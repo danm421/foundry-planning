@@ -569,6 +569,11 @@ export interface PresentationPage<TData, TOptions> {
    *  tokens: "base" | "<scenarioId>" | "snap:<id>"). The planner loads each and
    *  the document exposes them via `BuildDataContext.bundlesByRef`. */
   requiredScenarioRefs?: (options: TOptions) => string[];
+  /** Optional: the left-hand plan of a two-plan comparison page, read out of
+   *  the page's own options. The launcher row uses it to name the baseline when
+   *  it is not Base Case — `summarizeOptions` receives ids and never names, so
+   *  it cannot do this itself. Pages that omit the hook render nothing new. */
+  readBaselineScenarioId?: (options: TOptions) => string;
   /** Optional: a page may request plan *variants* that exist nowhere in the
    *  database — an already-loaded plan with one lever moved. The export applies
    *  the mutations to the `from` tree and exposes each result at
@@ -1349,7 +1354,7 @@ export const scenarioChangesPage: PresentationPage<ScenarioChangesPageData, Scen
 export const retirementComparisonPage: PresentationPage<RetirementComparisonPageData, RetirementComparisonOptions> = {
   id: "retirementComparison",
   title: "Retirement Comparison",
-  description: "Why the proposed plan wins vs. the base case — verdict, portfolio overlay, maximum sustainable spending, confidence range, and an AI summary.",
+  description: "Why one plan wins against another — verdict, portfolio overlay, maximum sustainable spending, confidence range, and an AI summary. Compares against Base Case unless a different baseline is chosen.",
   category: "Comparison",
   defaultOptions: RETIREMENT_COMPARISON_OPTIONS_DEFAULT,
   optionsSchema: retirementComparisonOptionsSchema,
@@ -1366,7 +1371,9 @@ export const retirementComparisonPage: PresentationPage<RetirementComparisonPage
         ],
   OptionsControl: RetirementComparisonOptionsControl,
   supportsScenarioOverride: false,
-  requiredScenarioRefs: (o) => (o.scenarioId ? ["base", o.scenarioId] : ["base"]),
+  requiredScenarioRefs: (o) =>
+    o.scenarioId ? [o.baselineScenarioId, o.scenarioId] : [o.baselineScenarioId],
+  readBaselineScenarioId: (o) => o.baselineScenarioId,
   inlineScenarioOption: {
     get: (o) => o.scenarioId,
     set: (o, scenarioId) => ({ ...o, scenarioId }),
@@ -1393,14 +1400,16 @@ export const taxSummaryPage: PresentationPage<TaxSummaryPageData, TaxSummaryOpti
 export const taxComparisonPage: PresentationPage<TaxComparisonPageData, TaxComparisonOptions> = {
   id: "taxComparison",
   title: "Tax Comparison",
-  description: "Base Case vs. a selected scenario: lifetime tax deltas, taxes-by-year with a base overlay, bracket-exposure change, and the Roth/pre-tax/taxable shift at retirement.",
+  description: "One plan against another: lifetime tax deltas, taxes-by-year with a baseline overlay, bracket-exposure change, and the Roth/pre-tax/taxable shift at retirement.",
   category: "Comparison",
   defaultOptions: TAX_COMPARISON_OPTIONS_DEFAULT,
   optionsSchema: taxComparisonOptionsSchema,
   summarizeOptions: summarizeTaxComparisonOptions,
   estimatePageCount: () => estimateTaxComparisonPageCount(),
   supportsScenarioOverride: false,
-  requiredScenarioRefs: (o) => (o.scenarioId ? ["base", o.scenarioId] : ["base"]),
+  requiredScenarioRefs: (o) =>
+    o.scenarioId ? [o.baselineScenarioId, o.scenarioId] : [o.baselineScenarioId],
+  readBaselineScenarioId: (o) => o.baselineScenarioId,
   inlineScenarioOption: {
     get: (o) => o.scenarioId,
     set: (o, scenarioId) => ({ ...o, scenarioId }),

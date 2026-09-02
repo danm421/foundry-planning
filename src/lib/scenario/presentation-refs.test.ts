@@ -98,6 +98,25 @@ describe("planScenarioBundles — multi-scenario pages", () => {
     expect(plan.pageKeys[0]).toBe("scenario:scn-9");
     expect(plan.distinct.has("scenario:scn-9")).toBe(true);
   });
+
+  it("counts four MC scenarios for two comparison pages on disjoint pairs", () => {
+    // renderPresentationPdf throws "Too many scenarios with a Monte Carlo page"
+    // above MAX_MC_SCENARIOS (3). Base-baselined pages share `base` and stay at
+    // 3; disjoint baselines do not.
+    const page = (refs: string[]): PlannerPage => ({
+      supportsScenarioOverride: false,
+      scenarioOverride: undefined,
+      needsMonteCarloRun: true,
+      isScenarioChanges: true,
+      requiredRefs: refs,
+    });
+
+    const shared = planScenarioBundles([page(["base", "a"]), page(["base", "b"])], null);
+    expect([...shared.distinct.values()].filter((d) => d.needsMonteCarlo)).toHaveLength(3);
+
+    const disjoint = planScenarioBundles([page(["a", "b"]), page(["c", "d"])], null);
+    expect([...disjoint.distinct.values()].filter((d) => d.needsMonteCarlo)).toHaveLength(4);
+  });
 });
 
 describe("planScenarioBundles", () => {

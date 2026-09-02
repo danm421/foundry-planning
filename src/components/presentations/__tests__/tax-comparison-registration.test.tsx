@@ -28,4 +28,19 @@ describe("taxComparison registration", () => {
     expect(() => page.optionsSchema.parse(page.defaultOptions)).not.toThrow();
     expect(page.estimatePageCount(undefined as never, page.defaultOptions)).toBe(1);
   });
+
+  it("asks for the chosen baseline instead of always asking for base", () => {
+    const o = { ...page.defaultOptions, baselineScenarioId: "s1", scenarioId: "s9" };
+    expect(page.requiredScenarioRefs!(o)).toEqual(["s1", "s9"]);
+  });
+
+  it("asks for the baseline alone until a comparison scenario is chosen", () => {
+    const o = { ...page.defaultOptions, baselineScenarioId: "s1" };
+    expect(page.requiredScenarioRefs!(o)).toEqual(["s1"]);
+  });
+
+  it("exposes the baseline id to the launcher row", () => {
+    expect(page.readBaselineScenarioId!(page.defaultOptions)).toBe("base");
+    expect(page.readBaselineScenarioId!({ ...page.defaultOptions, baselineScenarioId: "s1" })).toBe("s1");
+  });
 });
