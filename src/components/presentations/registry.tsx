@@ -301,6 +301,7 @@ import type {
   ScenarioComparisonPageData,
 } from "@/lib/presentations/pages/scenario-comparison/types";
 import { ScenarioComparisonPagePdf } from "./pages/scenario-comparison/page-pdf";
+import { ScenarioComparisonOptionsControl } from "./pages/scenario-comparison/options-control";
 import {
   balanceSheetOptionsSchema,
   BALANCE_SHEET_OPTIONS_DEFAULT,
@@ -1446,9 +1447,7 @@ export const scenarioComparisonPage: PresentationPage<
           { title: "Scenario Comparison — tradeoffs", offset: 1 },
         ]
       : [{ title: "Scenario Comparison", offset: 0 }],
-  // OptionsControl lands in Task 11 — ScenarioComparisonOptionsControl doesn't
-  // exist yet. Until then the row's summary (summarizeScenarioComparisonOptions)
-  // is the only feedback on what's configured.
+  OptionsControl: ScenarioComparisonOptionsControl,
   // The baseline is always Base Case (the change lists are recorded against
   // it), so there is nothing for a per-page "base facts" override to compare.
   supportsScenarioOverride: false,

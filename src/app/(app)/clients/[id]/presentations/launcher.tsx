@@ -27,6 +27,7 @@ import {
 import { SelectedPageRow } from "@/components/presentations/launcher/selected-page-row";
 import { PdfPreviewDialog, slug, type PreviewRequest } from "@/components/presentations/launcher/pdf-preview-dialog";
 import type { RetirementComparisonOptions } from "@/lib/presentations/pages/retirement-comparison/types";
+import type { ScenarioComparisonOptions } from "@/lib/presentations/pages/scenario-comparison/types";
 import { TemplatesPanel } from "@/components/presentations/launcher/templates-panel";
 import { SaveTemplateModal } from "@/components/presentations/launcher/save-template-modal";
 import { AddPageButton } from "@/components/presentations/launcher/report-command-palette";
@@ -160,19 +161,35 @@ export function PresentationsLauncher(props: Props) {
   // returning to this tab brings it back exactly as they left it.
   useLauncherDraft(props.clientId, props.currentUserId, state, dispatch);
 
-  // Pre-warm the compute cache for configured Retirement Comparison pages so the
-  // eventual "Generate PDF" hits a warm MC + max-spend cache instead of running
-  // ~4 simulations + 2 solves inline (the 800s-timeout path). Fire-and-forget,
-  // debounced, and de-duplicated per (scenarioId,target) for this session.
+  // Pre-warm the compute cache for configured Retirement Comparison and
+  // Scenario Comparison pages so the eventual "Generate PDF" hits a warm MC +
+  // max-spend cache instead of running everything inline (the 800s-timeout
+  // path). Each POST warms base + one scenario — 1 simulation + 1 solve for
+  // each of those two refs — so per page: Retirement Comparison's single
+  // comparison scenario is 2 simulations + 2 solves; Scenario Comparison's
+  // default of three chosen scenarios is 4 simulations + 4 solves overall
+  // (base is redundant after its first of the three calls, then
+  // getOrCompute* hits cache). Fire-and-forget, debounced, and de-duplicated
+  // per (scenarioId,target) for this session.
   const warmedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     const keyOf = (t: { scenarioId: string; targetPoS: number }) =>
       `${t.scenarioId}:${t.targetPoS}`;
     const targets = state.pages
-      .filter((p) => p.pageId === "retirementComparison")
-      .map((p) => p.options as RetirementComparisonOptions)
-      .filter((o) => !!o.scenarioId)
-      .map((o) => ({ scenarioId: o.scenarioId, targetPoS: o.maxSpend?.targetConfidence ?? 0.85 }))
+      .flatMap((p) => {
+        if (p.pageId === "retirementComparison") {
+          const o = p.options as RetirementComparisonOptions;
+          return o.scenarioId
+            ? [{ scenarioId: o.scenarioId, targetPoS: o.maxSpend?.targetConfidence ?? 0.85 }]
+            : [];
+        }
+        if (p.pageId === "scenarioComparison") {
+          const o = p.options as ScenarioComparisonOptions;
+          const targetPoS = o.maxSpend?.targetConfidence ?? 0.85;
+          return o.scenarioIds.filter(Boolean).map((scenarioId) => ({ scenarioId, targetPoS }));
+        }
+        return [];
+      })
       .filter((t) => !warmedRef.current.has(keyOf(t)));
     if (targets.length === 0) return;
     const timer = setTimeout(() => {
@@ -376,7 +393,7 @@ export function PresentationsLauncher(props: Props) {
   // Retirement / Tax) pick their scenario inline, and the four-column Scenario
   // Comparison page picks its list in its Options dialog and reports its own
   // unconfigured state via `isUnconfigured`.
-  function pagesMissingTheirScenario(): Array<{ title: string; position: number }> {
+  function pagesMissingTheirScenario(): Array<{ title: string; position: number; viaOptions: boolean }> {
     return state.pages
       .map((p, i) => ({ page: PRESENTATION_PAGES[p.pageId], options: p.options, position: i + 1 }))
       .filter(({ page, options }) => {
@@ -384,7 +401,9 @@ export function PresentationsLauncher(props: Props) {
         if (inline) return !inline.get(options as never);
         return page.isUnconfigured?.(options as never) ?? false;
       })
-      .map(({ page, position }) => ({ title: page.title, position }));
+      // No inline picker means the row was caught by `isUnconfigured` — its
+      // scenario list lives in the Options dialog, not an inline dropdown.
+      .map(({ page, position }) => ({ title: page.title, position, viaOptions: !page.inlineScenarioOption }));
   }
 
   async function handleGenerate() {
@@ -396,13 +415,27 @@ export function PresentationsLauncher(props: Props) {
     // so the advisor knows which row to fix.
     const missingScenario = pagesMissingTheirScenario();
     if (missingScenario.length > 0) {
-      const named = missingScenario
-        .map((m) => `${m.title} (page ${m.position})`)
-        .join(", ");
-      const each = missingScenario.length > 1 ? " for each" : "";
-      setError(
-        `No comparison selected for ${named}. Choose a comparison scenario${each} before generating the PDF.`,
-      );
+      const named = (list: typeof missingScenario) =>
+        list.map((m) => `${m.title} (page ${m.position})`).join(", ");
+      // Inline-picker pages (Plan / Retirement / Tax) get the original
+      // wording; Scenario Comparison has no inline dropdown to point at, so
+      // it's told to open its Options dialog instead.
+      const inlinePages = missingScenario.filter((m) => !m.viaOptions);
+      const optionsPages = missingScenario.filter((m) => m.viaOptions);
+      const messages: string[] = [];
+      if (inlinePages.length > 0) {
+        const each = inlinePages.length > 1 ? " for each" : "";
+        messages.push(
+          `No comparison selected for ${named(inlinePages)}. Choose a comparison scenario${each} before generating the PDF.`,
+        );
+      }
+      if (optionsPages.length > 0) {
+        const each = optionsPages.length > 1 ? " for each" : "";
+        messages.push(
+          `No scenario chosen for ${named(optionsPages)}. Open Options and choose at least one scenario${each} before generating the PDF.`,
+        );
+      }
+      setError(messages.join(" "));
       return;
     }
     setGenerating(true);
