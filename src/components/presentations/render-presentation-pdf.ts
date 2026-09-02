@@ -422,14 +422,26 @@ export async function renderPresentationPdf(
   await Promise.all(
     body.pages.flatMap((page) => {
       if (page.pageId !== "retirementComparison") return [];
-      const opts = page.options as { scenarioId: string; maxSpend: { show: boolean; targetConfidence: number } };
+      const opts = page.options as {
+        baselineScenarioId: string;
+        scenarioId: string;
+        maxSpend: { show: boolean; targetConfidence: number };
+      };
       if (!opts.maxSpend.show) return [];
       const target = opts.maxSpend.targetConfidence;
-      // The retirement comparison page always reads "base" plus the chosen
-      // scenario. Resolve to the same keys planScenarioBundles registered so
-      // we attach to the exact bundle objects the PDF renderer will read.
+      // The page reads its CHOSEN BASELINE plus the comparison scenario — the
+      // same two refs `requiredScenarioRefs` registers. Solving "base" here
+      // instead was silent and total: `view-model.ts` hides both the max-spend
+      // panel AND the page-1 "Max sustainable spend" KPI when either side's
+      // `maxSpend` is null, so picking any baseline other than Base Case
+      // deleted a panel and a card from a client-facing deck.
+      // Resolve to the same keys planScenarioBundles registered so we attach to
+      // the exact bundle objects the PDF renderer will read.
       const refs: Array<{ key: string; scenarioId: string | "base" }> = [
-        { key: keyForRef(resolveScenarioRef("base")), scenarioId: "base" },
+        {
+          key: keyForRef(resolveScenarioRef(opts.baselineScenarioId)),
+          scenarioId: opts.baselineScenarioId,
+        },
         ...(opts.scenarioId
           ? [{ key: keyForRef(resolveScenarioRef(opts.scenarioId)), scenarioId: opts.scenarioId }]
           : []),
