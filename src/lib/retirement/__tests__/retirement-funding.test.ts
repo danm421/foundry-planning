@@ -141,3 +141,90 @@ describe("lifetimeFunding — sources are capped at what actually funded spendin
     expect(f.reinvestedSurplus).toBe(51_000); // 40k SS + 7k RMD + 4k withdrawal
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Residue. `shortfall` and `reinvestedSurplus` are each a per-year
+// `Math.max(0, …)`, so a funded year contributes noise of one sign instead of a
+// clean zero and 33 of them compound. A real client deck printed "Unfunded 0%
+// $1" and "a shortfall the plan does not currently cover" on a plan that funds
+// itself in full. Shapes and magnitudes below are taken from the prod plan that
+// shipped it (8523c941: 33 retirement years, ~$315k–$757k of spending each,
+// per-year residue under $0.40, $15.8M lifetime).
+// ─────────────────────────────────────────────────────────────────────────────
+describe("lifetimeFunding — arithmetic residue never prints as a finding", () => {
+  const accounts = [acct("tax1", "taxable", "brokerage")];
+
+  /** 33 retirement years that fund themselves, each missing its expenses by
+   *  `residue` — positive = the inflow lands just short, negative = just over. */
+  function fundedPlan(residue: number): ProjectionYear[] {
+    return Array.from({ length: 33 }, (_, i) => {
+      const expenses = 315_510.62 * 1.02 ** i;
+      return yr(2026 + i, {
+        withdrawals: { byAccount: { tax1: expenses - residue }, total: expenses - residue },
+        totalExpenses: expenses,
+      });
+    });
+  }
+
+  it("drops a shortfall that is only the solve's own tolerance", () => {
+    const f = lifetimeFunding(fundedPlan(0.17), accounts, 2026);
+    expect(f.shortfall).toBe(0);
+    // Whatever the shortfall gives up, `totalFunded` takes back: the page draws
+    // the funding bar against `totalSpending`, so a gap here reopens as a sliver
+    // of unexplained bar.
+    expect(f.totalFunded).toBe(f.totalSpending);
+  });
+
+  it("drops the same residue on the surplus side", () => {
+    // The other half of the defect: the deck's other two scenarios printed
+    // "Reinvested surplus (not spent)" of $12 and $2 from this exact shape.
+    const f = lifetimeFunding(fundedPlan(-0.17), accounts, 2026);
+    expect(f.reinvestedSurplus).toBe(0);
+  });
+
+  it("keeps a real shortfall, to the cent", () => {
+    // 3.6% of lifetime spending — the smallest genuine shortfall across the 28
+    // live plans, so the threshold has to clear it with room to spare.
+    const years = fundedPlan(0);
+    const spending = years.reduce((s, y) => s + y.totalExpenses, 0);
+    const gap = spending * 0.036;
+    const first = years[0];
+    first.withdrawals = { byAccount: { tax1: first.totalExpenses - gap }, total: 0 };
+
+    const f = lifetimeFunding(years, accounts, 2026);
+    expect(f.shortfall).toBeCloseTo(gap, 6);
+    expect(f.totalFunded + f.shortfall).toBeCloseTo(f.totalSpending, 6);
+  });
+
+  it("keeps a real surplus while dropping a residue shortfall in the same plan", () => {
+    // The prod plan that shipped the bug: a genuine $254,721 of reinvested RMD
+    // alongside $1.01 of shortfall noise. Suppressing by plan rather than by
+    // field would have silently deleted a quarter of a million dollars.
+    const years = fundedPlan(0.17);
+    const rmdYear = years[20];
+    rmdYear.accountLedgers = { ira1: { rmdAmount: 254_721 } } as unknown as ProjectionYear["accountLedgers"];
+
+    const f = lifetimeFunding(years, accounts, 2026);
+    expect(f.shortfall).toBe(0);
+    expect(f.reinvestedSurplus).toBeCloseTo(254_721 - 0.17, 6);
+  });
+
+  it("draws the line between residue and real money at one part in a thousand", () => {
+    // Measured band: the worst residue on prod was 0.030% of its plan's lifetime
+    // spending, the smallest real shortfall 3.6%. Pin both sides of the choice.
+    const years = fundedPlan(0);
+    const spending = years.reduce((s, y) => s + y.totalExpenses, 0);
+
+    const shortBy = (share: number) => {
+      const y = fundedPlan(0);
+      y[0].withdrawals = { byAccount: { tax1: y[0].totalExpenses - spending * share }, total: 0 };
+      return lifetimeFunding(y, accounts, 2026).shortfall;
+    };
+
+    expect(shortBy(0.0009)).toBe(0);              // under — residue
+    expect(shortBy(0.0011)).toBeGreaterThan(0);   // over — real money
+    expect(shortBy(0.00030)).toBe(0);             // worst residue seen on prod
+    expect(shortBy(0.036)).toBeGreaterThan(0);    // smallest real gap seen on prod
+    expect(years.length).toBe(33);
+  });
+});

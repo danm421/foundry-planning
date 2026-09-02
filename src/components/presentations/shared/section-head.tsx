@@ -24,6 +24,28 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 600,
     color: PRESENTATION_THEME.ink,
+    // The title owns its measured width and never yields it. Without this the
+    // row shrank the title's BOX to make room for a long subtitle — and since
+    // react-pdf does not clip text to its box, the title's words stayed put
+    // while the subtitle started INSIDE them.
+    flexShrink: 0,
+  },
+  // Takes whatever the title leaves and ellipses past it, so a long scenario
+  // name can neither overprint the title nor run off the paper (a real deck
+  // printed "… Retire age 64 in 2026 · through 2058" 49pt past the right edge).
+  //
+  // `maxLines` is a STYLE property in react-pdf, not a Text prop — as a prop it
+  // is silently ignored and the subtitle wraps to a second line, which lands
+  // ABOVE the title under `alignItems: baseline` and busts the ~42pt head cap.
+  // One line is what the cap allows; the truncated tail ("Retire age X in Y")
+  // is the same figure the page's own RETIRE AGE card prints.
+  subtitle: {
+    fontFamily: "Fraunces",
+    fontSize: 12,
+    color: PRESENTATION_THEME.ink2,
+    flex: 1,
+    maxLines: 1,
+    textOverflow: "ellipsis",
   },
   rule: {
     marginTop: 5,
@@ -49,7 +71,7 @@ export function SectionHead({
       <View style={{ flexDirection: "row", alignItems: "baseline", gap: 10 }}>
         <Text style={styles.title}>{title}</Text>
         {subtitle && (
-          <Text style={{ fontFamily: "Fraunces", fontSize: 12, color: PRESENTATION_THEME.ink2 }}>
+          <Text style={styles.subtitle}>
             {`| ${subtitle}`}
           </Text>
         )}

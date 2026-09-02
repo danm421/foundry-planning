@@ -274,3 +274,87 @@ describe("buildClientProfileData — expenses", () => {
     expect(total.retirement).toBe(60000);
   });
 });
+
+describe("buildClientProfileData — mid-year retirement", () => {
+  // Mirrors a real couple: the client retires in 2026, the spouse at 64 in 2027,
+  // and the joint salary is anchored to the SPOUSE's retirement. `endYear`
+  // resolves to 2026 (the last full year) while the engine keeps paying a
+  // prorated slice through the retirement month of 2027.
+  const spouseRetiresJuly = {
+    dateOfBirth: "1962-01-15", retirementAge: 64, retirementMonth: 1,
+    spouseName: "Carrie", spouseDob: "1963-11-21",
+    spouseRetirementAge: 64, spouseRetirementMonth: 7,
+  };
+  const longPlan = [
+    py({ year: 2026, ageClient: 64, bySource: { sal: 194000 } }),
+    py({ year: 2027, ageClient: 65, bySource: { sal: 97000 } }),
+    py({ year: 2040, ageClient: 78, bySource: {} }),
+  ];
+  const salary = {
+    id: "sal", type: "salary", name: "Joint - Salary", annualAmount: 194000,
+    startYear: 2020, endYear: 2026, owner: "joint", growthRate: 0,
+    endYearRef: "spouse_retirement",
+  };
+
+  it("names the year the salary actually stops, not the last full year", () => {
+    const data = buildClientProfileData({
+      ...base,
+      years: longPlan,
+      clientData: clientData(spouseRetiresJuly, { incomes: [salary] as ClientData["incomes"] }),
+    });
+    // Retirement is July 2027, so the salary runs Jan–Jun 2027. The End column
+    // must say 2027 — showing 2026 hid half a year of pay.
+    expect(data.income.find((r) => r.name === "Joint - Salary")!.endYear).toBe(2027);
+  });
+
+  it("leaves a January retirement on the last full year", () => {
+    const data = buildClientProfileData({
+      ...base,
+      years: longPlan,
+      clientData: clientData(
+        { ...spouseRetiresJuly, spouseRetirementMonth: 1 },
+        { incomes: [salary] as ClientData["incomes"] },
+      ),
+    });
+    // month=1 pays nothing in 2027, so 2026 really is the last year.
+    expect(data.income.find((r) => r.name === "Joint - Salary")!.endYear).toBe(2026);
+  });
+
+  it("shows the entered annual amount for a row prorated by a mid-year start", () => {
+    const data = buildClientProfileData({
+      ...base,
+      years: [
+        py({ year: 2026, ageClient: 64, bySource: {} }),
+        // Pension starts at a February retirement -> engine pays 11/12 in 2027.
+        py({ year: 2027, ageClient: 65, bySource: { pen: 57750 } }),
+        py({ year: 2040, ageClient: 78, bySource: {} }),
+      ],
+      clientData: clientData(spouseRetiresJuly, {
+        incomes: [{
+          id: "pen", type: "deferred", name: "Carrie - Deferred", annualAmount: 63000,
+          startYear: 2027, endYear: 2060, owner: "spouse", growthRate: 0,
+          startYearRef: "spouse_retirement",
+        }] as ClientData["incomes"],
+      }),
+    });
+    expect(data.income.find((r) => r.name === "Carrie - Deferred")!.amount).toBe(63000);
+  });
+
+  it("shows the entered amount rather than the grown projection value", () => {
+    const data = buildClientProfileData({
+      ...base,
+      years: [
+        py({ year: 2026, ageClient: 64, bySource: {} }),
+        py({ year: 2030, ageClient: 68, bySource: { pen: 45000 } }),
+        py({ year: 2040, ageClient: 78, bySource: {} }),
+      ],
+      clientData: clientData(spouseRetiresJuly, {
+        incomes: [{
+          id: "pen", type: "deferred", name: "Pension", annualAmount: 40000,
+          startYear: 2030, endYear: 2060, owner: "client", growthRate: 0.03,
+        }] as ClientData["incomes"],
+      }),
+    });
+    expect(data.income.find((r) => r.name === "Pension")!.amount).toBe(40000);
+  });
+});

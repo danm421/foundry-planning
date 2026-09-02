@@ -3,6 +3,7 @@
 
 import type { ClientData, ClientInfo, Income, ProjectionYear } from "@/engine/types";
 import { resolveClaimAgeMonths } from "@/engine/socialSecurity/claimAge";
+import { endInclusionAndFactor } from "@/engine/retirement-proration";
 import type {
   BuildClientProfileInput,
   ClientProfilePageData,
@@ -73,7 +74,7 @@ export function buildClientProfileData(input: BuildClientProfileInput): ClientPr
     subtitle: scenarioLabel,
     persons: buildPersons(ci, years, clientName, spouseFullName),
     children: buildChildren(clientData, firstYear),
-    income: buildIncome(clientData, years, firstYear, lastYear),
+    income: buildIncome(clientData, firstYear, lastYear),
     expenses: buildExpenses(ci, years),
   };
 }
@@ -134,7 +135,6 @@ function buildChildren(clientData: ClientData, currentYear: number): ProfileChil
 
 function buildIncome(
   clientData: ClientData,
-  years: ProjectionYear[],
   firstYear: number,
   lastYear: number,
 ): ProfileIncomeRow[] {
@@ -146,19 +146,42 @@ function buildIncome(
     // "Active" + $0).
     const startYear = inc.type === "social_security" ? ssClaimYear(inc, ci) ?? inc.startYear : inc.startYear;
     const amount =
-      inc.type === "social_security"
-        ? ssAnnualAmount(inc, years, startYear)
-        : (years.find((y) => y.year === Math.max(inc.startYear, firstYear))?.income.bySource[inc.id] ?? 0);
+      inc.type === "social_security" ? ssAnnualAmount(inc) : enteredAnnualAmount(inc, startYear);
+    const endYear = effectiveEndYear(inc, ci);
     return {
       name: inc.name,
       typeLabel: INCOME_TYPE_LABELS[inc.type] ?? "Other",
       amount,
       active: startYear <= firstYear,
       startYear,
-      endYear: inc.endYear >= lastYear ? null : inc.endYear,
+      endYear: endYear >= lastYear ? null : endYear,
     };
   });
   return rows.sort((a, b) => a.startYear - b.startYear || a.name.localeCompare(b.name));
+}
+
+// The Amount column shows the figure the advisor ENTERED, not the projection's
+// cash in the first year. A row anchored to a mid-year retirement is prorated by
+// the engine — a pension starting in February pays 11/12 that year, a salary
+// ending in February pays 1/12 — and surfacing that slice here made the profile
+// look as though a smaller number had been entered. Growth is dropped for the
+// same reason: this is the plan's stated input, not a projected value.
+function enteredAnnualAmount(inc: Income, startYear: number): number {
+  // A schedule-driven row has no single annual figure; its first scheduled year
+  // is the closest thing to an entered amount (and is likewise unprorated).
+  if (inc.scheduleOverrides) return inc.scheduleOverrides[startYear] ?? inc.annualAmount;
+  return inc.annualAmount;
+}
+
+// Last calendar year the row actually pays. When the end is anchored to a
+// retirement milestone, `inc.endYear` resolves to (retirementYear - 1) — the last
+// FULL year — while the engine keeps paying a prorated slice through the
+// retirement month itself. Ask the engine's own gate whether that following year
+// is still included, so the End column names the year the income really stops
+// rather than the one before it.
+function effectiveEndYear(inc: Income, ci: ClientInfo): number {
+  const next = inc.endYear + 1;
+  return endInclusionAndFactor(inc.endYearRef, next, inc.endYear, ci).included ? next : inc.endYear;
 }
 
 // First calendar year a Social Security row actually pays, mirroring the engine's
@@ -179,12 +202,14 @@ function ssClaimYear(inc: Income, ci: ClientInfo): number | null {
 }
 
 // Headline annual SS benefit. For PIA-mode rows show PIA×12 (today's dollars,
-// consistent with how the other income rows display their entered amount). Fall
-// back to the projection at the claim year for legacy/manual rows.
-function ssAnnualAmount(inc: Income, years: ProjectionYear[], startYear: number): number {
+// consistent with how the other income rows display their entered amount);
+// legacy/manual rows show their entered annual amount. Neither reads the
+// projection, which prorates a benefit that starts partway through its claim
+// year and would understate the headline.
+function ssAnnualAmount(inc: Income): number {
   if (inc.ssBenefitMode === "no_benefit") return 0;
   if (inc.ssBenefitMode === "pia_at_fra" && inc.piaMonthly != null) return inc.piaMonthly * 12;
-  return years.find((y) => y.year === startYear)?.income.bySource[inc.id] ?? inc.annualAmount;
+  return inc.annualAmount;
 }
 
 // Last retirement year = max of client/spouse (dob year + retirementAge). The

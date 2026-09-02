@@ -120,6 +120,12 @@ const DECK: PresentationPageId[] = [
   "clientProfile",
   "balanceSheet",
   "retirementSummary",
+  // A cash-flow drill: one row per projection year, so on any real plan it runs
+  // to two sheets. Its estimator hard-returned 1, which pushed every entry
+  // after it a sheet early — the audited deck sent readers to 13 for a page
+  // that printed on 18. It sits mid-deck deliberately: an under-count only
+  // shows up in the entries that FOLLOW it.
+  "cashFlowIncome",
   "taxSummary",
   "scenarioChanges",
   "retirementComparison",
@@ -145,8 +151,31 @@ describe("Contents page numbers", () => {
       }
       // The sheet's own heading may carry a suffix ("Balance Sheet | Today"),
       // so the Contents title has to be a prefix of what the sheet prints.
-      expect(sheets[page - 1], `Contents sends "${title}" to sheet ${page}`).toContain(title);
+      //
+      // One deliberate exception: a drill page is registered under a
+      // category-prefixed name ("Cash Flow — Income") and heads its own sheet
+      // with the bare one ("Income"). The Contents number is still the thing
+      // under test, so the heading is matched on the segment after the dash.
+      const heading = title.includes(" — ") ? title.split(" — ").at(-1)! : title;
+      expect(sheets[page - 1], `Contents sends "${title}" to sheet ${page}`).toContain(heading);
     }
+  });
+
+  it("numbers past a drill page that prints more sheets than its title suggests", async () => {
+    const sheets = await sheetsOf(doc(DECK));
+    const entries = contentsEntries(sheets[1]);
+    const drill = entries.find((e) => e.title.startsWith("Cash Flow"))!;
+    const after = entries.find((e) => e.title === "Tax Summary")!;
+    expect(drill, "the drill page is missing from the Contents").toBeDefined();
+    // Its table is one row per projection year, so it prints two sheets: the
+    // first headed, the second carrying only the repeating column header.
+    expect(sheets[drill.page - 1], "the drill's own sheet").toContain("Income");
+    expect(sheets[drill.page], "the drill's continuation sheet").toContain("Age(s)");
+    // The page after it therefore starts TWO on, not one. Under the old
+    // hard-coded estimate of 1 this — and every entry below it — came out a
+    // sheet early.
+    expect(after.page).toBe(drill.page + 2);
+    expect(sheets[after.page - 1]).toContain("Tax Summary");
   });
 
   it("lists the second sheet of a two-sheet page under its own name", async () => {
