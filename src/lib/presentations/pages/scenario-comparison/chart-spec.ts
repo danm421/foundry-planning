@@ -70,7 +70,15 @@ export function buildComparisonChartSpec(
     kind: "stackedBarWithLine",
     width,
     height,
-    margin: { top: 8, right: 10, bottom: 22, left: 44 },
+    // `top` is the room the RENDERER's marker labels get, not decoration.
+    // `markerLabelLayout` gives a label `floor(top / 7.5)` rows and puts the
+    // first baseline 4pt above the plot; at 8 that is one row, so two nearby
+    // retirement years are forced onto the same baseline and print through each
+    // other — the defect `cash-flow/chart-geom.ts` records as having shipped in
+    // a client deck. Two rows needs 15, and the second row's baseline
+    // (top - 11.5) has to clear a 6pt glyph's ~4.36pt cap height, needing 15.86.
+    // 16 is the smallest integer that does both. The plot keeps the rest.
+    margin: { top: 16, right: 10, bottom: 22, left: 44 },
     xAxis: { domain: years, ticks: xTicks, labelFormat: (v: number) => String(v) },
     yAxis: {
       domain: [0, yDomainMax],

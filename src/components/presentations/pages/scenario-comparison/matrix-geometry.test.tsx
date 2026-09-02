@@ -14,7 +14,7 @@
 //    tsc and eslint see well-formed JSX; a render smoke asserts a byte length.
 import { describe, it, expect } from "vitest";
 import { isValidElement, type ElementType, type ReactElement, type ReactNode } from "react";
-import { Polyline } from "@react-pdf/renderer";
+import { Polyline, Text as SvgText } from "@react-pdf/renderer";
 import { CONTENT_W, LABEL_COL_W, VALUE_COL_W, MAX_COLUMNS } from "./geom";
 import { PAGE_WIDTH_PORTRAIT, PAGE_PAD_X } from "@/components/presentations/shared/page-frame";
 import { ComparisonChartPdf, polylineRuns } from "./chart-pdf";
@@ -23,6 +23,9 @@ import {
   buildComparisonChartSpec,
   type ComparisonSeries,
 } from "@/lib/presentations/pages/scenario-comparison/chart-spec";
+import {
+  MARKER_LABEL_ROW_H,
+} from "@/components/presentations/pages/cash-flow/chart-geom";
 import { COLUMN_COLORS } from "@/lib/presentations/pages/scenario-comparison/view-model";
 
 describe("scenario comparison column geometry", () => {
@@ -86,8 +89,10 @@ function collect(node: ReactNode, type: ElementType, out: ReactElement[] = []): 
 const YEARS = Array.from({ length: 20 }, (_, i) => 2026 + i);
 /** Column 3 is the short plan: ten real years, then the union's tail as gaps. */
 const SHORT_YEARS = 10;
+/** What `view-model.ts` asks `buildComparisonChartSpec` for. */
+const CHART_H = 190;
 
-function fixtureSpec() {
+function fixtureSpec(retirementYears: number[] = [2036, 2036, 2036, 2036]) {
   const series: ComparisonSeries[] = ["Base Case", "Retire at 62", "Sell the condo", "Move to Texas"]
     .map((label, i) => ({
       label,
@@ -95,9 +100,9 @@ function fixtureSpec() {
       values: YEARS.map((_, k) =>
         i === 2 && k >= SHORT_YEARS ? NaN : 1_000_000 * (1 + k / 10) * (1 + i / 20),
       ),
-      retirementYear: 2036,
+      retirementYear: retirementYears[i],
     }));
-  return buildComparisonChartSpec(YEARS, series, 526, 190);
+  return buildComparisonChartSpec(YEARS, series, CONTENT_W, CHART_H);
 }
 
 describe("ComparisonChartPdf", () => {
@@ -142,5 +147,61 @@ describe("ComparisonChartPdf", () => {
     const items = (legends[0].props as { items: { label: string }[] }).items;
     expect(items.map((i) => i.label)).toEqual(spec.legend.items.map((i) => i.label));
     expect(items).toHaveLength(4);
+  });
+});
+
+/**
+ * Two retirement labels one band apart — the case `chart-geom.ts` says already
+ * shipped in a client deck as "Matt NewnhaCarrie — Retirement".
+ *
+ * `markerLabelLayout`'s row budget is `floor(margin.top / MARKER_LABEL_ROW_H)`,
+ * and its baseline is `MARKER_LABEL_BASE_Y` below the plot's top edge. Both were
+ * sized against cash-flow's 24pt top margin. At this chart's original 8pt,
+ * `floor(8 / 7.5)` is 1, so a label that cannot fit beside its neighbour is
+ * forced back onto row 0 and prints THROUGH it — and the single row it does get
+ * sits at 4pt absolute, which shaves the caps off a 6pt label.
+ *
+ * The arithmetic that picks 16:
+ *   · two rows needs `margin.top >= 2 * 7.5` = 15;
+ *   · the SECOND row's baseline is `margin.top - 4 - 7.5`, and it has to clear
+ *     the canvas top by a 6pt glyph's cap height, so `margin.top >= 11.5 + 4.36`
+ *     = 15.86.
+ * 16 is the smallest integer that satisfies both.
+ */
+/** Cap height of 6pt Inter (~0.727em). A baseline closer to the canvas top than
+ *  this shaves the label's caps off: an @react-pdf `Svg` child past the viewport
+ *  is not drawn — no error, no clipping artefact. */
+const LABEL_CAP_H = 6 * 0.727;
+
+describe("retirement marker labels", () => {
+  const spec = fixtureSpec([2036, 2036, 2037, 2036]);
+
+  /** The placed marker labels, with `y` lifted into canvas coordinates. */
+  const placed = (() => {
+    const wanted = new Set(spec.markers.map((m) => m.label));
+    return collect(ComparisonChartPdf({ spec }), SvgText)
+      .map((el) => el.props as { x: number; y: number; children: unknown })
+      .filter((p) => typeof p.children === "string" && wanted.has(p.children))
+      .map((p) => ({ label: p.children as string, x: p.x, y: spec.margin.top + p.y }));
+  })();
+
+  it("is measuring two labels that really do collide", () => {
+    // Guard on the instrument: one marker, or two far apart, would let the
+    // stacking assertion below pass without stacking anything.
+    expect(placed.map((p) => p.label)).toEqual(["Retires 2036", "Retires 2037"]);
+    const halves = spec.markers.map((m) => (m.label.length * 3.35) / 2);
+    expect(Math.abs(placed[0].x - placed[1].x)).toBeLessThan(halves[0] + halves[1]);
+  });
+
+  it("stacks the colliding label onto a second row instead of printing through", () => {
+    expect(placed[0].y).not.toBe(placed[1].y);
+    expect(Math.abs(placed[0].y - placed[1].y)).toBe(MARKER_LABEL_ROW_H);
+  });
+
+  it("keeps every row's glyphs on the canvas", () => {
+    const clipped = placed
+      .filter((p) => p.y < LABEL_CAP_H)
+      .map((p) => `"${p.label}" baseline ${p.y}pt leaves ${p.y - LABEL_CAP_H}pt of cap off-canvas`);
+    expect(clipped).toEqual([]);
   });
 });

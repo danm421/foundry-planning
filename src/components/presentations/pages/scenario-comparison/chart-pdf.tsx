@@ -27,8 +27,8 @@ export interface PlotPoint {
  * a plan that ends early simply stops being drawn.
  *
  * The test is finiteness of the COMPUTED coordinate, not of the source value: it
- * catches the `NaN` sentinel, a scale that degenerates, and an x that falls
- * outside the band domain, which are the same defect at the point it matters.
+ * catches the `NaN` sentinel and an x that falls outside the band domain, which
+ * are the same defect at the point where it matters.
  *
  * A one-point run is kept rather than filtered: it is a valid points attribute
  * that draws nothing, which is exactly what a single year with no neighbour
