@@ -18,10 +18,15 @@ export function fmtPct(fraction: number): string {
  * Does this amount disappear into "$0" once it is printed?
  *
  * Every "only mention this if there is one" guard has to ask THIS, not `x > 0`.
- * The lifetime shortfall accumulates a per-year `Math.max(0, …)` residue, so a
- * fully funded plan carries a fraction of a cent — enough for `> 0`, and the
- * page then warned about "a shortfall the plan does not currently cover" beside
- * the figure "$0".
+ *
+ * This is the LAST line of defence, not the whole rule. It is sub-dollar by
+ * construction, so it never caught the residue it was written for: the lifetime
+ * shortfall compounds a per-year `Math.max(0, …)` into whole dollars — $1, $11
+ * and $2 on the three scenarios of one client deck, and up to $1,565 on a live
+ * plan — every one of which sails straight through `fmtUsd(n) === "$0"`. That
+ * residue is now dropped where it is produced, by `isMaterialLifetimeAmount` in
+ * `retirement-funding.ts`; keep asking this as well, for the genuinely
+ * sub-dollar figure that is real but not worth a sentence.
  */
 export function printsAsZero(n: number): boolean {
   return fmtUsd(n) === "$0";
