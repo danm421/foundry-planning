@@ -3,7 +3,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { IntegrationClientStatus } from "../IntegrationClientStatus";
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+// `refreshMock` must be a stable spy shared across renders — `useRouter` is
+// re-invoked on every render, and a fresh `vi.fn()` per call would make
+// `toHaveBeenCalled()` assertions unreliable (each render's spy starts with
+// zero calls of its own).
+const { refreshMock } = vi.hoisted(() => ({ refreshMock: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: refreshMock }) }));
 vi.mock("../toast", () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 
 const base = {
@@ -85,5 +90,76 @@ describe("IntegrationClientStatus", () => {
     });
     const calls = (global.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls;
     expect(calls).toHaveLength(1);
+  });
+
+  it("keeps the dialog open on a failed claim", async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      json: async () => ({ error: "That household ID isn't available to link." }),
+    }) as unknown as typeof fetch;
+
+    render(<IntegrationClientStatus {...base} linked={false} canEdit />);
+    fireEvent.click(screen.getByRole("button", { name: /link to addepar/i }));
+    fireEvent.change(screen.getByLabelText(/household id/i), {
+      target: { value: "9999999" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^link$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/isn't available to link/i)).toBeTruthy();
+    });
+    // A dialog that closed on failure would itself be a tell that something
+    // real (rather than the deliberately opaque "unavailable") happened.
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
+  it("refreshes after a successful claim even when the follow-on sync fails", async () => {
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ ok: true, name: "Doe Family" }),
+      })
+      .mockRejectedValueOnce(new Error("dropped connection")) as unknown as typeof fetch;
+
+    render(<IntegrationClientStatus {...base} linked={false} canEdit />);
+    fireEvent.click(screen.getByRole("button", { name: /link to addepar/i }));
+    fireEvent.change(screen.getByLabelText(/household id/i), {
+      target: { value: "1234567" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^link$/i }));
+
+    // The claim committed even though the sync that follows it will reject —
+    // the row must not be left stuck rendering the pre-claim "unlinked"
+    // state, which would make a retry hit the already-linked branch.
+    await waitFor(() => {
+      expect(refreshMock).toHaveBeenCalled();
+    });
+  });
+
+  it("trims whitespace off the typed id before posting", async () => {
+    render(<IntegrationClientStatus {...base} linked={false} canEdit />);
+    fireEvent.click(screen.getByRole("button", { name: /link to addepar/i }));
+    fireEvent.change(screen.getByLabelText(/household id/i), {
+      target: { value: "  1234567  " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^link$/i }));
+
+    await waitFor(() => {
+      const calls = (global.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls;
+      expect(JSON.parse(calls[0][1].body)).toEqual({
+        clientId: "c1",
+        externalHouseholdId: "1234567",
+      });
+    });
+  });
+
+  it("keeps the submit button disabled for a whitespace-only id", () => {
+    render(<IntegrationClientStatus {...base} linked={false} canEdit />);
+    fireEvent.click(screen.getByRole("button", { name: /link to addepar/i }));
+    fireEvent.change(screen.getByLabelText(/household id/i), {
+      target: { value: "   " },
+    });
+    expect(screen.getByRole("button", { name: /^link$/i })).toBeDisabled();
   });
 });

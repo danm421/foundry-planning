@@ -6,6 +6,7 @@ import { useToast } from "@/components/toast";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
 import DialogShell from "@/components/dialog-shell";
 import { inputClassName, fieldLabelClassName } from "@/components/forms/input-styles";
+import { AlertCircleIcon } from "@/components/icons";
 import type { ProviderId } from "@/lib/integrations/types";
 
 interface Props {
@@ -119,6 +120,13 @@ export function IntegrationClientStatus({
       }
       closeDialog();
       showToast({ message: `Linked to ${data?.name ?? providerLabel}.` });
+      // The claim itself committed — reflect that regardless of whether the
+      // follow-on sync below succeeds. Without this, a failed sync leaves
+      // the server-rendered `linked` prop stuck at false; the row keeps
+      // offering "Link to {provider}", and pressing it again hits the
+      // already-linked branch, returning the opaque "not available" error
+      // for an id that is now this client's own.
+      router.refresh();
       // Claim only creates the link — pull the accounts as a separate
       // request so one click never holds an accounts+positions fetch open.
       await handleSync();
@@ -139,36 +147,42 @@ export function IntegrationClientStatus({
           />
           {providerLabel}
         </span>
+        <span className="text-ink-3">·</span>
         {linked ? (
-          <>
-            <span className="text-ink-3">·</span>
-            {lastSyncedAt ? (
-              <span className="text-ink-3">
-                Synced <span className="tabular">{formatSyncedAt(lastSyncedAt)}</span>
-              </span>
-            ) : (
-              <span className="text-ink-3">Not yet synced</span>
-            )}
-            {canEdit ? (
-              <>
-                <button
-                  type="button"
-                  className="btn-ghost inline-flex items-center gap-1 text-xs"
-                  onClick={handleSync}
-                  disabled={busy}
-                >
-                  <SyncIcon />
-                  {busy ? "Syncing…" : "Sync"}
-                </button>
-                <FieldTooltip text={`Updates this household's ${providerLabel}-linked accounts; new accounts are queued for review.`} />
-              </>
-            ) : null}
-          </>
+          lastSyncedAt ? (
+            <span className="text-ink-3">
+              Synced <span className="tabular">{formatSyncedAt(lastSyncedAt)}</span>
+            </span>
+          ) : (
+            <span className="text-ink-3">Not yet synced</span>
+          )
+        ) : (
+          <span className="text-ink-3">Not linked</span>
+        )}
+        {linked ? (
+          canEdit ? (
+            <>
+              <button
+                type="button"
+                className="btn-ghost inline-flex items-center gap-1 text-xs"
+                onClick={handleSync}
+                disabled={busy}
+              >
+                <SyncIcon />
+                {busy ? "Syncing…" : "Sync"}
+              </button>
+              <FieldTooltip text={`Updates this household's ${providerLabel}-linked accounts; new accounts are queued for review.`} />
+            </>
+          ) : null
         ) : canEdit ? (
           <button
             type="button"
             className="btn-ghost text-xs"
-            onClick={() => setDialogOpen(true)}
+            onClick={() => {
+              setClaimError(null);
+              setHouseholdId("");
+              setDialogOpen(true);
+            }}
             disabled={busy}
           >
             Link to {providerLabel}
@@ -190,6 +204,15 @@ export function IntegrationClientStatus({
         }}
       >
         <form id={CLAIM_FORM_ID} onSubmit={handleClaim}>
+          {claimError ? (
+            <div
+              role="alert"
+              className="mb-4 flex items-start gap-2 rounded-[var(--radius-sm)] border border-crit/30 bg-crit/10 px-3 py-2 text-[13px] text-crit"
+            >
+              <AlertCircleIcon width={16} height={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+              <span>{claimError}</span>
+            </div>
+          ) : null}
           <label className={fieldLabelClassName} htmlFor={`${providerId}-household-id`}>
             {providerLabel} household ID
           </label>
@@ -204,7 +227,6 @@ export function IntegrationClientStatus({
             required
             data-autofocus
           />
-          {claimError ? <p className="mt-2 text-sm text-crit">{claimError}</p> : null}
         </form>
       </DialogShell>
     </>
