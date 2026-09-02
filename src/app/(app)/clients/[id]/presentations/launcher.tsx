@@ -164,13 +164,20 @@ export function PresentationsLauncher(props: Props) {
   // Pre-warm the compute cache for configured Retirement Comparison and
   // Scenario Comparison pages so the eventual "Generate PDF" hits a warm MC +
   // max-spend cache instead of running everything inline (the 800s-timeout
-  // path). Each POST warms base + one scenario — 1 simulation + 1 solve for
-  // each of those two refs — so per page: Retirement Comparison's single
-  // comparison scenario is 2 simulations + 2 solves; Scenario Comparison's
-  // default of three chosen scenarios is 4 simulations + 4 solves overall
-  // (base is redundant after its first of the three calls, then
-  // getOrCompute* hits cache). Fire-and-forget, debounced, and de-duplicated
-  // per (scenarioId,target) for this session.
+  // path). Each POST warms base + one scenario (warmComparisonCompute): 1
+  // simulation + 1 solve per ref. Retirement Comparison's single comparison
+  // scenario is 2 simulations + 2 solves. Scenario Comparison's default of
+  // three chosen scenarios needs 4 DISTINCT computations (base + 3
+  // scenarios) — 4 simulations + 4 solves — at minimum, not as a guarantee:
+  // the loop below fires all three POSTs un-awaited, as separate route
+  // invocations, and `singleFlight` (single-flight.ts) only coalesces calls
+  // racing within the SAME process — it cannot dedupe two invocations that
+  // both read the DB cache (cache-shell.ts) before either one's write lands.
+  // If all three "base" reads beat all three writes, base recomputes three
+  // times over, so actual work can run as high as 6 simulations + 6 solves.
+  // Fire-and-forget, debounced, and de-duplicated per (scenarioId,target) for
+  // this session — that dedup is on OUR requests, not on whether the compute
+  // behind them raced.
   const warmedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     const keyOf = (t: { scenarioId: string; targetPoS: number }) =>
@@ -186,7 +193,7 @@ export function PresentationsLauncher(props: Props) {
         if (p.pageId === "scenarioComparison") {
           const o = p.options as ScenarioComparisonOptions;
           const targetPoS = o.maxSpend?.targetConfidence ?? 0.85;
-          return o.scenarioIds.filter(Boolean).map((scenarioId) => ({ scenarioId, targetPoS }));
+          return (o.scenarioIds ?? []).filter(Boolean).map((scenarioId) => ({ scenarioId, targetPoS }));
         }
         return [];
       })

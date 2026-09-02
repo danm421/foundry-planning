@@ -227,6 +227,84 @@ describe("PresentationsLauncher", () => {
     expect(runsCall).toBeUndefined();
   });
 
+  it("blocks Generate and warns when a Scenario Comparison page has no scenario chosen", async () => {
+    render(
+      <PresentationsLauncher
+        clientId="c1"
+        currentUserId="me"
+        clientLastName="Sample"
+        householdId="hh-test"
+        scenarios={[]}
+        snapshots={[]}
+        initialTemplates={{ shared: [], mine: [], builtIn: [], builtInHidden: [] }}
+        investmentCatalog={{ groups: [], entities: [], portfolios: [], recommendedPortfolioId: null }}
+      />,
+    );
+    // Add a Scenario Comparison page (defaults to an empty scenarioIds list).
+    fireEvent.click(screen.getByRole("button", { name: /add page/i }));
+    fireEvent.change(screen.getByPlaceholderText(/search reports/i), {
+      target: { value: "scenario comparison" },
+    });
+    fireEvent.click(screen.getByText("Scenario Comparison"));
+
+    // No inline picker for this page — its scenario list lives in Options.
+    expect(screen.queryByLabelText(/Comparison scenario for Scenario Comparison/i)).toBeNull();
+    expect(screen.queryByLabelText(/^Scenario for Scenario Comparison$/i)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /Generate PDF/i }));
+
+    // The isUnconfigured branch's wording points at Options, not an inline
+    // dropdown this page doesn't have — and the export is still blocked.
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/no scenario chosen for scenario comparison/i);
+    expect(alert).toHaveTextContent(/open options and choose at least one scenario/i);
+    const runsCall = vi
+      .mocked(global.fetch)
+      .mock.calls.find((c) => String(c[0]).includes("/presentations/runs"));
+    expect(runsCall).toBeUndefined();
+  });
+
+  it("pre-warms base + each chosen scenario for a configured Scenario Comparison page", async () => {
+    render(
+      <PresentationsLauncher
+        clientId="c1"
+        currentUserId="me"
+        clientLastName="Sample"
+        householdId="hh-test"
+        scenarios={[{ id: "s1", name: "Scenario One", isBaseCase: false }]}
+        snapshots={[]}
+        initialTemplates={{ shared: [], mine: [], builtIn: [], builtInHidden: [] }}
+        investmentCatalog={{ groups: [], entities: [], portfolios: [], recommendedPortfolioId: null }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /add page/i }));
+    fireEvent.change(screen.getByPlaceholderText(/search reports/i), {
+      target: { value: "scenario comparison" },
+    });
+    fireEvent.click(screen.getByText("Scenario Comparison"));
+
+    // Choose one scenario through the Options dialog — the pre-warm effect
+    // reads scenarioIds off the deck's live state, not a fixture.
+    fireEvent.click(screen.getByRole("button", { name: "Options for Scenario Comparison" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add scenario" }));
+    fireEvent.change(screen.getByLabelText("Scenario 1"), { target: { value: "s1" } });
+
+    // The effect debounces 600ms before firing; wait past it for the warm POST.
+    await waitFor(
+      () => {
+        const warmCalls = vi
+          .mocked(global.fetch)
+          .mock.calls.filter((c) => String(c[0]).includes("/presentations/warm"));
+        expect(warmCalls).toHaveLength(1);
+        expect(JSON.parse((warmCalls[0][1] as RequestInit).body as string)).toEqual({
+          scenarioId: "s1",
+          targetPoS: 0.85,
+        });
+      },
+      { timeout: 2000 },
+    );
+  });
+
   it("Generate posts to the background /presentations/runs route and shows a notice", async () => {
     render(
       <PresentationsLauncher
