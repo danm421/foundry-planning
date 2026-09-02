@@ -179,11 +179,13 @@ describe("buildScenarioComparisonData", () => {
     expect(d.chart!.markers[0].label).toBe("Retirement");
   });
 
-  it("keeps the retirement marker on a year the chart actually plots", () => {
+  it("clamps an already-retired client onto the FIRST plotted year", () => {
     // An already-retired client's derived retirement year (1970 + 65 = 2035)
-    // precedes the projection. The marker must snap onto a real row: an
-    // off-domain `atX` has no band, so the renderer pins it to the left edge
-    // and silently annotates the wrong year.
+    // precedes the projection. The deck's convention — set by the sibling
+    // Retirement Summary page's `retirementYearRow` — is to fall back to the
+    // FIRST year. Falling back to the last would print "Assets at retirement"
+    // as the end-of-life figure, byte-identical to the row beneath it, and
+    // stand the dashed rule on the final plotted year.
     const retired = { ...CLIENT, dateOfBirth: "1970-02-01", retirementAge: 65 };
     const d = buildScenarioComparisonData(
       ctx({ bundlesByRef: {
@@ -196,6 +198,51 @@ describe("buildScenarioComparisonData", () => {
     );
     for (const m of d.chart!.markers) {
       expect(d.chart!.xAxis.domain).toContain(m.atX);
+    }
+    expect(d.chart!.markers[0].atX).toBe(2050);
+
+    const atRetirement = d.rows.find((r) => r.label === "Assets at retirement")!;
+    const endOfLife = d.rows.find((r) => r.label === "Assets end of life")!;
+    expect(atRetirement.cells[0].value).toBe("$2.4M");
+    // The two rows must not collapse onto the same figure.
+    expect(atRetirement.cells[0].value).not.toBe(endOfLife.cells[0].value);
+  });
+
+  it("clamps a missing date of birth onto the first plotted year too", () => {
+    const noDob = { firstName: "A", lastName: "B", spouseName: null, retirementAge: 65 };
+    const d = buildScenarioComparisonData(
+      ctx({ bundlesByRef: {
+        base: bundle("Base Case", 2_400_000, 0.73, { clientData: { client: noDob } }),
+        "scenario:s1": bundle("Retire at 62", 2_100_000, 0.82, {
+          clientData: { client: noDob },
+        }),
+      } }),
+      opts({ scenarioIds: ["s1"] }),
+    );
+    expect(d.chart!.markers[0].atX).toBe(2050);
+    expect(d.rows.find((r) => r.label === "Assets at retirement")!.cells[0].value)
+      .toBe("$2.4M");
+  });
+
+  it("orders retirement markers by year and keeps the second label short", () => {
+    // A scenario that retires EARLIER is emitted second in series order. Task
+    // 5's collision handling is order-sensitive, so markers must be sorted by
+    // year, and the second label must stay short — scenario names run long
+    // ("Retire at 62 and downsize") on a 526pt canvas.
+    const early = { ...CLIENT, dateOfBirth: "1988-04-01", retirementAge: 62 };  // 2050
+    const later = { ...CLIENT, dateOfBirth: "1988-04-01", retirementAge: 87 };  // 2075
+    const d = buildScenarioComparisonData(
+      ctx({ bundlesByRef: {
+        base: bundle("Base Case", 2_400_000, 0.73, { clientData: { client: later } }),
+        "scenario:s1": bundle("Retire at 62 and downsize", 2_100_000, 0.82, {
+          clientData: { client: early },
+        }),
+      } }),
+      opts({ scenarioIds: ["s1"] }),
+    );
+    expect(d.chart!.markers.map((m) => m.atX)).toEqual([2050, 2075]);
+    for (const m of d.chart!.markers) {
+      expect(m.label.length).toBeLessThanOrEqual(12);
     }
   });
 
@@ -290,6 +337,24 @@ describe("truncateToSentences", () => {
   });
   it("handles text with no terminator", () => {
     expect(truncateToSentences("no full stop here", 1)).toBe("no full stop here");
+  });
+
+  it("keeps the opening words when the text contains a decimal", () => {
+    // A decimal point is not a sentence break. `compactCurrency` prints exactly
+    // this "$1.2M" shape, so a narrative naming a dollar figure is the norm,
+    // not an edge case — and at three scenarios the budget is 3 sentences, so
+    // truncation is the normal path rather than a rare one.
+    const text =
+      "Retiring at 62 costs $1.2M in lifetime assets. Confidence falls. Taxes drop. A fourth one.";
+    expect(truncateToSentences(text, 3)).toBe(
+      "Retiring at 62 costs $1.2M in lifetime assets. Confidence falls. Taxes drop.",
+    );
+  });
+
+  it("does not treat a decimal as a sentence when counting the budget", () => {
+    // Two sentences, one decimal. A budget of 2 must leave the text whole.
+    const text = "Assets reach $2.4M by 2075. Confidence holds.";
+    expect(truncateToSentences(text, 2)).toBe(text);
   });
 });
 

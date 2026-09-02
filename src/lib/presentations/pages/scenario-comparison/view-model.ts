@@ -43,11 +43,24 @@ export function narrativeSentenceBudget(scenarioCount: number): number {
 
 /** Cut at a sentence boundary at or before `max`. The renderer also clamps with
  *  a `maxLines` STYLE, but truncating here is what keeps the page-count
- *  estimator and the renderer measuring the same string. */
+ *  estimator and the renderer measuring the same string.
+ *
+ *  A sentence ends at a terminator followed by whitespace or the end of the
+ *  text — the "." in "$1.2M" is not one. The cut is made by SLICING at that
+ *  offset rather than by concatenating regex matches: a match cannot span a
+ *  decimal, so the words ahead of one land in no match at all and joining the
+ *  matches silently amputates the opening of the narrative. `compactCurrency`
+ *  prints exactly that "$1.2M" shape, so narratives naming a dollar figure are
+ *  the norm here, not an edge case. */
 export function truncateToSentences(text: string, max: number): string {
-  const parts = text.match(/[^.!?]+[.!?]+(\s|$)/g);
-  if (!parts || parts.length <= max) return text.trim();
-  return parts.slice(0, max).join("").trim();
+  const trimmed = text.trim();
+  const ends: number[] = [];
+  const terminator = /[.!?](?=\s|$)/g;
+  for (let m = terminator.exec(trimmed); m !== null; m = terminator.exec(trimmed)) {
+    ends.push(m.index);
+  }
+  if (ends.length <= max) return trimmed;
+  return trimmed.slice(0, ends[max - 1] + 1);
 }
 
 function empty(): ScenarioComparisonPageData {
@@ -75,19 +88,31 @@ function changeLinesFor(bundle: PageScenarioBundle): string[] {
   );
 }
 
-/** The projection row that stands for retirement, falling back to the last row.
+/** The projection row that stands for retirement, CLAMPED onto the plan's own
+ *  span.
  *
  *  `ClientInfo` carries no `retirementYear` field — it is derived from
  *  dateOfBirth + retirementAge, and can land outside the projection entirely
- *  (an already-retired client, a missing date of birth). Snapping to a real row
- *  here is what keeps the matrix's "assets at retirement" and the chart's
- *  retirement marker on the same year — and keeps the marker on a year the
- *  chart actually plots, since an off-domain marker has no band to stand on. */
+ *  (an already-retired client, a missing or unparseable date of birth). Both
+ *  out-of-range cases clamp: below the plan → the first year, above it → the
+ *  last. Falling back to the LAST year instead would print "Assets at
+ *  retirement" as the end-of-life figure — byte-identical to the row directly
+ *  beneath it — and stand the dashed rule on the final plotted year. The
+ *  first-year fallback is the deck's established convention, set by the sibling
+ *  Retirement Summary page's `retirementYearRow`.
+ *
+ *  Resolving it once, here, is also what keeps the matrix's "assets at
+ *  retirement" and the chart's retirement marker on the same year, and keeps
+ *  the marker on a year the chart actually plots — an off-domain marker has no
+ *  band to stand on, so the renderer pins it to the left edge. */
 function retirementRow(bundle: PageScenarioBundle): ProjectionYear {
   const years = bundle.projection.years;
+  const first = years[0];
+  const last = years[years.length - 1];
   const wanted = retirementYearOf(bundle.clientData);
-  const match = wanted == null ? undefined : years.find((y) => y.year === wanted);
-  return match ?? years[years.length - 1];
+  if (wanted == null || wanted <= first.year) return first;
+  if (wanted >= last.year) return last;
+  return years.find((y) => y.year === wanted) ?? first;
 }
 
 function columnInputFor(

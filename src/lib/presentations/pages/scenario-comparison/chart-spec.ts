@@ -46,20 +46,25 @@ export function buildComparisonChartSpec(
   // One marker per DISTINCT retirement year. Emitting one per column stacks
   // identical dashed rules on the same x whenever scenarios share a retirement
   // year — which most of them do, since most scenarios change something else.
-  const markers: ChartSpec["markers"] = [];
-  const seenYears = new Set<number>();
+  //
+  // Ordered by YEAR, not by column: the renderer's label-collision handling is
+  // order-sensitive, so a scenario that moves retirement EARLIER must not be
+  // laid out after a later year merely because its column sits further right.
+  const colorByYear = new Map<number, string>();
   for (const s of series) {
-    if (seenYears.has(s.retirementYear)) continue;
-    seenYears.add(s.retirementYear);
-    markers.push({
-      atX: s.retirementYear,
-      // The first is the household's retirement; a second distinct year only
-      // exists because one scenario moved it, so it is named for that column.
-      label: markers.length === 0 ? "Retirement" : s.label,
-      color: s.color,
-      iconKind: "retirement",
-    });
+    if (!colorByYear.has(s.retirementYear)) colorByYear.set(s.retirementYear, s.color);
   }
+  const markers: ChartSpec["markers"] = [...colorByYear.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([atX, color], _i, all) => ({
+      atX,
+      // Deliberately short. Scenario names run long ("Retire at 62 and
+      // downsize") and these labels sit on a 526pt canvas; the marker's colour
+      // already ties it to its column.
+      label: all.length === 1 ? "Retirement" : `Retires ${atX}`,
+      color,
+      iconKind: "retirement" as const,
+    }));
 
   return {
     kind: "stackedBarWithLine",
