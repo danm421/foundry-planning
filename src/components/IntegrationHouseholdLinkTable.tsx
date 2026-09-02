@@ -14,6 +14,7 @@ interface Household {
   id: string;
   name: string | null;
   linkedClientId: string | null;
+  linkedByName: string | null;
 }
 
 interface ClientOption {
@@ -182,6 +183,12 @@ export function IntegrationHouseholdLinkTable({ providerId }: Props) {
             </div>
           );
         },
+      }),
+      col.accessor("linkedByName", {
+        header: "Linked by",
+        cell: (c) => (
+          <span className="text-sm text-ink-3">{c.getValue() ?? "—"}</span>
+        ),
       }),
     ],
     [clients, picks, clientName, link, unlink],
