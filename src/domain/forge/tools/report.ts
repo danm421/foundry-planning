@@ -36,13 +36,13 @@ import {
   MAX_DISTINCT_SCENARIOS,
   MAX_MC_SCENARIOS,
 } from "@/lib/scenario/presentation-refs";
+// Pages that drive a Monte Carlo sim per scenario (count toward the MC cap) —
+// the SAME set the export route plans from, so this tool can never refuse a
+// deck the route would render.
+import { MONTE_CARLO_PAGE_IDS } from "@/lib/presentations/export-page-sets";
 import type { ForgeAuthContext } from "../state";
 import type { ForgeToolContext } from "../context";
 
-/** Pages that drive a Monte Carlo sim per scenario (count toward the MC cap). */
-const MONTE_CARLO_PAGE_IDS = new Set([
-  "monteCarlo", "retirementSummary", "retirementComparison", "scenarioComparison",
-]);
 
 type GenerateReportResult =
   | { runId: string; status: "queued"; pageCount: number }
@@ -174,8 +174,11 @@ export function buildReportTools({ ctx, conversationId }: ForgeToolContext): Str
         "Pass pageIds (e.g. 'cover', 'cashFlow', 'monteCarlo'), optional scenarioIds, an " +
         "includeMonteCarlo flag, and an optional title. Returns a runId immediately; the deck " +
         "renders in the background and appears in the client's generated reports. " +
-        "Non-destructive — does not require approval. Caps: at most 6 distinct scenarios and " +
-        "3 Monte Carlo scenarios.",
+        // Interpolated, never re-typed: the model plans against this sentence,
+        // so a literal here that drifts from the enforced cap above gets a deck
+        // refused (or silently trimmed) before the code that would allow it runs.
+        `Non-destructive — does not require approval. Caps: at most ${MAX_DISTINCT_SCENARIOS} distinct scenarios and ` +
+        `${MAX_MC_SCENARIOS} Monte Carlo scenarios.`,
       schema: z.object({
         pageIds: z
           .array(z.string())

@@ -66,6 +66,7 @@ import {
   MAX_MC_SCENARIOS,
   type PlannerPage,
 } from "@/lib/scenario/presentation-refs";
+import { plannerFlagsFor } from "@/lib/presentations/export-page-sets";
 import React from "react";
 
 const PAGE_IDS = Object.keys(PRESENTATION_PAGES) as [
@@ -103,13 +104,6 @@ export const BodySchema = z.object({
 });
 
 export type ExportPdfBody = z.infer<typeof BodySchema>;
-
-// Pages that require a server-side Monte Carlo run for their scenario. The MC
-// page renders the full simulation; the Retirement Summary needs it only for its
-// Monte Carlo KPI. Runs are deduped per distinct scenario in planScenarioBundles.
-const MONTE_CARLO_PAGE_IDS = new Set<string>([
-  "monteCarlo", "retirementSummary", "retirementComparison", "scenarioComparison",
-]);
 
 const slugify = (s: string) =>
   s
@@ -194,14 +188,8 @@ export async function renderPresentationPdf(
     return {
       supportsScenarioOverride: page.supportsScenarioOverride,
       scenarioOverride: p.scenarioOverride,
-      needsMonteCarloRun: MONTE_CARLO_PAGE_IDS.has(p.pageId),
-      // Plan Comparison and Scenario Comparison both READ bundle.scenarioChanges.
-      // (The retirementComparison arm is pre-existing and dead — its AI path
-      // loads its own change set — and is left alone.)
-      isScenarioChanges:
-        p.pageId === "scenarioChanges" ||
-        p.pageId === "retirementComparison" ||
-        p.pageId === "scenarioComparison",
+      // Both flags come from `export-page-sets`, which the Forge tool reads too.
+      ...plannerFlagsFor(p.pageId),
       requiredRefs,
     };
   });

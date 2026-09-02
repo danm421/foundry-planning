@@ -1367,6 +1367,18 @@ export const scenarioChangesPage: PresentationPage<ScenarioChangesPageData, Scen
   renderPdf: (input) => <ScenarioChangesPagePdf {...input} />,
 };
 
+/** The refs this page compares: Base Case on the left, the chosen scenario on
+ *  the right. `requiredScenarioRefs` and `maxSpendRefs` BOTH call this — the
+ *  max-spend solve must run on exactly the columns the sheet prints, or the
+ *  spending row disagrees with the columns above it.
+ *
+ *  MERGE-TIME: `comparison-baseline` replaces the "base" literal here with
+ *  `o.baselineScenarioId`. This one line is all a merge has to get right;
+ *  because both hooks read it, the solve follows the chosen baseline
+ *  structurally rather than depending on someone noticing a second copy. */
+const retirementComparisonRefs = (o: RetirementComparisonOptions): string[] =>
+  o.scenarioId ? ["base", o.scenarioId] : ["base"];
+
 export const retirementComparisonPage: PresentationPage<RetirementComparisonPageData, RetirementComparisonOptions> = {
   id: "retirementComparison",
   title: "Retirement Comparison",
@@ -1387,27 +1399,27 @@ export const retirementComparisonPage: PresentationPage<RetirementComparisonPage
         ],
   OptionsControl: RetirementComparisonOptionsControl,
   supportsScenarioOverride: false,
-  requiredScenarioRefs: (o) => (o.scenarioId ? ["base", o.scenarioId] : ["base"]),
+  requiredScenarioRefs: retirementComparisonRefs,
   inlineScenarioOption: {
     get: (o) => o.scenarioId,
     set: (o, scenarioId) => ({ ...o, scenarioId }),
     placeholder: "Compare to…",
   },
-  // MERGE-TIME: once `comparison-baseline` lands, this page gains a
-  // `baselineScenarioId` option and `requiredScenarioRefs` becomes
-  // `[o.baselineScenarioId, o.scenarioId]`. These refs must follow it — solving
-  // against "base" when the advisor chose another baseline prints a spending
-  // row that disagrees with the sheet's own left column.
   maxSpendRefs: (o) =>
     o.maxSpend.show
-      ? {
-          refs: o.scenarioId ? ["base", o.scenarioId] : ["base"],
-          targetPoS: o.maxSpend.targetConfidence,
-        }
+      ? { refs: retirementComparisonRefs(o), targetPoS: o.maxSpend.targetConfidence }
       : null,
   buildData: (ctx, options) => buildRetirementComparisonData(ctx, options),
   renderPdf: (input) => <RetirementComparisonPagePdf {...input} />,
 };
+
+/** Base Case plus each distinct chosen scenario — the columns this sheet
+ *  prints. `requiredScenarioRefs` and `maxSpendRefs` BOTH call this, so a
+ *  column can never be printed without the solve behind its spending row. */
+const scenarioComparisonRefs = (o: ScenarioComparisonOptions): string[] => [
+  "base",
+  ...new Set(o.scenarioIds.filter(Boolean)),
+];
 
 export const scenarioComparisonPage: PresentationPage<
   ScenarioComparisonPageData,
@@ -1442,14 +1454,11 @@ export const scenarioComparisonPage: PresentationPage<
   supportsScenarioOverride: false,
   // Base plus each chosen scenario. planScenarioBundles applies this page's
   // Monte Carlo and scenario-changes flags to EVERY ref listed here.
-  requiredScenarioRefs: (o) => ["base", ...new Set(o.scenarioIds.filter(Boolean))],
+  requiredScenarioRefs: scenarioComparisonRefs,
   isUnconfigured: (o) => o.scenarioIds.filter(Boolean).length === 0,
   maxSpendRefs: (o) =>
     o.maxSpend.show
-      ? {
-          refs: ["base", ...new Set(o.scenarioIds.filter(Boolean))],
-          targetPoS: o.maxSpend.targetConfidence,
-        }
+      ? { refs: scenarioComparisonRefs(o), targetPoS: o.maxSpend.targetConfidence }
       : null,
   buildData: (ctx, options) => buildScenarioComparisonData(ctx, options),
   renderPdf: (input) => <ScenarioComparisonPagePdf {...input} />,

@@ -47,8 +47,11 @@ vi.mock("next/server", () => ({
   },
 }));
 
-import { generateReport } from "../report";
-import { MAX_MC_SCENARIOS } from "@/lib/scenario/presentation-refs";
+import { generateReport, buildReportTools } from "../report";
+import {
+  MAX_DISTINCT_SCENARIOS,
+  MAX_MC_SCENARIOS,
+} from "@/lib/scenario/presentation-refs";
 
 const CTX = { userId: "u1", firmId: "firm-1", clientId: "client-1", scenarioId: "base" };
 
@@ -138,6 +141,22 @@ describe("generateReport", () => {
     );
     expect("error" in r).toBe(true);
     expect(createQueuedRun).not.toHaveBeenCalled();
+  });
+
+  // The description is the contract the MODEL plans against. A literal here
+  // that drifts from the enforced cap gets a legal deck refused (or silently
+  // trimmed) by the model before the code that would have allowed it ever runs.
+  it("tells the model the same caps the code enforces", () => {
+    const [reportTool] = buildReportTools({
+      ctx: CTX,
+      conversationId: "conv-1",
+    } as never);
+    expect(reportTool.description).toContain(
+      `at most ${MAX_DISTINCT_SCENARIOS} distinct scenarios`,
+    );
+    expect(reportTool.description).toContain(
+      `${MAX_MC_SCENARIOS} Monte Carlo scenarios`,
+    );
   });
 
   it("refuses when the client has no CRM household", async () => {
