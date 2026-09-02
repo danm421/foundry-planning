@@ -369,16 +369,20 @@ export function PresentationsLauncher(props: Props) {
     }));
   }
 
-  // Every comparison report (Plan / Retirement / Tax) carries its "compare to"
-  // scenario in its own options — the baseline is always Base Case. Unset, the
-  // sheet prints only a "Select a comparison scenario" placeholder, so name the
-  // offending rows and block the export until each one is chosen.
-  function comparisonPagesMissingScenario(): Array<{ title: string; position: number }> {
+  // Every comparison report carries its scenario selection in its own options
+  // — the baseline is always Base Case. Unset, the sheet prints only a
+  // placeholder, so name the offending rows and block the export until each
+  // one is chosen. Two shapes of "unset" exist: the two-column pages (Plan /
+  // Retirement / Tax) pick their scenario inline, and the four-column Scenario
+  // Comparison page picks its list in its Options dialog and reports its own
+  // unconfigured state via `isUnconfigured`.
+  function pagesMissingTheirScenario(): Array<{ title: string; position: number }> {
     return state.pages
       .map((p, i) => ({ page: PRESENTATION_PAGES[p.pageId], options: p.options, position: i + 1 }))
       .filter(({ page, options }) => {
         const inline = page.inlineScenarioOption;
-        return inline != null && !inline.get(options as never);
+        if (inline) return !inline.get(options as never);
+        return page.isUnconfigured?.(options as never) ?? false;
       })
       .map(({ page, position }) => ({ title: page.title, position }));
   }
@@ -390,12 +394,12 @@ export function PresentationsLauncher(props: Props) {
     // Require a comparison on every comparison page before exporting, otherwise
     // the PDF would ship empty placeholder slides. Name the offending page(s)
     // so the advisor knows which row to fix.
-    const missingComparison = comparisonPagesMissingScenario();
-    if (missingComparison.length > 0) {
-      const named = missingComparison
+    const missingScenario = pagesMissingTheirScenario();
+    if (missingScenario.length > 0) {
+      const named = missingScenario
         .map((m) => `${m.title} (page ${m.position})`)
         .join(", ");
-      const each = missingComparison.length > 1 ? " for each" : "";
+      const each = missingScenario.length > 1 ? " for each" : "";
       setError(
         `No comparison selected for ${named}. Choose a comparison scenario${each} before generating the PDF.`,
       );

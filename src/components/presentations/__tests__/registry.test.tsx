@@ -80,6 +80,7 @@ describe("registry — Cash Flow page", () => {
         "retirementComparison",
         "retirementSummary",
         "scenarioChanges",
+        "scenarioComparison",
         "taxComparison",
         "taxSummary",
         "toc",

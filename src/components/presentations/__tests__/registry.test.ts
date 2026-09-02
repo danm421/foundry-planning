@@ -59,14 +59,19 @@ describe("scenario-control invariants", () => {
     }
   });
 
-  // Every comparison report compares a scenario against Base Case, so none of
-  // them may take the deck's per-page scenario override ("base facts").
-  it("every Comparison report picks its scenario inline, never by override", () => {
+  // Every comparison report compares against Base Case, so none may take the
+  // deck's per-page scenario override ("base facts"). Each must also be able to
+  // tell the Generate guard when it is still unset — either by picking its
+  // scenario inline (the two-column pages) or by declaring isUnconfigured (the
+  // four-column page, whose picker is a list in its dialog).
+  it("every Comparison report is override-free and knows when it is unset", () => {
     const comparison = pages.filter((p) => p.category === "Comparison");
-    expect(comparison.length).toBeGreaterThanOrEqual(3);
+    expect(comparison.length).toBeGreaterThanOrEqual(4);
     for (const p of comparison) {
-      expect({ id: p.id, override: p.supportsScenarioOverride, inline: !!p.inlineScenarioOption })
-        .toEqual({ id: p.id, override: false, inline: true });
+      expect({ id: p.id, override: p.supportsScenarioOverride })
+        .toEqual({ id: p.id, override: false });
+      expect({ id: p.id, guarded: !!p.inlineScenarioOption || !!p.isUnconfigured })
+        .toEqual({ id: p.id, guarded: true });
     }
   });
 });
