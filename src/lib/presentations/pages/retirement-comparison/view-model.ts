@@ -1,5 +1,7 @@
 import type { BuildDataContext } from "@/components/presentations/registry";
+import type { PageScenarioBundle } from "@/components/presentations/document";
 import type { Account, ClientData, ProjectionYear } from "@/engine/types";
+import { afterTaxLegacy } from "./legacy";
 import { resolveScenarioRef, keyForRef } from "@/lib/scenario/presentation-refs";
 import { buildRetirementComparisonMetrics } from "./metrics";
 import { buildTaxBuckets, type TaxBuckets } from "./tax-buckets";
@@ -186,8 +188,15 @@ export function buildRetirementComparisonData(
     baseSuccess != null && scnSuccess != null
       ? Math.round(scnSuccess * 100) - Math.round(baseSuccess * 100)
       : null;
-  const baseLegacy = metrics.matrix.baseAtEnd.total;
-  const scnLegacy = metrics.matrix.scenarioAtEnd.total;
+  // What the heirs KEEP, not the end-of-life portfolio total this used to print
+  // — see ./legacy.ts for why the gross is not the legacy. Each side falls back
+  // to its own last projected year when the bundle carries no death events.
+  const ownerNames = { clientName: ctx.clientName, spouseName: ctx.spouseName };
+  const legacyOf = (b: PageScenarioBundle, fallbackYear: number) =>
+    afterTaxLegacy({ projection: b.projection, clientData: b.clientData, ownerNames, fallbackYear })
+      ?.toHeirs ?? null;
+  const baseLegacy = legacyOf(baseBundle, baseAtEol.year);
+  const scnLegacy = legacyOf(scnBundle, scnAtEol.year);
   const baseDownside = endingP20(baseBundle.monteCarlo?.summary.byYear);
   const scnDownside = endingP20(scnBundle.monteCarlo?.summary.byYear);
   const maxSpendAvailable = baseBundle.maxSpend != null && scnBundle.maxSpend != null;
@@ -225,14 +234,15 @@ export function buildRetirementComparisonData(
     },
     {
       label: "Legacy to heirs",
-      base: fmtUsdCompact(baseLegacy),
-      scenario: fmtUsdCompact(scnLegacy),
-      delta: signedUsd(scnLegacy - baseLegacy),
+      base: baseLegacy == null ? "—" : fmtUsdCompact(baseLegacy),
+      scenario: scnLegacy == null ? "—" : fmtUsdCompact(scnLegacy),
+      delta:
+        baseLegacy == null || scnLegacy == null ? "" : signedUsd(scnLegacy - baseLegacy),
       // Neutral on purpose. Less legacy is exactly what a client who chose to
       // raise their own spending bought with it, and the deck does not know
       // which they intended — so it states the move without judging it.
       direction: 0,
-      show: true,
+      show: baseLegacy != null && scnLegacy != null,
     },
     {
       label: "Max sustainable spend",

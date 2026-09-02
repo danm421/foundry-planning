@@ -7,6 +7,11 @@ export interface EstateDistribution {
   year: number;
   toHeirs: number;
   taxesAndExpenses: number;
+  /** The income tax an heir owes on an inherited pre-tax account, already
+   *  inside `taxesAndExpenses`. Broken out because it is usually the largest
+   *  line and the only one a Roth conversion can move — a narrative that says
+   *  "taxes and costs" without it cannot explain why the conversion helped. */
+  ird: number;
   toCharity: number;
   isEmpty: boolean;
 }
@@ -32,7 +37,7 @@ export function estateDistributionAtYear(args: {
     ownerNames: args.ownerNames,
   });
   if (report.isEmpty) {
-    return { year: args.year, toHeirs: 0, taxesAndExpenses: 0, toCharity: 0, isEmpty: true };
+    return { year: args.year, toHeirs: 0, taxesAndExpenses: 0, ird: 0, toCharity: 0, isEmpty: true };
   }
   const h = summarizeHousehold(report);
 
@@ -64,6 +69,7 @@ export function estateDistributionAtYear(args: {
     year: args.year,
     toHeirs: h.netToHeirs - toCharity,
     taxesAndExpenses: h.taxAndCosts,
+    ird: h.ird,
     toCharity,
     isEmpty: false,
   };

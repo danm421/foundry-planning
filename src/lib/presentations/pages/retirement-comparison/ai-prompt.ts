@@ -1,5 +1,6 @@
 // src/lib/presentations/pages/retirement-comparison/ai-prompt.ts
 import { fmtUsdCompact as fmtUsd } from "./format";
+import type { AfterTaxLegacy } from "./legacy";
 import type { ComparisonKpi, PortfolioMatrix } from "./types";
 
 const TONE: Record<"concise" | "detailed" | "plain", string> = {
@@ -26,6 +27,10 @@ export interface RetirementComparisonAiArgs {
   customInstructions: string;
   maxSpend?: { base: number; scenario: number };
   downside?: { baseEndP20: number; scnEndP20: number };
+  /** What each plan's heirs actually receive, and what the estate loses on the
+   *  way. Distinct from the portfolio totals in `matrix` — see the system
+   *  guardrail this adds. Omitted when the plan carries no estate model. */
+  legacy?: { base: AfterTaxLegacy; scenario: AfterTaxLegacy };
 }
 
 export function buildRetirementComparisonAiPrompt(args: RetirementComparisonAiArgs): {
@@ -49,6 +54,15 @@ export function buildRetirementComparisonAiPrompt(args: RetirementComparisonAiAr
     TONE[args.tone],
     `Length: ${LENGTH[args.length]} Do not exceed this.`,
   ];
+  if (args.legacy) {
+    // Without this, the model narrates the portfolio total as the inheritance
+    // and reports a Roth conversion as destroying legacy — it is spending the
+    // heirs' future tax bill, and the two numbers move in opposite directions.
+    systemParts.push(
+      "Two different quantities appear below and they are NOT interchangeable: the portfolio total at the end of life is what the plan holds BEFORE the estate settles, while what the heirs receive is that total after estate tax, probate and the income tax an heir owes on inherited pre-tax retirement accounts.",
+      "When the two move in different directions, say so plainly and explain why: a plan holding more pre-tax money ends with a larger portfolio but hands its heirs less, because the tax on it is still owed. Prefer the amount the heirs receive when describing legacy, and name the portfolio total as the portfolio.",
+    );
+  }
   if (args.customInstructions.trim().length > 0) {
     systemParts.push(`Advisor instructions: ${args.customInstructions.trim()}`);
   }
@@ -75,6 +89,21 @@ export function buildRetirementComparisonAiPrompt(args: RetirementComparisonAiAr
     ? `Downside (poor-market) ending balance — 20th percentile: Base ${fmtUsd(args.downside.baseEndP20)} → Scenario ${fmtUsd(args.downside.scnEndP20)}.`
     : null;
 
+  // Gross → net on both sides, with the tax that separates them itemised, so
+  // the commentary can attribute the gap instead of guessing at it.
+  const legacySide = (label: string, endTotal: number, l: AfterTaxLegacy) =>
+    `- ${label}: portfolio ${fmtUsd(endTotal)} at the end of life, of which ${fmtUsd(l.taxesAndCosts)} goes to estate tax, probate and income tax on inherited pre-tax accounts (${fmtUsd(l.ird)} of that is the income tax on inherited pre-tax accounts), leaving ${fmtUsd(l.toHeirs)} to the heirs.`;
+  const legacyBlock = args.legacy
+    ? [
+        "What the heirs actually receive (after tax), vs. the portfolio total above:",
+        legacySide("Base", m.baseAtEnd.total, args.legacy.base),
+        legacySide("Scenario", m.scenarioAtEnd.total, args.legacy.scenario),
+        `Change in what the heirs receive: ${
+          args.legacy.scenario.toHeirs >= args.legacy.base.toHeirs ? "+" : "−"
+        }${fmtUsd(Math.abs(args.legacy.scenario.toHeirs - args.legacy.base.toHeirs))}.`,
+      ].join("\n")
+    : null;
+
   const user = [
     `Household: ${args.householdName}.`,
     `Comparison: Base Case vs. "${args.scenarioLabel}".`,
@@ -86,6 +115,7 @@ export function buildRetirementComparisonAiPrompt(args: RetirementComparisonAiAr
     matrixLines,
     ...(maxSpendBlock ? ["", maxSpendBlock] : []),
     ...(downsideBlock ? ["", downsideBlock] : []),
+    ...(legacyBlock ? ["", legacyBlock] : []),
     "",
     "Changes made in the scenario vs. the base plan:",
     changeBlock,
