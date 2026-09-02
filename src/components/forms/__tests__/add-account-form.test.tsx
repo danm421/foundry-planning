@@ -1343,3 +1343,110 @@ describe("AddAccountForm — the annuity Account Type states the tax treatment",
     expect(JSON.parse(contractWrites()[0][1].body as string).taxTreatment).toBe("tax_free");
   });
 });
+
+// ── Basis field label ───────────────────────────────────────────────────────
+// One column, two meanings. On a brokerage `basis` is a real cost basis; on a
+// retirement account it is already-taxed Form 8606 money that the engine hands
+// back TAX-FREE, pro-rata, on every distribution. Labelling that "Cost basis"
+// invites a purchase price, which would silently under-tax the whole plan.
+describe("AddAccountForm — basis field label", () => {
+  // Query the account-level field by its `for="basis"` binding: "cost basis"
+  // also appears on the holdings editor, which is a different field.
+  const basisLabelText = () =>
+    document.querySelector('label[for="basis"]')?.textContent ?? "";
+
+  it("says Cost basis on a taxable account", () => {
+    render(
+      <AddAccountForm
+        clientId="client-123"
+        category="taxable"
+        mode="create"
+        familyMembers={FAMILY_MEMBERS}
+        entities={[]}
+      />,
+    );
+    expect(basisLabelText()).toMatch(/cost basis/i);
+    expect(basisLabelText()).not.toMatch(/post-tax basis/i);
+  });
+
+  it("says Post-tax basis on a retirement account", () => {
+    render(
+      <AddAccountForm
+        clientId="client-123"
+        category="retirement"
+        mode="create"
+        familyMembers={FAMILY_MEMBERS}
+        entities={[]}
+      />,
+    );
+    expect(basisLabelText()).toMatch(/post-tax basis/i);
+    expect(basisLabelText()).not.toMatch(/cost basis/i);
+  });
+
+  it("follows a category switch", () => {
+    render(
+      <AddAccountForm
+        clientId="client-123"
+        category="taxable"
+        mode="create"
+        familyMembers={FAMILY_MEMBERS}
+        entities={[]}
+      />,
+    );
+    expect(basisLabelText()).toMatch(/cost basis/i);
+
+    fireEvent.change(screen.getByLabelText(/^category/i), {
+      target: { value: "retirement" },
+    });
+    expect(basisLabelText()).toMatch(/post-tax basis/i);
+  });
+});
+
+// ── Post-tax basis must NOT mirror the balance ──────────────────────────────
+// `basis` on a Form 8606 IRA is already-taxed money that the engine returns
+// TAX-FREE pro-rata. Mirroring the balance into it (the default for a
+// brokerage) would make the entire account distribute untaxed.
+describe("AddAccountForm — basis auto-mirror", () => {
+  // CurrencyInput renders "400,000" — compare digits, not the formatting.
+  const basisDigits = () =>
+    ((document.querySelector("#basis") as HTMLInputElement).value ?? "").replace(/[^0-9]/g, "");
+
+  const renderFor = (subType: string) =>
+    render(
+      <AddAccountForm
+        clientId="client-123"
+        category="retirement"
+        mode="create"
+        initial={{ ...BASE_INITIAL, category: "retirement", subType, value: "0", basis: "0" }}
+        familyMembers={FAMILY_MEMBERS}
+        entities={[]}
+      />,
+    );
+
+  it.each(["traditional_ira", "sep_ira", "simple_ira"])(
+    "leaves post-tax basis at 0 when the balance is typed on a %s",
+    (subType) => {
+      renderFor(subType);
+      fireEvent.change(screen.getByLabelText(/current value/i), {
+        target: { value: "400000" },
+      });
+      expect(basisDigits()).toBe("0");
+    },
+  );
+
+  it("still mirrors value into cost basis on a taxable brokerage", () => {
+    render(
+      <AddAccountForm
+        clientId="client-123"
+        category="taxable"
+        mode="create"
+        familyMembers={FAMILY_MEMBERS}
+        entities={[]}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText(/current value/i), {
+      target: { value: "400000" },
+    });
+    expect(basisDigits()).toBe("400000");
+  });
+});

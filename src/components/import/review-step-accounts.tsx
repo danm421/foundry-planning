@@ -18,6 +18,7 @@ import MatchColumn from "./match-column";
 import type { MatchCandidate } from "./match-link-picker";
 import DiffPreview from "./diff-preview";
 import SourceBadge from "./source-badge";
+import { basisFieldLabel } from "@/lib/accounts/basis-label";
 
 // Layered on top of CurrencyInput/PercentInput's own inputClassName baseline
 // to flag fields the AI didn't extract — same amber cue as the legacy
@@ -475,7 +476,7 @@ export default function ReviewStepAccounts({
                   />
                 </div>
                 <div className="col-span-4">
-                  <label className={fieldLabelClassName}>Cost Basis</label>
+                  <label className={fieldLabelClassName}>{basisFieldLabel(account.category)}</label>
                   <CurrencyInput
                     value={account.basis != null ? String(account.basis) : ""}
                     onChange={(raw) => updateField(i, "basis", raw === "" ? undefined : Number(raw))}

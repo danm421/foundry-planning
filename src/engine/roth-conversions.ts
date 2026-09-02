@@ -1,6 +1,7 @@
 import type { Account, AccountLedger, RothConversion } from "./types";
 import type { BracketTier, FilingStatus } from "@/lib/tax/types";
 import { classifyTransferTax } from "./tax-classification";
+import { isTraditionalIra } from "./ira-basis";
 import { controllingFamilyMember } from "./ownership";
 
 // ============================================================================
@@ -374,10 +375,12 @@ function _resolveTargetAmount(
   }
 }
 
-const TRAD_IRA_SUBTYPES = new Set(["traditional_ira", "sep_ira", "simple_ira"]);
-
+/** NOTE: the conversion pool is still HOUSEHOLD-wide, while distributions pool
+ *  per taxpayer (see `computeTradIraPool`). §408(d)(2) aggregates per
+ *  individual, so this one is the outlier — unifying it moves conversion
+ *  numbers on existing plans and is deliberately left as its own change. */
 function _isPooledTradIra(account: Account): boolean {
-  return account.category === "retirement" && TRAD_IRA_SUBTYPES.has(account.subType);
+  return isTraditionalIra(account);
 }
 
 function _computeTradIraPool(

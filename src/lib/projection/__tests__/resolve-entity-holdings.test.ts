@@ -44,4 +44,34 @@ describe("resolveAccountFromRaw — holdings-driven (asset_mix)", () => {
     expect(acct.value).toBe(777);
     expect(acct.basis).toBe(500);
   });
+
+  // A retirement wrapper realizes no capital gains, so its holdings' cost
+  // basis is tax-irrelevant. `basis` there means already-taxed Form 8606
+  // dollars, which come back TAX-FREE pro-rata on every distribution — so
+  // rolling holdings into it would hand an imported IRA a huge phantom
+  // post-tax basis and untax most of what it pays out.
+  it("takes VALUE but NOT basis from holdings on a retirement account", () => {
+    const ctx = {
+      resolver, resolvedInflationRate: 0.025,
+      holdingsTotalsByAccountId: new Map([["acct1", { value: 500_000, basis: 380_000 }]]),
+    } as ResolutionContext;
+    const acct = resolveAccountFromRaw(
+      { ...rawBase, category: "retirement" as const, subType: "traditional_ira", basis: "0" },
+      ctx,
+    );
+    expect(acct.value).toBe(500_000);
+    expect(acct.basis).toBe(0);
+  });
+
+  it("keeps the advisor's entered post-tax basis on a holdings-driven IRA", () => {
+    const ctx = {
+      resolver, resolvedInflationRate: 0.025,
+      holdingsTotalsByAccountId: new Map([["acct1", { value: 500_000, basis: 380_000 }]]),
+    } as ResolutionContext;
+    const acct = resolveAccountFromRaw(
+      { ...rawBase, category: "retirement" as const, subType: "traditional_ira", basis: "50000" },
+      ctx,
+    );
+    expect(acct.basis).toBe(50_000);
+  });
 });

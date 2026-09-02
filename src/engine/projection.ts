@@ -35,6 +35,13 @@ import { accrueLockedEntityShare } from "./locked-shares";
 import { computeFamilyAccountShares } from "./family-cashflow";
 import { computeGiftLedger, type GiftLedgerYear } from "./gift-ledger";
 import { computeIncome, applyDisabilityEvent } from "./income";
+import {
+  computeTradIraPool,
+  iraPoolKey,
+  isTraditionalIra,
+  proRataBasisReturn,
+  removePoolBasis,
+} from "./ira-basis";
 import { synthesizeDisabilityBenefits } from "./disability-benefits";
 import { expandLinkedIncomes } from "./linked-income";
 import { computeExpenses } from "./expenses";
@@ -2162,6 +2169,21 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       const rmd = Math.min(preTaxBalance, calculateRMD(rmdBasis, ownerAge, ownerBirthYear));
       if (rmd <= 0) continue;
 
+      // An RMD is a distribution, so Form 8606 pro-rata applies to it exactly
+      // as it does to a voluntary withdrawal: the owner's post-tax basis comes
+      // back tax-free in proportion to the pool. Computed on the PRE-
+      // distribution pool (§408(d)(2) values the pool including the year's
+      // distributions), so this must run before the balance is decremented.
+      const rmdPoolKey = isTraditionalIra(acct) ? iraPoolKey(acct) : null;
+      const rmdBasisReturn = rmdPoolKey == null
+        ? 0
+        : proRataBasisReturn(
+            rmd,
+            computeTradIraPool(data.accounts, accountBalances, basisMap, rmdPoolKey),
+          );
+      const rmdTaxable = rmd - rmdBasisReturn;
+      const rmdBasisMoved = Math.min(rmdBasisReturn, basisMap[acct.id] ?? 0);
+
       accountBalances[acct.id] = currentBalance - rmd;
       if (accountLedgers[acct.id]) {
         accountLedgers[acct.id].rmdAmount = rmd;
@@ -2170,10 +2192,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         accountLedgers[acct.id].entries.push({
           category: "rmd",
           label: `RMD distribution (age ${ownerAge})`,
+          // Matches the basisMap delta removePoolBasis applies below: a pure
+          // pre-tax IRA still moves no basis. Negated only when non-zero —
+          // `-Math.min(0, 0)` is -0, which renders as "-$0.00" in the ledger.
+          basis: rmdBasisMoved === 0 ? 0 : -rmdBasisMoved,
           amount: -rmd,
-          basis: 0, // pre-tax retirement distribution: no cost basis moves
         });
       }
+      removePoolBasis(data.accounts, acct.id, rmdBasisReturn, basisMap, rmdPoolKey);
 
       // Retirement accounts are required to have a single owner (DB CHECK
       // trigger in migration 0055). Route the RMD via that single owner —
@@ -2182,8 +2208,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       const rmdLabel = `RMD from ${acct.name}`;
       const householdOwner = controllingFamilyMember(acct);
       if (householdOwner != null) {
-        householdRmdIncome += rmd;
-        rmdBySource[`${acct.id}:rmd`] = { type: "ordinary_income", amount: rmd };
+        householdRmdIncome += rmdTaxable;
+        rmdBySource[`${acct.id}:rmd`] = { type: "ordinary_income", amount: rmdTaxable };
+        // Cash still lands in full — only the TAXABLE slice is income.
         creditCash(defaultChecking?.id, rmd, { category: "rmd", label: rmdLabel, sourceId: acct.id, basis: rmd });
       } else if (isFullyEntityOwned(acct)) {
         const entityOwner = acct.owners.find((o) => o.kind === "entity") as
@@ -2205,8 +2232,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           !isTaxExemptTrust(entityOwner.entityId) &&
           effectiveIsGrantor(entityOwner.entityId, year)
         ) {
-          grantorRmdTaxable += rmd;
-          rmdBySource[`${acct.id}:rmd`] = { type: "ordinary_income", amount: rmd };
+          grantorRmdTaxable += rmdTaxable;
+          rmdBySource[`${acct.id}:rmd`] = { type: "ordinary_income", amount: rmdTaxable };
         }
       } else {
         throw new Error(
@@ -6838,10 +6865,16 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         const drawAccount = accountById.get(draw.accountId);
         const gatesBasis =
           (drawAccount?.category === "taxable" || drawAccount?.category === "cash") && preBalance > 0;
+        // A Traditional-IRA draw now returns post-tax basis too (Form 8606
+        // pro-rata), so its basis must be SPENT here. Leave it in the map and
+        // the same post-tax dollars shelter income again next year, with the
+        // tax-free fraction climbing as the balance falls.
+        const isTradIraDraw = drawAccount != null && isTraditionalIra(drawAccount) && preBalance > 0;
         const basisBefore = basisMap[draw.accountId] ?? 0;
-        const entryBasisDelta = gatesBasis
-          ? -Math.min(draw.basisReturn, basisBefore)
-          : 0;
+        // `-Math.min(0, 0)` is -0, which formats as "-$0.00"; negate only a
+        // real move.
+        const basisMoved = gatesBasis || isTradIraDraw ? Math.min(draw.basisReturn, basisBefore) : 0;
+        const entryBasisDelta = basisMoved === 0 ? 0 : -basisMoved;
 
         if (accountLedgers[draw.accountId]) {
           accountLedgers[draw.accountId].distributions += draw.amount;
@@ -6853,6 +6886,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             counterpartyId: checkingId, // proceeds refill household checking
             basis: entryBasisDelta, // == basisMap delta applied by the gate below
           });
+        }
+
+        if (isTradIraDraw) {
+          removePoolBasis(
+            data.accounts, draw.accountId, draw.basisReturn, basisMap, iraPoolKey(drawAccount),
+          );
         }
 
         if (gatesBasis) {
@@ -6977,10 +7016,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           const drawAccount = accountById.get(draw.accountId);
           const gatesBasis =
             (drawAccount?.category === "taxable" || drawAccount?.category === "cash") && preBalance > 0;
+          // Same Form 8606 basis spend as the hasChecking block above.
+          const isTradIraDraw = drawAccount != null && isTraditionalIra(drawAccount) && preBalance > 0;
           const basisBefore = basisMap[draw.accountId] ?? 0;
-          const entryBasisDelta = gatesBasis
-            ? -Math.min(draw.basisReturn, basisBefore)
-            : 0;
+          const basisMoved = gatesBasis || isTradIraDraw ? Math.min(draw.basisReturn, basisBefore) : 0;
+          const entryBasisDelta = basisMoved === 0 ? 0 : -basisMoved;
 
           if (accountLedgers[draw.accountId]) {
             accountLedgers[draw.accountId].distributions += draw.amount;
@@ -6991,6 +7031,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
               amount: -draw.amount,
               basis: entryBasisDelta, // == basisMap delta applied by the gate below
             });
+          }
+
+          if (isTradIraDraw) {
+            removePoolBasis(
+              data.accounts, draw.accountId, draw.basisReturn, basisMap, iraPoolKey(drawAccount),
+            );
           }
 
           if (gatesBasis) {
