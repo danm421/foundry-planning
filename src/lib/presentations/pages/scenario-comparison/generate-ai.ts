@@ -7,10 +7,12 @@
 // the callers (the scenario-comparison-ai route and ensure-ai-summaries).
 //
 // Two halves, deliberately separate:
-//   prepareScenarioComparisonAiInputs — loads base + each chosen scenario ONCE
-//     and runs the page's own view model over them, so the narratives are
-//     written against exactly the gains, costs and change lines the sheet
-//     prints.
+//   prepareScenarioComparisonAiInputs — builds base + each chosen scenario ONCE
+//     via the SHARED loader the PDF export uses
+//     (src/lib/scenario/load-page-bundles.ts), then runs the page's own view
+//     model over them, so the narratives are written against exactly the gains,
+//     costs and change lines the sheet prints. Sharing that loader is load
+//     bearing: a private copy of it drifted from the export within a day.
 //   generateScenarioComparisonAi — prompt → Redis → ONE structured LLM call for
 //     every band on the sheet, returning only the bands that went stale.
 //
@@ -18,40 +20,22 @@
 // pair on every call, the model call here takes already-built data: one load
 // per page, not one per band.
 
-import { inArray } from "drizzle-orm";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
-import { db } from "@/db";
-import { scenarios } from "@/db/schema";
 import { chatModel } from "@/domain/forge/llm";
-import { runProjectionWithEvents } from "@/engine/projection";
-import { getOrComputeMonteCarlo } from "@/lib/compute-cache/monte-carlo";
 import { getOrComputeMaxSpending } from "@/lib/compute-cache/max-spending";
-import { loadEffectiveTreeForRef } from "@/lib/scenario/loader";
-import { loadScenarioChanges, loadScenarioToggleGroups } from "@/lib/scenario/changes";
-import { buildTargetNames } from "@/lib/scenario/load-panel-data";
+import { loadPageScenarioBundles } from "@/lib/scenario/load-page-bundles";
 import {
   keyForRef,
-  labelForRef,
   resolveScenarioRef,
+  type DistinctBundlePlan,
 } from "@/lib/scenario/presentation-refs";
-import {
-  applyReinvestmentEnrichment,
-  buildAssetTxResolveData,
-  buildBaseResolveData,
-  buildReinvestmentEnrichmentDeps,
-  hasReinvestmentChange,
-} from "@/lib/scenario/scenario-changes-resolve";
 import { listInvestmentOptionCatalog } from "@/lib/presentations/investment-option-catalog";
 import {
   hashAiRequest,
   getCachedAnalysis,
   setCachedAnalysis,
 } from "@/lib/presentations/ai-cache";
-import type { PageScenarioBundle } from "@/components/presentations/document";
 import type { BuildDataContext } from "@/components/presentations/registry";
-import type { MonteCarloReportPayload } from "@/lib/presentations/pages/monte-carlo/view-model";
-import type { ScenarioChangesContext } from "@/lib/presentations/pages/scenario-changes/types";
-import type { MaxSpendResult } from "@/lib/solver/solve-max-spending";
 import {
   buildScenarioComparisonAiPrompt,
   hashBand,
@@ -280,108 +264,20 @@ export interface ScenarioComparisonAiInputs {
   rows: MetricRow[];
   bands: TradeoffBand[];
 }
-
-/** Build one bundle per column, the way the export route does. Monte Carlo and
- *  max-spend both read through the compute cache, so the render pass that
- *  follows reuses these results instead of re-solving them. */
-async function loadBundle(
-  clientId: string,
-  firmId: string,
-  raw: string,
-  options: ScenarioComparisonOptions,
-  scenarioNames: Map<string, string>,
-  getInvestmentCatalog: () => ReturnType<typeof listInvestmentOptionCatalog>,
-): Promise<PageScenarioBundle> {
-  const ref = resolveScenarioRef(raw);
-  const scenarioId = ref.kind === "scenario" ? ref.id : "base";
-  const { effectiveTree } = await loadEffectiveTreeForRef(clientId, firmId, ref);
-  const projection = runProjectionWithEvents(effectiveTree);
-
-  // Every unavailable input degrades to a dash on the sheet rather than
-  // failing the deck, so each is caught independently.
-  let monteCarlo: MonteCarloReportPayload | null = null;
-  try {
-    monteCarlo = (await getOrComputeMonteCarlo({ clientId, firmId, scenarioId })).payload;
-  } catch (err) {
-    console.error("[scenario-comparison-ai] Monte Carlo unavailable", err);
-  }
-
-  let maxSpend: MaxSpendResult | null = null;
-  if (options.maxSpend.show && ref.kind === "scenario") {
-    try {
-      maxSpend = await getOrComputeMaxSpending({
-        clientId,
-        firmId,
-        scenarioId: ref.id,
-        targetPoS: options.maxSpend.targetConfidence,
-      });
-    } catch (err) {
-      console.error("[scenario-comparison-ai] max-spend solve failed", err);
-    }
-  }
-
-  // Change lines for the band come from here. Base Case has no change set.
-  //
-  // Org scoping: loadScenarioChanges reads by scenarioId alone; ownership was
-  // proven by the loadEffectiveTreeForRef call above, which throws on a
-  // cross-org id. Do not reorder these.
-  let scenarioChanges: ScenarioChangesContext | undefined;
-  if (ref.kind === "scenario" && ref.id !== "base") {
-    try {
-      const [changes, toggleGroups] = await Promise.all([
-        loadScenarioChanges(ref.id),
-        loadScenarioToggleGroups(ref.id),
-      ]);
-      let resolve = buildBaseResolveData(effectiveTree);
-      // Reinvestment enrichment names the NEW model portfolio in the change
-      // line. Kept in step with the same block in render-presentation-pdf.ts:
-      // without it the narrative would describe a switch the sheet beside it
-      // names, in vaguer words.
-      if (hasReinvestmentChange(changes)) {
-        try {
-          const catalog = await getInvestmentCatalog();
-          resolve = applyReinvestmentEnrichment(
-            resolve,
-            buildReinvestmentEnrichmentDeps(
-              changes,
-              Object.fromEntries(catalog.portfolios.map((p) => [p.id, p.name] as const)),
-              effectiveTree.reinvestments ?? [],
-            ),
-          );
-        } catch (riErr) {
-          console.error("[scenario-comparison-ai] reinvestment enrichment failed", riErr);
-        }
-      }
-      resolve = { ...resolve, assetTxById: buildAssetTxResolveData(projection.years) };
-      scenarioChanges = {
-        changes,
-        toggleGroups,
-        targetNames: buildTargetNames(effectiveTree, clientId),
-        baseLabel: "your current plan",
-        resolve,
-      };
-    } catch (err) {
-      console.error("[scenario-comparison-ai] scenario changes load failed", err);
-    }
-  }
-
-  return {
-    clientData: effectiveTree,
-    projection,
-    scenarioLabel: labelForRef(ref, scenarioNames),
-    monteCarlo,
-    scenarioChanges,
-    maxSpend,
-  };
-}
-
 /**
  * Load Base Case plus each chosen scenario and run the page's own view model
  * over them, so the AI is handed exactly the gains, costs and change lines the
  * sheet will print.
  *
- * Returns null when the page has nothing to narrate — an unresolvable scenario
- * set, or bands switched off. Throws on a load failure; callers decide.
+ * The columns are built by the SAME loader the PDF export uses
+ * (`loadPageScenarioBundles`) — a second copy of that logic drifted from the
+ * export within a day, losing its error mapping, its Monte Carlo gating and its
+ * snapshot names. Max-spend is attached here rather than there because it
+ * depends on (scenario, target), which each caller sources differently.
+ *
+ * Returns null when the page has nothing to narrate. Throws
+ * ClientNotFoundError / ProjectionInputError (scrubbed) on a load failure; the
+ * route maps them to 404 / 422 and the export hook treats them as non-fatal.
  */
 export async function prepareScenarioComparisonAiInputs(
   clientId: string,
@@ -389,21 +285,17 @@ export async function prepareScenarioComparisonAiInputs(
   options: ScenarioComparisonOptions,
 ): Promise<ScenarioComparisonAiInputs | null> {
   // The same ref set the registry's `requiredScenarioRefs` declares: Base Case
-  // plus each distinct chosen scenario, in the advisor's order.
-  const rawRefs = ["base", ...new Set(options.scenarioIds.filter(Boolean))];
-
-  const liveIds = rawRefs
+  // plus each distinct chosen scenario, in the advisor's order. Every column
+  // needs a Monte Carlo (the matrix prints plan confidence for all of them);
+  // only the live scenarios have a change set, matching the `isLive` rule in
+  // planScenarioBundles.
+  const requests: DistinctBundlePlan[] = ["base", ...new Set(options.scenarioIds.filter(Boolean))]
     .map((raw) => resolveScenarioRef(raw))
-    .filter((ref) => ref.kind === "scenario" && ref.id !== "base")
-    .map((ref) => ref.id);
-  const scenarioNames = new Map<string, string>();
-  if (liveIds.length > 0) {
-    const rows = await db
-      .select({ id: scenarios.id, name: scenarios.name })
-      .from(scenarios)
-      .where(inArray(scenarios.id, liveIds));
-    for (const r of rows) scenarioNames.set(r.id, r.name);
-  }
+    .map((ref) => ({
+      ref,
+      needsMonteCarlo: true,
+      needsScenarioChanges: ref.kind === "scenario" && ref.id !== "base",
+    }));
 
   // Memoized across the columns: the catalog is a multi-query bundle load and
   // several scenarios may each carry a reinvestment change.
@@ -411,14 +303,38 @@ export async function prepareScenarioComparisonAiInputs(
   const getInvestmentCatalog = () =>
     (investmentCatalog ??= listInvestmentOptionCatalog(clientId, firmId));
 
-  const built = await Promise.all(
-    rawRefs.map(async (raw) => ({
-      key: keyForRef(resolveScenarioRef(raw)),
-      bundle: await loadBundle(clientId, firmId, raw, options, scenarioNames, getInvestmentCatalog),
-    })),
-  );
-  const bundlesByRef: Record<string, PageScenarioBundle> = {};
-  for (const b of built) bundlesByRef[b.key] = b.bundle;
+  const bundlesByRef = await loadPageScenarioBundles({
+    clientId,
+    firmId,
+    requests,
+    getInvestmentCatalog,
+    logContext: "[scenario-comparison-ai]",
+  });
+
+  // Max sustainable spending, attached to the bundle for every ref that prints
+  // a spending row. Only base and live scenarios have a solvable scenario id —
+  // a snapshot would be solved as Base Case and that figure attached under the
+  // snapshot's name, so it is skipped, exactly as the export route skips it.
+  if (options.maxSpend.show) {
+    await Promise.all(
+      requests.map(async ({ ref }) => {
+        if (ref.kind !== "scenario") return;
+        const bundle = bundlesByRef[keyForRef(ref)];
+        if (!bundle) return;
+        try {
+          bundle.maxSpend = await getOrComputeMaxSpending({
+            clientId,
+            firmId,
+            scenarioId: ref.id,
+            targetPoS: options.maxSpend.targetConfidence,
+          });
+        } catch (err) {
+          console.error("[scenario-comparison-ai] max-spend solve failed", err);
+          bundle.maxSpend = null; // the row degrades to a dash
+        }
+      }),
+    );
+  }
 
   const baseBundle = bundlesByRef[keyForRef(resolveScenarioRef("base"))];
   const ci = baseBundle.clientData.client;

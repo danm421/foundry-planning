@@ -24,29 +24,33 @@ vi.mock("@/lib/presentations/ai-cache", () => ({
   setCachedAnalysis,
 }));
 
-// The generator module also carries the export-side loader, whose imports reach
-// the database and the engine. These tests never call it; stubbing the modules
-// keeps importing the generator free of both.
-vi.mock("@/db", () => ({ db: {} }));
-vi.mock("@/db/schema", () => ({ scenarios: {} }));
-vi.mock("@/lib/scenario/loader", () => ({ loadEffectiveTreeForRef: vi.fn() }));
-vi.mock("@/lib/scenario/changes", () => ({
-  loadScenarioChanges: vi.fn(),
-  loadScenarioToggleGroups: vi.fn(),
-}));
-vi.mock("@/lib/scenario/load-panel-data", () => ({ buildTargetNames: vi.fn() }));
-vi.mock("@/lib/compute-cache/monte-carlo", () => ({ getOrComputeMonteCarlo: vi.fn() }));
-vi.mock("@/lib/compute-cache/max-spending", () => ({ getOrComputeMaxSpending: vi.fn() }));
-vi.mock("@/engine/projection", () => ({ runProjectionWithEvents: vi.fn() }));
+// The module's other half loads the deck's columns. Its bundle building is the
+// SHARED loader (covered in src/lib/scenario/__tests__/load-page-bundles.test.ts);
+// stub it here so `prepareScenarioComparisonAiInputs` can be exercised over
+// known bundles with no database behind it.
+const loadPageScenarioBundles = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/scenario/load-page-bundles", () => ({ loadPageScenarioBundles }));
+// Typed on the generic so `mock.calls[0][0]` is the solve request — the
+// scenarioId it names is what the assertions below read.
+const getOrComputeMaxSpending = vi.hoisted(() =>
+  vi.fn<(args: { scenarioId: string }) => Promise<{ realAnnualSpend: number }>>(
+    async () => ({ realAnnualSpend: 164_000 }),
+  ),
+);
+vi.mock("@/lib/compute-cache/max-spending", () => ({ getOrComputeMaxSpending }));
 vi.mock("@/lib/presentations/investment-option-catalog", () => ({
-  listInvestmentOptionCatalog: vi.fn(),
+  listInvestmentOptionCatalog: vi.fn(async () => ({ portfolios: [] })),
 }));
 
 import {
   generateScenarioComparisonAi,
+  prepareScenarioComparisonAiInputs,
   type GenerateScenarioComparisonAiArgs,
 } from "./generate-ai";
 import { hashBand } from "./ai-prompt";
+import { narrativeSentenceBudget } from "./view-model";
+import { SCENARIO_COMPARISON_OPTIONS_DEFAULT } from "./options-schema";
+import type { ScenarioComparisonOptions } from "./types";
 
 // ── fixtures ────────────────────────────────────────────────────────────────
 
@@ -313,5 +317,129 @@ describe("generateScenarioComparisonAi", () => {
     expect(withStructuredOutput.mock.calls[0][1]).toEqual({
       name: "scenario_comparison_narratives",
     });
+  });
+});
+
+// ── the loader half ─────────────────────────────────────────────────────────
+
+describe("prepareScenarioComparisonAiInputs", () => {
+  // Only the fields buildScenarioComparisonData reads are populated, matching
+  // the fixture shape in view-model.test.ts.
+  const CLIENT = {
+    firstName: "Alan", lastName: "Cooper", spouseName: "Teresa",
+    dateOfBirth: "1988-04-01", retirementAge: 62,
+  };
+  const yr = (y: number, liquid: number) =>
+    ({
+      year: y,
+      portfolioAssets: { liquidTotal: liquid, cashTotal: 0, retirementTotal: liquid, taxableTotal: 0 },
+      expenses: { taxes: 40_000 },
+      taxResult: {
+        flow: { totalFederalTax: 30_000, stateTax: 10_000, capitalGainsTax: 0, fica: 0, totalTax: 40_000 },
+        income: { grossTotalIncome: 160_000 },
+      },
+    }) as never;
+
+  const bundle = (label: string, liquid: number, success: number) =>
+    ({
+      scenarioLabel: label,
+      clientData: { client: { ...CLIENT } },
+      projection: { years: [yr(2050, liquid), yr(2075, liquid * 2)] },
+      monteCarlo: { summary: { successRate: success, ending: { p20: liquid / 2 } } },
+    }) as never;
+
+  const opts = (over: Partial<ScenarioComparisonOptions> = {}): ScenarioComparisonOptions => ({
+    ...SCENARIO_COMPARISON_OPTIONS_DEFAULT,
+    scenarioIds: ["s1", "s2"],
+    ...over,
+  });
+
+  beforeEach(() => {
+    loadPageScenarioBundles.mockReset();
+    getOrComputeMaxSpending.mockClear();
+    // Keyed by keyForRef, exactly as the shared loader returns them.
+    loadPageScenarioBundles.mockResolvedValue({
+      base: bundle("Base Case", 2_400_000, 0.73),
+      "scenario:s1": bundle("Retire at 62", 2_100_000, 0.82),
+      "scenario:s2": bundle("Work to 70", 2_900_000, 0.91),
+    });
+  });
+
+  it("asks the shared loader for base plus each distinct scenario, MC on every column", async () => {
+    await prepareScenarioComparisonAiInputs("c1", "f1", opts({ scenarioIds: ["s1", "s1", "s2"] }));
+
+    const { requests } = loadPageScenarioBundles.mock.calls[0][0] as {
+      requests: Array<{ ref: { id: string }; needsMonteCarlo: boolean; needsScenarioChanges: boolean }>;
+    };
+    expect(requests.map((r) => r.ref.id)).toEqual(["base", "s1", "s2"]);
+    // The matrix prints plan confidence for every column, so every column needs one.
+    expect(requests.every((r) => r.needsMonteCarlo)).toBe(true);
+    // Only the live scenarios carry a change set — base never does.
+    expect(requests.map((r) => r.needsScenarioChanges)).toEqual([false, true, true]);
+  });
+
+  // If the returned map were keyed any other way, buildScenarioComparisonData
+  // would resolve no columns and fall through to its empty state, so a non-null
+  // result carrying every column IS the keying assertion.
+  it("reads the bundles back by keyForRef — base first, then each scenario in order", async () => {
+    const inputs = await prepareScenarioComparisonAiInputs("c1", "f1", opts());
+
+    expect(inputs).not.toBeNull();
+    expect(inputs!.columns.map((c) => c.refKey)).toEqual(["base", "s1", "s2"]);
+    expect(inputs!.columns.map((c) => c.name)).toEqual([
+      "Base Case", "Retire at 62", "Work to 70",
+    ]);
+    expect(inputs!.bands.map((b) => b.scenarioId)).toEqual(["s1", "s2"]);
+  });
+
+  it("returns null when the loader yields nothing that can be compared", async () => {
+    loadPageScenarioBundles.mockResolvedValue({ base: bundle("Base Case", 2_400_000, 0.73) });
+
+    expect(await prepareScenarioComparisonAiInputs("c1", "f1", opts())).toBeNull();
+  });
+
+  // The renderer truncates to this same budget; a mismatch would cut text the
+  // model was told it had room for.
+  it("sizes sentenceBudget off the scenario-column count, as the view model does", async () => {
+    const two = await prepareScenarioComparisonAiInputs("c1", "f1", opts());
+    expect(two!.sentenceBudget).toBe(narrativeSentenceBudget(two!.columns.length - 1));
+    expect(two!.sentenceBudget).toBe(narrativeSentenceBudget(2));
+
+    loadPageScenarioBundles.mockResolvedValue({
+      base: bundle("Base Case", 2_400_000, 0.73),
+      "scenario:s1": bundle("Retire at 62", 2_100_000, 0.82),
+    });
+    const one = await prepareScenarioComparisonAiInputs("c1", "f1", opts({ scenarioIds: ["s1"] }));
+    expect(one!.sentenceBudget).toBe(narrativeSentenceBudget(one!.columns.length - 1));
+    expect(one!.sentenceBudget).toBe(narrativeSentenceBudget(1));
+  });
+
+  it("names the household from the base column's client", async () => {
+    const inputs = await prepareScenarioComparisonAiInputs("c1", "f1", opts());
+
+    expect(inputs!.householdName).toBe("the Cooper household");
+    expect(inputs!.firstNames).toBe("Alan and Teresa");
+  });
+
+  it("solves max-spend for every column when the row is shown, and skips it when it is not", async () => {
+    await prepareScenarioComparisonAiInputs("c1", "f1", opts());
+    expect(getOrComputeMaxSpending.mock.calls.map((c) => c[0].scenarioId))
+      .toEqual(expect.arrayContaining(["base", "s1", "s2"]));
+
+    getOrComputeMaxSpending.mockClear();
+    await prepareScenarioComparisonAiInputs("c1", "f1", opts({
+      maxSpend: { show: false, targetConfidence: 0.85 },
+    }));
+    expect(getOrComputeMaxSpending).not.toHaveBeenCalled();
+  });
+
+  it("degrades a failed max-spend solve to a dash instead of failing the page", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    getOrComputeMaxSpending.mockRejectedValue(new Error("solver down"));
+
+    const inputs = await prepareScenarioComparisonAiInputs("c1", "f1", opts());
+
+    const row = inputs!.rows.find((r) => r.label === "Max sustainable spending");
+    expect(row?.cells.every((c) => c.value === "—")).toBe(true);
   });
 });

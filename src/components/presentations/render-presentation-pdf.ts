@@ -1,17 +1,12 @@
 import { z } from "zod";
 import { renderToBuffer } from "@react-pdf/renderer";
 import type { DocumentProps } from "@react-pdf/renderer";
-import { and, inArray, eq, asc } from "drizzle-orm";
+import { and, eq, asc } from "drizzle-orm";
 import { db } from "@/db";
-import { scenarios, scenarioSnapshots, planObservations, clients } from "@/db/schema";
+import { planObservations, clients } from "@/db/schema";
 import { resolveBranding } from "@/lib/branding/branding";
 import { resolveBrandingForClient } from "@/lib/branding/resolve-for-client";
 import { foundryDefaultLogoDataUrl } from "@/lib/presentations/default-logo";
-import {
-  ClientNotFoundError,
-  ProjectionInputError,
-} from "@/lib/projection/load-client-data";
-import { loadEffectiveTreeForRef } from "@/lib/scenario/loader";
 import { runProjectionWithEvents } from "@/engine/projection";
 import { applyMutations } from "@/lib/solver/apply-mutations";
 import {
@@ -20,8 +15,6 @@ import {
   type DerivedDeps,
   type DerivedRefRequest,
 } from "@/lib/presentations/derived-refs";
-import type { MonteCarloReportPayload } from "@/lib/presentations/pages/monte-carlo/view-model";
-import { getOrComputeMonteCarlo } from "@/lib/compute-cache/monte-carlo";
 import {
   PresentationDocument,
   type PageScenarioBundle,
@@ -42,16 +35,6 @@ import type {
   LiSolved,
 } from "@/lib/presentations/pages/life-insurance-summary/options-schema";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
-import { loadScenarioChanges, loadScenarioToggleGroups } from "@/lib/scenario/changes";
-import { buildTargetNames } from "@/lib/scenario/load-panel-data";
-import {
-  buildBaseResolveData,
-  buildAssetTxResolveData,
-  buildReinvestmentEnrichmentDeps,
-  hasReinvestmentChange,
-  applyReinvestmentEnrichment,
-} from "@/lib/scenario/scenario-changes-resolve";
-import type { ScenarioChangesContext } from "@/lib/presentations/pages/scenario-changes/types";
 import type { PlanStoryOptions } from "@/lib/presentations/pages/plan-story/options-schema";
 import { loadPlanStoryInput } from "@/lib/presentations/story/load-for-export";
 import { loadInvestmentProposalBundle } from "@/lib/presentations/investment-proposal-bundle";
@@ -59,13 +42,13 @@ import type { InvestmentProposalOptions } from "@/lib/presentations/pages/invest
 import { loadStoryScenarioLabel } from "@/lib/presentations/story/scenario-label";
 import {
   planScenarioBundles,
-  labelForRef,
   keyForRef,
   resolveScenarioRef,
   MAX_DISTINCT_SCENARIOS,
   MAX_MC_SCENARIOS,
   type PlannerPage,
 } from "@/lib/scenario/presentation-refs";
+import { loadPageScenarioBundles } from "@/lib/scenario/load-page-bundles";
 import { plannerFlagsFor } from "@/lib/presentations/export-page-sets";
 import React from "react";
 
@@ -207,31 +190,6 @@ export async function renderPresentationPdf(
     );
   }
 
-  // Resolve human-readable names for every live scenario / snapshot id in the
-  // plan, in two batched queries. firmId scoping is enforced per-tree below by
-  // loadEffectiveTreeForRef (it throws on a cross-org id before we use names).
-  const liveScenarioIds: string[] = [];
-  const snapshotIds: string[] = [];
-  for (const { ref } of plan.distinct.values()) {
-    if (ref.kind === "snapshot") snapshotIds.push(ref.id);
-    else if (ref.id !== "base") liveScenarioIds.push(ref.id);
-  }
-
-  const scenarioNames = new Map<string, string>();
-  if (liveScenarioIds.length > 0) {
-    const rows = await db
-      .select({ id: scenarios.id, name: scenarios.name })
-      .from(scenarios)
-      .where(inArray(scenarios.id, liveScenarioIds));
-    for (const r of rows) scenarioNames.set(r.id, r.name);
-  }
-  if (snapshotIds.length > 0) {
-    const rows = await db
-      .select({ id: scenarioSnapshots.id, name: scenarioSnapshots.name })
-      .from(scenarioSnapshots)
-      .where(inArray(scenarioSnapshots.id, snapshotIds));
-    for (const r of rows) scenarioNames.set(r.id, r.name);
-  }
   // Conditionally load the investments bundle — only when the deck includes
   // at least one investment page, to avoid unnecessary DB queries.
   const hasHoldingsPage = body.pages.some((p) => p.pageId === "holdings");
@@ -256,151 +214,18 @@ export async function renderPresentationPdf(
   const getInvestmentCatalog = () =>
     (investmentCatalog ??= listInvestmentOptionCatalog(clientId, firmId));
 
-  // Build one bundle per distinct scenario. Projection always; Monte Carlo
-  // and scenario-changes only where the plan says a page needs them. The
-  // distinct scenarios are independent and bounded by MAX_DISTINCT_SCENARIOS,
-  // so build them concurrently (the LI block below already does the same).
-  // A load failure surfaces as a sentinel result rather than rejecting the
-  // batch, so we preserve the original first-error-wins 404/422 responses.
-  type BundleResult =
-    | { kind: "ok"; key: string; bundle: PageScenarioBundle }
-    | { kind: "notFound" }
-    | { kind: "invalidInput" };
-
-  const bundleResults = await Promise.all(
-    [...plan.distinct].map(async ([key, d]): Promise<BundleResult> => {
-      let clientData;
-      try {
-        const { effectiveTree } = await loadEffectiveTreeForRef(clientId, firmId, d.ref);
-        clientData = effectiveTree;
-      } catch (err) {
-        if (err instanceof ClientNotFoundError) {
-          return { kind: "notFound" };
-        }
-        if (err instanceof ProjectionInputError) {
-          // The raw message embeds internal client / CRM-household UUIDs (audit
-          // F4). Keep the detail server-side; return a generic message.
-          console.error(
-            "POST /clients/[id]/presentations/export-pdf projection input error",
-            err,
-          );
-          return { kind: "invalidInput" };
-        }
-        throw err;
-      }
-
-      const projection = runProjectionWithEvents(clientData);
-
-      // Monte Carlo: served from the compute cache (or computed + stored on miss).
-      // Snapshots have no live scenario row so they fall back to the base seed,
-      // matching the old inline behaviour.
-      let monteCarlo: MonteCarloReportPayload | null = null;
-      if (d.needsMonteCarlo) {
-        try {
-          const cached = await getOrComputeMonteCarlo({
-            clientId: clientId,
-            firmId,
-            scenarioId: d.ref.kind === "scenario" ? d.ref.id : "base",
-          });
-          monteCarlo = cached.payload;
-        } catch (mcErr) {
-          // Non-fatal: leave monteCarlo null so the page renders its graceful
-          // "data unavailable" frame instead of failing the whole export.
-          console.error("Monte Carlo cache fetch failed for export", mcErr);
-        }
-      }
-
-      // Scenario Changes report: load the raw edits for the active scenario, but
-      // only when the deck includes that page AND the active ref is a live
-      // scenario (not base / snapshot). loadScenarioChanges returns enabled rows
-      // only — matching what the overlaid clientData already reflects.
-      //
-      // Org-scoping note: loadScenarioChanges/loadScenarioToggleGroups read by
-      // scenarioId alone. The scenarioId is proven to belong to this firm/client by
-      // the earlier loadEffectiveTreeForRef() call (it loads the scenario scoped to
-      // clientId/firmId and throws on a cross-org id before we reach here). Do not
-      // remove or lazily defer that call without adding firm scoping to these reads.
-      let scenarioChanges: ScenarioChangesContext | undefined;
-      if (d.needsScenarioChanges && d.ref.kind === "scenario") {
-        const scenarioId = d.ref.id;
-        try {
-          const [changes, toggleGroups] = await Promise.all([
-            loadScenarioChanges(scenarioId),
-            loadScenarioToggleGroups(scenarioId),
-          ]);
-          // Always build the base resolve maps (account / recipient / entity /
-          // spouse names) off the effective tree — this is what makes
-          // transfer / savings / roth / gift / will changes render rich
-          // references instead of terse fallbacks.
-          let resolve = buildBaseResolveData(clientData);
-
-          // Reinvestment enrichment: surface the NEW model portfolio (name +
-          // resolved growth rate) the switched accounts grow at. Names come
-          // from the firm's investment-option catalog (memoized per request);
-          // rates from the effective tree's already-resolved reinvestments.
-          // Gated on a reinvestment change so the catalog query only loads when
-          // it can matter.
-          if (hasReinvestmentChange(changes)) {
-            try {
-              const catalog = await getInvestmentCatalog();
-              const portfolioNamesById = Object.fromEntries(
-                catalog.portfolios.map((p) => [p.id, p.name] as const),
-              );
-              resolve = applyReinvestmentEnrichment(
-                resolve,
-                buildReinvestmentEnrichmentDeps(changes, portfolioNamesById, clientData.reinvestments ?? []),
-              );
-            } catch (riErr) {
-              // Non-fatal: the describer degrades to a blended-rate-only line.
-              console.error("Reinvestment enrichment failed for export", riErr);
-            }
-          }
-
-          // Asset-transaction enrichment: projection-derived value bought/sold
-          // and net cash received, keyed by transaction id. Always safe — a
-          // pure reshape of the already-computed projection breakdown.
-          resolve = { ...resolve, assetTxById: buildAssetTxResolveData(projection.years) };
-
-          scenarioChanges = {
-            changes,
-            toggleGroups,
-            targetNames: buildTargetNames(clientData, clientId),
-            baseLabel: "your current plan",
-            resolve,
-          };
-        } catch (scErr) {
-          // Non-fatal: leave undefined so the page renders its empty state.
-          console.error("Scenario changes load failed for export", scErr);
-        }
-      }
-
-      return {
-        kind: "ok",
-        key,
-        bundle: {
-          clientData,
-          projection,
-          scenarioLabel: labelForRef(d.ref, scenarioNames),
-          monteCarlo,
-          scenarioChanges,
-        },
-      };
-    }),
-  );
-
-  // First-error-wins, matching the original serial loop's early returns.
-  const firstErr = bundleResults.find((r) => r.kind !== "ok");
-  if (firstErr?.kind === "notFound") {
-    throw new ClientNotFoundError(clientId);
-  }
-  if (firstErr?.kind === "invalidInput") {
-    throw new ProjectionInputError("Client data is incomplete or invalid for this projection.");
-  }
-
-  const bundles: Record<string, PageScenarioBundle> = {};
-  for (const r of bundleResults) {
-    if (r.kind === "ok") bundles[r.key] = r.bundle;
-  }
+  // Build one bundle per distinct scenario. Shared with the Scenario Comparison
+  // AI generator (src/lib/scenario/load-page-bundles.ts), which needs the same
+  // columns built the same way; it also owns the ClientNotFoundError /
+  // ProjectionInputError mapping this route's caller catches, and resolves the
+  // scenario + snapshot display names.
+  const bundles = await loadPageScenarioBundles({
+    clientId,
+    firmId,
+    requests: [...plan.distinct.values()],
+    getInvestmentCatalog,
+    logContext: "POST /clients/[id]/presentations/export-pdf",
+  });
 
   // Max sustainable spending: each page that wants one declares the refs and
   // the confidence target via its `maxSpendRefs` hook, and the solve attaches

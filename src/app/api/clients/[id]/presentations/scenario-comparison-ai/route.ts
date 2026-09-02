@@ -16,6 +16,10 @@ import { authErrorResponse } from "@/lib/authz";
 import { checkExtractRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import {
+  ClientNotFoundError,
+  ProjectionInputError,
+} from "@/lib/projection/load-client-data";
+import {
   generateScenarioComparisonAi,
   prepareScenarioComparisonAiInputs,
 } from "@/lib/presentations/pages/scenario-comparison/generate-ai";
@@ -125,6 +129,18 @@ export async function POST(
       return NextResponse.json(
         { error: "Validation failed", issues: formatZodIssues(err) },
         { status: 400 },
+      );
+    }
+    // Same mapping the export route applies to the shared bundle loader's two
+    // sentinel errors. ProjectionInputError's message is already scrubbed by
+    // loadPageScenarioBundles — the raw one embeds client / CRM-household UUIDs.
+    if (err instanceof ClientNotFoundError) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    if (err instanceof ProjectionInputError) {
+      return NextResponse.json(
+        { error: "Client data is incomplete or invalid for this projection." },
+        { status: 422 },
       );
     }
     const authResp = authErrorResponse(err);
