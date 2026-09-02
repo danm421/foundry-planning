@@ -381,6 +381,8 @@ export type AuditAction =
   | "integration.disconnect"
   | "integration.recheck" // an admin re-verified stored credentials
   | "integration.sync"
+  | "integration.household.claim" // an advisor claimed a household by id
+  | "integration.household.unlink"
   // Client portal
   | "portal.invite.sent"
   | "portal.invite.revoked"
