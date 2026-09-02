@@ -34,6 +34,7 @@ import { PAGE_PAD_X } from "@/components/presentations/shared/page-frame";
 import {
   MARKER_LABEL_BASE_Y,
   MARKER_LABEL_ROW_H,
+  MARKER_LABEL_INK_EM,
 } from "@/components/presentations/pages/cash-flow/chart-geom";
 import { buildScenarioComparisonData } from "@/lib/presentations/pages/scenario-comparison/view-model";
 import { estimateScenarioComparisonPageCount } from "@/lib/presentations/pages/scenario-comparison/estimate-page-count";
@@ -531,6 +532,13 @@ describe("retirement marker labels", () => {
     const capHeight = Math.max(
       ...(await Promise.all(spec.markers.map((m) => inkAboveBaseline(m.label, 6)))),
     );
+
+    // …and `chart-geom.ts` owns that figure for everything that budgets against
+    // it. Re-measuring it here is what keeps the owned number from going stale:
+    // the 0.727em cap-height estimate it replaced sat in exactly this slot and
+    // let a clipped label pass. The tolerance is the raster's own resolution,
+    // 1/PX of a point.
+    expect(capHeight / 6).toBeCloseTo(MARKER_LABEL_INK_EM, 3);
 
     // The upper row's baseline sits `MARKER_LABEL_BASE_Y + rowGap` above the
     // plot, and the plot starts `margin.top` below the canvas top.

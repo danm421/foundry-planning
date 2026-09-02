@@ -125,6 +125,82 @@ describe("buildScenarioComparisonData", () => {
     expect(d.columns[0].descriptor).toEqual(["Your plan as it stands today."]);
   });
 
+  // The column card clamps its descriptor to two lines in a 96pt box — about 54
+  // characters (two-sheet-geometry.test.tsx measures the box). `describeChange`
+  // writes a single-field edit as "<name> · <field>" with the UNBOUNDED
+  // advisor-typed name first, so in that order the ellipsis eats the field
+  // label and the card never says what changed. The band on sheet two keeps the
+  // line as written; only the card flips.
+  describe("the card descriptor puts what changed in front of the target", () => {
+    /** Two scenarios editing DIFFERENT fields of the SAME long-named expense. */
+    function editCtx() {
+      const NAME = "Second home in Jackson Hole — property tax, insurance, utilities and the caretaker";
+      const edit = (scenarioId: string, field: string) => ({
+        changes: [{
+          id: `${scenarioId}-c0`, scenarioId, opType: "edit",
+          targetKind: "expense", targetId: "e1",
+          payload: { [field]: { from: 40_000, to: 25_000 } },
+          toggleGroupId: null, orderIndex: 0,
+        }],
+        toggleGroups: [],
+        targetNames: { "expense:e1": NAME },
+        baseLabel: "your current plan",
+      });
+      return ctx({ bundlesByRef: {
+        base: bundle("Base Case", 2_400_000, 0.73),
+        "scenario:s1": bundle("Cut the upkeep", 2_100_000, 0.82,
+          { scenarioChanges: edit("s1", "annualAmount") }),
+        "scenario:s2": bundle("End it early", 2_200_000, 0.79,
+          { scenarioChanges: edit("s2", "endYear") }),
+      } });
+    }
+
+    it("leads with the field label, not the unbounded target name", () => {
+      const d = buildScenarioComparisonData(editCtx(), opts({ scenarioIds: ["s1"] }));
+      expect(d.columns[1].descriptor[0]).toMatch(/^Annual amount · Second home in Jackson Hole/);
+      // Guard on the fixture: the line really is longer than the card can hold,
+      // so the order is what decides which half survives.
+      expect(d.columns[1].descriptor[0].length).toBeGreaterThan(54);
+    });
+
+    it("keeps two scenarios editing different fields of one target distinct", () => {
+      const d = buildScenarioComparisonData(editCtx(), opts({ scenarioIds: ["s1", "s2"] }));
+      const [a, b] = [d.columns[1].descriptor[0], d.columns[2].descriptor[0]];
+      expect(a).not.toBe(b);
+      // …and they differ within the first 54 characters, which is all the card
+      // prints. Comparing the whole string would pass on the old order too.
+      expect(a.slice(0, 54)).not.toBe(b.slice(0, 54));
+    });
+
+    it("leaves a line with no separator exactly as describeChange wrote it", () => {
+      const d = buildScenarioComparisonData(
+        ctx({ bundlesByRef: {
+          base: bundle("Base Case", 2_400_000, 0.73),
+          "scenario:s1": bundle("Drop it", 2_100_000, 0.82, {
+            scenarioChanges: {
+              changes: [{
+                id: "s1-c0", scenarioId: "s1", opType: "remove",
+                targetKind: "expense", targetId: "e1", payload: null,
+                toggleGroupId: null, orderIndex: 0,
+              }],
+              toggleGroups: [],
+              targetNames: { "expense:e1": "Ski house upkeep" },
+              baseLabel: "your current plan",
+            },
+          }),
+        } }),
+        opts({ scenarioIds: ["s1"] }),
+      );
+      expect(d.columns[1].descriptor).toEqual(["Ski house upkeep"]);
+    });
+
+    it("does NOT flip the line the band prints on sheet two", () => {
+      const d = buildScenarioComparisonData(editCtx(), opts({ scenarioIds: ["s1"] }));
+      expect(d.bands[0].changeLines[0]).toMatch(/^Second home in Jackson Hole/);
+      expect(d.bands[0].changeLines[0]).toMatch(/· Annual amount$/);
+    });
+  });
+
   it("reads assets at retirement off the retirement-year row, not the last row", () => {
     const d = buildScenarioComparisonData(ctx(), opts({ scenarioIds: ["s1"] }));
     const atRetirement = d.rows.find((r) => r.label === "Assets at retirement")!;

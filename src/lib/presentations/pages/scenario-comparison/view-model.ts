@@ -36,8 +36,12 @@ const CHART_WIDTH = 526;
  *  (its own padding, its heading and the legend below it, which wraps to a
  *  second row at four long scenario names). Measured in
  *  two-sheet-geometry.test.tsx: at 190 the maximal page breaks and prints the
- *  chart on a third sheet, which mis-numbers every later Contents entry. */
-const CHART_HEIGHT = 140;
+ *  chart on a third sheet, which mis-numbers every later Contents entry.
+ *
+ *  Exported so a geometry guard builds its spec at the height the page actually
+ *  asks for. A guard that restates it measures a chart the product never
+ *  prints — the same principle geom.ts's header states for the columns. */
+export const CHART_HEIGHT = 140;
 
 /** Sentence budget per band. Sheet two holds up to three bands in 666pt, so the
  *  budget shrinks as columns are added. This is a layout constraint, not an
@@ -159,11 +163,38 @@ function columnInputFor(
   };
 }
 
+/** The separator `describeChange` composes a single-field edit's `what` with —
+ *  `${name} · ${fieldLabel(f)}` (scenario-changes/describe/generic.ts). */
+const CHANGE_LINE_SEP = " · ";
+
+/** The half of a change line that says WHAT HAPPENED, moved to the front.
+ *
+ *  The column card clamps its descriptor to two lines in a 96pt box — about 54
+ *  characters — and the target name in front of that separator is unbounded
+ *  advisor text out of a `text` column. Left as written, the ellipsis eats the
+ *  field label: the card prints a truncated account name and never says what
+ *  changed about it, and two scenarios editing DIFFERENT fields of the SAME
+ *  target render byte-identical descriptors. It bites hardest with
+ *  `showTradeoffBands` off, where there is no sheet two and the card is the only
+ *  place a change is described at all.
+ *
+ *  Flipping costs no vertical space, so it does not reopen sheet one's page
+ *  budget (see two-sheet-geometry.test.tsx). Split on the LAST separator: an
+ *  advisor-typed name may contain one, a field label cannot. Lines with no
+ *  separator — adds, removes, multi-field edits, toggle-group names — are left
+ *  exactly as they are, and sheet two's band still prints every line unflipped
+ *  and in full. */
+function cardLine(line: string): string {
+  const at = line.lastIndexOf(CHANGE_LINE_SEP);
+  if (at === -1) return line;
+  return `${line.slice(at + CHANGE_LINE_SEP.length)}${CHANGE_LINE_SEP}${line.slice(0, at)}`;
+}
+
 /** Up to three short lines under a column's name: the first two change lines,
  *  then a "+N more" tail. */
 function descriptorFrom(lines: string[]): string[] {
   if (lines.length === 0) return ["No changes recorded."];
-  const head = lines.slice(0, 2);
+  const head = lines.slice(0, 2).map(cardLine);
   const rest = lines.length - head.length;
   return rest > 0 ? [...head, `+${rest} more`] : head;
 }

@@ -25,8 +25,9 @@ import {
 } from "@/lib/presentations/pages/scenario-comparison/chart-spec";
 import {
   MARKER_LABEL_ROW_H,
+  MARKER_LABEL_INK_EM,
 } from "@/components/presentations/pages/cash-flow/chart-geom";
-import { COLUMN_COLORS } from "@/lib/presentations/pages/scenario-comparison/view-model";
+import { COLUMN_COLORS, CHART_HEIGHT } from "@/lib/presentations/pages/scenario-comparison/view-model";
 
 describe("scenario comparison column geometry", () => {
   it("derives the content width from the frame the deck actually prints", () => {
@@ -89,8 +90,10 @@ function collect(node: ReactNode, type: ElementType, out: ReactElement[] = []): 
 const YEARS = Array.from({ length: 20 }, (_, i) => 2026 + i);
 /** Column 3 is the short plan: ten real years, then the union's tail as gaps. */
 const SHORT_YEARS = 10;
-/** What `view-model.ts` asks `buildComparisonChartSpec` for. */
-const CHART_H = 140;
+/** What `view-model.ts` asks `buildComparisonChartSpec` for — read from it, not
+ *  restated: a guard that hand-picks its own height measures a chart the
+ *  product never prints. */
+const CHART_H = CHART_HEIGHT;
 
 function fixtureSpec(retirementYears: number[] = [2036, 2036, 2036, 2036]) {
   const series: ComparisonSeries[] = ["Base Case", "Retire at 62", "Sell the condo", "Move to Texas"]
@@ -164,18 +167,19 @@ describe("ComparisonChartPdf", () => {
  * The arithmetic that picks 17:
  *   · two rows needs `margin.top >= 2 * 7.5` = 15;
  *   · the SECOND row's baseline is `margin.top - 4 - 7.5`, and its ink has to
- *     clear the canvas top, so `margin.top >= 11.5 + 4.52` = 16.02. That 4.52
- *     is MEASURED (two-sheet-geometry.test.tsx); the 4.36 cap height this
- *     originally assumed put the number at 15.86 and left 16 clipping.
+ *     clear the canvas top, so `margin.top >= 11.5 + 6 * MARKER_LABEL_INK_EM`
+ *     = 16.08. That ink figure is MEASURED (two-sheet-geometry.test.tsx); the
+ *     4.36pt cap height this originally assumed put the number at 15.86 and
+ *     left 16 clipping.
  * 17 is the smallest integer that satisfies both.
  */
-/** How far a marker label's INK reaches above its baseline at 6pt Inter,
- *  measured by rasterising the real label in two-sheet-geometry.test.tsx: the
- *  tittle on the "i" in "Retires" reaches 0.753em, above the 0.727em cap height
- *  this used to assume. A baseline closer to the canvas top than this shaves the
- *  label's top off: an @react-pdf `Svg` child past the viewport is not drawn —
- *  no error, no clipping artefact. */
-const LABEL_CAP_H = 6 * 0.7533;
+/** How far a marker label's ink reaches above its baseline at 6pt. Taken from
+ *  the module that owns it and re-measured from a render in
+ *  two-sheet-geometry.test.tsx — a hand-copied number in this slot is what let
+ *  a clipped label pass. A baseline closer to the canvas top than this shaves
+ *  the label's top off: an @react-pdf `Svg` child past the viewport is not
+ *  drawn — no error, no clipping artefact. */
+const LABEL_CAP_H = 6 * MARKER_LABEL_INK_EM;
 
 describe("retirement marker labels", () => {
   const spec = fixtureSpec([2036, 2036, 2037, 2036]);

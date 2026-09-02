@@ -80,11 +80,13 @@ export function buildComparisonChartSpec(
     //
     // 16 came from an ESTIMATED 0.727em cap height (4.36pt at 6pt). Measured
     // instead — rasterised at 1200 DPI in two-sheet-geometry.test.tsx — the
-    // label "Retires 2050" reaches 4.52pt above its baseline (0.753em): the
-    // tittle on the "i" sits above cap height, and Inter's digits alone already
-    // print 4.46pt. So 16 left the top row's ink 0.02pt OFF the canvas, and an
-    // `Svg` child past the viewport is simply not drawn. 17 is the smallest
-    // integer that clears the measured ink, and still gives exactly two rows
+    // label "Retires 2050" reaches 4.52pt of solid ink above its baseline and
+    // 4.58pt counting the faintest antialiased row: the tittle on the "i" sits
+    // above cap height, and Inter's digits alone already print 4.46pt. So 16
+    // left the top row's ink 0.02-0.08pt OFF the canvas, and an `Svg` child
+    // past the viewport is simply not drawn. `MARKER_LABEL_INK_EM` in
+    // cash-flow/chart-geom.ts owns that figure; 11.5 + 6 * it = 16.08, so 17 is
+    // the smallest integer that clears it, and still gives exactly two rows
     // (a third would need 22.5). The plot keeps the rest.
     margin: { top: 17, right: 10, bottom: 22, left: 44 },
     xAxis: { domain: years, ticks: xTicks, labelFormat: (v: number) => String(v) },
