@@ -47,6 +47,18 @@ vi.mock("@/lib/db-helpers", async (importOriginal) => {
   };
 });
 
+vi.mock("@clerk/nextjs/server", () => ({
+  auth: vi.fn(async () => {
+    const { requireOrgId } = await import("@/lib/db-helpers");
+    return {
+      userId: "user_clt_isolation_test",
+      orgId: await requireOrgId(),
+      orgRole: "org:admin",
+      sessionClaims: { org_public_metadata: { is_founder: true } },
+    };
+  }),
+}));
+
 const FIRM_A = "firm_clut_test_a";
 const FIRM_B = "firm_clut_test_b";
 
@@ -226,7 +238,7 @@ d("CLT split-interest tenant isolation", () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any,
     );
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
 
     const { db } = dbMod;
     const { trustSplitInterestDetails } = schema;

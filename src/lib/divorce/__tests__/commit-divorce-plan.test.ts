@@ -11,6 +11,11 @@ import { describe, it, expect, vi } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 
+// These integration cases each create and tear down a complete married-client
+// fixture in Neon. Allow for normal remote-database latency without weakening
+// the timeout for the rest of the test suite.
+vi.setConfig({ testTimeout: 15_000, hookTimeout: 15_000 });
+
 vi.mock("@clerk/nextjs/server", () => ({
   auth: async () => ({
     userId: "user_test_divorce_commit",

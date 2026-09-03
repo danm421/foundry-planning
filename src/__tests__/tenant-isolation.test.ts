@@ -6,12 +6,11 @@ import { join } from "node:path";
  * Multi-tenant isolation contract test.
  *
  * We don't (yet) have a full HTTP integration harness that can stand up
- * Clerk + Postgres for two distinct firms and prove firm-A → firm-B
- * returns 404. Instead this test enforces the structural invariant that
+ * Clerk + Postgres for two distinct firms and prove firm-A → firm-B access
+ * is denied. Instead this test enforces the structural invariant that
  * every mutating handler under `/api/clients/[id]/**` either:
  *
- *   (a) reads `firmId` from `getOrgId()`/`requireOrgId()` and uses it in
- *       a query before mutating, or
+ *   (a) calls an organization or client access guard before mutating, or
  *   (b) is explicitly opted out via an `@allow-firm-scope-exception`
  *       comment that documents why.
  *
@@ -73,15 +72,18 @@ describe("tenant isolation contract", () => {
     const hasMutation = /\bdb\s*\.\s*(update|delete|insert)\b/.test(src);
     if (!hasMutation) return; // read-only, skip
 
-    const derivesFirmId = /\b(getOrgId|requireOrgId)\s*\(/.test(src);
+    const hasStaffAccessGuard =
+      /\b(getOrgId|requireOrgId|requireOrgAndUser|requireClientAccess|requireClientEditAccess|requireShareManageAccess)\s*\(/.test(
+        src,
+      );
     // Portal mutation routes scope by the session's own clientId via
     // requireClientPortalAccess (portal users have no orgId), not getOrgId.
     const isPortalScoped = /\b(requireClientPortalAccess|resolvePortalClient)\s*\(/.test(src);
     const hasEscapeHatch = /@allow-firm-scope-exception/.test(src);
 
-    if (!derivesFirmId && !isPortalScoped && !hasEscapeHatch) {
+    if (!hasStaffAccessGuard && !isPortalScoped && !hasEscapeHatch) {
       throw new Error(
-        `${rel}: mutating handler does not call getOrgId() / requireOrgId() ` +
+        `${rel}: mutating handler does not call an organization/client access guard ` +
           `(or requireClientPortalAccess() for portal routes) — add the call, or ` +
           `document the exception with an @allow-firm-scope-exception comment.`
       );

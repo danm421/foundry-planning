@@ -3,6 +3,8 @@ import { z } from "zod";
 import { listFolders, createFolder } from "@/lib/crm/folders";
 import { authErrorResponse } from "@/lib/authz";
 
+export const dynamic = "force-dynamic";
+
 const CreateSchema = z.object({
   name: z.string().trim().min(1).max(120),
   parentFolderId: z.string().uuid().nullable().optional(),
