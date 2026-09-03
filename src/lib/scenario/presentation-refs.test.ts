@@ -100,9 +100,11 @@ describe("planScenarioBundles — multi-scenario pages", () => {
   });
 
   it("counts four MC scenarios for two comparison pages on disjoint pairs", () => {
-    // renderPresentationPdf throws "Too many scenarios with a Monte Carlo page"
-    // above MAX_MC_SCENARIOS (3). Base-baselined pages share `base` and stay at
-    // 3; disjoint baselines do not.
+    // What drives renderPresentationPdf's "Too many scenarios with a Monte
+    // Carlo page" throw: two comparison pages sharing the `base` baseline
+    // collapse onto one bundle and cost 3 MC runs, while disjoint baselines
+    // cost 4. The counts are the subject here; the cap they are measured
+    // against is MAX_MC_SCENARIOS, which Scenario Comparison raised to 4.
     const page = (refs: string[]): PlannerPage => ({
       supportsScenarioOverride: false,
       scenarioOverride: undefined,
