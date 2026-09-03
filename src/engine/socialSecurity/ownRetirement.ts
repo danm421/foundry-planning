@@ -1,5 +1,6 @@
 // src/engine/socialSecurity/ownRetirement.ts
 import { fraForBirthDate } from "./fra";
+import { effectiveClaimAgeMonths } from "./entitlement";
 import {
   EARLY_RETIREMENT_FIRST_36_PCT_PER_MONTH,
   EARLY_RETIREMENT_EXTENDED_PCT_PER_MONTH,
@@ -26,6 +27,10 @@ export interface OwnBenefitInput {
  *   capped at age 70 — no additional credit accrues beyond 70.
  * - **PIA = 0**: returns 0 regardless of claim age.
  *
+ * The offset is measured from the ENTITLEMENT month, not from a birthday, so a
+ * worker born mid-month who asks for 62 is priced at 62y1m — the earliest month
+ * SSA can actually pay them. See `effectiveClaimAgeMonths`.
+ *
  * @param input.piaMonthly  Worker's Primary Insurance Amount in dollars/month.
  * @param input.claimAgeMonths  Age at which the worker claims, expressed as
  *   total months (e.g. 67y 0m = 804).
@@ -36,7 +41,7 @@ export interface OwnBenefitInput {
 export function computeOwnMonthlyBenefit(input: OwnBenefitInput): number {
   if (input.piaMonthly <= 0) return 0;
   const fra = fraForBirthDate(input.dob);
-  const offset = input.claimAgeMonths - fra.totalMonths;
+  const offset = effectiveClaimAgeMonths(input.dob, input.claimAgeMonths) - fra.totalMonths;
 
   if (offset === 0) return input.piaMonthly;
 

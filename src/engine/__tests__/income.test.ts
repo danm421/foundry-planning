@@ -25,9 +25,14 @@ describe("computeIncome", () => {
   });
 
   it("delays social security until claiming age", () => {
-    // John born 1970, claiming age 67 → starts 2037
-    const before = computeIncome(sampleIncomes, 2036, baseClient);
-    expect(before.socialSecurity).toBe(0);
+    // John born 1970-01-01, claiming age 67. A January-1 birth attains 67 on
+    // 2036-12-31, so December 2036 is his first entitlement month — one payment
+    // that year, then full years after.
+    const beforeAny = computeIncome(sampleIncomes, 2035, baseClient);
+    expect(beforeAny.socialSecurity).toBe(0);
+
+    const firstMonth = computeIncome(sampleIncomes, 2036, baseClient);
+    expect(firstMonth.socialSecurity).toBeCloseTo(3000 * Math.pow(1.02, 10), 2);
 
     const after = computeIncome(sampleIncomes, 2037, baseClient);
     // SS: 36000 * 1.02^11 (11 years of COLA from 2026)
@@ -41,6 +46,11 @@ describe("computeIncome", () => {
     expect(result.socialSecurity).toBe(0);
   });
 });
+
+// Born on the 1st, so this client attains every age on the last day of the
+// prior month (SSA's day-before-the-birthday rule) and is entitled from May.
+// May..December is eight payments, so a claim year is worth 8/12 of a full year.
+const CLAIM_YEAR_MONTHS = 8;
 
 const client: ClientInfo = {
   firstName: "Test",
@@ -68,9 +78,9 @@ describe("computeIncome — SS pia_at_fra mode", () => {
       piaMonthly: 2000,
       inflationStartYear: 2022,
     };
-    // At FRA: monthly PIA × 12 = 24000
+    // At FRA: monthly PIA 2000, entitled from May 2027 → eight payments.
     const result = computeIncome([ss], 2027, client);
-    expect(result.socialSecurity).toBeCloseTo(24000, 2);
+    expect(result.socialSecurity).toBeCloseTo(2000 * CLAIM_YEAR_MONTHS, 2);
   });
 
   it("applies early reduction: claim-62 FRA-67 → 70% of annual PIA", () => {
@@ -89,9 +99,12 @@ describe("computeIncome — SS pia_at_fra mode", () => {
       piaMonthly: 2000,
       inflationStartYear: 2022,
     };
-    // 2000 × 0.70 × 12 = 16800
+    // A worker born on the 1st is 62 throughout their birthday month, so
+    // entitlement is June 2022 — seven payments, and 59 months before the May
+    // 2027 FRA month rather than 60. Reduction = 36×5/9% + 23×5/12% = 29.583%.
+    const monthly = 2000 * (1 - 36 * (5 / 900) - 23 * (5 / 1200));
     const result = computeIncome([ss], 2022, client);
-    expect(result.socialSecurity).toBeCloseTo(16800, 2);
+    expect(result.socialSecurity).toBeCloseTo(monthly * 7, 2);
   });
 
   it("returns 0 before claiming age", () => {
@@ -130,9 +143,9 @@ describe("computeIncome — SS pia_at_fra mode", () => {
       piaMonthly: 2000,
       inflationStartYear: 2022,
     };
-    // Year 2027 claim at FRA, 5 years of 3% growth: 24000 × 1.03^5 ≈ 27820.85
+    // Year 2027 claim at FRA, 5 years of 3% growth, eight payments.
     const result = computeIncome([ss], 2027, client);
-    expect(result.socialSecurity).toBeCloseTo(24000 * Math.pow(1.03, 5), 2);
+    expect(result.socialSecurity).toBeCloseTo(2000 * CLAIM_YEAR_MONTHS * Math.pow(1.03, 5), 2);
   });
 });
 
@@ -151,9 +164,9 @@ describe("computeIncome — SS manual_amount mode (regression)", () => {
       ssBenefitMode: "manual_amount",
       inflationStartYear: 2022,
     };
-    // 30000 × 1.02^5 ≈ 33122.42
+    // 30000 × 1.02^5 ≈ 33122.42, prorated to the eight months payable in 2027.
     const result = computeIncome([ss], 2027, client);
-    expect(result.socialSecurity).toBeCloseTo(30000 * Math.pow(1.02, 5), 2);
+    expect(result.socialSecurity).toBeCloseTo(30000 * Math.pow(1.02, 5) * (CLAIM_YEAR_MONTHS / 12), 2);
   });
   it("behaves identically when ssBenefitMode is undefined (existing data)", () => {
     const ss: Income = {
@@ -169,8 +182,62 @@ describe("computeIncome — SS manual_amount mode (regression)", () => {
       // no ssBenefitMode
       inflationStartYear: 2022,
     };
+    // Same eight-month claim year as the explicit manual_amount row above —
+    // that equivalence is the point of this regression pair.
     const result = computeIncome([ss], 2027, client);
-    expect(result.socialSecurity).toBeCloseTo(30000 * Math.pow(1.02, 5), 2);
+    expect(result.socialSecurity).toBeCloseTo(30000 * Math.pow(1.02, 5) * (CLAIM_YEAR_MONTHS / 12), 2);
+  });
+});
+
+describe("computeIncome — the claim year is prorated by birth month", () => {
+  function ssRow(): Income {
+    return {
+      id: "ss1",
+      type: "social_security",
+      name: "Client SS",
+      annualAmount: 0,
+      startYear: 2020,
+      endYear: 2099,
+      growthRate: 0,
+      owner: "client",
+      claimingAge: 67,
+      claimingAgeMonths: 0,
+      ssBenefitMode: "pia_at_fra",
+      piaMonthly: 3000,
+      inflationStartYear: 2020,
+    };
+  }
+  function at(dob: string): ClientInfo {
+    return { ...client, dateOfBirth: dob };
+  }
+
+  it("pays a December birthday one month in the claim year, not twelve", () => {
+    const dec = at("1960-12-15");
+    expect(computeIncome([ssRow()], 2026, dec).socialSecurity).toBe(0);
+    expect(computeIncome([ssRow()], 2027, dec).socialSecurity).toBeCloseTo(3000 * 1, 2);
+    expect(computeIncome([ssRow()], 2028, dec).socialSecurity).toBeCloseTo(3000 * 12, 2);
+  });
+
+  it("pays a June birthday seven months in the claim year", () => {
+    const jun = at("1960-06-15");
+    expect(computeIncome([ssRow()], 2027, jun).socialSecurity).toBeCloseTo(3000 * 7, 2);
+    expect(computeIncome([ssRow()], 2028, jun).socialSecurity).toBeCloseTo(3000 * 12, 2);
+  });
+
+  it("pays a mid-January birthday a nearly full claim year", () => {
+    const jan = at("1960-01-15");
+    expect(computeIncome([ssRow()], 2027, jan).socialSecurity).toBeCloseTo(3000 * 12, 2);
+  });
+
+  it("starts extra claim-age months in the right month instead of skipping a year", () => {
+    // 67y 6m from a 1960-06-15 birth → entitled December 2027, one payment that
+    // year. The year-granular gate this replaced paid zero in 2027 and a full
+    // twelve in 2028.
+    const row = { ...ssRow(), claimingAgeMonths: 6 };
+    const jun = at("1960-06-15");
+    const monthly = 3000 * (1 + 6 * (2 / 300)); // six months of delayed credits
+    expect(computeIncome([row], 2027, jun).socialSecurity).toBeCloseTo(monthly * 1, 2);
+    expect(computeIncome([row], 2028, jun).socialSecurity).toBeCloseTo(monthly * 12, 2);
   });
 });
 
@@ -214,10 +281,10 @@ describe("computeIncome — SS pia_at_fra with claimingAgeMode='fra'", () => {
       claimingAgeMode: "fra",
       inflationStartYear: 2022,
     };
-    // Client born 1960-06-01 → FRA 67y 0m. Year 2027 = age 67, just claimed.
-    // At FRA, benefit = PIA unchanged = 24000/yr.
+    // Client born 1960-06-01 → FRA 67y 0m, entitled from May 2027.
+    // At FRA, benefit = PIA unchanged = 2000/mo × eight payments.
     const result = computeIncome([ss], 2027, client);
-    expect(result.socialSecurity).toBeCloseTo(24000, 2);
+    expect(result.socialSecurity).toBeCloseTo(2000 * CLAIM_YEAR_MONTHS, 2);
   });
 
   it("returns 0 before FRA even if claimingAge year would have already fired", () => {

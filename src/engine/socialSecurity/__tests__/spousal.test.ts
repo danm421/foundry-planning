@@ -31,15 +31,27 @@ describe("computeSpousalMonthlyBenefit", () => {
     })).toBeCloseTo(1000, 2);
   });
 
-  it("claim-62 spousal with FRA-67 → base × 0.65", () => {
+  it("claim-62 spousal with FRA-67 → base × 0.65 for a birth on the 2nd", () => {
     // base = 1000, 60 months early: first 36 × 25/36% = 0.25, extended 24 × 5/12% = 0.10
-    // total reduction 0.35 → 1000 × 0.65 = 650
+    // total reduction 0.35 → 1000 × 0.65 = 650. Only a birth on the 2nd is 62
+    // throughout its birthday month AND reaches FRA a clean 60 months later.
+    expect(computeSpousalMonthlyBenefit({
+      otherPiaMonthly: 2000,
+      otherSpouseHasClaimed: true,
+      claimAgeMonths: 744,
+      dob: "1960-06-02",
+    })).toBeCloseTo(650, 2);
+  });
+
+  it("gives every other birth day one month less spousal reduction at 62", () => {
+    // 59 months early: first 36 × 25/36% = 0.25, extended 23 × 5/12% = 0.09583
+    const expected = 1000 * (1 - 36 * (25 / 3600) - 23 * (5 / 1200));
     expect(computeSpousalMonthlyBenefit({
       otherPiaMonthly: 2000,
       otherSpouseHasClaimed: true,
       claimAgeMonths: 744,
       dob: "1960-06-01",
-    })).toBeCloseTo(650, 2);
+    })).toBeCloseTo(expected, 2);
   });
 
   it("returns 0 when otherPiaMonthly is 0", () => {

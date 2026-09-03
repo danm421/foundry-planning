@@ -1,5 +1,6 @@
 // src/engine/socialSecurity/spousal.ts
 import { fraForBirthDate } from "./fra";
+import { effectiveClaimAgeMonths } from "./entitlement";
 import {
   EARLY_SPOUSAL_FIRST_36_PCT_PER_MONTH,
   EARLY_SPOUSAL_EXTENDED_PCT_PER_MONTH,
@@ -40,7 +41,8 @@ export function computeSpousalMonthlyBenefit(input: SpousalBenefitInput): number
 
   const base = input.otherPiaMonthly * 0.5;
   const fra = fraForBirthDate(input.dob);
-  const offset = input.claimAgeMonths - fra.totalMonths;
+  // Measured from the entitlement month, matching `computeOwnMonthlyBenefit`.
+  const offset = effectiveClaimAgeMonths(input.dob, input.claimAgeMonths) - fra.totalMonths;
 
   if (offset >= 0) return base;  // no DRC on spousal
 

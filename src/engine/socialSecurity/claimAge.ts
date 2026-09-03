@@ -1,6 +1,7 @@
 // src/engine/socialSecurity/claimAge.ts
 import type { Income, ClientInfo } from "../types";
 import { fraForBirthDate } from "./fra";
+import { ssEntitlementMonth, type EntitlementMonth } from "./entitlement";
 
 /**
  * Resolve the effective claim age for a Social Security income row in
@@ -30,4 +31,27 @@ export function resolveClaimAgeMonths(row: Income, client: ClientInfo): number |
   // "years" — existing behavior, including legacy rows where claimingAgeMode IS NULL
   if (row.claimingAge == null) return null;
   return row.claimingAge * 12 + (row.claimingAgeMonths ?? 0);
+}
+
+/**
+ * Resolve the first calendar MONTH a Social Security row pays out, combining
+ * the row's claim-age mode with the owner's date of birth.
+ *
+ * `resolveClaimAgeMonths` answers "at what age?", which only ever pins down a
+ * calendar year. This answers "starting when?", which is what the projection
+ * needs to prorate the claim year instead of paying twelve months of benefit
+ * to someone who turned 67 in December.
+ *
+ * Returns null when the claim age is unresolvable OR the owner has no date of
+ * birth on file — both mean "not yet claimed" to callers.
+ *
+ * @param row The SS income row. Uses `owner` plus the claim-age fields.
+ * @param client The household `ClientInfo`. Uses `dateOfBirth` / `spouseDob`.
+ */
+export function resolveEntitlementMonth(row: Income, client: ClientInfo): EntitlementMonth | null {
+  const claimAgeMonths = resolveClaimAgeMonths(row, client);
+  if (claimAgeMonths == null) return null;
+  const dob = row.owner === "spouse" ? client.spouseDob : client.dateOfBirth;
+  if (!dob) return null;
+  return ssEntitlementMonth(dob, claimAgeMonths);
 }
