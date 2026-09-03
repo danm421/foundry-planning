@@ -9,12 +9,6 @@ interface Props {
   onChange: (next: ObservationsPageOptions) => void;
 }
 
-const INCLUDE_OPTIONS: { key: ObservationsPageOptions["include"]; label: string }[] = [
-  { key: "both", label: "Both sections" },
-  { key: "observations", label: "Observations only" },
-  { key: "nextSteps", label: "Next Steps only" },
-];
-
 const field =
   "rounded border border-hair bg-card-2 px-2 py-1 text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/40";
 
@@ -28,22 +22,31 @@ export function ObservationsOptionsControl({ value, onChange }: Props) {
 
   return (
     <OptionsRow>
-      <OptionsGroup label="Content">
-        <label className="flex flex-col gap-1">
-          <span>Sections</span>
-          <select
-            aria-label="Sections to include"
-            className={field}
-            value={value.include}
-            onChange={(e) =>
-              onChange({ ...value, include: e.target.value as ObservationsPageOptions["include"] })
-            }
-          >
-            {INCLUDE_OPTIONS.map((opt) => (
-              <option key={opt.key} value={opt.key}>{opt.label}</option>
-            ))}
-          </select>
+      <OptionsGroup label="Sections">
+        <label className="flex items-center gap-2 hover:text-ink">
+          <input
+            type="checkbox"
+            className="accent-accent"
+            checked={value.showObservations}
+            onChange={(e) => onChange({ ...value, showObservations: e.target.checked })}
+          />
+          <span>Observations</span>
         </label>
+        <label className="flex items-center gap-2 hover:text-ink">
+          <input
+            type="checkbox"
+            className="accent-accent"
+            checked={value.showNextSteps}
+            onChange={(e) => onChange({ ...value, showNextSteps: e.target.checked })}
+          />
+          <span>Next steps</span>
+        </label>
+        {!value.showObservations && !value.showNextSteps && (
+          <span className="text-[11px] text-ink-3">Turn on at least one section — the page prints nothing otherwise.</span>
+        )}
+      </OptionsGroup>
+
+      <OptionsGroup label="Content">
         <label className="flex items-center gap-2 hover:text-ink">
           <input
             type="checkbox"

@@ -81,8 +81,8 @@ export function buildObservationsPageData(input: {
   const topicFilter = options.topics.length > 0 ? new Set(options.topics) : null;
   const sortedRows = [...rows].sort((a, b) => a.sortOrder - b.sortOrder);
 
-  const includeObservations = options.include === "both" || options.include === "observations";
-  const includeNextSteps = options.include === "both" || options.include === "nextSteps";
+  const includeObservations = options.showObservations;
+  const includeNextSteps = options.showNextSteps;
 
   const topicGroups: ObservationsPageData["topicGroups"] = [];
   if (includeObservations) {

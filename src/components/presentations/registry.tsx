@@ -337,6 +337,7 @@ import {
 import {
   observationsPageOptionsSchema,
   OBSERVATIONS_PAGE_OPTIONS_DEFAULT,
+  isObservationsPageUnconfigured,
   type ObservationsPageOptions,
 } from "@/lib/presentations/pages/observations-next-steps/options-schema";
 import { summarizeObservationsOptions } from "@/lib/presentations/pages/observations-next-steps/summarize-options";
@@ -628,6 +629,11 @@ export interface PresentationPage<TData, TOptions> {
    *  Pages whose scenario is picked by `inlineScenarioOption` are already
    *  covered by that sweep and do not need this. */
   isUnconfigured?: (options: TOptions) => boolean;
+  /** The launcher's wording when `isUnconfigured` fires. Absent → the default
+   *  "no scenario chosen … choose at least one scenario" copy, which is right
+   *  for the comparison pages and wrong for a page whose unset state is not a
+   *  scenario. */
+  unconfiguredHint?: string;
   /** Optional: the refs this page needs a maximum-spending solve on, and the
    *  confidence target to solve at. Returning null means no solve. Declaring it
    *  here keeps the export route from carrying a per-page id list. */
@@ -811,6 +817,8 @@ export const observationsNextStepsPage: PresentationPage<ObservationsPageData, O
   estimatePageCount: () => 1,
   OptionsControl: ObservationsOptionsControl,
   supportsScenarioOverride: true, // tokens resolve against the page's scenario bundle
+  isUnconfigured: isObservationsPageUnconfigured,
+  unconfiguredHint: "Open Options and turn on at least one section before generating the PDF.",
   buildData: (ctx, options) =>
     buildObservationsPageData({
       rows: ctx.observations ?? [],

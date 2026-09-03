@@ -2,6 +2,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { PresentationsLauncher } from "../launcher";
+import { draftKey } from "@/components/presentations/launcher/use-launcher-draft";
+import { OBSERVATIONS_PAGE_OPTIONS_DEFAULT } from "@/lib/presentations/pages/observations-next-steps/options-schema";
 
 const originalFetch = global.fetch;
 const originalCreateObjectURL = global.URL.createObjectURL;
@@ -258,6 +260,56 @@ describe("PresentationsLauncher", () => {
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent(/no scenario chosen for scenario comparison/i);
     expect(alert).toHaveTextContent(/open options and choose at least one scenario/i);
+    const runsCall = vi
+      .mocked(global.fetch)
+      .mock.calls.find((c) => String(c[0]).includes("/presentations/runs"));
+    expect(runsCall).toBeUndefined();
+  });
+
+  it("blocks Generate and shows the section hint when Observations & Next Steps has both sections off", async () => {
+    // Seed a pre-configured page directly into the launcher's draft storage
+    // rather than opening the Options dialog — the dialog's Options control
+    // isn't wired to a scenario-comparison-style query in this test harness,
+    // and the draft-restore path (useLauncherDraft) is exactly how the real
+    // launcher would carry an advisor's saved-off deck across a reload.
+    localStorage.setItem(
+      draftKey("c1", "me"),
+      JSON.stringify({
+        v: 1,
+        state: {
+          topScenarioPickerValue: "base",
+          filename: "",
+          pages: [
+            {
+              pageId: "observationsNextSteps",
+              options: { ...OBSERVATIONS_PAGE_OPTIONS_DEFAULT, showObservations: false, showNextSteps: false },
+              scenarioOverride: undefined,
+            },
+          ],
+          loadedTemplate: null,
+          isModified: false,
+        },
+      }),
+    );
+    render(
+      <PresentationsLauncher
+        clientId="c1"
+        currentUserId="me"
+        clientLastName="Sample"
+        householdId="hh-test"
+        scenarios={[]}
+        snapshots={[]}
+        initialTemplates={{ shared: [], mine: [], builtIn: [], builtInHidden: [] }}
+        investmentCatalog={{ groups: [], entities: [], portfolios: [], recommendedPortfolioId: null }}
+      />,
+    );
+    // The restore effect hydrates the seeded draft in after mount.
+    await screen.findByText("Observations & Next Steps");
+
+    fireEvent.click(screen.getByRole("button", { name: /Generate PDF/i }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/turn on at least one section/i);
     const runsCall = vi
       .mocked(global.fetch)
       .mock.calls.find((c) => String(c[0]).includes("/presentations/runs"));

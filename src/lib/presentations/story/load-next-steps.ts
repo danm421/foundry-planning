@@ -29,8 +29,9 @@ import type { StoryStep } from "./types";
  * What the story asks that builder for: the page's own defaults, with the two
  * fields this chapter has an opinion about spelled out.
  *
- * `include` is load-bearing — it gates the whole next-steps loop, not just the
- * topic groups — and every other default is inherited rather than retyped, so a
+ * `showNextSteps` is load-bearing — it gates the whole next-steps loop, and
+ * `showObservations: false` keeps the topic groups from being built for
+ * nothing — and every other default is inherited rather than retyped, so a
  * field this chapter does not care about cannot drift from the page's.
  *
  * `includeCompleted` matches that default today and is stated anyway, because it
@@ -42,7 +43,8 @@ import type { StoryStep } from "./types";
  */
 const STORY_STEP_OPTIONS: ObservationsPageOptions = {
   ...OBSERVATIONS_PAGE_OPTIONS_DEFAULT,
-  include: "nextSteps",
+  showObservations: false,
+  showNextSteps: true,
   includeCompleted: false,
 };
 
