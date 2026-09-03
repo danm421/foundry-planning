@@ -170,6 +170,7 @@ export type AuditAction =
   | "cma.model_portfolio.update"
   | "cma.model_portfolio.delete"
   | "cma.model_portfolio.allocation.update"
+  | "cma.model_portfolio.detach"
   | "cma.seed"
   | "cma.migrate-to-standard"
   | "cma.refresh-standard-values"
@@ -180,6 +181,7 @@ export type AuditAction =
   | "cma.ticker_portfolio.update"
   | "cma.ticker_portfolio.delete"
   | "cma.ticker_portfolio.holdings.update"
+  | "cma.ticker_portfolio.promote"
   | "cma.settings.update"
   // Open items (client-scoped to-do / data-gathering tracker)
   | "open_item.create"
