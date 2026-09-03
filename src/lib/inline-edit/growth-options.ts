@@ -35,6 +35,9 @@ export interface GrowthOption {
 export interface GrowthOptionsArgs {
   category: string;
   modelPortfolios: readonly { id: string; name: string; blendedReturn: number }[];
+  /** Unused since 2026-09-03 — fund portfolios reach plans as derived model
+   *  portfolios, so they arrive in `modelPortfolios`. Kept because callers still
+   *  pass it and `growthSelectValue` still round-trips a stored `tp:` source. */
   fundPortfolios: readonly { id: string; name: string; blendedReturnPct: number | null }[];
   resolvedInflationRate: number;
   defaultPctForCategory: number | null;
@@ -87,10 +90,6 @@ export function growthOptionsFor(args: GrowthOptionsArgs): GrowthOption[] {
   ];
   for (const mp of args.modelPortfolios) {
     out.push({ value: `mp:${mp.id}`, label: `${(mp.blendedReturn * 100).toFixed(2)}% \u2014 ${mp.name}` });
-  }
-  for (const fp of args.fundPortfolios) {
-    if (fp.blendedReturnPct === null) continue; // needs classified holdings
-    out.push({ value: `tp:${fp.id}`, label: `${fp.blendedReturnPct.toFixed(2)}% \u2014 ${fp.name}` });
   }
   // A <select> whose value matches no option shows the FIRST one, so dropping
   // the source the account is actually on makes the control read "Plan default"

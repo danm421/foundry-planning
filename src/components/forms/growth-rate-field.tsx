@@ -21,6 +21,9 @@ export interface GrowthRateFieldProps {
   growthRatePct: string;
   modelPortfolios?: GrowthRateModelPortfolio[];
   tickerPortfolioId?: string;
+  /** Unused by the dropdown since 2026-09-03 — fund portfolios reach plans as
+   *  derived model portfolios, so they arrive in `modelPortfolios`. Kept because
+   *  several callers still pass it and removing it is a wider refactor. */
   fundPortfolios?: { id: string; name: string; blendedReturnPct: number | null }[];
   /** Resolved category-default % (0–100) or null when unknown. */
   defaultPctForCategory: number | null;
@@ -60,7 +63,6 @@ export function GrowthRateField({
   growthRatePct,
   modelPortfolios,
   tickerPortfolioId = "",
-  fundPortfolios,
   defaultPctForCategory,
   catDefaultPortfolioName,
   resolvedInflationRate,
@@ -102,16 +104,6 @@ export function GrowthRateField({
             {(mp.blendedReturn * 100).toFixed(2)}% — {mp.name}
           </option>
         ))}
-        {fundPortfolios && fundPortfolios.length > 0 && (
-          <optgroup label="Fund portfolios">
-            {fundPortfolios.map((fp) => (
-              <option key={fp.id} value={`tp:${fp.id}`} disabled={fp.blendedReturnPct === null}>
-                {fp.blendedReturnPct !== null ? `${fp.blendedReturnPct.toFixed(2)}% — ` : ""}
-                {fp.name}{fp.blendedReturnPct === null ? " (needs classified holdings)" : ""}
-              </option>
-            ))}
-          </optgroup>
-        )}
         {showAssetMix && (
           <option value="asset_mix">
             {assetMixBlendedPct !== null ? `${assetMixBlendedPct.toFixed(2)}% — ` : ""}Asset mix (custom)
