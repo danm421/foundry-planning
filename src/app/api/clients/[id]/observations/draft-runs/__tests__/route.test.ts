@@ -238,6 +238,32 @@ describe("POST /draft-runs — sections", () => {
     expect((await res.json()).error).toBe("The source scenario no longer exists — pick another.");
   });
 
+  // Org scoping: a scenario id that is REAL but owned by a different client
+  // (same firm — otherwise the 403 on requireClientEditAccess would mask the
+  // scenario lookup entirely) must be rejected identically to a deleted one.
+  // A bare `eq(scenarios.id, …)` lookup with no client-ownership predicate
+  // would find this row and pass it through.
+  it("400s when the stored scenario belongs to a different client", async () => {
+    const [otherHousehold] = await db
+      .insert(crmHouseholds)
+      .values({ firmId: ORG, advisorId: "u_obs", name: "Other HH" })
+      .returning();
+    const [otherClient] = await db
+      .insert(clients)
+      .values({ firmId: ORG, advisorId: "u_obs", crmHouseholdId: otherHousehold.id, retirementAge: 65, planEndAge: 95 })
+      .returning();
+    const [otherScenario] = await db
+      .insert(scenarios)
+      .values({ clientId: otherClient.id, name: "Someone else's scenario", isBaseCase: false })
+      .returning();
+    await db.insert(planObservationContext).values({ clientId, nextStepsScenarioId: otherScenario.id });
+
+    const res = await POST(req({ section: "next_step" }), { params: Promise.resolve({ id: clientId }) });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("The source scenario no longer exists — pick another.");
+    expect(await db.select().from(generationRuns).where(eq(generationRuns.clientId, clientId))).toHaveLength(0);
+  });
+
   it("a next-steps run reads the scenario and notes from the context row, never the body, and stamps the run", async () => {
     await db.insert(planObservationContext).values({
       clientId, nextStepsScenarioId: scenarioId, nextStepsContext: "Keep the conversion optional.",
