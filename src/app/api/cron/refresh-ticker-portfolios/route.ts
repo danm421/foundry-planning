@@ -1,8 +1,11 @@
 import { type NextRequest, NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
 import { db } from "@/db";
-import { tickerPortfolios } from "@/db/schema";
+import { eq } from "drizzle-orm";
+import { tickerPortfolios, modelPortfolios } from "@/db/schema";
 import { computeAndCacheTickerPortfolioStats } from "@/lib/ticker-portfolio-compute";
+import { syncDerivedAllocations } from "@/lib/investments/sync-derived-model-portfolio";
+import { liveSyncDeps } from "@/lib/investments/derived-model-portfolio-deps";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +34,33 @@ export async function GET(req: NextRequest): Promise<Response> {
   for (const p of portfolios) {
     try {
       await computeAndCacheTickerPortfolioStats({ portfolioId: p.id, firmId: p.firmId, asOfMonth });
+
+      // Re-derive the linked model portfolio so an EODHD reclassification
+      // reaches plans without anyone editing the fund. A skipped re-sync is a
+      // warning, not a failure: the prior allocations stay correct-as-of-last-
+      // sync, which beats writing a mix we no longer trust.
+      const [derived] = await db
+        .select({ id: modelPortfolios.id })
+        .from(modelPortfolios)
+        .where(eq(modelPortfolios.sourceTickerPortfolioId, p.id));
+      if (derived) {
+        const outcome = await syncDerivedAllocations(
+          { tickerPortfolioId: p.id, modelPortfolioId: derived.id, firmId: p.firmId },
+          liveSyncDeps(),
+        );
+        if (!outcome.ok) {
+          Sentry.captureMessage("Derived model portfolio re-sync skipped", {
+            level: "warning",
+            extra: {
+              tickerPortfolioId: p.id,
+              modelPortfolioId: derived.id,
+              reason: outcome.reason,
+              unclassifiedWeight: outcome.unclassifiedWeight,
+              droppedSlugs: outcome.droppedSlugs,
+            },
+          });
+        }
+      }
       ok++;
     } catch (err) {
       failed++;
