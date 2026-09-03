@@ -1820,20 +1820,23 @@ describe("projection — socialSecurityDetail", () => {
 
     const result = runProjection(data);
 
-    // 2027: client (age 67) has claimed; spouse (age 65) has NOT yet claimed
+    // 2027: client (age 67) has claimed; spouse (age 65) has NOT yet claimed.
+    // Born on the 1st, the client attains 67 on 2027-05-31 and is entitled from
+    // May — eight payments in the claim year, twelve thereafter.
     const year2027 = result.find((py) => py.year === 2027)!;
     expect(year2027).toBeDefined();
     expect(year2027.socialSecurityDetail).toBeDefined();
-    // Client: own retirement at FRA = 2000/mo × 12 = 24000
-    expect(year2027.socialSecurityDetail!.client.retirement).toBeCloseTo(24000, 0);
+    // Client: own retirement at FRA = 2000/mo × 8 = 16000
+    expect(year2027.socialSecurityDetail!.client.retirement).toBeCloseTo(16000, 0);
     expect(year2027.socialSecurityDetail!.client.spousal).toBe(0);
     expect(year2027.socialSecurityDetail!.client.survivor).toBe(0);
     // Spouse hasn't claimed yet in 2027
     expect(year2027.socialSecurityDetail!.spouse).toBeUndefined();
 
     // 2029: both have claimed
-    // Client: own retirement = 24000, no spousal/survivor
-    // Spouse: own=300/mo, spousal top-up to 50% of 2000=1000/mo → retirement=3600, spousal=8400
+    // Client: own retirement = 24000 (a full year — claimed back in 2027)
+    // Spouse: own=300/mo, spousal top-up to 50% of 2000=1000/mo, both starting
+    // May 2029 → retirement=2400, spousal=5600
     const year2029 = result.find((py) => py.year === 2029)!;
     expect(year2029).toBeDefined();
     expect(year2029.socialSecurityDetail).toBeDefined();
@@ -1845,8 +1848,8 @@ describe("projection — socialSecurityDetail", () => {
 
     const spouseDetail = year2029.socialSecurityDetail!.spouse!;
     expect(spouseDetail).toBeDefined();
-    expect(spouseDetail.retirement).toBeCloseTo(3600, 0);   // 300/mo × 12
-    expect(spouseDetail.spousal).toBeCloseTo(8400, 0);      // (1000-300)/mo × 12
+    expect(spouseDetail.retirement).toBeCloseTo(2400, 0);   // 300/mo × 8
+    expect(spouseDetail.spousal).toBeCloseTo(5600, 0);      // (1000-300)/mo × 8
     expect(spouseDetail.survivor).toBe(0);
 
     // Total SS income should equal sum of all detail amounts
@@ -1854,7 +1857,7 @@ describe("projection — socialSecurityDetail", () => {
       clientDetail.retirement + clientDetail.spousal + clientDetail.survivor +
       spouseDetail.retirement + spouseDetail.spousal + spouseDetail.survivor;
     expect(year2029.income.socialSecurity).toBeCloseTo(detailTotal, 0);
-    expect(year2029.income.socialSecurity).toBeCloseTo(24000 + 12000, 0); // 36000
+    expect(year2029.income.socialSecurity).toBeCloseTo(24000 + 8000, 0); // 32000
   });
 });
 
@@ -1863,11 +1866,14 @@ describe("projection — spousal multi-year verification", () => {
     // Client born 1960-06-01 (FRA 67), PIA $2000/mo → claims year 2027
     // Spouse born 1962-06-01 (FRA 67), PIA $300/mo → claims year 2029
     // Spouse receives top-up: own $300/mo < 50% of $2000 = $1000/mo → total $1000/mo
+    // Both are born on the 1st, so each attains 67 on May 31 and is entitled
+    // from May — eight payments in their claim year, twelve after.
     // Household SS by year:
     //   2026: $0 (neither has claimed)
-    //   2027: $24,000 (client only)
-    //   2028: $24,000 (client only, spouse still not at 67)
-    //   2029: $36,000 (both claimed: 2000 + 1000 = 3000/mo)
+    //   2027: $16,000 (client only, eight months)
+    //   2028: $24,000 (client only, full year; spouse still not at 67)
+    //   2029: $32,000 (client full year + spouse's eight-month first year)
+    //   2030: $36,000 (both full years: 2000 + 1000 = 3000/mo)
     //   2030: $36,000 (both continue)
     // This tests multi-year stability — complementary coverage to the single-year Task 11 test.
     const data = buildClientData({
@@ -1927,11 +1933,11 @@ describe("projection — spousal multi-year verification", () => {
     expect(year2026).toBeDefined();
     expect(year2026.income.socialSecurity).toBe(0);
 
-    // 2027: client turns 67 and claims → $24,000; spouse age 65, not yet claimed
+    // 2027: client turns 67 and claims from May → $16,000; spouse age 65, not yet claimed
     const year2027 = result.find((py) => py.year === 2027)!;
     expect(year2027).toBeDefined();
-    expect(year2027.income.socialSecurity).toBeCloseTo(24000, 0);
-    expect(year2027.socialSecurityDetail!.client.retirement).toBeCloseTo(24000, 0);
+    expect(year2027.income.socialSecurity).toBeCloseTo(16000, 0);
+    expect(year2027.socialSecurityDetail!.client.retirement).toBeCloseTo(16000, 0);
     expect(year2027.socialSecurityDetail!.client.spousal).toBe(0);
     expect(year2027.socialSecurityDetail!.client.survivor).toBe(0);
     expect(year2027.socialSecurityDetail!.spouse).toBeUndefined();
@@ -1941,17 +1947,17 @@ describe("projection — spousal multi-year verification", () => {
     expect(year2028).toBeDefined();
     expect(year2028.income.socialSecurity).toBeCloseTo(24000, 0);
 
-    // 2029: spouse turns 67 and claims → $36,000
+    // 2029: spouse turns 67 and claims from May → $32,000
     //   client: 2000/mo × 12 = $24,000
-    //   spouse: 300/mo own + 700/mo top-up = 1000/mo × 12 = $12,000
+    //   spouse: 300/mo own + 700/mo top-up = 1000/mo × 8 = $8,000
     const year2029 = result.find((py) => py.year === 2029)!;
     expect(year2029).toBeDefined();
-    expect(year2029.income.socialSecurity).toBeCloseTo(36000, 0);
+    expect(year2029.income.socialSecurity).toBeCloseTo(32000, 0);
     expect(year2029.socialSecurityDetail!.client.retirement).toBeCloseTo(24000, 0);
-    expect(year2029.socialSecurityDetail!.spouse!.retirement).toBeCloseTo(3600, 0);
-    expect(year2029.socialSecurityDetail!.spouse!.spousal).toBeCloseTo(8400, 0);
+    expect(year2029.socialSecurityDetail!.spouse!.retirement).toBeCloseTo(2400, 0);
+    expect(year2029.socialSecurityDetail!.spouse!.spousal).toBeCloseTo(5600, 0);
 
-    // 2030: both continue at same rates → $36,000
+    // 2030: both on full years → $36,000
     const year2030 = result.find((py) => py.year === 2030)!;
     expect(year2030).toBeDefined();
     expect(year2030.income.socialSecurity).toBeCloseTo(36000, 0);
@@ -2220,11 +2226,11 @@ describe("projection — SS living-link claim-age modes", () => {
     expect(year2026).toBeDefined();
     expect(year2026.income.socialSecurity).toBe(0);
 
-    // 2027: client turns 67 — FRA reached → full PIA = $2,000/mo × 12 = $24,000
+    // 2027: client turns 67 — FRA reached, entitled from May → $2,000/mo × 8 = $16,000
     const year2027 = result.find((py) => py.year === 2027)!;
     expect(year2027).toBeDefined();
-    expect(year2027.income.socialSecurity).toBeCloseTo(24000, 0);
-    expect(year2027.socialSecurityDetail!.client.retirement).toBeCloseTo(24000, 0);
+    expect(year2027.income.socialSecurity).toBeCloseTo(16000, 0);
+    expect(year2027.socialSecurityDetail!.client.retirement).toBeCloseTo(16000, 0);
   });
 });
 

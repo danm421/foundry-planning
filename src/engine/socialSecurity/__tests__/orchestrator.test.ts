@@ -14,6 +14,12 @@ const baseClient: ClientInfo = {
   lifeExpectancy: 90,
 };
 
+// Both fixture DOBs fall on the 1st, so each worker attains their claim age on
+// the last day of the PRIOR month (SSA's day-before-the-birthday rule) and is
+// entitled from May. May..December is eight payments, so the claim year is
+// worth 8/12 of a steady-state year; every later year is a full 12.
+const CLAIM_YEAR_MONTHS = 8;
+
 function ssIncome(overrides: Partial<Income>): Income {
   return {
     id: "c",
@@ -39,10 +45,10 @@ describe("resolveAnnualBenefit — both alive, both claimed", () => {
     const spouse = ssIncome({ id: "s", owner: "spouse", piaMonthly: 1500 });
     const out = resolveAnnualBenefit({ row: client, spouseRow: spouse, client: baseClient, year: 2027 });
     // Client claims at FRA 67 in 2027. Own=2000, spousal=50%×1500=750. own>spousal → 2000/mo
-    expect(out.retirement).toBeCloseTo(2000 * 12, 2);
+    expect(out.retirement).toBeCloseTo(2000 * CLAIM_YEAR_MONTHS, 2);
     expect(out.spousal).toBeCloseTo(0, 2);
     expect(out.survivor).toBeCloseTo(0, 2);
-    expect(out.total).toBeCloseTo(2000 * 12, 2);
+    expect(out.total).toBeCloseTo(2000 * CLAIM_YEAR_MONTHS, 2);
   });
 
   it("own < spousal: top-up applied", () => {
@@ -51,11 +57,14 @@ describe("resolveAnnualBenefit — both alive, both claimed", () => {
     // Spouse must have claimed — spouse turns 67 in 2029; client turns 67 in 2027.
     // Year 2029: both have claimed.
     const out = resolveAnnualBenefit({ row: client, spouseRow: spouse, client: baseClient, year: 2029 });
-    // client own=300, spousal base = 1000. Both at FRA: total=1000, ret=300, spousalPortion=700
+    // client own=300, spousal base = 1000. Both at FRA: total=1000, ret=300, spousalPortion=700.
+    // The client's own benefit has run since 2027, so 2029 pays it in full; the
+    // spousal top-up needs BOTH filed and only switches on when the spouse is
+    // entitled in May 2029, so it earns eight months.
     expect(out.retirement).toBeCloseTo(300 * 12, 2);
-    expect(out.spousal).toBeCloseTo(700 * 12, 2);
+    expect(out.spousal).toBeCloseTo(700 * CLAIM_YEAR_MONTHS, 2);
     expect(out.survivor).toBeCloseTo(0, 2);
-    expect(out.total).toBeCloseTo(1000 * 12, 2);
+    expect(out.total).toBeCloseTo(300 * 12 + 700 * CLAIM_YEAR_MONTHS, 2);
   });
 });
 
@@ -74,7 +83,7 @@ describe("resolveAnnualBenefit — other spouse not claimed, this spouse has", (
     const spouse = ssIncome({ id: "s", owner: "spouse", claimingAge: 70, piaMonthly: 1500 });
     // Year 2027: client 67 (claimed), spouse 65 (not claimed until 2032)
     const out = resolveAnnualBenefit({ row: client, spouseRow: spouse, client: baseClient, year: 2027 });
-    expect(out.retirement).toBeCloseTo(2000 * 12, 2);
+    expect(out.retirement).toBeCloseTo(2000 * CLAIM_YEAR_MONTHS, 2);
     expect(out.spousal).toBe(0);
   });
 });
@@ -83,8 +92,8 @@ describe("resolveAnnualBenefit — single client (no spouse row)", () => {
   it("pays own only", () => {
     const client = ssIncome({ id: "c", owner: "client", piaMonthly: 2000 });
     const out = resolveAnnualBenefit({ row: client, spouseRow: null, client: { ...baseClient, spouseDob: undefined }, year: 2027 });
-    expect(out.retirement).toBeCloseTo(2000 * 12, 2);
-    expect(out.total).toBeCloseTo(2000 * 12, 2);
+    expect(out.retirement).toBeCloseTo(2000 * CLAIM_YEAR_MONTHS, 2);
+    expect(out.total).toBeCloseTo(2000 * CLAIM_YEAR_MONTHS, 2);
   });
 });
 
@@ -137,8 +146,8 @@ describe("resolveAnnualBenefit — growth indexing", () => {
     const spouse = ssIncome({ id: "s", owner: "spouse", piaMonthly: 1000, growthRate: 0.03 });
     const out = resolveAnnualBenefit({ row: client, spouseRow: spouse, client: baseClient, year: 2027 });
     // Client claims at 67 in 2027 (7 years after inflationStartYear 2020). Own 2000 > spousal 500.
-    // Annual = 2000 × 12 × 1.03^7
-    const expected = 2000 * 12 * Math.pow(1.03, 7);
+    // Claim year = 2000 × 8 months × 1.03^7
+    const expected = 2000 * CLAIM_YEAR_MONTHS * Math.pow(1.03, 7);
     expect(out.total).toBeCloseTo(expected, 2);
   });
 });
@@ -155,7 +164,7 @@ describe("resolveAnnualBenefit — claimingAgeMode integration", () => {
     // baseClient DOB 1960-06-01 → FRA 67y = 804 months → first claim year 2027
     // In 2027, benefit should be FULL PIA (no early reduction), annualized
     const out = resolveAnnualBenefit({ row: client, spouseRow: null, client: { ...baseClient, spouseDob: undefined }, year: 2027 });
-    expect(out.total).toBeCloseTo(2000 * 12, 2);
+    expect(out.total).toBeCloseTo(2000 * CLAIM_YEAR_MONTHS, 2);
   });
 
   it("honors claimingAgeMode='at_retirement' for this-spouse own benefit", () => {
@@ -166,8 +175,9 @@ describe("resolveAnnualBenefit — claimingAgeMode integration", () => {
       claimingAgeMode: "at_retirement",
     });
     // baseClient.retirementAge = 65 → 780 months → early reduction vs FRA 804 = 24 months
-    // Reduction = 24 × 5/9% = 0.1333 → benefit = 2000 × 0.8667 = 1733.33/mo → 20800/yr
+    // Reduction = 24 × 5/9% = 0.1333 → benefit = 2000 × 0.8667 = 1733.33/mo, paid
+    // from May 2025 → eight payments in the claim year.
     const out = resolveAnnualBenefit({ row: client, spouseRow: null, client: { ...baseClient, spouseDob: undefined }, year: 2025 });
-    expect(out.total).toBeCloseTo(2000 * (1 - 24 * (5 / 900)) * 12, 2);
+    expect(out.total).toBeCloseTo(2000 * (1 - 24 * (5 / 900)) * CLAIM_YEAR_MONTHS, 2);
   });
 });

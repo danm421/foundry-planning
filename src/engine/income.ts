@@ -1,7 +1,8 @@
 import type { Income, ClientInfo, DisabilityEvent } from "./types";
 import { disabilitySuspension } from "./disability-event";
 import { resolveAnnualBenefit } from "./socialSecurity/orchestrator";
-import { resolveClaimAgeMonths } from "./socialSecurity/claimAge";
+import { resolveEntitlementMonth } from "./socialSecurity/claimAge";
+import { monthsPaidInYear } from "./socialSecurity/entitlement";
 import { itemProrationGate } from "./retirement-proration";
 
 interface IncomeBreakdown {
@@ -105,15 +106,23 @@ export function computeIncome(
     if (!gate.include) continue;
     if (filter && !filter(inc)) continue;
 
+    // Months of Social Security actually payable this year. Stays 12 for every
+    // non-SS row and for SS rows with no claim age on file (there the row's own
+    // startYear governs), so the multiply below is a no-op outside the claim year.
+    let ssMonthsPaid = 12;
+
     // Social Security: delay until claiming age
     if (inc.type === "social_security" && inc.claimingAge != null) {
       if (inc.ssBenefitMode === "no_benefit") continue;
       const ownerDob = inc.owner === "spouse" ? client.spouseDob : client.dateOfBirth;
       if (!ownerDob) continue;
-      const claimAgeMonths = resolveClaimAgeMonths(inc, client);
-      if (claimAgeMonths == null) continue; // unresolvable mode (e.g., fra without DOB)
-      const birthYear = parseInt(ownerDob.slice(0, 4), 10);
-      if (year * 12 < birthYear * 12 + claimAgeMonths) continue;
+      // Entitlement is a MONTH, not a year: someone who turns 67 in December
+      // collects one payment that year, not twelve. `monthsPaidInYear` is 12 in
+      // every steady-state year, so only the claim year is prorated.
+      const entitlement = resolveEntitlementMonth(inc, client);
+      if (entitlement == null) continue; // unresolvable mode (e.g., fra without DOB)
+      ssMonthsPaid = monthsPaidInYear(entitlement, year);
+      if (ssMonthsPaid === 0) continue;
 
       // Suppress the spouse's SS row after the spouse has died. The death year
       // itself runs to completion (matches applyIncomeTermination's convention
@@ -144,6 +153,9 @@ export function computeIncome(
           (other) => other.id !== inc.id && other.type === "social_security" && other.owner === otherOwner,
         ) ?? null;
 
+        // The orchestrator prorates each component itself — own retirement and
+        // the spousal top-up switch on in different months — so `ssMonthsPaid`
+        // must NOT be applied again here.
         const resolved = resolveAnnualBenefit({ row: inc, spouseRow, client, year });
         const proratedTotal = resolved.total * gate.factor * ssFactor;
         result.socialSecurity += proratedTotal;
@@ -173,7 +185,13 @@ export function computeIncome(
       amount = inc.annualAmount * Math.pow(1 + inc.growthRate, yearsElapsed);
     }
     amount *= gate.factor;
-    if (inc.type === "social_security") amount *= ssFactor;
+    if (inc.type === "social_security") {
+      amount *= ssFactor;
+      // Legacy rows carry a flat annual figure instead of a PIA, so they never
+      // reach the orchestrator. Prorate their claim year here. `ssMonthsPaid`
+      // is 12 for every row that is not a claim-year Social Security row.
+      amount *= ssMonthsPaid / 12;
+    }
     const key = incomeTypeToKey[inc.type];
     result[key] += amount;
     result.bySource[inc.id] = amount;
