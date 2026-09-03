@@ -48,6 +48,10 @@ const smallButton =
 const textarea =
   "w-full resize-y rounded border border-hair bg-card-2 px-2 py-1 text-[13px] text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/40";
 
+/** One section's draft run, as `useDraftRun` hands it back. Module scope so
+ *  `DraftCards` below can take one. */
+type Draft = ReturnType<typeof useDraftRun>;
+
 /** "…" per token while values load; the Details panel's convention. */
 function renderBody(body: string, tokenValues: Record<string, string | null> | null): string {
   if (tokenValues === null) return body.replace(TOKEN_PATTERN, "…");
@@ -225,8 +229,6 @@ export function ObservationsAuthoringPanel({ clientId, showObservations, showNex
     setEditTarget(initial);
   }
 
-  type Draft = ReturnType<typeof useDraftRun>;
-
   function suggestionBody(s: DraftSuggestion, scenarioId: string | null) {
     return {
       section: s.section,
@@ -403,34 +405,26 @@ export function ObservationsAuthoringPanel({ clientId, showObservations, showNex
             );
           })}
 
-          {obsDraft.error && <p role="alert" className="text-[12px] text-crit">{obsDraft.error}</p>}
-          {obsDraft.result && (
-            <SuggestionCards
-              suggestions={obsDraft.result.suggestions}
-              tokenValues={tokenValues}
-              onAccept={(i) => acceptSuggestion(obsDraft, i)}
-              onEditAccept={(i) => editAndAccept(obsDraft, i)}
-              onDismiss={(i) => obsDraft.replaceSuggestions(obsDraft.result!.suggestions.filter((_, k) => k !== i))}
-              onAcceptAll={() => acceptAll(obsDraft)}
-            />
-          )}
+          <DraftCards
+            draft={obsDraft}
+            tokenValues={tokenValues}
+            onAccept={acceptSuggestion}
+            onEditAccept={editAndAccept}
+            onAcceptAll={acceptAll}
+          />
 
-          <label className="flex flex-col gap-1">
-            <span className="text-[11px] uppercase tracking-[0.1em] text-ink-3">Notes for the AI</span>
-            <textarea
-              className={textarea}
-              rows={3}
-              placeholder="Anything the draft should know — concerns they raised, what you want emphasised, what to leave out."
-              value={obsNotes}
-              onChange={(e) => setObsNotes(e.target.value)}
-              onBlur={async () => {
-                if (!context || obsNotes === context.observationsContext) return;
-                setNoteError(null);
-                const ok = await patchContext({ observationsContext: obsNotes });
-                if (!ok) setNoteError("Couldn't save your note");
-              }}
-            />
-          </label>
+          <NotesField
+            label="Notes for the AI"
+            placeholder="Anything the draft should know — concerns they raised, what you want emphasised, what to leave out."
+            value={obsNotes}
+            onChange={setObsNotes}
+            onSave={async () => {
+              if (!context || obsNotes === context.observationsContext) return;
+              setNoteError(null);
+              const ok = await patchContext({ observationsContext: obsNotes });
+              if (!ok) setNoteError("Couldn't save your note");
+            }}
+          />
           {noteError && <p className="text-[12px] text-crit">{noteError}</p>}
         </section>
       )}
@@ -449,7 +443,14 @@ export function ObservationsAuthoringPanel({ clientId, showObservations, showNex
                 {stepDraft.drafting ? "Generating…" : "Generate from scenario"}
               </button>
               {hasAiSteps && (
-                <button type="button" className={`${smallButton} hover:border-crit hover:text-crit`} onClick={clearAiNextSteps}>
+                // Disabled mid-run: `clearAiNextSteps` calls `stepDraft.clear()`,
+                // which cancels the poll and orphans a paid LLM run.
+                <button
+                  type="button"
+                  className={`${smallButton} hover:border-crit hover:text-crit`}
+                  disabled={stepDraft.drafting}
+                  onClick={clearAiNextSteps}
+                >
                   Clear AI-generated
                 </button>
               )}
@@ -474,35 +475,27 @@ export function ObservationsAuthoringPanel({ clientId, showObservations, showNex
                 <span className="text-[11px] text-ink-3">Pick a source scenario first — its edits become the steps.</span>
               )}
             </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-[11px] uppercase tracking-[0.1em] text-ink-3">Notes for the AI</span>
-              <textarea
-                className={textarea}
-                rows={3}
-                placeholder="What to stress, what to leave out, who should own what."
-                value={stepNotes}
-                onChange={(e) => setStepNotes(e.target.value)}
-                onBlur={async () => {
-                  if (!context || stepNotes === context.nextStepsContext) return;
-                  setNoteError(null);
-                  const ok = await patchContext({ nextStepsContext: stepNotes });
-                  if (!ok) setNoteError("Couldn't save your note");
-                }}
-              />
-            </label>
+            <NotesField
+              label="Notes for the AI"
+              placeholder="What to stress, what to leave out, who should own what."
+              value={stepNotes}
+              onChange={setStepNotes}
+              onSave={async () => {
+                if (!context || stepNotes === context.nextStepsContext) return;
+                setNoteError(null);
+                const ok = await patchContext({ nextStepsContext: stepNotes });
+                if (!ok) setNoteError("Couldn't save your note");
+              }}
+            />
           </div>
 
-          {stepDraft.error && <p role="alert" className="text-[12px] text-crit">{stepDraft.error}</p>}
-          {stepDraft.result && (
-            <SuggestionCards
-              suggestions={stepDraft.result.suggestions}
-              tokenValues={tokenValues}
-              onAccept={(i) => acceptSuggestion(stepDraft, i)}
-              onEditAccept={(i) => editAndAccept(stepDraft, i)}
-              onDismiss={(i) => stepDraft.replaceSuggestions(stepDraft.result!.suggestions.filter((_, k) => k !== i))}
-              onAcceptAll={() => acceptAll(stepDraft)}
-            />
-          )}
+          <DraftCards
+            draft={stepDraft}
+            tokenValues={tokenValues}
+            onAccept={acceptSuggestion}
+            onEditAccept={editAndAccept}
+            onAcceptAll={acceptAll}
+          />
 
           {rows !== null && nextStepRows.length === 0 && (
             <p className="text-[12px] text-ink-3">No next steps yet — generate them from a scenario or add your own on Details.</p>
@@ -565,6 +558,71 @@ function toEditInitial(row: AuthoringRow): EditInitial {
     priority: row.priority,
     targetDate: row.targetDate,
   };
+}
+
+/** A run's error line and its suggestion cards. Both sections render one, so
+ *  the accept handlers arrive as `(draft, idx)` and the closures are built
+ *  here rather than twice at the call sites. */
+function DraftCards({
+  draft,
+  tokenValues,
+  onAccept,
+  onEditAccept,
+  onAcceptAll,
+}: {
+  draft: Draft;
+  tokenValues: Record<string, string | null> | null;
+  onAccept: (draft: Draft, idx: number) => void;
+  onEditAccept: (draft: Draft, idx: number) => void;
+  onAcceptAll: (draft: Draft) => void;
+}) {
+  const result = draft.result;
+  return (
+    <>
+      {draft.error && <p role="alert" className="text-[12px] text-crit">{draft.error}</p>}
+      {result && (
+        <SuggestionCards
+          suggestions={result.suggestions}
+          tokenValues={tokenValues}
+          onAccept={(i) => onAccept(draft, i)}
+          onEditAccept={(i) => onEditAccept(draft, i)}
+          onDismiss={(i) => draft.replaceSuggestions(result.suggestions.filter((_, k) => k !== i))}
+          onAcceptAll={() => onAcceptAll(draft)}
+        />
+      )}
+    </>
+  );
+}
+
+/** The per-section "Notes for the AI" box. `onSave` fires on blur and owns its
+ *  own dirty check — the two sections compare against different context
+ *  fields. Module scope, so typing never remounts the textarea. */
+function NotesField({
+  label,
+  placeholder,
+  value,
+  onChange,
+  onSave,
+}: {
+  label: string;
+  placeholder: string;
+  value: string;
+  onChange: (next: string) => void;
+  onSave: () => void;
+}) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-[11px] uppercase tracking-[0.1em] text-ink-3">{label}</span>
+      <textarea
+        className={textarea}
+        rows={3}
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={onSave}
+      />
+    </label>
+  );
 }
 
 function RowActions({

@@ -335,6 +335,30 @@ describe("ObservationsAuthoringPanel — next steps", () => {
     expect(screen.getByText(/from a scenario that has since been deleted/i)).toBeInTheDocument();
   });
 
+  // Clear calls `stepDraft.clear()`, which nulls `active` and cancels the
+  // poll. Mid-run that orphans a paid LLM call and silently flips the Generate
+  // button back from "Generating…", so Clear has to be shut while it runs.
+  it("Clear AI-generated is disabled while a generate run is in flight", async () => {
+    installFetch((url, init) => {
+      const method = init?.method ?? "GET";
+      if (url.endsWith("/draft-runs") && method === "POST") return { status: 202, body: { runId: "run-3" } };
+      if (url.endsWith("/draft-runs/run-3")) return { status: 200, body: { status: "running", error: null, scenarioId: null, suggestions: null } };
+      return defaults({
+        context: { nextStepsScenarioId: SCENARIO_ID },
+        rows: [{ ...ROW, id: "n1", section: "next_step", title: "AI step", body: "b", source: "ai", sourceScenarioId: SCENARIO_ID }],
+      })(url, init);
+    });
+    renderPanel();
+    await screen.findByText("AI step");
+    // Enabled first, so the assertion below pins the run — not a button that
+    // is simply always disabled.
+    expect(screen.getByRole("button", { name: /clear ai-generated/i })).toBeEnabled();
+    await waitFor(() => expect(screen.getByRole("button", { name: /generate from scenario/i })).toBeEnabled());
+    await userEvent.click(screen.getByRole("button", { name: /generate from scenario/i }));
+    await screen.findByRole("button", { name: /generating/i });
+    expect(screen.getByRole("button", { name: /clear ai-generated/i })).toBeDisabled();
+  });
+
   it("Clear AI-generated confirms, then DELETEs the scoped query", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     const calls = installFetch((url, init) => {
