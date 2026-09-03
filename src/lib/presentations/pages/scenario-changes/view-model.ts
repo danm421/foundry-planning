@@ -1,9 +1,25 @@
 import type { BuildDataContext } from "@/components/presentations/registry";
 import { resolveScenarioRef, keyForRef } from "@/lib/scenario/presentation-refs";
-import type { ScenarioChangesOptions, ScenarioChangesPageData } from "./types";
+import type {
+  DisplayUnit,
+  ScenarioChangesContext,
+  ScenarioChangesOptions,
+  ScenarioChangesPageData,
+} from "./types";
 import { describeChange } from "./describe";
 import { groupUnits } from "./group";
 import { buildResolveContext, EMPTY_RESOLVE_DATA } from "./describe/resolve";
+
+/** A scenario's edits as the Plan Comparison page prints them — described
+ *  by the rich describers and folded into toggle-group units. Also what the
+ *  Observations next-steps prompt is shown, so the model and the page name
+ *  every change the same way. */
+export function describeAndGroup(sc: ScenarioChangesContext): DisplayUnit[] {
+  const resolve = buildResolveContext(sc.resolve ?? EMPTY_RESOLVE_DATA);
+  const describeCtx = { targetNames: sc.targetNames, resolve };
+  const described = sc.changes.map((change) => ({ change, row: describeChange(change, describeCtx) }));
+  return groupUnits(described, sc.toggleGroups);
+}
 
 function empty(
   options: ScenarioChangesOptions,
@@ -34,10 +50,7 @@ export function buildScenarioChangesData(
 
   if (!sc || sc.changes.length === 0) return empty(options, "no-changes");
 
-  const resolve = buildResolveContext(sc.resolve ?? EMPTY_RESOLVE_DATA);
-  const describeCtx = { targetNames: sc.targetNames, resolve };
-  const described = sc.changes.map((change) => ({ change, row: describeChange(change, describeCtx) }));
-  const units = groupUnits(described, sc.toggleGroups);
+  const units = describeAndGroup(sc);
 
   return {
     title: options.title,
