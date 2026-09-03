@@ -248,6 +248,16 @@ describe("audience and provenance", () => {
       { params: Promise.resolve({ id: clientA }) },
     );
     const advisorAiRow = await advisorAiRes.json();
+    // Identical section, source and audience to the rows being cleared, but a
+    // DIFFERENT client in a different firm. POST 403s cross-firm before it
+    // could write this, so insert directly. If the route's `where` ever drops
+    // the `clientId = id` predicate, this row gets swept too and the survivor
+    // assertion below catches it — the one predicate whose failure mode is
+    // another firm's data being destroyed.
+    const [otherFirmRow] = await db
+      .insert(planObservations)
+      .values({ clientId: clientB, section: "next_step", body: "Other firm AI step.", source: "ai" })
+      .returning();
 
     const res = await DELETE(makeReq(undefined, { method: "DELETE", query: "section=next_step&source=ai" }), {
       params: Promise.resolve({ id: clientA }),
@@ -261,6 +271,12 @@ describe("audience and provenance", () => {
     expect(left.some((r) => r.section === "next_step" && r.source === "manual")).toBe(true);
     expect(left.some((r) => r.section === "observation" && r.source === "ai")).toBe(true);
     expect(left.some((r) => r.id === advisorAiRow.id)).toBe(true);
+
+    const otherFirmLeft = await db
+      .select()
+      .from(planObservations)
+      .where(eq(planObservations.clientId, clientB));
+    expect(otherFirmLeft.some((r) => r.id === otherFirmRow.id)).toBe(true);
 
     const audits = await db
       .select({ action: auditLog.action })
