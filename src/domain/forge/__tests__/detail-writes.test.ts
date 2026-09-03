@@ -89,8 +89,8 @@ beforeEach(() => {
 });
 
 describe("add_expense", () => {
-  it('description ends with "Requires human approval."', () => {
-    expect(getTool("add_expense").description).toMatch(/Requires human approval\.$/);
+  it("description says the advisor approves it on a card — call it directly", () => {
+    expect(getTool("add_expense").description).toMatch(/approves it on a confirmation card.*call it directly/);
   });
 
   it("gates access BEFORE the core and passes actorId: ctx.userId (NOT firmId)", async () => {
@@ -203,8 +203,8 @@ describe("add_expense", () => {
 });
 
 describe("update_expense", () => {
-  it('description ends with "Requires human approval."', () => {
-    expect(getTool("update_expense").description).toMatch(/Requires human approval\.$/);
+  it("description says the advisor approves it on a card — call it directly", () => {
+    expect(getTool("update_expense").description).toMatch(/approves it on a confirmation card.*call it directly/);
   });
 
   it("passes expenseId + actorId: ctx.userId to the core and audits on success", async () => {
@@ -279,8 +279,8 @@ describe("update_expense", () => {
 });
 
 describe("remove_expense", () => {
-  it('description ends with "Requires human approval."', () => {
-    expect(getTool("remove_expense").description).toMatch(/Requires human approval\.$/);
+  it("description says the advisor approves it on a card — call it directly", () => {
+    expect(getTool("remove_expense").description).toMatch(/approves it on a confirmation card.*call it directly/);
   });
 
   it("passes expenseId + actorId: ctx.userId to the core and audits on success", async () => {
@@ -323,8 +323,8 @@ describe("remove_expense", () => {
 });
 
 describe("add_income", () => {
-  it('description ends with "Requires human approval."', () => {
-    expect(getTool("add_income").description).toMatch(/Requires human approval\.$/);
+  it("description says the advisor approves it on a card — call it directly", () => {
+    expect(getTool("add_income").description).toMatch(/approves it on a confirmation card.*call it directly/);
   });
 
   it("gates access BEFORE the core and passes actorId: ctx.userId (NOT firmId)", async () => {
@@ -397,8 +397,8 @@ describe("add_income", () => {
 });
 
 describe("update_income", () => {
-  it('description ends with "Requires human approval."', () => {
-    expect(getTool("update_income").description).toMatch(/Requires human approval\.$/);
+  it("description says the advisor approves it on a card — call it directly", () => {
+    expect(getTool("update_income").description).toMatch(/approves it on a confirmation card.*call it directly/);
   });
 
   it("passes incomeId + actorId: ctx.userId to the core and audits on success", async () => {
@@ -445,8 +445,8 @@ describe("update_income", () => {
 });
 
 describe("remove_income", () => {
-  it('description ends with "Requires human approval."', () => {
-    expect(getTool("remove_income").description).toMatch(/Requires human approval\.$/);
+  it("description says the advisor approves it on a card — call it directly", () => {
+    expect(getTool("remove_income").description).toMatch(/approves it on a confirmation card.*call it directly/);
   });
 
   it("passes incomeId + actorId: ctx.userId to the core and audits on success", async () => {
@@ -490,8 +490,8 @@ describe("remove_income", () => {
 });
 
 describe("add_liability", () => {
-  it('description ends with "Requires human approval."', () => {
-    expect(getTool("add_liability").description).toMatch(/Requires human approval\.$/);
+  it("description says the advisor approves it on a card — call it directly", () => {
+    expect(getTool("add_liability").description).toMatch(/approves it on a confirmation card.*call it directly/);
   });
 
   it("gates access BEFORE the core and passes actorId: ctx.userId (NOT firmId)", async () => {
@@ -577,8 +577,8 @@ describe("add_liability", () => {
 });
 
 describe("update_liability", () => {
-  it('description ends with "Requires human approval."', () => {
-    expect(getTool("update_liability").description).toMatch(/Requires human approval\.$/);
+  it("description says the advisor approves it on a card — call it directly", () => {
+    expect(getTool("update_liability").description).toMatch(/approves it on a confirmation card.*call it directly/);
   });
 
   it("passes liabilityId + actorId: ctx.userId to the core and audits on success", async () => {
@@ -625,8 +625,8 @@ describe("update_liability", () => {
 });
 
 describe("remove_liability", () => {
-  it('description ends with "Requires human approval."', () => {
-    expect(getTool("remove_liability").description).toMatch(/Requires human approval\.$/);
+  it("description says the advisor approves it on a card — call it directly", () => {
+    expect(getTool("remove_liability").description).toMatch(/approves it on a confirmation card.*call it directly/);
   });
 
   it("passes liabilityId + actorId: ctx.userId to the core and audits on success", async () => {
@@ -670,8 +670,8 @@ describe("remove_liability", () => {
 });
 
 describe("add_account", () => {
-  it('description ends with "Requires human approval."', () => {
-    expect(getTool("add_account").description).toMatch(/Requires human approval\.$/);
+  it("description says the advisor approves it on a card — call it directly", () => {
+    expect(getTool("add_account").description).toMatch(/approves it on a confirmation card.*call it directly/);
   });
 
   it("gates access BEFORE the core and passes actorId: ctx.userId (NOT firmId)", async () => {
@@ -744,8 +744,8 @@ describe("add_account", () => {
 });
 
 describe("update_account", () => {
-  it('description ends with "Requires human approval."', () => {
-    expect(getTool("update_account").description).toMatch(/Requires human approval\.$/);
+  it("description says the advisor approves it on a card — call it directly", () => {
+    expect(getTool("update_account").description).toMatch(/approves it on a confirmation card.*call it directly/);
   });
 
   it("passes accountId + actorId: ctx.userId to the core and audits on success", async () => {
@@ -792,8 +792,8 @@ describe("update_account", () => {
 });
 
 describe("remove_account", () => {
-  it('description ends with "Requires human approval."', () => {
-    expect(getTool("remove_account").description).toMatch(/Requires human approval\.$/);
+  it("description says the advisor approves it on a card — call it directly", () => {
+    expect(getTool("remove_account").description).toMatch(/approves it on a confirmation card.*call it directly/);
   });
 
   it("passes accountId + actorId: ctx.userId to the core and audits on success", async () => {

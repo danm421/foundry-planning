@@ -54,7 +54,8 @@ import {
 import type { ForgeToolContext } from "../context";
 
 /** Every write tool's description ends with this so the UI can flag approval. */
-const APPROVAL_SUFFIX = "Requires human approval.";
+const APPROVAL_SUFFIX =
+  "The advisor approves it on a confirmation card before anything is saved — call it directly; do not ask permission in prose first.";
 
 // ── Required-on-CREATE overrides ─────────────────────────────────────────────
 // The shared *Fields groups below are UPDATE-shaped: every field is .optional()

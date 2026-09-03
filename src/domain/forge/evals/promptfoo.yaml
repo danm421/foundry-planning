@@ -113,6 +113,16 @@ tests:
         value: file://./assertions.ts:usedExpectedTool
       - type: javascript
         value: file://./assertions.ts:noUnapprovedWrite
+  # Batch data entry: several items in one message must become several write
+  # calls in ONE turn (one approval card) — not a prose read-back and "shall I?".
+  - vars:
+      message: "Add two accounts: a Schwab brokerage with $150,000 and a Fidelity Roth IRA with $80,000."
+      expectTool: "add_account"
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool
+      - type: javascript
+        value: file://./assertions.ts:noUnapprovedWrite
 
   # ── Global (clientless) tool-selection cases ──────────────────────────────
   # These cases carry mode: global so provider.ts builds the graph with

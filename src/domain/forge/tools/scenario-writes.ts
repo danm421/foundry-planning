@@ -41,7 +41,8 @@ import type { TargetKind, OpType } from "@/engine/scenario/types";
 import type { ForgeToolContext } from "../context";
 
 /** Every write tool's description ends with this so the UI can flag approval. */
-const APPROVAL_SUFFIX = "Requires human approval.";
+const APPROVAL_SUFFIX =
+  "The advisor approves it on a confirmation card before anything is saved — call it directly; do not ask permission in prose first.";
 
 /**
  * Re-derive the firmId from the live session and confirm the (server-supplied)

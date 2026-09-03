@@ -21,6 +21,7 @@ vi.mock("@/lib/scenario/scenario-changes-to-base-writes", () => ({
 }));
 
 import { formatProposedWrite } from "../preview";
+import { formatMoney } from "../row-lines";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
@@ -176,8 +177,9 @@ describe.skipIf(!HAS_DB)("preview fidelity", { timeout: 60_000 }, () => {
 
     expect(preview.details).toBeDefined();
     const detailText = preview.details!.join(" ");
-    expect(detailText).toContain("annualAmount");
-    expect(detailText).toContain(String(realField!.to));
+    // The line is labelled and money-formatted, and carries the real post-write value.
+    expect(detailText).toContain("Annual amount");
+    expect(detailText).toContain(formatMoney(realField!.to));
   });
 });
 
