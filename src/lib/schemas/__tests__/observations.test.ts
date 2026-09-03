@@ -4,6 +4,9 @@ import {
   observationCreateSchema,
   observationUpdateSchema,
   observationReorderSchema,
+  observationBulkDeleteQuerySchema,
+  observationContextPatchSchema,
+  draftRunRequestSchema,
 } from "@/lib/schemas/observations";
 
 describe("OBSERVATION_TOPICS", () => {
@@ -183,5 +186,53 @@ describe("observationReorderSchema", () => {
     expect(
       observationReorderSchema.safeParse({ orderedIds: [uuid1] }).success,
     ).toBe(false);
+  });
+});
+
+describe("observationCreateSchema — audience and provenance", () => {
+  it("defaults audience to client and sourceScenarioId to absent", () => {
+    const r = observationCreateSchema.parse({ section: "observation", body: "x" });
+    expect(r.audience).toBe("client");
+    expect(r.sourceScenarioId).toBeUndefined();
+  });
+  it("accepts advisor audience and a uuid sourceScenarioId", () => {
+    const r = observationCreateSchema.parse({
+      section: "next_step",
+      body: "x",
+      audience: "advisor",
+      sourceScenarioId: "11111111-1111-4111-8111-111111111111",
+    });
+    expect(r.audience).toBe("advisor");
+    expect(r.sourceScenarioId).toBe("11111111-1111-4111-8111-111111111111");
+  });
+  it("rejects a non-uuid sourceScenarioId and an unknown audience", () => {
+    expect(observationCreateSchema.safeParse({ section: "next_step", body: "x", sourceScenarioId: "nope" }).success).toBe(false);
+    expect(observationCreateSchema.safeParse({ section: "next_step", body: "x", audience: "everyone" }).success).toBe(false);
+  });
+});
+
+describe("observationBulkDeleteQuerySchema", () => {
+  it("accepts only an ai-sourced section", () => {
+    expect(observationBulkDeleteQuerySchema.safeParse({ section: "next_step", source: "ai" }).success).toBe(true);
+    expect(observationBulkDeleteQuerySchema.safeParse({ section: "next_step", source: "manual" }).success).toBe(false);
+    expect(observationBulkDeleteQuerySchema.safeParse({ source: "ai" }).success).toBe(false);
+  });
+});
+
+describe("observationContextPatchSchema", () => {
+  it("accepts any one field and rejects an empty body", () => {
+    expect(observationContextPatchSchema.safeParse({ observationsContext: "notes" }).success).toBe(true);
+    expect(observationContextPatchSchema.safeParse({ nextStepsScenarioId: null }).success).toBe(true);
+    expect(observationContextPatchSchema.safeParse({}).success).toBe(false);
+    expect(observationContextPatchSchema.safeParse({ nextStepsScenarioId: "nope" }).success).toBe(false);
+    expect(observationContextPatchSchema.safeParse({ unknown: 1 }).success).toBe(false);
+  });
+});
+
+describe("draftRunRequestSchema", () => {
+  it("accepts an empty body, a section, or a scenario", () => {
+    expect(draftRunRequestSchema.parse({})).toEqual({});
+    expect(draftRunRequestSchema.parse({ section: "next_step" }).section).toBe("next_step");
+    expect(draftRunRequestSchema.safeParse({ section: "both" }).success).toBe(false);
   });
 });

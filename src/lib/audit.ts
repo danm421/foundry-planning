@@ -192,6 +192,8 @@ export type AuditAction =
   | "plan_observation.complete"
   | "plan_observation.delete"
   | "plan_observation.reorder"
+  | "plan_observation.clear_ai"
+  | "plan_observation_context.update"
   // Scenario builder (per-scenario diff overlay; the writer at
   // src/lib/scenario/changes-writer.ts is the only sanctioned path for
   // non-base-case mutations on overlayable tables).
