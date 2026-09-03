@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { db } from "@/db";
-import { clients, crmHouseholds, generationRuns } from "@/db/schema";
+import { clients, crmHouseholds, generationRuns, scenarios, planObservationContext } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import type { ClientData } from "@/engine/types";
 import type { ProjectionResult } from "@/engine/projection";
@@ -17,6 +17,7 @@ const {
   mockGetOrComputeMonteCarlo,
   mockBuildObservationsFacts,
   mockGenerateObservationsDraft,
+  mockLoadScenarioChangesContext,
 } = vi.hoisted(() => ({
   mockCheckObservationsAiRateLimit: vi.fn(),
   mockLoadEffectiveTree: vi.fn(),
@@ -24,6 +25,7 @@ const {
   mockGetOrComputeMonteCarlo: vi.fn(),
   mockBuildObservationsFacts: vi.fn(),
   mockGenerateObservationsDraft: vi.fn(),
+  mockLoadScenarioChangesContext: vi.fn(),
 }));
 
 vi.mock("@/lib/db-helpers", async (importOriginal) => {
@@ -61,6 +63,9 @@ vi.mock("next/server", async () => {
 vi.mock("@/lib/scenario/loader", () => ({ loadEffectiveTree: mockLoadEffectiveTree }));
 vi.mock("@/engine/projection", () => ({ runProjectionWithEvents: mockRunProjectionWithEvents }));
 vi.mock("@/lib/compute-cache/monte-carlo", () => ({ getOrComputeMonteCarlo: mockGetOrComputeMonteCarlo }));
+vi.mock("@/lib/scenario/load-scenario-changes-context", () => ({
+  loadScenarioChangesContext: mockLoadScenarioChangesContext,
+}));
 // Only the two expensive calls are faked — `draftFailureMessage` stays real so
 // this suite proves what an advisor actually reads on a failed run.
 vi.mock("@/lib/observations/draft", async (importOriginal) => {
@@ -76,6 +81,7 @@ import { POST } from "../route";
 
 const ORG = "org_obs_draft_rt";
 let clientId: string;
+let scenarioId: string;
 
 const FAKE_CLIENT_DATA = { client: { firstName: "Test" } } as unknown as ClientData;
 const FAKE_PROJECTION = { years: [{ year: 2026 }] } as unknown as ProjectionResult;
@@ -106,12 +112,18 @@ beforeEach(async () => {
     .returning();
   clientId = c.id;
 
+  const [s] = await db.insert(scenarios).values({ clientId, name: "Retire at 62", isBaseCase: false }).returning();
+  scenarioId = s.id;
+
   mockCheckObservationsAiRateLimit.mockReset().mockResolvedValue({ allowed: true, remaining: 5, reset: 0 });
   mockLoadEffectiveTree.mockReset().mockResolvedValue({ effectiveTree: FAKE_CLIENT_DATA });
   mockRunProjectionWithEvents.mockReset().mockReturnValue(FAKE_PROJECTION);
   mockGetOrComputeMonteCarlo.mockReset().mockResolvedValue({ payload: { summary: { successRate: 0.9 } } });
   mockBuildObservationsFacts.mockReset().mockReturnValue("FACT SHEET");
   mockGenerateObservationsDraft.mockReset().mockResolvedValue(FAKE_SUGGESTIONS);
+  mockLoadScenarioChangesContext.mockReset().mockResolvedValue({
+    changes: [], toggleGroups: [], targetNames: {}, baseLabel: "your current plan",
+  });
 });
 
 function req(body: unknown = {}) {
@@ -137,6 +149,9 @@ describe("POST /api/clients/[id]/observations/draft-runs", () => {
     expect(row.clientId).toBe(clientId);
     expect(row.triggeredByEmail).toBe("advisor@firm.com");
     expect(row.resultPayload).toEqual({ suggestions: FAKE_SUGGESTIONS.suggestions });
+    // R13: absent-section runs resolve against "base" and record it in the
+    // payload alongside a null section.
+    expect(row.requestPayload).toEqual({ section: null, scenarioId: "base" });
 
     // The background job fetches the effective tree, runs the projection,
     // computes MC, builds the fact sheet from those exact results, and only
@@ -147,12 +162,11 @@ describe("POST /api/clients/[id]/observations/draft-runs", () => {
       firmId: ORG,
       scenarioId: "base",
     });
-    expect(mockBuildObservationsFacts).toHaveBeenCalledWith({
-      clientData: FAKE_CLIENT_DATA,
-      projection: FAKE_PROJECTION,
-      monteCarlo: { successRate: 0.9 },
-    });
-    expect(mockGenerateObservationsDraft).toHaveBeenCalledWith("FACT SHEET");
+    expect(mockBuildObservationsFacts).toHaveBeenCalledWith(
+      { clientData: FAKE_CLIENT_DATA, projection: FAKE_PROJECTION, monteCarlo: { successRate: 0.9 } },
+      {},
+    );
+    expect(mockGenerateObservationsDraft).toHaveBeenCalledWith("FACT SHEET", { section: undefined });
   });
 
   it("passes a scenario from the request body through to loadEffectiveTree and Monte Carlo", async () => {
@@ -206,5 +220,65 @@ describe("POST /api/clients/[id]/observations/draft-runs", () => {
       params: Promise.resolve({ id: "00000000-0000-0000-0000-000000000000" }),
     });
     expect(res.status).toBe(403);
+  });
+});
+
+describe("POST /draft-runs — sections", () => {
+  it("400s a next-steps run when no source scenario is picked, without creating a run", async () => {
+    const res = await POST(req({ section: "next_step" }), { params: Promise.resolve({ id: clientId }) });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("Pick a source scenario first.");
+    expect(await db.select().from(generationRuns).where(eq(generationRuns.clientId, clientId))).toHaveLength(0);
+  });
+
+  it("400s when the stored scenario has been deleted", async () => {
+    await db.insert(planObservationContext).values({ clientId, nextStepsScenarioId: "00000000-0000-4000-8000-000000000000" });
+    const res = await POST(req({ section: "next_step" }), { params: Promise.resolve({ id: clientId }) });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("The source scenario no longer exists — pick another.");
+  });
+
+  it("a next-steps run reads the scenario and notes from the context row, never the body, and stamps the run", async () => {
+    await db.insert(planObservationContext).values({
+      clientId, nextStepsScenarioId: scenarioId, nextStepsContext: "Keep the conversion optional.",
+    });
+    // A scenario in the body is ignored for this section.
+    const res = await POST(req({ section: "next_step", scenario: "some-other-id" }), { params: Promise.resolve({ id: clientId }) });
+    expect(res.status).toBe(202);
+    const { runId } = await res.json();
+    await Promise.all(afterTasks);
+
+    const [row] = await db.select().from(generationRuns).where(eq(generationRuns.id, runId));
+    expect(row.status).toBe("done");
+    expect(row.scenarioId).toBe(scenarioId);
+    expect(row.requestPayload).toEqual({ section: "next_step", scenarioId });
+
+    // Figures resolve against the SCENARIO's tree.
+    expect(mockLoadEffectiveTree).toHaveBeenCalledWith(clientId, ORG, scenarioId, {});
+    expect(mockGetOrComputeMonteCarlo).toHaveBeenCalledWith({ clientId, firmId: ORG, scenarioId });
+    expect(mockLoadScenarioChangesContext).toHaveBeenCalledWith(
+      expect.objectContaining({ scenarioId, clientId, clientData: FAKE_CLIENT_DATA, projection: FAKE_PROJECTION }),
+    );
+    expect(mockBuildObservationsFacts).toHaveBeenCalledWith(
+      expect.anything(),
+      { proposedChanges: { scenarioName: "Retire at 62", units: [] }, advisorNotes: "Keep the conversion optional." },
+    );
+    expect(mockGenerateObservationsDraft).toHaveBeenCalledWith("FACT SHEET", { section: "next_step" });
+  });
+
+  it("an observations run passes the observations note and no changes, against the base plan", async () => {
+    await db.insert(planObservationContext).values({ clientId, observationsContext: "They asked about college." });
+    const res = await POST(req({ section: "observation" }), { params: Promise.resolve({ id: clientId }) });
+    expect(res.status).toBe(202);
+    await Promise.all(afterTasks);
+    expect(mockLoadEffectiveTree).toHaveBeenCalledWith(clientId, ORG, "base", {});
+    expect(mockLoadScenarioChangesContext).not.toHaveBeenCalled();
+    expect(mockBuildObservationsFacts).toHaveBeenCalledWith(expect.anything(), { advisorNotes: "They asked about college." });
+    expect(mockGenerateObservationsDraft).toHaveBeenCalledWith("FACT SHEET", { section: "observation" });
+  });
+
+  it("400s an unknown section", async () => {
+    const res = await POST(req({ section: "both" }), { params: Promise.resolve({ id: clientId }) });
+    expect(res.status).toBe(400);
   });
 });
