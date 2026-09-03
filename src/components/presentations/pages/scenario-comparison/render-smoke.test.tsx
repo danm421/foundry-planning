@@ -193,10 +193,10 @@ describe("sheet two — tradeoff bands", () => {
     // Expand each composed BandPdf element for real and confirm the name is
     // actually painted, not just that a correctly-propped element exists.
     for (const el of bandEls) {
-      const { band } = el.props as { band: TradeoffBand };
-      const texts = collect(BandPdf(el.props as { band: TradeoffBand }), Text)
+      const props = el.props as Parameters<typeof BandPdf>[0];
+      const texts = collect(BandPdf(props), Text)
         .map((t) => (t.props as { children?: ReactNode }).children);
-      expect(texts, band.scenarioId).toContain(band.name);
+      expect(texts, props.band.scenarioId).toContain(props.band.name);
     }
   });
 });

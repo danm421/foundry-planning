@@ -15,7 +15,7 @@ vi.mock("@/lib/presentations/pages/estate-summary/aggregate", () => ({
   summarizeHousehold: (...args: unknown[]) => summarizeHousehold(...args),
 }));
 
-import { netToHeirsEol } from "../solver-summary-metrics";
+import { estateHeirTotalsEol, netToHeirsEol } from "../solver-summary-metrics";
 
 const clientData = { client: { firstName: "Frank" } } as unknown as ClientData;
 const ownerNames = { clientName: "Frank", spouseName: "Anita" };
@@ -50,5 +50,30 @@ describe("netToHeirsEol", () => {
       clientData,
       ownerNames,
     });
+  });
+});
+
+describe("estateHeirTotalsEol", () => {
+  beforeEach(() => {
+    buildEstateTransferReportData.mockReset();
+    summarizeHousehold.mockReset();
+  });
+
+  it("returns the heirs' own income tax alongside what reaches them", () => {
+    buildEstateTransferReportData.mockReturnValue({ isEmpty: false });
+    summarizeHousehold.mockReturnValue({ netToHeirs: 2_400_000, ird: 410_000 });
+
+    expect(estateHeirTotalsEol(projection, clientData, ownerNames))
+      .toEqual({ netToHeirs: 2_400_000, heirIncomeTax: 410_000 });
+    // …from ONE build. The report is a multi-query, whole-projection compose;
+    // the whole point of returning the pair is that a caller wanting both no
+    // longer has to run it twice.
+    expect(buildEstateTransferReportData).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns null on the same two paths netToHeirsEol does", () => {
+    expect(estateHeirTotalsEol(undefined, clientData, ownerNames)).toBeNull();
+    buildEstateTransferReportData.mockReturnValue({ isEmpty: true });
+    expect(estateHeirTotalsEol(projection, clientData, ownerNames)).toBeNull();
   });
 });

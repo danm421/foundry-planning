@@ -25,10 +25,19 @@ const s = StyleSheet.create({
   changeLine: { fontSize: 7, color: T.ink2, lineHeight: 1.3, marginBottom: 1.5, maxLines: 2, textOverflow: "ellipsis" },
   more: { fontSize: 6.5, color: T.ink3, fontStyle: "italic" },
   // maxLines is a STYLE in react-pdf, not a prop. As a prop it is inert, and an
-  // over-long narrative would silently push the band onto a third sheet.
-  narrative: { fontSize: 7.5, color: T.ink, lineHeight: 1.35, maxLines: 9, textOverflow: "ellipsis" },
+  // over-long narrative would silently push the band onto a third sheet. The
+  // count comes from `narrativeMaxLines` — it scales with the number of bands
+  // sharing the sheet, exactly as the sentence budget does.
+  // ⚠️ `narrativeMaxLines` (view-model.ts, beside the sentence budget it has to
+  // move with) was sized against THIS fontSize and lineHeight and the right
+  // column's width. Changing any of the three without re-running
+  // two-sheet-geometry.test.tsx is what spills a third sheet.
+  narrative: { fontSize: 7.5, color: T.ink, lineHeight: 1.35, textOverflow: "ellipsis" },
   placeholder: { fontSize: 7.5, color: T.ink3, fontStyle: "italic" },
-  strip: { flexDirection: "row", marginTop: 6, paddingTop: 5, borderTopWidth: 0.5, borderTopColor: T.hair },
+  // `gap` is load bearing: the two sides are flex: 1 with no gutter otherwise,
+  // so a wrapping GAINS line ran straight into the COSTS label ("−$1.7M
+  // lifetimeCOSTS −$32k assets at retirement").
+  strip: { flexDirection: "row", gap: 10, marginTop: 6, paddingTop: 5, borderTopWidth: 0.5, borderTopColor: T.hair },
   stripLbl: { fontSize: 5.5, fontWeight: 700, letterSpacing: 0.4, marginRight: 5 },
   stripText: { fontSize: 6.5, color: T.ink2, flex: 1 },
 });
@@ -47,7 +56,7 @@ function Side({ label, color, items }: {
   );
 }
 
-export function BandPdf({ band }: { band: TradeoffBand }) {
+export function BandPdf({ band, maxLines }: { band: TradeoffBand; maxLines: number }) {
   return (
     <View style={s.band} wrap={false}>
       <View style={s.head}>
@@ -81,7 +90,7 @@ export function BandPdf({ band }: { band: TradeoffBand }) {
         </View>
         <View style={s.right}>
           {band.narrative ? (
-            <Text style={s.narrative}>{band.narrative}</Text>
+            <Text style={[s.narrative, { maxLines }]}>{band.narrative}</Text>
           ) : (
             <Text style={s.placeholder}>Commentary will appear here once generated.</Text>
           )}

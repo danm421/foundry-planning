@@ -24,6 +24,7 @@ import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { chatModel } from "@/domain/forge/llm";
 import { getOrComputeMaxSpending } from "@/lib/compute-cache/max-spending";
 import { loadPageScenarioBundles } from "@/lib/scenario/load-page-bundles";
+import { estateHeirTotalsEol } from "@/lib/solver/solver-summary-metrics";
 import {
   keyForRef,
   resolveScenarioRef,
@@ -66,25 +67,27 @@ export interface GeneratedBandNarrative {
   hash: string;
 }
 
-export interface GenerateScenarioComparisonAiArgs {
+/**
+ * Everything the model call needs: the loaded half, verbatim, plus what only
+ * the caller knows.
+ *
+ * Written as an intersection rather than a copy of the seven loaded fields on
+ * purpose — the two callers (the scenario-comparison-ai route and
+ * ensure-ai-summaries) then spread `...inputs` instead of hand-listing them,
+ * and a new loaded field costs one edit here instead of three. Hand-copying
+ * fails silently: a site that forgets one passes `undefined` into the prompt,
+ * which is not a type error at the site that forgot.
+ */
+export type GenerateScenarioComparisonAiArgs = ScenarioComparisonAiInputs & {
   /** Redis cache namespace. */
   clientId: string;
-  householdName: string;
-  firstNames: string;
-  /** Base Case first, index-aligned with each row's cells. */
-  columns: ColumnHeader[];
-  rows: MetricRow[];
-  /** Every band on the sheet. Fresh ones are still prompted (so the model can
-   *  contrast them) but never returned. */
-  bands: TradeoffBand[];
   tone: ScenarioComparisonOptions["ai"]["tone"];
   customInstructions: string;
-  sentenceBudget: number;
   /** Keyed by scenario id, as the page stores it. */
   stored: Record<string, StoredBandNarrative>;
   /** Treat every band as stale and bypass the Redis read. */
   force: boolean;
-}
+};
 
 export interface GeneratedScenarioComparisonAi {
   /** Only the bands that were stale AND that the model answered for. */
@@ -106,6 +109,16 @@ function matrixLinesFrom(columns: ColumnHeader[], rows: MetricRow[]): string[] {
       .join("; ");
     return `${row.indent ? "of which " : ""}${row.label}: ${cells}`;
   });
+}
+
+/** The inherited-asset tax, joined to the column names the prompt prints.
+ *  Handed over unformatted — whether the block appears at all, and what the
+ *  model may say about a $0, both turn on the numbers (see `heirTaxBlock`). */
+function heirTaxesFrom(
+  columns: ColumnHeader[],
+  byRef: Record<string, number | null>,
+): Array<{ name: string; amount: number | null }> {
+  return columns.map((c) => ({ name: c.name, amount: byRef[c.refKey] ?? null }));
 }
 
 /** Read a cached response back. The cache stores the whole narrative set as
@@ -149,6 +162,7 @@ export async function generateScenarioComparisonAi(
         tone: args.tone,
         customInstructions: args.customInstructions,
         sentenceBudget: args.sentenceBudget,
+        heirIncomeTax: args.heirIncomeTaxByRef[b.scenarioId] ?? null,
       }),
     ]),
   );
@@ -175,6 +189,7 @@ export async function generateScenarioComparisonAi(
     sentenceBudget: args.sentenceBudget,
     bands,
     matrixLines: matrixLinesFrom(args.columns, args.rows),
+    heirTaxes: heirTaxesFrom(args.columns, args.heirIncomeTaxByRef),
   });
 
   // The prompt hash is still the right CACHE key even though the STALENESS key
@@ -261,9 +276,25 @@ export interface ScenarioComparisonAiInputs {
   firstNames: string;
   /** Set by the column count, not by an advisor preference — see view-model. */
   sentenceBudget: number;
+  /** Base Case first, index-aligned with each row's cells. */
   columns: ColumnHeader[];
   rows: MetricRow[];
+  /** Every band on the sheet. Fresh ones are still prompted (so the model can
+   *  contrast them) but never returned. */
   bands: TradeoffBand[];
+  /**
+   * Income tax the heirs owe on the pre-tax balances they inherit, keyed by
+   * column refKey — already deducted from the Net to heirs row the sheet
+   * prints. 0 is a real answer (nothing pre-tax passes, or the household has
+   * no IRD rate set); null means there is no estate report to read.
+   *
+   * Computed HERE rather than carried on `ScenarioComparisonPageData`, because
+   * nothing on the sheet renders it. The sibling Retirement Comparison page
+   * sets the same precedent: `retirement-comparison/legacy.ts` is one
+   * implementation read independently by that page's view model and by its AI
+   * generator, and its page-data type carries no AI-only field either.
+   */
+  heirIncomeTaxByRef: Record<string, number | null>;
 }
 /**
  * Load Base Case plus each chosen scenario and run the page's own view model
@@ -362,6 +393,22 @@ export async function prepareScenarioComparisonAiInputs(
   const data = buildScenarioComparisonData(ctx, options);
   if (data.bands.length === 0) return null;
 
+  // Read off the SAME helper the view model's Net to heirs comes from, so the
+  // tax the narrative names is the one already deducted from the figure the
+  // sheet prints. Keyed by refKey to match `data.columns`, which is what the
+  // prompt walks. This is a second estate-report build per column on the AI
+  // path only — the render path is untouched — and it is dwarfed by the bundle
+  // load, Monte Carlo and max-spend solve each column has already paid for.
+  const ownerNames = { clientName: ctx.clientName, spouseName: ctx.spouseName };
+  const heirIncomeTaxByRef: Record<string, number | null> = {};
+  for (const column of data.columns) {
+    const bundle = bundlesByRef[keyForRef(resolveScenarioRef(column.refKey))];
+    heirIncomeTaxByRef[column.refKey] = bundle
+      ? (estateHeirTotalsEol(bundle.projection, bundle.clientData, ownerNames)?.heirIncomeTax
+         ?? null)
+      : null;
+  }
+
   const firstName = ci.firstName || "the household";
   const spouseFirst = ci.spouseName ?? null;
 
@@ -375,5 +422,6 @@ export async function prepareScenarioComparisonAiInputs(
     columns: data.columns,
     rows: data.rows,
     bands: data.bands,
+    heirIncomeTaxByRef,
   };
 }

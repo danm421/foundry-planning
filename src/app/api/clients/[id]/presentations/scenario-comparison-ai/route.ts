@@ -92,15 +92,10 @@ export async function POST(
     }
 
     const { byScenario, cached } = await generateScenarioComparisonAi({
+      ...inputs,
       clientId: id,
-      householdName: inputs.householdName,
-      firstNames: inputs.firstNames,
-      columns: inputs.columns,
-      rows: inputs.rows,
-      bands: inputs.bands,
       tone: body.tone,
       customInstructions: body.customInstructions,
-      sentenceBudget: inputs.sentenceBudget,
       stored: {},
       force: body.force,
     });

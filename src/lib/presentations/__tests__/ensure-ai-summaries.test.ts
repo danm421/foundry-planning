@@ -194,6 +194,7 @@ describe("ensureScenarioComparisonAiSummaries", () => {
     columns: [],
     rows: [],
     bands: [band("s1"), band("s2")],
+    heirIncomeTaxByRef: {},
   });
 
   const scPage = (

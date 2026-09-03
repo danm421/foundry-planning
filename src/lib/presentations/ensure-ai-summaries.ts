@@ -217,15 +217,10 @@ export async function ensureScenarioComparisonAiSummaries<T extends PageLike>(
         if (!inputs) return page;
 
         const { byScenario } = await generate({
+          ...inputs,
           clientId,
-          householdName: inputs.householdName,
-          firstNames: inputs.firstNames,
-          columns: inputs.columns,
-          rows: inputs.rows,
-          bands: inputs.bands,
           tone: o.ai.tone,
           customInstructions: o.ai.customInstructions,
-          sentenceBudget: inputs.sentenceBudget,
           stored: o.ai.byScenario,
           force: false,
         });

@@ -36,6 +36,43 @@ export function netToHeirsEol(
   clientData: ClientData,
   ownerNames: { clientName: string; spouseName: string | null },
 ): number | null {
+  return estateHeirTotalsEol(projection, clientData, ownerNames)?.netToHeirs ?? null;
+}
+
+/** What reaches the heirs, and the income tax already taken out of it. */
+export interface EstateHeirTotals {
+  /** Same figure `netToHeirsEol` returns. */
+  netToHeirs: number;
+  /**
+   * Income tax the heirs owe on inherited pre-tax retirement balances — income
+   * in respect of a decedent — already deducted from `netToHeirs`.
+   *
+   * Zero is a REAL answer, not a missing one: it means the household's estate
+   * holds no pre-tax balances at death, or that no IRD tax rate has been set
+   * (see death-warning-summary.ts, which warns on exactly that). Anything
+   * telling the client this tax was accounted for has to read the figure, not
+   * assume it.
+   */
+  heirIncomeTax: number;
+}
+
+/**
+ * The end-of-life estate split, from ONE report build. `netToHeirsEol` is the
+ * netToHeirs half of it, so a caller that wants both figures gets them without
+ * composing the (multi-query, whole-projection) report twice.
+ *
+ * ⚠️ That saving is available, not taken: the Scenario Comparison AI path reads
+ * `netToHeirs` through the view model and then calls this again per column for
+ * the IRD figure, because the view model returns the page's render contract and
+ * nothing on the sheet prints an IRD row. Deliberate — see the call site in
+ * `scenario-comparison/generate-ai.ts` — and worth revisiting if a third caller
+ * ever needs the pair.
+ */
+export function estateHeirTotalsEol(
+  projection: ProjectionResult | undefined,
+  clientData: ClientData,
+  ownerNames: { clientName: string; spouseName: string | null },
+): EstateHeirTotals | null {
   if (!projection) return null;
   const report = buildEstateTransferReportData({
     projection,
@@ -45,7 +82,8 @@ export function netToHeirsEol(
     ownerNames,
   });
   if (report.isEmpty) return null;
-  return summarizeHousehold(report).netToHeirs;
+  const household = summarizeHousehold(report);
+  return { netToHeirs: household.netToHeirs, heirIncomeTax: household.ird };
 }
 
 /**

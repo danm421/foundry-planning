@@ -97,6 +97,10 @@ const ROWS: MetricRow[] = [
 
 const BANDS = [bandFor("s1", "Retire at 62"), bandFor("s2", "Work to 70")];
 
+const HEIR_TAX: Record<string, number | null> = {
+  base: 412_000, s1: 180_000, s2: 505_000,
+};
+
 function args(
   over: Partial<GenerateScenarioComparisonAiArgs> = {},
 ): GenerateScenarioComparisonAiArgs {
@@ -110,6 +114,7 @@ function args(
     tone: "detailed",
     customInstructions: "",
     sentenceBudget: 4,
+    heirIncomeTaxByRef: HEIR_TAX,
     stored: {},
     force: false,
     ...over,
@@ -127,6 +132,7 @@ function hashOf(band: TradeoffBand, a: GenerateScenarioComparisonAiArgs): string
     tone: a.tone,
     customInstructions: a.customInstructions,
     sentenceBudget: a.sentenceBudget,
+    heirIncomeTax: a.heirIncomeTaxByRef[band.scenarioId] ?? null,
   });
 }
 
@@ -189,6 +195,49 @@ describe("generateScenarioComparisonAi", () => {
     const user = (invoke.mock.calls[0][0] as Array<{ content: string }>)[1].content;
     expect(user).toContain("scenarioId: s1");
     expect(user).toContain("scenarioId: s2");
+  });
+
+  it("hands the model each column's inherited-asset tax, named and in dollars", async () => {
+    const a = args();
+    respondWith([{ scenarioId: "s1", paragraph: "one" }, { scenarioId: "s2", paragraph: "two" }]);
+
+    await generateScenarioComparisonAi(a);
+
+    const [system, user] = (invoke.mock.calls[0][0] as Array<{ content: string }>)
+      .map((m) => m.content);
+    expect(user).toContain("Base Case: $412k");
+    expect(user).toContain("Retire at 62: $180k");
+    expect(user).toContain("Work to 70: $505k");
+    // …and the instruction that tells it what that block MEANS. Without this
+    // the figures are just three more numbers to restate.
+    expect(system).toContain("ALREADY NET of it");
+  });
+
+  it("drops the inherited-asset block entirely when the household has no estate report", async () => {
+    const a = args({
+      heirIncomeTaxByRef: Object.fromEntries(COLUMNS.map((c) => [c.refKey, null])),
+    });
+    respondWith([{ scenarioId: "s1", paragraph: "one" }, { scenarioId: "s2", paragraph: "two" }]);
+
+    await generateScenarioComparisonAi(a);
+
+    const [system, user] = (invoke.mock.calls[0][0] as Array<{ content: string }>)
+      .map((m) => m.content);
+    // A block of "unavailable" would invite the model to explain the absence,
+    // and the instruction would license a claim nothing backs.
+    expect(user).not.toContain("heirs owe on the pre-tax retirement balances");
+    expect(system).not.toContain("ALREADY NET of it");
+  });
+
+  it("restales a band when only its inherited-asset tax moves", async () => {
+    const a = args();
+    const fresh = freshStore(a, BANDS);
+    respondWith([{ scenarioId: "s1", paragraph: "one" }]);
+
+    const moved = args({ heirIncomeTaxByRef: { ...HEIR_TAX, s1: 90_000 } });
+    const result = await generateScenarioComparisonAi({ ...moved, stored: fresh });
+
+    expect(Object.keys(result.byScenario)).toEqual(["s1"]);
   });
 
   it("returns only the stale bands", async () => {
@@ -391,6 +440,80 @@ describe("prepareScenarioComparisonAiInputs", () => {
       "Base Case", "Retire at 62", "Work to 70",
     ]);
     expect(inputs!.bands.map((b) => b.scenarioId)).toEqual(["s1", "s2"]);
+  });
+
+  /** Gives a bundle a first-death event and the matching year's transfers, so
+   *  the estate report composes non-empty. `ird` is the income tax the heirs
+   *  owe on the pre-tax balances they inherit — the report reads it off the
+   *  estate's `ird_tax` drain attributions, which is the ONLY place it comes
+   *  from, so a household with no IRD rate set really does report $0. */
+  const withEstate = (base: unknown, toHeirs: number, ird: number) => {
+    const b = base as { clientData: { client: Record<string, unknown> }; projection: { years: Array<{ year: number }> } };
+    const deathYear = 2075;
+    return {
+      ...(base as object),
+      clientData: {
+        client: b.clientData.client,
+        accounts: [], entities: [], externalBeneficiaries: [], wills: [],
+        familyMembers: [{ id: "fm-child", role: "child", relationship: "child",
+          firstName: "Alex", lastName: null, dateOfBirth: "2010-01-01" }],
+      },
+      projection: {
+        years: b.projection.years.map((y) => y.year === deathYear ? { ...y, deathTransfers: [{
+          year: deathYear, deathOrder: 1, deceased: "client",
+          sourceAccountId: "acc-1", sourceAccountName: "IRA",
+          sourceLiabilityId: null, sourceLiabilityName: null,
+          via: "will", recipientKind: "family_member", recipientId: "fm-child",
+          recipientLabel: "Alex", amount: toHeirs, basis: 0,
+          resultingAccountId: null, resultingLiabilityId: null,
+        }] } : y),
+        firstDeathEvent: {
+          year: deathYear, deathOrder: 1, deceased: "client",
+          grossEstate: toHeirs, grossEstateLines: [], estateAdminExpenses: 0,
+          maritalDeduction: 0, charitableDeduction: 0, taxableEstate: toHeirs,
+          federalEstateTax: 0, stateEstateTax: 0, probateCost: 0,
+          drainAttributions: ird > 0
+            ? [{ drainKind: "ird_tax", amount: ird, accountId: "acc-1" }]
+            : [],
+          estateTaxDebits: [], creditorPayoffDebits: [],
+        },
+        secondDeathEvent: null,
+      },
+    } as never;
+  };
+
+  it("keys each column's inherited-asset income tax by that column's own refKey", async () => {
+    loadPageScenarioBundles.mockResolvedValue({
+      base: withEstate(bundle("Base Case", 2_400_000, 0.73), 1_000_000, 410_000),
+      "scenario:s1": withEstate(bundle("Retire at 62", 2_100_000, 0.82), 1_400_000, 95_000),
+      "scenario:s2": withEstate(bundle("Work to 70", 2_600_000, 0.9), 1_200_000, 220_000),
+    });
+
+    const inputs = await prepareScenarioComparisonAiInputs("c1", "f1", opts());
+
+    // Distinct values per column: a positional or copy-paste slip would tell
+    // one scenario's client another scenario's tax bill.
+    expect(inputs!.heirIncomeTaxByRef).toEqual({ base: 410_000, s1: 95_000, s2: 220_000 });
+  });
+
+  it("reports $0 when the estate exists but no IRD tax is modelled", async () => {
+    loadPageScenarioBundles.mockResolvedValue({
+      base: withEstate(bundle("Base Case", 2_400_000, 0.73), 1_000_000, 0),
+      "scenario:s1": withEstate(bundle("Retire at 62", 2_100_000, 0.82), 1_400_000, 0),
+      "scenario:s2": withEstate(bundle("Work to 70", 2_600_000, 0.9), 1_200_000, 0),
+    });
+
+    const inputs = await prepareScenarioComparisonAiInputs("c1", "f1", opts());
+
+    // $0 and null license different sentences — the prompt bars the "already
+    // accounted for" claim on $0, and drops the block entirely on all-null.
+    expect(inputs!.heirIncomeTaxByRef).toEqual({ base: 0, s1: 0, s2: 0 });
+  });
+
+  it("reports null for every column when there is no estate report to read", async () => {
+    const inputs = await prepareScenarioComparisonAiInputs("c1", "f1", opts());
+
+    expect(inputs!.heirIncomeTaxByRef).toEqual({ base: null, s1: null, s2: null });
   });
 
   it("returns null when the loader yields nothing that can be compared", async () => {

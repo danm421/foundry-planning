@@ -315,10 +315,16 @@ function ctx() {
 }
 
 /** Twelve sentences — four times the three-sentence budget three scenarios get,
- *  and twice the six a single scenario gets. */
+ *  and twice the six a single scenario gets.
+ *
+ *  Each one is long enough to run over three lines in a band's right-hand
+ *  column, which is what makes `narrativeMaxLines` BIND: at 150 characters a
+ *  sentence, a full sentence budget came in under every clamp, so the guard was
+ *  measuring a band the budget had already shortened and the clamp could be
+ *  deleted without a test moving. Same reasoning as the change lines below. */
 const LONG_NARRATIVE = Array.from(
   { length: 12 },
-  () => "Retiring a year earlier trades a slightly smaller ending balance for another year of the travel and the time with family you told us actually matters.",
+  () => "Retiring a year earlier trades a slightly smaller ending balance for another year of the travel and the time with family you told us actually matters, and it moves part of the tax bill into years when your bracket sits well below the one your required distributions will push you into later, which is the sort of second-order consequence this page exists to surface rather than bury in a footnote.",
 ).join(" ");
 
 function buildData(scenarioIds: string[], over: Partial<typeof SCENARIO_COMPARISON_OPTIONS_DEFAULT> = {}) {
@@ -365,6 +371,31 @@ describe("the fixture really is maximal", () => {
     // `maxLines` cap doing nothing and the growth hazard untested (measured:
     // at 60-odd characters, deleting that cap changes nothing).
     expect(Math.min(...MAXIMAL.bands[0].changeLines.map((l) => l.length))).toBeGreaterThan(90);
+  });
+
+  // The narrative's own cap, measured the same way — on the rendered sheet,
+  // because `maxLines` is a react-pdf STYLE and nothing in the element tree
+  // says whether it bound. The ellipsis is the renderer's own mark that it did,
+  // so each sheet-count case below is measuring a band at the tallest the
+  // narrative can ever make it, not at whatever the fixture happened to be.
+  it.each([
+    ["three scenarios", MAXIMAL],
+    ["two scenarios", TWO_SCENARIOS],
+    ["one scenario", ONE_SCENARIO],
+  ])("clamps the narrative at %s, so the sheet-count cases measure the tallest band", async (_label, data) => {
+    const sheetTwo = (await wordBoxes(await render(data))).filter((w) => w.sheet === 2);
+    // Which ellipsis matters: the change lines are clamped too, and they sit in
+    // the band's left column, so a bare "contains …" passes with the narrative
+    // clamp deleted. Take the narrative column's left edge from where the
+    // paragraph's own first word lands rather than restating band-pdf's 36%
+    // split — an ellipsis at or past it can only be the paragraph's.
+    const narrativeX = Math.min(
+      ...sheetTwo.filter((w) => w.text === "Retiring").map((w) => w.xMin),
+    );
+    expect(Number.isFinite(narrativeX)).toBe(true);
+    expect(
+      sheetTwo.filter((w) => w.text.includes("…") && w.xMin >= narrativeX),
+    ).not.toHaveLength(0);
   });
 });
 

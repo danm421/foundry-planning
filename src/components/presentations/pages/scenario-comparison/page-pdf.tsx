@@ -5,6 +5,7 @@ import { SectionHead } from "@/components/presentations/shared/section-head";
 import { PRESENTATION_THEME as T } from "@/lib/presentations/theme";
 import type { RenderPdfInput } from "@/components/presentations/registry";
 import type { ScenarioComparisonPageData } from "@/lib/presentations/pages/scenario-comparison/types";
+import { narrativeMaxLines } from "@/lib/presentations/pages/scenario-comparison/view-model";
 import { ColumnCardsPdf } from "./column-cards-pdf";
 import { MatrixPdf } from "./matrix-pdf";
 import { ComparisonChartPdf } from "./chart-pdf";
@@ -22,6 +23,7 @@ const s = StyleSheet.create({
 export function ScenarioComparisonPagePdf(input: RenderPdfInput<ScenarioComparisonPageData>) {
   const { data, firmName, clientName, reportDate, pageIndex, totalPages, accent } = input;
   const frame = { firmName, clientName, reportDate, totalPages };
+  const bandMaxLines = narrativeMaxLines(data.bands.length);
 
   if (data.isEmpty) {
     return (
@@ -65,10 +67,12 @@ export function ScenarioComparisonPagePdf(input: RenderPdfInput<ScenarioComparis
             eyebrow="SCENARIO COMPARISON — TRADEOFFS"
             accent={accent}
           />
+          {/* One clamp for the whole sheet — it is set by how many bands share
+              the room, so it is the same for every band on it. */}
           {data.bands.map((b, i) => (
             <Fragment key={b.scenarioId}>
               {i > 0 ? <View style={s.bandGap} /> : null}
-              <BandPdf band={b} />
+              <BandPdf band={b} maxLines={bandMaxLines} />
             </Fragment>
           ))}
         </PageFrame>

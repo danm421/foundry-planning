@@ -52,6 +52,22 @@ export function narrativeSentenceBudget(scenarioCount: number): number {
   return 3;
 }
 
+/** Lines the renderer gives that paragraph — the twin of the budget above, and
+ *  it has to scale with it. A flat clamp cut a paragraph that was WITHIN its
+ *  sentence budget: three explanatory sentences run about nine lines in the
+ *  band's right-hand column, so a two-scenario band allowed four of them ended
+ *  "…as they draw down inherited pre-tax…" on a client's deck.
+ *
+ *  Sized from the room each layout actually has — three bands share 666pt, one
+ *  band has it to itself — and the ceiling is measured, not asserted:
+ *  two-sheet-geometry.test.tsx renders a maximal fixture at each count and is
+ *  what stops a rise here spilling a third sheet. */
+export function narrativeMaxLines(scenarioCount: number): number {
+  if (scenarioCount <= 1) return 20;
+  if (scenarioCount === 2) return 13;
+  return 9;
+}
+
 /** Cut at a sentence boundary at or before `max`. The renderer also clamps with
  *  a `maxLines` STYLE, but truncating here is what keeps the page-count
  *  estimator and the renderer measuring the same string.
