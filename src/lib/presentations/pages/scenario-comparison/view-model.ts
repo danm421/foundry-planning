@@ -146,8 +146,6 @@ function columnInputFor(
     // trust. NOT the engine's same-named helper, which omits the last two.
     atRetirement: liquidPortfolioTotal(atRetirementRow),
     atEndOfLife: liquidPortfolioTotal(last),
-    retirementYear: atRetirementRow.year,
-    endYear: last.year,
     lifetimeTaxTotal: tax.lifetimeTotal,
     lifetimeTaxFederal: tax.lifetimeFederal,
     lifetimeTaxState: tax.lifetimeState,

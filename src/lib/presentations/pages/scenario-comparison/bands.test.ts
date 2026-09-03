@@ -6,7 +6,7 @@ import { buildTradeoffBands } from "./bands";
 
 const base: ScenarioColumnInput = {
   refKey: "base", name: "Base Case", successRate: 0.73, endingP20: 600_000,
-  atRetirement: 2_400_000, atEndOfLife: 4_400_000, retirementYear: 2050, endYear: 2075,
+  atRetirement: 2_400_000, atEndOfLife: 4_400_000,
   lifetimeTaxTotal: 1_900_000, lifetimeTaxFederal: 1_400_000, lifetimeTaxState: 500_000,
   yearsFullyFunded: 28, netToHeirs: 3_100_000, maxSpendToday: 164_000,
 };

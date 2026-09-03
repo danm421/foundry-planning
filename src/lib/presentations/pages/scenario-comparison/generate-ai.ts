@@ -142,6 +142,7 @@ export async function generateScenarioComparisonAi(
       b.scenarioId,
       hashBand({
         scenarioId: b.scenarioId,
+        name: b.name,
         gains: b.gains,
         costs: b.costs,
         changeLines: b.changeLines,

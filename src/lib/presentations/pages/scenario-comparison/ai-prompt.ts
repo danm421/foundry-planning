@@ -25,6 +25,7 @@ const TONE: Record<"concise" | "detailed" | "plain", string> = {
 
 export interface BandHashInput {
   scenarioId: string;
+  name: string;
   gains: GainCost[];
   costs: GainCost[];
   changeLines: string[];
@@ -44,6 +45,7 @@ export interface BandHashInput {
 export function hashBand(input: BandHashInput): string {
   const h = createHash("sha256");
   h.update(input.scenarioId).update(" ");
+  h.update(input.name).update(" ");
   for (const g of input.gains) h.update(`+${g.label}=${g.amount} `);
   for (const c of input.costs) h.update(`-${c.label}=${c.amount} `);
   for (const l of input.changeLines) h.update(`~${l} `);

@@ -9,8 +9,6 @@ function col(over: Partial<ScenarioColumnInput>): ScenarioColumnInput {
     endingP20: 600_000,
     atRetirement: 2_400_000,
     atEndOfLife: 4_400_000,
-    retirementYear: 2050,
-    endYear: 2075,
     lifetimeTaxTotal: 1_900_000,
     lifetimeTaxFederal: 1_400_000,
     lifetimeTaxState: 500_000,

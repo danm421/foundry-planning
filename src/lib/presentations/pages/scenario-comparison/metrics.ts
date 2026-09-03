@@ -12,8 +12,6 @@ export interface ScenarioColumnInput {
   endingP20: number | null;
   atRetirement: number;
   atEndOfLife: number;
-  retirementYear: number;
-  endYear: number;
   lifetimeTaxTotal: number;
   lifetimeTaxFederal: number;
   lifetimeTaxState: number;

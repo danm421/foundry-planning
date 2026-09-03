@@ -177,22 +177,23 @@ export function PresentationsLauncher(props: Props) {
   // times over, so actual work can run as high as 6 simulations + 6 solves.
   // Fire-and-forget, debounced, and de-duplicated per (scenarioId,target) for
   // this session — that dedup is on OUR requests, not on whether the compute
-  // behind them raced.
+  // behind them raced. `targetPoS` is `null` when the page's own Max Spend
+  // toggle is off — the registry already returns null max-spend refs in that
+  // case (nothing reads the figure), so the warm POST skips that ~10s solve.
   const warmedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    const keyOf = (t: { scenarioId: string; targetPoS: number }) =>
+    const keyOf = (t: { scenarioId: string; targetPoS: number | null }) =>
       `${t.scenarioId}:${t.targetPoS}`;
     const targets = state.pages
       .flatMap((p) => {
         if (p.pageId === "retirementComparison") {
           const o = p.options as RetirementComparisonOptions;
-          return o.scenarioId
-            ? [{ scenarioId: o.scenarioId, targetPoS: o.maxSpend?.targetConfidence ?? 0.85 }]
-            : [];
+          const targetPoS = o.maxSpend?.show ? o.maxSpend?.targetConfidence ?? 0.85 : null;
+          return o.scenarioId ? [{ scenarioId: o.scenarioId, targetPoS }] : [];
         }
         if (p.pageId === "scenarioComparison") {
           const o = p.options as ScenarioComparisonOptions;
-          const targetPoS = o.maxSpend?.targetConfidence ?? 0.85;
+          const targetPoS = o.maxSpend?.show ? o.maxSpend?.targetConfidence ?? 0.85 : null;
           return (o.scenarioIds ?? []).filter(Boolean).map((scenarioId) => ({ scenarioId, targetPoS }));
         }
         return [];

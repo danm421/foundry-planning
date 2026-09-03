@@ -9,14 +9,10 @@ import type { ScenarioComparisonPageData } from "./types";
  *  is `[]` in that case and the composer omits the sheet rather than print a
  *  section head over blank space (`page-pdf.tsx`). This estimate has to move
  *  with that same condition: the deck's Contents is numbered from estimates,
- *  and a renderer/estimate mismatch shifts every later entry.
- *
- *  `data` is optional because the registry contract allows a data-free probe —
- *  kept at 2 for that case, since Task 7's probe relies on this shape. */
+ *  and a renderer/estimate mismatch shifts every later entry. */
 export function estimateScenarioComparisonPageCount(
-  data?: ScenarioComparisonPageData,
+  data: ScenarioComparisonPageData,
 ): number {
-  if (!data) return 2;
   if (data.isEmpty) return 1;
   return data.bands.length > 0 ? 2 : 1;
 }

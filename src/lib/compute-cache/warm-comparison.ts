@@ -15,7 +15,9 @@ export async function warmComparisonCompute(args: {
   firmId: string;
   /** The compared scenario id (never "base"). */
   scenarioId: string;
-  targetPoS: number;
+  /** `null` when the page's Max Spend toggle is off — nothing reads the
+   *  figure, so the max-spend solve is skipped for both refs. */
+  targetPoS: number | null;
 }): Promise<void> {
   const { clientId, firmId, scenarioId, targetPoS } = args;
   const refs: string[] = ["base", scenarioId];
@@ -25,7 +27,13 @@ export async function warmComparisonCompute(args: {
   await Promise.all(
     refs.flatMap((ref) => [
       getOrComputeMonteCarlo({ clientId, firmId, scenarioId: ref }).catch(swallow(`mc:${ref}`)),
-      getOrComputeMaxSpending({ clientId, firmId, scenarioId: ref, targetPoS }).catch(swallow(`maxspend:${ref}`)),
+      ...(targetPoS != null
+        ? [
+            getOrComputeMaxSpending({ clientId, firmId, scenarioId: ref, targetPoS }).catch(
+              swallow(`maxspend:${ref}`),
+            ),
+          ]
+        : []),
     ]),
   );
 }

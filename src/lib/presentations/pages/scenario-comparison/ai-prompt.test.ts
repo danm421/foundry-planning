@@ -51,7 +51,7 @@ describe("buildScenarioComparisonAiPrompt", () => {
 
 describe("hashBand", () => {
   const base = {
-    scenarioId: "s1", gains: band.gains, costs: band.costs,
+    scenarioId: "s1", name: "Retire at 62", gains: band.gains, costs: band.costs,
     changeLines: band.changeLines, tone: "detailed", customInstructions: "",
     sentenceBudget: 3,
   };
@@ -73,6 +73,10 @@ describe("hashBand", () => {
   it("changes when its change list moves", () => {
     expect(hashBand({ ...base, changeLines: ["Retirement age 65 to 61"] }))
       .not.toBe(hashBand(base));
+  });
+
+  it("changes when only the scenario's display name changes", () => {
+    expect(hashBand({ ...base, name: "Retire at 65" })).not.toBe(hashBand(base));
   });
 
   it("changes when the tone changes", () => {

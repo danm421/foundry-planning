@@ -305,6 +305,49 @@ describe("PresentationsLauncher", () => {
     );
   });
 
+  it("pre-warms with no max-spend solve when the page's Max Spend toggle is off", async () => {
+    render(
+      <PresentationsLauncher
+        clientId="c1"
+        currentUserId="me"
+        clientLastName="Sample"
+        householdId="hh-test"
+        scenarios={[{ id: "s1", name: "Scenario One", isBaseCase: false }]}
+        snapshots={[]}
+        initialTemplates={{ shared: [], mine: [], builtIn: [], builtInHidden: [] }}
+        investmentCatalog={{ groups: [], entities: [], portfolios: [], recommendedPortfolioId: null }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /add page/i }));
+    fireEvent.change(screen.getByPlaceholderText(/search reports/i), {
+      target: { value: "scenario comparison" },
+    });
+    fireEvent.click(screen.getByText("Scenario Comparison"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Options for Scenario Comparison" }));
+    // Turn Max Spend off BEFORE choosing the scenario, so only one settled
+    // (scenarioId,targetPoS) key is ever debounced — the pre-warm effect's own
+    // dedup keys on both, and toggling after would fire a second warm POST
+    // under the old `targetPoS: 0.85` key.
+    fireEvent.click(screen.getByLabelText(/solves each column.s sustainable spending/i));
+    fireEvent.click(screen.getByRole("button", { name: "Add scenario" }));
+    fireEvent.change(screen.getByLabelText("Scenario 1"), { target: { value: "s1" } });
+
+    await waitFor(
+      () => {
+        const warmCalls = vi
+          .mocked(global.fetch)
+          .mock.calls.filter((c) => String(c[0]).includes("/presentations/warm"));
+        expect(warmCalls).toHaveLength(1);
+        expect(JSON.parse((warmCalls[0][1] as RequestInit).body as string)).toEqual({
+          scenarioId: "s1",
+          targetPoS: null,
+        });
+      },
+      { timeout: 2000 },
+    );
+  });
+
   it("Generate posts to the background /presentations/runs route and shows a notice", async () => {
     render(
       <PresentationsLauncher

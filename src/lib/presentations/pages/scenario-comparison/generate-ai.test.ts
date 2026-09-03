@@ -120,6 +120,7 @@ function args(
 function hashOf(band: TradeoffBand, a: GenerateScenarioComparisonAiArgs): string {
   return hashBand({
     scenarioId: band.scenarioId,
+    name: band.name,
     gains: band.gains,
     costs: band.costs,
     changeLines: band.changeLines,
