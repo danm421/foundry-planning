@@ -134,6 +134,28 @@ describe("ObservationsAuthoringPanel — observations", () => {
     expect(note).toHaveValue("They asked about college.");
   });
 
+  it("shows an error when the note can't be loaded, and never overwrites the stored note", async () => {
+    const calls = installFetch((url, init) => {
+      if (url.endsWith("/context") && (init?.method ?? "GET") === "GET") return { status: 500, body: {} };
+      return defaults()(url, init);
+    });
+    renderPanel();
+    // Awaited first so the failed context load has certainly settled before
+    // the blur below — otherwise a still-loading `context` would pass the
+    // zero-PATCH assertion for the wrong reason.
+    expect(await screen.findByText(/couldn't load this client's notes/i)).toBeInTheDocument();
+
+    const note = screen.getByPlaceholderText(/anything the draft should know/i);
+    await userEvent.type(note, "They asked about college.");
+    await userEvent.tab();
+    // THE load-bearing assertion. If the failed load synthesised
+    // `{ observationsContext: "" }`, the blur guard compares the typed text
+    // against that "", PATCHes, and silently replaces a note the advisor was
+    // never shown. Zero PATCHes is the only proof it didn't.
+    expect(calls.filter((c) => c.method === "PATCH" && c.url.endsWith("/context"))).toHaveLength(0);
+    expect(note).toHaveValue("They asked about college.");
+  });
+
   // Un-todo in Task 13, which adds the "Generate from scenario" button this
   // asserts still renders when the observations section is switched off.
   it.todo("shows nothing for a section the page will not print", async () => {

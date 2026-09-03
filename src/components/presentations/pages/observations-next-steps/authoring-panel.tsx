@@ -59,6 +59,8 @@ export function ObservationsAuthoringPanel({ clientId, showObservations, showNex
   const [rows, setRows] = useState<AuthoringRow[] | null>(null);
   const [rowsError, setRowsError] = useState<string | null>(null);
   const [context, setContext] = useState<ObservationContext | null>(null);
+  const [contextError, setContextError] = useState<string | null>(null);
+  const [contextAttempt, setContextAttempt] = useState(0);
   const [tokenValues, setTokenValues] = useState<Record<string, string | null> | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [noteError, setNoteError] = useState<string | null>(null);
@@ -96,16 +98,22 @@ export function ObservationsAuthoringPanel({ clientId, showObservations, showNex
         const ctx = (await res.json()) as ObservationContext;
         if (cancelled) return;
         setContext(ctx);
+        setContextError(null);
         setObsNotes(ctx.observationsContext);
         setStepNotes(ctx.nextStepsContext);
       } catch {
-        if (!cancelled) setContext({ observationsContext: "", nextStepsContext: "", nextStepsScenarioId: null });
+        // `context` stays null. The route answers 200 with defaults when no
+        // row exists, so reaching here means a real failure — a note may be
+        // stored that we could not read. Synthesising `{ ..., "" }` would
+        // show an empty box and let the blur handler PATCH over a note the
+        // advisor never saw; the blur guard's `!context` blocks that.
+        if (!cancelled) setContextError("Couldn't load this client's notes.");
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [base]);
+  }, [base, contextAttempt]);
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -228,6 +236,14 @@ export function ObservationsAuthoringPanel({ clientId, showObservations, showNex
         <p role="alert" className="flex items-center gap-2 text-[13px] text-crit">
           {rowsError}
           <button type="button" className={smallButton} onClick={() => refetch()}>
+            Retry
+          </button>
+        </p>
+      )}
+      {contextError && (
+        <p role="alert" className="flex items-center gap-2 text-[13px] text-crit">
+          {contextError}
+          <button type="button" className={smallButton} onClick={() => setContextAttempt((n) => n + 1)}>
             Retry
           </button>
         </p>
