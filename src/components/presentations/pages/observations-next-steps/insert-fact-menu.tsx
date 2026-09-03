@@ -41,7 +41,7 @@ export function InsertFactMenu({ entries, tokenValues, onInsert }: Props) {
       {open && (
         <ul
           role="menu"
-          className="absolute left-0 z-20 mt-1 max-h-80 w-[28rem] overflow-y-auto rounded-lg border border-hair bg-card p-1 shadow-lg"
+          className="absolute right-0 z-20 mt-1 max-h-80 w-[28rem] overflow-y-auto rounded-lg border border-hair bg-card p-1 shadow-lg"
         >
           {entries.map((entry) => (
             <li key={entry.id} role="none">

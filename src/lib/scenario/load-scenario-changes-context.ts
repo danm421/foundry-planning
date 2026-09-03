@@ -5,7 +5,7 @@
 // a second copy existed (the Retirement Comparison prompt's terse describer)
 // the two disagreed about what a change was called.
 //
-// A THIRD assembly exists and is meant to: `loadStrategies` in
+// A third assembly is deliberately separate: `loadStrategies` in
 // `src/lib/presentations/story/load-context.ts` (Plan Story) groups the same
 // changes into `StoryStrategy[]` rather than `DisplayUnit[]`, and deliberately
 // omits the reinvestment enrichment so it never needs the firm's investment
