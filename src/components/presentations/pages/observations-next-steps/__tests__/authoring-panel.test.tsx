@@ -84,20 +84,23 @@ describe("ObservationsAuthoringPanel — observations", () => {
     expect(await screen.findByText("On track to retire at 65.")).toBeInTheDocument();
   });
 
+  // "Effective tax rate", not a `topic: "general"` entry: general is also the
+  // schema default, so a panel that hardcoded the topic would stay green on
+  // one — and this is the only test of the insert path.
   it("Insert a fact posts the entry's token body with its topic, on the client audience", async () => {
     const calls = installFetch(defaults());
     renderPanel();
     await screen.findByText("On track to retire at x.");
     await userEvent.click(screen.getByRole("button", { name: /insert a fact/i }));
-    await userEvent.click(screen.getByRole("menuitem", { name: /^Net worth/ }));
+    await userEvent.click(screen.getByRole("menuitem", { name: /^Effective tax rate/ }));
     await waitFor(() => {
       const post = calls.find((c) => c.method === "POST" && c.url === BASE);
       expect(post?.body).toEqual({
         section: "observation",
         source: "manual",
         audience: "client",
-        topic: "general",
-        body: "Your net worth today is {{net_worth}}, with {{total_liabilities}} of debt outstanding.",
+        topic: "tax",
+        body: "Roughly {{effective_tax_rate}} of your income will go to taxes this year.",
       });
     });
   });
@@ -271,6 +274,29 @@ describe("ObservationsAuthoringPanel — next steps", () => {
     await waitFor(() => {
       expect(calls.find((c) => c.method === "PATCH" && c.url.endsWith("/context"))?.body).toEqual({ nextStepsScenarioId: SCENARIO_ID });
     });
+  });
+
+  // Both boxes carry the same message, so one shared error state prints a
+  // next-steps failure under the OBSERVATIONS box — the advisor is told the
+  // note they didn't touch failed to save.
+  it("a next-steps note failure shows under the next-steps box, not the observations one", async () => {
+    installFetch((url, init) => {
+      if (url.endsWith("/context") && init?.method === "PATCH") {
+        const patch = JSON.parse(String(init.body)) as Record<string, unknown>;
+        if ("nextStepsContext" in patch) return { status: 500, body: {} };
+      }
+      return defaults()(url, init);
+    });
+    renderPanel();
+    await screen.findByText("On track to retire at x.");
+    await userEvent.type(screen.getByPlaceholderText(/what to stress/i), "Push the Roth conversion.");
+    await userEvent.tab();
+
+    const shown = await screen.findByText(/couldn't save your note/i);
+    expect(screen.getAllByText(/couldn't save your note/i)).toHaveLength(1);
+    const section = (name: string) => screen.getByRole("heading", { name }).closest("section")!;
+    expect(within(section("Next steps")).getByText(/couldn't save your note/i)).toBe(shown);
+    expect(within(section("Observations")).queryByText(/couldn't save your note/i)).toBeNull();
   });
 
   it("Generate is disabled with a hint until a scenario is picked", async () => {

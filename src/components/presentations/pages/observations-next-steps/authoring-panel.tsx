@@ -69,7 +69,11 @@ export function ObservationsAuthoringPanel({ clientId, showObservations, showNex
   const [contextAttempt, setContextAttempt] = useState(0);
   const [tokenValues, setTokenValues] = useState<Record<string, string | null> | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [noteError, setNoteError] = useState<string | null>(null);
+  // One per section. A single shared state printed a next-steps failure
+  // under the OBSERVATIONS box — the advisor was told the note they never
+  // touched had failed to save.
+  const [observationsNoteError, setObservationsNoteError] = useState<string | null>(null);
+  const [nextStepsNoteError, setNextStepsNoteError] = useState<string | null>(null);
   const [editTarget, setEditTarget] = useState<EditInitial | null>(null);
   const onDialogSavedRef = useRef<(() => void) | null>(null);
   const obsDraft = useDraftRun(clientId);
@@ -420,12 +424,12 @@ export function ObservationsAuthoringPanel({ clientId, showObservations, showNex
             onChange={setObsNotes}
             onSave={async () => {
               if (!context || obsNotes === context.observationsContext) return;
-              setNoteError(null);
+              setObservationsNoteError(null);
               const ok = await patchContext({ observationsContext: obsNotes });
-              if (!ok) setNoteError("Couldn't save your note");
+              if (!ok) setObservationsNoteError("Couldn't save your note");
             }}
           />
-          {noteError && <p className="text-[12px] text-crit">{noteError}</p>}
+          {observationsNoteError && <p className="text-[12px] text-crit">{observationsNoteError}</p>}
         </section>
       )}
 
@@ -475,18 +479,21 @@ export function ObservationsAuthoringPanel({ clientId, showObservations, showNex
                 <span className="text-[11px] text-ink-3">Pick a source scenario first — its edits become the steps.</span>
               )}
             </label>
-            <NotesField
-              label="Notes for the AI"
-              placeholder="What to stress, what to leave out, who should own what."
-              value={stepNotes}
-              onChange={setStepNotes}
-              onSave={async () => {
-                if (!context || stepNotes === context.nextStepsContext) return;
-                setNoteError(null);
-                const ok = await patchContext({ nextStepsContext: stepNotes });
-                if (!ok) setNoteError("Couldn't save your note");
-              }}
-            />
+            <div className="flex flex-col gap-1">
+              <NotesField
+                label="Notes for the AI"
+                placeholder="What to stress, what to leave out, who should own what."
+                value={stepNotes}
+                onChange={setStepNotes}
+                onSave={async () => {
+                  if (!context || stepNotes === context.nextStepsContext) return;
+                  setNextStepsNoteError(null);
+                  const ok = await patchContext({ nextStepsContext: stepNotes });
+                  if (!ok) setNextStepsNoteError("Couldn't save your note");
+                }}
+              />
+              {nextStepsNoteError && <p className="text-[12px] text-crit">{nextStepsNoteError}</p>}
+            </div>
           </div>
 
           <DraftCards
@@ -523,7 +530,6 @@ export function ObservationsAuthoringPanel({ clientId, showObservations, showNex
               </li>
             ))}
           </ul>
-          {noteError && showObservations === false && <p className="text-[12px] text-crit">{noteError}</p>}
         </section>
       )}
 
