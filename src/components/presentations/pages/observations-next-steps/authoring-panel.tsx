@@ -69,6 +69,7 @@ export function ObservationsAuthoringPanel({ clientId, showObservations, showNex
   const [editTarget, setEditTarget] = useState<EditInitial | null>(null);
   const onDialogSavedRef = useRef<(() => void) | null>(null);
   const obsDraft = useDraftRun(clientId);
+  const stepDraft = useDraftRun(clientId);
 
   // Local copies of the two notes: the textarea is the advisor's, and a
   // failed save must not throw their words away.
@@ -292,6 +293,45 @@ export function ObservationsAuthoringPanel({ clientId, showObservations, showNex
   const nextStepRows = useMemo(() => (rows ?? []).filter((r) => r.section === "next_step"), [rows]);
   const libraryEntries = useMemo(() => visibleLibraryEntries(tokenValues), [tokenValues]);
 
+  // Orphan integration-test scenarios (changes-writer.test.ts) pile up in the
+  // picker; hide them as Retirement Comparison does. Base case has no edits
+  // to turn into steps, so it is not offered either.
+  const liveScenarios = scenarios.filter((s) => !s.isBaseCase && !s.name.startsWith("writer-test-"));
+  const scenarioNameById = new Map(scenarios.map((s) => [s.id, s.name]));
+
+  async function pickScenario(value: string) {
+    setSaveError(null);
+    const ok = await patchContext({ nextStepsScenarioId: value || null });
+    if (!ok) setSaveError("Couldn't save the source scenario. Please try again.");
+  }
+
+  async function clearAiNextSteps() {
+    if (!window.confirm("Remove every AI-generated next step for this client? Hand-written steps are kept.")) return;
+    setSaveError(null);
+    try {
+      const res = await fetch(`${base}?section=next_step&source=ai`, { method: "DELETE" });
+      if (!res.ok) throw new Error();
+    } catch {
+      setSaveError("Couldn't clear the AI-generated steps. Please try again.");
+      return;
+    }
+    stepDraft.clear();
+    await refetch();
+  }
+
+  function provenance(row: AuthoringRow): React.ReactNode {
+    if (row.source !== "ai" || !row.sourceScenarioId) return null;
+    const name = scenarioNameById.get(row.sourceScenarioId);
+    return name ? (
+      <>From <em>{name}</em></>
+    ) : (
+      "From a scenario that has since been deleted"
+    );
+  }
+
+  const hasAiSteps = nextStepRows.some((r) => r.source === "ai");
+  const canGenerate = Boolean(context?.nextStepsScenarioId) && !stepDraft.drafting;
+
   return (
     <div className="space-y-6 text-sm text-ink-2">
       {saveError && (
@@ -397,8 +437,100 @@ export function ObservationsAuthoringPanel({ clientId, showObservations, showNex
 
       {showNextSteps && (
         <section className="space-y-3">
-          <h3 className={heading}>Next steps</h3>
-          {/* TASK 13: source scenario, notes, generate, rows, clear */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className={heading}>Next steps</h3>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className={smallButton}
+                disabled={!canGenerate}
+                onClick={() => stepDraft.start("next_step")}
+              >
+                {stepDraft.drafting ? "Generating…" : "Generate from scenario"}
+              </button>
+              {hasAiSteps && (
+                <button type="button" className={`${smallButton} hover:border-crit hover:text-crit`} onClick={clearAiNextSteps}>
+                  Clear AI-generated
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] uppercase tracking-[0.1em] text-ink-3">Source scenario</span>
+              <select
+                aria-label="Source scenario"
+                className={`w-full ${textarea}`}
+                value={context?.nextStepsScenarioId ?? ""}
+                onChange={(e) => pickScenario(e.target.value)}
+              >
+                <option value="">— No scenario —</option>
+                {liveScenarios.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+              {!context?.nextStepsScenarioId && (
+                <span className="text-[11px] text-ink-3">Pick a source scenario first — its edits become the steps.</span>
+              )}
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] uppercase tracking-[0.1em] text-ink-3">Notes for the AI</span>
+              <textarea
+                className={textarea}
+                rows={3}
+                placeholder="What to stress, what to leave out, who should own what."
+                value={stepNotes}
+                onChange={(e) => setStepNotes(e.target.value)}
+                onBlur={async () => {
+                  if (!context || stepNotes === context.nextStepsContext) return;
+                  setNoteError(null);
+                  const ok = await patchContext({ nextStepsContext: stepNotes });
+                  if (!ok) setNoteError("Couldn't save your note");
+                }}
+              />
+            </label>
+          </div>
+
+          {stepDraft.error && <p role="alert" className="text-[12px] text-crit">{stepDraft.error}</p>}
+          {stepDraft.result && (
+            <SuggestionCards
+              suggestions={stepDraft.result.suggestions}
+              tokenValues={tokenValues}
+              onAccept={(i) => acceptSuggestion(stepDraft, i)}
+              onEditAccept={(i) => editAndAccept(stepDraft, i)}
+              onDismiss={(i) => stepDraft.replaceSuggestions(stepDraft.result!.suggestions.filter((_, k) => k !== i))}
+              onAcceptAll={() => acceptAll(stepDraft)}
+            />
+          )}
+
+          {rows !== null && nextStepRows.length === 0 && (
+            <p className="text-[12px] text-ink-3">No next steps yet — generate them from a scenario or add your own on Details.</p>
+          )}
+          <ul className="flex flex-col gap-2">
+            {nextStepRows.map((row) => (
+              <li key={row.id} className="group flex items-start gap-2 rounded-lg border border-hair bg-card p-3">
+                <span
+                  aria-label={`Status: ${row.status}`}
+                  className={`mt-1 h-3 w-3 flex-shrink-0 rounded-full border ${
+                    row.status === "done" ? "border-accent bg-accent" : row.status === "in_progress" ? "border-accent" : "border-hair"
+                  }`}
+                />
+                <div className="min-w-0 flex-1">
+                  {row.title && <p className="text-[13px] font-semibold text-ink">{row.title}</p>}
+                  <MarkdownMessage text={renderBody(row.body, tokenValues)} />
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-wider text-ink-3">
+                    {row.owner && <span>{row.owner}</span>}
+                    {row.priority && <span>{row.priority} priority</span>}
+                    {row.targetDate && <span>Due {row.targetDate}</span>}
+                  </div>
+                  {provenance(row) && <p className="mt-1 text-[11px] normal-case text-ink-3">{provenance(row)}</p>}
+                </div>
+                <RowActions onEdit={() => openEdit(toEditInitial(row))} onDelete={() => deleteRow(row)} />
+              </li>
+            ))}
+          </ul>
+          {noteError && showObservations === false && <p className="text-[12px] text-crit">{noteError}</p>}
         </section>
       )}
 

@@ -66,7 +66,7 @@ export function InsertFactMenu({ entries, tokenValues, onInsert }: Props) {
           ))}
           {entries.length === 0 && (
             <li role="none" className="px-2 py-1.5 text-[12px] text-ink-3">
-              Nothing to insert — every fact here needs a figure this plan doesn't have.
+              Nothing to insert — every fact here needs a figure this plan doesn&apos;t have.
             </li>
           )}
         </ul>

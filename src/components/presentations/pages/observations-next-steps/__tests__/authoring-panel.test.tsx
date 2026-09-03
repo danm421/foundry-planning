@@ -10,6 +10,9 @@ import { ObservationsAuthoringPanel } from "../authoring-panel";
 const CLIENT_ID = "11111111-1111-4111-8111-111111111111";
 const SCENARIO_ID = "22222222-2222-4222-8222-222222222222";
 const OTHER_SCENARIO_ID = "33333333-3333-4333-8333-333333333333";
+// The scenario a RUN was produced from. Deliberately never the picker's value,
+// so a row stamped from the context row instead of the run is visible.
+const RUN_SCENARIO_ID = "44444444-4444-4444-8444-444444444444";
 const BASE = `/api/clients/${CLIENT_ID}/observations`;
 
 const ALL_RESOLVED = Object.fromEntries(PLAN_TOKENS.map((t) => [t.id, "x"]));
@@ -157,9 +160,29 @@ describe("ObservationsAuthoringPanel — observations", () => {
     expect(note).toHaveValue("They asked about college.");
   });
 
-  // Un-todo in Task 13, which adds the "Generate from scenario" button this
-  // asserts still renders when the observations section is switched off.
-  it.todo("shows nothing for a section the page will not print", async () => {
+  // The reorder route only scopes its completeness check to the client
+  // audience when the body says so. Drop `audience: "client"` and a household
+  // that also holds advisor-only rows makes this PUT a silent "Stale order".
+  it("reordering an observation sends the swapped order scoped to the client audience", async () => {
+    const calls = installFetch(defaults({
+      rows: [
+        { ...ROW, id: "o1", body: "First." },
+        { ...ROW, id: "o2", body: "Second.", sortOrder: 1 },
+      ],
+    }));
+    renderPanel();
+    await screen.findByText("First.");
+    await userEvent.click(screen.getByRole("button", { name: /move down/i }));
+    await waitFor(() => {
+      expect(calls.find((c) => c.method === "PUT" && c.url.endsWith("/reorder"))?.body).toEqual({
+        section: "observation",
+        audience: "client",
+        orderedIds: ["o2", "o1"],
+      });
+    });
+  });
+
+  it("shows nothing for a section the page will not print", async () => {
     installFetch(defaults());
     renderPanel({ showObservations: false });
     await waitFor(() => expect(screen.queryByRole("button", { name: /insert a fact/i })).toBeNull());
@@ -236,5 +259,95 @@ describe("ObservationsAuthoringPanel — Draft with AI", () => {
 
     expect(await screen.findByText("Taxes take x.")).toBeInTheDocument();
     expect(calls.filter((c) => c.url.endsWith("/draft-runs") && c.method === "POST")).toHaveLength(1);
+  });
+});
+
+describe("ObservationsAuthoringPanel — next steps", () => {
+  it("picking a source scenario PATCHes the context row", async () => {
+    const calls = installFetch(defaults());
+    renderPanel();
+    await screen.findByText("On track to retire at x.");
+    await userEvent.selectOptions(screen.getByLabelText(/source scenario/i), SCENARIO_ID);
+    await waitFor(() => {
+      expect(calls.find((c) => c.method === "PATCH" && c.url.endsWith("/context"))?.body).toEqual({ nextStepsScenarioId: SCENARIO_ID });
+    });
+  });
+
+  it("Generate is disabled with a hint until a scenario is picked", async () => {
+    installFetch(defaults());
+    renderPanel();
+    await screen.findByText("On track to retire at x.");
+    expect(screen.getByRole("button", { name: /generate from scenario/i })).toBeDisabled();
+    expect(screen.getByText(/pick a source scenario first/i)).toBeInTheDocument();
+  });
+
+  it("generate → cards → Accept all stamps every row with the RUN's scenario, not the picker's", async () => {
+    const calls = installFetch((url, init) => {
+      const method = init?.method ?? "GET";
+      if (url.endsWith("/draft-runs") && method === "POST") return { status: 202, body: { runId: "run-2" } };
+      if (url.endsWith("/draft-runs/run-2")) {
+        return {
+          status: 200,
+          body: {
+            status: "done", error: null, scenarioId: RUN_SCENARIO_ID,
+            suggestions: [
+              { section: "next_step", topic: "retirement", title: "Update the deferral", body: "Raise it to 12%.", owner: "client", priority: "high" },
+              { section: "next_step", topic: "tax", title: "Open a Roth", body: "Before 2028.", owner: "advisor", priority: "medium" },
+            ],
+          },
+        };
+      }
+      return defaults({ context: { nextStepsScenarioId: SCENARIO_ID } })(url, init);
+    });
+    renderPanel();
+    await screen.findByText("On track to retire at x.");
+    // Generate stays disabled until the /context GET resolves.
+    await waitFor(() => expect(screen.getByRole("button", { name: /generate from scenario/i })).toBeEnabled());
+    await userEvent.click(screen.getByRole("button", { name: /generate from scenario/i }));
+    expect(calls.find((c) => c.url.endsWith("/draft-runs") && c.method === "POST")?.body).toEqual({ section: "next_step" });
+    await screen.findByText("Update the deferral");
+
+    // The advisor changes the picker while the cards are open — the stamp
+    // still comes from the run. The picker never held RUN_SCENARIO_ID, so a
+    // row stamped from the context row shows up as SCENARIO_ID or null.
+    await userEvent.selectOptions(screen.getByLabelText(/source scenario/i), "");
+    await userEvent.click(screen.getByRole("button", { name: /accept all/i }));
+    await waitFor(() => {
+      const posts = calls.filter((c) => c.method === "POST" && c.url === BASE);
+      expect(posts).toHaveLength(2);
+      for (const p of posts) expect(p.body).toMatchObject({ section: "next_step", source: "ai", audience: "client", sourceScenarioId: RUN_SCENARIO_ID });
+    });
+  });
+
+  it("prints provenance on AI rows — the live name, or that the scenario is gone", async () => {
+    installFetch(defaults({
+      rows: [
+        { ...ROW, id: "n1", section: "next_step", title: "Update the deferral", body: "b", source: "ai", sourceScenarioId: SCENARIO_ID },
+        { ...ROW, id: "n2", section: "next_step", title: "Old step", body: "b", source: "ai", sourceScenarioId: OTHER_SCENARIO_ID },
+        { ...ROW, id: "n3", section: "next_step", title: "Hand-typed", body: "b", source: "manual", sourceScenarioId: null },
+      ],
+    }));
+    renderPanel();
+    const provenance = await screen.findAllByText(/^From/);
+    expect(provenance).toHaveLength(2);
+    // Scoped to the row: the picker's <option> carries the same text.
+    expect(within(provenance[0]).getByText("Retire at 62")).toBeInTheDocument();
+    expect(screen.getByText(/from a scenario that has since been deleted/i)).toBeInTheDocument();
+  });
+
+  it("Clear AI-generated confirms, then DELETEs the scoped query", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const calls = installFetch((url, init) => {
+      if (init?.method === "DELETE") return { status: 200, body: { removed: 2 } };
+      return defaults({
+        rows: [{ ...ROW, id: "n1", section: "next_step", title: "AI step", body: "b", source: "ai", sourceScenarioId: SCENARIO_ID }],
+      })(url, init);
+    });
+    renderPanel();
+    await screen.findByText("AI step");
+    await userEvent.click(screen.getByRole("button", { name: /clear ai-generated/i }));
+    await waitFor(() => {
+      expect(calls.find((c) => c.method === "DELETE")?.url).toBe(`${BASE}?section=next_step&source=ai`);
+    });
   });
 });
