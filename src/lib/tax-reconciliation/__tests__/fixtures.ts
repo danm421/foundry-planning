@@ -43,9 +43,10 @@ export function engineYearFixture(over: Partial<EngineYear> = {}): EngineYear {
 }
 
 export function inputFixture(over: Partial<ReconciliationInput> = {}): ReconciliationInput {
-  const facts: TaxReturnFacts = over.facts ?? emptyTaxReturnFacts(2025);
+  const taxYear = over.taxYear ?? 2025;
+  const facts: TaxReturnFacts = over.facts ?? emptyTaxReturnFacts(taxYear);
   return {
-    clientId: CLIENT_ID, taxYear: 2025, planYear: 2026, facts, w2s: [],
+    clientId: CLIENT_ID, taxYear, planYear: 2026, facts, w2s: [],
     plan: planFixture(), engineYear: null, stateTaxEstimate: 0,
     ...over,
   };

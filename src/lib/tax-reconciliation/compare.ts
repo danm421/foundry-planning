@@ -45,9 +45,15 @@ export function deflate(amount: number, rate: number, years: number): number {
   return years <= 0 ? amount : amount / Math.pow(1 + rate, years);
 }
 
-/** The engine's own growth rule (src/engine/income.ts): compound from
+/** Mirrors the engine's GROWTH branch (src/engine/income.ts): compound from
  *  inflationStartYear when set, else from startYear. Valid for years before
- *  the start too — that is exactly the "state it in taxYear dollars" case. */
+ *  the start too — that is exactly the "state it in taxYear dollars" case.
+ *
+ *  Two engine paths never reach that formula, so this is not the whole rule:
+ *  a row carrying year-by-year `scheduleOverrides` reads its amount straight
+ *  out of the schedule, and a Social Security row in `pia_at_fra` mode is
+ *  resolved by the benefit orchestrator instead. Callers comparing those rows
+ *  against a return get the growth-branch figure, not the engine's. */
 export function rowAmountInYear(
   row: { annualAmount: number; growthRate: number; startYear: number; inflationStartYear: number | null },
   year: number,
