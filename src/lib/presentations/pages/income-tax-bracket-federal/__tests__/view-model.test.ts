@@ -104,3 +104,43 @@ describe("buildTaxBracketFederalDrillData — the footnote cannot run off the pa
     if (years.length > 6) expect(d.footnote).toContain("more");
   });
 });
+
+describe("buildTaxBracketFederalDrillData — Roth conversion years", () => {
+  const rothOnly = { range: "rothConversionYears" as const, showCallout: false };
+
+  function yearsConvertingIn2036() {
+    const years = makeTaxYears();
+    years.find((y) => y.year === 2036)!.rothConversions = [
+      { id: "rc1", name: "Fill the 12% bracket", gross: 40_000, taxable: 40_000 },
+    ];
+    return years;
+  }
+
+  it("keeps only the years a conversion happens, in the table and the chart", () => {
+    const d = buildTaxBracketFederalDrillData({ ...base, years: yearsConvertingIn2036(), options: rothOnly });
+    expect(d.table.rows.map((r) => r.year)).toEqual([2036]);
+    expect(d.table.rows[0].cells.conversionGross).toBe(40_000);
+    expect(d.chartSpec!.xAxis.domain).toEqual([2036]);
+  });
+
+  it("reports Change in Base against the prior year even though the range hides it", () => {
+    const d = buildTaxBracketFederalDrillData({ ...base, years: yearsConvertingIn2036(), options: rothOnly });
+    // 2036 base 63_800 less 2031 base 50_800 — the hidden year, not a zero.
+    expect(d.table.rows[0].cells.changeInBase).toBe(13_000);
+  });
+
+  it("says so, and prints no chart, when the plan has no conversions", () => {
+    const d = buildTaxBracketFederalDrillData({ ...base, options: rothOnly });
+    expect(d.table.rows).toHaveLength(0);
+    expect(d.chartSpec).toBeUndefined();
+    expect(d.footnote).toContain("No Roth conversions are modeled");
+  });
+
+  it("leaves the full range alone", () => {
+    const d = buildTaxBracketFederalDrillData({
+      ...base, years: yearsConvertingIn2036(), options: { range: "full", showCallout: false },
+    });
+    expect(d.table.rows.map((r) => r.year)).toEqual([2026, 2031, 2036]);
+    expect(d.footnote).not.toContain("No Roth conversions");
+  });
+});

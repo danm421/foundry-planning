@@ -1,6 +1,21 @@
 import { describe, it, expect } from "vitest";
 import { cashFlowPage, PRESENTATION_PAGES } from "../registry";
 import { CASH_FLOW_PAGE_OPTIONS_DEFAULT } from "@/lib/presentations/types";
+import { DrillOptionsControl, TaxBracketOptionsControl } from "../shared/drill-options-control";
+
+describe("registry — Tax Bracket pages", () => {
+  it("alone offer the Roth conversion years range", () => {
+    expect(PRESENTATION_PAGES.incomeTaxBracketFederal.OptionsControl).toBe(TaxBracketOptionsControl);
+    expect(PRESENTATION_PAGES.incomeTaxBracketState.OptionsControl).toBe(TaxBracketOptionsControl);
+    expect(PRESENTATION_PAGES.incomeTaxFederal.OptionsControl).toBe(DrillOptionsControl);
+  });
+
+  it("accept and label that range", () => {
+    const page = PRESENTATION_PAGES.incomeTaxBracketFederal;
+    const opts = page.optionsSchema.parse({ range: "rothConversionYears", showCallout: false });
+    expect(page.summarizeOptions(opts)).toBe("Roth conversion years");
+  });
+});
 
 describe("registry — Cash Flow page", () => {
   it("validates its default options via optionsSchema", () => {

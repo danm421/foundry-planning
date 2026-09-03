@@ -22,6 +22,9 @@ describe("rangeSchema", () => {
   it("coerces legacy 'lifetime' to 'full'", () => {
     expect(rangeSchema.parse("lifetime")).toBe("full");
   });
+  it("accepts 'rothConversionYears'", () => {
+    expect(rangeSchema.parse("rothConversionYears")).toBe("rothConversionYears");
+  });
   it("rejects endYear < startYear", () => {
     expect(() => rangeSchema.parse({ startYear: 2050, endYear: 2030 })).toThrow();
   });
@@ -35,6 +38,11 @@ describe("summarizeDrillOptions", () => {
     expect(
       summarizeDrillOptions({ range: { startYear: 2030, endYear: 2050 }, showCallout: false }),
     ).toBe("2030–2050");
+  });
+  it("labels the Roth-conversion range in plain words", () => {
+    expect(summarizeDrillOptions({ range: "rothConversionYears", showCallout: false })).toBe(
+      "Roth conversion years",
+    );
   });
 });
 

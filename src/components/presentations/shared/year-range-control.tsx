@@ -1,7 +1,8 @@
 // src/components/presentations/shared/year-range-control.tsx
 "use client";
 
-import type { RangeOption } from "@/lib/presentations/shared/year-filter";
+import type { NamedRange, RangeOption } from "@/lib/presentations/shared/year-filter";
+import { summarizeRange } from "@/lib/presentations/shared/drill-options";
 import { OptionsGroup } from "./options-layout";
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -9,11 +10,14 @@ const CURRENT_YEAR = new Date().getFullYear();
 interface Props {
   value: RangeOption;
   onChange: (next: RangeOption) => void;
+  /** Named ranges to offer between Full and Custom. The control does not know
+   *  what any of them means; the page that offers one does. */
+  presets?: NamedRange[];
 }
 
 /** Full / Custom year-range picker shared by the cash-flow page and every
  *  cash-flow / estate drill. Renders as a single labeled options group. */
-export function YearRangeControl({ value, onChange }: Props) {
+export function YearRangeControl({ value, onChange, presets }: Props) {
   const isCustom = typeof value === "object";
   const startYear = isCustom ? value.startYear : CURRENT_YEAR;
   const endYear = isCustom ? value.endYear : CURRENT_YEAR + 30;
@@ -30,6 +34,18 @@ export function YearRangeControl({ value, onChange }: Props) {
         />
         <span>Full range</span>
       </label>
+      {presets?.map((preset) => (
+        <label key={preset} className="flex items-center gap-2 hover:text-ink">
+          <input
+            type="radio"
+            aria-label={summarizeRange(preset)}
+            className="accent-accent"
+            checked={value === preset}
+            onChange={() => onChange(preset)}
+          />
+          <span>{summarizeRange(preset)}</span>
+        </label>
+      ))}
       <label className="flex items-center gap-2 hover:text-ink">
         <input
           type="radio"

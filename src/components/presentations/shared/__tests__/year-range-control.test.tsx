@@ -25,4 +25,23 @@ describe("YearRangeControl", () => {
     fireEvent.change(screen.getByLabelText("Start year"), { target: { value: "2035" } });
     expect(onChange).toHaveBeenCalledWith({ startYear: 2035, endYear: 2050 });
   });
+
+  it("offers Roth conversion years only when asked", () => {
+    render(<YearRangeControl value="full" onChange={() => {}} />);
+    expect(screen.queryByLabelText("Roth conversion years")).not.toBeInTheDocument();
+  });
+
+  it("emits the Roth-conversion range when that radio is picked", () => {
+    const onChange = vi.fn();
+    render(<YearRangeControl value="full" onChange={onChange} presets={["rothConversionYears"]} />);
+    fireEvent.click(screen.getByLabelText("Roth conversion years"));
+    expect(onChange).toHaveBeenCalledWith("rothConversionYears");
+  });
+
+  it("shows the Roth-conversion range selected without the custom inputs", () => {
+    render(<YearRangeControl value="rothConversionYears" onChange={() => {}} presets={["rothConversionYears"]} />);
+    expect((screen.getByLabelText("Roth conversion years") as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByLabelText("Full") as HTMLInputElement).checked).toBe(false);
+    expect(screen.queryByLabelText("Start year")).not.toBeInTheDocument();
+  });
 });

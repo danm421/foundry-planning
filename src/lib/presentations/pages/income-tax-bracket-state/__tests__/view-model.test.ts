@@ -28,4 +28,27 @@ describe("buildTaxBracketStateDrillData", () => {
     expect(d.chartSpec!.stacks.map((s) => s.seriesId)).toEqual(["intoBracket", "remainingInBracket"]);
     expect(d.chartSpec!.lines).toHaveLength(0);
   });
+
+  it("clips to Roth conversion years while keeping Change in Base year-over-year", () => {
+    const years = makeTaxYears();
+    years.find((y) => y.year === 2036)!.rothConversions = [
+      { id: "rc1", name: "Fill the 12% bracket", gross: 40_000, taxable: 40_000 },
+    ];
+    const d = buildTaxBracketStateDrillData({
+      ...base, years, options: { range: "rothConversionYears", showCallout: false },
+    });
+    expect(d.table.rows.map((r) => r.year)).toEqual([2036]);
+    expect(d.chartSpec!.xAxis.domain).toEqual([2036]);
+    // 2036 state taxable 63_800 less 2031's 50_800 — the hidden year, not a zero.
+    expect(d.table.rows[0].cells.changeInBase).toBe(13_000);
+  });
+
+  it("says so, and prints no chart, when the plan has no conversions", () => {
+    const d = buildTaxBracketStateDrillData({
+      ...base, options: { range: "rothConversionYears", showCallout: false },
+    });
+    expect(d.table.rows).toHaveLength(0);
+    expect(d.chartSpec).toBeUndefined();
+    expect(d.footnote).toContain("No Roth conversions are modeled");
+  });
 });

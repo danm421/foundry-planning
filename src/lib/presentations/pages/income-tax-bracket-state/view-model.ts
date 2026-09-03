@@ -8,7 +8,7 @@ import { buildStateBracketRows } from "@/lib/tax/bracket";
 import type {
   DrillColumn, DrillPageData, DrillPageOptions, DrillRow,
 } from "../../shared/drill-types";
-import { filterYearsToRange, type RangeOption } from "../../shared/year-filter";
+import { clipRowsToYears, emptyRangeNote, filterYearsToRange } from "../../shared/year-filter";
 import { buildMarkers } from "../../shared/markers";
 import { buildDrillChartSpec } from "../../shared/build-chart-spec";
 import { PRESENTATION_THEME } from "../../theme";
@@ -27,8 +27,8 @@ export interface BuildTaxBracketStateDrillInput {
 
 export function buildTaxBracketStateDrillData(input: BuildTaxBracketStateDrillInput): DrillPageData {
   const { years, clientData, options, scenarioLabel, clientName, spouseName } = input;
-  const visibleYears = filterYearsToRange(years, options.range as RangeOption);
-  const stateRows = buildStateBracketRows(visibleYears);
+  const visibleYears = filterYearsToRange(years, options.range);
+  const stateRows = clipRowsToYears(buildStateBracketRows(years), visibleYears);
 
   const columns: DrillColumn[] = [
     { key: "stateTaxable",       header: "State\nTaxable",        width: 52 },
@@ -76,9 +76,9 @@ export function buildTaxBracketStateDrillData(input: BuildTaxBracketStateDrillIn
     title: "Income Tax — Tax Bracket (State)",
     subtitle: scenarioLabel,
     callout: computeCallout(options),
-    chartSpec,
+    chartSpec: rows.length > 0 ? chartSpec : undefined,
     table: { columns, rows, markers },
-    footnote: DISCLAIMER,
+    footnote: emptyRangeNote(options.range, rows.length) + DISCLAIMER,
   };
 }
 

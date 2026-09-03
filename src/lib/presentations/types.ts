@@ -2,6 +2,7 @@
 // Pure data — no React, no react-pdf, no engine internals.
 
 import type { ClientData, ProjectionYear } from "@/engine/types";
+import type { RangeOption } from "./shared/year-filter";
 
 // ── Page-level ──────────────────────────────────────────────────────────────
 
@@ -56,7 +57,7 @@ export type TocPageData = { clientName: string };
 // ── Cash-flow page ─────────────────────────────────────────────────────────
 
 export interface CashFlowPageOptions {
-  range: "full" | { startYear: number; endYear: number };
+  range: RangeOption;
   showCallout: boolean;
   calloutText?: string;
 }

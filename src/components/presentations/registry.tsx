@@ -76,7 +76,7 @@ import { HoldingsPagePdf } from "./pages/holdings/page-pdf";
 import { HoldingsOptionsControl } from "./pages/holdings/options-control";
 // Shared drill-down infrastructure used by every Cash Flow > * drill page.
 import { DrillPagePdf } from "./shared/drill-page-pdf";
-import { DrillOptionsControl } from "./shared/drill-options-control";
+import { DrillOptionsControl, TaxBracketOptionsControl } from "./shared/drill-options-control";
 import {
   DRILL_PAGE_OPTIONS_DEFAULT,
   drillOptionsSchema,
@@ -1152,21 +1152,29 @@ export const incomeTaxOtherTaxesPage = makeDrillPage(
   "Income Tax",
 );
 
-export const incomeTaxBracketFederalPage = makeDrillPage(
-  "incomeTaxBracketFederal",
-  "Income Tax — Tax Bracket (Federal)",
-  "Federal bracket stacking: Roth conversions, income tax base, marginal rate, amount into and remaining in the marginal bracket.",
-  buildTaxBracketFederalDrillData,
-  "Income Tax",
-);
+// The two Tax Bracket pages also offer a "Roth conversion years" range — the
+// rows an advisor sizing a conversion actually wants to hand the client.
+export const incomeTaxBracketFederalPage: PresentationPage<DrillPageData, DrillPageOptions> = {
+  ...makeDrillPage(
+    "incomeTaxBracketFederal",
+    "Income Tax — Tax Bracket (Federal)",
+    "Federal bracket stacking: Roth conversions, income tax base, marginal rate, amount into and remaining in the marginal bracket.",
+    buildTaxBracketFederalDrillData,
+    "Income Tax",
+  ),
+  OptionsControl: TaxBracketOptionsControl,
+};
 
-export const incomeTaxBracketStatePage = makeDrillPage(
-  "incomeTaxBracketState",
-  "Income Tax — Tax Bracket (State)",
-  "State bracket stacking: state taxable income, marginal rate, amount into and remaining in the marginal bracket, and state tax.",
-  buildTaxBracketStateDrillData,
-  "Income Tax",
-);
+export const incomeTaxBracketStatePage: PresentationPage<DrillPageData, DrillPageOptions> = {
+  ...makeDrillPage(
+    "incomeTaxBracketState",
+    "Income Tax — Tax Bracket (State)",
+    "State bracket stacking: state taxable income, marginal rate, amount into and remaining in the marginal bracket, and state tax.",
+    buildTaxBracketStateDrillData,
+    "Income Tax",
+  ),
+  OptionsControl: TaxBracketOptionsControl,
+};
 
 export const estateFlowChartPage: PresentationPage<EstateFlowChartData, EstatePageOptions> = {
   id: "estateFlowChart",

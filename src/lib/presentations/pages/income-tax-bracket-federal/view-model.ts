@@ -6,7 +6,7 @@ import { buildTaxBracketRows } from "@/lib/tax/bracket";
 import type {
   DrillColumn, DrillPageData, DrillPageOptions, DrillRow,
 } from "../../shared/drill-types";
-import { filterYearsToRange, type RangeOption } from "../../shared/year-filter";
+import { clipRowsToYears, emptyRangeNote, filterYearsToRange } from "../../shared/year-filter";
 import { buildMarkers } from "../../shared/markers";
 import { buildDrillChartSpec } from "../../shared/build-chart-spec";
 import { PRESENTATION_THEME } from "../../theme";
@@ -56,8 +56,8 @@ export interface BuildTaxBracketFederalDrillInput {
 
 export function buildTaxBracketFederalDrillData(input: BuildTaxBracketFederalDrillInput): DrillPageData {
   const { years, clientData, options, scenarioLabel, clientName, spouseName } = input;
-  const visibleYears = filterYearsToRange(years, options.range as RangeOption);
-  const bracketRows = buildTaxBracketRows(visibleYears);
+  const visibleYears = filterYearsToRange(years, options.range);
+  const bracketRows = clipRowsToYears(buildTaxBracketRows(years), visibleYears);
 
   const columns: DrillColumn[] = [
     { key: "conversionGross",    header: "Roth\nConversion",      width: 52 },
@@ -87,7 +87,7 @@ export function buildTaxBracketFederalDrillData(input: BuildTaxBracketFederalDri
   const markers = buildMarkers(clientData, visibleYears, clientName, spouseName);
 
   const chartSpec = buildDrillChartSpec({
-    years: visibleYears.map((y) => y.year),
+    years: bracketRows.map((br) => br.year),
     stacks: [
       {
         seriesId: "intoBracket", label: "Into Bracket",
@@ -112,9 +112,9 @@ export function buildTaxBracketFederalDrillData(input: BuildTaxBracketFederalDri
     title: "Income Tax — Tax Bracket (Federal)",
     subtitle: scenarioLabel,
     callout: computeCallout(options),
-    chartSpec,
+    chartSpec: rows.length > 0 ? chartSpec : undefined,
     table: { columns, rows, markers },
-    footnote: amtFootnote(bracketRows) + DISCLAIMER,
+    footnote: emptyRangeNote(options.range, rows.length) + amtFootnote(bracketRows) + DISCLAIMER,
   };
 }
 

@@ -3,6 +3,7 @@
 
 import { z } from "zod";
 import type { DrillPageData, DrillPageOptions } from "./drill-types";
+import type { RangeOption } from "./year-filter";
 import { CASH_FLOW_PAGE_OPTIONS_DEFAULT } from "../types";
 import { PAGE_PAD_X, PAGE_WIDTH_PORTRAIT } from "@/components/presentations/shared/page-frame";
 
@@ -19,8 +20,15 @@ const customRange = z
 // coerce those to "full" before validation so old decks load unchanged.
 export const rangeSchema = z.preprocess(
   (v) => (v === "retirement" || v === "lifetime" ? "full" : v),
-  z.union([z.literal("full"), customRange]),
+  z.union([z.literal("full"), z.literal("rothConversionYears"), customRange]),
 );
+
+/** One label per range, shared by every page that persists one. */
+export function summarizeRange(range: RangeOption): string {
+  if (range === "full") return "Full range";
+  if (range === "rothConversionYears") return "Roth conversion years";
+  return `${range.startYear}–${range.endYear}`; // en-dash U+2013
+}
 
 export const drillOptionsSchema = z.object({
   range: rangeSchema,
@@ -32,8 +40,7 @@ export const DRILL_PAGE_OPTIONS_DEFAULT: DrillPageOptions =
   CASH_FLOW_PAGE_OPTIONS_DEFAULT;
 
 export function summarizeDrillOptions(opts: DrillPageOptions): string {
-  if (opts.range === "full") return "Full range";
-  return `${opts.range.startYear}–${opts.range.endYear}`; // en-dash U+2013
+  return summarizeRange(opts.range);
 }
 
 // ── Sheet count ──────────────────────────────────────────────────────────────
