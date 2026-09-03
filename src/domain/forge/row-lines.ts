@@ -142,6 +142,23 @@ export function formatRate(v: unknown): string {
   return `${(n * 100).toFixed(1).replace(/\.0$/, "")}%`;
 }
 
+/** The one figure that names a row — a balance, an annual amount, a loan
+ *  balance — formatted for prose. The write tools echo it in their result so a
+ *  confirmation that repeats it stays grounded: verify.ts checks every figure in
+ *  an answer against the tool results, and a bare `Added "X" (id …)` grounds
+ *  nothing, so the retry it triggers reads back as a hedge. */
+export function headlineFigure(kind: RowKind, row: Row): string {
+  switch (kind) {
+    case "account":
+      return formatMoney(row.value ?? 0);
+    case "expense":
+    case "income":
+      return `${formatMoney(row.annualAmount ?? 0)}/yr`;
+    case "liability":
+      return formatMoney(row.balance ?? 0);
+  }
+}
+
 function formatTerm(v: unknown): string {
   const n = toNumber(v);
   if (n == null) return String(v);

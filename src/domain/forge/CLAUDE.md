@@ -7,4 +7,4 @@
 
 Run `npm run eval:forge` before merge (non-blocking lane).
 
-**Known limitation:** the eval runs the real graph against a fake eval-scope client (`provider.ts` `EVAL_AUTH`), so tool *execution* errors until a seeded eval client exists. The assertions still exercise tool *selection* and the HITL invariant. Assertion logic itself is unit-tested in `evals/__tests__/assertions.test.ts`.
+**Known limitation:** the eval runs the real graph against a fake eval-scope client (`provider.ts` `EVAL_AUTH`), so tool *execution* errors until a seeded eval client exists. The assertions still exercise tool *selection* and the HITL invariant. The graph also runs with `evals/fixtures.ts`'s **stub** system prompt, so a change to `system-prompt.ts` is not under test here — only tool selection and the tool descriptions are. Assertion logic itself is unit-tested in `evals/__tests__/assertions.test.ts`.

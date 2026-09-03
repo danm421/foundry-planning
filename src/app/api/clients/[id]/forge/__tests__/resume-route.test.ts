@@ -264,7 +264,8 @@ describe("POST /api/clients/[id]/forge/resume — happy path", () => {
     const types = events.map((e) => e.type);
     expect(types).toContain("token");
     expect(types).toContain("done");
-    expect(events.find((e) => e.type === "token")).toMatchObject({ text: "Applied" });
+    // The answer is held behind the verify gate and released as one chunk.
+    expect(events.filter((e) => e.type === "token").map((e) => e.text).join("")).toBe("Applied the change.");
 
     // Command was constructed with the exact resume payload.
     expect(commandArgs).toHaveLength(1);
@@ -317,6 +318,69 @@ describe("POST /api/clients/[id]/forge/resume — happy path", () => {
     expect(passedCtx.clientId).toBe("c1");
     expect(passedCtx.firmId).toBe("firm_1");
     expect(passedCtx.userId).toBe("user_1");
+  });
+
+  // ── Verify gate (parity with stream-verify.test.ts) ─────────────────────────
+  // A post-approval confirmation that repeats a figure routes through the verify
+  // node exactly like a first-turn answer. Without a buffer the rejected draft
+  // and its revision both stream into the same bubble, glued together.
+
+  it("holds the answer behind the verify gate: 'verifying' precedes the first token", async () => {
+    fakeGraph.streamEvents = async function* () {
+      yield {
+        event: "on_chat_model_stream",
+        name: "model",
+        metadata: { langgraph_node: "agent" },
+        data: { chunk: { content: "Added Schwab Brokerage at $150,000." } },
+      };
+      yield { event: "on_custom_event", name: "forge_verify", data: { result: "start" } };
+      yield {
+        event: "on_chat_model_stream",
+        name: "model",
+        metadata: { langgraph_node: "verify" },
+        data: { chunk: { content: '{"ok":true,"problems":[]}' } },
+      };
+      yield { event: "on_custom_event", name: "forge_verify", data: { result: "pass" } };
+    };
+    const events = await drainSse(await POST(makeReq(goodBody), ctx));
+    expect(events.map((e) => e.type)).toEqual(["verifying", "token", "done"]);
+    const text = events.filter((e) => e.type === "token").map((e) => e.text).join("");
+    expect(text).toBe("Added Schwab Brokerage at $150,000.");
+  });
+
+  it("discards the rejected draft on retry and streams only the revision", async () => {
+    fakeGraph.streamEvents = async function* () {
+      yield { event: "on_chat_model_stream", name: "model", data: { chunk: { content: "Draft says $1." } } };
+      yield { event: "on_custom_event", name: "forge_verify", data: { result: "start" } };
+      yield { event: "on_custom_event", name: "forge_verify", data: { result: "retry" } };
+      yield { event: "on_chat_model_stream", name: "model", data: { chunk: { content: "Revised: $2." } } };
+      yield { event: "on_custom_event", name: "forge_verify", data: { result: "start" } };
+      yield { event: "on_custom_event", name: "forge_verify", data: { result: "pass" } };
+    };
+    const events = await drainSse(await POST(makeReq(goodBody), ctx));
+    const text = events.filter((e) => e.type === "token").map((e) => e.text).join("");
+    expect(text).toBe("Revised: $2.");
+  });
+
+  it("trails the answer with the caveat when verify gives up", async () => {
+    fakeGraph.streamEvents = async function* () {
+      yield { event: "on_chat_model_stream", name: "model", data: { chunk: { content: "Answer $3." } } };
+      yield { event: "on_custom_event", name: "forge_verify", data: { result: "start" } };
+      yield { event: "on_custom_event", name: "forge_verify", data: { result: "caveat", caveat: "CHECK THESE." } };
+    };
+    const events = await drainSse(await POST(makeReq(goodBody), ctx));
+    const text = events.filter((e) => e.type === "token").map((e) => e.text).join("");
+    expect(text).toBe("Answer $3.\n\nCHECK THESE.");
+  });
+
+  it("releases a held answer before the error frame when the stream dies mid-turn", async () => {
+    fakeGraph.streamEvents = async function* () {
+      yield { event: "on_chat_model_stream", name: "model", data: { chunk: { content: "Held $4." } } };
+      throw new Error("boom");
+    };
+    const events = await drainSse(await POST(makeReq(goodBody), ctx));
+    expect(events.map((e) => e.type)).toEqual(["token", "error"]);
+    expect(String(events[0].text)).toContain("Held $4.");
   });
 
   it("re-emits approval_required when getState reports a chained pending interrupt", async () => {

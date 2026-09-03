@@ -12,6 +12,7 @@ import {
   formatFieldValue,
   formatMoney,
   formatRate,
+  headlineFigure,
   newRowLines,
   ownershipLines,
 } from "../row-lines";
@@ -279,5 +280,19 @@ describe("formatters", () => {
     expect(formatFieldValue("accountNumberLast4", "1234")).toBe("…1234");
     expect(formatFieldValue("rmdEnabled", true)).toBe("Yes");
     expect(formatFieldValue("custodian", null)).toBe("—");
+  });
+});
+
+describe("headlineFigure", () => {
+  it("names the one figure that identifies a row, formatted for prose", () => {
+    expect(headlineFigure("account", { value: "150000.00" })).toBe("$150,000");
+    expect(headlineFigure("expense", { annualAmount: "12000" })).toBe("$12,000/yr");
+    expect(headlineFigure("income", { annualAmount: 95000 })).toBe("$95,000/yr");
+    expect(headlineFigure("liability", { balance: "9840.00" })).toBe("$9,840");
+  });
+
+  it("reads $0 when the row carries no figure", () => {
+    expect(headlineFigure("account", {})).toBe("$0");
+    expect(headlineFigure("liability", { balance: null })).toBe("$0");
   });
 });

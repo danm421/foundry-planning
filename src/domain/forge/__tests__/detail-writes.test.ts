@@ -89,6 +89,16 @@ beforeEach(() => {
 });
 
 describe("add_expense", () => {
+  it("echoes the headline figure in its result so a confirmation that repeats it stays grounded", async () => {
+    vi.mocked(createExpenseForClient).mockResolvedValue({
+      ok: true,
+      data: { id: "exp-1", name: "Vacation", annualAmount: "12000.00" } as never,
+      resourceId: "exp-1",
+    });
+    const result = await getTool("add_expense").invoke({ type: "discretionary", name: "Vacation", startYear: 2026, endYear: 2040 });
+    expect(String(result)).toBe("Added expense \"Vacation\" at $12,000/yr (id exp-1).");
+  });
+
   it("description says the advisor approves it on a card — call it directly", () => {
     expect(getTool("add_expense").description).toMatch(/approves it on a confirmation card.*call it directly/);
   });
@@ -203,6 +213,16 @@ describe("add_expense", () => {
 });
 
 describe("update_expense", () => {
+  it("echoes the headline figure in its result so a confirmation that repeats it stays grounded", async () => {
+    vi.mocked(updateExpenseForClient).mockResolvedValue({
+      ok: true,
+      data: { id: "exp-1", name: "Vacation", annualAmount: "15000.00" } as never,
+      resourceId: "exp-1",
+    });
+    const result = await getTool("update_expense").invoke({ expenseId: "exp-1", annualAmount: 15000 });
+    expect(String(result)).toBe("Updated expense \"Vacation\" at $15,000/yr (id exp-1).");
+  });
+
   it("description says the advisor approves it on a card — call it directly", () => {
     expect(getTool("update_expense").description).toMatch(/approves it on a confirmation card.*call it directly/);
   });
@@ -323,6 +343,16 @@ describe("remove_expense", () => {
 });
 
 describe("add_income", () => {
+  it("echoes the headline figure in its result so a confirmation that repeats it stays grounded", async () => {
+    vi.mocked(createIncomeForClient).mockResolvedValue({
+      ok: true,
+      data: { id: "inc-1", name: "Salary", annualAmount: "95000.00" } as never,
+      resourceId: "inc-1",
+    });
+    const result = await getTool("add_income").invoke({ type: "salary", name: "Salary", startYear: 2026, endYear: 2040 });
+    expect(String(result)).toBe("Added income \"Salary\" at $95,000/yr (id inc-1).");
+  });
+
   it("description says the advisor approves it on a card — call it directly", () => {
     expect(getTool("add_income").description).toMatch(/approves it on a confirmation card.*call it directly/);
   });
@@ -397,6 +427,16 @@ describe("add_income", () => {
 });
 
 describe("update_income", () => {
+  it("echoes the headline figure in its result so a confirmation that repeats it stays grounded", async () => {
+    vi.mocked(updateIncomeForClient).mockResolvedValue({
+      ok: true,
+      data: { id: "inc-1", name: "Salary", annualAmount: "99000.00" } as never,
+      resourceId: "inc-1",
+    });
+    const result = await getTool("update_income").invoke({ incomeId: "inc-1", annualAmount: 99000 });
+    expect(String(result)).toBe("Updated income \"Salary\" at $99,000/yr (id inc-1).");
+  });
+
   it("description says the advisor approves it on a card — call it directly", () => {
     expect(getTool("update_income").description).toMatch(/approves it on a confirmation card.*call it directly/);
   });
@@ -490,6 +530,16 @@ describe("remove_income", () => {
 });
 
 describe("add_liability", () => {
+  it("echoes the headline figure in its result so a confirmation that repeats it stays grounded", async () => {
+    vi.mocked(createLiabilityForClient).mockResolvedValue({
+      ok: true,
+      data: { id: "liab-1", name: "Mortgage", balance: "9840.00" } as never,
+      resourceId: "liab-1",
+    });
+    const result = await getTool("add_liability").invoke({ name: "Mortgage", startYear: 2030, termMonths: 360 });
+    expect(String(result)).toBe("Added liability \"Mortgage\" at $9,840 (id liab-1).");
+  });
+
   it("description says the advisor approves it on a card — call it directly", () => {
     expect(getTool("add_liability").description).toMatch(/approves it on a confirmation card.*call it directly/);
   });
@@ -577,6 +627,16 @@ describe("add_liability", () => {
 });
 
 describe("update_liability", () => {
+  it("echoes the headline figure in its result so a confirmation that repeats it stays grounded", async () => {
+    vi.mocked(updateLiabilityForClient).mockResolvedValue({
+      ok: true,
+      data: { id: "liab-1", name: "Mortgage", balance: "5000.00" } as never,
+      resourceId: "liab-1",
+    });
+    const result = await getTool("update_liability").invoke({ liabilityId: "liab-1", balance: 5000 });
+    expect(String(result)).toBe("Updated liability \"Mortgage\" at $5,000 (id liab-1).");
+  });
+
   it("description says the advisor approves it on a card — call it directly", () => {
     expect(getTool("update_liability").description).toMatch(/approves it on a confirmation card.*call it directly/);
   });
@@ -670,6 +730,16 @@ describe("remove_liability", () => {
 });
 
 describe("add_account", () => {
+  it("echoes the headline figure in its result so a confirmation that repeats it stays grounded", async () => {
+    vi.mocked(createAccountForClient).mockResolvedValue({
+      ok: true,
+      data: { id: "acct-1", name: "Brokerage", value: "150000.00" } as never,
+      resourceId: "acct-1",
+    });
+    const result = await getTool("add_account").invoke({ name: "Brokerage", category: "taxable" });
+    expect(String(result)).toBe("Added account \"Brokerage\" at $150,000 (id acct-1).");
+  });
+
   it("description says the advisor approves it on a card — call it directly", () => {
     expect(getTool("add_account").description).toMatch(/approves it on a confirmation card.*call it directly/);
   });
@@ -744,6 +814,16 @@ describe("add_account", () => {
 });
 
 describe("update_account", () => {
+  it("echoes the headline figure in its result so a confirmation that repeats it stays grounded", async () => {
+    vi.mocked(updateAccountForClient).mockResolvedValue({
+      ok: true,
+      data: { id: "acct-1", name: "Brokerage", value: "150000.00" } as never,
+      resourceId: "acct-1",
+    });
+    const result = await getTool("update_account").invoke({ accountId: "acct-1", value: 150000 });
+    expect(String(result)).toBe("Updated account \"Brokerage\" at $150,000 (id acct-1).");
+  });
+
   it("description says the advisor approves it on a card — call it directly", () => {
     expect(getTool("update_account").description).toMatch(/approves it on a confirmation card.*call it directly/);
   });
