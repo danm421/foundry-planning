@@ -14,7 +14,7 @@ import { listCrmHouseholds, getCrmHousehold, createCrmHousehold } from "@/lib/cr
 import { isUSPSStateCode } from "@/lib/usps-states";
 import { createClientForHousehold } from "@/lib/clients/create-client";
 import { ensurePlanImport } from "@/lib/imports/plan-builder-core";
-import { emitNavigate, emitToolRender } from "../custom-events";
+import { emitNavigate, emitPageLink, emitToolRender } from "../custom-events";
 import type { ForgeGlobalToolContext } from "../context";
 
 export function buildGlobalActionTools({ ctx, conversationId }: ForgeGlobalToolContext): StructuredToolInterface[] {
@@ -98,6 +98,15 @@ export function buildGlobalActionTools({ ctx, conversationId }: ForgeGlobalToolC
           action: "forge.write_approved", resourceType: "crm_household", resourceId: hh.id,
           firmId, actorId: ctx.userId, metadata: { tool: "create_household", conversationId },
         });
+        // The advisor lands on the new household record; the button carries them
+        // on to the start-planning picker (guided / import / intake / empty) for
+        // this household, so they don't have to hunt for it there.
+        await emitPageLink(
+          `/clients/new?crmHouseholdId=${hh.id}`,
+          "start-planning",
+          "Start planning",
+          "action",
+        );
         await emitNavigate(`/crm/households/${hh.id}`);
         return JSON.stringify({ householdId: hh.id, name: hh.name, suggestion: "set_up_plan" });
       } catch (e) {
@@ -109,7 +118,9 @@ export function buildGlobalActionTools({ ctx, conversationId }: ForgeGlobalToolC
       description:
         "Create a new CRM household (client record) for this firm. Requires human approval. " +
         "Collect the household name, US state (2-letter), and the primary contact's name (DOB optional); " +
-        "a spouse contact is optional. After it's created, offer to set up the financial plan (set_up_plan).",
+        "a spouse contact is optional. On success a 'Start planning' button is attached to your answer " +
+        "automatically, so say the household is created and keep the follow-up short — you can still " +
+        "offer to set the plan up here (set_up_plan) instead.",
       schema: z.object({
         name: z.string().min(1).max(200),
         state: z.string().length(2).describe("USPS 2-letter state code, e.g. NJ"),

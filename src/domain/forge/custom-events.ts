@@ -34,6 +34,9 @@ export interface PageLinkFrame {
   href: string;
   section: string;
   label: string;
+  /** "action" renders the link as a call-to-action button ("Start planning")
+   *  rather than a "see this in the app" citation chip. Absent = citation. */
+  intent?: "action";
 }
 export interface WalkthroughFrame {
   type: "walkthrough";
@@ -60,12 +63,21 @@ export async function emitActivity(label: string) {
 }
 /** Emit a non-navigating deep link the client attaches to the answer as a chip.
  *  Same allowlist guard as emitNavigate (defence in depth); the advisor is NOT
- *  routed — the chip is rendered for them to click. */
-export async function emitPageLink(href: string, section: string, label: string) {
+ *  routed — the chip is rendered for them to click.
+ *
+ *  `intent: "action"` marks it as the next step the advisor can take (not a
+ *  citation of where a number came from), so the client renders it as a button
+ *  under the answer instead of a "See this in the app" chip. */
+export async function emitPageLink(
+  href: string,
+  section: string,
+  label: string,
+  intent?: "action",
+) {
   if (!NAVIGATE_ALLOWLIST_PREFIXES.some((p) => href.startsWith(p))) {
     throw new Error("page_link href not allowlisted");
   }
-  await dispatchCustomEvent("page_link", { href, section, label });
+  await dispatchCustomEvent("page_link", { href, section, label, ...(intent ? { intent } : {}) });
 }
 /** Emit a request for the client to start an on-screen guided walkthrough.
  *  The id is re-validated against the catalog here (defence in depth) — the

@@ -353,6 +353,34 @@ describe("ForgePanel", () => {
     expect(navMocks.push).toHaveBeenCalledWith("/clients/c1/assets/balance-sheet-report");
   });
 
+  it("renders an action page_link as a button and routes to the start-planning picker", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        makeFramedResponse([
+          `data: {"type":"token","text":"Created the Doe Household."}\n\n`,
+          `data: {"type":"page_link","href":"/clients/new?crmHouseholdId=hh_new","section":"start-planning","label":"Start planning","intent":"action"}\n\n`,
+          `data: {"type":"done"}\n\n`,
+        ]),
+      ),
+    );
+    mountPanel();
+    await act(async () => {
+      fireEvent.change(screen.getByRole("textbox", { name: /ask forge/i }), {
+        target: { value: "Add the Doe household" },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Send message"));
+    });
+
+    const button = await screen.findByRole("button", { name: /start planning/i });
+    fireEvent.click(button);
+    expect(navMocks.push).toHaveBeenCalledWith("/clients/new?crmHouseholdId=hh_new");
+    // It's a next step, not a citation — the citation heading must not appear.
+    expect(screen.queryByText("See this in the app")).toBeNull();
+  });
+
   it("hands a pendingWalkthrough off to the walkthrough provider and clears it", async () => {
     vi.stubGlobal(
       "fetch",

@@ -9,6 +9,7 @@ vi.mock("@/lib/db-helpers", () => ({ requireOrgId: vi.fn(async () => "org_A") })
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn(async () => {}) }));
 vi.mock("../../custom-events", () => ({
   emitNavigate: vi.fn(async () => {}),
+  emitPageLink: vi.fn(async () => {}),
   emitToolRender: vi.fn(async () => {}),
 }));
 vi.mock("@/lib/clients/create-client", () => ({ createClientForHousehold: vi.fn() }));
@@ -16,7 +17,7 @@ vi.mock("@/lib/imports/plan-builder-core", () => ({ ensurePlanImport: vi.fn() })
 
 import { buildGlobalActionTools } from "../global-actions";
 import { getCrmHousehold } from "@/lib/crm/households";
-import { emitNavigate } from "../../custom-events";
+import { emitNavigate, emitPageLink } from "../../custom-events";
 import { recordAudit } from "@/lib/audit";
 import { createClientForHousehold } from "@/lib/clients/create-client";
 import { ensurePlanImport } from "@/lib/imports/plan-builder-core";
@@ -86,7 +87,26 @@ describe("create_household (HITL)", () => {
       action: "forge.write_approved", resourceType: "crm_household", resourceId: "hh_new",
     }));
     expect(emitNavigate).toHaveBeenCalledWith("/crm/households/hh_new");
+    // The chat's next step: a button onto the start-planning picker for THIS
+    // household — the id must be the created household, not the model's input.
+    expect(emitPageLink).toHaveBeenCalledWith(
+      "/clients/new?crmHouseholdId=hh_new",
+      "start-planning",
+      "Start planning",
+      "action",
+    );
     expect(out).toEqual({ householdId: "hh_new", name: "Doe Household", suggestion: "set_up_plan" });
+  });
+
+  it("offers no Start planning button when the create fails", async () => {
+    createCrmHousehold.mockRejectedValue(new Error("duplicate household"));
+    const out = String(await getTool("create_household").invoke({
+      name: "Doe Household",
+      state: "NJ",
+      primaryContact: { firstName: "Jane", lastName: "Doe" },
+    }));
+    expect(out).toMatch(/duplicate household/i);
+    expect(emitPageLink).not.toHaveBeenCalled();
   });
 });
 

@@ -195,6 +195,29 @@ describe("custom-streaming frames", () => {
     ]);
   });
 
+  it("carries the action intent onto the attached link (a next step, not a citation)", async () => {
+    const frames = [
+      `data: {"type":"token","text":"Created the Doe Household."}\n\n`,
+      `data: {"type":"page_link","href":"/clients/new?crmHouseholdId=hh_new","section":"start-planning","label":"Start planning","intent":"action"}\n\n`,
+      `data: {"type":"done"}\n\n`,
+    ];
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(makeFramedResponse(frames)));
+
+    const { result } = renderHook(() => useForgeStream("c1"));
+    await act(async () => {
+      await result.current.send({ message: "Add the Does", scenarioId: "base" });
+    });
+
+    expect(result.current.messages.at(-1)!.pageLinks).toEqual([
+      {
+        href: "/clients/new?crmHouseholdId=hh_new",
+        section: "start-planning",
+        label: "Start planning",
+        intent: "action",
+      },
+    ]);
+  });
+
   it("pageLinks survive a token frame that arrives AFTER the page_link frame (real server order)", async () => {
     // Real server order: cite_page tool emits page_link, THEN the answer tokens
     // flush through the verify-gate. The token case must not clobber pageLinks.

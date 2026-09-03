@@ -26,6 +26,9 @@ export interface PageLink {
   href: string;
   section: string;
   label: string;
+  /** "action" = a next step to take (rendered as a button); absent = a
+   *  citation chip under "See this in the app". */
+  intent?: "action";
 }
 export interface ProposedTaskView {
   title: string;
@@ -55,7 +58,7 @@ export type ForgeSseEvent =
   // Structured custom-streaming frames (plumbing only — no renderer yet).
   | { type: "tool_render"; name: string; status: "inProgress" | "complete"; data: unknown }
   | { type: "navigate"; href: string }
-  | { type: "page_link"; href: string; section: string; label: string }
+  | { type: "page_link"; href: string; section: string; label: string; intent?: "action" }
   | { type: "walkthrough"; walkthroughId: string }
   | { type: "activity"; label: string }
   | { type: "approval_required"; previews: WritePreview[]; calls: ApprovalCall[] }
@@ -284,7 +287,10 @@ export function useForgeStream(clientId: string | null): UseForgeStreamResult {
           if (existing.some((l) => l.section === ev.section)) return copy;
           copy[copy.length - 1] = {
             ...last,
-            pageLinks: [...existing, { href: ev.href, section: ev.section, label: ev.label }],
+            pageLinks: [
+              ...existing,
+              { href: ev.href, section: ev.section, label: ev.label, ...(ev.intent ? { intent: ev.intent } : {}) },
+            ],
           };
           return copy;
         });

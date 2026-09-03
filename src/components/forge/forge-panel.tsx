@@ -7,7 +7,7 @@ import { sectionKeyForPath } from "@/lib/back-nav";
 import { useForge } from "./forge-provider";
 import { useWalkthrough } from "./walkthrough-context";
 import { useScenarioDrawerOptional } from "@/components/scenario/scenario-drawer-provider";
-import { useForgeStream, type PendingApproval } from "./use-forge-stream";
+import { useForgeStream, type PageLink, type PendingApproval } from "./use-forge-stream";
 import { ApprovalCard } from "./approval-card";
 import { looksLikeTranscript } from "./detect-transcript";
 import { MeetingReviewCard } from "./meeting-review-card";
@@ -897,23 +897,7 @@ export function ForgePanel({
                 </div>
 
                 {!isUser && m.pageLinks && m.pageLinks.length > 0 && (
-                  <div className="mt-1.5 max-w-[90%]" data-testid="page-links">
-                    <div className="mb-1 text-[11px] text-secondary-ink/70">See this in the app</div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {m.pageLinks.map((link) => (
-                        <button
-                          key={link.section}
-                          type="button"
-                          data-href={link.href}
-                          onClick={() => jumpToPage(link.href)}
-                          className="inline-flex items-center gap-1 rounded-full border border-secondary/40 bg-secondary/10 px-2.5 py-1 text-[12px] text-secondary-ink transition-colors hover:bg-secondary/20"
-                        >
-                          {link.label}
-                          <span aria-hidden>→</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  <PageLinks links={m.pageLinks} onJump={jumpToPage} />
                 )}
               </div>
             );
@@ -1530,6 +1514,46 @@ function ComposerAddMenu({
             Paste a meeting transcript
           </button>
         </div>
+      )}
+    </div>
+  );
+}
+
+const ACTION_LINK_CLASS =
+  "inline-flex items-center gap-1 rounded-[var(--radius-sm)] bg-accent px-3 py-1 text-[12px] font-semibold text-accent-on transition-colors hover:bg-accent-ink";
+const CITATION_LINK_CLASS =
+  "inline-flex items-center gap-1 rounded-full border border-secondary/40 bg-secondary/10 px-2.5 py-1 text-[12px] text-secondary-ink transition-colors hover:bg-secondary/20";
+
+/** Links a turn attached to its answer. An `action` link is the next step the
+ *  advisor can take (e.g. "Start planning" after a household is created), so it
+ *  gets the accent — accent is for action. Everything else is a citation of
+ *  where a figure came from and stays a quiet chip. */
+function PageLinks({ links, onJump }: { links: PageLink[]; onJump: (href: string) => void }) {
+  const actions = links.filter((l) => l.intent === "action");
+  const citations = links.filter((l) => l.intent !== "action");
+  const row = (group: PageLink[], className: string) =>
+    group.map((link) => (
+      <button
+        key={link.section}
+        type="button"
+        data-href={link.href}
+        onClick={() => onJump(link.href)}
+        className={className}
+      >
+        {link.label}
+        <span aria-hidden>→</span>
+      </button>
+    ));
+  return (
+    <div className="mt-1.5 max-w-[90%]" data-testid="page-links">
+      {actions.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-1.5">{row(actions, ACTION_LINK_CLASS)}</div>
+      )}
+      {citations.length > 0 && (
+        <>
+          <div className="mb-1 text-[11px] text-secondary-ink/70">See this in the app</div>
+          <div className="flex flex-wrap gap-1.5">{row(citations, CITATION_LINK_CLASS)}</div>
+        </>
       )}
     </div>
   );
