@@ -141,7 +141,8 @@ describe("PATCH /observations/context", () => {
   });
 
   it("records a plan_observation_context.update audit entry", async () => {
-    await PATCH(makeReq({ nextStepsContext: "Push the Roth conversion." }), { params: Promise.resolve({ id: clientA }) });
+    const res = await PATCH(makeReq({ nextStepsContext: "Push the Roth conversion." }), { params: Promise.resolve({ id: clientA }) });
+    expect((await res.json()).nextStepsContext).toBe("Push the Roth conversion.");
     const audits = await db.select({ action: auditLog.action }).from(auditLog).where(eq(auditLog.clientId, clientA));
     expect(audits.map((a) => a.action)).toContain("plan_observation_context.update");
   });
