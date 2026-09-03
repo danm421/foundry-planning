@@ -21,6 +21,17 @@ import {
   type GeneratedInvestmentProposalAi,
 } from "./pages/investment-proposal/generate-ai";
 import type { InvestmentProposalOptions } from "./pages/investment-proposal/options-schema";
+import {
+  generateScenarioComparisonAi,
+  prepareScenarioComparisonAiInputs,
+  type GeneratedScenarioComparisonAi,
+  type GenerateScenarioComparisonAiArgs,
+  type ScenarioComparisonAiInputs,
+} from "./pages/scenario-comparison/generate-ai";
+import type {
+  ScenarioComparisonBandAi,
+  ScenarioComparisonOptions,
+} from "./pages/scenario-comparison/types";
 
 /** Minimal page shape — matches both the export BodySchema pages and previews. */
 interface PageLike {
@@ -151,6 +162,94 @@ export async function ensureInvestmentProposalAiSummaries<T extends PageLike>(
         return { ...page, options: nextOptions } as T;
       } catch (err) {
         console.error("[ensure-ai-summaries] proposal generation failed (non-fatal)", err);
+        return page;
+      }
+    }),
+  );
+}
+
+// ── Scenario Comparison ─────────────────────────────────────────────────────
+
+interface ScenarioComparisonDeps {
+  /** Injectable for tests; defaults to the real loader + view model. */
+  prepare?: (
+    clientId: string,
+    firmId: string,
+    options: ScenarioComparisonOptions,
+  ) => Promise<ScenarioComparisonAiInputs | null>;
+  /** Injectable for tests; defaults to the real Redis-cached Azure generator. */
+  generate?: (
+    args: GenerateScenarioComparisonAiArgs,
+  ) => Promise<GeneratedScenarioComparisonAi>;
+}
+
+/**
+ * Same best-effort contract as its siblings, with one difference that matters:
+ * this page carries a narrative PER SCENARIO, so the returned bands are merged
+ * into `ai.byScenario` one at a time. Rebuilding that record wholesale would
+ * discard the text the advisor already has for scenarios the generator did not
+ * return — which is the whole reason the staleness hash is per band rather than
+ * per page.
+ */
+export async function ensureScenarioComparisonAiSummaries<T extends PageLike>(
+  clientId: string,
+  firmId: string,
+  pages: T[],
+  deps: ScenarioComparisonDeps = {},
+): Promise<T[]> {
+  const prepare = deps.prepare ?? prepareScenarioComparisonAiInputs;
+  const generate = deps.generate ?? generateScenarioComparisonAi;
+
+  return Promise.all(
+    pages.map(async (page) => {
+      if (page.pageId !== "scenarioComparison") return page;
+      const o = page.options as ScenarioComparisonOptions;
+      // Sheet two — the only place a narrative appears — is dropped whenever
+      // the page has no bands, so generating one would be pure spend on text
+      // that can never print.
+      if (!o.showTradeoffBands) return page;
+      if (o.scenarioIds.filter(Boolean).length === 0) return page;
+
+      try {
+        const inputs = await prepare(clientId, firmId, o);
+        if (!inputs) return page;
+
+        const { byScenario } = await generate({
+          clientId,
+          householdName: inputs.householdName,
+          firstNames: inputs.firstNames,
+          columns: inputs.columns,
+          rows: inputs.rows,
+          bands: inputs.bands,
+          tone: o.ai.tone,
+          customInstructions: o.ai.customInstructions,
+          sentenceBudget: inputs.sentenceBudget,
+          stored: o.ai.byScenario,
+          force: false,
+        });
+
+        const freshIds = Object.keys(byScenario);
+        if (freshIds.length === 0) return page;
+
+        const merged: Record<string, ScenarioComparisonBandAi> = { ...o.ai.byScenario };
+        for (const id of freshIds) {
+          const res = byScenario[id];
+          merged[id] = {
+            generatedText: res.markdown,
+            generatedAt: res.generatedAt,
+            sourceHash: res.hash,
+          };
+        }
+        const nextOptions: ScenarioComparisonOptions = {
+          ...o,
+          ai: { ...o.ai, byScenario: merged },
+        };
+        return { ...page, options: nextOptions } as T;
+      } catch (err) {
+        console.error(
+          "[ensure-ai-summaries] scenario comparison generation failed (non-fatal)",
+          err,
+        );
         return page;
       }
     }),

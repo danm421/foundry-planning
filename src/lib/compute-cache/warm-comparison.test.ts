@@ -23,6 +23,13 @@ describe("warmComparisonCompute", () => {
     expect((mockMs.mock.calls[0][0] as { targetPoS: number }).targetPoS).toBe(0.9);
   });
 
+  it("skips the max-spend solve for both refs when targetPoS is null", async () => {
+    await warmComparisonCompute({ clientId: "c1", firmId: "f1", scenarioId: "scn1", targetPoS: null });
+    const mcScns = mockMc.mock.calls.map((c) => (c[0] as { scenarioId: string }).scenarioId).sort();
+    expect(mcScns).toEqual(["base", "scn1"]);
+    expect(mockMs).not.toHaveBeenCalled();
+  });
+
   it("does not throw when one compute rejects, and still warms the rest", async () => {
     mockMc.mockRejectedValueOnce(new Error("boom"));
     await expect(

@@ -1,9 +1,12 @@
-// Pre-warm the compute cache for a Retirement Comparison deck: ensures the
-// Monte Carlo + max-spend results for BOTH the base plan and the compared
-// scenario are computed and cached, so the eventual "Generate PDF" run reuses
-// them instead of computing ~4 simulations + 2 solves inline (the 800s-timeout
-// path). Best-effort: each compute is independent and its failure is logged,
-// never thrown — a failed warm just means the run recomputes as it does today.
+// Pre-warm the compute cache for one comparison pair: base + a single chosen
+// scenario. Ensures the Monte Carlo + max-spend results for BOTH refs are
+// computed and cached, so the eventual "Generate PDF" run reuses them instead
+// of computing 2 simulations + 2 solves inline (the 800s-timeout path). Used
+// by both Retirement Comparison (its one comparison scenario, one call) and
+// Scenario Comparison (one call per chosen scenario, up to three — see the
+// launcher's pre-warm effect, which fires all of them independently). Best-
+// effort: each compute is independent and its failure is logged, never
+// thrown — a failed warm just means the run recomputes as it does today.
 import { getOrComputeMonteCarlo } from "./monte-carlo";
 import { getOrComputeMaxSpending } from "./max-spending";
 
@@ -12,7 +15,9 @@ export async function warmComparisonCompute(args: {
   firmId: string;
   /** The compared scenario id (never "base"). */
   scenarioId: string;
-  targetPoS: number;
+  /** `null` when the page's Max Spend toggle is off — nothing reads the
+   *  figure, so the max-spend solve is skipped for both refs. */
+  targetPoS: number | null;
 }): Promise<void> {
   const { clientId, firmId, scenarioId, targetPoS } = args;
   const refs: string[] = ["base", scenarioId];
@@ -22,7 +27,13 @@ export async function warmComparisonCompute(args: {
   await Promise.all(
     refs.flatMap((ref) => [
       getOrComputeMonteCarlo({ clientId, firmId, scenarioId: ref }).catch(swallow(`mc:${ref}`)),
-      getOrComputeMaxSpending({ clientId, firmId, scenarioId: ref, targetPoS }).catch(swallow(`maxspend:${ref}`)),
+      ...(targetPoS != null
+        ? [
+            getOrComputeMaxSpending({ clientId, firmId, scenarioId: ref, targetPoS }).catch(
+              swallow(`maxspend:${ref}`),
+            ),
+          ]
+        : []),
     ]),
   );
 }

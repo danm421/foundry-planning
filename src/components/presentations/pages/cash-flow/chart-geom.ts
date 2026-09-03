@@ -117,6 +117,21 @@ export function legendSlot(index: number, layout: LegendLayout): { x: number; y:
 export const MARKER_LABEL_PT_PER_CHAR = 3.35;
 /** Baseline-to-baseline when labels stack, at 6pt. */
 export const MARKER_LABEL_ROW_H = 7.5;
+/** How far a marker label's INK reaches above its baseline, as a fraction of
+ *  font size — what a stacked label needs to clear the top of the canvas by.
+ *
+ *  NOT the font's cap height. Inter's is 0.7275em (1490/2048), and a label
+ *  budgeted against that number is budgeted short: MEASURED by rasterising the
+ *  real label at 1200 DPI, "Retires 2050" reaches 0.7533em of solid ink and
+ *  0.7633em counting the faintest antialiased row, because the tallest ink in
+ *  it is the tittle on the "i" — even the digits alone reach 0.7433em. The
+ *  permissive figure is the one kept: a clipped glyph loses its faintest row
+ *  first, so a stricter threshold reports the label as shorter than it prints.
+ *
+ *  `scenario-comparison/two-sheet-geometry.test.tsx` re-measures this from a
+ *  render and fails if the number drifts from it, because a stale estimate
+ *  sitting in exactly this slot is what let a clipped label ship. */
+export const MARKER_LABEL_INK_EM = 0.7633;
 /** The first row sits just clear of the plot's top edge. */
 export const MARKER_LABEL_BASE_Y = -4;
 /** Clear air between two labels sharing a row. */

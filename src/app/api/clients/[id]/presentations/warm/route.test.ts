@@ -36,6 +36,12 @@ describe("POST presentations/warm", () => {
     expect(mockWarm).toHaveBeenCalledWith({ clientId: "c1", firmId: "f1", scenarioId: "scn1", targetPoS: 0.9 });
   });
 
+  it("accepts a null targetPoS (Max Spend off) and forwards it as-is", async () => {
+    const res = await POST(req({ scenarioId: "scn1", targetPoS: null }), { params });
+    expect(res.status).toBe(202);
+    expect(mockWarm).toHaveBeenCalledWith({ clientId: "c1", firmId: "f1", scenarioId: "scn1", targetPoS: null });
+  });
+
   it("rejects an invalid body with 400 and does not warm", async () => {
     const res = await POST(req({ scenarioId: "", targetPoS: 5 }), { params });
     expect(res.status).toBe(400);

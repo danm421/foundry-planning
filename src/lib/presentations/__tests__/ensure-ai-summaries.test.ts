@@ -2,10 +2,17 @@ import { describe, it, expect, vi } from "vitest";
 import {
   ensureRetirementComparisonAiSummaries,
   ensureInvestmentProposalAiSummaries,
+  ensureScenarioComparisonAiSummaries,
 } from "../ensure-ai-summaries";
 import { RETIREMENT_COMPARISON_OPTIONS_DEFAULT } from "../pages/retirement-comparison/options-schema";
 import type { RetirementComparisonOptions } from "../pages/retirement-comparison/types";
 import type { GeneratedRetirementComparisonAi } from "../pages/retirement-comparison/generate-ai";
+import { SCENARIO_COMPARISON_OPTIONS_DEFAULT } from "../pages/scenario-comparison/options-schema";
+import type {
+  ScenarioComparisonOptions,
+  TradeoffBand,
+} from "../pages/scenario-comparison/types";
+import type { ScenarioComparisonAiInputs } from "../pages/scenario-comparison/generate-ai";
 
 function rcPage(overrides: Partial<RetirementComparisonOptions> = {}, aiOverrides = {}) {
   return {
@@ -151,5 +158,156 @@ describe("ensureInvestmentProposalAiSummaries", () => {
     const [out] = await ensureInvestmentProposalAiSummaries("c1", "f1", [other], { generate });
     expect(out).toBe(other);
     expect(generate).not.toHaveBeenCalled();
+  });
+});
+
+// ── Scenario Comparison ─────────────────────────────────────────────────────
+
+describe("ensureScenarioComparisonAiSummaries", () => {
+  const band = (scenarioId: string): TradeoffBand => ({
+    scenarioId,
+    name: scenarioId,
+    color: "#123456",
+    chips: [],
+    changeLines: [],
+    moreChangeCount: 0,
+    narrative: "",
+    gains: [],
+    costs: [],
+  });
+
+  const inputs = (): ScenarioComparisonAiInputs => ({
+    householdName: "the Cooper household",
+    firstNames: "Alan",
+    sentenceBudget: 4,
+    columns: [],
+    rows: [],
+    bands: [band("s1"), band("s2")],
+  });
+
+  const scPage = (
+    overrides: Partial<ScenarioComparisonOptions> = {},
+    aiOverrides: Partial<ScenarioComparisonOptions["ai"]> = {},
+  ) => ({
+    pageId: "scenarioComparison" as const,
+    options: {
+      ...SCENARIO_COMPARISON_OPTIONS_DEFAULT,
+      scenarioIds: ["s1", "s2"],
+      ...overrides,
+      ai: { ...SCENARIO_COMPARISON_OPTIONS_DEFAULT.ai, ...aiOverrides },
+    } satisfies ScenarioComparisonOptions,
+  });
+
+  const aiOf = (page: { options: unknown }) => (page.options as ScenarioComparisonOptions).ai;
+
+  const prepare = () => vi.fn(async () => inputs());
+
+  it("merges a returned band WITHOUT touching a band the generator left out", async () => {
+    const generate = vi.fn(async () => ({
+      byScenario: {
+        s2: { markdown: "FRESH S2", generatedAt: "2026-09-02T00:00:00.000Z", hash: "h2-new" },
+      },
+      cached: false,
+    }));
+    const pages = [
+      scPage({}, {
+        byScenario: {
+          s1: { generatedText: "MY EDIT", generatedAt: "t1", sourceHash: "h1" },
+          s2: { generatedText: "stale", generatedAt: "t2", sourceHash: "h2-old" },
+        },
+      }),
+    ];
+
+    const out = await ensureScenarioComparisonAiSummaries("c1", "f1", pages, { prepare: prepare(), generate });
+
+    // The untouched band keeps the advisor's edit, its timestamp AND its hash.
+    expect(aiOf(out[0]).byScenario.s1).toEqual({
+      generatedText: "MY EDIT",
+      generatedAt: "t1",
+      sourceHash: "h1",
+    });
+    expect(aiOf(out[0]).byScenario.s2).toEqual({
+      generatedText: "FRESH S2",
+      generatedAt: "2026-09-02T00:00:00.000Z",
+      sourceHash: "h2-new",
+    });
+  });
+
+  it("hands the generator the page's stored narratives, tone and budget, with force:false", async () => {
+    const generate = vi.fn(async () => ({ byScenario: {}, cached: true }));
+    const stored = { s1: { generatedText: "x", generatedAt: "t", sourceHash: "h" } };
+    const pages = [scPage({}, { tone: "plain", customInstructions: "Be blunt.", byScenario: stored })];
+
+    await ensureScenarioComparisonAiSummaries("c1", "f1", pages, { prepare: prepare(), generate });
+
+    expect(generate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clientId: "c1",
+        tone: "plain",
+        customInstructions: "Be blunt.",
+        sentenceBudget: 4,
+        stored,
+        force: false,
+      }),
+    );
+  });
+
+  it("returns the page untouched when nothing was stale", async () => {
+    const generate = vi.fn(async () => ({ byScenario: {}, cached: true }));
+    const pages = [scPage()];
+
+    const out = await ensureScenarioComparisonAiSummaries("c1", "f1", pages, { prepare: prepare(), generate });
+
+    expect(out[0]).toBe(pages[0]);
+  });
+
+  it("skips a page whose tradeoff bands are switched off — that sheet never prints", async () => {
+    const generate = vi.fn();
+    const prep = prepare();
+    const pages = [scPage({ showTradeoffBands: false })];
+
+    await ensureScenarioComparisonAiSummaries("c1", "f1", pages, { prepare: prep, generate });
+
+    expect(prep).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it("skips a page with no scenario chosen, and a page of another type", async () => {
+    const generate = vi.fn();
+    const prep = prepare();
+    const pages = [scPage({ scenarioIds: [] }), { pageId: "cashFlow" as const, options: {} }];
+
+    const out = await ensureScenarioComparisonAiSummaries("c1", "f1", pages, { prepare: prep, generate });
+
+    expect(prep).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+    expect(out).toEqual(pages);
+  });
+
+  it("returns the page untouched when there is nothing to narrate", async () => {
+    const generate = vi.fn();
+    const pages = [scPage()];
+
+    const out = await ensureScenarioComparisonAiSummaries("c1", "f1", pages, {
+      prepare: vi.fn(async () => null),
+      generate,
+    });
+
+    expect(generate).not.toHaveBeenCalled();
+    expect(out[0]).toBe(pages[0]);
+  });
+
+  it("is best-effort: a generator failure leaves every stored band alone and does not throw", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const generate = vi.fn(async () => {
+      throw new Error("azure down");
+    });
+    const stored = { s1: { generatedText: "previous", generatedAt: "t", sourceHash: "h" } };
+    const pages = [scPage({}, { byScenario: stored })];
+
+    const out = await ensureScenarioComparisonAiSummaries("c1", "f1", pages, { prepare: prepare(), generate });
+
+    expect(aiOf(out[0]).byScenario).toEqual(stored);
+    vi.restoreAllMocks();
   });
 });

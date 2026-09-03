@@ -15,6 +15,7 @@ import { renderPresentationPdf, BodySchema } from "@/components/presentations/re
 import {
   ensureRetirementComparisonAiSummaries,
   ensureInvestmentProposalAiSummaries,
+  ensureScenarioComparisonAiSummaries,
 } from "@/lib/presentations/ensure-ai-summaries";
 
 export const dynamic = "force-dynamic";
@@ -67,14 +68,18 @@ export async function POST(
       );
     }
 
-    // Generate any Retirement Comparison and Investment Proposal AI commentary
-    // server-side so the preview matches the saved deck (the export route does
-    // the same in its "Analyzing…" phase). Synchronous — the preview already
-    // blocks on render.
+    // Generate any Retirement Comparison, Scenario Comparison and Investment
+    // Proposal AI commentary server-side so the preview matches the saved deck
+    // (the export route does the same in its "Analyzing…" phase). Synchronous —
+    // the preview already blocks on render.
     const pages = await ensureInvestmentProposalAiSummaries(
       id,
       access.firmId,
-      await ensureRetirementComparisonAiSummaries(id, access.firmId, parsed.data.pages),
+      await ensureScenarioComparisonAiSummaries(
+        id,
+        access.firmId,
+        await ensureRetirementComparisonAiSummaries(id, access.firmId, parsed.data.pages),
+      ),
     );
     const { buffer, filename, distinctScenarioCount } =
       await renderPresentationPdf(id, access.firmId, { ...parsed.data, pages });

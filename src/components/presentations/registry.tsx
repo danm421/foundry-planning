@@ -290,6 +290,19 @@ import type {
 import { RetirementComparisonPagePdf } from "./pages/retirement-comparison/page-pdf";
 import { RetirementComparisonOptionsControl } from "./pages/retirement-comparison/options-control";
 import {
+  scenarioComparisonOptionsSchema,
+  SCENARIO_COMPARISON_OPTIONS_DEFAULT,
+} from "@/lib/presentations/pages/scenario-comparison/options-schema";
+import { summarizeScenarioComparisonOptions } from "@/lib/presentations/pages/scenario-comparison/summarize-options";
+import { estimateScenarioComparisonPageCount } from "@/lib/presentations/pages/scenario-comparison/estimate-page-count";
+import { buildScenarioComparisonData } from "@/lib/presentations/pages/scenario-comparison/view-model";
+import type {
+  ScenarioComparisonOptions,
+  ScenarioComparisonPageData,
+} from "@/lib/presentations/pages/scenario-comparison/types";
+import { ScenarioComparisonPagePdf } from "./pages/scenario-comparison/page-pdf";
+import { ScenarioComparisonOptionsControl } from "./pages/scenario-comparison/options-control";
+import {
   balanceSheetOptionsSchema,
   BALANCE_SHEET_OPTIONS_DEFAULT,
   type BalanceSheetOptions,
@@ -604,6 +617,15 @@ export interface PresentationPage<TData, TOptions> {
     /** Leading/empty option label shown when no scenario is picked. */
     placeholder: string;
   };
+  /** Optional: this page's own options are incomplete, so exporting it would
+   *  print a placeholder sheet. The launcher's Generate guard blocks on it.
+   *  Pages whose scenario is picked by `inlineScenarioOption` are already
+   *  covered by that sweep and do not need this. */
+  isUnconfigured?: (options: TOptions) => boolean;
+  /** Optional: the refs this page needs a maximum-spending solve on, and the
+   *  confidence target to solve at. Returning null means no solve. Declaring it
+   *  here keeps the export route from carrying a per-page id list. */
+  maxSpendRefs?: (options: TOptions) => { refs: string[]; targetPoS: number } | null;
   buildData: (ctx: BuildDataContext, options: TOptions) => TData;
   renderPdf: (input: RenderPdfInput<TData>) => ReactElement;
 }
@@ -1346,6 +1368,18 @@ export const scenarioChangesPage: PresentationPage<ScenarioChangesPageData, Scen
   renderPdf: (input) => <ScenarioChangesPagePdf {...input} />,
 };
 
+/** The refs this page compares: Base Case on the left, the chosen scenario on
+ *  the right. `requiredScenarioRefs` and `maxSpendRefs` BOTH call this — the
+ *  max-spend solve must run on exactly the columns the sheet prints, or the
+ *  spending row disagrees with the columns above it.
+ *
+ *  MERGE-TIME: `comparison-baseline` replaces the "base" literal here with
+ *  `o.baselineScenarioId`. This one line is all a merge has to get right;
+ *  because both hooks read it, the solve follows the chosen baseline
+ *  structurally rather than depending on someone noticing a second copy. */
+const retirementComparisonRefs = (o: RetirementComparisonOptions): string[] =>
+  o.scenarioId ? ["base", o.scenarioId] : ["base"];
+
 export const retirementComparisonPage: PresentationPage<RetirementComparisonPageData, RetirementComparisonOptions> = {
   id: "retirementComparison",
   title: "Retirement Comparison",
@@ -1366,14 +1400,67 @@ export const retirementComparisonPage: PresentationPage<RetirementComparisonPage
         ],
   OptionsControl: RetirementComparisonOptionsControl,
   supportsScenarioOverride: false,
-  requiredScenarioRefs: (o) => (o.scenarioId ? ["base", o.scenarioId] : ["base"]),
+  requiredScenarioRefs: retirementComparisonRefs,
   inlineScenarioOption: {
     get: (o) => o.scenarioId,
     set: (o, scenarioId) => ({ ...o, scenarioId }),
     placeholder: "Compare to…",
   },
+  maxSpendRefs: (o) =>
+    o.maxSpend.show
+      ? { refs: retirementComparisonRefs(o), targetPoS: o.maxSpend.targetConfidence }
+      : null,
   buildData: (ctx, options) => buildRetirementComparisonData(ctx, options),
   renderPdf: (input) => <RetirementComparisonPagePdf {...input} />,
+};
+
+/** Base Case plus each distinct chosen scenario — the columns this sheet
+ *  prints. `requiredScenarioRefs` and `maxSpendRefs` BOTH call this, so a
+ *  column can never be printed without the solve behind its spending row. */
+const scenarioComparisonRefs = (o: ScenarioComparisonOptions): string[] => [
+  "base",
+  ...new Set(o.scenarioIds.filter(Boolean)),
+];
+
+export const scenarioComparisonPage: PresentationPage<
+  ScenarioComparisonPageData,
+  ScenarioComparisonOptions
+> = {
+  id: "scenarioComparison",
+  title: "Scenario Comparison",
+  description:
+    "Base Case and up to three scenarios side by side: a KPI matrix on one sheet, and what each scenario trades — changes, gains, costs and an AI narrative — on the next.",
+  category: "Comparison",
+  defaultOptions: SCENARIO_COMPARISON_OPTIONS_DEFAULT,
+  optionsSchema: scenarioComparisonOptionsSchema,
+  summarizeOptions: summarizeScenarioComparisonOptions,
+  estimatePageCount: (data) => estimateScenarioComparisonPageCount(data),
+  // The tradeoffs sheet drops out whenever `data.bands` is empty — either the
+  // empty state (no scenario chosen) or `showTradeoffBands` off. This must key
+  // off `bands.length`, the same predicate the renderer and
+  // `estimateScenarioComparisonPageCount` use, or the Contents names a sheet
+  // that was never printed and shifts every later page number by one.
+  tocSections: (data) =>
+    data.bands.length > 0
+      ? [
+          { title: "Scenario Comparison", offset: 0 },
+          { title: "Scenario Comparison — tradeoffs", offset: 1 },
+        ]
+      : [{ title: "Scenario Comparison", offset: 0 }],
+  OptionsControl: ScenarioComparisonOptionsControl,
+  // The baseline is always Base Case (the change lists are recorded against
+  // it), so there is nothing for a per-page "base facts" override to compare.
+  supportsScenarioOverride: false,
+  // Base plus each chosen scenario. planScenarioBundles applies this page's
+  // Monte Carlo and scenario-changes flags to EVERY ref listed here.
+  requiredScenarioRefs: scenarioComparisonRefs,
+  isUnconfigured: (o) => o.scenarioIds.filter(Boolean).length === 0,
+  maxSpendRefs: (o) =>
+    o.maxSpend.show
+      ? { refs: scenarioComparisonRefs(o), targetPoS: o.maxSpend.targetConfidence }
+      : null,
+  buildData: (ctx, options) => buildScenarioComparisonData(ctx, options),
+  renderPdf: (input) => <ScenarioComparisonPagePdf {...input} />,
 };
 
 export const taxSummaryPage: PresentationPage<TaxSummaryPageData, TaxSummaryOptions> = {
@@ -1836,6 +1923,7 @@ export const PRESENTATION_PAGES = {
   entitiesBalanceSheet: entitiesBalanceSheetPage,
   scenarioChanges: scenarioChangesPage,
   retirementComparison: retirementComparisonPage,
+  scenarioComparison: scenarioComparisonPage,
   lifeInsuranceSummary: lifeInsuranceSummaryPage,
   earlyYearsStanding: earlyYearsStandingPage,
   earlyYearsHumanCapital: earlyYearsHumanCapitalPage,

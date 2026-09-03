@@ -13,7 +13,9 @@ export const maxDuration = 800;
 
 const BodySchema = z.object({
   scenarioId: z.string().min(1),
-  targetPoS: z.number().min(0).max(1),
+  // `null` when the page's Max Spend toggle is off — nothing reads the
+  // figure, so `warmComparisonCompute` skips that ~10s solve.
+  targetPoS: z.number().min(0).max(1).nullable(),
 });
 
 export async function POST(

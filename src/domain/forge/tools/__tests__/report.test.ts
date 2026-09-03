@@ -47,7 +47,11 @@ vi.mock("next/server", () => ({
   },
 }));
 
-import { generateReport } from "../report";
+import { generateReport, buildReportTools } from "../report";
+import {
+  MAX_DISTINCT_SCENARIOS,
+  MAX_MC_SCENARIOS,
+} from "@/lib/scenario/presentation-refs";
 
 const CTX = { userId: "u1", firmId: "firm-1", clientId: "client-1", scenarioId: "base" };
 
@@ -115,14 +119,44 @@ describe("generateReport", () => {
     expect(createQueuedRun).not.toHaveBeenCalled();
   });
 
-  it("rejects more than 3 Monte Carlo scenarios", async () => {
+  // Sized off the shared constant, not a literal: the export route and this
+  // tool must refuse at the same count, and that count moved from 3 to 4 for
+  // the Scenario Comparison page's base-plus-three configuration.
+  it(`admits exactly ${MAX_MC_SCENARIOS} Monte Carlo scenarios and rejects one more`, async () => {
+    const ids = (n: number) => Array.from({ length: n }, (_, i) => `s${i + 1}`);
+
+    const ok = await generateReport(
+      { pageIds: ["monteCarlo"], scenarioIds: ids(MAX_MC_SCENARIOS) },
+      CTX,
+      "conv-1",
+    );
+    expect("error" in ok).toBe(false);
+    expect(createQueuedRun).toHaveBeenCalledTimes(1);
+
+    createQueuedRun.mockClear();
     const r = await generateReport(
-      { pageIds: ["monteCarlo"], scenarioIds: ["s1", "s2", "s3", "s4"] },
+      { pageIds: ["monteCarlo"], scenarioIds: ids(MAX_MC_SCENARIOS + 1) },
       CTX,
       "conv-1",
     );
     expect("error" in r).toBe(true);
     expect(createQueuedRun).not.toHaveBeenCalled();
+  });
+
+  // The description is the contract the MODEL plans against. A literal here
+  // that drifts from the enforced cap gets a legal deck refused (or silently
+  // trimmed) by the model before the code that would have allowed it ever runs.
+  it("tells the model the same caps the code enforces", () => {
+    const [reportTool] = buildReportTools({
+      ctx: CTX,
+      conversationId: "conv-1",
+    } as never);
+    expect(reportTool.description).toContain(
+      `at most ${MAX_DISTINCT_SCENARIOS} distinct scenarios`,
+    );
+    expect(reportTool.description).toContain(
+      `${MAX_MC_SCENARIOS} Monte Carlo scenarios`,
+    );
   });
 
   it("refuses when the client has no CRM household", async () => {

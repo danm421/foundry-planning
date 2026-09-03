@@ -27,6 +27,7 @@ import {
 import { SelectedPageRow } from "@/components/presentations/launcher/selected-page-row";
 import { PdfPreviewDialog, slug, type PreviewRequest } from "@/components/presentations/launcher/pdf-preview-dialog";
 import type { RetirementComparisonOptions } from "@/lib/presentations/pages/retirement-comparison/types";
+import type { ScenarioComparisonOptions } from "@/lib/presentations/pages/scenario-comparison/types";
 import { TemplatesPanel } from "@/components/presentations/launcher/templates-panel";
 import { SaveTemplateModal } from "@/components/presentations/launcher/save-template-modal";
 import { AddPageButton } from "@/components/presentations/launcher/report-command-palette";
@@ -160,19 +161,43 @@ export function PresentationsLauncher(props: Props) {
   // returning to this tab brings it back exactly as they left it.
   useLauncherDraft(props.clientId, props.currentUserId, state, dispatch);
 
-  // Pre-warm the compute cache for configured Retirement Comparison pages so the
-  // eventual "Generate PDF" hits a warm MC + max-spend cache instead of running
-  // ~4 simulations + 2 solves inline (the 800s-timeout path). Fire-and-forget,
-  // debounced, and de-duplicated per (scenarioId,target) for this session.
+  // Pre-warm the compute cache for configured Retirement Comparison and
+  // Scenario Comparison pages so the eventual "Generate PDF" hits a warm MC +
+  // max-spend cache instead of running everything inline (the 800s-timeout
+  // path). Each POST warms base + one scenario (warmComparisonCompute): 1
+  // simulation + 1 solve per ref. Retirement Comparison's single comparison
+  // scenario is 2 simulations + 2 solves. Scenario Comparison's default of
+  // three chosen scenarios needs 4 DISTINCT computations (base + 3
+  // scenarios) — 4 simulations + 4 solves — at minimum, not as a guarantee:
+  // the loop below fires all three POSTs un-awaited, as separate route
+  // invocations, and `singleFlight` (single-flight.ts) only coalesces calls
+  // racing within the SAME process — it cannot dedupe two invocations that
+  // both read the DB cache (cache-shell.ts) before either one's write lands.
+  // If all three "base" reads beat all three writes, base recomputes three
+  // times over, so actual work can run as high as 6 simulations + 6 solves.
+  // Fire-and-forget, debounced, and de-duplicated per (scenarioId,target) for
+  // this session — that dedup is on OUR requests, not on whether the compute
+  // behind them raced. `targetPoS` is `null` when the page's own Max Spend
+  // toggle is off — the registry already returns null max-spend refs in that
+  // case (nothing reads the figure), so the warm POST skips that ~10s solve.
   const warmedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    const keyOf = (t: { scenarioId: string; targetPoS: number }) =>
+    const keyOf = (t: { scenarioId: string; targetPoS: number | null }) =>
       `${t.scenarioId}:${t.targetPoS}`;
     const targets = state.pages
-      .filter((p) => p.pageId === "retirementComparison")
-      .map((p) => p.options as RetirementComparisonOptions)
-      .filter((o) => !!o.scenarioId)
-      .map((o) => ({ scenarioId: o.scenarioId, targetPoS: o.maxSpend?.targetConfidence ?? 0.85 }))
+      .flatMap((p) => {
+        if (p.pageId === "retirementComparison") {
+          const o = p.options as RetirementComparisonOptions;
+          const targetPoS = o.maxSpend?.show ? o.maxSpend?.targetConfidence ?? 0.85 : null;
+          return o.scenarioId ? [{ scenarioId: o.scenarioId, targetPoS }] : [];
+        }
+        if (p.pageId === "scenarioComparison") {
+          const o = p.options as ScenarioComparisonOptions;
+          const targetPoS = o.maxSpend?.show ? o.maxSpend?.targetConfidence ?? 0.85 : null;
+          return (o.scenarioIds ?? []).filter(Boolean).map((scenarioId) => ({ scenarioId, targetPoS }));
+        }
+        return [];
+      })
       .filter((t) => !warmedRef.current.has(keyOf(t)));
     if (targets.length === 0) return;
     const timer = setTimeout(() => {
@@ -369,18 +394,24 @@ export function PresentationsLauncher(props: Props) {
     }));
   }
 
-  // Every comparison report (Plan / Retirement / Tax) carries its "compare to"
-  // scenario in its own options — the baseline is always Base Case. Unset, the
-  // sheet prints only a "Select a comparison scenario" placeholder, so name the
-  // offending rows and block the export until each one is chosen.
-  function comparisonPagesMissingScenario(): Array<{ title: string; position: number }> {
+  // Every comparison report carries its scenario selection in its own options
+  // — the baseline is always Base Case. Unset, the sheet prints only a
+  // placeholder, so name the offending rows and block the export until each
+  // one is chosen. Two shapes of "unset" exist: the two-column pages (Plan /
+  // Retirement / Tax) pick their scenario inline, and the four-column Scenario
+  // Comparison page picks its list in its Options dialog and reports its own
+  // unconfigured state via `isUnconfigured`.
+  function pagesMissingTheirScenario(): Array<{ title: string; position: number; viaOptions: boolean }> {
     return state.pages
       .map((p, i) => ({ page: PRESENTATION_PAGES[p.pageId], options: p.options, position: i + 1 }))
       .filter(({ page, options }) => {
         const inline = page.inlineScenarioOption;
-        return inline != null && !inline.get(options as never);
+        if (inline) return !inline.get(options as never);
+        return page.isUnconfigured?.(options as never) ?? false;
       })
-      .map(({ page, position }) => ({ title: page.title, position }));
+      // No inline picker means the row was caught by `isUnconfigured` — its
+      // scenario list lives in the Options dialog, not an inline dropdown.
+      .map(({ page, position }) => ({ title: page.title, position, viaOptions: !page.inlineScenarioOption }));
   }
 
   async function handleGenerate() {
@@ -390,15 +421,29 @@ export function PresentationsLauncher(props: Props) {
     // Require a comparison on every comparison page before exporting, otherwise
     // the PDF would ship empty placeholder slides. Name the offending page(s)
     // so the advisor knows which row to fix.
-    const missingComparison = comparisonPagesMissingScenario();
-    if (missingComparison.length > 0) {
-      const named = missingComparison
-        .map((m) => `${m.title} (page ${m.position})`)
-        .join(", ");
-      const each = missingComparison.length > 1 ? " for each" : "";
-      setError(
-        `No comparison selected for ${named}. Choose a comparison scenario${each} before generating the PDF.`,
-      );
+    const missingScenario = pagesMissingTheirScenario();
+    if (missingScenario.length > 0) {
+      const named = (list: typeof missingScenario) =>
+        list.map((m) => `${m.title} (page ${m.position})`).join(", ");
+      // Inline-picker pages (Plan / Retirement / Tax) get the original
+      // wording; Scenario Comparison has no inline dropdown to point at, so
+      // it's told to open its Options dialog instead.
+      const inlinePages = missingScenario.filter((m) => !m.viaOptions);
+      const optionsPages = missingScenario.filter((m) => m.viaOptions);
+      const messages: string[] = [];
+      if (inlinePages.length > 0) {
+        const each = inlinePages.length > 1 ? " for each" : "";
+        messages.push(
+          `No comparison selected for ${named(inlinePages)}. Choose a comparison scenario${each} before generating the PDF.`,
+        );
+      }
+      if (optionsPages.length > 0) {
+        const each = optionsPages.length > 1 ? " for each" : "";
+        messages.push(
+          `No scenario chosen for ${named(optionsPages)}. Open Options and choose at least one scenario${each} before generating the PDF.`,
+        );
+      }
+      setError(messages.join(" "));
       return;
     }
     setGenerating(true);
