@@ -13,6 +13,8 @@
 // pages can sit a few leaves apart in one PDF, and two spellings of "Client ·
 // March 1, 2026" inside one document is exactly what reusing that builder makes
 // impossible.
+//
+// `audience = client` — the same filter the export's `load-rows.ts` applies.
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { planObservations } from "@/db/schema";
@@ -97,7 +99,13 @@ export async function loadStoryNextSteps(clientId: string, tokens: TokenContext)
       sortOrder: planObservations.sortOrder,
     })
     .from(planObservations)
-    .where(and(eq(planObservations.clientId, clientId), eq(planObservations.section, "next_step")))
+    .where(
+      and(
+        eq(planObservations.clientId, clientId),
+        eq(planObservations.section, "next_step"),
+        eq(planObservations.audience, "client"),
+      ),
+    )
     // The tie-break the other three reads use. `buildObservationsPageData` sorts
     // on `sortOrder` itself, and a stable sort keeps this order inside a tie.
     .orderBy(asc(planObservations.sortOrder), asc(planObservations.createdAt));

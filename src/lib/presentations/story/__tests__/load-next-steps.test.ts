@@ -61,13 +61,13 @@ describe("loadStoryNextSteps", () => {
    * loader is called with a client id off the route's params, so a read without
    * it would hand one household's next steps to another's report.
    */
-  it("scopes the read to this client, and to next steps only", async () => {
+  it("scopes the read to this client, to next steps, and to the client audience", async () => {
     await loadStoryNextSteps(CLIENT, TOKENS);
 
     expect(m.where).toHaveBeenCalledTimes(1);
     const { sql, params } = render(m.where.mock.calls[0][0]);
     expect(sql).toContain('"plan_observations"."client_id" =');
-    expect(params).toEqual([CLIENT, "next_step"]);
+    expect(params).toEqual([CLIENT, "next_step", "client"]);
   });
 
   it("takes the advisor's own one-liner, with the owner and date the page would print", async () => {
