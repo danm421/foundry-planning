@@ -104,8 +104,15 @@ export async function PATCH(
       resourceId: id,
       clientId: id,
       firmId,
+      // The scenario pointer's VALUE, not just that it changed — it decides
+      // where every future next-steps draft comes from, and `null` (pointer
+      // cleared) is as worth reconstructing as a set. The two free-text notes
+      // stay out: prose does not belong in the audit log.
       metadata: crossFirmAuditMeta({ access }, callerOrg, {
         fields: Object.keys(parsed.data),
+        ...("nextStepsScenarioId" in parsed.data
+          ? { nextStepsScenarioId: parsed.data.nextStepsScenarioId }
+          : {}),
       }),
     });
 

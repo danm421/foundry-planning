@@ -8,7 +8,7 @@ import {
   crmHouseholdContacts,
   auditLog,
 } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 vi.mock("@clerk/nextjs/server", () => ({
   auth: vi.fn(async () => ({
@@ -259,6 +259,20 @@ describe("audience and provenance", () => {
       .values({ clientId: clientB, section: "next_step", body: "Other firm AI step.", source: "ai" })
       .returning();
 
+    // The exact rows the DELETE is about to destroy, read before it runs —
+    // the only way to check the audit names them rather than just counting.
+    const doomed = await db
+      .select({ id: planObservations.id })
+      .from(planObservations)
+      .where(
+        and(
+          eq(planObservations.clientId, clientA),
+          eq(planObservations.section, "next_step"),
+          eq(planObservations.source, "ai"),
+          eq(planObservations.audience, "client"),
+        ),
+      );
+
     const res = await DELETE(makeReq(undefined, { method: "DELETE", query: "section=next_step&source=ai" }), {
       params: Promise.resolve({ id: clientA }),
     });
@@ -279,10 +293,20 @@ describe("audience and provenance", () => {
     expect(otherFirmLeft.some((r) => r.id === otherFirmRow.id)).toBe(true);
 
     const audits = await db
-      .select({ action: auditLog.action })
+      .select({ action: auditLog.action, metadata: auditLog.metadata })
       .from(auditLog)
       .where(eq(auditLog.clientId, clientA));
     expect(audits.map((a) => a.action)).toContain("plan_observation.clear_ai");
+
+    // A bulk delete of client-facing rows that logs only a COUNT leaves nobody
+    // able to say WHICH rows went. The ids are the reconstruction.
+    const clearAi = audits.filter((a) => a.action === "plan_observation.clear_ai");
+    expect(clearAi).toHaveLength(1);
+    const meta = clearAi[0].metadata as { section?: string; removed?: number; ids?: string[] } | null;
+    expect(meta?.section).toBe("next_step");
+    expect(meta?.removed).toBe(removed);
+    expect([...(meta?.ids ?? [])].sort()).toEqual(doomed.map((r) => r.id).sort());
+    expect(meta?.ids).toHaveLength(removed);
   });
 
   it("DELETE 400s without source=ai — hand-typed rows are never bulk-deleted", async () => {

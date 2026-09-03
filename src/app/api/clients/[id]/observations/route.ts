@@ -171,9 +171,12 @@ export async function DELETE(
       resourceId: id,
       clientId: id,
       firmId,
+      // The ids, not just the count: this destroys N client-facing rows, and
+      // a count alone leaves nobody able to say which ones went.
       metadata: crossFirmAuditMeta({ access }, callerOrg, {
         section: query.data.section,
         removed: removed.length,
+        ids: removed.map((r) => r.id),
       }),
     });
 

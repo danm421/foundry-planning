@@ -9,7 +9,7 @@ import {
   scenarios,
   planObservationContext,
 } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 // R9: the sibling fixture's orgId is hard-coded to that file's own firm
 // constant ("firm_test_observations"). Copied verbatim it would make every
@@ -145,6 +145,37 @@ describe("PATCH /observations/context", () => {
     expect((await res.json()).nextStepsContext).toBe("Push the Roth conversion.");
     const audits = await db.select({ action: auditLog.action }).from(auditLog).where(eq(auditLog.clientId, clientA));
     expect(audits.map((a) => a.action)).toContain("plan_observation_context.update");
+  });
+
+  // The pointer decides where every future next-steps draft comes from, so
+  // the audit has to carry its VALUE — "fields: [nextStepsScenarioId]" says
+  // it moved but not to what, and a cleared pointer is worth reconstructing
+  // too. The free-text notes stay OUT: prose does not belong in the log.
+  it("records the scenario pointer's VALUE, including when it is cleared", async () => {
+    const contextAudits = async () =>
+      db
+        .select({ id: auditLog.id, metadata: auditLog.metadata })
+        .from(auditLog)
+        .where(and(eq(auditLog.clientId, clientA), eq(auditLog.action, "plan_observation_context.update")));
+
+    const beforeSet = new Set((await contextAudits()).map((r) => r.id));
+    await PATCH(makeReq({ nextStepsScenarioId: scenarioA }), { params: Promise.resolve({ id: clientA }) });
+    const written = (await contextAudits()).filter((r) => !beforeSet.has(r.id));
+    expect(written).toHaveLength(1);
+    expect(written[0].metadata).toEqual({ fields: ["nextStepsScenarioId"], nextStepsScenarioId: scenarioA });
+
+    const beforeClear = new Set((await contextAudits()).map((r) => r.id));
+    await PATCH(makeReq({ nextStepsScenarioId: null }), { params: Promise.resolve({ id: clientA }) });
+    const cleared = (await contextAudits()).filter((r) => !beforeClear.has(r.id));
+    expect(cleared).toHaveLength(1);
+    expect(cleared[0].metadata).toEqual({ fields: ["nextStepsScenarioId"], nextStepsScenarioId: null });
+
+    // A note-only PATCH must not carry the key at all, and must not log prose.
+    const beforeNote = new Set((await contextAudits()).map((r) => r.id));
+    await PATCH(makeReq({ nextStepsContext: "Push the Roth conversion." }), { params: Promise.resolve({ id: clientA }) });
+    const noteOnly = (await contextAudits()).filter((r) => !beforeNote.has(r.id));
+    expect(noteOnly).toHaveLength(1);
+    expect(noteOnly[0].metadata).toEqual({ fields: ["nextStepsContext"] });
   });
 
   it("403s cross-firm", async () => {
