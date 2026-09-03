@@ -165,3 +165,39 @@ describe("ObservationsAuthoringPanel — observations", () => {
     expect(screen.getByRole("button", { name: /generate from scenario/i })).toBeInTheDocument();
   });
 });
+
+describe("ObservationsAuthoringPanel — Draft with AI", () => {
+  it("starts an observation run, shows the cards, and Accept all posts one client row per card", async () => {
+    const calls = installFetch((url, init) => {
+      const method = init?.method ?? "GET";
+      if (url.endsWith("/draft-runs") && method === "POST") return { status: 202, body: { runId: "run-1" } };
+      if (url.endsWith("/draft-runs/run-1")) {
+        return {
+          status: 200,
+          body: {
+            status: "done", error: null, scenarioId: null,
+            suggestions: [
+              { section: "observation", topic: "cash-flow", title: null, body: "You save {{savings_rate}}.", owner: null, priority: null },
+              { section: "observation", topic: "tax", title: null, body: "Taxes take {{effective_tax_rate}}.", owner: null, priority: null },
+            ],
+          },
+        };
+      }
+      return defaults()(url, init);
+    });
+    renderPanel();
+    await screen.findByText("On track to retire at x.");
+    await userEvent.click(screen.getByRole("button", { name: /^draft with ai$/i }));
+    expect(calls.find((c) => c.url.endsWith("/draft-runs") && c.method === "POST")?.body).toEqual({ section: "observation" });
+
+    expect(await screen.findByText("You save x.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /accept all/i }));
+    await waitFor(() => {
+      const posts = calls.filter((c) => c.method === "POST" && c.url === BASE);
+      expect(posts).toHaveLength(2);
+      expect(posts[0].body).toMatchObject({ section: "observation", source: "ai", audience: "client", topic: "cash-flow", sourceScenarioId: null });
+      expect(posts[1].body).toMatchObject({ topic: "tax" });
+    });
+    await waitFor(() => expect(screen.queryByText("You save x.")).toBeNull());
+  });
+});

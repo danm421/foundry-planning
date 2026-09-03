@@ -21,6 +21,8 @@ import {
 } from "@/lib/plan-text/observation-library";
 import { OBSERVATION_TOPICS, TOPIC_LABELS, type ObservationTopic } from "@/lib/schemas/observations";
 import { InsertFactMenu } from "./insert-fact-menu";
+import { SuggestionCards } from "./suggestion-cards";
+import { useDraftRun, type DraftSuggestion } from "./use-draft-run";
 
 export type AuthoringRow = ObservationItem & {
   audience: "client" | "advisor";
@@ -66,6 +68,7 @@ export function ObservationsAuthoringPanel({ clientId, showObservations, showNex
   const [noteError, setNoteError] = useState<string | null>(null);
   const [editTarget, setEditTarget] = useState<EditInitial | null>(null);
   const onDialogSavedRef = useRef<(() => void) | null>(null);
+  const obsDraft = useDraftRun(clientId);
 
   // Local copies of the two notes: the textarea is the advisor's, and a
   // failed save must not throw their words away.
@@ -221,6 +224,70 @@ export function ObservationsAuthoringPanel({ clientId, showObservations, showNex
     setEditTarget(initial);
   }
 
+  type Draft = ReturnType<typeof useDraftRun>;
+
+  function suggestionBody(s: DraftSuggestion, scenarioId: string | null) {
+    return {
+      section: s.section,
+      source: "ai",
+      audience: "client",
+      topic: s.topic,
+      title: s.title,
+      body: s.body,
+      owner: s.owner,
+      priority: s.priority,
+      sourceScenarioId: scenarioId,
+    };
+  }
+
+  async function acceptSuggestion(draft: Draft, idx: number) {
+    const r = draft.result;
+    if (!r) return;
+    setSaveError(null);
+    const s = r.suggestions[idx];
+    draft.replaceSuggestions(r.suggestions.filter((_, i) => i !== idx));
+    const ok = await postRow(suggestionBody(s, r.scenarioId));
+    if (!ok) {
+      draft.replaceSuggestions(r.suggestions);
+      setSaveError("Couldn't accept this suggestion. Please try again.");
+      return;
+    }
+    await refetch();
+  }
+
+  async function acceptAll(draft: Draft) {
+    const r = draft.result;
+    if (!r) return;
+    setSaveError(null);
+    const failed: DraftSuggestion[] = [];
+    for (const s of r.suggestions) {
+      if (!(await postRow(suggestionBody(s, r.scenarioId)))) failed.push(s);
+    }
+    draft.replaceSuggestions(failed);
+    if (failed.length > 0) setSaveError(`Couldn't add ${failed.length} of them. Try again.`);
+    await refetch();
+  }
+
+  function editAndAccept(draft: Draft, idx: number) {
+    const r = draft.result;
+    if (!r) return;
+    const s = r.suggestions[idx];
+    openEdit(
+      {
+        section: s.section,
+        source: "ai",
+        topic: s.topic,
+        title: s.title,
+        body: s.body,
+        owner: s.owner,
+        priority: s.priority,
+        targetDate: null,
+        sourceScenarioId: r.scenarioId,
+      },
+      () => draft.replaceSuggestions(r.suggestions.filter((_, i) => i !== idx)),
+    );
+  }
+
   const observationRows = useMemo(() => (rows ?? []).filter((r) => r.section === "observation"), [rows]);
   const nextStepRows = useMemo(() => (rows ?? []).filter((r) => r.section === "next_step"), [rows]);
   const libraryEntries = useMemo(() => visibleLibraryEntries(tokenValues), [tokenValues]);
@@ -255,7 +322,14 @@ export function ObservationsAuthoringPanel({ clientId, showObservations, showNex
             <h3 className={heading}>Observations</h3>
             <div className="flex items-center gap-2">
               <InsertFactMenu entries={libraryEntries} tokenValues={tokenValues} onInsert={insertFact} />
-              {/* TASK 12: Draft with AI button goes here */}
+              <button
+                type="button"
+                className={smallButton}
+                disabled={obsDraft.drafting}
+                onClick={() => obsDraft.start("observation")}
+              >
+                {obsDraft.drafting ? "Drafting…" : "Draft with AI"}
+              </button>
             </div>
           </div>
 
@@ -289,7 +363,17 @@ export function ObservationsAuthoringPanel({ clientId, showObservations, showNex
             );
           })}
 
-          {/* TASK 12: suggestion cards go here */}
+          {obsDraft.error && <p role="alert" className="text-[12px] text-crit">{obsDraft.error}</p>}
+          {obsDraft.result && (
+            <SuggestionCards
+              suggestions={obsDraft.result.suggestions}
+              tokenValues={tokenValues}
+              onAccept={(i) => acceptSuggestion(obsDraft, i)}
+              onEditAccept={(i) => editAndAccept(obsDraft, i)}
+              onDismiss={(i) => obsDraft.replaceSuggestions(obsDraft.result!.suggestions.filter((_, k) => k !== i))}
+              onAcceptAll={() => acceptAll(obsDraft)}
+            />
+          )}
 
           <label className="flex flex-col gap-1">
             <span className="text-[11px] uppercase tracking-[0.1em] text-ink-3">Notes for the AI</span>
