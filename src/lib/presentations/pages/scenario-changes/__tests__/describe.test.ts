@@ -24,7 +24,7 @@ describe("describe/format", () => {
   });
 });
 
-import { describeFromSpec } from "../describe/generic";
+import { addRow, describeFromSpec } from "../describe/generic";
 import { SPEC } from "../describe/specs";
 import { buildResolveContext, EMPTY_RESOLVE_DATA } from "../describe/resolve";
 import type { ScenarioChange } from "@/engine/scenario/types";
@@ -45,6 +45,15 @@ describe("describeFromSpec", () => {
   it("builds an add row", () => {
     const row = describeFromSpec(change({ opType: "add", payload: {} }), ctx, SPEC.income);
     expect(row).toMatchObject({ area: "Income", what: "+ Rental income", op: "add", before: "—", after: "Added" });
+  });
+
+  // `changeLine` in src/lib/observations/draft.ts strips this exact "+ "
+  // prefix off an add row before feeding it to the model. Drop the prefix
+  // here and the AI prompt reads "+ Rental income (new)".
+  it("addRow prefixes the name with '+ ' — the AI draft prompt strips it", () => {
+    const row = addRow("Income", "Rental income", []);
+    expect(row.what).toBe("+ Rental income");
+    expect(row.op).toBe("add");
   });
 
   it("builds a remove row", () => {
