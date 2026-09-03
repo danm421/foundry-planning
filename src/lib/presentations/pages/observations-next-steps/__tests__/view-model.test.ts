@@ -104,6 +104,21 @@ describe("buildObservationsPageData", () => {
     expect(data.nextSteps).toEqual([]);
   });
 
+  // Distinct from the case above: with the fixture's only next step already
+  // `status: "done"` and `includeCompleted` defaulting false, `showNextSteps:
+  // false` alone yields `[]` whether or not the gate is honoured — a deleted
+  // `if (includeNextSteps)` in view-model.ts would still pass it. Pairing the
+  // false boolean with `includeCompleted: true` is the one combination where a
+  // missing gate lets the done step back onto the page.
+  it("showNextSteps: false hides next steps even with includeCompleted: true", () => {
+    const data = buildObservationsPageData({
+      rows,
+      ctx,
+      options: { ...OBSERVATIONS_PAGE_OPTIONS_DEFAULT, showNextSteps: false, includeCompleted: true },
+    });
+    expect(data.nextSteps).toEqual([]);
+  });
+
   it("includeCompleted: false drops the done next step (and includeCompleted: true restores it)", () => {
     const data = buildObservationsPageData({
       rows,

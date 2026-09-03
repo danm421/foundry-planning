@@ -3,8 +3,22 @@ import {
   observationsPageOptionsSchema,
   OBSERVATIONS_PAGE_OPTIONS_DEFAULT,
   isObservationsPageUnconfigured,
+  type ObservationsPageOptions,
 } from "../options-schema";
 import { summarizeObservationsOptions } from "../summarize-options";
+
+// A deck saved before this task shipped, restored exactly as
+// `use-launcher-draft.ts`'s `readDraft` and `selected-page-row.tsx` hand it
+// over: no `optionsSchema.parse` in between, so neither boolean exists. Cast
+// the same way those real call sites do (`options as never`) — the point of
+// this fixture is that TypeScript's static type is a fiction here.
+const RAW_LEGACY_BLOB = {
+  include: "both",
+  topics: [],
+  includeCompleted: false,
+  showOwnerAndDate: true,
+  intro: "",
+} as unknown as ObservationsPageOptions;
 
 describe("observationsPageOptionsSchema", () => {
   it("defaults both sections on", () => {
@@ -56,6 +70,15 @@ describe("isObservationsPageUnconfigured", () => {
       }),
     ).toBe(true);
   });
+
+  // The launcher's Generate guard reads this straight off a restored draft or
+  // template row — neither passes through `optionsSchema.parse` first (see
+  // `resolveObservationsPageOptions`'s doc comment in options-schema.ts). A
+  // deck saved before `showObservations`/`showNextSteps` existed must not read
+  // as "both sections off" and get its export refused.
+  it("resolves a raw legacy include blob before checking the guard", () => {
+    expect(isObservationsPageUnconfigured(RAW_LEGACY_BLOB)).toBe(false);
+  });
 });
 
 describe("summarizeObservationsOptions", () => {
@@ -84,5 +107,12 @@ describe("summarizeObservationsOptions", () => {
         showNextSteps: false,
       }),
     ).toBe("Nothing selected · all topics");
+  });
+
+  // Same read path as the guard test above — the launcher row's summary comes
+  // from `selected-page-row.tsx`'s `page.summarizeOptions(props.options as
+  // never)`, the raw restored blob, not a parsed one.
+  it("resolves a raw legacy include blob before summarizing", () => {
+    expect(summarizeObservationsOptions(RAW_LEGACY_BLOB)).toBe("Observations · Next Steps · all topics");
   });
 });

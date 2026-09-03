@@ -55,8 +55,49 @@ export const OBSERVATIONS_PAGE_OPTIONS_DEFAULT: ObservationsPageOptions = {
   intro: "",
 };
 
+/**
+ * Resolves a possibly-raw, possibly-legacy options blob into a complete
+ * `ObservationsPageOptions`, for read sites downstream of the launcher's own
+ * state rather than an export request body.
+ *
+ * ⚠️⚠️ Stored options are validated on WRITE only: `render-presentation-pdf.ts`'s
+ * `BodySchema` re-parses every page's options against its own `optionsSchema`
+ * at export time, but nothing runs `observationsPageOptionsSchema` on the way
+ * back OUT. The localStorage draft restores raw (`use-launcher-draft.ts`'s
+ * `readDraft` never calls `optionsSchema`), a loaded template's `options` is
+ * copied verbatim (`use-launcher-state.ts`'s `loadTemplate` reducer), and the
+ * launcher row hands that same object to both `summarizeOptions` and
+ * `OptionsControl` untouched (`selected-page-row.tsx`, `props.options as
+ * never`). So a deck saved before this task shipped still carries
+ * `{ include: "both" | "observations" | "nextSteps", … }` with neither
+ * boolean, and reading `.showObservations`/`.showNextSteps` off it directly
+ * is `undefined` — the Generate guard would refuse a deck that used to print
+ * fine, the row summary would read "Nothing selected", and the checkboxes
+ * below would render uncontrolled.
+ *
+ * Same shape of problem, same fix, as Plan Story's `chapterStyle` gap:
+ * `src/components/presentations/pages/plan-story/options-control.tsx`'s
+ * "RESOLVED rather than read straight off value" comment. Resolved AT THE
+ * READ SITE, not by normalizing every restored blob at ingress — ingress
+ * normalization would run every page's own schema over every restored blob, a
+ * behaviour change to shared launcher infrastructure well outside this page.
+ *
+ * Reuses `observationsPageOptionsSchema` itself (which already carries the
+ * legacy `include` migration) rather than a second hand-written mapping —
+ * `safeParse` so a genuinely foreign blob falls back to the page's default
+ * instead of throwing mid-render.
+ */
+export function resolveObservationsPageOptions(raw: unknown): ObservationsPageOptions {
+  const parsed = observationsPageOptionsSchema.safeParse(raw);
+  return parsed.success ? parsed.data : OBSERVATIONS_PAGE_OPTIONS_DEFAULT;
+}
+
 /** Both halves off is a sheet with nothing on it; the launcher's Generate
- *  guard blocks the export rather than printing it. */
-export function isObservationsPageUnconfigured(o: ObservationsPageOptions): boolean {
-  return !o.showObservations && !o.showNextSteps;
+ *  guard blocks the export rather than printing it. Takes `unknown` (not
+ *  `ObservationsPageOptions`) because the launcher passes it the deck's raw,
+ *  possibly-legacy, possibly-unparsed page options — see
+ *  `resolveObservationsPageOptions` above. */
+export function isObservationsPageUnconfigured(o: unknown): boolean {
+  const resolved = resolveObservationsPageOptions(o);
+  return !resolved.showObservations && !resolved.showNextSteps;
 }
