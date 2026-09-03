@@ -38,6 +38,14 @@ beforeEach(() => {
         { status: 200 },
       );
     }
+    // Observations & Next Steps' options control mounts an authoring panel
+    // that loads rows, the context row and the merge-token values. No test
+    // here opens that page's Options dialog today, so these are inert — they
+    // stop the panel answering a bare `{ ok: true }` the moment one does.
+    // Order matters: the two specific paths before the bare `/observations`.
+    if (String(url).includes("/observations/token-values")) return new Response(JSON.stringify({ values: {} }), { status: 200 });
+    if (String(url).includes("/observations/context")) return new Response(JSON.stringify({ observationsContext: "", nextStepsContext: "", nextStepsScenarioId: null }), { status: 200 });
+    if (String(url).includes("/observations")) return new Response(JSON.stringify([]), { status: 200 });
     return new Response(JSON.stringify({ ok: true }), { status: 200 });
   }) as never;
 });
