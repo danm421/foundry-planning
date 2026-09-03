@@ -74,7 +74,7 @@ export interface ScenarioChangesPageData {
 
 /**
  * Attached to the chosen scenario's bundle by the export route, only when the
- * deck includes the Plan Comparison page and that ref is a live scenario.
+ * deck includes the Plan Changes page and that ref is a live scenario.
  */
 export interface ScenarioChangesContext {
   changes: ScenarioChange[];

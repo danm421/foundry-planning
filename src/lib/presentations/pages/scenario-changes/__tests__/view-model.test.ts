@@ -30,18 +30,30 @@ describe("scenario-changes naming", () => {
   // The report is client-facing: "Scenario" is our internal word, not the
   // advisor's. Pin the printed heading and the sheet's eyebrow together so a
   // future edit can't rename one and leave the other contradicting it.
-  it("prints as Plan Comparison on the sheet heading and the eyebrow", async () => {
-    expect(SCENARIO_CHANGES_OPTIONS_DEFAULT.title).toBe("Plan Comparison");
+  it("prints as Plan Changes on the sheet heading and the eyebrow", async () => {
+    expect(SCENARIO_CHANGES_OPTIONS_DEFAULT.title).toBe("Plan Changes");
     const src = await readFile(
       new URL("../../../../../components/presentations/pages/scenario-changes/page-pdf.tsx", import.meta.url),
       "utf8",
     );
-    expect(src).toContain('eyebrow="PLAN COMPARISON"');
+    expect(src).toContain('eyebrow="PLAN CHANGES"');
   });
 
   it("keeps the pageId stable so saved decks still resolve the report", () => {
     expect(PRESENTATION_PAGES.scenarioChanges.id).toBe("scenarioChanges");
-    expect(PRESENTATION_PAGES.scenarioChanges.title).toBe("Plan Comparison");
+    expect(PRESENTATION_PAGES.scenarioChanges.title).toBe("Plan Changes");
+  });
+
+  // A deck saved under the old name stored "Plan Comparison" in its own
+  // options. The Contents reads the registry title and the eyebrow is
+  // hard-coded, so leaving the stored heading alone would print two names for
+  // one report on the same sheet.
+  it("retires the old stored heading, but honours an advisor's own title", () => {
+    const withOld = { ...OPTS, title: "Plan Comparison" };
+    expect(buildScenarioChangesData(ctxWith(undefined), withOld).title).toBe("Plan Changes");
+
+    const custom = { ...OPTS, title: "What We Adjusted" };
+    expect(buildScenarioChangesData(ctxWith(undefined), custom).title).toBe("What We Adjusted");
   });
 });
 

@@ -20,7 +20,7 @@ describe("scenario-changes options + estimate", () => {
         before: "$1", after: "$2", detail: ["one detail line"],
       },
     }));
-    const data = { title: "Plan Comparison", subtitle: "", units, showExplanations: true, isEmpty: false };
+    const data = { title: "Plan Changes", subtitle: "", units, showExplanations: true, isEmpty: false };
     expect(estimateScenarioChangesPageCount(data)).toBeGreaterThan(
       estimateScenarioChangesPageCount({ ...data, units: units.slice(0, 5) }),
     );

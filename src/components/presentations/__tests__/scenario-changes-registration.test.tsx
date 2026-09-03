@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { PRESENTATION_PAGES } from "../registry";
 
-describe("Plan Comparison (scenarioChanges) registration", () => {
+describe("Plan Changes (scenarioChanges) registration", () => {
   const page = PRESENTATION_PAGES.scenarioChanges;
 
   // The report compares a scenario against Base Case, so the deck's per-page
@@ -9,7 +9,7 @@ describe("Plan Comparison (scenarioChanges) registration", () => {
   // offer it — it must behave like its Retirement / Tax Comparison siblings.
   it("is registered under the Comparison category with a Base-Case baseline", () => {
     expect(page.id).toBe("scenarioChanges");
-    expect(page.title).toBe("Plan Comparison");
+    expect(page.title).toBe("Plan Changes");
     expect(page.category).toBe("Comparison");
     expect(page.supportsScenarioOverride).toBe(false);
   });

@@ -100,7 +100,7 @@ function empty(): ScenarioComparisonPageData {
   };
 }
 
-/** Plain-English change lines for one bundle, reusing the Plan Comparison
+/** Plain-English change lines for one bundle, reusing the Plan Changes
  *  describers unchanged. Returns [] when the bundle carries no change set. */
 function changeLinesFor(bundle: PageScenarioBundle): string[] {
   const sc = bundle.scenarioChanges;

@@ -42,7 +42,7 @@ function row(i: number, detailLines: number): DisplayUnit {
 
 function deck(units: DisplayUnit[], showExplanations = true): ScenarioChangesPageData {
   return {
-    title: "Plan Comparison",
+    title: "Plan Changes",
     subtitle: "Base Case vs. Proposed Plan",
     units,
     showExplanations,
@@ -106,7 +106,7 @@ describe("estimateScenarioChangesPageCount", () => {
 
   it("claims one sheet for the empty state and for a data-free probe", async () => {
     const empty: ScenarioChangesPageData = {
-      title: "Plan Comparison",
+      title: "Plan Changes",
       subtitle: "",
       units: [],
       showExplanations: true,

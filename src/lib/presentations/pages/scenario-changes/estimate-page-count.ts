@@ -24,7 +24,7 @@ function rowHeight(detailLines: number): number {
   return Math.max(ROW_MIN_PT, ROW_PADDING_PT + detailLines * DETAIL_LINE_PT);
 }
 
-/** How many sheets the Plan Comparison table will occupy. `data` is optional
+/** How many sheets the Plan Changes table will occupy. `data` is optional
  *  because the registry's contract allows a data-free probe (see
  *  export-pdf-monte-carlo.test.ts); without it we answer for the empty state. */
 export function estimateScenarioChangesPageCount(data?: ScenarioChangesPageData): number {

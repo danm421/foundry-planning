@@ -4,13 +4,14 @@ import type { ScenarioChangesOptions, ScenarioChangesPageData } from "./types";
 import { describeChange } from "./describe";
 import { groupUnits } from "./group";
 import { buildResolveContext, EMPTY_RESOLVE_DATA } from "./describe/resolve";
+import { titleFor } from "./options-schema";
 
 function empty(
   options: ScenarioChangesOptions,
   emptyReason: NonNullable<ScenarioChangesPageData["emptyReason"]>,
 ): ScenarioChangesPageData {
   return {
-    title: options.title,
+    title: titleFor(options),
     subtitle: "",
     units: [],
     showExplanations: options.showExplanations,
@@ -40,7 +41,7 @@ export function buildScenarioChangesData(
   const units = groupUnits(described, sc.toggleGroups);
 
   return {
-    title: options.title,
+    title: titleFor(options),
     subtitle: `What's different from ${sc.baseLabel}`,
     units,
     showExplanations: options.showExplanations,
