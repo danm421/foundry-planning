@@ -147,4 +147,37 @@ describe("buildTaxComparisonData", () => {
     const d = buildTaxComparisonData(ctxFor("bracket"), opts);
     expect(d.narrative[0]).toContain("lowers");
   });
+
+  it("reads the LEFT side from the chosen baseline and names both sides", () => {
+    // s2's years pay far less tax than base's, so a lifetime total read off the
+    // wrong bundle is visible in the assertion, not just in coverage.
+    const ctx = ctxFor("bracket");
+    const threeWay = {
+      bundlesByRef: {
+        ...(ctx.bundlesByRef as Record<string, unknown>),
+        "scenario:s2": bundle(scnYears, 100_000, "Retire at 62", "bracket"),
+      },
+    } as unknown as BuildDataContext;
+
+    const opts = { ...TAX_COMPARISON_OPTIONS_DEFAULT, scenarioId: "s1", baselineScenarioId: "s2" };
+    const d = buildTaxComparisonData(threeWay, opts);
+
+    expect(d.isEmpty).toBe(false);
+    expect(d.baselineLabel).toBe("Retire at 62");
+    expect(d.subtitle).toContain("Retire at 62 vs.");
+    // Both sides now read the low-tax fixture, so the two columns must match.
+    // Against the default `base` baseline (the high-tax fixture) they differ —
+    // which is what makes reading the wrong bundle visible here.
+    const lifetime = d.kpis.find((k) => k.label === "Lifetime Total Tax")!;
+    expect(lifetime.base).toBe(lifetime.scenario);
+
+    const againstBase = buildTaxComparisonData(threeWay, { ...opts, baselineScenarioId: "base" });
+    const lifetimeVsBase = againstBase.kpis.find((k) => k.label === "Lifetime Total Tax")!;
+    expect(lifetimeVsBase.base).not.toBe(lifetimeVsBase.scenario);
+  });
+
+  it("renders the empty state when the chosen baseline was not loaded", () => {
+    const opts = { ...TAX_COMPARISON_OPTIONS_DEFAULT, scenarioId: "s1", baselineScenarioId: "missing" };
+    expect(buildTaxComparisonData(ctxFor("bracket"), opts).isEmpty).toBe(true);
+  });
 });

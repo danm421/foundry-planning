@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { SelectedPageRow } from "../selected-page-row";
 import { RETIREMENT_COMPARISON_OPTIONS_DEFAULT } from "@/lib/presentations/pages/retirement-comparison/options-schema";
+import type { PresentationPageId } from "@/components/presentations/registry";
 
 const baseProps = {
   index: 0,
@@ -137,5 +138,47 @@ describe("SelectedPageRow", () => {
     expect(onOptionsChange).toHaveBeenCalledWith(
       expect.objectContaining({ scenarioId: "sc-1" }),
     );
+  });
+
+  // A chosen (non-base) baseline should surface as a "vs <name>" chip beside
+  // the summary line, so the row stops implying every comparison is against
+  // Base Case. An ordinary Base Case deck must render no such chip.
+  const BASELINE_SCENARIOS = [
+    { id: "base", name: "Base case", isBaseCase: true },
+    { id: "s1", name: "Retire at 62", isBaseCase: false },
+    { id: "s2", name: "Retire at 65", isBaseCase: false },
+  ];
+
+  function renderRow(overrides: { pageId: PresentationPageId; options: unknown }) {
+    render(
+      <SelectedPageRow
+        {...baseProps}
+        pageId={overrides.pageId}
+        options={overrides.options}
+        scenarios={BASELINE_SCENARIOS}
+      />,
+    );
+  }
+
+  it("names a non-base baseline beside the summary", () => {
+    renderRow({
+      pageId: "retirementComparison",
+      options: { ...RETIREMENT_COMPARISON_OPTIONS_DEFAULT, scenarioId: "s2", baselineScenarioId: "s1" },
+    });
+    // `selector: "span"` targets the chip itself — the summary text beside it
+    // (from summarizeRetirementComparisonOptions) also starts with "vs " for a
+    // non-base baseline, so a plain text match would be ambiguous.
+    expect(screen.getByText("vs Retire at 62", { selector: "span" })).toBeTruthy();
+  });
+
+  it("shows no baseline chip for the ordinary Base Case deck", () => {
+    renderRow({
+      pageId: "retirementComparison",
+      options: { ...RETIREMENT_COMPARISON_OPTIONS_DEFAULT, scenarioId: "s2" },
+    });
+    // The summary text itself reads "vs Base Case …" here (pre-existing,
+    // Task 3/4 behavior) — scope the query to the chip's <span> so this
+    // assertion tests for the chip's absence, not the summary's wording.
+    expect(screen.queryByText(/^vs /, { selector: "span" })).toBeNull();
   });
 });

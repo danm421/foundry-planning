@@ -169,6 +169,7 @@ import {
 import { summarizeTaxComparisonOptions } from "@/lib/presentations/pages/tax-comparison/summarize-options";
 import { estimateTaxComparisonPageCount } from "@/lib/presentations/pages/tax-comparison/estimate-page-count";
 import { TaxComparisonPagePdf } from "./pages/tax-comparison/page-pdf";
+import { TaxComparisonOptionsControl } from "./pages/tax-comparison/options-control";
 import { buildMedicareSummaryData } from "@/lib/presentations/pages/medicare-summary/view-model";
 import type { MedicareSummaryPageData } from "@/lib/presentations/pages/medicare-summary/view-model";
 import {
@@ -582,6 +583,11 @@ export interface PresentationPage<TData, TOptions> {
    *  tokens: "base" | "<scenarioId>" | "snap:<id>"). The planner loads each and
    *  the document exposes them via `BuildDataContext.bundlesByRef`. */
   requiredScenarioRefs?: (options: TOptions) => string[];
+  /** Optional: the left-hand plan of a two-plan comparison page, read out of
+   *  the page's own options. The launcher row uses it to name the baseline when
+   *  it is not Base Case — `summarizeOptions` receives ids and never names, so
+   *  it cannot do this itself. Pages that omit the hook render nothing new. */
+  readBaselineScenarioId?: (options: TOptions) => string;
   /** Optional: a page may request plan *variants* that exist nowhere in the
    *  database — an already-loaded plan with one lever moved. The export applies
    *  the mutations to the `from` tree and exposes each result at
@@ -1373,17 +1379,17 @@ export const scenarioChangesPage: PresentationPage<ScenarioChangesPageData, Scen
  *  max-spend solve must run on exactly the columns the sheet prints, or the
  *  spending row disagrees with the columns above it.
  *
- *  MERGE-TIME: `comparison-baseline` replaces the "base" literal here with
- *  `o.baselineScenarioId`. This one line is all a merge has to get right;
- *  because both hooks read it, the solve follows the chosen baseline
- *  structurally rather than depending on someone noticing a second copy. */
+ *  The left column is whatever baseline the advisor picked ("base" for Base
+ *  Case), so the solve follows that choice structurally — attaching it to the
+ *  "base" bundle while the sheet printed a scenario used to delete the
+ *  max-spend panel AND its KPI from a client-facing deck, silently. */
 const retirementComparisonRefs = (o: RetirementComparisonOptions): string[] =>
-  o.scenarioId ? ["base", o.scenarioId] : ["base"];
+  o.scenarioId ? [o.baselineScenarioId, o.scenarioId] : [o.baselineScenarioId];
 
 export const retirementComparisonPage: PresentationPage<RetirementComparisonPageData, RetirementComparisonOptions> = {
   id: "retirementComparison",
   title: "Retirement Comparison",
-  description: "Why the proposed plan wins vs. the base case — verdict, portfolio overlay, maximum sustainable spending, confidence range, and an AI summary.",
+  description: "Why one plan wins against another — verdict, portfolio overlay, maximum sustainable spending, confidence range, and an AI summary. Compares against Base Case unless a different baseline is chosen.",
   category: "Comparison",
   defaultOptions: RETIREMENT_COMPARISON_OPTIONS_DEFAULT,
   optionsSchema: retirementComparisonOptionsSchema,
@@ -1401,6 +1407,7 @@ export const retirementComparisonPage: PresentationPage<RetirementComparisonPage
   OptionsControl: RetirementComparisonOptionsControl,
   supportsScenarioOverride: false,
   requiredScenarioRefs: retirementComparisonRefs,
+  readBaselineScenarioId: (o) => o.baselineScenarioId,
   inlineScenarioOption: {
     get: (o) => o.scenarioId,
     set: (o, scenarioId) => ({ ...o, scenarioId }),
@@ -1480,14 +1487,17 @@ export const taxSummaryPage: PresentationPage<TaxSummaryPageData, TaxSummaryOpti
 export const taxComparisonPage: PresentationPage<TaxComparisonPageData, TaxComparisonOptions> = {
   id: "taxComparison",
   title: "Tax Comparison",
-  description: "Base Case vs. a selected scenario: lifetime tax deltas, taxes-by-year with a base overlay, bracket-exposure change, and the Roth/pre-tax/taxable shift at retirement.",
+  description: "One plan against another: lifetime tax deltas, taxes-by-year with a baseline overlay, bracket-exposure change, and the Roth/pre-tax/taxable shift at retirement.",
   category: "Comparison",
   defaultOptions: TAX_COMPARISON_OPTIONS_DEFAULT,
   optionsSchema: taxComparisonOptionsSchema,
   summarizeOptions: summarizeTaxComparisonOptions,
   estimatePageCount: () => estimateTaxComparisonPageCount(),
+  OptionsControl: TaxComparisonOptionsControl,
   supportsScenarioOverride: false,
-  requiredScenarioRefs: (o) => (o.scenarioId ? ["base", o.scenarioId] : ["base"]),
+  requiredScenarioRefs: (o) =>
+    o.scenarioId ? [o.baselineScenarioId, o.scenarioId] : [o.baselineScenarioId],
+  readBaselineScenarioId: (o) => o.baselineScenarioId,
   inlineScenarioOption: {
     get: (o) => o.scenarioId,
     set: (o, scenarioId) => ({ ...o, scenarioId }),

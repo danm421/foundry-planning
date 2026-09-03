@@ -21,6 +21,7 @@ export const maxDuration = 300;
 
 const Body = z.object({
   scenarioId: z.string().min(1),
+  baselineScenarioId: z.string().min(1).default("base"),
   tone: z.enum(["concise", "detailed", "plain"]),
   length: z.enum(["short", "medium", "long"]),
   customInstructions: z.string().max(2000).default(""),
@@ -57,6 +58,7 @@ export async function POST(
       clientId: id,
       firmId: access.firmId,
       scenarioId: body.scenarioId,
+      baselineScenarioId: body.baselineScenarioId,
       tone: body.tone,
       length: body.length,
       customInstructions: body.customInstructions,
@@ -76,6 +78,7 @@ export async function POST(
       metadata: crossFirmAuditMeta({ access: access.access }, callerOrg, {
         surface: "presentations.retirement_comparison",
         scenarioId: body.scenarioId,
+        baselineScenarioId: body.baselineScenarioId,
         tone: body.tone,
         length: body.length,
         force: body.force,

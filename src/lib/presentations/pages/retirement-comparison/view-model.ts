@@ -34,7 +34,7 @@ const EMPTY_BUCKETS: TaxBuckets = { cash: 0, taxable: 0, preTax: 0, roth: 0, hsa
 const EMPTY_BREAKDOWN: TaxTreatmentBreakdown = { baseYear: 0, scenarioYear: 0, base: EMPTY_BUCKETS, scenario: EMPTY_BUCKETS };
 
 const EMPTY = (title: string): RetirementComparisonPageData => ({
-  title, subtitle: "", isEmpty: true,
+  title, subtitle: "", baselineLabel: "", scenarioLabel: "", isEmpty: true,
   verdict: { headline: "" },
   kpis: [],
   overlay: [],
@@ -95,7 +95,7 @@ export function buildRetirementComparisonData(
 ): RetirementComparisonPageData {
   const title = "Retirement Comparison";
   const byRef = ctx.bundlesByRef ?? {};
-  const baseBundle = byRef[keyForRef(resolveScenarioRef("base"))];
+  const baseBundle = byRef[keyForRef(resolveScenarioRef(options.baselineScenarioId))];
   const scnBundle = options.scenarioId
     ? byRef[keyForRef(resolveScenarioRef(options.scenarioId))]
     : undefined;
@@ -267,7 +267,9 @@ export function buildRetirementComparisonData(
 
   return {
     title,
-    subtitle: `Base Case vs. ${scnBundle.scenarioLabel}`,
+    subtitle: `${baseBundle.scenarioLabel} vs. ${scnBundle.scenarioLabel}`,
+    baselineLabel: baseBundle.scenarioLabel,
+    scenarioLabel: scnBundle.scenarioLabel,
     isEmpty: false,
     verdict: { headline: verdictHeadline(baseSuccess, scnSuccess) },
     kpis,

@@ -9,8 +9,14 @@ import type {
   CompositionSide,
 } from "@/lib/presentations/pages/tax-comparison/view-model";
 import { fmtUsd } from "@/lib/presentations/pages/tax-summary/aggregate";
+import { truncateLabel } from "@/lib/presentations/format";
 import { TaxComparisonChartPdf } from "./chart-pdf";
 import { horizonYearsLabel } from "@/lib/presentations/shared/horizon-label";
+
+// The comparison columns' fixed width. The header caps below are DERIVED from
+// this number by measurement, so the two must move together — widening the cell
+// without revisiting the cap silently reintroduces the abutting-labels defect.
+const CMP_CELL_W = 52;
 
 const s = StyleSheet.create({
   kpis: { flexDirection: "row", gap: 8, marginBottom: 8 },
@@ -29,12 +35,12 @@ const s = StyleSheet.create({
   h4: { fontSize: 8, color: T.ink2, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, marginBottom: 4 },
   cmpHead: { flexDirection: "row", paddingBottom: 2, borderBottomWidth: 1, borderBottomColor: T.hair2 },
   cmpHeadLbl: { flex: 1, fontSize: 6.5, color: T.ink3, fontWeight: 700, textTransform: "uppercase" },
-  cmpHeadCell: { width: 52, fontSize: 6.5, color: T.ink3, fontWeight: 700, textTransform: "uppercase", textAlign: "right" },
+  cmpHeadCell: { width: CMP_CELL_W, fontSize: 6.5, color: T.ink3, fontWeight: 700, textTransform: "uppercase", textAlign: "right" },
   cmpRow: { flexDirection: "row", alignItems: "center", paddingVertical: 2.5, borderBottomWidth: 0.5, borderBottomColor: T.hair2 },
   cmpLbl: { flex: 1, fontSize: 8, color: T.ink },
-  cmpBase: { width: 52, fontSize: 8, color: T.ink3, textAlign: "right" },
-  cmpScn: { width: 52, fontSize: 9, fontWeight: 700, color: T.ink, textAlign: "right" },
-  cmpDelta: { width: 52, fontSize: 8, fontWeight: 700, textAlign: "right" },
+  cmpBase: { width: CMP_CELL_W, fontSize: 8, color: T.ink3, textAlign: "right" },
+  cmpScn: { width: CMP_CELL_W, fontSize: 9, fontWeight: 700, color: T.ink, textAlign: "right" },
+  cmpDelta: { width: CMP_CELL_W, fontSize: 8, fontWeight: 700, textAlign: "right" },
   note: { fontSize: 6.5, color: T.ink3, marginTop: 4 },
   compTrackLbl: { fontSize: 6.5, color: T.ink3, fontWeight: 700, textTransform: "uppercase", marginTop: 6 },
   splitTrack: { flexDirection: "row", height: 12, borderRadius: 2, overflow: "hidden", marginTop: 2 },
@@ -89,6 +95,18 @@ function SplitBar({ side }: { side: CompositionSide }) {
 
 export function TaxComparisonPagePdf(input: RenderPdfInput<TaxComparisonPageData>) {
   const { data, firmName, clientName, reportDate, pageIndex, totalPages, accent } = input;
+  // Measured with `pdftotext -bbox` on a real render, not estimated: at 6.5pt
+  // bold uppercase a 12-char label is 51.55pt inside a CMP_CELL_W cell, so two of them
+  // abut with 0.45pt between — "BASE CASE" and "PROPOSED PL…" read as one word —
+  // and a 12-char label carrying a space wraps to a second line, making that
+  // header row taller than its neighbours. 10 chars measures ~43pt, which keeps
+  // a ~9pt gutter and stays on one line. The track labels and the chart heading
+  // are block-level in their panel: a 40-char name needs ~315pt of ~372pt, so 40
+  // is measured safe there.
+  const baseCell = truncateLabel(data.baselineLabel, 10);
+  const scnCell = truncateLabel(data.scenarioLabel, 10);
+  const baseTrack = truncateLabel(data.baselineLabel, 40);
+  const scnTrack = truncateLabel(data.scenarioLabel, 40);
   return (
     <PageFrame firmName={firmName} clientName={clientName} reportDate={reportDate} pageIndex={pageIndex} totalPages={totalPages} orientation="landscape">
       <SectionHead title={data.title} subtitle={data.subtitle} accent={accent} />
@@ -105,7 +123,7 @@ export function TaxComparisonPagePdf(input: RenderPdfInput<TaxComparisonPageData
 
           <View style={s.body}>
             <View style={[s.panel, s.panelLeft]}>
-              <Text style={s.h4}>Taxes paid by year (proposed)</Text>
+              <Text style={s.h4}>{`Taxes paid by year (${scnTrack})`}</Text>
               <TaxComparisonChartPdf years={data.chart} />
             </View>
 
@@ -115,8 +133,8 @@ export function TaxComparisonPagePdf(input: RenderPdfInput<TaxComparisonPageData
                   <Text style={s.h4}>Bracket exposure</Text>
                   <View style={s.cmpHead}>
                     <Text style={s.cmpHeadLbl}> </Text>
-                    <Text style={s.cmpHeadCell}>Base</Text>
-                    <Text style={s.cmpHeadCell}>Proposed</Text>
+                    <Text style={s.cmpHeadCell}>{baseCell}</Text>
+                    <Text style={s.cmpHeadCell}>{scnCell}</Text>
                     <Text style={s.cmpHeadCell}>Δ</Text>
                   </View>
                   {data.bracket.map((row) => (
@@ -135,14 +153,14 @@ export function TaxComparisonPagePdf(input: RenderPdfInput<TaxComparisonPageData
               {data.composition && (data.composition.base.total > 0 || data.composition.scenario.total > 0) ? (
                 <View style={{ marginTop: 10 }}>
                   <Text style={s.h4}>{`Account composition at retirement (${horizonYearsLabel(data.composition.baseYear, data.composition.scenarioYear)})`}</Text>
-                  <Text style={s.compTrackLbl}>Base</Text>
+                  <Text style={s.compTrackLbl}>{baseTrack}</Text>
                   <SplitBar side={data.composition.base} />
-                  <Text style={s.compTrackLbl}>Proposed</Text>
+                  <Text style={s.compTrackLbl}>{scnTrack}</Text>
                   <SplitBar side={data.composition.scenario} />
                   <View style={[s.cmpHead, { marginTop: 6 }]}>
                     <Text style={s.cmpHeadLbl}> </Text>
-                    <Text style={s.cmpHeadCell}>Base</Text>
-                    <Text style={s.cmpHeadCell}>Proposed</Text>
+                    <Text style={s.cmpHeadCell}>{baseCell}</Text>
+                    <Text style={s.cmpHeadCell}>{scnCell}</Text>
                     <Text style={s.cmpHeadCell}>Δ</Text>
                   </View>
                   {COMP_SEGMENTS.map((seg) => {

@@ -25,6 +25,9 @@ export function RetirementComparisonOptionsControl({ value, onChange }: Props) {
   const liveScenarios = scenarios.filter(
     (s) => !s.name.startsWith("writer-test-"),
   );
+  // The baseline picker hard-codes its own "Base Case" option, so the base row
+  // must not also come through the list — `liveScenarios` does not drop it.
+  const baselineScenarios = liveScenarios.filter((s) => !s.isBaseCase);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,6 +44,7 @@ export function RetirementComparisonOptionsControl({ value, onChange }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           scenarioId: value.scenarioId,
+          baselineScenarioId: value.baselineScenarioId,
           tone: value.ai.tone,
           length: value.ai.length,
           customInstructions: value.ai.customInstructions,
@@ -70,7 +74,24 @@ export function RetirementComparisonOptionsControl({ value, onChange }: Props) {
         {/* Left column: comparison scenario + display toggles */}
         <div className="space-y-3">
           <label className="flex flex-col gap-1">
-            <span className={label}>Comparison scenario (vs Base Case)</span>
+            <span className={label}>Baseline plan</span>
+            <select
+              aria-label="Baseline plan"
+              className={`w-full ${field}`}
+              value={value.baselineScenarioId}
+              onChange={(e) => onChange({ ...value, baselineScenarioId: e.target.value })}
+            >
+              <option value="base">Base Case</option>
+              {baselineScenarios
+                .filter((sc) => sc.id !== value.scenarioId)
+                .map((sc) => (
+                  <option key={sc.id} value={sc.id}>{sc.name}</option>
+                ))}
+            </select>
+          </label>
+
+          <label className="flex flex-col gap-1">
+            <span className={label}>Comparison scenario</span>
             <select
               aria-label="Comparison scenario"
               className={`w-full ${field}`}
@@ -78,9 +99,11 @@ export function RetirementComparisonOptionsControl({ value, onChange }: Props) {
               onChange={(e) => onChange({ ...value, scenarioId: e.target.value })}
             >
               <option value="">— Select a scenario —</option>
-              {liveScenarios.map((sc) => (
-                <option key={sc.id} value={sc.id}>{sc.name}</option>
-              ))}
+              {liveScenarios
+                .filter((sc) => sc.id !== value.baselineScenarioId)
+                .map((sc) => (
+                  <option key={sc.id} value={sc.id}>{sc.name}</option>
+                ))}
             </select>
           </label>
 

@@ -8,6 +8,8 @@ describe("buildRetirementComparisonAiPrompt", () => {
     householdName: "the Smith household",
     firstNames: "John and Jane",
     scenarioLabel: "Roth + Delay RE",
+    baselineLabel: "Base Case",
+    baselineIsBase: true,
     kpis: [
       { label: "Plan Confidence", base: "72%", scenario: "91%", deltaLabel: "+19 pts", direction: 1 as const },
       { label: "Ending Portfolio Assets", base: "$4.1M", scenario: "$5.3M", deltaLabel: "+$1.2M", direction: 1 as const },
@@ -39,6 +41,41 @@ describe("buildRetirementComparisonAiPrompt", () => {
     const { system } = buildRetirementComparisonAiPrompt({ ...args, customInstructions: "Mention the legacy goal." });
     expect(system).toContain("Advisor instructions: Mention the legacy goal.");
   });
+
+  it("keeps a Base Case prompt byte-identical, so stored hashes keep matching", () => {
+    // ensure-ai-summaries preserves advisor-edited prose only while the hash
+    // matches. These are the exact strings the pre-baseline prompt emitted.
+    const { user } = buildRetirementComparisonAiPrompt(args);
+    expect(user).toContain('Comparison: Base Case vs. "Roth + Delay RE".');
+    expect(user).toContain("Key metrics (Base → Scenario):");
+    expect(user).toContain("- Plan Confidence: Base 72% → Scenario 91% (+19 pts).");
+    expect(user).toContain("Changes made in the scenario vs. the base plan:");
+    expect(user).not.toContain("recorded against Base Case");
+  });
+
+  it("names a scenario baseline everywhere it used to say 'Base'", () => {
+    const { user } = buildRetirementComparisonAiPrompt({
+      ...args,
+      baselineLabel: "Retire at 62",
+      baselineIsBase: false,
+    });
+    expect(user).toContain('Comparison: "Retire at 62" vs. "Roth + Delay RE".');
+    expect(user).toContain("Key metrics (Retire at 62 → Scenario):");
+    expect(user).toContain("- Plan Confidence: Retire at 62 72% → Scenario 91% (+19 pts).");
+    expect(user).not.toContain("Base 72%");
+  });
+
+  it("labels both change lists as recorded against Base Case", () => {
+    const { system, user } = buildRetirementComparisonAiPrompt({
+      ...args,
+      baselineLabel: "Retire at 62",
+      baselineIsBase: false,
+      baselineChangeLines: ["Changed retirementAge on John: 65 → 62."],
+    });
+    expect(system).toContain("recorded against Base Case, not against each other");
+    expect(user).toContain('Changes in "Retire at 62" vs. the base plan:');
+    expect(user).toContain('Changes in "Roth + Delay RE" vs. the base plan:');
+  });
 });
 
 const kpis: ComparisonKpi[] = [
@@ -58,6 +95,7 @@ describe("buildRetirementComparisonAiPrompt — max-spend & downside", () => {
     const { user } = buildRetirementComparisonAiPrompt({
       householdName: "the Smith household", firstNames: "Pat",
       scenarioLabel: "Delay + Roth", kpis, matrix,
+      baselineLabel: "Base Case", baselineIsBase: true,
       changeLines: ["Delay retirement to 67"],
       maxSpend: { base: 90_000, scenario: 110_000 },
       downside: { baseEndP20: 100_000, scnEndP20: 400_000 },
@@ -71,6 +109,7 @@ describe("buildRetirementComparisonAiPrompt — max-spend & downside", () => {
   it("omits the new lines when not provided (back-compat)", () => {
     const { user } = buildRetirementComparisonAiPrompt({
       householdName: "h", firstNames: "p", scenarioLabel: "s", kpis, matrix,
+      baselineLabel: "Base Case", baselineIsBase: true,
       changeLines: [], tone: "concise", length: "short", customInstructions: "",
     });
     expect(user).not.toContain("Maximum sustainable retirement spending");
@@ -90,6 +129,8 @@ describe("buildRetirementComparisonAiPrompt — legacy after tax", () => {
     householdName: "the Smith household",
     firstNames: "Pat",
     scenarioLabel: "Roth conversion",
+    baselineLabel: "Base Case",
+    baselineIsBase: true,
     kpis,
     // Gross falls 8.9M → 7.3M; net to heirs is flat. That is the whole point.
     matrix: {
@@ -141,10 +182,24 @@ describe("buildRetirementComparisonAiPrompt — legacy after tax", () => {
 
   it("omits the block and its guardrail when the plan has no estate model", () => {
     const { system, user } = buildRetirementComparisonAiPrompt({
-      householdName: "h", firstNames: "p", scenarioLabel: "s", kpis, matrix,
+      householdName: "h", firstNames: "p", scenarioLabel: "s",
+      baselineLabel: "Base Case", baselineIsBase: true, kpis, matrix,
       changeLines: [], tone: "concise", length: "short", customInstructions: "",
     });
     expect(user).not.toContain("What the heirs actually receive");
     expect(system).not.toContain("NOT interchangeable");
+  });
+  // The legacy block arrived on main while the baseline picker was on a branch,
+  // so it hard-coded "Base" for the left side. Every other line on this prompt
+  // uses the chosen baseline's name; if this one does not, the sheet tells the
+  // model that the left column is Base Case while the KPIs above say otherwise.
+  it("names the chosen baseline in the legacy block, not \"Base\"", () => {
+    const { user } = buildRetirementComparisonAiPrompt({
+      ...legacyArgs,
+      baselineLabel: "Retire at 62",
+      baselineIsBase: false,
+    });
+    expect(user).toContain("- Retire at 62: portfolio");
+    expect(user).not.toContain("- Base: portfolio");
   });
 });

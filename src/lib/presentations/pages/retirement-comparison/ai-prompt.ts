@@ -19,6 +19,16 @@ export interface RetirementComparisonAiArgs {
   householdName: string;
   firstNames: string;
   scenarioLabel: string;
+  /** Display name of the left-hand plan. "Base Case" in the ordinary deck. */
+  baselineLabel: string;
+  /** True when the left side really is Base Case. Load-bearing: it holds the
+   *  prompt byte-identical to the pre-baseline version, which is what keeps a
+   *  stored `sourceHash` matching and an advisor's edited prose alive. */
+  baselineIsBase: boolean;
+  /** The baseline's OWN changes, when it is a scenario rather than Base Case.
+   *  Absent for a base baseline. Both lists are recorded against Base Case —
+   *  neither is a diff of one plan against the other. */
+  baselineChangeLines?: string[];
   kpis: ComparisonKpi[];
   matrix: PortfolioMatrix;
   changeLines: string[];
@@ -37,6 +47,12 @@ export function buildRetirementComparisonAiPrompt(args: RetirementComparisonAiAr
   system: string;
   user: string;
 } {
+  // The baseline's own change list, gated ONCE. A base baseline has no changes
+  // "vs. base" to describe, so `baselineIsBase` empties it here rather than at
+  // each of the two places that read it — the system guardrail and the user
+  // block must appear together, and spelling the same condition twice, forty
+  // lines apart, is how they drift apart.
+  const baselineLines = args.baselineIsBase ? [] : (args.baselineChangeLines ?? []);
   const systemParts = [
     "You write advisor commentary for a financial-planning report.",
     'Always sound warm, personable, and conversational — like you\'re talking with the household, not at them. Use "you" and "your". Skip corporate-speak and jargon.',
@@ -54,6 +70,11 @@ export function buildRetirementComparisonAiPrompt(args: RetirementComparisonAiAr
     TONE[args.tone],
     `Length: ${LENGTH[args.length]} Do not exceed this.`,
   ];
+  if (baselineLines.length > 0) {
+    systemParts.push(
+      "Both change lists below are recorded against Base Case, not against each other. Describe how the two sets differ; never present one list as the change from the other.",
+    );
+  }
   if (args.legacy) {
     // Without this, the model narrates the portfolio total as the inheritance
     // and reports a Roth conversion as destroying legacy — it is spending the
@@ -68,25 +89,33 @@ export function buildRetirementComparisonAiPrompt(args: RetirementComparisonAiAr
   }
   const system = systemParts.join(" ");
 
+  // "Base" when the left side is Base Case — the exact token the pre-baseline
+  // prompt used. Changing it for an ordinary deck would stale every stored
+  // sourceHash and overwrite advisor-edited prose.
+  const left = args.baselineIsBase ? "Base" : args.baselineLabel;
+
   const kpiLines = args.kpis
-    .map((k) => `- ${k.label}: Base ${k.base} → Scenario ${k.scenario} (${k.deltaLabel}).`)
+    .map((k) => `- ${k.label}: ${left} ${k.base} → Scenario ${k.scenario} (${k.deltaLabel}).`)
     .join("\n");
   const m = args.matrix;
   // Each side carries its own year: the two plans retire in different years, and
   // handing the model one year for both invited it to narrate a false like-for-like.
   const matrixLines = [
-    `At retirement: Base ${fmtUsd(m.baseAtRetirement.total)} in ${m.baseRetirementYear} → Scenario ${fmtUsd(m.scenarioAtRetirement.total)} in ${m.scenarioRetirementYear}.`,
-    `At end of life: Base ${fmtUsd(m.baseAtEnd.total)} in ${m.baseEndYear} → Scenario ${fmtUsd(m.scenarioAtEnd.total)} in ${m.scenarioEndYear}.`,
+    `At retirement: ${left} ${fmtUsd(m.baseAtRetirement.total)} in ${m.baseRetirementYear} → Scenario ${fmtUsd(m.scenarioAtRetirement.total)} in ${m.scenarioRetirementYear}.`,
+    `At end of life: ${left} ${fmtUsd(m.baseAtEnd.total)} in ${m.baseEndYear} → Scenario ${fmtUsd(m.scenarioAtEnd.total)} in ${m.scenarioEndYear}.`,
   ].join("\n");
   const changeBlock = args.changeLines.length
     ? args.changeLines.map((l) => `- ${l}`).join("\n")
     : "- (No changes vs. the base plan.)";
+  const baselineChangeBlock = baselineLines.length
+    ? baselineLines.map((l) => `- ${l}`).join("\n")
+    : null;
 
   const maxSpendBlock = args.maxSpend
-    ? `Maximum sustainable retirement spending (today's dollars, same confidence target): Base ${fmtUsd(args.maxSpend.base)}/yr → Scenario ${fmtUsd(args.maxSpend.scenario)}/yr.`
+    ? `Maximum sustainable retirement spending (today's dollars, same confidence target): ${left} ${fmtUsd(args.maxSpend.base)}/yr → Scenario ${fmtUsd(args.maxSpend.scenario)}/yr.`
     : null;
   const downsideBlock = args.downside
-    ? `Downside (poor-market) ending balance — 20th percentile: Base ${fmtUsd(args.downside.baseEndP20)} → Scenario ${fmtUsd(args.downside.scnEndP20)}.`
+    ? `Downside (poor-market) ending balance — 20th percentile: ${left} ${fmtUsd(args.downside.baseEndP20)} → Scenario ${fmtUsd(args.downside.scnEndP20)}.`
     : null;
 
   // Gross → net on both sides, with the tax that separates them itemised, so
@@ -96,7 +125,7 @@ export function buildRetirementComparisonAiPrompt(args: RetirementComparisonAiAr
   const legacyBlock = args.legacy
     ? [
         "What the heirs actually receive (after tax), vs. the portfolio total above:",
-        legacySide("Base", m.baseAtEnd.total, args.legacy.base),
+        legacySide(left, m.baseAtEnd.total, args.legacy.base),
         legacySide("Scenario", m.scenarioAtEnd.total, args.legacy.scenario),
         `Change in what the heirs receive: ${
           args.legacy.scenario.toHeirs >= args.legacy.base.toHeirs ? "+" : "−"
@@ -106,9 +135,11 @@ export function buildRetirementComparisonAiPrompt(args: RetirementComparisonAiAr
 
   const user = [
     `Household: ${args.householdName}.`,
-    `Comparison: Base Case vs. "${args.scenarioLabel}".`,
+    args.baselineIsBase
+      ? `Comparison: Base Case vs. "${args.scenarioLabel}".`
+      : `Comparison: "${args.baselineLabel}" vs. "${args.scenarioLabel}".`,
     "",
-    "Key metrics (Base → Scenario):",
+    `Key metrics (${left} → Scenario):`,
     kpiLines,
     "",
     "Total portfolio assets:",
@@ -117,7 +148,14 @@ export function buildRetirementComparisonAiPrompt(args: RetirementComparisonAiAr
     ...(downsideBlock ? ["", downsideBlock] : []),
     ...(legacyBlock ? ["", legacyBlock] : []),
     "",
-    "Changes made in the scenario vs. the base plan:",
+    ...(baselineChangeBlock
+      ? [
+          `Changes in "${args.baselineLabel}" vs. the base plan:`,
+          baselineChangeBlock,
+          "",
+          `Changes in "${args.scenarioLabel}" vs. the base plan:`,
+        ]
+      : ["Changes made in the scenario vs. the base plan:"]),
     changeBlock,
     "",
     "Write the commentary now.",

@@ -17,6 +17,7 @@ import { TaxTreatmentChartPdf } from "./tax-treatment-chart-pdf";
 import { MONO } from "./chart-axis";
 import { KPI_BORDER, KPI_GAP, KPI_PAD } from "./kpi-geom";
 import { horizonYearsLabel } from "@/lib/presentations/shared/horizon-label";
+import { truncateLabel } from "@/lib/presentations/format";
 
 const s = StyleSheet.create({
   verdict: { backgroundColor: T.card, borderWidth: 1, borderColor: T.hair2, borderLeftWidth: 3, borderLeftColor: T.good, borderRadius: 3, padding: 10, marginBottom: 10 },
@@ -99,6 +100,44 @@ export function RetirementComparisonPagePdf(input: RenderPdfInput<RetirementComp
 
   const kpis = data.kpis.filter((k) => k.show);
 
+  // The two plans used to be the literal words "Current" and "Proposed", which
+  // are false as soon as the advisor picks a scenario as the baseline — the
+  // subtitle and every KPI on this sheet already name the real plans.
+  //
+  // Four surfaces print a name and each has its own width, so each gets its own
+  // cap, MEASURED by rendering this sheet at candidate caps and reading the
+  // result back with `pdftotext -bbox` (see the ledger). A name fails in one of
+  // two ways depending on whether it contains a space: one WITH a space wraps
+  // to a second line and pushes the page down; one without cannot wrap, so it
+  // overruns its box and overprints its neighbour. Both were swept.
+  //
+  //   HEAD_CAP 20    the page-1 chart heading. Largest value that survives both
+  //                  modes: an unbroken 22-char name wraps it.
+  //   HORIZON_CAP 16 the "At retirement (…)" heading, which prints a year
+  //                  beside each name and so has far less room than it looks.
+  //                  A spaced name wraps it at 18 — but an UNBROKEN one wraps
+  //                  it at 12, and 10 would truncate "Proposed Plan", an
+  //                  entirely ordinary name, on most real decks. Set for real
+  //                  names: a pathological 17+ char single token costs this
+  //                  heading one extra line, which page 1 has the room to
+  //                  absorb (verified by render). It only prints names at all
+  //                  when the two plans retire in different years — see
+  //                  horizon-label.ts.
+  //   LEGEND_CAP 24  a chart legend row inside a ~246pt side-by-side panel; at
+  //                  26 an unbroken name overprints the value beside it.
+  //
+  // The fourth surface, the SVG axis label inside TaxTreatmentChartPdf, is
+  // capped there — it is the one that fails SILENTLY.
+  const HEAD_CAP = 20;
+  const HORIZON_CAP = 16;
+  const LEGEND_CAP = 24;
+  const headBase = truncateLabel(data.baselineLabel, HEAD_CAP);
+  const headScn = truncateLabel(data.scenarioLabel, HEAD_CAP);
+  const horizonBase = truncateLabel(data.baselineLabel, HORIZON_CAP);
+  const horizonScn = truncateLabel(data.scenarioLabel, HORIZON_CAP);
+  const legendBase = truncateLabel(data.baselineLabel, LEGEND_CAP);
+  const legendScn = truncateLabel(data.scenarioLabel, LEGEND_CAP);
+
   return (
     <Fragment>
       {/* ── Page 1 · The outcome ── */}
@@ -116,13 +155,13 @@ export function RetirementComparisonPagePdf(input: RenderPdfInput<RetirementComp
         ) : null}
 
         <View style={s.panel}>
-          <Text style={s.h4}>Portfolio assets over time — proposed vs. current</Text>
+          <Text style={s.h4}>{`Portfolio assets over time — ${headScn} vs. ${headBase}`}</Text>
           <OverlayBarsPdf bars={data.overlay} retirementYear={data.atRetirement.scenarioYear} />
         </View>
 
         <View style={s.panel}>
-          <Text style={s.h4}>{`At retirement (${horizonYearsLabel(data.atRetirement.baseYear, data.atRetirement.scenarioYear, "current")}) — portfolio assets by tax treatment`}</Text>
-          <TaxTreatmentChartPdf data={data.atRetirement} />
+          <Text style={s.h4}>{`At retirement (${horizonYearsLabel(data.atRetirement.baseYear, data.atRetirement.scenarioYear, horizonBase, horizonScn)}) — portfolio assets by tax treatment`}</Text>
+          <TaxTreatmentChartPdf data={data.atRetirement} baselineLabel={data.baselineLabel} scenarioLabel={data.scenarioLabel} />
         </View>
       </PageFrame>
 
@@ -144,14 +183,14 @@ export function RetirementComparisonPagePdf(input: RenderPdfInput<RetirementComp
                 <View style={s.metricRow}>
                   <View style={s.metricKey}>
                     <View style={[s.metricSwatch, { backgroundColor: dataLight.green }]} />
-                    <Text style={s.metricLabel}>Proposed</Text>
+                    <Text style={s.metricLabel}>{legendScn}</Text>
                   </View>
                   <Text style={s.metricVal}>{`${fmtUsd(data.maxSpend.scenarioToday)}/yr`}</Text>
                 </View>
                 <View style={s.metricRow}>
                   <View style={s.metricKey}>
                     <View style={[s.metricSwatch, { backgroundColor: dataLight.grey }]} />
-                    <Text style={s.metricLabel}>Current</Text>
+                    <Text style={s.metricLabel}>{legendBase}</Text>
                   </View>
                   <Text style={s.metricVal}>{`${fmtUsd(data.maxSpend.baseToday)}/yr`}</Text>
                 </View>
@@ -175,14 +214,14 @@ export function RetirementComparisonPagePdf(input: RenderPdfInput<RetirementComp
                 <View style={s.metricRow}>
                   <View style={s.metricKey}>
                     <View style={[s.metricSwatch, { backgroundColor: dataLight.green }]} />
-                    <Text style={s.metricLabel}>Proposed</Text>
+                    <Text style={s.metricLabel}>{legendScn}</Text>
                   </View>
                   <Text style={s.metricVal}>{`${fmtUsd(lastConf.scnP20)}`}</Text>
                 </View>
                 <View style={s.metricRow}>
                   <View style={s.metricKey}>
                     <View style={[s.metricSwatch, { backgroundColor: dataLight.grey }]} />
-                    <Text style={s.metricLabel}>Current</Text>
+                    <Text style={s.metricLabel}>{legendBase}</Text>
                   </View>
                   <Text style={s.metricVal}>{`${fmtUsd(lastConf.baseP20)}`}</Text>
                 </View>
@@ -205,8 +244,8 @@ export function RetirementComparisonPagePdf(input: RenderPdfInput<RetirementComp
 
         {data.showPortfolioMatrix ? (
           <View style={s.panel}>
-            <Text style={s.h4}>{`At end of life (${horizonYearsLabel(data.atEndOfLife.baseYear, data.atEndOfLife.scenarioYear, "current")}) — portfolio assets by tax treatment`}</Text>
-            <TaxTreatmentChartPdf data={data.atEndOfLife} compact />
+            <Text style={s.h4}>{`At end of life (${horizonYearsLabel(data.atEndOfLife.baseYear, data.atEndOfLife.scenarioYear, horizonBase, horizonScn)}) — portfolio assets by tax treatment`}</Text>
+            <TaxTreatmentChartPdf data={data.atEndOfLife} baselineLabel={data.baselineLabel} scenarioLabel={data.scenarioLabel} compact />
           </View>
         ) : null}
 

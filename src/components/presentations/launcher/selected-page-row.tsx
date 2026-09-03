@@ -49,15 +49,28 @@ export function SelectedPageRow(props: Props) {
       : (props.scenarioOverride ?? "base");
 
   // Pages like Retirement Comparison store the "compare to" scenario *inside*
-  // their options (the baseline is always Base Case). Surface it as an inline
+  // their options (the baseline sits beside it, and is no longer always Base
+  // Case — see `readBaselineScenarioId` below). Surface it as an inline
   // picker in place of the static "Base plan" chip so it can be set without
   // opening Options. Live scenarios only — mirrors the Options-dialog list.
   const inlineScenario = page.inlineScenarioOption;
   const inlineScenarioValue = inlineScenario
     ? inlineScenario.get(props.options as never)
     : "";
+
+  // `summarizeOptions` receives ids, never names, so the row resolves the
+  // baseline's name itself. Only shown when it is not Base Case — the ordinary
+  // deck's row is unchanged.
+  const baselineId = page.readBaselineScenarioId
+    ? page.readBaselineScenarioId(props.options as never)
+    : "base";
+  const baselineName =
+    baselineId !== "base"
+      ? (props.scenarios.find((s) => s.id === baselineId)?.name ?? baselineId)
+      : null;
+
   const comparisonScenarios = props.scenarios.filter(
-    (s) => !s.isBaseCase && !s.name.startsWith("writer-test-"),
+    (s) => !s.isBaseCase && !s.name.startsWith("writer-test-") && s.id !== baselineId,
   );
 
   return (
@@ -71,7 +84,14 @@ export function SelectedPageRow(props: Props) {
         </span>
         <div className="flex-1">
           <div className="text-sm font-medium text-ink">{page.title}</div>
-          <div className="text-xs text-ink-2">{summary}</div>
+          <div className="text-xs text-ink-2">
+            {summary}
+            {baselineName && (
+              <span className="ml-2 rounded bg-card px-1.5 py-0.5 text-[11px] text-ink-3">
+                {`vs ${baselineName}`}
+              </span>
+            )}
+          </div>
         </div>
         <button
           type="button"

@@ -49,6 +49,10 @@ export interface TaxComparisonChartYear {
 export interface TaxComparisonPageData {
   title: string;
   subtitle: string;
+  /** Full display names of the two plans. The subtitle carries them at length;
+   *  the PDF's fixed-width columns truncate them via `truncateLabel`. */
+  baselineLabel: string;
+  scenarioLabel: string;
   isEmpty: boolean;
   bracketMode: boolean;
   kpis: TaxComparisonKpi[];
@@ -63,6 +67,8 @@ const EMPTY_SIDE: CompositionSide = { roth: 0, preTax: 0, taxable: 0, total: 0 }
 const EMPTY = (): TaxComparisonPageData => ({
   title: "Tax Comparison",
   subtitle: "",
+  baselineLabel: "",
+  scenarioLabel: "",
   isEmpty: true,
   bracketMode: false,
   kpis: [],
@@ -103,7 +109,7 @@ export function buildTaxComparisonData(
   options: TaxComparisonOptions,
 ): TaxComparisonPageData {
   const byRef = ctx.bundlesByRef ?? {};
-  const baseBundle = byRef[keyForRef(resolveScenarioRef("base"))];
+  const baseBundle = byRef[keyForRef(resolveScenarioRef(options.baselineScenarioId))];
   const scnBundle = options.scenarioId
     ? byRef[keyForRef(resolveScenarioRef(options.scenarioId))]
     : undefined;
@@ -192,6 +198,7 @@ export function buildTaxComparisonData(
 
   // ── Narrative ──
   const narrative = buildTaxComparisonNarrative({
+    baselineLabel: baseBundle.scenarioLabel,
     baseLifetimeTotal: baseTotals.lifetimeTotal,
     scnLifetimeTotal: scnTotals.lifetimeTotal,
     baseEffectiveRate: baseTotals.effectiveRate,
@@ -212,7 +219,9 @@ export function buildTaxComparisonData(
   const horizon = scnBars.length ? `${scnBars[0].year}–${scnBars[scnBars.length - 1].year}` : "—";
   return {
     title: "Tax Comparison",
-    subtitle: `Base Case vs. ${scnBundle.scenarioLabel} · Lifetime ${horizon}`,
+    subtitle: `${baseBundle.scenarioLabel} vs. ${scnBundle.scenarioLabel} · Lifetime ${horizon}`,
+    baselineLabel: baseBundle.scenarioLabel,
+    scenarioLabel: scnBundle.scenarioLabel,
     isEmpty: false,
     bracketMode,
     kpis,

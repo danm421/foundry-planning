@@ -47,6 +47,7 @@ function bundle(
   accounts: { id: string; subType: string }[] = [],
   endP20 = 100,
   retirementAge = 65,
+  scenarioLabel = "Delay + Roth",
 ) {
   return {
     clientData: {
@@ -55,7 +56,7 @@ function bundle(
       accounts,
     },
     projection: { years },
-    scenarioLabel: "Delay + Roth",
+    scenarioLabel,
     monteCarlo: {
       summary: {
         successRate: success,
@@ -79,7 +80,7 @@ const scnAccounts = [
 
 const ctx = {
   bundlesByRef: {
-    base: bundle(baseYears, 0.73, 90_000, [], 1_500_000),
+    base: bundle(baseYears, 0.73, 90_000, [], 1_500_000, 65, "Base Case"),
     "scenario:s1": bundle(scnYears, 0.91, 110_000, scnAccounts, 13_900_000),
   },
 } as unknown as BuildDataContext;
@@ -237,6 +238,34 @@ describe("buildRetirementComparisonData", () => {
     expect(d.atEndOfLife.baseYear).toBe(2031);
     expect(d.atEndOfLife.scenarioYear).toBe(2031);
     expect(d.atEndOfLife.scenario.roth).toBe(500_000);
+  });
+
+  it("names both sides in the subtitle", () => {
+    expect(buildRetirementComparisonData(ctx, opts).subtitle).toBe("Base Case vs. Delay + Roth");
+  });
+
+  it("reads the LEFT side from the chosen baseline, not from base", () => {
+    // Three bundles loaded; the baseline points at s2, whose success rate is
+    // 0.40 — a value neither base (0.73) nor the comparison scenario (0.91)
+    // holds, so reading the wrong bundle is visible in the assertion.
+    const threeWay = {
+      bundlesByRef: {
+        ...(ctx.bundlesByRef as Record<string, unknown>),
+        "scenario:s2": bundle(baseYears, 0.40, 70_000, [], 900_000, 62, "Retire at 62"),
+      },
+    } as unknown as BuildDataContext;
+
+    const d = buildRetirementComparisonData(threeWay, { ...opts, baselineScenarioId: "s2" });
+
+    expect(d.isEmpty).toBe(false);
+    expect(d.subtitle).toBe("Retire at 62 vs. Delay + Roth");
+    expect(d.verdict.headline).toContain("40%");
+    expect(d.verdict.headline).not.toContain("73%");
+  });
+
+  it("renders the empty state when the chosen baseline was not loaded", () => {
+    const d = buildRetirementComparisonData(ctx, { ...opts, baselineScenarioId: "missing" });
+    expect(d.isEmpty).toBe(true);
   });
 });
 

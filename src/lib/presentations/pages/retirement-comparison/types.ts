@@ -14,7 +14,12 @@ export interface RetirementComparisonAiConfig {
 }
 
 export interface RetirementComparisonOptions {
-  /** The comparison scenario id; baseline is always Base Case. Empty = unset. */
+  /** The left-hand plan. "base" = Base Case; otherwise a live scenario id.
+   *  Never empty — a comparison always has a baseline, unlike `scenarioId`,
+   *  whose "" means "unset, render the empty state". */
+  baselineScenarioId: string;
+  /** The comparison scenario id — the right-hand plan; "" = unset, render the
+   *  empty state. */
   scenarioId: string;
   showPortfolioMatrix: boolean;
   showAiSummary: boolean;
@@ -112,6 +117,11 @@ export interface TaxTreatmentBreakdown {
 export interface RetirementComparisonPageData {
   title: string;
   subtitle: string;
+  /** Full display names of the two plans. The subtitle carries them at length;
+   *  the PDF's fixed-width columns and its SVG axis truncate them via
+   *  `truncateLabel`, each with its own separately measured cap. */
+  baselineLabel: string;
+  scenarioLabel: string;
   isEmpty: boolean;
   verdict: VerdictBanner;
   /** Page-1 headline strip — the metrics that improve (success, legacy, max

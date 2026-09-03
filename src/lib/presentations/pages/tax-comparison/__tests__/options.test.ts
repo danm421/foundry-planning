@@ -9,12 +9,24 @@ import { estimateTaxComparisonPageCount } from "../estimate-page-count";
 describe("tax-comparison options", () => {
   it("parses default options", () => {
     expect(() => taxComparisonOptionsSchema.parse(TAX_COMPARISON_OPTIONS_DEFAULT)).not.toThrow();
-    expect(TAX_COMPARISON_OPTIONS_DEFAULT).toEqual({ scenarioId: "", lowThreshold: 0.22, highThreshold: 0.24 });
+    expect(TAX_COMPARISON_OPTIONS_DEFAULT).toEqual({
+      scenarioId: "",
+      baselineScenarioId: "base",
+      lowThreshold: 0.22,
+      highThreshold: 0.24,
+    });
+  });
+
+  it("defaults a missing baseline on a deck saved before the field existed", () => {
+    const legacy: Record<string, unknown> = { ...TAX_COMPARISON_OPTIONS_DEFAULT };
+    delete legacy.baselineScenarioId;
+    expect(taxComparisonOptionsSchema.parse(legacy).baselineScenarioId).toBe("base");
   });
 
   it("summarizes thresholds, noting when no scenario is picked", () => {
     expect(summarizeTaxComparisonOptions(TAX_COMPARISON_OPTIONS_DEFAULT)).toBe("No scenario · Low <22% · High >24%");
-    expect(summarizeTaxComparisonOptions({ scenarioId: "s1", lowThreshold: 0.22, highThreshold: 0.24 })).toBe("vs scenario · Low <22% · High >24%");
+    expect(summarizeTaxComparisonOptions({ scenarioId: "s1", baselineScenarioId: "base", lowThreshold: 0.22, highThreshold: 0.24 })).toBe("vs scenario · Low <22% · High >24%");
+    expect(summarizeTaxComparisonOptions({ scenarioId: "s1", baselineScenarioId: "s2", lowThreshold: 0.22, highThreshold: 0.24 })).toBe("vs a scenario baseline · Low <22% · High >24%");
   });
 
   it("estimates one page", () => {

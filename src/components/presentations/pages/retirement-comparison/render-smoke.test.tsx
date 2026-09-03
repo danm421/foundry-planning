@@ -41,6 +41,8 @@ const confidence: ConfidencePoint[] = Array.from({ length: 34 }, (_, i) => {
 const data: RetirementComparisonPageData = {
   title: "Retirement Comparison",
   subtitle: "Base Case vs. New Plan",
+  baselineLabel: "Base Case",
+  scenarioLabel: "New Plan",
   isEmpty: false,
   verdict: { headline: "99% chance your plan fully funds your life — up from 83%." },
   kpis: [
