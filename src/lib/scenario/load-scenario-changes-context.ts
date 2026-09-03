@@ -1,9 +1,15 @@
 // src/lib/scenario/load-scenario-changes-context.ts
-// The one assembly of a scenario's change set for anything that DESCRIBES the
-// edits: the PDF export's Plan Comparison page and the Observations
-// next-steps generator. Two callers, one implementation — the moment a second
-// copy existed (the Retirement Comparison prompt's terse describer) the two
-// disagreed about what a change was called.
+// The shared assembly of a scenario's change set for the two callers that
+// render it as `DisplayUnit[]`: the PDF export's changes page and the
+// Observations next-steps generator. One implementation for both — the moment
+// a second copy existed (the Retirement Comparison prompt's terse describer)
+// the two disagreed about what a change was called.
+//
+// A THIRD assembly exists and is meant to: `loadStrategies` in
+// `src/lib/presentations/story/load-context.ts` (Plan Story) groups the same
+// changes into `StoryStrategy[]` rather than `DisplayUnit[]`, and deliberately
+// omits the reinvestment enrichment so it never needs the firm's investment
+// catalog. Do not fold it into this module.
 //
 // Org-scoping note: loadScenarioChanges / loadScenarioToggleGroups read by
 // scenarioId alone. Every caller must have obtained `clientData` for this
