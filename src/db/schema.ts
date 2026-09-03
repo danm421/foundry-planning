@@ -1848,8 +1848,17 @@ export const modelPortfolios = pgTable("model_portfolios", {
   // Firm-authored risk rung. Nullable = untagged; a client tolerance that finds
   // no tagged portfolio is blank+flagged, never snapped to a neighbour.
   riskLevel: riskLevelEnum("risk_level"),
+  // Set when this portfolio was derived from a fund (ticker) portfolio's
+  // look-through. Non-null => allocations are managed by syncDerivedAllocations
+  // and are read-only in the CMA UI.
+  // `set null` (not cascade): deleting the fund must not delete a portfolio that
+  // accounts, scenarios and reinvestments already point at — it detaches.
+  sourceTickerPortfolioId: uuid("source_ticker_portfolio_id")
+    .references(() => tickerPortfolios.id, { onDelete: "set null" }),
 }, (t) => [
   unique("model_portfolios_firm_id_name_unique").on(t.firmId, t.name),
+  // One derived model portfolio per fund portfolio.
+  uniqueIndex("model_portfolios_source_ticker_portfolio_uniq").on(t.sourceTickerPortfolioId),
   // At most one portfolio per rung per firm, so the tolerance->portfolio join is
   // deterministic. Partial: untagged (null) portfolios don't collide.
   uniqueIndex("model_portfolios_firm_risk_level_uniq")
