@@ -3,7 +3,7 @@
 // is stamped with what produced it, not with whatever the picker says by the
 // time the advisor clicks Accept. Polling mirrors the Details panel's.
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ObservationTopic } from "@/lib/schemas/observations";
 
 export type DraftSection = "observation" | "next_step";
@@ -31,6 +31,11 @@ export function useDraftRun(clientId: string) {
   const [active, setActive] = useState<{ runId: string; section: DraftSection } | null>(null);
   const [result, setResult] = useState<DraftRunResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // `active` and the button's `disabled` both only flip once the POST has
+  // resolved, so for the whole round-trip neither guards a second click. The
+  // route has no dedupe — a duplicate is a second real LLM run, and the first
+  // is orphaned until the reaper. This ref closes that window synchronously.
+  const starting = useRef(false);
 
   useEffect(() => {
     if (!active) return;
@@ -86,7 +91,8 @@ export function useDraftRun(clientId: string) {
   }, [active, base]);
 
   async function start(section: DraftSection) {
-    if (active) return;
+    if (active || starting.current) return;
+    starting.current = true;
     setError(null);
     setResult(null);
     try {
@@ -103,6 +109,8 @@ export function useDraftRun(clientId: string) {
       setActive({ runId, section });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't start the draft.");
+    } finally {
+      starting.current = false;
     }
   }
 
@@ -116,6 +124,13 @@ export function useDraftRun(clientId: string) {
     result,
     error,
     replaceSuggestions,
-    clear: () => setResult(null),
+    // Clearing a run that is still polling must cancel it too — dropping only
+    // the result leaves the effect alive, so the cards reappear on the next
+    // poll and `drafting` never falls back to false.
+    clear: () => {
+      setActive(null);
+      setResult(null);
+      setError(null);
+    },
   };
 }

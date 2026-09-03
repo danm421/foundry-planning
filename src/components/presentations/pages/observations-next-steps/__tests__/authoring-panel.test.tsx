@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { PresentationOptionsProvider } from "@/components/presentations/options-context";
 import { EMPTY_INVESTMENT_OPTION_CATALOG } from "@/lib/presentations/investment-option-catalog";
@@ -9,6 +9,7 @@ import { ObservationsAuthoringPanel } from "../authoring-panel";
 
 const CLIENT_ID = "11111111-1111-4111-8111-111111111111";
 const SCENARIO_ID = "22222222-2222-4222-8222-222222222222";
+const OTHER_SCENARIO_ID = "33333333-3333-4333-8333-333333333333";
 const BASE = `/api/clients/${CLIENT_ID}/observations`;
 
 const ALL_RESOLVED = Object.fromEntries(PLAN_TOKENS.map((t) => [t.id, "x"]));
@@ -175,7 +176,10 @@ describe("ObservationsAuthoringPanel — Draft with AI", () => {
         return {
           status: 200,
           body: {
-            status: "done", error: null, scenarioId: null,
+            // The RUN's scenario. The picker/context below deliberately holds a
+            // DIFFERENT one, so an accepted row stamped from the wrong source is
+            // visible rather than coincidentally equal.
+            status: "done", error: null, scenarioId: SCENARIO_ID,
             suggestions: [
               { section: "observation", topic: "cash-flow", title: null, body: "You save {{savings_rate}}.", owner: null, priority: null },
               { section: "observation", topic: "tax", title: null, body: "Taxes take {{effective_tax_rate}}.", owner: null, priority: null },
@@ -183,7 +187,7 @@ describe("ObservationsAuthoringPanel — Draft with AI", () => {
           },
         };
       }
-      return defaults()(url, init);
+      return defaults({ context: { nextStepsScenarioId: OTHER_SCENARIO_ID } })(url, init);
     });
     renderPanel();
     await screen.findByText("On track to retire at x.");
@@ -195,9 +199,42 @@ describe("ObservationsAuthoringPanel — Draft with AI", () => {
     await waitFor(() => {
       const posts = calls.filter((c) => c.method === "POST" && c.url === BASE);
       expect(posts).toHaveLength(2);
-      expect(posts[0].body).toMatchObject({ section: "observation", source: "ai", audience: "client", topic: "cash-flow", sourceScenarioId: null });
+      // From the RUN, not from the picker: OTHER_SCENARIO_ID would mean the
+      // accept path read the context row instead of the run that produced it.
+      expect(posts[0].body).toMatchObject({ section: "observation", source: "ai", audience: "client", topic: "cash-flow", sourceScenarioId: SCENARIO_ID });
       expect(posts[1].body).toMatchObject({ topic: "tax" });
     });
     await waitFor(() => expect(screen.queryByText("You save x.")).toBeNull());
+  });
+
+  // fireEvent, not userEvent: userEvent awaits between clicks, by which time
+  // the POST has resolved and both `active` and `disabled` have flipped. Two
+  // SYNCHRONOUS clicks are the real race — the window while the POST is in
+  // flight, where neither guard is closed yet. The route has no dedupe, so a
+  // second POST is a second real LLM run.
+  it("ignores a second click while the first draft request is still in flight", async () => {
+    const calls = installFetch((url, init) => {
+      const method = init?.method ?? "GET";
+      if (url.endsWith("/draft-runs") && method === "POST") return { status: 202, body: { runId: "run-1" } };
+      if (url.endsWith("/draft-runs/run-1")) {
+        return {
+          status: 200,
+          body: {
+            status: "done", error: null, scenarioId: null,
+            suggestions: [{ section: "observation", topic: "tax", title: null, body: "Taxes take {{effective_tax_rate}}.", owner: null, priority: null }],
+          },
+        };
+      }
+      return defaults()(url, init);
+    });
+    renderPanel();
+    await screen.findByText("On track to retire at x.");
+
+    const button = screen.getByRole("button", { name: /^draft with ai$/i });
+    fireEvent.click(button);
+    fireEvent.click(button);
+
+    expect(await screen.findByText("Taxes take x.")).toBeInTheDocument();
+    expect(calls.filter((c) => c.url.endsWith("/draft-runs") && c.method === "POST")).toHaveLength(1);
   });
 });
