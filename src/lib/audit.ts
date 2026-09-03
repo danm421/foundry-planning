@@ -75,6 +75,9 @@ export type AuditAction =
   | "tax_return.document_remove"
   | "tax_return.second_read"
   | "tax_return.second_read_dismiss"
+  | "tax_reconciliation.apply"
+  | "tax_reconciliation.dismiss"
+  | "tax_reconciliation.restore"
   // Scenario-level movements
   | "transfer.create"
   | "transfer.update"
