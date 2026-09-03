@@ -10,6 +10,8 @@ const EMPTY_BUCKETS = { cash: 0, taxable: 0, preTax: 0, roth: 0, hsa: 0 };
 const DATA: RetirementComparisonPageData = {
   title: "Retirement Comparison",
   subtitle: "Base Case vs. Proposed",
+  baselineLabel: "Base Case",
+  scenarioLabel: "Proposed",
   isEmpty: false,
   verdict: { headline: "91% chance your plan fully funds your life — up from 73%." },
   kpis: [

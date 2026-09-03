@@ -78,6 +78,8 @@ function fixture(kpis: KpiCard[]): RetirementComparisonPageData {
   return {
     title: "Retirement Comparison",
     subtitle: "Base Case vs. New Plan",
+    baselineLabel: "Base Case",
+    scenarioLabel: "New Plan",
     isEmpty: false,
     verdict: { headline: "83% chance your plan fully funds your life (was 100%)." },
     kpis,

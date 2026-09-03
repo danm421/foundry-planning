@@ -34,7 +34,7 @@ const EMPTY_BUCKETS: TaxBuckets = { cash: 0, taxable: 0, preTax: 0, roth: 0, hsa
 const EMPTY_BREAKDOWN: TaxTreatmentBreakdown = { baseYear: 0, scenarioYear: 0, base: EMPTY_BUCKETS, scenario: EMPTY_BUCKETS };
 
 const EMPTY = (title: string): RetirementComparisonPageData => ({
-  title, subtitle: "", isEmpty: true,
+  title, subtitle: "", baselineLabel: "", scenarioLabel: "", isEmpty: true,
   verdict: { headline: "" },
   kpis: [],
   overlay: [],
@@ -268,6 +268,8 @@ export function buildRetirementComparisonData(
   return {
     title,
     subtitle: `${baseBundle.scenarioLabel} vs. ${scnBundle.scenarioLabel}`,
+    baselineLabel: baseBundle.scenarioLabel,
+    scenarioLabel: scnBundle.scenarioLabel,
     isEmpty: false,
     verdict: { headline: verdictHeadline(baseSuccess, scnSuccess) },
     kpis,

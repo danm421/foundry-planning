@@ -2,6 +2,7 @@ import { View, Svg, G, Rect, Text as SvgText, Text, StyleSheet } from "@react-pd
 import { PRESENTATION_THEME as T, ZEBRA_FILL } from "@/lib/presentations/theme";
 import { dataLight } from "@/brand";
 import { fmtUsdCompact as fmtUsd } from "@/lib/presentations/pages/retirement-comparison/format";
+import { truncateLabel } from "@/lib/presentations/format";
 import { MONO } from "./chart-axis";
 import type { TaxBuckets } from "@/lib/presentations/pages/retirement-comparison/tax-buckets";
 import type { TaxTreatmentBreakdown } from "@/lib/presentations/pages/retirement-comparison/types";
@@ -35,10 +36,25 @@ const s = StyleSheet.create({
   totalNum: { flex: 1, fontSize: 8, color: T.ink, fontWeight: 600, textAlign: "right", fontFamily: MONO },
 });
 
-/** Paired stacked columns (Current vs Proposed) + a per-bucket value table.
- *  Buckets that are zero in BOTH plans are hidden. `compact` drops the bars and
- *  renders the value table only (the page-2 end-of-life summary). */
-export function TaxTreatmentChartPdf({ data, compact = false }: { data: TaxTreatmentBreakdown; compact?: boolean }) {
+/** Paired stacked columns (baseline vs. comparison plan) + a per-bucket value
+ *  table. Buckets that are zero in BOTH plans are hidden. `compact` drops the
+ *  bars and renders the value table only (the page-2 end-of-life summary).
+ *
+ *  The two plan names are REQUIRED, not defaulted: this used to print the words
+ *  "Current" and "Proposed", which are false whenever the advisor picks a
+ *  scenario as the baseline. A default would let a new call site reintroduce
+ *  exactly that. */
+export function TaxTreatmentChartPdf({
+  data,
+  baselineLabel,
+  scenarioLabel,
+  compact = false,
+}: {
+  data: TaxTreatmentBreakdown;
+  baselineLabel: string;
+  scenarioLabel: string;
+  compact?: boolean;
+}) {
   const { base, scenario } = data;
   const buckets = TAX_BUCKETS.filter((b) => base[b.key] > 0 || scenario[b.key] > 0);
   const baseTotal = sumBuckets(base);
@@ -46,6 +62,26 @@ export function TaxTreatmentChartPdf({ data, compact = false }: { data: TaxTreat
   const maxTotal = Math.max(1, baseTotal, scnTotal);
 
   const colW = 38, gap = 26, plotH = 112, topPad = 13;
+  // Two separately measured caps, because the two surfaces fail differently and
+  // one of them fails silently. Both swept by rendering at candidate caps and
+  // reading the result back with `pdftotext -bbox` (see the ledger).
+  //
+  // COL_CAP 10 — the SVG axis label. `textAnchor="middle"` centres it on a colW
+  // column, the two column centres are colW + gap = 64pt apart, and SVG text
+  // neither wraps nor clips: an over-long label OVERPRINTS its neighbour, so
+  // getting this wrong is SILENT. At 10 the widest possible name clears its
+  // neighbour by 4.5pt; at 12 it overlaps by 7.1pt.
+  //
+  // TH_CAP 14 — the value table's right-aligned header cell. Right-aligned in a
+  // flex cell, so an unbroken name slides LEFT over the previous header (16
+  // overlaps by 5.7pt) and a name with spaces wraps the header row taller than
+  // its neighbours (22). 14 clears both.
+  const COL_CAP = 10;
+  const TH_CAP = 14;
+  const baseCol = truncateLabel(baselineLabel, COL_CAP);
+  const scnCol = truncateLabel(scenarioLabel, COL_CAP);
+  const baseTh = truncateLabel(baselineLabel, TH_CAP);
+  const scnTh = truncateLabel(scenarioLabel, TH_CAP);
   const svgW = colW * 2 + gap;
   const svgH = plotH + topPad + 14;
 
@@ -58,7 +94,7 @@ export function TaxTreatmentChartPdf({ data, compact = false }: { data: TaxTreat
     });
     const topY = topPad + plotH - (total / maxTotal) * plotH;
     return (
-      <G key={label}>
+      <G key={x}>
         {rects}
         <SvgText x={x + colW / 2} y={topY - 4} textAnchor="middle" style={{ fontSize: 8, fontWeight: 600, fill: T.ink, fontFamily: MONO }}>
           {fmtUsd(total)}
@@ -74,8 +110,8 @@ export function TaxTreatmentChartPdf({ data, compact = false }: { data: TaxTreat
     <View style={compact ? { width: "100%" } : { flex: 1 }}>
       <View style={s.headRow}>
         <Text style={[s.th, { flex: 1.5 }]}> </Text>
-        <Text style={[s.th, { flex: 1, textAlign: "right" }]}>Current</Text>
-        <Text style={[s.th, { flex: 1, textAlign: "right" }]}>Proposed</Text>
+        <Text style={[s.th, { flex: 1, textAlign: "right" }]}>{baseTh}</Text>
+        <Text style={[s.th, { flex: 1, textAlign: "right" }]}>{scnTh}</Text>
         <Text style={[s.th, { flex: 1, textAlign: "right" }]}>Change</Text>
       </View>
       {buckets.map((bk, i) => {
@@ -108,8 +144,8 @@ export function TaxTreatmentChartPdf({ data, compact = false }: { data: TaxTreat
   return (
     <View style={s.row}>
       <Svg width={svgW} height={svgH}>
-        {column(base, 0, baseTotal, "Current")}
-        {column(scenario, colW + gap, scnTotal, "Proposed")}
+        {column(base, 0, baseTotal, baseCol)}
+        {column(scenario, colW + gap, scnTotal, scnCol)}
       </Svg>
       {table}
     </View>

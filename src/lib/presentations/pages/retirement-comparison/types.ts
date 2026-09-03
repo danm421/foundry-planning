@@ -117,6 +117,11 @@ export interface TaxTreatmentBreakdown {
 export interface RetirementComparisonPageData {
   title: string;
   subtitle: string;
+  /** Full display names of the two plans. The subtitle carries them at length;
+   *  the PDF's fixed-width columns and its SVG axis truncate them via
+   *  `truncateLabel`, each with its own separately measured cap. */
+  baselineLabel: string;
+  scenarioLabel: string;
   isEmpty: boolean;
   verdict: VerdictBanner;
   /** Page-1 headline strip — the metrics that improve (success, legacy, max
