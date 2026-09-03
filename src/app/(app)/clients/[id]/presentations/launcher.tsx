@@ -401,7 +401,12 @@ export function PresentationsLauncher(props: Props) {
   // Retirement / Tax) pick their scenario inline, and the four-column Scenario
   // Comparison page picks its list in its Options dialog and reports its own
   // unconfigured state via `isUnconfigured`.
-  function pagesMissingTheirScenario(): Array<{ title: string; position: number; viaOptions: boolean }> {
+  function pagesMissingTheirScenario(): Array<{
+    title: string;
+    position: number;
+    viaOptions: boolean;
+    hint: string | null;
+  }> {
     return state.pages
       .map((p, i) => ({ page: PRESENTATION_PAGES[p.pageId], options: p.options, position: i + 1 }))
       .filter(({ page, options }) => {
@@ -411,7 +416,12 @@ export function PresentationsLauncher(props: Props) {
       })
       // No inline picker means the row was caught by `isUnconfigured` — its
       // scenario list lives in the Options dialog, not an inline dropdown.
-      .map(({ page, position }) => ({ title: page.title, position, viaOptions: !page.inlineScenarioOption }));
+      .map(({ page, position }) => ({
+        title: page.title,
+        position,
+        viaOptions: !page.inlineScenarioOption,
+        hint: page.unconfiguredHint ?? null,
+      }));
   }
 
   async function handleGenerate() {
@@ -437,10 +447,15 @@ export function PresentationsLauncher(props: Props) {
           `No comparison selected for ${named(inlinePages)}. Choose a comparison scenario${each} before generating the PDF.`,
         );
       }
-      if (optionsPages.length > 0) {
-        const each = optionsPages.length > 1 ? " for each" : "";
+      const hinted = optionsPages.filter((m) => m.hint);
+      const generic = optionsPages.filter((m) => !m.hint);
+      for (const m of hinted) {
+        messages.push(`${m.title} (page ${m.position}): ${m.hint}`);
+      }
+      if (generic.length > 0) {
+        const each = generic.length > 1 ? " for each" : "";
         messages.push(
-          `No scenario chosen for ${named(optionsPages)}. Open Options and choose at least one scenario${each} before generating the PDF.`,
+          `No scenario chosen for ${named(generic)}. Open Options and choose at least one scenario${each} before generating the PDF.`,
         );
       }
       setError(messages.join(" "));

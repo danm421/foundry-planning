@@ -23,6 +23,9 @@ export interface EditInitial {
   owner: ObservationOwner | null;
   priority: ObservationPriority | null;
   targetDate: string | null;
+  /** The scenario an AI next step came from — sent on create only, so an
+   *  "Edit & accept" keeps the provenance the run gave it. Absent = none. */
+  sourceScenarioId?: string | null;
 }
 
 const OWNER_LABELS: Record<ObservationOwner, string> = {
@@ -135,6 +138,7 @@ export default function ObservationEditDialog({ clientId, open, initial, onClose
               owner: owner || null,
               priority: priority || null,
               targetDate: targetDate || null,
+              ...(initial.sourceScenarioId !== undefined && { sourceScenarioId: initial.sourceScenarioId }),
             }),
           });
       if (!res.ok) {

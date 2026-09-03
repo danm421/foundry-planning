@@ -1,99 +1,142 @@
 "use client";
 
-import type { ObservationsPageOptions } from "@/lib/presentations/pages/observations-next-steps/options-schema";
+import {
+  resolveObservationsPageOptions,
+  type ObservationsPageOptions,
+} from "@/lib/presentations/pages/observations-next-steps/options-schema";
 import { OBSERVATION_TOPICS, TOPIC_LABELS } from "@/lib/schemas/observations";
 import { OptionsRow, OptionsGroup } from "@/components/presentations/shared/options-layout";
+import { useClientId } from "@/components/presentations/options-context";
+import { ObservationsAuthoringPanel } from "./authoring-panel";
 
 interface Props {
   value: ObservationsPageOptions;
   onChange: (next: ObservationsPageOptions) => void;
 }
 
-const INCLUDE_OPTIONS: { key: ObservationsPageOptions["include"]; label: string }[] = [
-  { key: "both", label: "Both sections" },
-  { key: "observations", label: "Observations only" },
-  { key: "nextSteps", label: "Next Steps only" },
-];
-
 const field =
   "rounded border border-hair bg-card-2 px-2 py-1 text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/40";
+const check = "flex items-center gap-2 hover:text-ink";
 
 export function ObservationsOptionsControl({ value, onChange }: Props) {
+  const clientId = useClientId();
+
+  /**
+   * ⚠️⚠️ RESOLVED rather than read straight off `value`. The launcher hands
+   * this control the deck's raw page options, unparsed — `selected-page-row.tsx`
+   * passes `props.options as never`, and a deck saved before this task shipped
+   * still carries the legacy `include` shape with neither boolean. Reading
+   * `value.showObservations` directly would render an uncontrolled checkbox
+   * (`checked={undefined}`). See `resolveObservationsPageOptions`'s doc comment
+   * in options-schema.ts.
+   *
+   * Every `onChange` below writes from `resolved`, not `value` — once the
+   * advisor touches any control here, the emitted object is the clean,
+   * fully-booleaned shape, and a stray legacy `include` riding alongside is
+   * dropped rather than carried forward.
+   */
+  const resolved = resolveObservationsPageOptions(value);
+
   function toggleTopic(topic: string, checked: boolean) {
     const topics = checked
-      ? [...value.topics, topic]
-      : value.topics.filter((t) => t !== topic);
-    onChange({ ...value, topics });
+      ? [...resolved.topics, topic]
+      : resolved.topics.filter((t) => t !== topic);
+    onChange({ ...resolved, topics });
   }
 
   return (
-    <OptionsRow>
-      <OptionsGroup label="Content">
-        <label className="flex flex-col gap-1">
-          <span>Sections</span>
-          <select
-            aria-label="Sections to include"
-            className={field}
-            value={value.include}
-            onChange={(e) =>
-              onChange({ ...value, include: e.target.value as ObservationsPageOptions["include"] })
-            }
-          >
-            {INCLUDE_OPTIONS.map((opt) => (
-              <option key={opt.key} value={opt.key}>{opt.label}</option>
+    <div className="space-y-4">
+      <OptionsRow>
+        <OptionsGroup label="Sections">
+          <label className={check}>
+            <input
+              type="checkbox"
+              className="accent-accent"
+              checked={resolved.showObservations}
+              onChange={(e) => onChange({ ...resolved, showObservations: e.target.checked })}
+            />
+            <span>Observations</span>
+          </label>
+          <label className={check}>
+            <input
+              type="checkbox"
+              className="accent-accent"
+              checked={resolved.showNextSteps}
+              onChange={(e) => onChange({ ...resolved, showNextSteps: e.target.checked })}
+            />
+            <span>Next steps</span>
+          </label>
+          {!resolved.showObservations && !resolved.showNextSteps && (
+            <span className="text-[11px] text-ink-3">Turn on at least one section — the page prints nothing otherwise.</span>
+          )}
+        </OptionsGroup>
+
+        <OptionsGroup label="Content">
+          <label className={check}>
+            <input
+              type="checkbox"
+              className="accent-accent"
+              checked={resolved.includeCompleted}
+              onChange={(e) => onChange({ ...resolved, includeCompleted: e.target.checked })}
+            />
+            <span>Include completed next steps</span>
+          </label>
+          <label className={check}>
+            <input
+              type="checkbox"
+              className="accent-accent"
+              checked={resolved.showOwnerAndDate}
+              onChange={(e) => onChange({ ...resolved, showOwnerAndDate: e.target.checked })}
+            />
+            <span>Show owner &amp; target date</span>
+          </label>
+        </OptionsGroup>
+
+        <OptionsGroup label="Topics">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+            {OBSERVATION_TOPICS.map((topic) => (
+              <label key={topic} className={check}>
+                <input
+                  type="checkbox"
+                  className="accent-accent"
+                  checked={resolved.topics.includes(topic)}
+                  onChange={(e) => toggleTopic(topic, e.target.checked)}
+                />
+                <span>{TOPIC_LABELS[topic]}</span>
+              </label>
             ))}
-          </select>
-        </label>
-        <label className="flex items-center gap-2 hover:text-ink">
-          <input
-            type="checkbox"
-            className="accent-accent"
-            checked={value.includeCompleted}
-            onChange={(e) => onChange({ ...value, includeCompleted: e.target.checked })}
-          />
-          <span>Include completed next steps</span>
-        </label>
-        <label className="flex items-center gap-2 hover:text-ink">
-          <input
-            type="checkbox"
-            className="accent-accent"
-            checked={value.showOwnerAndDate}
-            onChange={(e) => onChange({ ...value, showOwnerAndDate: e.target.checked })}
-          />
-          <span>Show owner &amp; target date</span>
-        </label>
-      </OptionsGroup>
+          </div>
+          <span className="text-[11px] text-ink-3">No topics checked = all topics shown</span>
+        </OptionsGroup>
 
-      <OptionsGroup label="Topics">
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-          {OBSERVATION_TOPICS.map((topic) => (
-            <label key={topic} className="flex items-center gap-2 hover:text-ink">
-              <input
-                type="checkbox"
-                className="accent-accent"
-                checked={value.topics.includes(topic)}
-                onChange={(e) => toggleTopic(topic, e.target.checked)}
-              />
-              <span>{TOPIC_LABELS[topic]}</span>
-            </label>
-          ))}
+        <OptionsGroup label="Intro">
+          <textarea
+            aria-label="Intro markdown"
+            className={`w-full resize-y ${field}`}
+            rows={4}
+            placeholder="Optional intro text above the observations…"
+            value={resolved.intro}
+            onChange={(e) => onChange({ ...resolved, intro: e.target.value })}
+          />
+          <span className="text-[11px] text-ink-3">
+            Supports merge tokens (e.g. {"{{client_first_name}}"}); include a Monte Carlo page for {"{{mc_success}}"}.
+          </span>
+        </OptionsGroup>
+      </OptionsRow>
+
+      {/* `useClientId()` answers "" with no provider, and a component-library
+          render of this control must not fire a GET at /api/clients//observations. */}
+      {clientId !== "" && (
+        <div className="space-y-2 border-t border-hair pt-4">
+          <div className="text-[11px] uppercase tracking-[0.1em] text-ink-3">What the client reads</div>
+          <p className="text-[12px] text-ink-3">Saved on the household — every report for this client prints these.</p>
+          <ObservationsAuthoringPanel
+            clientId={clientId}
+            showObservations={resolved.showObservations}
+            showNextSteps={resolved.showNextSteps}
+          />
         </div>
-        <span className="text-[11px] text-ink-3">No topics checked = all topics shown</span>
-      </OptionsGroup>
-
-      <OptionsGroup label="Intro">
-        <textarea
-          aria-label="Intro markdown"
-          className={`w-full resize-y ${field}`}
-          rows={4}
-          placeholder="Optional intro text above the observations…"
-          value={value.intro}
-          onChange={(e) => onChange({ ...value, intro: e.target.value })}
-        />
-        <span className="text-[11px] text-ink-3">
-          Supports merge tokens (e.g. {"{{client_first_name}}"}); include a Monte Carlo page for {"{{mc_success}}"}.
-        </span>
-      </OptionsGroup>
-    </OptionsRow>
+      )}
+    </div>
   );
 }

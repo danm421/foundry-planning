@@ -46,6 +46,7 @@ export async function GET(
       {
         status: run.status,
         error: run.error,
+        scenarioId: run.scenarioId,
         suggestions:
           (run.resultPayload as { suggestions?: unknown } | null)?.suggestions ?? null,
       },
