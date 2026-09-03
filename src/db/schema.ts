@@ -606,6 +606,14 @@ export const planObservationSourceEnum = pgEnum("plan_observation_source", [
   "manual",
   "ai",
 ]);
+/** Who a plan_observations row is written FOR. `client` rows print on the
+ *  report and in the Plan Story; `advisor` rows are the seam a later phase
+ *  turns the Details screen into a checklist with. Every row written before
+ *  0256 was written for the client, hence the default. */
+export const planObservationAudienceEnum = pgEnum("plan_observation_audience", [
+  "client",
+  "advisor",
+]);
 
 export const importModeEnum = pgEnum("import_mode", ["onboarding", "updating"]);
 
@@ -3411,6 +3419,11 @@ export const planObservations = pgTable(
     targetDate: date("target_date"),
     completedAt: timestamp("completed_at"),
     source: planObservationSourceEnum("source").notNull().default("manual"),
+    audience: planObservationAudienceEnum("audience").notNull().default("client"),
+    /** The scenario an AI-generated next step came from. Text, not a FK, for
+     *  the same reason `plan_story_chapters.scenario_id` is: a scenario can be
+     *  deleted after its steps were accepted, and the steps must survive it. */
+    sourceScenarioId: text("source_scenario_id"),
     sortOrder: integer("sort_order").notNull().default(0),
     createdByUserId: text("created_by_user_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -3423,6 +3436,26 @@ export const planObservations = pgTable(
 
 export type PlanObservationRow = InferSelectModel<typeof planObservations>;
 export type NewPlanObservationRow = InferInsertModel<typeof planObservations>;
+
+/**
+ * The advisor's instructions to the model about THIS household — not
+ * client-facing, so not a plan_observations row, and household-shaped, so not
+ * a page option (options travel into firm-wide templates and per-browser
+ * drafts). One row per client, upserted on every save; a client with no row
+ * reads as empty strings and no scenario.
+ */
+export const planObservationContext = pgTable("plan_observation_context", {
+  clientId: uuid("client_id")
+    .primaryKey()
+    .references(() => clients.id, { onDelete: "cascade" }),
+  observationsContext: text("observations_context").notNull().default(""),
+  nextStepsContext: text("next_steps_context").notNull().default(""),
+  /** Text, not a FK — see `planObservations.sourceScenarioId`. */
+  nextStepsScenarioId: text("next_steps_scenario_id"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type PlanObservationContextRow = InferSelectModel<typeof planObservationContext>;
 
 /**
  * Advisor-reviewed narrative for the Plan Story report.
