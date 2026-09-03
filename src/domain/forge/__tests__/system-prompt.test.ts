@@ -5,6 +5,9 @@ import {
   FORGE_PREFIX_CLAUSES,
   GROUNDING_RULES,
   RESPONSE_STYLE,
+  IDENTITY,
+  DATA_ENTRY,
+  PLANNERS_EYE,
   buildSystemPrompt,
   type ForgePromptContext,
 } from "../system-prompt";
@@ -33,6 +36,62 @@ describe("FORGE_SYSTEM_PREFIX", () => {
   it("does NOT enumerate internal tool names (no scope leak)", () => {
     // The grounding/tool clauses are appended by the Phase 1 section, not here.
     expect(FORGE_SYSTEM_PREFIX).not.toMatch(/run_projection|find_client/);
+  });
+});
+
+describe("IDENTITY — Forge is the advisor's planning associate", () => {
+  it("opens the cacheable prefix", () => {
+    expect(FORGE_PREFIX_CLAUSES[0]).toBe(IDENTITY);
+  });
+  it("names the role and the posture, and drops the timid 'assistant' framing", () => {
+    expect(IDENTITY).toMatch(/planning associate/i);
+    expect(IDENTITY).toMatch(/capable colleague/i);
+    expect(IDENTITY).toMatch(/no asking permission for work the advisor already asked for/i);
+    expect(IDENTITY).not.toMatch(/an assistant for/i);
+  });
+});
+
+describe("DATA_ENTRY — one turn, one card, one approval", () => {
+  it("lives inside the cacheable stable prefix", () => {
+    expect(FORGE_SYSTEM_PREFIX).toContain(DATA_ENTRY);
+  });
+  it("treats a data-entry request as an instruction carried out in the same turn", () => {
+    expect(DATA_ENTRY).toMatch(/that is an instruction/i);
+    expect(DATA_ENTRY).toMatch(/in the same turn/i);
+  });
+  it("names the double-ask failure modes and forbids each", () => {
+    expect(DATA_ENTRY).toMatch(/never restate the values back/i);
+    expect(DATA_ENTRY).toMatch(/never ask them to reply 'approve'/i);
+    expect(DATA_ENTRY).toMatch(/describe-then-do/i);
+    expect(DATA_ENTRY).toMatch(/confirm twice/i);
+  });
+  it("batches several items onto one card", () => {
+    expect(DATA_ENTRY).toMatch(/once per item in the SAME turn/);
+    expect(DATA_ENTRY).toMatch(/one card/i);
+  });
+  it("keeps the required-field guard and the no-invented-figures rule", () => {
+    expect(DATA_ENTRY).toMatch(/REQUIRED field/);
+    expect(DATA_ENTRY).toMatch(/never invent a balance, rate, term, or date/i);
+  });
+  it("confirms an approved write in one line, not a field dump", () => {
+    expect(DATA_ENTRY).toMatch(/confirm in one line/i);
+    expect(DATA_ENTRY).toMatch(/do not re-list every field/i);
+  });
+});
+
+describe("PLANNERS_EYE — do the task, then say what a planner would notice", () => {
+  it("lives inside the cacheable stable prefix", () => {
+    expect(FORGE_SYSTEM_PREFIX).toContain(PLANNERS_EYE);
+  });
+  it("puts the task first and caps observations at one or two", () => {
+    expect(PLANNERS_EYE).toMatch(/do what the advisor asked first/i);
+    expect(PLANNERS_EYE).toMatch(/at most one or two per turn/i);
+    expect(PLANNERS_EYE).toMatch(/say nothing extra/i);
+  });
+  it("frames them as observations for the advisor, grounded, never client advice", () => {
+    expect(PLANNERS_EYE).toMatch(/observations or questions for the advisor/i);
+    expect(PLANNERS_EYE).toMatch(/never as advice to the client/i);
+    expect(PLANNERS_EYE).toMatch(/ground every figure you cite in a tool result/i);
   });
 });
 

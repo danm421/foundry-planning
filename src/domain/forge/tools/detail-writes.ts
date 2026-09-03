@@ -31,6 +31,7 @@ import { z } from "zod";
 import { requireOrgId } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { recordAudit } from "@/lib/audit";
+import { headlineFigure } from "@/domain/forge/row-lines";
 import {
   createExpenseForClient,
   updateExpenseForClient,
@@ -54,7 +55,8 @@ import {
 import type { ForgeToolContext } from "../context";
 
 /** Every write tool's description ends with this so the UI can flag approval. */
-const APPROVAL_SUFFIX = "Requires human approval.";
+const APPROVAL_SUFFIX =
+  "The advisor approves it on a confirmation card before anything is saved — call it directly; do not ask permission in prose first.";
 
 // ── Required-on-CREATE overrides ─────────────────────────────────────────────
 // The shared *Fields groups below are UPDATE-shaped: every field is .optional()
@@ -357,7 +359,7 @@ export function buildDetailWriteTools({
           metadata: { tool: "add_expense", name: r.data.name },
         });
 
-        return `Added expense "${r.data.name}" (id ${r.resourceId}).`;
+        return `Added expense "${r.data.name}" at ${headlineFigure("expense", r.data)} (id ${r.resourceId}).`;
       } catch {
         return "Sorry — that action couldn't be completed.";
       }
@@ -403,7 +405,7 @@ export function buildDetailWriteTools({
           metadata: { tool: "update_expense", name: r.data.name },
         });
 
-        return `Updated expense "${r.data.name}" (id ${r.resourceId}).`;
+        return `Updated expense "${r.data.name}" at ${headlineFigure("expense", r.data)} (id ${r.resourceId}).`;
       } catch {
         return "Sorry — that action couldn't be completed.";
       }
@@ -488,7 +490,7 @@ export function buildDetailWriteTools({
           metadata: { tool: "add_income", name: r.data.name },
         });
 
-        return `Added income "${r.data.name}" (id ${r.resourceId}).`;
+        return `Added income "${r.data.name}" at ${headlineFigure("income", r.data)} (id ${r.resourceId}).`;
       } catch {
         return "Sorry — that action couldn't be completed.";
       }
@@ -534,7 +536,7 @@ export function buildDetailWriteTools({
           metadata: { tool: "update_income", name: r.data.name },
         });
 
-        return `Updated income "${r.data.name}" (id ${r.resourceId}).`;
+        return `Updated income "${r.data.name}" at ${headlineFigure("income", r.data)} (id ${r.resourceId}).`;
       } catch {
         return "Sorry — that action couldn't be completed.";
       }
@@ -618,7 +620,7 @@ export function buildDetailWriteTools({
           metadata: { tool: "add_liability", name: r.data.name },
         });
 
-        return `Added liability "${r.data.name}" (id ${r.resourceId}).`;
+        return `Added liability "${r.data.name}" at ${headlineFigure("liability", r.data)} (id ${r.resourceId}).`;
       } catch {
         return "Sorry — that action couldn't be completed.";
       }
@@ -665,7 +667,7 @@ export function buildDetailWriteTools({
           metadata: { tool: "update_liability", name: r.data.name },
         });
 
-        return `Updated liability "${r.data.name}" (id ${r.resourceId}).`;
+        return `Updated liability "${r.data.name}" at ${headlineFigure("liability", r.data)} (id ${r.resourceId}).`;
       } catch {
         return "Sorry — that action couldn't be completed.";
       }
@@ -748,7 +750,7 @@ export function buildDetailWriteTools({
           metadata: { tool: "add_account", name: r.data.name },
         });
 
-        return `Added account "${r.data.name}" (id ${r.resourceId}).`;
+        return `Added account "${r.data.name}" at ${headlineFigure("account", r.data)} (id ${r.resourceId}).`;
       } catch {
         return "Sorry — that action couldn't be completed.";
       }
@@ -796,7 +798,7 @@ export function buildDetailWriteTools({
           metadata: { tool: "update_account", name: r.data.name },
         });
 
-        return `Updated account "${r.data.name}" (id ${r.resourceId}).`;
+        return `Updated account "${r.data.name}" at ${headlineFigure("account", r.data)} (id ${r.resourceId}).`;
       } catch {
         return "Sorry — that action couldn't be completed.";
       }

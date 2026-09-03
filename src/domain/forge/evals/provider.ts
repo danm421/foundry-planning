@@ -33,6 +33,16 @@ export async function runForgeTurn(
 
   const trajectory: ForgeTrajectoryStep[] = [];
   let output = "";
+  // Proposed calls are captured twice (on_chat_model_end, then the pending
+  // interrupt) — dedup by CALL id, never by tool name, or a batch of N
+  // same-tool calls collapses to one entry and the batch cases prove nothing.
+  const seen = new Set<string>();
+  const remember = (name: string, args: Record<string, unknown>, id?: string) => {
+    const key = id ?? `${name}:${JSON.stringify(args)}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    trajectory.push({ tool: name, args });
+  };
 
   const events = graph.streamEvents(
     { messages: [new HumanMessage(message)], authContext: auth },
@@ -49,9 +59,7 @@ export async function runForgeTurn(
       const msg = ev.data?.output as AIMessage | undefined;
       // capture proposed (un-executed) write tool calls too, for HITL assertions
       for (const c of msg?.tool_calls ?? []) {
-        if (!trajectory.some((t) => t.tool === c.name)) {
-          trajectory.push({ tool: c.name, args: c.args as Record<string, unknown> });
-        }
+        remember(c.name, c.args as Record<string, unknown>, c.id);
       }
     } else if (ev.event === "on_chat_model_stream") {
       const chunk = ev.data?.chunk;
@@ -67,26 +75,27 @@ export async function runForgeTurn(
   const pending = snapshot.tasks?.find((t: { interrupts?: unknown[] }) => t.interrupts?.length);
   if (pending) {
     const value = (pending.interrupts as Array<{ value?: { calls?: unknown } }>)[0]?.value;
-    const calls = (value?.calls ?? []) as Array<{ name?: string; args?: unknown }>;
+    const calls = (value?.calls ?? []) as Array<{ id?: string; name?: string; args?: unknown }>;
     for (const c of calls) {
-      const name = c.name ?? "unknown";
-      if (!trajectory.some((t) => t.tool === name)) {
-        trajectory.push({ tool: name, args: (c.args ?? {}) as Record<string, unknown> });
-      }
+      remember(c.name ?? "unknown", (c.args ?? {}) as Record<string, unknown>, c.id);
     }
   }
 
   return { output, trajectory };
 }
 
-/** promptfoo custom provider (callApi contract). */
-export const forgeProvider = {
-  id: () => "forge-graph",
+/** promptfoo custom provider (callApi contract). promptfoo instantiates a
+ *  `file://` provider with `new`, so this must be a class — a plain object
+ *  fails at load time ("(intermediate value) is not a constructor") before any
+ *  case runs, which is what kept `npm run eval:forge` from ever starting. */
+export default class ForgeGraphProvider {
+  id(): string {
+    return "forge-graph";
+  }
+
   async callApi(prompt: string, context?: { vars?: Record<string, unknown> }) {
     const mode = context?.vars?.mode as string | undefined;
     const { output, trajectory } = await runForgeTurn(prompt, mode);
     return { output, metadata: { trajectory } };
-  },
-};
-
-export default forgeProvider;
+  }
+}

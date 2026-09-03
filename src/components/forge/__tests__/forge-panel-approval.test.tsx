@@ -139,7 +139,7 @@ describe("ForgePanel approval slot — Phase 2", () => {
   it("(1) does NOT render ApprovalCard text when pendingApproval is null", () => {
     mockStreamState = makeStreamState({ pendingApproval: null });
     mountPanel();
-    expect(screen.queryByText(/forge wants to make/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /^approve$/i })).toBeNull();
     // Also confirm the old placeholder is gone
     expect(document.querySelector("[data-testid='approval-slot']")).toBeNull();
   });
@@ -147,7 +147,7 @@ describe("ForgePanel approval slot — Phase 2", () => {
   it("(2) renders ApprovalCard summary and details when pendingApproval is set", () => {
     mockStreamState = makeStreamState({ pendingApproval: SAMPLE_APPROVAL });
     mountPanel();
-    expect(screen.getByText("Forge wants to make 1 change")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^approve$/i })).toBeInTheDocument();
     expect(screen.getByText("Add Roth conversion: $40,000 in 2026")).toBeInTheDocument();
     expect(screen.getByText("+$214k")).toBeInTheDocument();
   });

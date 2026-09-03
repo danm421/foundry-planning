@@ -52,7 +52,7 @@ import {
   accountCreateSchema,
   accountUpdateSchema,
 } from "@/lib/schemas/accounts";
-import { createDiffLines } from "@/lib/clients/create-diff-adapter";
+import { editLines, newRowLines, ownershipLines, type ProposedOwner } from "./row-lines";
 import type {
   OpType,
   ScenarioChange,
@@ -265,10 +265,7 @@ function previewAddExpense(a: Record<string, unknown>): WritePreview {
 }
 
 function previewUpdateExpense(a: Record<string, unknown>): WritePreview {
-  const id = str(a.expenseId) ?? "";
-  const name = str(a.name);
-  const label = name ? `“${name}” ` : "";
-  return { name: "update_expense", summary: `Update expense ${label}(id ${id}).`.trim() };
+  return { name: "update_expense", summary: updateSummary("expense", a.name, a.expenseId) };
 }
 
 function previewRemoveExpense(a: Record<string, unknown>): WritePreview {
@@ -284,10 +281,7 @@ function previewAddIncome(a: Record<string, unknown>): WritePreview {
 }
 
 function previewUpdateIncome(a: Record<string, unknown>): WritePreview {
-  const id = str(a.incomeId) ?? "";
-  const name = str(a.name);
-  const label = name ? `“${name}” ` : "";
-  return { name: "update_income", summary: `Update income ${label}(id ${id}).`.trim() };
+  return { name: "update_income", summary: updateSummary("income", a.name, a.incomeId) };
 }
 
 function previewRemoveIncome(a: Record<string, unknown>): WritePreview {
@@ -301,10 +295,7 @@ function previewAddLiability(a: Record<string, unknown>): WritePreview {
 }
 
 function previewUpdateLiability(a: Record<string, unknown>): WritePreview {
-  const id = str(a.liabilityId) ?? "";
-  const name = str(a.name);
-  const label = name ? `“${name}” ` : "";
-  return { name: "update_liability", summary: `Update liability ${label}(id ${id}).`.trim() };
+  return { name: "update_liability", summary: updateSummary("liability", a.name, a.liabilityId) };
 }
 
 function previewRemoveLiability(a: Record<string, unknown>): WritePreview {
@@ -318,10 +309,14 @@ function previewAddAccount(a: Record<string, unknown>): WritePreview {
 }
 
 function previewUpdateAccount(a: Record<string, unknown>): WritePreview {
-  const id = str(a.accountId) ?? "";
-  const name = str(a.name);
-  const label = name ? `“${name}” ` : "";
-  return { name: "update_account", summary: `Update account ${label}(id ${id}).`.trim() };
+  return { name: "update_account", summary: updateSummary("account", a.name, a.accountId) };
+}
+
+/** "Update account “Joint Brokerage”." when the call names the row; the id is
+ *  the fallback only, and enrichment replaces it with the live row's name. */
+function updateSummary(kind: string, name: unknown, id: unknown): string {
+  const n = str(name);
+  return n ? `Update ${kind} “${n}”.` : `Update ${kind} (id ${str(id) ?? ""}).`;
 }
 
 function previewRemoveAccount(a: Record<string, unknown>): WritePreview {
@@ -426,14 +421,45 @@ function findRowById(
   return null;
 }
 
-function fmt(v: unknown): string {
-  return v == null ? "—" : String(v);
+/**
+ * Re-title an update/remove preview with the live row's name — "Update account
+ * “Joint Brokerage”." — so the card never shows an id where a name exists.
+ */
+function named(base: WritePreview, current: Record<string, unknown>): WritePreview {
+  const name = typeof current.name === "string" ? current.name : undefined;
+  if (!name) return base;
+  const [verb, kind] = base.name.split("_");
+  return { ...base, summary: `${verb.charAt(0).toUpperCase()}${verb.slice(1)} ${kind} “${name}”.` };
+}
+
+/** Owner ids → display names, looked up on the effective tree (family members
+ *  carry firstName/lastName; entities carry name). */
+function ownerNameFrom(tree: ClientData): (o: ProposedOwner) => string | undefined {
+  return (o) => {
+    const row = findRowById(tree, o.familyMemberId ?? o.entityId ?? "");
+    if (!row) return undefined;
+    if (typeof row.firstName === "string") {
+      return [row.firstName, row.lastName].filter((s) => typeof s === "string" && s).join(" ");
+    }
+    return typeof row.name === "string" ? row.name : undefined;
+  };
+}
+
+/** A name resolver for an ADD preview: loads the tree only when there are
+ *  owners to name, so the common no-owners case costs nothing. */
+async function ownerNamesFor(
+  ctx: ForgeAuthContext,
+  owners: ProposedOwner[] | undefined,
+): Promise<(o: ProposedOwner) => string | undefined> {
+  if (!owners || owners.length === 0) return () => undefined;
+  const { effectiveTree } = await loadEffectiveTree(ctx.clientId, ctx.firmId, ctx.scenarioId, {});
+  return ownerNameFrom(effectiveTree);
 }
 
 /**
- * Live field-level `field: from → to` lines for one edit, diffed against the
- * current effective row. Returns null when the target row can't be resolved or
- * the diff isn't an edit, so the caller can fall back to the pure formatter.
+ * Live field-level `Label: before → after` lines for one edit, diffed against
+ * the current effective row. Returns null when the target row can't be resolved
+ * or the diff isn't an edit, so the caller can fall back to the pure formatter.
  */
 function enrichedEditLines(
   tree: ClientData,
@@ -443,7 +469,7 @@ function enrichedEditLines(
   if (!current) return null;
   const diff = computeRowDiff(current, { ...current, ...c.desiredFields });
   if (diff.kind !== "edit") return null;
-  return diff.fields.map((f) => `${f.field}: ${fmt(f.from)} → ${fmt(f.to)}`);
+  return editLines(diff.fields);
 }
 
 /**
@@ -533,38 +559,6 @@ async function assertLiabilityFks(
   return null;
 }
 
-/** A single proposed owner from the liability owners[] split (model arg shape). */
-type ProposedOwner = {
-  kind?: string;
-  familyMemberId?: string;
-  entityId?: string;
-  percent?: number;
-};
-
-/**
- * Cascade lines describing how the liability's ownership resolves (spec §5).
- * A non-null parentAccountId means the row inherits ownership via the business
- * account (no per-row owners); otherwise each owner[] entry renders as one line.
- * Returns [] when neither applies, so the caller appends nothing.
- */
-function liabilityOwnershipLines(
-  parentAccountId: string | null | undefined,
-  owners: ProposedOwner[] | undefined,
-): string[] {
-  if (parentAccountId != null) {
-    return ["Owned via parent business account (no separate owners)."];
-  }
-  if (owners && owners.length > 0) {
-    return owners.map(
-      (o) =>
-        `Owner: ${o.kind} ${o.familyMemberId ?? o.entityId ?? ""} (${Math.round(
-          (o.percent ?? 0) * 100,
-        )}%)`,
-    );
-  }
-  return [];
-}
-
 /**
  * Run the SAME FK asserts the account create core runs (entities for
  * ownerEntityId, FIRM-scoped model + ticker portfolios, and — when
@@ -607,30 +601,25 @@ async function assertAccountFks(
  *     per owner (the liability ownership-lines style).
  * Returns [] when none apply, so the caller appends nothing.
  */
-function accountCascadeLines(parsed: {
-  category?: string;
-  parentAccountId?: string | null;
-  deriveFromHoldings?: boolean;
-  owners?: unknown;
-}): string[] {
+function accountCascadeLines(
+  parsed: {
+    category?: string;
+    parentAccountId?: string | null;
+    deriveFromHoldings?: boolean;
+    owners?: unknown;
+  },
+  ownerName: (o: ProposedOwner) => string | undefined,
+): string[] {
   const lines: string[] = [];
   const isChild = parsed.parentAccountId != null;
   if (parsed.category === "business" && !isChild) {
     lines.push("Will also create a business-cash sub-account.");
   }
   if (parsed.deriveFromHoldings === true) {
-    lines.push("Value and allocation will be recomputed from holdings after save (post-write).");
+    lines.push("Value and allocation will be recomputed from holdings after save.");
   }
-  const owners = parsed.owners as ProposedOwner[] | undefined;
-  if (!isChild && owners && owners.length > 0) {
-    lines.push(
-      ...owners.map(
-        (o) =>
-          `Owner: ${o.kind} ${o.familyMemberId ?? o.entityId ?? ""} (${Math.round(
-            (o.percent ?? 0) * 100,
-          )}%)`,
-      ),
-    );
+  if (!isChild) {
+    lines.push(...ownershipLines(null, parsed.owners as ProposedOwner[] | undefined, ownerName));
   }
   return lines;
 }
@@ -653,7 +642,7 @@ async function enrichAddExpense(
   }
   const fkError = await assertDetailFks(clientId, parsed.data);
   if (fkError) return { ...base, summary: fkError };
-  return { ...base, details: createDiffLines(parsed.data) };
+  return { ...base, details: newRowLines("expense", parsed.data) };
 }
 
 /**
@@ -686,11 +675,8 @@ async function enrichUpdateExpense(
   const current = findRowById(effectiveTree, id);
   if (!current) return base;
   const diff = computeRowDiff(current, { ...current, ...parsed.data });
-  if (diff.kind !== "edit") return base;
-  return {
-    ...base,
-    details: diff.fields.map((f) => `${f.field}: ${fmt(f.from)} → ${fmt(f.to)}`),
-  };
+  if (diff.kind !== "edit") return named(base, current);
+  return { ...named(base, current), details: editLines(diff.fields) };
 }
 
 /**
@@ -711,7 +697,7 @@ async function enrichAddIncome(
   }
   const fkError = await assertDetailFks(clientId, parsed.data);
   if (fkError) return { ...base, summary: fkError };
-  return { ...base, details: createDiffLines(parsed.data) };
+  return { ...base, details: newRowLines("income", parsed.data) };
 }
 
 /**
@@ -745,11 +731,8 @@ async function enrichUpdateIncome(
   const current = findRowById(effectiveTree, id);
   if (!current) return base;
   const diff = computeRowDiff(current, { ...current, ...parsed.data });
-  if (diff.kind !== "edit") return base;
-  return {
-    ...base,
-    details: diff.fields.map((f) => `${f.field}: ${fmt(f.from)} → ${fmt(f.to)}`),
-  };
+  if (diff.kind !== "edit") return named(base, current);
+  return { ...named(base, current), details: editLines(diff.fields) };
 }
 
 /**
@@ -765,19 +748,19 @@ async function enrichUpdateIncome(
 async function enrichAddLiability(
   base: WritePreview,
   args: Record<string, unknown>,
-  clientId: string,
+  ctx: ForgeAuthContext,
 ): Promise<WritePreview> {
   const parsed = liabilityCreateSchema.safeParse(args);
   if (!parsed.success) {
     return { ...base, summary: zodErrorMessage(parsed.error) };
   }
-  const fkError = await assertLiabilityFks(clientId, parsed.data);
+  const fkError = await assertLiabilityFks(ctx.clientId, parsed.data);
   if (fkError) return { ...base, summary: fkError };
 
-  const { owners, ...rowForLines } = parsed.data;
-  const details = createDiffLines(rowForLines);
+  const owners = parsed.data.owners as ProposedOwner[] | undefined;
+  const details = newRowLines("liability", parsed.data);
   details.push(
-    ...liabilityOwnershipLines(parsed.data.parentAccountId, owners as ProposedOwner[] | undefined),
+    ...ownershipLines(parsed.data.parentAccountId, owners, await ownerNamesFor(ctx, owners)),
   );
   return { ...base, details };
 }
@@ -816,14 +799,16 @@ async function enrichUpdateLiability(
 
   const { owners, ...rowFields } = parsed.data;
   const diff = computeRowDiff(current, { ...current, ...rowFields });
-  const details = diff.kind === "edit"
-    ? diff.fields.map((f) => `${f.field}: ${fmt(f.from)} → ${fmt(f.to)}`)
-    : [];
+  const details = diff.kind === "edit" ? editLines(diff.fields) : [];
   details.push(
-    ...liabilityOwnershipLines(parsed.data.parentAccountId, owners as ProposedOwner[] | undefined),
+    ...ownershipLines(
+      parsed.data.parentAccountId,
+      owners as ProposedOwner[] | undefined,
+      ownerNameFrom(effectiveTree),
+    ),
   );
-  if (details.length === 0) return base;
-  return { ...base, details };
+  if (details.length === 0) return named(base, current);
+  return { ...named(base, current), details };
 }
 
 /**
@@ -840,25 +825,25 @@ async function enrichUpdateLiability(
 async function enrichAddAccount(
   base: WritePreview,
   args: Record<string, unknown>,
-  clientId: string,
-  firmId: string,
+  ctx: ForgeAuthContext,
 ): Promise<WritePreview> {
   const parsed = accountCreateSchema.safeParse(args);
   if (!parsed.success) {
     return { ...base, summary: zodErrorMessage(parsed.error) };
   }
-  const fkError = await assertAccountFks(clientId, firmId, parsed.data);
+  const fkError = await assertAccountFks(ctx.clientId, ctx.firmId, parsed.data);
   if (fkError) return { ...base, summary: fkError };
 
-  // owners is stripped from the diff lines (an array renders as "[object Object]");
-  // accountCascadeLines re-reads it off the full parsed.data spread below.
-  const { owners, ...rowForLines } = parsed.data;
-  void owners;
-  const details = createDiffLines(rowForLines);
+  const details = newRowLines("account", parsed.data);
   // deriveFromHoldings is NOT a column on accountCreateSchema (the core mass-
   // assigns it on update / it drives the post-write sync), so the schema strips
   // it — read the flag off the RAW args for the cascade line.
-  details.push(...accountCascadeLines({ ...parsed.data, deriveFromHoldings: args.deriveFromHoldings === true }));
+  details.push(
+    ...accountCascadeLines(
+      { ...parsed.data, deriveFromHoldings: args.deriveFromHoldings === true },
+      await ownerNamesFor(ctx, parsed.data.owners as ProposedOwner[] | undefined),
+    ),
+  );
   return { ...base, details };
 }
 
@@ -918,14 +903,32 @@ async function enrichUpdateAccount(
   }
 
   const diff = computeRowDiff(current, { ...current, ...rowFields });
-  const details = diff.kind === "edit"
-    ? diff.fields.map((f) => `${f.field}: ${fmt(f.from)} → ${fmt(f.to)}`)
-    : [];
+  const details = diff.kind === "edit" ? editLines(diff.fields) : [];
   // deriveFromHoldings is stripped by accountUpdateSchema (the core mass-assigns
   // it) — read the flag off the RAW args for the cascade line.
-  details.push(...accountCascadeLines({ ...parsed.data, deriveFromHoldings: rest.deriveFromHoldings === true }));
-  if (details.length === 0) return base;
-  return { ...base, details };
+  details.push(
+    ...accountCascadeLines(
+      { ...parsed.data, deriveFromHoldings: rest.deriveFromHoldings === true },
+      ownerNameFrom(effectiveTree),
+    ),
+  );
+  if (details.length === 0) return named(base, current);
+  return { ...named(base, current), details };
+}
+
+/**
+ * A remove preview has nothing to diff, but "Remove account (id 3d55…)" is not
+ * something an advisor can approve with confidence — name the row instead.
+ */
+async function enrichRemove(
+  base: WritePreview,
+  id: unknown,
+  ctx: ForgeAuthContext,
+): Promise<WritePreview> {
+  if (typeof id !== "string") return base;
+  const { effectiveTree } = await loadEffectiveTree(ctx.clientId, ctx.firmId, ctx.scenarioId, {});
+  const current = findRowById(effectiveTree, id);
+  return current ? named(base, current) : base;
 }
 
 /**
@@ -962,17 +965,21 @@ export async function describeProposedWrite(
       return await enrichUpdateIncome(base, call.args, ctx);
     }
     if (call.name === "add_liability") {
-      return await enrichAddLiability(base, call.args, ctx.clientId);
+      return await enrichAddLiability(base, call.args, ctx);
     }
     if (call.name === "update_liability") {
       return await enrichUpdateLiability(base, call.args, ctx);
     }
     if (call.name === "add_account") {
-      return await enrichAddAccount(base, call.args, ctx.clientId, ctx.firmId);
+      return await enrichAddAccount(base, call.args, ctx);
     }
     if (call.name === "update_account") {
       return await enrichUpdateAccount(base, call.args, ctx);
     }
+    if (call.name === "remove_expense") return await enrichRemove(base, call.args.expenseId, ctx);
+    if (call.name === "remove_income") return await enrichRemove(base, call.args.incomeId, ctx);
+    if (call.name === "remove_liability") return await enrichRemove(base, call.args.liabilityId, ctx);
+    if (call.name === "remove_account") return await enrichRemove(base, call.args.accountId, ctx);
     if (call.name === "promote_to_base") {
       const scenarioId = str(call.args.scenarioId);
       if (!scenarioId) return base;

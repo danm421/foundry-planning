@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   usedExpectedTool,
+  usedExpectedToolTimes,
   noUnapprovedWrite,
   noInventedNumbers,
   type AssertionContext,
@@ -44,5 +45,31 @@ describe("noInventedNumbers", () => {
     const r = noInventedNumbers("You spend $9,999/yr", ctx([{ tool: "add_expense", args: { annualAmount: 1200 } }]));
     expect(r.pass).toBe(false);
     expect(r.reason).toMatch(/9999/);
+  });
+});
+
+describe("usedExpectedToolTimes", () => {
+  it("passes when the tool was proposed at least expectCalls times", () => {
+    const r = usedExpectedToolTimes(
+      "",
+      ctx([{ tool: "add_account" }, { tool: "add_account" }], { expectTool: "add_account", expectCalls: 2 }),
+    );
+    expect(r.pass).toBe(true);
+  });
+  it("fails when a batch collapsed to fewer calls than asked for", () => {
+    const r = usedExpectedToolTimes("", ctx([{ tool: "add_account" }], { expectTool: "add_account", expectCalls: 2 }));
+    expect(r.pass).toBe(false);
+    expect(r.reason).toMatch(/1 of 2/);
+  });
+  it("counts proposals only — an executed read tool's second entry is not a second call", () => {
+    const r = usedExpectedToolTimes(
+      "",
+      ctx([{ tool: "run_projection" }, { tool: "run_projection", executed: true }], { expectTool: "run_projection", expectCalls: 2 }),
+    );
+    expect(r.pass).toBe(false);
+  });
+  it("defaults expectCalls to 1", () => {
+    const r = usedExpectedToolTimes("", ctx([{ tool: "add_expense" }], { expectTool: "add_expense" }));
+    expect(r.pass).toBe(true);
   });
 });

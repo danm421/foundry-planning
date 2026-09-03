@@ -109,6 +109,19 @@ export async function POST(req: Request): Promise<Response> {
       const send = (obj: unknown) => { if (!closed) controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`)); };
       const onAbort = () => { closed = true; try { controller.close(); } catch {} };
       req.signal.addEventListener("abort", onAbort);
+      // Verify-gate answer buffer (parity with stream/route.ts and the client
+      // resume route): a post-approval confirmation that repeats a figure routes
+      // through the verify node like any answer, and a rejected draft must not
+      // reach the advisor glued to its revision. Hoisted above the try so the
+      // catch can release a held answer if the run dies mid-turn.
+      let buffer = "";
+      const REPLAY_CHUNK = 240;
+      const flush = () => {
+        for (let i = 0; i < buffer.length; i += REPLAY_CHUNK) {
+          send({ type: "token", text: buffer.slice(i, i + REPLAY_CHUNK) });
+        }
+        buffer = "";
+      };
       try {
         const events = graph.streamEvents(new Command({ resume: { decisions: body.decisions } }), {
           version: "v2",
@@ -120,14 +133,25 @@ export async function POST(req: Request): Promise<Response> {
         for await (const ev of events) {
           if (closed) break;
           if (ev.event === "on_chat_model_stream") {
+            if (ev.metadata?.langgraph_node === "verify") continue; // the critic's own model call
             const text = typeof ev.data?.chunk?.content === "string" ? ev.data.chunk.content : "";
-            if (text) send({ type: "token", text });
-          } else if (ev.event === "on_tool_start") { send({ type: "tool_start", name: ev.name }); }
+            if (text) buffer += text; // held, not forwarded
+          } else if (ev.event === "on_tool_start") { flush(); send({ type: "tool_start", name: ev.name }); }
           else if (ev.event === "on_tool_end") { send({ type: "tool_end", name: ev.name }); }
-          else if (ev.event === "on_custom_event" && ev.name !== "forge_verify") {
+          else if (ev.event === "on_custom_event" && ev.name === "forge_verify") {
+            const data = (ev.data ?? {}) as { result?: string; caveat?: string };
+            if (data.result === "start") send({ type: "verifying" });
+            else if (data.result === "pass") flush();
+            else if (data.result === "retry") buffer = ""; // discard the rejected draft; the revision re-streams
+            else if (data.result === "caveat") {
+              buffer = data.caveat ? (buffer ? `${buffer}\n\n${data.caveat}` : data.caveat) : buffer;
+              flush();
+            }
+          } else if (ev.event === "on_custom_event") {
             send({ type: ev.name, ...(ev.data as Record<string, unknown>) });
           }
         }
+        flush(); // any final no-number answer that never hit verify
         if (!closed) {
           await touchConversation(conversationId, userId);
           const snapshot = await graph.getState({ configurable: { thread_id: conversationId } });
@@ -140,6 +164,16 @@ export async function POST(req: Request): Promise<Response> {
           send({ type: "done" });
         }
       } catch (err) {
+        // Release a held answer with an honesty caveat before the error frame.
+        if (buffer.length > 0) {
+          send({
+            type: "token",
+            text:
+              "The figures below could not be automatically verified before the connection dropped — double-check them.\n\n" +
+              buffer,
+          });
+          buffer = "";
+        }
         send({ type: "error", message: safeForgeErrorMessage(err) });
       } finally {
         req.signal.removeEventListener("abort", onAbort);

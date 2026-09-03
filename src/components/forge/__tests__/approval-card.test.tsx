@@ -2,7 +2,7 @@
 // src/components/forge/__tests__/approval-card.test.tsx
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { ApprovalCard } from "../approval-card";
+import { ApprovalCard, batchTitle } from "../approval-card";
 
 const previews = [
   { summary: "Add Roth conversion: $40,000 in 2026", name: "propose_changes", details: ["Roth conversion · 2026 · gross $40,000", "Moves end-of-plan portfolio by +$214k"] },
@@ -43,58 +43,58 @@ describe("ApprovalCard", () => {
     expect(screen.getByText("Add Roth conversion: $40,000 in 2026")).toBeInTheDocument();
   });
 
-  it("builds the decisions map from per-row choices on submit", () => {
-    const onSubmit = vi.fn();
-    render(<ApprovalCard previews={previews} calls={calls} busy={false} onSubmit={onSubmit} onCancel={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: /confirm row 1/i }));
-    fireEvent.click(screen.getByRole("button", { name: /apply selected/i }));
-    expect(onSubmit).toHaveBeenCalledWith({ call_a: "confirm", call_b: "reject" });
+  it("renders a short 'Label: value' detail as a label and a mono value", () => {
+    render(
+      <ApprovalCard
+        previews={[{ summary: "Add account “Schwab Brokerage”.", name: "add_account", details: ["Type: Taxable · Brokerage", "Balance: $150,000"] }]}
+        calls={[calls[0]]}
+        busy={false}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Balance")).toBeInTheDocument();
+    expect(screen.getByText("$150,000")).toHaveClass("tabular");
+    // A value with no digits stays in the UI face.
+    expect(screen.getByText("Taxable · Brokerage")).not.toHaveClass("tabular");
   });
-  it("confirm-all sets every row to confirm", () => {
-    const onSubmit = vi.fn();
-    render(<ApprovalCard previews={previews} calls={calls} busy={false} onSubmit={onSubmit} onCancel={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: /confirm all/i }));
-    fireEvent.click(screen.getByRole("button", { name: /apply selected/i }));
-    expect(onSubmit).toHaveBeenCalledWith({ call_a: "confirm", call_b: "confirm" });
-  });
-  it("reject-all clears every row, leaving nothing to apply", () => {
-    render(<ApprovalCard previews={previews} calls={calls} busy={false} onSubmit={vi.fn()} onCancel={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: /confirm row 1/i }));
-    fireEvent.click(screen.getByRole("button", { name: /reject all/i }));
-    // Reject-all is a row-state helper, not a submit. With 0 confirmed there is
-    // nothing to apply, so the primary is unavailable and "Decline all" is the
-    // way to send an all-reject verdict.
-    expect(screen.getByRole("button", { name: /apply selected/i }).hasAttribute("disabled")).toBe(true);
-  });
+
   it("disables actions while busy", () => {
     render(<ApprovalCard previews={previews} calls={calls} busy onSubmit={vi.fn()} onCancel={vi.fn()} />);
-    expect(screen.getByRole("button", { name: /apply selected/i }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: /approve all 2/i }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: /decline all/i }).hasAttribute("disabled")).toBe(true);
   });
 });
 
-// ─── Regression: the card must never turn an affirmative click into a decline ──
+describe("batchTitle", () => {
+  it("names a homogeneous batch by what it does", () => {
+    const acct = { summary: "", name: "add_account" };
+    expect(batchTitle([acct, acct, acct])).toBe("Add 3 accounts");
+    const liab = { summary: "", name: "add_liability" };
+    expect(batchTitle([liab, liab])).toBe("Add 2 liabilities");
+    const inc = { summary: "", name: "update_income" };
+    expect(batchTitle([inc, inc])).toBe("Update 2 income sources");
+  });
+  it("falls back to a plain count for a mixed batch", () => {
+    expect(batchTitle(previews)).toBe("2 changes");
+  });
+});
+
+// ─── One decision, one click — and no affirmative control ever submits a decline ──
 //
-// SHIPPED BUG (pre-existing, reproduced live against a real build_plan proposal
-// that silently declined and created nothing): every row defaults to "reject"
-// (fail-safe, and correct), but that default was paired with an accent-filled
-// primary CTA — `Apply selected (0)` — that stayed ENABLED at zero confirmed.
-// Clicking the most affirmative-looking control in the card without first
-// finding the small per-row "Confirm" pill SUBMITTED A DECLINE. The only signal
-// that anything was wrong was a digit inside the button label.
-//
-// Every pre-existing test walked an explicit path (confirm-a-row-then-apply,
-// reject-all) and so never touched the click-the-primary-first path a real
-// advisor takes. These lock it down from both ends: the primary can no longer
-// submit a decline, and the common single-change card no longer has a decoy
-// primary at all.
-describe("ApprovalCard — affirmative controls never submit a decline", () => {
+// The batch card used to need two steps: find and press a small per-row
+// "Confirm" pill, then "Apply selected (N)". Advisors read that as being asked
+// to confirm twice — and before the pill-gate fix, clicking the primary first
+// silently submitted a decline. Now every row starts INCLUDED (the advisor asked
+// for these), one primary approves the checked rows, a checkbox leaves one out,
+// and the primary is unavailable when nothing is checked.
+describe("ApprovalCard — one click approves; unticking leaves a row out", () => {
   const onePreview = [previews[0]];
   const oneCall = [calls[0]];
 
   it("single change: the primary approves — it does not decline", () => {
     const onSubmit = vi.fn();
     render(<ApprovalCard previews={onePreview} calls={oneCall} busy={false} onSubmit={onSubmit} onCancel={vi.fn()} />);
-    // No hunting for a pill first — this is the whole interaction.
     fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
     expect(onSubmit).toHaveBeenCalledWith({ call_a: "confirm" });
   });
@@ -108,37 +108,48 @@ describe("ApprovalCard — affirmative controls never submit a decline", () => {
 
   it("single change: collapses to exactly two controls", () => {
     render(<ApprovalCard previews={onePreview} calls={oneCall} busy={false} onSubmit={vi.fn()} onCancel={vi.fn()} />);
-    // Six controls (Confirm, Reject, Confirm all, Reject all, Cancel, Apply
-    // selected) for one yes/no decision is what made the decoy primary possible.
     const labels = screen.getAllByRole("button").map((b) => b.textContent);
     expect(labels).toEqual(["Reject", "Approve"]);
+    expect(screen.queryByRole("checkbox")).toBeNull();
   });
 
-  it("single change: still shows the summary and detail lines", () => {
-    render(<ApprovalCard previews={onePreview} calls={oneCall} busy={false} onSubmit={vi.fn()} onCancel={vi.fn()} />);
-    expect(screen.getByText("Add Roth conversion: $40,000 in 2026")).toBeInTheDocument();
-    expect(screen.getByText("Moves end-of-plan portfolio by +$214k")).toBeInTheDocument();
-  });
-
-  it("multi change: the primary is disabled until a row is confirmed", () => {
+  it("multi change: every row starts included and one click approves them all", () => {
     const onSubmit = vi.fn();
     render(<ApprovalCard previews={previews} calls={calls} busy={false} onSubmit={onSubmit} onCancel={vi.fn()} />);
-    const apply = screen.getByRole("button", { name: /apply selected/i });
-    // THE BUG: this used to be enabled at (0) and submit two rejects.
-    expect(apply.hasAttribute("disabled")).toBe(true);
-    fireEvent.click(apply);
-    expect(onSubmit).not.toHaveBeenCalled();
+    for (const box of screen.getAllByRole("checkbox")) expect(box).toBeChecked();
+    // No pill to hunt for first — this is the whole interaction.
+    fireEvent.click(screen.getByRole("button", { name: /approve all 2/i }));
+    expect(onSubmit).toHaveBeenCalledWith({ call_a: "confirm", call_b: "confirm" });
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: /confirm row 1/i }));
-    expect(screen.getByRole("button", { name: /apply selected/i }).hasAttribute("disabled")).toBe(false);
+  it("multi change: unticking a row leaves just that row out", () => {
+    const onSubmit = vi.fn();
+    render(<ApprovalCard previews={previews} calls={calls} busy={false} onSubmit={onSubmit} onCancel={vi.fn()} />);
+    fireEvent.click(screen.getByRole("checkbox", { name: /Remove brokerage account/i }));
+    fireEvent.click(screen.getByRole("button", { name: /approve 1 of 2/i }));
+    expect(onSubmit).toHaveBeenCalledWith({ call_a: "confirm", call_b: "reject" });
+  });
+
+  it("multi change: with every row unticked the primary is unavailable", () => {
+    const onSubmit = vi.fn();
+    render(<ApprovalCard previews={previews} calls={calls} busy={false} onSubmit={onSubmit} onCancel={vi.fn()} />);
+    for (const box of screen.getAllByRole("checkbox")) fireEvent.click(box);
+    const primary = screen.getByRole("button", { name: /approve 0 of 2/i });
+    expect(primary.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(primary);
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 
   it("multi change: declining everything is an explicit, labelled action", () => {
     const onCancel = vi.fn();
     render(<ApprovalCard previews={previews} calls={calls} busy={false} onSubmit={vi.fn()} onCancel={onCancel} />);
-    // The decline path was previously labelled "Cancel", which reads as
-    // "dismiss without deciding" — but it resumed the graph with all-reject.
     fireEvent.click(screen.getByRole("button", { name: /decline all/i }));
     expect(onCancel).toHaveBeenCalled();
+  });
+
+  it("multi change: exactly two buttons — no per-row pills, no batch helpers", () => {
+    render(<ApprovalCard previews={previews} calls={calls} busy={false} onSubmit={vi.fn()} onCancel={vi.fn()} />);
+    const labels = screen.getAllByRole("button").map((b) => b.textContent);
+    expect(labels).toEqual(["Decline all", "Approve all 2"]);
   });
 });

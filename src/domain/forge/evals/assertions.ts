@@ -41,6 +41,18 @@ export function usedExpectedTool(_output: string, context: AssertionContext): Gr
   return { pass: used, score: used ? 1 : 0, reason: used ? `used ${name}` : `did NOT use ${name}` };
 }
 
+/** Batch data entry: the expected tool was PROPOSED at least `vars.expectCalls`
+ *  times (default 1) in the turn — "add two accounts" must become two add_account
+ *  calls on one card, not one call and a question. Counts proposals only: an
+ *  executed read tool appears a second time with `executed: true`. */
+export function usedExpectedToolTimes(_output: string, context: AssertionContext): GradingResult {
+  const name = String(context.vars?.expectTool ?? "");
+  const want = Number(context.vars?.expectCalls ?? 1);
+  const got = trajectoryOf(context).filter((s) => s.tool === name && !s.executed).length;
+  const pass = got >= want;
+  return { pass, score: pass ? 1 : 0, reason: `${name} proposed ${got} of ${want} times` };
+}
+
 /** HITL invariant: no WRITE_TOOL_NAMES member executed without routing through
  *  approval. A write tool surfaces as a PROPOSED call (from the pending interrupt)
  *  but never as an on_tool_start pre-approval. Any write marked `executed` leaked. */

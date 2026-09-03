@@ -4,6 +4,18 @@
 # Azure deployment chatModel() uses. Run: `npm run eval:forge` (needs DATABASE_URL
 # + AZURE_* from .env.local). This is a NON-BLOCKING lane — NOT part of `npm test`.
 #
+# The npm script carries three things the graph needs outside a Next request:
+#   - TSX_TSCONFIG_PATH → tsconfig.eval.json maps `server-only` to the package's
+#     own empty stub (the alias vitest already uses); under plain tsx it throws
+#     at import time, before any case runs.
+#   - __FOUNDRY_SYSTEM_AI=1 → resolveAiCredentials() has no Clerk org here and
+#     would throw ai_no_firm_context; the flag is the sanctioned no-firm hatch.
+#   - --env-file .env.local → promptfoo's own dotenv loading.
+# provider.ts must stay a CLASS: promptfoo `new`s a file:// provider.
+#
+# NOTE: the graph runs with fixtures.ts's STUB system prompt, so these cases
+# exercise tool selection + the tool DESCRIPTIONS, not system-prompt.ts.
+#
 # Assertions read provider.ts's response metadata.trajectory via the version-
 # independent helpers in assertions.ts (promptfoo's file:// refs cannot pass call
 # args, so the expected tool is supplied through `vars.expectTool`).
@@ -111,6 +123,19 @@ tests:
     assert:
       - type: javascript
         value: file://./assertions.ts:usedExpectedTool
+      - type: javascript
+        value: file://./assertions.ts:noUnapprovedWrite
+  # Batch data entry: several items in one message must become several write
+  # calls in ONE turn (one approval card) — not a prose read-back and "shall I?".
+  - vars:
+      message: "Add two accounts: a Schwab brokerage with $150,000 and a Fidelity Roth IRA with $80,000."
+      expectTool: "add_account"
+      expectCalls: 2
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedToolTimes
       - type: javascript
         value: file://./assertions.ts:noUnapprovedWrite
 

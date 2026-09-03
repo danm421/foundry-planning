@@ -225,11 +225,13 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
       // Cancel-on-disconnect: stop consuming and close once the client aborts.
       // The abort signal is also threaded into streamEvents so the graph run
       // itself is cancelled, not just the SSE write side.
-      // PARITY: the stream route (stream/route.ts) now runs the same
+      // PARITY: the stream route (stream/route.ts) runs the same
       // cancel-on-disconnect + buffer-flush-on-error pattern (backported
-      // 2026-06-21; see SECURITY_HARDENING_LOG.md). The only intentional
-      // difference is the buffer flush: this resume route streams live (no
-      // verify-gate answer buffer to release), so its catch only emits the error.
+      // 2026-06-21; see SECURITY_HARDENING_LOG.md) and the same verify-gate
+      // answer buffer below. A post-approval confirmation that repeats a figure
+      // routes through the verify node exactly like a first-turn answer; this
+      // route used to stream live, so a rejected draft and its revision both
+      // landed in the advisor's bubble, glued together.
       const onAbort = () => {
         closed = true;
         try {
@@ -239,6 +241,17 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
         }
       };
       req.signal.addEventListener("abort", onAbort);
+      // Hold the agent's answer tokens; the verify node decides when they're
+      // allowed out. Hoisted above the try so the catch can release a fully-
+      // generated-but-still-held answer if the run dies mid-turn.
+      let buffer = "";
+      const REPLAY_CHUNK = 240;
+      const flush = () => {
+        for (let i = 0; i < buffer.length; i += REPLAY_CHUNK) {
+          send({ type: "token", text: buffer.slice(i, i + REPLAY_CHUNK) });
+        }
+        buffer = "";
+      };
       try {
         const resumeValue = isMeeting ? body.meetingReview : { decisions: body.decisions };
         const events = graph.streamEvents(new Command({ resume: resumeValue }), {
@@ -251,22 +264,41 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
         for await (const ev of events) {
           if (closed) break;
           if (ev.event === "on_chat_model_stream") {
+            // Only the agent node produces user-facing tokens; the verify node's
+            // critic also calls a chat model and must never reach the buffer.
+            if (ev.metadata?.langgraph_node === "verify") continue;
             const chunk = ev.data?.chunk;
             const text = typeof chunk?.content === "string" ? chunk.content : "";
-            if (text) send({ type: "token", text });
+            if (text) buffer += text; // held, not forwarded
           } else if (ev.event === "on_tool_start") {
+            flush(); // release any interstitial prose before the tool runs
             send({ type: "tool_start", name: ev.name });
           } else if (ev.event === "on_tool_end") {
             send({ type: "tool_end", name: ev.name });
-          } else if (ev.event === "on_custom_event" && ev.name !== "forge_verify") {
-            // Forward the typed structured frame verbatim (tool_render/navigate/
-            // activity). Payloads are already masked/grounded by the emitter
-            // (custom-events contract). forge_verify control frames are skipped:
-            // the resume route streams live (no answer buffer to gate), matching
-            // the stream route's verify scope.
-            send({ type: ev.name, ...(ev.data as Record<string, unknown>) });
+          } else if (ev.event === "on_custom_event") {
+            if (ev.name === "forge_verify") {
+              // Verify-gate control frames govern the held answer.
+              const data = (ev.data ?? {}) as { result?: string; caveat?: string };
+              if (data.result === "start") {
+                send({ type: "verifying" });
+              } else if (data.result === "pass") {
+                flush();
+              } else if (data.result === "retry") {
+                buffer = ""; // discard the rejected draft; the revision re-streams
+              } else if (data.result === "caveat") {
+                // Caveat trails the answer ("figures above") — answer first, doubt last.
+                buffer = data.caveat ? (buffer ? `${buffer}\n\n${data.caveat}` : data.caveat) : buffer;
+                flush();
+              }
+            } else {
+              // Forward the typed structured frame verbatim (tool_render/navigate/
+              // activity). Payloads are already masked/grounded by the emitter
+              // (custom-events contract).
+              send({ type: ev.name, ...(ev.data as Record<string, unknown>) });
+            }
           }
         }
+        flush(); // any final no-number answer that never hit verify
         if (!closed) {
           await touchConversation(conversationId, userId);
 
@@ -303,6 +335,18 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
           send({ type: "done" });
         }
       } catch (err) {
+        // Don't throw away a fully-generated answer: release anything still held
+        // behind the verify gate with an honesty caveat before the error frame,
+        // so the advisor sees the work + knows it's unchecked.
+        if (buffer.length > 0) {
+          send({
+            type: "token",
+            text:
+              "The figures below could not be automatically verified before the connection dropped — double-check them.\n\n" +
+              buffer,
+          });
+          buffer = "";
+        }
         // Never emit raw err.message — it may leak client ids / internals.
         send({ type: "error", message: safeForgeErrorMessage(err) });
       } finally {

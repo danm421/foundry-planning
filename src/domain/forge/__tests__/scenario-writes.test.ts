@@ -41,8 +41,8 @@ beforeEach(() => {
 });
 
 describe("create_scenario", () => {
-  it('description ends with "Requires human approval."', () => {
-    expect(getTool("create_scenario").description).toMatch(/Requires human approval\.$/);
+  it("description says the advisor approves it on a card — call it directly", () => {
+    expect(getTool("create_scenario").description).toMatch(/approves it on a confirmation card.*call it directly/);
   });
   it("re-derives firmId via requireOrgId + verifyClientAccess BEFORE the write", async () => {
     vi.mocked(createScenarioWithClone).mockResolvedValue({ scenario: { id: "s-new", name: "Roth ladder" } as never });
@@ -88,8 +88,8 @@ describe("propose_changes", () => {
     );
   });
 
-  it('description ends with "Requires human approval."', () => {
-    expect(getTool("propose_changes").description).toMatch(/Requires human approval\.$/);
+  it("description says the advisor approves it on a card — call it directly", () => {
+    expect(getTool("propose_changes").description).toMatch(/approves it on a confirmation card.*call it directly/);
   });
 
   it("rejects when verifyClientAccess fails", async () => {
@@ -163,8 +163,8 @@ describe("revert_change", () => {
     } as never);
   });
 
-  it('description ends with "Requires human approval."', () => {
-    expect(getTool("revert_change").description).toMatch(/Requires human approval\.$/);
+  it("description says the advisor approves it on a card — call it directly", () => {
+    expect(getTool("revert_change").description).toMatch(/approves it on a confirmation card.*call it directly/);
   });
 
   it("rejects when verifyClientAccess fails", async () => {
@@ -211,8 +211,8 @@ describe("compare_and_snapshot", () => {
     vi.mocked(createSnapshot).mockResolvedValue({ id: "snap-new", name: "Base vs Roth" } as never);
   });
 
-  it('description ends with "Requires human approval."', () => {
-    expect(getTool("compare_and_snapshot").description).toMatch(/Requires human approval\.$/);
+  it("description says the advisor approves it on a card — call it directly", () => {
+    expect(getTool("compare_and_snapshot").description).toMatch(/approves it on a confirmation card.*call it directly/);
   });
 
   it("rejects when verifyClientAccess fails", async () => {
@@ -259,8 +259,8 @@ describe("promote_to_base", () => {
     });
   });
 
-  it('description ends with "Requires human approval."', () => {
-    expect(getTool("promote_to_base").description).toMatch(/Requires human approval\.$/);
+  it("description says the advisor approves it on a card — call it directly", () => {
+    expect(getTool("promote_to_base").description).toMatch(/approves it on a confirmation card.*call it directly/);
   });
 
   it("REFUSES when the target is already the base case (and does NOT call promoteScenarioToBase)", async () => {

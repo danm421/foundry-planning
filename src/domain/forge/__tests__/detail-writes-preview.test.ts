@@ -63,14 +63,14 @@ describe.skipIf(!HAS_DB)("detail-writes preview (add_expense dry run)", () => {
     expect(insertSpy).not.toHaveBeenCalled();
 
     expect(preview.name).toBe("add_expense");
-    expect(preview.summary).toMatch(/Add expense/i);
+    expect(preview.summary).toContain("Annual vacation");
     expect(preview.details).toBeDefined();
     const text = preview.details!.join(" ");
-    // createDiffLines renders the parsed, defaulted row as `field: value` lines.
-    expect(text).toMatch(/name: Annual vacation/);
-    expect(text).toMatch(/annualAmount: 12000/);
-    expect(text).toMatch(/startYear: 2030/);
-    expect(text).toMatch(/endYear: 2040/);
+    // Plain-language lines — the name lives in the summary, not repeated here.
+    expect(text).toMatch(/Type: Discretionary/);
+    expect(text).toMatch(/Annual amount: \$12,000/);
+    expect(text).toMatch(/Years: 2030–2040/);
+    expect(text).not.toMatch(/annualAmount|startYear/);
   });
 
   it("surfaces the both-owner validation error as the summary (no insert)", async () => {
@@ -137,14 +137,13 @@ describe.skipIf(!HAS_DB)("detail-writes preview (add_income dry run)", () => {
     expect(insertSpy).not.toHaveBeenCalled();
 
     expect(preview.name).toBe("add_income");
-    expect(preview.summary).toMatch(/Add income/i);
+    expect(preview.summary).toContain("Base salary");
     expect(preview.details).toBeDefined();
     const text = preview.details!.join(" ");
-    // createDiffLines renders the parsed, defaulted row as `field: value` lines.
-    expect(text).toMatch(/name: Base salary/);
-    expect(text).toMatch(/annualAmount: 90000/);
-    expect(text).toMatch(/startYear: 2030/);
-    expect(text).toMatch(/endYear: 2040/);
+    expect(text).toMatch(/Type: Salary/);
+    expect(text).toMatch(/Owner: Client/);
+    expect(text).toMatch(/Annual amount: \$90,000/);
+    expect(text).toMatch(/Years: 2030–2040/);
   });
 
   it("surfaces the both-owner validation error as the summary (no insert)", async () => {
@@ -208,14 +207,16 @@ describe.skipIf(!HAS_DB)("detail-writes preview (add_liability dry run)", () => 
     expect(insertSpy).not.toHaveBeenCalled();
 
     expect(preview.name).toBe("add_liability");
-    expect(preview.summary).toMatch(/Add liability/i);
+    expect(preview.summary).toContain("Mortgage");
     expect(preview.details).toBeDefined();
     const text = preview.details!.join(" ");
-    // createDiffLines renders the parsed, defaulted row as `field: value` lines.
-    expect(text).toMatch(/name: Mortgage/);
-    expect(text).toMatch(/balance: 200000/);
-    expect(text).toMatch(/startYear: 2030/);
-    expect(text).toMatch(/termMonths: 120/);
+    expect(text).toMatch(/Balance: \$200,000/);
+    // The schema defaults the rate and payment to 0 — the card must show that,
+    // because a 0% loan with no payment is exactly what the advisor should catch.
+    expect(text).toMatch(/Interest rate: 0%/);
+    expect(text).toMatch(/Monthly payment: \$0/);
+    expect(text).toMatch(/Term: 120 months \(10 yrs\)/);
+    expect(text).toMatch(/Starts: 2030/);
   });
 
   it("renders the parent-business cascade line when parentAccountId is set", async () => {
@@ -234,10 +235,10 @@ describe.skipIf(!HAS_DB)("detail-writes preview (add_liability dry run)", () => 
     expect(preview.name).toBe("add_liability");
     expect(preview.details).toBeDefined();
     const text = preview.details!.join(" ");
-    expect(text).toMatch(/Owned via parent business account \(no separate owners\)\./);
+    expect(text).toMatch(/Owned through the parent business account\./);
   });
 
-  it("renders an owner cascade line when owners[] is provided", async () => {
+  it("names the owner from the plan when owners[] is provided — never the id", async () => {
     const call: ProposedWrite = {
       name: "add_liability",
       args: {
@@ -255,7 +256,10 @@ describe.skipIf(!HAS_DB)("detail-writes preview (add_liability dry run)", () => 
     expect(preview.name).toBe("add_liability");
     expect(preview.details).toBeDefined();
     const text = preview.details!.join(" ");
-    expect(text).toMatch(/Owner: family_member .* \(100%\)/);
+    // The Cooper "client" family member resolves to a real name.
+    expect(text).toMatch(/Owner: [A-Z][a-z]+/);
+    expect(text).not.toContain(COOPER_FM_ID);
+    expect(text).not.toMatch(/family_member/);
   });
 
   it("surfaces the cross-tenant linkedPropertyId FK error as the summary (no insert)", async () => {
@@ -331,13 +335,11 @@ describe.skipIf(!HAS_DB)("detail-writes preview (account dry run + cascade)", ()
     expect(insertSpy).not.toHaveBeenCalled();
 
     expect(preview.name).toBe("add_account");
-    expect(preview.summary).toMatch(/Add account/i);
+    expect(preview.summary).toContain("Brokerage");
     expect(preview.details).toBeDefined();
-    const text = preview.details!.join(" ");
-    // createDiffLines renders the parsed, defaulted row as `field: value` lines.
-    expect(text).toMatch(/name: Brokerage/);
-    expect(text).toMatch(/category: taxable/);
-    expect(text).toMatch(/value: 50000/);
+    // High-level only: the type and the balance. None of the schema's fourteen
+    // defaulted columns (titlingType, propertyTaxGrowthSource, …) leak through.
+    expect(preview.details).toEqual(["Type: Taxable", "Balance: $50,000"]);
   });
 
   it("renders the business-cash cascade line for a business add_account", async () => {
@@ -358,8 +360,9 @@ describe.skipIf(!HAS_DB)("detail-writes preview (account dry run + cascade)", ()
     expect(preview.details).toBeDefined();
     const text = preview.details!.join(" ");
     expect(text).toMatch(/Will also create a business-cash sub-account\./);
-    // An owners[] cascade line is also rendered.
-    expect(text).toMatch(/Owner: family_member .* \(100%\)/);
+    // The owner is named from the plan, never shown as an id.
+    expect(text).toMatch(/Owner: [A-Z][a-z]+/);
+    expect(text).not.toContain(COOPER_FM_ID);
   });
 
   it("renders the holdings-recompute cascade line when deriveFromHoldings is set", async () => {
@@ -377,9 +380,7 @@ describe.skipIf(!HAS_DB)("detail-writes preview (account dry run + cascade)", ()
     expect(preview.name).toBe("add_account");
     expect(preview.details).toBeDefined();
     const text = preview.details!.join(" ");
-    expect(text).toMatch(
-      /Value and allocation will be recomputed from holdings after save \(post-write\)\./,
-    );
+    expect(text).toMatch(/Value and allocation will be recomputed from holdings after save\./);
   });
 
   it("surfaces the cross-tenant modelPortfolioId FK error as the summary (no insert)", async () => {
