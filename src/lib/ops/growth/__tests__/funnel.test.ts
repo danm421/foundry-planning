@@ -123,17 +123,34 @@ function walk(dir: string, out: string[] = []): string[] {
   return out;
 }
 
+/** Drops `/* *\/` and `// ` comments so a prose mention of a function name
+ * can't be mistaken for a call. */
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+}
+
+/** True only if the file both imports the symbol by name and calls it —
+ * a prose mention has no import, and an import alone has no call. */
+function callsClearPendingSignup(source: string): boolean {
+  const code = stripComments(source);
+  const imported = /import\s*\{[^}]*\bclearPendingSignup\b[^}]*\}/.test(code);
+  const called = /\bclearPendingSignup\s*\(/.test(code);
+  return imported && called;
+}
+
 describe("the funnel's premise", () => {
   it("clearPendingSignup is called from exactly one place", () => {
     const callers = walk("src")
       .filter((p) => !p.includes("__tests__"))
+      .filter((p) => !p.endsWith(".test.ts") && !p.endsWith(".test.tsx"))
       .filter((p) => !p.endsWith(join("lib", "billing", "pending-signup.ts")))
-      .filter((p) => /\bclearPendingSignup\s*\(/.test(readFileSync(p, "utf8")));
+      .filter((p) => callsClearPendingSignup(readFileSync(p, "utf8")));
 
-    // If this fails, the "filled the form, never paid" bucket is no longer
-    // trustworthy: some other code path now wipes the stash, so people who
-    // never paid will silently vanish from the funnel. Fix the dashboard's
-    // classification before changing this number.
+    // Comments are stripped and an import is required alongside the call, so
+    // neither a prose mention nor a bare import can trip this — a failure
+    // here means a genuine new call site. Fix the dashboard's funnel
+    // classification (the "filled the form, never paid" bucket) before
+    // changing this list.
     expect(callers).toEqual([
       join("src", "lib", "billing", "webhook-handlers", "checkout-session-completed.ts"),
     ]);

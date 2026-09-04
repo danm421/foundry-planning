@@ -2,7 +2,7 @@
 //
 // Four stages, with names at each. Pure.
 //
-// The classification is exact rather than heuristic: `clearPendingSignup` is
+// The classification is exact rather than heuristic: `clearPendingSignup()` is
 // called from exactly one place — the completed-checkout webhook — so a Clerk
 // account still holding a `pending_signup` stash provably filled in /welcome
 // and never paid. See the guard test in __tests__/funnel.test.ts.
