@@ -34,8 +34,9 @@ const BRACKET_OPTIONS = [
 ];
 
 // IRMAA cap choices. No tier 5 — the top tier is unbounded above and cannot
-// serve as a ceiling. Thresholds shown in the helper text are current-year
-// MFJ figures; the engine re-resolves them for each conversion's premium year.
+// serve as a ceiling. The tiers are named, not priced: this form receives no
+// tax-year parameters, so it has no thresholds to quote, and the engine
+// resolves each tier's dollars for the year the surcharge actually lands.
 const IRMAA_CAP_OPTIONS = [
   { value: "", label: "No IRMAA cap" },
   { value: "0", label: "Stay surcharge-free" },
@@ -665,7 +666,10 @@ export default function AddRothConversionForm({
           <p className="mt-1.5 text-[12px] text-ink-3">
             Limits the conversion so the household&rsquo;s income stays at or below the
             selected Medicare surcharge tier. The surcharge lands two years after the
-            conversion, so the cap targets that year&rsquo;s thresholds.
+            conversion, so the cap targets that year&rsquo;s thresholds. It only applies
+            if someone is on Medicare in that later year, and each conversion is capped
+            on its own — two capped conversions in the same year can still add up past
+            the tier.
           </p>
         </div>
 

@@ -5055,14 +5055,26 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
      *
      *  Both `incomeTaxBase(r)` and `magi(r)` are monotonically non-decreasing
      *  in `r`, so the minimum of the two independent solutions satisfies BOTH
-     *  constraints. This is exact, not a heuristic.
+     *  constraints FOR THIS CONVERSION. That much is exact, not a heuristic.
+     *
+     *  ⚠️ CEILINGS ARE SOLVED ONE CONVERSION AT A TIME — this is not a
+     *  household-level guarantee. A sibling's target is never accumulated into
+     *  any later sibling's base, so two capped conversions in the same year
+     *  each receive the FULL headroom and can breach the ceiling together. The
+     *  cap holds for the household only when a single capped conversion runs
+     *  in the year. See future-work/engine.md, "The IRMAA cap FAILS OPEN when
+     *  two capped conversions run in the same year" (P9 E4 L8) — the fix needs
+     *  a product decision on how one shared headroom is split, so do not
+     *  paper over it here.
      *
      *  ⚠️ The solve runs in TAXABLE dollars but the answer is applied as a
      *  GROSS conversion amount (see the slice loop in roth-conversions.ts).
      *  When the source IRA holds after-tax basis, gross > taxable, so the
      *  realized income lands UNDER the ceiling. For the bracket fill that is a
      *  documented minor shortfall; for the IRMAA cap it is the CORRECT
-     *  direction — the guardrail can leave room unused but cannot fail open.
+     *  direction — within this one conversion the guardrail can leave room
+     *  unused but cannot fail open. (That claim is scoped to the unit
+     *  mismatch alone; the aggregation gap above is a separate matter.)
      *  Do not "fix" this by converting between the two spaces without also
      *  re-deriving the cap's safety argument.
      *

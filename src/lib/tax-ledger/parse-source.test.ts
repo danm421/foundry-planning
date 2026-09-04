@@ -30,6 +30,13 @@ describe("parseHouseholdSource", () => {
     const r = parseHouseholdSource("roth_conversion:rc1", { type: "ordinary_income", amount: 40000 }, ctx);
     expect(r).toMatchObject({ type: "Roth Conversion", description: "2030 Conversion", account: null });
   });
+  it("flags a Roth conversion row so a $0 amount is never filtered away as noise", () => {
+    const r = parseHouseholdSource("roth_conversion:rc1", { type: "ordinary_income", amount: 0 }, ctx);
+    expect(r.zeroIsMeaningful).toBe(true);
+    // Ordinary rows stay unflagged — $0 there really is noise.
+    const rmd = parseHouseholdSource("acct1:rmd", { type: "ordinary_income", amount: 0 }, ctx);
+    expect(rmd.zeroIsMeaningful).toBeUndefined();
+  });
   it("parses business pass-through to a K-1 row", () => {
     const r = parseHouseholdSource("business_passthrough:ent1", { type: "qbi", amount: 1000 }, ctx);
     expect(r).toMatchObject({ type: "K-1 Pass-Thru Income", description: "Business 1 — K-1", character: "ordinary" });

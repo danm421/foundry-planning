@@ -41,7 +41,9 @@ export function parseHouseholdSource(
     // a conversion the cap zeroed shows as a bare "$0" with no explanation.
     const description =
       entry.irmaaCapTier != null ? `${name} (limited by IRMAA Tier ${entry.irmaaCapTier})` : name;
-    return { type: "Roth Conversion", description, character, account: null, amount, taxable };
+    // Same `roth_conversion:` test build-household-section.ts uses to keep the
+    // $0 row, so the row that survives the build cannot be filtered back out.
+    return { type: "Roth Conversion", description, character, account: null, amount, taxable, zeroIsMeaningful: true };
   }
   if (key.startsWith("note:")) {
     const rest = key.slice("note:".length);

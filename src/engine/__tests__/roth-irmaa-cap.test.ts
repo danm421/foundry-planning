@@ -799,4 +799,12 @@ describe("Roth conversion IRMAA cap — the outcome record", () => {
       0,
     );
   });
+
+  // Known gap, deliberately unimplemented: the cap sizes each conversion
+  // against the full headroom, so two capped conversions in one year can land
+  // the household past the ceiling together. Blocked on a product decision
+  // about how one shared headroom is split (pro-rata / priority / sequential).
+  // See future-work/engine.md, "The IRMAA cap FAILS OPEN when two capped
+  // conversions run in the same year" (P9 E4 L8). `it.todo` runs nothing.
+  it.todo("caps two conversions in the same year against ONE shared headroom");
 });
