@@ -93,14 +93,29 @@ describe("wageRules — per W-2 (10% / $500)", () => {
     ]);
   });
 
-  it("prefers a live row over an ended one when both match the employer", () => {
-    // normalizeName strips "corp", so "acme" is contained in "acme consulting" and the W-2 matches
-    // BOTH rows. Taking the first in plan.incomes order — which is startYear order, so the ended one
-    // — checks the job off as finished and then fires a false "no W-2 matches this" card at the
-    // consulting row the client actually holds, losing the real update entirely.
+  it("gives a W-2 to the exactly-named ended row, not to a fuzzily-named live one", () => {
+    // normalizeName strips "corp", so "acme" is contained in "acme consulting" and this W-2 matches
+    // BOTH rows. Exactness is the key; activity only breaks ties inside it. Preferring the live row
+    // here would offer a 2025 W-2's box 1 as a write into a 2026+ consulting engagement — a
+    // wrong-row write, the same harm as the cross-swap below, just relocated.
     const plan = planFixture({ incomes: [
       salary("i1", "Acme Corp", 154_500, { startYear: 2015, endYear: 2025 }),
       salary("i2", "Acme Corp — consulting", 103_000, { startYear: 2026, endYear: 2035 }),
+    ] });
+    const r = wageRules(inputFixture({ w2s: [w2("Acme Corp", 170_000)], plan }));
+    expect(r.suggestions).toEqual([]);
+    expect(r.checks).toEqual([
+      { id: "income.wages.w2.0", label: "Wages · Acme Corp", returnDisplay: "$170,000", planDisplay: "Ends in 2025, before the 2026 plan year" },
+    ]);
+  });
+
+  it("prefers the live row when two rows carry the same employer name", () => {
+    // "Acme Corp" and "Acme Corporation" both normalize to "acme", so exactness cannot separate
+    // them. This is the tie activity exists to break, and the engagement the client currently holds
+    // is the one to write to.
+    const plan = planFixture({ incomes: [
+      salary("i1", "Acme Corp", 154_500, { startYear: 2015, endYear: 2025 }),
+      salary("i2", "Acme Corporation", 103_000, { startYear: 2026, endYear: 2035 }),
     ] });
     const r = wageRules(inputFixture({ w2s: [w2("Acme Corp", 170_000)], plan }));
     expect(r.suggestions.map((s) => s.id)).toEqual(["income.wages.w2.0"]);
@@ -116,6 +131,40 @@ describe("wageRules — per W-2 (10% / $500)", () => {
     expect(r.suggestions).toEqual([]);
     expect(r.checks).toEqual([
       { id: "income.wages.w2.0", label: "Wages · ACME CORPORATION", returnDisplay: "$100,000", planDisplay: "Starts in 2030, after the 2026 plan year" },
+    ]);
+  });
+
+  it("does not let a W-2 with no employer name claim a row whose name normalizes to nothing", () => {
+    // normalizeName drops every suffix token, so a row named "Inc" becomes "". Comparing that
+    // against a nameless W-2's own empty string is an exact match on nothing, and would write this
+    // W-2's box 1 into an unrelated row.
+    const plan = planFixture({ incomes: [salary("i1", "Inc", 103_000)] });
+    const r = wageRules(inputFixture({ w2s: [w2(null, 90_000)], plan }));
+    expect(r.suggestions.map((s) => s.id)).toEqual(["income.wages.w2.0.create"]);
+    expect(r.checks).toEqual([]);
+  });
+
+  it("falls back to a fuzzy match, preferring the live row, when no row is named exactly", () => {
+    // Neither row normalizes to "acme holdings", so the exact tiers miss entirely and matching lands
+    // on containment. Inside that fuzzy class the tie breaks the same way it does inside the exact
+    // one: toward the engagement the client currently holds.
+    const plan = planFixture({ incomes: [
+      salary("i1", "Acme Holdings Group", 154_500, { startYear: 2015, endYear: 2025 }),
+      salary("i2", "Acme Holdings Group West", 103_000, { startYear: 2026, endYear: 2035 }),
+    ] });
+    const r = wageRules(inputFixture({ w2s: [w2("Acme Holdings", 170_000)], plan }));
+    expect(r.suggestions.map((s) => s.id)).toEqual(["income.wages.w2.0"]);
+    expect(r.suggestions[0].action?.target).toMatchObject({ incomeId: "i2", patch: { annualAmount: 170_000 } });
+  });
+
+  it("reaches an ended row on a fuzzy name when nothing live matches at all", () => {
+    // The last tier. Without it this W-2 matches nothing and the advisor is offered a brand-new
+    // salary running to retirement — the re-employment card, back again by a different route.
+    const plan = planFixture({ incomes: [salary("i1", "Acme Holdings Group", 154_500, { startYear: 2015, endYear: 2025 })] });
+    const r = wageRules(inputFixture({ w2s: [w2("Acme Holdings", 100_000)], plan }));
+    expect(r.suggestions).toEqual([]);
+    expect(r.checks).toEqual([
+      { id: "income.wages.w2.0", label: "Wages · Acme Holdings", returnDisplay: "$100,000", planDisplay: "Ends in 2025, before the 2026 plan year" },
     ]);
   });
 

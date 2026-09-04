@@ -36,17 +36,25 @@ export const wageRules: Rule = (input) => {
     const id = `income.wages.w2.${i}`;
     const employer = w.employer ?? `W-2 #${i + 1}`;
     const returnFigure = { label: `${employer} · box 1`, amount: wages, display: money(wages), lineRefs: [ref("W-2", "Box 1", `${employer} wages`, wages)] };
-    // Candidate order matters, not just the predicate. `normalizeName` strips suffixes and then
-    // matches on containment, so "Acme Corp" matches both an ended "Acme Corp" row and a live
-    // "Acme Corp — consulting" one; taking whichever came first in plan.incomes order would hand the
-    // W-2 to the ended row, check it off as finished, and fire a false "no W-2 matches this" card at
-    // the job the client actually holds. Exact beats fuzzy for the same reason: with rows
-    // ["Acme Holdings", "Acme"] and W-2s ["Acme", "Acme Holdings"], first-match-wins writes each
-    // employer's box 1 into the other's row. Ended rows stay reachable, but only last.
+    // Candidate ORDER matters, not just the predicate, because `namesMatch` also accepts containment
+    // and near-spellings: with rows ["Acme Holdings", "Acme"] and W-2s ["Acme", "Acme Holdings"],
+    // first-match-wins writes each employer's box 1 into the other's row.
+    //
+    // Exactness is the key; activity only breaks ties WITHIN an exactness class. Ordering it the
+    // other way round — every active row ahead of every ended one — quietly moves the wrong-row
+    // write rather than removing it: given an ended "Acme Corp" (2015-2025) and a live
+    // "Acme Corp — consulting" (2026-2035), a 2025 W-2 reading "Acme Corp" would skip the row it
+    // plainly belongs to and offer its box 1 as a write into the 2026+ engagement.
+    //
+    // So: exact-and-active, exact-at-all, fuzzy-and-active, fuzzy-at-all.
     const available = salaryRows.filter((r) => !claimed.has(r.id));
+    // Guarded: `normalizeName` drops every suffix token, so a row named "Inc" normalizes to "". An
+    // unguarded exact tier would match "" === "" and let a nameless W-2 claim it.
     const wanted = w.employer ? normalizeName(w.employer) : "";
+    const exact = wanted ? available.filter((r) => normalizeName(r.name) === wanted) : [];
     const match =
-      (wanted ? available.find((r) => isActiveInYear(r, planYear) && normalizeName(r.name) === wanted) : undefined)
+      exact.find((r) => isActiveInYear(r, planYear))
+      ?? exact[0]
       ?? available.find((r) => isActiveInYear(r, planYear) && namesMatch(w.employer, r.name))
       ?? available.find((r) => namesMatch(w.employer, r.name));
     if (match) {
