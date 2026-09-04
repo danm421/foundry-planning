@@ -69,10 +69,10 @@ export function CrmTaskFilters() {
             onClick={(e) => onClick(e, chip.value)}
             aria-pressed={isActive}
             className={
-              "rounded-full px-3 py-1 text-[12px] font-medium transition-colors " +
+              "rounded-[var(--radius-sm)] border px-3 py-1 font-mono text-[10.5px] font-semibold uppercase tracking-[0.12em] transition-colors duration-150 " +
               (isActive
-                ? "bg-accent text-accent-on"
-                : "border border-hair text-ink-3 hover:bg-card-2 hover:text-ink-2")
+                ? "border-accent bg-accent text-accent-on"
+                : "border-hair-2 text-ink-3 hover:border-hair-3 hover:bg-card-hover hover:text-ink-2")
             }
           >
             {chip.label}

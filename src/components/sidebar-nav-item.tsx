@@ -85,7 +85,7 @@ export default function SidebarNavItem({
           <>
             <span className="flex-1 truncate">{label}</span>
             {typeof count === "number" ? (
-              <span className="text-xs text-ink-4">{count}</span>
+              <span className="tabular text-[11px] text-ink-3">{count}</span>
             ) : null}
           </>
         )}

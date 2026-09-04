@@ -6,11 +6,15 @@ import { useRouter } from "next/navigation";
 import { CrmLinkHouseholdDialog } from "@/components/crm-link-household-dialog";
 import { OverflowMenu } from "@/components/overflow-menu";
 import { HOUSEHOLD_STATUS_LABELS } from "@/components/household-status-select";
-import { chipClass, sectionHeadingClass, addGhostClass, EmptyState } from "@/components/crm-section-primitives";
+import {
+  EmptyState,
+  SectionLabel,
+  addGhostClass,
+  chipClass,
+} from "@/components/crm-section-primitives";
 import type { HouseholdRelationshipView } from "@/lib/crm/household-relationships";
 
-const statusBadgeClass =
-  "shrink-0 rounded-full border border-hair px-2 py-0.5 text-[11px] uppercase tracking-wide text-ink-3";
+const statusBadgeClass = `shrink-0 ${chipClass}`;
 
 function RelationshipCard({
   relationship,
@@ -22,14 +26,14 @@ function RelationshipCard({
   unlinking: boolean;
 }) {
   return (
-    <li className="rounded-[var(--radius)] border border-hair bg-card p-4 transition-colors hover:border-hair-2">
+    <li className="rounded-[var(--radius)] border border-hair-2 bg-card p-4 transition-colors duration-150 hover:border-hair-3 hover:bg-card-hover">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className={chipClass}>{relationship.label}</span>
             <Link
               href={`/crm/households/${relationship.counterpart.id}`}
-              className="text-[14px] font-medium text-ink transition-colors hover:text-accent-ink"
+              className="text-[14px] font-semibold text-ink transition-colors duration-150 hover:text-accent"
             >
               {relationship.counterpart.name}
             </Link>
@@ -40,7 +44,7 @@ function RelationshipCard({
           </div>
 
           {relationship.note && (
-            <p className="mt-1.5 text-[12.5px] text-ink-2">{relationship.note}</p>
+            <p className="mt-2 text-[13px] text-ink-2">{relationship.note}</p>
           )}
         </div>
 
@@ -94,14 +98,14 @@ export function CrmHouseholdRelationshipsSection({
 
   return (
     <section aria-labelledby="related-households-heading" className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <h2 id="related-households-heading" className={sectionHeadingClass}>
-          Related households ({relationships.length})
-        </h2>
+      <SectionLabel
+        id="related-households-heading"
+        segments={[`Related households (${relationships.length})`]}
+      >
         <button type="button" onClick={() => setLinkDialogOpen(true)} className={addGhostClass}>
           Link household
         </button>
-      </div>
+      </SectionLabel>
 
       {relationships.length === 0 ? (
         <EmptyState>No related households yet.</EmptyState>

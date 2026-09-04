@@ -14,8 +14,8 @@ interface CrmTaskRowProps {
 
 const PRIORITY_DOT_CLASS: Record<TaskListRow["priority"], string> = {
   high: "bg-crit",
-  med: "bg-amber-500",
-  low: "bg-slate-400",
+  med: "bg-warn",
+  low: "bg-ink-4",
 };
 
 const PRIORITY_LABEL: Record<TaskListRow["priority"], string> = {
@@ -32,10 +32,10 @@ const STATUS_LABEL: Record<TaskListRow["status"], string> = {
 };
 
 const STATUS_PILL_CLASS: Record<TaskListRow["status"], string> = {
-  open: "border-hair text-ink-2 bg-card-2",
-  in_progress: "border-accent/40 text-accent bg-accent/10",
-  blocked: "border-crit/40 text-crit bg-crit/10",
-  done: "border-hair text-ink-3 bg-card-2",
+  open: "border-hair-2 text-ink-2",
+  in_progress: "border-accent-deep text-accent",
+  blocked: "border-crit text-crit",
+  done: "border-hair text-ink-3",
 };
 
 /**
@@ -50,16 +50,16 @@ export function CrmTaskRow({ task, hrefBase, assigneeName }: CrmTaskRowProps) {
   const interactionCount = task.commentCount + task.fileCount;
 
   return (
-    <tr className="hover:bg-card-2">
+    <tr className="transition-colors duration-150 hover:bg-card-hover">
       <td className="whitespace-nowrap px-4 py-3 align-middle">
         <Link href={href} className="flex items-center gap-3 text-ink no-underline">
           <span
             aria-label={`${PRIORITY_LABEL[task.priority]} priority`}
-            className={`inline-block h-2 w-2 shrink-0 rounded-full ${PRIORITY_DOT_CLASS[task.priority]}`}
+            className={`inline-block h-[7px] w-[7px] shrink-0 rounded-full ${PRIORITY_DOT_CLASS[task.priority]}`}
           />
           <span
             className={
-              "truncate text-[14px] font-medium " +
+              "truncate text-[13px] font-medium " +
               (isDone ? "text-ink-3 line-through" : "text-ink")
             }
           >
@@ -67,25 +67,25 @@ export function CrmTaskRow({ task, hrefBase, assigneeName }: CrmTaskRowProps) {
           </span>
         </Link>
       </td>
-      <td className="whitespace-nowrap px-4 py-3 text-sm text-ink-2">
+      <td className="whitespace-nowrap px-4 py-3 text-[13px] text-ink-2">
         <Link href={href} className="block">
           {task.householdName ?? "—"}
         </Link>
       </td>
-      <td className="whitespace-nowrap px-4 py-3 text-sm text-ink-2">
+      <td className="whitespace-nowrap px-4 py-3 text-[13px] text-ink-2">
         <Link href={href} className="block">
           {assigneeName ?? "Unassigned"}
         </Link>
       </td>
-      <td className="whitespace-nowrap px-4 py-3 text-sm">
+      <td className="whitespace-nowrap px-4 py-3 text-[13px]">
         <Link
           href={href}
-          className={"block tabular-nums " + (due.overdue ? "text-crit" : "text-ink-2")}
+          className={"tabular block " + (due.overdue ? "text-crit" : "text-ink-2")}
         >
           {due.label}
         </Link>
       </td>
-      <td className="whitespace-nowrap px-4 py-3 text-sm text-ink-3">
+      <td className="whitespace-nowrap px-4 py-3 text-[13px] text-ink-3">
         <Link href={href} className="block">
           {PRIORITY_LABEL[task.priority]}
         </Link>
@@ -94,7 +94,7 @@ export function CrmTaskRow({ task, hrefBase, assigneeName }: CrmTaskRowProps) {
         <Link href={href} className="block">
           <span
             className={
-              "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide " +
+              "inline-flex items-center rounded-[var(--radius-sm)] border px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] " +
               STATUS_PILL_CLASS[task.status]
             }
           >
@@ -102,7 +102,7 @@ export function CrmTaskRow({ task, hrefBase, assigneeName }: CrmTaskRowProps) {
           </span>
         </Link>
       </td>
-      <td className="whitespace-nowrap px-4 py-3 text-right text-sm text-ink-3 tabular-nums">
+      <td className="tabular whitespace-nowrap px-4 py-3 text-right text-[13px] text-ink-3">
         <Link href={href} className="block">
           {interactionCount > 0 ? `⌁ ${interactionCount}` : ""}
         </Link>

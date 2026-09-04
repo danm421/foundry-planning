@@ -23,7 +23,15 @@ import type { HouseholdRelationshipView } from "@/lib/crm/household-relationship
 import { deriveContactSections } from "@/lib/crm/contact-sections";
 import { ageOnDate } from "@/lib/age-year";
 import { TrashIcon } from "@/components/icons";
-import { chipClass, sectionHeadingClass, addGhostClass, EmptyState } from "@/components/crm-section-primitives";
+import {
+  EmptyState,
+  SectionLabel,
+  addGhostClass,
+  chipAccentClass,
+  chipClass,
+  monoLabelClass,
+  primaryButtonClass,
+} from "@/components/crm-section-primitives";
 
 type Household = NonNullable<Awaited<ReturnType<typeof getCrmHousehold>>>;
 type Contact = Household["contacts"][number];
@@ -36,12 +44,11 @@ const ROLE_LABELS: Record<string, string> = {
   spouse: "Spouse",
 };
 
-/** Verdigris pill — identity roles (primary / spouse) only. */
-const roleBadgeClass =
-  "rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent";
+/** Accent-bordered pill — identity roles (primary / spouse) only. Descriptive
+ *  labels (child, dependent, CPA, attorney) take the neutral `chipClass`. */
+const roleBadgeClass = chipAccentClass;
 
-const addPrimaryClass =
-  "rounded-[var(--radius-sm)] bg-accent px-3 py-1.5 text-[12px] font-semibold text-accent-on transition-colors hover:bg-accent-ink";
+const addPrimaryClass = `${primaryButtonClass} px-3 py-1.5 text-[12px]`;
 
 function fmtDob(iso: string | null | undefined): string {
   if (!iso) return "";
@@ -88,7 +95,7 @@ function addressLine(c: Contact): string {
  *  primary/spouse cards use it — those two rows stay on screen whether or not
  *  they're filled, so "no email on file" is legible at a glance instead of
  *  looking identical to a card that simply doesn't render the row. */
-const MISSING = <span className="text-ink-3">—</span>;
+const MISSING = <span className="text-ink-4">—</span>;
 
 const contactLinkClass = "transition-colors hover:text-accent-ink hover:underline";
 
@@ -187,25 +194,27 @@ function ContactCard({
 }) {
   const preferred = preferredName?.trim();
   return (
-    <li className="rounded-[var(--radius)] border border-hair bg-card p-4 transition-colors hover:border-hair-2">
+    <li className="rounded-[var(--radius)] border border-hair-2 bg-card p-4 transition-colors duration-150 hover:border-hair-3 hover:bg-card-hover">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             {badge}
-            <span className="text-[14px] font-medium text-ink">
+            <span className="text-[15px] font-semibold text-ink">
               {name}
               {preferred ? (
-                <span className="ml-1 text-[13px] text-ink-3">({preferred})</span>
+                <span className="ml-1.5 text-[13px] font-normal text-ink-3">({preferred})</span>
               ) : null}
             </span>
           </div>
 
           {rows.length > 0 && (
-            <dl className="mt-2.5 grid grid-cols-1 gap-y-1 text-[12.5px] text-ink-2 sm:grid-cols-[110px_1fr] sm:gap-x-3">
+            <dl className="mt-3 grid grid-cols-1 text-[13px] text-ink-2 sm:grid-cols-[88px_minmax(0,1fr)] [&>*:nth-last-child(-n+2)]:border-b-0">
               {rows.map((row) => (
                 <Fragment key={row.label}>
-                  <dt className="text-ink-3">{row.label}</dt>
-                  <dd className="min-w-0 truncate">{row.value}</dd>
+                  <dt className={`border-b border-hair py-[7px] pr-3 ${monoLabelClass}`}>
+                    {row.label}
+                  </dt>
+                  <dd className="min-w-0 truncate border-b border-hair py-[7px]">{row.value}</dd>
                 </Fragment>
               ))}
             </dl>
@@ -217,7 +226,7 @@ function ContactCard({
             type="button"
             onClick={onEdit}
             aria-label={`Edit ${name}`}
-            className="rounded-[var(--radius-sm)] border border-hair bg-card-2 px-2.5 py-1 text-[12px] font-medium text-ink-2 transition-colors hover:border-hair-2 hover:text-ink"
+            className="rounded-[var(--radius-sm)] border border-hair-2 px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-2 transition-colors duration-150 hover:border-hair-3 hover:text-ink"
           >
             Edit
           </button>
@@ -226,7 +235,7 @@ function ContactCard({
             onClick={onDelete}
             disabled={deleting}
             aria-label={`Delete ${name}`}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-[var(--radius-sm)] text-ink-3 transition-colors hover:bg-crit/15 hover:text-crit disabled:opacity-50"
+            className="inline-flex h-7 w-7 items-center justify-center rounded-[var(--radius-sm)] text-ink-3 transition-colors duration-150 hover:text-crit disabled:opacity-50"
           >
             <TrashIcon width={14} height={14} aria-hidden="true" />
           </button>
@@ -430,16 +439,13 @@ export function ContactsTab({
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,380px)]">
+    <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,400px)]">
       <section aria-labelledby="contacts-family-heading" className="space-y-4">
-        <div className="flex items-center justify-between gap-3">
-          <h2 id="contacts-family-heading" className={sectionHeadingClass}>
-            Family ({familyCount})
-          </h2>
+        <SectionLabel id="contacts-family-heading" segments={[`Family (${familyCount})`]}>
           <button type="button" onClick={openFamilyCreate} className={addPrimaryClass}>
             Add family member
           </button>
-        </div>
+        </SectionLabel>
 
         {sections.primarySpouse.length > 0 && (
           <ul className="space-y-2.5">
@@ -578,14 +584,14 @@ export function ContactsTab({
 
       <div className="space-y-6">
         <section aria-labelledby="contacts-external-heading" className="space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <h2 id="contacts-external-heading" className={sectionHeadingClass}>
-              External contacts ({sections.external.length})
-            </h2>
+          <SectionLabel
+            id="contacts-external-heading"
+            segments={[`External contacts (${sections.external.length})`]}
+          >
             <button type="button" onClick={openExternalCreate} className={addGhostClass}>
               Add external contact
             </button>
-          </div>
+          </SectionLabel>
 
           {sections.external.length === 0 ? (
             <EmptyState>No external contacts yet.</EmptyState>

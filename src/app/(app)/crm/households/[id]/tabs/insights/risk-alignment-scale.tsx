@@ -137,11 +137,13 @@ export function RiskAlignmentScale({
   const areaHeight = BASE_AREA_PX + maxRow * ROW_OFFSET_PX;
 
   return (
-    <section className="rounded-[var(--radius)] border border-hair bg-card p-5">
-      <div className="mb-6 flex items-center justify-between">
-        <h3 className="text-sm font-semibold">Risk Capacity &amp; Alignment</h3>
+    <section className="rounded-[var(--radius)] border border-hair-2 bg-card p-5">
+      <div className="mb-6 flex items-center justify-between gap-3">
+        <h3 className="font-mono text-[10.5px] font-semibold uppercase tracking-[0.14em] text-ink-2">
+          Risk capacity &amp; alignment
+        </h3>
         <span
-          className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${VERDICT_BADGE_CLASS[risk.verdict]}`}
+          className={`rounded-[var(--radius-sm)] border px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] ${VERDICT_BADGE_CLASS[risk.verdict]}`}
         >
           {VERDICT_LABEL[risk.verdict]}
         </span>
@@ -159,10 +161,10 @@ export function RiskAlignmentScale({
             maxRow={maxRow}
           />
         ))}
-        <div className="absolute inset-x-0 bottom-0 h-2 rounded-full bg-gradient-to-r from-good/25 to-crit/35" />
+        <div className="absolute inset-x-0 bottom-0 h-[3px] bg-hair-2" />
       </div>
 
-      <div className="mt-1 flex justify-between text-[11px] text-ink-3">
+      <div className="mt-2 flex justify-between font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-3">
         <span>Conservative</span>
         <span>Aggressive</span>
       </div>

@@ -26,10 +26,10 @@ const TABS: DialogTab[] = [
 ];
 
 const STATUS_PILL_CLASS: Record<CrmTaskStatus, string> = {
-  open: "border-hair text-ink-2 bg-card-2",
-  in_progress: "border-accent/40 text-accent bg-accent/10",
-  blocked: "border-crit/40 text-crit bg-crit/10",
-  done: "border-hair text-ink-3 bg-card-2",
+  open: "border-hair-2 text-ink-2",
+  in_progress: "border-accent-deep text-accent",
+  blocked: "border-crit text-crit",
+  done: "border-hair text-ink-3",
 };
 
 const STATUS_LABEL: Record<CrmTaskStatus, string> = {
@@ -41,8 +41,8 @@ const STATUS_LABEL: Record<CrmTaskStatus, string> = {
 
 const PRIORITY_DOT_CLASS: Record<CrmTaskPriority, string> = {
   high: "bg-crit",
-  med: "bg-amber-500",
-  low: "bg-slate-400",
+  med: "bg-warn",
+  low: "bg-ink-4",
 };
 
 const PRIORITY_LABEL: Record<CrmTaskPriority, string> = {
@@ -153,7 +153,7 @@ export function CrmTaskSidePanel({
       <div
         data-testid="task-panel-backdrop"
         onClick={close}
-        className="absolute inset-0 bg-black/40"
+        className="absolute inset-0 bg-paper/70"
       />
       <div
         ref={surfaceRef}
@@ -161,13 +161,13 @@ export function CrmTaskSidePanel({
         aria-modal="true"
         aria-label={`Task: ${title}`}
         tabIndex={-1}
-        className="relative z-10 flex h-full w-full flex-col border-l border-hair bg-card shadow-2xl outline-none sm:w-[560px]"
+        className="relative z-10 flex h-full w-full flex-col border-l border-hair-2 bg-card-2 outline-none sm:w-[560px]"
       >
-        <div className="flex items-start gap-3 border-b border-hair px-5 py-4">
+        <div className="flex items-start gap-3 border-b border-hair-2 px-5 py-4">
           <span
             aria-label={PRIORITY_LABEL[initialTask.priority]}
             title={PRIORITY_LABEL[initialTask.priority]}
-            className={`mt-2 inline-block h-2.5 w-2.5 shrink-0 rounded-full ${PRIORITY_DOT_CLASS[initialTask.priority]}`}
+            className={`mt-2.5 inline-block h-[9px] w-[9px] shrink-0 rounded-full ${PRIORITY_DOT_CLASS[initialTask.priority]}`}
           />
           <div className="min-w-0 flex-1">
             {editingTitle ? (
@@ -188,7 +188,7 @@ export function CrmTaskSidePanel({
                     setTitleError(null);
                   }
                 }}
-                className="w-full rounded-[var(--radius-sm)] border border-hair bg-card-2 px-2 py-1 text-[16px] font-semibold text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
+                className="w-full rounded-[var(--radius-sm)] border border-hair-2 bg-paper px-2 py-1 text-[19px] font-semibold text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
               />
             ) : (
               <button
@@ -197,7 +197,7 @@ export function CrmTaskSidePanel({
                   setDraftTitle(title);
                   setEditingTitle(true);
                 }}
-                className="block w-full rounded-[var(--radius-sm)] px-2 py-1 text-left text-[16px] font-semibold text-ink hover:bg-card-2"
+                className="block w-full rounded-[var(--radius-sm)] px-2 py-1 text-left text-[19px] font-semibold leading-tight text-ink transition-colors duration-150 hover:bg-card-hover"
               >
                 {title}
               </button>
@@ -207,22 +207,27 @@ export function CrmTaskSidePanel({
                 {titleError}
               </p>
             )}
-            <div className="mt-1 flex items-center gap-2 px-2">
+            <div className="mt-2 flex flex-wrap items-center gap-2.5 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-3">
               <span
                 className={
-                  "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide " +
+                  "inline-flex items-center rounded-[var(--radius-sm)] border px-2 py-0.5 " +
                   STATUS_PILL_CLASS[initialTask.status]
                 }
               >
                 {STATUS_LABEL[initialTask.status]}
               </span>
+              <span>{PRIORITY_LABEL[initialTask.priority]}</span>
+              <span aria-hidden="true" className="text-ink-4">
+                /
+              </span>
+              <span className="tabular normal-case tracking-[0.06em]">{initialTask.id}</span>
             </div>
           </div>
           <button
             type="button"
             onClick={close}
             aria-label="Close"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded text-ink-3 hover:bg-card-2 hover:text-ink"
+            className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-hair-2 text-ink-3 transition-colors duration-150 hover:border-hair-3 hover:text-ink"
           >
             <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
               <path

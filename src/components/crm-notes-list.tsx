@@ -5,6 +5,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircleIcon } from "@/components/icons";
 import { CrmNoteDialog } from "@/components/crm-note-dialog";
 import type { NoteRow, NoteKind } from "@/lib/crm/notes";
+import {
+  SectionLabel,
+  chipClass,
+  primaryButtonClass,
+} from "@/components/crm-section-primitives";
 
 const KIND_LABELS: Record<NoteKind, string> = {
   note: "General",
@@ -81,16 +86,11 @@ export function CrmNotesList({ householdId }: { householdId: string }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-[15px] font-semibold text-ink">Notes</h2>
-        <button
-          type="button"
-          onClick={openCreate}
-          className="rounded-[var(--radius-sm)] bg-accent px-3.5 py-2 text-[13px] font-semibold text-accent-on transition-colors hover:bg-accent-ink"
-        >
+      <SectionLabel segments={["Notes", `${rows.length} records`]}>
+        <button type="button" onClick={openCreate} className={primaryButtonClass}>
           New note
         </button>
-      </div>
+      </SectionLabel>
 
       {error && (
         <div
@@ -103,36 +103,38 @@ export function CrmNotesList({ householdId }: { householdId: string }) {
       )}
 
       {loading && rows.length === 0 ? (
-        <div className="text-[13px] text-ink-3">Loading notes…</div>
+        <div className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-ink-3">
+          Loading notes…
+        </div>
       ) : rows.length === 0 ? (
-        <div className="rounded-[var(--radius)] border border-dashed border-hair bg-card-2 px-6 py-10 text-center">
-          <p className="text-[13px] text-ink-3">No notes yet.</p>
-          <p className="mt-1 text-[12px] text-ink-3">Click &ldquo;New note&rdquo; to record a meeting note.</p>
+        <div className="rounded-[var(--radius)] border border-dashed border-hair-2 px-6 py-10 text-center">
+          <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-ink-2">No notes yet.</p>
+          <p className="mt-2 text-[13px] text-ink-3">
+            Click &ldquo;New note&rdquo; to record a meeting note.
+          </p>
         </div>
       ) : (
-        <ul className="space-y-2.5">
+        <ul className="grid items-start gap-3 [grid-template-columns:repeat(auto-fill,minmax(340px,1fr))]">
           {rows.map((row) => (
             <li key={row.id}>
               <button
                 type="button"
                 onClick={() => openEdit(row)}
-                className="w-full rounded-[var(--radius)] border border-hair bg-card p-3.5 text-left transition-colors hover:border-hair-2"
+                className="h-full w-full rounded-[var(--radius)] border border-hair-2 bg-card p-[18px] text-left transition-colors duration-150 hover:border-hair-3 hover:bg-card-hover"
               >
                 <div className="flex items-baseline justify-between gap-3">
-                  <p className="truncate text-[13.5px] font-semibold text-ink">{row.title}</p>
-                  <span className="shrink-0 text-[11.5px] tabular-nums text-ink-3">
+                  <p className="truncate text-[15px] font-semibold text-ink">{row.title}</p>
+                  <span className="tabular shrink-0 text-[11px] text-ink-3">
                     {formatNoteDate(row.occurredAt)}
                   </span>
                 </div>
                 {row.body && (
-                  <p className="mt-1 line-clamp-2 text-[12.5px] leading-relaxed text-ink-2">
+                  <p className="mt-2 line-clamp-2 text-[13px] leading-relaxed text-ink-2">
                     {markdownPreview(row.body)}
                   </p>
                 )}
-                <div className="mt-1.5">
-                  <span className="rounded-full bg-card-2 px-1.5 py-0.5 text-[11px] font-medium uppercase tracking-wide text-ink-3">
-                    {KIND_LABELS[row.kind]}
-                  </span>
+                <div className="mt-3">
+                  <span className={chipClass}>{KIND_LABELS[row.kind]}</span>
                 </div>
               </button>
             </li>

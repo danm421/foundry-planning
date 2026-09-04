@@ -33,7 +33,7 @@ const SEVERITY_CLASS: Record<SignalSeverity, string> = {
   critical: "border-crit/40 bg-crit/10 text-crit",
   opportunity: "border-good/40 bg-good/10 text-good",
   watch: "border-warn/40 bg-warn/10 text-warn",
-  info: "border-hair bg-card-2 text-ink-3",
+  info: "border-hair-2 bg-card-2 text-ink-3",
 };
 
 /**
@@ -46,9 +46,11 @@ const SEVERITY_CLASS: Record<SignalSeverity, string> = {
 export function SignalsList({ signals }: { signals: Signal[] }) {
   if (signals.length === 0) {
     return (
-      <section className="rounded-[var(--radius)] border border-hair bg-card p-5">
-        <h3 className="mb-1 text-sm font-semibold">Signals</h3>
-        <p className="text-sm text-ink-3">
+      <section className="rounded-[var(--radius)] border border-hair-2 bg-card p-5">
+        <h3 className="mb-2 font-mono text-[10.5px] font-semibold uppercase tracking-[0.14em] text-ink-2">
+          Signals
+        </h3>
+        <p className="text-[13px] text-ink-3">
           Nothing needs attention on this household right now.
         </p>
       </section>
@@ -63,21 +65,26 @@ export function SignalsList({ signals }: { signals: Signal[] }) {
         return (
           <section
             key={severity}
-            className="rounded-[var(--radius)] border border-hair bg-card p-5"
+            className="rounded-[var(--radius)] border border-hair-2 bg-card p-5"
           >
             <h3 className="mb-3 flex items-center gap-2">
               <span
-                className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${SEVERITY_CLASS[severity]}`}
+                className={`rounded-[var(--radius-sm)] border px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] ${SEVERITY_CLASS[severity]}`}
               >
                 {SEVERITY_LABEL[severity]}
               </span>
               <span className="tabular text-[11px] text-ink-3">{group.length}</span>
             </h3>
-            <ul className="flex flex-col gap-3">
-              {group.map((s) => (
-                <li key={s.id} className="flex flex-col gap-0.5">
-                  <span className="text-sm font-medium text-ink">{s.title}</span>
-                  <span className="text-sm text-ink-2">{s.detail}</span>
+            <ul className="flex flex-col">
+              {group.map((s, i) => (
+                <li
+                  key={s.id}
+                  className={`flex flex-col gap-0.5 py-3 first:pt-0 last:pb-0 ${
+                    i === group.length - 1 ? "" : "border-b border-hair"
+                  }`}
+                >
+                  <span className="text-[13.5px] font-semibold text-ink">{s.title}</span>
+                  <span className="text-[13px] text-ink-2">{s.detail}</span>
                   {s.href && (
                     // Plain <a>, not next/link, on purpose: these deep-link into
                     // heavy routes (cashflow, monte-carlo) and a viewport-
@@ -86,7 +93,7 @@ export function SignalsList({ signals }: { signals: Signal[] }) {
                     <a
                       href={s.href}
                       aria-label={`Open ${s.title}`}
-                      className="w-fit rounded-[var(--radius-sm)] text-[12px] text-accent underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                      className="mt-1 w-fit rounded-[var(--radius-sm)] font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-accent underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                     >
                       Open
                     </a>
