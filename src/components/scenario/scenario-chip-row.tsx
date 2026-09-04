@@ -65,6 +65,14 @@ const TEST_ORPHAN_PREFIXES = [
  * scenario via `/api/clients/[id]/scenarios/[sid]`. If the deleted scenario
  * was active, we strip `?scenario=` from the URL on success so the layout
  * falls back to base.
+ *
+ * Each non-base row also carries a ✎ button that swaps the row for an inline
+ * name field and PATCHes `/api/clients/[id]/scenarios/[sid]` with the new
+ * name. Enter saves, Escape cancels (and is stopped from bubbling so it
+ * doesn't also close the menu). The base case is deliberately not renamable:
+ * several surfaces (the compare picker, the presentation launcher) label the
+ * base with the literal string "Base case" rather than its stored name, so
+ * renaming it there would read inconsistently across the app.
  */
 export function ScenarioChipRow({
   clientId,
@@ -80,6 +88,10 @@ export function ScenarioChipRow({
   const router = useRouter();
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [promotingId, setPromotingId] = useState<string | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [renameBusy, setRenameBusy] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
   const [promoteTarget, setPromoteTarget] = useState<ScenarioChip | null>(null);
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -114,6 +126,14 @@ export function ScenarioChipRow({
     };
   }, [open]);
 
+  // Closing the menu discards an in-progress rename, so reopening starts clean.
+  useEffect(() => {
+    if (open) return;
+    setRenamingId(null);
+    setRenameDraft("");
+    setRenameError(null);
+  }, [open]);
+
   function handleSelect(s: ScenarioChip) {
     setScenario(s.isBaseCase ? null : s.id);
     setOpen(false);
@@ -137,6 +157,47 @@ export function ScenarioChipRow({
       router.refresh();
     } finally {
       setDeletingId(null);
+    }
+  }
+
+  function startRename(s: ScenarioChip) {
+    setRenamingId(s.id);
+    setRenameDraft(s.name);
+    setRenameError(null);
+  }
+
+  function cancelRename() {
+    setRenamingId(null);
+    setRenameDraft("");
+    setRenameError(null);
+  }
+
+  async function handleRename(s: ScenarioChip) {
+    const name = renameDraft.trim();
+    if (!name || renameBusy) return;
+    // No-op edits shouldn't cost a round trip or an audit row.
+    if (name === s.name) {
+      cancelRename();
+      return;
+    }
+    setRenameBusy(true);
+    setRenameError(null);
+    try {
+      const res = await fetch(`/api/clients/${clientId}/scenarios/${s.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) {
+        setRenameError("Couldn't rename — try again.");
+        return;
+      }
+      cancelRename();
+      router.refresh();
+    } catch {
+      setRenameError("Couldn't rename — try again.");
+    } finally {
+      setRenameBusy(false);
     }
   }
 
@@ -202,6 +263,63 @@ export function ScenarioChipRow({
             {visibleScenarios.map((s) => {
               const isActive = s.id === effectiveActive;
               const isDeleting = deletingId === s.id;
+              const isRenaming = renamingId === s.id;
+              if (isRenaming) {
+                return (
+                  <form
+                    key={s.id}
+                    data-testid={`scenario-chip-${s.id}`}
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void handleRename(s);
+                    }}
+                    className="rounded-[var(--radius-sm)] bg-card-2 px-1.5 py-1.5"
+                  >
+                    <div className="flex items-center gap-1">
+                      <input
+                        autoFocus
+                        value={renameDraft}
+                        onChange={(e) => setRenameDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          // Escape cancels the rename only — stop it before the
+                          // document listener closes the whole menu.
+                          if (e.key === "Escape") {
+                            e.stopPropagation();
+                            cancelRename();
+                          }
+                        }}
+                        maxLength={60}
+                        disabled={renameBusy}
+                        aria-label={`Rename scenario ${s.name}`}
+                        className="min-w-0 flex-1 rounded-[var(--radius-sm)] border border-hair bg-paper px-2 py-1 text-[13px] text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+                      />
+                      <button
+                        type="submit"
+                        disabled={!renameDraft.trim() || renameBusy}
+                        aria-label={`Save name for ${s.name}`}
+                        title="Save"
+                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-[13px] leading-none text-ink-3 transition hover:bg-accent-wash hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+                      >
+                        ✓
+                      </button>
+                      <button
+                        type="button"
+                        onClick={cancelRename}
+                        aria-label={`Cancel renaming ${s.name}`}
+                        title="Cancel"
+                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-[13px] leading-none text-ink-4 transition hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    {renameError && (
+                      <div role="alert" className="px-1 pt-1 text-[11px] text-crit">
+                        {renameError}
+                      </div>
+                    )}
+                  </form>
+                );
+              }
               return (
                 <div
                   key={s.id}
@@ -251,6 +369,18 @@ export function ScenarioChipRow({
                           ↑
                         </button>
                       )}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          startRename(s);
+                        }}
+                        aria-label={`Rename scenario ${s.name}`}
+                        title="Rename scenario"
+                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-[11px] leading-none text-ink-4 opacity-0 transition hover:bg-accent-wash hover:text-accent focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent group-focus-within:opacity-100 group-hover:opacity-100"
+                      >
+                        ✎
+                      </button>
                       <button
                         type="button"
                         onClick={(e) => {

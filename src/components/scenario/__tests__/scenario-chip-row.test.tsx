@@ -258,4 +258,145 @@ describe("ScenarioChipRow", () => {
     // The row's main button should not have fired its own onClick.
     expect(setScenarioSpy).not.toHaveBeenCalled();
   });
+
+  it("renders a Rename button per non-base row and none on the base row", async () => {
+    const user = userEvent.setup();
+    render(<ScenarioChipRow clientId={CLIENT_ID} scenarios={SCENARIOS} />);
+    await openMenu(user);
+    expect(
+      screen.queryByRole("button", { name: /Rename scenario Base case/ }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /Rename scenario Roth conversion/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Rename scenario Early retirement/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("clicking ✎ swaps the row for an input seeded with the current name", async () => {
+    const user = userEvent.setup();
+    render(<ScenarioChipRow clientId={CLIENT_ID} scenarios={SCENARIOS} />);
+    await openMenu(user);
+    await user.click(
+      screen.getByRole("button", { name: /Rename scenario Roth conversion/ }),
+    );
+
+    const input = screen.getByRole("textbox", {
+      name: /Rename scenario Roth conversion/,
+    });
+    expect(input).toHaveValue("Roth conversion");
+    // The row's select button is replaced while editing; other rows survive.
+    expect(screen.getAllByRole("menuitemradio")).toHaveLength(2);
+    // Editing must not switch the active scenario.
+    expect(setScenarioSpy).not.toHaveBeenCalled();
+  });
+
+  it("submitting the rename PATCHes the new name and refreshes", async () => {
+    const user = userEvent.setup();
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    render(<ScenarioChipRow clientId={CLIENT_ID} scenarios={SCENARIOS} />);
+    await openMenu(user);
+    await user.click(
+      screen.getByRole("button", { name: /Rename scenario Roth conversion/ }),
+    );
+    const input = screen.getByRole("textbox", {
+      name: /Rename scenario Roth conversion/,
+    });
+    await user.clear(input);
+    await user.type(input, "  Roth ladder  {Enter}");
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `/api/clients/${CLIENT_ID}/scenarios/s1`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "Roth ladder" }),
+      },
+    );
+    expect(refreshSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("an unchanged name closes the editor without a network call", async () => {
+    const user = userEvent.setup();
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    render(<ScenarioChipRow clientId={CLIENT_ID} scenarios={SCENARIOS} />);
+    await openMenu(user);
+    await user.click(
+      screen.getByRole("button", { name: /Rename scenario Roth conversion/ }),
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: /Rename scenario Roth conversion/ }),
+      "{Enter}",
+    );
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(screen.getAllByRole("menuitemradio")).toHaveLength(3);
+  });
+
+  it("Escape cancels the rename and leaves the menu open", async () => {
+    const user = userEvent.setup();
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    render(<ScenarioChipRow clientId={CLIENT_ID} scenarios={SCENARIOS} />);
+    await openMenu(user);
+    await user.click(
+      screen.getByRole("button", { name: /Rename scenario Roth conversion/ }),
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: /Rename scenario Roth conversion/ }),
+      "x{Escape}",
+    );
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    expect(screen.getAllByRole("menuitemradio")).toHaveLength(3);
+  });
+
+  it("a failed rename keeps the editor open and shows an error", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }));
+
+    render(<ScenarioChipRow clientId={CLIENT_ID} scenarios={SCENARIOS} />);
+    await openMenu(user);
+    await user.click(
+      screen.getByRole("button", { name: /Rename scenario Roth conversion/ }),
+    );
+    const input = screen.getByRole("textbox", {
+      name: /Rename scenario Roth conversion/,
+    });
+    await user.clear(input);
+    await user.type(input, "Roth ladder{Enter}");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/Couldn't rename/);
+    expect(input).toBeInTheDocument();
+    expect(refreshSpy).not.toHaveBeenCalled();
+  });
+
+  it("an empty name can't be submitted", async () => {
+    const user = userEvent.setup();
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    render(<ScenarioChipRow clientId={CLIENT_ID} scenarios={SCENARIOS} />);
+    await openMenu(user);
+    await user.click(
+      screen.getByRole("button", { name: /Rename scenario Roth conversion/ }),
+    );
+    const input = screen.getByRole("textbox", {
+      name: /Rename scenario Roth conversion/,
+    });
+    await user.clear(input);
+    await user.type(input, "   {Enter}");
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: /Save name for Roth conversion/ }),
+    ).toBeDisabled();
+  });
 });
