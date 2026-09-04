@@ -1,6 +1,7 @@
 "use client";
 
 import type { ProjectionYear } from "@/engine";
+import { sumTaxAdjustments } from "@/engine/tax-adjustments";
 import { TaxDetailTooltip } from "./tax-detail-tooltip";
 import {
   detectRegimeTransitions,
@@ -46,6 +47,9 @@ interface Column {
   label: string;
   tooltip?: string;
   value: (y: ProjectionYear) => number;
+  /** When true, the column is hidden if all visible years have value 0 —
+   *  mirrors the flow table's `Column.zeroSuppress`. */
+  zeroSuppress?: boolean;
 }
 
 export const INCOME_COLUMNS: Column[] = [
@@ -97,6 +101,14 @@ export const INCOME_COLUMNS: Column[] = [
     value: (y) => y.taxResult?.income.qbi ?? 0,
   },
   {
+    key: "taxAdjustments",
+    label: "Tax Adjustments",
+    tooltip:
+      "Income entered as already having happened — a completed Roth conversion, a bonus already received. Included in the tax math above; no money moves in the cash flow.",
+    value: (y) => sumTaxAdjustments(y.taxDetail),
+    zeroSuppress: true,
+  },
+  {
     key: "totalIncome",
     label: "Total Income",
     tooltip: "Sum of all taxable income items. Feeds into the AGI calc.",
@@ -117,6 +129,18 @@ export const INCOME_COLUMNS: Column[] = [
   },
 ];
 
+/** `INCOME_COLUMNS` itself must stay the complete, exported list — existing
+ *  tests look up columns on it by key — so the zero-suppression hide is
+ *  applied to a derived subset here instead of to that array. Mirrors the
+ *  flow table's own top-level `zeroSuppress` filter; exported for the same
+ *  reason its `otherColumns`/`aboveLineColumns` are: the decision is
+ *  otherwise only reachable through a full rendered table. */
+export function visibleIncomeColumns(years: ProjectionYear[]): Column[] {
+  return INCOME_COLUMNS.filter(
+    (col) => !col.zeroSuppress || years.some((y) => col.value(y) !== 0),
+  );
+}
+
 export function TaxDetailIncomeTable({
   years,
   onYearClick,
@@ -125,6 +149,7 @@ export function TaxDetailIncomeTable({
   spouseLifeExpectancy,
 }: TaxDetailIncomeTableProps) {
   const transitions = detectRegimeTransitions(years);
+  const activeColumns = visibleIncomeColumns(years);
 
   return (
     <div className="overflow-x-auto rounded-lg border border-hair bg-card">
@@ -137,8 +162,8 @@ export function TaxDetailIncomeTable({
             <th className="sticky left-20 z-20 w-24 min-w-[6rem] border-b border-r border-hair bg-card px-3 py-2 text-left">
               Age
             </th>
-            {INCOME_COLUMNS.map((col, idx) => {
-              const isLast = idx === INCOME_COLUMNS.length - 1;
+            {activeColumns.map((col, idx) => {
+              const isLast = idx === activeColumns.length - 1;
               return (
                 <th
                   key={col.key}
@@ -176,9 +201,9 @@ export function TaxDetailIncomeTable({
                 <td className="sticky left-20 z-10 border-b border-r border-hair bg-card px-3 py-2 text-left text-ink-2 group-hover:shadow-[inset_0_1px_0_var(--color-ink),inset_0_-1px_0_var(--color-ink)]">
                   {formatAge(y.ages, clientLifeExpectancy, spouseLifeExpectancy)}
                 </td>
-                {INCOME_COLUMNS.map((col, idx) => {
+                {activeColumns.map((col, idx) => {
                   const v = col.value(y);
-                  const isLast = idx === INCOME_COLUMNS.length - 1;
+                  const isLast = idx === activeColumns.length - 1;
                   return (
                     <td
                       key={col.key}

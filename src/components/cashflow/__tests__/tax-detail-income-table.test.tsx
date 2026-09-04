@@ -5,6 +5,25 @@ import userEvent from "@testing-library/user-event";
 import type { ProjectionYear } from "@/engine/types";
 import { TaxDetailIncomeTable, INCOME_COLUMNS } from "../tax-detail-income-table";
 
+/** Task 9 income-column fixture: a year carrying one `tax_adjustment:` entry
+ *  in `taxDetail.bySource`, of the given tax type. */
+function makeYearWithAdjustment(taxType: string, amount: number): ProjectionYear {
+  return {
+    year: 2030,
+    ages: { client: 67 },
+    taxDetail: {
+      bySource: { "tax_adjustment:adj-1": { type: taxType, amount } },
+    },
+    taxResult: {
+      income: {
+        earnedIncome: 0, taxableSocialSecurity: 0, ordinaryIncome: 0,
+        dividends: 0, capitalGains: 0, shortCapitalGains: 0, qbi: 0,
+        totalIncome: 0, nonTaxableIncome: 0, grossTotalIncome: 0,
+      },
+    },
+  } as unknown as ProjectionYear;
+}
+
 function makeYear(): ProjectionYear {
   return {
     year: 2030,
@@ -100,5 +119,39 @@ describe("TaxDetailIncomeTable", () => {
     const sum = get("earnedIncome") + get("taxableSocialSecurity") + get("ordinaryIncome")
       + get("dividends") + get("capitalGains") + get("shortCapitalGains") + get("qbi");
     expect(sum).toBe(get("totalIncome"));
+  });
+
+  it("T9: a tax_adjustment bySource entry renders in the Tax Adjustments cell", () => {
+    const year = makeYearWithAdjustment("ordinary_income", 12_000);
+    render(
+      <TaxDetailIncomeTable years={[year]} onYearClick={() => {}} onCellClick={() => {}} />,
+    );
+    expect(
+      screen.getByRole("button", { name: /tax adjustments value 12,000/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("T9: the Tax Adjustments column hides itself when no year has an adjustment", () => {
+    const year = makeYear(); // no taxDetail at all — no adjustments anywhere
+    render(
+      <TaxDetailIncomeTable years={[year]} onYearClick={() => {}} onCellClick={() => {}} />,
+    );
+    expect(screen.queryByText("Tax Adjustments")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /tax adjustments value/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("T9: a tax_exempt adjustment shows in Tax Adjustments while no taxable bucket moves", () => {
+    // sumTaxAdjustments deliberately counts tax_exempt rows (Task 2, Correction
+    // 5): the column is "income entered as already having happened", not
+    // "taxable income", so a tax_exempt adjustment appears here while moving
+    // no taxable taxResult.income bucket.
+    const y = makeYearWithAdjustment("tax_exempt", 7_500);
+    const get = (k: string) => INCOME_COLUMNS.find((c) => c.key === k)!.value(y);
+    expect(get("taxAdjustments")).toBe(7_500);
+    expect(get("ordinaryIncome")).toBe(0);
+    expect(get("earnedIncome")).toBe(0);
+    expect(get("totalIncome")).toBe(0);
   });
 });

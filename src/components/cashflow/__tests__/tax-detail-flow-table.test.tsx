@@ -5,6 +5,7 @@ import {
   FLOW_COLUMNS,
   getSourcesForColumn,
   otherColumns,
+  topLevelColumns,
 } from "../tax-detail-flow-table";
 
 // A credit-claiming household, traced through calculate.ts's roll-up so the
@@ -213,5 +214,26 @@ describe("tax-detail-flow-table — the AMT column carries a real figure", () =>
       .filter((c) => !["other_total", "trustTax", "beneficiaryTax"].includes(c.key))
       .reduce((s, c) => s + c.value(withAmt), 0);
     expect(components).toBe(computeOtherTaxes(withAmt));
+  });
+});
+
+describe("tax-detail-flow-table — Task 9 Already Paid / Balance Due", () => {
+  it("T9: a year with withholding recorded shows BOTH rows, with their own figures", () => {
+    const withheld = makeYear({ taxAlreadyPaid: 22_000, balanceDue: 26_000 });
+    const cols = topLevelColumns([withheld]);
+    expect(cols.find((c) => c.key === "taxAlreadyPaid")!.value(withheld)).toBe(22_000);
+    expect(cols.find((c) => c.key === "balanceDue")!.value(withheld)).toBe(26_000);
+  });
+
+  it("T9: no year has withheld a dollar — the pair hides, even though Balance Due is a large nonzero number", () => {
+    // Fixture choice is load-bearing (Task 9 corrections): balanceDue here
+    // equals totalTax, exactly what an honest no-adjustments plan reports.
+    // Per-column zeroSuppress applied independently to each row would keep
+    // Balance Due visible forever, because it is never zero on a real plan.
+    // Only a shared predicate gating BOTH rows on taxAlreadyPaid catches that.
+    const noWithholding = makeYear({ taxAlreadyPaid: 0, balanceDue: 35_000 });
+    const keys = topLevelColumns([noWithholding]).map((c) => c.key);
+    expect(keys).not.toContain("taxAlreadyPaid");
+    expect(keys).not.toContain("balanceDue");
   });
 });

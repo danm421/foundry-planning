@@ -10,6 +10,7 @@ import {
   CAPITAL_LOSS_ORDINARY_LIMIT,
   CAPITAL_LOSS_ORDINARY_LIMIT_MFS,
 } from "@/lib/tax/constants";
+import { sumTaxAdjustments } from "@/engine/tax-adjustments";
 
 const COLUMN_LABEL: Record<IncomeColumnKey, string> = {
   earnedIncome: "Earned Income",
@@ -19,6 +20,7 @@ const COLUMN_LABEL: Record<IncomeColumnKey, string> = {
   capitalGains: "LT Capital Gains",
   shortCapitalGains: "ST Capital Gains",
   qbi: "QBI",
+  taxAdjustments: "Tax Adjustments",
   totalIncome: "Total Income",
   nonTaxableIncome: "Non-Taxable Income",
   grossTotalIncome: "Gross Total Income",
@@ -179,6 +181,14 @@ export function buildIncomeCellDrill(args: IncomeCellDrillArgs): CellDrillProps 
   if (columnKey === "grossTotalIncome") {
     const total = year.taxResult?.income.grossTotalIncome ?? 0;
     return { title, total, groups: [...totalIncomeGroups(year, ctx), ...nonTaxableGroups(year, ctx)] };
+  }
+
+  // taxAdjustments isn't a taxResult.income field — it's summed straight off
+  // taxDetail.bySource (see sumTaxAdjustments) — so it can't fall through to
+  // the generic `taxResult.income[columnKey]` lookup below. No drill-down
+  // rows: same "no drill available" shape the simplest existing keys return.
+  if (columnKey === "taxAdjustments") {
+    return { title, total: sumTaxAdjustments(year.taxDetail), groups: [] };
   }
 
   return { title, total: year.taxResult?.income[columnKey] ?? 0, groups: [] };
