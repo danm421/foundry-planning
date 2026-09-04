@@ -62,7 +62,12 @@ export const socialSecurityRules: Rule = (input) => {
         // The rows exist but pay nothing, so this is the un-claimed seed: benefits have started in
         // real life and the plan has not been told. `apply.ts` sets the amount from the owner
         // choice, which is why each row carries its patch already built and no annualAmount.
-        const both = claimRows.length >= 2;
+        // The choice is between the OWNERS actually present, not the row count. Counting rows
+        // offered a "Spouse" radio to a household whose two claimable rows both belong to the
+        // client — and `apply.ts` filters by owner, so that radio selected nothing and the
+        // click dead-ended in a 400. Two claim rows can only carry two distinct owners when
+        // both people are present, so `size >= 2` is exactly "client and spouse".
+        const both = new Set(claimRows.map((r) => r.owner)).size >= 2;
         suggestions.push({ id: "income.socialSecurity", section: "income", kind: "update", status: "open",
           headline: "Social Security is on the return but not in the plan yet.",
           meaning: `The household received ${money(gross)} in ${taxYear}, so benefits have already started. This records the benefit as an annual amount already being claimed${both ? "; the return does not say whose, so choose who receives it" : ""}. ${partialYearNote}`,

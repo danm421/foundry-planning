@@ -56,6 +56,19 @@ describe("socialSecurityRules", () => {
     expect(s.meaning).toMatch(/choose who receives it/);
   });
 
+  it("offers no owner choice when two claimable rows belong to the SAME person", () => {
+    // Deriving the choice from the row COUNT put a "Spouse" radio on a household whose two
+    // claimable benefits are both the client's. `apply.ts` filters the rows by owner, so that
+    // radio selected nothing and the click dead-ended in "No Social Security row for that owner".
+    // With no choice offered the claim writes both rows, splitting the household gross across them.
+    const plan = planFixture({ incomes: [ss("s1", "client"), ss("s2", "client", { name: "Social Security — client (2)" })] });
+    const s = socialSecurityRules(inputFixture({ facts: factsWith(62_000), plan })).suggestions[0];
+    expect(s.kind).toBe("update");
+    expect(claim(s).rows.map((r) => r.incomeId)).toEqual(["s1", "s2"]);
+    expect(s.action?.ownerChoices).toBeUndefined();
+    expect(s.meaning).not.toMatch(/choose who receives it/);
+  });
+
   it("does not claim a spouse-owned row when there is no spouse date of birth", () => {
     // ageAtYearEnd returns null with no date of birth, and writing a null claimingAge into the row
     // would quietly erase the age already stated on it. The client row is still claimable, so this
