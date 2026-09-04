@@ -86,6 +86,9 @@ export const TRIAL_TILE_HORIZON_DAYS = 7;
 /** Statuses in which a firm is paying us, or is expected to. */
 export const PAID_STATUSES = ["active", "past_due", "unpaid"] as const;
 
+/** Separates a ~365-day annual billing period from a ~30-day monthly one. */
+export const ANNUAL_PERIOD_THRESHOLD_DAYS = 300;
+
 export function daysBetween(from: Date, to: Date): number {
   return (to.getTime() - from.getTime()) / 86_400_000;
 }

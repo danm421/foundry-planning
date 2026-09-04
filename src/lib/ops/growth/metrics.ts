@@ -4,6 +4,7 @@
 // the input so every figure is reproducible in a test.
 import {
   ACTIVE_WINDOW_DAYS,
+  ANNUAL_PERIOD_THRESHOLD_DAYS,
   BLOCKED_ACTION,
   PAID_STATUSES,
   TRIAL_TILE_HORIZON_DAYS,
@@ -22,7 +23,7 @@ import {
 function monthlyCents(sub: SubInput, cents: number): number {
   const { currentPeriodStart: s, currentPeriodEnd: e } = sub;
   if (!s || !e) return cents;
-  return daysBetween(s, e) >= 300 ? Math.round(cents / 12) : cents;
+  return daysBetween(s, e) >= ANNUAL_PERIOD_THRESHOLD_DAYS ? Math.round(cents / 12) : cents;
 }
 
 export function buildMetrics(input: GrowthInput): GrowthMetrics {

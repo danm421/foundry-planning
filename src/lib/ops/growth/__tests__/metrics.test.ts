@@ -1,7 +1,7 @@
 // src/lib/ops/growth/__tests__/metrics.test.ts
 import { describe, it, expect } from "vitest";
 import { buildMetrics } from "../metrics";
-import type { GrowthInput } from "../types";
+import { ANNUAL_PERIOD_THRESHOLD_DAYS, type GrowthInput } from "../types";
 
 const NOW = new Date("2026-09-04T12:00:00Z");
 const day = (n: number) => new Date(NOW.getTime() + n * 86_400_000);
@@ -43,6 +43,36 @@ describe("buildMetrics — MRR", () => {
       items: [{ firmId: "org_1", quantity: 1, unitAmount: 120_000, removedAt: null }],
     });
     expect(m.mrrCents).toBe(10_000);
+  });
+
+  it("normalises a period exactly at the annual threshold", () => {
+    const m = buildMetrics({
+      ...EMPTY,
+      firms: [firm()],
+      subs: [
+        sub({
+          currentPeriodStart: day(-10),
+          currentPeriodEnd: day(-10 + ANNUAL_PERIOD_THRESHOLD_DAYS),
+        }),
+      ],
+      items: [{ firmId: "org_1", quantity: 1, unitAmount: 120_000, removedAt: null }],
+    });
+    expect(m.mrrCents).toBe(10_000);
+  });
+
+  it("does not normalise a period one day short of the annual threshold", () => {
+    const m = buildMetrics({
+      ...EMPTY,
+      firms: [firm()],
+      subs: [
+        sub({
+          currentPeriodStart: day(-10),
+          currentPeriodEnd: day(-10 + ANNUAL_PERIOD_THRESHOLD_DAYS - 1),
+        }),
+      ],
+      items: [{ firmId: "org_1", quantity: 1, unitAmount: 120_000, removedAt: null }],
+    });
+    expect(m.mrrCents).toBe(120_000);
   });
 
   it("ignores a removed line", () => {
