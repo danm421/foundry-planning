@@ -123,20 +123,90 @@ function walk(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-/** Drops `/* *\/` and `// ` comments so a prose mention of a function name
- * can't be mistaken for a call. */
+/** Drops `/* *\/` block comments and WHOLE-LINE `//` comments (the line must
+ * start with `//`, ignoring leading whitespace). Deliberately does NOT strip
+ * a trailing `//` that shares a line with real code — an unanchored version
+ * would also eat the `//` inside a `"https://..."` string and delete a real
+ * call sitting after it on the same line. The accepted trade-off: a
+ * `// clearPendingSignup()` comment appended after real code on the same
+ * line can still cause a false positive below. That's rare and safe — a
+ * false positive is a review nuisance, a false negative is silent damage. */
 function stripComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 }
 
-/** True only if the file both imports the symbol by name and calls it —
- * a prose mention has no import, and an import alone has no call. */
+/** True only if the file both imports the symbol and calls it — covering a
+ * named import (`import { clearPendingSignup }`, called bare) and a
+ * namespace import (`import * as ns from ".../pending-signup"`, called as
+ * `ns.clearPendingSignup(...)`). An aliased named import
+ * (`import { clearPendingSignup as x }`, called as `x(...)`) is NOT
+ * detected — text scanning can't follow a rename to its call site. That gap
+ * is known and accepted; see the tests below. */
 function callsClearPendingSignup(source: string): boolean {
   const code = stripComments(source);
-  const imported = /import\s*\{[^}]*\bclearPendingSignup\b[^}]*\}/.test(code);
-  const called = /\bclearPendingSignup\s*\(/.test(code);
-  return imported && called;
+
+  const namedImport = /import\s*\{[^}]*\bclearPendingSignup\b[^}]*\}/.test(code);
+  if (namedImport && /\bclearPendingSignup\s*\(/.test(code)) return true;
+
+  const namespaceImport = code.match(
+    /import\s*\*\s*as\s+(\w+)\s+from\s*["'][^"']*pending-signup["']/,
+  );
+  if (namespaceImport) {
+    const ns = namespaceImport[1];
+    if (new RegExp(`\\b${ns}\\s*\\.\\s*clearPendingSignup\\s*\\(`).test(code)) return true;
+  }
+
+  return false;
 }
+
+describe("callsClearPendingSignup", () => {
+  it("detects a named import and a bare call", () => {
+    expect(
+      callsClearPendingSignup(
+        'import { clearPendingSignup } from "@/lib/billing/pending-signup";\nclearPendingSignup(id);',
+      ),
+    ).toBe(true);
+  });
+
+  it("detects a namespace import and a call through the binding", () => {
+    expect(
+      callsClearPendingSignup(
+        'import * as ns from "@/lib/billing/pending-signup";\nawait ns.clearPendingSignup(id);',
+      ),
+    ).toBe(true);
+  });
+
+  it("misses a call through a renamed alias — a known, accepted gap of text scanning", () => {
+    expect(
+      callsClearPendingSignup(
+        'import { clearPendingSignup as clear } from "@/lib/billing/pending-signup";\nclear(id);',
+      ),
+    ).toBe(false);
+  });
+
+  it("does not mistake the // inside a URL for a comment that swallows a real call", () => {
+    expect(
+      callsClearPendingSignup(
+        'import { clearPendingSignup } from "@/lib/billing/pending-signup";\n' +
+          'const DOCS = "https://example.com/webhooks"; await clearPendingSignup(id);',
+      ),
+    ).toBe(true);
+  });
+
+  it("ignores a prose mention with no import", () => {
+    expect(
+      callsClearPendingSignup("// clearPendingSignup() is called from the webhook"),
+    ).toBe(false);
+  });
+
+  it("ignores a bare import with no call", () => {
+    expect(
+      callsClearPendingSignup(
+        'import { clearPendingSignup } from "@/lib/billing/pending-signup";\nconst unused = clearPendingSignup;',
+      ),
+    ).toBe(false);
+  });
+});
 
 describe("the funnel's premise", () => {
   it("clearPendingSignup is called from exactly one place", () => {
