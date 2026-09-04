@@ -1,33 +1,27 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
-  syncDerivedAllocations,
+  deriveAllocationsForFund,
   type SyncDeps,
 } from "@/lib/investments/sync-derived-model-portfolio";
 
-const args = { tickerPortfolioId: "tp1", modelPortfolioId: "mp1", firmId: "firm1" };
+const args = { tickerPortfolioId: "tp1", firmId: "firm1" };
 
-function deps(overrides: Partial<SyncDeps> = {}): SyncDeps & {
-  writeAllocations: ReturnType<typeof vi.fn>;
-} {
+function deps(overrides: Partial<SyncDeps> = {}): SyncDeps {
   return {
     loadHoldings: async () => [
       { ticker: "VT", weight: 0.4, slugWeights: [{ slug: "us_large_cap", weight: 1 }] },
       { ticker: "BND", weight: 0.6, slugWeights: [{ slug: "ten_year_treasury", weight: 1 }] },
     ],
     loadSlugMap: async () => ({ us_large_cap: "ac-stock", ten_year_treasury: "ac-bond" }),
-    writeAllocations: vi.fn(async () => {}),
     ...overrides,
-  } as SyncDeps & { writeAllocations: ReturnType<typeof vi.fn> };
+  };
 }
 
-describe("syncDerivedAllocations", () => {
-  it("writes normalized allocations for a fully classified fund", async () => {
-    const d = deps();
-    const out = await syncDerivedAllocations(args, d);
+describe("deriveAllocationsForFund", () => {
+  it("returns normalized allocations for a fully classified fund", async () => {
+    const out = await deriveAllocationsForFund(args, deps());
     expect(out.ok).toBe(true);
-    expect(out.written).toBe(2);
-    expect(d.writeAllocations).toHaveBeenCalledWith(
-      "mp1",
+    expect(out.allocations).toEqual(
       expect.arrayContaining([
         { assetClassId: "ac-stock", weight: 0.4 },
         { assetClassId: "ac-bond", weight: 0.6 },
@@ -36,22 +30,23 @@ describe("syncDerivedAllocations", () => {
   });
 
   it("blends a multi-asset-class holding through its slug weights", async () => {
-    const d = deps({
-      loadHoldings: async () => [
-        {
-          ticker: "VT",
-          weight: 1,
-          slugWeights: [
-            { slug: "us_large_cap", weight: 0.6 },
-            { slug: "ten_year_treasury", weight: 0.4 },
-          ],
-        },
-      ],
-    });
-    const out = await syncDerivedAllocations(args, d);
+    const out = await deriveAllocationsForFund(
+      args,
+      deps({
+        loadHoldings: async () => [
+          {
+            ticker: "VT",
+            weight: 1,
+            slugWeights: [
+              { slug: "us_large_cap", weight: 0.6 },
+              { slug: "ten_year_treasury", weight: 0.4 },
+            ],
+          },
+        ],
+      }),
+    );
     expect(out.ok).toBe(true);
-    expect(d.writeAllocations).toHaveBeenCalledWith(
-      "mp1",
+    expect(out.allocations).toEqual(
       expect.arrayContaining([
         { assetClassId: "ac-stock", weight: 0.6 },
         { assetClassId: "ac-bond", weight: 0.4 },
@@ -59,43 +54,53 @@ describe("syncDerivedAllocations", () => {
     );
   });
 
-  it("does NOT write when the gate fails — prior allocations survive", async () => {
-    const d = deps({
-      loadHoldings: async () => [
-        { ticker: "VT", weight: 0.8, slugWeights: [{ slug: "us_large_cap", weight: 1 }] },
-        { ticker: "PRIV", weight: 0.2, slugWeights: [] },
-      ],
-    });
-    const out = await syncDerivedAllocations(args, d);
+  it("returns NO allocations when the gate fails, so the caller writes nothing", async () => {
+    const out = await deriveAllocationsForFund(
+      args,
+      deps({
+        loadHoldings: async () => [
+          { ticker: "VT", weight: 0.8, slugWeights: [{ slug: "us_large_cap", weight: 1 }] },
+          { ticker: "PRIV", weight: 0.2, slugWeights: [] },
+        ],
+      }),
+    );
     expect(out.ok).toBe(false);
     expect(out.reason).toBe("unclassified");
     expect(out.unclassifiedWeight).toBeCloseTo(0.2, 10);
-    expect(out.written).toBe(0);
-    expect(d.writeAllocations).not.toHaveBeenCalled();
+    expect(out.allocations).toEqual([]);
   });
 
-  it("does NOT write when the fund has no holdings", async () => {
-    const d = deps({ loadHoldings: async () => [] });
-    const out = await syncDerivedAllocations(args, d);
+  it("reports an empty fund distinctly from an unclassifiable one", async () => {
+    const out = await deriveAllocationsForFund(args, deps({ loadHoldings: async () => [] }));
     expect(out.ok).toBe(false);
     expect(out.reason).toBe("empty");
-    expect(d.writeAllocations).not.toHaveBeenCalled();
+    expect(out.allocations).toEqual([]);
   });
 
-  it("reports a slug the firm has no asset class for", async () => {
-    const d = deps({ loadSlugMap: async () => ({ us_large_cap: "ac-stock" }) });
-    const out = await syncDerivedAllocations(args, d);
+  it("names a slug the firm has no asset class for", async () => {
+    const out = await deriveAllocationsForFund(
+      args,
+      deps({ loadSlugMap: async () => ({ us_large_cap: "ac-stock" }) }),
+    );
     expect(out.ok).toBe(false);
     expect(out.droppedSlugs).toContain("ten_year_treasury");
-    expect(d.writeAllocations).not.toHaveBeenCalled();
+    expect(out.allocations).toEqual([]);
   });
 
-  it("passes the model portfolio id through, not the fund's", async () => {
-    const d = deps();
-    await syncDerivedAllocations(
-      { tickerPortfolioId: "tp-source", modelPortfolioId: "mp-target", firmId: "firm1" },
-      d,
+  it("does not read the slug map before it knows there are holdings", async () => {
+    // An empty fund must short-circuit: the slug-map query is pure waste there,
+    // and in the cron that is one wasted query per unpromoted portfolio.
+    let slugMapReads = 0;
+    await deriveAllocationsForFund(
+      args,
+      deps({
+        loadHoldings: async () => [],
+        loadSlugMap: async () => {
+          slugMapReads++;
+          return {};
+        },
+      }),
     );
-    expect(d.writeAllocations).toHaveBeenCalledWith("mp-target", expect.anything());
+    expect(slugMapReads).toBe(0);
   });
 });

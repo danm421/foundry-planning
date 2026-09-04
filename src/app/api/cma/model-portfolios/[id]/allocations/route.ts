@@ -46,6 +46,21 @@ export async function PUT(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    // A derived portfolio's allocations are owned by its source fund portfolio:
+    // the next re-sync would silently revert anything written here, so refuse
+    // rather than accept a write we know will be undone. The UI hides these
+    // controls, but the UI is not the enforcement point — without this, Detach
+    // is decorative.
+    if (portfolio.sourceTickerPortfolioId) {
+      return NextResponse.json(
+        {
+          error:
+            "This portfolio is derived from a fund portfolio and syncs from its holdings. Detach it first to edit the allocations by hand.",
+        },
+        { status: 409 },
+      );
+    }
+
     const parsed = allocationsBodySchema.safeParse(await request.json());
     if (!parsed.success) {
       return NextResponse.json({ error: "Invalid allocations payload" }, { status: 400 });

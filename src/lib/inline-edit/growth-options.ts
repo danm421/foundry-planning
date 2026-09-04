@@ -35,9 +35,10 @@ export interface GrowthOption {
 export interface GrowthOptionsArgs {
   category: string;
   modelPortfolios: readonly { id: string; name: string; blendedReturn: number }[];
-  /** Unused since 2026-09-03 — fund portfolios reach plans as derived model
-   *  portfolios, so they arrive in `modelPortfolios`. Kept because callers still
-   *  pass it and `growthSelectValue` still round-trips a stored `tp:` source. */
+  /** No longer offered as a NEW choice since 2026-09-03 — fund portfolios reach
+   *  plans as derived model portfolios, so they arrive in `modelPortfolios`.
+   *  Still read to name an account already stored on a `ticker_portfolio`
+   *  source, which must keep displaying and round-tripping correctly. */
   fundPortfolios: readonly { id: string; name: string; blendedReturnPct: number | null }[];
   resolvedInflationRate: number;
   defaultPctForCategory: number | null;
@@ -48,6 +49,9 @@ export interface GrowthOptionsArgs {
   /** The account's persisted `growth_source`. An account already on a source is
    *  always offered it, whatever its category. */
   currentSource?: string;
+  /** The account's persisted `ticker_portfolio_id`, needed to round-trip an
+   *  account stored on the retired `ticker_portfolio` source. */
+  currentTickerPortfolioId?: string | null;
 }
 
 /**
@@ -90,6 +94,17 @@ export function growthOptionsFor(args: GrowthOptionsArgs): GrowthOption[] {
   ];
   for (const mp of args.modelPortfolios) {
     out.push({ value: `mp:${mp.id}`, label: `${(mp.blendedReturn * 100).toFixed(2)}% \u2014 ${mp.name}` });
+  }
+  // Never hide the source the account is actually stored on — see the comment
+  // below. Fund portfolios are no longer offered as a NEW choice, but the DB
+  // enum still accepts `ticker_portfolio` and an API or import write can land
+  // there.
+  if (args.currentSource === "ticker_portfolio") {
+    const stored = args.fundPortfolios.find((fp) => fp.id === args.currentTickerPortfolioId);
+    out.push({
+      value: `tp:${args.currentTickerPortfolioId ?? ""}`,
+      label: `${stored?.name ?? "Fund portfolio"} (legacy — re-pick to change)`,
+    });
   }
   // A <select> whose value matches no option shows the FIRST one, so dropping
   // the source the account is actually on makes the control read "Plan default"

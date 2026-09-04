@@ -1,11 +1,13 @@
 import { type NextRequest, NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
 import { db } from "@/db";
-import { eq } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 import { tickerPortfolios, modelPortfolios } from "@/db/schema";
 import { computeAndCacheTickerPortfolioStats } from "@/lib/ticker-portfolio-compute";
-import { syncDerivedAllocations } from "@/lib/investments/sync-derived-model-portfolio";
-import { liveSyncDeps } from "@/lib/investments/derived-model-portfolio-deps";
+import {
+  liveSyncDeps,
+  resyncDerivedForFund,
+} from "@/lib/investments/derived-model-portfolio-deps";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +31,30 @@ export async function GET(req: NextRequest): Promise<Response> {
     .select({ id: tickerPortfolios.id, firmId: tickerPortfolios.firmId })
     .from(tickerPortfolios);
 
+  // Which funds back a model portfolio — one batched query, not one per
+  // portfolio inside the loop. Almost every fund has no derived portfolio.
+  const derivedRows = portfolios.length
+    ? await db
+        .select({
+          id: modelPortfolios.id,
+          sourceTickerPortfolioId: modelPortfolios.sourceTickerPortfolioId,
+        })
+        .from(modelPortfolios)
+        .where(
+          inArray(
+            modelPortfolios.sourceTickerPortfolioId,
+            portfolios.map((p) => p.id),
+          ),
+        )
+    : [];
+  const derivedByFund = new Map<string, string>();
+  for (const row of derivedRows) {
+    if (row.sourceTickerPortfolioId) derivedByFund.set(row.sourceTickerPortfolioId, row.id);
+  }
+  // One deps instance for the whole run: it memoizes each firm's slug map, which
+  // is otherwise re-queried identically for every portfolio that firm owns.
+  const deps = liveSyncDeps();
+
   let ok = 0;
   let failed = 0;
   for (const p of portfolios) {
@@ -39,21 +65,15 @@ export async function GET(req: NextRequest): Promise<Response> {
       // reaches plans without anyone editing the fund. A skipped re-sync is a
       // warning, not a failure: the prior allocations stay correct-as-of-last-
       // sync, which beats writing a mix we no longer trust.
-      const [derived] = await db
-        .select({ id: modelPortfolios.id })
-        .from(modelPortfolios)
-        .where(eq(modelPortfolios.sourceTickerPortfolioId, p.id));
-      if (derived) {
-        const outcome = await syncDerivedAllocations(
-          { tickerPortfolioId: p.id, modelPortfolioId: derived.id, firmId: p.firmId },
-          liveSyncDeps(),
-        );
-        if (!outcome.ok) {
+      const derivedId = derivedByFund.get(p.id);
+      if (derivedId) {
+        const outcome = await resyncDerivedForFund(p.id, p.firmId, deps, derivedId);
+        if (outcome && !outcome.ok) {
           Sentry.captureMessage("Derived model portfolio re-sync skipped", {
             level: "warning",
             extra: {
               tickerPortfolioId: p.id,
-              modelPortfolioId: derived.id,
+              modelPortfolioId: derivedId,
               reason: outcome.reason,
               unclassifiedWeight: outcome.unclassifiedWeight,
               droppedSlugs: outcome.droppedSlugs,

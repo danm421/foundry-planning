@@ -5,8 +5,12 @@ import { tickerPortfolios, modelPortfolios } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
 import { authErrorResponse, requireOrgAdminOrOwner } from "@/lib/authz";
 import { recordAudit } from "@/lib/audit";
-import { syncDerivedAllocations } from "@/lib/investments/sync-derived-model-portfolio";
-import { liveSyncDeps } from "@/lib/investments/derived-model-portfolio-deps";
+import { deriveAllocationsForFund } from "@/lib/investments/sync-derived-model-portfolio";
+import {
+  liveSyncDeps,
+  writeDerivedAllocations,
+} from "@/lib/investments/derived-model-portfolio-deps";
+import { MAX_UNCLASSIFIED } from "@/lib/investments/derive-model-allocations";
 import { freeModelPortfolioName } from "@/lib/investments/derived-portfolio-name";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +35,24 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       .where(and(eq(tickerPortfolios.id, id), eq(tickerPortfolios.firmId, firmId)));
     if (!fund) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+    // Derive BEFORE creating anything: a gate failure must not leave a
+    // 0%-allocated portfolio behind, and a crash between an insert and its
+    // allocations would leave one that re-promoting then finds and never cleans
+    // up. Deriving first means there is nothing to roll back.
+    const outcome = await deriveAllocationsForFund({ tickerPortfolioId: id, firmId }, liveSyncDeps());
+
+    if (!outcome.ok) {
+      const detail =
+        outcome.reason === "empty"
+          ? "This fund portfolio has no holdings."
+          : `${(outcome.unclassifiedWeight * 100).toFixed(1)}% of this portfolio could not be classified` +
+            (outcome.droppedSlugs.length
+              ? ` (no asset class for: ${outcome.droppedSlugs.join(", ")})`
+              : "") +
+            `. Promotion needs at least ${((1 - MAX_UNCLASSIFIED) * 100).toFixed(0)}% classified.`;
+      return NextResponse.json({ error: detail }, { status: 422 });
+    }
+
     const existing = await db
       .select({
         id: modelPortfolios.id,
@@ -40,68 +62,39 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       .from(modelPortfolios)
       .where(eq(modelPortfolios.firmId, firmId));
 
-    let derived = existing.find((p) => p.sourceTickerPortfolioId === id) ?? null;
-    // Only a portfolio THIS request created may be rolled back on failure.
-    const isNew = derived === null;
-
-    if (!derived) {
-      const name = freeModelPortfolioName(
-        fund.name,
-        existing.map((p) => p.name),
-      );
+    let derivedId = existing.find((p) => p.sourceTickerPortfolioId === id)?.id ?? null;
+    if (!derivedId) {
       const [created] = await db
         .insert(modelPortfolios)
         .values({
           firmId,
-          name,
+          // A fund's name is unique only among funds; model portfolio names are
+          // unique per firm. Without this, promoting "Balanced" into a firm that
+          // already has one throws a raw constraint violation at the advisor.
+          name: freeModelPortfolioName(
+            fund.name,
+            existing.map((p) => p.name),
+          ),
           description: `Derived from the fund portfolio "${fund.name}".`,
           sourceTickerPortfolioId: id,
         })
-        .returning({
-          id: modelPortfolios.id,
-          name: modelPortfolios.name,
-          sourceTickerPortfolioId: modelPortfolios.sourceTickerPortfolioId,
-        });
-      derived = created;
+        .returning({ id: modelPortfolios.id });
+      derivedId = created.id;
     }
 
-    const outcome = await syncDerivedAllocations(
-      { tickerPortfolioId: id, modelPortfolioId: derived.id, firmId },
-      liveSyncDeps(),
-    );
-
-    if (!outcome.ok) {
-      // Nothing was written. Roll the empty shell back so a failed promotion
-      // doesn't leave a 0%-allocated portfolio in the advisor's list — but only
-      // when this request created it. Re-promoting an established portfolio that
-      // has since gone unclassifiable must report the problem, not delete a
-      // portfolio the plans already point at.
-      if (isNew) {
-        await db.delete(modelPortfolios).where(eq(modelPortfolios.id, derived.id));
-      }
-      const detail =
-        outcome.reason === "empty"
-          ? "This fund portfolio has no holdings."
-          : `${(outcome.unclassifiedWeight * 100).toFixed(1)}% of this portfolio could not be classified` +
-            (outcome.droppedSlugs.length
-              ? ` (no asset class for: ${outcome.droppedSlugs.join(", ")})`
-              : "") +
-            ". Promotion needs at least 95% classified.";
-      return NextResponse.json({ error: detail }, { status: 422 });
-    }
+    await writeDerivedAllocations(derivedId, outcome.allocations);
 
     await recordAudit({
       action: "cma.ticker_portfolio.promote",
       resourceType: "cma.model_portfolio",
-      resourceId: derived.id,
+      resourceId: derivedId,
       firmId,
-      metadata: { tickerPortfolioId: id, allocations: outcome.written },
+      metadata: { tickerPortfolioId: id, allocations: outcome.allocations.length },
     });
 
     return NextResponse.json({
-      modelPortfolioId: derived.id,
-      name: derived.name,
-      allocations: outcome.written,
+      modelPortfolioId: derivedId,
+      allocations: outcome.allocations.length,
     });
   } catch (err) {
     const authResp = authErrorResponse(err);

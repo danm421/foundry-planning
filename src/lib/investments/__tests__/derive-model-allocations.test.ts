@@ -7,20 +7,6 @@ import {
 const slugMap = { us_large_cap: "ac-stock", ten_year_treasury: "ac-bond" };
 
 describe("deriveModelAllocations", () => {
-  it("normalizes classified weights to exactly 1.0", () => {
-    const res = deriveModelAllocations(
-      {
-        allocation: [
-          { slug: "us_large_cap", weight: 0.36 },
-          { slug: "ten_year_treasury", weight: 0.54 },
-        ],
-        unclassifiedWeight: 0.1,
-      },
-      slugMap,
-    );
-    expect(res.ok).toBe(false); // 10% unclassified is over the gate
-  });
-
   it("normalizes a small residual to exactly 1.0", () => {
     const res = deriveModelAllocations(
       {

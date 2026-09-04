@@ -1,21 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/db";
-import {
-  tickerPortfolios,
-  tickerPortfolioHoldings,
-  tickerPortfolioStats,
-  modelPortfolios,
-} from "@/db/schema";
+import { tickerPortfolios, tickerPortfolioHoldings, tickerPortfolioStats } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { authErrorResponse, requireOrgAdminOrOwner } from "@/lib/authz";
 import { recordAudit } from "@/lib/audit";
-import {
-  syncDerivedAllocations,
-  type SyncOutcome,
-} from "@/lib/investments/sync-derived-model-portfolio";
-import { liveSyncDeps } from "@/lib/investments/derived-model-portfolio-deps";
+import { resyncDerivedForFund } from "@/lib/investments/derived-model-portfolio-deps";
 
 export const dynamic = "force-dynamic";
 
@@ -111,17 +102,7 @@ export async function PUT(
     // portfolio directly and never touch this fund's /stats route, so a lazy
     // sync could stay stale indefinitely. A sync that fails the coverage gate
     // leaves the prior allocations intact and reports it to the caller.
-    const [derived] = await db
-      .select({ id: modelPortfolios.id })
-      .from(modelPortfolios)
-      .where(eq(modelPortfolios.sourceTickerPortfolioId, id));
-    let derivedSync: SyncOutcome | null = null;
-    if (derived) {
-      derivedSync = await syncDerivedAllocations(
-        { tickerPortfolioId: id, modelPortfolioId: derived.id, firmId },
-        liveSyncDeps(),
-      );
-    }
+    const derivedSync = await resyncDerivedForFund(id, firmId);
 
     await recordAudit({
       action: "cma.ticker_portfolio.holdings.update",

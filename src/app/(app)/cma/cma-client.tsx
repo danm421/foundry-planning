@@ -966,7 +966,6 @@ function ModelPortfoliosTab({ portfolios, assetClasses, correlationRows, onRefre
           <PortfolioAllocationEditor
             portfolio={selected}
             assetClasses={assetClasses}
-            readOnly={!!selected.sourceTickerPortfolioId}
             onSave={(allocs) => saveAllocations(selected.id, allocs)}
           />
         </div>
@@ -979,17 +978,17 @@ function PortfolioAllocationEditor({
   portfolio,
   assetClasses,
   onSave,
-  readOnly = false,
 }: {
   portfolio: ModelPortfolio;
   assetClasses: AssetClass[];
   onSave: (allocs: { assetClassId: string; weight: string }[]) => void;
-  /** Derived-from-a-fund portfolios are read-only: the next sync would clobber
-   *  a hand edit with no warning. Weights render as text and the write controls
-   *  are withheld entirely — a disabled Save that silently does nothing would be
-   *  worse than no Save at all. */
-  readOnly?: boolean;
 }) {
+  // Derived-from-a-fund portfolios are read-only: the next sync would clobber a
+  // hand edit with no warning. Weights render as text and the write controls are
+  // withheld entirely — a disabled Save that silently does nothing would be
+  // worse than no Save at all. (The API refuses the write too; this is only the
+  // affordance.)
+  const readOnly = portfolio.sourceTickerPortfolioId !== null;
   const [allocs, setAllocs] = useState(
     portfolio.allocations.map((a) => ({
       assetClassId: a.assetClassId,

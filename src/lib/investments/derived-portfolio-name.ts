@@ -8,16 +8,12 @@
 /** The first free name in the series `name`, `name (fund)`, `name (fund 2)`, … */
 export function freeModelPortfolioName(desired: string, taken: Iterable<string>): string {
   const used = new Set([...taken].map((n) => n.trim().toLowerCase()));
-  if (!used.has(desired.trim().toLowerCase())) return desired;
+  const free = (candidate: string) => !used.has(candidate.trim().toLowerCase());
 
-  const withSuffix = `${desired} (fund)`;
-  if (!used.has(withSuffix.toLowerCase())) return withSuffix;
-
-  // Bounded: a firm with 99 same-named portfolios has a naming problem of its
-  // own, and an unbounded loop here would hang the request.
-  for (let n = 2; n < 100; n++) {
-    const candidate = `${desired} (fund ${n})`;
-    if (!used.has(candidate.toLowerCase())) return candidate;
+  if (free(desired)) return desired;
+  if (free(`${desired} (fund)`)) return `${desired} (fund)`;
+  // Terminates: `used` is finite and every candidate is distinct.
+  for (let n = 2; ; n++) {
+    if (free(`${desired} (fund ${n})`)) return `${desired} (fund ${n})`;
   }
-  return `${desired} (fund ${Date.now()})`;
 }

@@ -592,11 +592,6 @@ export default function FundPortfoliosTab() {
                 )}
               </div>
 
-              {/* The figures above are realized history; a plan built on this
-                  portfolio uses the firm's forward CMA assumptions for the asset
-                  classes below. Two numbers for one portfolio, on adjacent
-                  screens, is exactly the thing that gets questioned in a client
-                  meeting — so say which one drives the plan. */}
               <p className="text-xs text-ink-3">
                 Past performance of these funds. Plans use your capital market assumptions for the
                 asset classes below, not these figures.
