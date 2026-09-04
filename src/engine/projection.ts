@@ -101,7 +101,9 @@ import { applyReinvestments } from "./reinvestments";
 import {
   applyRothConversions,
   fillUpBracketCeiling,
+  isTopBracketTarget,
   strategyGrossAmount,
+  type RothConversionOutcome,
 } from "./roth-conversions";
 import { applyMarketShock } from "./market-shock";
 import {
@@ -2437,7 +2439,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     let rothConversionResult = {
       taxableOrdinaryIncome: 0,
       earlyWithdrawalPenalty: 0,
-      byConversion: {} as Record<string, { gross: number; taxable: number; bySource: Record<string, number> }>,
+      byConversion: {} as Record<string, RothConversionOutcome>,
     };
 
     // 5. Compute taxable income total and per-category tax detail.
@@ -5021,6 +5023,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       bracketCeiling: number | null;
       /** MAGI ceiling — IRMAA-capped conversions only. */
       irmaaCeiling: number | null;
+      /** The tier `irmaaCeiling` was resolved from, carried purely so the
+       *  outcome record can name it. Null whenever `irmaaCeiling` is. */
+      irmaaCapTier: number | null;
       /** What the strategy asks for in gross dollars — fixed/full/deplete. */
       strategyGross: number | null;
       /**
@@ -5035,6 +5040,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       sourceCap: number;
     }
     const convTargets: Record<string, ConvTarget> = {};
+    /** Why each joint-solve conversion came out the size it did. Rewritten on
+     *  every `sizeJointConversion` call, so after the convergence loop it
+     *  describes the CONVERGED target — the constraint that actually bound,
+     *  not one that bound on an earlier iteration. */
+    const convOutcome: Record<
+      string,
+      Pick<RothConversionOutcome, "requested" | "limitedBy" | "irmaaCapTier">
+    > = {};
     let fillBracketProbe: ReturnType<typeof buildTaxProbe> | null = null;
 
     /** The converged target for one joint-solve conversion, given the current
@@ -5052,6 +5065,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
      *  direction — the guardrail can leave room unused but cannot fail open.
      *  Do not "fix" this by converting between the two spaces without also
      *  re-deriving the cap's safety argument.
+     *
+     *  Also records into `convOutcome` WHICH candidate won, so the year can
+     *  report why the conversion is the size it is.
      */
     const sizeJointConversion = (
       cid: string,
@@ -5061,31 +5077,62 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     ): number => {
       const t = convTargets[cid];
       if (!t) return 0;
-      const candidates: number[] = [t.sourceCap];
-      if (t.strategyGross != null) candidates.push(t.strategyGross);
-      if (t.bracketCeiling != null) {
-        candidates.push(
-          sizeConversionToCeiling(
-            t.bracketCeiling,
-            probe,
-            selectIncomeTaxBase,
-            suppOrdinary,
-            suppCapGains,
-          ),
-        );
+
+      // Labeled, so the winner names itself. `null` means "not limited" — the
+      // conversion did exactly what the advisor told it to.
+      const candidates: { limitedBy: RothConversionOutcome["limitedBy"]; value: number }[] = [
+        { limitedBy: "sources", value: t.sourceCap },
+      ];
+      if (t.strategyGross != null) {
+        candidates.push({ limitedBy: null, value: t.strategyGross });
+      }
+      const bracketSolve =
+        t.bracketCeiling != null
+          ? sizeConversionToCeiling(
+              t.bracketCeiling,
+              probe,
+              selectIncomeTaxBase,
+              suppOrdinary,
+              suppCapGains,
+            )
+          : null;
+      if (bracketSolve != null) {
+        candidates.push({ limitedBy: "bracket", value: bracketSolve });
       }
       if (t.irmaaCeiling != null) {
-        candidates.push(
-          sizeConversionToCeiling(
+        candidates.push({
+          limitedBy: "irmaa",
+          value: sizeConversionToCeiling(
             t.irmaaCeiling,
             probe,
             selectMagi,
             suppOrdinary,
             suppCapGains,
           ),
-        );
+        });
       }
-      return Math.max(0, Math.min(...candidates));
+
+      let winner = candidates[0];
+      for (let i = 1; i < candidates.length; i++) {
+        const c = candidates[i];
+        // Strictly smaller wins outright. On an exact TIE the unlimited
+        // candidate wins: a strategy whose own ask lands exactly on a ceiling
+        // was not limited by it, it did what it was told. Reporting "limited
+        // by IRMAA" there would name a constraint that changed nothing.
+        if (c.value < winner.value || (c.value === winner.value && c.limitedBy === null)) {
+          winner = c;
+        }
+      }
+
+      // What the advisor's instruction ALONE would have converted, ignoring
+      // the cap and the pool: a stated amount, else the bracket fill's solve,
+      // else (a top-bracket fill, which has no ceiling of its own) the pool.
+      convOutcome[cid] = {
+        requested: Math.max(0, t.strategyGross ?? bracketSolve ?? t.sourceCap),
+        limitedBy: winner.limitedBy,
+        irmaaCapTier: winner.limitedBy === "irmaa" ? t.irmaaCapTier : null,
+      };
+      return Math.max(0, winner.value);
     };
     const convFilingStatus = effectiveFilingStatus(
       (client.filingStatus ?? "single") as FilingStatus,
@@ -5181,23 +5228,33 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           }
           const irmaaCeiling = resolveIrmaaCeiling(conv);
 
-          // Two ways a bracket fill must stay skipped, both of which it is
-          // skipped for today:
-          //  - No bracket ceiling AND no cap: nothing to solve against at all.
-          //    The source pool would be the only candidate and the whole IRA
-          //    would convert.
-          //  - No bracket CHOSEN (`fillUpBracket == null`) but a live cap: the
-          //    cap would become the only ceiling and the conversion would fill
-          //    straight TO the tier boundary. That turns a guardrail into a
-          //    target, which is the opposite of what a cap means.
-          // A conversion that DID name a bracket with no top (the 37% tier) and
-          // carries a live cap is registered on purpose: "fill the top bracket,
-          // capped at tier N" is a coherent instruction and the cap is the only
-          // thing that can bound it.
+          // A bracket fill with no bracket ceiling is registered ONLY when it
+          // named the top (37%) tier and carries a live cap: "fill the top
+          // bracket, capped at tier N" is a coherent instruction, and the cap
+          // is the only thing that can bound it.
+          //
+          // Every other null ceiling must stay skipped, because in none of
+          // them did the advisor name a fillable bracket — and with no bracket
+          // ceiling the cap becomes the ONLY ceiling, so the conversion would
+          // fill straight TO the tier boundary. That turns a guardrail into a
+          // target, the opposite of what a cap means. Three populations reach
+          // here with a null ceiling and no top-tier intent:
+          //   - no bracket CHOSEN (`fillUpBracket == null`),
+          //   - a target rate no tier matches — stale, or orphaned by the "tax
+          //     rates rise" stressor,
+          //   - a year with no bracket table at all (`convBrackets` undefined).
+          // Each of them converts nothing without a cap, and must keep
+          // converting nothing with one. `isTopBracketTarget` identifies the
+          // top tier POSITIVELY rather than inferring it from the null.
+          const namedTopBracket =
+            conv.conversionType === "fill_up_bracket" &&
+            convBrackets != null &&
+            conv.fillUpBracket != null &&
+            isTopBracketTarget(convBrackets, conv.fillUpBracket);
           if (
             conv.conversionType === "fill_up_bracket" &&
             bracketCeiling == null &&
-            (irmaaCeiling == null || conv.fillUpBracket == null)
+            !(irmaaCeiling != null && namedTopBracket)
           ) {
             continue;
           }
@@ -5205,6 +5262,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           convTargets[conv.id] = {
             bracketCeiling,
             irmaaCeiling,
+            irmaaCapTier: irmaaCeiling != null ? (conv.irmaaCapTier ?? null) : null,
             strategyGross:
               conv.conversionType === "fill_up_bracket"
                 ? null
@@ -6538,9 +6596,18 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       const ids = Object.keys(convTargets);
       if (ids.length === 0) return 0;
 
-      const registered = ids
-        .map((cid) => jointSolveConvById.get(cid))
-        .filter((c): c is RothConversion => c != null);
+      // Built with the SAME filter over the SAME array the post-loop apply
+      // uses, not from `Object.keys(convTargets)`. JS orders integer-like keys
+      // numerically ahead of insertion order, so a plan whose conversion ids
+      // are "1"/"2" would hand the preview a different ORDER than the apply —
+      // and two conversions sharing a source pool drain it in list order, so
+      // the preview would book a taxable figure the apply never realizes.
+      const registered = (data.rothConversions ?? []).filter(
+        (c) =>
+          c.enabled !== false &&
+          convTargets[c.id] != null &&
+          _isFillBracketActiveYear(c, year),
+      );
       const preview = registered.some((c) => c.conversionType !== "fill_up_bracket")
         ? applyRothConversions({
             // Every registered conversion, in the SAME order the post-loop
@@ -7037,12 +7104,38 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       });
 
       rothConversionResult.taxableOrdinaryIncome += jointSolveResult.taxableOrdinaryIncome;
-      for (const [cid, info] of Object.entries(jointSolveResult.byConversion)) {
+      // Iterate the REGISTERED set, not the applied one. `applyRothConversions`
+      // skips a conversion whose target came out at $0, so a cap that bound all
+      // the way down leaves no applied entry at all — and the technique would
+      // disappear from the year entirely, reading as a broken feature rather
+      // than an enforced cap. `convOutcome` is the only record that it ran.
+      for (const cid of Object.keys(convTargets)) {
+        const applied = jointSolveResult.byConversion[cid];
+        const outcome = convOutcome[cid];
+        // Two things produce no applied entry: the cap zeroed the target, or
+        // the source pool was empty. Only the first is worth reporting — an
+        // empty pool converts nothing today and stays silent.
+        if (!applied && outcome?.limitedBy !== "irmaa") continue;
+        const info: RothConversionOutcome = {
+          ...(applied ?? { gross: 0, taxable: 0, bySource: {} }),
+          // The sizer's verdict, not applyRothConversions' — that function sees
+          // only the converged target handed to it and would report "sources"
+          // (or null) for a conversion a ceiling actually cut.
+          requested: outcome?.requested ?? applied?.requested ?? 0,
+          limitedBy: outcome?.limitedBy ?? null,
+          irmaaCapTier: outcome?.irmaaCapTier ?? null,
+        };
         rothConversionResult.byConversion[cid] = info;
-        if (info.taxable > 0) {
+        // A cap that binds to $0 must still produce a row. Without this the
+        // conversion silently disappears from the tax detail and the advisor
+        // sees a technique that did nothing, with no reason given.
+        if (info.taxable > 0 || info.limitedBy === "irmaa") {
           taxDetail.bySource[`roth_conversion:${cid}`] = {
             type: "ordinary_income",
             amount: info.taxable,
+            // Per-YEAR, so it rides on the row: the drill's shared context is
+            // built once for all years and could not say which year bound.
+            ...(info.irmaaCapTier != null ? { irmaaCapTier: info.irmaaCapTier } : {}),
           };
         }
       }
@@ -8305,6 +8398,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
                 name: data.rothConversions?.find((c) => c.id === id)?.name ?? id,
                 gross: info.gross,
                 taxable: info.taxable,
+                requested: info.requested,
+                limitedBy: info.limitedBy,
+                irmaaCapTier: info.irmaaCapTier ?? null,
               }),
             ),
           }

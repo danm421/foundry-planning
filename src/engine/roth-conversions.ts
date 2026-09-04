@@ -60,7 +60,32 @@ export interface RothConversionsResult {
    *  pool; `taxable` is the portion that lands in ordinary income (lower than
    *  gross when a Trad-IRA source has after-tax basis — Form 8606 pro-rata).
    *  `bySource` tracks gross per source. */
-  byConversion: Record<string, { gross: number; taxable: number; bySource: Record<string, number> }>;
+  byConversion: Record<string, RothConversionOutcome>;
+}
+
+/** One conversion's result for the year, plus WHY it came out that size.
+ *
+ * The three "why" fields exist because a conversion that shrank — or vanished —
+ * is indistinguishable from a broken technique without them. An advisor
+ * looking at a $180K conversion against a $600K instruction needs the engine to
+ * say which ceiling cut it.
+ *
+ * ⚠️ `limitedBy` / `irmaaCapTier` are a per-YEAR outcome, never a property of
+ * the conversion's config: the same cap can bind in 2030 and sit idle in 2031.
+ * Anything that reads them must read them off the year, not off `ClientData`.
+ */
+export interface RothConversionOutcome {
+  gross: number;
+  taxable: number;
+  bySource: Record<string, number>;
+  /** What the strategy asked for before any ceiling applied. */
+  requested: number;
+  /** Which constraint produced the final number, or null if none did. */
+  limitedBy: "irmaa" | "bracket" | "sources" | null;
+  /** The IRMAA tier whose ceiling bound. Present only when
+   *  `limitedBy === "irmaa"` — it names the limit that ACTUALLY applied, not
+   *  the tier the advisor configured. */
+  irmaaCapTier?: number | null;
 }
 
 // ============================================================================
@@ -93,9 +118,39 @@ export function fillUpBracketCeiling(
   tiers: BracketTier[],
   targetRate: number,
 ): number | null {
-  const tier = tiers.find((t) => Math.abs((t.baseRate ?? t.rate) - targetRate) < 1e-9);
+  const tier = _findTierByIdentity(tiers, targetRate);
   if (!tier || tier.to == null) return null;
   return tier.to - 1;
+}
+
+/**
+ * True when `targetRate` names a REAL tier that has no upper bound — the top
+ * (37%) bracket.
+ *
+ * `fillUpBracketCeiling` returns null for this case AND for a target rate no
+ * tier matches, and the two mean opposite things. "Fill the top bracket,
+ * capped at IRMAA tier N" is a coherent instruction the cap can bound; a stale
+ * or stressor-orphaned rate is no instruction at all and must convert nothing.
+ * A caller that told them apart by the null ceiling would let the second case
+ * fill straight to whatever other ceiling it carries — turning a guardrail
+ * into a target.
+ *
+ * Shares `_findTierByIdentity` with the ceiling so the identity match (see that
+ * function's note on `baseRate ?? rate`) cannot drift between the two.
+ */
+export function isTopBracketTarget(
+  tiers: BracketTier[],
+  targetRate: number,
+): boolean {
+  const tier = _findTierByIdentity(tiers, targetRate);
+  return tier != null && tier.to == null;
+}
+
+function _findTierByIdentity(
+  tiers: BracketTier[],
+  targetRate: number,
+): BracketTier | undefined {
+  return tiers.find((t) => Math.abs((t.baseRate ?? t.rate) - targetRate) < 1e-9);
 }
 
 export function applyRothConversions(input: RothConversionsInput): RothConversionsResult {
@@ -265,6 +320,15 @@ export function applyRothConversions(input: RothConversionsInput): RothConversio
       gross: cappedAmount - Math.max(0, remaining),
       taxable: taxablePerConversion,
       bySource,
+      requested: targetAmount,
+      // The ONLY ceiling this function applies on its own is the source pool.
+      // A bracket fill's ceiling and an IRMAA cap are both resolved by the
+      // caller's sizer and arrive here already baked into
+      // `targetTaxableOverride`, so this verdict would name "sources" (or
+      // null) for a conversion the cap actually cut. The caller overwrites
+      // both fields with the verdict IT recorded — see the post-solve merge in
+      // projection.ts. Left honest here for the callers that size nothing.
+      limitedBy: cappedAmount < targetAmount ? "sources" : null,
     };
   }
 

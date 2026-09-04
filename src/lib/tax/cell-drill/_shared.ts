@@ -7,8 +7,22 @@ const COMPOUND_KIND_LABEL: Record<string, string> = {
   rmd: "RMD",
 };
 
-/** Resolve a `taxDetail.bySource` key to a display label. */
-export function resolveSourceLabel(sourceId: string, ctx: CellDrillContext): string {
+/** One `taxDetail.bySource` row. Mirrors `ProjectionYear["taxDetail"]["bySource"]`. */
+export type BySourceEntry = { type: string; amount: number; irmaaCapTier?: number };
+
+/** Resolve a `taxDetail.bySource` key to a display label.
+ *
+ *  `entry` is the ROW the key points at, and is optional only because a couple
+ *  of callers label a bare key. Pass it whenever you have it: a per-YEAR
+ *  outcome such as "this conversion was cut by the IRMAA cap" can only be read
+ *  off the row. `ctx` is built once for every year of the projection, so a
+ *  reason stored there would label 2030 and 2031 identically even when the cap
+ *  bound in only one of them. */
+export function resolveSourceLabel(
+  sourceId: string,
+  ctx: CellDrillContext,
+  entry?: BySourceEntry,
+): string {
   if (sourceId.startsWith("withdrawal:")) {
     const acctId = sourceId.slice("withdrawal:".length);
     const name = ctx.accountNames[acctId] ?? acctId;
@@ -41,7 +55,9 @@ export function resolveSourceLabel(sourceId: string, ctx: CellDrillContext): str
   if (sourceId.startsWith("roth_conversion:")) {
     const cid = sourceId.slice("roth_conversion:".length);
     const name = ctx.rothConversionNames?.[cid];
-    return name ? `${name} — Roth Conversion` : "Roth Conversion";
+    const base = name ? `${name} — Roth Conversion` : "Roth Conversion";
+    const tier = entry?.irmaaCapTier;
+    return tier != null ? `${base} (limited by IRMAA Tier ${tier})` : base;
   }
   if (sourceId.startsWith("sale:")) {
     const tx = sourceId.slice("sale:".length);
@@ -103,7 +119,7 @@ export function resolveSourceLabel(sourceId: string, ctx: CellDrillContext): str
 
 export { formatCurrency } from "@/lib/cell-drill/format";
 
-type BySource = Record<string, { type: string; amount: number }>;
+type BySource = Record<string, BySourceEntry>;
 
 /** Build descending-by-amount drill rows from a `taxDetail.bySource` map,
  *  filtered by one type or a set of types. */
@@ -118,6 +134,6 @@ export function bySourceRows(
       : (t: string) => match.has(t);
   return Object.entries(bySource)
     .filter(([, v]) => matches(v.type))
-    .map(([id, v]) => ({ id, label: resolveSourceLabel(id, ctx), amount: v.amount }))
+    .map(([id, v]) => ({ id, label: resolveSourceLabel(id, ctx, v), amount: v.amount }))
     .sort((a, b) => b.amount - a.amount);
 }

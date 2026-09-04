@@ -7,6 +7,8 @@ import type { TaxLedgerRow } from "./types";
 interface RawEntry {
   type: string;
   amount: number;
+  /** Set by the engine only on a `roth_conversion:` row an IRMAA cap limited. */
+  irmaaCapTier?: number;
 }
 
 const INCOME_TYPE_LABELS: Record<string, string> = {
@@ -40,7 +42,13 @@ export function parseHouseholdSource(
   }
   if (key.startsWith("roth_conversion:")) {
     const id = key.slice("roth_conversion:".length);
-    return { type: "Roth Conversion", description: ctx.rothConversionNames?.[id] ?? "Roth Conversion", character, account: null, amount, taxable };
+    const name = ctx.rothConversionNames?.[id] ?? "Roth Conversion";
+    // The cap is a per-YEAR outcome carried on the ROW — `ctx` is built once
+    // for every year and could not say which year it bound in. Without this,
+    // a conversion the cap zeroed shows as a bare "$0" with no explanation.
+    const description =
+      entry.irmaaCapTier != null ? `${name} (limited by IRMAA Tier ${entry.irmaaCapTier})` : name;
+    return { type: "Roth Conversion", description, character, account: null, amount, taxable };
   }
   if (key.startsWith("note:")) {
     const rest = key.slice("note:".length);

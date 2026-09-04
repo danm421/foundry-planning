@@ -1593,7 +1593,12 @@ export interface ProjectionYear {
      *  generic non-taxable business pass-through (e.g. Roth-equivalent
      *  distributions, return-of-capital) — those land in `taxExempt` only. */
     taxExemptInterest: number;
-    bySource: Record<string, { type: string; amount: number }>;
+    /** Drill-down itemization. `irmaaCapTier` rides on the ROW rather than on
+     *  a per-conversion lookup because it is a per-YEAR outcome: the same cap
+     *  can bind in 2030 and sit idle in 2031, and the drill's shared context
+     *  is built once for every year. Set only on `roth_conversion:<id>` rows
+     *  the cap actually limited. */
+    bySource: Record<string, { type: string; amount: number; irmaaCapTier?: number }>;
     /** End-of-year §1212(b) carryforward, for the drill-down. Post-drawdown:
      *  this year's §1211(b) offset has already been subtracted. */
     capitalLossCarryforward?: { shortTerm: number; longTerm: number };
@@ -1829,8 +1834,22 @@ export interface ProjectionYear {
   /** Per-conversion summary for years where Roth conversions ran. `gross` is
    *  the amount moved out of source IRAs; `taxable` is the ordinary-income
    *  portion (lower than gross when the source has after-tax basis — Form
-   *  8606 pro-rata). The Tax Bracket report consumes both columns. */
-  rothConversions?: { id: string; name: string; gross: number; taxable: number }[];
+   *  8606 pro-rata). The Tax Bracket report consumes both columns.
+   *
+   *  `requested` / `limitedBy` / `irmaaCapTier` say WHY the conversion came
+   *  out this size — see `RothConversionOutcome` in `roth-conversions.ts`.
+   *  A conversion an IRMAA cap zeroed out appears here with `gross: 0` rather
+   *  than being omitted, so the technique reads as "ran, converted nothing"
+   *  instead of vanishing from the year. */
+  rothConversions?: {
+    id: string;
+    name: string;
+    gross: number;
+    taxable: number;
+    requested: number;
+    limitedBy: "irmaa" | "bracket" | "sources" | null;
+    irmaaCapTier?: number | null;
+  }[];
   /** Only populated on death-event years. One entry per (source × recipient).
    *  Same-year double death (4b + 4c in the same year) produces both
    *  deathOrder = 1 and deathOrder = 2 entries on the same row. */

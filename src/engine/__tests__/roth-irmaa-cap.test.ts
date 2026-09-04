@@ -90,6 +90,10 @@ const WRONG_CEILING_CONVERSION_YEAR_MFJ = 212_000;
 /** `irmaaCapCeiling(tiers, 2)` returns tier 2's UPPER bound — the top of the
  *  band the advisor is willing to pay for.  334_000 * 1.0609 = 354_340.60. */
 const CEILING_2028_MFJ_TIER2 = 354_340.6;
+/** Tier 4's upper bound — the last band before the top tier, used by the
+ *  "set but does not bind" test as a deliberately roomy live ceiling.
+ *  750_000 * 1.0609 = 795_675. */
+const CEILING_2028_MFJ_TIER4 = 795_675;
 /** Top of the 2026 MFJ 24% bracket less `fillUpBracketCeiling`'s $1 backoff.
  *  2026 is the seeded row, so no tax inflation applies to it. */
 const BRACKET_24_CEILING_2026_MFJ = 383_899;
@@ -643,6 +647,156 @@ describe("Roth conversion IRMAA cap — the ceiling binds", () => {
     ).toBeCloseTo(conv!.taxable, 0);
     expect(magi, "and it must still sit under the ceiling").toBeLessThanOrEqual(
       CEILING_2028_MFJ + 1,
+    );
+  });
+
+  it("does NOT become a target for a bracket fill whose rate matches no tier", () => {
+    // A `fillUpBracket` of 0.99 matches no tier — a stale value, or one the
+    // "tax rates rise" stressor orphaned. It converts nothing today, and adding
+    // a cap must not change that: with no bracket ceiling the cap would become
+    // the ONLY ceiling and the conversion would fill straight to the tier-0
+    // boundary (~$225K). That is the cap acting as a target, which is the
+    // opposite of a guardrail.
+    //
+    // ⚠️ The old guard read this case off a NULL ceiling, which the top (37%)
+    // tier also returns — so it could not tell "no such bracket" from "the
+    // bracket with no top". `isTopBracketTarget` identifies the top positively.
+    const years = runProjection(
+      scenario({
+        clientDob: "1958-01-01",
+        spouseDob: "1959-01-01",
+        filingStatus: "married_joint",
+        medicareCoverage: [coverage("client"), coverage("spouse")],
+        conversion: cappedFillUpBracket(0.99, 0),
+        checkingValue: 500_000,
+      }),
+    );
+
+    const y2026 = years.find((y) => y.year === 2026);
+    expect(y2026, "year 2026 should exist").toBeDefined();
+
+    const gross = (y2026!.rothConversions ?? []).reduce((s, c) => s + c.gross, 0);
+    expect(gross, "an unrecognized bracket target converts nothing, cap or no cap").toBe(0);
+    // Specifically not the tier-0 ceiling, which is what filling TO the cap
+    // would produce.
+    const magi = y2026!.taxResult!.flow.adjustedGrossIncome;
+    expect(
+      magi,
+      `MAGI ${magi} must not have been filled up to the tier-0 ceiling ${CEILING_2028_MFJ}`,
+    ).toBeLessThan(1_000);
+  });
+});
+
+describe("Roth conversion IRMAA cap — the outcome record", () => {
+  it("reports limitedBy: irmaa when the cap binds", () => {
+    // Same household as "caps a fixed_amount conversion at the tier ceiling":
+    // a $600K ask, a $3M pool, and a tier-0 cap that is the only thing small
+    // enough to bind. The gross assertion there proves the SIZE; this proves
+    // the year can say WHY, which is what an advisor sees on the drill row.
+    const years = runProjection(
+      scenario({
+        clientDob: "1958-01-01",
+        spouseDob: "1959-01-01",
+        filingStatus: "married_joint",
+        medicareCoverage: [coverage("client"), coverage("spouse")],
+        conversion: cappedFixedAmount(600_000, 0),
+        checkingValue: 500_000,
+      }),
+    );
+
+    const conv = (years.find((y) => y.year === 2026)!.rothConversions ?? [])[0];
+    expect(conv, "2026 should have a roth conversion").toBeDefined();
+
+    expect(conv!.limitedBy, "the cap is the constraint that bound").toBe("irmaa");
+    expect(conv!.irmaaCapTier, "and it names the tier it aimed at").toBe(0);
+    // `requested` is the untouched instruction, so the pair reads as
+    // "asked for $600K, converted $224K".
+    expect(conv!.requested, "the $600K ask is recorded verbatim").toBeCloseTo(600_000, 0);
+    expect(
+      conv!.gross,
+      `gross ${conv!.gross} must be below the requested ${conv!.requested}`,
+    ).toBeLessThan(conv!.requested);
+  });
+
+  it("reports limitedBy: null when the cap is SET but does not bind", () => {
+    // ⚠️ The cap here is LIVE, not absent. Testing an ABSENT cap would prove
+    // nothing: that path never reaches the sizer, so `null` would be the
+    // trivially right answer for the wrong reason. Both spouses are enrolled in
+    // premium year 2028, so the tier-4 ceiling resolves and this conversion
+    // routes through the phase-12 joint solve exactly like the binding case.
+    // It just asks for less than the ceiling allows.
+    const run = (ask: number) => {
+      const years = runProjection(
+        scenario({
+          clientDob: "1958-01-01",
+          spouseDob: "1959-01-01",
+          filingStatus: "married_joint",
+          medicareCoverage: [coverage("client"), coverage("spouse")],
+          conversion: cappedFixedAmount(ask, 4),
+          checkingValue: 500_000,
+        }),
+      );
+      const conv = (years.find((y) => y.year === 2026)!.rothConversions ?? [])[0];
+      expect(conv, "2026 should have a roth conversion").toBeDefined();
+      return conv!;
+    };
+
+    // CONTROL, and the whole point of the test: the SAME household with the
+    // SAME tier-4 cap, asking for more than the ceiling allows. If this comes
+    // back unlimited then the cap was silently inert and the assertion below
+    // would be measuring nothing.
+    const bound = run(900_000);
+    expect(bound.limitedBy, "the tier-4 ceiling really is live for this household").toBe(
+      "irmaa",
+    );
+    expect(
+      Math.abs(bound.gross - CEILING_2028_MFJ_TIER4),
+      `gross ${bound.gross} should land on the 2028 MFJ tier-4 ceiling ${CEILING_2028_MFJ_TIER4}`,
+    ).toBeLessThan(50);
+
+    // Same live cap, an ask that fits well under it.
+    const unbound = run(50_000);
+    expect(unbound.gross, "the full $50K ask converts").toBeCloseTo(50_000, 0);
+    expect(unbound.requested, "and that ask is what was requested").toBeCloseTo(50_000, 0);
+    expect(unbound.limitedBy, "nothing limited it").toBeNull();
+    expect(unbound.irmaaCapTier, "so no tier is named").toBeNull();
+  });
+
+  it("emits a $0 drill row rather than dropping the conversion", () => {
+    // The "already past the ceiling" household: a $300K pension alone clears
+    // the tier-0 ceiling, so the right answer is to convert nothing. Nothing
+    // converted used to mean nothing REPORTED — the technique vanished from the
+    // tax detail and read as a broken feature instead of an enforced cap.
+    const years = runProjection(
+      scenario({
+        clientDob: "1958-01-01",
+        spouseDob: "1959-01-01",
+        filingStatus: "married_joint",
+        medicareCoverage: [coverage("client"), coverage("spouse")],
+        conversion: cappedFixedAmount(600_000, 0),
+        checkingValue: 500_000,
+        incomes: [pension(300_000)],
+      }),
+    );
+
+    const y2026 = years.find((y) => y.year === 2026)!;
+    const row = y2026.taxDetail?.bySource["roth_conversion:rc-cap"];
+
+    expect(row, "the drill row must exist even at $0").toBeDefined();
+    expect(row!.amount, "and it reports $0, not a phantom amount").toBe(0);
+    expect(row!.type).toBe("ordinary_income");
+    // The reason rides on the ROW, not on a per-conversion lookup: the cap is a
+    // per-year outcome and the drill's context is built once for all years.
+    expect(row!.irmaaCapTier, "the row carries the tier that bound").toBe(0);
+
+    // The conversion summary agrees, and still records the untouched ask.
+    const conv = (y2026.rothConversions ?? [])[0];
+    expect(conv, "the conversion must not vanish from the year either").toBeDefined();
+    expect(conv!.gross).toBe(0);
+    expect(conv!.limitedBy).toBe("irmaa");
+    expect(conv!.requested, "the $600K ask survives even when nothing converts").toBeCloseTo(
+      600_000,
+      0,
     );
   });
 });

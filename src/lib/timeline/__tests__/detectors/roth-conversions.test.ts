@@ -11,10 +11,10 @@ describe("detectRothConversionEvents", () => {
   it("consolidates every fire year into a single card per conversion", () => {
     const data = buildClientData();
     const projection = mkProjection([
-      { rothConversions: [{ id: "rc-1", name: "Bracket ladder", gross: 80000, taxable: 80000 }] },
-      { rothConversions: [{ id: "rc-1", name: "Bracket ladder", gross: 95000, taxable: 95000 }] },
+      { rothConversions: [{ id: "rc-1", name: "Bracket ladder", gross: 80000, taxable: 80000, requested: 80000, limitedBy: null }] },
+      { rothConversions: [{ id: "rc-1", name: "Bracket ladder", gross: 95000, taxable: 95000, requested: 95000, limitedBy: null }] },
       { rothConversions: undefined },
-      { rothConversions: [{ id: "rc-1", name: "Bracket ladder", gross: 110000, taxable: 110000 }] },
+      { rothConversions: [{ id: "rc-1", name: "Bracket ladder", gross: 110000, taxable: 110000, requested: 110000, limitedBy: null }] },
     ]);
     const events = detectRothConversionEvents(data, projection);
     const matches = events.filter((e) => e.id.startsWith("strategy:roth:rc-1"));
@@ -40,7 +40,7 @@ describe("detectRothConversionEvents", () => {
   it("surfaces the per-year taxable amount when gross != taxable", () => {
     const data = buildClientData();
     const projection = mkProjection([
-      { rothConversions: [{ id: "rc-2", name: "Backdoor", gross: 50000, taxable: 30000 }] },
+      { rothConversions: [{ id: "rc-2", name: "Backdoor", gross: 50000, taxable: 30000, requested: 50000, limitedBy: null }] },
     ]);
     const events = detectRothConversionEvents(data, projection);
     const card = events.find((e) => e.id === "strategy:roth:rc-2");
@@ -54,8 +54,8 @@ describe("detectRothConversionEvents", () => {
     const projection = mkProjection([
       {
         rothConversions: [
-          { id: "rc-a", name: "Plan A", gross: 50000, taxable: 50000 },
-          { id: "rc-b", name: "Plan B", gross: 25000, taxable: 25000 },
+          { id: "rc-a", name: "Plan A", gross: 50000, taxable: 50000, requested: 50000, limitedBy: null },
+          { id: "rc-b", name: "Plan B", gross: 25000, taxable: 25000, requested: 25000, limitedBy: null },
         ],
       },
     ]);
