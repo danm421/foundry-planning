@@ -82,7 +82,7 @@ export async function loadReconciliationInput(clientId: string, firmId: string, 
   const { planStartYear, planEndYear } = plan.planSettings;
   // Never earlier than the plan's first year: a return filed before the plan begins has no
   // projected year of its own, so the nearest year the plan actually models stands in for it.
-  // The consequence, which `build.ts`'s deflation note relies on, is planYear >= taxYear always.
+  // The consequence, which `compare.ts`'s `planToTaxYear` relies on, is planYear >= taxYear always.
   const planYear = taxYear >= planStartYear ? taxYear : planStartYear;
 
   const notes: string[] = [];

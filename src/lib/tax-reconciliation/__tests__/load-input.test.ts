@@ -45,9 +45,10 @@ const paSingleFiler = () => {
 beforeEach(() => {
   vi.clearAllMocks();
   m.getTaxReturn.mockResolvedValue(row());
-  // The `full_return` summary carries a stray pair on purpose: only W-2 documents may
-  // contribute W-2 pairs, and a filter that let any other role through would double-count
-  // the same employer against the wages rule.
+  // The `full_return` summary carries a stray pair on purpose, as defence in depth rather than
+  // against a live hazard: `rowToSummary` already sets `w2s: []` for every role but `w2`, so the
+  // system cannot produce this row. The fixture pins the loader's own filter so a future change
+  // upstream cannot let a second role's pairs double-count one employer against the wages rule.
   m.loadDocumentContext.mockResolvedValue({ summaries: [{ id: "d1", role: "w2", w2s: [{ employer: "Acme", wages: 100_000 }] }, { id: "d2", role: "full_return", w2s: [{ employer: "Acme", wages: 100_000 }] }], unavailable: false });
   m.loadEffectiveTree.mockResolvedValue({ effectiveTree: tree });
   m.runProjectionWithEvents.mockReturnValue({ years: [{ year: 2026, income: { bySource: {} } }, { year: 2027 }] });

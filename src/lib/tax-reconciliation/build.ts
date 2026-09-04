@@ -6,8 +6,8 @@ import { SECTION_ORDER, SECTION_TITLES, type Check, type Pair, type Reconciliati
  *  advisor has already recorded, and any note the caller wants carried onto the page — the
  *  "projection couldn't run" note among them, which the loader raises because it is the side that
  *  knows why the run failed. It arrives exactly once however many rules degraded, because no rule
- *  can emit a note — `RuleResult` has no field for one. The builder appends its own notes after
- *  these: one for any rule that threw, and the deflation note. */
+ *  can emit a note — `RuleResult` has no field for one. The builder appends one note of its own
+ *  after these, for any rule that threw. */
 export interface BuildContext {
   status: Reconciliation["status"];
   dismissedIds: Set<string>;
