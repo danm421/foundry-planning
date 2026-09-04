@@ -192,3 +192,69 @@ describe("AddTaxAdjustmentForm — edit submit always sends both withheld fields
     expect(body.withheldValue).toBe(0);
   });
 });
+
+// ── Test 6: stale withheld state is not resubmitted once the amount goes
+//    negative — the actual reproduction sequence, not just DOM visibility ──
+
+describe("AddTaxAdjustmentForm — stale withheld state after amount goes negative", () => {
+  it("forces withheldMode: 'none' and withheldValue: 0 when a percent value entered while positive is submitted after the amount is edited negative", async () => {
+    render(
+      <AddTaxAdjustmentForm clientId="client-123" onClose={vi.fn()} onSaved={vi.fn()} />,
+    );
+
+    const amountInput = screen.getByLabelText("Annual amount");
+
+    // Positive amount → switch to percent → enter a value. The control is
+    // visible and its own onChange handlers set real React state here.
+    fireEvent.change(amountInput, { target: { value: "10000" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Tax already paid mode" }), {
+      target: { value: "percent" },
+    });
+    fireEvent.change(screen.getByLabelText("Percent withheld"), { target: { value: "22.5" } });
+
+    // Now flip the amount negative. The control disappears from the DOM, but
+    // nothing has cleared withheldMode/withheldValue in state — they're only
+    // ever touched by the (now-hidden) control's own handlers.
+    fireEvent.change(amountInput, { target: { value: "-500" } });
+    expect(screen.queryByRole("combobox", { name: "Tax already paid mode" })).not.toBeInTheDocument();
+
+    fireEvent.submit(document.querySelector("form")!);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = lastPostBody();
+    expect(body.annualAmount).toBe(-500);
+    expect(body.withheldMode).toBe("none");
+    expect(body.withheldValue).toBe(0);
+  });
+});
+
+// ── Test 7: same reproduction, but the amount is cleared to blank ─────────
+
+describe("AddTaxAdjustmentForm — stale withheld state after amount goes blank", () => {
+  it("forces withheldMode: 'none' and withheldValue: 0 when the amount is cleared to blank after entering a percent value", async () => {
+    render(
+      <AddTaxAdjustmentForm clientId="client-123" onClose={vi.fn()} onSaved={vi.fn()} />,
+    );
+
+    const amountInput = screen.getByLabelText("Annual amount");
+
+    fireEvent.change(amountInput, { target: { value: "10000" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Tax already paid mode" }), {
+      target: { value: "amount" },
+    });
+    fireEvent.change(screen.getByLabelText("Amount withheld"), { target: { value: "3000" } });
+
+    // Blank, not negative — parseFloat("") is NaN, which a naive `<= 0` guard
+    // would fail to catch (NaN > 0 and NaN <= 0 are both false).
+    fireEvent.change(amountInput, { target: { value: "" } });
+    expect(screen.queryByRole("combobox", { name: "Tax already paid mode" })).not.toBeInTheDocument();
+
+    fireEvent.submit(document.querySelector("form")!);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = lastPostBody();
+    expect(body.annualAmount).toBe(0);
+    expect(body.withheldMode).toBe("none");
+    expect(body.withheldValue).toBe(0);
+  });
+});

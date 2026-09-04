@@ -86,6 +86,13 @@ export function AddTaxAdjustmentForm({
   );
   const [submitting, setSubmitting] = useState(false);
 
+  // Single choke point for "does this row even have withholding to speak
+  // of" — shared by the JSX visibility gate below and the submit-body guard
+  // in handleSubmit, so the two can never disagree. NaN (blank/non-numeric
+  // amount) and any value <= 0 both resolve to false here, exactly like the
+  // gate they replace.
+  const hasWithholdableAmount = parseFloat(annualAmount) > 0;
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setSubmitting(true);
@@ -100,9 +107,13 @@ export function AddTaxAdjustmentForm({
         endYear,
         startYearRef,
         endYearRef,
-        withheldMode,
-        withheldValue:
-          withheldMode === "none" ? 0
+        // A negative or blank amount hides the withheld control (see
+        // `hasWithholdableAmount` above) but does not clear its state — force
+        // both fields to their "off" value here so a stale percent/amount
+        // set before the advisor flipped the sign can never be resubmitted.
+        withheldMode: hasWithholdableAmount ? withheldMode : "none",
+        withheldValue: !hasWithholdableAmount ? 0
+          : withheldMode === "none" ? 0
           : withheldMode === "percent" ? (parseFloat(withheldValue) || 0) / 100
           : parseFloat(withheldValue) || 0,
       };
@@ -228,7 +239,7 @@ export function AddTaxAdjustmentForm({
           </div>
         </div>
 
-        {parseFloat(annualAmount) > 0 && (
+        {hasWithholdableAmount && (
           <div>
             <label className="block text-xs font-medium text-gray-300">Tax already paid</label>
             <div className="mt-1 flex gap-2">
