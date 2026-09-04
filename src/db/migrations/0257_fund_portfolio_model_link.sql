@@ -1,0 +1,3 @@
+ALTER TABLE "model_portfolios" ADD COLUMN "source_ticker_portfolio_id" uuid;--> statement-breakpoint
+ALTER TABLE "model_portfolios" ADD CONSTRAINT "model_portfolios_source_ticker_portfolio_id_ticker_portfolios_id_fk" FOREIGN KEY ("source_ticker_portfolio_id") REFERENCES "public"."ticker_portfolios"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+CREATE UNIQUE INDEX "model_portfolios_source_ticker_portfolio_uniq" ON "model_portfolios" USING btree ("source_ticker_portfolio_id");
