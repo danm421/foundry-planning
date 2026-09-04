@@ -7,6 +7,7 @@ import {
   expenseDedicatedAccounts,
   savingsRules,
   savingsRuleSalaryIncomes,
+  clientTaxAdjustments,
 } from "@/db/schema";
 import { executeBaseWritePlan } from "../execute-base-write-plan";
 import type { BaseWritePlan } from "../promote-to-base-types";
@@ -74,6 +75,46 @@ describe("executeBaseWritePlan", () => {
     expect(arg.annualAmount).toBe("9000"); // numeric column coerced to string
     expect("id" in arg).toBe(false); // synthetic id stripped so the DB generates one
     expect(counts.income).toBe(1);
+  });
+
+  it("inserts a client_tax_adjustment row with withheldMode and withheldValue preserved", async () => {
+    // client_tax_adjustment is the mirror image of client_deduction, but with
+    // withheldMode/withheldValue columns a deduction doesn't have. Asserting
+    // on them (not just that the row lands) catches a promote registered
+    // against the wrong table — coerceForTable silently drops any raw key
+    // that isn't a real column on the table it's given, so a registry mixup
+    // (e.g. pointing at clientDeductions) would make these two go missing
+    // rather than error.
+    const plan: BaseWritePlan = {
+      ...emptyPlan(),
+      inserts: [
+        {
+          kind: "client_tax_adjustment",
+          targetId: "synthetic",
+          raw: {
+            id: "synthetic",
+            name: "Roth conversion already done",
+            annualAmount: 40000,
+            withheldMode: "percent",
+            withheldValue: 0.22,
+          },
+        },
+      ],
+    };
+    const { tx, ops } = makeTx();
+    const counts = await executeBaseWritePlan(tx as never, plan, {
+      clientId: "c1",
+      baseScenarioId: "base1",
+    });
+    const insert = ops.find((o) => o.op === "insert");
+    const arg = insert!.arg as Record<string, unknown>;
+    expect(insert!.table).toBe(clientTaxAdjustments);
+    expect(arg.clientId).toBe("c1");
+    expect(arg.scenarioId).toBe("base1");
+    expect(arg.annualAmount).toBe("40000"); // numeric column coerced to string
+    expect(arg.withheldMode).toBe("percent"); // enum column passes through untouched
+    expect(arg.withheldValue).toBe("0.22"); // numeric column coerced to string
+    expect(counts.client_tax_adjustment).toBe(1);
   });
 
   it("does NOT inject scenarioId for the client-scoped gifts table", async () => {

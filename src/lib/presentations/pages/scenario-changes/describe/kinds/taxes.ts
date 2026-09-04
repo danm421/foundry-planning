@@ -43,5 +43,13 @@ const clientDeduction = simpleDescriber({
   segments: [(p) => (p.amount != null ? money(p.amount) : null)],
 });
 
+const clientTaxAdjustment = simpleDescriber({
+  area: "Taxes",
+  noun: "tax adjustment",
+  whatMode: "name",
+  segments: [(p) => (p.annualAmount != null ? money(p.annualAmount) : null)],
+});
+
 DESCRIBERS.roth_conversion = rothConversion;
 DESCRIBERS.client_deduction = clientDeduction;
+DESCRIBERS.client_tax_adjustment = clientTaxAdjustment;

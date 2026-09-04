@@ -43,6 +43,7 @@ import {
   willResiduaryRecipientRow,
   transferRow,
   taxYearParameterRow,
+  taxAdjustmentRow,
   modelPortfolioRow,
   modelPortfolioAllocationRow,
   assetClassRow,
@@ -88,6 +89,7 @@ type DbState = {
   willResiduaryRecipients: typeof willResiduaryRecipientRow[];
   taxYearParameters: typeof taxYearParameterRow[];
   clientDeductions: unknown[];
+  clientTaxAdjustments: (typeof taxAdjustmentRow)[];
   incomeScheduleOverrides: unknown[];
   expenseScheduleOverrides: unknown[];
   savingsScheduleOverrides: unknown[];
@@ -132,6 +134,7 @@ const dbState: DbState = {
   willResiduaryRecipients: [],
   taxYearParameters: [],
   clientDeductions: [],
+  clientTaxAdjustments: [],
   incomeScheduleOverrides: [],
   expenseScheduleOverrides: [],
   savingsScheduleOverrides: [],
@@ -191,6 +194,7 @@ vi.mock("@/db", async () => {
     if (t === schema.willResiduaryRecipients || n === "will_residuary_recipients") return dbState.willResiduaryRecipients;
     if (t === schema.taxYearParameters || n === "tax_year_parameters") return dbState.taxYearParameters;
     if (t === schema.clientDeductions || n === "client_deductions") return dbState.clientDeductions;
+    if (t === schema.clientTaxAdjustments || n === "client_tax_adjustments") return dbState.clientTaxAdjustments;
     if (t === schema.incomeScheduleOverrides || n === "income_schedule_overrides") return dbState.incomeScheduleOverrides;
     if (t === schema.expenseScheduleOverrides || n === "expense_schedule_overrides") return dbState.expenseScheduleOverrides;
     if (t === schema.savingsScheduleOverrides || n === "savings_schedule_overrides") return dbState.savingsScheduleOverrides;
@@ -460,5 +464,46 @@ describe("loadClientData", () => {
 
     // 0.025 (resolved asset class), NOT 0.03 (raw inflation_rate column).
     expect(data.planSettings.inflationRate).toBeCloseTo(0.025, 10);
+  });
+
+  it("loads tax adjustments for the scenario, parsing decimals to numbers", async () => {
+    seedValidFixture();
+    dbState.clientTaxAdjustments = [taxAdjustmentRow];
+
+    const data = await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
+
+    expect(data.taxAdjustments).toHaveLength(1);
+    expect(data.taxAdjustments![0]).toMatchObject({
+      taxType: "ordinary_income",
+      annualAmount: 100_000,
+      growthRate: 0.03,
+      withheldMode: "percent",
+      withheldValue: 0.225,
+    });
+  });
+
+  it("resolves a tax adjustment's year refs to the live milestone, not the stale stored integer", async () => {
+    // clientRow's dateOfBirth (via crmPrimaryContactRow, 1968-06-15) + retirementAge
+    // 65 puts client_retirement at 2033; planSettingsRow.planEndYear is 2063. Both
+    // stored startYear/endYear below are deliberately stale so this only passes if
+    // load-client-data re-derives from the refs — mirroring incomes/expenses/
+    // savings/withdrawals, per the Task 5 controller ruling (parsedDeductions is
+    // the one row kind that does NOT re-derive; that gap is out of scope here).
+    seedValidFixture();
+    dbState.clientTaxAdjustments = [
+      {
+        ...taxAdjustmentRow,
+        startYearRef: "client_retirement" as unknown as typeof taxAdjustmentRow.startYearRef,
+        startYear: 2025,
+        endYearRef: "plan_end" as unknown as typeof taxAdjustmentRow.endYearRef,
+        endYear: 2030,
+      },
+    ];
+
+    const data = await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
+
+    expect(data.taxAdjustments).toHaveLength(1);
+    expect(data.taxAdjustments![0].startYear).toBe(2033);
+    expect(data.taxAdjustments![0].endYear).toBe(2063);
   });
 });

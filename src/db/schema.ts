@@ -533,6 +533,12 @@ export const incomeTaxTypeEnum = pgEnum("income_tax_type", [
   "stcg",
 ]);
 
+export const taxWithheldModeEnum = pgEnum("tax_withheld_mode", [
+  "none",
+  "amount",
+  "percent",
+]);
+
 export const taxEngineModeEnum = pgEnum("tax_engine_mode", [
   "flat",
   "bracket",
@@ -4755,6 +4761,46 @@ export const clientDeductions = pgTable("client_deductions", {
   endYear: integer("end_year").notNull(),
   startYearRef: yearRefEnum("start_year_ref"),
   endYearRef: yearRefEnum("end_year_ref"),
+
+  source: sourceEnum("source").notNull().default("manual"),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Income that already happened — a completed Roth conversion, a banked bonus,
+// a K-1 that landed. Feeds the tax engine and NEVER the cash flow: the account
+// balances the advisor imported already reflect the money. Deliberately shaped
+// as the mirror image of `clientDeductions` above.
+export const clientTaxAdjustments = pgTable("client_tax_adjustments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => clients.id, { onDelete: "cascade" }),
+  scenarioId: uuid("scenario_id")
+    .notNull()
+    .references(() => scenarios.id, { onDelete: "cascade" }),
+
+  taxType: incomeTaxTypeEnum("tax_type").notNull(),
+  name: text("name"),
+  owner: ownerEnum("owner").notNull().default("joint"),
+  // SIGNED. A negative amount removes income the plan over-counts.
+  annualAmount: decimal("annual_amount", { precision: 15, scale: 2 }).notNull().default("0"),
+  growthRate: decimal("growth_rate", { precision: 5, scale: 4 }).notNull().default("0"),
+
+  startYear: integer("start_year").notNull(),
+  endYear: integer("end_year").notNull(),
+  startYearRef: yearRefEnum("start_year_ref"),
+  endYearRef: yearRefEnum("end_year_ref"),
+
+  // Tax already withheld or paid on this item. Stored as mode + value rather
+  // than a resolved dollar figure so a percent keeps tracking `annualAmount`
+  // when the advisor corrects it — see the spec's note on
+  // a-resolved-rate-saved-without-its-source-is-discarded.
+  withheldMode: taxWithheldModeEnum("withheld_mode").notNull().default("none"),
+  // Dollars when mode is 'amount', a 0..1 fraction when 'percent'. Scale 4 on
+  // purpose: one column serves both, and scale 2 would round 22.5% to 23%.
+  withheldValue: decimal("withheld_value", { precision: 15, scale: 4 }).notNull().default("0"),
 
   source: sourceEnum("source").notNull().default("manual"),
 

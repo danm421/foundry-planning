@@ -33,6 +33,7 @@ export const FIXTURE_BEQUEST_ID = "00000000-0000-0000-0000-000000000121";
 export const FIXTURE_BEQUEST_RECIPIENT_ID = "00000000-0000-0000-0000-000000000122";
 export const FIXTURE_TAX_YEAR_ID = "00000000-0000-0000-0000-000000000200";
 export const FIXTURE_TRANSFER_ID = "00000000-0000-0000-0000-000000000300";
+export const FIXTURE_TAX_ADJUSTMENT_ID = "00000000-0000-0000-0000-000000000310";
 export const FIXTURE_ACCOUNT_ID_3 = "00000000-0000-0000-0000-000000000022";
 export const FIXTURE_ACCOUNT_ASSET_ALLOC_ID = "00000000-0000-0000-0000-000000000092";
 export const FIXTURE_CORRELATION_ID = "00000000-0000-0000-0000-000000000400";
@@ -499,6 +500,28 @@ export const transferRow = {
   endYear: 2033,
   endYearRef: null,
   growthRate: "0.0000",
+  createdAt: NOW,
+  updatedAt: NOW,
+};
+
+// ── client_tax_adjustments ────────────────────────────────────────────────────
+
+export const taxAdjustmentRow = {
+  id: FIXTURE_TAX_ADJUSTMENT_ID,
+  clientId: FIXTURE_CLIENT_ID,
+  scenarioId: FIXTURE_SCENARIO_ID,
+  taxType: "ordinary_income" as const,
+  name: "Completed Roth Conversion",
+  owner: "joint" as const,
+  annualAmount: "100000.00",
+  growthRate: "0.0300",
+  startYear: 2026,
+  endYear: 2026,
+  startYearRef: null,
+  endYearRef: null,
+  withheldMode: "percent" as const,
+  withheldValue: "0.2250",
+  source: "manual" as const,
   createdAt: NOW,
   updatedAt: NOW,
 };

@@ -66,6 +66,10 @@ export type AuditAction =
   | "deduction.create"
   | "deduction.update"
   | "deduction.delete"
+  // Tax-only income adjustments (completed Roth conversions, banked bonuses, K-1s)
+  | "tax_adjustment.create"
+  | "tax_adjustment.update"
+  | "tax_adjustment.delete"
   // Tax return analysis (AI-extracted 1040 facts)
   | "tax_return.extract"
   | "tax_return.update"
