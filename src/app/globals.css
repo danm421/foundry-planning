@@ -375,6 +375,17 @@ html {
   background: color-mix(in oklab, var(--color-accent) 8%, transparent);
 }
 
+/* A chip carrying a SENTENCE rather than a status token. `.chip` is built for
+   eyebrows, section labels and one-word statuses, so it forces uppercase at
+   0.1em — which turns "Plan is $15,000 short" into PLAN IS $15,000 SHORT,
+   twelve times down the Plan vs. Return page. This keeps the pill (box,
+   hairline, mono face) and drops only the two rules that make it a token.
+   Tracking follows `.tabular`, since what it holds is mostly numerals. */
+.chip-sentence {
+  text-transform: none;
+  letter-spacing: -0.01em;
+}
+
 /* Drift pill (Plan vs. Return): a measured gap, stated at full strength and
    without a hue. Both directions weigh the same on purpose — a single tone
    cannot encode risk direction, since a plan running OVER on income is the
@@ -383,13 +394,17 @@ html {
    only separates "we measured a gap" from the muted default, which is left
    to the differences we could not put a number on.
 
-   It has to live HERE, unlayered, beside `.chip` — Tailwind v4 emits its
+   The step up is text and fill only. The border stays on `.chip`'s `hair-2`:
+   hierarchy is carried by exactly two hairline tokens, and borrowing a TEXT
+   token for a border made a dozen pills ring louder than the quiet this is
+   supposed to be.
+
+   These have to live HERE, unlayered, beside `.chip` — Tailwind v4 emits its
    utilities inside `@layer utilities` (see node_modules/tailwindcss/index.css)
-   and `.chip` is unlayered, so `.chip`'s own `color` and `border` beat any
-   `text-*`/`border-*` utility put on the same element, whatever the
+   and `.chip` is unlayered, so `.chip`'s own `color`, `border` and
+   `text-transform` beat any utility put on the same element, whatever the
    specificity. A utility-based tone is silently inert. */
 .chip-drift {
-  border-color: var(--color-ink-3);
   color: var(--color-ink);
   background: color-mix(in oklab, var(--color-ink) 8%, transparent);
 }

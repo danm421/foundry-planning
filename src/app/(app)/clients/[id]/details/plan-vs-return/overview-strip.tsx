@@ -18,7 +18,7 @@ function Tile({
 }) {
   return (
     <div className="flex flex-col gap-0.5 rounded-lg border border-hair bg-card p-3">
-      <span className="text-[11px] uppercase tracking-[0.08em] text-ink-3">{label}</span>
+      <span className="tabular text-[11px] uppercase tracking-[0.08em] text-ink-3">{label}</span>
       <span className="tabular text-lg font-semibold text-ink">{ret}</span>
       <span className="tabular text-xs text-ink-2">Plan {plan}</span>
       {caption && <span className="tabular text-xs text-ink-3">{caption}</span>}
@@ -65,7 +65,7 @@ export function OverviewStrip({
         />
         <Tile label="AGI" ret={usd(o.agi.return)} plan={usd(o.agi.plan)} />
         <div className="flex flex-col gap-0.5 rounded-lg border border-hair bg-card p-3">
-          <span className="text-[11px] uppercase tracking-[0.08em] text-ink-3">
+          <span className="tabular text-[11px] uppercase tracking-[0.08em] text-ink-3">
             Open suggestions
           </span>
           <span className="tabular text-lg font-semibold text-ink">{o.openCount}</span>

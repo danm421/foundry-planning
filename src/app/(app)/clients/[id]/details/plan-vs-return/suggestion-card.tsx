@@ -32,17 +32,21 @@ export const figureClass = (display: string): string => (/\d/.test(display) ? "t
  *  the differences no number could be put on. Nothing here may read as
  *  success, and colour never carries the meaning alone — the chip's words do.
  *
+ *  Every tone carries `chip-sentence`: `.chip` is a status-token style and
+ *  forces uppercase at 0.1em, which would render "Plan is $15,000 short" as
+ *  PLAN IS $15,000 SHORT on every card. A delta is a sentence.
+ *
  *  These are `.chip-*` rules from globals.css, NOT Tailwind utilities.
  *  Tailwind emits utilities inside `@layer utilities` while `.chip` is
  *  unlayered, so an unlayered `.chip { color }` beats any `text-*` utility on
  *  the same element and a utility-based tone renders nothing at all.
  *  `keys every tone to a class that exists beside .chip` guards this. */
 export const TONE_CLASS: Record<Suggestion["delta"]["tone"], string> = {
-  short: "chip-drift",
-  missing: "chip-drift",
-  over: "chip-drift",
-  extra: "chip-drift",
-  neutral: "",
+  short: "chip-sentence chip-drift",
+  missing: "chip-sentence chip-drift",
+  over: "chip-sentence chip-drift",
+  extra: "chip-sentence chip-drift",
+  neutral: "chip-sentence",
 };
 
 const OWNER_LABEL: Record<OwnerChoice, string> = {
@@ -174,7 +178,7 @@ export function SuggestionCard({
         <div>
           {/* R69: the plan row's own year would label a figure already restated
               in tax-year dollars. The units are named once, on the strip. */}
-          <span className="text-[11px] uppercase tracking-[0.08em] text-ink-3">Plan</span>
+          <span className="tabular text-[11px] uppercase tracking-[0.08em] text-ink-3">Plan</span>
           <p className={`text-base text-ink ${figureClass(s.planFigure.display)}`}>
             {s.planFigure.display}
           </p>
@@ -190,7 +194,10 @@ export function SuggestionCard({
           <button
             type="button"
             className={`btn-ghost px-3 py-1.5 text-sm disabled:opacity-50 ${FOCUS_RING}`}
-            disabled={isBusy}
+            // Restore writes to the same store Dismiss does, so the same
+            // outage takes it out. Largely unreachable — no store means no
+            // dismissed cards to restore — but the gate belongs on both.
+            disabled={isBusy || dismissalsUnavailable}
             onClick={onRestore}
           >
             {busy === "restore" ? (
@@ -279,13 +286,9 @@ export function SuggestionCard({
           )}
 
           <div className="ml-auto flex items-center gap-2">
-            {/* R61: the reason a control is dead has to be readable without a
-                mouse — a `title` is invisible to keyboard and screen readers. */}
-            {dismissalsUnavailable && (
-              <span className="text-xs text-ink-3">
-                Setting cards aside isn&apos;t available right now.
-              </span>
-            )}
+            {/* R61's visible reason lives ONCE, at page level: it is a
+                page-wide state, and repeating it beside a dozen dead buttons
+                shouted the same sentence a dozen times. */}
             <button
               type="button"
               className={`btn-ghost px-3 py-1.5 text-sm disabled:opacity-50 ${FOCUS_RING}`}

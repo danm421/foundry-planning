@@ -35,7 +35,12 @@ const engine = (federalTax: number): EngineYear =>
 const grouped = (r: Reconciliation) => r.sections.map((s) => [s.id, s.title, s.items.map((i) => i.id)]);
 
 /** The deflation note the builder appends whenever the plan year is not the tax year. */
-const DEFLATION_NOTE = "The plan's 2026 figures are shown in 2025 dollars, using each row's own growth rate (the plan's inflation rate for engine totals).";
+/** `notes` carries only what the PAGE cannot know for itself — a rule that
+ *  threw, a projection that did not run. The units the plan figures are stated
+ *  in are not one of those: the renderer labels its own columns and explains
+ *  the restatement on the overview strip, so a units note here printed the same
+ *  sentence twice, one line apart, in different words. */
+const UNITS_SENTENCE = /shown in 2025 dollars|restated in 2025 dollars/;
 
 describe("buildReconciliation", () => {
   // Restored here rather than at the end of the two tests that spy on console.error, so a failing
@@ -141,11 +146,11 @@ describe("buildReconciliation", () => {
     expect(r.sections.flatMap((s) => s.items).map((i) => i.id)).not.toContain("household.filingStatus");
   });
 
-  it("degrades to row-level rules with the caller's note when the engine year is null, and adds the deflation note", () => {
+  it("degrades to row-level rules with the caller's note when the engine year is null, and adds no note of its own", () => {
     const r = buildReconciliation(inputFixture({ facts: facts() }), ctx({ notes: ["The plan's projection couldn't run, so only direct row comparisons are shown."] }));
-    // Exactly two notes: the caller's degrade note passes through once (no rule adds its own), and
-    // the builder appends the deflation note because the plan year is not the tax year.
-    expect(r.notes).toEqual(["The plan's projection couldn't run, so only direct row comparisons are shown.", DEFLATION_NOTE]);
+    // Exactly one note: the caller's degrade note passes through once, and no rule
+    // adds its own. The builder appends nothing — units are the renderer's to state.
+    expect(r.notes).toEqual(["The plan's projection couldn't run, so only direct row comparisons are shown."]);
     expect(r.overview.agi.plan).toBeNull();
     expect(r.overview.totalIncome.plan).toBeNull();
     expect(r.overview.federalTax.plan).toBeNull();
@@ -156,9 +161,14 @@ describe("buildReconciliation", () => {
     expect(r.sections.find((s) => s.id === "tax")!.items.map((i) => i.id)).toEqual(["tax.settlement"]);
   });
 
-  it("adds no deflation note when the plan year is the tax year", () => {
-    const r = buildReconciliation(inputFixture({ facts: facts(), planYear: 2025 }), ctx({ notes: ["Only direct row comparisons are shown."] }));
-    expect(r.notes).toEqual(["Only direct row comparisons are shown."]);
+  it("states the units nowhere in notes, whether or not the plan year is the tax year", () => {
+    // Both arms: a units note used to appear only when the years differed, so
+    // pinning just one arm would let it come back for the other.
+    for (const planYear of [2025, 2026]) {
+      const r = buildReconciliation(inputFixture({ facts: facts(), planYear }), ctx({ notes: ["Only direct row comparisons are shown."] }));
+      expect(r.notes).toEqual(["Only direct row comparisons are shown."]);
+      expect(r.notes.join(" ")).not.toMatch(UNITS_SENTENCE);
+    }
   });
 
   it("runs the federal-tax rule last, so it names the largest income-side gaps the other rules found", () => {
@@ -188,7 +198,7 @@ describe("buildReconciliation", () => {
       ["tax", "Why the tax differs", ["tax.settlement"]],
     ]);
     // Disclosed, never swallowed: the note names what went unchecked, and the error reaches the logs.
-    expect(r.notes).toEqual(["The assumption checks could not run, so nothing on this page reflects them. Everything else was compared normally.", DEFLATION_NOTE]);
+    expect(r.notes).toEqual(["The assumption checks could not run, so nothing on this page reflects them. Everything else was compared normally."]);
     expect(spy).toHaveBeenCalledOnce();
     // The counts follow the cards that survived, so a rule that throws cannot inflate them.
     expect(r.overview).toMatchObject({ openCount: 4, dismissedCount: 0, inLineCount: 1 });
@@ -203,7 +213,7 @@ describe("buildReconciliation", () => {
       ["income", "Income", ["income.wages.total", "income.pensions"]],
       ["household", "Household & assumptions", ["household.filingStatus", "medicare.priorYearMagi.client"]],
     ]);
-    expect(r.notes).toEqual(["The federal tax checks could not run, so nothing on this page reflects them. Everything else was compared normally.", DEFLATION_NOTE]);
+    expect(r.notes).toEqual(["The federal tax checks could not run, so nothing on this page reflects them. Everything else was compared normally."]);
     expect(spy).toHaveBeenCalledOnce();
   });
 

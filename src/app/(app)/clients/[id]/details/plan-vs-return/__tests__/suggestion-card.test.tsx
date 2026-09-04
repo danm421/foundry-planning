@@ -72,6 +72,12 @@ function props(over: Partial<React.ComponentProps<typeof SuggestionCard>> = {}) 
 }
 
 describe("SuggestionCard", () => {
+  it("puts both eyebrow labels in the same face, not one mono and its twin in Inter", () => {
+    render(<SuggestionCard {...props()} />);
+    expect(screen.getByText("Return 2025").className).toContain("tabular");
+    expect(screen.getByText("Plan").className).toContain("tabular");
+  });
+
   it("renders both figures, the citation, the delta chip and the meaning line", () => {
     render(<SuggestionCard {...props()} />);
     expect(screen.getByText(/acme paid \$165,000/i)).toBeTruthy();
@@ -154,11 +160,19 @@ describe("SuggestionCard", () => {
     expect(screen.getByRole("radio", { name: /spouse/i })).toBeDisabled();
   });
 
-  it("R61: the disabled dismiss button's reason is readable without a mouse", () => {
+  it("R61: an outage disables BOTH writes to the dismissals store", () => {
     render(<SuggestionCard {...props({ dismissalsUnavailable: true })} />);
     expect(screen.getByRole("button", { name: /not applicable/i })).toBeDisabled();
-    // Visible text, not a title attribute a keyboard or screen-reader user never sees.
-    expect(screen.getByText(/setting cards aside isn't available right now/i)).toBeTruthy();
+    // Restore writes to the same store, so the same outage takes it out.
+    render(
+      <SuggestionCard
+        {...props({ suggestion: { ...base, status: "dismissed" }, dismissalsUnavailable: true })}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /restore/i })).toBeDisabled();
+    // The reason itself is page-level now: repeating it beside a dozen dead
+    // buttons shouted one sentence a dozen times.
+    expect(screen.queryByText(/setting cards aside isn't available/i)).toBeNull();
   });
 
   it("renders a suggestion that carries no action without offering a write", () => {
@@ -197,6 +211,21 @@ describe("SuggestionCard", () => {
     expect(chip.className).not.toContain("chip-drift");
   });
 
+  it("never renders the delta as an uppercased sentence", () => {
+    // `.chip` is a status-token style: uppercase at 0.1em turns "Plan is
+    // $15,000 short" into PLAN IS $15,000 SHORT, on every card down the page.
+    render(<SuggestionCard {...props()} />);
+    const chip = screen.getByText("Plan is $15,000 short");
+    expect(chip.className).toContain("chip-sentence");
+    // Every tone, not just the drift ones — a neutral delta is a sentence too.
+    for (const cls of Object.values(TONE_CLASS)) {
+      expect(cls.split(/\s+/)).toContain("chip-sentence");
+    }
+    const css = readFileSync(resolve(process.cwd(), "src/app/globals.css"), "utf8");
+    const rule = css.slice(css.indexOf(".chip-sentence {"));
+    expect(rule.slice(0, rule.indexOf("}"))).toContain("text-transform: none");
+  });
+
   it("weighs a plan running over exactly as heavily as one running short", () => {
     // A single tone cannot encode risk direction — over is the dangerous way to
     // be wrong on income and the conservative one on expenses — so neither
@@ -208,7 +237,7 @@ describe("SuggestionCard", () => {
 
   it("keys every tone to a class that exists beside .chip, never a Tailwind utility", () => {
     const css = readFileSync(resolve(process.cwd(), "src/app/globals.css"), "utf8");
-    const tones = [...new Set(Object.values(TONE_CLASS))].filter(Boolean);
+    const tones = [...new Set(Object.values(TONE_CLASS).flatMap((v) => v.split(/\s+/)))].filter(Boolean);
     expect(tones.length).toBeGreaterThan(0);
     for (const cls of tones) {
       // Tailwind emits its utilities inside `@layer utilities` while `.chip` is

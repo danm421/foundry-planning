@@ -91,9 +91,9 @@ const bundle = (over: Partial<Reconciliation> = {}): Reconciliation => ({
     },
   ],
   dismissed: [],
-  notes: [
-    "The plan's 2026 figures are shown in 2025 dollars, using each row's own growth rate (the plan's inflation rate for engine totals).",
-  ],
+  // What `notes` actually carries now: only what the page cannot know for
+  // itself. Units are the renderer's job — see build.ts.
+  notes: ["The wages checks could not run, so nothing on this page reflects them."],
   dismissalsUnavailable: false,
   ...over,
 });
@@ -130,17 +130,26 @@ describe("PlanVsReturnContent", () => {
     // the row also holds the FieldTooltip, whose panel sets only size and
     // leading and would otherwise render the page's one mechanism sentence in
     // ALL CAPS at 0.08em tracking inside a 224px box.
+    // CHANGE 3: the units explanation exists once, on the strip's tooltip. It
+    // used to print again one line below as a builder note, in different words.
+    expect(screen.getAllByText(/restated in 2025 dollars/i)).toHaveLength(1);
+    expect(screen.queryByText(/shown in 2025 dollars/i)).toBeNull();
     const eyebrow = screen.getByText(/^Return 2025 · Plan 2026$/);
     expect(eyebrow.className).toContain("uppercase");
     expect(eyebrow.parentElement!.className).not.toContain("uppercase");
     expect(eyebrow.parentElement!.className).not.toContain("tracking-");
     expect(screen.getByText("$190,000")).toBeTruthy(); // AGI tile (return)
+    // CHANGE 1: every eyebrow on the strip shares the numeral face, so no tile
+    // label sits in Inter beside a mono neighbour.
+    for (const label of ["Total income", "Federal tax", "AGI", "Open suggestions"]) {
+      expect(screen.getByText(label).className).toContain("tabular");
+    }
     expect(within(openTile()).getByText("2")).toBeTruthy();
     expect(screen.getByText(/acme paid \$165,000/i)).toBeTruthy();
     expect(screen.getByText(/globex is on the return/i)).toBeTruthy();
-    // CHANGE 5: notes are disclosures, so they render above the cards — one of
-    // them says a whole rule could not run.
-    const note = screen.getByText(/shown in 2025 dollars/i);
+    // CHANGE 5: notes are disclosures, so they render above the cards — this
+    // one says a whole rule could not run.
+    const note = screen.getByText(/wages checks could not run/i);
     const firstCard = screen.getByText(/acme paid \$165,000/i);
     expect(note.compareDocumentPosition(firstCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
@@ -152,8 +161,11 @@ describe("PlanVsReturnContent", () => {
     expect(inLineToggle.closest("h3")).toBeTruthy();
     await userEvent.click(inLineToggle);
     const table = screen.getByRole("table");
-    // CHANGE 3: a year is a number here too.
-    expect(within(table).getByText(/Return 2025/).className).toContain("tabular");
+    // CHANGE 1/3: all three headers share one face — a mono year beside an
+    // Inter "Plan" is a visible split in the same row.
+    for (const header of within(table).getAllByRole("columnheader")) {
+      expect(header.className).toContain("tabular");
+    }
     expect(within(table).getByText("Filing status")).toBeTruthy();
     // Mono is for numerals only: a filing status rendered in the numeral face
     // is a brand violation on a screen an advisor shows a client as-is.
@@ -359,8 +371,9 @@ describe("PlanVsReturnContent", () => {
     await userEvent.click(within(card).getByRole("button", { name: /not applicable/i }));
 
     const live = screen.getByRole("status");
+    // The notice reports THIS click; the page-level line explains the state.
     await waitFor(() =>
-      expect(within(live).getByText(/everything else on this page still works/i)).toBeTruthy(),
+      expect(within(live).getByText(/that card couldn't be set aside/i)).toBeTruthy(),
     );
     expect(within(live).queryByText(/dismissals_unavailable/)).toBeNull();
     // Deployment state is not something an advisor can act on, and this screen
@@ -368,9 +381,11 @@ describe("PlanVsReturnContent", () => {
     expect(within(live).queryByText(/update|deploy|migrat/i)).toBeNull();
 
     // …and the button latches off, so the same wall cannot be hit again.
-    const dismiss = within(card).getByRole("button", { name: /not applicable/i });
-    expect(dismiss).toBeDisabled();
-    expect(within(card).getByText(/setting cards aside isn't available right now\./i)).toBeTruthy();
+    expect(within(card).getByRole("button", { name: /not applicable/i })).toBeDisabled();
+    // The explanation appears ONCE on the page, not beside every dead button.
+    const reason = screen.getAllByText(/setting cards aside isn't available right now/i);
+    expect(reason).toHaveLength(1);
+    expect(within(card).queryByText(/setting cards aside/i)).toBeNull();
   });
 
   it("moves focus to the confirmation, which replaced the card the button was on", async () => {

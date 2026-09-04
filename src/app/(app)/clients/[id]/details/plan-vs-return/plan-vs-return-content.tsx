@@ -218,18 +218,17 @@ export function PlanVsReturnContent({
       if (!res.ok || !body.reconciliation) {
         // Latch it: the bundle still says the store is there, so leaving the
         // button live invites the advisor to hit the same wall repeatedly.
+        // Latching also raises the page-level explanation, so the notice only
+        // has to report THIS click — the two say different things.
         if (res.status === 503) setDismissalsBlocked(true);
         setNotice({
           tone: "error",
-          text:
-            res.status === 503
-              ? "Setting cards aside isn't available right now — everything else on this page still works."
-              : sentence(
-                  body,
-                  mode === "dismiss"
-                    ? "That card couldn't be set aside."
-                    : "That card couldn't be restored.",
-                ),
+          text: sentence(
+            body,
+            mode === "dismiss"
+              ? "That card couldn't be set aside."
+              : "That card couldn't be restored.",
+          ),
         });
         return;
       }
@@ -374,9 +373,16 @@ export function PlanVsReturnContent({
               disclosures, not footnotes — one of them is "The wages checks
               could not run, so nothing on this page reflects them", and a
               must-see disclosure under fifteen cards is a disclosure nobody
-              sees. */}
-          {bundle.notes.length > 0 && (
+              sees. The dead-control reason sits with them for the same
+              reason, and exactly once. */}
+          {(bundle.notes.length > 0 || dismissalsOff) && (
             <ul className="flex flex-col gap-1">
+              {dismissalsOff && (
+                <li className="text-xs text-ink-3">
+                  Setting cards aside isn&apos;t available right now. Everything else on this page
+                  works normally.
+                </li>
+              )}
               {bundle.notes.map((n) => (
                 <li key={n} className="text-xs text-ink-3">
                   {n}
@@ -466,11 +472,11 @@ export function PlanVsReturnContent({
                   </caption>
                   <thead>
                     <tr className="border-b border-hair text-left text-ink-3">
-                      <th className="py-1 font-normal">Check</th>
+                      <th className="tabular py-1 font-normal">Check</th>
                       <th className="tabular py-1 text-right font-normal">
                         Return {bundle.taxYear}
                       </th>
-                      <th className="py-1 text-right font-normal">Plan</th>
+                      <th className="tabular py-1 text-right font-normal">Plan</th>
                     </tr>
                   </thead>
                   <tbody>

@@ -52,9 +52,11 @@ export function buildReconciliation(input: ReconciliationInput, ctx: BuildContex
     .map((id) => ({ id, title: SECTION_TITLES[id], items: open.filter((s) => s.section === id) }))
     .filter((s) => s.items.length > 0);
 
-  if (input.planYear !== input.taxYear) {
-    notes.push(`The plan's ${input.planYear} figures are shown in ${input.taxYear} dollars, using each row's own growth rate (the plan's inflation rate for engine totals).`);
-  }
+  // No units note. Every plan figure IS stated in taxYear dollars, but saying so
+  // is the renderer's job: the page labels its own columns and carries the
+  // explanation on the strip, so emitting it here printed the same sentence
+  // twice, in different words, one line apart. `notes` is for what the page
+  // cannot know — a rule that threw, a projection that did not run.
 
   const tr = input.engineYear?.taxResult;
   const planOf = (v: number | undefined): number | null => (v == null ? null : planToTaxYear(input, v));
