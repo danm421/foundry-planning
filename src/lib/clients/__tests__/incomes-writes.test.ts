@@ -6,6 +6,7 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
+import { recordAudit } from "@/lib/audit";
 import { sweepLeakedAuditRows } from "@/lib/audit/test-helpers";
 import { auditLog, incomes } from "@/db/schema";
 import {
@@ -279,5 +280,60 @@ d("incomes-writes core", () => {
       .from(auditLog)
       .where(and(eq(auditLog.action, "income.update"), eq(auditLog.resourceId, created.data.id)));
     expect(audits).toHaveLength(0);
+  });
+
+  // The other direction of the same contract. `recordAudit` is deliberately fail-soft —
+  // an audit hiccup must never break a user-facing write — so putting its INSERT inside a
+  // caller's transaction must not invert that: a failed INSERT poisons the whole Postgres
+  // transaction (25P02) and every later statement dies with it. A SAVEPOINT keeps both
+  // halves true at once.
+  it("an audit failure inside a caller's transaction rolls back only itself", async () => {
+    const created = await createIncomeForClient({
+      clientId: COOPER_CLIENT_ID,
+      firmId: COOPER_FIRM_ID,
+      actorId: ACTOR_ID,
+      input: {
+        type: "social_security",
+        name: "Savepoint target",
+        annualAmount: 30000,
+        startYear: 2025,
+        endYear: 2045,
+      },
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    createdIds.push(created.data.id);
+
+    await db.transaction(async (tx) => {
+      // `audit_log.client_id` is a uuid column, so this INSERT cannot succeed.
+      // recordAudit swallows the error, exactly as it always has.
+      await recordAudit({
+        action: "income.update",
+        resourceType: "income",
+        resourceId: created.data.id,
+        clientId: "not-a-uuid",
+        firmId: COOPER_FIRM_ID,
+        actorId: ACTOR_ID,
+        tx,
+      });
+      // Without the savepoint the transaction is aborted by now and this throws 25P02 —
+      // an audit-log hiccup taking a client's income edit down with it.
+      const res = await updateIncomeForClient({
+        clientId: COOPER_CLIENT_ID,
+        firmId: COOPER_FIRM_ID,
+        actorId: ACTOR_ID,
+        incomeId: created.data.id,
+        input: { annualAmount: 44000 },
+        tx,
+      });
+      expect(res.ok).toBe(true);
+    });
+
+    const [row] = await db
+      .select({ annualAmount: incomes.annualAmount })
+      .from(incomes)
+      .where(eq(incomes.id, created.data.id));
+    // The write stands: the audit failure cost only the audit row.
+    expect(row.annualAmount).toBe("44000.00");
   });
 });

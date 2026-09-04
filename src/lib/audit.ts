@@ -558,7 +558,7 @@ export async function recordAudit(args: Args): Promise<void> {
     // that user leaves the org. Best-effort — never blocks the insert.
     const actorName = await snapshotActorName(actorId);
     if (actorName) metadata = { ...(metadata ?? {}), actorName };
-    await (args.tx ?? db).insert(auditLog).values({
+    const row = {
       firmId: args.firmId,
       actorId,
       actorKind: args.actorKind ?? "advisor",
@@ -567,7 +567,22 @@ export async function recordAudit(args: Args): Promise<void> {
       resourceId: args.resourceId,
       clientId: args.clientId ?? null,
       metadata,
-    });
+    };
+    if (args.tx) {
+      // Inside a caller's transaction the row must live and die with the write it
+      // describes — but it must not be able to KILL that write. A failed INSERT aborts
+      // the whole Postgres transaction (25P02) and every later statement with it, which
+      // would invert this function's fail-soft contract for tx callers only.
+      //
+      // A nested transaction is a real SAVEPOINT on this driver: drizzle's pg dialect
+      // issues `savepoint spN` on the SAME session and `rollback to savepoint spN` if the
+      // callback throws (drizzle-orm/neon-serverless/session.js:198-209). So an audit
+      // failure rolls back only itself, the enclosing transaction stays usable, and the
+      // catch below swallows it exactly as it does on the plain path.
+      await args.tx.transaction(async (sp) => { await sp.insert(auditLog).values(row); });
+    } else {
+      await db.insert(auditLog).values(row);
+    }
   } catch (err) {
     const msg =
       err instanceof Error ? err.message.slice(0, 200) : "unknown audit error";
