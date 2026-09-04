@@ -10,6 +10,7 @@ import {
   assetClasses,
   clientCmaOverrides,
   clientDeductions,
+  clientTaxAdjustments,
   crmHouseholdContacts,
   clientRiskProfiles,
 } from "@/db/schema";
@@ -74,6 +75,7 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
     allocationRows,
     assetClassRows,
     deductionRows,
+    taxAdjustmentDbRows,
     riskProfileRows,
     { effectiveTree },
   ] = await Promise.all([
@@ -97,6 +99,10 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
       .select()
       .from(clientDeductions)
       .where(and(eq(clientDeductions.clientId, id), eq(clientDeductions.scenarioId, scenario.id))),
+    db
+      .select()
+      .from(clientTaxAdjustments)
+      .where(and(eq(clientTaxAdjustments.clientId, id), eq(clientTaxAdjustments.scenarioId, scenario.id))),
     // Nothing in the risk-profile plan syncs `clients.risk_tolerance` from the
     // composite level, so the legacy column would go stale the moment an
     // advisor changes tolerance on /risk. Prefer the composite level; fall
@@ -295,6 +301,21 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
     endYearRef: d.endYearRef,
   }));
 
+  const taxAdjustmentRows = taxAdjustmentDbRows.map((a) => ({
+    id: a.id,
+    taxType: a.taxType,
+    name: a.name,
+    owner: a.owner,
+    annualAmount: parseFloat(a.annualAmount),
+    growthRate: parseFloat(a.growthRate),
+    startYear: a.startYear,
+    endYear: a.endYear,
+    startYearRef: a.startYearRef,
+    endYearRef: a.endYearRef,
+    withheldMode: a.withheldMode,
+    withheldValue: parseFloat(a.withheldValue),
+  }));
+
   const liquidAccounts = accountRows
     .filter((a) => ["taxable", "cash", "retirement"].includes(a.category))
     .map((a) => ({
@@ -396,6 +417,7 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
           currentYear,
           saltCap,
         }}
+        taxAdjustmentRows={taxAdjustmentRows}
       />
     </div>
   );

@@ -10,6 +10,7 @@ import WithdrawalStrategySection from "@/components/withdrawal-strategy-section"
 import type { WithdrawalAccount, WithdrawalStrategy } from "@/components/withdrawal-strategy-section";
 import type { ClientMilestones } from "@/lib/milestones";
 import { DeductionsClient } from "./deductions-client";
+import { TaxAdjustmentsList } from "@/components/tax-adjustments-list";
 import AccountGroupsTab from "./account-groups-tab";
 import type {
   DerivedRow,
@@ -20,6 +21,7 @@ import type {
 import type { LiquidAccount, AssetAccount } from "@/components/account-groups/types";
 import { type RiskLevel } from "@/lib/risk-levels";
 import type { FilingStatus } from "@/lib/tax/types";
+import type { IncomeTaxType } from "@/engine/tax-adjustments";
 
 export interface DeductionsTabData {
   derivedRows: DerivedRow[];
@@ -40,6 +42,23 @@ export interface DeductionsTabData {
   }[];
   currentYear: number;
   saltCap: number;
+}
+
+export interface TaxAdjustmentRow {
+  id: string;
+  taxType: IncomeTaxType;
+  name: string | null;
+  owner: "client" | "spouse" | "joint";
+  /** SIGNED. A negative amount removes income the plan over-counts. */
+  annualAmount: number;
+  growthRate: number;
+  startYear: number;
+  endYear: number;
+  startYearRef: string | null;
+  endYearRef: string | null;
+  withheldMode: "none" | "amount" | "percent";
+  /** Dollars when mode is "amount"; a 0..1 fraction when "percent". */
+  withheldValue: number;
 }
 
 export interface AssumptionsSettings {
@@ -115,6 +134,7 @@ interface AssumptionsClientProps {
   resolvedInflationRate: number;
   hasInflationAssetClass: boolean;
   deductionsData: DeductionsTabData;
+  taxAdjustmentRows: TaxAdjustmentRow[];
   liquidAccounts: LiquidAccount[];
   allAccounts: AssetAccount[];
 }
@@ -133,6 +153,7 @@ export default function AssumptionsClient({
   resolvedInflationRate,
   hasInflationAssetClass,
   deductionsData,
+  taxAdjustmentRows,
   liquidAccounts,
   allAccounts,
 }: AssumptionsClientProps) {
@@ -240,6 +261,16 @@ export default function AssumptionsClient({
             itemizedRows={deductionsData.itemizedRows}
             currentYear={deductionsData.currentYear}
             saltCap={deductionsData.saltCap}
+            milestones={milestones}
+            clientFirstName={clientFirstName}
+            spouseFirstName={spouseFirstName}
+          />
+        )}
+        {activeTab === "tax-adjustments" && (
+          <TaxAdjustmentsList
+            clientId={clientId}
+            rows={taxAdjustmentRows}
+            currentYear={deductionsData.currentYear}
             milestones={milestones}
             clientFirstName={clientFirstName}
             spouseFirstName={spouseFirstName}

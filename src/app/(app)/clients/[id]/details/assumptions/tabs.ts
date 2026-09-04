@@ -8,6 +8,7 @@ export const ASSUMPTIONS_TAB_IDS = [
   "growth-inflation",
   "withdrawal",
   "deductions",
+  "tax-adjustments",
   "account-groups",
 ] as const;
 
@@ -22,6 +23,7 @@ export const ASSUMPTIONS_TABS: { id: AssumptionsTabId; label: string }[] = [
   { id: "growth-inflation", label: "Growth & Inflation" },
   { id: "withdrawal", label: "Savings & Withdrawals" },
   { id: "deductions", label: "Deductions" },
+  { id: "tax-adjustments", label: "Tax Adjustments" },
   { id: "account-groups", label: "Account Groups" },
 ];
 
