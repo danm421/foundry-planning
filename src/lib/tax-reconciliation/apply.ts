@@ -19,7 +19,7 @@ import * as w from "./writers";
 import type { ActionTarget, OwnerChoice, Reconciliation, Suggestion } from "./types";
 
 export interface ApplyArgs {
-  clientId: string; firmId: string; actorId: string; callerOrgId: string | null; access: "own" | "shared";
+  clientId: string; firmId: string; actorId: string; callerOrgId: string | null;
   taxYear: number; suggestionId: string; amount?: number; owner?: OwnerChoice;
 }
 export type ApplyResult =
@@ -96,17 +96,24 @@ async function dispatch(t: ActionTarget, owner: OwnerChoice | undefined, c: Writ
       // is. Defaulting to "client" here made every click on a spouse-only claim a 400.
       const chosen = owner === "split" ? t.rows : owner ? t.rows.filter((r) => r.owner === owner) : t.rows;
       if (chosen.length === 0) return { ok: false, status: 400, error: "No Social Security row for that owner" };
-      // `incomes.annual_amount` is decimal(15,2), so an even division of an odd cent
-      // would be rounded on BOTH rows and the household's total would no longer add up.
-      // Split in whole cents and give the remainder to the last row.
+      // The gross is the HOUSEHOLD's, so it is divided across every row being written —
+      // "split" is not a special case. An owner can hold more than one claimable benefit
+      // (`claimRows` filters only on owner-is-a-person, not-ended, DOB-present), and
+      // writing the whole gross to each of them doubled the benefit in one click.
+      // With a single row the division is the identity: share === total, and the
+      // remainder branch returns `total - share * 0`.
+      //
+      // Divided in whole cents because `incomes.annual_amount` is decimal(15,2): an even
+      // division of an odd cent would be rounded on every row and the household's total
+      // would no longer add up. The remainder goes to the last row.
       const totalCents = Math.round(t.amount * 100);
       const shareCents = Math.floor(totalCents / chosen.length);
-      const amountFor = (i: number) => owner !== "split" ? t.amount
-        : (i === chosen.length - 1 ? totalCents - shareCents * (chosen.length - 1) : shareCents) / 100;
-      // A split is TWO row writes. They go through the shared income core — the one
-      // validation path the routes and Forge also use — but on ONE transaction handle,
-      // so a failure on the second cannot leave one spouse's benefit rewritten and the
-      // other's untouched, with the household's total then wrong and nothing flagging it.
+      const amountFor = (i: number) =>
+        (i === chosen.length - 1 ? totalCents - shareCents * (chosen.length - 1) : shareCents) / 100;
+      // A claim can be several row writes. They go through the shared income core — the
+      // one validation path the routes and Forge also use — but on ONE transaction
+      // handle, so a failure partway cannot leave some benefits rewritten and the rest
+      // untouched, with the household's total then wrong and nothing flagging it.
       try {
         return await db.transaction(async (tx) => {
           let last: EntityWriteResult<unknown> = { ok: false, status: 500, error: "No Social Security row was written" };
@@ -133,7 +140,7 @@ export async function applySuggestion(a: ApplyArgs): Promise<ApplyResult> {
   // which proves firm membership and nothing about the caller's `edit` permission or
   // the firm's subscription. A function that takes a firmId and reads as self-scoping
   // has to actually self-scope. The writers keep their own gates as defence in depth.
-  const { firmId } = await requireClientEditAccess(a.clientId);
+  const { firmId, access } = await requireClientEditAccess(a.clientId);
   if (firmId !== a.firmId) return { ok: false, status: 404, error: "Client not found" };
   await requireActiveSubscriptionForFirm(a.firmId);
 
@@ -155,7 +162,9 @@ export async function applySuggestion(a: ApplyArgs): Promise<ApplyResult> {
   const owner = s.action.ownerChoices ? (a.owner ?? "client") : undefined;
 
   const target = withOverrides(s.action.target, a.amount, owner);
-  const crossFirmMeta = crossFirmAuditMeta({ access: a.access }, a.callerOrgId, { taxYear: a.taxYear, suggestionId: a.suggestionId });
+  // `access` comes from the gate, never from the body: a caller passing the wrong value
+  // would mis-stamp `crossFirmActor` on every audit row this apply writes.
+  const crossFirmMeta = crossFirmAuditMeta({ access }, a.callerOrgId, { taxYear: a.taxYear, suggestionId: a.suggestionId });
   const written = await dispatch(target, owner, { clientId: a.clientId, firmId: a.firmId, actorId: a.actorId, crossFirmMeta });
   if (!written.ok) return { ok: false, status: written.status, error: written.error };
 

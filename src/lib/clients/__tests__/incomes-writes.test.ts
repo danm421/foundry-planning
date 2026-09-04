@@ -335,5 +335,15 @@ d("incomes-writes core", () => {
       .where(eq(incomes.id, created.data.id));
     // The write stands: the audit failure cost only the audit row.
     expect(row.annualAmount).toBe("44000.00");
+
+    // …and the POSITIVE direction of the same contract: the update's OWN audit row,
+    // written on the caller's handle, committed with it. Without this, skipping the
+    // audit entirely whenever a handle is passed would satisfy every other assertion
+    // here and in the rollback test above.
+    const audits = await db
+      .select({ id: auditLog.id })
+      .from(auditLog)
+      .where(and(eq(auditLog.action, "income.update"), eq(auditLog.resourceId, created.data.id)));
+    expect(audits).toHaveLength(1);
   });
 });

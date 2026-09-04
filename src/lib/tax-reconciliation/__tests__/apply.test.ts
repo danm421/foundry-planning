@@ -61,7 +61,7 @@ const spouseCreate = base({ id: "income.rental.create", action: { label: "", des
   target: { kind: "income.create", amountField: "annualAmount", ownerField: "owner", input: { type: "other", name: "Rental", owner: "spouse", annualAmount: 20_000 } } } });
 
 const recon = (open: Suggestion[], dismissed: Suggestion[] = [], checks: Reconciliation["checks"] = []): Reconciliation => ({ taxYear: 2025, planYear: 2026, planStartYear: 2026, status: "ready", overview: { totalIncome: { return: null, plan: null }, federalTax: { return: null, plan: null }, agi: { return: null, plan: null }, effectiveRate: { return: null, plan: null }, openCount: open.length, dismissedCount: dismissed.length, inLineCount: checks.length }, sections: open.length ? [{ id: "income", title: "Income", items: open }] : [], checks, dismissed, notes: [], dismissalsUnavailable: false });
-const args = (over = {}) => ({ clientId: "c1", firmId: "org_1", actorId: "user_1", callerOrgId: "org_1", access: "own" as const, taxYear: 2025, suggestionId: "income.wages.w2.0.create", ...over });
+const args = (over = {}) => ({ clientId: "c1", firmId: "org_1", actorId: "user_1", callerOrgId: "org_1", taxYear: 2025, suggestionId: "income.wages.w2.0.create", ...over });
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -206,6 +206,27 @@ describe("applySuggestion", () => {
     expect(amounts.reduce((t, v) => t + Math.round(v * 100), 0)).toBe(6_200_001);
   });
 
+  it("divides a same-owner multi-row claim too — the gross is the HOUSEHOLD's, not each row's", async () => {
+    // `claimRows` filters on owner-is-a-person / not-ended / DOB-present, so nothing stops
+    // two rows sharing an owner. Two rows make the owner picker appear; picking "client"
+    // used to write the whole household gross to BOTH, doubling the benefit in one click.
+    const twoClientRows = base({ id: "income.socialSecurity", action: { label: "", describe: "", amountEditable: true, defaultAmount: 50_000, ownerChoices: ["client", "spouse", "split"],
+      target: { kind: "income.socialSecurity.claim", amount: 50_000, rows: [
+        { owner: "client", incomeId: "c1a", patch: {} }, { owner: "client", incomeId: "c1b", patch: {} }, { owner: "spouse", incomeId: "sp1", patch: {} }] } } });
+    m.computeReconciliation.mockResolvedValue({ ok: true, taxReturnId: "tr-1", reconciliation: recon([twoClientRows]) });
+    await applySuggestion(args({ suggestionId: "income.socialSecurity", owner: "client" }));
+    const calls = m.updateIncomeForClient.mock.calls.map((call) => call[0] as { incomeId: string; input: { annualAmount: number } });
+    expect(calls.map((x) => x.incomeId)).toEqual(["c1a", "c1b"]);
+    expect(calls.map((x) => x.input.annualAmount)).toEqual([25_000, 25_000]);
+    expect(calls.reduce((t, x) => t + Math.round(x.input.annualAmount * 100), 0)).toBe(5_000_000);
+  });
+
+  it("leaves a single-row claim on the exact gross, bit for bit", async () => {
+    m.computeReconciliation.mockResolvedValue({ ok: true, taxReturnId: "tr-1", reconciliation: recon([ssSpouseOnly]) });
+    await applySuggestion(args({ suggestionId: "income.socialSecurity" }));
+    expect(m.updateIncomeForClient).toHaveBeenCalledWith(expect.objectContaining({ input: expect.objectContaining({ annualAmount: 40_000 }) }));
+  });
+
   it("rejects a suggestion that carries no action instead of crashing", async () => {
     expect(await applySuggestion(args({ suggestionId: "income.socialSecurity.noProjection" }))).toMatchObject({ ok: false, status: 400 });
     for (const f of Object.values(WRITERS)) expect(f).not.toHaveBeenCalled();
@@ -280,12 +301,20 @@ describe("applySuggestion routing — every ActionTarget kind reaches its own wr
     expect(m.recordAudit).toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.objectContaining({ kind: target.kind }) }));
   });
 
-  it("stamps cross-firm metadata on the apply audit and hands it to the writer", async () => {
-    const r = await applySuggestion(args({ access: "shared", callerOrgId: "org_other" }));
+  it("stamps cross-firm metadata from the GATE's access, never the caller's word for it", async () => {
+    m.requireClientEditAccess.mockResolvedValue({ firmId: "org_1", access: "shared", client: {} });
+    // A body claiming "own" must not be able to strip the cross-firm stamp off the audit.
+    const r = await applySuggestion({ ...args({ callerOrgId: "org_other" }), access: "own" } as never);
     expect(r.ok).toBe(true);
     const meta = { crossFirmActor: true, actorFirmId: "org_other", taxYear: 2025, suggestionId: "income.wages.w2.0.create" };
     expect(m.createIncomeForClient).toHaveBeenCalledWith(expect.objectContaining({ crossFirmMeta: meta }));
     expect(m.recordAudit).toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.objectContaining(meta) }));
+  });
+
+  it("leaves the stamp off when the gate says the client is the caller's own", async () => {
+    const r = await applySuggestion({ ...args({ callerOrgId: "org_other" }), access: "shared" } as never);
+    expect(r.ok).toBe(true);
+    expect(m.recordAudit).toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.not.objectContaining({ crossFirmActor: true }) }));
   });
 
   it("refuses a Social Security claim whose chosen owner has no row", async () => {
