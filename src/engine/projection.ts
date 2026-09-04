@@ -166,6 +166,7 @@ import {
   type EntityFlowOverride,
 } from "./types";
 import { computeTaxForYear, type YearTaxInput } from "./year-tax";
+import { resolveTaxAdjustmentsForYear } from "./tax-adjustments";
 import { diffEquityTaxImpact, type EquityTaxImpact } from "./equity/tax-impact";
 import {
   buildNoteReceivableSchedules,
@@ -2435,6 +2436,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // Declared `let` so the Phase 3 entity-passthrough block can add its
     // passthrough total for flat-mode compatibility (bracket mode reads
     // taxDetail directly; flat mode reads taxableIncome).
+    //
+    // Advisor-entered income that already happened (completed Roth conversion,
+    // banked bonus, K-1). Feeds the tax math only — nothing is added to
+    // `income.*`, so no cash moves and no account balance changes.
+    const taxAdj = resolveTaxAdjustmentsForYear(data.taxAdjustments, year);
     // SIGNED capital gains folded into the `taxableIncome` scalar directly
     // below, split by character. Flat mode backs this exact pair out and
     // re-adds the §1222-netted figures, so it MUST be built from the same terms
@@ -2450,8 +2456,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         reinvestmentResult.capitalGains +
         saleResult.capitalGains +
         businessSaleResult.capitalGains +
-        equityCapitalGains,
-      shortTerm: realizationSTCG + equityStCapitalGains,
+        equityCapitalGains +
+        taxAdj.capitalGainsLt,
+      shortTerm: realizationSTCG + equityStCapitalGains + taxAdj.capitalGainsSt,
     };
     let taxableIncome =
       income.salaries +
@@ -2478,7 +2485,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       businessSaleResult.capitalGains +
       equityOrdinaryIncome +
       equityCapitalGains +
-      equityStCapitalGains;
+      equityStCapitalGains +
+      taxAdj.taxableTotal;
     // Build per-year tax detail breakdown. Income items use their taxType when
     // set, otherwise fall back to the legacy type-based mapping.
     const taxDetail: ProjectionYear["taxDetail"] = {
@@ -2500,6 +2508,17 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       taxExemptInterest: 0,
       bySource: { ...realizationBySource, ...rmdBySource, ...annuityBySource },
     };
+    // Tax adjustments land in their own buckets and in bySource, so the
+    // drill-down names each one. `tax_exempt` raises `taxExempt` only — NOT
+    // `taxExemptInterest`, which is the muni-interest subset feeding IRMAA MAGI.
+    taxDetail.earnedIncome += taxAdj.byTaxType.earned_income;
+    taxDetail.ordinaryIncome += taxAdj.byTaxType.ordinary_income;
+    taxDetail.dividends += taxAdj.byTaxType.dividends;
+    taxDetail.capitalGains += taxAdj.byTaxType.capital_gains;
+    taxDetail.stCapitalGains += taxAdj.byTaxType.stcg;
+    taxDetail.qbi += taxAdj.byTaxType.qbi;
+    taxDetail.taxExempt += taxAdj.byTaxType.tax_exempt;
+    Object.assign(taxDetail.bySource, taxAdj.bySource);
     // Map income entries to tax categories. Social Security is intentionally
     // excluded from this loop: `socialSecurityGross` is passed separately into
     // the bracket engine, which runs `calcTaxableSocialSecurity` against it
