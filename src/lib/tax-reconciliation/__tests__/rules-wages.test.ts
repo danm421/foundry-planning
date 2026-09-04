@@ -2,9 +2,18 @@ import { describe, it, expect } from "vitest";
 import { emptyTaxReturnFacts } from "@/lib/schemas/tax-return-facts";
 import { wageRules } from "../rules/wages";
 import { engineYearFixture, income, inputFixture, planFixture } from "./fixtures";
+import type { PlanIncome } from "../types";
 
 const w2 = (employer: string | null, wages: number | null) => ({ employer, wages });
-const salary = (id: string, name: string, amount: number, over = {}) => income({ id, type: "salary", name, annualAmount: amount, ...over });
+// `over` is typed, not `{}`: an untyped bag silently swallows a misspelled override, so a test could
+// think it was pinning `inflationStartYear` while the row kept the fixture default.
+const salary = (id: string, name: string, amount: number, over: Partial<PlanIncome> = {}) => income({ id, type: "salary", name, annualAmount: amount, ...over });
+const engineDeferring = (retirementContributions: number) => engineYearFixture({
+  deductionBreakdown: {
+    aboveLine: { retirementContributions, taggedExpenses: 0, manualEntries: 0, studentLoanInterest: 0, total: retirementContributions, bySource: {} },
+    belowLine: { charitable: 0, taxesPaid: 0, stateIncomeTax: 0, propertyTaxes: 0, interestPaid: 0, otherItemized: 0, itemizedTotal: 0, standardDeduction: 0, taxDeductions: 0, bySource: {} },
+  },
+});
 
 describe("wageRules — per W-2 (10% / $500)", () => {
   it("updates a matched row whose tax-year figure differs, naming the row and writing inflationStartYear", () => {
@@ -41,6 +50,18 @@ describe("wageRules — per W-2 (10% / $500)", () => {
     expect(s.meaning).toMatch(/401\(k\)/);
   });
 
+  it("leaves the 401(k) note off when the savings rule funds a non-deferral account", () => {
+    // "No accounts at all" is the easy negative; this is the one that pins the SUBTYPE predicate.
+    // A brokerage account is still funded by a savings rule, but nothing about it is pre-tax.
+    const plan = planFixture({
+      incomes: [salary("i1", "Acme Corp", 154_500)],
+      accounts: [{ id: "a1", name: "Joint brokerage", category: "taxable", subType: "brokerage" }],
+      savingsRules: [{ id: "r1", accountId: "a1", annualAmount: 23_000, startYear: 2026, endYear: 2060 }],
+    });
+    const s = wageRules(inputFixture({ w2s: [w2("Acme", 120_000)], plan })).suggestions[0];
+    expect(s.meaning).not.toMatch(/401\(k\)/);
+  });
+
   it("creates a salary for an unmatched W-2 over $1,000, with an owner choice when there is a spouse", () => {
     const r = wageRules(inputFixture({ w2s: [w2("Globex", 90_000), w2("Tiny Gig", 800)] }));
     expect(r.suggestions.map((s) => s.id)).toEqual(["income.wages.w2.0.create"]);
@@ -72,6 +93,45 @@ describe("wageRules — per W-2 (10% / $500)", () => {
     ]);
   });
 
+  it("prefers a live row over an ended one when both match the employer", () => {
+    // normalizeName strips "corp", so "acme" is contained in "acme consulting" and the W-2 matches
+    // BOTH rows. Taking the first in plan.incomes order — which is startYear order, so the ended one
+    // — checks the job off as finished and then fires a false "no W-2 matches this" card at the
+    // consulting row the client actually holds, losing the real update entirely.
+    const plan = planFixture({ incomes: [
+      salary("i1", "Acme Corp", 154_500, { startYear: 2015, endYear: 2025 }),
+      salary("i2", "Acme Corp — consulting", 103_000, { startYear: 2026, endYear: 2035 }),
+    ] });
+    const r = wageRules(inputFixture({ w2s: [w2("Acme Corp", 170_000)], plan }));
+    expect(r.suggestions.map((s) => s.id)).toEqual(["income.wages.w2.0"]);
+    expect(r.suggestions[0].action?.target).toMatchObject({ incomeId: "i2", patch: { annualAmount: 170_000 } });
+    expect(r.checks).toEqual([]); // the ended row was never claimed, so nothing was checked off
+  });
+
+  it("says a matched row starts after the plan year rather than claiming it ended", () => {
+    // isActiveInYear is false for a row that has not STARTED as well as one that has ended, so the
+    // ended-job copy would tell the advisor this 2030 row "ends in 2060, before the 2026 plan year".
+    const plan = planFixture({ incomes: [salary("i1", "Acme Corp", 154_500, { startYear: 2030, endYear: 2060 })] });
+    const r = wageRules(inputFixture({ w2s: [w2("ACME CORPORATION", 100_000)], plan }));
+    expect(r.suggestions).toEqual([]);
+    expect(r.checks).toEqual([
+      { id: "income.wages.w2.0", label: "Wages · ACME CORPORATION", returnDisplay: "$100,000", planDisplay: "Starts in 2030, after the 2026 plan year" },
+    ]);
+  });
+
+  it("matches the exactly-named row first, so two live employers do not swap writes", () => {
+    // Both rows fuzzy-match both W-2s on the contains rule. First-match-wins hands each row the
+    // OTHER employer's box 1 — the right amount written to the wrong row's id, twice over.
+    const plan = planFixture({ incomes: [
+      salary("i1", "Acme Holdings", 103_000),
+      salary("i2", "Acme", 103_000),
+    ] });
+    const r = wageRules(inputFixture({ w2s: [w2("Acme", 200_000), w2("Acme Holdings", 40_000)], plan }));
+    const byId = Object.fromEntries(r.suggestions.map((s) => [s.id, s]));
+    expect(byId["income.wages.w2.0"]?.action?.target).toMatchObject({ incomeId: "i2", patch: { annualAmount: 200_000 } });
+    expect(byId["income.wages.w2.1"]?.action?.target).toMatchObject({ incomeId: "i1", patch: { annualAmount: 40_000 } });
+  });
+
   it("does not offer one plan row to two W-2s", () => {
     const plan = planFixture({ incomes: [salary("i1", "Acme", 100_000)] });
     const r = wageRules(inputFixture({ w2s: [w2("Acme", 100_000), w2("Acme Holdings", 40_000)], plan }));
@@ -90,6 +150,31 @@ describe("wageRules — per W-2 (10% / $500)", () => {
     expect(s.returnFigure.amount).toBe(100_000);
     expect(s.link?.href).toMatch(/income-expenses$/);
   });
+
+  it("reconciles the unmatched-row card's three figures against each other", () => {
+    // The card prints the return's total wages, THIS row, and a delta. Building the delta from the
+    // plan's salary total — a number the card never shows — left the three not adding up on screen.
+    const f = emptyTaxReturnFacts(2025); f.income.wages = 100_000;
+    const plan = planFixture({ incomes: [salary("i1", "Acme", 100_000), salary("i2", "Old Job", 60_000)] });
+    const r = wageRules(inputFixture({ facts: f, w2s: [w2("Acme", 100_000)], plan }));
+    const s = r.suggestions.find((x) => x.id === "income.wages.unmatchedRow.i2")!;
+    expect(s.returnFigure.amount! - s.planFigure.amount!).toBeCloseTo(-s.delta.amount!, 2);
+    expect(s.delta.display).toBe("Plan is $41,748 short"); // 100,000 − 60,000/1.03, not − 155,340
+  });
+
+  it("leaves an ended job out of the plan's salary total, so a live row is not falsely flagged", () => {
+    // The return's wages (130,000) already exceed the plan's ACTIVE salaries (110,000), so nothing is
+    // missing and the rule stays silent. Counting the ended job pushes the total to 190,635, clears
+    // the tolerance, and fires "no W-2 matches this" at Side Gig — a job the client still holds.
+    const f = emptyTaxReturnFacts(2025); f.income.wages = 130_000;
+    const plan = planFixture({ incomes: [
+      salary("i1", "Acme", 100_000, { inflationStartYear: 2025 }),
+      salary("i2", "Side Gig", 10_000, { inflationStartYear: 2025 }),
+      salary("i3", "Old Job", 60_000, { startYear: 2015, endYear: 2025 }),
+    ] });
+    const r = wageRules(inputFixture({ facts: f, w2s: [w2("Acme", 100_000)], plan }));
+    expect(r.suggestions).toEqual([]);
+  });
 });
 
 describe("wageRules — income.wages.total (no W-2 documents, 5% / $500)", () => {
@@ -99,10 +184,19 @@ describe("wageRules — income.wages.total (no W-2 documents, 5% / $500)", () =>
     expect(s.id).toBe("income.wages.total");
     expect(s.action?.target).toMatchObject({ kind: "income.create", input: { name: "Wages (from 2025 return)", annualAmount: 80_000 } });
   });
+  it("shows no salary as $0, not as a negative figure, when the plan still defers pre-tax", () => {
+    // With no active salary rows the plan figure is 0 − deferrals. The card would read "-$20,000"
+    // under a headline saying the plan has no salary at all.
+    const f = emptyTaxReturnFacts(2025); f.income.wages = 80_000;
+    const s = wageRules(inputFixture({ facts: f, engineYear: engineDeferring(20_600) })).suggestions[0];
+    expect(s.id).toBe("income.wages.total");
+    expect(s.planFigure.amount).toBe(0);
+    expect(s.planFigure.display).toBe("$0");
+  });
   it("updates the single row, adding back the engine's pre-tax deferrals so the row stays gross", () => {
     const f = emptyTaxReturnFacts(2025); f.income.wages = 80_000;
     const plan = planFixture({ incomes: [salary("i1", "Acme", 100_000, { inflationStartYear: 2025 })] });
-    const engineYear = engineYearFixture({ deductionBreakdown: { aboveLine: { retirementContributions: 10_300, taggedExpenses: 0, manualEntries: 0, studentLoanInterest: 0, total: 10_300, bySource: {} }, belowLine: { charitable: 0, taxesPaid: 0, stateIncomeTax: 0, propertyTaxes: 0, interestPaid: 0, otherItemized: 0, itemizedTotal: 0, standardDeduction: 0, taxDeductions: 0, bySource: {} } } });
+    const engineYear = engineDeferring(10_300);
     const s = wageRules(inputFixture({ facts: f, plan, engineYear })).suggestions[0];
     // plan box-1 equivalent = 100,000 − 10,300/1.03 = 90,000; return 80,000 → differs
     expect(s.planFigure.amount).toBeCloseTo(90_000, 0);
@@ -114,7 +208,7 @@ describe("wageRules — income.wages.total (no W-2 documents, 5% / $500)", () =>
     // 120,000, which pulls the three apart: return 80,000 · plan 110,000 · write-back 90,000.
     const f = emptyTaxReturnFacts(2025); f.income.wages = 80_000;
     const plan = planFixture({ incomes: [salary("i1", "Acme", 120_000, { inflationStartYear: 2025 })] });
-    const engineYear = engineYearFixture({ deductionBreakdown: { aboveLine: { retirementContributions: 10_300, taggedExpenses: 0, manualEntries: 0, studentLoanInterest: 0, total: 10_300, bySource: {} }, belowLine: { charitable: 0, taxesPaid: 0, stateIncomeTax: 0, propertyTaxes: 0, interestPaid: 0, otherItemized: 0, itemizedTotal: 0, standardDeduction: 0, taxDeductions: 0, bySource: {} } } });
+    const engineYear = engineDeferring(10_300);
     const s = wageRules(inputFixture({ facts: f, plan, engineYear })).suggestions[0];
     expect(s.returnFigure.amount).toBe(80_000);
     expect(s.planFigure.amount).toBeCloseTo(110_000, 0);

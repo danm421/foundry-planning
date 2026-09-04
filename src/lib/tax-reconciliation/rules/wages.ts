@@ -1,4 +1,4 @@
-import { ROW, W2, detailsHref, differs, hasSpouse, isActiveInYear, makeDelta, money, n, namesMatch, planToTaxYear, ref, rowAmountInYear, sum } from "../compare";
+import { ROW, W2, detailsHref, differs, hasSpouse, isActiveInYear, makeDelta, money, n, namesMatch, normalizeName, planToTaxYear, ref, rowAmountInYear, sum } from "../compare";
 import type { Check, PlanIncome, Rule, Suggestion } from "../types";
 
 const DEFERRAL_SUBTYPES = new Set(["401k", "403b"]);
@@ -20,7 +20,10 @@ export const wageRules: Rule = (input) => {
     ? " Box 1 excludes pre-tax 401(k)/403(b) deferrals, so a plan salary that is higher by about the deferral is not a gap."
     : "";
   const spouse = hasSpouse(plan);
-  const planFig = (row: PlanIncome) => ({ label: row.name, amount: rowAmountInYear(row, taxYear), display: money(rowAmountInYear(row, taxYear)), year: planYear });
+  const planFig = (row: PlanIncome) => {
+    const amount = rowAmountInYear(row, taxYear);
+    return { label: row.name, amount, display: money(amount), year: planYear };
+  };
   const createInput = (name: string, amount: number) => ({
     type: "salary", name, owner: "client", annualAmount: amount, growthRate: 0.03, inflationStartYear: taxYear,
     startYear: plan.planSettings.planStartYear, endYear: plan.planSettings.planEndYear, endYearRef: "client_retirement",
@@ -33,15 +36,30 @@ export const wageRules: Rule = (input) => {
     const id = `income.wages.w2.${i}`;
     const employer = w.employer ?? `W-2 #${i + 1}`;
     const returnFigure = { label: `${employer} · box 1`, amount: wages, display: money(wages), lineRefs: [ref("W-2", "Box 1", `${employer} wages`, wages)] };
-    const match = salaryRows.find((r) => !claimed.has(r.id) && namesMatch(w.employer, r.name));
+    // Candidate order matters, not just the predicate. `normalizeName` strips suffixes and then
+    // matches on containment, so "Acme Corp" matches both an ended "Acme Corp" row and a live
+    // "Acme Corp — consulting" one; taking whichever came first in plan.incomes order would hand the
+    // W-2 to the ended row, check it off as finished, and fire a false "no W-2 matches this" card at
+    // the job the client actually holds. Exact beats fuzzy for the same reason: with rows
+    // ["Acme Holdings", "Acme"] and W-2s ["Acme", "Acme Holdings"], first-match-wins writes each
+    // employer's box 1 into the other's row. Ended rows stay reachable, but only last.
+    const available = salaryRows.filter((r) => !claimed.has(r.id));
+    const wanted = w.employer ? normalizeName(w.employer) : "";
+    const match =
+      (wanted ? available.find((r) => isActiveInYear(r, planYear) && normalizeName(r.name) === wanted) : undefined)
+      ?? available.find((r) => isActiveInYear(r, planYear) && namesMatch(w.employer, r.name))
+      ?? available.find((r) => namesMatch(w.employer, r.name));
     if (match) {
       claimed.add(match.id);
       if (!isActiveInYear(match, planYear)) {
-        // The row is real and it matched; it just ends before the plan year — a job the client has
-        // already left. There is nothing to write, so record that the W-2 was accounted for and say
-        // why the plan carries no salary for it. Claiming the row is safe: the unmatchedRow loop
-        // below only walks active rows.
-        checks.push({ id, label: `Wages · ${employer}`, returnDisplay: money(wages), planDisplay: `Ends in ${match.endYear}, before the ${planYear} plan year` });
+        // The row is real and it matched, it just does not overlap the plan year — a job already
+        // left, or one not started yet. There is nothing to write, so record that the W-2 was
+        // accounted for and say why the plan carries no salary for it in this year. Claiming the row
+        // is safe: the unmatchedRow loop below only walks active rows.
+        const planDisplay = match.endYear < planYear
+          ? `Ends in ${match.endYear}, before the ${planYear} plan year`
+          : `Starts in ${match.startYear}, after the ${planYear} plan year`;
+        checks.push({ id, label: `Wages · ${employer}`, returnDisplay: money(wages), planDisplay });
         return;
       }
       const p = rowAmountInYear(match, taxYear);
@@ -74,12 +92,16 @@ export const wageRules: Rule = (input) => {
     const planTotal = sum(rows.map((r) => rowAmountInYear(r, taxYear)));
     if (facts.income.wages < planTotal && differs(facts.income.wages, planTotal, W2)) {
       for (const row of rows.filter((r) => !claimed.has(r.id))) {
+        // The card shows the return's total against THIS row, so the delta has to be the gap between
+        // the two figures it prints. Building it from `planTotal` — which the card never shows —
+        // left three numbers on screen that did not reconcile.
+        const planFigure = planFig(row);
         suggestions.push({
           id: `income.wages.unmatchedRow.${row.id}`, section: "income", kind: "review", status: "open",
           headline: `${row.name} is in the plan, but no W-2 on the return matches it.`,
           meaning: `Total wages on the return (${money(facts.income.wages)}) are below the plan's salaries (${money(planTotal)}). This job may have ended, or its W-2 was not uploaded.`,
           returnFigure: { label: "Wages (all W-2s)", amount: facts.income.wages, display: money(facts.income.wages), lineRefs: [ref("1040", "1a", "Wages", facts.income.wages)] },
-          planFigure: planFig(row), delta: makeDelta(facts.income.wages, planTotal),
+          planFigure, delta: makeDelta(facts.income.wages, planFigure.amount),
           link: { label: "Open Inflows & Outflows", href: detailsHref(input, "income-expenses") },
         });
       }
@@ -90,7 +112,9 @@ export const wageRules: Rule = (input) => {
     const wages = facts.income.wages;
     const deferrals = input.engineYear ? planToTaxYear(input, n(input.engineYear.deductionBreakdown?.aboveLine.retirementContributions)) : 0;
     const gross = sum(rows.map((r) => rowAmountInYear(r, taxYear)));
-    const p = gross - deferrals;
+    // Clamped: with no active salary rows this is 0 − deferrals, and the card would print a negative
+    // plan figure under a headline saying the plan has no salary at all.
+    const p = Math.max(0, gross - deferrals);
     const returnFigure = { label: "Wages", amount: wages, display: money(wages), lineRefs: [ref("1040", "1a", "Wages", wages)] };
     const planFigure = { label: rows.length === 1 ? rows[0].name : "Salaries after pre-tax deferrals", amount: p, display: money(p), year: planYear };
     const id = "income.wages.total";
