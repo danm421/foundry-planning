@@ -76,18 +76,18 @@ export function buildAttention(input: GrowthInput): AttentionRow[] {
       .map((a) => a.actorId),
   );
   for (const u of users) {
-    const firmId = u.firmIds.find((id) => trialingFirms.has(id));
-    if (!firmId) continue;
     if (!u.lastSignInAt || u.lastSignInAt < quietCutoff) continue;
     if (workedRecently.has(u.userId)) continue;
-    rows.push({
-      kind: "signed_in_not_working",
-      headline: `Signing in but nothing built in ${plural(QUIET_DAYS, "day")}`,
-      who: [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email || u.userId,
-      email: u.email,
-      firmId,
-      at: u.lastSignInAt.toISOString(),
-    });
+    for (const firmId of u.firmIds.filter((id) => trialingFirms.has(id))) {
+      rows.push({
+        kind: "signed_in_not_working",
+        headline: `Signing in but nothing built in ${plural(QUIET_DAYS, "day")}`,
+        who: [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email || u.userId,
+        email: u.email,
+        firmId,
+        at: u.lastSignInAt.toISOString(),
+      });
+    }
   }
 
   // Repeated paywall hits — a blocked attempt is a signal, never work.

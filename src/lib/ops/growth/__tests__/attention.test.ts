@@ -2,8 +2,10 @@ import { describe, it, expect } from "vitest";
 import {
   buildAttention,
   TRIAL_ENDING_DAYS,
+  CANCELED_WITHIN_DAYS,
   QUIET_DAYS,
   PAYWALL_HIT_THRESHOLD,
+  NEW_SIGNUP_DAYS,
 } from "../attention";
 import type { GrowthInput } from "../types";
 
@@ -69,6 +71,22 @@ describe("buildAttention — cancellations", () => {
     };
     expect(kinds(i)).not.toContain("canceled");
   });
+
+  it("fires exactly at the cancellation window threshold", () => {
+    const i = {
+      ...EMPTY, firms: [firm()],
+      subs: [sub({ status: "canceled", canceledAt: day(-CANCELED_WITHIN_DAYS), trialEnd: day(-90) })],
+    };
+    expect(kinds(i)).toContain("canceled");
+  });
+
+  it("stays silent one day outside the cancellation window threshold", () => {
+    const i = {
+      ...EMPTY, firms: [firm()],
+      subs: [sub({ status: "canceled", canceledAt: day(-(CANCELED_WITHIN_DAYS + 1)), trialEnd: day(-90) })],
+    };
+    expect(kinds(i)).not.toContain("canceled");
+  });
 });
 
 describe("buildAttention — quiet and blocked", () => {
@@ -116,6 +134,38 @@ describe("buildAttention — quiet and blocked", () => {
     }));
     expect(kinds({ ...EMPTY, firms: [firm()], activity })).not.toContain("paywall_blocked");
   });
+
+  it("counts a paywall hit exactly at the recency window boundary", () => {
+    const activity = Array.from({ length: PAYWALL_HIT_THRESHOLD }, () => ({
+      firmId: "org_1", actorId: "user_a",
+      action: "billing.access_denied", createdAt: day(-QUIET_DAYS),
+    }));
+    expect(kinds({ ...EMPTY, firms: [firm()], activity })).toContain("paywall_blocked");
+  });
+
+  it("drops a paywall hit one day outside the recency window", () => {
+    const activity = Array.from({ length: PAYWALL_HIT_THRESHOLD }, () => ({
+      firmId: "org_1", actorId: "user_a",
+      action: "billing.access_denied", createdAt: day(-(QUIET_DAYS + 1)),
+    }));
+    expect(kinds({ ...EMPTY, firms: [firm()], activity })).not.toContain("paywall_blocked");
+  });
+
+  it("flags every trialing firm a shared user belongs to, not just the first", () => {
+    const i: GrowthInput = {
+      ...EMPTY,
+      firms: [firm(), firm({ firmId: "org_2", displayName: "Beta" })],
+      subs: [sub(), sub({ firmId: "org_2" })],
+      users: [{
+        userId: "user_a", email: "a@x.com", firstName: "Ada", lastName: null,
+        createdAt: day(-10), lastSignInAt: day(-1),
+        hasPendingSignup: false, pendingFirmName: null, firmIds: ["org_1", "org_2"],
+      }],
+      activity: [],
+    };
+    const rows = buildAttention(i).filter((r) => r.kind === "signed_in_not_working");
+    expect(rows.map((r) => r.firmId).sort()).toEqual(["org_1", "org_2"]);
+  });
 });
 
 describe("buildAttention — signups", () => {
@@ -149,5 +199,53 @@ describe("buildAttention — signups", () => {
     expect(k).toContain("trial_ending");
     expect(k).toContain("paywall_blocked");
     expect(k.length).toBe(2);
+  });
+
+  it("fires new_signup exactly at the new-signup window threshold", () => {
+    const i: GrowthInput = {
+      ...EMPTY,
+      users: [{
+        userId: "user_a", email: "a@x.com", firstName: null, lastName: null,
+        createdAt: day(-NEW_SIGNUP_DAYS), lastSignInAt: day(-NEW_SIGNUP_DAYS),
+        hasPendingSignup: false, pendingFirmName: null, firmIds: [],
+      }],
+    };
+    expect(kinds(i)).toContain("new_signup");
+  });
+
+  it("stays silent one day outside the new-signup window threshold", () => {
+    const i: GrowthInput = {
+      ...EMPTY,
+      users: [{
+        userId: "user_a", email: "a@x.com", firstName: null, lastName: null,
+        createdAt: day(-(NEW_SIGNUP_DAYS + 1)), lastSignInAt: day(-(NEW_SIGNUP_DAYS + 1)),
+        hasPendingSignup: false, pendingFirmName: null, firmIds: [],
+      }],
+    };
+    expect(kinds(i)).not.toContain("new_signup");
+  });
+
+  it("fires stalled_checkout exactly at the new-signup window threshold", () => {
+    const i: GrowthInput = {
+      ...EMPTY,
+      users: [{
+        userId: "user_a", email: "a@x.com", firstName: null, lastName: null,
+        createdAt: day(-NEW_SIGNUP_DAYS), lastSignInAt: day(-NEW_SIGNUP_DAYS),
+        hasPendingSignup: true, pendingFirmName: "Beta", firmIds: [],
+      }],
+    };
+    expect(kinds(i)).toContain("stalled_checkout");
+  });
+
+  it("stays silent one day outside the window for stalled_checkout", () => {
+    const i: GrowthInput = {
+      ...EMPTY,
+      users: [{
+        userId: "user_a", email: "a@x.com", firstName: null, lastName: null,
+        createdAt: day(-(NEW_SIGNUP_DAYS + 1)), lastSignInAt: day(-(NEW_SIGNUP_DAYS + 1)),
+        hasPendingSignup: true, pendingFirmName: "Beta", firmIds: [],
+      }],
+    };
+    expect(kinds(i)).not.toContain("stalled_checkout");
   });
 });
