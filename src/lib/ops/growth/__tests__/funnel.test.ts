@@ -137,22 +137,21 @@ function stripComments(source: string): string {
 
 /** True only if the file both imports the symbol and calls it — covering a
  * named import (`import { clearPendingSignup }`, called bare) and a
- * namespace import (`import * as ns from ".../pending-signup"`, called as
- * `ns.clearPendingSignup(...)`). An aliased named import
- * (`import { clearPendingSignup as x }`, called as `x(...)`) is NOT
- * detected — text scanning can't follow a rename to its call site. That gap
- * is known and accepted; see the tests below. */
+ * namespace import (`import * as ns from "<any specifier>"`, called as
+ * `ns.clearPendingSignup(...)`). The specifier is not checked — like the
+ * named-import path, this trusts the symbol/binding name alone, so a barrel
+ * or re-exporting module is still caught. Every namespace import in the
+ * file is checked, not just the first, in case more than one is present.
+ * An aliased named import (`import { clearPendingSignup as x }`, called as
+ * `x(...)`) is NOT detected — text scanning can't follow a rename to its
+ * call site. That gap is known and accepted; see the tests below. */
 function callsClearPendingSignup(source: string): boolean {
   const code = stripComments(source);
 
   const namedImport = /import\s*\{[^}]*\bclearPendingSignup\b[^}]*\}/.test(code);
   if (namedImport && /\bclearPendingSignup\s*\(/.test(code)) return true;
 
-  const namespaceImport = code.match(
-    /import\s*\*\s*as\s+(\w+)\s+from\s*["'][^"']*pending-signup["']/,
-  );
-  if (namespaceImport) {
-    const ns = namespaceImport[1];
+  for (const [, ns] of code.matchAll(/import\s*\*\s*as\s+(\w+)\s+from/g)) {
     if (new RegExp(`\\b${ns}\\s*\\.\\s*clearPendingSignup\\s*\\(`).test(code)) return true;
   }
 
@@ -172,6 +171,14 @@ describe("callsClearPendingSignup", () => {
     expect(
       callsClearPendingSignup(
         'import * as ns from "@/lib/billing/pending-signup";\nawait ns.clearPendingSignup(id);',
+      ),
+    ).toBe(true);
+  });
+
+  it("detects a namespace import from a barrel specifier that doesn't spell 'pending-signup'", () => {
+    expect(
+      callsClearPendingSignup(
+        'import * as ns from "@/lib/billing";\nns.clearPendingSignup(id);',
       ),
     ).toBe(true);
   });
