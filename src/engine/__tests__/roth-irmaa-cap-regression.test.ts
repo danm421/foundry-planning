@@ -1,19 +1,23 @@
 /**
- * IRMAA cap regression guard — the feature must be genuinely ADDITIVE.
+ * IRMAA cap regression guard — an explicitly NULL cap is indistinguishable from
+ * an ABSENT one.
  *
- * The whole IRMAA-cap feature is defended by one promise: a plan that never
- * sets a cap projects exactly as it did before any of this landed. This file is
- * that promise, written as a test.
+ * ⚠️ READ THIS BEFORE CITING THIS FILE. Both runs execute THIS branch, so a
+ * pass proves exactly one thing: on a household where the cap demonstrably
+ * COULD bite, `irmaaCapTier: null` projects identically to a conversion with no
+ * `irmaaCapTier` key at all. That is worth pinning — every saved plan, API
+ * payload and frozen scenario snapshot written before this feature omits the
+ * field entirely, and the two spellings enter the engine at two separate places
+ * (`resolveIrmaaCeiling`'s first line, projection.ts:4953, and the phase-5b vs
+ * phase-12 routing test at :5169). Either could drift apart on its own.
  *
- * ⚠️ WHY THE COMPARISON IS TWO RUNS ON THIS BRANCH, NOT A STORED BASELINE.
- * The cap work deliberately ADDED fields that now appear on every plan with a
- * bracket fill (`requested`, `limitedBy`, and new `taxDetail.bySource` keys).
- * Diffing against a pre-branch snapshot would light up on those additions and
- * read as a regression that is not one. Running the SAME household twice — once
- * with the cap field absent, once with it explicitly null — holds every number
- * to account while letting the new fields be new. `resolveIrmaaCeiling` returns
- * null for both `undefined` and `null`, so the two runs must agree on
- * everything, including the added fields.
+ * It is NOT a proof that this branch is byte-compatible with the pre-branch
+ * engine, and it must not be cited as one. This branch deliberately ADDED
+ * fields that now appear on every plan with a bracket fill (`requested`,
+ * `limitedBy`, and new `taxDetail.bySource` keys); a pre-branch snapshot does
+ * not carry them, so a diff against one would light up everywhere and read as a
+ * regression that is not one. That is why the comparison is two runs on this
+ * branch rather than a stored baseline.
  *
  * ⚠️ WHY THE FIXTURE IS BUILT HERE AND NOT REUSED.
  * The cap only exists in BRACKET tax mode with somebody enrolled in the premium
@@ -294,8 +298,24 @@ describe("IRMAA cap regression", () => {
     expect(years.map((y) => y.year)).toEqual([2026, 2027, 2028, 2029, 2030]);
 
     for (const y of years) {
-      // 1. BRACKET mode — flat mode makes the cap inert by design.
-      expect(y.taxResult, `${y.year} should have a bracket-mode tax result`).toBeDefined();
+      // 1. BRACKET mode. ⚠️ `expect(y.taxResult).toBeDefined()` does NOT test
+      //    this — projection.ts assigns `taxResult` unconditionally and
+      //    `calculateTaxYearFlat` returns a fully-populated one too. Assert
+      //    something flat mode cannot produce instead. `belowLineDeductions` is
+      //    hard-coded to 0 in the flat calculator (engine/tax.ts, the `flow`
+      //    block), so a positive value can only be the bracket engine applying
+      //    a real standard deduction from the seeded tax-year row — and unlike
+      //    a tax figure it does not depend on this fixture's flat rates being
+      //    zero. The tax assertion then confirms the household is genuinely
+      //    taxed rather than sitting at a degenerate zero.
+      expect(
+        y.taxResult?.flow.belowLineDeductions ?? 0,
+        `${y.year} should apply a real deduction — flat mode always books 0`,
+      ).toBeGreaterThan(0);
+      expect(
+        y.taxResult?.flow.totalFederalTax ?? 0,
+        `${y.year} should owe federal tax — flat mode at a 0% rate owes none`,
+      ).toBeGreaterThan(0);
       // 2. Medicare-enrolled, including in 2028 (the premium year for the first
       //    conversion) — no enrollment means no ceiling ever resolves.
       expect(y.medicare?.client?.enrolled, `client enrolled in ${y.year}`).toBe(true);
@@ -305,9 +325,33 @@ describe("IRMAA cap regression", () => {
         y.accountLedgers["acc-ira"]?.rmdAmount ?? 0,
         `${y.year} should take an RMD`,
       ).toBeGreaterThan(0);
-      // 4. A supplemental draw is live, so the sizer's supplemental inputs are
-      //    non-zero rather than a trivially-zero special case.
-      expect(y.withdrawals.total, `${y.year} should draw from the portfolio`).toBeGreaterThan(0);
+    }
+
+    // 4. The supplemental draw against the TAXABLE brokerage — the source of
+    //    the `suppOrdinary` / `suppCapGains` inputs the cap's sizer takes.
+    //    Pinned BY ACCOUNT, not with `withdrawals.total > 0`: the total also
+    //    counts a plain checking sweep, which realizes no gain and exercises
+    //    none of that path.
+    //
+    //    ⚠️ 2026 is deliberately NOT in this list, and that is a feature. The
+    //    $150K opening checking balance plus the RMD and pension cover that
+    //    year's spend outright, which is what keeps 2026's cap arithmetic
+    //    hand-checkable: the tier-0 target is exactly `ceiling − (pension +
+    //    RMD)`, with no capital-gains term to muddy it. From 2027 the brokerage
+    //    funds the shortfall and realized gain enters AGI. Asserting the EXACT
+    //    set catches the draw both vanishing and appearing where it should not.
+    const brokerageDrawYears = years.filter(
+      (y) => (y.withdrawals.byAccount["acc-brokerage"] ?? 0) > 0,
+    );
+    expect(
+      brokerageDrawYears.map((y) => y.year),
+      "the brokerage must fund the shortfall from 2027 on",
+    ).toEqual([2027, 2028, 2029, 2030]);
+    for (const y of brokerageDrawYears) {
+      expect(
+        y.taxResult?.flow.capitalGainsTax ?? 0,
+        `${y.year}'s brokerage draw should realize TAXED gain, not just move cash`,
+      ).toBeGreaterThan(0);
     }
 
     // Both conversions actually convert, down both routing arms.
@@ -321,13 +365,20 @@ describe("IRMAA cap regression", () => {
     const withoutField = runProjection(baseFixture());
 
     const capped = baseFixture();
+    // Self-contained non-emptiness guard. An empty `rothConversions` would make
+    // the `.map` below a no-op and the equality trivially true, and this `it`
+    // must not depend on a sibling test that could be skipped or deleted.
+    expect(capped.rothConversions!.length, "both conversions must be present").toBe(2);
     const withNullField = runProjection({
       ...capped,
       rothConversions: capped.rothConversions!.map((c) => ({ ...c, irmaaCapTier: null })),
     });
 
     // The WHOLE year array, not a summary figure — a summary can agree while a
-    // component moved.
-    expect(withNullField).toEqual(withoutField);
+    // component moved. `toStrictEqual`, not `toEqual`: this branch added
+    // OPTIONAL fields, and `toEqual` treats `{ limitedBy: undefined }` as equal
+    // to a missing key. That is exactly the asymmetry two runs of the same
+    // engine could develop, so it must not be forgiven.
+    expect(withNullField).toStrictEqual(withoutField);
   });
 });
