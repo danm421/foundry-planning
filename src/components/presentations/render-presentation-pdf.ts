@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { renderToBuffer } from "@react-pdf/renderer";
 import type { DocumentProps } from "@react-pdf/renderer";
-import { and, eq, asc } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { planObservations, clients } from "@/db/schema";
+import { clients } from "@/db/schema";
 import { resolveBranding } from "@/lib/branding/branding";
 import { resolveBrandingForClient } from "@/lib/branding/resolve-for-client";
 import { foundryDefaultLogoDataUrl } from "@/lib/presentations/default-logo";
@@ -26,6 +26,7 @@ import {
 import { dateLong } from "@/lib/presentations/format";
 import { loadInvestmentsBundle } from "@/lib/presentations/investments-bundle";
 import { loadLifeInsuranceInventory } from "@/lib/insurance-policies/load-li-inventory";
+import { loadClientObservationRows } from "@/lib/observations/load-rows";
 import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
 import { listInvestmentOptionCatalog } from "@/lib/presentations/investment-option-catalog";
 import { getOrComputeLifeInsuranceSolve } from "@/lib/compute-cache/life-insurance";
@@ -306,29 +307,10 @@ export async function renderPresentationPdf(
 
   // Conditionally load observation/next-step rows — only when the deck
   // includes the Observations & Next Steps page. Org-scoping note: clientId +
-  // firmId were already proven by loadEffectiveTreeForRef above; this query
-  // adds eq(planObservations.clientId, clientId) only — rows carry no
-  // cross-client data, so no separate firmId check is needed here.
+  // firmId were already proven by loadEffectiveTreeForRef above; see
+  // `load-rows.ts` for what the query itself adds.
   const needsObservations = body.pages.some((p) => p.pageId === "observationsNextSteps");
-  const observations = needsObservations
-    ? (
-        await db
-          .select()
-          .from(planObservations)
-          .where(eq(planObservations.clientId, clientId))
-          .orderBy(asc(planObservations.section), asc(planObservations.sortOrder), asc(planObservations.createdAt))
-      ).map((r) => ({
-        section: r.section,
-        topic: r.topic,
-        title: r.title,
-        body: r.body,
-        status: r.status,
-        owner: r.owner,
-        priority: r.priority,
-        targetDate: r.targetDate,
-        sortOrder: r.sortOrder,
-      }))
-    : undefined;
+  const observations = needsObservations ? await loadClientObservationRows(clientId) : undefined;
 
   // Load the Plan Story — one payload PER ENTRY, index-aligned with
   // `body.pages`. The chapter prose comes out of storage, never from the model:

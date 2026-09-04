@@ -45,9 +45,25 @@ const d = HAS_DB ? describe : describe.skip;
 // Mock both org helpers: the gift routes were migrated from the loose
 // `getOrgId()` to the strict `requireOrgId()` (audit F2), so the firm the
 // handler reads depends on which one it imports. Set both via `setFirm()`.
-vi.mock("@/lib/db-helpers", () => ({
-  getOrgId: vi.fn(),
-  requireOrgId: vi.fn(),
+vi.mock("@/lib/db-helpers", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/db-helpers")>();
+  return {
+    ...actual,
+    getOrgId: vi.fn(),
+    requireOrgId: vi.fn(),
+  };
+});
+
+vi.mock("@clerk/nextjs/server", () => ({
+  auth: vi.fn(async () => {
+    const { requireOrgId } = await import("@/lib/db-helpers");
+    return {
+      userId: "user_gifts_isolation_test",
+      orgId: await requireOrgId(),
+      orgRole: "org:admin",
+      sessionClaims: { org_public_metadata: { is_founder: true } },
+    };
+  }),
 }));
 
 const FIRM_A = "firm_gifts_test_a";
@@ -247,7 +263,7 @@ d("gifts tenant isolation", () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any,
     );
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
   });
 
   it("Firm A cannot POST a gift with Firm B's trust as recipient", async () => {
@@ -402,7 +418,7 @@ d("gifts tenant isolation", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       { params: Promise.resolve({ id: a.clientId, giftId: seeded.id }) } as any,
     );
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
   });
 
   it("Firm B cannot DELETE Firm A's gift", async () => {
@@ -431,6 +447,6 @@ d("gifts tenant isolation", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       { params: Promise.resolve({ id: a.clientId, giftId: seeded.id }) } as any,
     );
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
   });
 });

@@ -595,6 +595,8 @@ describe("applyBeneficiaryDesignations (Step 2)", () => {
       iraWithBens, 1,
       [{ id: "fm-spouse", role: "spouse" as const, relationship: "other", firstName: "Jane", lastName: "Smith", dateOfBirth: "1972-01-01" }],
       [], [], undefined,
+      /* deceasedFmId */ null,
+      /* survivorFmId */ "fm-spouse",
     );
     expect(result.fractionClaimed).toBeCloseTo(1, 9);
     expect(result.ledgerEntries[0]).toMatchObject({
@@ -649,11 +651,12 @@ describe("applyBeneficiaryDesignations (Step 2)", () => {
     expect(result.consumed).toBe(true);
     expect(result.fractionClaimed).toBeCloseTo(1, 9);
 
-    // The ledger entry is emitted (via=beneficiary_designation, kind=spouse, id=null).
+    // No surviving spouse identity was supplied, so the unresolved role is not
+    // eligible for spouse-only tax treatment.
     expect(result.ledgerEntries).toHaveLength(1);
     expect(result.ledgerEntries[0]).toMatchObject({
       via: "beneficiary_designation",
-      recipientKind: "spouse",
+      recipientKind: "family_member",
       recipientId: null,
     });
 
@@ -701,6 +704,7 @@ describe("applyBeneficiaryDesignations (Step 2)", () => {
       ],
       [], [], undefined,
       /* deceasedFmId */ LEGACY_FM_CLIENT,
+      /* survivorFmId */ LEGACY_FM_SPOUSE,
     );
     expect(result.fractionClaimed).toBeCloseTo(0.5, 9);
     expect(result.consumed).toBe(false);

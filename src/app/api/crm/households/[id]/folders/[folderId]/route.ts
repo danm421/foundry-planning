@@ -3,6 +3,8 @@ import { z } from "zod";
 import { updateFolder, deleteFolder } from "@/lib/crm/folders";
 import { authErrorResponse } from "@/lib/authz";
 
+export const dynamic = "force-dynamic";
+
 const PatchSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   parentFolderId: z.string().uuid().nullable().optional(),

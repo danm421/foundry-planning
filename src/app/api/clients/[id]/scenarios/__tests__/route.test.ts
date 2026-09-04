@@ -61,7 +61,8 @@ vi.mock("@/lib/audit", async () => {
 // Phase 1b: routes gate via verifyClientAccess → auth() from @clerk/nextjs/server.
 // verifyClientAccess now reads `orgId` from auth() (not requireOrgId), so the
 // auth mock derives orgId from the per-test requireOrgId mock to keep the
-// own-firm match and the wrong-firm 404 test in sync.
+// own-firm match and the wrong-firm test in sync. Admin role gives the seeded
+// firm fixtures normal full-book access.
 // Task 17d: include sessionClaims.org_public_metadata.is_founder so
 // requireActiveSubscriptionForFirm passes without a live Clerk API call.
 vi.mock("@clerk/nextjs/server", () => ({
@@ -71,6 +72,7 @@ vi.mock("@clerk/nextjs/server", () => ({
     return {
       userId: "user_test",
       orgId,
+      orgRole: "org:admin",
       sessionClaims: { org_public_metadata: { is_founder: true } },
     };
   }),

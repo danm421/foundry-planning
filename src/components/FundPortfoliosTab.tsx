@@ -17,6 +17,8 @@ interface TickerPortfolio {
   name: string;
   description: string | null;
   holdings: TickerHolding[];
+  /** Non-null once promoted: the model portfolio plans actually consume. */
+  derivedModelPortfolioId: string | null;
 }
 
 interface PortfolioStats {
@@ -151,9 +153,18 @@ function FundHoldingsEditor({
           }),
         }
       );
+      const data = await res.json();
       if (!res.ok) {
-        const data = await res.json();
         throw new Error(data.error ?? "Save failed");
+      }
+      // The one case where an advisor's edit does not reach their plans: the
+      // holdings saved, but the derived model portfolio kept its old mix because
+      // the new one no longer classifies well enough. Never let that be silent.
+      if (data.derivedSync && !data.derivedSync.ok) {
+        setSaveError(
+          "Holdings saved, but the plan copy of this portfolio was left unchanged — " +
+            `${(data.derivedSync.unclassifiedWeight * 100).toFixed(1)}% no longer classifies.`,
+        );
       }
       onSaved();
     } catch (err) {
@@ -255,6 +266,7 @@ export default function FundPortfoliosTab() {
   const [statsLoading, setStatsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [riskFreeRate, setRiskFreeRate] = useState<number>(0.04);
+  const [promoting, setPromoting] = useState(false);
   // Track the name being edited in the rename input
   const [editName, setEditName] = useState<string>("");
 
@@ -277,6 +289,26 @@ export default function FundPortfoliosTab() {
       setError("Failed to load fund portfolios");
     }
   }, []);
+
+  // ── Promote to a model portfolio ───────────────────────────────────────────
+  // Promotion is the only route by which a fund portfolio reaches a plan: every
+  // downstream surface speaks model portfolio and nothing else.
+  async function promoteToModel(id: string) {
+    setPromoting(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/cma/ticker-portfolios/${id}/promote`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Could not use this portfolio in plans");
+      await fetchPortfolios();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Could not use this portfolio in plans",
+      );
+    } finally {
+      setPromoting(false);
+    }
+  }
 
   // ── Fetch stats for selected portfolio ─────────────────────────────────────
   // Returns an ignore-setter so callers can cancel the in-flight request if the
@@ -455,6 +487,22 @@ export default function FundPortfoliosTab() {
               aria-label="Portfolio name"
               className="flex-1 rounded border border-hair bg-transparent px-2 py-1 text-sm font-medium text-ink focus:border-accent focus:outline-none"
             />
+            <button
+              onClick={() => promoteToModel(selected.id)}
+              disabled={promoting}
+              className={
+                selected.derivedModelPortfolioId
+                  ? "flex-shrink-0 rounded border border-accent bg-accent/10 px-3 py-1 text-xs text-accent-ink disabled:opacity-50"
+                  : "flex-shrink-0 rounded border border-hair px-3 py-1 text-xs text-ink-2 hover:border-hair-2 disabled:opacity-50"
+              }
+              title={
+                selected.derivedModelPortfolioId
+                  ? "Available in plans as a model portfolio. Re-syncs whenever you save holdings."
+                  : "Make this portfolio selectable as an account growth source, benchmark and reinvestment target."
+              }
+            >
+              {selected.derivedModelPortfolioId ? "\u2713 Used in plans" : "Use in plans"}
+            </button>
             <div className="flex items-center gap-2 flex-shrink-0">
               <label
                 htmlFor="rfr-input"
@@ -543,6 +591,11 @@ export default function FundPortfoliosTab() {
                   <span>· limited by {stats.window.limitingTicker}</span>
                 )}
               </div>
+
+              <p className="text-xs text-ink-3">
+                Past performance of these funds. Plans use your capital market assumptions for the
+                asset classes below, not these figures.
+              </p>
 
               {/* Look-through panel */}
               {(stats.lookThrough.allocation.length > 0 ||

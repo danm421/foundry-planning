@@ -606,6 +606,14 @@ export const planObservationSourceEnum = pgEnum("plan_observation_source", [
   "manual",
   "ai",
 ]);
+/** Who a plan_observations row is written FOR. `client` rows print on the
+ *  report and in the Plan Story; `advisor` rows are the seam a later phase
+ *  turns the Details screen into a checklist with. Every row written before
+ *  0256 was written for the client, hence the default. */
+export const planObservationAudienceEnum = pgEnum("plan_observation_audience", [
+  "client",
+  "advisor",
+]);
 
 export const importModeEnum = pgEnum("import_mode", ["onboarding", "updating"]);
 
@@ -1848,8 +1856,17 @@ export const modelPortfolios = pgTable("model_portfolios", {
   // Firm-authored risk rung. Nullable = untagged; a client tolerance that finds
   // no tagged portfolio is blank+flagged, never snapped to a neighbour.
   riskLevel: riskLevelEnum("risk_level"),
+  // Set when this portfolio was derived from a fund (ticker) portfolio's
+  // look-through. Non-null => allocations are managed by syncDerivedAllocations
+  // and are read-only in the CMA UI.
+  // `set null` (not cascade): deleting the fund must not delete a portfolio that
+  // accounts, scenarios and reinvestments already point at — it detaches.
+  sourceTickerPortfolioId: uuid("source_ticker_portfolio_id")
+    .references(() => tickerPortfolios.id, { onDelete: "set null" }),
 }, (t) => [
   unique("model_portfolios_firm_id_name_unique").on(t.firmId, t.name),
+  // One derived model portfolio per fund portfolio.
+  uniqueIndex("model_portfolios_source_ticker_portfolio_uniq").on(t.sourceTickerPortfolioId),
   // At most one portfolio per rung per firm, so the tolerance->portfolio join is
   // deterministic. Partial: untagged (null) portfolios don't collide.
   uniqueIndex("model_portfolios_firm_risk_level_uniq")
@@ -3429,6 +3446,11 @@ export const planObservations = pgTable(
     targetDate: date("target_date"),
     completedAt: timestamp("completed_at"),
     source: planObservationSourceEnum("source").notNull().default("manual"),
+    audience: planObservationAudienceEnum("audience").notNull().default("client"),
+    /** The scenario an AI-generated next step came from. Text, not a FK, for
+     *  the same reason `plan_story_chapters.scenario_id` is: a scenario can be
+     *  deleted after its steps were accepted, and the steps must survive it. */
+    sourceScenarioId: text("source_scenario_id"),
     sortOrder: integer("sort_order").notNull().default(0),
     createdByUserId: text("created_by_user_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -3441,6 +3463,26 @@ export const planObservations = pgTable(
 
 export type PlanObservationRow = InferSelectModel<typeof planObservations>;
 export type NewPlanObservationRow = InferInsertModel<typeof planObservations>;
+
+/**
+ * The advisor's instructions to the model about THIS household — not
+ * client-facing, so not a plan_observations row, and household-shaped, so not
+ * a page option (options travel into firm-wide templates and per-browser
+ * drafts). One row per client, upserted on every save; a client with no row
+ * reads as empty strings and no scenario.
+ */
+export const planObservationContext = pgTable("plan_observation_context", {
+  clientId: uuid("client_id")
+    .primaryKey()
+    .references(() => clients.id, { onDelete: "cascade" }),
+  observationsContext: text("observations_context").notNull().default(""),
+  nextStepsContext: text("next_steps_context").notNull().default(""),
+  /** Text, not a FK — see `planObservations.sourceScenarioId`. */
+  nextStepsScenarioId: text("next_steps_scenario_id"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type PlanObservationContextRow = InferSelectModel<typeof planObservationContext>;
 
 /**
  * Advisor-reviewed narrative for the Plan Story report.

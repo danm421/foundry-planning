@@ -1,5 +1,5 @@
 {
-  "id": "b98c2b4c-aa60-49c6-906a-581feaf5fcf5",
+  "id": "af77ea33-0607-4f46-a12a-cc8863c21bfd",
   "prevId": "3d748f52-c10f-4751-af03-ab53137c7508",
   "version": "7",
   "dialect": "postgresql",
@@ -14594,6 +14594,66 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.plan_observation_context": {
+      "name": "plan_observation_context",
+      "schema": "",
+      "columns": {
+        "client_id": {
+          "name": "client_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "observations_context": {
+          "name": "observations_context",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "next_steps_context": {
+          "name": "next_steps_context",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "next_steps_scenario_id": {
+          "name": "next_steps_scenario_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "plan_observation_context_client_id_clients_id_fk": {
+          "name": "plan_observation_context_client_id_clients_id_fk",
+          "tableFrom": "plan_observation_context",
+          "tableTo": "clients",
+          "columnsFrom": [
+            "client_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.plan_observations": {
       "name": "plan_observations",
       "schema": "",
@@ -14679,6 +14739,20 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'manual'"
+        },
+        "audience": {
+          "name": "audience",
+          "type": "plan_observation_audience",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'client'"
+        },
+        "source_scenario_id": {
+          "name": "source_scenario_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "sort_order": {
           "name": "sort_order",
@@ -20108,90 +20182,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.tax_return_reconciliation_dismissals": {
-      "name": "tax_return_reconciliation_dismissals",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "tax_return_id": {
-          "name": "tax_return_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "suggestion_id": {
-          "name": "suggestion_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "dismissed_by": {
-          "name": "dismissed_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "tax_return_reconciliation_dismissals_return_idx": {
-          "name": "tax_return_reconciliation_dismissals_return_idx",
-          "columns": [
-            {
-              "expression": "tax_return_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "tax_return_reconciliation_dismissals_tax_return_id_tax_returns_id_fk": {
-          "name": "tax_return_reconciliation_dismissals_tax_return_id_tax_returns_id_fk",
-          "tableFrom": "tax_return_reconciliation_dismissals",
-          "tableTo": "tax_returns",
-          "columnsFrom": [
-            "tax_return_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "tax_return_reconciliation_dismissals_uniq": {
-          "name": "tax_return_reconciliation_dismissals_uniq",
-          "nullsNotDistinct": false,
-          "columns": [
-            "tax_return_id",
-            "suggestion_id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.tax_return_state": {
       "name": "tax_return_state",
       "schema": "",
@@ -23421,6 +23411,14 @@
       "values": [
         "family_member",
         "entity"
+      ]
+    },
+    "public.plan_observation_audience": {
+      "name": "plan_observation_audience",
+      "schema": "public",
+      "values": [
+        "client",
+        "advisor"
       ]
     },
     "public.plan_observation_owner": {

@@ -32,6 +32,7 @@ export async function PUT(
         and(
           eq(planObservations.clientId, id),
           eq(planObservations.section, parsed.data.section),
+          parsed.data.audience ? eq(planObservations.audience, parsed.data.audience) : undefined,
         ),
       );
     const known = new Set(rows.map((r) => r.id));

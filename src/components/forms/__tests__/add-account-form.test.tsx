@@ -1232,7 +1232,10 @@ describe("AddAccountForm — an annuity picks its growth like an investable acco
     const labels = Array.from(growthSourceSelect().options).map((o) => o.textContent ?? "");
     expect(labels.some((l) => l.includes("Plan default"))).toBe(true);
     expect(labels.some((l) => l.includes("Moderate"))).toBe(true);
-    expect(labels.some((l) => l.includes("Core Four"))).toBe(true);
+    // Fund portfolios are NOT offered here: since 2026-09-03 they reach plans by
+    // being promoted to a model portfolio, so a promoted one arrives in
+    // `modelPortfolios` above. Offering both would list one portfolio twice.
+    expect(labels.some((l) => l.includes("Core Four"))).toBe(false);
     expect(labels.some((l) => l.includes("Custom %"))).toBe(true);
     // Asset mix would also switch on the Asset Mix and Holdings tabs, which an
     // annuity has no sub-account holdings to fill.

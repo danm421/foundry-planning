@@ -47,7 +47,7 @@ describe("growthEditModeFor", () => {
 describe("growthOptionsFor", () => {
   it("offers asset mix and inflation for taxable", () => {
     const values = growthOptionsFor({ category: "taxable", ...ctx }).map((o) => o.value);
-    expect(values).toEqual(["default", "mp:mp-1", "mp:mp-2", "tp:tp-1", "asset_mix", "inflation", "custom"]);
+    expect(values).toEqual(["default", "mp:mp-1", "mp:mp-2", "asset_mix", "inflation", "custom"]);
   });
 
   it("omits asset mix for cash but keeps inflation", () => {
@@ -61,12 +61,12 @@ describe("growthOptionsFor", () => {
     // so an annuity is not offered one it isn't already on. (An annuity that
     // IS already on one keeps it — see the `currentSource` cases below.)
     const values = growthOptionsFor({ category: "annuity", ...ctx }).map((o) => o.value);
-    expect(values).toEqual(["default", "mp:mp-1", "mp:mp-2", "tp:tp-1", "custom"]);
+    expect(values).toEqual(["default", "mp:mp-1", "mp:mp-2", "custom"]);
   });
 
   it("omits both asset mix and inflation for education_savings", () => {
     const values = growthOptionsFor({ category: "education_savings", ...ctx }).map((o) => o.value);
-    expect(values).toEqual(["default", "mp:mp-1", "mp:mp-2", "tp:tp-1", "custom"]);
+    expect(values).toEqual(["default", "mp:mp-1", "mp:mp-2", "custom"]);
   });
 
   it("orders real_estate as [custom, inflation], matching the form (R11)", () => {

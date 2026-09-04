@@ -30,8 +30,21 @@ try {
 const HAS_DB = !!process.env.DATABASE_URL;
 const d = HAS_DB ? describe : describe.skip;
 
-vi.mock("@/lib/db-helpers", () => ({
-  requireOrgId: vi.fn(),
+vi.mock("@/lib/db-helpers", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/db-helpers")>();
+  return { ...actual, requireOrgId: vi.fn() };
+});
+
+vi.mock("@clerk/nextjs/server", () => ({
+  auth: vi.fn(async () => {
+    const { requireOrgId } = await import("@/lib/db-helpers");
+    return {
+      userId: "user_wills_isolation_test",
+      orgId: await requireOrgId(),
+      orgRole: "org:admin",
+      sessionClaims: { org_public_metadata: { is_founder: true } },
+    };
+  }),
 }));
 
 const FIRM_A = "firm_wills_test_a";
@@ -250,7 +263,7 @@ d("wills tenant isolation", () => {
       new Request("http://x", { method: "PATCH", body: JSON.stringify({ bequests: [] }) }) as unknown as Parameters<typeof PATCH>[0],
       { params: Promise.resolve({ id: a.clientId, willId: seeded.id }) } as unknown as Parameters<typeof PATCH>[1],
     );
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
   });
 
   it("Firm B cannot DELETE Firm A's will", async () => {
@@ -269,7 +282,7 @@ d("wills tenant isolation", () => {
       new Request("http://x", { method: "DELETE" }) as unknown as Parameters<typeof DELETE>[0],
       { params: Promise.resolve({ id: a.clientId, willId: seeded.id }) } as unknown as Parameters<typeof DELETE>[1],
     );
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
   });
 
   it("deleting the client cascades to wills and children", async () => {

@@ -42,9 +42,25 @@ const HAS_DB = !!process.env.DATABASE_URL;
 const d = HAS_DB ? describe : describe.skip;
 
 // Mock BEFORE importing anything that touches the module (route handlers).
-vi.mock("@/lib/db-helpers", () => ({
-  getOrgId: vi.fn(),
-  requireOrgId: vi.fn(),
+vi.mock("@/lib/db-helpers", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/db-helpers")>();
+  return {
+    ...actual,
+    getOrgId: vi.fn(),
+    requireOrgId: vi.fn(),
+  };
+});
+
+vi.mock("@clerk/nextjs/server", () => ({
+  auth: vi.fn(async () => {
+    const { requireOrgId } = await import("@/lib/db-helpers");
+    return {
+      userId: "user_beneficiaries_isolation_test",
+      orgId: await requireOrgId(),
+      orgRole: "org:admin",
+      sessionClaims: { org_public_metadata: { is_founder: true } },
+    };
+  }),
 }));
 
 const FIRM_A = "firm_isolation_test_a";
@@ -208,7 +224,7 @@ d("beneficiaries tenant isolation", () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any,
     );
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
   });
 
   it("Firm A cannot designate Firm B's family member onto its own account", async () => {

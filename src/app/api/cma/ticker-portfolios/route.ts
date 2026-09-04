@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { tickerPortfolios, tickerPortfolioHoldings } from "@/db/schema";
+import { tickerPortfolios, tickerPortfolioHoldings, modelPortfolios } from "@/db/schema";
 import { eq, asc, inArray } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { authErrorResponse, requireOrgAdminOrOwner } from "@/lib/authz";
@@ -35,10 +35,28 @@ export async function GET() {
       holdingsByPortfolio.set(holding.tickerPortfolioId, list);
     }
 
+    // Which of these funds already back a model portfolio. One batched query,
+    // matching the holdings fetch above — never one query per portfolio.
+    let derivedRows: { id: string; sourceTickerPortfolioId: string | null }[] = [];
+    if (portfolioIds.length > 0) {
+      derivedRows = await db
+        .select({
+          id: modelPortfolios.id,
+          sourceTickerPortfolioId: modelPortfolios.sourceTickerPortfolioId,
+        })
+        .from(modelPortfolios)
+        .where(inArray(modelPortfolios.sourceTickerPortfolioId, portfolioIds));
+    }
+    const derivedByPortfolio = new Map<string, string>();
+    for (const row of derivedRows) {
+      if (row.sourceTickerPortfolioId) derivedByPortfolio.set(row.sourceTickerPortfolioId, row.id);
+    }
+
     return NextResponse.json(
       portfolios.map((p) => ({
         ...p,
         holdings: holdingsByPortfolio.get(p.id) ?? [],
+        derivedModelPortfolioId: derivedByPortfolio.get(p.id) ?? null,
       }))
     );
   } catch (err) {

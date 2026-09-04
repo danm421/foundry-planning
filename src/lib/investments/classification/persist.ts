@@ -3,6 +3,7 @@ import { eq, and } from "drizzle-orm";
 import { db } from "@/db";
 import { securities, securityAssetClassWeights } from "@/db/schema";
 import type { ClassifiedSecurity } from "./types";
+import { classifySecurity } from "./classify";
 
 /** Upsert a classified security and replace its weight rows. Idempotent. */
 export async function upsertClassifiedSecurity(c: ClassifiedSecurity): Promise<string> {
@@ -65,4 +66,39 @@ export async function getSecurityByTicker(ticker: string) {
     .from(securityAssetClassWeights)
     .where(eq(securityAssetClassWeights.securityId, sec.id));
   return { security: sec, weights };
+}
+
+/**
+ * A ticker's look-through slug weights, cache first: the securities table, then
+ * a live classify + persist, then `[]`.
+ *
+ * Soft-fails per ticker on purpose — an unresolvable ticker becomes unclassified
+ * weight for the caller to judge, and must not abort a whole portfolio's
+ * resolution. Callers that need to know a ticker failed should compare the
+ * returned weight against the holding's own.
+ *
+ * NB: `ticker-portfolio-compute.ts` and `rebalance/load-inputs.ts` still carry
+ * their own copies of this sequence — see future-work/cma-investments.md.
+ */
+export async function resolveSlugWeightsByTicker(
+  ticker: string,
+): Promise<{ slug: string; weight: number }[]> {
+  try {
+    const cached = await getSecurityByTicker(ticker);
+    if (cached) {
+      return cached.weights.map((w) => ({
+        slug: w.assetClassSlug,
+        weight: parseFloat(w.weight),
+      }));
+    }
+    const classified = await classifySecurity(ticker);
+    if (!classified) return [];
+    await upsertClassifiedSecurity(classified);
+    const stored = await getSecurityByTicker(ticker);
+    return stored
+      ? stored.weights.map((w) => ({ slug: w.assetClassSlug, weight: parseFloat(w.weight) }))
+      : [];
+  } catch {
+    return [];
+  }
 }
