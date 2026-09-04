@@ -264,6 +264,7 @@ exports[`loadClientData > returns a fully populated ClientData for a valid clien
     },
   ],
   "stockOptionPlans": [],
+  "taxAdjustments": [],
   "taxYearRows": [
     {
       "addlMedicareRate": 0.009,
