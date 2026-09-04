@@ -79,6 +79,31 @@ function pickTier(magi: number, tiers: IrmaaTier[]): {
   return { tier: 0, surchargeB: 0, surchargeD: 0, upperBound: tiers[0]?.magiLowerBound ?? null };
 }
 
+/**
+ * The MAGI ceiling a conversion must not exceed to stay at or below `capTier`.
+ *
+ * ⚠️ ORIENTATION IS LOAD-BEARING, and it is the OPPOSITE of the tax-bracket
+ * equivalent. IRMAA bounds are lower-EXCLUSIVE / upper-INCLUSIVE (20 CFR
+ * 418.2120) — see `pickTier` above, which encodes the same convention. So a
+ * MAGI landing exactly ON the tier-1 threshold is surcharge-free and the
+ * tier-0 ceiling is that threshold ITSELF, with no backoff.
+ *
+ * Contrast `fillUpBracketCeiling` in roth-conversions.ts, which subtracts $1
+ * precisely BECAUSE ordinary tax brackets are lower-inclusive and a base
+ * landing on `tier.to` classifies into the NEXT bracket. Same shaped problem,
+ * opposite correct answer; getting either backwards is wrong by a full tier
+ * and looks entirely plausible on a report.
+ *
+ * Returns null when the tier is absent from the table, and for the TOP tier,
+ * which is unbounded above and therefore cannot be a ceiling.
+ */
+export function irmaaCapCeiling(tiers: IrmaaTier[], capTier: number): number | null {
+  if (capTier <= 0) return tiers[0]?.magiLowerBound ?? null;
+  const tier = tiers.find((t) => t.tier === capTier);
+  if (!tier) return null;
+  return tier.magiUpperBound;
+}
+
 export function computeMedicareYear(input: MedicareYearInput): MedicareYearDetail {
   const {
     year, age, coverage,
