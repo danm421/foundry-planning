@@ -95,6 +95,14 @@ describe("resolveSourceLabel", () => {
     expect(resolveSourceLabel("mystery_thing", ctx)).toBe("mystery_thing");
   });
 
+  it("resolves tax_adjustment:<uuid> to 'Tax Adjustment' instead of splitting the uuid as a compound kind", () => {
+    // Without a dedicated arm this falls into the generic `split(":")` path,
+    // which reads "tax_adjustment" as an account id and uppercases the UUID
+    // half as a "kind" — printing "tax_adjustment — <UUID>" at the advisor.
+    const uuid = "3f1b0c2a-0000-4000-8000-000000000099";
+    expect(resolveSourceLabel(`tax_adjustment:${uuid}`, ctx)).toBe("Tax Adjustment");
+  });
+
   it("resolves equity-vest:<planId> to '<ticker> RSU — vest'", () => {
     const eCtx: CellDrillContext = { ...ctx, equityPlanNames: { plan_tsla: "TSLA RSU" } };
     expect(resolveSourceLabel("equity-vest:plan_tsla", eCtx)).toBe("TSLA RSU — vest");

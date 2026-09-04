@@ -52,6 +52,19 @@ export async function PUT(
       withheldValue,
     } = body;
 
+    if ((withheldMode != null) !== (withheldValue != null)) {
+      return NextResponse.json(
+        { error: "withheldMode and withheldValue must be sent together" },
+        { status: 400 },
+      );
+    }
+    if (withheldMode === "percent" && (withheldValue < 0 || withheldValue > 1)) {
+      return NextResponse.json(
+        { error: "withheldValue must be a 0..1 fraction" },
+        { status: 400 },
+      );
+    }
+
     const [updated] = await db
       .update(clientTaxAdjustments)
       .set({

@@ -258,3 +258,61 @@ describe("AddTaxAdjustmentForm — stale withheld state after amount goes blank"
     expect(body.withheldValue).toBe(0);
   });
 });
+
+// ── Test 8: default end year is the same year as the default start year ───
+// This feature models a transaction that ALREADY HAPPENED — "a $120,000 Roth
+// conversion completed in March" — never a recurring flow. A `+ 50` default
+// (copied from add-deduction-form.tsx, where recurrence is correct) would
+// book that income every year for the next 50 years unless the advisor
+// happens to notice and fix it.
+
+describe("AddTaxAdjustmentForm — default end year", () => {
+  it("defaults endYear to the same year as startYear on a new row, not 50 years out", async () => {
+    render(
+      <AddTaxAdjustmentForm clientId="client-123" onClose={vi.fn()} onSaved={vi.fn()} />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Annual amount"), { target: { value: "120000" } });
+    fireEvent.submit(document.querySelector("form")!);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = lastPostBody();
+    const currentYear = new Date().getFullYear();
+    expect(body.startYear).toBe(currentYear);
+    expect(body.endYear).toBe(currentYear);
+    expect(body.endYear).toBe(body.startYear);
+    expect(body.endYear).not.toBe(currentYear + 50);
+  });
+});
+
+// ── Test 9: edit-load of a percent row doesn't leak floating-point noise ──
+
+describe("AddTaxAdjustmentForm — percent-mode edit load precision", () => {
+  it("renders 29, not 28.999999999999996, when loading an existing 0.29 percent row", () => {
+    render(
+      <AddTaxAdjustmentForm
+        clientId="client-123"
+        existing={{
+          id: "adj-1",
+          taxType: "ordinary_income",
+          name: "2026 bonus",
+          owner: "joint",
+          annualAmount: 10000,
+          growthRate: 0,
+          startYear: 2026,
+          endYear: 2026,
+          startYearRef: null,
+          endYearRef: null,
+          withheldMode: "percent",
+          withheldValue: 0.29,
+        }}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+      />,
+    );
+
+    const withheldInput = screen.getByLabelText("Percent withheld") as HTMLInputElement;
+    expect(withheldInput.value).toBe("29");
+    expect(withheldInput.value).not.toBe("28.999999999999996");
+  });
+});

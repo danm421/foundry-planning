@@ -220,6 +220,27 @@ describe("buildCashFlowYearDetail", () => {
     expect(residual!.total).toBe(-13_000);
   });
 
+  it("names the withholding netting as 'Already withheld' instead of an anonymous negative Other in the Taxes category", () => {
+    // A tax_adjustment's withholding pays Federal + State (9k gross) down to a
+    // 5k net cash-flow liability. Without a named item, canonicalCategory's
+    // balancing row absorbs the -4k gap into an unlabelled "Other".
+    const year = makeYear({
+      expenses: { ...makeYear().expenses, taxes: 5_000 },
+      taxResult: {
+        flow: { totalFederalTax: 7_000, stateTax: 2_000, taxAlreadyPaid: 4_000 },
+      } as never,
+    });
+    const d = buildCashFlowYearDetail(year, makeClientData());
+    const taxes = d.outflows.find((c) => c.key === "taxes")!;
+    expect(taxes.total).toBe(5_000);
+    expect(taxes.items).toEqual([
+      { id: "tax-federal", label: "Federal", amount: 7_000 },
+      { id: "tax-state", label: "State", amount: 2_000 },
+      { id: "tax-already-paid", label: "Already withheld", amount: -4_000 },
+    ]);
+    expect(taxes.items.some((i) => i.label === "Other")).toBe(false);
+  });
+
   it("does not throw on an empty year", () => {
     const empty = makeYear({
       income: { salaries: 0, socialSecurity: 0, business: 0, trust: 0, deferred: 0, capitalGains: 0, other: 0, total: 0, bySource: {} },

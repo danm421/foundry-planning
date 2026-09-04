@@ -22,7 +22,11 @@ export function makeTaxResult(over?: {
       amtCredit: 0, taxCredits: 0, refundableCredits: 0, aotcAllowed: 0, regularFederalIncomeTax: 0, capitalGainsTax: 0,
       amtAdditional: 0, niit: 0, additionalMedicare: 0, fica: 0, stateTax: 0,
       totalFederalTax: 0, totalTax: 0, earlyWithdrawalPenalty: 0,
-      taxAlreadyPaid: 0, balanceDue: 0, ...over?.flow,
+      taxAlreadyPaid: 0, ...over?.flow,
+      // Derived AFTER the spread so an explicit override still wins, but a
+      // caller who sets totalTax without balanceDue gets a truthful default
+      // instead of a type-satisfying 0 against a real liability.
+      balanceDue: over?.flow?.balanceDue ?? Math.max(0, (over?.flow?.totalTax ?? 0) - (over?.flow?.taxAlreadyPaid ?? 0)),
     },
     diag: {
       marginalFederalRate: over?.marginalFederalRate ?? 0.22,

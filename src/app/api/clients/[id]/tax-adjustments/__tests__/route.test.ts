@@ -3,9 +3,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // ---------------------------------------------------------------------------
 // Fake DB that EVALUATES the where clause (drizzle `eq`/`and` nodes carry the
 // column + the bound param) — same technique as the disability-policies
-// route test. The property under test for PUT/DELETE is that the item route
-// scopes by `and(eq(id), eq(clientId))`, so another client's row is a 404 and
-// never touched; a fake that ignored the condition could not tell rows apart.
+// route test. DELETE is tested for the item route's `and(eq(id), eq(clientId))`
+// scoping, so another client's row is a 404 and never touched; a fake that
+// ignored the condition could not tell rows apart. PUT is tested for its
+// withheldMode/withheldValue validation guards and a legitimate update, which
+// exercises the update() branch below.
 // ---------------------------------------------------------------------------
 type Row = Record<string, unknown>;
 const state: { scenarios: Row[]; adjustments: Row[] } = {
@@ -135,7 +137,7 @@ vi.mock("@/lib/scenario/prune-changes", () => ({
 }));
 
 import { GET, POST } from "../route";
-import { DELETE } from "../[adjustmentId]/route";
+import { PUT, DELETE } from "../[adjustmentId]/route";
 import { requireOrgId } from "@/lib/db-helpers";
 import { requireClientEditAccess, verifyClientAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, ForbiddenError } from "@/lib/authz";
@@ -286,6 +288,48 @@ describe("POST /api/clients/[id]/tax-adjustments", () => {
     const rows = await getRes.json();
     const round = rows.find((r: Row) => r.id === created.id);
     expect(round.withheldValue).toBe("0.225");
+  });
+
+  it("rejects an out-of-range percent (22 = 2,200%) with 400 and persists nothing", async () => {
+    // withheldValue is a 0..1 fraction everywhere below the form boundary. An
+    // advisor typing "2200" into the %-box divides by 100 client-side and
+    // sends 22 — a 2,200% rate — which the route must reject, not clamp.
+    const res = await POST(
+      req("POST", CLIENT_A, { ...VALID_BODY, withheldMode: "percent", withheldValue: 22 }),
+      listCtx(CLIENT_A),
+    );
+    expect(res.status).toBe(400);
+    expect(state.adjustments).toHaveLength(0);
+  });
+});
+
+describe("PUT /api/clients/[id]/tax-adjustments/[adjustmentId]", () => {
+  it("rejects withheldMode sent without withheldValue with 400 and leaves the row untouched", async () => {
+    // The row already carries a $5,000 dollar withheldValue. Sending mode
+    // alone would reinterpret that $5,000 as a 500,000% rate if this guard
+    // were missing.
+    const mine = seedAdjustment(CLIENT_A, { withheldMode: "amount", withheldValue: "5000.0000" });
+    const res = await PUT(
+      req("PUT", CLIENT_A, { withheldMode: "percent" }),
+      itemCtx(CLIENT_A, mine.id as string),
+    );
+    expect(res.status).toBe(400);
+    const persisted = state.adjustments.find((r) => r.id === mine.id);
+    expect(persisted).toMatchObject({ withheldMode: "amount", withheldValue: "5000.0000" });
+  });
+
+  it("accepts a matched withheldMode/withheldValue pair and persists the update", async () => {
+    const mine = seedAdjustment(CLIENT_A, { withheldMode: "none", withheldValue: "0.0000" });
+    const res = await PUT(
+      req("PUT", CLIENT_A, { withheldMode: "percent", withheldValue: 0.22 }),
+      itemCtx(CLIENT_A, mine.id as string),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.withheldMode).toBe("percent");
+    expect(body.withheldValue).toBe("0.22");
+    const persisted = state.adjustments.find((r) => r.id === mine.id);
+    expect(persisted).toMatchObject({ withheldMode: "percent", withheldValue: "0.22" });
   });
 });
 

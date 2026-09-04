@@ -90,6 +90,7 @@ export function resolveSourceLabel(sourceId: string, ctx: CellDrillContext): str
     const planId = sourceId.slice("equity-stcg:".length);
     return `${ctx.equityPlanNames?.[planId] ?? planId} — sale (ST)`;
   }
+  if (sourceId.startsWith("tax_adjustment:")) return "Tax Adjustment";
   if (sourceId.includes(":")) {
     const [acctId, kind] = sourceId.split(":");
     const name = ctx.accountNames[acctId] ?? acctId;

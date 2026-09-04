@@ -69,7 +69,7 @@ export function AddTaxAdjustmentForm({
   const [annualAmount, setAnnualAmount] = useState(existing?.annualAmount?.toString() ?? "");
   const [growthRate, setGrowthRate] = useState(existing ? (existing.growthRate * 100).toString() : "0");
   const [startYear, setStartYear] = useState(existing?.startYear ?? new Date().getFullYear());
-  const [endYear, setEndYear] = useState(existing?.endYear ?? new Date().getFullYear() + 50);
+  const [endYear, setEndYear] = useState(existing?.endYear ?? new Date().getFullYear());
   const [startYearRef, setStartYearRef] = useState<YearRef | null>(
     (existing?.startYearRef as YearRef | null) ?? null
   );
@@ -84,7 +84,7 @@ export function AddTaxAdjustmentForm({
   const [withheldValue, setWithheldValue] = useState(
     existing
       ? existing.withheldMode === "percent"
-        ? (existing.withheldValue * 100).toString()
+        ? Number((existing.withheldValue * 100).toFixed(4)).toString()
         : existing.withheldValue.toString()
       : "0"
   );
@@ -222,7 +222,7 @@ export function AddTaxAdjustmentForm({
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-gray-300">Annual amount ($)</label>
+            <label className="block text-xs font-medium text-gray-300">Amount ($)</label>
             <input
               type="number"
               step="100"

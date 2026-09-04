@@ -118,7 +118,7 @@ export function TaxAdjustmentsList({
               <span>Description</span>
               <span>Owner</span>
               <span>Years</span>
-              <span className="text-right">Amount / yr</span>
+              <span className="text-right">Amount</span>
               <span className="text-right">Tax paid</span>
               <span className="text-right">Actions</span>
             </div>

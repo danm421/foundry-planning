@@ -144,4 +144,23 @@ describe("parseHouseholdSource", () => {
     expect(r.taxable).toBe(false);
     expect(r.character).toBe("tax_exempt");
   });
+
+  it("parses a tax_adjustment:<uuid> key without leaking the uuid or a wrong category", () => {
+    // Without a dedicated arm this falls into the generic <acctId>:<kind>
+    // fallback, which reads "tax_adjustment" as the account id (rendering the
+    // wrong category, "Investment Income") and the uuid as the description —
+    // leaking the raw id at the advisor.
+    const uuid = "3f1b0c2a-0000-4000-8000-000000000099";
+    const r = parseHouseholdSource(`tax_adjustment:${uuid}`, { type: "ordinary_income", amount: 120_000 }, ctx);
+    expect(r).toMatchObject({
+      type: "Tax Adjustment",
+      description: "Income already received",
+      character: "ordinary",
+      account: null,
+      amount: 120_000,
+      taxable: true,
+    });
+    expect(r.type).not.toBe("Investment Income");
+    expect(r.description).not.toBe(uuid);
+  });
 });
