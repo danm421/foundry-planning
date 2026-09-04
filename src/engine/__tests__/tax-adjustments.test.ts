@@ -32,6 +32,7 @@ describe("resolveTaxAdjustmentsForYear — bucket routing", () => {
     ["stcg", "stcg"],
     ["qbi", "qbi"],
     ["tax_exempt", "tax_exempt"],
+    ["muni_interest", "muni_interest"],
   ];
 
   for (const [taxType, bucket] of CASES) {
@@ -157,5 +158,48 @@ describe("sumTaxAdjustments", () => {
 
   it("returns 0 for an absent taxDetail", () => {
     expect(sumTaxAdjustments(undefined)).toBe(0);
+  });
+});
+
+describe("resolveTaxAdjustmentsForYear — municipal bond interest", () => {
+  it("routes muni_interest to its own bucket", () => {
+    const r = resolveTaxAdjustmentsForYear([row({ taxType: "muni_interest" })], 2026);
+    expect(r.byTaxType.muni_interest).toBe(100_000);
+    expect(r.byTaxType.tax_exempt).toBe(0);
+  });
+
+  // THE GUARD TEST. `tax-adjustments.ts:90` excludes only "tax_exempt" by
+  // name, so any new type falls through into taxableTotal. Municipal bond
+  // interest is not taxable income; if this passes with the old guard, the
+  // guard was never widened.
+  it("keeps muni_interest OUT of taxableTotal", () => {
+    const r = resolveTaxAdjustmentsForYear([row({ taxType: "muni_interest" })], 2026);
+    expect(r.taxableTotal).toBe(0);
+  });
+
+  it("keeps muni_interest out of both capital-gains slices", () => {
+    const r = resolveTaxAdjustmentsForYear([row({ taxType: "muni_interest" })], 2026);
+    expect(r.capitalGainsLt).toBe(0);
+    expect(r.capitalGainsSt).toBe(0);
+  });
+
+  it("names a muni adjustment in the drill-down with its own type", () => {
+    const r = resolveTaxAdjustmentsForYear(
+      [row({ id: "muni-1", taxType: "muni_interest", annualAmount: 50_000 })],
+      2026,
+    );
+    expect(r.bySource["tax_adjustment:muni-1"]).toEqual({
+      type: "muni_interest",
+      amount: 50_000,
+    });
+  });
+
+  it("subtracts a negative muni adjustment without making it taxable", () => {
+    const r = resolveTaxAdjustmentsForYear(
+      [row({ taxType: "muni_interest", annualAmount: -20_000 })],
+      2026,
+    );
+    expect(r.byTaxType.muni_interest).toBe(-20_000);
+    expect(r.taxableTotal).toBe(0);
   });
 });
