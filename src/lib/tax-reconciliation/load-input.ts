@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { clientDeductions, scenarios } from "@/db/schema";
+import { clientDeductions, clients, scenarios } from "@/db/schema";
 import { runProjectionWithEvents } from "@/engine";
 import { ClientNotFoundError, ProjectionInputError } from "@/lib/projection/load-client-data";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
@@ -9,6 +9,7 @@ import { parseRowFacts } from "@/lib/tax-returns/db";
 import { loadDocumentContext } from "@/lib/tax-returns/assemble-analysis";
 import { loadAnalysisContext } from "@/lib/tax-returns/load-analysis-context";
 import { runCalc } from "@/lib/tax-analysis/adapter";
+import type { TaxResult } from "@/lib/tax/types";
 import { listDismissedIds } from "./dismissals-store";
 import { snapshotFromTree } from "./snapshot";
 import type { EngineYear, PlanDeduction, Reconciliation, ReconciliationInput } from "./types";
@@ -29,8 +30,19 @@ async function loadBaseDeductions(clientId: string): Promise<PlanDeduction[]> {
 }
 
 export async function loadReconciliationInput(clientId: string, firmId: string, taxYear: number): Promise<LoadedInput | LoadFailure> {
+  // ONE value, deliberately shared by both arms below: an out-of-firm client must be
+  // indistinguishable from a client that does not exist, so the code and the words have to match.
+  const notFound: LoadFailure = { ok: false, code: "not_found", message: `No ${taxYear} return on file.` };
+
+  // The firm check has to come FIRST. `getTaxReturn` and `parseRowFacts` are scoped on clientId
+  // alone, so without this the three early exits below would answer "does this household exist, and
+  // has its return finished extracting?" for any client in any firm. Routes gate before calling in,
+  // but this function takes a firmId and must be safe on its own terms.
+  const [client] = await db.select({ id: clients.id }).from(clients).where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
+  if (!client) return notFound;
+
   const row = await getTaxReturn(clientId, taxYear);
-  if (!row) return { ok: false, code: "not_found", message: `No ${taxYear} return on file.` };
+  if (!row) return notFound;
   const { facts } = parseRowFacts(row);
   if (!facts) {
     // Two very different situations reach here and only the message can tell them apart.
@@ -68,7 +80,10 @@ export async function loadReconciliationInput(clientId: string, firmId: string, 
   const notes: string[] = [];
   let engineYear: EngineYear | null = null;
   if (planYear > planEndYear) {
-    notes.push(`The plan ends in ${planEndYear}, before the ${taxYear} return's year, so only direct row comparisons are shown.`);
+    // Names planYear, not taxYear: the two diverge when the plan starts after the return's year, and
+    // a plan whose end age sits below the client's current age ends BEFORE it starts — which under
+    // the old wording read "the plan ends in 2025, before the 2025 return's year".
+    notes.push(`The plan ends in ${planEndYear}, so it has no ${planYear} figures to compare against and only direct row comparisons are shown.`);
   } else {
     try {
       engineYear = runProjectionWithEvents(tree).years.find((y) => y.year === planYear) ?? null;
@@ -81,7 +96,15 @@ export async function loadReconciliationInput(clientId: string, firmId: string, 
 
   // `runCalc` returns null when the return's filing status is unknown — it will not guess a
   // bracket. Both estimates then read 0, which is what every consuming rule treats as "unknown".
-  const calc = runCalc(facts, { taxParams: ctx.resolver.getYear(taxYear).params, primaryAge: ctx.primaryAge, spouseAge: ctx.spouseAge });
+  // It can also THROW: these facts come off scanned PDFs and reach a full tax calculation. That is
+  // a secondary estimate with a defined zero fallback, so it degrades rather than failing the page —
+  // the same posture the builder takes for a rule that throws.
+  let calc: TaxResult | null = null;
+  try {
+    calc = runCalc(facts, { taxParams: ctx.resolver.getYear(taxYear).params, primaryAge: ctx.primaryAge, spouseAge: ctx.spouseAge });
+  } catch (err) {
+    console.warn("plan-vs-return: tax estimate failed, state tax and FICA read as unknown", err);
+  }
   const w2s = docs.summaries.filter((d) => d.role === "w2").flatMap((d) => d.w2s);
 
   return {

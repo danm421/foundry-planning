@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { emptyTaxReturnFacts, emptyAdjustmentsDetail } from "@/lib/schemas/tax-return-facts";
 import { savingsRules } from "../rules/savings";
-import { CLIENT_ID, inputFixture, planFixture } from "./fixtures";
+import { CLIENT_ID, engineYearFixture, inputFixture, planFixture } from "./fixtures";
 import type { PlanAccount, PlanSavingsRule } from "../types";
 
 const factsWith = (sep: number | null, hsa: number | null) => {
@@ -13,7 +13,10 @@ const acct = (id: string, subType: string): PlanAccount => ({ id, name: `${subTy
 // `over` is typed, not `{}`: an untyped bag silently swallows a misspelled override, so a test could
 // think it was pinning `endYear` while the rule kept the fixture default.
 const rule = (id: string, accountId: string, amount: number, over: Partial<PlanSavingsRule> = {}): PlanSavingsRule =>
-  ({ id, accountId, annualAmount: amount, startYear: 2026, endYear: 2060, ...over });
+  ({ id, accountId, annualAmount: amount, startYear: 2026, endYear: 2060, annualPercent: null, contributeMax: false, ...over });
+/** A projection year whose only content is what the SEP account received. */
+const engine = (contribution: number) =>
+  engineYearFixture({ savings: { byAccount: { a1: contribution }, total: contribution, employerTotal: 0 } });
 
 describe("savingsRules (5% / $500)", () => {
   it("creates a rule into the SEP account when none exists, and updates one that differs", () => {
@@ -135,6 +138,59 @@ describe("savingsRules (5% / $500)", () => {
     // again, so it cannot double up and the advisor is still offered the create.
     const longGone = planFixture({ accounts: [acct("a1", "sep_ira")], savingsRules: [rule("r0", "a1", 20_000, { startYear: 2010, endYear: 2015 })] });
     expect(savingsRules(inputFixture({ facts: factsWith(20_000, null), plan: longGone })).suggestions[0]).toMatchObject({ id: "savings.sepSimple.create", kind: "update" });
+  });
+
+  it("takes the plan figure from the engine for every mode, and offers no dollar write to a rule the engine resolves itself", () => {
+    // MAX MODE. `savings_rules.annual_amount` is NOT NULL DEFAULT '0', so a max-funded rule reads $0
+    // off the row — a phantom "the plan saves nothing" against a plan funding the account in full.
+    // $7,210 of 2026 dollars is exactly $7,000 of 2025 dollars at the fixture's 3%.
+    const maxRule = planFixture({ accounts: [acct("a1", "sep_ira")], savingsRules: [rule("r1", "a1", 0, { contributeMax: true })] });
+    const maxed = savingsRules(inputFixture({ facts: factsWith(7_000, null), plan: maxRule, engineYear: engine(7_210) }));
+    expect(maxed.suggestions).toEqual([]);
+    expect(maxed.checks).toEqual([{ id: "savings.sepSimple", label: "SEP / SIMPLE / solo 401(k) deduction", returnDisplay: "$7,000", planDisplay: "$7,000" }]);
+
+    // PERCENT MODE, genuinely off. `savings_rule.update` writes `annualAmount`, which the engine
+    // discards for a percent rule — so the advisor would be told a gap was closed while the
+    // projection never moved. A review naming the mode is the only honest card.
+    const pctRule = planFixture({ accounts: [acct("a1", "sep_ira")], savingsRules: [rule("r1", "a1", 0, { annualPercent: 0.05 })] });
+    const pct = savingsRules(inputFixture({ facts: factsWith(20_000, null), plan: pctRule, engineYear: engine(10_300) })).suggestions[0];
+    expect(pct).toMatchObject({ id: "savings.sepSimple", kind: "review" });
+    expect(pct.action).toBeUndefined();
+    expect(pct.headline).toMatch(/percent of salary/);
+    expect(pct.meaning).toMatch(/would be ignored/);
+    expect(pct.link?.href).toBe(`/clients/${CLIENT_ID}/details/net-worth`);
+    expect(pct.planFigure).toMatchObject({ amount: 10_000, display: "$10,000", year: 2026 });
+
+    // The same review, worded for the max — so a swapped mode label reddens.
+    const maxOff = savingsRules(inputFixture({ facts: factsWith(20_000, null), plan: maxRule, engineYear: engine(7_210) })).suggestions[0];
+    expect(maxOff.kind).toBe("review");
+    expect(maxOff.action).toBeUndefined();
+    expect(maxOff.headline).toMatch(/IRS maximum/);
+
+    // ANNUALAMOUNT MODE keeps the one-click write, and its plan figure comes off the engine too —
+    // which is where the IRS contribution cap and any retirement-year proration have been applied.
+    const flat = planFixture({ accounts: [acct("a1", "sep_ira")], savingsRules: [rule("r1", "a1", 12_000)] });
+    const write = savingsRules(inputFixture({ facts: factsWith(20_000, null), plan: flat, engineYear: engine(10_300) })).suggestions[0];
+    expect(write.kind).toBe("update");
+    expect(write.action?.target).toEqual({ kind: "savings_rule.update", ruleId: "r1", patch: { annualAmount: 20_000 }, amountField: "annualAmount" });
+    // $10,000, not the row's $12,000: the engine is the figure, the row is not.
+    expect(write.planFigure).toMatchObject({ amount: 10_000, display: "$10,000" });
+  });
+
+  it("leaves an engine-resolved rule out of the row sum when the projection could not run", () => {
+    // No engine year means no post-resolution truth. A percent rule's `annual_amount` is whatever it
+    // held before the advisor switched it to percent — here $4,000 — and that number is NOT its
+    // contribution. It is left out of the sum entirely rather than added or counted as zero, and the
+    // card explains the mode instead of offering a write that would be discarded.
+    const plan = planFixture({ accounts: [acct("a1", "sep_ira")], savingsRules: [rule("r1", "a1", 4_000, { annualPercent: 0.05 }), rule("r2", "a1", 6_000)] });
+    const r = savingsRules(inputFixture({ facts: factsWith(20_000, null), plan }));
+    expect(r.suggestions).toHaveLength(1);
+    expect(r.suggestions[0]).toMatchObject({ id: "savings.sepSimple", kind: "review" });
+    expect(r.suggestions[0].action).toBeUndefined();
+    expect(r.suggestions[0].headline).toMatch(/percent of salary/);
+    // $6,000 — the flat rule alone, not the $10,000 a naive sum of both rows would give.
+    expect(r.suggestions[0].planFigure).toMatchObject({ amount: 6_000, display: "$6,000" });
+    expect(r.checks).toEqual([]);
   });
 
   it("never counts or writes to a rule on an account of another kind", () => {

@@ -13,7 +13,11 @@ const tree = {
     { id: "e1", type: "living", name: "Living", annualAmount: 100_000, startYear: 2026, endYear: 2060, growthRate: 0.03, isDefault: true, startYearRef: null },
     { id: "e2", type: "insurance", name: "Policy premium", annualAmount: 4_000, startYear: 2026, endYear: 2060, growthRate: 0, source: "policy" },
   ],
-  savingsRules: [{ id: "r1", accountId: "a1", annualAmount: 5_000, startYear: 2026, endYear: 2040, isDeductible: true }],
+  savingsRules: [
+    { id: "r1", accountId: "a1", annualAmount: 5_000, startYear: 2026, endYear: 2040, isDeductible: true },
+    { id: "r2", accountId: "a1", annualAmount: 0, startYear: 2026, endYear: 2040, annualPercent: 0.1, contributeMax: false, isDeductible: true },
+    { id: "r3", accountId: "a1", annualAmount: 0, startYear: 2026, endYear: 2040, annualPercent: null, contributeMax: true, isDeductible: true },
+  ],
   accounts: [{ id: "a1", name: "401(k)", category: "retirement", subType: "401k", value: 0, basis: 0, growthRate: 0.07, rmdEnabled: false }],
   entities: [{ id: "en1", name: "Blue Harbor", entityType: "partnership", taxTreatment: "qbi", includeInPortfolio: false, isGrantor: false }, { id: "en2", includeInPortfolio: false, isGrantor: false }],
   familyMembers: [{ id: "fm1", role: "child", relationship: "child", firstName: "K", lastName: null, dateOfBirth: "2015-01-01" }],
@@ -40,7 +44,13 @@ describe("snapshotFromTree", () => {
     const s = snapshotFromTree(tree, []);
     // A wholesale `...row` spread would smuggle `isDeductible` / `value` / `growthRate`
     // onto the snapshot and let a rule quietly depend on a column no write can patch.
-    expect(s.savingsRules).toEqual([{ id: "r1", accountId: "a1", annualAmount: 5_000, startYear: 2026, endYear: 2040 }]);
+    expect(s.savingsRules).toEqual([
+      // The mode fields decide which figure the engine spends, so they must survive the narrowing —
+      // and an absent one must land as null/false, never undefined.
+      { id: "r1", accountId: "a1", annualAmount: 5_000, startYear: 2026, endYear: 2040, annualPercent: null, contributeMax: false },
+      { id: "r2", accountId: "a1", annualAmount: 0, startYear: 2026, endYear: 2040, annualPercent: 0.1, contributeMax: false },
+      { id: "r3", accountId: "a1", annualAmount: 0, startYear: 2026, endYear: 2040, annualPercent: null, contributeMax: true },
+    ]);
     expect(s.accounts).toEqual([{ id: "a1", name: "401(k)", category: "retirement", subType: "401k" }]);
     expect(s.deductions).toEqual([]);
   });

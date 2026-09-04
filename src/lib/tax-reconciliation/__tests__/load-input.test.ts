@@ -1,10 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { and, eq } from "drizzle-orm";
+import { clients } from "@/db/schema";
 import { emptyTaxReturnFacts } from "@/lib/schemas/tax-return-facts";
 import { ClientNotFoundError, ProjectionInputError } from "@/lib/projection/load-client-data";
 
 const m = vi.hoisted(() => ({
   getTaxReturn: vi.fn(), loadDocumentContext: vi.fn(), loadEffectiveTree: vi.fn(), runProjectionWithEvents: vi.fn(),
   loadAnalysisContext: vi.fn(), listDismissedIds: vi.fn(), deductionsWhere: vi.fn(), scenarioWhere: vi.fn(),
+  clientWhere: vi.fn(), runCalc: vi.fn(),
 }));
 vi.mock("@/lib/tax-returns/store", () => ({ getTaxReturn: m.getTaxReturn }));
 vi.mock("@/lib/tax-returns/assemble-analysis", () => ({ loadDocumentContext: m.loadDocumentContext }));
@@ -12,11 +15,19 @@ vi.mock("@/lib/scenario/loader", () => ({ loadEffectiveTree: m.loadEffectiveTree
 vi.mock("@/engine", () => ({ runProjectionWithEvents: m.runProjectionWithEvents }));
 vi.mock("@/lib/tax-returns/load-analysis-context", () => ({ loadAnalysisContext: m.loadAnalysisContext }));
 vi.mock("../dismissals-store", () => ({ listDismissedIds: m.listDismissedIds }));
-vi.mock("@/db", () => ({ db: { select: () => ({ from: (t: { _name?: string }) => ({ where: t && "isBaseCase" in (t as object) ? m.scenarioWhere : m.deductionsWhere }) }) } }));
+// Kept REAL by default (see beforeEach) so the state-tax and FICA figures below are the calculator's
+// own; only the throw test replaces it, because no facts that survive `parseRowFacts` can break it.
+vi.mock("@/lib/tax-analysis/adapter", async (importOriginal) => ({ ...(await importOriginal<object>()), runCalc: m.runCalc }));
+// Three tables reach this mock. Discriminated on a column only that table carries — `scenarios`
+// has isBaseCase, `clients` has firmId, `client_deductions` has neither — and each arm is pinned by
+// a test below, so a mis-routed query shows up as a wrong VALUE rather than as a silent pass.
+vi.mock("@/db", () => ({ db: { select: () => ({ from: (t: object) => ({ where: t && "isBaseCase" in t ? m.scenarioWhere : t && "firmId" in t ? m.clientWhere : m.deductionsWhere }) }) } }));
 
 import { loadReconciliationInput, PROJECTION_FAILED_NOTE } from "../load-input";
 import { createTaxResolver } from "@/lib/tax/resolver";
 import { params2025 } from "@/lib/tax-analysis/__tests__/fixtures";
+
+const { runCalc: realRunCalc } = await vi.importActual<typeof import("@/lib/tax-analysis/adapter")>("@/lib/tax-analysis/adapter");
 
 const tree = { client: { dateOfBirth: "1960-04-02", spouseDob: null, filingStatus: "single" }, planSettings: { planStartYear: 2026, planEndYear: 2060, inflationRate: 0.03, residenceState: "PA" }, incomes: [], expenses: [], savingsRules: [], accounts: [], entities: [], familyMembers: [], medicareCoverage: [] };
 const row = (status = "ready") => ({ id: "tr-1", clientId: "c1", taxYear: 2025, status, facts: emptyTaxReturnFacts(2025), extractedFacts: null, warnings: [] });
@@ -42,6 +53,8 @@ beforeEach(() => {
   m.runProjectionWithEvents.mockReturnValue({ years: [{ year: 2026, income: { bySource: {} } }, { year: 2027 }] });
   m.loadAnalysisContext.mockResolvedValue({ resolver: createTaxResolver([params2025], { taxInflationRate: 0.025, ssWageGrowthRate: 0.03 }), primaryAge: 65, spouseAge: null });
   m.listDismissedIds.mockResolvedValue({ ok: true, ids: new Set(["tax.federal"]) });
+  m.clientWhere.mockResolvedValue([{ id: "c1" }]);
+  m.runCalc.mockImplementation(realRunCalc);
   m.scenarioWhere.mockResolvedValue([{ id: "sc-base" }]);
   m.deductionsWhere.mockResolvedValue([]);
 });
@@ -103,6 +116,31 @@ describe("loadReconciliationInput", () => {
     expect(noPlan.ok === false && noPlan.message).toBe("This household has no base-case plan to compare against yet.");
   });
 
+  it("hides a client in another firm behind the same answer as one that does not exist", async () => {
+    // `getTaxReturn` is scoped on clientId alone, so without the firm check first this function
+    // would answer "this household exists and its return is still extracting" for any client in any
+    // firm. Both the code AND the message have to match the missing-return answer, or the
+    // difference is itself the oracle.
+    m.clientWhere.mockResolvedValueOnce([]);
+    const outOfFirm = await loadReconciliationInput("c1", "someone_elses_firm", 2025);
+    expect(outOfFirm).toEqual({ ok: false, code: "not_found", message: "No 2025 return on file." });
+    // The where-clause IS the control, and a mocked db cannot evaluate one — so pin the predicate
+    // itself. Scoping on clientId alone builds a different object and reddens here.
+    expect(m.clientWhere).toHaveBeenCalledWith(and(eq(clients.id, "c1"), eq(clients.firmId, "someone_elses_firm")));
+
+    m.getTaxReturn.mockResolvedValueOnce(null);
+    const missing = await loadReconciliationInput("c1", "org_1", 2025);
+    expect(outOfFirm).toEqual(missing);
+
+    // And the firm check runs BEFORE the return is read at all: a still-extracting return in
+    // another firm must not leak its status either.
+    // NB a persistent mock, not `...Once`: the firm check short-circuits before the return is read,
+    // so a queued one-shot would survive this test and poison the next.
+    m.clientWhere.mockResolvedValueOnce([]);
+    m.getTaxReturn.mockResolvedValue({ ...row("extracting"), facts: null });
+    expect(await loadReconciliationInput("c1", "someone_elses_firm", 2025)).toEqual(missing);
+  });
+
   it("says the return is still being read when the extraction has not finished", async () => {
     // The most common way to reach the no-facts branch is a return uploaded moments ago:
     // `status` defaults to "extracting" and `facts` stays null until extraction lands.
@@ -137,7 +175,7 @@ describe("loadReconciliationInput", () => {
     const far = await loadReconciliationInput("c1", "org_1", 2099);
     expect(far.ok && far.input.engineYear).toBeNull();
     expect(far.ok && far.input.planYear).toBe(2099);
-    expect(far.ok && far.notes).toEqual(["The plan ends in 2060, before the 2099 return's year, so only direct row comparisons are shown."]);
+    expect(far.ok && far.notes).toEqual(["The plan ends in 2060, so it has no 2099 figures to compare against and only direct row comparisons are shown."]);
   });
 
   it("treats the plan's final year as covered and the year after it as past the plan", async () => {
@@ -150,7 +188,7 @@ describe("loadReconciliationInput", () => {
 
     const past = await loadReconciliationInput("c1", "org_1", 2061);
     expect(past.ok && past.input.engineYear).toBeNull();
-    expect(past.ok && past.notes).toEqual(["The plan ends in 2060, before the 2061 return's year, so only direct row comparisons are shown."]);
+    expect(past.ok && past.notes).toEqual(["The plan ends in 2060, so it has no 2061 figures to compare against and only direct row comparisons are shown."]);
   });
 
   it("degrades with the projection note when the run succeeds but has no row for the plan year", async () => {
@@ -158,6 +196,33 @@ describe("loadReconciliationInput", () => {
     const r = await loadReconciliationInput("c1", "org_1", 2025);
     expect(r.ok && r.input.engineYear).toBeNull();
     expect(r.ok && r.notes).toEqual([PROJECTION_FAILED_NOTE]);
+  });
+
+  it("degrades both estimates to zero rather than failing the page when the tax calculator throws", async () => {
+    // These facts come off scanned PDFs and reach a full tax calculation. The estimates are
+    // secondary and already have a defined zero fallback, so a throw must not 500 the whole page.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    m.runCalc.mockImplementationOnce(() => { throw new Error("bad bracket table"); });
+    m.getTaxReturn.mockResolvedValueOnce({ ...row(), facts: paSingleFiler() });
+    const r = await loadReconciliationInput("c1", "org_1", 2025);
+    expect(r.ok).toBe(true);
+    expect(r.ok && r.input.stateTaxEstimate).toBe(0);
+    expect(r.ok && r.input.ficaEstimate).toBe(0);
+    // Everything else still loaded — the degrade is confined to the two estimates.
+    expect(r.ok && r.input.engineYear?.year).toBe(2026);
+    expect(r.ok && r.notes).toEqual([]);
+    warn.mockRestore();
+  });
+
+  it("names the plan year in the plan-end note, not the return's year", async () => {
+    // A plan whose end age sits below the client's current age ends BEFORE it starts. planYear is
+    // clamped up to planStartYear, so the two diverge — and the old wording read "the plan ends in
+    // 2025, before the 2025 return's year", which contradicts itself.
+    m.loadEffectiveTree.mockResolvedValueOnce({ effectiveTree: { ...tree, planSettings: { ...tree.planSettings, planStartYear: 2026, planEndYear: 2025 } } });
+    const r = await loadReconciliationInput("c1", "org_1", 2025);
+    expect(r.ok && r.input.planYear).toBe(2026);
+    expect(r.ok && r.input.engineYear).toBeNull();
+    expect(r.ok && r.notes).toEqual(["The plan ends in 2025, so it has no 2026 figures to compare against and only direct row comparisons are shown."]);
   });
 
   it("marks dismissals unavailable in the migration window and estimates state tax and FICA from the facts", async () => {

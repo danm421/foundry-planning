@@ -73,7 +73,19 @@ export interface PlanExpense {
   id: string; type: "living" | "other" | "insurance" | "education"; name: string; annualAmount: number; growthRate: number;
   startYear: number; endYear: number; inflationStartYear: number | null; isDefault: boolean; startYearRef: string | null;
 }
-export interface PlanSavingsRule { id: string; accountId: string; annualAmount: number; startYear: number; endYear: number }
+export interface PlanSavingsRule {
+  id: string; accountId: string; annualAmount: number; startYear: number; endYear: number;
+  /** Percent-of-salary mode. The engine resolves the contribution as ownerSalary x annualPercent and
+   *  IGNORES annualAmount whenever this is set and above zero (src/engine/savings.ts:20-25). Null or
+   *  zero means annualAmount is the live figure. Carried here because `savings_rules.annual_amount`
+   *  is NOT NULL DEFAULT '0' (src/db/schema.ts:3327-3329), so a percent rule reads as $0 off the row
+   *  and would otherwise show a phantom gap against a fully funded plan. */
+  annualPercent: number | null;
+  /** Max-funded mode. The engine resolves the contribution to the IRS limit for the owner's age and
+   *  the account's sub-type, overriding BOTH annualAmount and annualPercent
+   *  (src/engine/projection.ts:3910-3924). Same phantom-gap hazard as annualPercent. */
+  contributeMax: boolean;
+}
 export interface PlanAccount { id: string; name: string; category: string; subType: string }
 export interface PlanEntity { id: string; name: string; entityType: string; taxTreatment: "qbi" | "ordinary" | "non_taxable" }
 export interface PlanDeduction { id: string; type: "charitable" | "above_line" | "below_line" | "property_tax"; name: string | null; annualAmount: number; growthRate: number; startYear: number; endYear: number }

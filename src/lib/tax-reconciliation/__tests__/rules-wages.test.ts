@@ -44,7 +44,7 @@ describe("wageRules — per W-2 (10% / $500)", () => {
     const plan = planFixture({
       incomes: [salary("i1", "Acme Corp", 154_500)],
       accounts: [{ id: "a1", name: "401(k)", category: "retirement", subType: "401k" }],
-      savingsRules: [{ id: "r1", accountId: "a1", annualAmount: 23_000, startYear: 2026, endYear: 2060 }],
+      savingsRules: [{ id: "r1", accountId: "a1", annualAmount: 23_000, startYear: 2026, endYear: 2060, annualPercent: null, contributeMax: false }],
     });
     const s = wageRules(inputFixture({ w2s: [w2("Acme", 120_000)], plan })).suggestions[0];
     expect(s.meaning).toMatch(/401\(k\)/);
@@ -56,7 +56,7 @@ describe("wageRules — per W-2 (10% / $500)", () => {
     const plan = planFixture({
       incomes: [salary("i1", "Acme Corp", 154_500)],
       accounts: [{ id: "a1", name: "Joint brokerage", category: "taxable", subType: "brokerage" }],
-      savingsRules: [{ id: "r1", accountId: "a1", annualAmount: 23_000, startYear: 2026, endYear: 2060 }],
+      savingsRules: [{ id: "r1", accountId: "a1", annualAmount: 23_000, startYear: 2026, endYear: 2060, annualPercent: null, contributeMax: false }],
     });
     const s = wageRules(inputFixture({ w2s: [w2("Acme", 120_000)], plan })).suggestions[0];
     expect(s.meaning).not.toMatch(/401\(k\)/);

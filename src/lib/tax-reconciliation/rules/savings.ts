@@ -1,12 +1,20 @@
-import { ROW, detailsHref, differs, isActiveInYear, makeDelta, money, ref, sum } from "../compare";
+import { ROW, detailsHref, differs, isActiveInYear, makeDelta, money, n, planToTaxYear, ref, sum } from "../compare";
 import type { Check, PlanSavingsRule, ReconciliationInput, Rule, Suggestion } from "../types";
 
 /** One Schedule 1 adjustment that is really a contribution the plan should be making: the account
  *  sub-types it can land in, the line it came off, and the words for it in a headline. */
 interface Kind { id: string; label: string; subTypes: string[]; amount: number | null; line: string; what: string }
 
+/** Which of the three figures on a savings rule the engine actually spends. Mirrors its precedence
+ *  exactly: "contribute the max" wins (src/engine/projection.ts:3910), then percent-of-salary, then
+ *  the flat annualAmount (src/engine/savings.ts:20-25). Only `amount` rules can be written to by
+ *  setting a dollar figure — for the other two the engine discards annualAmount entirely. */
+type SavingsMode = "max" | "percent" | "amount";
+const modeOf = (r: PlanSavingsRule): SavingsMode =>
+  r.contributeMax ? "max" : (r.annualPercent != null && r.annualPercent > 0 ? "percent" : "amount");
+
 function one(input: ReconciliationInput, k: Kind): { suggestions: Suggestion[]; checks: Check[] } {
-  const { plan, taxYear, planYear } = input;
+  const { plan, taxYear, planYear, engineYear } = input;
   if (k.amount == null || k.amount <= 0) return { suggestions: [], checks: [] };
   const accounts = plan.accounts.filter((a) => k.subTypes.includes(a.subType));
   const ids = new Set(accounts.map((a) => a.id));
@@ -24,9 +32,18 @@ function one(input: ReconciliationInput, k: Kind): { suggestions: Suggestion[]; 
   //    contributes TWICE into the same account from 2030 on.
   const ending = accountRules.filter((r) => isActiveInYear(r, taxYear) && !isActiveInYear(r, planYear));
   const future = accountRules.filter((r) => r.startYear > planYear);
-  // Flat, with no growth: the engine resolves a savings rule as an annual amount, a percent of
-  // salary or "contribute the max" (src/engine/savings.ts) and never compounds `annualAmount`.
-  const p = sum(rules.map((r) => r.annualAmount));
+  // The engine year is the post-resolution truth for all three modes — it has already applied the
+  // percent, the IRS maximum, the contribution caps and any retirement-year proration — so it is
+  // what the plan really contributes. Deflated by the plan's inflation rate like every other
+  // engine-sourced figure on this page, which is exactly what the builder's note discloses.
+  //
+  // Without an engine year only the flat rows can be added up, and a percent or max rule's
+  // contribution is genuinely unknowable here: it is left OUT of the sum rather than counted as the
+  // $0 its `annual_amount` column holds, and the arms below say so instead of writing a number.
+  const derived = rules.filter((r) => modeOf(r) !== "amount");
+  const p = engineYear
+    ? planToTaxYear(input, sum(accounts.map((a) => n(engineYear.savings.byAccount[a.id]))))
+    : sum(rules.filter((r) => modeOf(r) === "amount").map((r) => r.annualAmount));
   const returnFigure = { label: k.label, amount: k.amount, display: money(k.amount), lineRefs: [ref("Sched 1", k.line, k.label, k.amount)] };
   const planFigure = { label: accounts.length ? `Contributions to ${accounts.length === 1 ? accounts[0].name : k.what} in the plan` : `No ${k.what} in the plan`, amount: accounts.length ? p : null, display: accounts.length ? money(p) : "—", year: planYear };
   const netWorth = { label: "Open Net Worth", href: detailsHref(input, "net-worth") };
@@ -76,6 +93,22 @@ function one(input: ReconciliationInput, k: Kind): { suggestions: Suggestion[]; 
       target: { kind: "savings_rule.create", amountField: "annualAmount", input: { accountId: accounts[0].id, annualAmount: k.amount, startYear: plan.planSettings.planStartYear, endYear: plan.planSettings.planEndYear, endYearRef: "client_retirement" } } } }], checks: [] };
 
   if (!differs(k.amount, p, ROW)) return { suggestions: [], checks: [{ id: k.id, label: k.label, returnDisplay: money(k.amount), planDisplay: money(p) }] };
+
+  // A percent or max rule cannot be corrected by writing a dollar amount — the engine would ignore
+  // it and the card would report a fix that never happened. Say which mode it is in and send the
+  // advisor to the screen that can change it, the same posture every other unwritable arm takes.
+  if (derived.length > 0) {
+    const label = accountsLabel(derived);
+    const byMax = derived.some((r) => modeOf(r) === "max");
+    const how = byMax ? "to contribute the IRS maximum each year" : "as a percent of salary";
+    const why = byMax
+      ? `A max-funded rule resolves to the IRS limit for the owner's age each year, so a dollar amount set here would be ignored.`
+      : `A percent-of-salary rule resolves from the owner's salary each year, so a dollar amount set here would be ignored.`;
+    return { suggestions: [{ id: k.id, section: "savings", kind: "review", status: "open",
+      headline: `${head}; the plan's saving into ${label} is set ${how}.`,
+      meaning: `${why} Change it on Net Worth if the return's figure is the one to model.`,
+      returnFigure, planFigure, delta: makeDelta(k.amount, p), link: netWorth }], checks: [] };
+  }
 
   if (rules.length === 1) return { suggestions: [{ id: k.id, section: "savings", kind: "update", status: "open",
     headline: `${head}; the plan saves ${money(p)}.`,
