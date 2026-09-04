@@ -3,27 +3,12 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
-import { AddTaxAdjustmentForm } from "@/components/forms/add-tax-adjustment-form";
+import {
+  AddTaxAdjustmentForm,
+  type TaxAdjustmentRow,
+} from "@/components/forms/add-tax-adjustment-form";
 import type { ClientMilestones } from "@/lib/milestones";
 import { useClientAccess } from "@/components/client-access-provider";
-import type { IncomeTaxType } from "@/engine/tax-adjustments";
-
-interface TaxAdjustmentListRow {
-  id: string;
-  taxType: IncomeTaxType;
-  name: string | null;
-  owner: "client" | "spouse" | "joint";
-  /** SIGNED. A negative amount removes income the plan over-counts. */
-  annualAmount: number;
-  growthRate: number;
-  startYear: number;
-  endYear: number;
-  startYearRef: string | null;
-  endYearRef: string | null;
-  withheldMode: "none" | "amount" | "percent";
-  /** Dollars when mode is "amount"; a 0..1 fraction when "percent". */
-  withheldValue: number;
-}
 
 const fmt = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 
@@ -46,7 +31,7 @@ const OWNER_LABELS: Record<string, string> = {
 /** Dollar figure for the "Tax paid" column, raw (un-inflated) same as the
  *  Amount column — "amount" mode is already dollars; "percent" mode is a
  *  0..1 fraction of the row's own annualAmount. */
-function taxPaidDollars(r: TaxAdjustmentListRow): number {
+function taxPaidDollars(r: TaxAdjustmentRow): number {
   if (r.withheldMode === "amount") return r.withheldValue;
   if (r.withheldMode === "percent") return r.withheldValue * r.annualAmount;
   return 0;
@@ -62,7 +47,7 @@ export function TaxAdjustmentsList({
   spouseFirstName,
 }: {
   clientId: string;
-  rows: TaxAdjustmentListRow[];
+  rows: TaxAdjustmentRow[];
   currentYear: number;
   onChange?: () => void;
   milestones?: ClientMilestones;
@@ -73,19 +58,16 @@ export function TaxAdjustmentsList({
   const canEdit = permission === "edit";
   const router = useRouter();
   const writer = useScenarioWriter(clientId);
-  const [editing, setEditing] = useState<TaxAdjustmentListRow | null>(null);
+  const [editing, setEditing] = useState<TaxAdjustmentRow | null>(null);
   const [adding, setAdding] = useState(false);
 
   // Compute current-year totals (display only). SIGNED — a negative row
   // (income the plan over-counts) subtracts from the total; never clamped.
-  let total = 0;
+  let currentYearTotal = 0;
   for (const r of rows) {
     if (currentYear < r.startYear || currentYear > r.endYear) continue;
-    const yearsSinceStart = currentYear - r.startYear;
-    const inflated = r.annualAmount * Math.pow(1 + r.growthRate, yearsSinceStart);
-    total += inflated;
+    currentYearTotal += r.annualAmount * Math.pow(1 + r.growthRate, currentYear - r.startYear);
   }
-  const currentYearTotal = total;
 
   async function handleDelete(id: string) {
     if (!confirm("Delete this tax adjustment?")) return;

@@ -21,7 +21,7 @@ import type {
 import type { LiquidAccount, AssetAccount } from "@/components/account-groups/types";
 import { type RiskLevel } from "@/lib/risk-levels";
 import type { FilingStatus } from "@/lib/tax/types";
-import type { IncomeTaxType } from "@/engine/tax-adjustments";
+import type { TaxAdjustmentRow } from "@/components/forms/add-tax-adjustment-form";
 
 export interface DeductionsTabData {
   derivedRows: DerivedRow[];
@@ -42,23 +42,6 @@ export interface DeductionsTabData {
   }[];
   currentYear: number;
   saltCap: number;
-}
-
-export interface TaxAdjustmentRow {
-  id: string;
-  taxType: IncomeTaxType;
-  name: string | null;
-  owner: "client" | "spouse" | "joint";
-  /** SIGNED. A negative amount removes income the plan over-counts. */
-  annualAmount: number;
-  growthRate: number;
-  startYear: number;
-  endYear: number;
-  startYearRef: string | null;
-  endYearRef: string | null;
-  withheldMode: "none" | "amount" | "percent";
-  /** Dollars when mode is "amount"; a 0..1 fraction when "percent". */
-  withheldValue: number;
 }
 
 export interface AssumptionsSettings {

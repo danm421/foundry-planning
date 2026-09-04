@@ -7,7 +7,11 @@ import MilestoneYearPicker from "@/components/milestone-year-picker";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import type { IncomeTaxType } from "@/engine/tax-adjustments";
 
-interface TaxAdjustmentRow {
+/** The tax-adjustment row as the UI sees it: DB-shaped (owner, year refs) rather
+ *  than engine-shaped. Declared here, the deepest node in the
+ *  assumptions-client → list → form chain, and imported by both of the others so
+ *  the three cannot drift — a row flows through all three untouched. */
+export interface TaxAdjustmentRow {
   id: string;
   taxType: IncomeTaxType;
   name: string | null;
