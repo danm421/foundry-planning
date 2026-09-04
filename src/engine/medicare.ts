@@ -104,6 +104,36 @@ export function irmaaCapCeiling(tiers: IrmaaTier[], capTier: number): number | n
   return tier.magiUpperBound;
 }
 
+/** Scale every dollar figure on a tier table by `factor`. CMS republishes both
+ *  the thresholds and the surcharges each year; the projection inflates them
+ *  forward off the seeded row. Shared by the premium calculation and the
+ *  conversion cap so the cap can never aim at a threshold the premium
+ *  calculation does not use. */
+export function inflateIrmaaTiers(tiers: IrmaaTier[], factor: number): IrmaaTier[] {
+  if (factor === 1) return tiers;
+  return tiers.map((t) => ({
+    tier: t.tier,
+    magiLowerBound: t.magiLowerBound * factor,
+    magiUpperBound: t.magiUpperBound == null ? null : t.magiUpperBound * factor,
+    partBSurcharge: t.partBSurcharge * factor,
+    partDSurcharge: t.partDSurcharge * factor,
+  }));
+}
+
+/** Whether `coverage`'s owner is enrolled in Medicare in `year`, given their
+ *  age that year. Single definition shared by `computeMedicareYear` (which
+ *  charges the premium) and the Roth-conversion IRMAA cap (which must not bind
+ *  when nobody is enrolled in the premium year). */
+export function isEnrolledInYear(
+  coverage: MedicareCoverage,
+  ageInYear: number,
+  year: number,
+): boolean {
+  const reachesEnrollmentYear =
+    coverage.enrollmentYear === null || year >= coverage.enrollmentYear;
+  return ageInYear >= DEFAULT_ENROLLMENT_AGE && reachesEnrollmentYear;
+}
+
 export function computeMedicareYear(input: MedicareYearInput): MedicareYearDetail {
   const {
     year, age, coverage,
@@ -114,10 +144,7 @@ export function computeMedicareYear(input: MedicareYearInput): MedicareYearDetai
     defaultMedigapMonthly, defaultPartDPlanMonthly,
   } = input;
 
-  const enrollmentAge = DEFAULT_ENROLLMENT_AGE;
-  const yearReachesEnrollmentYear =
-    coverage.enrollmentYear === null || year >= coverage.enrollmentYear;
-  const enrolled = age >= enrollmentAge && yearReachesEnrollmentYear;
+  const enrolled = isEnrolledInYear(coverage, age, year);
 
   if (!enrolled) {
     return {

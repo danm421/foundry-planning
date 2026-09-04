@@ -22,7 +22,7 @@ import type {
   RothConversion,
   EducationGoalYear,
 } from "./types";
-import { computeMedicareYear } from "./medicare";
+import { computeMedicareYear, inflateIrmaaTiers } from "./medicare";
 import { resolveResidenceState } from "./relocation";
 import {
   computeBusinessAccountCashFlow,
@@ -5143,18 +5143,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       const partBFactor = Math.pow(1 + inflationRate, Math.max(0, year - paramSourceYear));
       const standardPartBPremium = rawStandardPartB * partBFactor;
       const partDNationalBase = rawPartDBase * partBFactor;
-      const inflateTiers = (tiers: IrmaaTier[]): IrmaaTier[] =>
-        partBFactor === 1
-          ? tiers
-          : tiers.map((t) => ({
-              tier: t.tier,
-              magiLowerBound: t.magiLowerBound * partBFactor,
-              magiUpperBound: t.magiUpperBound == null ? null : t.magiUpperBound * partBFactor,
-              partBSurcharge: t.partBSurcharge * partBFactor,
-              partDSurcharge: t.partDSurcharge * partBFactor,
-            }));
-      const irmaaTiersMfj = inflateTiers(rawIrmaaMfj);
-      const irmaaTiersSingle = inflateTiers(rawIrmaaSingle);
+      const irmaaTiersMfj = inflateIrmaaTiers(rawIrmaaMfj, partBFactor);
+      const irmaaTiersSingle = inflateIrmaaTiers(rawIrmaaSingle, partBFactor);
 
       if (medicareCoverageByOwner.client) {
         const mc = resolveSourceMagi("client");
