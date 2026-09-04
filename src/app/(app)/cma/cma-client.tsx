@@ -48,6 +48,9 @@ interface ModelPortfolio {
   description: string | null;
   riskLevel: RiskLevel | null;
   allocations: Allocation[];
+  /** Non-null when derived from a fund portfolio: allocations are synced from
+   *  that fund's look-through and must not be hand-edited. */
+  sourceTickerPortfolioId: string | null;
 }
 
 type Tab = "asset-classes" | "model-portfolios" | "fund-portfolios";
@@ -790,6 +793,17 @@ function ModelPortfoliosTab({ portfolios, assetClasses, correlationRows, onRefre
     }
   }
 
+  async function detach(id: string) {
+    setError(null);
+    try {
+      const res = await fetch(`/api/cma/model-portfolios/${id}/detach`, { method: "POST" });
+      if (!res.ok) throw new Error("Detach failed");
+      onRefresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Detach failed");
+    }
+  }
+
   async function saveRiskLevel(id: string, riskLevel: RiskLevel | null) {
     setError(null);
     try {
@@ -932,6 +946,22 @@ function ModelPortfoliosTab({ portfolios, assetClasses, correlationRows, onRefre
             </div>
           )}
 
+          {selected.sourceTickerPortfolioId && (
+            <div className="flex items-center justify-between rounded-lg border border-hair bg-card-2/60 px-3 py-2">
+              <p className="text-xs text-ink-2">
+                Derived from a fund portfolio. These allocations update automatically when its
+                holdings change.
+              </p>
+              <button
+                onClick={() => detach(selected.id)}
+                className="flex-shrink-0 rounded border border-hair px-2 py-1 text-xs text-ink-2 hover:border-hair-2"
+                title="Stop syncing and make these allocations editable. This cannot be undone."
+              >
+                Detach
+              </button>
+            </div>
+          )}
+
           {/* Allocation table */}
           <PortfolioAllocationEditor
             portfolio={selected}
@@ -953,6 +983,12 @@ function PortfolioAllocationEditor({
   assetClasses: AssetClass[];
   onSave: (allocs: { assetClassId: string; weight: string }[]) => void;
 }) {
+  // Derived-from-a-fund portfolios are read-only: the next sync would clobber a
+  // hand edit with no warning. Weights render as text and the write controls are
+  // withheld entirely — a disabled Save that silently does nothing would be
+  // worse than no Save at all. (The API refuses the write too; this is only the
+  // affordance.)
+  const readOnly = portfolio.sourceTickerPortfolioId !== null;
   const [allocs, setAllocs] = useState(
     portfolio.allocations.map((a) => ({
       assetClassId: a.assetClassId,
@@ -1016,24 +1052,32 @@ function PortfolioAllocationEditor({
                   <td className="px-3 py-2 text-right text-sm tabular-nums text-ink-2">{growth}</td>
                   <td className="px-3 py-2">
                     <div className="flex justify-end">
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={a.weight}
-                        onChange={(e) => updateWeight(idx, e.target.value)}
-                        className="w-24 rounded border border-hair bg-transparent px-2 py-1 text-right text-sm tabular-nums text-ink focus:border-accent focus:outline-none"
-                      />
+                      {readOnly ? (
+                        <span className="px-2 py-1 text-right text-sm tabular-nums text-ink">
+                          {a.weight}
+                        </span>
+                      ) : (
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={a.weight}
+                          onChange={(e) => updateWeight(idx, e.target.value)}
+                          className="w-24 rounded border border-hair bg-transparent px-2 py-1 text-right text-sm tabular-nums text-ink focus:border-accent focus:outline-none"
+                        />
+                      )}
                     </div>
                   </td>
                   <td className="px-3 py-2">
-                    <button
-                      onClick={() => removeRow(idx)}
-                      className="rounded p-1 text-white hover:bg-white/10 hover:text-white"
-                      title="Remove asset class from portfolio"
-                      aria-label="Remove asset class from portfolio"
-                    >
-                      <TrashIcon className="h-4 w-4" />
-                    </button>
+                    {!readOnly && (
+                      <button
+                        onClick={() => removeRow(idx)}
+                        className="rounded p-1 text-white hover:bg-white/10 hover:text-white"
+                        title="Remove asset class from portfolio"
+                        aria-label="Remove asset class from portfolio"
+                      >
+                        <TrashIcon className="h-4 w-4" />
+                      </button>
+                    )}
                   </td>
                 </tr>
               );
@@ -1044,7 +1088,7 @@ function PortfolioAllocationEditor({
 
       <div className="mt-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          {availableClasses.length > 0 && (
+          {!readOnly && availableClasses.length > 0 && (
             <select
               onChange={(e) => { if (e.target.value) addRow(e.target.value); e.target.value = ""; }}
               className="rounded border border-hair bg-card-2 px-3 py-1.5 text-sm text-ink-2"
@@ -1060,13 +1104,15 @@ function PortfolioAllocationEditor({
             Total: {currentTotal.toFixed(2)}%
           </span>
         </div>
-        <button
-          onClick={handleSave}
-          disabled={Math.abs(currentTotal - 100) > 0.1}
-          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-ink disabled:opacity-50"
-        >
-          Save Allocations
-        </button>
+        {!readOnly && (
+          <button
+            onClick={handleSave}
+            disabled={Math.abs(currentTotal - 100) > 0.1}
+            className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-ink disabled:opacity-50"
+          >
+            Save Allocations
+          </button>
+        )}
       </div>
     </div>
   );

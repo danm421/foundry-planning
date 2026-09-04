@@ -59,7 +59,7 @@ describe("GrowthRateField", () => {
     expect(screen.getByRole("textbox")).toBeInTheDocument();
   });
 
-  it("renders fund portfolios as tp:<id> options and parses them", () => {
+  it("does not offer fund portfolios — they reach plans as model portfolios", () => {
     render(
       <GrowthRateField
         category="taxable" growthSource="default" modelPortfolioId="" growthRatePct=""
@@ -69,7 +69,7 @@ describe("GrowthRateField", () => {
         onSourceChange={() => {}} onCustomPctChange={() => {}}
       />,
     );
-    expect(screen.getByRole("option", { name: /5\.98% — My Fund Sleeve/ })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /My Fund Sleeve/ })).not.toBeInTheDocument();
   });
 
   it("labels the inherit row as a plan default, not a bare portfolio name", () => {

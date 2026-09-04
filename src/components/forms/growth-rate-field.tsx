@@ -21,6 +21,10 @@ export interface GrowthRateFieldProps {
   growthRatePct: string;
   modelPortfolios?: GrowthRateModelPortfolio[];
   tickerPortfolioId?: string;
+  /** No longer offered as a NEW choice since 2026-09-03 — fund portfolios reach
+   *  plans as derived model portfolios, so they arrive in `modelPortfolios`.
+   *  Still read to name an account already stored on a `ticker_portfolio`
+   *  source, which must keep displaying and round-tripping correctly. */
   fundPortfolios?: { id: string; name: string; blendedReturnPct: number | null }[];
   /** Resolved category-default % (0–100) or null when unknown. */
   defaultPctForCategory: number | null;
@@ -102,15 +106,16 @@ export function GrowthRateField({
             {(mp.blendedReturn * 100).toFixed(2)}% — {mp.name}
           </option>
         ))}
-        {fundPortfolios && fundPortfolios.length > 0 && (
-          <optgroup label="Fund portfolios">
-            {fundPortfolios.map((fp) => (
-              <option key={fp.id} value={`tp:${fp.id}`} disabled={fp.blendedReturnPct === null}>
-                {fp.blendedReturnPct !== null ? `${fp.blendedReturnPct.toFixed(2)}% — ` : ""}
-                {fp.name}{fp.blendedReturnPct === null ? " (needs classified holdings)" : ""}
-              </option>
-            ))}
-          </optgroup>
+        {/* The same "never hide the stored source" rule the asset-mix comment
+            above states. Fund portfolios are no longer offered as a NEW choice,
+            but the DB enum still accepts `ticker_portfolio` and an API, import
+            or Forge write can land there — and a select whose value matches no
+            option silently displays "Plan default" and saves that lie back. */}
+        {growthSource === "ticker_portfolio" && (
+          <option value={`tp:${tickerPortfolioId}`}>
+            {fundPortfolios?.find((fp) => fp.id === tickerPortfolioId)?.name ?? "Fund portfolio"}{" "}
+            (legacy — re-pick to change)
+          </option>
         )}
         {showAssetMix && (
           <option value="asset_mix">
