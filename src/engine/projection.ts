@@ -4971,8 +4971,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
       const premiumResolved = taxResolver.getYear(premiumYear);
       const premiumParams = premiumResolved?.params;
+      // Mirrors `medicareParamsReady` in the Medicare block below, INCLUDING its
+      // `standardPartBPremium` test. The cap may bind only when that block would
+      // actually run in the premium year: a row carrying IRMAA brackets but no
+      // Part B premium charges no surcharge in Y+2, so throttling a conversion
+      // in Y would guard a premium the engine never charges — the same mistake
+      // the enrollment gate above prevents. Keep the two conditions in step.
       const rawMfj = (premiumParams?.irmaaBracketsMfj ?? []) as IrmaaTier[];
       const rawSingle = (premiumParams?.irmaaBracketsSingle ?? []) as IrmaaTier[];
+      if (premiumParams?.standardPartBPremium == null) return null;
       if (rawMfj.length === 0 || rawSingle.length === 0) return null;
 
       // Same Medicare inflation the premium block applies, resolved for the

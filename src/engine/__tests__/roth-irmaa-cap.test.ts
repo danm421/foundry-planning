@@ -10,10 +10,12 @@
  * Per the project's inline-helper convention, the scenario builders are local
  * to this file and build only the shape these tests need.
  *
- * ⚠️ Two of these three tests are RED until Task 6 makes the ceiling bind.
- * Task 5 only RESOLVES the ceiling; nothing consumes it yet. The enrollment-gate
- * test is the negative control: it asserts the cap does NOT bind, so it is green
- * now and must STAY green once the sizing starts consuming the ceiling.
+ * ⚠️ Two of these four tests are RED until Task 6 makes the ceiling bind.
+ * Task 5 only RESOLVES the ceiling; nothing consumes it yet. The other two —
+ * the enrollment gate and flat tax mode — are NEGATIVE CONTROLS: each asserts
+ * the cap does NOT bind, so both are green now and must STAY green once the
+ * sizing starts consuming the ceiling. They exit `resolveIrmaaCeiling` at
+ * different guards and neither substitutes for the other.
  */
 
 import { describe, it, expect } from "vitest";
@@ -99,6 +101,8 @@ interface ScenarioInput {
   medicareCoverage: MedicareCoverage[];
   conversion: RothConversion;
   checkingValue: number;
+  /** Defaults to "bracket". Only the flat-mode negative control overrides it. */
+  taxEngineMode?: "bracket" | "flat";
 }
 
 /** A retired household whose ONLY taxable income is the Roth conversion, so
@@ -134,6 +138,13 @@ function scenario(input: ScenarioInput): ClientData {
         owners: [{ kind: "family_member", familyMemberId: CLIENT_FM_ID, percent: 1 }],
       },
       {
+        // ⚠️ LOAD-BEARING PLAN WINDOW. `rmdEnabled` is true on $3M, so "the only
+        // taxable income is the conversion" holds ONLY because no scenario in
+        // this file reaches RMD age inside the 2026-2030 plan window: the 1958
+        // client turns 73 (their RMD age) in 2031, one year past `planEndYear`,
+        // and the 1968 client's RMD age is 75. Move a DOB earlier or extend
+        // `planEndYear` and RMD income appears silently — every MAGI assertion
+        // below would then be measuring something else.
         id: "acc-ira",
         name: "Trad IRA",
         category: "retirement",
@@ -171,7 +182,7 @@ function scenario(input: ScenarioInput): ClientData {
       inflationRate: 0,
       planStartYear: 2026,
       planEndYear: 2030,
-      taxEngineMode: "bracket",
+      taxEngineMode: input.taxEngineMode ?? "bracket",
       taxInflationRate: 0.025,
       estateAdminExpenses: 0,
       flatStateEstateRate: 0,
@@ -285,6 +296,44 @@ describe("Roth conversion IRMAA cap — ceiling resolution", () => {
     // $800K blows past every single-filer tier (tier 4 tops out at $500K).
     expect(conv!.gross, "the full fixed amount converts when nobody is enrolled").toBeCloseTo(
       800_000,
+      0,
+    );
+  });
+
+  it("does not bind in flat tax mode", () => {
+    // Second negative control — guards `resolveIrmaaCeiling`'s
+    // `!useBracket || !resolved` early return.
+    //
+    // ⚠️ NOT redundant with the enrollment-gate test above: that one exits at a
+    // different guard, and neither covers the other. Do not delete this as a
+    // duplicate. In flat mode the phase-12 tax probe short-circuits and hands
+    // back a taxable-income proxy as its `magi` — NOT AGI + tax-exempt interest.
+    // A ceiling sized against that number yields a wrong conversion amount with
+    // no error and no visible symptom, so the cap must go inert instead.
+    //
+    // Same household as the two-year-shift test (both spouses enrolled in
+    // premium year 2028, tier-0 cap, $600K fixed). The ONLY difference is the
+    // tax engine, so a red here means the guard is gone, not that the fixture
+    // drifted.
+    const years = runProjection(
+      scenario({
+        clientDob: "1958-01-01",
+        spouseDob: "1959-01-01",
+        filingStatus: "married_joint",
+        medicareCoverage: [coverage("client"), coverage("spouse")],
+        conversion: cappedFixedAmount(600_000, 0),
+        checkingValue: 500_000,
+        taxEngineMode: "flat",
+      }),
+    );
+
+    const y2026 = years.find((y) => y.year === 2026);
+    expect(y2026, "year 2026 should exist").toBeDefined();
+    const conv = (y2026!.rothConversions ?? [])[0];
+    expect(conv, "2026 should have a roth conversion").toBeDefined();
+
+    expect(conv!.gross, "the full fixed amount converts in flat tax mode").toBeCloseTo(
+      600_000,
       0,
     );
   });
