@@ -7,7 +7,13 @@ export const wageRules: Rule = (input) => {
   const { facts, plan, taxYear, planYear, w2s } = input;
   const suggestions: Suggestion[] = [];
   const checks: Check[] = [];
-  const rows = plan.incomes.filter((i) => i.type === "salary" && isActiveInYear(i, planYear));
+  // Match W-2s against EVERY salary row, ended ones included: the retirement or job-change year is
+  // the likeliest year to be reconciling a return at all, and a row that ends in the tax year would
+  // otherwise be invisible to the matcher — its own W-2 would fall through to the create arm and
+  // offer to re-employ the client at full salary for the life of the plan.
+  const salaryRows = plan.incomes.filter((i) => i.type === "salary");
+  // The aggregates below mean "what the plan pays in the plan year", so they keep the active subset.
+  const rows = salaryRows.filter((i) => isActiveInYear(i, planYear));
   const deferralAccountIds = new Set(plan.accounts.filter((a) => DEFERRAL_SUBTYPES.has(a.subType)).map((a) => a.id));
   const hasDeferralRule = plan.savingsRules.some((r) => deferralAccountIds.has(r.accountId));
   const deferralNote = hasDeferralRule
@@ -27,9 +33,17 @@ export const wageRules: Rule = (input) => {
     const id = `income.wages.w2.${i}`;
     const employer = w.employer ?? `W-2 #${i + 1}`;
     const returnFigure = { label: `${employer} · box 1`, amount: wages, display: money(wages), lineRefs: [ref("W-2", "Box 1", `${employer} wages`, wages)] };
-    const match = rows.find((r) => !claimed.has(r.id) && namesMatch(w.employer, r.name));
+    const match = salaryRows.find((r) => !claimed.has(r.id) && namesMatch(w.employer, r.name));
     if (match) {
       claimed.add(match.id);
+      if (!isActiveInYear(match, planYear)) {
+        // The row is real and it matched; it just ends before the plan year — a job the client has
+        // already left. There is nothing to write, so record that the W-2 was accounted for and say
+        // why the plan carries no salary for it. Claiming the row is safe: the unmatchedRow loop
+        // below only walks active rows.
+        checks.push({ id, label: `Wages · ${employer}`, returnDisplay: money(wages), planDisplay: `Ends in ${match.endYear}, before the ${planYear} plan year` });
+        return;
+      }
       const p = rowAmountInYear(match, taxYear);
       if (differs(wages, p, W2)) {
         suggestions.push({

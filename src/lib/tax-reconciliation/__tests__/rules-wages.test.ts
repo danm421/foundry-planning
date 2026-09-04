@@ -58,6 +58,20 @@ describe("wageRules — per W-2 (10% / $500)", () => {
     expect(s.action?.ownerChoices).toBeUndefined();
   });
 
+  it("checks off a job that ended in the tax year instead of offering to re-create it", () => {
+    // The retirement / job-change year. The row ran 2015–2025 and is worth $207,635 in 2025 dollars,
+    // so if the matcher could see it at all it would want to *update* it to the W-2's $100,000; if it
+    // could not see it, it would want to *create* a brand-new salary running to retirement — which
+    // re-employs a client who has just retired. Neither is right: assert an empty suggestion list,
+    // and a check that names the year the job ended.
+    const plan = planFixture({ incomes: [salary("i1", "Acme Corp", 154_500, { startYear: 2015, endYear: 2025 })] });
+    const r = wageRules(inputFixture({ w2s: [w2("ACME CORPORATION", 100_000)], plan }));
+    expect(r.suggestions).toEqual([]);
+    expect(r.checks).toEqual([
+      { id: "income.wages.w2.0", label: "Wages · ACME CORPORATION", returnDisplay: "$100,000", planDisplay: "Ends in 2025, before the 2026 plan year" },
+    ]);
+  });
+
   it("does not offer one plan row to two W-2s", () => {
     const plan = planFixture({ incomes: [salary("i1", "Acme", 100_000)] });
     const r = wageRules(inputFixture({ w2s: [w2("Acme", 100_000), w2("Acme Holdings", 40_000)], plan }));
@@ -106,6 +120,20 @@ describe("wageRules — income.wages.total (no W-2 documents, 5% / $500)", () =>
     expect(s.planFigure.amount).toBeCloseTo(110_000, 0);
     expect(s.action?.defaultAmount).toBe(90_000);
     expect(s.action?.target).toMatchObject({ kind: "income.update", incomeId: "i1", patch: { annualAmount: 90_000 } });
+  });
+  it("counts only rows active in the plan year, so an ended job does not force a review", () => {
+    // The other half of the matcher fix: matching sees every salary row, but the aggregates stay on
+    // the ACTIVE subset. If the ended row were counted here the advisor would get a "which salary is
+    // off?" review instead of the one-click update on the job they actually still hold.
+    const f = emptyTaxReturnFacts(2025); f.income.wages = 80_000;
+    const plan = planFixture({ incomes: [
+      salary("i1", "Acme", 100_000, { inflationStartYear: 2025 }),
+      salary("i2", "Old Job", 60_000, { startYear: 2015, endYear: 2025 }),
+    ] });
+    const s = wageRules(inputFixture({ facts: f, plan })).suggestions[0];
+    expect(s.kind).toBe("update");
+    expect(s.planFigure.label).toBe("Acme");
+    expect(s.action?.target).toMatchObject({ kind: "income.update", incomeId: "i1", patch: { annualAmount: 80_000 } });
   });
   it("sends two or more rows to review", () => {
     const f = emptyTaxReturnFacts(2025); f.income.wages = 80_000;
