@@ -63,4 +63,78 @@ describe("detectRothConversionEvents", () => {
     expect(events.find((e) => e.id === "strategy:roth:rc-a")).toBeDefined();
     expect(events.find((e) => e.id === "strategy:roth:rc-b")).toBeDefined();
   });
+
+  it("ignores a year an IRMAA cap zeroed, for the anchor AND the count", () => {
+    // The engine emits a $0 entry on purpose when a cap binds all the way down,
+    // so the tax drill can say "ran, converted nothing". A timeline card records
+    // what HAPPENED: counting that year would anchor the card a year early and
+    // report "over 3 years" when only two years moved money.
+    const data = buildClientData();
+    const projection = mkProjection([
+      {
+        rothConversions: [
+          {
+            id: "rc-cap", name: "Capped ladder", gross: 0, taxable: 0,
+            requested: 600_000, limitedBy: "irmaa", irmaaCapTier: 0,
+          },
+        ],
+      },
+      {
+        rothConversions: [
+          {
+            id: "rc-cap", name: "Capped ladder", gross: 100_000, taxable: 100_000,
+            requested: 600_000, limitedBy: "irmaa", irmaaCapTier: 0,
+          },
+        ],
+      },
+      {
+        rothConversions: [
+          {
+            id: "rc-cap", name: "Capped ladder", gross: 150_000, taxable: 150_000,
+            requested: 600_000, limitedBy: "irmaa", irmaaCapTier: 0,
+          },
+        ],
+      },
+    ]);
+    const card = detectRothConversionEvents(data, projection).find(
+      (e) => e.id === "strategy:roth:rc-cap",
+    );
+    expect(card, "the two converting years still make a card").toBeDefined();
+
+    // Anchored on the first year money actually moved — 2031, not 2030.
+    expect(card!.year).toBe(2031);
+    // Two years, $250K — not three years.
+    expect(card!.supportingFigure).toBe("$250,000 converted over 2 years");
+    // And no $0 detail row.
+    const yearRows = card!.details.filter((d) => /^\d{4}$/.test(d.label));
+    expect(yearRows.map((d) => d.label)).toEqual(["2031", "2032"]);
+  });
+
+  it("emits no card at all when the cap zeroed every year", () => {
+    // Nothing happened, so there is no event to put on a timeline.
+    const data = buildClientData();
+    const projection = mkProjection([
+      {
+        rothConversions: [
+          {
+            id: "rc-dead", name: "Fully blocked", gross: 0, taxable: 0,
+            requested: 600_000, limitedBy: "irmaa", irmaaCapTier: 0,
+          },
+        ],
+      },
+      {
+        rothConversions: [
+          {
+            id: "rc-dead", name: "Fully blocked", gross: 0, taxable: 0,
+            requested: 600_000, limitedBy: "irmaa", irmaaCapTier: 0,
+          },
+        ],
+      },
+    ]);
+    expect(
+      detectRothConversionEvents(data, projection).filter((e) =>
+        e.id.startsWith("strategy:roth:rc-dead"),
+      ),
+    ).toHaveLength(0);
+  });
 });

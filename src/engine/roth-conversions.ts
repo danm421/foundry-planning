@@ -80,7 +80,13 @@ export interface RothConversionOutcome {
   bySource: Record<string, number>;
   /** What the strategy asked for before any ceiling applied. */
   requested: number;
-  /** Which constraint produced the final number, or null if none did. */
+  /** Which constraint PRODUCED the final number, or null if none did.
+   *
+   *  ⚠️ Non-null does NOT mean "cut short". An ordinary bracket fill reports
+   *  `"bracket"` even when it filled the bracket perfectly — the bracket
+   *  ceiling is what produced its number. Reading `limitedBy != null` as
+   *  "this conversion was reduced" would flag every healthy bracket fill in
+   *  the plan. Only `requested === gross` says nothing was given up. */
   limitedBy: "irmaa" | "bracket" | "sources" | null;
   /** The IRMAA tier whose ceiling bound. Present only when
    *  `limitedBy === "irmaa"` — it names the limit that ACTUALLY applied, not

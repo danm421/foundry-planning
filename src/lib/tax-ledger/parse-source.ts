@@ -1,15 +1,8 @@
 // src/lib/tax-ledger/parse-source.ts
 import type { CellDrillContext } from "@/lib/tax/cell-drill/types";
-import { resolveSourceLabel } from "@/lib/tax/cell-drill/_shared";
+import { resolveSourceLabel, type BySourceEntry } from "@/lib/tax/cell-drill/_shared";
 import { isTaxableCharacter, rawTypeToCharacter } from "./character";
 import type { TaxLedgerRow } from "./types";
-
-interface RawEntry {
-  type: string;
-  amount: number;
-  /** Set by the engine only on a `roth_conversion:` row an IRMAA cap limited. */
-  irmaaCapTier?: number;
-}
 
 const INCOME_TYPE_LABELS: Record<string, string> = {
   salary: "Salary / Wages",
@@ -28,7 +21,7 @@ const INCOME_TYPE_LABELS: Record<string, string> = {
  */
 export function parseHouseholdSource(
   key: string,
-  entry: RawEntry,
+  entry: BySourceEntry,
   ctx: CellDrillContext,
 ): TaxLedgerRow {
   const character = rawTypeToCharacter(entry.type);
