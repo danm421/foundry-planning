@@ -230,6 +230,27 @@ describe("POST /api/clients/[id]/tax-adjustments", () => {
     );
   });
 
+  it("creates with annualAmount: 0 — the value the spec calls out as legal, and the one a `!annualAmount` guard would reject", async () => {
+    const res = await POST(
+      req("POST", CLIENT_A, { ...VALID_BODY, annualAmount: 0 }),
+      listCtx(CLIENT_A),
+    );
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.annualAmount).toBe("0");
+    expect(state.adjustments).toHaveLength(1);
+    expect(state.adjustments[0].annualAmount).toBe("0");
+  });
+
+  it("rejects a body missing taxType with 400 and persists nothing", async () => {
+    const res = await POST(
+      req("POST", CLIENT_A, { ...VALID_BODY, taxType: undefined }),
+      listCtx(CLIENT_A),
+    );
+    expect(res.status).toBe(400);
+    expect(state.adjustments).toHaveLength(0);
+  });
+
   it("defaults withheldMode to 'none' when the body omits it", async () => {
     // VALID_BODY carries no withheldMode/withheldValue — the route must fill them in.
     const res = await POST(req("POST", CLIENT_A, VALID_BODY), listCtx(CLIENT_A));
