@@ -61,6 +61,29 @@ describe("resolveSourceLabel", () => {
     ).toBe("Ladder — Roth Conversion");
   });
 
+  it("says the cap was EXCEEDED rather than 'limited by' when it did not hold", () => {
+    // A capped conversion sharing a year with another conversion that solves
+    // against the same income is sized to the ceiling and STILL finishes above
+    // it. "limited by IRMAA Tier 2" would report a cap the engine did not
+    // deliver, which is the one thing this label must never do.
+    expect(
+      resolveSourceLabel("roth_conversion:cv_4", ctx, {
+        type: "ordinary_income",
+        amount: 120_000,
+        irmaaCapTier: 2,
+        irmaaCapExceeded: true,
+      }),
+    ).toBe("Roth Conversion (IRMAA Tier 2 cap exceeded)");
+    // The flag is meaningless without a tier and must not invent one.
+    expect(
+      resolveSourceLabel("roth_conversion:cv_4", ctx, {
+        type: "ordinary_income",
+        amount: 120_000,
+        irmaaCapExceeded: true,
+      }),
+    ).toBe("Roth Conversion");
+  });
+
   it("labels tier 0 — the surcharge-free band — rather than treating it as absent", () => {
     // `0` is the most common cap an advisor sets and the one a truthiness test
     // would silently drop.

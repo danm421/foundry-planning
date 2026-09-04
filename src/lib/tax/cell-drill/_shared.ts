@@ -8,7 +8,32 @@ const COMPOUND_KIND_LABEL: Record<string, string> = {
 };
 
 /** One `taxDetail.bySource` row. Mirrors `ProjectionYear["taxDetail"]["bySource"]`. */
-export type BySourceEntry = { type: string; amount: number; irmaaCapTier?: number };
+export type BySourceEntry = {
+  type: string;
+  amount: number;
+  irmaaCapTier?: number;
+  irmaaCapExceeded?: boolean;
+};
+
+/** The IRMAA-cap suffix a `roth_conversion:` row carries, or `""` when it
+ *  carries none. Exported because the tax LEDGER parses the same rows into its
+ *  own descriptions (`lib/tax-ledger/parse-source.ts`) — two advisor-facing
+ *  surfaces, one wording, so they cannot drift apart.
+ *
+ *  ⚠️ The two outcomes are opposites and must not be collapsed. "limited by"
+ *  means the ceiling produced this conversion's number. `irmaaCapExceeded`
+ *  means the conversion was sized to that ceiling and the HOUSEHOLD still
+ *  finished above it, because a sibling conversion took the same headroom —
+ *  saying "limited by" there reports a cap the engine did not deliver. */
+export function irmaaCapSuffix(
+  entry?: Pick<BySourceEntry, "irmaaCapTier" | "irmaaCapExceeded">,
+): string {
+  const tier = entry?.irmaaCapTier;
+  if (tier == null) return "";
+  return entry?.irmaaCapExceeded
+    ? ` (IRMAA Tier ${tier} cap exceeded)`
+    : ` (limited by IRMAA Tier ${tier})`;
+}
 
 /** Resolve a `taxDetail.bySource` key to a display label.
  *
@@ -56,8 +81,7 @@ export function resolveSourceLabel(
     const cid = sourceId.slice("roth_conversion:".length);
     const name = ctx.rothConversionNames?.[cid];
     const base = name ? `${name} — Roth Conversion` : "Roth Conversion";
-    const tier = entry?.irmaaCapTier;
-    return tier != null ? `${base} (limited by IRMAA Tier ${tier})` : base;
+    return base + irmaaCapSuffix(entry);
   }
   if (sourceId.startsWith("sale:")) {
     const tx = sourceId.slice("sale:".length);

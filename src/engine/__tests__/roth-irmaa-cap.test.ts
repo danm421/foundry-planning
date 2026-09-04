@@ -117,7 +117,9 @@ interface ScenarioInput {
   lifeExpectancy?: number;
   spouseLifeExpectancy?: number;
   medicareCoverage: MedicareCoverage[];
-  conversion: RothConversion;
+  /** An array when a scenario needs MORE THAN ONE conversion in the same year;
+   *  every single-conversion test passes the bare object as it always has. */
+  conversion: RothConversion | RothConversion[];
   checkingValue: number;
   /** Defaults to "bracket". Only the flat-mode negative control overrides it. */
   taxEngineMode?: "bracket" | "flat";
@@ -219,7 +221,7 @@ function scenario(input: ScenarioInput): ClientData {
     gifts: [],
     giftEvents: [],
     wills: [],
-    rothConversions: [input.conversion],
+    rothConversions: Array.isArray(input.conversion) ? input.conversion : [input.conversion],
     familyMembers: [
       {
         id: CLIENT_FM_ID,
@@ -250,9 +252,13 @@ function scenario(input: ScenarioInput): ClientData {
   } as ClientData;
 }
 
-function cappedFixedAmount(amount: number, capTier: number | null): RothConversion {
+function cappedFixedAmount(
+  amount: number,
+  capTier: number | null,
+  id = "rc-cap",
+): RothConversion {
   return {
-    id: "rc-cap",
+    id,
     name: "Capped conversion",
     destinationAccountId: "acc-roth",
     sourceAccountIds: ["acc-ira"],
@@ -266,9 +272,13 @@ function cappedFixedAmount(amount: number, capTier: number | null): RothConversi
 }
 
 /** A bracket fill that ALSO carries a cap — the two-ceiling case. */
-function cappedFillUpBracket(targetRate: number, capTier: number | null): RothConversion {
+function cappedFillUpBracket(
+  targetRate: number,
+  capTier: number | null,
+  id = "rc-cap",
+): RothConversion {
   return {
-    id: "rc-cap",
+    id,
     name: "Capped bracket fill",
     destinationAccountId: "acc-roth",
     sourceAccountIds: ["acc-ira"],
@@ -807,4 +817,154 @@ describe("Roth conversion IRMAA cap — the outcome record", () => {
   // See future-work/engine.md, "The IRMAA cap FAILS OPEN when two capped
   // conversions run in the same year" (P9 E4 L8). `it.todo` runs nothing.
   it.todo("caps two conversions in the same year against ONE shared headroom");
+});
+
+/**
+ * The cap's HONESTY guard.
+ *
+ * Each conversion is sized against the full headroom on its own (see the
+ * `it.todo` above), so when a capped conversion shares a year with another
+ * conversion that is ALSO solved against the year's converged income, the
+ * household can finish past the ceiling the cap named. Splitting one headroom
+ * between them needs a product decision nobody has made. Until then the engine
+ * must at least SAY SO rather than report a cap it did not deliver.
+ *
+ * ⚠️ The guard measures the OUTCOME — realized MAGI against the ceiling — and
+ * deliberately NOT "does this year hold more than one conversion". The named
+ * negative controls below are what tell those two apart; each says in place
+ * which substitution it exists to catch.
+ */
+describe("Roth conversion IRMAA cap — reports when the cap did not hold", () => {
+  const capExceeded = (years: ReturnType<typeof runProjection>) =>
+    (years.find((y) => y.year === 2026)!.trustWarnings ?? []).filter(
+      (w) => w.code === "irmaa_cap_not_enforced",
+    );
+
+  const magi2026 = (years: ReturnType<typeof runProjection>) =>
+    years.find((y) => y.year === 2026)!.taxResult!.flow.adjustedGrossIncome;
+
+  /** MFJ, both spouses enrolled, no other income — so 2026 AGI reads directly
+   *  as the household MAGI the tier-2 ceiling is measured against. */
+  const run = (conversions: RothConversion[], extra?: Partial<ScenarioInput>) =>
+    runProjection(
+      scenario({
+        clientDob: "1958-01-01",
+        spouseDob: "1959-01-01",
+        filingStatus: "married_joint",
+        medicareCoverage: [coverage("client"), coverage("spouse")],
+        conversion: conversions,
+        checkingValue: 500_000,
+        ...extra,
+      }),
+    );
+
+  it("warns when TWO CAPPED conversions share a year", () => {
+    const years = run([
+      cappedFixedAmount(600_000, 2, "rc-a"),
+      cappedFixedAmount(600_000, 2, "rc-b"),
+    ]);
+
+    // Both took the full headroom, so the household lands at twice the ceiling.
+    expect(magi2026(years)).toBeGreaterThan(CEILING_2028_MFJ_TIER2 + 1);
+
+    const warned = capExceeded(years);
+    expect(warned, "one warning per capped conversion whose cap did not hold").toHaveLength(2);
+    expect(warned.map((w) => w.conversionId).sort()).toEqual(["rc-a", "rc-b"]);
+    for (const w of warned) {
+      expect(w.tier).toBe(2);
+      expect(w.ceiling).toBeCloseTo(CEILING_2028_MFJ_TIER2, 0);
+      // The warning must carry the REALIZED figure, not the ceiling again —
+      // an advisor reading it needs to know by how much.
+      expect(w.magi).toBeCloseTo(magi2026(years), 0);
+      expect(w.magi).toBeGreaterThan(w.ceiling);
+    }
+  });
+
+  it("warns when a capped conversion shares a year with an UNCAPPED bracket fill", () => {
+    // The wider case, and the ordinary one: "fill the 12% bracket" on one row,
+    // "cap at tier 2" on another. The bracket fill carries no cap of its own,
+    // so a guard that looked only for a second CAPPED conversion would miss it.
+    const years = run([
+      cappedFixedAmount(600_000, 2, "rc-capped"),
+      cappedFillUpBracket(0.12, null, "rc-fill"),
+    ]);
+
+    expect(magi2026(years)).toBeGreaterThan(CEILING_2028_MFJ_TIER2 + 1);
+
+    const warned = capExceeded(years);
+    expect(warned, "only the CAPPED conversion is warned about").toHaveLength(1);
+    expect(warned[0]!.conversionId).toBe("rc-capped");
+    expect(warned[0]!.tier).toBe(2);
+  });
+
+  it("NEGATIVE CONTROL: one capped conversion alone is silent", () => {
+    const years = run([cappedFixedAmount(600_000, 2, "rc-only")]);
+
+    // The cap held to the dollar, so there is nothing to report.
+    expect(magi2026(years)).toBeLessThanOrEqual(CEILING_2028_MFJ_TIER2 + 1);
+    expect(capExceeded(years)).toHaveLength(0);
+  });
+
+  it("NEGATIVE CONTROL: an uncapped FIXED-AMOUNT sibling does not trip the guard", () => {
+    // ⚠️ THE TEST THAT PINS "OUTCOME, NOT SIBLING COUNT". A plain fixed-amount
+    // conversion is applied on the phase-5b path BEFORE the joint solve, so its
+    // income is already in the probe and the capped conversion correctly sizes
+    // itself down to leave room. Two conversions, cap still held, no warning.
+    const years = run([
+      cappedFixedAmount(600_000, 2, "rc-capped"),
+      cappedFixedAmount(50_000, null, "rc-plain"),
+    ]);
+
+    expect(magi2026(years)).toBeLessThanOrEqual(CEILING_2028_MFJ_TIER2 + 1);
+    expect(
+      capExceeded(years),
+      "the cap held, so a sibling-counting guard would be crying wolf here",
+    ).toHaveLength(0);
+  });
+
+  it("NEGATIVE CONTROL: a conversion the cap held to $0 is not reported as a miss", () => {
+    // ⚠️ PROTECTS A VERIFIED SURFACE. A $300K pension alone clears the tier-0
+    // ceiling, so the cap correctly converts nothing — the household is above
+    // the ceiling for reasons no conversion could fix. Warning here would fire
+    // on every capped plan whose baseline already exceeds the tier and would
+    // relabel the browser-verified "limited by IRMAA Tier 0" $0 row, drowning
+    // the real defect in noise.
+    const years = run([cappedFixedAmount(600_000, 0, "rc-zeroed")], {
+      incomes: [pension(300_000)],
+    });
+
+    const conv = (years.find((y) => y.year === 2026)!.rothConversions ?? [])[0]!;
+    expect(conv.gross, "the cap zeroed it").toBe(0);
+    expect(magi2026(years), "and the household is genuinely over the ceiling").toBeGreaterThan(
+      CEILING_2028_MFJ,
+    );
+    expect(capExceeded(years), "…yet nothing is reported as a miss").toHaveLength(0);
+    expect(conv.irmaaCapExceeded).toBeUndefined();
+  });
+
+  it("marks the exceeded conversion's OUTCOME so a surface can show it", () => {
+    const years = run([
+      cappedFixedAmount(600_000, 2, "rc-a"),
+      cappedFixedAmount(600_000, 2, "rc-b"),
+    ]);
+
+    const conv = (years.find((y) => y.year === 2026)!.rothConversions ?? []).find(
+      (c) => c.id === "rc-a",
+    );
+    expect(conv, "the capped conversion should still be reported").toBeDefined();
+    expect(conv!.irmaaCapExceeded, "the outcome carries the flag the drill reads").toBe(true);
+    // Still genuinely limited by IRMAA — it WAS sized to the ceiling. What
+    // failed is the household total, which is a different claim.
+    expect(conv!.limitedBy).toBe("irmaa");
+  });
+
+  it("NEGATIVE CONTROL: an UNCAPPED plan never emits the warning", () => {
+    // The branch's standing guarantee: no cap set anywhere must behave exactly
+    // as it did before any of this landed, warnings included.
+    const years = run([
+      cappedFixedAmount(600_000, null, "rc-a"),
+      cappedFillUpBracket(0.24, null, "rc-b"),
+    ]);
+    expect(capExceeded(years)).toHaveLength(0);
+  });
 });

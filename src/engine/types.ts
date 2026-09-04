@@ -1597,8 +1597,13 @@ export interface ProjectionYear {
      *  a per-conversion lookup because it is a per-YEAR outcome: the same cap
      *  can bind in 2030 and sit idle in 2031, and the drill's shared context
      *  is built once for every year. Set only on `roth_conversion:<id>` rows
-     *  the cap actually limited. */
-    bySource: Record<string, { type: string; amount: number; irmaaCapTier?: number }>;
+     *  the cap actually limited. `irmaaCapExceeded` rides the same way and
+     *  means the OPPOSITE outcome: the cap was named but the household still
+     *  finished the year above it. */
+    bySource: Record<
+      string,
+      { type: string; amount: number; irmaaCapTier?: number; irmaaCapExceeded?: boolean }
+    >;
     /** End-of-year §1212(b) carryforward, for the drill-down. Post-drawdown:
      *  this year's §1211(b) offset has already been subtracted. */
     capitalLossCarryforward?: { shortTerm: number; longTerm: number };
@@ -1849,6 +1854,11 @@ export interface ProjectionYear {
     requested: number;
     limitedBy: "irmaa" | "bracket" | "sources" | null;
     irmaaCapTier?: number | null;
+    /** True when the cap named by `irmaaCapTier` did NOT hold at the household
+     *  level — see the `irmaa_cap_not_enforced` warning. `limitedBy` stays
+     *  "irmaa" because this conversion WAS sized to the ceiling; what failed is
+     *  the year's total. Absent means the cap held (or there was no cap). */
+    irmaaCapExceeded?: boolean;
   }[];
   /** Only populated on death-event years. One entry per (source × recipient).
    *  Same-year double death (4b + 4c in the same year) produces both

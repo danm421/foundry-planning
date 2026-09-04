@@ -92,6 +92,12 @@ export interface RothConversionOutcome {
    *  `limitedBy === "irmaa"` — it names the limit that ACTUALLY applied, not
    *  the tier the advisor configured. */
   irmaaCapTier?: number | null;
+  /** True when this conversion was sized to its IRMAA ceiling and the
+   *  HOUSEHOLD still finished the year above it, because a sibling conversion
+   *  solved against the same year's income claimed the same headroom. Set from
+   *  the realized MAGI after the year converges — never inferred from how many
+   *  conversions the year holds. */
+  irmaaCapExceeded?: boolean;
 }
 
 // ============================================================================

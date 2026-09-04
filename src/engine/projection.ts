@@ -6671,6 +6671,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       taxOutForIter = computeTaxForYear(finalTaxInput);
     }
     let convergenceWarning: TrustWarning | null = null;
+    const irmaaCapNotEnforcedWarnings: TrustWarning[] = [];
     // Converged draw target for the legacy no-checking branch (base deficit +
     // recomputed tax + penalty). Sized in phase 12 below; the application
     // block posts any (target − funded) remainder as an overdraft (M14).
@@ -7285,6 +7286,59 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       (finalTaxResult?.flow.adjustedGrossIncome ?? 0) +
       (finalTaxDetail?.taxExemptInterest ?? 0);
     magiHistory.set(year, magiThisYear);
+
+    // ── Did each live IRMAA cap actually HOLD? ──────────────────────────────
+    // Deliberately HERE, reading `magiThisYear`: that is the exact figure the
+    // year+2 surcharge is charged against, so "the cap held" and "what IRMAA
+    // bills" are the same number by construction rather than by agreement.
+    //
+    // `sizeConversionToCeiling` solves ONE conversion against the full headroom
+    // and knows nothing of its siblings, so two conversions that both solve
+    // against this year's converged income can each take that headroom and
+    // leave the household above the ceiling one of them named. Splitting a
+    // single household headroom between them is a product decision nobody has
+    // made (pro-rata / advisor priority / sequential — see the `it.todo` in
+    // `roth-irmaa-cap.test.ts`). Until it is made, the engine REPORTS the miss
+    // rather than claiming a cap it did not deliver.
+    //
+    // ⚠️ Measured from the REALIZED MAGI, never from "does this year hold more
+    // than one conversion". An uncapped fixed-amount sibling is applied on the
+    // phase-5b path BEFORE the joint solve, so its income is already in the
+    // probe and the cap still holds — counting siblings would cry wolf there.
+    for (const [cid, info] of Object.entries(rothConversionResult.byConversion)) {
+      // `convTargets` already carries the ceiling this conversion was sized
+      // against, resolved once earlier in the year. No entry means the
+      // conversion never joined the joint solve — it has no cap, or one that is
+      // inert this year — and an inert cap promised nothing, so it cannot have
+      // been broken. The two fields are null together by construction; both are
+      // tested so the narrowing reaches the warning payload.
+      const target = convTargets[cid];
+      if (target?.irmaaCeiling == null || target.irmaaCapTier == null) continue;
+      // $1 is `sizeConversionToCeiling`'s own convergence tolerance — landing
+      // ON the ceiling is the cap working, not failing.
+      if (magiThisYear <= target.irmaaCeiling + 1) continue;
+      // A conversion the cap held to $0 did everything it could: the sizer
+      // returns 0 precisely when the household was ALREADY above the ceiling
+      // with nothing converted, so the breach is not this conversion's doing
+      // and there is no engine miss to report.
+      if (info.gross <= 0) continue;
+
+      info.irmaaCapExceeded = true;
+      // The flag goes on the drill row that actually ships — `finalTaxDetail`
+      // is what the ProjectionYear carries. Display-only, and written after the
+      // year's tax is final: nothing numeric reads it, so no figure can move.
+      const drillRow = finalTaxDetail.bySource[`roth_conversion:${cid}`];
+      if (drillRow) drillRow.irmaaCapExceeded = true;
+
+      irmaaCapNotEnforcedWarnings.push({
+        code: "irmaa_cap_not_enforced",
+        year,
+        conversionId: cid,
+        tier: target.irmaaCapTier,
+        ceiling: target.irmaaCeiling,
+        magi: magiThisYear,
+      });
+    }
 
     // Apply converged supplemental + taxes to balances and ledgers.
     if (hasChecking) {
@@ -8413,6 +8467,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
                 requested: info.requested,
                 limitedBy: info.limitedBy,
                 irmaaCapTier: info.irmaaCapTier ?? null,
+                ...(info.irmaaCapExceeded ? { irmaaCapExceeded: true } : {}),
               }),
             ),
           }
@@ -8447,6 +8502,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
        || noteShortfallWarnings.length > 0
        || missingCheckingByEntity.size > 0
        || convergenceWarning != null
+       || irmaaCapNotEnforcedWarnings.length > 0
         ? {
             ...(trustPassResult != null ? {
               trustTaxByEntity: trustPassResult.taxByEntity,
@@ -8464,6 +8520,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
                 ...noteShortfallWarnings,
                 ...missingCheckingByEntity.values(),
                 ...(convergenceWarning != null ? [convergenceWarning] : []),
+                ...irmaaCapNotEnforcedWarnings,
               ];
               return all.length > 0 ? all : undefined;
             })(),

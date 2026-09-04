@@ -1,6 +1,6 @@
 // src/lib/tax-ledger/parse-source.ts
 import type { CellDrillContext } from "@/lib/tax/cell-drill/types";
-import { resolveSourceLabel, type BySourceEntry } from "@/lib/tax/cell-drill/_shared";
+import { irmaaCapSuffix, resolveSourceLabel, type BySourceEntry } from "@/lib/tax/cell-drill/_shared";
 import { isTaxableCharacter, rawTypeToCharacter } from "./character";
 import type { TaxLedgerRow } from "./types";
 
@@ -39,8 +39,7 @@ export function parseHouseholdSource(
     // The cap is a per-YEAR outcome carried on the ROW — `ctx` is built once
     // for every year and could not say which year it bound in. Without this,
     // a conversion the cap zeroed shows as a bare "$0" with no explanation.
-    const description =
-      entry.irmaaCapTier != null ? `${name} (limited by IRMAA Tier ${entry.irmaaCapTier})` : name;
+    const description = name + irmaaCapSuffix(entry);
     // Same `roth_conversion:` test build-household-section.ts uses to keep the
     // $0 row, so the row that survives the build cannot be filtered back out.
     return { type: "Roth Conversion", description, character, account: null, amount, taxable, zeroIsMeaningful: true };
