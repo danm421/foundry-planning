@@ -96,7 +96,9 @@ export const socialSecurityRules: Rule = (input) => {
       }
     } else {
       const p = sum(active.map(inTaxYear));
-      const planFigure = { label: "Social Security (both)", amount: p, display: money(p), year: planYear };
+      // The label counts the same rows the headline does. "(both)" over three benefits names a
+      // household that is not on screen.
+      const planFigure = { label: `Social Security (${active.length} benefits)`, amount: p, display: money(p), year: planYear };
       if (differs(gross, p, ROW)) {
         suggestions.push({ id: "income.socialSecurity.split", section: "income", kind: "review", status: "open",
           headline: `The return shows ${money(gross)} of Social Security; the plan's ${active.length} benefits total ${money(p)}.`,

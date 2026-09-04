@@ -168,7 +168,7 @@ describe("socialSecurityRules", () => {
     const split = socialSecurityRules(inputFixture({ facts: factsWith(62_000), plan: two, engineYear: engineWith({ s1: 20_400, s2: 20_400 }) }));
     expect(split.suggestions[0]).toMatchObject({ id: "income.socialSecurity.split", kind: "review" });
     expect(split.suggestions[0].returnFigure.amount).toBe(62_000);
-    expect(split.suggestions[0].planFigure).toMatchObject({ label: "Social Security (both)" });
+    expect(split.suggestions[0].planFigure).toMatchObject({ label: "Social Security (2 benefits)" });
     expect(split.suggestions[0].planFigure.amount).toBeCloseTo(40_000, 0); // 20,400 + 20,400, deflated
     expect(split.suggestions[0].action).toBeUndefined(); // line 6a cannot say which row is off
     expect(split.suggestions[0].headline).toMatch(/\$62,000[\s\S]*\$40,000/); // return first, then the plan
@@ -259,6 +259,9 @@ describe("socialSecurityRules", () => {
     expect(s.id).toBe("income.socialSecurity.split");
     expect(s.headline).toMatch(/3 benefits/);
     expect(s.headline).toMatch(/\$40,000[\s\S]*\$60,000/);
+    // The figure's own label carries the same count. "Social Security (both)" over three rows names
+    // a household that does not exist.
+    expect(s.planFigure.label).toBe("Social Security (3 benefits)");
   });
 
   it("names a small return figure on the plan-only card instead of calling it none", () => {
