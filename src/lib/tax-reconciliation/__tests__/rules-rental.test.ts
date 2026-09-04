@@ -13,7 +13,9 @@ describe("rentalRules — cash figure = scheduleENet + depreciation", () => {
   it("creates a linked rental income when one rental property exists and no row does", () => {
     const plan = planFixture({ accounts: [rentalAcct("re1", "12 Oak St")] });
     const s = rentalRules(inputFixture({ facts: factsWith(-6_141, 8_413), plan })).suggestions[0];
-    expect(s.id).toBe("income.rental");
+    // The create arm carries a dismissal id of its own: dismissing "add rental income" must not
+    // also suppress "the rental amount is off", and these ids are persisted.
+    expect(s.id).toBe("income.rental.create");
     expect(s.returnFigure.amount).toBe(2_272);
     expect(s.action?.target).toMatchObject({ kind: "income.create", input: { type: "other", name: "Rental income — 12 Oak St", linkedPropertyId: "re1", annualAmount: 2_272, inflationStartYear: 2025 } });
     expect(s.meaning).toMatch(/depreciation/i);
@@ -23,8 +25,11 @@ describe("rentalRules — cash figure = scheduleENet + depreciation", () => {
       { form: "Sched 1", line: "5", label: "Rental net", amount: -6_141 },
       { form: "Sched E", line: "18", label: "Depreciation", amount: 8_413 },
     ]);
-    expect(s.action?.target).toEqual({ kind: "income.create", amountField: "annualAmount",
+    expect(s.action?.target).toEqual({ kind: "income.create", amountField: "annualAmount", ownerField: "owner",
       input: { type: "other", name: "Rental income — 12 Oak St", owner: "client", annualAmount: 2_272, growthRate: 0.03, inflationStartYear: 2025, startYear: 2026, endYear: 2060, linkedPropertyId: "re1" } });
+    // Schedule E carries no taxpayer/spouse indicator, and ownership drives survivor modelling.
+    expect(s.action?.ownerChoices).toEqual(["client", "spouse"]);
+    expect(s.meaning).toMatch(/pick the owner first/);
     expect(s.planFigure).toMatchObject({ label: "Rental income in the plan", amount: null, display: "—", year: 2026 });
     expect(s.delta.tone).toBe("missing");
     expect(s.action?.defaultAmount).toBe(2_272);
@@ -70,6 +75,47 @@ describe("rentalRules — cash figure = scheduleENet + depreciation", () => {
     expect(pair.headline).toMatch(/2 rental rows/);
     expect(pair.headline).toMatch(/\$12,000[\s\S]*\$9,709/);
     expect(pair.link?.href).toBe(`/clients/${CLIENT_ID}/details/net-worth`);
+  });
+
+  it("stays silent when gross rents were extracted but Schedule 1 line 5 was missed", () => {
+    // Both fields are independently nullable. Opening the rule on gross rents alone coerces the
+    // unknown net to 0, so `cash` is $0 and the plan's live rental row is offered a one-click write
+    // to zero under "Rental cash flow on the return is $0" — the exact case `differs`' own null
+    // guard exists to prevent.
+    const f = emptyTaxReturnFacts(2025);
+    f.income.scheduleE = { ...emptyScheduleE(), grossRents: 19_600, depreciation: null };
+    const plan = planFixture({
+      accounts: [rentalAcct("re1", "12 Oak St")],
+      incomes: [income({ id: "r1", type: "other", name: "Rent — Oak", annualAmount: 9_000, growthRate: 0, inflationStartYear: 2025, linkedPropertyId: "re1" })],
+    });
+    expect(rentalRules(inputFixture({ facts: f, plan }))).toEqual({ suggestions: [], checks: [] });
+  });
+
+  it("does not offer to restart a rental the plan models as ending in the tax year", () => {
+    // The row ran THROUGH 2025 and stops before the 2026 plan year. It is invisible to the plan-year
+    // aggregate by design, so without this the $12,000 falls to the create arm and offers to add the
+    // rental back from 2026 to 2060 — beside a property that is already in the plan.
+    const plan = planFixture({
+      accounts: [rentalAcct("re1", "12 Oak St")],
+      incomes: [income({ id: "r1", type: "other", name: "Rent — Oak", annualAmount: 12_000, growthRate: 0, inflationStartYear: 2025, linkedPropertyId: "re1", startYear: 2015, endYear: 2025 })],
+    });
+    const r = rentalRules(inputFixture({ facts: factsWith(4_000, 8_000), plan }));
+    expect(r.suggestions).toHaveLength(1);
+    expect(r.suggestions[0]).toMatchObject({ id: "income.rental", kind: "review" });
+    expect(r.suggestions[0].action).toBeUndefined();
+    expect(r.suggestions[0].headline).toMatch(/Rent — Oak[\s\S]*2025[\s\S]*2026/);
+    expect(r.suggestions[0].headline).toMatch(/\$12,000/);
+    expect(r.suggestions[0].planFigure).toMatchObject({ label: "Rent — Oak", amount: 0, display: "$0", year: 2026 });
+    expect(r.suggestions[0].link?.href).toBe(`/clients/${CLIENT_ID}/details/net-worth`);
+    expect(r.checks).toEqual([]);
+  });
+
+  it("offers no owner choice on a created rental for a single filer", () => {
+    const plan = planFixture({ client: { filingStatus: "single", dateOfBirth: "1960-04-02", spouseDob: null }, familyMembers: [], accounts: [rentalAcct("re1", "12 Oak St")] });
+    const s = rentalRules(inputFixture({ facts: factsWith(4_000, 8_000), plan })).suggestions[0];
+    expect(s.action?.ownerChoices).toBeUndefined();
+    expect(s.meaning).not.toMatch(/pick the owner first/);
+    expect(s.action?.target).toMatchObject({ kind: "income.create", ownerField: "owner", input: { owner: "client" } });
   });
 
   it("is silent with no Schedule E and checks when in line", () => {

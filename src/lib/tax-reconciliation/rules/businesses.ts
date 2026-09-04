@@ -1,5 +1,5 @@
-import { ROW, detailsHref, differs, isActiveInYear, makeDelta, money, n, namesMatch, ref, rowAmountInYear } from "../compare";
-import type { Check, Rule, Suggestion } from "../types";
+import { ROW, detailsHref, differs, hasSpouse, isActiveInYear, makeDelta, money, n, namesMatch, normalizeName, ref, rowAmountInYear } from "../compare";
+import type { Check, OwnerChoice, PlanIncome, Rule, Suggestion } from "../types";
 import type { FindingLineRef } from "@/lib/tax-analysis/types";
 
 /** One thing on the return that ought to reach the household as business income: a Schedule C, or
@@ -10,9 +10,19 @@ export const businessRules: Rule = (input) => {
   const { facts, plan, taxYear, planYear } = input;
   const suggestions: Suggestion[] = [];
   const checks: Check[] = [];
-  const incomes = plan.incomes.filter((i) => i.type === "business" && isActiveInYear(i, planYear));
+  // Match against EVERY business row, ended ones included. A row the advisor modelled as stopping
+  // in the tax year would otherwise be invisible to the matcher, and its own Schedule C would fall
+  // through to the create arm and offer to restart the business for the life of the plan — the
+  // wind-down year is one of the likeliest years to be reconciling a return at all.
+  const businessRows = plan.incomes.filter((i) => i.type === "business");
   const accounts = plan.accounts.filter((a) => a.category === "business");
   const entities = plan.entities.filter((e) => e.entityType !== "trust" && e.entityType !== "foundation");
+  // Neither a Schedule C nor a K-1 carries a taxpayer/spouse indicator, so the return cannot say
+  // whose business it is — and ownership drives survivor modelling. `owner: "client"` on the create
+  // arm is only the default the advisor overrides.
+  const spouse = hasSpouse(plan);
+  const ownerChoices: OwnerChoice[] | undefined = spouse ? ["client", "spouse"] : undefined;
+  const ownerNote = spouse ? " The return does not say whose it is; pick the owner first." : "";
   // One candidate — row, account or entity — belongs to at most one item. `namesMatch` accepts
   // near-spellings, so two businesses on the return can both look like the same plan row; without
   // this, first-match-wins would offer that one row to each of them.
@@ -31,9 +41,31 @@ export const businessRules: Rule = (input) => {
   for (const it of items) {
     if (it.amount == null) continue;
     const returnFigure = { label: `${it.name} · ${it.source}`, amount: it.amount, display: money(it.amount), lineRefs: it.lineRefs };
-    const row = incomes.find((r) => !claimed.has(r.id) && (namesMatch(it.name, r.name) || namesMatch(it.createName, r.name)));
+    // Candidate ORDER matters, not just the predicate: `namesMatch` accepts containment and
+    // near-spellings, so an ended "Acme Corp" would take a live "Acme Consulting"'s Schedule C on
+    // array order alone. Exactness is the key; activity only breaks ties WITHIN an exactness class.
+    // A K-1 is matched under both its own name and the "(K-1)" name the create arm would give it.
+    // `wanted` is filtered because `normalizeName` drops every suffix token — a business named
+    // "LLC" normalizes to "", and an unguarded exact tier would let it match another empty name.
+    const available = businessRows.filter((r) => !claimed.has(r.id));
+    const wanted = [normalizeName(it.name), normalizeName(it.createName)].filter(Boolean);
+    const exact = available.filter((r) => wanted.includes(normalizeName(r.name)));
+    const fuzzy = (r: PlanIncome) => namesMatch(it.name, r.name) || namesMatch(it.createName, r.name);
+    const row =
+      exact.find((r) => isActiveInYear(r, planYear))
+      ?? exact[0]
+      ?? available.find((r) => isActiveInYear(r, planYear) && fuzzy(r))
+      ?? available.find(fuzzy);
     if (row) {
       claimed.add(row.id);
+      if (!isActiveInYear(row, planYear)) {
+        // The row is real and it matched, it just does not overlap the plan year — a business
+        // already wound down, or one not started yet. There is nothing to write, so record that the
+        // return figure was accounted for and name the row that carries it.
+        checks.push({ id: it.id, label: it.name, returnDisplay: money(it.amount),
+          planDisplay: row.endYear < planYear ? `${row.name} ends in ${row.endYear}, before the ${planYear} plan year` : `${row.name} starts in ${row.startYear}, after the ${planYear} plan year` });
+        continue;
+      }
       const p = rowAmountInYear(row, taxYear);
       if (differs(it.amount, p, ROW)) {
         suggestions.push({ id: it.id, section: "business", kind: "update", status: "open",
@@ -63,19 +95,31 @@ export const businessRules: Rule = (input) => {
         returnFigure, planFigure: { label: ent.name, amount: 0, display: "$0", year: planYear }, delta: makeDelta(it.amount, 0), link: { label: "Open Net Worth", href: detailsHref(input, "net-worth") } });
       continue;
     }
-    suggestions.push({ id: it.id, section: "business", kind: "update", status: "open",
+    // `.create` is a dismissal id of its own: dismissing "add this business" must not also suppress
+    // "this business's amount is off", and those ids are persisted.
+    suggestions.push({ id: `${it.id}.create`, section: "business", kind: "update", status: "open",
       headline: acct ? `${it.name} is on the balance sheet but sends the household no income.` : `${it.name} is on the return but not in the plan.`,
-      meaning: `${it.source} shows ${money(it.amount)} for ${taxYear}. ${acct ? "This adds the income on the business account." : "This adds a business income row; link it to an entity or business account on Net Worth if one exists under another name."}`,
+      meaning: `${it.source} shows ${money(it.amount)} for ${taxYear}. ${acct ? "This adds the income on the business account." : "This adds a business income row; link it to an entity or business account on Net Worth if one exists under another name."}${ownerNote}`,
       returnFigure, planFigure: { label: acct ? acct.name : "No matching business", amount: null, display: "—", year: planYear }, delta: makeDelta(it.amount, null),
-      action: { label: `Add income of ${money(it.amount)}`, describe: `Adds business income "${it.createName}" of ${money(it.amount)} (${taxYear} dollars)`, amountEditable: true, defaultAmount: it.amount,
-        target: { kind: "income.create", amountField: "annualAmount", input: { type: "business", name: it.createName, owner: "client", annualAmount: it.amount, growthRate: 0.03, inflationStartYear: taxYear, startYear: plan.planSettings.planStartYear, endYear: plan.planSettings.planEndYear, ...(acct ? { ownerAccountId: acct.id } : {}) } } } });
+      action: { label: `Add income of ${money(it.amount)}`, describe: `Adds business income "${it.createName}" of ${money(it.amount)} (${taxYear} dollars)`, amountEditable: true, defaultAmount: it.amount, ownerChoices,
+        target: { kind: "income.create", amountField: "annualAmount", ownerField: "owner", input: { type: "business", name: it.createName, owner: "client", annualAmount: it.amount, growthRate: 0.03, inflationStartYear: taxYear, startYear: plan.planSettings.planStartYear, endYear: plan.planSettings.planEndYear, ...(acct ? { ownerAccountId: acct.id } : {}) } } } });
   }
 
   // The balance-sheet half of a K-1, which is a separate question from the income above: the
   // interest itself belongs in the plan so its value and estate treatment are modelled.
+  //
+  // This loop searches the trust/foundation-excluded `entities`, and claims with a set of its own.
+  // Excluding trusts stops a K-1 that merely near-matches a plan TRUST from drawing a QBI treatment
+  // onto it, and the claim set stops two near-named K-1s both writing to one entity. The set is
+  // separate from `claimed` above because the items loop claims an entity to say "this business's
+  // income is missing" — a different question from "this entity is in the plan". Sharing one set
+  // would make a K-1 that had already reviewed its own entity look like it had none, and offer to
+  // create a duplicate.
+  const claimedEntities = new Set<string>();
   facts.k1s.forEach((k, i) => {
     if (!k.entityName) return;
-    const ent = plan.entities.find((e) => namesMatch(k.entityName, e.name));
+    const ent = entities.find((e) => !claimedEntities.has(e.id) && namesMatch(k.entityName, e.name));
+    if (ent) claimedEntities.add(ent.id);
     const qbi = n(k.qbiIncome) > 0;
     if (!ent) {
       // Entity CREATION is gated on the type, because only an S-corp or a partnership interest is

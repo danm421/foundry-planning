@@ -7,11 +7,25 @@ export const pensionRules: Rule = (input) => {
   // No plan-only arm: line 5a is blank in any year without a distribution, so a pension the plan
   // carries and the return does not report is not evidence of anything.
   if (gross == null || gross <= 1_000) return { suggestions: [], checks: [] };
-  const rows = plan.incomes.filter((i) => i.type === "deferred" && isActiveInYear(i, planYear));
+  const deferredRows = plan.incomes.filter((i) => i.type === "deferred");
+  // The aggregate means "what the plan pays in the plan year", so it keeps the active subset.
+  const rows = deferredRows.filter((i) => isActiveInYear(i, planYear));
+  // A pension that ran through the tax year and stops before the plan year is invisible to that
+  // aggregate by design. Without this the plan would look short against line 5a and the create arm
+  // would offer to add the pension back for life.
+  const ending = deferredRows.filter((i) => !isActiveInYear(i, planYear) && isActiveInYear(i, taxYear));
   const p = sum(rows.map((r) => rowAmountInYear(r, taxYear)));
   const returnFigure = { label: "Pensions and annuities", amount: gross, display: money(gross), lineRefs: [ref("1040", "5a", "Pensions and annuities", gross)] };
   const planFigure = { label: rows.length === 1 ? rows[0].name : "Pensions in the plan", amount: p, display: money(p), year: planYear };
   const id = "income.pensions";
+  const outflows = { label: "Open Inflows & Outflows", href: detailsHref(input, "income-expenses") };
+  if (rows.length === 0 && ending.length > 0) {
+    const label = ending.length === 1 ? ending[0].name : `${ending.length} pensions`;
+    return { suggestions: [{ id, section: "income", kind: "review", status: "open",
+      headline: `The return shows ${money(gross)} of pension income; the plan's ${label} ran in ${taxYear} but not in ${planYear}.`,
+      meaning: `The plan models the pension as stopping before ${planYear}, so adding one here would restart it for life. Check the end year on Inflows & Outflows instead.`,
+      returnFigure, planFigure: { label, amount: 0, display: money(0), year: planYear }, delta: makeDelta(gross, 0), link: outflows }], checks: [] };
+  }
   if (rows.length > 0 && !differs(gross, p, ROW)) return { suggestions: [], checks: [{ id, label: "Pensions", returnDisplay: money(gross), planDisplay: money(p) }] };
   if (rows.length === 0) return { suggestions: [{ id, section: "income", kind: "update", status: "open",
     headline: `The return shows ${money(gross)} of pension income; the plan has none.`,
@@ -32,5 +46,5 @@ export const pensionRules: Rule = (input) => {
   return { suggestions: [{ id, section: "income", kind: "review", status: "open",
     headline: `The return shows ${money(gross)} of pension income; the plan's ${rows.length} pensions total ${money(p)}.`,
     meaning: "Line 5a is one total, so the return cannot say which pension is off. Adjust them on Inflows & Outflows.",
-    returnFigure, planFigure, delta: makeDelta(gross, p), link: { label: "Open Inflows & Outflows", href: detailsHref(input, "income-expenses") } }], checks: [] };
+    returnFigure, planFigure, delta: makeDelta(gross, p), link: outflows }], checks: [] };
 };

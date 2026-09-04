@@ -118,6 +118,26 @@ describe("pensionRules (5% / $500, return > $1,000)", () => {
     expect(r.checks).toEqual([]);
   });
 
+  it("does not offer to restart a pension the plan models as ending in the tax year", () => {
+    // The harmful shape: the row ran THROUGH 2025 and stops before the 2026 plan year. It drops out
+    // of the plan-year sum by design, so the plan looks to carry no pension at all and the create
+    // arm would add one back from 2026 to 2060 — a stream the advisor deliberately ended.
+    const plan = planFixture({ incomes: [pension("p1", 24_000, { startYear: 2015, endYear: 2025 })] });
+    const r = pensionRules(inputFixture({ facts: factsWith(24_000), plan }));
+    expect(r.suggestions).toHaveLength(1);
+    expect(r.suggestions[0]).toMatchObject({ id: "income.pensions", kind: "review" });
+    expect(r.suggestions[0].action).toBeUndefined();
+    expect(r.suggestions[0].headline).toMatch(/Pension p1[\s\S]*2025[\s\S]*2026/);
+    expect(r.suggestions[0].headline).toMatch(/\$24,000/);
+    expect(r.suggestions[0].planFigure).toMatchObject({ label: "Pension p1", amount: 0, display: "$0", year: 2026 });
+    expect(r.suggestions[0].link?.href).toBe(`/clients/${CLIENT_ID}/details/income-expenses`);
+    expect(r.checks).toEqual([]);
+    // A pension that ended long BEFORE the tax year is untouched by this arm: the return year says
+    // nothing about it, so the create still stands.
+    const old = planFixture({ incomes: [pension("p0", 24_000, { startYear: 2015, endYear: 2020 })] });
+    expect(pensionRules(inputFixture({ facts: factsWith(24_000), plan: old })).suggestions[0].action?.target).toMatchObject({ kind: "income.create" });
+  });
+
   it("stays silent with no pension line at all, and at the $1,000 boundary", () => {
     expect(pensionRules(inputFixture({ facts: factsWith(null) }))).toEqual({ suggestions: [], checks: [] });
     expect(pensionRules(inputFixture({ facts: factsWith(1_000) }))).toEqual({ suggestions: [], checks: [] });
