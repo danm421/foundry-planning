@@ -1348,6 +1348,9 @@ export interface RothConversion {
   /** Top of the ordinary-income bracket to fill (e.g., 0.22). Used only when
    *  conversionType === "fill_up_bracket". */
   fillUpBracket?: number;
+  /** Highest IRMAA tier this conversion may push MAGI into. null/undefined =
+   *  uncapped. 0 = stay surcharge-free; 1-4 = stay within that tier. */
+  irmaaCapTier?: number | null;
   startYear: number;
   endYear?: number;
   /** Annual indexing rate applied to fixedAmount. Only meaningful for

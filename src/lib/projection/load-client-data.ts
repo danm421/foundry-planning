@@ -1355,6 +1355,7 @@ export const loadClientDataWithContext = cache(
         conversionType: c.conversionType,
         fixedAmount: parseFloat(c.fixedAmount),
         fillUpBracket: c.fillUpBracket != null ? parseFloat(c.fillUpBracket) : undefined,
+        irmaaCapTier: c.irmaaCapTier ?? null,
         startYear: resolvedStart(c.startYearRef ?? null, c.startYear),
         endYear: resolvedConvEnd,
         indexingRate: parseFloat(c.indexingRate),

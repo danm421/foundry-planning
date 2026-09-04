@@ -5011,6 +5011,11 @@ export const rothConversions = pgTable("roth_conversions", {
   // Top of the ordinary-income bracket to fill (e.g., 0.22 = "fill up to top of 22% bracket").
   // Only meaningful when conversionType = "fill_up_bracket".
   fillUpBracket: decimal("fill_up_bracket", { precision: 5, scale: 4 }),
+  // IRMAA cap: the highest Medicare surcharge tier this conversion may push
+  // the household's MAGI into. NULL = uncapped (every pre-existing row).
+  // 0 = stay surcharge-free; 1-4 = stay within that tier. There is no 5 —
+  // the top tier is unbounded above, so it cannot serve as a ceiling.
+  irmaaCapTier: integer("irmaa_cap_tier"),
   startYear: integer("start_year").notNull(),
   startYearRef: yearRefEnum("start_year_ref"),
   endYear: integer("end_year"),
