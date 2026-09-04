@@ -41,6 +41,10 @@ describe("engineFlowRules — IRA distributions (4a > $1,000; plan < 50%)", () =
     expect(s.planFigure.amount).toBeCloseTo(10_000, 0);       // (5,150 + 5,150) / 1.03; the brokerage draw is not an IRA distribution
     expect(s.link?.href).toMatch(/techniques$/);
     expect(s.meaning).toMatch(/living expenses are understated/);
+    // The plan side is a SUPERSET of line 4a — 401(k), 403(b) and annuity draws file on line 5a,
+    // which `pensions.ts` reconciles separately. The comparison stays as the spec sets it, so the
+    // copy has to admit what the plan number contains or the advisor reads the card wrong.
+    expect(s.meaning).toMatch(/401\(k\)[\s\S]*403\(b\)[\s\S]*5a[\s\S]*4a/);
     // The pair is what the card shows, so a swapped field has to redden here.
     expect(s.returnFigure).toMatchObject({ label: "IRA distributions", amount: 41_000, display: "$41,000" });
     expect(s.returnFigure.lineRefs).toEqual([{ form: "1040", line: "4a", label: "IRA distributions", amount: 41_000 }]);
@@ -213,5 +217,31 @@ describe("engineFlowRules — investment income, capital gains, other", () => {
     const at = emptyTaxReturnFacts(2025); at.income.otherIncome = 5_000;
     expect(engineFlowRules(inputFixture({ facts: at, plan: plan(), engineYear: engineYearFixture() }))).toEqual({ suggestions: [], checks: [] });
     expect(engineFlowRules(inputFixture({ facts: emptyTaxReturnFacts(2025), plan: plan(), engineYear: engineYearFixture() }))).toEqual({ suggestions: [], checks: [] });
+  });
+});
+
+describe("engineFlowRules — where each threshold sits", () => {
+  it("draws each line where the spec draws it, not merely somewhere below it", () => {
+    // Every plan figure here sits in the BAND between the real threshold and a looser one, which is
+    // the only shape that tells half from a quarter, or a quarter from a tenth. Without them a ratio
+    // could be loosened — quietly silencing the card on real gaps — and every other fixture in this
+    // file would stay green, because they all sit far below the line rather than beside it.
+    const ira = emptyTaxReturnFacts(2025); ira.income.iraDistributionsGross = 41_000;
+    // 15,000 is under half of 41,000 (20,500) but over a quarter of it (10,250).
+    const iraR = engineFlowRules(inputFixture({ facts: ira, plan: plan(), engineYear: engineYearFixture({ withdrawals: { byAccount: { ira: 15_450 }, total: 15_450 } }) }));
+    expect(iraR.suggestions.map((x) => x.id)).toEqual(["income.iraDistributions"]);
+    expect(iraR.suggestions[0].planFigure.amount).toBeCloseTo(15_000, 0);
+
+    // 10,000 is under a quarter of 60,000 (15,000) but over a tenth of it (6,000).
+    const gains = emptyTaxReturnFacts(2025); gains.income.capitalGainOrLoss = 60_000;
+    const gainsR = engineFlowRules(inputFixture({ facts: gains, plan: plan(), engineYear: engineYearFixture({ taxDetail: taxDetail({ capitalGains: 10_300 }) }) }));
+    expect(gainsR.suggestions.map((x) => x.id)).toEqual(["income.capitalGains"]);
+    expect(gainsR.suggestions[0].planFigure.amount).toBeCloseTo(10_000, 0);
+
+    // 2,000 is under half of 7,000 (3,500) but over a quarter of it (1,750).
+    const other = emptyTaxReturnFacts(2025); other.income.unemployment = 4_000; other.income.otherIncome = 3_000;
+    const otherR = engineFlowRules(inputFixture({ facts: other, plan: plan(), engineYear: engineYearFixture({ income: { ...engineYearFixture().income, other: 2_060 } }) }));
+    expect(otherR.suggestions.map((x) => x.id)).toEqual(["income.other"]);
+    expect(otherR.suggestions[0].planFigure.amount).toBeCloseTo(2_000, 0);
   });
 });

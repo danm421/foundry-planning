@@ -98,6 +98,11 @@ export interface ReconciliationInput {
   plan: PlanSnapshot;
   engineYear: EngineYear | null;
   stateTaxEstimate: number;   // runCalc(facts).flow.stateTax, 0 when unknown
+  /** runCalc(facts).flow.fica, 0 when unknown — employee Social Security and Medicare withheld.
+   *  Needed because 1040 line 24 EXCLUDES it (it lives only on W-2 boxes 4 and 6), while the
+   *  engine's own tax total includes it (src/lib/tax/calculate.ts). Without it the spending rule
+   *  would count money the household never had as available to spend. */
+  ficaEstimate: number;
 }
 
 export interface Pair { return: number | null; plan: number | null }

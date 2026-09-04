@@ -8,7 +8,7 @@ import type { Rule } from "../types";
  *  1040, so the gap is an UPPER BOUND on the spending the plan is missing — the copy says so on
  *  every arm, because an advisor who takes it as exact will overstate expenses for life. */
 export const spendingRule: Rule = (input) => {
-  const { facts, plan, taxYear, planYear, engineYear, stateTaxEstimate } = input;
+  const { facts, plan, taxYear, planYear, engineYear, stateTaxEstimate, ficaEstimate } = input;
   const inc = facts.income;
   if (!engineYear || inc.totalIncome == null || facts.tax.totalTax == null) return { suggestions: [], checks: [] };
   // Depreciation is a non-cash deduction, so a rental that nets to a loss can still be cash in.
@@ -16,16 +16,28 @@ export const spendingRule: Rule = (input) => {
   // Gross, not taxable: the whole IRA draw and the whole Social Security benefit were spendable.
   // A Schedule C LOSS is floored at zero — it is not negative money to spend.
   const cashIn = n(inc.wages) + n(inc.taxableInterest) + n(inc.taxExemptInterest) + n(inc.ordinaryDividends) + n(inc.iraDistributionsGross) + n(inc.pensionsGross) + n(inc.ssBenefitsGross) + Math.max(0, n(inc.scheduleCNet)) + rentalCash + n(inc.unemployment) + n(inc.otherIncome);
-  const taxes = facts.tax.totalTax + stateTaxEstimate;
+  // FICA is deliberately part of this, even though line 24 is not. Employee Social Security and
+  // Medicare withholding appears only on W-2 boxes 4 and 6 — never on the 1040 — so leaving it out
+  // counts up to the wage-base maximum of money the household never saw as available to spend, and
+  // every dollar of that overstatement lands in the write below. The plan side excludes
+  // `expenses.taxes`, and the engine's own tax total includes FICA, so both sides now agree.
+  const taxes = facts.tax.totalTax + stateTaxEstimate + ficaEstimate;
   const savingsOnReturn = n(inc.adjustmentsDetail?.sepSimpleSolo401k) + n(inc.adjustmentsDetail?.hsaDeduction);
   const available = Math.round(cashIn - taxes - savingsOnReturn);
   // Every spending bucket EXCEPT tax: the return's own tax is already out of `available`, so
   // counting the plan's would subtract it twice.
   const e = engineYear.expenses;
   const spend = planToTaxYear(input, e.living + e.other + e.insurance + e.liabilities + e.realEstate + e.discretionary);
-  // Only saving that came out of after-tax money belongs beside spending: the employer's match was
-  // never the household's to spend, and a pre-tax deferral is already outside `available`.
-  const afterTax = planToTaxYear(input, Math.max(0, engineYear.savings.total - engineYear.savings.employerTotal - n(engineYear.deductionBreakdown?.aboveLine.retirementContributions)));
+  // Only saving that came out of after-tax money belongs beside spending, so the pre-tax deferral
+  // comes off — it is already outside `available`, which starts from gross cash in.
+  //
+  // The employer match is deliberately NOT subtracted here, however obvious that looks: it was
+  // never in `savings.total` to begin with. `src/engine/savings.ts` accumulates employee
+  // contributions into `total` and the match into a SEPARATE `employerTotal`, and never adds one
+  // into the other — `projection.ts` debits household checking by `savings.total` alone and credits
+  // the match in its own pass. Subtracting it would understate the plan side and inflate the write
+  // below by the whole match, every year, for the life of the projection.
+  const afterTax = planToTaxYear(input, Math.max(0, engineYear.savings.total - n(engineYear.deductionBreakdown?.aboveLine.retirementContributions)));
   const planSide = spend + afterTax;
   const gap = available - planSide;
   const id = "spending.implied";

@@ -22,6 +22,10 @@ describe("taxRules", () => {
     expect(s.meaning.indexOf("income.wages.w2.0")).toBe(-1);   // fourth-largest is not listed
     // Largest first, so a broken sort reddens rather than quietly reordering the sentence.
     expect(s.meaning).toMatch(/business\.scheduleC\.0[\s\S]*income\.capitalGains[\s\S]*income\.iraDistributions/);
+    // The two sides are not measured identically: the engine's figure is net of refundable credits
+    // and line 24 sits before them. This arm only informs, so it keeps the spec's field and says so.
+    expect(s.meaning).toMatch(/refundable credits/);
+    expect(s.meaning).toMatch(/line 24/);
     // The pair the card shows, both halves, so a swapped field reddens.
     expect(s).toMatchObject({ section: "tax", status: "open" });
     expect(s.action).toBeUndefined();

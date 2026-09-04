@@ -47,7 +47,7 @@ export function inputFixture(over: Partial<ReconciliationInput> = {}): Reconcili
   const facts: TaxReturnFacts = over.facts ?? emptyTaxReturnFacts(taxYear);
   return {
     clientId: CLIENT_ID, taxYear, planYear: 2026, facts, w2s: [],
-    plan: planFixture(), engineYear: null, stateTaxEstimate: 0,
+    plan: planFixture(), engineYear: null, stateTaxEstimate: 0, ficaEstimate: 0,
     ...over,
   };
 }
