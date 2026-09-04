@@ -1,4 +1,4 @@
-import { ROW, detailsHref, differs, hasSpouse, isActiveInYear, makeDelta, money, n, ref, rowAmountInYear, sum } from "../compare";
+import { ROW, detailsHref, differs, editableAmount, hasSpouse, isActiveInYear, makeDelta, money, n, ref, rowAmountInYear, sum } from "../compare";
 import type { OwnerChoice, PlanIncome, Rule } from "../types";
 
 export const rentalRules: Rule = (input) => {
@@ -47,7 +47,9 @@ export const rentalRules: Rule = (input) => {
   if (rows.length === 1) {
     if (!differs(cash, p, ROW)) return { suggestions: [], checks: [{ id, label: "Rental income", returnDisplay: money(cash), planDisplay: money(p) }] };
     return { suggestions: [{ id, section: "income", kind: "update", status: "open", headline: `Rental cash flow on the return is ${money(cash)}; the plan's ${rows[0].name} is ${money(p)}.`, meaning: meaningCash, returnFigure, planFigure, delta: makeDelta(cash, p),
-      action: { label: `Set rental income to ${money(cash)}`, describe: `Sets ${rows[0].name} to ${money(cash)} (${taxYear} dollars)`, amountEditable: true, defaultAmount: cash, target: { kind: "income.update", incomeId: rows[0].id, patch: { annualAmount: cash, inflationStartYear: taxYear }, amountField: "annualAmount" } } }], checks: [] };
+      // Not editable when the cash figure is still a loss: the `cash <= 500` floor below
+      // never sees this arm, and the card's unsigned box would apply the positive twin.
+      action: { label: `Set rental income to ${money(cash)}`, describe: `Sets ${rows[0].name} to ${money(cash)} (${taxYear} dollars)`, amountEditable: editableAmount(cash), defaultAmount: cash, target: { kind: "income.update", incomeId: rows[0].id, patch: { annualAmount: cash, inflationStartYear: taxYear }, amountField: "annualAmount" } } }], checks: [] };
   }
   if (rows.length >= 2) {
     if (!differs(cash, p, ROW)) return { suggestions: [], checks: [{ id, label: "Rental income", returnDisplay: money(cash), planDisplay: money(p) }] };

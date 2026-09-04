@@ -1,4 +1,4 @@
-import { ROW, ageAtYearEnd, differs, makeDelta, money, n, ref } from "../compare";
+import { ROW, ageAtYearEnd, differs, editableAmount, makeDelta, money, n, ref } from "../compare";
 import type { Check, Rule, Suggestion } from "../types";
 
 export const assumptionRules: Rule = (input) => {
@@ -48,7 +48,9 @@ export const assumptionRules: Rule = (input) => {
           headline: p == null ? `Medicare premiums for ${who} have no starting MAGI; the ${taxYear} return says ${money(magi)}.` : `The ${taxYear} return's MAGI is ${money(magi)}; the plan starts ${who}'s Medicare lookback at ${money(p)}.`,
           meaning: `Part B and Part D surcharges (IRMAA) look back two years, so the ${taxYear} return sets the ${taxYear + 2} premium. Until the plan has two projected years, this figure is what it uses.`,
           ...fig, delta: makeDelta(magi, p),
-          action: { label: `Set MAGI to ${money(magi)}`, describe: `Sets ${who}'s prior-year MAGI for Medicare to ${money(magi)}`, amountEditable: true, defaultAmount: magi, target: { kind: "medicare.upsert", owner, priorYearMagi: magi, amountField: "priorYearMagi" } },
+          // A loss year makes this MAGI negative, and unlike the carryover above it is not
+          // a magnitude — so it is not editable, or the card's unsigned box would flip it.
+          action: { label: `Set MAGI to ${money(magi)}`, describe: `Sets ${who}'s prior-year MAGI for Medicare to ${money(magi)}`, amountEditable: editableAmount(magi), defaultAmount: magi, target: { kind: "medicare.upsert", owner, priorYearMagi: magi, amountField: "priorYearMagi" } },
         });
       } else checks.push({ id, label: `Medicare MAGI (${who})`, returnDisplay: money(magi), planDisplay: money(p) });
     }

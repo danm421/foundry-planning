@@ -130,6 +130,33 @@ describe("SuggestionCard", () => {
     expect(onApply).not.toHaveBeenCalled();
   });
 
+  // The rules no longer mark a negative figure editable (a loss-making business, a
+  // rental that nets below its depreciation, a negative-AGI MAGI), so these two
+  // cards should not exist. They are the belt to that braces: the box is unsigned,
+  // and if a future rule ever hands one a negative default it must fail VISIBLY
+  // rather than quietly apply the positive twin — a $10,000 swing on a card the
+  // advisor never touched.
+  const loss: Suggestion = {
+    ...base,
+    action: { ...base.action!, label: "Set to -$5,000", defaultAmount: -5_000 },
+  };
+
+  it("labels the button with the figure it would actually write, minus sign included", () => {
+    render(<SuggestionCard {...props({ suggestion: loss })} />);
+    expect(screen.getByRole("textbox", { name: /amount/i })).toHaveValue("-5000");
+    expect(screen.getByRole("button", { name: /^set to/i }).textContent).toBe("Set to -$5,000");
+  });
+
+  it("refuses a negative amount rather than applying its positive twin", async () => {
+    const onApply = vi.fn();
+    render(<SuggestionCard {...props({ suggestion: loss, onApply })} />);
+    const button = screen.getByRole("button", { name: /^set to/i });
+    expect(screen.getByRole("textbox", { name: /amount/i })).toHaveAttribute("aria-invalid", "true");
+    expect(button).toBeDisabled();
+    await userEvent.click(button);
+    expect(onApply).not.toHaveBeenCalled();
+  });
+
   it("passes the chosen owner when the action offers one", async () => {
     const onApply = vi.fn();
     const withOwner: Suggestion = {

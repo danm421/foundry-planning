@@ -9,6 +9,19 @@ export const W2: Tolerance = { pct: 0.10, abs: 500 };
 export const FLOW: Tolerance = { pct: 0.10, abs: 1_000 };
 export const SPEND: Tolerance = { pct: 0.10, abs: 10_000 };
 
+/** Whether the card may offer an amount box for this figure, for the arms that can
+ *  compute a NEGATIVE one — a business that lost money, a rental netting below its
+ *  depreciation, a negative-AGI MAGI.
+ *
+ *  It may not. The box is unsigned (it strips everything but digits and a dot) and
+ *  `apply.ts` rejects `amount < 0` outright, so an editable negative initialises to
+ *  its own magnitude and is applied as the POSITIVE twin — +$5,000 written where the
+ *  rule computed -$5,000, with no user action at all. Left un-editable the client
+ *  sends no amount, and the target's own patch carries the sign through unchanged.
+ *  The figure stays on the card either way; the row itself is still editable on the
+ *  screen the card links to. */
+export const editableAmount = (v: number): boolean => v >= 0;
+
 export const n = (v: number | null | undefined): number => v ?? 0;
 export const sum = (xs: number[]): number => xs.reduce((a, b) => a + b, 0);
 export const money = (v: number | null): string => (v == null ? "—" : fmtUsd(v));

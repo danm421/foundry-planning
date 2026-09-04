@@ -1,4 +1,4 @@
-import { ROW, detailsHref, differs, hasSpouse, isActiveInYear, makeDelta, money, n, namesMatch, normalizeName, ref, rowAmountInYear } from "../compare";
+import { ROW, detailsHref, differs, editableAmount, hasSpouse, isActiveInYear, makeDelta, money, n, namesMatch, normalizeName, ref, rowAmountInYear } from "../compare";
 import type { Check, OwnerChoice, PlanIncome, Rule, Suggestion } from "../types";
 import type { FindingLineRef } from "@/lib/tax-analysis/types";
 
@@ -72,7 +72,7 @@ export const businessRules: Rule = (input) => {
           headline: `${it.name} shows ${money(it.amount)} on the ${taxYear} return; the plan's ${row.name} is ${money(p)}.`,
           meaning: "The return is the actual result for the year. Setting the row to it keeps its growth assumption and starts from what the business really made.",
           returnFigure, planFigure: { label: row.name, amount: p, display: money(p), year: planYear }, delta: makeDelta(it.amount, p),
-          action: { label: `Set to ${money(it.amount)}`, describe: `Sets ${row.name} to ${money(it.amount)} (${taxYear} dollars)`, amountEditable: true, defaultAmount: it.amount,
+          action: { label: `Set to ${money(it.amount)}`, describe: `Sets ${row.name} to ${money(it.amount)} (${taxYear} dollars)`, amountEditable: editableAmount(it.amount), defaultAmount: it.amount,
             target: { kind: "income.update", incomeId: row.id, patch: { annualAmount: it.amount, inflationStartYear: taxYear }, amountField: "annualAmount" } } });
       } else checks.push({ id: it.id, label: it.name, returnDisplay: money(it.amount), planDisplay: money(p) });
       continue;

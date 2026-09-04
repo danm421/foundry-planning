@@ -142,6 +142,21 @@ describe("rentalRules — cash figure = scheduleENet + depreciation", () => {
     expect(s.action?.target).toMatchObject({ kind: "income.create", ownerField: "owner", input: { owner: "client" } });
   });
 
+  it("does not offer an editable amount when the cash figure is still a loss", () => {
+    // The `cash <= 500` floor sits BELOW the matched-row arms, so a rental whose net is
+    // more negative than its depreciation reaches this update arm with a negative figure.
+    // The card's amount box is unsigned: an editable -$8,000 would initialise to "-8000",
+    // clean to "8000" and apply +$8,000, and the server's own `amount >= 0` floor waves
+    // that through. Not editable sends no amount, so the patch below carries the loss.
+    const one = planFixture({ incomes: [income({ id: "r1", type: "other", name: "Rent — Oak", annualAmount: 9_000, growthRate: 0, inflationStartYear: 2025, linkedPropertyId: "re1" })] });
+    const s = rentalRules(inputFixture({ facts: factsWith(-10_000, 2_000), plan: one })).suggestions[0];
+    expect(s.id).toBe("income.rental");
+    expect(s.action?.defaultAmount).toBe(-8_000);
+    expect(s.action?.amountEditable).toBe(false);
+    expect(s.action?.label).toBe("Set rental income to -$8,000");
+    expect(s.action?.target).toMatchObject({ kind: "income.update", incomeId: "r1", patch: { annualAmount: -8_000 } });
+  });
+
   it("is silent with no Schedule E and checks when in line", () => {
     expect(rentalRules(inputFixture())).toEqual({ suggestions: [], checks: [] });
     const one = planFixture({ incomes: [income({ id: "r1", type: "other", name: "Rent", annualAmount: 12_100, growthRate: 0, inflationStartYear: 2025, linkedPropertyId: "re1" })] });

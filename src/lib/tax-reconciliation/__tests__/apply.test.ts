@@ -46,8 +46,10 @@ const w2Create = base({ id: "income.wages.w2.0.create", action: { label: "", des
 const ssClaim = base({ id: "income.socialSecurity", action: { label: "", describe: "", amountEditable: true, defaultAmount: 62_000, ownerChoices: ["client", "spouse", "split"],
   target: { kind: "income.socialSecurity.claim", amount: 62_000, rows: [{ owner: "client", incomeId: "s1", patch: { ssBenefitMode: "manual_amount" } }, { owner: "spouse", incomeId: "s2", patch: { ssBenefitMode: "manual_amount" } }] } } });
 const filing = base({ id: "household.filingStatus", section: "household", action: { label: "", describe: "Sets the household's filing status to Single", amountEditable: false, defaultAmount: null, target: { kind: "client.update", patch: { filingStatus: "single" } } } });
-/** A matched Schedule C LOSS. The rules emit these, so a negative default has to survive the applier. */
-const scheduleCLoss = base({ id: "business.scheduleC.0.create", section: "business", action: { label: "", describe: 'Adds business income "Consulting" of -$12,000 (2025 dollars)', amountEditable: true, defaultAmount: -12_000,
+/** A matched Schedule C LOSS. The rules emit these, so a negative default has to survive the
+ *  applier — and NOT editable, because the card's unsigned amount box would apply +$12,000
+ *  and the server's own `amount >= 0` floor would accept it. */
+const scheduleCLoss = base({ id: "business.scheduleC.0.create", section: "business", action: { label: "", describe: 'Adds business income "Consulting" of -$12,000 (2025 dollars)', amountEditable: false, defaultAmount: -12_000,
   target: { kind: "income.create", amountField: "annualAmount", ownerField: "owner", input: { type: "business", name: "Consulting", owner: "client", annualAmount: -12_000, startYear: 2026, endYear: 2060 } } } });
 /** A review item: it exists to be read, and carries no `action` at all. */
 const noAction = base({ id: "income.socialSecurity.noProjection", kind: "review" });
@@ -134,6 +136,9 @@ describe("applySuggestion", () => {
     expect(r.ok).toBe(true);
     expect(m.createIncomeForClient).toHaveBeenCalledWith(expect.objectContaining({ input: expect.objectContaining({ name: "Consulting", annualAmount: -12_000 }) }));
     expect(m.recordAudit).toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.objectContaining({ amount: -12_000 }) }));
+    // …and no override can reach it: the card offers no box, so a body carrying one is
+    // refused rather than floored to its positive twin by the `amount >= 0` check below.
+    expect(await applySuggestion(args({ suggestionId: "business.scheduleC.0.create", amount: 12_000 }))).toMatchObject({ ok: false, status: 400 });
   });
 
   it("splits a two-row Social Security claim in half, or sends the whole amount to one row", async () => {

@@ -89,6 +89,21 @@ describe("assumptionRules — medicare.priorYearMagi", () => {
     expect(r.checks.map((c) => c.id)).not.toContain("medicare.priorYearMagi.client");
   });
 
+  it("does not offer an editable amount for a negative MAGI", () => {
+    // A loss year makes `agi + taxExemptInterest` negative, and that IS the IRMAA MAGI —
+    // it is not a magnitude the way the Schedule D carryover above is. The card's amount
+    // box is unsigned, so an editable -$40,000 would initialise to "-40000", clean to
+    // "40000" and write +$40,000 past the server's own `amount >= 0` floor. Not editable
+    // sends no amount, and the target's own figure carries the sign.
+    const f = emptyTaxReturnFacts(2025);
+    f.filingStatus = "single";
+    f.income.agi = -40_000;
+    const s = assumptionRules(inputFixture({ facts: f })).suggestions.find((x) => x.id === "medicare.priorYearMagi.client")!;
+    expect(s.action?.defaultAmount).toBe(-40_000);
+    expect(s.action?.amountEditable).toBe(false);
+    expect(s.action?.target).toEqual({ kind: "medicare.upsert", owner: "client", priorYearMagi: -40_000, amountField: "priorYearMagi" });
+  });
+
   it("skips a person under 63 and checks a row already within tolerance", () => {
     const plan = planFixture({ client: { filingStatus: "married_joint", dateOfBirth: "1960-04-02", spouseDob: "1970-01-01" }, medicare: [{ owner: "client", priorYearMagi: 191_000 }] });
     const r = assumptionRules(inputFixture({ facts: magiFacts(), plan }));

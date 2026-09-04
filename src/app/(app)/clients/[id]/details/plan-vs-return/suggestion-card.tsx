@@ -131,10 +131,20 @@ export function SuggestionCard({
   // `aria-busy` reports only THIS card's own write; `isBusy` gates the controls
   // and so also covers another card's write.
   const isBusy = busy !== null || locked;
-  const cleaned = amountText.replace(/[^0-9.]/g, "");
+  // The box is unsigned — but a LEADING minus survives the clean, and that is the
+  // whole point. Stripping it made a negative `defaultAmount` initialise to its own
+  // magnitude with no user action at all: the state read "-5000", cleaned to "5000",
+  // relabelled the button "Set to $5,000", and the server's `amount >= 0` floor waved
+  // the sign flip through. Kept, the sign fails `amountOk` and the card says so.
+  // (The rules no longer mark a negative figure editable — `editableAmount` in
+  // compare.ts — so this is the guard against a future one that does.) Any later
+  // minus is dropped, so "5-0" is still 50 rather than NaN.
+  const cleaned = amountText.replace(/[^0-9.-]/g, "").replace(/(?!^)-/g, "");
   // An empty box must not read as $0 — that would write a zero over a real row.
   const amount = cleaned === "" ? Number.NaN : Number(cleaned);
   const amountOk = !action?.amountEditable || (Number.isFinite(amount) && amount >= 0);
+  // Two ways to be wrong, and "enter an amount first" is true of only one of them.
+  const amountHint = cleaned === "" ? "Enter an amount first." : "Enter an amount of $0 or more.";
 
   // The button names the write it will actually perform, so an edited amount
   // has to reach the label too.
@@ -272,7 +282,7 @@ export function SuggestionCard({
                 )}
               </button>
 
-              {!amountOk && <p className="text-xs text-warn">Enter an amount first.</p>}
+              {!amountOk && <p className="text-xs text-warn">{amountHint}</p>}
             </>
           )}
 

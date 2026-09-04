@@ -108,6 +108,14 @@ describe("businessRules — Schedule C", () => {
     expect(s.returnFigure.display).toBe("-$5,000");
     expect(s.planFigure).toMatchObject({ amount: 20_000, display: "$20,000" });
     expect(s.delta.tone).toBe("over");
+    // …and the loss is NOT editable on the card. The amount box is unsigned, so an
+    // editable -$5,000 initialises to "-5000", cleans to "5000" and applies +$5,000 —
+    // a $10,000 swing with no user action at all, which the server's own `amount >= 0`
+    // floor waves through. Not editable sends no amount, and the patch above carries
+    // the sign through untouched. Mirrors the posture the unmatched arm already takes.
+    expect(s.action?.defaultAmount).toBe(-5_000);
+    expect(s.action?.amountEditable).toBe(false);
+    expect(s.action?.label).toBe("Set to -$5,000");
   });
 
   it("does not offer to restart a business the plan models as ending, and ignores a salary of the same name", () => {
