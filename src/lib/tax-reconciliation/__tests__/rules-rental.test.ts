@@ -142,6 +142,23 @@ describe("rentalRules — cash figure = scheduleENet + depreciation", () => {
     expect(s.action?.target).toMatchObject({ kind: "income.create", ownerField: "owner", input: { owner: "client" } });
   });
 
+  it("will not link a rental_property account filed under another category", () => {
+    // `linkedPropertyId` goes through `assertRealEstateAccountsInClient`, which requires
+    // category "real_estate". The import review step lets a sub-type and a category be set
+    // independently, so a rental filed under "business" is reachable — and it produced a
+    // create button that 400s on the FK. It falls to the review arm instead.
+    const misfiled = planFixture({ accounts: [{ id: "re1", name: "12 Oak St", category: "business", subType: "rental_property" }] });
+    const s = rentalRules(inputFixture({ facts: factsWith(4_000, 8_000), plan: misfiled })).suggestions[0];
+    expect(s.id).toBe("income.rental");
+    expect(s.kind).toBe("review");
+    expect(s.action).toBeUndefined();
+    expect(s.link).toMatchObject({ label: "Open Net Worth" });
+    // …and the same account filed correctly still gets the one-click create.
+    const filed = planFixture({ accounts: [rentalAcct("re1", "12 Oak St")] });
+    expect(rentalRules(inputFixture({ facts: factsWith(4_000, 8_000), plan: filed })).suggestions[0])
+      .toMatchObject({ id: "income.rental.create", action: { target: { input: { linkedPropertyId: "re1" } } } });
+  });
+
   it("does not offer an editable amount when the cash figure is still a loss", () => {
     // The `cash <= 500` floor sits BELOW the matched-row arms, so a rental whose net is
     // more negative than its depreciation reaches this update arm with a negative figure.

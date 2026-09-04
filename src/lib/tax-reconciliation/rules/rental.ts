@@ -29,7 +29,14 @@ export const rentalRules: Rule = (input) => {
   //    pays the rent TWICE from 2030 on.
   const ending = rentalRows.filter((i) => !isActiveInYear(i, planYear) && isActiveInYear(i, taxYear));
   const future = rentalRows.filter((i) => i.startYear > planYear);
-  const properties = plan.accounts.filter((a) => a.subType === "rental_property");
+  // CATEGORY as well as sub-type, because `linkedPropertyId` is the FK the income core asserts on:
+  // `assertRealEstateAccountsInClient` requires `category === "real_estate"`. The advisor's own
+  // Account form and the portal's both couple the two, but the import review step offers a flat
+  // sub-type list beside a separately-editable category (and the accounts route validates neither),
+  // so a rental filed under another category is reachable — and it produced a create button that
+  // 400s. Filtered out, the return figure falls to the "no rental property" review arm instead,
+  // which sends the advisor to Net Worth where the mis-filed account can be fixed.
+  const properties = plan.accounts.filter((a) => a.category === "real_estate" && a.subType === "rental_property");
   const p = sum(rows.map((r) => rowAmountInYear(r, taxYear)));
   const id = "income.rental";
   const returnFigure = { label: "Rental cash flow (net + depreciation)", amount: cash, display: money(cash), lineRefs: [ref("Sched 1", "5", "Rental net", facts.income.scheduleENet), ref("Sched E", "18", "Depreciation", sE?.depreciation ?? null)] };
