@@ -17,6 +17,7 @@ import { fmtUsd } from "@/lib/tax-analysis/format";
 import { computeReconciliation } from "./reconcile";
 import { LOAD_FAILURE_STATUS } from "./load-input";
 import * as w from "./writers";
+import { AMOUNT_MAX } from "./types";
 import type { ActionTarget, OwnerChoice, Reconciliation, Suggestion } from "./types";
 
 export interface ApplyArgs {
@@ -155,14 +156,14 @@ export async function applySuggestion(a: ApplyArgs): Promise<ApplyResult> {
     const known = r.dismissed.some((d) => d.id === a.suggestionId) || r.checks.some((c) => c.id === a.suggestionId);
     return known
       ? { ok: false, status: 409, error: "stale", message: "This suggestion is no longer available — the plan or return may have changed since the page loaded.", reconciliation: r }
-      : { ok: false, status: 404, error: "Unknown suggestion" };
+      : { ok: false, status: 404, error: "Unknown suggestion", message: "That suggestion isn't on this comparison any more. Reload the page for the current list." };
   }
-  if (!s.action) return { ok: false, status: 400, error: "This suggestion has no automatic update" };
+  if (!s.action) return { ok: false, status: 400, error: "This suggestion has no automatic update", message: "There's no one-click update for this one — open the linked screen and make the change there." };
   if (a.amount !== undefined) {
-    if (!s.action.amountEditable) return { ok: false, status: 400, error: "This update does not take an amount" };
-    if (!Number.isFinite(a.amount) || a.amount < 0 || a.amount > 1e9) return { ok: false, status: 400, error: "Amount must be between $0 and $1,000,000,000" };
+    if (!s.action.amountEditable) return { ok: false, status: 400, error: "This update does not take an amount", message: "This update doesn't take an amount of its own." };
+    if (!Number.isFinite(a.amount) || a.amount < 0 || a.amount > AMOUNT_MAX) return { ok: false, status: 400, error: "Amount must be between $0 and $1,000,000,000", message: `The amount has to be between $0 and ${fmtUsd(AMOUNT_MAX)}.` };
   }
-  if (a.owner !== undefined && !s.action.ownerChoices?.includes(a.owner)) return { ok: false, status: 400, error: "That owner is not offered for this update" };
+  if (a.owner !== undefined && !s.action.ownerChoices?.includes(a.owner)) return { ok: false, status: 400, error: "That owner is not offered for this update", message: "That owner isn't one this update offers." };
   const owner = s.action.ownerChoices ? (a.owner ?? "client") : undefined;
 
   const target = withOverrides(s.action.target, a.amount, owner);
@@ -170,7 +171,11 @@ export async function applySuggestion(a: ApplyArgs): Promise<ApplyResult> {
   // would mis-stamp `crossFirmActor` on every audit row this apply writes.
   const crossFirmMeta = crossFirmAuditMeta({ access }, a.callerOrgId, { taxYear: a.taxYear, suggestionId: a.suggestionId });
   const written = await dispatch(target, owner, { clientId: a.clientId, firmId: a.firmId, actorId: a.actorId, crossFirmMeta });
-  if (!written.ok) return { ok: false, status: written.status, error: written.error };
+  // The cores' `error` is already the PII-free sentence they hand every caller ("Account …
+  // is not a real estate account", "Invalid input; startYear"). Passed through as `message`
+  // too, because the screen renders only `message` — without this every core rejection
+  // collapsed to "The update didn't apply", and the one thing that said WHY was dropped.
+  if (!written.ok) return { ok: false, status: written.status, error: written.error, message: written.error };
 
   await recordAudit({ action: "tax_reconciliation.apply", resourceType: "tax_return", resourceId: `${a.clientId}:${a.taxYear}`, clientId: a.clientId, firmId: a.firmId, actorId: a.actorId,
     metadata: { ...crossFirmMeta, suggestionId: a.suggestionId, kind: target.kind, amount: a.amount ?? s.action.defaultAmount, owner } });

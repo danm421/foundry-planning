@@ -159,8 +159,9 @@ describe("applySuggestion", () => {
     m.updateIncomeForClient.mockResolvedValueOnce({ ok: true, data: { id: "s1" }, resourceId: "s1" });
     m.updateIncomeForClient.mockResolvedValueOnce({ ok: false, status: 404, error: "Income not found" });
     const r = await applySuggestion(args({ suggestionId: "income.socialSecurity", owner: "split" }));
-    // The core's own rejection reaches the advisor, not a generic 500 …
-    expect(r).toEqual({ ok: false, status: 404, error: "Income not found" });
+    // The core's own rejection reaches the advisor, not a generic 500 — as `message` too,
+    // because the screen renders only that …
+    expect(r).toEqual({ ok: false, status: 404, error: "Income not found", message: "Income not found" });
     // … and the callback threw, so the driver rolls back — the first row goes with it.
     expect(rolledBack).toBe(true);
     expect(m.updateIncomeForClient).toHaveBeenCalledTimes(2);
@@ -182,6 +183,29 @@ describe("applySuggestion", () => {
     expect(await applySuggestion(args({ suggestionId: "household.filingStatus", amount: 5 }))).toMatchObject({ ok: false, status: 400 });
     expect(await applySuggestion(args({ owner: "split" }))).toMatchObject({ ok: false, status: 400 });
     for (const f of Object.values(WRITERS)) expect(f).not.toHaveBeenCalled();
+  });
+
+  it("gives EVERY rejection a sentence, because the screen renders `message` and never `error`", async () => {
+    // Only 2 of the 8 failure arms carried one, so the other six — an over-the-ceiling
+    // amount most of all, which ordinary typing reaches — all collapsed into "The update
+    // didn't apply, and nothing in the plan changed."
+    const rejections = [
+      args({ suggestionId: "nope" }),                                    // unknown id
+      args({ suggestionId: "income.socialSecurity.noProjection" }),      // no action
+      args({ suggestionId: "household.filingStatus", amount: 5 }),       // amount not editable
+      args({ amount: 2e9 }),                                             // past the ceiling
+      args({ owner: "split" }),                                          // owner not offered
+    ];
+    for (const a of rejections) {
+      const r = await applySuggestion(a);
+      expect(r.ok).toBe(false);
+      // A sentence, not a machine code: it ends in a full stop and is not the bare `error`.
+      expect(r.ok === false && r.message).toMatch(/\.$/);
+      expect(r.ok === false && r.message).not.toBe(r.ok === false ? r.error : "");
+    }
+    // The ceiling arm names the ceiling, so the advisor can see what to type instead.
+    const tooBig = await applySuggestion(args({ amount: 2e9 }));
+    expect(tooBig.ok === false && tooBig.message).toBe("The amount has to be between $0 and $1,000,000,000.");
   });
 
   it("writes the row the target NAMES when the card offered no owner choice", async () => {
@@ -254,7 +278,10 @@ describe("applySuggestion", () => {
 
   it("passes a core's rejection through verbatim and maps a load failure, carrying its message", async () => {
     m.createIncomeForClient.mockResolvedValueOnce({ ok: false, status: 400, error: "Invalid input; startYear" });
-    expect(await applySuggestion(args())).toEqual({ ok: false, status: 400, error: "Invalid input; startYear" });
+    // The core's own prose rides along as `message` — the screen renders only that, so
+    // without it a core rejection reached the advisor as "the update didn't apply" and
+    // nothing else. `error` keeps the same string for the machine side of the split.
+    expect(await applySuggestion(args())).toEqual({ ok: false, status: 400, error: "Invalid input; startYear", message: "Invalid input; startYear" });
     expect(m.recordAudit).not.toHaveBeenCalled();
     m.computeReconciliation.mockResolvedValueOnce({ ok: false, code: "no_plan", message: "no plan" });
     expect(await applySuggestion(args())).toMatchObject({ ok: false, status: 409, error: "no_plan", message: "no plan" });

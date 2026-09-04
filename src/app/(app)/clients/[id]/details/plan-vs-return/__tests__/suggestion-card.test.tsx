@@ -157,6 +157,25 @@ describe("SuggestionCard", () => {
     expect(onApply).not.toHaveBeenCalled();
   });
 
+  it("catches an amount past the server's own ceiling before the request", async () => {
+    // The box had no upper bound while `apply.ts` rejects anything over $1,000,000,000, so
+    // a typed $2,000,000,000 became a failed write with no explanation attached to it.
+    const onApply = vi.fn();
+    render(<SuggestionCard {...props({ onApply })} />);
+    const box = screen.getByRole("textbox", { name: /amount/i });
+    await userEvent.clear(box);
+    await userEvent.type(box, "2000000000");
+    const button = screen.getByRole("button", { name: /^set salary/i });
+    expect(button).toBeDisabled();
+    expect(screen.getByText(/between \$0 and \$1,000,000,000/i)).toBeTruthy();
+    await userEvent.click(button);
+    expect(onApply).not.toHaveBeenCalled();
+    // The ceiling itself is still allowed — this is a bound, not an off-by-one exclusion.
+    await userEvent.clear(box);
+    await userEvent.type(box, "1000000000");
+    expect(screen.getByRole("button", { name: /^set salary/i })).not.toBeDisabled();
+  });
+
   it("passes the chosen owner when the action offers one", async () => {
     const onApply = vi.fn();
     const withOwner: Suggestion = {

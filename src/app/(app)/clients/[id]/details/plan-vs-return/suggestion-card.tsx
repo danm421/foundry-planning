@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { fmtUsd } from "@/lib/tax-analysis/format";
 import { formatLineRefs } from "@/lib/tax-analysis/findings/line-refs";
+import { AMOUNT_MAX } from "@/lib/tax-reconciliation/types";
 import type { OwnerChoice, Suggestion } from "@/lib/tax-reconciliation/types";
 
 /** Which write, if any, this card is waiting on. Null is idle. Kept as one
@@ -142,9 +143,14 @@ export function SuggestionCard({
   const cleaned = amountText.replace(/[^0-9.-]/g, "").replace(/(?!^)-/g, "");
   // An empty box must not read as $0 — that would write a zero over a real row.
   const amount = cleaned === "" ? Number.NaN : Number(cleaned);
-  const amountOk = !action?.amountEditable || (Number.isFinite(amount) && amount >= 0);
-  // Two ways to be wrong, and "enter an amount first" is true of only one of them.
-  const amountHint = cleaned === "" ? "Enter an amount first." : "Enter an amount of $0 or more.";
+  // The ceiling is the SERVER's own, imported rather than retyped: the box had no upper
+  // bound at all, so a typed $2,000,000,000 sailed past this check and came back as a
+  // rejected write the advisor got no reason for.
+  const amountOk =
+    !action?.amountEditable || (Number.isFinite(amount) && amount >= 0 && amount <= AMOUNT_MAX);
+  // Three ways to be wrong, and "enter an amount first" is true of only one of them.
+  const amountHint =
+    cleaned === "" ? "Enter an amount first." : `Enter an amount between $0 and ${fmtUsd(AMOUNT_MAX)}.`;
 
   // The button names the write it will actually perform, so an edited amount
   // has to reach the label too.

@@ -10,6 +10,12 @@ export const SECTION_TITLES: Record<SectionId, string> = {
   deductions: "Deductions", household: "Household & assumptions", tax: "Why the tax differs",
 };
 
+/** The ceiling on an advisor-supplied amount. Shared by `apply.ts`, which enforces it,
+ *  and the card's own amount box, which checks it first — a client check looser than the
+ *  server's turns an ordinary typo (a stray zero) into a failed write with no reason
+ *  given, and the two drifting apart is exactly how that happened. */
+export const AMOUNT_MAX = 1_000_000_000;
+
 export type SuggestionKind = "update" | "review" | "info";
 export type DeltaTone = "short" | "over" | "missing" | "extra" | "neutral";
 export type OwnerChoice = "client" | "spouse" | "split";
