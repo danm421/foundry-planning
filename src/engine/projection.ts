@@ -4820,6 +4820,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       ): { incomeTaxBase: number; magi: number } => {
         if (!useBracket || !resolved) {
           const flat = Math.max(0, taxableIncome + r + suppOrdinary + suppCapGains);
+          // Placeholder only: with no resolved params there is no AGI to read, so
+          // `magi` mirrors `incomeTaxBase`. NOT a real IRMAA MAGI — any
+          // MAGI-ceiling caller must guard this path rather than size against it.
           return { incomeTaxBase: flat, magi: flat };
         }
         const trial = computeTaxForYear({
@@ -4903,7 +4906,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     };
 
     const selectIncomeTaxBase = (p: { incomeTaxBase: number; magi: number }) => p.incomeTaxBase;
-    // No caller until the IRMAA cap lands (Task 6) — the sizer's second ceiling.
+    // No caller until the IRMAA cap lands — the sizer's second ceiling.
     const selectMagi = (p: { incomeTaxBase: number; magi: number }) => p.magi;
 
     // Phase 5b: size-only. Splits conversions into bracket-fillers (deferred
