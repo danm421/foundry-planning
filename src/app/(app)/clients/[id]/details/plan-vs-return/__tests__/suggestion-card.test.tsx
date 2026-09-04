@@ -11,7 +11,9 @@ vi.mock("next/link", () => ({
   ),
 }));
 
-import { SuggestionCard } from "../suggestion-card";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { SuggestionCard, TONE_CLASS, rowLink } from "../suggestion-card";
 import type { Suggestion } from "@/lib/tax-reconciliation/types";
 
 const base: Suggestion = {
@@ -74,6 +76,8 @@ describe("SuggestionCard", () => {
     render(<SuggestionCard {...props()} />);
     expect(screen.getByText(/acme paid \$165,000/i)).toBeTruthy();
     expect(screen.getByText("Return 2025")).toBeTruthy();
+    // A year is a number: the eyebrow is the most-repeated element on the page.
+    expect(screen.getByText("Return 2025").className).toContain("tabular");
     expect(screen.getByText("$165,000")).toBeTruthy();
     expect(screen.getByText("$150,000")).toBeTruthy();
     expect(screen.getByText(/W-2 Box 1/)).toBeTruthy();
@@ -154,7 +158,7 @@ describe("SuggestionCard", () => {
     render(<SuggestionCard {...props({ dismissalsUnavailable: true })} />);
     expect(screen.getByRole("button", { name: /not applicable/i })).toBeDisabled();
     // Visible text, not a title attribute a keyboard or screen-reader user never sees.
-    expect(screen.getByText(/setting cards aside isn't available yet/i)).toBeTruthy();
+    expect(screen.getByText(/setting cards aside isn't available right now/i)).toBeTruthy();
   });
 
   it("renders a suggestion that carries no action without offering a write", () => {
@@ -188,6 +192,58 @@ describe("SuggestionCard", () => {
       delta: { amount: null, display: "Differs", tone: "neutral" },
     };
     render(<SuggestionCard {...props({ suggestion: differs })} />);
-    expect(screen.getByText("Differs").className).not.toContain("good");
+    const chip = screen.getByText("Differs");
+    expect(chip.className).not.toContain("good");
+    expect(chip.className).not.toContain("chip-drift");
+  });
+
+  it("weighs a plan running over exactly as heavily as one running short", () => {
+    // A single tone cannot encode risk direction — over is the dangerous way to
+    // be wrong on income and the conservative one on expenses — so neither
+    // direction may be muted relative to the other.
+    expect(TONE_CLASS.over).toBe(TONE_CLASS.short);
+    expect(TONE_CLASS.extra).toBe(TONE_CLASS.missing);
+    expect(TONE_CLASS.short).not.toBe(TONE_CLASS.neutral);
+  });
+
+  it("keys every tone to a class that exists beside .chip, never a Tailwind utility", () => {
+    const css = readFileSync(resolve(process.cwd(), "src/app/globals.css"), "utf8");
+    const tones = [...new Set(Object.values(TONE_CLASS))].filter(Boolean);
+    expect(tones.length).toBeGreaterThan(0);
+    for (const cls of tones) {
+      // Tailwind emits its utilities inside `@layer utilities` while `.chip` is
+      // unlayered, so `.chip`'s own color/border beat any `text-*` utility on
+      // the same element whatever the specificity — a utility tone renders
+      // NOTHING. The tone has to be a real unlayered rule next to `.chip`.
+      expect(css).toContain(`.${cls} {`);
+    }
+    for (const cls of Object.values(TONE_CLASS)) {
+      expect(cls).not.toMatch(/\b(text|border|bg)-(warn|good|crit|ink|accent)/);
+    }
+  });
+
+  it("sends a deduction write to the screen that actually edits it", () => {
+    // `/details/deductions` is LegacyDeductionsRedirect — it forwards to
+    // Assumptions, so a "Deductions" link lands the advisor somewhere the name
+    // does not match and the sidebar does not list.
+    const deduction: Suggestion = {
+      ...base,
+      action: {
+        ...base.action!,
+        target: { kind: "deduction.update", deductionId: "d1", patch: { annualAmount: 1 }, amountField: "annualAmount" },
+      },
+    };
+    expect(rowLink(deduction, "c1")).toEqual({
+      href: "/clients/c1/details/assumptions",
+      label: "Assumptions",
+    });
+  });
+
+  it("gives every card a heading and an accessible name", () => {
+    render(<SuggestionCard {...props()} />);
+    const heading = screen.getByRole("heading", { name: /acme paid/i });
+    expect(heading.tagName).toBe("H4");
+    expect(screen.getByRole("article").getAttribute("aria-labelledby")).toBe(heading.id);
+    expect(heading.id).toBeTruthy();
   });
 });

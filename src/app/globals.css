@@ -375,6 +375,25 @@ html {
   background: color-mix(in oklab, var(--color-accent) 8%, transparent);
 }
 
+/* Drift pill (Plan vs. Return): a measured gap, stated at full strength and
+   without a hue. Both directions weigh the same on purpose — a single tone
+   cannot encode risk direction, since a plan running OVER on income is the
+   dangerous, too-rosy way to be wrong while a plan running over on expenses
+   is the conservative one. The chip's own words carry the direction; this
+   only separates "we measured a gap" from the muted default, which is left
+   to the differences we could not put a number on.
+
+   It has to live HERE, unlayered, beside `.chip` — Tailwind v4 emits its
+   utilities inside `@layer utilities` (see node_modules/tailwindcss/index.css)
+   and `.chip` is unlayered, so `.chip`'s own `color` and `border` beat any
+   `text-*`/`border-*` utility put on the same element, whatever the
+   specificity. A utility-based tone is silently inert. */
+.chip-drift {
+  border-color: var(--color-ink-3);
+  color: var(--color-ink);
+  background: color-mix(in oklab, var(--color-ink) 8%, transparent);
+}
+
 /* Soft fade-and-rise on mount, used on auth + landing surfaces.       */
 @keyframes softRise {
   from { opacity: 0; transform: translateY(10px); }

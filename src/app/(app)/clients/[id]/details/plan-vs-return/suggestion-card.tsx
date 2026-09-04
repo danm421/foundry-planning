@@ -22,16 +22,27 @@ export const FOCUS_RING =
  *  numerals, so "Married filing jointly" must not get it. */
 export const figureClass = (display: string): string => (/\d/.test(display) ? "tabular" : "");
 
-/** The delta is information, never applause. `neutral` covers "In line" but
- *  also "Differs" and "Not known", so it can never be green — a card exists
- *  because something is out of line. The chip's own words carry the meaning;
- *  colour only reinforces it. */
-const TONE_CLASS: Record<Suggestion["delta"]["tone"], string> = {
-  short: "border-warn/40 text-warn",
-  missing: "border-warn/40 text-warn",
-  over: "text-ink-2",
-  extra: "text-ink-2",
-  neutral: "text-ink-2",
+/** The delta is information, never applause, and never a risk verdict.
+ *
+ *  All four measured tones share one weight. A plan running OVER is not the
+ *  safe direction — on income it is the too-rosy one, on expenses and
+ *  deductions it is the conservative one — so a single tone cannot encode
+ *  risk direction and must not pretend to. `neutral` keeps the muted default
+ *  `.chip`, because it is not "fine": it covers "Differs" and "Not known",
+ *  the differences no number could be put on. Nothing here may read as
+ *  success, and colour never carries the meaning alone — the chip's words do.
+ *
+ *  These are `.chip-*` rules from globals.css, NOT Tailwind utilities.
+ *  Tailwind emits utilities inside `@layer utilities` while `.chip` is
+ *  unlayered, so an unlayered `.chip { color }` beats any `text-*` utility on
+ *  the same element and a utility-based tone renders nothing at all.
+ *  `keys every tone to a class that exists beside .chip` guards this. */
+export const TONE_CLASS: Record<Suggestion["delta"]["tone"], string> = {
+  short: "chip-drift",
+  missing: "chip-drift",
+  over: "chip-drift",
+  extra: "chip-drift",
+  neutral: "",
 };
 
 const OWNER_LABEL: Record<OwnerChoice, string> = {
@@ -47,7 +58,10 @@ const ROW_SCREEN: Record<string, string> = {
   income: "income-expenses",
   expense: "income-expenses",
   savings_rule: "net-worth",
-  deduction: "deductions",
+  // NOT "deductions": that route is `LegacyDeductionsRedirect`, which forwards
+  // to Assumptions. Linking there would land the advisor on a screen whose
+  // name is not the one the link promised, and which is not in the sidebar.
+  deduction: "assumptions",
   entity: "net-worth",
   plan_settings: "assumptions",
   client: "family",
@@ -56,7 +70,6 @@ const ROW_SCREEN: Record<string, string> = {
 const ROW_LABEL: Record<string, string> = {
   "income-expenses": "Inflows & Outflows",
   "net-worth": "Net Worth",
-  deductions: "Deductions",
   assumptions: "Assumptions",
   family: "Profile",
   insurance: "Insurance",
@@ -134,12 +147,20 @@ export function SuggestionCard({
   const refs = s.returnFigure.lineRefs.length ? formatLineRefs(s.returnFigure.lineRefs) : null;
 
   return (
-    <article aria-busy={busy !== null} className="rounded-lg border border-hair bg-card p-4">
-      <p className="text-sm font-medium text-ink">{s.headline}</p>
+    <article
+      aria-busy={busy !== null}
+      // A page can hold a dozen of these. Without a heading they are invisible
+      // to heading navigation, and without a name the landmark is "article".
+      aria-labelledby={`${s.id}-headline`}
+      className="rounded-lg border border-hair bg-card p-4"
+    >
+      <h4 id={`${s.id}-headline`} className="text-sm font-medium text-ink">
+        {s.headline}
+      </h4>
 
       <div className="mt-3 grid gap-4 sm:grid-cols-2">
         <div>
-          <span className="text-[11px] uppercase tracking-[0.08em] text-ink-3">
+          <span className="tabular text-[11px] uppercase tracking-[0.08em] text-ink-3">
             Return {taxYear}
           </span>
           <p className={`text-base text-ink ${figureClass(s.returnFigure.display)}`}>
@@ -262,7 +283,7 @@ export function SuggestionCard({
                 mouse — a `title` is invisible to keyboard and screen readers. */}
             {dismissalsUnavailable && (
               <span className="text-xs text-ink-3">
-                Setting cards aside isn&apos;t available yet.
+                Setting cards aside isn&apos;t available right now.
               </span>
             )}
             <button

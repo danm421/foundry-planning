@@ -45,8 +45,12 @@ export function OverviewStrip({
 
   return (
     <div>
-      <p className="mb-2 flex items-center gap-1.5 text-[11px] uppercase tracking-[0.08em] text-ink-3">
-        <span className="tabular">
+      {/* `uppercase` and the tracking live on the eyebrow SPAN, never on this
+          row: FieldTooltip's panel sets only size and leading, so anything
+          inherited here would render the page's one mechanism sentence in all
+          caps at 0.08em in a 224px box. */}
+      <p className="mb-2 flex items-center gap-1.5 text-ink-3">
+        <span className="tabular text-[11px] uppercase tracking-[0.08em]">
           Return {taxYear} · Plan {planYear}
         </span>
         <FieldTooltip text={units} />

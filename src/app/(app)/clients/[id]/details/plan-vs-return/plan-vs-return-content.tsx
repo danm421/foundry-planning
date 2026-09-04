@@ -70,11 +70,20 @@ export function PlanVsReturnContent({
   const [busy, setBusy] = useState<Busy>(null);
   const [showInLine, setShowInLine] = useState(false);
   const [showDismissed, setShowDismissed] = useState(false);
+  // A 503 says the dismissals store is not there. The bundle in hand was
+  // computed before that answer and still says it is, so without this the
+  // button stays live and the advisor can re-trigger the same failure forever.
+  const [dismissalsBlocked, setDismissalsBlocked] = useState(false);
+  const liveRegion = useRef<HTMLDivElement>(null);
   // Ruling 9: two clicks landing in the same tick would each recompute
   // server-side and each write. The disabled button covers the human case; this
   // covers the same-tick case, and it engages on the FIRST click, not on the
   // response.
   const writing = useRef(false);
+  // Bundle loads are slow (a projection runs server-side) and the year tabs
+  // stay live throughout, so 2024's answer can land after 2025's was asked
+  // for. Only the newest request may paint.
+  const loadSeq = useRef(0);
   const base = `/api/clients/${clientId}/tax-returns`;
 
   useEffect(() => {
@@ -105,10 +114,13 @@ export function PlanVsReturnContent({
 
   const loadBundle = useCallback(
     async (y: number) => {
+      const seq = ++loadSeq.current;
+      const superseded = () => seq !== loadSeq.current;
       setLoad({ state: "loading" });
       try {
         const res = await fetch(`${base}/${y}/reconcile`, { cache: "no-store" });
         const body = await readBody(res);
+        if (superseded()) return;
         if (!res.ok || !body.reconciliation) {
           setLoad({
             state: "error",
@@ -118,6 +130,7 @@ export function PlanVsReturnContent({
         }
         setLoad({ state: "ready", bundle: body.reconciliation });
       } catch {
+        if (superseded()) return;
         setLoad({ state: "error", message: `The ${y} return couldn't be compared to the plan.` });
       }
     },
@@ -133,6 +146,10 @@ export function PlanVsReturnContent({
   async function apply(s: Suggestion, amount?: number, owner?: OwnerChoice) {
     if (year == null || writing.current) return;
     writing.current = true;
+    // Same sequence the loads use: if the advisor switches year mid-write, the
+    // newer bundle wins and this response must not paint over it.
+    const seq = loadSeq.current;
+    const superseded = () => seq !== loadSeq.current;
     setBusy({ id: s.id, mode: "apply" });
     setNotice(null);
     try {
@@ -146,6 +163,7 @@ export function PlanVsReturnContent({
         }),
       });
       const body = await readBody(res);
+      if (superseded()) return;
       if (res.status === 409 && body.error === "stale") {
         if (body.reconciliation) setLoad({ state: "ready", bundle: body.reconciliation });
         else void loadBundle(year);
@@ -185,6 +203,8 @@ export function PlanVsReturnContent({
   async function dismiss(id: string, mode: "dismiss" | "restore") {
     if (year == null || writing.current) return;
     writing.current = true;
+    const seq = loadSeq.current;
+    const superseded = () => seq !== loadSeq.current;
     setBusy({ id, mode });
     setNotice(null);
     try {
@@ -194,12 +214,16 @@ export function PlanVsReturnContent({
         body: JSON.stringify({ suggestionId: id }),
       });
       const body = await readBody(res);
+      if (superseded()) return;
       if (!res.ok || !body.reconciliation) {
+        // Latch it: the bundle still says the store is there, so leaving the
+        // button live invites the advisor to hit the same wall repeatedly.
+        if (res.status === 503) setDismissalsBlocked(true);
         setNotice({
           tone: "error",
           text:
             res.status === 503
-              ? "Setting cards aside isn't available yet — the app needs its next update first."
+              ? "Setting cards aside isn't available right now — everything else on this page still works."
               : sentence(
                   body,
                   mode === "dismiss"
@@ -218,8 +242,17 @@ export function PlanVsReturnContent({
     }
   }
 
+  // R58 + R61: a successful apply removes the card that held the focused
+  // button, which drops focus to <body> and sends the next Tab back to the top
+  // of the document. Move it to the confirmation — the thing that replaced
+  // what the advisor was looking at.
+  useEffect(() => {
+    if (notice?.tone === "success") liveRegion.current?.focus();
+  }, [notice]);
+
   const bundle = load.state === "ready" ? load.bundle : null;
   const ready = current?.status === "ready";
+  const dismissalsOff = (bundle?.dismissalsUnavailable ?? false) || dismissalsBlocked;
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -280,7 +313,14 @@ export function PlanVsReturnContent({
 
       {/* Always mounted: a live region added at the same moment as its text is
           not reliably announced. */}
-      <div role="status" aria-live="polite" aria-atomic="true">
+      <div
+        ref={liveRegion}
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        tabIndex={-1}
+        className={`rounded-md ${FOCUS_RING}`}
+      >
         {notice && (
           <p className={`rounded-md border px-3 py-2 text-sm ${NOTICE_CLASS[notice.tone]}`}>
             {notice.text}
@@ -330,6 +370,21 @@ export function PlanVsReturnContent({
             planYear={bundle.planYear}
           />
 
+          {/* Directly under the strip, never below the cards. These are
+              disclosures, not footnotes — one of them is "The wages checks
+              could not run, so nothing on this page reflects them", and a
+              must-see disclosure under fifteen cards is a disclosure nobody
+              sees. */}
+          {bundle.notes.length > 0 && (
+            <ul className="flex flex-col gap-1">
+              {bundle.notes.map((n) => (
+                <li key={n} className="text-xs text-ink-3">
+                  {n}
+                </li>
+              ))}
+            </ul>
+          )}
+
           {bundle.sections.map((s) => (
             <SuggestionSection key={s.id} title={s.title}>
               {s.items.map((item) => (
@@ -340,7 +395,7 @@ export function PlanVsReturnContent({
                   busy={busy?.id === item.id ? busy.mode : null}
 
                   locked={busy !== null}
-                  dismissalsUnavailable={bundle.dismissalsUnavailable}
+                  dismissalsUnavailable={dismissalsOff}
                   onApply={(amount, owner) => void apply(item, amount, owner)}
                   onDismiss={() => void dismiss(item.id, "dismiss")}
                   onRestore={() => void dismiss(item.id, "restore")}
@@ -355,25 +410,22 @@ export function PlanVsReturnContent({
             </p>
           )}
 
-          {bundle.notes.length > 0 && (
-            <ul className="flex flex-col gap-1">
-              {bundle.notes.map((n) => (
-                <li key={n} className="text-xs text-ink-3">
-                  {n}
-                </li>
-              ))}
-            </ul>
-          )}
-
+          {/* Each disclosure's toggle IS its heading (the WAI-ARIA disclosure
+              pattern), so the cards and the table inside them sit under an h3
+              exactly as the section cards do — no h2 → h4 skip. Tailwind's
+              preflight resets heading size and weight to inherit, so the h3
+              adds structure without styling. */}
           <div className="flex flex-col gap-3 border-t border-hair pt-4">
-            <button
-              type="button"
-              aria-expanded={showDismissed}
-              className={`self-start rounded px-1 text-sm text-ink-2 underline hover:text-ink ${FOCUS_RING}`}
-              onClick={() => setShowDismissed((v) => !v)}
-            >
-              Not applicable ({bundle.dismissed.length})
-            </button>
+            <h3 className="self-start">
+              <button
+                type="button"
+                aria-expanded={showDismissed}
+                className={`btn-ghost px-3 py-1.5 text-sm ${FOCUS_RING}`}
+                onClick={() => setShowDismissed((v) => !v)}
+              >
+                Not applicable ({bundle.dismissed.length})
+              </button>
+            </h3>
             {showDismissed &&
               (bundle.dismissed.length === 0 ? (
                 <p className="text-sm text-ink-3">Nothing has been set aside on this return.</p>
@@ -386,7 +438,7 @@ export function PlanVsReturnContent({
                     busy={busy?.id === item.id ? busy.mode : null}
 
                     locked={busy !== null}
-                    dismissalsUnavailable={bundle.dismissalsUnavailable}
+                    dismissalsUnavailable={dismissalsOff}
                     onApply={(amount, owner) => void apply(item, amount, owner)}
                     onDismiss={() => void dismiss(item.id, "dismiss")}
                     onRestore={() => void dismiss(item.id, "restore")}
@@ -394,14 +446,16 @@ export function PlanVsReturnContent({
                 ))
               ))}
 
-            <button
-              type="button"
-              aria-expanded={showInLine}
-              className={`self-start rounded px-1 text-sm text-ink-2 underline hover:text-ink ${FOCUS_RING}`}
-              onClick={() => setShowInLine((v) => !v)}
-            >
-              Already in line ({bundle.checks.length})
-            </button>
+            <h3 className="self-start">
+              <button
+                type="button"
+                aria-expanded={showInLine}
+                className={`btn-ghost px-3 py-1.5 text-sm ${FOCUS_RING}`}
+                onClick={() => setShowInLine((v) => !v)}
+              >
+                Already in line ({bundle.checks.length})
+              </button>
+            </h3>
             {showInLine &&
               (bundle.checks.length === 0 ? (
                 <p className="text-sm text-ink-3">Nothing matched outright on this return.</p>
@@ -413,7 +467,9 @@ export function PlanVsReturnContent({
                   <thead>
                     <tr className="border-b border-hair text-left text-ink-3">
                       <th className="py-1 font-normal">Check</th>
-                      <th className="py-1 text-right font-normal">Return {bundle.taxYear}</th>
+                      <th className="tabular py-1 text-right font-normal">
+                        Return {bundle.taxYear}
+                      </th>
                       <th className="py-1 text-right font-normal">Plan</th>
                     </tr>
                   </thead>

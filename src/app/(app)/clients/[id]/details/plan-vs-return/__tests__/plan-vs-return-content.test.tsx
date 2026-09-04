@@ -126,14 +126,34 @@ describe("PlanVsReturnContent", () => {
       expect.anything(),
     );
     expect(screen.getByText(/what the 2025 return says/i)).toBeTruthy();
+    // CHANGE 1: the caps and tracking belong to the eyebrow, not to the row —
+    // the row also holds the FieldTooltip, whose panel sets only size and
+    // leading and would otherwise render the page's one mechanism sentence in
+    // ALL CAPS at 0.08em tracking inside a 224px box.
+    const eyebrow = screen.getByText(/^Return 2025 · Plan 2026$/);
+    expect(eyebrow.className).toContain("uppercase");
+    expect(eyebrow.parentElement!.className).not.toContain("uppercase");
+    expect(eyebrow.parentElement!.className).not.toContain("tracking-");
     expect(screen.getByText("$190,000")).toBeTruthy(); // AGI tile (return)
     expect(within(openTile()).getByText("2")).toBeTruthy();
     expect(screen.getByText(/acme paid \$165,000/i)).toBeTruthy();
     expect(screen.getByText(/globex is on the return/i)).toBeTruthy();
-    expect(screen.getByText(/shown in 2025 dollars/i)).toBeTruthy();
+    // CHANGE 5: notes are disclosures, so they render above the cards — one of
+    // them says a whole rule could not run.
+    const note = screen.getByText(/shown in 2025 dollars/i);
+    const firstCard = screen.getByText(/acme paid \$165,000/i);
+    expect(note.compareDocumentPosition(firstCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
-    await userEvent.click(screen.getByRole("button", { name: /already in line \(2\)/i }));
+    // CHANGE 4/10: the toggles are btn-ghost, and each IS its section heading,
+    // so the cards and table inside sit under an h3 rather than skipping a level.
+    const inLineToggle = screen.getByRole("button", { name: /already in line \(2\)/i });
+    expect(inLineToggle.className).toContain("btn-ghost");
+    expect(inLineToggle.className).not.toContain("underline");
+    expect(inLineToggle.closest("h3")).toBeTruthy();
+    await userEvent.click(inLineToggle);
     const table = screen.getByRole("table");
+    // CHANGE 3: a year is a number here too.
+    expect(within(table).getByText(/Return 2025/).className).toContain("tabular");
     expect(within(table).getByText("Filing status")).toBeTruthy();
     // Mono is for numerals only: a filing status rendered in the numeral face
     // is a brand violation on a screen an advisor shows a client as-is.
@@ -338,8 +358,58 @@ describe("PlanVsReturnContent", () => {
     fetchMock.mockReturnValueOnce(json({ error: "dismissals_unavailable" }, 503));
     await userEvent.click(within(card).getByRole("button", { name: /not applicable/i }));
 
-    await waitFor(() => expect(screen.getByText(/isn't available yet/i)).toBeTruthy());
-    expect(screen.queryByText(/dismissals_unavailable/)).toBeNull();
+    const live = screen.getByRole("status");
+    await waitFor(() =>
+      expect(within(live).getByText(/everything else on this page still works/i)).toBeTruthy(),
+    );
+    expect(within(live).queryByText(/dismissals_unavailable/)).toBeNull();
+    // Deployment state is not something an advisor can act on, and this screen
+    // is shown to clients as it stands.
+    expect(within(live).queryByText(/update|deploy|migrat/i)).toBeNull();
+
+    // …and the button latches off, so the same wall cannot be hit again.
+    const dismiss = within(card).getByRole("button", { name: /not applicable/i });
+    expect(dismiss).toBeDisabled();
+    expect(within(card).getByText(/setting cards aside isn't available right now\./i)).toBeTruthy();
+  });
+
+  it("moves focus to the confirmation, which replaced the card the button was on", async () => {
+    fetchMock.mockReturnValueOnce(json(list())).mockReturnValueOnce(json({ reconciliation: bundle() }));
+    render(<PlanVsReturnContent clientId="c1" scenarioIgnored={false} />);
+    const card = (await screen.findByText(/acme paid/i)).closest("article")!;
+
+    fetchMock.mockReturnValueOnce(
+      json({
+        applied: { suggestionId: wages.id, summary: "Sets Acme Corp to $165,000" },
+        reconciliation: bundle({ sections: [{ id: "income", title: "Income", items: [create] }] }),
+      }),
+    );
+    await userEvent.click(within(card).getByRole("button", { name: /set salary/i }));
+
+    const live = screen.getByRole("status");
+    await waitFor(() => expect(document.activeElement).toBe(live));
+    expect(live.getAttribute("tabindex")).toBe("-1");
+  });
+
+  it("ignores a bundle that arrives after the advisor moved to another year", async () => {
+    let releaseStale!: (r: Response) => void;
+    fetchMock
+      .mockReturnValueOnce(json(list()))
+      .mockReturnValueOnce(new Promise<Response>((resolve) => { releaseStale = resolve; }));
+    render(<PlanVsReturnContent clientId="c1" scenarioIgnored={false} />);
+    await screen.findByRole("tab", { name: /2024/ });
+
+    // Switch to 2024 while 2025's bundle is still in flight, then let 2025 land.
+    fetchMock.mockReturnValueOnce(
+      json({ reconciliation: bundle({ taxYear: 2024, sections: [], notes: ["2024 note"] }) }),
+    );
+    await userEvent.click(screen.getByRole("tab", { name: /2024/ }));
+    releaseStale(new Response(JSON.stringify({ reconciliation: bundle() }), { status: 200 }));
+
+    await waitFor(() => expect(screen.getByText("2024 note")).toBeTruthy());
+    // 2025's late answer must not have painted over 2024's.
+    expect(screen.queryByText(/acme paid/i)).toBeNull();
+    expect(screen.getByText(/nothing to update/i)).toBeTruthy();
   });
 
   it("reloads on a stale apply and says so", async () => {
