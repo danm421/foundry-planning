@@ -1,12 +1,13 @@
 import { planToTaxYear } from "./compare";
 import { RULES, taxRules } from "./rules";
-import { SECTION_ORDER, SECTION_TITLES, type Check, type Pair, type Reconciliation, type ReconciliationInput, type Suggestion } from "./types";
+import { SECTION_ORDER, SECTION_TITLES, type Check, type Pair, type Reconciliation, type ReconciliationInput, type RuleResult, type Suggestion } from "./types";
 
 /** Everything the builder cannot derive from the input: the extraction's state, the dismissals the
  *  advisor has already recorded, and any note the caller wants carried onto the page — the
  *  "projection couldn't run" note among them, which the loader raises because it is the side that
- *  knows why the run failed. No rule emits notes (`RuleResult` has no field for them), so a note
- *  reaches the page exactly once however many rules degraded. */
+ *  knows why the run failed. It arrives exactly once however many rules degraded, because no rule
+ *  can emit a note — `RuleResult` has no field for one. The builder appends its own notes after
+ *  these: one for any rule that threw, and the deflation note. */
 export interface BuildContext {
   status: Reconciliation["status"];
   dismissedIds: Set<string>;
@@ -17,16 +18,30 @@ export interface BuildContext {
 export function buildReconciliation(input: ReconciliationInput, ctx: BuildContext): Reconciliation {
   const suggestions: Suggestion[] = [];
   const checks: Check[] = [];
-  for (const rule of RULES) {
-    const r = rule(input);
-    suggestions.push(...r.suggestions);
-    checks.push(...r.checks);
-  }
+  const notes = [...ctx.notes];
+
+  // These facts come off scanned PDFs, so a shape no rule anticipated is a live risk — and one rule
+  // throwing must not blank the whole page. Catch it and DISCLOSE it: a silent hole would read as
+  // "the plan agrees about this", which is the one thing it must never say. The advisor gets a note
+  // naming what went unchecked; the logs get the error. A rule that throws contributes nothing,
+  // because its output is only pushed once it has returned.
+  const run = (label: string, rule: () => RuleResult): void => {
+    try {
+      const r = rule();
+      suggestions.push(...r.suggestions);
+      checks.push(...r.checks);
+    } catch (err) {
+      console.error("[tax-reconciliation] rule threw, skipping it:", label, err);
+      notes.push(`The ${label} checks could not run, so nothing on this page reflects them. Everything else was compared normally.`);
+    }
+  };
+
+  for (const { label, rule } of RULES) run(label, () => rule(input));
   // Last, and fed everything found so far: the federal-tax card names the three largest income-side
-  // gaps rather than restating the difference, so it needs the other rules' output.
-  const t = taxRules(input, suggestions);
-  suggestions.push(...t.suggestions);
-  checks.push(...t.checks);
+  // gaps rather than restating the difference, so it needs the other rules' output. `suggestions`
+  // includes dismissed cards on purpose — dismissing a card hides it, it does not un-find the gap
+  // the tax difference actually came from.
+  run("federal tax", () => taxRules(input, suggestions));
 
   // Dismissals match the WHOLE id the rule emitted, never a prefix: a create arm carries its own
   // `.create` id so that setting aside "add this business" does not also silence "this business's
@@ -37,7 +52,6 @@ export function buildReconciliation(input: ReconciliationInput, ctx: BuildContex
     .map((id) => ({ id, title: SECTION_TITLES[id], items: open.filter((s) => s.section === id) }))
     .filter((s) => s.items.length > 0);
 
-  const notes = [...ctx.notes];
   if (input.planYear !== input.taxYear) {
     notes.push(`The plan's ${input.planYear} figures are shown in ${input.taxYear} dollars, using each row's own growth rate (the plan's inflation rate for engine totals).`);
   }

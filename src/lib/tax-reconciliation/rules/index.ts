@@ -11,11 +11,25 @@ import { socialSecurityRules } from "./social-security";
 import { spendingRule } from "./spending";
 import { wageRules } from "./wages";
 
+/** A rule and the plain-words name a note uses when it throws. The label is a literal rather than
+ *  `fn.name` for two reasons: a production bundle mangles function names, and the note is written
+ *  for the advisor reading the page, not for a stack trace. Each reads as "The ${label} checks". */
+export interface NamedRule { label: string; rule: Rule }
+
 /** This order sets the "already in line" list and the order of the cards WITHIN a section, both of
  *  which print in it. The sections themselves are ordered by SECTION_ORDER, not by rule order. */
-export const RULES: readonly Rule[] = [
-  householdRules, wageRules, socialSecurityRules, pensionRules, engineFlowRules, rentalRules,
-  businessRules, savingsRules, deductionRules, assumptionRules, spendingRule,
+export const RULES: readonly NamedRule[] = [
+  { label: "household", rule: householdRules },
+  { label: "wage", rule: wageRules },
+  { label: "Social Security", rule: socialSecurityRules },
+  { label: "pension", rule: pensionRules },
+  { label: "investment and retirement income", rule: engineFlowRules },
+  { label: "rental", rule: rentalRules },
+  { label: "business", rule: businessRules },
+  { label: "savings", rule: savingsRules },
+  { label: "deduction", rule: deductionRules },
+  { label: "assumption", rule: assumptionRules },
+  { label: "spending", rule: spendingRule },
 ];
 
 /** Deliberately outside RULES: `taxRules` is not a plain `Rule`. It takes the suggestions the other

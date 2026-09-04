@@ -1,8 +1,8 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { emptyBusiness, emptyTaxReturnFacts, type TaxReturnFacts } from "@/lib/schemas/tax-return-facts";
 import { buildReconciliation, type BuildContext } from "../build";
 import type { EngineYear, Reconciliation } from "../types";
-import { engineYearFixture, inputFixture } from "./fixtures";
+import { engineYearFixture, inputFixture, planFixture } from "./fixtures";
 
 // `over` is typed rather than an untyped bag: a misspelled key would otherwise be swallowed and the
 // test would think it was pinning a context field while the default stayed in place.
@@ -34,7 +34,14 @@ const engine = (federalTax: number): EngineYear =>
  *  membership together, so a swapped section or a lost item cannot hide behind a matching count. */
 const grouped = (r: Reconciliation) => r.sections.map((s) => [s.id, s.title, s.items.map((i) => i.id)]);
 
+/** The deflation note the builder appends whenever the plan year is not the tax year. */
+const DEFLATION_NOTE = "The plan's 2026 figures are shown in 2025 dollars, using each row's own growth rate (the plan's inflation rate for engine totals).";
+
 describe("buildReconciliation", () => {
+  // Restored here rather than at the end of the two tests that spy on console.error, so a failing
+  // assertion cannot leak the spy into the rest of the file.
+  afterEach(() => { vi.restoreAllMocks(); });
+
   it("groups open items by section in SECTION_ORDER, dropping the sections no rule reached", () => {
     const r = buildReconciliation(inputFixture({ facts: facts() }), ctx());
     // The rules run household-first (see RULES), so a builder that grouped in emission order would
@@ -97,6 +104,18 @@ describe("buildReconciliation", () => {
 
   it("fills the overview from the engine year, deflated, and lists what already agrees", () => {
     const r = buildReconciliation(inputFixture({ facts: facts(), engineYear: engine(15_450) }), ctx());
+    // The engine-present grouping, which the engineYear-null fixtures cannot reach: an engine year
+    // wakes the spending rule, so `spending.implied` has to route to its own section and land
+    // between income and household. It also proves no engine-fed card renders a NaN — the fixture's
+    // `taxResult` carries three fields, so a rule reading a fourth would surface here.
+    expect(grouped(r)).toEqual([
+      ["income", "Income", ["income.wages.total", "income.pensions"]],
+      ["spending", "Spending", ["spending.implied"]],
+      ["household", "Household & assumptions", ["household.filingStatus", "medicare.priorYearMagi.client"]],
+      ["tax", "Why the tax differs", ["tax.settlement"]],
+    ]);
+    const displays = r.sections.flatMap((s) => s.items).flatMap((i) => [i.returnFigure.display, i.planFigure.display, i.delta.display, i.headline, i.meaning]);
+    expect(displays.filter((d) => d.includes("NaN"))).toEqual([]);
     expect(r.overview.totalIncome).toEqual({ return: 104_000, plan: expect.closeTo(104_000, 0) });
     expect(r.overview.agi).toEqual({ return: 104_000, plan: expect.closeTo(104_000, 0) });
     expect(r.overview.federalTax).toEqual({ return: 15_000, plan: expect.closeTo(15_000, 0) });
@@ -126,10 +145,7 @@ describe("buildReconciliation", () => {
     const r = buildReconciliation(inputFixture({ facts: facts() }), ctx({ notes: ["The plan's projection couldn't run, so only direct row comparisons are shown."] }));
     // Exactly two notes: the caller's degrade note passes through once (no rule adds its own), and
     // the builder appends the deflation note because the plan year is not the tax year.
-    expect(r.notes).toEqual([
-      "The plan's projection couldn't run, so only direct row comparisons are shown.",
-      "The plan's 2026 figures are shown in 2025 dollars, using each row's own growth rate (the plan's inflation rate for engine totals).",
-    ]);
+    expect(r.notes).toEqual(["The plan's projection couldn't run, so only direct row comparisons are shown.", DEFLATION_NOTE]);
     expect(r.overview.agi.plan).toBeNull();
     expect(r.overview.totalIncome.plan).toBeNull();
     expect(r.overview.federalTax.plan).toBeNull();
@@ -157,6 +173,38 @@ describe("buildReconciliation", () => {
       "Where the difference comes from: Available to spend (cash in − taxes − retirement savings) (not in the plan); Wages (not in the plan); Pensions and annuities (not in the plan).",
     );
     expect(r.checks.map((c) => c.id)).toEqual(["household.residenceState"]);
+  });
+
+  it("keeps every other rule's cards when one rule throws, and names the checks that went missing", () => {
+    // `plan.medicare` is read by exactly ONE rule (assumptions), so nulling it fails that rule alone
+    // — a real throw down the real loop rather than a mocked barrel. The Medicare MAGI card is the
+    // only thing that disappears: the household section still renders the filing-status card, which
+    // a different rule put there, so the page degrades card-by-card and not section-by-section.
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = buildReconciliation(inputFixture({ facts: facts(), plan: { ...planFixture(), medicare: null as never } }), ctx());
+    expect(grouped(r)).toEqual([
+      ["income", "Income", ["income.wages.total", "income.pensions"]],
+      ["household", "Household & assumptions", ["household.filingStatus"]],
+      ["tax", "Why the tax differs", ["tax.settlement"]],
+    ]);
+    // Disclosed, never swallowed: the note names what went unchecked, and the error reaches the logs.
+    expect(r.notes).toEqual(["The assumption checks could not run, so nothing on this page reflects them. Everything else was compared normally.", DEFLATION_NOTE]);
+    expect(spy).toHaveBeenCalledOnce();
+    // The counts follow the cards that survived, so a rule that throws cannot inflate them.
+    expect(r.overview).toMatchObject({ openCount: 4, dismissedCount: 0, inLineCount: 1 });
+  });
+
+  it("catches the federal-tax rule too, which runs outside the loop", () => {
+    // `facts.payments` is read by exactly ONE rule (tax), and with no engine year that rule's other
+    // arm is skipped — so the whole tax section goes and nothing else moves.
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = buildReconciliation(inputFixture({ facts: { ...facts(), payments: null as never } }), ctx());
+    expect(grouped(r)).toEqual([
+      ["income", "Income", ["income.wages.total", "income.pensions"]],
+      ["household", "Household & assumptions", ["household.filingStatus", "medicare.priorYearMagi.client"]],
+    ]);
+    expect(r.notes).toEqual(["The federal tax checks could not run, so nothing on this page reflects them. Everything else was compared normally.", DEFLATION_NOTE]);
+    expect(spy).toHaveBeenCalledOnce();
   });
 
   it("passes taxYear/planYear/planStartYear/status/dismissalsUnavailable through", () => {
