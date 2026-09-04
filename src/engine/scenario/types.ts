@@ -14,6 +14,7 @@ export type TargetKind =
   | "beneficiary_designation"
   | "client"
   | "client_deduction"
+  | "client_tax_adjustment"
   | "entity"
   | "expense"
   | "expense_schedule_override"
