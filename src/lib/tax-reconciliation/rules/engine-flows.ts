@@ -1,9 +1,9 @@
 import { detailsHref, makeDelta, money, n, planToTaxYear, ref, sum } from "../compare";
 import type { Check, Rule, Suggestion } from "../types";
 
-/** Each flow carries its OWN floor and ratio rather than the shared `FLOW` tolerance in compare.ts,
- *  because the spec's catalog sets a pair per flow (rows 185–189). Named here rather than left as
- *  bare literals so the carve-out is greppable and reads as deliberate, not as an oversight.
+/** Each flow carries its OWN floor and ratio rather than one shared tolerance, because the spec's
+ *  catalog sets a pair per flow (rows 185–189). Named here rather than left as bare literals so the
+ *  carve-out is greppable and reads as deliberate, not as an oversight.
  *  `planShareOfReturn` is the share of the return's figure the plan must reach to stay quiet. */
 const IRA_DISTRIBUTIONS = { floor: 1_000, planShareOfReturn: 0.5 };
 const INVESTMENT_INCOME = { minGap: 2_000, returnMultipleOfPlan: 2 };

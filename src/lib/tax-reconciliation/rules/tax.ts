@@ -5,7 +5,7 @@ import type { Check, ReconciliationInput, RuleResult, Suggestion } from "../type
  *  the tax too, but naming one here would tell the advisor to chase the wrong card first. */
 const INCOME_SIDE = new Set(["income", "business", "spending"]);
 
-/** Its own pair rather than the shared `FLOW` tolerance in compare.ts, because the spec's catalog
+/** Its own pair rather than one of the shared tolerances in compare.ts, because the spec's catalog
  *  sets one for this row (202). Named rather than left as bare literals so the carve-out is
  *  greppable and reads as deliberate. */
 const FEDERAL_TAX = { minGap: 2_000, minShareOfTax: 0.15 };

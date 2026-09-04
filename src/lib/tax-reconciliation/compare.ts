@@ -6,7 +6,6 @@ import type { Delta, PlanSnapshot, ReconciliationInput } from "./types";
 export interface Tolerance { pct: number; abs: number }
 export const ROW: Tolerance = { pct: 0.05, abs: 500 };
 export const W2: Tolerance = { pct: 0.10, abs: 500 };
-export const FLOW: Tolerance = { pct: 0.10, abs: 1_000 };
 export const SPEND: Tolerance = { pct: 0.10, abs: 10_000 };
 
 /** Whether the card may offer an amount box for this figure, for the arms that can

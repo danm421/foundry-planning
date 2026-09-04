@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  normalizeName, namesMatch, differs, deflate, rowAmountInYear, ageAtYearEnd, makeDelta, ROW, W2, FLOW, SPEND,
+  normalizeName, namesMatch, differs, deflate, rowAmountInYear, ageAtYearEnd, makeDelta, ROW, W2, SPEND,
 } from "../compare";
 
 describe("normalizeName", () => {
@@ -36,7 +36,6 @@ describe("differs", () => {
   });
   it("uses the wider thresholds by name", () => {
     expect(W2).toEqual({ pct: 0.10, abs: 500 });
-    expect(FLOW).toEqual({ pct: 0.10, abs: 1_000 });
     expect(SPEND).toEqual({ pct: 0.10, abs: 10_000 });
   });
 });
