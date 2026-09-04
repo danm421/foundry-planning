@@ -137,6 +137,10 @@ export function calculateTaxYearFlat(input: FlatCalcInput): TaxResult {
       totalFederalTax: federal,
       totalTax: total,
       earlyWithdrawalPenalty: 0,
+      // See calculate.ts: the projection overwrites both when an adjustment
+      // records withholding.
+      taxAlreadyPaid: 0,
+      balanceDue: total,
     },
     diag: {
       marginalFederalRate: input.flatFederalRate,

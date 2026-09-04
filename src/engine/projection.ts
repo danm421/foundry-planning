@@ -7361,6 +7361,23 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       finalTaxResult.flow.totalFederalTax += supplementalEarlyPenalty;
     }
     const totalTaxes = finalTaxResult.flow.totalTax;
+    // Withholding recorded on a tax adjustment was already paid out of the
+    // client's paycheck or to the custodian, so the plan must not withdraw it a
+    // second time. Clamped: over-withholding stops at zero rather than becoming
+    // a refund inflow, which `expenses.taxes` has no way to represent.
+    // NEVER subtracted from `flow.totalTax` — withholding is a payment, not a
+    // deduction, and every consumer of `totalTax` (effective rate, bracket
+    // report, the tax deck pages) must keep reading the full liability.
+    const taxAlreadyPaid = Math.min(Math.max(0, taxAdj.alreadyPaid), Math.max(0, totalTaxes));
+    finalTaxResult.flow.taxAlreadyPaid = taxAlreadyPaid;
+    finalTaxResult.flow.balanceDue = Math.max(0, totalTaxes - taxAlreadyPaid);
+    // What the cash flow actually pays out this year. Deliberately NOT
+    // `flow.balanceDue`, which is floored at 0: `totalTax` is legitimately
+    // NEGATIVE in a refundable-credit year (calculate.ts subtracts ACTC/AOTC
+    // outside the floor on purpose), and the floor would silently turn that
+    // refund into a $0 tax line. With no withholding this is exactly
+    // `totalTaxes`, so today's behaviour is unchanged sign and all.
+    const taxesPaidFromCashFlow = totalTaxes - taxAlreadyPaid;
     // Property tax only counts toward the household realEstate bucket for the
     // household-share synthetic rows. Entity-owned shares are tagged with
     // ownerEntityId and route to the entity's checking via resolveCashAccount.
@@ -7377,7 +7394,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         educationOutOfPocketTotal,
       insurance: expenseBreakdown.insurance,
       realEstate: householdSyntheticExpenseTotal,
-      taxes: totalTaxes,
+      taxes: taxesPaidFromCashFlow,
       cashGifts: householdCashGiftsTotal,
       discretionary: expenseBreakdown.discretionary,
       total:
@@ -7387,7 +7404,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         expenseBreakdown.discretionary +
         householdSyntheticExpenseTotal +
         liabResult.totalPayment +
-        totalTaxes +
+        // Must stay in lockstep with the `taxes:` line above — `total` is
+        // summed inside this same literal, so netting one and not the other
+        // leaves the total disagreeing with its own tax line.
+        taxesPaidFromCashFlow +
         techniqueExpenses +
         householdCashGiftsTotal +
         educationOutOfPocketTotal,
@@ -7407,6 +7427,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       byLiability: liabResult.byLiability,
       interestByLiability: liabResult.interestByLiability,
     };
+
+    // Name the netting in the expense drill-down, so an advisor asking why the
+    // tax line is lower than the reported liability can see the answer. Negative
+    // because it is a credit against the tax bucket. Like `withdrawal_penalty:*`
+    // this is a drill-down row, not a decomposition term — consumers true each
+    // category up against the year's own total (see solver/monthly-allocation.ts).
+    if (taxAlreadyPaid > 0) {
+      expenses.bySource["tax_withheld_adjustments"] = -taxAlreadyPaid;
+    }
 
     // Medicare post-processing on the expenses literal.
     //   (a) Zero out any pre-Medicare expense flagged endsAtMedicareEligibilityOwner

@@ -403,6 +403,11 @@ export function calculateTaxYear(input: CalcInput, opts: CalcOptions = {}): TaxR
       totalFederalTax,
       totalTax,
       earlyWithdrawalPenalty: 0,
+      // Set by the projection, which is the only layer that knows about
+      // advisor-entered tax adjustments. With nothing withheld, the balance due
+      // is the whole liability.
+      taxAlreadyPaid: 0,
+      balanceDue: totalTax,
     },
     diag: {
       marginalFederalRate: calcMarginalRate(incomeTaxBase, brackets),

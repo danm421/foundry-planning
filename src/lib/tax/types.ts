@@ -335,6 +335,14 @@ export interface TaxResult {
     /** Early-withdrawal penalty (10%) — transfer penalty + gap-fill supplemental
      *  penalty. Included in totalTax/totalFederalTax. 0 when no pre-59½ draws. */
     earlyWithdrawalPenalty: number;
+    /** Tax already withheld or paid on advisor-entered tax adjustments, clamped
+     *  to `totalTax`. A PAYMENT, not a deduction: it is subtracted from the
+     *  cash-flow tax expense and never from `totalTax`, which stays the full
+     *  liability. 0 when the plan records no withholding. */
+    taxAlreadyPaid: number;
+    /** `totalTax − taxAlreadyPaid`, floored at 0. What the plan actually pays
+     *  out of cash flow this year. Equals `totalTax` when nothing was withheld. */
+    balanceDue: number;
   };
   diag: {
     marginalFederalRate: number;

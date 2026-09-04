@@ -114,3 +114,62 @@ describe("tax adjustments in the projection", () => {
     expect(JSON.stringify(b)).toBe(JSON.stringify(a));
   });
 });
+
+describe("withholding recorded on an adjustment", () => {
+  const bonus: TaxAdjustmentRow = {
+    id: "adj-bonus",
+    taxType: "earned_income",
+    name: "Q1 bonus, already banked",
+    annualAmount: 100_000,
+    growthRate: 0,
+    startYear: 2026,
+    endYear: 2026,
+    withheldMode: "amount",
+    withheldValue: 22_000,
+  };
+  const noWithhold: TaxAdjustmentRow = { ...bonus, withheldMode: "none", withheldValue: 0 };
+
+  it("reduces the cash-flow tax line but never the reported liability", () => {
+    const a = runProjection({ ...buildBaseClient(), taxAdjustments: [noWithhold] });
+    const b = runProjection({ ...buildBaseClient(), taxAdjustments: [bonus] });
+
+    // Liability is identical — withholding is a payment, not a deduction.
+    expect(b[0].taxResult!.flow.totalTax).toBeCloseTo(a[0].taxResult!.flow.totalTax, 2);
+    // Cash paid drops by exactly the withheld amount.
+    expect(a[0].expenses.taxes - b[0].expenses.taxes).toBeCloseTo(22_000, 2);
+    expect(b[0].taxResult!.flow.taxAlreadyPaid).toBeCloseTo(22_000, 2);
+    expect(b[0].taxResult!.flow.balanceDue).toBeCloseTo(
+      b[0].taxResult!.flow.totalTax - 22_000,
+      2,
+    );
+  });
+
+  // `expenses.total` is summed INSIDE the same object literal, and one of its
+  // terms is the raw `totalTaxes`. Netting `expenses.taxes` alone leaves the
+  // total overstated and disagreeing with its own tax line — a bug that ships
+  // green without this test.
+  it("nets the withheld amount out of expenses.total too", () => {
+    const a = runProjection({ ...buildBaseClient(), taxAdjustments: [noWithhold] });
+    const b = runProjection({ ...buildBaseClient(), taxAdjustments: [bonus] });
+
+    expect(a[0].expenses.total - b[0].expenses.total).toBeCloseTo(22_000, 2);
+    // And the total still agrees with the netted line it is built from.
+    expect(a[0].expenses.total - a[0].expenses.taxes).toBeCloseTo(
+      b[0].expenses.total - b[0].expenses.taxes,
+      2,
+    );
+  });
+
+  it("reconciles in the expense drill-down", () => {
+    const r = runProjection({ ...buildBaseClient(), taxAdjustments: [bonus] });
+    expect(r[0].expenses.bySource["tax_withheld_adjustments"]).toBeCloseTo(-22_000, 2);
+  });
+
+  it("clamps at zero rather than producing a refund inflow", () => {
+    const over: TaxAdjustmentRow = { ...bonus, withheldValue: 10_000_000 };
+    const r = runProjection({ ...buildBaseClient(), taxAdjustments: [over] });
+    expect(r[0].expenses.taxes).toBe(0);
+    expect(r[0].taxResult!.flow.balanceDue).toBe(0);
+    expect(r[0].taxResult!.flow.taxAlreadyPaid).toBeCloseTo(r[0].taxResult!.flow.totalTax, 2);
+  });
+});
