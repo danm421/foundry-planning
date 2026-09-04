@@ -138,9 +138,12 @@ export function calculateTaxYearFlat(input: FlatCalcInput): TaxResult {
       totalTax: total,
       earlyWithdrawalPenalty: 0,
       // See calculate.ts: the projection overwrites both when an adjustment
-      // records withholding.
+      // records withholding. Floored for the same reason — `max(0, total)` is
+      // what `max(0, totalTax − taxAlreadyPaid)` reduces to at zero withholding,
+      // and matching the formula rather than relying on `safeTaxable` already
+      // being clamped keeps the field's meaning identical across both builders.
       taxAlreadyPaid: 0,
-      balanceDue: total,
+      balanceDue: Math.max(0, total),
     },
     diag: {
       marginalFederalRate: input.flatFederalRate,

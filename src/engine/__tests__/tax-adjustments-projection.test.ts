@@ -165,6 +165,31 @@ describe("withholding recorded on an adjustment", () => {
     expect(r[0].expenses.bySource["tax_withheld_adjustments"]).toBeCloseTo(-22_000, 2);
   });
 
+  // `withheldMode: "percent"` has no end-to-end coverage otherwise. 22% of the
+  // $100,000 row is the same $22,000 the "amount" row states outright, so the
+  // two modes must produce an identical projection — a stronger assertion than
+  // re-checking the number, since it also catches the percent arm being applied
+  // to the wrong base.
+  it("applies percent-mode withholding to the adjustment amount", () => {
+    const pct: TaxAdjustmentRow = { ...bonus, withheldMode: "percent", withheldValue: 0.22 };
+    const r = runProjection({ ...buildBaseClient(), taxAdjustments: [pct] });
+    const asAmount = runProjection({ ...buildBaseClient(), taxAdjustments: [bonus] });
+
+    expect(r[0].taxResult!.flow.taxAlreadyPaid).toBeCloseTo(22_000, 2);
+    expect(r[0].expenses.taxes).toBeCloseTo(asAmount[0].expenses.taxes, 2);
+    expect(r[0].expenses.bySource["tax_withheld_adjustments"]).toBeCloseTo(-22_000, 2);
+  });
+
+  // Covers the `if (taxAlreadyPaid > 0)` guard directly — only transitively
+  // exercised otherwise. The key must be ABSENT, not present-and-zero: a `-0`
+  // row would show up in the expense drill-down as a phantom line.
+  it("writes no drill-down row when nothing was withheld", () => {
+    const r = runProjection({ ...buildBaseClient(), taxAdjustments: [noWithhold] });
+    expect(r[0].expenses.bySource).not.toHaveProperty("tax_withheld_adjustments");
+    expect(r[0].taxResult!.flow.taxAlreadyPaid).toBe(0);
+    expect(r[0].taxResult!.flow.balanceDue).toBeCloseTo(r[0].taxResult!.flow.totalTax, 2);
+  });
+
   it("clamps at zero rather than producing a refund inflow", () => {
     const over: TaxAdjustmentRow = { ...bonus, withheldValue: 10_000_000 };
     const r = runProjection({ ...buildBaseClient(), taxAdjustments: [over] });

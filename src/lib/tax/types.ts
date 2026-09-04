@@ -340,8 +340,14 @@ export interface TaxResult {
      *  cash-flow tax expense and never from `totalTax`, which stays the full
      *  liability. 0 when the plan records no withholding. */
     taxAlreadyPaid: number;
-    /** `totalTax − taxAlreadyPaid`, floored at 0. What the plan actually pays
-     *  out of cash flow this year. Equals `totalTax` when nothing was withheld. */
+    /** `max(0, totalTax − taxAlreadyPaid)` — the Form 1040 "balance due" line:
+     *  the liability less the payments already made, floored at 0 because a
+     *  return cannot owe a negative amount. With nothing withheld this is
+     *  `max(0, totalTax)`, NOT bare `totalTax` — `totalTax` goes negative in a
+     *  refundable-credit year (see `calculate.ts`, which subtracts ACTC/AOTC
+     *  outside its own floor on purpose), and this field floors that away.
+     *  Deliberately NOT the cash-flow tax line: `expenses.taxes` keeps such a
+     *  year's refund as a negative expense, which this floor would erase. */
     balanceDue: number;
   };
   diag: {

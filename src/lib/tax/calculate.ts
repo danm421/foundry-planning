@@ -404,10 +404,13 @@ export function calculateTaxYear(input: CalcInput, opts: CalcOptions = {}): TaxR
       totalTax,
       earlyWithdrawalPenalty: 0,
       // Set by the projection, which is the only layer that knows about
-      // advisor-entered tax adjustments. With nothing withheld, the balance due
-      // is the whole liability.
+      // advisor-entered tax adjustments. With nothing withheld the balance due
+      // is the whole liability — but still floored, because `totalTax` above is
+      // deliberately negative in a refundable-credit year and a return cannot
+      // owe a negative amount. Must reduce to the same `max(0, totalTax −
+      // taxAlreadyPaid)` the projection applies, or one field means two things.
       taxAlreadyPaid: 0,
-      balanceDue: totalTax,
+      balanceDue: Math.max(0, totalTax),
     },
     diag: {
       marginalFederalRate: calcMarginalRate(incomeTaxBase, brackets),

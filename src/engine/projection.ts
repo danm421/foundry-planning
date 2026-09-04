@@ -7355,6 +7355,16 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // so the actual checking debit is unaffected.
     // Applies on BOTH funding paths: the hasChecking convergence loop and the
     // legacy no-checking branch (H7) populate `supplementalPlan` the same way.
+    //
+    // EXCEPTION — recorded withholding. That tie-out holds only while nothing
+    // was withheld. In any year a tax adjustment records withholding, the two
+    // lines diverge BY DESIGN by exactly `flow.taxAlreadyPaid`: see the netting
+    // immediately below. `expenses.taxes` reads `totalTax − taxAlreadyPaid`
+    // (that cash was already paid, so the plan must not withdraw it twice)
+    // while `flow.totalTax` stays the full liability. The general form of the
+    // invariant is therefore `expenses.taxes == flow.totalTax −
+    // flow.taxAlreadyPaid`, which reduces to the equality above at zero
+    // withholding. `projection-tax-tieout.test.ts` covers both arms.
     if (supplementalEarlyPenalty > 0) {
       finalTaxResult.flow.earlyWithdrawalPenalty += supplementalEarlyPenalty;
       finalTaxResult.flow.totalTax += supplementalEarlyPenalty;
