@@ -3,10 +3,9 @@ import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { parseYear } from "@/lib/tax-returns/assemble-analysis";
 import { computeReconciliation } from "@/lib/tax-reconciliation/reconcile";
+import { LOAD_FAILURE_STATUS } from "@/lib/tax-reconciliation/load-input";
 
 export const dynamic = "force-dynamic";
-
-export const LOAD_FAILURE_STATUS = { not_found: 404, facts_unreadable: 409, no_plan: 409 } as const;
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string; taxYear: string }> }) {
   try {

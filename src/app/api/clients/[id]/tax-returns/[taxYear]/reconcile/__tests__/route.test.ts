@@ -31,7 +31,13 @@ import { POST as DISMISS, DELETE as RESTORE } from "../dismiss/route";
 
 const CLIENT_ID = "11111111-1111-1111-1111-111111111111";
 const params = { params: Promise.resolve({ id: CLIENT_ID, taxYear: "2025" }) };
-const recon = { taxYear: 2025, planYear: 2026, sections: [], checks: [], dismissed: [], notes: [], overview: {} };
+const badYearParams = { params: Promise.resolve({ id: CLIENT_ID, taxYear: "abc" }) };
+// "tax.federal" lives in `checks` so the dismiss/restore suggestion-id validation
+// (Change 6) accepts it in every test below without each test having to build its own bundle.
+const recon = { taxYear: 2025, planYear: 2026, sections: [], checks: [{ id: "tax.federal", label: "", returnDisplay: "", planDisplay: "" }], dismissed: [], notes: [], overview: {} };
+// A DISTINCT object from `recon`, so a test can prove which of the two computeReconciliation
+// calls (pre-write "before" vs post-write "after") a route response actually carries.
+const reconAfter = { ...recon, notes: ["after-write"] };
 const json = (body: unknown, method = "POST") => new NextRequest("http://test", { method, body: JSON.stringify(body), headers: { "content-type": "application/json" } });
 
 beforeEach(() => {
@@ -53,7 +59,7 @@ describe("GET …/reconcile", () => {
     res = await GET(new NextRequest("http://test"), params);
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: "no_plan", message: "no plan" });
-    expect((await GET(new NextRequest("http://test"), { params: Promise.resolve({ id: CLIENT_ID, taxYear: "abc" }) })).status).toBe(400);
+    expect((await GET(new NextRequest("http://test"), badYearParams)).status).toBe(400);
   });
 
   // Binding decision #3: every LOAD_FAILURE_STATUS arm gets pinned by its own
@@ -86,20 +92,29 @@ describe("GET …/reconcile", () => {
 });
 
 describe("POST …/reconcile/apply", () => {
-  it("passes only suggestionId/amount/owner to the applier with the caller's identity", async () => {
+  it("passes only suggestionId/amount/owner to the applier with the caller's identity, and returns its payload verbatim", async () => {
     vi.mocked(applySuggestion).mockResolvedValue({ ok: true, applied: { suggestionId: "s", summary: "done" }, reconciliation: recon as never });
     const res = await APPLY(json({ suggestionId: "income.wages.w2.0", amount: 1, owner: "client", target: { kind: "client.update" } }), params);
     expect(res.status).toBe(200);
     expect(applySuggestion).toHaveBeenCalledWith({ clientId: CLIENT_ID, firmId: "org_1", actorId: "user_1", callerOrgId: "org_1", taxYear: 2025, suggestionId: "income.wages.w2.0", amount: 1, owner: "client" });
+    // Change 2: the 200 payload itself — {applied, reconciliation} — is exactly what Task 13 reads.
+    expect(await res.json()).toEqual({ applied: { suggestionId: "s", summary: "done" }, reconciliation: recon });
   });
 
-  it("400s a malformed body and maps applier failures to their status, carrying the stale bundle", async () => {
+  it("400s a malformed body and maps applier failures to their status, carrying the stale bundle and its human message", async () => {
     expect((await APPLY(json({ amount: 1 }), params)).status).toBe(400);
     expect((await APPLY(json({ suggestionId: "x", owner: "everyone" }), params)).status).toBe(400);
-    vi.mocked(applySuggestion).mockResolvedValueOnce({ ok: false, status: 409, error: "stale", reconciliation: recon as never });
+    vi.mocked(applySuggestion).mockResolvedValueOnce({ ok: false, status: 409, error: "stale", message: "This suggestion is no longer available.", reconciliation: recon as never });
     const res = await APPLY(json({ suggestionId: "x" }), params);
     expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject({ error: "stale", reconciliation: { taxYear: 2025 } });
+    // Change 1: a bare code ("stale") is never the only thing in the body — `message` rides along.
+    expect(await res.json()).toEqual({ error: "stale", message: "This suggestion is no longer available.", reconciliation: recon });
+  });
+
+  it("400s a non-numeric tax year before calling the applier", async () => {
+    const res = await APPLY(json({ suggestionId: "x" }), badYearParams);
+    expect(res.status).toBe(400);
+    expect(applySuggestion).not.toHaveBeenCalled();
   });
 
   // Ruling R91 / binding decision #2: the applier's two failure shapes are deliberately
@@ -119,30 +134,81 @@ describe("POST …/reconcile/apply", () => {
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: "Active subscription required" });
   });
+
+  it("401s when the caller has no session", async () => {
+    const { requireOrgAndUser } = await import("@/lib/db-helpers");
+    vi.mocked(requireOrgAndUser).mockRejectedValueOnce(new UnauthorizedError());
+    const res = await APPLY(json({ suggestionId: "x" }), params);
+    expect(res.status).toBe(401);
+    expect(applySuggestion).not.toHaveBeenCalled();
+  });
 });
 
 describe("dismiss / restore", () => {
-  it("dismisses, audits, and returns the recomputed bundle; 503s in the migration window", async () => {
+  it("dismisses, audits, and returns the recomputed (after, not before) bundle", async () => {
     vi.mocked(addDismissal).mockResolvedValue("ok");
+    // Change 3: distinct before/after fixtures, so the response body proves which
+    // compute call the route actually surfaced.
+    vi.mocked(computeReconciliation)
+      .mockResolvedValueOnce({ ok: true, taxReturnId: "tr-1", reconciliation: recon as never })
+      .mockResolvedValueOnce({ ok: true, taxReturnId: "tr-1", reconciliation: reconAfter as never });
     const res = await DISMISS(json({ suggestionId: "tax.federal" }), params);
     expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ reconciliation: reconAfter });
     expect(addDismissal).toHaveBeenCalledWith("tr-1", "tax.federal", "user_1");
     expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({ action: "tax_reconciliation.dismiss", metadata: expect.objectContaining({ suggestionId: "tax.federal" }) }));
     expect(computeReconciliation).toHaveBeenCalledTimes(2);
-    vi.mocked(addDismissal).mockResolvedValueOnce("unavailable");
-    expect((await DISMISS(json({ suggestionId: "tax.federal" }), params)).status).toBe(503);
   });
 
-  it("restores with DELETE", async () => {
+  it("503s in the migration window without dismissing or auditing, and never runs the post-write compute", async () => {
+    vi.mocked(addDismissal).mockResolvedValueOnce("unavailable");
+    const res = await DISMISS(json({ suggestionId: "tax.federal" }), params);
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: "dismissals_unavailable" });
+    expect(recordAudit).not.toHaveBeenCalled();
+    expect(computeReconciliation).toHaveBeenCalledTimes(1); // only the pre-write "before" compute
+  });
+
+  it("falls back to the pre-write bundle when the post-write recompute fails", async () => {
+    vi.mocked(addDismissal).mockResolvedValue("ok");
+    vi.mocked(computeReconciliation)
+      .mockResolvedValueOnce({ ok: true, taxReturnId: "tr-1", reconciliation: recon as never })
+      .mockResolvedValueOnce({ ok: false, code: "not_found", message: "gone" });
+    const res = await DISMISS(json({ suggestionId: "tax.federal" }), params);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ reconciliation: recon });
+  });
+
+  it("restores with DELETE and returns the recomputed (after) bundle", async () => {
     vi.mocked(removeDismissal).mockResolvedValue("ok");
+    vi.mocked(computeReconciliation)
+      .mockResolvedValueOnce({ ok: true, taxReturnId: "tr-1", reconciliation: recon as never })
+      .mockResolvedValueOnce({ ok: true, taxReturnId: "tr-1", reconciliation: reconAfter as never });
     const res = await RESTORE(json({ suggestionId: "tax.federal" }, "DELETE"), params);
     expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ reconciliation: reconAfter });
     expect(removeDismissal).toHaveBeenCalledWith("tr-1", "tax.federal");
     expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({ action: "tax_reconciliation.restore" }));
   });
 
+  // Change 4: removeDismissal's own "unavailable" arm — a DIFFERENT function than
+  // addDismissal's, on the DELETE path, previously untested.
+  it("503s a restore when removeDismissal is unavailable", async () => {
+    vi.mocked(removeDismissal).mockResolvedValueOnce("unavailable");
+    const res = await RESTORE(json({ suggestionId: "tax.federal" }, "DELETE"), params);
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: "dismissals_unavailable" });
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
   it("400s a body with no suggestionId, before touching the store", async () => {
     const res = await DISMISS(json({}), params);
+    expect(res.status).toBe(400);
+    expect(addDismissal).not.toHaveBeenCalled();
+  });
+
+  it("400s a non-numeric tax year before doing anything", async () => {
+    const res = await DISMISS(json({ suggestionId: "tax.federal" }), badYearParams);
     expect(res.status).toBe(400);
     expect(addDismissal).not.toHaveBeenCalled();
   });
@@ -157,11 +223,30 @@ describe("dismiss / restore", () => {
     expect(addDismissal).not.toHaveBeenCalled();
   });
 
+  // Change 6: an id that isn't in the bundle's sections, checks, or dismissed list is
+  // rejected before it can be persisted into the (unbounded, unvalidated) store.
+  it("rejects a suggestionId that doesn't appear in the bundle, before touching the store", async () => {
+    const res = await DISMISS(json({ suggestionId: "bogus.unknown" }), params);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "Unknown suggestion" });
+    expect(addDismissal).not.toHaveBeenCalled();
+  });
+
   it("maps a ForbiddenError thrown by its own gate to 403, not 500", async () => {
     const { requireActiveSubscriptionForFirm } = await import("@/lib/authz");
     vi.mocked(requireActiveSubscriptionForFirm).mockRejectedValueOnce(new ForbiddenError("Active subscription required"));
     const res = await DISMISS(json({ suggestionId: "tax.federal" }), params);
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: "Active subscription required" });
+  });
+
+  // Change 4: crossFirmAuditMeta's shared-access arm. Every other test's
+  // requireClientEditAccess mock resolves "own", so a route that hardcoded
+  // { access: "own" } into the audit call would still pass every other test.
+  it("stamps crossFirmActor when the caller holds only a cross-firm shared-edit grant", async () => {
+    vi.mocked(requireClientEditAccess).mockResolvedValueOnce({ firmId: "org_1", access: "shared" } as never);
+    vi.mocked(addDismissal).mockResolvedValue("ok");
+    await DISMISS(json({ suggestionId: "tax.federal" }), params);
+    expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.objectContaining({ crossFirmActor: true, actorFirmId: "org_1" }) }));
   });
 });

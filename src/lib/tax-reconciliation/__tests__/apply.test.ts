@@ -233,26 +233,28 @@ describe("applySuggestion", () => {
     expect(m.recordAudit).not.toHaveBeenCalled();
   });
 
-  it("404s an unknown id and 409s a stale one (dismissed or now in line), returning the fresh bundle", async () => {
+  it("404s an unknown id and 409s a stale one (dismissed or now in line), returning the fresh bundle and a human message", async () => {
     expect(await applySuggestion(args({ suggestionId: "nope" }))).toMatchObject({ ok: false, status: 404 });
     m.computeReconciliation.mockResolvedValueOnce({ ok: true, taxReturnId: "tr-1", reconciliation: recon([], [], [{ id: "income.wages.w2.0.create", label: "", returnDisplay: "", planDisplay: "" }]) });
     const stale = await applySuggestion(args());
     expect(stale).toMatchObject({ ok: false, status: 409, error: "stale" });
+    // The bare code "stale" is never the only thing an advisor sees — a prose message rides along.
+    expect(stale.ok === false && stale.message).toMatch(/no longer available/i);
     expect(stale.ok === false && stale.reconciliation?.checks.length).toBe(1);
 
     m.computeReconciliation.mockResolvedValueOnce({ ok: true, taxReturnId: "tr-1", reconciliation: recon([], [{ ...w2Create, status: "dismissed" }]) });
-    expect(await applySuggestion(args())).toMatchObject({ ok: false, status: 409, error: "stale" });
+    expect(await applySuggestion(args())).toMatchObject({ ok: false, status: 409, error: "stale", message: expect.stringMatching(/no longer available/i) });
     for (const f of Object.values(WRITERS)) expect(f).not.toHaveBeenCalled();
   });
 
-  it("passes a core's rejection through verbatim and maps a load failure", async () => {
+  it("passes a core's rejection through verbatim and maps a load failure, carrying its message", async () => {
     m.createIncomeForClient.mockResolvedValueOnce({ ok: false, status: 400, error: "Invalid input; startYear" });
     expect(await applySuggestion(args())).toEqual({ ok: false, status: 400, error: "Invalid input; startYear" });
     expect(m.recordAudit).not.toHaveBeenCalled();
     m.computeReconciliation.mockResolvedValueOnce({ ok: false, code: "no_plan", message: "no plan" });
-    expect(await applySuggestion(args())).toMatchObject({ ok: false, status: 409, error: "no_plan" });
+    expect(await applySuggestion(args())).toMatchObject({ ok: false, status: 409, error: "no_plan", message: "no plan" });
     m.computeReconciliation.mockResolvedValueOnce({ ok: false, code: "not_found", message: "gone" });
-    expect(await applySuggestion(args())).toMatchObject({ ok: false, status: 404, error: "not_found" });
+    expect(await applySuggestion(args())).toMatchObject({ ok: false, status: 404, error: "not_found", message: "gone" });
   });
 
   it("returns the pre-write bundle when the recompute after a successful write fails", async () => {

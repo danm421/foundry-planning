@@ -22,6 +22,14 @@ export interface LoadedInput {
 }
 export interface LoadFailure { ok: false; code: "not_found" | "facts_unreadable" | "no_plan"; message: string }
 
+/** The one mapping from a `LoadFailure.code` to its HTTP status — shared by the GET
+ *  route, the dismiss/restore route, and `applySuggestion`'s own pre-write compute, so
+ *  the table exists exactly once and can't drift between call sites. Kept here rather
+ *  than in a `route.ts` (a value export the App Router's generated route types don't
+ *  recognize — Turbopack tolerates it today, but the webpack type-checker `route.ts`
+ *  build rejects a non-handler export via its generated `RouteHandlerConfig`). */
+export const LOAD_FAILURE_STATUS = { not_found: 404, facts_unreadable: 409, no_plan: 409 } as const;
+
 async function loadBaseDeductions(clientId: string): Promise<PlanDeduction[]> {
   const [base] = await db.select({ id: scenarios.id }).from(scenarios).where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true)));
   if (!base) return [];

@@ -7,11 +7,21 @@ import { recordAudit } from "@/lib/audit";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { parseYear } from "@/lib/tax-returns/assemble-analysis";
 import { computeReconciliation } from "@/lib/tax-reconciliation/reconcile";
+import { LOAD_FAILURE_STATUS } from "@/lib/tax-reconciliation/load-input";
 import { addDismissal, removeDismissal } from "@/lib/tax-reconciliation/dismissals-store";
-import { LOAD_FAILURE_STATUS } from "../route";
+import type { Reconciliation } from "@/lib/tax-reconciliation/types";
 
 export const dynamic = "force-dynamic";
 const bodySchema = z.object({ suggestionId: z.string().min(1) });
+
+/** True when `id` names a suggestion, check, or already-dismissed item this reconciliation
+ *  actually produced — mode-agnostic on purpose (a dismiss id and a restore id are drawn
+ *  from different arrays, but both must be REAL). Without this, an edit-access advisor could
+ *  persist any string into the (unbounded, unvalidated) dismissals table. `before` is already
+ *  in hand for the year check, so this costs nothing extra to compute. */
+function isKnownSuggestionId(r: Reconciliation, id: string): boolean {
+  return r.sections.some((s) => s.items.some((item) => item.id === id)) || r.checks.some((c) => c.id === id) || r.dismissed.some((d) => d.id === id);
+}
 
 async function handle(request: NextRequest, params: Promise<{ id: string; taxYear: string }>, mode: "dismiss" | "restore") {
   try {
@@ -29,6 +39,7 @@ async function handle(request: NextRequest, params: Promise<{ id: string; taxYea
     // the second returns the post-write bundle the page renders.
     const before = await computeReconciliation(id, firmId, taxYear);
     if (!before.ok) return NextResponse.json({ error: before.code, message: before.message }, { status: LOAD_FAILURE_STATUS[before.code] });
+    if (!isKnownSuggestionId(before.reconciliation, suggestionId)) return NextResponse.json({ error: "Unknown suggestion" }, { status: 404 });
     const outcome = mode === "dismiss" ? await addDismissal(before.taxReturnId, suggestionId, userId) : await removeDismissal(before.taxReturnId, suggestionId);
     if (outcome === "unavailable") return NextResponse.json({ error: "dismissals_unavailable" }, { status: 503 });
 

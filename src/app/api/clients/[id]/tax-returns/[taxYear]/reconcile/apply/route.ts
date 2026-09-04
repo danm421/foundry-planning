@@ -24,12 +24,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const { firmId } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
     const parsed = bodySchema.safeParse(await request.json().catch(() => null));
-    if (!parsed.success) return NextResponse.json({ error: "suggestionId is required; amount must be a number; owner must be client, spouse or split" }, { status: 400 });
+    if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid request" }, { status: 400 });
     // `access` is deliberately NOT forwarded — applySuggestion resolves its own
     // authoritative access from requireClientEditAccess and would reject an
     // extra field on ApplyArgs at compile time if it were.
     const r = await applySuggestion({ clientId: id, firmId, actorId: userId, callerOrgId, taxYear, ...parsed.data });
-    if (!r.ok) return NextResponse.json({ error: r.error, ...(r.reconciliation ? { reconciliation: r.reconciliation } : {}) }, { status: r.status });
+    // `r.message` carries the advisor-facing sentence; `r.error` alone can be a bare
+    // machine code ("stale", "no_plan", …) that must never be the only thing a human sees.
+    if (!r.ok) return NextResponse.json({ error: r.error, ...(r.message ? { message: r.message } : {}), ...(r.reconciliation ? { reconciliation: r.reconciliation } : {}) }, { status: r.status });
     return NextResponse.json({ applied: r.applied, reconciliation: r.reconciliation });
   } catch (err) {
     const r = authErrorResponse(err);

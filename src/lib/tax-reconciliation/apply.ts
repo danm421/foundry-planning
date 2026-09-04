@@ -15,6 +15,7 @@ import { createSavingsRuleForClient, updateSavingsRuleForClient } from "@/lib/cl
 import type { EntityWriteResult } from "@/lib/clients/entity-write-result";
 import { fmtUsd } from "@/lib/tax-analysis/format";
 import { computeReconciliation } from "./reconcile";
+import { LOAD_FAILURE_STATUS } from "./load-input";
 import * as w from "./writers";
 import type { ActionTarget, OwnerChoice, Reconciliation, Suggestion } from "./types";
 
@@ -24,9 +25,10 @@ export interface ApplyArgs {
 }
 export type ApplyResult =
   | { ok: true; applied: { suggestionId: string; summary: string }; reconciliation: Reconciliation }
-  | { ok: false; status: number; error: string; reconciliation?: Reconciliation };
-
-const LOAD_STATUS = { not_found: 404, facts_unreadable: 409, no_plan: 409 } as const;
+  // `message`, when present, is the advisor-facing sentence for a bare `error` code
+  // ("stale", "no_plan", "not_found", …) — the route surfaces it so a machine code
+  // never reaches the advisor alone.
+  | { ok: false; status: number; error: string; message?: string; reconciliation?: Reconciliation };
 
 /** The advisor's two edits — amount and owner — folded into the server's own target. */
 function withOverrides(target: ActionTarget, amount: number | undefined, owner: OwnerChoice | undefined): ActionTarget {
@@ -145,13 +147,15 @@ export async function applySuggestion(a: ApplyArgs): Promise<ApplyResult> {
   await requireActiveSubscriptionForFirm(a.firmId);
 
   const before = await computeReconciliation(a.clientId, a.firmId, a.taxYear);
-  if (!before.ok) return { ok: false, status: LOAD_STATUS[before.code], error: before.code };
+  if (!before.ok) return { ok: false, status: LOAD_FAILURE_STATUS[before.code], error: before.code, message: before.message };
   const r = before.reconciliation;
   const s: Suggestion | undefined = r.sections.flatMap((x) => x.items).find((x) => x.id === a.suggestionId);
   if (!s) {
     // Already dismissed, or the plan moved and the gap closed while the page was open.
     const known = r.dismissed.some((d) => d.id === a.suggestionId) || r.checks.some((c) => c.id === a.suggestionId);
-    return known ? { ok: false, status: 409, error: "stale", reconciliation: r } : { ok: false, status: 404, error: "Unknown suggestion" };
+    return known
+      ? { ok: false, status: 409, error: "stale", message: "This suggestion is no longer available — the plan or return may have changed since the page loaded.", reconciliation: r }
+      : { ok: false, status: 404, error: "Unknown suggestion" };
   }
   if (!s.action) return { ok: false, status: 400, error: "This suggestion has no automatic update" };
   if (a.amount !== undefined) {
