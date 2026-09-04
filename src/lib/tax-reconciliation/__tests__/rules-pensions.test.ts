@@ -13,8 +13,11 @@ describe("pensionRules (5% / $500, return > $1,000)", () => {
   it("creates a flat pension when the plan has none", () => {
     const s = pensionRules(inputFixture({ facts: factsWith(24_000) })).suggestions[0];
     expect(s.id).toBe("income.pensions");
-    expect(s.action?.target).toEqual({ kind: "income.create", amountField: "annualAmount",
+    expect(s.action?.target).toEqual({ kind: "income.create", amountField: "annualAmount", ownerField: "owner",
       input: { type: "deferred", name: "Pension (from 2025 return)", owner: "client", annualAmount: 24_000, growthRate: 0, inflationStartYear: 2025, startYear: 2026, endYear: 2060 } });
+    // Line 5a is a household total on a joint return, and ownership drives survivor modelling: a
+    // spouse's pension booked to the client stops paying at the wrong death.
+    expect(s.action?.ownerChoices).toEqual(["client", "spouse"]);
     // Which side is which: $24,000 is what the return reports, $0 is what the plan carries.
     expect(s.kind).toBe("update");
     expect(s.returnFigure.amount).toBe(24_000);
@@ -23,6 +26,15 @@ describe("pensionRules (5% / $500, return > $1,000)", () => {
     expect(s.delta.tone).toBe("missing");
     expect(s.action?.amountEditable).toBe(true);
     expect(s.action?.defaultAmount).toBe(24_000);
+    expect(s.action?.label).toMatch(/\$24,000/);
+    expect(s.action?.describe).toMatch(/\$24,000/);
+  });
+
+  it("offers no owner choice on the created pension when there is no spouse", () => {
+    const plan = planFixture({ client: { filingStatus: "single", dateOfBirth: "1960-04-02", spouseDob: null }, familyMembers: [] });
+    const s = pensionRules(inputFixture({ facts: factsWith(24_000), plan })).suggestions[0];
+    expect(s.action?.ownerChoices).toBeUndefined();
+    expect(s.action?.target).toMatchObject({ kind: "income.create", ownerField: "owner", input: { owner: "client" } });
   });
 
   it("updates one row, reviews two, checks when in line, and stays silent under $1,000", () => {
@@ -40,6 +52,10 @@ describe("pensionRules (5% / $500, return > $1,000)", () => {
     expect(one.planFigure).toMatchObject({ label: "Pension p1", amount: 20_000 });
     expect(one.delta.tone).toBe("short");
     expect(inline.checks).toEqual([{ id: "income.pensions", label: "Pensions", returnDisplay: "$24,000", planDisplay: "$23,800" }]);
+    // Ordered: the return's figure, then the plan's. Exchanging them leaves the prose intact.
+    expect(one.headline).toMatch(/\$24,000[\s\S]*\$20,000/);
+    expect(one.action?.label).toMatch(/\$24,000/);
+    expect(one.action?.describe).toMatch(/\$24,000/);
   });
 
   it("takes the created row's span from plan settings, not from a hardcoded pair of years", () => {
@@ -88,6 +104,8 @@ describe("pensionRules (5% / $500, return > $1,000)", () => {
     expect(s.planFigure).toMatchObject({ label: "Pensions in the plan", amount: 20_000 });
     expect(s.returnFigure.amount).toBe(24_000);
     expect(s.link?.href).toBe(`/clients/${CLIENT_ID}/details/income-expenses`);
+    expect(s.headline).toMatch(/2 pensions/);           // the count is the rows being compared
+    expect(s.headline).toMatch(/\$24,000[\s\S]*\$20,000/); // return first, then the plan
   });
 
   it("uses the 5% leg of the row tolerance, not a looser one", () => {

@@ -1,4 +1,4 @@
-import { ROW, detailsHref, differs, isActiveInYear, makeDelta, money, ref, rowAmountInYear, sum } from "../compare";
+import { ROW, detailsHref, differs, hasSpouse, isActiveInYear, makeDelta, money, ref, rowAmountInYear, sum } from "../compare";
 import type { Rule } from "../types";
 
 export const pensionRules: Rule = (input) => {
@@ -17,8 +17,12 @@ export const pensionRules: Rule = (input) => {
     headline: `The return shows ${money(gross)} of pension income; the plan has none.`,
     meaning: "A pension on line 5a is a stream the plan should carry for life. This adds it flat (no growth); set a cost-of-living adjustment on the row if the pension has one.",
     returnFigure, planFigure, delta: makeDelta(gross, 0),
+    // Line 5a is a household total on a joint return, so it does not say whose pension this is —
+    // and ownership drives survivor modelling, so a spouse's pension booked to the client stops
+    // paying at the wrong death. `owner: "client"` below is only the default the advisor overrides.
     action: { label: `Add pension of ${money(gross)}`, describe: `Adds "Pension (from ${taxYear} return)" of ${money(gross)} a year`, amountEditable: true, defaultAmount: gross,
-      target: { kind: "income.create", amountField: "annualAmount", input: { type: "deferred", name: `Pension (from ${taxYear} return)`, owner: "client", annualAmount: gross, growthRate: 0, inflationStartYear: taxYear, startYear: plan.planSettings.planStartYear, endYear: plan.planSettings.planEndYear } } } }], checks: [] };
+      ownerChoices: hasSpouse(plan) ? ["client", "spouse"] : undefined,
+      target: { kind: "income.create", amountField: "annualAmount", ownerField: "owner", input: { type: "deferred", name: `Pension (from ${taxYear} return)`, owner: "client", annualAmount: gross, growthRate: 0, inflationStartYear: taxYear, startYear: plan.planSettings.planStartYear, endYear: plan.planSettings.planEndYear } } } }], checks: [] };
   if (rows.length === 1) return { suggestions: [{ id, section: "income", kind: "update", status: "open",
     headline: `The return shows ${money(gross)} of pension income; the plan's ${rows[0].name} is ${money(p)} in ${taxYear} dollars.`,
     meaning: "The 1099-R figure is the actual payment. Setting the row to it keeps its growth assumption.",
