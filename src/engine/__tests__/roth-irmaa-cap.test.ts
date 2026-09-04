@@ -270,11 +270,15 @@ function cappedFillUpBracket(targetRate: number, capTier: number | null): RothCo
     sourceAccountIds: ["acc-ira"],
     conversionType: "fill_up_bracket",
     fillUpBracket: targetRate,
+    // Required by the type and ignored by this strategy — the amount is solved,
+    // not stated. Spelled out rather than cast away so a future required field
+    // shows up as a type error here.
+    fixedAmount: 0,
     irmaaCapTier: capTier,
     startYear: 2026,
     endYear: 2026,
     indexingRate: 0,
-  } as RothConversion;
+  };
 }
 
 /** A pension big enough to blow past a tier ceiling on its own. */
@@ -350,6 +354,44 @@ describe("Roth conversion IRMAA cap — ceiling resolution", () => {
       800_000,
       0,
     );
+  });
+
+  it("an INERT cap is byte-identical to no cap, basis and all", () => {
+    // The gross amount alone is a weak read on inertness: the two paths that
+    // can produce it (phase 5b vs the phase-12 joint solve) book DIFFERENT
+    // taxable income when the source IRA holds after-tax basis — the joint
+    // solve's target is a GROSS figure, so booking it as taxable would
+    // over-state the tax bill. An inert cap must never reach that path, so run
+    // the same household twice and compare every reported number.
+    const run = (capTier: number | null) => {
+      const years = runProjection(
+        scenario({
+          clientDob: "1968-01-01", // 58 in 2026 — 60 in premium year 2028
+          filingStatus: "single",
+          medicareCoverage: [coverage("client")],
+          conversion: cappedFixedAmount(800_000, capTier),
+          checkingValue: 1_000_000,
+          iraBasis: 600_000, // 20% of the $3M pool comes back tax-free
+        }),
+      );
+      const y = years.find((yr) => yr.year === 2026)!;
+      const conv = (y.rothConversions ?? [])[0]!;
+      return {
+        gross: conv.gross,
+        taxable: conv.taxable,
+        agi: y.taxResult!.flow.adjustedGrossIncome,
+        incomeTaxBase: y.taxResult!.flow.incomeTaxBase,
+        taxes: y.expenses.taxes,
+      };
+    };
+
+    const inertCap = run(0);
+    const noCap = run(null);
+
+    expect(inertCap.taxable, "basis must still shield 20% of the gross").toBeLessThan(
+      inertCap.gross,
+    );
+    expect(inertCap, "an inert cap must change nothing at all").toEqual(noCap);
   });
 
   it("does not bind in flat tax mode", () => {
@@ -493,6 +535,34 @@ describe("Roth conversion IRMAA cap — the ceiling binds", () => {
     ).toHaveLength(0);
   });
 
+  it("POSITIVE CONTROL: the same scenario with no cap converts in full", () => {
+    // Guards the test above. `gross === 0` would ALSO pass if the conversion
+    // silently never reached the apply path at all — a plausible regression
+    // once conversions are routed between two different apply sites. Identical
+    // household and identical $300K pension; the ONLY difference is the tier,
+    // so a red here means the conversion vanished, not that the cap worked.
+    const years = runProjection(
+      scenario({
+        clientDob: "1958-01-01",
+        spouseDob: "1959-01-01",
+        filingStatus: "married_joint",
+        medicareCoverage: [coverage("client"), coverage("spouse")],
+        conversion: cappedFixedAmount(600_000, null),
+        checkingValue: 500_000,
+        incomes: [pension(300_000)],
+      }),
+    );
+
+    const y2026 = years.find((y) => y.year === 2026);
+    expect(y2026, "year 2026 should exist").toBeDefined();
+    const conv = (y2026!.rothConversions ?? [])[0];
+    expect(conv, "2026 should have a roth conversion").toBeDefined();
+    expect(conv!.gross, "an uncapped conversion ignores the pension entirely").toBeCloseTo(
+      600_000,
+      0,
+    );
+  });
+
   it("takes the SMALLER of the bracket ceiling and the IRMAA ceiling", () => {
     // One conversion, two ceilings: fill the 24% bracket AND stay in tier 0.
     // The tier-0 MAGI ceiling ($224,910.80) is far below what filling the 24%
@@ -562,9 +632,17 @@ describe("Roth conversion IRMAA cap — the ceiling binds", () => {
       conv!.taxable,
       `realized taxable ${conv!.taxable} must not breach the ceiling ${CEILING_2028_MFJ}`,
     ).toBeLessThanOrEqual(CEILING_2028_MFJ);
+
+    // The tax line must be computed on what was REALIZED, not on the gross
+    // target. Booking the target would over-state the household's income by the
+    // shielded basis — a real, advisor-visible tax figure that never happened.
+    const magi = y2026!.taxResult!.flow.adjustedGrossIncome;
     expect(
-      y2026!.taxResult!.flow.adjustedGrossIncome,
-      "the modeled MAGI must not breach the ceiling either",
-    ).toBeLessThanOrEqual(CEILING_2028_MFJ + 1);
+      magi,
+      `MAGI ${magi} should equal the realized taxable ${conv!.taxable}, not the gross ${conv!.gross}`,
+    ).toBeCloseTo(conv!.taxable, 0);
+    expect(magi, "and it must still sit under the ceiling").toBeLessThanOrEqual(
+      CEILING_2028_MFJ + 1,
+    );
   });
 });
