@@ -22,7 +22,12 @@ import type {
   RothConversion,
   EducationGoalYear,
 } from "./types";
-import { computeMedicareYear, inflateIrmaaTiers } from "./medicare";
+import {
+  computeMedicareYear,
+  inflateIrmaaTiers,
+  irmaaCapCeiling,
+  isEnrolledInYear,
+} from "./medicare";
 import { resolveResidenceState } from "./relocation";
 import {
   computeBusinessAccountCashFlow,
@@ -4909,6 +4914,88 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // No caller until the IRMAA cap lands — the sizer's second ceiling.
     const selectMagi = (p: { incomeTaxBase: number; magi: number }) => p.magi;
 
+    // Hoisted from the Medicare/IRMAA block further down so `resolveIrmaaCeiling`
+    // (immediately below) can read it. The initializer touches nothing but
+    // `data.medicareCoverage`, so it is safe this early in the year.
+    const medicareCoverageByOwner: Record<"client" | "spouse", MedicareCoverage | undefined> = {
+      client: data.medicareCoverage?.find((c) => c.owner === "client"),
+      spouse: data.medicareCoverage?.find((c) => c.owner === "spouse"),
+    };
+
+    /** The MAGI ceiling a capped conversion must respect this year, or null
+     *  when the cap does not bind.
+     *
+     *  ⚠️ THREE RULES, EACH OF WHICH LOOKS OPTIONAL AND IS NOT:
+     *
+     *  1. PREMIUM YEAR = year + 2. IRMAA charges year N's premium against
+     *     year N-2's MAGI, so a conversion made NOW sets the premium TWO
+     *     YEARS OUT and must aim at THAT year's thresholds. They inflate
+     *     ~3%/yr, so aiming at this year's silently steals ~6% of the
+     *     headroom — about $13K of MFJ tier-1 room. The result looks right.
+     *
+     *  2. ENROLLMENT GATE. If nobody is enrolled in the premium year there is
+     *     no premium to protect and the cap MUST NOT bind — otherwise a
+     *     58-year-old gets throttled for a surcharge that will never be
+     *     charged. In practice the cap starts biting at age 63.
+     *
+     *  3. FILING STATUS IS THE PREMIUM YEAR'S. If the first death falls
+     *     between now and then, the survivor files single and the thresholds
+     *     roughly HALVE. Reading `client.filingStatus` here instead would
+     *     hand a survivor joint-sized headroom.
+     */
+    const resolveIrmaaCeiling = (conv: RothConversion): number | null => {
+      if (conv.irmaaCapTier == null) return null;
+      if (!taxResolver) return null;
+      // Flat tax mode has no AGI to read: `buildTaxProbe` short-circuits on
+      // `!useBracket || !resolved` and returns a taxable-income proxy as its
+      // `magi` (see the "Placeholder only" comment at that early return).
+      // Sizing a MAGI ceiling against that number would quietly produce a wrong
+      // conversion amount, so the cap goes inert here instead — the same
+      // posture as the enrollment gate below.
+      if (!useBracket || !resolved) return null;
+
+      const premiumYear = year + 2;
+
+      // Rule 2 — enrollment gate. `ages.*` are THIS year's ages, so the
+      // premium-year ages are simply +2.
+      const enrolledInPremiumYear = [
+        [medicareCoverageByOwner.client, ages.client] as const,
+        [medicareCoverageByOwner.spouse, ages.spouse] as const,
+      ].some(
+        ([cov, ageNow]) =>
+          cov != null &&
+          ageNow !== undefined &&
+          isEnrolledInYear(cov, ageNow + 2, premiumYear),
+      );
+      if (!enrolledInPremiumYear) return null;
+
+      const premiumResolved = taxResolver.getYear(premiumYear);
+      const premiumParams = premiumResolved?.params;
+      const rawMfj = (premiumParams?.irmaaBracketsMfj ?? []) as IrmaaTier[];
+      const rawSingle = (premiumParams?.irmaaBracketsSingle ?? []) as IrmaaTier[];
+      if (rawMfj.length === 0 || rawSingle.length === 0) return null;
+
+      // Same Medicare inflation the premium block applies, resolved for the
+      // PREMIUM year rather than this one.
+      const premiumSourceYear = premiumResolved?.sourceYear ?? premiumYear;
+      const medInflationEnabled = data.medicarePremiumInflationEnabled ?? true;
+      const medRate = medInflationEnabled ? (data.medicarePremiumInflationRate ?? 0.03) : 0;
+      const factor = Math.pow(1 + medRate, Math.max(0, premiumYear - premiumSourceYear));
+
+      // Rule 3 — the PREMIUM year's filing status.
+      const statusThen = effectiveFilingStatus(
+        (client.filingStatus ?? "single") as FilingStatus,
+        firstDeathYear,
+        premiumYear,
+      );
+      const tiers = inflateIrmaaTiers(
+        statusThen === "married_joint" ? rawMfj : rawSingle,
+        factor,
+      );
+
+      return irmaaCapCeiling(tiers, conv.irmaaCapTier);
+    };
+
     // Phase 5b: size-only. Splits conversions into bracket-fillers (deferred
     // to phase 12) and the rest (applied here).
     const pendingFillBracketTargets: Record<string, number> = {};
@@ -5094,10 +5181,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // Only fires when (a) at least one household member has a MedicareCoverage
     // row AND (b) the tax resolver has Medicare params seeded for this year —
     // otherwise the household has no Medicare model in scope and we skip.
-    const medicareCoverageByOwner: Record<"client" | "spouse", MedicareCoverage | undefined> = {
-      client: data.medicareCoverage?.find((c) => c.owner === "client"),
-      spouse: data.medicareCoverage?.find((c) => c.owner === "spouse"),
-    };
+    // `medicareCoverageByOwner` is declared above phase 5b — the Roth IRMAA cap
+    // resolver needs it earlier in the year. Declaration moved; this block is
+    // otherwise unchanged.
     const hasAnyCoverage = !!(medicareCoverageByOwner.client || medicareCoverageByOwner.spouse);
     const taxYearParams = resolved?.params;
     const medicareParamsReady =
