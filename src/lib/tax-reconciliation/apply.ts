@@ -4,6 +4,7 @@
 // It never sends a target: the reconciliation is RECOMPUTED here and the write comes
 // from the suggestion the server just built, so a forged body can only choose WHICH
 // of the server's own suggestions to apply, never what it writes.
+import { db } from "@/db";
 import { recordAudit } from "@/lib/audit";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { createIncomeForClient, updateIncomeForClient } from "@/lib/clients/incomes-writes";
@@ -64,6 +65,12 @@ function withOverrides(target: ActionTarget, amount: number | undefined, owner: 
 
 type WriteContext = { clientId: string; firmId: string; actorId: string; crossFirmMeta: Record<string, unknown> };
 
+/** Carries a core's `{ok:false}` out through a transaction throw, so the rejection the
+ *  advisor sees is the core's own rather than a generic 500. */
+class SplitWriteRejected extends Error {
+  constructor(readonly result: { ok: false; status: number; error: string }) { super(result.error); }
+}
+
 /** One target kind, one writer. Exhaustive over `ActionTarget`, so a new kind in the
  *  rules cannot reach production without a route to a writer. */
 async function dispatch(t: ActionTarget, owner: OwnerChoice | undefined, c: WriteContext): Promise<EntityWriteResult<unknown>> {
@@ -84,8 +91,26 @@ async function dispatch(t: ActionTarget, owner: OwnerChoice | undefined, c: Writ
       const chosen = owner === "split" ? t.rows : t.rows.filter((r) => r.owner === (owner ?? "client"));
       if (chosen.length === 0) return { ok: false, status: 400, error: "No Social Security row for that owner" };
       const each = owner === "split" ? t.amount / chosen.length : t.amount;
-      // One writer, not one call per row: a split has to land whole or not at all.
-      return w.claimSocialSecurityForReturn({ ...c, rows: chosen.map((r) => ({ incomeId: r.incomeId, patch: { ...r.patch, annualAmount: each } })) });
+      // A split is TWO row writes. They go through the shared income core — the one
+      // validation path the routes and Forge also use — but on ONE transaction handle,
+      // so a failure on the second cannot leave one spouse's benefit rewritten and the
+      // other's untouched, with the household's total then wrong and nothing flagging it.
+      try {
+        return await db.transaction(async (tx) => {
+          let last: EntityWriteResult<unknown> = { ok: false, status: 500, error: "No Social Security row was written" };
+          for (const r of chosen) {
+            last = await updateIncomeForClient({ ...c, incomeId: r.incomeId, input: { ...r.patch, annualAmount: each }, tx });
+            // The core reports a rejection rather than throwing, so throwing here is
+            // what rolls the sibling write back.
+            if (!last.ok) throw new SplitWriteRejected(last);
+          }
+          return last;
+        });
+      } catch (err) {
+        if (err instanceof SplitWriteRejected) return err.result;
+        console.error("[tax-reconciliation] Social Security claim write failed:", err);
+        return { ok: false, status: 500, error: "Could not record the Social Security benefit" };
+      }
     }
   }
 }

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { and, eq } from "drizzle-orm";
-import { accountOwners, accounts, clientDeductions, clients, entities, incomes, medicareCoverage, planSettings } from "@/db/schema";
+import { accountOwners, accounts, clientDeductions, clients, entities, medicareCoverage, planSettings } from "@/db/schema";
 
 const m = vi.hoisted(() => ({
   update: vi.fn(), insert: vi.fn(), tx: vi.fn(),
@@ -22,35 +22,25 @@ vi.mock("@/lib/audit", () => ({ recordAudit: m.recordAudit }));
 vi.mock("@/lib/clients/base-case", () => ({ baseCaseScenarioId: m.baseCaseScenarioId }));
 
 import {
-  claimSocialSecurityForReturn, createDeductionForReturn, createEntityForReturn, updateClientFilingStatus,
-  updateDeductionAmount, updateEntityTaxTreatment, updatePlanSettingsForReturn, upsertMedicarePriorYearMagi,
+  createDeductionForReturn, createEntityForReturn, updateClientFilingStatus, updateDeductionAmount,
+  updateEntityTaxTreatment, updatePlanSettingsForReturn, upsertMedicarePriorYearMagi,
 } from "../writers";
 
 const c = { clientId: "c1", firmId: "org_1", actorId: "u1", crossFirmMeta: {} };
 
-/** A transaction handle whose every write is recorded against THIS handle, so a test can
- *  prove two writes shared one transaction rather than merely both happening. */
-type TxCall = { op: "insert" | "update"; table: object; values?: object; set?: object; where?: object };
+/** A transaction handle that records every write against THIS handle, so the entity
+ *  create can be shown to run all three inserts inside one transaction. */
+type TxCall = { table: object; values: object };
 function makeTx() {
   const calls: TxCall[] = [];
-  const updateBehavior: Array<() => Promise<unknown>> = [];
-  let updates = 0;
-  const handle = {
+  return {
     calls,
-    /** Queue one result (or rejection) per `tx.update(...).returning()`, in order. */
-    onUpdate(...fns: Array<() => Promise<unknown>>) { updateBehavior.push(...fns); },
     insert: (table: object) => ({ values: (values: object) => {
-      calls.push({ op: "insert", table, values });
+      calls.push({ table, values });
       const rows = table === entities ? [{ id: "e1", name: (values as { name: string }).name }] : [{ id: "acct-1" }];
       return { returning: () => Promise.resolve(rows) };
     } }),
-    update: (table: object) => ({ set: (set: object) => ({ where: (where: object) => ({ returning: () => {
-      calls.push({ op: "update", table, set, where });
-      const fn = updateBehavior[updates++];
-      return fn ? fn() : Promise.resolve([{ id: `row-${updates}` }]);
-    } }) }) }),
   };
-  return handle;
 }
 let tx: ReturnType<typeof makeTx>;
 
@@ -75,7 +65,6 @@ const ALL_WRITERS = [
   { name: "createEntityForReturn", run: () => createEntityForReturn({ ...c, input: { name: "Acme LLC", entityType: "partnership" as const, taxTreatment: "qbi" as const, value: 0 } }), action: "entity.create" },
   { name: "updateEntityTaxTreatment", run: () => updateEntityTaxTreatment({ ...c, entityId: "en1", taxTreatment: "qbi" as const }), action: "entity.update" },
   { name: "upsertMedicarePriorYearMagi", run: () => upsertMedicarePriorYearMagi({ ...c, owner: "spouse" as const, priorYearMagi: 192_000 }), action: "medicare_coverage.upsert" },
-  { name: "claimSocialSecurityForReturn", run: () => claimSocialSecurityForReturn({ ...c, rows: [{ incomeId: "s1", patch: { ssBenefitMode: "manual_amount", claimingAgeMode: "years", claimingAge: 67, startYear: 2026, inflationStartYear: 2025, annualAmount: 31_000 } }] }), action: "income.update" },
 ];
 
 describe("writers — the gate every one of them shares", () => {
@@ -238,53 +227,5 @@ describe("upsertMedicarePriorYearMagi", () => {
       }),
     }));
     expect(m.recordAudit).toHaveBeenCalledWith(expect.objectContaining({ action: "medicare_coverage.upsert", resourceType: "medicare_coverage", resourceId: "c1:spouse" }));
-  });
-});
-
-describe("claimSocialSecurityForReturn", () => {
-  const row = (incomeId: string, annualAmount: number, claimingAge = 67) => ({
-    incomeId, patch: { ssBenefitMode: "manual_amount", claimingAgeMode: "years", claimingAge, startYear: 2026, inflationStartYear: 2025, annualAmount },
-  });
-
-  it("writes both halves of a split through ONE transaction handle, scoped to the client", async () => {
-    const r = await claimSocialSecurityForReturn({ ...c, rows: [row("s1", 31_000), row("s2", 31_000, 65)] });
-    expect(r).toMatchObject({ ok: true, data: { id: "s1" } });
-    expect(m.tx).toHaveBeenCalledTimes(1);
-    expect(m.update).not.toHaveBeenCalled(); // neither write escaped the transaction
-    expect(tx.calls).toHaveLength(2);
-    expect(tx.calls[0]).toMatchObject({ table: incomes, where: and(eq(incomes.id, "s1"), eq(incomes.clientId, "c1")) });
-    expect(tx.calls[0].set).toMatchObject({ ssBenefitMode: "manual_amount", claimingAgeMode: "years", claimingAge: 67, startYear: 2026, inflationStartYear: 2025, annualAmount: "31000" });
-    expect(tx.calls[1]).toMatchObject({ table: incomes, where: and(eq(incomes.id, "s2"), eq(incomes.clientId, "c1")) });
-    expect(tx.calls[1].set).toMatchObject({ claimingAge: 65, annualAmount: "31000" });
-    expect(m.recordAudit).toHaveBeenCalledTimes(2);
-    expect(m.recordAudit).toHaveBeenCalledWith(expect.objectContaining({ action: "income.update", resourceType: "income", resourceId: "s2" }));
-  });
-
-  it("leaves NEITHER row changed when the second write fails — one transaction, no audit", async () => {
-    tx.onUpdate(() => Promise.resolve([{ id: "s1" }]), () => Promise.reject(new Error("connection lost")));
-    const r = await claimSocialSecurityForReturn({ ...c, rows: [row("s1", 31_000), row("s2", 31_000)] });
-    expect(r).toMatchObject({ ok: false, status: 500 });
-    // Both writes were issued on the SAME handle, so the driver's rollback covers the first.
-    expect(tx.calls).toHaveLength(2);
-    expect(m.tx).toHaveBeenCalledTimes(1);
-    expect(m.update).not.toHaveBeenCalled();
-    expect(m.recordAudit).not.toHaveBeenCalled();
-  });
-
-  it("rolls back and 404s when a row id does not belong to the client", async () => {
-    tx.onUpdate(() => Promise.resolve([{ id: "s1" }]), () => Promise.resolve([]));
-    expect(await claimSocialSecurityForReturn({ ...c, rows: [row("s1", 31_000), row("nope", 31_000)] })).toMatchObject({ ok: false, status: 404 });
-    expect(m.recordAudit).not.toHaveBeenCalled();
-  });
-
-  it("refuses a patch that carries a key it does not know how to write", async () => {
-    const bad = { incomeId: "s1", patch: { ...row("s1", 31_000).patch, piaMonthly: 2_400 } };
-    expect(await claimSocialSecurityForReturn({ ...c, rows: [bad] })).toMatchObject({ ok: false, status: 400 });
-    expect(m.tx).not.toHaveBeenCalled();
-  });
-
-  it("refuses an empty row list rather than opening an empty transaction", async () => {
-    expect(await claimSocialSecurityForReturn({ ...c, rows: [] })).toMatchObject({ ok: false, status: 400 });
-    expect(m.tx).not.toHaveBeenCalled();
   });
 });

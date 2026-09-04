@@ -5,8 +5,9 @@ const m = vi.hoisted(() => ({
   computeReconciliation: vi.fn(), createIncomeForClient: vi.fn(), updateIncomeForClient: vi.fn(), updateExpenseForClient: vi.fn(),
   createSavingsRuleForClient: vi.fn(), updateSavingsRuleForClient: vi.fn(), recordAudit: vi.fn(),
   updatePlanSettingsForReturn: vi.fn(), updateClientFilingStatus: vi.fn(), createDeductionForReturn: vi.fn(), updateDeductionAmount: vi.fn(),
-  createEntityForReturn: vi.fn(), updateEntityTaxTreatment: vi.fn(), upsertMedicarePriorYearMagi: vi.fn(), claimSocialSecurityForReturn: vi.fn(),
+  createEntityForReturn: vi.fn(), updateEntityTaxTreatment: vi.fn(), upsertMedicarePriorYearMagi: vi.fn(), transaction: vi.fn(),
 }));
+vi.mock("@/db", () => ({ db: { transaction: m.transaction } }));
 vi.mock("../reconcile", () => ({ computeReconciliation: m.computeReconciliation }));
 vi.mock("@/lib/clients/incomes-writes", () => ({ createIncomeForClient: m.createIncomeForClient, updateIncomeForClient: m.updateIncomeForClient }));
 vi.mock("@/lib/clients/expenses-writes", () => ({ updateExpenseForClient: m.updateExpenseForClient }));
@@ -15,7 +16,7 @@ vi.mock("@/lib/audit", () => ({ recordAudit: m.recordAudit }));
 vi.mock("../writers", () => ({
   updatePlanSettingsForReturn: m.updatePlanSettingsForReturn, updateClientFilingStatus: m.updateClientFilingStatus, createDeductionForReturn: m.createDeductionForReturn,
   updateDeductionAmount: m.updateDeductionAmount, createEntityForReturn: m.createEntityForReturn, updateEntityTaxTreatment: m.updateEntityTaxTreatment,
-  upsertMedicarePriorYearMagi: m.upsertMedicarePriorYearMagi, claimSocialSecurityForReturn: m.claimSocialSecurityForReturn,
+  upsertMedicarePriorYearMagi: m.upsertMedicarePriorYearMagi,
 }));
 
 import { applySuggestion } from "../apply";
@@ -27,9 +28,14 @@ const WRITERS = {
   updatePlanSettingsForReturn: m.updatePlanSettingsForReturn, updateClientFilingStatus: m.updateClientFilingStatus,
   createDeductionForReturn: m.createDeductionForReturn, updateDeductionAmount: m.updateDeductionAmount,
   createEntityForReturn: m.createEntityForReturn, updateEntityTaxTreatment: m.updateEntityTaxTreatment,
-  upsertMedicarePriorYearMagi: m.upsertMedicarePriorYearMagi, claimSocialSecurityForReturn: m.claimSocialSecurityForReturn,
+  upsertMedicarePriorYearMagi: m.upsertMedicarePriorYearMagi,
 } as const;
 type WriterName = keyof typeof WRITERS;
+
+/** The handle `db.transaction` hands its callback. Both halves of a split must carry
+ *  THIS object, which is what makes them one transaction. */
+const TX = { __transaction: true };
+let rolledBack = false;
 
 const base = (over: Partial<Suggestion>): Suggestion => ({ id: "x", section: "income", kind: "update", status: "open", headline: "", meaning: "", returnFigure: { label: "", amount: null, display: "", lineRefs: [] }, planFigure: { label: "", amount: null, display: "", year: 2026 }, delta: { amount: null, display: "", tone: "neutral" }, ...over });
 const w2Create = base({ id: "income.wages.w2.0.create", action: { label: "", describe: 'Adds a salary "Globex" of $90,000 (2025 dollars)', amountEditable: true, defaultAmount: 90_000, ownerChoices: ["client", "spouse"],
@@ -50,6 +56,12 @@ beforeEach(() => {
   vi.clearAllMocks();
   m.computeReconciliation.mockResolvedValue({ ok: true, taxReturnId: "tr-1", reconciliation: recon([w2Create, ssClaim, filing, scheduleCLoss, noAction]) });
   for (const f of Object.values(WRITERS)) f.mockResolvedValue({ ok: true, data: { id: "new" }, resourceId: "new" });
+  // Stands in for the driver: run the callback, and on a throw record the ROLLBACK
+  // and re-raise, exactly as neon-serverless does.
+  rolledBack = false;
+  m.transaction.mockImplementation(async (cb: (t: unknown) => Promise<unknown>) => {
+    try { return await cb(TX); } catch (err) { rolledBack = true; throw err; }
+  });
 });
 
 describe("applySuggestion", () => {
@@ -90,13 +102,36 @@ describe("applySuggestion", () => {
 
   it("splits a two-row Social Security claim in half, or sends the whole amount to one row", async () => {
     await applySuggestion(args({ suggestionId: "income.socialSecurity", owner: "split" }));
-    expect(m.claimSocialSecurityForReturn).toHaveBeenCalledWith(expect.objectContaining({ clientId: "c1", firmId: "org_1", actorId: "user_1",
-      rows: [{ incomeId: "s1", patch: { ssBenefitMode: "manual_amount", annualAmount: 31_000 } }, { incomeId: "s2", patch: { ssBenefitMode: "manual_amount", annualAmount: 31_000 } }] }));
+    expect(m.transaction).toHaveBeenCalledTimes(1);
+    expect(m.updateIncomeForClient).toHaveBeenCalledTimes(2);
+    // Both halves carry the SAME handle: that, not the loop, is what makes them atomic.
+    expect(m.updateIncomeForClient).toHaveBeenNthCalledWith(1, expect.objectContaining({ clientId: "c1", firmId: "org_1", actorId: "user_1", incomeId: "s1", input: { ssBenefitMode: "manual_amount", annualAmount: 31_000 }, tx: TX }));
+    expect(m.updateIncomeForClient).toHaveBeenNthCalledWith(2, expect.objectContaining({ incomeId: "s2", input: { ssBenefitMode: "manual_amount", annualAmount: 31_000 }, tx: TX }));
 
-    m.claimSocialSecurityForReturn.mockClear();
+    m.updateIncomeForClient.mockClear(); m.transaction.mockClear();
     await applySuggestion(args({ suggestionId: "income.socialSecurity", owner: "spouse", amount: 60_000 }));
-    expect(m.claimSocialSecurityForReturn).toHaveBeenCalledWith(expect.objectContaining({
-      rows: [{ incomeId: "s2", patch: { ssBenefitMode: "manual_amount", annualAmount: 60_000 } }] }));
+    expect(m.updateIncomeForClient).toHaveBeenCalledTimes(1);
+    expect(m.updateIncomeForClient).toHaveBeenCalledWith(expect.objectContaining({ incomeId: "s2", input: { ssBenefitMode: "manual_amount", annualAmount: 60_000 }, tx: TX }));
+  });
+
+  it("leaves NEITHER row changed when the second write of a split fails", async () => {
+    m.updateIncomeForClient.mockResolvedValueOnce({ ok: true, data: { id: "s1" }, resourceId: "s1" });
+    m.updateIncomeForClient.mockResolvedValueOnce({ ok: false, status: 404, error: "Income not found" });
+    const r = await applySuggestion(args({ suggestionId: "income.socialSecurity", owner: "split" }));
+    // The core's own rejection reaches the advisor, not a generic 500 …
+    expect(r).toEqual({ ok: false, status: 404, error: "Income not found" });
+    // … and the callback threw, so the driver rolls back — the first row goes with it.
+    expect(rolledBack).toBe(true);
+    expect(m.updateIncomeForClient).toHaveBeenCalledTimes(2);
+    expect(m.recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("maps an unexpected transaction failure to a 500 without auditing", async () => {
+    m.updateIncomeForClient.mockRejectedValueOnce(new Error("connection lost"));
+    const r = await applySuggestion(args({ suggestionId: "income.socialSecurity", owner: "split" }));
+    expect(r).toMatchObject({ ok: false, status: 500 });
+    expect(rolledBack).toBe(true);
+    expect(m.recordAudit).not.toHaveBeenCalled();
   });
 
   it("rejects a bad amount, an amount on a non-editable action, and an owner not offered", async () => {
@@ -149,10 +184,10 @@ describe("applySuggestion", () => {
  *  emit needs a fixture that reddens if it is routed to the wrong writer. Each row
  *  asserts BOTH that its own writer fired and that no other writer did. */
 describe("applySuggestion routing — every ActionTarget kind reaches its own writer", () => {
-  const cases: Array<{ target: ActionTarget; fn: WriterName; expect: Record<string, unknown> }> = [
+  const cases: Array<{ target: ActionTarget; fn: WriterName; expect: Record<string, unknown>; txn?: boolean }> = [
     { target: { kind: "income.create", amountField: "annualAmount", input: { name: "n" } }, fn: "createIncomeForClient", expect: { input: { name: "n" } } },
     { target: { kind: "income.update", incomeId: "i1", patch: { annualAmount: 10 }, amountField: "annualAmount" }, fn: "updateIncomeForClient", expect: { incomeId: "i1", input: { annualAmount: 10 } } },
-    { target: { kind: "income.socialSecurity.claim", amount: 100, rows: [{ owner: "client", incomeId: "s1", patch: { ssBenefitMode: "manual_amount" } }] }, fn: "claimSocialSecurityForReturn", expect: { rows: [{ incomeId: "s1", patch: { ssBenefitMode: "manual_amount", annualAmount: 100 } }] } },
+    { target: { kind: "income.socialSecurity.claim", amount: 100, rows: [{ owner: "client", incomeId: "s1", patch: { ssBenefitMode: "manual_amount" } }] }, fn: "updateIncomeForClient", expect: { incomeId: "s1", input: { ssBenefitMode: "manual_amount", annualAmount: 100 }, tx: TX }, txn: true },
     { target: { kind: "expense.update", expenseId: "e1", patch: { annualAmount: 20 }, amountField: "annualAmount" }, fn: "updateExpenseForClient", expect: { expenseId: "e1", input: { annualAmount: 20 } } },
     { target: { kind: "savings_rule.create", input: { accountId: "a1" }, amountField: "annualAmount" }, fn: "createSavingsRuleForClient", expect: { input: { accountId: "a1" } } },
     { target: { kind: "savings_rule.update", ruleId: "r1", patch: { annualAmount: 30 }, amountField: "annualAmount" }, fn: "updateSavingsRuleForClient", expect: { ruleId: "r1", input: { annualAmount: 30 } } },
@@ -165,7 +200,7 @@ describe("applySuggestion routing — every ActionTarget kind reaches its own wr
     { target: { kind: "medicare.upsert", owner: "spouse", priorYearMagi: 192_000, amountField: "priorYearMagi" }, fn: "upsertMedicarePriorYearMagi", expect: { owner: "spouse", priorYearMagi: 192_000 } },
   ];
 
-  it.each(cases)("routes $target.kind to $fn and to nothing else", async ({ target, fn, expect: expected }) => {
+  it.each(cases)("routes $target.kind to $fn and to nothing else", async ({ target, fn, expect: expected, txn }) => {
     vi.clearAllMocks();
     for (const f of Object.values(WRITERS)) f.mockResolvedValue({ ok: true, data: { id: "new" }, resourceId: "new" });
     const s = base({ id: "t", action: { label: "", describe: "", amountEditable: false, defaultAmount: null, target } });
@@ -177,6 +212,8 @@ describe("applySuggestion routing — every ActionTarget kind reaches its own wr
     expect(WRITERS[fn]).toHaveBeenCalledTimes(1);
     expect(WRITERS[fn]).toHaveBeenCalledWith(expect.objectContaining(expected));
     for (const [name, f] of Object.entries(WRITERS)) if (name !== fn) expect(f).not.toHaveBeenCalled();
+    // Only the Social Security claim writes more than one row, so only it opens a transaction.
+    expect(m.transaction).toHaveBeenCalledTimes(txn ? 1 : 0);
     expect(m.recordAudit).toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.objectContaining({ kind: target.kind }) }));
   });
 
@@ -193,6 +230,7 @@ describe("applySuggestion routing — every ActionTarget kind reaches its own wr
       target: { kind: "income.socialSecurity.claim", amount: 40_000, rows: [{ owner: "client", incomeId: "s1", patch: {} }] } } });
     m.computeReconciliation.mockResolvedValue({ ok: true, taxReturnId: "tr-1", reconciliation: recon([oneRow]) });
     expect(await applySuggestion(args({ suggestionId: "income.socialSecurity", owner: "spouse" }))).toMatchObject({ ok: false, status: 400 });
-    expect(m.claimSocialSecurityForReturn).not.toHaveBeenCalled();
+    expect(m.updateIncomeForClient).not.toHaveBeenCalled();
+    expect(m.transaction).not.toHaveBeenCalled();
   });
 });

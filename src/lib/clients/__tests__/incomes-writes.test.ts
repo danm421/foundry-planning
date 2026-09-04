@@ -223,4 +223,51 @@ d("incomes-writes core", () => {
     // taxing income the advisor marked tax-exempt.
     expect(res.data.taxType).toBe("tax_exempt");
   });
+
+  // Plan vs. Return applies a two-row Social Security split through this core and needs
+  // both rows to land together, so the core must honour a caller's transaction handle
+  // rather than its own module-level `db`. Proven the only way that counts: roll the
+  // caller's transaction back and read the row again.
+  it("honours a caller's transaction handle — a rollback undoes the update", async () => {
+    const created = await createIncomeForClient({
+      clientId: COOPER_CLIENT_ID,
+      firmId: COOPER_FIRM_ID,
+      actorId: ACTOR_ID,
+      input: {
+        type: "social_security",
+        name: "Transaction handle target",
+        annualAmount: 30000,
+        startYear: 2025,
+        endYear: 2045,
+      },
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    createdIds.push(created.data.id);
+    expect(created.data.annualAmount).toBe("30000.00");
+
+    await expect(
+      db.transaction(async (tx) => {
+        const res = await updateIncomeForClient({
+          clientId: COOPER_CLIENT_ID,
+          firmId: COOPER_FIRM_ID,
+          actorId: ACTOR_ID,
+          incomeId: created.data.id,
+          input: { annualAmount: 99000 },
+          tx,
+        });
+        expect(res.ok).toBe(true);
+        // Stands in for a failure on the SECOND row of a split.
+        throw new Error("roll it back");
+      }),
+    ).rejects.toThrow("roll it back");
+
+    const [row] = await db
+      .select({ annualAmount: incomes.annualAmount })
+      .from(incomes)
+      .where(eq(incomes.id, created.data.id));
+    // Without the threaded handle the write would have gone to the module-level `db`,
+    // committed on its own connection, and survived the rollback.
+    expect(row.annualAmount).toBe("30000.00");
+  });
 });

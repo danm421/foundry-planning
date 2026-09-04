@@ -39,6 +39,12 @@ import { writeError, type EntityWriteResult } from "./entity-write-result";
 
 type IncomeRow = typeof incomes.$inferSelect;
 
+// Drizzle transaction handle — same convention as src/lib/clients/create-client.ts
+// and src/lib/ownership.ts.
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+/** Either the module-level db or a caller's open transaction. */
+type DbOrTx = typeof db | Tx;
+
 export async function createIncomeForClient(args: {
   clientId: string;
   firmId: string;
@@ -128,8 +134,17 @@ export async function updateIncomeForClient(args: {
   input: unknown;
   crossFirmMeta?: Record<string, unknown>;
   actorKind?: "advisor" | "client" | "system";
+  // An open transaction to run the UPDATE on, instead of the module-level `db`.
+  // Additive and optional: every existing caller keeps the standalone behaviour.
+  // Plan vs. Return's Social Security split needs TWO row updates to commit or
+  // roll back together, and a core holding its own `db` handle cannot join the
+  // caller's transaction — `db.transaction` checks out a separate connection, so
+  // writes issued on `db` inside it commit independently. Reads (the FK asserts)
+  // and `recordAudit` deliberately stay on `db`.
+  tx?: DbOrTx;
 }): Promise<EntityWriteResult<IncomeRow>> {
   const { clientId, firmId, actorId, incomeId, input, crossFirmMeta, actorKind } = args;
+  const handle = args.tx ?? db;
 
   const a = await verifyClientAccess(clientId);
   if (!a.ok || a.firmId !== firmId) {
@@ -166,7 +181,7 @@ export async function updateIncomeForClient(args: {
   // plus taxType — the edit dialog exposes a Tax Treatment dropdown, so a changed
   // tax type (e.g. → tax_exempt) must round-trip; omitting it left income the
   // advisor marked tax-exempt still taxed by the engine.
-  const [updated] = await db
+  const [updated] = await handle
     .update(incomes)
     .set({
       ...(p.type !== undefined && { type: p.type as IncomeRow["type"] }),
