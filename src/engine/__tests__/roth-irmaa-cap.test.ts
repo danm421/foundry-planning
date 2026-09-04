@@ -10,17 +10,25 @@
  * Per the project's inline-helper convention, the scenario builders are local
  * to this file and build only the shape these tests need.
  *
- * ⚠️ Two of these four tests are RED until Task 6 makes the ceiling bind.
- * Task 5 only RESOLVES the ceiling; nothing consumes it yet. The other two —
- * the enrollment gate and flat tax mode — are NEGATIVE CONTROLS: each asserts
- * the cap does NOT bind, so both are green now and must STAY green once the
- * sizing starts consuming the ceiling. They exit `resolveIrmaaCeiling` at
- * different guards and neither substitutes for the other.
+ * Two describe blocks: the first pins WHICH ceiling gets resolved (premium
+ * year, filing status, and the two guards that make the cap inert), the second
+ * pins that the ceiling actually BINDS the conversion.
+ *
+ * ⚠️ The enrollment gate and flat tax mode are NEGATIVE CONTROLS: each asserts
+ * the cap does NOT bind. They exit `resolveIrmaaCeiling` at different guards
+ * and neither substitutes for the other — a red in either means the inertness
+ * guarantee is gone, not that a fixture drifted.
  */
 
 import { describe, it, expect } from "vitest";
 import { runProjection } from "../projection";
-import type { ClientData, FamilyMember, MedicareCoverage, RothConversion } from "../types";
+import type {
+  ClientData,
+  FamilyMember,
+  Income,
+  MedicareCoverage,
+  RothConversion,
+} from "../types";
 import type { TaxYearParameters } from "../../lib/tax/types";
 import { TAX_YEAR_2026 } from "./_fixtures/tax-year-2026";
 
@@ -79,6 +87,12 @@ const CEILING_2028_SINGLE = 112_455.4;
  *  exact-match row, so the factor is 1.0 and the ceiling is the raw 212_000.
  *  ~6% / ~$12.9K of headroom silently lost. */
 const WRONG_CEILING_CONVERSION_YEAR_MFJ = 212_000;
+/** `irmaaCapCeiling(tiers, 2)` returns tier 2's UPPER bound — the top of the
+ *  band the advisor is willing to pay for.  334_000 * 1.0609 = 354_340.60. */
+const CEILING_2028_MFJ_TIER2 = 354_340.6;
+/** Top of the 2026 MFJ 24% bracket less `fillUpBracketCeiling`'s $1 backoff.
+ *  2026 is the seeded row, so no tax inflation applies to it. */
+const BRACKET_24_CEILING_2026_MFJ = 383_899;
 
 function coverage(owner: "client" | "spouse"): MedicareCoverage {
   return {
@@ -103,6 +117,13 @@ interface ScenarioInput {
   checkingValue: number;
   /** Defaults to "bracket". Only the flat-mode negative control overrides it. */
   taxEngineMode?: "bracket" | "flat";
+  /** Income rows. Only the "already past the ceiling" test sets any — every
+   *  other scenario relies on the conversion being the household's ONLY
+   *  taxable income. */
+  incomes?: Income[];
+  /** After-tax (Form 8606) basis on the source traditional IRA. Defaults to 0
+   *  so gross === taxable and the MAGI assertions read directly. */
+  iraBasis?: number;
 }
 
 /** A retired household whose ONLY taxable income is the Roth conversion, so
@@ -151,7 +172,7 @@ function scenario(input: ScenarioInput): ClientData {
         subType: "traditional_ira",
         titlingType: "jtwros",
         value: 3_000_000,
-        basis: 0,
+        basis: input.iraBasis ?? 0,
         growthRate: 0,
         rmdEnabled: true,
         owners: [{ kind: "family_member", familyMemberId: CLIENT_FM_ID, percent: 1 }],
@@ -169,7 +190,7 @@ function scenario(input: ScenarioInput): ClientData {
         owners: [{ kind: "family_member", familyMemberId: CLIENT_FM_ID, percent: 1 }],
       },
     ],
-    incomes: [],
+    incomes: input.incomes ?? [],
     expenses: [],
     liabilities: [],
     savingsRules: [],
@@ -237,6 +258,37 @@ function cappedFixedAmount(amount: number, capTier: number | null): RothConversi
     startYear: 2026,
     endYear: 2026,
     indexingRate: 0,
+  };
+}
+
+/** A bracket fill that ALSO carries a cap — the two-ceiling case. */
+function cappedFillUpBracket(targetRate: number, capTier: number | null): RothConversion {
+  return {
+    id: "rc-cap",
+    name: "Capped bracket fill",
+    destinationAccountId: "acc-roth",
+    sourceAccountIds: ["acc-ira"],
+    conversionType: "fill_up_bracket",
+    fillUpBracket: targetRate,
+    irmaaCapTier: capTier,
+    startYear: 2026,
+    endYear: 2026,
+    indexingRate: 0,
+  } as RothConversion;
+}
+
+/** A pension big enough to blow past a tier ceiling on its own. */
+function pension(annualAmount: number): Income {
+  return {
+    id: "inc-pension",
+    type: "deferred",
+    name: "Pension",
+    annualAmount,
+    startYear: 2026,
+    endYear: 2030,
+    growthRate: 0,
+    owner: "client",
+    taxType: "ordinary_income",
   };
 }
 
@@ -370,5 +422,149 @@ describe("Roth conversion IRMAA cap — ceiling resolution", () => {
       magi,
       `2026 MAGI ${magi} must stay well below the MFJ ceiling ${CEILING_2028_MFJ}`,
     ).toBeLessThan(150_000);
+  });
+});
+
+describe("Roth conversion IRMAA cap — the ceiling binds", () => {
+  it("caps a fixed_amount conversion at the tier ceiling", () => {
+    // A tier-2 cap: the advisor accepts the tier-2 surcharge but no more, so
+    // the ceiling is tier 2's UPPER bound. The $600K ask is far above it and
+    // the $3M source pool is far below binding, so the cap is the only thing
+    // that can size this conversion.
+    const years = runProjection(
+      scenario({
+        clientDob: "1958-01-01",
+        spouseDob: "1959-01-01",
+        filingStatus: "married_joint",
+        medicareCoverage: [coverage("client"), coverage("spouse")],
+        conversion: cappedFixedAmount(600_000, 2),
+        checkingValue: 500_000,
+      }),
+    );
+
+    const y2026 = years.find((y) => y.year === 2026);
+    expect(y2026, "year 2026 should exist").toBeDefined();
+    const conv = (y2026!.rothConversions ?? [])[0];
+    expect(conv, "2026 should have a roth conversion").toBeDefined();
+
+    expect(
+      conv!.gross,
+      `gross ${conv!.gross} must be cut back from the $600K ask`,
+    ).toBeLessThan(600_000);
+    // The IRA holds no after-tax basis here, so gross === taxable === MAGI.
+    expect(
+      Math.abs(conv!.gross - CEILING_2028_MFJ_TIER2),
+      `gross ${conv!.gross} should land on the 2028 MFJ tier-2 ceiling ${CEILING_2028_MFJ_TIER2}`,
+    ).toBeLessThan(50);
+    expect(y2026!.taxResult!.flow.adjustedGrossIncome).toBeLessThanOrEqual(
+      CEILING_2028_MFJ_TIER2 + 1,
+    );
+  });
+
+  it("converts $0 when MAGI is already past the ceiling", () => {
+    // A $300K pension alone clears the 2028 MFJ tier-0 ceiling ($224,910.80),
+    // so no conversion of any size keeps the household surcharge-free. The
+    // right answer is to convert nothing.
+    const years = runProjection(
+      scenario({
+        clientDob: "1958-01-01",
+        spouseDob: "1959-01-01",
+        filingStatus: "married_joint",
+        medicareCoverage: [coverage("client"), coverage("spouse")],
+        conversion: cappedFixedAmount(600_000, 0),
+        checkingValue: 500_000,
+        incomes: [pension(300_000)],
+      }),
+    );
+
+    const y2026 = years.find((y) => y.year === 2026);
+    expect(y2026, "year 2026 should exist").toBeDefined();
+
+    const gross = (y2026!.rothConversions ?? []).reduce((s, c) => s + c.gross, 0);
+    expect(gross, "nothing should convert once the ceiling is already breached").toBe(0);
+
+    // $0 is the SOLVED answer, not a failure to solve: the joint loop must
+    // treat this conversion as converged rather than burning all five
+    // iterations and warning the advisor about a residual it cannot close.
+    const warnings = y2026!.trustWarnings ?? [];
+    expect(
+      warnings.filter((w) => w.code === "engine_iteration_limit"),
+      "a fully-blocked conversion is converged, not an iteration-limit failure",
+    ).toHaveLength(0);
+  });
+
+  it("takes the SMALLER of the bracket ceiling and the IRMAA ceiling", () => {
+    // One conversion, two ceilings: fill the 24% bracket AND stay in tier 0.
+    // The tier-0 MAGI ceiling ($224,910.80) is far below what filling the 24%
+    // bracket would need, so IRMAA is the binding constraint.
+    const years = runProjection(
+      scenario({
+        clientDob: "1958-01-01",
+        spouseDob: "1959-01-01",
+        filingStatus: "married_joint",
+        medicareCoverage: [coverage("client"), coverage("spouse")],
+        conversion: cappedFillUpBracket(0.24, 0),
+        checkingValue: 500_000,
+      }),
+    );
+
+    const y2026 = years.find((y) => y.year === 2026);
+    expect(y2026, "year 2026 should exist").toBeDefined();
+    expect(y2026!.taxResult, "2026 should have a bracket-mode tax result").toBeDefined();
+
+    const magi = y2026!.taxResult!.flow.adjustedGrossIncome;
+    expect(
+      Math.abs(magi - CEILING_2028_MFJ),
+      `2026 MAGI ${magi} should stop at the tier-0 ceiling ${CEILING_2028_MFJ}, not the 24% bracket top`,
+    ).toBeLessThan(50);
+
+    // And the bracket is left visibly unfilled — proof the smaller ceiling won
+    // rather than the two happening to agree.
+    const incomeTaxBase = y2026!.taxResult!.flow.incomeTaxBase;
+    expect(
+      incomeTaxBase,
+      `incomeTaxBase ${incomeTaxBase} should sit well below the 24% top ${BRACKET_24_CEILING_2026_MFJ}`,
+    ).toBeLessThan(BRACKET_24_CEILING_2026_MFJ - 100_000);
+  });
+
+  it("never breaches the ceiling when the source IRA holds after-tax basis", () => {
+    // $600K of Form 8606 basis in a $3M IRA → 20% of every conversion dollar
+    // comes back tax-free. The solve runs in TAXABLE dollars but is applied as
+    // a GROSS amount, so the realized income lands UNDER the ceiling. That is
+    // the conservative direction: the guardrail may leave room unused, but it
+    // must never let MAGI through.
+    const years = runProjection(
+      scenario({
+        clientDob: "1958-01-01",
+        spouseDob: "1959-01-01",
+        filingStatus: "married_joint",
+        medicareCoverage: [coverage("client"), coverage("spouse")],
+        conversion: cappedFixedAmount(600_000, 0),
+        checkingValue: 500_000,
+        iraBasis: 600_000,
+      }),
+    );
+
+    const y2026 = years.find((y) => y.year === 2026);
+    expect(y2026, "year 2026 should exist").toBeDefined();
+    const conv = (y2026!.rothConversions ?? [])[0];
+    expect(conv, "2026 should have a roth conversion").toBeDefined();
+
+    // A real conversion happened — this test must not pass by converting $0.
+    expect(conv!.gross, "a meaningful conversion should still run").toBeGreaterThan(100_000);
+    // Basis shielded part of it, which is what makes this case different.
+    expect(
+      conv!.taxable,
+      `taxable ${conv!.taxable} should be below gross ${conv!.gross} once basis is pro-rated`,
+    ).toBeLessThan(conv!.gross);
+
+    expect(
+      conv!.taxable,
+      `realized taxable ${conv!.taxable} must not breach the ceiling ${CEILING_2028_MFJ}`,
+    ).toBeLessThanOrEqual(CEILING_2028_MFJ);
+    expect(
+      y2026!.taxResult!.flow.adjustedGrossIncome,
+      "the modeled MAGI must not breach the ceiling either",
+    ).toBeLessThanOrEqual(CEILING_2028_MFJ + 1);
   });
 });

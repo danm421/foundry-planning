@@ -282,14 +282,17 @@ function _isActiveYear(conv: RothConversion, year: number): boolean {
 }
 
 /**
- * Resolves the desired conversion amount for the year before capping at the
- * available source pool. Returns 0 when the conversion cannot run this year.
+ * The gross amount a strategy asks for this year, before any ceiling and
+ * before capping at the available source pool. Returns 0 for
+ * `fill_up_bracket`, whose amount is a solve rather than a stated figure.
+ *
+ * Exported so projection.ts can size an IRMAA-capped conversion in phase 5b
+ * without rebuilding a full `RothConversionsInput`.
  */
-function _resolveTargetAmount(
+export function strategyGrossAmount(
   conv: RothConversion,
   year: number,
   sourcePoolBalance: number,
-  input: RothConversionsInput,
 ): number {
   switch (conv.conversionType) {
     case "fixed_amount": {
@@ -314,65 +317,82 @@ function _resolveTargetAmount(
       return sourcePoolBalance / yearsRemaining;
     }
 
-    case "fill_up_bracket": {
-      const override = input.targetTaxableOverride?.[conv.id];
-      if (override != null) {
-        // Caller (phase 12 joint loop) already converged the target. Apply it
-        // directly — no closure iteration. Negative/zero means "skip this year".
-        return Math.max(0, override);
-      }
-      const {
-        ordinaryBrackets,
-        computeIncomeTaxBaseWithRothTaxable,
-        preConversionOrdinaryIncome,
-        taxDeduction,
-      } = input;
-      if (ordinaryBrackets == null || conv.fillUpBracket == null) return 0;
-      const ceiling = fillUpBracketCeiling(ordinaryBrackets, conv.fillUpBracket);
-      if (ceiling == null) return 0;
-
-      // Preferred path: caller supplied a `computeIncomeTaxBaseWithRothTaxable`
-      // closure that returns the year's true `incomeTaxBase` for any hypothetical
-      // Roth-conversion taxable amount. Iterate to converge `incomeTaxBase ≈ ceiling`.
-      //
-      // Two-pass with bounded fixed-point iteration handles non-linearities like:
-      //   - SS taxability phase-in (50%/85% thresholds bend the curve)
-      //   - QBI deduction phase-in
-      //   - any other piecewise-linear deduction that depends on AGI
-      //
-      // For trad IRAs with after-tax basis the gross conversion will be larger
-      // than the taxable amount we solve for; the per-slice loop in the main
-      // function caps the gross to source-pool balance, which is the right
-      // behavior (we never want to over-convert). The taxable result will be
-      // a bit shy of ceiling in basis-heavy cases — acceptable.
-      if (computeIncomeTaxBaseWithRothTaxable) {
-        const baseAt0 = computeIncomeTaxBaseWithRothTaxable(0);
-        if (baseAt0 >= ceiling) return 0;
-        let target = ceiling - baseAt0; // initial guess assumes linear
-        for (let i = 0; i < 6; i++) {
-          const baseAtTarget = computeIncomeTaxBaseWithRothTaxable(target);
-          const delta = ceiling - baseAtTarget;
-          if (Math.abs(delta) < 1) break;
-          // Conservative update: never let target go negative; if SS or other
-          // stack-up made the previous guess overshoot, pull it back.
-          target = Math.max(0, target + delta);
-        }
-        return Math.max(0, target);
-      }
-
-      // Legacy fallback (kept for callers that haven't migrated). Known issues:
-      // ignores taxable-SS, above-line deductions, QBI, and itemized > std.
-      if (preConversionOrdinaryIncome == null) return 0;
-      const taxableBeforeConv = Math.max(
-        0,
-        preConversionOrdinaryIncome - (taxDeduction ?? 0),
-      );
-      return Math.max(0, ceiling - taxableBeforeConv);
-    }
-
     default:
       return 0;
   }
+}
+
+/**
+ * Resolves the desired conversion amount for the year before capping at the
+ * available source pool. Returns 0 when the conversion cannot run this year.
+ */
+function _resolveTargetAmount(
+  conv: RothConversion,
+  year: number,
+  sourcePoolBalance: number,
+  input: RothConversionsInput,
+): number {
+  // The phase-12 joint loop already converged a target for every conversion it
+  // took over. That set used to be exactly the bracket fills; it now also holds
+  // any IRMAA-capped conversion, of ANY strategy type. A capped `fixed_amount`
+  // whose override was ignored here would convert its full stated amount —
+  // i.e. the cap would silently not bind at all. So the override is honored
+  // ahead of the strategy switch, never inside one arm of it. Negative/zero
+  // means "skip this year".
+  const override = input.targetTaxableOverride?.[conv.id];
+  if (override != null) return Math.max(0, override);
+
+  if (conv.conversionType !== "fill_up_bracket") {
+    return strategyGrossAmount(conv, year, sourcePoolBalance);
+  }
+
+  const {
+    ordinaryBrackets,
+    computeIncomeTaxBaseWithRothTaxable,
+    preConversionOrdinaryIncome,
+    taxDeduction,
+  } = input;
+  if (ordinaryBrackets == null || conv.fillUpBracket == null) return 0;
+  const ceiling = fillUpBracketCeiling(ordinaryBrackets, conv.fillUpBracket);
+  if (ceiling == null) return 0;
+
+  // Preferred path: caller supplied a `computeIncomeTaxBaseWithRothTaxable`
+  // closure that returns the year's true `incomeTaxBase` for any hypothetical
+  // Roth-conversion taxable amount. Iterate to converge `incomeTaxBase ≈ ceiling`.
+  //
+  // Two-pass with bounded fixed-point iteration handles non-linearities like:
+  //   - SS taxability phase-in (50%/85% thresholds bend the curve)
+  //   - QBI deduction phase-in
+  //   - any other piecewise-linear deduction that depends on AGI
+  //
+  // For trad IRAs with after-tax basis the gross conversion will be larger
+  // than the taxable amount we solve for; the per-slice loop in the main
+  // function caps the gross to source-pool balance, which is the right
+  // behavior (we never want to over-convert). The taxable result will be
+  // a bit shy of ceiling in basis-heavy cases — acceptable.
+  if (computeIncomeTaxBaseWithRothTaxable) {
+    const baseAt0 = computeIncomeTaxBaseWithRothTaxable(0);
+    if (baseAt0 >= ceiling) return 0;
+    let target = ceiling - baseAt0; // initial guess assumes linear
+    for (let i = 0; i < 6; i++) {
+      const baseAtTarget = computeIncomeTaxBaseWithRothTaxable(target);
+      const delta = ceiling - baseAtTarget;
+      if (Math.abs(delta) < 1) break;
+      // Conservative update: never let target go negative; if SS or other
+      // stack-up made the previous guess overshoot, pull it back.
+      target = Math.max(0, target + delta);
+    }
+    return Math.max(0, target);
+  }
+
+  // Legacy fallback (kept for callers that haven't migrated). Known issues:
+  // ignores taxable-SS, above-line deductions, QBI, and itemized > std.
+  if (preConversionOrdinaryIncome == null) return 0;
+  const taxableBeforeConv = Math.max(
+    0,
+    preConversionOrdinaryIncome - (taxDeduction ?? 0),
+  );
+  return Math.max(0, ceiling - taxableBeforeConv);
 }
 
 /** NOTE: the conversion pool is still HOUSEHOLD-wide, while distributions pool
