@@ -17,10 +17,18 @@ export const rentalRules: Rule = (input) => {
   const rentalRows = plan.incomes.filter(isRental);
   // The aggregate below means "what the plan pays in the plan year", so it keeps the active subset.
   const rows = rentalRows.filter((i) => isActiveInYear(i, planYear));
-  // A row that ran through the tax year and stops before the plan year is not a missing row. It is
-  // invisible to the aggregate by design, and without this the return's own figure would fall
-  // through to the create arm and offer to restart the rental for the life of the plan.
+  // Two shapes are invisible to that aggregate by design, and neither is a missing row. Without
+  // them the return's own figure falls through to the create arm. The predicates are ASYMMETRIC on
+  // purpose:
+  //
+  //  - ENDING blocks the create only when the row was active in the TAX year — a rental the advisor
+  //    modelled as sold. A row that ended in 2015 never pays again, so a new one cannot double up
+  //    and the advisor should still be offered it.
+  //  - FUTURE blocks whenever the row starts after the plan year, whatever it did in the tax year,
+  //    because the overlap a create would make is real: a 2030-2060 row plus a new 2026-2060 row
+  //    pays the rent TWICE from 2030 on.
   const ending = rentalRows.filter((i) => !isActiveInYear(i, planYear) && isActiveInYear(i, taxYear));
+  const future = rentalRows.filter((i) => i.startYear > planYear);
   const properties = plan.accounts.filter((a) => a.subType === "rental_property");
   const p = sum(rows.map((r) => rowAmountInYear(r, taxYear)));
   const id = "income.rental";
@@ -52,6 +60,13 @@ export const rentalRules: Rule = (input) => {
     const label = ending.length === 1 ? ending[0].name : `${ending.length} rental rows`;
     return { suggestions: [{ id, section: "income", kind: "review", status: "open", headline: `The return shows ${money(cash)} of rental cash flow; the plan's ${label} ran in ${taxYear} but not in ${planYear}.`,
       meaning: `${meaningCash} The plan models the rental as stopping before ${planYear}, so adding a row here would restart it for the life of the plan. Check the end year on Net Worth instead.`,
+      returnFigure, planFigure: { label, amount: 0, display: money(0), year: planYear }, delta: makeDelta(cash, 0), link: netWorth }], checks: [] };
+  }
+  if (future.length > 0) {
+    const label = future.length === 1 ? future[0].name : `${future.length} rental rows`;
+    const starts = Math.min(...future.map((i) => i.startYear));
+    return { suggestions: [{ id, section: "income", kind: "review", status: "open", headline: `The return shows ${money(cash)} of rental cash flow; the plan's ${label} does not start until ${starts}.`,
+      meaning: `${meaningCash} Adding a row here would run alongside it and pay the rent twice from ${starts} on. Move the start year back on Net Worth instead.`,
       returnFigure, planFigure: { label, amount: 0, display: money(0), year: planYear }, delta: makeDelta(cash, 0), link: netWorth }], checks: [] };
   }
   // `.create` is a dismissal id of its own: dismissing "add rental income" must not also suppress

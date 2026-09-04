@@ -10,10 +10,18 @@ export const pensionRules: Rule = (input) => {
   const deferredRows = plan.incomes.filter((i) => i.type === "deferred");
   // The aggregate means "what the plan pays in the plan year", so it keeps the active subset.
   const rows = deferredRows.filter((i) => isActiveInYear(i, planYear));
-  // A pension that ran through the tax year and stops before the plan year is invisible to that
-  // aggregate by design. Without this the plan would look short against line 5a and the create arm
-  // would offer to add the pension back for life.
+  // Two shapes are invisible to that aggregate by design, and both would otherwise leave the plan
+  // looking short against line 5a with the create arm offering to add a pension. The predicates are
+  // ASYMMETRIC on purpose:
+  //
+  //  - ENDING blocks the create only when the row was active in the TAX year — a pension the
+  //    advisor modelled as stopping. A row that ended in 2015 never pays again, so a new one cannot
+  //    double up and the advisor should still be offered it.
+  //  - FUTURE blocks whenever the row starts after the plan year, whatever it did in the tax year,
+  //    because the overlap a create would make is real: a 2030-2060 row plus a new 2026-2060 row
+  //    pays the pension TWICE from 2030 on.
   const ending = deferredRows.filter((i) => !isActiveInYear(i, planYear) && isActiveInYear(i, taxYear));
+  const future = deferredRows.filter((i) => i.startYear > planYear);
   const p = sum(rows.map((r) => rowAmountInYear(r, taxYear)));
   const returnFigure = { label: "Pensions and annuities", amount: gross, display: money(gross), lineRefs: [ref("1040", "5a", "Pensions and annuities", gross)] };
   const planFigure = { label: rows.length === 1 ? rows[0].name : "Pensions in the plan", amount: p, display: money(p), year: planYear };
@@ -24,6 +32,14 @@ export const pensionRules: Rule = (input) => {
     return { suggestions: [{ id, section: "income", kind: "review", status: "open",
       headline: `The return shows ${money(gross)} of pension income; the plan's ${label} ran in ${taxYear} but not in ${planYear}.`,
       meaning: `The plan models the pension as stopping before ${planYear}, so adding one here would restart it for life. Check the end year on Inflows & Outflows instead.`,
+      returnFigure, planFigure: { label, amount: 0, display: money(0), year: planYear }, delta: makeDelta(gross, 0), link: outflows }], checks: [] };
+  }
+  if (rows.length === 0 && future.length > 0) {
+    const label = future.length === 1 ? future[0].name : `${future.length} pensions`;
+    const starts = Math.min(...future.map((i) => i.startYear));
+    return { suggestions: [{ id, section: "income", kind: "review", status: "open",
+      headline: `The return shows ${money(gross)} of pension income; the plan's ${label} does not start until ${starts}.`,
+      meaning: `Adding one here would run alongside it and pay the pension twice from ${starts} on. Move the start year back on Inflows & Outflows instead.`,
       returnFigure, planFigure: { label, amount: 0, display: money(0), year: planYear }, delta: makeDelta(gross, 0), link: outflows }], checks: [] };
   }
   if (rows.length > 0 && !differs(gross, p, ROW)) return { suggestions: [], checks: [{ id, label: "Pensions", returnDisplay: money(gross), planDisplay: money(p) }] };

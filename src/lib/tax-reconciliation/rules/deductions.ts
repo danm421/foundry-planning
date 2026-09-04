@@ -14,10 +14,18 @@ export const deductionRules: Rule = (input) => {
     const charitableRows = plan.deductions.filter((d) => d.type === "charitable");
     // The aggregate means "what the plan gives in the plan year", so it keeps the active subset.
     const rows = charitableRows.filter((d) => isActiveInYear(d, planYear));
-    // A pledge that ran through the tax year and finishes before the plan year is invisible to that
-    // aggregate by design. Without this the return's own figure falls through to the create arm and
-    // offers to add the giving back for the life of the plan.
+    // Two shapes are invisible to that aggregate by design, and both would otherwise let the
+    // return's own figure fall through to the create arm. The two predicates are ASYMMETRIC on
+    // purpose:
+    //
+    //  - ENDING blocks the create only when the row was active in the TAX year — a pledge the
+    //    advisor modelled as finishing. A row that ended in 2015 never gives again, so a new one
+    //    cannot double up and the advisor should still be offered it.
+    //  - FUTURE blocks whenever the row starts after the plan year, whatever it did in the tax
+    //    year, because the overlap a create would make is real: a 2030-2060 row plus a new
+    //    2026-2060 row deducts the giving TWICE from 2030 on.
     const ending = charitableRows.filter((d) => isActiveInYear(d, taxYear) && !isActiveInYear(d, planYear));
+    const future = charitableRows.filter((d) => d.startYear > planYear);
     // `client_deductions` carries no inflation start year, and the engine grows a deduction row
     // from its own `startYear` (src/lib/tax/derive-deductions.ts), so state the plan figure the
     // same way rather than from an inflation start the column does not have.
@@ -26,13 +34,22 @@ export const deductionRules: Rule = (input) => {
     const returnFigure = { label: "Charitable gifts", amount: charity, display: money(charity), lineRefs: [ref("Sched A", "11–12", "Gifts to charity", charity)] };
     const planFigure = { label: rows.length === 1 ? (rows[0].name ?? "Charitable") : "Charitable deductions in the plan", amount: rows.length ? p : null, display: rows.length ? money(p) : "—", year: planYear };
     const deductionsLink = { label: "Open Deductions", href: detailsHref(input, "deductions") };
+    // An out-of-range row is never shown a dollar figure — the plan gives nothing in the plan year —
+    // so the prose names the row and says why instead.
+    const rowsLabel = (ds: typeof charitableRows) => (ds.length === 1 ? (ds[0].name ?? "charitable giving") : `${ds.length} charitable rows`);
     if (rows.length === 0 && ending.length > 0) {
-      // An ended row is never shown a dollar figure — the plan gives nothing in the plan year — so
-      // the prose names the row and says why instead.
-      const label = ending.length === 1 ? (ending[0].name ?? "charitable giving") : `${ending.length} charitable rows`;
+      const label = rowsLabel(ending);
       suggestions.push({ id, section: "deductions", kind: "review", status: "open",
         headline: `The return deducts ${money(charity)} of gifts to charity; the plan's ${label} ran in ${taxYear} but not in ${planYear}.`,
         meaning: `The plan models the giving as finishing before ${planYear}, so adding a row here would start it again for the life of the plan. Check the end year on Deductions instead.`,
+        returnFigure, planFigure: { label, amount: 0, display: money(0), year: planYear }, delta: makeDelta(charity, 0), link: deductionsLink });
+    }
+    else if (rows.length === 0 && future.length > 0) {
+      const label = rowsLabel(future);
+      const starts = Math.min(...future.map((d) => d.startYear));
+      suggestions.push({ id, section: "deductions", kind: "review", status: "open",
+        headline: `The return deducts ${money(charity)} of gifts to charity; the plan's ${label} does not start until ${starts}.`,
+        meaning: `Adding a row here would run alongside the giving that starts in ${starts} and deduct it twice from then on. Move the start year back on Deductions instead.`,
         returnFigure, planFigure: { label, amount: 0, display: money(0), year: planYear }, delta: makeDelta(charity, 0), link: deductionsLink });
     }
     // `.create` is a dismissal id of its own: dismissing "add this giving" must not also suppress
@@ -58,6 +75,12 @@ export const deductionRules: Rule = (input) => {
 
   // SALT and mortgage interest are engine-level: neither is a plan row an advisor edits directly,
   // so both arms review or report rather than offering a write.
+  //
+  // Both comparisons are deliberately ONE-SIDED, and the spec (rows 197-198) mandates exactly these
+  // thresholds and types both as Review: SALT speaks only when the return is more than DOUBLE the
+  // plan, and mortgage interest only when the plan is under HALF the return. A plan that models
+  // more than the return did is not evidence of anything here — the return is one year and the plan
+  // is a projection. Do not "fix" this into a symmetric comparison.
   if (engineYear?.deductionBreakdown && a.saltPaid != null) {
     const p = planToTaxYear(input, engineYear.deductionBreakdown.belowLine.stateIncomeTax + engineYear.deductionBreakdown.belowLine.propertyTaxes);
     const id = "deductions.salt";

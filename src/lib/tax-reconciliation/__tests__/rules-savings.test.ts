@@ -116,4 +116,57 @@ describe("savingsRules (5% / $500)", () => {
       { id: "savings.sepSimple", label: "SEP / SIMPLE / solo 401(k) deduction", returnDisplay: "$20,000", planDisplay: "$19,800" },
     ]);
   });
+
+  it("does not offer a second rule alongside one the plan starts later", () => {
+    // The mirror image of the ended case, and the harmful one: a rule starting AFTER the plan year
+    // is in neither the plan-year aggregate nor the ending set, so the return's $20,000 falls to the
+    // create arm — and the new 2026-2060 rule would then contribute TWICE into the same SEP from
+    // 2030 on, on top of the $20,000 already scheduled.
+    const later = planFixture({ accounts: [acct("a1", "sep_ira")], savingsRules: [rule("r1", "a1", 20_000, { startYear: 2030, endYear: 2060 })] });
+    const r = savingsRules(inputFixture({ facts: factsWith(20_000, null), plan: later }));
+    expect(r.suggestions).toHaveLength(1);
+    expect(r.suggestions[0]).toMatchObject({ id: "savings.sepSimple", kind: "review" });
+    expect(r.suggestions[0].action).toBeUndefined();
+    expect(r.suggestions[0].headline).toMatch(/sep_ira account[\s\S]*2030/);
+    expect(r.suggestions[0].planFigure).toMatchObject({ label: "sep_ira account", amount: 0, display: "$0", year: 2026 });
+    expect(r.checks).toEqual([]);
+
+    // The two predicates are asymmetric on purpose. A rule that ended in 2015 never contributes
+    // again, so it cannot double up and the advisor is still offered the create.
+    const longGone = planFixture({ accounts: [acct("a1", "sep_ira")], savingsRules: [rule("r0", "a1", 20_000, { startYear: 2010, endYear: 2015 })] });
+    expect(savingsRules(inputFixture({ facts: factsWith(20_000, null), plan: longGone })).suggestions[0]).toMatchObject({ id: "savings.sepSimple.create", kind: "update" });
+  });
+
+  it("never counts or writes to a rule on an account of another kind", () => {
+    // The account filter is what ROUTES the write. With it removed, the HSA's $8,300 rule would be
+    // read as SEP contributions and line 16's $20,000 would be offered as a `savings_rule.update`
+    // ONTO THE HSA RULE — a wrong write to an account the SEP line never mentioned.
+    const plan = planFixture({ accounts: [acct("a1", "sep_ira"), acct("h1", "hsa")], savingsRules: [rule("r1", "h1", 8_300)] });
+    const r = savingsRules(inputFixture({ facts: factsWith(20_000, 8_300), plan }));
+    // SEP: no rule on a SEP account, so it creates one — on a1, never on h1.
+    expect(r.suggestions).toHaveLength(1);
+    expect(r.suggestions[0].id).toBe("savings.sepSimple.create");
+    expect(r.suggestions[0].action?.target).toEqual({ kind: "savings_rule.create", amountField: "annualAmount", input: { accountId: "a1", annualAmount: 20_000, startYear: 2026, endYear: 2060, endYearRef: "client_retirement" } });
+    expect(r.suggestions[0].planFigure).toMatchObject({ label: "Contributions to sep_ira account in the plan", amount: 0 });
+    // HSA: its own rule matches its own line, exactly.
+    expect(r.checks).toEqual([{ id: "savings.hsa", label: "HSA deduction", returnDisplay: "$8,300", planDisplay: "$8,300" }]);
+  });
+
+  it("names the account it will save into when several could hold the contribution", () => {
+    // Two HSAs — one each for a client and a spouse — is an ordinary household. The apply payload
+    // carries an amount and an owner, never an account, so the target is fixed server-side and the
+    // advisor cannot redirect it. The copy therefore has to name the account chosen and say the
+    // others exist.
+    const plan = planFixture({ accounts: [{ id: "h1", name: "HSA — Dan", category: "retirement", subType: "hsa" }, { id: "h2", name: "HSA — Jane", category: "retirement", subType: "hsa" }] });
+    const s = savingsRules(inputFixture({ facts: factsWith(null, 8_300), plan })).suggestions[0];
+    expect(s.id).toBe("savings.hsa.create");
+    expect(s.action?.target).toMatchObject({ kind: "savings_rule.create", input: { accountId: "h1", annualAmount: 8_300 } });
+    // The account chosen is named, and the fact that a second exists is stated — in that order.
+    expect(s.meaning).toMatch(/2 accounts[\s\S]*HSA — Dan/);
+    expect(s.headline).toMatch(/HSA — Dan/);
+    expect(s.action?.describe).toMatch(/HSA — Dan/);
+    // With only one account the copy stays quiet about a choice that does not exist.
+    const single = savingsRules(inputFixture({ facts: factsWith(null, 8_300), plan: planFixture({ accounts: [acct("h1", "hsa")] }) })).suggestions[0];
+    expect(single.meaning).not.toMatch(/accounts that could hold it/);
+  });
 });

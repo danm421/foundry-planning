@@ -1,5 +1,5 @@
 import { ROW, detailsHref, differs, isActiveInYear, makeDelta, money, ref, sum } from "../compare";
-import type { Check, ReconciliationInput, Rule, Suggestion } from "../types";
+import type { Check, PlanSavingsRule, ReconciliationInput, Rule, Suggestion } from "../types";
 
 /** One Schedule 1 adjustment that is really a contribution the plan should be making: the account
  *  sub-types it can land in, the line it came off, and the words for it in a headline. */
@@ -13,10 +13,17 @@ function one(input: ReconciliationInput, k: Kind): { suggestions: Suggestion[]; 
   const accountRules = plan.savingsRules.filter((r) => ids.has(r.accountId));
   // The aggregate means "what the plan saves in the plan year", so it keeps the active subset.
   const rules = accountRules.filter((r) => isActiveInYear(r, planYear));
-  // A rule that ran through the tax year and stops before the plan year is invisible to that
-  // aggregate by design — saving the advisor modelled as ending at retirement. Without this the
-  // return's own figure falls through to the create arm and offers to start it again for life.
+  // Two shapes are invisible to that aggregate by design, and both would otherwise let the return's
+  // own figure fall through to the create arm. The two predicates are ASYMMETRIC on purpose:
+  //
+  //  - ENDING blocks the create only when the rule was active in the TAX year — saving the advisor
+  //    modelled as stopping at retirement. A rule that ended in 2015 never contributes again, so a
+  //    new one cannot double up and the advisor should still be offered it.
+  //  - FUTURE blocks whenever the rule starts after the plan year, whatever it did in the tax year,
+  //    because the overlap a create would make is real: a 2030-2060 rule plus a new 2026-2060 rule
+  //    contributes TWICE into the same account from 2030 on.
   const ending = accountRules.filter((r) => isActiveInYear(r, taxYear) && !isActiveInYear(r, planYear));
+  const future = accountRules.filter((r) => r.startYear > planYear);
   // Flat, with no growth: the engine resolves a savings rule as an annual amount, a percent of
   // salary or "contribute the max" (src/engine/savings.ts) and never compounds `annualAmount`.
   const p = sum(rules.map((r) => r.annualAmount));
@@ -30,25 +37,40 @@ function one(input: ReconciliationInput, k: Kind): { suggestions: Suggestion[]; 
     meaning: `Add the ${k.what} on Net Worth first; the contribution can then be recorded as a savings rule.`,
     returnFigure, planFigure, delta: makeDelta(k.amount, 0), link: netWorth }], checks: [] };
 
+  // Named by ACCOUNT, not by rule: a savings rule has no name of its own, and one account can carry
+  // several. An out-of-range rule is never shown a dollar figure — the plan really does save nothing
+  // into it in the plan year — so the prose carries the reason instead.
+  const accountsLabel = (rs: PlanSavingsRule[]) => {
+    const names = [...new Set(rs.map((r) => accounts.find((a) => a.id === r.accountId)?.name ?? k.what))];
+    return names.length === 1 ? names[0] : `${names.length} accounts`;
+  };
+
   if (rules.length === 0 && ending.length > 0) {
-    // Named by ACCOUNT, not by rule: a savings rule has no name of its own, and one account can
-    // carry several. An ended rule is never shown a dollar figure — the plan really does save
-    // nothing into it in the plan year — so the prose carries the reason instead.
-    const names = [...new Set(ending.map((r) => accounts.find((a) => a.id === r.accountId)?.name ?? k.what))];
-    const label = names.length === 1 ? names[0] : `${names.length} accounts`;
+    const label = accountsLabel(ending);
     return { suggestions: [{ id: k.id, section: "savings", kind: "review", status: "open",
       headline: `${head}; the plan's saving into ${label} ran in ${taxYear} but not in ${planYear}.`,
       meaning: `The plan models the contributions as stopping before ${planYear}, so adding a rule here would start them again. Check the end year on Net Worth instead.`,
       returnFigure, planFigure: { label, amount: 0, display: money(0), year: planYear }, delta: makeDelta(k.amount, 0), link: netWorth }], checks: [] };
   }
 
+  if (rules.length === 0 && future.length > 0) {
+    const label = accountsLabel(future);
+    const starts = Math.min(...future.map((r) => r.startYear));
+    return { suggestions: [{ id: k.id, section: "savings", kind: "review", status: "open",
+      headline: `${head}; the plan's saving into ${label} does not start until ${starts}.`,
+      meaning: `Adding a rule here would run alongside the one that starts in ${starts} and contribute twice from then on. Move the start year back on Net Worth instead.`,
+      returnFigure, planFigure: { label, amount: 0, display: money(0), year: planYear }, delta: makeDelta(k.amount, 0), link: netWorth }], checks: [] };
+  }
+
   // `.create` is a dismissal id of its own: dismissing "add this contribution" must not also
   // suppress "this contribution's amount is off", and those ids are persisted.
-  // With several matching accounts the first is the default the advisor overrides; the account is
-  // named in the button copy so the write is never anonymous.
+  //
+  // The write is fixed server-side to ONE account — the apply payload carries an amount and an
+  // owner, never an account — so where several accounts could hold it the copy names the one chosen
+  // and says the others exist, rather than writing silently into the first.
   if (rules.length === 0) return { suggestions: [{ id: `${k.id}.create`, section: "savings", kind: "update", status: "open",
     headline: `${head}; the plan saves nothing into ${accounts[0].name}.`,
-    meaning: "The deduction on Schedule 1 is the actual contribution. This adds a savings rule for it, ending at retirement.",
+    meaning: `The deduction on Schedule 1 is the actual contribution. This adds a savings rule for it, ending at retirement.${accounts.length > 1 ? ` The plan has ${accounts.length} accounts that could hold it; this one saves into ${accounts[0].name}. Move the rule on Net Worth if it belongs to another.` : ""}`,
     returnFigure, planFigure, delta: makeDelta(k.amount, 0),
     action: { label: `Save ${money(k.amount)} a year`, describe: `Adds a ${money(k.amount)} a year savings rule into ${accounts[0].name}`, amountEditable: true, defaultAmount: k.amount,
       target: { kind: "savings_rule.create", amountField: "annualAmount", input: { accountId: accounts[0].id, annualAmount: k.amount, startYear: plan.planSettings.planStartYear, endYear: plan.planSettings.planEndYear, endYearRef: "client_retirement" } } } }], checks: [] };

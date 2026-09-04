@@ -110,6 +110,30 @@ describe("rentalRules — cash figure = scheduleENet + depreciation", () => {
     expect(r.checks).toEqual([]);
   });
 
+  it("does not offer a second rental row alongside one the plan starts later", () => {
+    // The mirror-image gap to the ending case, and the harmful one: a row that starts AFTER the plan
+    // year is in neither the plan-year aggregate nor the ending set, so the $12,000 falls to the
+    // create arm — and the new 2026-2060 row would then pay the rent TWICE from 2030 on.
+    const plan = planFixture({
+      accounts: [rentalAcct("re1", "12 Oak St")],
+      incomes: [income({ id: "r1", type: "other", name: "Rent — Oak", annualAmount: 12_000, growthRate: 0, inflationStartYear: 2025, linkedPropertyId: "re1", startYear: 2030, endYear: 2060 })],
+    });
+    const r = rentalRules(inputFixture({ facts: factsWith(4_000, 8_000), plan }));
+    expect(r.suggestions).toHaveLength(1);
+    expect(r.suggestions[0]).toMatchObject({ id: "income.rental", kind: "review" });
+    expect(r.suggestions[0].action).toBeUndefined();
+    expect(r.suggestions[0].headline).toMatch(/Rent — Oak[\s\S]*2030/);
+    expect(r.suggestions[0].planFigure).toMatchObject({ label: "Rent — Oak", amount: 0, display: "$0", year: 2026 });
+    expect(r.checks).toEqual([]);
+    // The predicate is asymmetric on purpose: a row that ended long BEFORE the tax year can never
+    // double up, so the create still stands for it.
+    const old = planFixture({
+      accounts: [rentalAcct("re1", "12 Oak St")],
+      incomes: [income({ id: "r0", type: "other", name: "Rent — Oak", annualAmount: 12_000, growthRate: 0, inflationStartYear: 2025, linkedPropertyId: "re1", startYear: 2010, endYear: 2015 })],
+    });
+    expect(rentalRules(inputFixture({ facts: factsWith(4_000, 8_000), plan: old })).suggestions[0]).toMatchObject({ id: "income.rental.create", kind: "update" });
+  });
+
   it("offers no owner choice on a created rental for a single filer", () => {
     const plan = planFixture({ client: { filingStatus: "single", dateOfBirth: "1960-04-02", spouseDob: null }, familyMembers: [], accounts: [rentalAcct("re1", "12 Oak St")] });
     const s = rentalRules(inputFixture({ facts: factsWith(4_000, 8_000), plan })).suggestions[0];

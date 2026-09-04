@@ -94,6 +94,45 @@ describe("deductionRules — charitable (> $500; 5% / $500)", () => {
     expect(r.suggestions[0].link?.href).toBe(`/clients/${CLIENT_ID}/details/deductions`);
     expect(r.checks).toEqual([]);
   });
+
+  it("does not offer a second giving row alongside one the plan starts later", () => {
+    // The mirror image of the ended case, and the harmful one: a row starting AFTER the plan year is
+    // in neither the plan-year aggregate nor the ending set, so the return's $5,000 falls to the
+    // create arm — and the new 2026-2060 row would then deduct the giving TWICE from 2030 on.
+    const later = planFixture({ deductions: [gift("d1", "Pledge", 5_000, { startYear: 2030, endYear: 2060 })] });
+    const r = deductionRules(inputFixture({ facts: factsWith({ charitableCash: 5_000 }), plan: later }));
+    expect(r.suggestions).toHaveLength(1);
+    expect(r.suggestions[0]).toMatchObject({ id: "deductions.charitable", kind: "review" });
+    expect(r.suggestions[0].action).toBeUndefined();
+    expect(r.suggestions[0].headline).toMatch(/Pledge[\s\S]*2030/);
+    expect(r.suggestions[0].planFigure).toMatchObject({ label: "Pledge", amount: 0, display: "$0", year: 2026 });
+    expect(r.checks).toEqual([]);
+
+    // The two predicates are asymmetric on purpose. A row that finished in 2015 never gives again,
+    // so it cannot double up and the advisor is still offered the create.
+    const longGone = planFixture({ deductions: [gift("d0", "Old pledge", 5_000, { startYear: 2010, endYear: 2015 })] });
+    expect(deductionRules(inputFixture({ facts: factsWith({ charitableCash: 5_000 }), plan: longGone })).suggestions[0]).toMatchObject({ id: "deductions.charitable.create", kind: "update" });
+  });
+
+  it("never counts or writes to a deduction row of another type", () => {
+    // The type filter is what ROUTES the write. With it removed, a lone property-tax row would be
+    // read as the plan's giving and the single-row arm would emit a `deduction.update` TARGETING
+    // THE PROPERTY-TAX ROW, overwriting its $9,000 with the charitable $5,000 — a wrong write to a
+    // row Schedule A's gift lines never mentioned.
+    const propertyTaxOnly = planFixture({ deductions: [{ id: "pt1", type: "property_tax", name: "County property tax", annualAmount: 9_000, growthRate: 0, startYear: 2026, endYear: 2060 }] });
+    const r = deductionRules(inputFixture({ facts: factsWith({ charitableCash: 5_000 }), plan: propertyTaxOnly }));
+    expect(r.suggestions).toHaveLength(1);
+    expect(r.suggestions[0].id).toBe("deductions.charitable.create");
+    expect(r.suggestions[0].action?.target).toEqual({ kind: "deduction.create", amountField: "annualAmount", input: { type: "charitable", name: "Charitable giving (from 2025 return)", owner: "joint", annualAmount: 5_000, growthRate: 0, startYear: 2026, endYear: 2060 } });
+    expect(r.suggestions[0].planFigure).toMatchObject({ label: "Charitable deductions in the plan", amount: null, display: "—" });
+
+    // Beside a real charitable row, the property tax must not join the aggregate either: the plan
+    // figure is the $2,000 of giving, not $11,000, and the write lands on the charitable row.
+    const both = planFixture({ deductions: [{ id: "pt1", type: "property_tax", name: "County property tax", annualAmount: 9_000, growthRate: 0, startYear: 2026, endYear: 2060 }, gift("d1", "Church", 2_000)] });
+    const s = deductionRules(inputFixture({ facts: factsWith({ charitableCash: 5_000 }), plan: both })).suggestions[0];
+    expect(s.action?.target).toEqual({ kind: "deduction.update", deductionId: "d1", patch: { annualAmount: 5_000 }, amountField: "annualAmount" });
+    expect(s.planFigure).toMatchObject({ label: "Church", amount: 2_000, display: "$2,000" });
+  });
 });
 
 describe("deductionRules — SALT and mortgage interest (engine-level)", () => {

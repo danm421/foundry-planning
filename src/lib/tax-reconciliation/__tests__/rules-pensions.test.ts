@@ -138,6 +138,21 @@ describe("pensionRules (5% / $500, return > $1,000)", () => {
     expect(pensionRules(inputFixture({ facts: factsWith(24_000), plan: old })).suggestions[0].action?.target).toMatchObject({ kind: "income.create" });
   });
 
+  it("does not offer a second pension alongside one the plan starts later", () => {
+    // The mirror-image gap to the ending case, and the harmful one: a row that starts AFTER the plan
+    // year is in neither the plan-year aggregate nor the ending set, so the $24,000 falls to the
+    // create arm — and the new 2026-2060 row would then pay the pension TWICE from 2030 on.
+    const plan = planFixture({ incomes: [pension("p1", 24_000, { startYear: 2030, endYear: 2060 })] });
+    const r = pensionRules(inputFixture({ facts: factsWith(24_000), plan }));
+    expect(r.suggestions).toHaveLength(1);
+    expect(r.suggestions[0]).toMatchObject({ id: "income.pensions", kind: "review" });
+    expect(r.suggestions[0].action).toBeUndefined();
+    expect(r.suggestions[0].headline).toMatch(/Pension p1[\s\S]*2030/);
+    expect(r.suggestions[0].planFigure).toMatchObject({ label: "Pension p1", amount: 0, display: "$0", year: 2026 });
+    expect(r.suggestions[0].link?.href).toBe(`/clients/${CLIENT_ID}/details/income-expenses`);
+    expect(r.checks).toEqual([]);
+  });
+
   it("stays silent with no pension line at all, and at the $1,000 boundary", () => {
     expect(pensionRules(inputFixture({ facts: factsWith(null) }))).toEqual({ suggestions: [], checks: [] });
     expect(pensionRules(inputFixture({ facts: factsWith(1_000) }))).toEqual({ suggestions: [], checks: [] });
