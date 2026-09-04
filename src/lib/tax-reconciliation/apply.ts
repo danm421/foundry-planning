@@ -1,0 +1,122 @@
+// Server-authoritative applier for one Plan vs. Return suggestion.
+//
+// The caller sends an opaque `suggestionId` and, at most, an amount and an owner.
+// It never sends a target: the reconciliation is RECOMPUTED here and the write comes
+// from the suggestion the server just built, so a forged body can only choose WHICH
+// of the server's own suggestions to apply, never what it writes.
+import { recordAudit } from "@/lib/audit";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
+import { createIncomeForClient, updateIncomeForClient } from "@/lib/clients/incomes-writes";
+import { updateExpenseForClient } from "@/lib/clients/expenses-writes";
+import { createSavingsRuleForClient, updateSavingsRuleForClient } from "@/lib/clients/savings-rules-writes";
+import type { EntityWriteResult } from "@/lib/clients/entity-write-result";
+import { fmtUsd } from "@/lib/tax-analysis/format";
+import { computeReconciliation } from "./reconcile";
+import * as w from "./writers";
+import type { ActionTarget, OwnerChoice, Reconciliation, Suggestion } from "./types";
+
+export interface ApplyArgs {
+  clientId: string; firmId: string; actorId: string; callerOrgId: string | null; access: "own" | "shared";
+  taxYear: number; suggestionId: string; amount?: number; owner?: OwnerChoice;
+}
+export type ApplyResult =
+  | { ok: true; applied: { suggestionId: string; summary: string }; reconciliation: Reconciliation }
+  | { ok: false; status: number; error: string; reconciliation?: Reconciliation };
+
+const LOAD_STATUS = { not_found: 404, facts_unreadable: 409, no_plan: 409 } as const;
+
+/** The advisor's two edits — amount and owner — folded into the server's own target. */
+function withOverrides(target: ActionTarget, amount: number | undefined, owner: OwnerChoice | undefined): ActionTarget {
+  const t = structuredClone(target);
+  switch (t.kind) {
+    case "income.update": case "expense.update": case "savings_rule.update": case "deduction.update":
+      if (amount != null) (t.patch as Record<string, unknown>)[t.amountField] = amount;
+      return t;
+    case "income.create": {
+      if (amount != null) t.input[t.amountField] = amount;
+      if (t.ownerField) {
+        const o = owner === "spouse" ? "spouse" : "client";
+        t.input[t.ownerField] = o;
+        // The row ends at ITS OWNER's retirement. Left alone, a salary handed to the
+        // spouse would still stop the year the client retires.
+        if (o === "spouse" && t.input.endYearRef === "client_retirement") t.input.endYearRef = "spouse_retirement";
+      }
+      return t;
+    }
+    case "savings_rule.create": case "deduction.create":
+      if (amount != null) (t.input as Record<string, unknown>)[t.amountField] = amount;
+      return t;
+    case "plan_settings.update":
+      if (amount != null && t.amountField) t.patch[t.amountField] = amount;
+      return t;
+    case "medicare.upsert":
+      if (amount != null) t.priorYearMagi = amount;
+      return t;
+    case "income.socialSecurity.claim":
+      if (amount != null) t.amount = amount;
+      return t;
+    // Nothing an advisor can edit on the card: a filing status, an entity, a tax
+    // treatment. Listed rather than defaulted so a new kind fails to compile here.
+    case "entity.create": case "entity.update": case "client.update":
+      return t;
+  }
+}
+
+type WriteContext = { clientId: string; firmId: string; actorId: string; crossFirmMeta: Record<string, unknown> };
+
+/** One target kind, one writer. Exhaustive over `ActionTarget`, so a new kind in the
+ *  rules cannot reach production without a route to a writer. */
+async function dispatch(t: ActionTarget, owner: OwnerChoice | undefined, c: WriteContext): Promise<EntityWriteResult<unknown>> {
+  switch (t.kind) {
+    case "income.create": return createIncomeForClient({ ...c, input: t.input });
+    case "income.update": return updateIncomeForClient({ ...c, incomeId: t.incomeId, input: t.patch });
+    case "expense.update": return updateExpenseForClient({ ...c, expenseId: t.expenseId, input: t.patch });
+    case "savings_rule.create": return createSavingsRuleForClient({ ...c, input: t.input });
+    case "savings_rule.update": return updateSavingsRuleForClient({ ...c, ruleId: t.ruleId, input: t.patch });
+    case "deduction.create": return w.createDeductionForReturn({ ...c, input: t.input });
+    case "deduction.update": return w.updateDeductionAmount({ ...c, deductionId: t.deductionId, annualAmount: t.patch.annualAmount });
+    case "entity.create": return w.createEntityForReturn({ ...c, input: t.input });
+    case "entity.update": return w.updateEntityTaxTreatment({ ...c, entityId: t.entityId, taxTreatment: t.patch.taxTreatment });
+    case "plan_settings.update": return w.updatePlanSettingsForReturn({ ...c, patch: t.patch });
+    case "client.update": return w.updateClientFilingStatus({ ...c, filingStatus: t.patch.filingStatus });
+    case "medicare.upsert": return w.upsertMedicarePriorYearMagi({ ...c, owner: t.owner, priorYearMagi: t.priorYearMagi });
+    case "income.socialSecurity.claim": {
+      const chosen = owner === "split" ? t.rows : t.rows.filter((r) => r.owner === (owner ?? "client"));
+      if (chosen.length === 0) return { ok: false, status: 400, error: "No Social Security row for that owner" };
+      const each = owner === "split" ? t.amount / chosen.length : t.amount;
+      // One writer, not one call per row: a split has to land whole or not at all.
+      return w.claimSocialSecurityForReturn({ ...c, rows: chosen.map((r) => ({ incomeId: r.incomeId, patch: { ...r.patch, annualAmount: each } })) });
+    }
+  }
+}
+
+export async function applySuggestion(a: ApplyArgs): Promise<ApplyResult> {
+  const before = await computeReconciliation(a.clientId, a.firmId, a.taxYear);
+  if (!before.ok) return { ok: false, status: LOAD_STATUS[before.code], error: before.code };
+  const r = before.reconciliation;
+  const s: Suggestion | undefined = r.sections.flatMap((x) => x.items).find((x) => x.id === a.suggestionId);
+  if (!s) {
+    // Already dismissed, or the plan moved and the gap closed while the page was open.
+    const known = r.dismissed.some((d) => d.id === a.suggestionId) || r.checks.some((c) => c.id === a.suggestionId);
+    return known ? { ok: false, status: 409, error: "stale", reconciliation: r } : { ok: false, status: 404, error: "Unknown suggestion" };
+  }
+  if (!s.action) return { ok: false, status: 400, error: "This suggestion has no automatic update" };
+  if (a.amount !== undefined) {
+    if (!s.action.amountEditable) return { ok: false, status: 400, error: "This update does not take an amount" };
+    if (!Number.isFinite(a.amount) || a.amount < 0 || a.amount > 1e9) return { ok: false, status: 400, error: "Amount must be between $0 and $1,000,000,000" };
+  }
+  if (a.owner !== undefined && !s.action.ownerChoices?.includes(a.owner)) return { ok: false, status: 400, error: "That owner is not offered for this update" };
+  const owner = s.action.ownerChoices ? (a.owner ?? "client") : undefined;
+
+  const target = withOverrides(s.action.target, a.amount, owner);
+  const crossFirmMeta = crossFirmAuditMeta({ access: a.access }, a.callerOrgId, { taxYear: a.taxYear, suggestionId: a.suggestionId });
+  const written = await dispatch(target, owner, { clientId: a.clientId, firmId: a.firmId, actorId: a.actorId, crossFirmMeta });
+  if (!written.ok) return { ok: false, status: written.status, error: written.error };
+
+  await recordAudit({ action: "tax_reconciliation.apply", resourceType: "tax_return", resourceId: `${a.clientId}:${a.taxYear}`, clientId: a.clientId, firmId: a.firmId, actorId: a.actorId,
+    metadata: { ...crossFirmMeta, suggestionId: a.suggestionId, kind: target.kind, amount: a.amount ?? s.action.defaultAmount, owner } });
+
+  const summary = a.amount != null && s.action.defaultAmount != null ? s.action.describe.replace(fmtUsd(s.action.defaultAmount), fmtUsd(a.amount)) : s.action.describe;
+  const after = await computeReconciliation(a.clientId, a.firmId, a.taxYear);
+  return { ok: true, applied: { suggestionId: a.suggestionId, summary }, reconciliation: after.ok ? after.reconciliation : r };
+}
