@@ -17,6 +17,7 @@ const tree = {
     { id: "r1", accountId: "a1", annualAmount: 5_000, startYear: 2026, endYear: 2040, isDeductible: true },
     { id: "r2", accountId: "a1", annualAmount: 0, startYear: 2026, endYear: 2040, annualPercent: 0.1, contributeMax: false, isDeductible: true },
     { id: "r3", accountId: "a1", annualAmount: 0, startYear: 2026, endYear: 2040, annualPercent: null, contributeMax: true, isDeductible: true },
+    { id: "r4", accountId: "a1", annualAmount: 9_000, startYear: 2026, endYear: 2040, scheduleOverrides: { 2027: 11_000, 2028: 0 }, isDeductible: true },
   ],
   accounts: [{ id: "a1", name: "401(k)", category: "retirement", subType: "401k", value: 0, basis: 0, growthRate: 0.07, rmdEnabled: false }],
   entities: [{ id: "en1", name: "Blue Harbor", entityType: "partnership", taxTreatment: "qbi", includeInPortfolio: false, isGrantor: false }, { id: "en2", includeInPortfolio: false, isGrantor: false }],
@@ -47,9 +48,13 @@ describe("snapshotFromTree", () => {
     expect(s.savingsRules).toEqual([
       // The mode fields decide which figure the engine spends, so they must survive the narrowing —
       // and an absent one must land as null/false, never undefined.
-      { id: "r1", accountId: "a1", annualAmount: 5_000, startYear: 2026, endYear: 2040, annualPercent: null, contributeMax: false },
-      { id: "r2", accountId: "a1", annualAmount: 0, startYear: 2026, endYear: 2040, annualPercent: 0.1, contributeMax: false },
-      { id: "r3", accountId: "a1", annualAmount: 0, startYear: 2026, endYear: 2040, annualPercent: null, contributeMax: true },
+      { id: "r1", accountId: "a1", annualAmount: 5_000, startYear: 2026, endYear: 2040, annualPercent: null, contributeMax: false, overrideYears: [] },
+      { id: "r2", accountId: "a1", annualAmount: 0, startYear: 2026, endYear: 2040, annualPercent: 0.1, contributeMax: false, overrideYears: [] },
+      { id: "r3", accountId: "a1", annualAmount: 0, startYear: 2026, endYear: 2040, annualPercent: null, contributeMax: true, overrideYears: [] },
+      // The override YEARS travel, as numbers; the AMOUNTS deliberately do not, so no rule can be
+      // tempted to re-derive the engine's precedence from them. Note 2028's override is 0 — a year
+      // key must survive on its own, never on its amount being truthy.
+      { id: "r4", accountId: "a1", annualAmount: 9_000, startYear: 2026, endYear: 2040, annualPercent: null, contributeMax: false, overrideYears: [2027, 2028] },
     ]);
     expect(s.accounts).toEqual([{ id: "a1", name: "401(k)", category: "retirement", subType: "401k" }]);
     expect(s.deductions).toEqual([]);

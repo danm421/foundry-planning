@@ -26,10 +26,11 @@ export function snapshotFromTree(tree: ClientData, deductionRows: PlanDeduction[
       id: e.id, type: e.type, name: e.name, annualAmount: e.annualAmount, growthRate: e.growthRate, startYear: e.startYear, endYear: e.endYear,
       inflationStartYear: e.inflationStartYear ?? null, isDefault: e.isDefault ?? false, startYearRef: e.startYearRef ?? null,
     })),
-    // `annualPercent` and `contributeMax` come along because they decide WHICH figure on the row the
-    // engine actually spends: without them a percent or max-funded rule reads as $0 and no caller can
-    // tell that from a rule genuinely saving nothing.
-    savingsRules: tree.savingsRules.map((r) => ({ id: r.id, accountId: r.accountId, annualAmount: r.annualAmount, startYear: r.startYear, endYear: r.endYear, annualPercent: r.annualPercent ?? null, contributeMax: r.contributeMax ?? false })),
+    // `annualPercent`, `contributeMax` and the override YEARS come along because they decide WHICH
+    // figure on the row the engine actually spends: without them a percent, max-funded or
+    // schedule-driven rule reads as $0 and no caller can tell that from a rule genuinely saving
+    // nothing. The override AMOUNTS stay behind — see PlanSavingsRule.overrideYears.
+    savingsRules: tree.savingsRules.map((r) => ({ id: r.id, accountId: r.accountId, annualAmount: r.annualAmount, startYear: r.startYear, endYear: r.endYear, annualPercent: r.annualPercent ?? null, contributeMax: r.contributeMax ?? false, overrideYears: Object.keys(r.scheduleOverrides ?? {}).map(Number) })),
     accounts: tree.accounts.map((a) => ({ id: a.id, name: a.name, category: a.category, subType: a.subType })),
     entities: (tree.entities ?? []).map((e) => ({ id: e.id, name: e.name ?? "", entityType: e.entityType ?? "trust", taxTreatment: e.taxTreatment ?? "ordinary" })),
     deductions: deductionRows,

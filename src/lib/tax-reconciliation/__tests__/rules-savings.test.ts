@@ -13,7 +13,7 @@ const acct = (id: string, subType: string): PlanAccount => ({ id, name: `${subTy
 // `over` is typed, not `{}`: an untyped bag silently swallows a misspelled override, so a test could
 // think it was pinning `endYear` while the rule kept the fixture default.
 const rule = (id: string, accountId: string, amount: number, over: Partial<PlanSavingsRule> = {}): PlanSavingsRule =>
-  ({ id, accountId, annualAmount: amount, startYear: 2026, endYear: 2060, annualPercent: null, contributeMax: false, ...over });
+  ({ id, accountId, annualAmount: amount, startYear: 2026, endYear: 2060, annualPercent: null, contributeMax: false, overrideYears: [], ...over });
 /** A projection year whose only content is what the SEP account received. */
 const engine = (contribution: number) =>
   engineYearFixture({ savings: { byAccount: { a1: contribution }, total: contribution, employerTotal: 0 } });
@@ -177,6 +177,45 @@ describe("savingsRules (5% / $500)", () => {
     expect(write.planFigure).toMatchObject({ amount: 10_000, display: "$10,000" });
   });
 
+  it("treats a year-by-year override in the plan year as unwritable, and one elsewhere as writable", () => {
+    // The engine reads an override BEFORE contributeMax and annualPercent, so for a year it covers
+    // the row's annualAmount is discarded exactly as it is in percent mode: the card would say
+    // "Sets contributions to $20,000" and the projection would not move.
+    const covered = planFixture({ accounts: [acct("a1", "sep_ira")], savingsRules: [rule("r1", "a1", 12_000, { overrideYears: [2026] })] });
+    const r = savingsRules(inputFixture({ facts: factsWith(20_000, null), plan: covered, engineYear: engine(10_300) })).suggestions[0];
+    expect(r).toMatchObject({ id: "savings.sepSimple", kind: "review" });
+    expect(r.action).toBeUndefined();
+    expect(r.headline).toMatch(/year-by-year schedule/);
+    expect(r.meaning).toMatch(/would be ignored/);
+    expect(r.link?.href).toBe(`/clients/${CLIENT_ID}/details/net-worth`);
+    // Still the engine's figure, not the row's $12,000 — the comparison side was already right.
+    expect(r.planFigure).toMatchObject({ amount: 10_000, display: "$10,000", year: 2026 });
+
+    // The mode is per-YEAR: overrides that miss the plan year leave the rule on its annualAmount,
+    // so the write is correct and must still be offered. A rule-level "has any override" test would
+    // wrongly silence this one.
+    const elsewhere = planFixture({ accounts: [acct("a1", "sep_ira")], savingsRules: [rule("r1", "a1", 12_000, { overrideYears: [2027, 2030] })] });
+    const w = savingsRules(inputFixture({ facts: factsWith(20_000, null), plan: elsewhere, engineYear: engine(10_300) })).suggestions[0];
+    expect(w.kind).toBe("update");
+    expect(w.action?.target).toEqual({ kind: "savings_rule.update", ruleId: "r1", patch: { annualAmount: 20_000 }, amountField: "annualAmount" });
+
+    // And an override outranks BOTH other modes — it is what the engine reads first — so a rule that
+    // is also percent-driven, or also max-funded, is named for the schedule: the mode actually
+    // deciding the number. Reordering the precedence would name the wrong one here.
+    const alsoPct = planFixture({ accounts: [acct("a1", "sep_ira")], savingsRules: [rule("r1", "a1", 0, { annualPercent: 0.05, overrideYears: [2026] })] });
+    expect(savingsRules(inputFixture({ facts: factsWith(20_000, null), plan: alsoPct, engineYear: engine(10_300) })).suggestions[0].headline).toMatch(/year-by-year schedule/);
+    const alsoMax = planFixture({ accounts: [acct("a1", "sep_ira")], savingsRules: [rule("r1", "a1", 0, { contributeMax: true, overrideYears: [2026] })] });
+    expect(savingsRules(inputFixture({ facts: factsWith(20_000, null), plan: alsoMax, engineYear: engine(10_300) })).suggestions[0].headline).toMatch(/year-by-year schedule/);
+
+    // Mixed set with the WRITABLE rule listed first: the card must be named for the rule that
+    // actually blocks the write, not for whichever rule happens to come first on the account.
+    const mixed = planFixture({ accounts: [acct("a1", "sep_ira")], savingsRules: [rule("r1", "a1", 12_000), rule("r2", "a1", 4_000, { overrideYears: [2026] })] });
+    const m = savingsRules(inputFixture({ facts: factsWith(20_000, null), plan: mixed, engineYear: engine(10_300) })).suggestions[0];
+    expect(m.kind).toBe("review");
+    expect(m.action).toBeUndefined();
+    expect(m.headline).toMatch(/year-by-year schedule/);
+  });
+
   it("leaves an engine-resolved rule out of the row sum when the projection could not run", () => {
     // No engine year means no post-resolution truth. A percent rule's `annual_amount` is whatever it
     // held before the advisor switched it to percent — here $4,000 — and that number is NOT its
@@ -191,6 +230,13 @@ describe("savingsRules (5% / $500)", () => {
     // $6,000 — the flat rule alone, not the $10,000 a naive sum of both rows would give.
     expect(r.suggestions[0].planFigure).toMatchObject({ amount: 6_000, display: "$6,000" });
     expect(r.checks).toEqual([]);
+
+    // Same for a schedule-driven row: its annualAmount is not what the engine would spend in 2026.
+    const scheduled = planFixture({ accounts: [acct("a1", "sep_ira")], savingsRules: [rule("r1", "a1", 4_000, { overrideYears: [2026] }), rule("r2", "a1", 6_000)] });
+    const sc = savingsRules(inputFixture({ facts: factsWith(20_000, null), plan: scheduled })).suggestions[0];
+    expect(sc.kind).toBe("review");
+    expect(sc.action).toBeUndefined();
+    expect(sc.planFigure).toMatchObject({ amount: 6_000, display: "$6,000" });
   });
 
   it("never counts or writes to a rule on an account of another kind", () => {

@@ -85,6 +85,16 @@ export interface PlanSavingsRule {
    *  the account's sub-type, overriding BOTH annualAmount and annualPercent
    *  (src/engine/projection.ts:3910-3924). Same phantom-gap hazard as annualPercent. */
   contributeMax: boolean;
+  /** The years this rule carries a year-by-year amount override for. The engine reads an override
+   *  FIRST, ahead of contributeMax and annualPercent (src/engine/projection.ts:3905-3909), so in one
+   *  of these years annualAmount is discarded exactly as it is in percent mode.
+   *
+   *  The YEARS only, never the amounts. The snapshot is a view of the plan, not of any one
+   *  projection year, so it stays plan-year-agnostic and the caller does its own year test; and a
+   *  rules module holding the amounts would be one step from re-implementing the engine's
+   *  precedence, which is the drift that produced this whole class of defect. A list of years
+   *  answers "can this rule be written to?" and answers nothing else. */
+  overrideYears: number[];
 }
 export interface PlanAccount { id: string; name: string; category: string; subType: string }
 export interface PlanEntity { id: string; name: string; entityType: string; taxTreatment: "qbi" | "ordinary" | "non_taxable" }
