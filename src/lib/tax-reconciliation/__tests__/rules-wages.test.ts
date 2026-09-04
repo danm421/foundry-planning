@@ -230,7 +230,7 @@ describe("wageRules — income.wages.total (no W-2 documents, 5% / $500)", () =>
   it("creates a wages row when the plan has none", () => {
     const f = emptyTaxReturnFacts(2025); f.income.wages = 80_000;
     const s = wageRules(inputFixture({ facts: f })).suggestions[0];
-    expect(s.id).toBe("income.wages.total");
+    expect(s.id).toBe("income.wages.total.create");
     expect(s.action?.target).toMatchObject({ kind: "income.create", input: { name: "Wages (from 2025 return)", annualAmount: 80_000 } });
   });
   it("shows no salary as $0, not as a negative figure, when the plan still defers pre-tax", () => {
@@ -238,10 +238,27 @@ describe("wageRules — income.wages.total (no W-2 documents, 5% / $500)", () =>
     // under a headline saying the plan has no salary at all.
     const f = emptyTaxReturnFacts(2025); f.income.wages = 80_000;
     const s = wageRules(inputFixture({ facts: f, engineYear: engineDeferring(20_600) })).suggestions[0];
-    expect(s.id).toBe("income.wages.total");
+    expect(s.id).toBe("income.wages.total.create");
     expect(s.planFigure.amount).toBe(0);
     expect(s.planFigure.display).toBe("$0");
   });
+  it("gives the create arm a dismissal id of its own, so setting it aside leaves the update arm", () => {
+    // These ids are persisted. Sharing one would make "no thanks, don't add a salary" also
+    // suppress "the salary amount is off" — permanently, and on a card the advisor never saw.
+    const f = emptyTaxReturnFacts(2025); f.income.wages = 80_000;
+    const create = wageRules(inputFixture({ facts: f })).suggestions[0];
+    const plan = planFixture({ incomes: [salary("i1", "Acme", 100_000, { inflationStartYear: 2025 })] });
+    const update = wageRules(inputFixture({ facts: f, plan })).suggestions[0];
+    expect(create.action?.target).toMatchObject({ kind: "income.create" });
+    expect(update.action?.target).toMatchObject({ kind: "income.update" });
+    expect(create.id).toBe("income.wages.total.create");
+    expect(update.id).toBe("income.wages.total");
+    expect(create.id).not.toBe(update.id);
+    // The multi-row review keeps the bare id too — only a true create splits.
+    const many = planFixture({ incomes: [salary("i1", "Acme", 60_000, { inflationStartYear: 2025 }), salary("i2", "Globex", 60_000, { inflationStartYear: 2025 })] });
+    expect(wageRules(inputFixture({ facts: f, plan: many })).suggestions[0]).toMatchObject({ id: "income.wages.total", kind: "review" });
+  });
+
   it("updates the single row, adding back the engine's pre-tax deferrals so the row stays gross", () => {
     const f = emptyTaxReturnFacts(2025); f.income.wages = 80_000;
     const plan = planFixture({ incomes: [salary("i1", "Acme", 100_000, { inflationStartYear: 2025 })] });

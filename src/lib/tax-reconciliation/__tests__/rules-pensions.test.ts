@@ -12,7 +12,7 @@ const pension = (id: string, amount: number, over: Partial<PlanIncome> = {}) =>
 describe("pensionRules (5% / $500, return > $1,000)", () => {
   it("creates a flat pension when the plan has none", () => {
     const s = pensionRules(inputFixture({ facts: factsWith(24_000) })).suggestions[0];
-    expect(s.id).toBe("income.pensions");
+    expect(s.id).toBe("income.pensions.create");
     expect(s.action?.target).toEqual({ kind: "income.create", amountField: "annualAmount", ownerField: "owner",
       input: { type: "deferred", name: "Pension (from 2025 return)", owner: "client", annualAmount: 24_000, growthRate: 0, inflationStartYear: 2025, startYear: 2026, endYear: 2060 } });
     // Line 5a is a household total on a joint return, and ownership drives survivor modelling: a
@@ -28,6 +28,21 @@ describe("pensionRules (5% / $500, return > $1,000)", () => {
     expect(s.action?.defaultAmount).toBe(24_000);
     expect(s.action?.label).toMatch(/\$24,000/);
     expect(s.action?.describe).toMatch(/\$24,000/);
+  });
+
+  it("gives the create arm a dismissal id of its own, so setting it aside leaves the update arm", () => {
+    // These ids are persisted. Sharing one would make "no thanks, don't add a pension" also
+    // suppress "the pension amount is off" — permanently, and on a card the advisor never saw.
+    const create = pensionRules(inputFixture({ facts: factsWith(24_000) })).suggestions[0];
+    const update = pensionRules(inputFixture({ facts: factsWith(24_000), plan: planFixture({ incomes: [pension("p1", 20_000)] }) })).suggestions[0];
+    expect(create.action?.target).toMatchObject({ kind: "income.create" });
+    expect(update.action?.target).toMatchObject({ kind: "income.update" });
+    expect(create.id).toBe("income.pensions.create");
+    expect(update.id).toBe("income.pensions");
+    expect(create.id).not.toBe(update.id);
+    // The ending, future and review arms stay on the bare id — only a true create splits.
+    const ending = pensionRules(inputFixture({ facts: factsWith(24_000), plan: planFixture({ incomes: [pension("p1", 20_000, { startYear: 2015, endYear: 2025 })] }) })).suggestions[0];
+    expect(ending).toMatchObject({ id: "income.pensions", kind: "review" });
   });
 
   it("offers no owner choice on the created pension when there is no spouse", () => {

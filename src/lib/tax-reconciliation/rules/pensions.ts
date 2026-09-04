@@ -43,7 +43,9 @@ export const pensionRules: Rule = (input) => {
       returnFigure, planFigure: { label, amount: 0, display: money(0), year: planYear }, delta: makeDelta(gross, 0), link: outflows }], checks: [] };
   }
   if (rows.length > 0 && !differs(gross, p, ROW)) return { suggestions: [], checks: [{ id, label: "Pensions", returnDisplay: money(gross), planDisplay: money(p) }] };
-  if (rows.length === 0) return { suggestions: [{ id, section: "income", kind: "update", status: "open",
+  // `.create` is a dismissal id of its own: dismissing "add this pension" must not also suppress
+  // "the pension amount is off", and those ids are persisted.
+  if (rows.length === 0) return { suggestions: [{ id: `${id}.create`, section: "income", kind: "update", status: "open",
     headline: `The return shows ${money(gross)} of pension income; the plan has none.`,
     meaning: "A pension on line 5a is a stream the plan should carry for life. This adds it flat (no growth); set a cost-of-living adjustment on the row if the pension has one.",
     returnFigure, planFigure, delta: makeDelta(gross, 0),

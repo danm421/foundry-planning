@@ -53,7 +53,7 @@ describe("buildReconciliation", () => {
     // read household, income, tax. SECTION_ORDER puts income first — deleting the ordering reddens.
     // The four absent sections pin the empty-section drop: keep every section and this reddens too.
     expect(grouped(r)).toEqual([
-      ["income", "Income", ["income.wages.total", "income.pensions"]],
+      ["income", "Income", ["income.wages.total.create", "income.pensions.create"]],
       ["household", "Household & assumptions", ["household.filingStatus", "medicare.priorYearMagi.client"]],
       ["tax", "Why the tax differs", ["tax.settlement"]],
     ]);
@@ -62,17 +62,17 @@ describe("buildReconciliation", () => {
   });
 
   it("keeps a dismissed suggestion computed but out of the sections and the open count", () => {
-    const r = buildReconciliation(inputFixture({ facts: facts() }), ctx({ dismissedIds: new Set(["income.pensions"]) }));
+    const r = buildReconciliation(inputFixture({ facts: facts() }), ctx({ dismissedIds: new Set(["income.pensions.create"]) }));
     expect(grouped(r)).toEqual([
-      ["income", "Income", ["income.wages.total"]],
+      ["income", "Income", ["income.wages.total.create"]],
       ["household", "Household & assumptions", ["household.filingStatus", "medicare.priorYearMagi.client"]],
       ["tax", "Why the tax differs", ["tax.settlement"]],
     ]);
-    expect(r.dismissed.map((d) => d.id)).toEqual(["income.pensions"]);
+    expect(r.dismissed.map((d) => d.id)).toEqual(["income.pensions.create"]);
     // Dismissed means routed and re-stamped, not skipped: the card is fully built, action included,
     // so the UI can show what was set aside. Only `status` differs from the open form.
     expect(r.dismissed[0]).toMatchObject({
-      id: "income.pensions", section: "income", kind: "update", status: "dismissed",
+      id: "income.pensions.create", section: "income", kind: "update", status: "dismissed",
       returnFigure: { label: "Pensions and annuities", amount: 24_000, display: "$24,000" },
       delta: { display: "Not in the plan", tone: "missing" },
     });
@@ -81,9 +81,9 @@ describe("buildReconciliation", () => {
   });
 
   it("drops a section once every item in it is dismissed", () => {
-    const r = buildReconciliation(inputFixture({ facts: facts() }), ctx({ dismissedIds: new Set(["income.wages.total", "income.pensions"]) }));
+    const r = buildReconciliation(inputFixture({ facts: facts() }), ctx({ dismissedIds: new Set(["income.wages.total.create", "income.pensions.create"]) }));
     expect(r.sections.map((s) => s.id)).toEqual(["household", "tax"]);
-    expect(r.dismissed.map((d) => d.id)).toEqual(["income.wages.total", "income.pensions"]);
+    expect(r.dismissed.map((d) => d.id)).toEqual(["income.wages.total.create", "income.pensions.create"]);
     expect(r.overview).toMatchObject({ openCount: 3, dismissedCount: 2 });
   });
 
@@ -114,7 +114,7 @@ describe("buildReconciliation", () => {
     // between income and household. It also proves no engine-fed card renders a NaN — the fixture's
     // `taxResult` carries three fields, so a rule reading a fourth would surface here.
     expect(grouped(r)).toEqual([
-      ["income", "Income", ["income.wages.total", "income.pensions"]],
+      ["income", "Income", ["income.wages.total.create", "income.pensions.create"]],
       ["spending", "Spending", ["spending.implied"]],
       ["household", "Household & assumptions", ["household.filingStatus", "medicare.priorYearMagi.client"]],
       ["tax", "Why the tax differs", ["tax.settlement"]],
@@ -193,7 +193,7 @@ describe("buildReconciliation", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const r = buildReconciliation(inputFixture({ facts: facts(), plan: { ...planFixture(), medicare: null as never } }), ctx());
     expect(grouped(r)).toEqual([
-      ["income", "Income", ["income.wages.total", "income.pensions"]],
+      ["income", "Income", ["income.wages.total.create", "income.pensions.create"]],
       ["household", "Household & assumptions", ["household.filingStatus"]],
       ["tax", "Why the tax differs", ["tax.settlement"]],
     ]);
@@ -210,7 +210,7 @@ describe("buildReconciliation", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const r = buildReconciliation(inputFixture({ facts: { ...facts(), payments: null as never } }), ctx());
     expect(grouped(r)).toEqual([
-      ["income", "Income", ["income.wages.total", "income.pensions"]],
+      ["income", "Income", ["income.wages.total.create", "income.pensions.create"]],
       ["household", "Household & assumptions", ["household.filingStatus", "medicare.priorYearMagi.client"]],
     ]);
     expect(r.notes).toEqual(["The federal tax checks could not run, so nothing on this page reflects them. Everything else was compared normally."]);

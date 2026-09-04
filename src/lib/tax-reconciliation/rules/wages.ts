@@ -129,7 +129,9 @@ export const wageRules: Rule = (input) => {
     if (!differs(wages, p, ROW)) {
       checks.push({ id, label: "Wages", returnDisplay: money(wages), planDisplay: money(p) });
     } else if (rows.length === 0) {
-      suggestions.push({ id, section: "income", kind: "update", status: "open",
+      // `.create` is a dismissal id of its own: dismissing "add a salary" must not also suppress
+      // "the salary amount is off", and those ids are persisted.
+      suggestions.push({ id: `${id}.create`, section: "income", kind: "update", status: "open",
         headline: `The return shows ${money(wages)} of wages; the plan has no salary.`,
         meaning: "Without W-2s the return cannot say which employer or whose. Add one salary row now and rename it, or upload the W-2s on Tax Analysis for a per-employer comparison.",
         returnFigure, planFigure, delta: makeDelta(wages, 0),
