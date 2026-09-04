@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { eq, and } from "drizzle-orm";
 import { tickerPortfolios, modelPortfolios } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
-import { authErrorResponse, requireOrgAdminOrOwner } from "@/lib/authz";
+import { authErrorResponse, requireActiveSubscriptionForFirm, requireOrgAdminOrOwner } from "@/lib/authz";
 import { recordAudit } from "@/lib/audit";
 import { deriveAllocationsForFund } from "@/lib/investments/sync-derived-model-portfolio";
 import {
@@ -27,6 +27,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   try {
     await requireOrgAdminOrOwner();
     const firmId = await requireOrgId();
+    await requireActiveSubscriptionForFirm(firmId);
     const { id } = await params;
 
     const [fund] = await db
