@@ -137,6 +137,7 @@ export interface RothConversionRow {
   endYearRef: string | null;
   indexingRate: string;
   inflationStartYear: number | null;
+  irmaaCapTier: number | null;
 }
 
 export interface RelocationRow {

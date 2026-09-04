@@ -191,6 +191,7 @@ export async function TechniquesContent({ clientId: id, scenarioParam }: Techniq
     endYearRef: c.endYearRef ?? null,
     indexingRate: String(c.indexingRate),
     inflationStartYear: c.inflationStartYear ?? null,
+    irmaaCapTier: c.irmaaCapTier ?? null,
   }));
 
   const accountOptions = accountRows.map((a) => ({
