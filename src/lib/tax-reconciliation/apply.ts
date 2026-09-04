@@ -6,6 +6,8 @@
 // of the server's own suggestions to apply, never what it writes.
 import { db } from "@/db";
 import { recordAudit } from "@/lib/audit";
+import { requireActiveSubscriptionForFirm } from "@/lib/authz";
+import { requireClientEditAccess } from "@/lib/clients/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { createIncomeForClient, updateIncomeForClient } from "@/lib/clients/incomes-writes";
 import { updateExpenseForClient } from "@/lib/clients/expenses-writes";
@@ -35,7 +37,9 @@ function withOverrides(target: ActionTarget, amount: number | undefined, owner: 
       return t;
     case "income.create": {
       if (amount != null) t.input[t.amountField] = amount;
-      if (t.ownerField) {
+      // Only when the card actually offered a choice. Forcing an owner here regardless
+      // would silently rewrite the owner of any create whose rule names one itself.
+      if (t.ownerField && owner !== undefined) {
         const o = owner === "spouse" ? "spouse" : "client";
         t.input[t.ownerField] = o;
         // The row ends at ITS OWNER's retirement. Left alone, a salary handed to the
@@ -88,9 +92,17 @@ async function dispatch(t: ActionTarget, owner: OwnerChoice | undefined, c: Writ
     case "client.update": return w.updateClientFilingStatus({ ...c, filingStatus: t.patch.filingStatus });
     case "medicare.upsert": return w.upsertMedicarePriorYearMagi({ ...c, owner: t.owner, priorYearMagi: t.priorYearMagi });
     case "income.socialSecurity.claim": {
-      const chosen = owner === "split" ? t.rows : t.rows.filter((r) => r.owner === (owner ?? "client"));
+      // No choice offered means one claimable row, and the target already names whose it
+      // is. Defaulting to "client" here made every click on a spouse-only claim a 400.
+      const chosen = owner === "split" ? t.rows : owner ? t.rows.filter((r) => r.owner === owner) : t.rows;
       if (chosen.length === 0) return { ok: false, status: 400, error: "No Social Security row for that owner" };
-      const each = owner === "split" ? t.amount / chosen.length : t.amount;
+      // `incomes.annual_amount` is decimal(15,2), so an even division of an odd cent
+      // would be rounded on BOTH rows and the household's total would no longer add up.
+      // Split in whole cents and give the remainder to the last row.
+      const totalCents = Math.round(t.amount * 100);
+      const shareCents = Math.floor(totalCents / chosen.length);
+      const amountFor = (i: number) => owner !== "split" ? t.amount
+        : (i === chosen.length - 1 ? totalCents - shareCents * (chosen.length - 1) : shareCents) / 100;
       // A split is TWO row writes. They go through the shared income core — the one
       // validation path the routes and Forge also use — but on ONE transaction handle,
       // so a failure on the second cannot leave one spouse's benefit rewritten and the
@@ -98,8 +110,8 @@ async function dispatch(t: ActionTarget, owner: OwnerChoice | undefined, c: Writ
       try {
         return await db.transaction(async (tx) => {
           let last: EntityWriteResult<unknown> = { ok: false, status: 500, error: "No Social Security row was written" };
-          for (const r of chosen) {
-            last = await updateIncomeForClient({ ...c, incomeId: r.incomeId, input: { ...r.patch, annualAmount: each }, tx });
+          for (const [i, r] of chosen.entries()) {
+            last = await updateIncomeForClient({ ...c, incomeId: r.incomeId, input: { ...r.patch, annualAmount: amountFor(i) }, tx });
             // The core reports a rejection rather than throwing, so throwing here is
             // what rolls the sibling write back.
             if (!last.ok) throw new SplitWriteRejected(last);
@@ -116,6 +128,15 @@ async function dispatch(t: ActionTarget, owner: OwnerChoice | undefined, c: Writ
 }
 
 export async function applySuggestion(a: ApplyArgs): Promise<ApplyResult> {
+  // Gate once, here. Seven of the thirteen targets go to writers that gate themselves,
+  // but the six that go to a shared core do not: the cores run `verifyClientAccess`,
+  // which proves firm membership and nothing about the caller's `edit` permission or
+  // the firm's subscription. A function that takes a firmId and reads as self-scoping
+  // has to actually self-scope. The writers keep their own gates as defence in depth.
+  const { firmId } = await requireClientEditAccess(a.clientId);
+  if (firmId !== a.firmId) return { ok: false, status: 404, error: "Client not found" };
+  await requireActiveSubscriptionForFirm(a.firmId);
+
   const before = await computeReconciliation(a.clientId, a.firmId, a.taxYear);
   if (!before.ok) return { ok: false, status: LOAD_STATUS[before.code], error: before.code };
   const r = before.reconciliation;

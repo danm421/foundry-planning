@@ -6,8 +6,11 @@ const m = vi.hoisted(() => ({
   createSavingsRuleForClient: vi.fn(), updateSavingsRuleForClient: vi.fn(), recordAudit: vi.fn(),
   updatePlanSettingsForReturn: vi.fn(), updateClientFilingStatus: vi.fn(), createDeductionForReturn: vi.fn(), updateDeductionAmount: vi.fn(),
   createEntityForReturn: vi.fn(), updateEntityTaxTreatment: vi.fn(), upsertMedicarePriorYearMagi: vi.fn(), transaction: vi.fn(),
+  requireClientEditAccess: vi.fn(), requireActiveSubscriptionForFirm: vi.fn(),
 }));
 vi.mock("@/db", () => ({ db: { transaction: m.transaction } }));
+vi.mock("@/lib/clients/authz", () => ({ requireClientEditAccess: m.requireClientEditAccess }));
+vi.mock("@/lib/authz", () => ({ requireActiveSubscriptionForFirm: m.requireActiveSubscriptionForFirm }));
 vi.mock("../reconcile", () => ({ computeReconciliation: m.computeReconciliation }));
 vi.mock("@/lib/clients/incomes-writes", () => ({ createIncomeForClient: m.createIncomeForClient, updateIncomeForClient: m.updateIncomeForClient }));
 vi.mock("@/lib/clients/expenses-writes", () => ({ updateExpenseForClient: m.updateExpenseForClient }));
@@ -48,6 +51,14 @@ const scheduleCLoss = base({ id: "business.scheduleC.0.create", section: "busine
   target: { kind: "income.create", amountField: "annualAmount", ownerField: "owner", input: { type: "business", name: "Consulting", owner: "client", annualAmount: -12_000, startYear: 2026, endYear: 2060 } } } });
 /** A review item: it exists to be read, and carries no `action` at all. */
 const noAction = base({ id: "income.socialSecurity.noProjection", kind: "review" });
+/** Exactly ONE claimable row and it is the SPOUSE's, so `rules/social-security.ts`
+ *  offers no owner choice. Reachable on an MFJ household whose client-side row is
+ *  joint, ended, or has no date of birth. */
+const ssSpouseOnly = base({ id: "income.socialSecurity", action: { label: "", describe: "", amountEditable: true, defaultAmount: 40_000,
+  target: { kind: "income.socialSecurity.claim", amount: 40_000, rows: [{ owner: "spouse", incomeId: "sp1", patch: { ssBenefitMode: "manual_amount" } }] } } });
+/** A create whose target names a spouse owner with no choice offered. */
+const spouseCreate = base({ id: "income.rental.create", action: { label: "", describe: "", amountEditable: true, defaultAmount: 20_000,
+  target: { kind: "income.create", amountField: "annualAmount", ownerField: "owner", input: { type: "other", name: "Rental", owner: "spouse", annualAmount: 20_000 } } } });
 
 const recon = (open: Suggestion[], dismissed: Suggestion[] = [], checks: Reconciliation["checks"] = []): Reconciliation => ({ taxYear: 2025, planYear: 2026, planStartYear: 2026, status: "ready", overview: { totalIncome: { return: null, plan: null }, federalTax: { return: null, plan: null }, agi: { return: null, plan: null }, effectiveRate: { return: null, plan: null }, openCount: open.length, dismissedCount: dismissed.length, inLineCount: checks.length }, sections: open.length ? [{ id: "income", title: "Income", items: open }] : [], checks, dismissed, notes: [], dismissalsUnavailable: false });
 const args = (over = {}) => ({ clientId: "c1", firmId: "org_1", actorId: "user_1", callerOrgId: "org_1", access: "own" as const, taxYear: 2025, suggestionId: "income.wages.w2.0.create", ...over });
@@ -61,6 +72,31 @@ beforeEach(() => {
   rolledBack = false;
   m.transaction.mockImplementation(async (cb: (t: unknown) => Promise<unknown>) => {
     try { return await cb(TX); } catch (err) { rolledBack = true; throw err; }
+  });
+  m.requireClientEditAccess.mockResolvedValue({ firmId: "org_1", access: "own", client: {} });
+  m.requireActiveSubscriptionForFirm.mockResolvedValue(undefined);
+});
+
+describe("applySuggestion — the gate at the top", () => {
+  it("refuses a caller without edit permission before it reads or writes anything", async () => {
+    m.requireClientEditAccess.mockRejectedValue(new Error("Edit access required"));
+    await expect(applySuggestion(args())).rejects.toThrow("Edit access required");
+    expect(m.computeReconciliation).not.toHaveBeenCalled();
+    for (const f of Object.values(WRITERS)) expect(f).not.toHaveBeenCalled();
+  });
+
+  it("refuses when the caller's firm is not the client's, before the subscription check", async () => {
+    m.requireClientEditAccess.mockResolvedValue({ firmId: "org_other", access: "own", client: {} });
+    expect(await applySuggestion(args())).toMatchObject({ ok: false, status: 404 });
+    expect(m.requireActiveSubscriptionForFirm).not.toHaveBeenCalled();
+    expect(m.computeReconciliation).not.toHaveBeenCalled();
+  });
+
+  it("refuses when the firm has no active subscription", async () => {
+    m.requireActiveSubscriptionForFirm.mockRejectedValue(new Error("Active subscription required"));
+    await expect(applySuggestion(args())).rejects.toThrow("Active subscription required");
+    expect(m.computeReconciliation).not.toHaveBeenCalled();
+    for (const f of Object.values(WRITERS)) expect(f).not.toHaveBeenCalled();
   });
 });
 
@@ -141,6 +177,33 @@ describe("applySuggestion", () => {
     expect(await applySuggestion(args({ suggestionId: "household.filingStatus", amount: 5 }))).toMatchObject({ ok: false, status: 400 });
     expect(await applySuggestion(args({ owner: "split" }))).toMatchObject({ ok: false, status: 400 });
     for (const f of Object.values(WRITERS)) expect(f).not.toHaveBeenCalled();
+  });
+
+  it("writes the row the target NAMES when the card offered no owner choice", async () => {
+    m.computeReconciliation.mockResolvedValue({ ok: true, taxReturnId: "tr-1", reconciliation: recon([ssSpouseOnly]) });
+    const r = await applySuggestion(args({ suggestionId: "income.socialSecurity" }));
+    // Defaulting the filter to "client" here made every click on a spouse-only claim a 400.
+    expect(r.ok).toBe(true);
+    expect(m.updateIncomeForClient).toHaveBeenCalledWith(expect.objectContaining({ incomeId: "sp1", input: { ssBenefitMode: "manual_amount", annualAmount: 40_000 } }));
+  });
+
+  it("leaves a create's own owner alone when the card offered no owner choice", async () => {
+    m.computeReconciliation.mockResolvedValue({ ok: true, taxReturnId: "tr-1", reconciliation: recon([spouseCreate]) });
+    const r = await applySuggestion(args({ suggestionId: "income.rental.create" }));
+    expect(r.ok).toBe(true);
+    expect(m.createIncomeForClient).toHaveBeenCalledWith(expect.objectContaining({ input: expect.objectContaining({ owner: "spouse" }) }));
+  });
+
+  it("gives the odd cent of a split to the last row so the halves still sum to the total", async () => {
+    const odd = base({ id: "income.socialSecurity", action: { label: "", describe: "", amountEditable: true, defaultAmount: 62_000.01, ownerChoices: ["client", "spouse", "split"],
+      target: { kind: "income.socialSecurity.claim", amount: 62_000.01, rows: [{ owner: "client", incomeId: "s1", patch: {} }, { owner: "spouse", incomeId: "s2", patch: {} }] } } });
+    m.computeReconciliation.mockResolvedValue({ ok: true, taxReturnId: "tr-1", reconciliation: recon([odd]) });
+    await applySuggestion(args({ suggestionId: "income.socialSecurity", owner: "split" }));
+    const amounts = m.updateIncomeForClient.mock.calls.map((call) => (call[0] as { input: { annualAmount: number } }).input.annualAmount);
+    expect(amounts).toEqual([31_000, 31_000.01]);
+    // `incomes.annual_amount` is decimal(15,2), so the halves are compared in whole cents:
+    // an even split would store 31,000.00 twice and lose the household's odd cent.
+    expect(amounts.reduce((t, v) => t + Math.round(v * 100), 0)).toBe(6_200_001);
   });
 
   it("rejects a suggestion that carries no action instead of crashing", async () => {

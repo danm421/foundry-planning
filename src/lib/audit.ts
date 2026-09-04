@@ -504,6 +504,10 @@ export type AuditAction =
   | "story_voice.sample_enabled"
   | "story_voice.sample_deleted";
 
+// Drizzle transaction handle — same convention as src/lib/clients/create-client.ts.
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type DbOrTx = typeof db | Tx;
+
 type Args = {
   action: AuditAction;
   resourceType: string;
@@ -520,6 +524,15 @@ type Args = {
   // 'advisor' (default) for staff edits, 'client' for portal edits,
   // 'system' for unattended jobs (webhooks, crons).
   actorKind?: "advisor" | "client" | "system";
+  // Write the row on a caller's open transaction instead of the module-level `db`.
+  // Additive and optional: every existing call site keeps today's behaviour.
+  //
+  // An audit row is a claim that a change happened. When the change itself is running
+  // inside a caller's transaction, a row written on a separate pooled connection
+  // commits even if that transaction rolls back — leaving the log permanently
+  // asserting an edit that never landed. Passing the handle makes the row atomic with
+  // the change it describes.
+  tx?: DbOrTx;
 };
 
 export async function recordAudit(args: Args): Promise<void> {
@@ -545,7 +558,7 @@ export async function recordAudit(args: Args): Promise<void> {
     // that user leaves the org. Best-effort — never blocks the insert.
     const actorName = await snapshotActorName(actorId);
     if (actorName) metadata = { ...(metadata ?? {}), actorName };
-    await db.insert(auditLog).values({
+    await (args.tx ?? db).insert(auditLog).values({
       firmId: args.firmId,
       actorId,
       actorKind: args.actorKind ?? "advisor",

@@ -4,10 +4,10 @@
 // with income-specific adjustments. Hits the real Neon dev branch and skips
 // cleanly without a DB so it never adds to the no-delta failing set in CI.
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { sweepLeakedAuditRows } from "@/lib/audit/test-helpers";
-import { incomes } from "@/db/schema";
+import { auditLog, incomes } from "@/db/schema";
 import {
   createIncomeForClient,
   updateIncomeForClient,
@@ -269,5 +269,15 @@ d("incomes-writes core", () => {
     // Without the threaded handle the write would have gone to the module-level `db`,
     // committed on its own connection, and survived the rollback.
     expect(row.annualAmount).toBe("30000.00");
+
+    // An audit row is a claim that a change happened. The change was undone, so there
+    // must be no row — otherwise the log permanently records an income edit that never
+    // landed. (`sweepLeakedAuditRows` would delete exactly this row in afterAll, which
+    // is why the assertion has to run here.)
+    const audits = await db
+      .select({ id: auditLog.id })
+      .from(auditLog)
+      .where(and(eq(auditLog.action, "income.update"), eq(auditLog.resourceId, created.data.id)));
+    expect(audits).toHaveLength(0);
   });
 });

@@ -139,8 +139,9 @@ export async function updateIncomeForClient(args: {
   // Plan vs. Return's Social Security split needs TWO row updates to commit or
   // roll back together, and a core holding its own `db` handle cannot join the
   // caller's transaction — `db.transaction` checks out a separate connection, so
-  // writes issued on `db` inside it commit independently. Reads (the FK asserts)
-  // and `recordAudit` deliberately stay on `db`.
+  // writes issued on `db` inside it commit independently. The FK-assert READS stay
+  // on `db`; the audit row rides the same handle, so a rolled-back update cannot
+  // leave a committed log entry claiming it happened.
   tx?: DbOrTx;
 }): Promise<EntityWriteResult<IncomeRow>> {
   const { clientId, firmId, actorId, incomeId, input, crossFirmMeta, actorKind } = args;
@@ -238,6 +239,7 @@ export async function updateIncomeForClient(args: {
     actorId,
     actorKind,
     metadata: { type: updated.type, name: updated.name, ...(crossFirmMeta ?? {}) },
+    tx: args.tx,
   });
 
   return { ok: true, data: updated, resourceId: incomeId };
