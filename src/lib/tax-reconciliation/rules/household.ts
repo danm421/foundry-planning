@@ -1,7 +1,8 @@
 import { ageAtYearEnd, detailsHref, ref } from "../compare";
+import type { TaxReturnFilingStatus } from "@/lib/schemas/tax-return-facts";
 import type { Check, Rule, Suggestion } from "../types";
 
-const FILING_LABEL: Record<string, string> = {
+const FILING_LABEL: Record<TaxReturnFilingStatus, string> = {
   single: "Single", married_joint: "Married filing jointly", married_separate: "Married filing separately", head_of_household: "Head of household",
 };
 
@@ -45,14 +46,15 @@ export const householdRules: Rule = (input) => {
       const age = ageAtYearEnd(m.dateOfBirth, taxYear);
       return age != null && age <= 23;
     }).length;
-    const fig = { returnFigure: { label: "Dependents claimed", amount: r, display: String(r), lineRefs: [ref("1040", "Dependents", "Dependents", r)] }, planFigure: { label: "Children under 24 on file", amount: p, display: String(p), year: taxYear } };
+    const fig = { returnFigure: { label: "Dependents claimed", amount: r, display: String(r), lineRefs: [ref("1040", "Dependents", "Dependents", r)] }, planFigure: { label: "Children under 24 claimed on file", amount: p, display: String(p), year: taxYear } };
     if (r !== p) {
       suggestions.push({
         id: "household.dependents", section: "household", kind: "review", status: "open",
-        headline: `The return claims ${r} dependent${r === 1 ? "" : "s"}; the plan's household has ${p} ${p === 1 ? "child" : "children"} under 24 on file.`,
+        headline: `The return claims ${r} dependent${r === 1 ? "" : "s"}; the plan's household has ${p} ${p === 1 ? "child" : "children"} under 24 claimed on file.`,
         meaning: "The child tax credit, the dependent care credit and education credits all key off who is claimed. Add the missing children on Profile, or mark a child as not claimed.",
         // A headcount, not money: keep the signed difference but never render it with fmtUsd.
-        ...fig, delta: { amount: p - r, display: "Differs", tone: "neutral" },
+        // Tone still carries the "the plan has none of them" signal, as the two sibling branches do.
+        ...fig, delta: { amount: p - r, display: "Differs", tone: p === 0 && r > 0 ? "missing" : "neutral" },
         link: { label: "Open Profile", href: detailsHref(input, "family") },
       });
     } else checks.push({ id: "household.dependents", label: "Dependents", returnDisplay: String(r), planDisplay: String(p) });

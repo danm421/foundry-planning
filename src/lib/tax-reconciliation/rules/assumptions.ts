@@ -6,8 +6,13 @@ export const assumptionRules: Rule = (input) => {
   const suggestions: Suggestion[] = [];
   const checks: Check[] = [];
 
-  const carry = facts.carryovers.capitalLossCarryover;
-  if (carry != null) {
+  // The Schedule D worksheet carryover is a magnitude by definition, but the schema's
+  // `money` is `z.number().finite().nullable()` with no `.min(0)` — its sibling `count`
+  // has one, this does not. The figure feeds a write, so read the magnitude; the card
+  // prints it before any click, so a bad sign upstream stays visible rather than hidden.
+  const extractedCarry = facts.carryovers.capitalLossCarryover;
+  if (extractedCarry != null) {
+    const carry = Math.abs(extractedCarry);
     const p = n(plan.planSettings.capitalLossCarryforwardLt) + n(plan.planSettings.capitalLossCarryforwardSt);
     const fig = { returnFigure: { label: "Capital loss carried forward", amount: carry, display: money(carry), lineRefs: [ref("Sched D", "worksheet", "Capital loss carryover", carry)] }, planFigure: { label: "Plan carryforward (LT + ST)", amount: p, display: money(p), year: planYear } };
     if (Math.abs(carry - p) > 100) {
@@ -23,9 +28,12 @@ export const assumptionRules: Rule = (input) => {
 
   if (facts.income.agi != null) {
     const magi = facts.income.agi + n(facts.income.taxExemptInterest);
-    const people: Array<{ owner: "client" | "spouse"; dob: string | null }> = [
-      { owner: "client", dob: plan.client.dateOfBirth }, { owner: "spouse", dob: plan.client.spouseDob },
-    ];
+    // `agi + taxExemptInterest` is the CLIENT's own IRMAA MAGI whatever the filing status,
+    // but it is the SPOUSE's only on a joint return: a married-separate return states one
+    // spouse's income alone, and a single or head-of-household return may still sit beside
+    // a stale `spouseDob` in the plan. A null filing status falls through to "skip the spouse".
+    const people: Array<{ owner: "client" | "spouse"; dob: string | null }> = [{ owner: "client", dob: plan.client.dateOfBirth }];
+    if (facts.filingStatus === "married_joint") people.push({ owner: "spouse", dob: plan.client.spouseDob });
     for (const { owner, dob } of people) {
       const age = ageAtYearEnd(dob, taxYear);
       if (age == null || age < 63) continue;
