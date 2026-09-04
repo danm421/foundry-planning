@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { ClientData } from "@/engine/types";
 import type { ProjectionResult } from "@/engine/projection";
 import { resolveAllTokens, type TokenContext } from "@/lib/plan-text/tokens";
+import type { DisplayUnit } from "@/lib/presentations/pages/scenario-changes/types";
 
 // Shared mock fns declared via vi.hoisted so the vi.mock factory (hoisted
 // above imports) can close over them, and beforeEach can reset them.
@@ -321,5 +322,110 @@ describe("draftFailureMessage", () => {
       "The AI draft didn't finish. Please try again.",
     );
     expect(draftFailureMessage("nope")).toBe("The AI draft didn't finish. Please try again.");
+  });
+});
+
+const ROW_EDIT = {
+  area: "Savings" as const, what: "Dan's 401(k) deferral", op: "edit" as const,
+  before: "6%", after: "12%", detail: ["Raises the annual contribution to the IRS limit."],
+};
+const ROW_RESTATE = {
+  area: "Plan & Assumptions" as const, what: "Retirement age", op: "edit" as const,
+  before: "65", after: "62", detail: ["Adjusts this assumption."], restatesRow: true as const,
+};
+const ROW_ADD = {
+  area: "Assets" as const, what: "+ Roth conversion", op: "add" as const,
+  before: "—", after: "Added", detail: ["$60,000 a year, 2028–2031"],
+};
+const ROW_REMOVE = {
+  area: "Expenses" as const, what: "Boat", op: "remove" as const, before: "In plan", after: "Removed", detail: [],
+};
+const UNITS: DisplayUnit[] = [
+  { kind: "row", row: ROW_EDIT },
+  { kind: "group", label: "Retire early", rows: [ROW_RESTATE, ROW_ADD] },
+  { kind: "row", row: ROW_REMOVE },
+];
+
+describe("buildObservationsFacts — proposed changes and advisor notes", () => {
+  it("prints nothing extra by default — the Details panel's fact sheet is byte-identical", () => {
+    expect(buildObservationsFacts(CTX)).toBe(buildObservationsFacts(CTX, {}));
+    expect(buildObservationsFacts(CTX)).not.toContain("PROPOSED CHANGES");
+    expect(buildObservationsFacts(CTX)).not.toContain("ADVISOR NOTES");
+  });
+
+  it("prints the changes section after the figures with the rich describer's words", () => {
+    const facts = buildObservationsFacts(CTX, { proposedChanges: { scenarioName: "Retire at 62", units: UNITS } });
+    expect(facts).toContain('PROPOSED CHANGES — the scenario "Retire at 62" makes these edits to the current plan.');
+    expect(facts).toContain("Each one is a decision the client will need to act on:");
+    expect(facts).toContain("  [Savings] Dan's 401(k) deferral — 6% → 12%. Raises the annual contribution to the IRS limit.");
+    expect(facts).toContain("  [Assets] Roth conversion (new) — $60,000 a year, 2028–2031");
+    expect(facts).toContain("  [Expenses] Boat — removed from the plan");
+    // Rich describers, not the terse fallback.
+    expect(facts).not.toContain("savings_rule");
+    // Order: figures, then changes, then the cheat-sheet.
+    expect(facts.indexOf("Net worth (today)")).toBeLessThan(facts.indexOf("PROPOSED CHANGES"));
+    expect(facts.indexOf("PROPOSED CHANGES")).toBeLessThan(facts.indexOf("MERGE TOKEN CHEAT-SHEET"));
+  });
+
+  it("prints a group's label once and indents its members under it", () => {
+    const facts = buildObservationsFacts(CTX, { proposedChanges: { scenarioName: "Retire at 62", units: UNITS } });
+    const lines = facts.split("\n");
+    const labelIdx = lines.indexOf("  Retire early:");
+    expect(labelIdx).toBeGreaterThan(-1);
+    expect(lines[labelIdx + 1]).toBe("    [Plan & Assumptions] Retirement age — 65 → 62");
+    expect(lines[labelIdx + 2]).toBe("    [Assets] Roth conversion (new) — $60,000 a year, 2028–2031");
+    expect(facts.match(/Retire early:/g)).toHaveLength(1);
+  });
+
+  it("drops a detail that only restates the row, as the changes table does", () => {
+    const facts = buildObservationsFacts(CTX, { proposedChanges: { scenarioName: "S", units: UNITS } });
+    expect(facts).not.toContain("Adjusts this assumption.");
+  });
+
+  it("prints the advisor's notes last, and not at all when blank", () => {
+    const facts = buildObservationsFacts(CTX, {
+      proposedChanges: { scenarioName: "S", units: UNITS },
+      advisorNotes: "They are nervous about the conversion — keep it optional.",
+    });
+    const lines = facts.trimEnd().split("\n");
+    expect(lines.at(-2)).toBe("ADVISOR NOTES");
+    expect(lines.at(-1)).toBe("They are nervous about the conversion — keep it optional.");
+    expect(buildObservationsFacts(CTX, { advisorNotes: "   " })).not.toContain("ADVISOR NOTES");
+  });
+});
+
+describe("generateObservationsDraft — sections", () => {
+  beforeEach(() => {
+    mockInvoke.mockReset();
+    mockInvoke.mockResolvedValue({
+      suggestions: [
+        { section: "observation", topic: "retirement", body: "An observation." },
+        { section: "next_step", topic: "tax", title: "Update the election", body: "Raise it to 12%.", owner: "client", priority: "high" },
+      ],
+    });
+  });
+
+  it("asks for next steps only and drops any observation the model still returns", async () => {
+    const out = await generateObservationsDraft("FACTS", { section: "next_step" });
+    const [system] = mockInvoke.mock.calls[0][0] as Array<{ content: string }>;
+    expect(system.content).toContain("PROPOSED CHANGES");
+    expect(system.content).toContain("one for each change that implies something the client or advisor must DO");
+    expect(system.content).not.toContain("Produce 4–8 observations");
+    expect(out.suggestions).toHaveLength(1);
+    expect(out.suggestions[0].section).toBe("next_step");
+  });
+
+  it("asks for observations only and drops any next step the model still returns", async () => {
+    const out = await generateObservationsDraft("FACTS", { section: "observation" });
+    const [system] = mockInvoke.mock.calls[0][0] as Array<{ content: string }>;
+    expect(system.content).toContain("Produce observations ONLY");
+    expect(out.suggestions.map((s) => s.section)).toEqual(["observation"]);
+  });
+
+  it("with no section keeps today's prompt and both sections", async () => {
+    const out = await generateObservationsDraft("FACTS");
+    const [system] = mockInvoke.mock.calls[0][0] as Array<{ content: string }>;
+    expect(system.content).toContain("Produce 4–8 observations");
+    expect(out.suggestions).toHaveLength(2);
   });
 });

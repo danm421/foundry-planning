@@ -95,11 +95,26 @@ const rows: ObservationsRowInput[] = [
 ];
 
 describe("buildObservationsPageData", () => {
-  it("include: 'observations' yields no next steps", () => {
+  it("showNextSteps: false yields no next steps", () => {
     const data = buildObservationsPageData({
       rows,
       ctx,
-      options: { ...OBSERVATIONS_PAGE_OPTIONS_DEFAULT, include: "observations" },
+      options: { ...OBSERVATIONS_PAGE_OPTIONS_DEFAULT, showNextSteps: false },
+    });
+    expect(data.nextSteps).toEqual([]);
+  });
+
+  // Distinct from the case above: with the fixture's only next step already
+  // `status: "done"` and `includeCompleted` defaulting false, `showNextSteps:
+  // false` alone yields `[]` whether or not the gate is honoured — a deleted
+  // `if (includeNextSteps)` in view-model.ts would still pass it. Pairing the
+  // false boolean with `includeCompleted: true` is the one combination where a
+  // missing gate lets the done step back onto the page.
+  it("showNextSteps: false hides next steps even with includeCompleted: true", () => {
+    const data = buildObservationsPageData({
+      rows,
+      ctx,
+      options: { ...OBSERVATIONS_PAGE_OPTIONS_DEFAULT, showNextSteps: false, includeCompleted: true },
     });
     expect(data.nextSteps).toEqual([]);
   });
@@ -108,18 +123,37 @@ describe("buildObservationsPageData", () => {
     const data = buildObservationsPageData({
       rows,
       ctx,
-      options: { ...OBSERVATIONS_PAGE_OPTIONS_DEFAULT, include: "nextSteps", includeCompleted: false },
+      options: { ...OBSERVATIONS_PAGE_OPTIONS_DEFAULT, showObservations: false, includeCompleted: false },
     });
     expect(data.nextSteps).toEqual([]);
 
     const withCompleted = buildObservationsPageData({
       rows,
       ctx,
-      options: { ...OBSERVATIONS_PAGE_OPTIONS_DEFAULT, include: "nextSteps", includeCompleted: true },
+      options: { ...OBSERVATIONS_PAGE_OPTIONS_DEFAULT, showObservations: false, includeCompleted: true },
     });
     expect(withCompleted.nextSteps).toHaveLength(1);
     expect(withCompleted.nextSteps[0].title).toBe("Rebalance portfolio");
     expect(withCompleted.nextSteps[0].status).toBe("done");
+  });
+
+  it("the two booleans gate the two halves independently", () => {
+    const both = buildObservationsPageData({ rows, ctx, options: OBSERVATIONS_PAGE_OPTIONS_DEFAULT });
+    expect(both.topicGroups.length).toBeGreaterThan(0);
+    const noObs = buildObservationsPageData({
+      rows,
+      ctx,
+      options: { ...OBSERVATIONS_PAGE_OPTIONS_DEFAULT, showObservations: false, includeCompleted: true },
+    });
+    expect(noObs.topicGroups).toEqual([]);
+    expect(noObs.nextSteps.length).toBe(both.nextSteps.length + 1); // the done step comes back
+    const neither = buildObservationsPageData({
+      rows,
+      ctx,
+      options: { ...OBSERVATIONS_PAGE_OPTIONS_DEFAULT, showObservations: false, showNextSteps: false },
+    });
+    expect(neither.topicGroups).toEqual([]);
+    expect(neither.nextSteps).toEqual([]);
   });
 
   it("resolves a {{net_worth}} token in an observation body to $1,750,000 in the parsed blocks", () => {

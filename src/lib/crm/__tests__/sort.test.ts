@@ -191,8 +191,8 @@ describe("buildOrderBy — compiled SQL text", () => {
     expect(directional.every((term) => term.endsWith(`${dir} nulls last`))).toBe(true);
   });
 
-  // Point 3: `name` and `primary` are deliberately different keys — name
-  // sorts on last_name first, primary sorts on first_name first.
+  // Point 3: household and contact name columns display surname first, so
+  // both sort by last_name before first_name.
   it("name's leading term sorts on last_name", () => {
     const [leading] = orderByText("name", "asc");
     expect(leading).toContain("c.last_name");
@@ -203,14 +203,14 @@ describe("buildOrderBy — compiled SQL text", () => {
     expect(second).toContain("c.first_name");
   });
 
-  it("primary's leading term sorts on first_name", () => {
+  it("primary's leading term sorts on last_name", () => {
     const [leading] = orderByText("primary", "asc");
-    expect(leading).toContain("c.first_name");
+    expect(leading).toContain("c.last_name");
   });
 
-  it("primary's second term sorts on last_name", () => {
+  it("primary's second term sorts on first_name", () => {
     const [, second] = orderByText("primary", "asc");
-    expect(second).toContain("c.last_name");
+    expect(second).toContain("c.first_name");
   });
 
   // Point 4: `status` and `updated` order on the household column directly —
@@ -232,8 +232,8 @@ describe("buildOrderBy — compiled SQL text", () => {
   it("spouse's terms select the spouse contact, not the primary", () => {
     const [leading, second] = orderByText("spouse", "asc");
     expect(leading).toContain("c.role = 'spouse'");
-    expect(leading).toContain("c.first_name");
+    expect(leading).toContain("c.last_name");
     expect(second).toContain("c.role = 'spouse'");
-    expect(second).toContain("c.last_name");
+    expect(second).toContain("c.first_name");
   });
 });

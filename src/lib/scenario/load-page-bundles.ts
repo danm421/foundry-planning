@@ -24,16 +24,8 @@ import {
   ProjectionInputError,
 } from "@/lib/projection/load-client-data";
 import { loadEffectiveTreeForRef } from "@/lib/scenario/loader";
-import { loadScenarioChanges, loadScenarioToggleGroups } from "@/lib/scenario/changes";
-import { buildTargetNames } from "@/lib/scenario/load-panel-data";
+import { loadScenarioChangesContext } from "@/lib/scenario/load-scenario-changes-context";
 import { keyForRef, labelForRef, type DistinctBundlePlan } from "@/lib/scenario/presentation-refs";
-import {
-  applyReinvestmentEnrichment,
-  buildAssetTxResolveData,
-  buildBaseResolveData,
-  buildReinvestmentEnrichmentDeps,
-  hasReinvestmentChange,
-} from "@/lib/scenario/scenario-changes-resolve";
 import type { InvestmentOptionCatalog } from "@/lib/presentations/investment-option-catalog";
 import type { MonteCarloReportPayload } from "@/lib/presentations/pages/monte-carlo/view-model";
 import type { ScenarioChangesContext } from "@/lib/presentations/pages/scenario-changes/types";
@@ -161,64 +153,20 @@ export async function loadPageScenarioBundles(
       // them. loadScenarioChanges returns enabled rows only — matching what the
       // overlaid clientData already reflects.
       //
-      // Org-scoping note: loadScenarioChanges/loadScenarioToggleGroups read by
-      // scenarioId alone. The scenarioId is proven to belong to this
-      // firm/client by the loadEffectiveTreeForRef() call above (it loads the
-      // scenario scoped to clientId/firmId and throws on a cross-org id before
-      // we reach here). Do not remove or lazily defer that call without adding
-      // firm scoping to these reads.
+      // Org-scoping note: the scenarioId is proven to belong to this
+      // firm/client by the loadEffectiveTreeForRef() call above. Do not remove
+      // or lazily defer that call — see load-scenario-changes-context.ts.
       let scenarioChanges: ScenarioChangesContext | undefined;
       if (d.needsScenarioChanges && d.ref.kind === "scenario") {
-        const scenarioId = d.ref.id;
         try {
-          const [changes, toggleGroups] = await Promise.all([
-            loadScenarioChanges(scenarioId),
-            loadScenarioToggleGroups(scenarioId),
-          ]);
-          // Always build the base resolve maps (account / recipient / entity /
-          // spouse names) off the effective tree — this is what makes transfer
-          // / savings / roth / gift / will changes render rich references
-          // instead of terse fallbacks.
-          let resolve = buildBaseResolveData(clientData);
-
-          // Reinvestment enrichment: surface the NEW model portfolio (name +
-          // resolved growth rate) the switched accounts grow at. Names come
-          // from the firm's investment-option catalog (memoized by the caller);
-          // rates from the effective tree's already-resolved reinvestments.
-          // Gated on a reinvestment change so the catalog query only loads when
-          // it can matter.
-          if (hasReinvestmentChange(changes)) {
-            try {
-              const catalog = await getInvestmentCatalog();
-              const portfolioNamesById = Object.fromEntries(
-                catalog.portfolios.map((p) => [p.id, p.name] as const),
-              );
-              resolve = applyReinvestmentEnrichment(
-                resolve,
-                buildReinvestmentEnrichmentDeps(
-                  changes,
-                  portfolioNamesById,
-                  clientData.reinvestments ?? [],
-                ),
-              );
-            } catch (riErr) {
-              // Non-fatal: the describer degrades to a blended-rate-only line.
-              console.error(`${logContext} reinvestment enrichment failed`, riErr);
-            }
-          }
-
-          // Asset-transaction enrichment: projection-derived value bought/sold
-          // and net cash received, keyed by transaction id. Always safe — a
-          // pure reshape of the already-computed projection breakdown.
-          resolve = { ...resolve, assetTxById: buildAssetTxResolveData(projection.years) };
-
-          scenarioChanges = {
-            changes,
-            toggleGroups,
-            targetNames: buildTargetNames(clientData, clientId),
-            baseLabel: "your current plan",
-            resolve,
-          };
+          scenarioChanges = await loadScenarioChangesContext({
+            scenarioId: d.ref.id,
+            clientId,
+            clientData,
+            projection,
+            getInvestmentCatalog,
+            logContext,
+          });
         } catch (scErr) {
           // Non-fatal: leave undefined so the page renders its empty state.
           console.error(`${logContext} scenario changes load failed`, scErr);

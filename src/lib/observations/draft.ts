@@ -10,7 +10,23 @@ import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { chatModel } from "@/domain/forge/llm";
 import { exactCurrency } from "@/lib/presentations/format";
 import { PLAN_TOKENS, resolveAllTokens, type TokenContext } from "@/lib/plan-text/tokens";
+import {
+  visibleDetail,
+  type ChangeRow,
+  type DisplayUnit,
+} from "@/lib/presentations/pages/scenario-changes/types";
 import { OBSERVATION_TOPICS } from "@/lib/schemas/observations";
+
+export type DraftSection = "observation" | "next_step";
+
+/** What the report's authoring panel adds to the Details panel's fact sheet. */
+export interface ObservationsFactsExtras {
+  /** The proposed scenario's edits, described by the Plan Comparison page's
+   *  own describers and grouped the way it prints them (`describeAndGroup`). */
+  proposedChanges?: { scenarioName: string; units: DisplayUnit[] };
+  /** The advisor's free-text note for this section, from the context row. */
+  advisorNotes?: string;
+}
 
 // `title`, `owner` and `priority` are `.nullish()`, not `.nullable()`, so the
 // model may simply LEAVE THEM OUT — which is what it does for observations,
@@ -57,10 +73,71 @@ and a priority; observations need neither. Wherever a figure has a merge
 token in the cheat-sheet, write the token (e.g. {{net_worth}}) instead of the
 number so the text stays current.`;
 
+const OBSERVATIONS_ONLY_PROMPT = `You are a financial planning analyst drafting the "Observations" section of a
+client-facing financial plan. Use ONLY the facts provided — never invent
+numbers or products. Write in plain, warm, professional language a client can
+read. No performance guarantees, no product recommendations.
+Produce observations ONLY — every item's section is "observation" — 4–8 of
+them, statements of fact or finding grouped by topic, with no owner and no
+priority. Honour the ADVISOR NOTES when present: emphasise what they ask for,
+leave out what they exclude. Wherever a figure has a merge token in the
+cheat-sheet, write the token (e.g. {{net_worth}}) instead of the number so the
+text stays current.`;
+
+const NEXT_STEPS_PROMPT = `You are a financial planning analyst drafting the "Next Steps" list of a
+client-facing financial plan. The fact sheet carries PROPOSED CHANGES — the
+edits a recommended scenario makes to the current plan. Turn them into next
+steps: one for each change that implies something the client or advisor must DO
+(an election to update, a form to file, an account to open, a conversation to
+have). Merge changes that share one action into a single step. Write no step
+for a change that needs no action. Give every step a short title, an owner and
+a priority. Produce next steps ONLY — every item's section is "next_step" — and
+no observations. Honour the ADVISOR NOTES when present. Use ONLY the facts
+provided — never invent numbers or products. Plain, warm, professional
+language; no guarantees, no product recommendations, no "you must" — frame each
+as a recommended action. Wherever a figure has a merge token in the cheat-sheet,
+write the token instead of the number.`;
+
+function promptFor(section: DraftSection | undefined): string {
+  if (section === "observation") return OBSERVATIONS_ONLY_PROMPT;
+  if (section === "next_step") return NEXT_STEPS_PROMPT;
+  return SYSTEM_PROMPT;
+}
+
 /** `resolveAllTokens` returns null for anything unresolved — never fabricate
  *  a number in its place. */
 function fig(value: string | null): string {
   return value ?? "not computed";
+}
+
+/** One change as a prompt line. Add rows lose their "+ " and gain "(new)";
+ *  removes say so; edits print before → after. A detail that only restates
+ *  the row is dropped, as the changes table drops it. */
+function changeLine(row: ChangeRow, indent: string): string {
+  const detail = visibleDetail(row, true).join(" ");
+  const head =
+    row.op === "add"
+      ? `${row.what.replace(/^\+\s*/, "")} (new)${detail ? ` — ${detail}` : ""}`
+      : row.op === "remove"
+        ? `${row.what} — removed from the plan${detail ? `. ${detail}` : ""}`
+        : `${row.what} — ${row.before} → ${row.after}${detail ? `. ${detail}` : ""}`;
+  return `${indent}[${row.area}] ${head}`;
+}
+
+function proposedChangesLines(pc: NonNullable<ObservationsFactsExtras["proposedChanges"]>): string[] {
+  const lines = [
+    `PROPOSED CHANGES — the scenario "${pc.scenarioName}" makes these edits to the current plan.`,
+    "Each one is a decision the client will need to act on:",
+  ];
+  for (const unit of pc.units) {
+    if (unit.kind === "row") {
+      lines.push(changeLine(unit.row, "  "));
+    } else {
+      lines.push(`  ${unit.label}:`);
+      for (const row of unit.rows) lines.push(changeLine(row, "    "));
+    }
+  }
+  return lines;
 }
 
 /**
@@ -68,7 +145,7 @@ function fig(value: string | null): string {
  * its merge-token id when one exists) followed by the full token cheat-sheet,
  * so the model can substitute `{{token}}` for any figure it references.
  */
-export function buildObservationsFacts(ctx: TokenContext): string {
+export function buildObservationsFacts(ctx: TokenContext, extras: ObservationsFactsExtras = {}): string {
   const { clientData, projection, monteCarlo } = ctx;
   const { client } = clientData;
   const values = resolveAllTokens(ctx);
@@ -142,13 +219,16 @@ export function buildObservationsFacts(ctx: TokenContext): string {
   }
 
   const cheatSheet = PLAN_TOKENS.map((t) => `{{${t.id}}} — ${t.label}`).join("\n");
+  const notes = extras.advisorNotes?.trim() ?? "";
 
   return [
     "FACT SHEET",
     ...lines,
+    ...(extras.proposedChanges ? ["", ...proposedChangesLines(extras.proposedChanges)] : []),
     "",
     "MERGE TOKEN CHEAT-SHEET — write the token instead of the number for any figure listed here, so the text stays current when the plan changes:",
     cheatSheet,
+    ...(notes ? ["", "ADVISOR NOTES", notes] : []),
   ].join("\n");
 }
 
@@ -159,22 +239,25 @@ export function buildObservationsFacts(ctx: TokenContext): string {
  */
 export async function generateObservationsDraft(
   facts: string,
+  opts: { section?: DraftSection } = {},
 ): Promise<{ suggestions: ObservationSuggestion[] }> {
   const result = (await (await chatModel("full"))
     .withStructuredOutput(ObservationSuggestionSchema)
-    .invoke([
-      new SystemMessage(SYSTEM_PROMPT),
-      new HumanMessage(facts),
-    ])) as ObservationSuggestions;
+    .invoke([new SystemMessage(promptFor(opts.section)), new HumanMessage(facts)])) as ObservationSuggestions;
   return {
-    suggestions: result.suggestions.map((s) => ({
-      section: s.section,
-      topic: s.topic,
-      body: s.body,
-      title: s.title ?? null,
-      owner: s.owner ?? null,
-      priority: s.priority ?? null,
-    })),
+    suggestions: result.suggestions
+      // The prompt asks for one section; a model that ignores that is
+      // filtered here rather than trusted — an observation must never land
+      // in the next-steps list because the section picker said so.
+      .filter((s) => !opts.section || s.section === opts.section)
+      .map((s) => ({
+        section: s.section,
+        topic: s.topic,
+        body: s.body,
+        title: s.title ?? null,
+        owner: s.owner ?? null,
+        priority: s.priority ?? null,
+      })),
   };
 }
 

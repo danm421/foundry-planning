@@ -8,7 +8,7 @@ import {
   crmHouseholdContacts,
   auditLog,
 } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 vi.mock("@clerk/nextjs/server", () => ({
   auth: vi.fn(async () => ({
@@ -70,11 +70,12 @@ afterAll(async () => {
 });
 
 // Import AFTER mock + fixture setup
-import { GET, POST } from "../route";
+import { GET, POST, DELETE } from "../route";
 
-function makeReq(body?: unknown): NextRequest {
-  return new Request("http://test/api", {
-    method: body ? "POST" : "GET",
+function makeReq(body?: unknown, init?: { method?: string; query?: string }): NextRequest {
+  const method = init?.method ?? (body ? "POST" : "GET");
+  return new Request(`http://test/api${init?.query ? `?${init.query}` : ""}`, {
+    method,
     body: body ? JSON.stringify(body) : undefined,
     headers: { "content-type": "application/json" },
   }) as unknown as NextRequest;
@@ -195,5 +196,130 @@ describe("GET /api/clients/[id]/observations", () => {
       params: Promise.resolve({ id: clientB }),
     });
     expect(res.status).toBe(404);
+  });
+});
+
+describe("audience and provenance", () => {
+  it("POST stores audience and sourceScenarioId, defaulting audience to client", async () => {
+    const a = await POST(
+      makeReq({ section: "next_step", body: "Update the deferral election.", source: "ai", sourceScenarioId: "11111111-1111-4111-8111-111111111111" }),
+      { params: Promise.resolve({ id: clientA }) },
+    );
+    expect(a.status).toBe(201);
+    const row = await a.json();
+    expect(row.audience).toBe("client");
+    expect(row.sourceScenarioId).toBe("11111111-1111-4111-8111-111111111111");
+
+    const b = await POST(
+      makeReq({ section: "observation", body: "Advisor-only reminder.", audience: "advisor" }),
+      { params: Promise.resolve({ id: clientA }) },
+    );
+    expect((await b.json()).audience).toBe("advisor");
+  });
+
+  it("GET ?audience=client omits advisor rows; GET without it returns everything", async () => {
+    const all = (await (await GET(makeReq(), { params: Promise.resolve({ id: clientA }) })).json()) as Array<{ audience: string }>;
+    expect(all.some((r) => r.audience === "advisor")).toBe(true);
+
+    const client = (await (
+      await GET(makeReq(undefined, { query: "audience=client" }), { params: Promise.resolve({ id: clientA }) })
+    ).json()) as Array<{ audience: string }>;
+    expect(client.length).toBeGreaterThan(0);
+    expect(client.every((r) => r.audience === "client")).toBe(true);
+  });
+
+  it("GET 400s on an unknown audience", async () => {
+    const res = await GET(makeReq(undefined, { query: "audience=everyone" }), { params: Promise.resolve({ id: clientA }) });
+    expect(res.status).toBe(400);
+  });
+
+  it("DELETE ?section=next_step&source=ai removes only AI next steps for the client audience, audited", async () => {
+    await POST(makeReq({ section: "next_step", body: "Hand-typed step." }), { params: Promise.resolve({ id: clientA }) });
+    await POST(makeReq({ section: "next_step", body: "AI step 1.", source: "ai" }), { params: Promise.resolve({ id: clientA }) });
+    await POST(makeReq({ section: "next_step", body: "AI step 2.", source: "ai" }), { params: Promise.resolve({ id: clientA }) });
+    await POST(makeReq({ section: "observation", body: "AI observation stays.", source: "ai" }), { params: Promise.resolve({ id: clientA }) });
+    // Same section AND same source as the rows being cleared, but advisor
+    // audience — the only thing distinguishing it from the rows that must be
+    // deleted. If the route's `where` ever drops the `audience = 'client'`
+    // predicate, this row gets swept too and the survivor assertion below
+    // catches it.
+    const advisorAiRes = await POST(
+      makeReq({ section: "next_step", body: "Advisor-only AI step.", source: "ai", audience: "advisor" }),
+      { params: Promise.resolve({ id: clientA }) },
+    );
+    const advisorAiRow = await advisorAiRes.json();
+    // Identical section, source and audience to the rows being cleared, but a
+    // DIFFERENT client in a different firm. POST 403s cross-firm before it
+    // could write this, so insert directly. If the route's `where` ever drops
+    // the `clientId = id` predicate, this row gets swept too and the survivor
+    // assertion below catches it — the one predicate whose failure mode is
+    // another firm's data being destroyed.
+    const [otherFirmRow] = await db
+      .insert(planObservations)
+      .values({ clientId: clientB, section: "next_step", body: "Other firm AI step.", source: "ai" })
+      .returning();
+
+    // The exact rows the DELETE is about to destroy, read before it runs —
+    // the only way to check the audit names them rather than just counting.
+    const doomed = await db
+      .select({ id: planObservations.id })
+      .from(planObservations)
+      .where(
+        and(
+          eq(planObservations.clientId, clientA),
+          eq(planObservations.section, "next_step"),
+          eq(planObservations.source, "ai"),
+          eq(planObservations.audience, "client"),
+        ),
+      );
+
+    const res = await DELETE(makeReq(undefined, { method: "DELETE", query: "section=next_step&source=ai" }), {
+      params: Promise.resolve({ id: clientA }),
+    });
+    expect(res.status).toBe(200);
+    const { removed } = await res.json();
+    expect(removed).toBeGreaterThanOrEqual(3); // the two here + the provenance row above
+
+    const left = await db.select().from(planObservations).where(eq(planObservations.clientId, clientA));
+    expect(left.some((r) => r.section === "next_step" && r.source === "ai" && r.audience === "client")).toBe(false);
+    expect(left.some((r) => r.section === "next_step" && r.source === "manual")).toBe(true);
+    expect(left.some((r) => r.section === "observation" && r.source === "ai")).toBe(true);
+    expect(left.some((r) => r.id === advisorAiRow.id)).toBe(true);
+
+    const otherFirmLeft = await db
+      .select()
+      .from(planObservations)
+      .where(eq(planObservations.clientId, clientB));
+    expect(otherFirmLeft.some((r) => r.id === otherFirmRow.id)).toBe(true);
+
+    const audits = await db
+      .select({ action: auditLog.action, metadata: auditLog.metadata })
+      .from(auditLog)
+      .where(eq(auditLog.clientId, clientA));
+    expect(audits.map((a) => a.action)).toContain("plan_observation.clear_ai");
+
+    // A bulk delete of client-facing rows that logs only a COUNT leaves nobody
+    // able to say WHICH rows went. The ids are the reconstruction.
+    const clearAi = audits.filter((a) => a.action === "plan_observation.clear_ai");
+    expect(clearAi).toHaveLength(1);
+    const meta = clearAi[0].metadata as { section?: string; removed?: number; ids?: string[] } | null;
+    expect(meta?.section).toBe("next_step");
+    expect(meta?.removed).toBe(removed);
+    expect([...(meta?.ids ?? [])].sort()).toEqual(doomed.map((r) => r.id).sort());
+    expect(meta?.ids).toHaveLength(removed);
+  });
+
+  it("DELETE 400s without source=ai — hand-typed rows are never bulk-deleted", async () => {
+    const res = await DELETE(makeReq(undefined, { method: "DELETE", query: "section=next_step&source=manual" }), {
+      params: Promise.resolve({ id: clientA }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("DELETE 403s cross-firm", async () => {
+    const res = await DELETE(makeReq(undefined, { method: "DELETE", query: "section=next_step&source=ai" }), {
+      params: Promise.resolve({ id: clientB }),
+    });
+    expect(res.status).toBe(403);
   });
 });

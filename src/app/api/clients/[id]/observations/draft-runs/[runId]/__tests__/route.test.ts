@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { db } from "@/db";
-import { clients, crmHouseholds, generationRuns } from "@/db/schema";
+import { clients, crmHouseholds, generationRuns, scenarios } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
 vi.mock("@clerk/nextjs/server", () => ({
@@ -20,6 +20,7 @@ let clientOtherId: string;
 let runId: string;
 let presentationRunId: string;
 let otherFirmRunId: string;
+let scenarioId: string;
 
 async function seedClient(firmId: string, name: string) {
   const [h] = await db.insert(crmHouseholds).values({ firmId, advisorId: "advisor_test", name }).returning();
@@ -42,6 +43,9 @@ beforeEach(async () => {
   householdId = a.householdId;
   clientOtherId = b.clientId;
 
+  const [s] = await db.insert(scenarios).values({ clientId, name: "Retire at 62", isBaseCase: false }).returning();
+  scenarioId = s.id;
+
   const [run] = await db
     .insert(generationRuns)
     .values({
@@ -50,6 +54,7 @@ beforeEach(async () => {
       firmId: FIRM,
       kind: "observations-draft",
       status: "done",
+      scenarioId,
       resultPayload: { suggestions: [{ section: "observation", topic: "general", body: "x" }] },
     })
     .returning();
@@ -82,6 +87,7 @@ describe("GET /api/clients/[id]/observations/draft-runs/[runId]", () => {
     const body = await res.json();
     expect(body.status).toBe("done");
     expect(body.error).toBeNull();
+    expect(body.scenarioId).toBe(scenarioId);
     expect(body.suggestions).toEqual([{ section: "observation", topic: "general", body: "x" }]);
   });
 
@@ -94,6 +100,7 @@ describe("GET /api/clients/[id]/observations/draft-runs/[runId]", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.status).toBe("queued");
+    expect(body.scenarioId).toBeNull();
     expect(body.suggestions).toBeNull();
   });
 
