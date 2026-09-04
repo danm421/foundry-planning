@@ -4800,16 +4800,27 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       return true;
     };
 
-    // Probe: returns this year's `incomeTaxBase` if Roth taxable income were
-    // `r` and supplemental withdrawals contributed `(suppOrdinary, suppCapGains)`.
-    // Captures the year-loop's tax inputs by closure so phase 12 can call it
-    // each iteration with a fresh supplemental snapshot.
-    const buildIncomeTaxBaseProbe = (): (
-      (r: number, suppOrdinary?: number, suppCapGains?: number) => number
+    // Probe: returns this year's `incomeTaxBase` AND IRMAA MAGI if Roth taxable
+    // income were `r` and supplemental withdrawals contributed
+    // `(suppOrdinary, suppCapGains)`. Captures the year-loop's tax inputs by
+    // closure so phase 12 can call it each iteration with a fresh supplemental
+    // snapshot. Both figures come off ONE trial compute — an IRMAA-capped
+    // conversion costs no extra tax computation.
+    const buildTaxProbe = (): (
+      (
+        r: number,
+        suppOrdinary?: number,
+        suppCapGains?: number,
+      ) => { incomeTaxBase: number; magi: number }
     ) => {
-      return (r: number, suppOrdinary: number = 0, suppCapGains: number = 0): number => {
+      return (
+        r: number,
+        suppOrdinary: number = 0,
+        suppCapGains: number = 0,
+      ): { incomeTaxBase: number; magi: number } => {
         if (!useBracket || !resolved) {
-          return Math.max(0, taxableIncome + r + suppOrdinary + suppCapGains);
+          const flat = Math.max(0, taxableIncome + r + suppOrdinary + suppCapGains);
+          return { incomeTaxBase: flat, magi: flat };
         }
         const trial = computeTaxForYear({
           taxDetail: {
@@ -4842,43 +4853,58 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           transferEarlyWithdrawalPenalty: 0,
           interestIncomeForTax,
           deductionBreakdownIn: deductionBreakdownResult ?? null,
-          // This probe reads `incomeTaxBase` and throws the rest away, and it
-          // runs once per convergence iteration — never pay for the
-          // next-dollar rate measurement here.
+          // This probe reads `incomeTaxBase` / `adjustedGrossIncome` and throws
+          // the rest away, and it runs once per convergence iteration — never
+          // pay for the next-dollar rate measurement here.
           measureNextDollarRate: false,
           // primaryAge/spouseAge: senior deductions lower incomeTaxBase, which
           // sizes the conversion. retirementBreakdown is omitted — it feeds only
-          // state exclusions (not this probe's federal incomeTaxBase) and is
-          // declared after this closure's first call site (TDZ).
+          // state exclusions (neither this probe's federal incomeTaxBase nor its
+          // federal AGI) and is declared after this closure's first call site (TDZ).
           primaryAge: ages.client,
           spouseAge: ages.spouse,
           isoSpread: equityIsoSpread,
           household: taxHousehold,
         });
-        return trial.taxResult.flow.incomeTaxBase;
+        return {
+          incomeTaxBase: trial.taxResult.flow.incomeTaxBase,
+          // IRMAA's MAGI (IRC §6334(d)(3)(C)) — the SAME definition the
+          // Medicare block uses at the `magiThisYearPreSupplemental` site.
+          // Read off the trial we already ran: the cap costs no extra tax
+          // computation. Tax-exempt interest is invariant to the conversion
+          // amount, so taking it from the enclosing taxDetail is exact.
+          magi:
+            trial.taxResult.flow.adjustedGrossIncome +
+            (taxDetail.taxExemptInterest ?? 0),
+        };
       };
     };
 
-    // Solve for the Roth taxable amount that lands `incomeTaxBase ≈ ceiling`
-    // given a fixed supplemental snapshot. Bounded fixed-point — handles
-    // non-linearities from SS taxability / QBI / piecewise deductions.
-    const sizeFillBracketConversion = (
+    /** Solve for the Roth taxable amount that lands `select(probe(r)) ≈ ceiling`
+     *  given a fixed supplemental snapshot. Bounded fixed-point — handles
+     *  non-linearities from SS taxability / QBI / piecewise deductions. */
+    const sizeConversionToCeiling = (
       ceiling: number,
-      probe: ReturnType<typeof buildIncomeTaxBaseProbe>,
+      probe: ReturnType<typeof buildTaxProbe>,
+      select: (p: { incomeTaxBase: number; magi: number }) => number,
       suppOrdinary: number,
       suppCapGains: number,
     ): number => {
-      const baseAt0 = probe(0, suppOrdinary, suppCapGains);
+      const baseAt0 = select(probe(0, suppOrdinary, suppCapGains));
       if (baseAt0 >= ceiling) return 0;
       let target = ceiling - baseAt0;
       for (let i = 0; i < 6; i++) {
-        const baseAtTarget = probe(target, suppOrdinary, suppCapGains);
+        const baseAtTarget = select(probe(target, suppOrdinary, suppCapGains));
         const delta = ceiling - baseAtTarget;
         if (Math.abs(delta) < 1) break;
         target = Math.max(0, target + delta);
       }
       return Math.max(0, target);
     };
+
+    const selectIncomeTaxBase = (p: { incomeTaxBase: number; magi: number }) => p.incomeTaxBase;
+    // No caller until the IRMAA cap lands (Task 6) — the sizer's second ceiling.
+    const selectMagi = (p: { incomeTaxBase: number; magi: number }) => p.magi;
 
     // Phase 5b: size-only. Splits conversions into bracket-fillers (deferred
     // to phase 12) and the rest (applied here).
@@ -4891,7 +4917,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // source IRA is drained). Captured here at size time; the source accounts
     // are not debited again until the conversion is applied post-convergence.
     const fillBracketSourceCapById: Record<string, number> = {};
-    let fillBracketProbe: ReturnType<typeof buildIncomeTaxBaseProbe> | null = null;
+    let fillBracketProbe: ReturnType<typeof buildTaxProbe> | null = null;
     const convFilingStatus = effectiveFilingStatus(
       (client.filingStatus ?? "single") as FilingStatus,
       firstDeathYear,
@@ -4940,7 +4966,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
 
       if (bracketFillers.length > 0 && convBrackets) {
-        fillBracketProbe = buildIncomeTaxBaseProbe();
+        fillBracketProbe = buildTaxProbe();
         for (const conv of bracketFillers) {
           if (!_isFillBracketActiveYear(conv, year)) continue;
           if (conv.fillUpBracket == null) continue;
@@ -4956,7 +4982,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           );
           fillBracketSourceCapById[conv.id] = sourceCap;
           pendingFillBracketTargets[conv.id] = Math.min(
-            sizeFillBracketConversion(ceiling, fillBracketProbe, 0, 0),
+            sizeConversionToCeiling(ceiling, fillBracketProbe, selectIncomeTaxBase, 0, 0),
             sourceCap,
           );
         }
@@ -6315,7 +6341,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
               pendingFillBracketTargets[cid] ?? 0,
               supplementalPlan.recognizedIncome.ordinaryIncome,
               supplementalPlan.recognizedIncome.capitalGains,
-            );
+            ).incomeTaxBase;
             if (!fillBracketOnTarget(cid, baseAtCurrent)) {
               bracketConverged = false;
               break;
@@ -6390,9 +6416,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         if (fillBracketProbe) {
           for (const cid of Object.keys(fillBracketCeilingsById)) {
             pendingFillBracketTargets[cid] = Math.min(
-              sizeFillBracketConversion(
+              sizeConversionToCeiling(
                 fillBracketCeilingsById[cid],
                 fillBracketProbe,
+                selectIncomeTaxBase,
                 supplementalPlan.recognizedIncome.ordinaryIncome,
                 supplementalPlan.recognizedIncome.capitalGains,
               ),
@@ -6490,7 +6517,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
                 pendingFillBracketTargets[cid] ?? 0,
                 supplementalPlan.recognizedIncome.ordinaryIncome,
                 supplementalPlan.recognizedIncome.capitalGains,
-              );
+              ).incomeTaxBase;
               // A conversion that exhausted its source pool below the ceiling is
               // on-target, not an unconverged residual — don't warn for it.
               bracketResiduals[cid] = fillBracketOnTarget(cid, baseAtCurrent)
