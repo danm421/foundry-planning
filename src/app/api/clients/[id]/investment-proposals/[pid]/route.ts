@@ -6,7 +6,7 @@ import { parseBody } from "@/lib/schemas/common";
 import { requireOrgId } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
-import { authErrorResponse } from "@/lib/authz";
+import { authErrorResponse, requireActiveSubscriptionForFirm } from "@/lib/authz";
 import { recordAudit } from "@/lib/audit";
 import { proposalUpdateSchema, type ProposalCreateInput } from "@/lib/investments/proposals/schemas";
 import { computeProposalSnapshot } from "@/lib/investments/proposals/compute";
@@ -75,6 +75,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
     if (!access.ok || access.permission !== "edit") {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+    await requireActiveSubscriptionForFirm(access.firmId);
 
     const parsed = await parseBody(proposalUpdateSchema, request);
     if (!parsed.ok) return parsed.response;
@@ -189,6 +190,7 @@ export async function DELETE(_request: NextRequest, { params }: Params) {
     if (!access.ok || access.permission !== "edit") {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+    await requireActiveSubscriptionForFirm(access.firmId);
 
     const existing = await getProposal(id, pid);
     if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });

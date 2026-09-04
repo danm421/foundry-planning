@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { deleteHouseholdRelationship, RelationshipNotFoundError } from "@/lib/crm/household-relationships";
 import { UnauthorizedError } from "@/lib/db-helpers";
+import { authErrorResponse, requireActiveSubscription } from "@/lib/authz";
 
 export const dynamic = "force-dynamic";
 
@@ -10,9 +11,12 @@ export async function DELETE(
 ) {
   try {
     const { id, relationshipId } = await params;
+    await requireActiveSubscription();
     await deleteHouseholdRelationship(id, relationshipId);
     return NextResponse.json({ ok: true });
   } catch (err) {
+    const denial = authErrorResponse(err);
+    if (denial) return NextResponse.json(denial.body, { status: denial.status });
     if (err instanceof UnauthorizedError) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

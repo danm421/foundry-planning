@@ -36,6 +36,21 @@ export const PURGED_FIRM_TABLES: readonly string[] = [
   // new — per-advisor branding (Task 14): leaf table, no FK to clients/
   // crm_households, so nothing cascades it.
   "advisor_profiles",
+  // new — leaf firm-scoped tables keyed by (firm_id, advisor/user id) with no
+  // FK to clients or crm_households, so the household cascade never reaches
+  // them. All seven below verified present on BOTH dev and prod 2026-09-03.
+  "advisor_onboarding",
+  "compliance_export_batches",
+  "notification_preferences",
+  "ops_user_entitlement_overrides",
+  "story_voice_profiles",
+  // notifications: client_id is NULLABLE (the data-plumbing categories are not
+  // client-scoped), so firm-level rows survive the client cascade.
+  "notifications",
+  // story_voice_samples: source_client_id is ON DELETE SET NULL, so a harvested
+  // sample survives its source client's deletion — and it holds prose the
+  // advisor lifted from a real client report.
+  "story_voice_samples",
 ];
 
 /** Removed transitively by a cascade purgeFirmById triggers — each has a
@@ -59,6 +74,10 @@ export const CASCADE_COVERED_FIRM_TABLES: readonly string[] = [
   "client_risk_profiles",
   "client_risk_profile_events",
   "risk_questionnaires",
+  // from_household_id + to_household_id NOT NULL → crm_households
+  "crm_household_relationships",
+  // client_id NOT NULL → clients (firm_id also cascades from firms)
+  "investment_proposals",
 ];
 
 /** Intentionally retained (legal / evidence). */
@@ -69,15 +88,27 @@ export const RETAIN_ALLOWLIST_FIRM_TABLES: readonly string[] = [
   "firms", // the purge record itself (PII nulled, row kept)
 ];
 
-/** Retired tables with NO Drizzle schema object — dropped by migration
- *  0151_retire_comparison_tables (verified absent on prod). They linger on the
- *  dev branch only (0151 unapplied there — a dev migration-ledger drift, tracked
- *  in future-work/schema). Not purge targets: there is no schema object to
- *  delete, and on prod the tables don't exist. Excluded here so the live-DB
- *  drift guard stays honest on both dev (present) and prod (absent). */
+/** Tables with NO Drizzle schema object that linger on the dev branch only —
+ *  each verified ABSENT on prod 2026-09-03. Not purge targets: there is no
+ *  schema object to delete, and on prod the tables don't exist. Excluded here
+ *  so the live-DB drift guard stays honest on both dev and prod.
+ *
+ *   - comparison_templates / client_comparisons: dropped by migration
+ *     0151_retire_comparison_tables, unapplied on dev (a dev migration-ledger
+ *     drift, tracked in future-work/schema).
+ *   - orion_*: dropped by 0220_integration_connections, which replaced them
+ *     with the provider-agnostic integration_* tables — all four of those ARE
+ *     covered above. Same dev-only ledger drift.
+ *   - _bk_investment_proposals_20260817: an ad-hoc dev backup snapshot from the
+ *     investment-proposals work; no migration, no schema object. */
 export const RETIRED_UNMANAGED_FIRM_TABLES: readonly string[] = [
   "comparison_templates",
   "client_comparisons",
+  "orion_connections",
+  "orion_household_links",
+  "orion_oauth_states",
+  "orion_sync_runs",
+  "_bk_investment_proposals_20260817",
 ];
 
 /** Union of all four sets — the drift test checks every firm_id table is here. */

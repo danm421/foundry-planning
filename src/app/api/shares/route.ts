@@ -5,7 +5,7 @@ import { db } from "@/db";
 import { clientShares } from "@/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
 import { requireOrgAndUser } from "@/lib/db-helpers";
-import { authErrorResponse } from "@/lib/authz";
+import { authErrorResponse, requireActiveSubscriptionForFirm } from "@/lib/authz";
 import { parseBody } from "@/lib/schemas/common";
 import { resolveSharesForRecipient } from "@/lib/clients/shared-access";
 import { createShare } from "@/lib/clients/share-manage";
@@ -27,6 +27,7 @@ const shareBodySchema = z
 export async function POST(request: NextRequest) {
   try {
     const { orgId: firmId, userId } = await requireOrgAndUser();
+    await requireActiveSubscriptionForFirm(firmId);
 
     const parsed = await parseBody(shareBodySchema, request);
     if (!parsed.ok) return parsed.response;

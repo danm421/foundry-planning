@@ -7,7 +7,8 @@
  *
  * Three auxiliary loaders (listOpenItems, listAuditRows, getAssetAllocationByType)
  * are mocked at the module level — they are NOT the SUT and their DB patterns
- * (innerJoin, etc.) are outside the scope of this test.
+ * are outside the scope of this test. loadClientData itself DOES innerJoin
+ * (account_group_members → account_groups), so makeResult answers that too.
  *
  * Three tests:
  *  1. Throws ClientNotFoundError for an unknown clientId (empty dbState.clients)
@@ -216,6 +217,7 @@ vi.mock("@/db", async () => {
     if (t === schema.incomeScheduleOverrides || n === "income_schedule_overrides") return dbState.incomeScheduleOverrides;
     if (t === schema.expenseScheduleOverrides || n === "expense_schedule_overrides") return dbState.expenseScheduleOverrides;
     if (t === schema.savingsScheduleOverrides || n === "savings_schedule_overrides") return dbState.savingsScheduleOverrides;
+    if (t === schema.accountGroupMembers || n === "account_group_members") return [];
     return [];
   };
 
@@ -226,6 +228,7 @@ vi.mock("@/db", async () => {
     then: (resolve: (v: unknown[]) => unknown) => Promise.resolve(rows).then(resolve),
     orderBy: (..._args: unknown[]) => makeResult(rows),
     where: (_cond: unknown) => makeResult(rows),
+    innerJoin: (_table: unknown, _cond: unknown) => makeResult(rows),
   });
 
   const db = {

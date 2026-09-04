@@ -75,9 +75,14 @@ describe("templates-repo", () => {
 
   it("update modifies fields and bumps updatedAt", async () => {
     const created = await createTemplate({ firmId: FIRM_A, createdByUserId: USER_1, name: "n1", visibility: "private", pages: validPages });
-    const updated = await updateTemplate(created.id, FIRM_A, { name: "n2" });
-    expect(updated?.name).toBe("n2");
-    expect(updated?.updatedAt.getTime()).toBeGreaterThanOrEqual(created.createdAt.getTime());
+    const first = await updateTemplate(created.id, FIRM_A, { name: "n2" });
+    expect(first?.name).toBe("n2");
+    // Both stamps below come from updateTemplate's own `new Date()`. Comparing
+    // against `created.createdAt` instead would put the app clock against the
+    // Neon clock, and a few ms of skew between them fails a correct update.
+    const second = await updateTemplate(created.id, FIRM_A, { name: "n3" });
+    expect(second?.name).toBe("n3");
+    expect(second!.updatedAt.getTime()).toBeGreaterThanOrEqual(first!.updatedAt.getTime());
   });
 
   it("delete removes the row", async () => {

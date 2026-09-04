@@ -21,6 +21,21 @@ vi.mock("@/lib/tax-returns/store", () => ({
 }));
 vi.mock("@/lib/tax-returns/save-facts", () => ({ saveReviewedFacts: vi.fn() }));
 vi.mock("@/lib/tax-returns/load-analysis-context", () => ({ loadAnalysisContext: vi.fn() }));
+// assembleTaxAnalysis (which GET now goes through) loads the row's supporting
+// documents by tax_return id. `store` is mocked above, so that id is the
+// fixture's "r1" — a real query with it reaches Neon and dies in string_to_uuid.
+// Only the two DB readers are replaced; rowToMergeDocument stays real.
+vi.mock("@/lib/tax-returns/documents-store", async () => {
+  const actual =
+    await vi.importActual<typeof import("@/lib/tax-returns/documents-store")>(
+      "@/lib/tax-returns/documents-store",
+    );
+  return {
+    ...actual,
+    listDocuments: vi.fn().mockResolvedValue([]),
+    getState: vi.fn().mockResolvedValue(null),
+  };
+});
 
 import { getTaxReturn, deleteTaxReturn } from "@/lib/tax-returns/store";
 import { saveReviewedFacts } from "@/lib/tax-returns/save-facts";

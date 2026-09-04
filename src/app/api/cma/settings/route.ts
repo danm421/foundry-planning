@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { cmaSettings } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
-import { authErrorResponse, requireOrgAdminOrOwner } from "@/lib/authz";
+import { authErrorResponse, requireActiveSubscriptionForFirm, requireOrgAdminOrOwner } from "@/lib/authz";
 import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
@@ -36,6 +36,7 @@ export async function PUT(request: NextRequest) {
   try {
     await requireOrgAdminOrOwner();
     const firmId = await requireOrgId();
+    await requireActiveSubscriptionForFirm(firmId);
 
     const parsed = settingsBodySchema.safeParse(await request.json());
     if (!parsed.success) {

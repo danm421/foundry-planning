@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireOrgAndUser } from "@/lib/db-helpers";
-import { authErrorResponse } from "@/lib/authz";
+import { authErrorResponse, requireActiveSubscriptionForFirm } from "@/lib/authz";
 import { parseBody } from "@/lib/schemas/common";
 import { requireShareManageAccess } from "@/lib/clients/share-manage";
 import { createShare } from "@/lib/clients/share-manage";
@@ -30,6 +30,7 @@ export async function POST(
 
     // This enforces: caller in owning firm AND (owner OR admin)
     const { firmId, ownerUserId } = await requireShareManageAccess(clientId);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const parsed = await parseBody(shareBodySchema, request);
     if (!parsed.ok) return parsed.response;

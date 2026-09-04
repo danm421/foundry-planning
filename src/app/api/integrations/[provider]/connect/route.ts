@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@clerk/nextjs/server";
-import { requireOrgAdminOrOwner, authErrorResponse } from "@/lib/authz";
+import { requireOrgAdminOrOwner, requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { generatePkce, generateState } from "@/lib/integrations/pkce";
 import { createOauthState, upsertByokConnection } from "@/lib/integrations/connections";
 import { ProviderNotConfigured } from "@/lib/integrations/errors";
@@ -95,6 +95,8 @@ export async function POST(
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    await requireActiveSubscriptionForFirm(firmId);
 
     const rl = await checkIntegrationOauthLimit(`${provider.id}:${firmId}`);
     if (!rl.allowed) {

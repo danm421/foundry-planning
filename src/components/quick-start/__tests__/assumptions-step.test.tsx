@@ -17,6 +17,14 @@ const bootstrap = {
     lifeInsurance: 0.03,
     inflation: 0.03,
   },
+  modelPortfolios: [],
+  growthSource: {
+    taxable: { source: "custom", portfolioId: null },
+    cash: { source: "custom", portfolioId: null },
+    retirement: { source: "custom", portfolioId: null },
+    realEstate: "custom",
+    lifeInsurance: "custom",
+  },
 } as unknown as QsBootstrap;
 
 const ctx = buildQsContext({
@@ -57,7 +65,7 @@ describe("AssumptionsStep", () => {
   it("brackets mode PUTs plan settings with converted growth", async () => {
     renderStep();
     // Taxable growth input should display "7" (0.07 * 100)
-    fireEvent.change(screen.getByLabelText("Taxable growth"), { target: { value: "8" } });
+    fireEvent.change(screen.getByLabelText("Taxable growth rate"), { target: { value: "8" } });
     await saveFn();
     const body = JSON.parse(findCall((u) => u.endsWith("/plan-settings"))[1].body);
     expect(body).toMatchObject({

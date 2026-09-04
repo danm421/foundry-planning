@@ -9,6 +9,7 @@ vi.mock("@clerk/nextjs/server", () => ({ auth: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 vi.mock("@/lib/authz", () => ({
   requireOrgAdminOrOwner: vi.fn(),       // no-op resolve = authorized
+  requireActiveSubscriptionForFirm: vi.fn(), // no-op resolve = subscription active
   authErrorResponse: vi.fn(() => null),  // not an auth error
 }));
 vi.mock("@/lib/integrations/providers/addepar/client", () => ({

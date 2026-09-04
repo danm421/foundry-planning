@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
-import { UnauthorizedError } from "@/lib/db-helpers";
+import { authErrorResponse } from "@/lib/authz";
 
 /**
  * Shared error mapper for `/api/crm/households/[id]/notes/*` route handlers.
- * - UnauthorizedError / "Unauthorized" → 401
+ * - Access denials (UnauthorizedError → 401, ForbiddenError → 403, legacy
+ *   `Error("Unauthorized")` → 401) are delegated to `authErrorResponse`, so the
+ *   subscription gate's ForbiddenError surfaces as a 403 rather than a 500.
  * - ZodError → 400
  * - Domain not-found errors → 404. Two shapes: anything thrown by
  *   `requireCrmHouseholdAccess` (prefixed "CRM ", e.g. "CRM household not found
@@ -13,12 +15,8 @@ import { UnauthorizedError } from "@/lib/db-helpers";
  * - anything else → log + 500
  */
 export function mapCrmNoteError(err: unknown): NextResponse {
-  if (err instanceof UnauthorizedError) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (err instanceof Error && err.message === "Unauthorized") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const denial = authErrorResponse(err);
+  if (denial) return NextResponse.json(denial.body, { status: denial.status });
   if (err instanceof ZodError) {
     return NextResponse.json({ error: err.message }, { status: 400 });
   }

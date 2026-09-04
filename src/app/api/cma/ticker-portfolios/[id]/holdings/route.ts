@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { tickerPortfolios, tickerPortfolioHoldings, tickerPortfolioStats } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
-import { authErrorResponse, requireOrgAdminOrOwner } from "@/lib/authz";
+import { authErrorResponse, requireActiveSubscriptionForFirm, requireOrgAdminOrOwner } from "@/lib/authz";
 import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
@@ -33,6 +33,7 @@ export async function PUT(
   try {
     await requireOrgAdminOrOwner();
     const firmId = await requireOrgId();
+    await requireActiveSubscriptionForFirm(firmId);
     const { id } = await params;
 
     // Verify portfolio belongs to this firm

@@ -8,6 +8,9 @@
  *
  * Stubbed boundaries:
  * - @/lib/authz            → requireClientPortalAccess (no Clerk session needed)
+ * - @/lib/portal/require-portal-subscription → requirePortalActiveSubscription
+ *   (the seeded firmId is not a real Clerk org, and the gate calls Clerk's
+ *   `auth()`, which pulls in `server-only` and cannot load under vitest)
  * - @/lib/portal/require-edit-enabled → requireEditEnabled (no DB portal flag check)
  * - @/lib/plaid/client     → getPlaidClient (no Plaid sandbox creds needed)
  * - @/lib/plaid/refresh    → fetchBalancesForItem (avoids double Plaid SDK hit)
@@ -124,6 +127,10 @@ vi.mock("@/lib/authz", async (importOriginal) => {
     ...actual,
   };
 });
+
+vi.mock("@/lib/portal/require-portal-subscription", () => ({
+  requirePortalActiveSubscription: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock("@/lib/portal/require-edit-enabled", () => ({
   requireEditEnabled: vi.fn().mockResolvedValue(undefined),
@@ -299,16 +306,17 @@ d("Plaid E2E: link-token → exchange → commit → refresh → unlink", () => 
         body: JSON.stringify({
           itemId: plaidItemDbId,
           decisions: [
+            // The portal user picks the Foundry type explicitly; the route
+            // no longer derives it from the Plaid type.
             {
               plaidAccountId: STUB_PLAID_ACCOUNT_ID,
               action: "create",
-              accountData: {
-                name: "E2E Checking",
-                mask: "9999",
-                type: "depository",
-                subtype: "checking",
-                balance: STUB_BALANCE,
-              },
+              kind: "asset",
+              name: "E2E Checking",
+              mask: "9999",
+              balance: STUB_BALANCE,
+              category: "cash",
+              subType: "checking",
             },
           ],
         }),

@@ -6,7 +6,7 @@ import { parseBody } from "@/lib/schemas/common";
 import { requireOrgId } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
-import { authErrorResponse } from "@/lib/authz";
+import { authErrorResponse, requireActiveSubscriptionForFirm } from "@/lib/authz";
 import { recordAudit } from "@/lib/audit";
 import { proposalCreateSchema } from "@/lib/investments/proposals/schemas";
 import { computeProposalSnapshot } from "@/lib/investments/proposals/compute";
@@ -48,6 +48,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (!access.ok || access.permission !== "edit") {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+    await requireActiveSubscriptionForFirm(access.firmId);
 
     const parsed = await parseBody(proposalCreateSchema, request);
     if (!parsed.ok) return parsed.response;

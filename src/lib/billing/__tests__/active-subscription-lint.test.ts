@@ -337,6 +337,51 @@ const ALLOWLIST: Record<string, string> = {
   "src/app/api/data-collection/email-settings/route.ts":
     "advisor email-template config — writes only intake_email_settings (the advisor's own invitation copy), no live planning data; the send path POST /api/data-collection is itself sub-gated",
 
+  // ── 2026-09-03 sweep. Every remaining ungated mutation route was read and
+  // split gate-vs-exempt on Dan's line: "writes live client planning data"
+  // gates, "firm/advisor config, a lifecycle flip, or no DB write at all"
+  // is exempt. 24 routes took the helper; these 14 are the exemptions, each
+  // with the reason it is not just another "wire in Phase 3.5" deferral.
+
+  // (a) POSTs that compute and return — they mutate NOTHING, so there is no
+  //     write for a subscription gate to protect. Same ruling as solver/solve.
+  "src/app/api/clients/[id]/rebalance/compute/route.ts":
+    "rebalance trade-list compute — read-only on DB, no mutation; parity with solver/solve",
+  "src/app/api/clients/[id]/solver/education-solve/route.ts":
+    "education dedicated-savings solve — read-only on DB, no mutation; parity with solver/solve",
+  "src/app/api/clients/[id]/solver/retirement-comparison/route.ts":
+    "retirement-comparison solve — read-only on DB (compute cache only, same as the already-exempt solver/monte-carlo); no mutation",
+  "src/app/api/crm/import/remap/route.ts":
+    "rebuilds an import PREVIEW in memory from rows the caller posted — writes nothing; crm/import/commit is the write and is separately listed",
+  "src/app/api/integrations/[provider]/test/route.ts":
+    "credential pre-flight probe — calls the provider and returns ok/failure, stores nothing; the connect POST it precedes IS gated",
+
+  // (b) A viewer preference on the client row, not planning data.
+  "src/app/api/clients/[id]/view-mode/route.ts":
+    "which Details tab a household opens on (clients.details_view_mode) — a UI preference, deliberately narrower than the client PUT; no planning data",
+  "src/app/api/presentation-templates/builtins/[slug]/dismiss/route.ts":
+    "per-user hide/restore of a built-in template in the picker — a UI preference keyed to the advisor, no client data",
+  "src/app/api/onboarding/first-run/route.ts":
+    "advisor onboarding checklist start/dismiss — a lifecycle flip on the advisor's own row, no client data",
+
+  // (c) Must stay reachable precisely BECAUSE the firm has lapsed. Blocking
+  //     these would strand a departing customer with our product holding their
+  //     credentials, their records, or an access grant they cannot revoke.
+  "src/app/api/integrations/[provider]/disconnect/route.ts":
+    "revokes the firm's OWN stored provider credentials — a lapsed or departing firm must always be able to pull its API keys back out of us",
+  "src/app/api/integrations/[provider]/recheck/route.ts":
+    "re-verifies stored credentials and writes only that connection's own status row — the one button whose job is explaining why a feed is broken",
+  "src/app/api/shares/[shareId]/route.ts":
+    "revokes a client/household share — removing someone else's access must never be the thing billing blocks",
+  "src/app/api/feedback/route.ts":
+    "support contact form (rate-limited, emails us; no DB write) — a firm that cannot reach support cannot tell us its billing is broken; same reasoning as billing/portal",
+  "src/app/api/firm/compliance-exports/route.ts":
+    "enqueues the firm's own regulatory export of its own records — a cancelling firm needs its compliance archive on the way out, and admin + one-batch-at-a-time already bound it",
+
+  // (d) Public intake family — joins the three token-scoped exemptions above.
+  "src/app/api/intake/[token]/verify/route.ts":
+    "public token-scoped identity gate: writes only intake_forms.opened_at (first-access stamp) plus audit, and there is no Clerk session to read a firm from; firm-active is gated at submit",
+
   // Per-advisor branding (Task 14). Same shape as the email-settings exemption
   // above: firm/advisor config, not live planning data, so a lapsed
   // subscription shouldn't block fixing a broken brand field (e.g. a
@@ -373,6 +418,10 @@ describe("active-subscription lint", () => {
       // orgId). NB: "requirePortalActiveSubscription" does NOT contain the
       // substring "requireActiveSubscription", so this needs its own check.
       if (body.includes("requirePortalActiveSubscription")) continue;
+      // `resolvePortalWriteContext` is the portal mutation entry point and
+      // calls requirePortalActiveSubscription unconditionally before it
+      // returns, so a route using it is gated without naming the helper.
+      if (body.includes("resolvePortalWriteContext")) continue;
       violations.push(rel);
     }
 

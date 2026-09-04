@@ -6,6 +6,9 @@ vi.mock("@/lib/portal/resolve-portal-client", () => ({
 }));
 const authErrMock = vi.fn<(e: unknown) => { status: number; body: { error: string } } | null>(() => null);
 vi.mock("@/lib/authz", () => ({ authErrorResponse: (e: unknown) => authErrMock(e) }));
+vi.mock("@/lib/portal/require-portal-subscription", () => ({
+  requirePortalActiveSubscription: vi.fn().mockResolvedValue(undefined),
+}));
 const hasFormMock = vi.fn<() => Promise<boolean>>(() => Promise.resolve(true));
 vi.mock("@/lib/intake/queries", () => ({
   hasUnsubmittedPrefilledForm: () => hasFormMock(),

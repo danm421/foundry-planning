@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { requireOrgAdminOrOwner, authErrorResponse } from "@/lib/authz";
+import { requireOrgAdminOrOwner, requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { findClientInFirm } from "@/lib/db-scoping";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { linkHousehold, unlinkHousehold, getHouseholdLinkForClient } from "@/lib/integrations/households";
@@ -27,6 +27,12 @@ export async function POST(
     if (!clientId || !externalHouseholdId) {
       return NextResponse.json({ error: "clientId and externalHouseholdId are required" }, { status: 400 });
     }
+
+    // Gated on the POST only. DELETE (unlink) stays reachable on a lapsed
+    // subscription: severing a provider's hold on a client must never be the
+    // thing billing blocks. Ahead of findClientInFirm because firmId is the
+    // caller's own org, so this takes the session fast path and costs nothing.
+    await requireActiveSubscriptionForFirm(firmId);
 
     const client = await findClientInFirm(clientId, firmId);
     if (!client) return NextResponse.json({ error: "Client not found" }, { status: 404 });

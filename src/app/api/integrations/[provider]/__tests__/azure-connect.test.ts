@@ -35,6 +35,7 @@ vi.mock("@clerk/nextjs/server", () => ({
 // both be DELETED from a route with this whole file still green.
 vi.mock("@/lib/authz", () => ({
   requireOrgAdminOrOwner: () => mockRequireAdmin(),
+  requireActiveSubscriptionForFirm: vi.fn().mockResolvedValue(undefined),
   authErrorResponse: (...a: unknown[]) => mockAuthErrorResponse(...a),
 }));
 vi.mock("@/lib/rate-limit", () => ({

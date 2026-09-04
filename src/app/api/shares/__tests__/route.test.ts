@@ -43,6 +43,7 @@ vi.mock("@clerk/nextjs/server", () => ({
 
 vi.mock("@/lib/authz", () => ({
   authErrorResponse: vi.fn().mockReturnValue(null),
+  requireActiveSubscriptionForFirm: vi.fn().mockResolvedValue(undefined),
   ForbiddenError: class ForbiddenError extends Error {
     constructor(msg = "Forbidden") { super(msg); this.name = "ForbiddenError"; }
   },

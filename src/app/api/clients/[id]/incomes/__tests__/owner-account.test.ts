@@ -129,7 +129,7 @@ describe("POST /api/clients/[id]/incomes — ownerAccountId", () => {
 
     expect(res.status).toBe(400);
     const json = (await res.json()) as { error: string };
-    expect(json.error).toMatch(/Cannot set both/i);
+    expect(json.error).toMatch(/Set at most one of/i);
     expect(insertedValues.length).toBe(0);
   });
 

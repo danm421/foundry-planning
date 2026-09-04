@@ -62,6 +62,11 @@ describe("Phase 2 schema — plaid_items + plaid_transactions", () => {
       expect(cols, `missing ${c}`).toHaveProperty(c);
     }
     expect(cols.accountId.notNull).toBe(false); // nullable: credit txns map to liabilities
-    expect(transactionCategorizedByEnum.enumValues).toEqual(["plaid", "rule", "manual"]);
+    expect(transactionCategorizedByEnum.enumValues).toEqual([
+      "plaid",
+      "rule",
+      "manual",
+      "recurring", // set when a recurring transaction claims the row
+    ]);
   });
 });

@@ -28,6 +28,7 @@ import {
   gifts,
   wills,
   entities,
+  relocations,
 } from "@/db/schema";
 import {
   writeAccountChildren,
@@ -116,4 +117,5 @@ export const PROMOTE_TABLE_REGISTRY: Partial<Record<TargetKind, RegistryEntry>> 
   gift: { table: gifts },
   will: { table: wills, childWriter: writeWillChildren },
   entity: { table: entities },
+  relocation: { table: relocations },
 };

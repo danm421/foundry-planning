@@ -34,6 +34,13 @@ import {
   forgeConversations,
   integrationConnections,
   advisorProfiles,
+  advisorOnboarding,
+  complianceExportBatches,
+  notificationPreferences,
+  notifications,
+  opsUserEntitlementOverrides,
+  storyVoiceProfiles,
+  storyVoiceSamples,
 } from "@/db/schema";
 import { purgeCrmHouseholdById } from "@/lib/crm/households";
 import { deleteImportFile } from "@/lib/imports/blob";
@@ -269,6 +276,21 @@ export async function purgeFirmById(firmId: string): Promise<void> {
   // Its logo/favicon URLs were collected in step 0, ABOVE — see the ordering
   // warning there before moving either statement.
   await db.delete(advisorProfiles).where(eq(advisorProfiles.firmId, firmId));
+
+  // 3c. Leaf firm-scoped tables keyed by (firm_id, advisor/user id). None has a
+  //     FK to clients or crm_households, so the household cascade never reaches
+  //     them. `notifications` (client_id NULLABLE) and `story_voice_samples`
+  //     (source_client_id ON DELETE SET NULL) keep rows past the client cascade
+  //     for the same reason client_shares does.
+  await db.delete(advisorOnboarding).where(eq(advisorOnboarding.firmId, firmId));
+  await db.delete(complianceExportBatches).where(eq(complianceExportBatches.firmId, firmId));
+  await db.delete(notificationPreferences).where(eq(notificationPreferences.firmId, firmId));
+  await db.delete(notifications).where(eq(notifications.firmId, firmId));
+  await db
+    .delete(opsUserEntitlementOverrides)
+    .where(eq(opsUserEntitlementOverrides.firmId, firmId));
+  await db.delete(storyVoiceSamples).where(eq(storyVoiceSamples.firmId, firmId));
+  await db.delete(storyVoiceProfiles).where(eq(storyVoiceProfiles.firmId, firmId));
 
   // 4. Stripe customer (best-effort).
   if (stripeCustomerId) {

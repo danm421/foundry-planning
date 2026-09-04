@@ -97,10 +97,16 @@ describe("createPortalSessionForFirm", () => {
 
 describe("extendTrialForFirm", () => {
   it("updates the live trialing sub and audits trial_extended", async () => {
+    // The extension runs from the later of the current trial end or now, so the
+    // clock is frozen before the fixture's end date — otherwise this asserts the
+    // "already expired" branch the moment that date slips into the past.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-15T00:00:00Z"));
     h.subRows = [
       { status: "trialing", stripeSubscriptionId: "sub_1", trialEnd: new Date("2026-06-20T00:00:00Z") },
     ];
     const end = await extendTrialForFirm({ firmId: "org_1", days: 7, reason: "support", setBy: "user_op" });
+    vi.useRealTimers();
     expect(end.toISOString()).toBe("2026-06-27T00:00:00.000Z");
     expect(h.subUpdate).toHaveBeenCalledWith("sub_1", {
       trial_end: Math.floor(new Date("2026-06-27T00:00:00Z").getTime() / 1000),

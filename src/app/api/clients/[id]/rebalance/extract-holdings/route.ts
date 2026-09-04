@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
+import { requireActiveSubscriptionForFirm } from "@/lib/authz";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
@@ -42,6 +43,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (access.permission !== "edit") {
       return NextResponse.json({ error: "View-only access" }, { status: 403 });
     }
+    await requireActiveSubscriptionForFirm(access.firmId);
 
     // Extraction is the expensive, externally-billed step — same limiter the
     // import flow uses. It fails closed when Upstash is unconfigured.

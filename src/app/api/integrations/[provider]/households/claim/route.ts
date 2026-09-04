@@ -4,7 +4,7 @@
 // guessable in practice; see the design doc's "Decision" section.
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { authErrorResponse } from "@/lib/authz";
+import { authErrorResponse, requireActiveSubscriptionForFirm } from "@/lib/authz";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { checkIntegrationClaimLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { makeCallContext } from "@/lib/integrations/auth";
@@ -53,6 +53,7 @@ export async function POST(
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     const firmId = access.firmId;
+    await requireActiveSubscriptionForFirm(firmId);
 
     const rl = await checkIntegrationClaimLimit(`${provider.id}:${userId}`);
     if (!rl.allowed) {

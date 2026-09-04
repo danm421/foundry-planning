@@ -15,12 +15,14 @@ describe("parseIrsUpdatesSheet — trust brackets", () => {
       { from: 15200,  to: null,  rate: 0.37 },
     ]);
 
+    // Rev. Proc. 2025-32 (Table 5), as carried in the workbook and pinned by
+    // snapshot-2026.test.ts / data/tax/snapshot.json.
     const y2026 = years.find((y) => y.year === 2026)!;
     expect(y2026.trustIncomeBrackets).toEqual([
       { from: 0,      to: 3300,  rate: 0.10 },
-      { from: 3300,   to: 12000, rate: 0.24 },
-      { from: 12000,  to: 16250, rate: 0.35 },
-      { from: 16250,  to: null,  rate: 0.37 },
+      { from: 3300,   to: 11700, rate: 0.24 },
+      { from: 11700,  to: 16000, rate: 0.35 },
+      { from: 16000,  to: null,  rate: 0.37 },
     ]);
   });
 
@@ -35,9 +37,9 @@ describe("parseIrsUpdatesSheet — trust brackets", () => {
 
     const y2026 = years.find((y) => y.year === 2026)!;
     expect(y2026.trustCapGainsBrackets).toEqual([
-      { from: 0,     to: 3350,  rate: 0    },
-      { from: 3350,  to: 16300, rate: 0.15 },
-      { from: 16300, to: null,  rate: 0.20 },
+      { from: 0,     to: 3300,  rate: 0    },
+      { from: 3300,  to: 16250, rate: 0.15 },
+      { from: 16250, to: null,  rate: 0.20 },
     ]);
   });
 });

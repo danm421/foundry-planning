@@ -9,7 +9,7 @@ import { formatZodIssues } from "@/lib/schemas/common";
 import { requireOrgId } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
-import { authErrorResponse } from "@/lib/authz";
+import { authErrorResponse, requireActiveSubscriptionForFirm } from "@/lib/authz";
 import { checkExtractRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { generateRetirementComparisonAi } from "@/lib/presentations/pages/retirement-comparison/generate-ai";
@@ -41,6 +41,7 @@ export async function POST(
     if (!access.ok) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+    await requireActiveSubscriptionForFirm(access.firmId);
 
     const parsed = Body.safeParse(await request.json());
     if (!parsed.success) {

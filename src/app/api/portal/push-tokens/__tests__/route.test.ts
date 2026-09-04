@@ -5,6 +5,9 @@ vi.mock("@/lib/portal/resolve-portal-client", () => ({
   resolvePortalClient: () => resolveMock(),
 }));
 vi.mock("@/lib/authz", () => ({ authErrorResponse: () => null }));
+vi.mock("@/lib/portal/require-portal-subscription", () => ({
+  requirePortalActiveSubscription: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock("@/db/schema", () => ({ portalPushTokens: { _n: "ppt", expoPushToken: "t", clientId: "c" } }));
 vi.mock("drizzle-orm", () => ({ and: (...a: unknown[]) => a, eq: (...a: unknown[]) => a }));
 

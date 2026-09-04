@@ -64,8 +64,8 @@ describe("commitTabs orchestrator", () => {
     expect(results.entities.created).toBe(1);
 
     // Untouched tabs default to zero counts
-    expect(results.accounts).toEqual({ created: 0, updated: 0, skipped: 0 });
-    expect(results.wills).toEqual({ created: 0, updated: 0, skipped: 0 });
+    expect(results.accounts).toEqual({ created: 0, updated: 0, skipped: 0, warnings: [] });
+    expect(results.wills).toEqual({ created: 0, updated: 0, skipped: 0, warnings: [] });
   });
 
   it("returns allTabsCommitted=false when only some tabs ran and DB has none committed yet", async () => {

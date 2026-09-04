@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+vi.mock("@/lib/authz", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/authz")>();
+  return { ...actual, requireActiveSubscriptionForFirm: vi.fn().mockResolvedValue(undefined) };
+});
+
 vi.mock("@/lib/db-helpers", async () => {
   const actual = await vi.importActual<typeof import("@/lib/db-helpers")>("@/lib/db-helpers");
   return { ...actual, requireOrgId: vi.fn() };

@@ -7,6 +7,7 @@ import {
 } from "@/lib/crm/household-relationships";
 import { createHouseholdRelationshipSchema } from "@/lib/crm/schemas";
 import { UnauthorizedError } from "@/lib/db-helpers";
+import { authErrorResponse, requireActiveSubscription } from "@/lib/authz";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,7 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
+    await requireActiveSubscription();
     const body = await req.json();
     const parsed = createHouseholdRelationshipSchema.safeParse(body);
     if (!parsed.success) {
@@ -44,6 +46,8 @@ export async function POST(
     const relationship = await createHouseholdRelationship(id, parsed.data);
     return NextResponse.json({ relationship }, { status: 201 });
   } catch (err) {
+    const denial = authErrorResponse(err);
+    if (denial) return NextResponse.json(denial.body, { status: denial.status });
     if (err instanceof SelfLinkError) {
       return NextResponse.json({ error: err.message }, { status: 400 });
     }

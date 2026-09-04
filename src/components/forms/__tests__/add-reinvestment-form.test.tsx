@@ -28,12 +28,22 @@ let fetchMock: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   refreshMock.mockReset();
   searchParamsMock = new URLSearchParams("");
-  fetchMock = vi.fn().mockResolvedValue({
-    ok: true,
-    json: async () => ({ id: "ri-1" }),
-  });
+  // The combined group selector always loads the client's custom groups, in
+  // draft mode too — that GET is expected, so it answers with a real list.
+  fetchMock = vi.fn().mockImplementation(async (url: string) =>
+    String(url).endsWith("/account-groups")
+      ? { ok: true, json: async () => [] }
+      : { ok: true, json: async () => ({ id: "ri-1" }) },
+  );
   vi.stubGlobal("fetch", fetchMock);
 });
+
+/** Fetches other than the expected custom-group load. */
+function nonGroupCalls() {
+  return fetchMock.mock.calls.filter(
+    ([url]) => !String(url).endsWith("/account-groups"),
+  );
+}
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -89,7 +99,7 @@ describe("AddReinvestmentForm — draft mode", () => {
     expect(technique.modelPortfolioId).toBe("mp-1");
 
     // fetch must NOT have been called for persistence
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(nonGroupCalls()).toEqual([]);
 
     // onSaved must have been called to close the dialog
     expect(onSaved).toHaveBeenCalledTimes(1);
@@ -126,6 +136,6 @@ describe("AddReinvestmentForm — draft mode", () => {
     expect(select.value).toBe("mp-2");
 
     // Draft edits never hit the DB to recover detail fields.
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(nonGroupCalls()).toEqual([]);
   });
 });

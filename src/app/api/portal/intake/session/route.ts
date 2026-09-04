@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { clerkClient } from "@clerk/nextjs/server";
 import { authErrorResponse } from "@/lib/authz";
 import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
+import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import { hasUnsubmittedPrefilledForm } from "@/lib/intake/queries";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +25,10 @@ export async function POST(): Promise<Response> {
     if (mode !== "client") {
       return NextResponse.json({ error: "Client mode only" }, { status: 403 });
     }
+    // The intake SUBMIT is firm-gated, so a lapsed firm's client would fill in
+    // the whole wizard and be refused at the end. Fail at the door instead.
+    await requirePortalActiveSubscription(clientId);
+
     if (!(await hasUnsubmittedPrefilledForm(clientId))) {
       return NextResponse.json({ error: "No pending intake form" }, { status: 409 });
     }

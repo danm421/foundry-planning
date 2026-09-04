@@ -48,6 +48,10 @@ beforeEach(() => {
         emailAddresses: [{ id: "idem_1", emailAddress: "dana@firm.com" }],
       }),
     },
+    // The route resolves the firm's display name for the email subject.
+    organizations: {
+      getOrganization: vi.fn().mockResolvedValue({ name: "Firm & Co" }),
+    },
   } as never);
 });
 

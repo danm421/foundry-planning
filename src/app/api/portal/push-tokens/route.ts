@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { portalPushTokens } from "@/db/schema";
 import { authErrorResponse } from "@/lib/authz";
 import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
+import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,12 @@ export async function POST(req: Request): Promise<Response> {
     if (mode !== "client") {
       return NextResponse.json({ error: "Client mode only" }, { status: 403 });
     }
+    // Registration is gated; DELETE (unregister) below deliberately is not —
+    // turning your own notifications off must work whatever the firm's billing
+    // state. NB not resolvePortalWriteContext: that also runs requireEditEnabled,
+    // and a view-only portal client still gets notified.
+    await requirePortalActiveSubscription(clientId);
+
     const body = (await req.json().catch(() => ({}))) as PostBody;
     const token = typeof body.expoPushToken === "string" ? body.expoPushToken.trim() : undefined;
     if (!token) {

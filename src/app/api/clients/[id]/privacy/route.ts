@@ -4,7 +4,7 @@ import { clients } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { requireShareManageAccess } from "@/lib/clients/share-manage";
 import { recordAudit } from "@/lib/audit";
-import { authErrorResponse } from "@/lib/authz";
+import { authErrorResponse, requireActiveSubscriptionForFirm } from "@/lib/authz";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +15,7 @@ export async function PUT(
   try {
     const { id } = await params;
     const { firmId } = await requireShareManageAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const body = await request.json();
     if (typeof body?.isPrivate !== "boolean") {

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { requireOrgAdminOrOwner, authErrorResponse } from "@/lib/authz";
+import { requireOrgAdminOrOwner, requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { checkIntegrationSyncLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { syncFirm } from "@/lib/integrations/sync";
@@ -48,6 +48,8 @@ export async function POST(
       firmId = orgId;
       rateLimitKey = `${provider.id}:${firmId}`;
     }
+
+    await requireActiveSubscriptionForFirm(firmId);
 
     const rl = await checkIntegrationSyncLimit(rateLimitKey);
     if (!rl.allowed) {

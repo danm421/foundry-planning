@@ -1,6 +1,11 @@
 // src/app/api/integrations/[provider]/households/claim/route.test.ts
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
+vi.mock("@/lib/authz", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/authz")>();
+  return { ...actual, requireActiveSubscriptionForFirm: vi.fn().mockResolvedValue(undefined) };
+});
+
 vi.mock("@clerk/nextjs/server", () => ({ auth: vi.fn() }));
 vi.mock("@/lib/clients/authz", () => ({ requireClientEditAccess: vi.fn() }));
 vi.mock("@/lib/rate-limit", async (orig) => ({
