@@ -110,6 +110,10 @@ export function parseHouseholdSource(
     return { type: "Entity Carry-In Gain", description: "Prior-year grantor carry-in", character, account: null, amount, taxable };
   }
 
+  if (key.startsWith("tax_adjustment:")) {
+    return { type: "Tax Adjustment", description: "Income already received", character, account: null, amount, taxable };
+  }
+
   // Portfolio realization & RMD: <acctId>:oi|qdiv|stcg|rmd  (also 3-segment <acctId>:<kind>:<entityId>)
   if (key.includes(":")) {
     const segs = key.split(":");

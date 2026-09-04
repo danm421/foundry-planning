@@ -13,6 +13,7 @@ export type IncomeColumnKey =
   | "capitalGains"
   | "shortCapitalGains"
   | "qbi"
+  | "taxAdjustments"
   | "totalIncome"
   | "nonTaxableIncome"
   | "grossTotalIncome";

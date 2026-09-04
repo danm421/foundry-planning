@@ -1,6 +1,6 @@
 {
-  "id": "0621338b-953e-4bfa-a75a-f5a8f880eb72",
-  "prevId": "5d7c4c4d-8c90-400a-95a2-44904787d57d",
+  "id": "33d5398f-2991-49d4-9045-46ffe633f224",
+  "prevId": "0621338b-953e-4bfa-a75a-f5a8f880eb72",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -17604,6 +17604,12 @@
         "fill_up_bracket": {
           "name": "fill_up_bracket",
           "type": "numeric(5, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "irmaa_cap_tier": {
+          "name": "irmaa_cap_tier",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false
         },

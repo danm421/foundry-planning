@@ -482,6 +482,9 @@ export interface ClientData {
   taxYearRows?: TaxYearParameters[];
   /** Itemized deduction line items (charitable, SALT, mortgage interest, etc.). */
   deductions?: ClientDeductionRow[];
+  /** Advisor-entered income that already happened — feeds the tax engine and
+   *  never the cash flow. See `src/engine/tax-adjustments.ts`. */
+  taxAdjustments?: import("./tax-adjustments").TaxAdjustmentRow[];
   /** Transfer techniques — move value between accounts with tax implications. */
   transfers?: Transfer[];
   /** Roth conversion techniques — multi-source, strategy-driven Trad → Roth conversions. */

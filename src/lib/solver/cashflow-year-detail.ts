@@ -130,12 +130,19 @@ export function noteReceivableItems(year: ProjectionYear, m: NameMaps): CashFlow
 }
 
 export function taxLineItems(year: ProjectionYear): CashFlowLineItem[] {
-  return year.taxResult
-    ? [
-        { id: "tax-federal", label: "Federal", amount: year.taxResult.flow.totalFederalTax ?? 0 },
-        { id: "tax-state", label: "State", amount: year.taxResult.flow.stateTax ?? 0 },
-      ]
-    : [];
+  if (!year.taxResult) return [];
+  const taxAlreadyPaid = year.taxResult.flow.taxAlreadyPaid ?? 0;
+  return [
+    { id: "tax-federal", label: "Federal", amount: year.taxResult.flow.totalFederalTax ?? 0 },
+    { id: "tax-state", label: "State", amount: year.taxResult.flow.stateTax ?? 0 },
+    // Names the netting a tax_adjustment's withholding applies against the
+    // gross Federal + State liability above, so the balancing row this
+    // category would otherwise need (see canonicalCategory / balanced) reads
+    // "Already withheld" instead of an anonymous negative "Other".
+    ...(taxAlreadyPaid > 0
+      ? [{ id: "tax-already-paid", label: "Already withheld", amount: -taxAlreadyPaid }]
+      : []),
+  ];
 }
 
 function isOtherInflowKey(key: string): boolean {
