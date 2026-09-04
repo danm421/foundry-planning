@@ -10,14 +10,21 @@ three got `0256`. Here is who owns what:
 |---|---|---|---|
 | `0256` | `observation_audience_context` | `main` | ✅ merged (`eba3c717e`) and **applied to PROD** — settled, do not touch |
 | `0257` | `fund_portfolio_model_link` | `fund-portfolio-to-model` | ✅ renumbered 2026-09-03 |
-| `0258` | `tax_return_reconciliation_dismissals` | `plan-vs-return` | ⚠️ **still numbered 0256 — must move to 0258** |
+| `0258` | `tax_return_reconciliation_dismissals` | `plan-vs-return` | ✅ regenerated 2026-09-04, applied to DEV |
 
 **The next free number is `0259`.**
 
 ## If you are `plan-vs-return`
 
-Your `0256_tax_return_reconciliation_dismissals` still collides. It must become
-**`0258`**, not 0257 — `fund-portfolio-to-model` already took 0257.
+Done 2026-09-04. `origin/main` was merged into the branch, the old
+`0256_tax_return_reconciliation_dismissals` was deleted, and `drizzle-kit generate`
+re-emitted it as `0258` on top of main's `0257`. The DDL is byte-identical to the
+old file and a second `generate` prints "No schema changes". Applied to **DEV only**;
+prod still needs it before the branch is pushed.
+
+Its `when` is `1788509479555`, above dev's previous newest (`1788479423596`) and above
+prod's, so it applies on both. The paragraph below about keeping the original `when`
+did NOT apply here — the table did not yet exist on dev.
 
 ## Do not fix this by renaming the file
 

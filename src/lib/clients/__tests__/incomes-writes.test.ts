@@ -4,10 +4,11 @@
 // with income-specific adjustments. Hits the real Neon dev branch and skips
 // cleanly without a DB so it never adds to the no-delta failing set in CI.
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
+import { recordAudit } from "@/lib/audit";
 import { sweepLeakedAuditRows } from "@/lib/audit/test-helpers";
-import { incomes } from "@/db/schema";
+import { auditLog, incomes } from "@/db/schema";
 import {
   createIncomeForClient,
   updateIncomeForClient,
@@ -222,5 +223,127 @@ d("incomes-writes core", () => {
     // The edited tax treatment must round-trip — otherwise the engine keeps
     // taxing income the advisor marked tax-exempt.
     expect(res.data.taxType).toBe("tax_exempt");
+  });
+
+  // Plan vs. Return applies a two-row Social Security split through this core and needs
+  // both rows to land together, so the core must honour a caller's transaction handle
+  // rather than its own module-level `db`. Proven the only way that counts: roll the
+  // caller's transaction back and read the row again.
+  it("honours a caller's transaction handle — a rollback undoes the update", async () => {
+    const created = await createIncomeForClient({
+      clientId: COOPER_CLIENT_ID,
+      firmId: COOPER_FIRM_ID,
+      actorId: ACTOR_ID,
+      input: {
+        type: "social_security",
+        name: "Transaction handle target",
+        annualAmount: 30000,
+        startYear: 2025,
+        endYear: 2045,
+      },
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    createdIds.push(created.data.id);
+    expect(created.data.annualAmount).toBe("30000.00");
+
+    await expect(
+      db.transaction(async (tx) => {
+        const res = await updateIncomeForClient({
+          clientId: COOPER_CLIENT_ID,
+          firmId: COOPER_FIRM_ID,
+          actorId: ACTOR_ID,
+          incomeId: created.data.id,
+          input: { annualAmount: 99000 },
+          tx,
+        });
+        expect(res.ok).toBe(true);
+        // Stands in for a failure on the SECOND row of a split.
+        throw new Error("roll it back");
+      }),
+    ).rejects.toThrow("roll it back");
+
+    const [row] = await db
+      .select({ annualAmount: incomes.annualAmount })
+      .from(incomes)
+      .where(eq(incomes.id, created.data.id));
+    // Without the threaded handle the write would have gone to the module-level `db`,
+    // committed on its own connection, and survived the rollback.
+    expect(row.annualAmount).toBe("30000.00");
+
+    // An audit row is a claim that a change happened. The change was undone, so there
+    // must be no row — otherwise the log permanently records an income edit that never
+    // landed. (`sweepLeakedAuditRows` would delete exactly this row in afterAll, which
+    // is why the assertion has to run here.)
+    const audits = await db
+      .select({ id: auditLog.id })
+      .from(auditLog)
+      .where(and(eq(auditLog.action, "income.update"), eq(auditLog.resourceId, created.data.id)));
+    expect(audits).toHaveLength(0);
+  });
+
+  // The other direction of the same contract. `recordAudit` is deliberately fail-soft —
+  // an audit hiccup must never break a user-facing write — so putting its INSERT inside a
+  // caller's transaction must not invert that: a failed INSERT poisons the whole Postgres
+  // transaction (25P02) and every later statement dies with it. A SAVEPOINT keeps both
+  // halves true at once.
+  it("an audit failure inside a caller's transaction rolls back only itself", async () => {
+    const created = await createIncomeForClient({
+      clientId: COOPER_CLIENT_ID,
+      firmId: COOPER_FIRM_ID,
+      actorId: ACTOR_ID,
+      input: {
+        type: "social_security",
+        name: "Savepoint target",
+        annualAmount: 30000,
+        startYear: 2025,
+        endYear: 2045,
+      },
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    createdIds.push(created.data.id);
+
+    await db.transaction(async (tx) => {
+      // `audit_log.client_id` is a uuid column, so this INSERT cannot succeed.
+      // recordAudit swallows the error, exactly as it always has.
+      await recordAudit({
+        action: "income.update",
+        resourceType: "income",
+        resourceId: created.data.id,
+        clientId: "not-a-uuid",
+        firmId: COOPER_FIRM_ID,
+        actorId: ACTOR_ID,
+        tx,
+      });
+      // Without the savepoint the transaction is aborted by now and this throws 25P02 —
+      // an audit-log hiccup taking a client's income edit down with it.
+      const res = await updateIncomeForClient({
+        clientId: COOPER_CLIENT_ID,
+        firmId: COOPER_FIRM_ID,
+        actorId: ACTOR_ID,
+        incomeId: created.data.id,
+        input: { annualAmount: 44000 },
+        tx,
+      });
+      expect(res.ok).toBe(true);
+    });
+
+    const [row] = await db
+      .select({ annualAmount: incomes.annualAmount })
+      .from(incomes)
+      .where(eq(incomes.id, created.data.id));
+    // The write stands: the audit failure cost only the audit row.
+    expect(row.annualAmount).toBe("44000.00");
+
+    // …and the POSITIVE direction of the same contract: the update's OWN audit row,
+    // written on the caller's handle, committed with it. Without this, skipping the
+    // audit entirely whenever a handle is passed would satisfy every other assertion
+    // here and in the rollback test above.
+    const audits = await db
+      .select({ id: auditLog.id })
+      .from(auditLog)
+      .where(and(eq(auditLog.action, "income.update"), eq(auditLog.resourceId, created.data.id)));
+    expect(audits).toHaveLength(1);
   });
 });

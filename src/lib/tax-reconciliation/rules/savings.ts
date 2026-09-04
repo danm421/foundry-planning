@@ -1,0 +1,149 @@
+import { ROW, detailsHref, differs, isActiveInYear, makeDelta, money, n, planToTaxYear, ref, sum } from "../compare";
+import type { Check, PlanSavingsRule, ReconciliationInput, Rule, Suggestion } from "../types";
+
+/** One Schedule 1 adjustment that is really a contribution the plan should be making: the account
+ *  sub-types it can land in, the line it came off, and the words for it in a headline. */
+interface Kind { id: string; label: string; subTypes: string[]; amount: number | null; line: string; what: string }
+
+/** Which of the four figures on a savings rule the engine actually spends in a given year. Mirrors
+ *  its precedence exactly: a year-by-year override wins, then "contribute the max", then
+ *  percent-of-salary, then the flat annualAmount (src/engine/projection.ts:3905-3924,
+ *  src/engine/savings.ts:20-25). Only `amount` rules can be corrected by setting a dollar figure —
+ *  for the other three the engine discards annualAmount entirely, so a write would change nothing.
+ *
+ *  Year-dependent by necessity: the same rule is schedule-driven in a year it has an override for
+ *  and percent- or amount-driven in every other year. */
+type SavingsMode = "schedule" | "max" | "percent" | "amount";
+const modeOf = (r: PlanSavingsRule, year: number): SavingsMode =>
+  r.overrideYears.includes(year) ? "schedule"
+    : r.contributeMax ? "max"
+      : (r.annualPercent != null && r.annualPercent > 0 ? "percent" : "amount");
+
+/** How each unwritable mode is named to the advisor, and why the button is missing. */
+const DERIVED_COPY: Record<Exclude<SavingsMode, "amount">, { how: string; why: string }> = {
+  schedule: { how: "to a year-by-year schedule", why: "A scheduled rule reads its amount straight out of the schedule for that year" },
+  max: { how: "to contribute the IRS maximum each year", why: "A max-funded rule resolves to the IRS limit for the owner's age each year" },
+  percent: { how: "as a percent of salary", why: "A percent-of-salary rule resolves from the owner's salary each year" },
+};
+
+function one(input: ReconciliationInput, k: Kind): { suggestions: Suggestion[]; checks: Check[] } {
+  const { plan, taxYear, planYear, engineYear } = input;
+  if (k.amount == null || k.amount <= 0) return { suggestions: [], checks: [] };
+  const accounts = plan.accounts.filter((a) => k.subTypes.includes(a.subType));
+  const ids = new Set(accounts.map((a) => a.id));
+  const accountRules = plan.savingsRules.filter((r) => ids.has(r.accountId));
+  // The aggregate means "what the plan saves in the plan year", so it keeps the active subset.
+  const rules = accountRules.filter((r) => isActiveInYear(r, planYear));
+  // Two shapes are invisible to that aggregate by design, and both would otherwise let the return's
+  // own figure fall through to the create arm. The two predicates are ASYMMETRIC on purpose:
+  //
+  //  - ENDING blocks the create only when the rule was active in the TAX year — saving the advisor
+  //    modelled as stopping at retirement. A rule that ended in 2015 never contributes again, so a
+  //    new one cannot double up and the advisor should still be offered it.
+  //  - FUTURE blocks whenever the rule starts after the plan year, whatever it did in the tax year,
+  //    because the overlap a create would make is real: a 2030-2060 rule plus a new 2026-2060 rule
+  //    contributes TWICE into the same account from 2030 on.
+  const ending = accountRules.filter((r) => isActiveInYear(r, taxYear) && !isActiveInYear(r, planYear));
+  const future = accountRules.filter((r) => r.startYear > planYear);
+  // The engine year is the post-resolution truth for all three modes — it has already applied the
+  // percent, the IRS maximum, the contribution caps and any retirement-year proration — so it is
+  // what the plan really contributes. Deflated by the plan's inflation rate like every other
+  // engine-sourced figure on this page, which is exactly what the builder's note discloses.
+  //
+  // Without an engine year only the flat rows can be added up, and a percent, max or schedule-driven
+  // rule's contribution is genuinely unknowable here: it is left OUT of the sum rather than counted
+  // as whatever its `annual_amount` column happens to hold, and the arms below say so instead of
+  // writing a number.
+  const derived = rules.filter((r) => modeOf(r, planYear) !== "amount");
+  const p = engineYear
+    ? planToTaxYear(input, sum(accounts.map((a) => n(engineYear.savings.byAccount[a.id]))))
+    : sum(rules.filter((r) => modeOf(r, planYear) === "amount").map((r) => r.annualAmount));
+  const returnFigure = { label: k.label, amount: k.amount, display: money(k.amount), lineRefs: [ref("Sched 1", k.line, k.label, k.amount)] };
+  const planFigure = { label: accounts.length ? `Contributions to ${accounts.length === 1 ? accounts[0].name : k.what} in the plan` : `No ${k.what} in the plan`, amount: accounts.length ? p : null, display: accounts.length ? money(p) : "—", year: planYear };
+  const netWorth = { label: "Open Net Worth", href: detailsHref(input, "net-worth") };
+  const head = `The return deducts ${money(k.amount)} of ${k.what} contributions`;
+
+  if (accounts.length === 0) return { suggestions: [{ id: k.id, section: "savings", kind: "review", status: "open",
+    headline: `${head}; the plan has no such account.`,
+    meaning: `Add the ${k.what} on Net Worth first; the contribution can then be recorded as a savings rule.`,
+    returnFigure, planFigure, delta: makeDelta(k.amount, 0), link: netWorth }], checks: [] };
+
+  // Named by ACCOUNT, not by rule: a savings rule has no name of its own, and one account can carry
+  // several. An out-of-range rule is never shown a dollar figure — the plan really does save nothing
+  // into it in the plan year — so the prose carries the reason instead.
+  const accountsLabel = (rs: PlanSavingsRule[]) => {
+    const names = [...new Set(rs.map((r) => accounts.find((a) => a.id === r.accountId)?.name ?? k.what))];
+    return names.length === 1 ? names[0] : `${names.length} accounts`;
+  };
+
+  if (rules.length === 0 && ending.length > 0) {
+    const label = accountsLabel(ending);
+    return { suggestions: [{ id: k.id, section: "savings", kind: "review", status: "open",
+      headline: `${head}; the plan's saving into ${label} ran in ${taxYear} but not in ${planYear}.`,
+      meaning: `The plan models the contributions as stopping before ${planYear}, so adding a rule here would start them again. Check the end year on Net Worth instead.`,
+      returnFigure, planFigure: { label, amount: 0, display: money(0), year: planYear }, delta: makeDelta(k.amount, 0), link: netWorth }], checks: [] };
+  }
+
+  if (rules.length === 0 && future.length > 0) {
+    const label = accountsLabel(future);
+    const starts = Math.min(...future.map((r) => r.startYear));
+    return { suggestions: [{ id: k.id, section: "savings", kind: "review", status: "open",
+      headline: `${head}; the plan's saving into ${label} does not start until ${starts}.`,
+      meaning: `Adding a rule here would run alongside the one that starts in ${starts} and contribute twice from then on. Move the start year back on Net Worth instead.`,
+      returnFigure, planFigure: { label, amount: 0, display: money(0), year: planYear }, delta: makeDelta(k.amount, 0), link: netWorth }], checks: [] };
+  }
+
+  // `.create` is a dismissal id of its own: dismissing "add this contribution" must not also
+  // suppress "this contribution's amount is off", and those ids are persisted.
+  //
+  // The write is fixed server-side to ONE account — the apply payload carries an amount and an
+  // owner, never an account — so where several accounts could hold it the copy names the one chosen
+  // and says the others exist, rather than writing silently into the first.
+  if (rules.length === 0) return { suggestions: [{ id: `${k.id}.create`, section: "savings", kind: "update", status: "open",
+    headline: `${head}; the plan saves nothing into ${accounts[0].name}.`,
+    meaning: `The deduction on Schedule 1 is the actual contribution. This adds a savings rule for it, ending at retirement.${accounts.length > 1 ? ` The plan has ${accounts.length} accounts that could hold it; this one saves into ${accounts[0].name}. Move the rule on Net Worth if it belongs to another.` : ""}`,
+    returnFigure, planFigure, delta: makeDelta(k.amount, 0),
+    action: { label: `Save ${money(k.amount)} a year`, describe: `Adds a ${money(k.amount)} a year savings rule into ${accounts[0].name}`, amountEditable: true, defaultAmount: k.amount,
+      target: { kind: "savings_rule.create", amountField: "annualAmount", input: { accountId: accounts[0].id, annualAmount: k.amount, startYear: plan.planSettings.planStartYear, endYear: plan.planSettings.planEndYear, endYearRef: "client_retirement" } } } }], checks: [] };
+
+  if (!differs(k.amount, p, ROW)) return { suggestions: [], checks: [{ id: k.id, label: k.label, returnDisplay: money(k.amount), planDisplay: money(p) }] };
+
+  // A rule the engine resolves for itself cannot be corrected by writing a dollar amount — the
+  // engine would ignore it and the card would report a fix that never happened. Say which mode it is
+  // in and send the advisor to the screen that can change it, the same posture every other
+  // unwritable arm takes. Where several rules are derived the card is a review pointing at Net Worth
+  // whichever mode is named, so naming the first one's is enough to explain the missing button.
+  if (derived.length > 0) {
+    // The cast is safe by construction: `derived` is exactly the rules whose mode is not "amount".
+    const copy = DERIVED_COPY[modeOf(derived[0], planYear) as Exclude<SavingsMode, "amount">];
+    return { suggestions: [{ id: k.id, section: "savings", kind: "review", status: "open",
+      headline: `${head}; the plan's saving into ${accountsLabel(derived)} is set ${copy.how}.`,
+      meaning: `${copy.why}, so a dollar amount set here would be ignored. Change it on Net Worth if the return's figure is the one to model.`,
+      returnFigure, planFigure, delta: makeDelta(k.amount, p), link: netWorth }], checks: [] };
+  }
+
+  if (rules.length === 1) return { suggestions: [{ id: k.id, section: "savings", kind: "update", status: "open",
+    headline: `${head}; the plan saves ${money(p)}.`,
+    meaning: "The deduction on Schedule 1 is the actual contribution for the year.",
+    returnFigure, planFigure, delta: makeDelta(k.amount, p),
+    action: { label: `Set contribution to ${money(k.amount)}`, describe: `Sets the ${k.what} savings rule to ${money(k.amount)} a year`, amountEditable: true, defaultAmount: k.amount,
+      target: { kind: "savings_rule.update", ruleId: rules[0].id, patch: { annualAmount: k.amount }, amountField: "annualAmount" } } }], checks: [] };
+
+  return { suggestions: [{ id: k.id, section: "savings", kind: "review", status: "open",
+    headline: `${head}; the plan's ${rules.length} rules save ${money(p)}.`,
+    meaning: "Which rule is off cannot be told from one line. Adjust them on Net Worth.",
+    returnFigure, planFigure, delta: makeDelta(k.amount, p), link: netWorth }], checks: [] };
+}
+
+export const savingsRules: Rule = (input) => {
+  const d = input.facts.income.adjustmentsDetail;
+  // `401k` is deliberately NOT a sub-type here, even though line 16 is where a solo 401(k) lands:
+  // there is no solo-401(k) sub-type, so a `401k` account is normally an EMPLOYEE deferral account,
+  // and box 1 already excludes those deferrals — they never reach line 16. Including it would
+  // compare this line against employee deferrals and offer a wrong write. The cost of leaving it
+  // out is that a solo 401(k) modelled on a `401k` account reviews as "no such account", which asks
+  // the advisor a question rather than writing a wrong number.
+  const a = one(input, { id: "savings.sepSimple", label: "SEP / SIMPLE / solo 401(k) deduction", subTypes: ["sep_ira", "simple_ira"], amount: d?.sepSimpleSolo401k ?? null, line: "16", what: "SEP or SIMPLE IRA" });
+  const b = one(input, { id: "savings.hsa", label: "HSA deduction", subTypes: ["hsa"], amount: d?.hsaDeduction ?? null, line: "13", what: "HSA" });
+  return { suggestions: [...a.suggestions, ...b.suggestions], checks: [...a.checks, ...b.checks] };
+};

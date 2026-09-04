@@ -75,6 +75,9 @@ export type AuditAction =
   | "tax_return.document_remove"
   | "tax_return.second_read"
   | "tax_return.second_read_dismiss"
+  | "tax_reconciliation.apply"
+  | "tax_reconciliation.dismiss"
+  | "tax_reconciliation.restore"
   // Scenario-level movements
   | "transfer.create"
   | "transfer.update"
@@ -505,6 +508,10 @@ export type AuditAction =
   | "story_voice.sample_enabled"
   | "story_voice.sample_deleted";
 
+// Drizzle transaction handle — same convention as src/lib/clients/create-client.ts.
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type DbOrTx = typeof db | Tx;
+
 type Args = {
   action: AuditAction;
   resourceType: string;
@@ -521,6 +528,15 @@ type Args = {
   // 'advisor' (default) for staff edits, 'client' for portal edits,
   // 'system' for unattended jobs (webhooks, crons).
   actorKind?: "advisor" | "client" | "system";
+  // Write the row on a caller's open transaction instead of the module-level `db`.
+  // Additive and optional: every existing call site keeps today's behaviour.
+  //
+  // An audit row is a claim that a change happened. When the change itself is running
+  // inside a caller's transaction, a row written on a separate pooled connection
+  // commits even if that transaction rolls back — leaving the log permanently
+  // asserting an edit that never landed. Passing the handle makes the row atomic with
+  // the change it describes.
+  tx?: DbOrTx;
 };
 
 export async function recordAudit(args: Args): Promise<void> {
@@ -546,7 +562,7 @@ export async function recordAudit(args: Args): Promise<void> {
     // that user leaves the org. Best-effort — never blocks the insert.
     const actorName = await snapshotActorName(actorId);
     if (actorName) metadata = { ...(metadata ?? {}), actorName };
-    await db.insert(auditLog).values({
+    const row = {
       firmId: args.firmId,
       actorId,
       actorKind: args.actorKind ?? "advisor",
@@ -555,7 +571,22 @@ export async function recordAudit(args: Args): Promise<void> {
       resourceId: args.resourceId,
       clientId: args.clientId ?? null,
       metadata,
-    });
+    };
+    if (args.tx) {
+      // Inside a caller's transaction the row must live and die with the write it
+      // describes — but it must not be able to KILL that write. A failed INSERT aborts
+      // the whole Postgres transaction (25P02) and every later statement with it, which
+      // would invert this function's fail-soft contract for tx callers only.
+      //
+      // A nested transaction is a real SAVEPOINT on this driver: drizzle's pg dialect
+      // issues `savepoint spN` on the SAME session and `rollback to savepoint spN` if the
+      // callback throws (drizzle-orm/neon-serverless/session.js:198-209). So an audit
+      // failure rolls back only itself, the enclosing transaction stays usable, and the
+      // catch below swallows it exactly as it does on the plain path.
+      await args.tx.transaction(async (sp) => { await sp.insert(auditLog).values(row); });
+    } else {
+      await db.insert(auditLog).values(row);
+    }
   } catch (err) {
     const msg =
       err instanceof Error ? err.message.slice(0, 200) : "unknown audit error";

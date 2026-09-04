@@ -36,6 +36,13 @@ describe("TaxReportView", () => {
     expect(screen.getByTestId("bracket-map")).toBeTruthy();
     expect(screen.getByText(/not tax advice/i)).toBeTruthy();
   });
+
+  it("links a ready year to Plan vs. Return with its year", () => {
+    render(<TaxReportView clientId="c1" detail={detail} onEditFacts={vi.fn()} {...secondReadProps} />);
+    expect(screen.getByRole("link", { name: /compare to plan/i }).getAttribute("href")).toBe(
+      "/clients/c1/details/plan-vs-return?year=2025",
+    );
+  });
 });
 
 describe("TaxReportView — income composition + deductions", () => {

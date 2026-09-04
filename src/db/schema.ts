@@ -2990,6 +2990,24 @@ export const taxReturnState = pgTable("tax_return_state", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+/** One row per suggestion the advisor marked "Not applicable" on Plan vs.
+ *  Return. Keyed by the suggestion's stable id, not by row data, so a restore
+ *  is a delete. A NEW table rather than a column on tax_return_state: this is
+ *  read only by new code, so the deploy-before-migrate window degrades to
+ *  "Not applicable temporarily unavailable" instead of blanking a page. */
+export const taxReturnReconciliationDismissals = pgTable("tax_return_reconciliation_dismissals", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  taxReturnId: uuid("tax_return_id")
+    .notNull()
+    .references(() => taxReturns.id, { onDelete: "cascade" }),
+  suggestionId: text("suggestion_id").notNull(),
+  dismissedBy: text("dismissed_by"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  unique("tax_return_reconciliation_dismissals_uniq").on(t.taxReturnId, t.suggestionId),
+  index("tax_return_reconciliation_dismissals_return_idx").on(t.taxReturnId),
+]);
+
 export const expenses = pgTable("expenses", {
   id: uuid("id").defaultRandom().primaryKey(),
   clientId: uuid("client_id")

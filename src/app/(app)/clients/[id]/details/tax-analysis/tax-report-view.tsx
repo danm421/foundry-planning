@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import type { Finding } from "@/lib/tax-analysis/types";
 import { fmtUsd, fmtPct } from "@/lib/tax-analysis/format";
 import {
@@ -132,6 +133,14 @@ export function TaxReportView({
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">{detail.taxYear} Tax Analysis</h2>
         <div className="flex gap-2">
+          {detail.status === "ready" && (
+            <Link
+              href={`/clients/${clientId}/details/plan-vs-return?year=${detail.taxYear}`}
+              className="inline-flex items-center rounded border border-hair px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+            >
+              Compare to plan
+            </Link>
+          )}
           <button type="button" className="rounded border border-hair px-3 py-1.5 text-sm" onClick={onEditFacts}>
             Edit facts
           </button>
