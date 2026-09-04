@@ -6331,10 +6331,29 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
 
-    if (hasChecking) {
-      let checkingAfterTax = preSupplementalChecking - taxOutForIter.taxes;
+    // Withholding recorded on a tax adjustment is cash the client already paid,
+    // out of the very paycheck the imported balances already reflect. The plan
+    // must not withdraw it a second time. Clamped against the year's own tax so
+    // over-withholding stops at zero rather than becoming a cash inflow, which
+    // neither `expenses.taxes` nor the checking debit can represent.
+    // The liability itself (`flow.totalTax`) is NEVER reduced — only the funding.
+    // Same clamp shape the reporting seam uses below, so the cash-flow tax line
+    // and the account movement can never disagree.
+    const taxAlreadyPaidAgainst = (tax: number) =>
+      Math.min(Math.max(0, taxAdj.alreadyPaid), Math.max(0, tax));
+    // The cash the plan must actually raise to settle a gross tax (+ penalty)
+    // figure. Monotone and 1-Lipschitz in its argument, so the convergence loop
+    // below keeps its contraction property.
+    const taxToFund = (tax: number) => tax - taxAlreadyPaidAgainst(tax);
 
-      const initialTaxes = taxOutForIter.taxes;
+    if (hasChecking) {
+      let checkingAfterTax = preSupplementalChecking - taxToFund(taxOutForIter.taxes);
+
+      // The cash the pre-supplemental tax bill costs — the delta base for the
+      // Newton step below. Netted, like every other term in that step, so the
+      // step measures the marginal CASH cost of the draws (which is what the
+      // loop has to raise), not the marginal liability.
+      const initialTaxesToFund = taxToFund(taxOutForIter.taxes);
       for (let iter = 0; iter < MAX_ITER; iter++) {
         // Joint convergence test: bracket fillers must also be on-target.
         let bracketConverged = true;
@@ -6379,10 +6398,20 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           }
         }
 
-        // Newton-style step on the supplemental side (existing logic).
+        // Newton-style step on the supplemental side (existing logic). Both
+        // terms are netted, so this stays the marginal CASH cost of the draws —
+        // the derivative of the very `checkingAfterTax` the loop drives to zero.
+        // While recorded withholding still covers the whole bill an extra draw
+        // costs no extra cash, and the step correctly degrades to a plain
+        // fixed-point iteration (effectiveRate 0). With no withholding
+        // `taxToFund` is the identity, leaving the old expression reassociated
+        // (`(t + p) − t0` for `t − t0 + p`) and otherwise unchanged; this is a
+        // step-size heuristic, not the convergence criterion.
         const supplementalCost =
           supplementalPlan.total > 0
-            ? taxOutForIter.taxes - initialTaxes + supplementalPlan.recognizedIncome.earlyWithdrawalPenalty
+            ? taxToFund(
+                taxOutForIter.taxes + supplementalPlan.recognizedIncome.earlyWithdrawalPenalty,
+              ) - initialTaxesToFund
             : 0;
         const effectiveRate =
           supplementalPlan.total > 0 ? supplementalCost / supplementalPlan.total : 0;
@@ -6507,8 +6536,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         taxOutForIter = computeTaxForYear(supplementalTaxInput);
         finalTaxInput = supplementalTaxInput;
 
-        const taxAndPenalty =
-          taxOutForIter.taxes + supplementalPlan.recognizedIncome.earlyWithdrawalPenalty;
+        // Netted: the loop must converge on the cash the plan actually has to
+        // raise, which is what the application block below really debits.
+        const taxAndPenalty = taxToFund(
+          taxOutForIter.taxes + supplementalPlan.recognizedIncome.earlyWithdrawalPenalty,
+        );
         checkingAfterTax = preSupplementalChecking + supplementalPlan.total - taxAndPenalty;
 
         if (iter === MAX_ITER - 1) {
@@ -6557,10 +6589,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // `finalTaxes` capture the recomputed tax; the balance mutations happen
       // in the application block, mirroring the hasChecking split.
       const purchaseEquity = purchaseBreakdown.reduce((sum, p) => sum + p.equity, 0);
-      const seededTaxes = taxOutForIter.taxes;
+      // Netted, because this path's draw IS the cash movement: there is no
+      // checking account to debit, so a deficit sized on the gross bill would
+      // liquidate the withheld dollars a second time. The gross `taxes` term
+      // subtracted here is the one baked into `householdNonSavingsOutflows`, so
+      // the two cancel and the deficit is sized on the netted figure alone.
+      const seededTaxesToFund = taxToFund(taxOutForIter.taxes);
       const legacyNetFlow =
         householdInflows - householdNonSavingsOutflows - savings.total - purchaseEquity
-        - (seededTaxes - taxes);
+        - (seededTaxesToFund - taxes);
       if (legacyNetFlow < 0) {
         const baseDeficit = -legacyNetFlow;
         let target = baseDeficit;
@@ -6652,10 +6689,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           taxOutForIter = computeTaxForYear(legacyTaxInput);
           finalTaxInput = legacyTaxInput;
 
-          const desiredTotal =
-            baseDeficit
-            + (taxOutForIter.taxes - seededTaxes)
-            + supplementalPlan.recognizedIncome.earlyWithdrawalPenalty;
+          // Same base-plus-delta shape as before, with the penalty folded inside
+          // the netting so the target is the cash this path really has to raise.
+          const finalTaxesToFund = taxToFund(
+            taxOutForIter.taxes + supplementalPlan.recognizedIncome.earlyWithdrawalPenalty,
+          );
+          const desiredTotal = baseDeficit + (finalTaxesToFund - seededTaxesToFund);
 
           // Pool exhausted: draws can't grow further and the recomputed tax
           // already reflects the actual draws. The remainder becomes the
@@ -6964,7 +7003,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         }
       }
 
-      const taxAndPenalty = finalTaxes + supplementalEarlyPenalty;
+      // The real debit. `finalTaxes + supplementalEarlyPenalty` is exactly the
+      // post-C2-fold `flow.totalTax` (see the fold below), so netting the SUM —
+      // rather than the tax leg alone — makes this movement equal
+      // `flow.totalTax − flow.taxAlreadyPaid`, i.e. `expenses.taxes`, to the
+      // penny. Clamping the legs separately would let an over-withheld year
+      // report $0 of tax while still draining the penalty from checking.
+      // A 10% early-distribution penalty is additional tax on the same return,
+      // so withholding is credited against it just as the IRS credits it.
+      const taxAndPenalty = taxToFund(finalTaxes + supplementalEarlyPenalty);
       withdrawalTax = supplementalEarlyPenalty;
 
       // Cash drawdown reporting (was Phase 12a). When this year's net flow
@@ -7351,8 +7398,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // C2: fold the gap-fill (pre-59½ supplemental) early-withdrawal penalty into
     // the converged tax result so the cash-flow "Taxes" line (expenses.taxes) and
     // the income-tax report "Total Tax" (taxResult.flow.totalTax) read the same
-    // number. `finalTaxes`/`taxAndPenalty` above captured the pre-fold totalTax,
-    // so the actual checking debit is unaffected.
+    // number. `finalTaxes` above captured the PRE-fold totalTax, and
+    // `taxAndPenalty` added the very penalty this fold adds — so
+    // `finalTaxes + supplementalEarlyPenalty` is the post-fold `flow.totalTax`,
+    // and the checking debit already carries the penalty. The fold changes the
+    // reported total only, never the amount of cash that moved.
     // Applies on BOTH funding paths: the hasChecking convergence loop and the
     // legacy no-checking branch (H7) populate `supplementalPlan` the same way.
     //
@@ -7365,6 +7415,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // invariant is therefore `expenses.taxes == flow.totalTax −
     // flow.taxAlreadyPaid`, which reduces to the equality above at zero
     // withholding. `projection-tax-tieout.test.ts` covers both arms.
+    //
+    // And the ACCOUNTS move by that same netted figure: every funding site above
+    // — the convergence driver, the legacy deficit and the checking debit — runs
+    // its gross tax (+ penalty) through `taxToFund`, which is this exact clamp.
+    // So the cash-flow statement and the balance sheet agree penny-for-penny in
+    // a withholding year, which they did not before Task 4b.
     if (supplementalEarlyPenalty > 0) {
       finalTaxResult.flow.earlyWithdrawalPenalty += supplementalEarlyPenalty;
       finalTaxResult.flow.totalTax += supplementalEarlyPenalty;
@@ -7378,7 +7434,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // NEVER subtracted from `flow.totalTax` — withholding is a payment, not a
     // deduction, and every consumer of `totalTax` (effective rate, bracket
     // report, the tax deck pages) must keep reading the full liability.
-    const taxAlreadyPaid = Math.min(Math.max(0, taxAdj.alreadyPaid), Math.max(0, totalTaxes));
+    // Same helper the funding sites use, so the reported number and the account
+    // movement are computed from ONE clamp and can never drift apart.
+    const taxAlreadyPaid = taxAlreadyPaidAgainst(totalTaxes);
     finalTaxResult.flow.taxAlreadyPaid = taxAlreadyPaid;
     finalTaxResult.flow.balanceDue = Math.max(0, totalTaxes - taxAlreadyPaid);
     // What the cash flow actually pays out this year. Deliberately NOT

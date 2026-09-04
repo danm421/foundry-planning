@@ -152,9 +152,13 @@ interface Summary {
 }
 
 /**
- * `expenses.taxes` IS `finalTaxResult.flow.totalTax` — the whole tax bill,
- * mode-independent, already net of every deduction the variant earned.
- * `expenses.total` INCLUDES it, so real spending is the difference.
+ * `expenses.taxes` is the tax CASH the plan pays — mode-independent, already net
+ * of every deduction the variant earned. It equals `flow.totalTax` in every year
+ * with no recorded withholding, and `flow.totalTax − flow.taxAlreadyPaid` in a
+ * year where a tax adjustment records some (that cash left the household before
+ * the plan starts, so the plan must not spend it again). Cash is the right basis
+ * for this page either way. `expenses.total` INCLUDES it, so real spending is
+ * the difference.
  */
 function summarize(
   years: ProjectionYear[],
