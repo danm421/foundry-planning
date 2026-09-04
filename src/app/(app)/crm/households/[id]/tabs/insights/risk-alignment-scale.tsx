@@ -21,6 +21,10 @@ const VERDICT_BADGE_CLASS: Record<RiskAlignment["verdict"], string> = {
 const OVERLAP_THRESHOLD_PCT = 4;
 /** Vertical stagger per collision row, in px. */
 const ROW_OFFSET_PX = 22;
+
+/** Within this many percent of either end, a centred label would overflow the
+ *  panel, so the marker's text is shunted inward. */
+const EDGE_PCT = 8;
 /** Room for one unstaggered marker's label + value + a short connector. */
 const BASE_AREA_PX = 44;
 
@@ -75,14 +79,23 @@ function Marker({
   // auto-stretch from its staggered top down to the track — the connector
   // (a flex-1 filler) always reaches the track regardless of stagger row.
   const topPx = (maxRow - row) * ROW_OFFSET_PX;
+  // The column is centred on the tick, so a marker at either extreme would hang
+  // half its label outside the panel — and 0% is the ordinary state for a
+  // household with no risk profile on file. Near an edge, shunt the TEXT back
+  // inside (start-aligned at 0%, end-aligned at 100%) while the tick itself
+  // stays exactly on the value.
+  const labelShift =
+    clamped <= EDGE_PCT ? "translate-x-1/2" : clamped >= 100 - EDGE_PCT ? "-translate-x-1/2" : "";
   return (
     <div
       className="absolute flex -translate-x-1/2 flex-col items-center"
       style={{ left: `${clamped}%`, top: `${topPx}px`, bottom: 0 }}
     >
-      <span className={`text-[11px] font-medium leading-tight ${textClass}`}>{label}</span>
-      <span className={`tabular text-[11px] leading-tight ${textClass}`}>
-        {Math.round(pct)}%
+      <span className={`flex flex-col items-center ${labelShift}`}>
+        <span className={`text-[11px] font-medium leading-tight ${textClass}`}>{label}</span>
+        <span className={`tabular text-[11px] leading-tight ${textClass}`}>
+          {Math.round(pct)}%
+        </span>
       </span>
       <span className={`mt-1 w-px flex-1 ${tickClass}`} aria-hidden />
     </div>

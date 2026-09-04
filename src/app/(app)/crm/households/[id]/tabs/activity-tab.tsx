@@ -40,7 +40,10 @@ export function ActivityTab({ household }: { household: Household }) {
 
       <section
         aria-labelledby="activity-log-heading"
-        className="flex flex-col gap-4 lg:sticky lg:top-4"
+        // top-18 = the topbar's own h-14 plus 4 of breathing room. The chrome's
+        // bar is `sticky top-0 z-40 h-14` (topbar.tsx), so a rail pinned any
+        // higher than 14 scrolls underneath it and loses its heading.
+        className="flex flex-col gap-4 lg:sticky lg:top-18"
       >
         <SectionLabel id="activity-log-heading" as="h3" segments={["Log"]} />
         <div className="flex flex-col gap-2 rounded-[var(--radius)] border border-hair-2 bg-card p-4">
