@@ -76,10 +76,30 @@ describe("isRmdEligibleSubType", () => {
     expect(isRmdEligibleSubType("403b")).toBe(true);
   });
 
+  // SEP and SIMPLE IRAs are traditional IRAs for every distribution purpose
+  // (they already sit in TRAD_IRA_SUBTYPES for the §408(d)(2) pro-rata pool),
+  // and a 401(a) is a qualified plan — all three take lifetime RMDs. Leaving
+  // them out defaulted the account form's "RMD" checkbox to OFF, so a plan
+  // silently projected an SEP IRA compounding forever with no forced
+  // distribution — and let a Roth conversion take the whole balance in a year
+  // an RMD should have come out first.
+  it("returns true for SEP IRA, SIMPLE IRA, and 401(a)", () => {
+    expect(isRmdEligibleSubType("sep_ira")).toBe(true);
+    expect(isRmdEligibleSubType("simple_ira")).toBe(true);
+    expect(isRmdEligibleSubType("401a")).toBe(true);
+  });
+
   it("returns false for roth types and other types", () => {
     expect(isRmdEligibleSubType("roth_ira")).toBe(false);
     expect(isRmdEligibleSubType("529")).toBe(false);
     expect(isRmdEligibleSubType("brokerage")).toBe(false);
     expect(isRmdEligibleSubType("savings")).toBe(false);
+  });
+
+  // An HSA has no lifetime RMD, and "other" is a catch-all that could hold a
+  // Roth-flavored or non-retirement balance — neither should default to ON.
+  it("returns false for hsa and the retirement catch-all", () => {
+    expect(isRmdEligibleSubType("hsa")).toBe(false);
+    expect(isRmdEligibleSubType("other")).toBe(false);
   });
 });

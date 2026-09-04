@@ -43,11 +43,26 @@ export function calculateRMD(balance: number, age: number, birthYear: number): n
   return balance / divisor;
 }
 
-/** Sub-types that are subject to RMDs (pre-tax retirement accounts). */
+/** Sub-types that are subject to RMDs (pre-tax retirement accounts).
+ *
+ *  SEP and SIMPLE IRAs are traditional IRAs for distribution purposes — they
+ *  already sit in `TRAD_IRA_SUBTYPES` for the §408(d)(2) pro-rata pool — and a
+ *  401(a) is a qualified plan, so all three take lifetime RMDs. HSAs and the
+ *  `other` catch-all deliberately stay out.
+ *
+ *  This set only seeds the DEFAULT state of the account form's "RMD" checkbox
+ *  (and the import/quick-start equivalents). The projection keys off each
+ *  account's own `rmdEnabled` flag, so widening this does not retroactively
+ *  change any saved plan — it only stops the next SEP/SIMPLE/401(a) from being
+ *  entered with RMDs silently switched off.
+ */
 export const RMD_ELIGIBLE_SUB_TYPES = new Set([
   "traditional_ira",
   "401k",
   "403b",
+  "sep_ira",
+  "simple_ira",
+  "401a",
 ]);
 
 /** Check if a sub-type is eligible for RMDs by default. */
