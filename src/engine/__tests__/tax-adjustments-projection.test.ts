@@ -311,8 +311,15 @@ describe("recorded withholding inside the supplemental convergence loop", () => 
     buildBaseClient().planSettings.flatStateRate!;
 
   // Owner is 70, so no pre-59½ penalty muddies the arithmetic.
-  const deficitPlan = (adj: TaxAdjustmentRow): ClientData => {
+  // `defaultChecking: false` drops the `isDefaultChecking` flag, which is the
+  // ONLY thing that selects the legacy no-checking funding branch — same
+  // household, same expense, same adjustment, other side of `hasChecking`.
+  const deficitPlan = (
+    adj: TaxAdjustmentRow,
+    opts: { defaultChecking?: boolean } = {},
+  ): ClientData => {
     const base = buildBaseClient();
+    const { defaultChecking = true } = opts;
     return {
       ...base,
       client: { ...base.client, dateOfBirth: "1956-01-01" },
@@ -327,7 +334,7 @@ describe("recorded withholding inside the supplemental convergence loop", () => 
           basis: 10_000,
           growthRate: 0,
           rmdEnabled: false,
-          isDefaultChecking: true,
+          ...(defaultChecking ? { isDefaultChecking: true } : {}),
           owners: owner,
         },
         {
@@ -400,5 +407,63 @@ describe("recorded withholding inside the supplemental convergence loop", () => 
       // No `engine_iteration_limit` residual — the loop still reaches its fixed point.
       expect(year.trustWarnings ?? []).toEqual([]);
     }
+  });
+
+  // ── Legacy no-checking funding path ───────────────────────────────────────
+  // Everything above runs the `hasChecking` convergence loop. The legacy branch
+  // (`projection.ts` phase 12 `else`) is the HIGHER-consequence path for this
+  // fix: it has no checking account to debit, so its draw IS the cash movement
+  // and an over-sized draw does not land anywhere — it simply leaves the
+  // balance sheet. It was netted in the same commit with nothing biting on it.
+
+  // Guard for the money test below. Without this, a fixture that silently fell
+  // back to the `hasChecking` path would still pass the draw assertion and
+  // prove nothing about the legacy branch.
+  it("legacy fixture really does run the no-checking deficit branch", () => {
+    const year = runProjection(deficitPlan(k1, { defaultChecking: false }))[0];
+
+    // The tax debit and its ledger entry live INSIDE `if (hasChecking)`, so a
+    // year with a real tax bill and no tax entry on ANY account is proof the
+    // legacy branch ran.
+    expect(year.expenses.taxes).toBeGreaterThan(0);
+    const anyTaxEntry = Object.values(year.accountLedgers).flatMap((l) =>
+      (l.entries ?? []).filter((e) => e.category === "tax"),
+    );
+    expect(anyTaxEntry).toEqual([]);
+    // Checking is untouched — nothing debits it on this path.
+    expect(year.portfolioAssets.cash["acc-checking"]).toBeCloseTo(10_000, 2);
+    // And the deficit branch opened: the only thing that draws this IRA is the
+    // legacy shortfall solve (RMDs are off and the owner is 70).
+    expect(year.withdrawals.byAccount["acc-ira"] ?? 0).toBeGreaterThan(0);
+  });
+
+  it("sizes the legacy no-checking draw on the balance due, not the whole liability", () => {
+    const a = runProjection(deficitPlan(noWithhold, { defaultChecking: false }))[0];
+    const b = runProjection(deficitPlan(k1, { defaultChecking: false }))[0];
+
+    const drawA = a.withdrawals.byAccount["acc-ira"] ?? 0;
+    const drawB = b.withdrawals.byAccount["acc-ira"] ?? 0;
+    expect(drawA).toBeGreaterThan(0);
+    expect(drawB).toBeGreaterThan(0);
+
+    // Identical gross-up to the hasChecking arm: $15,000 of relieved tax, each
+    // drawn dollar taxed at the flat rate.
+    expect(drawA - drawB).toBeCloseTo(15_000 / (1 - FLAT_RATE), 0);
+    // On this path the draw IS the cash movement, so the portfolio keeps
+    // exactly what the smaller draw left behind.
+    expect(b.portfolioAssets.liquidTotal - a.portfolioAssets.liquidTotal).toBeCloseTo(
+      15_000 / (1 - FLAT_RATE),
+      0,
+    );
+    // The liability is NOT equal across the arms here, and must not be: a
+    // smaller draw recognizes less IRA income. It falls by exactly the flat tax
+    // on the dollars no longer drawn — anything else would mean the netting had
+    // leaked into the liability rather than only into the funding.
+    expect(a.taxResult!.flow.totalTax - b.taxResult!.flow.totalTax).toBeCloseTo(
+      (15_000 / (1 - FLAT_RATE)) * FLAT_RATE,
+      0,
+    );
+    // The legacy solve still converges (no `engine_iteration_limit` residual).
+    expect(b.trustWarnings ?? []).toEqual([]);
   });
 });
