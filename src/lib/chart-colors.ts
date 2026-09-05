@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { Theme } from "@/lib/theme";
+import type { PaletteTheme } from "@/lib/theme";
 import { chartSeriesColors } from "./chart-palette";
 
 // Re-export the pure helpers so existing client imports keep working from one
@@ -16,8 +16,8 @@ export type { ChartChrome, DataColorKey } from "./chart-palette";
  * read CSS vars) recolor on toggle without a reload. Initial render is "dark"
  * to match SSR; corrected on mount.
  */
-export function useThemeName(): Theme {
-  const [theme, setTheme] = useState<Theme>("dark");
+export function useThemeName(): PaletteTheme {
+  const [theme, setTheme] = useState<PaletteTheme>("dark");
 
   useEffect(() => {
     const root = document.documentElement;

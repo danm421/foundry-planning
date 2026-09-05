@@ -19,38 +19,40 @@ export function CrmTaskTable({ rows, hrefBase, members }: CrmTaskTableProps) {
   const nameByUserId = new Map(members.map((m) => [m.userId, m.displayName]));
   if (rows.length === 0) {
     return (
-      <div className="mt-4 overflow-hidden rounded-lg border border-hair bg-card shadow-sm">
+      <div className="mt-4 overflow-hidden rounded-[var(--radius)] border border-hair-2 bg-card">
         <div className="px-6 py-12 text-center">
-          <p className="text-ink-3">No tasks yet.</p>
+          <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-ink-3">
+            No tasks yet.
+          </p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="mt-4 overflow-hidden rounded-lg border border-hair bg-card shadow-sm">
-      <table className="min-w-full divide-y divide-hair">
-        <thead className="bg-card-2">
+    <div className="mt-4 overflow-x-auto rounded-[var(--radius)] border border-hair-2 bg-card">
+      <table className="min-w-full">
+        <thead className="border-b border-hair-2 bg-card-2">
           <tr>
-            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-ink-3">
+            <th className="px-4 py-2.5 text-left font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-3">
               Title
             </th>
-            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-ink-3">
+            <th className="px-4 py-2.5 text-left font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-3">
               Household
             </th>
-            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-ink-3">
+            <th className="px-4 py-2.5 text-left font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-3">
               Assignee
             </th>
-            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-ink-3">
+            <th className="px-4 py-2.5 text-left font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-3">
               Due
             </th>
-            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-ink-3">
+            <th className="px-4 py-2.5 text-left font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-3">
               Priority
             </th>
-            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-ink-3">
+            <th className="px-4 py-2.5 text-left font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-3">
               Status
             </th>
-            <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-ink-3">
+            <th className="px-4 py-2.5 text-right font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-3">
               <span aria-label="Comments and files">⌁</span>
             </th>
           </tr>

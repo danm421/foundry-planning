@@ -49,6 +49,48 @@ function MoonIcon() {
   );
 }
 
+// Industrial Dark — a plotted grid, matching the theme's own line-first,
+// architectural-drawing language.
+function GridIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="3" y="3" width="18" height="18" rx="1" />
+      <path d="M3 9h18" />
+      <path d="M3 15h18" />
+      <path d="M9 3v18" />
+      <path d="M15 3v18" />
+    </svg>
+  );
+}
+
+// Cycle order. Each entry names the theme the button moves TO, so the icon and
+// label always describe the next state rather than the current one.
+const NEXT: Record<Theme, Theme> = {
+  dark: "light",
+  light: "industrial",
+  industrial: "dark",
+};
+
+const THEME_LABELS: Record<Theme, string> = {
+  dark: "dark",
+  light: "light",
+  industrial: "industrial",
+};
+
+function isTheme(value: string | undefined): value is Theme {
+  return value === "dark" || value === "light" || value === "industrial";
+}
+
 export function ThemeToggle() {
   // The server renders <html data-theme=…> from the cookie; sync to it on mount
   // so the icon matches without a hydration mismatch (initial render is "dark").
@@ -56,11 +98,11 @@ export function ThemeToggle() {
 
   useEffect(() => {
     const current = document.documentElement.dataset.theme;
-    if (current === "light" || current === "dark") setTheme(current);
+    if (isTheme(current)) setTheme(current);
   }, []);
 
   function toggle() {
-    const next: Theme = theme === "dark" ? "light" : "dark";
+    const next = NEXT[theme];
     const root = document.documentElement;
     root.dataset.theme = next;
     root.classList.remove(theme);
@@ -69,7 +111,7 @@ export function ThemeToggle() {
     setTheme(next);
   }
 
-  const label = theme === "dark" ? "Switch to light theme" : "Switch to dark theme";
+  const label = `Switch to ${THEME_LABELS[NEXT[theme]]} theme`;
 
   return (
     <button
@@ -79,7 +121,7 @@ export function ThemeToggle() {
       title={label}
       className="inline-flex items-center justify-center rounded-md border border-hair bg-card-2 p-2 text-ink-2 transition-colors hover:border-accent hover:text-accent"
     >
-      {theme === "dark" ? <SunIcon /> : <MoonIcon />}
+      {theme === "dark" ? <SunIcon /> : theme === "light" ? <GridIcon /> : <MoonIcon />}
     </button>
   );
 }
