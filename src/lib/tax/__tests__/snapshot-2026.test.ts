@@ -25,6 +25,7 @@ const snapshot = JSON.parse(
   amtExemption: { mfj: number; singleHoh: number; mfs: number };
   amtBreakpoint2628: { mfjShoh: number; mfs: number };
   amtPhaseoutStart: { mfj: number; singleHoh: number; mfs: number };
+  contribLimits: { iraTradLimit: number; iraCatchup50: number };
 }>;
 
 const y2026 = snapshot.find((y) => y.year === 2026)!;
@@ -136,5 +137,19 @@ describe("snapshot.json 2026 — IRS Rev. Proc. 2025-32 (Bugs #14/#31/#32)", () 
     expect(y2026.amtExemption.mfs).toBe(y2026.amtExemption.mfj / 2);
     expect(y2026.amtBreakpoint2628.mfs).toBe(y2026.amtBreakpoint2628.mfjShoh / 2);
     expect(y2026.amtPhaseoutStart.mfs).toBe(y2026.amtPhaseoutStart.mfj / 2);
+  });
+
+  // IRA contribution limits — IRS Notice 2025-67.
+  //
+  // 2026 is the first year the age-50 IRA catch-up is indexed: SECURE 2.0 Act §108
+  // amended IRC §219(b)(5)(C) to index the long-flat $1,000 catch-up in $100
+  // increments, and Notice 2025-67 sets it at $1,100. The workbook carried $1,000
+  // into the 2026 row while every other 2026 figure was updated, so this pins the
+  // corrected cell (sheet "2022-2026 IRS Updates", C164) against a silent revert.
+  it("IRA contribution limits: regular and the newly-indexed age-50 catch-up", () => {
+    expect(y2026.contribLimits.iraTradLimit).toBe(7500);
+    expect(y2026.contribLimits.iraCatchup50).toBe(1100);
+    // The figure advisors actually see for a 50+ saver.
+    expect(y2026.contribLimits.iraTradLimit + y2026.contribLimits.iraCatchup50).toBe(8600);
   });
 });

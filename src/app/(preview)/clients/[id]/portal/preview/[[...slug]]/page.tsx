@@ -218,7 +218,7 @@ export default async function PortalPreviewPage({
           alerts={navAlerts}
           features={features}
         />
-        <main className="min-h-0 min-w-0 overflow-y-auto border-x border-hair">
+        <main id="main" className="min-h-0 min-w-0 overflow-y-auto border-x border-hair">
           <PortalBrandingStrip branding={branding} />
           {/* The Budget section's tab strip sits above the privacy gate, so an
               advisor can still move between tabs when one area isn't shared.

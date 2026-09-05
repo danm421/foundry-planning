@@ -101,7 +101,7 @@ export default async function AppLayout({
               <div className="px-[var(--pad-card)] pt-[var(--pad-card)] empty:hidden">
                 <SubscriptionGuard state={state} isFounder={isFounder} />
               </div>
-              <main className="flex min-h-0 flex-1 flex-col bg-paper">{children}</main>
+              <main id="main" className="flex min-h-0 flex-1 flex-col bg-paper">{children}</main>
               <Footer />
               <GlobalForgeMount enabled={isForgeEnabled()} />
             </div>

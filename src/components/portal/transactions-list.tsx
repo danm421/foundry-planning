@@ -355,8 +355,13 @@ export default function TransactionsList({
                     >
                       {badge}
                     </span>
-                    <div className="min-w-0 flex-1 cursor-pointer" onClick={() => setSelected(t)}>
-                      <div className="flex items-center gap-2">
+                    {/* A real button, so the row opens from the keyboard too. */}
+                    <button
+                      type="button"
+                      className="min-w-0 flex-1 cursor-pointer rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                      onClick={() => setSelected(t)}
+                    >
+                      <span className="flex items-center gap-2">
                         <span className="truncate text-[13px] font-medium text-ink">
                           {t.merchantName ?? t.name}
                         </span>
@@ -366,11 +371,11 @@ export default function TransactionsList({
                         {t.pending && <span className="text-[11px] text-warn">pending</span>}
                         {t.excluded && <span className="text-[11px] text-ink-4">excluded</span>}
                         {t.source === "manual" && <span className="text-[11px] text-ink-4">manual</span>}
-                      </div>
-                    </div>
+                      </span>
+                    </button>
                     {/* Category column — fixed width so every colored dot lines up.
                         When editable, the pill opens a compact searchable popover. */}
-                    <div className="w-28 shrink-0 sm:w-44" onClick={(e) => e.stopPropagation()}>
+                    <div className="w-28 shrink-0 sm:w-44">
                       {t.type === "transfer" ? (
                         <span className="text-[12px] text-ink-4">—</span>
                       ) : editEnabled ? (
@@ -386,7 +391,7 @@ export default function TransactionsList({
                       )}
                     </div>
                     <span className={`tabular w-24 shrink-0 text-right text-[14px] ${amt.cls}`}>{amt.text}</span>
-                    <span className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                    <span className="shrink-0">
                       {editEnabled ? (
                         <button
                           type="button"
@@ -412,7 +417,7 @@ export default function TransactionsList({
                       ) : null}
                     </span>
                     {editEnabled && (
-                      <span className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <span className="shrink-0">
                         <button
                           type="button"
                           onClick={() =>

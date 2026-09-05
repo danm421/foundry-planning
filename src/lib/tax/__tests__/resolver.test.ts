@@ -82,6 +82,22 @@ describe("createTaxResolver", () => {
     expect(out.params.contribLimits.iraTradLimit).toBe(8000);
   });
 
+  it("never projects the IRA catch-up below its indexed base year", () => {
+    const r = createTaxResolver(rows, { taxInflationRate: 0.025, ssWageGrowthRate: 0.03 });
+    // SECURE 2.0 §108 indexes the age-50 IRA catch-up (IRC §219(b)(5)(C)) in $100
+    // steps; the 2026 base is $1,100. With the $500 step it shared before, 2027 was
+    // 1100 × 1.025 = 1127.5 → floor 500 = 1000, i.e. BELOW the base year — the
+    // inflation step silently undoing the indexation. Every projected year must be
+    // at least the base.
+    for (const year of [2027, 2030, 2040, 2060]) {
+      expect(r.getYear(year).params.contribLimits.iraCatchup50).toBeGreaterThanOrEqual(1100);
+    }
+    // 2027: 1100 × 1.025 = 1127.5 → floor to 100 = 1100
+    expect(r.getYear(2027).params.contribLimits.iraCatchup50).toBe(1100);
+    // 2030: 1100 × 1.10381 ≈ 1214.2 → floor to 100 = 1200
+    expect(r.getYear(2030).params.contribLimits.iraCatchup50).toBe(1200);
+  });
+
   it("uses ssWageGrowthRate for SS wage base, not taxInflationRate", () => {
     const r = createTaxResolver(rows, { taxInflationRate: 0.025, ssWageGrowthRate: 0.04 });
     // 2030: 184500 × 1.04^4 ≈ 215868 → floor to 300 = 215700

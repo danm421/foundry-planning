@@ -65,7 +65,7 @@ function Unavailable({
   return (
     <div className="flex min-h-screen flex-col bg-paper">
       <IntakeBrandingHeader branding={branding} />
-      <div className="flex flex-1 flex-col items-center justify-center px-6 py-16 text-center">
+      <main id="main" className="flex flex-1 flex-col items-center justify-center px-6 py-16 text-center">
         <div className="max-w-md">
           <p className="mb-3 font-mono text-xs uppercase tracking-widest text-ink-3">
             {copy.eyebrow}
@@ -76,7 +76,7 @@ function Unavailable({
           </h1>
           <p className="text-base leading-relaxed text-ink-2">{copy.body}</p>
         </div>
-      </div>
+      </main>
     </div>
   );
 }
@@ -99,7 +99,7 @@ export default async function RiskQuestionnairePage({
   if (!verdict.ok) {
     if (verdict.reason === "already_submitted") {
       // row is non-null whenever classifyToken returns "already_submitted".
-      return <IntakeThankYou recipientName={row!.recipientName ?? null} branding={branding} />;
+      return <IntakeThankYou recipientName={row!.recipientName ?? null} branding={branding} landmark="main" />;
     }
     return <Unavailable reason={verdict.reason} branding={branding} />;
   }
