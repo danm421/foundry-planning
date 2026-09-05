@@ -84,5 +84,11 @@ export const config: VercelConfig = {
       path: "/api/cron/notification-digest",
       schedule: "0 9 * * *",
     },
+    // Founder growth digest. Daily at 7:00am EST / 8:00am EDT. Silent unless
+    // something needs Dan — see the route's module comment.
+    {
+      path: "/api/cron/ops-digest",
+      schedule: "0 12 * * *",
+    },
   ],
 };
