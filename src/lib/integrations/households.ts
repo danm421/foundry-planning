@@ -1,5 +1,5 @@
 // src/lib/integrations/households.ts
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { integrationHouseholdLinks } from "@/db/schema";
 import { isUniqueViolation } from "@/lib/crm/household-relationships";
@@ -45,7 +45,10 @@ export async function linkHousehold(input: {
         // update: the "Linked by" column must name whoever performed THIS
         // link, not whoever created the row originally.
         linkedByUserId: input.userId,
-        updatedAt: new Date(),
+        // DB clock, not the app's: `updated_at` defaults to now() on insert, so
+        // stamping the update from Node made the column go BACKWARDS whenever
+        // Postgres ran ahead of this process (measured: 60ms on Neon).
+        updatedAt: sql`now()`,
       },
     });
 }
