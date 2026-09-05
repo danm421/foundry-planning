@@ -111,7 +111,12 @@ const eslintConfig = defineConfig([
     // errors here. (2026-09-04 accessibility audit.)
     files: ["src/**/*.{ts,tsx}"],
     rules: {
-      "jsx-a11y/alt-text": "error",
+      // eslint-config-next defaults this to `img: ["Image"]` so it also covers
+      // next/image. This repo imports next/image nowhere; the only <Image> is
+      // @react-pdf/renderer's, which has no alt prop and is never read by a
+      // screen reader. Dropping the component name keeps the rule on real
+      // <img> and off the PDF layer.
+      "jsx-a11y/alt-text": ["error", { elements: ["img"], img: [] }],
       "jsx-a11y/aria-props": "error",
       "jsx-a11y/aria-proptypes": "error",
       "jsx-a11y/aria-unsupported-elements": "error",
