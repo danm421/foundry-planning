@@ -11,21 +11,38 @@ import { z } from "zod";
 import { isUSPSStateCode } from "@/lib/usps-states";
 import { MAX_RATE_STRESS_POINTS } from "@/lib/tax/rate-stress";
 import { YEAR_REFS } from "@/lib/milestones";
+import type { IncomeTaxType } from "@/engine/tax-adjustments";
 
 const PERSON = z.enum(["client", "spouse"]);
 
 const SS_BENEFIT_MODE = z.enum(["pia_at_fra", "manual_amount", "no_benefit"]);
 const SS_CLAIM_AGE_MODE = z.enum(["fra", "at_retirement", "years"]);
 const GROWTH_SOURCE = z.enum(["custom", "inflation"]);
-const INCOME_TAX_TYPE = z.enum([
+// `z.enum` needs a literal tuple, so this list cannot be derived from
+// IncomeTaxType — but it must not drift from it either. A value missing here is
+// invisible until an advisor picks it and the ROUTE 400s on the whole request
+// (the body wraps this in `z.array(SOLVER_MUTATION_SCHEMA)`, so one bad
+// mutation stops the solver recomputing at all, not just that row).
+// `satisfies` rejects a value that is not an IncomeTaxType; the guard below
+// rejects an IncomeTaxType that is missing from the list.
+const INCOME_TAX_TYPE_VALUES = [
   "earned_income",
   "ordinary_income",
   "dividends",
   "capital_gains",
   "qbi",
   "tax_exempt",
+  "muni_interest",
   "stcg",
-]);
+] as const satisfies readonly IncomeTaxType[];
+
+/** Non-`never` exactly when a member of IncomeTaxType is absent above. */
+type MissingIncomeTaxType = Exclude<IncomeTaxType, (typeof INCOME_TAX_TYPE_VALUES)[number]>;
+// Assigning the missing members to `never` fails to compile when there are any.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _INCOME_TAX_TYPE_IS_EXHAUSTIVE: never[] = [] as MissingIncomeTaxType[];
+
+const INCOME_TAX_TYPE = z.enum(INCOME_TAX_TYPE_VALUES);
 
 const YEAR = z.number().int().min(1950).max(2150);
 // The savings-rule year anchors. Enumerated (not a free string) because the
