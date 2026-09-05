@@ -54,10 +54,10 @@ function lastPutBody(adjustmentId: string) {
   return JSON.parse(call![1].body as string);
 }
 
-// ── Test 1: all seven tax treatments render ────────────────────────────────
+// ── Test 1: all eight tax treatments render ────────────────────────────────
 
 describe("AddTaxAdjustmentForm — tax treatment options", () => {
-  it("renders all seven tax treatments as options", () => {
+  it("renders all eight tax treatments as options", () => {
     render(
       <AddTaxAdjustmentForm clientId="client-123" onClose={vi.fn()} onSaved={vi.fn()} />,
     );
@@ -72,7 +72,20 @@ describe("AddTaxAdjustmentForm — tax treatment options", () => {
       "stcg",
       "qbi",
       "tax_exempt",
+      "muni_interest",
     ]);
+  });
+
+  it("offers municipal bond interest as a distinct choice from other tax-free income", () => {
+    render(
+      <AddTaxAdjustmentForm clientId="client-123" onClose={vi.fn()} onSaved={vi.fn()} />,
+    );
+
+    const select = screen.getByRole("combobox", { name: "Tax treatment" }) as HTMLSelectElement;
+    const labels = Array.from(select.querySelectorAll("option")).map((o) => o.textContent);
+    expect(labels).toContain("Municipal bond interest");
+    expect(labels).toContain("Other tax-free income");
+    expect(labels).not.toContain("Tax-exempt income");
   });
 });
 

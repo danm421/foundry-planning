@@ -11,7 +11,10 @@ export interface QsIncomeDraft {
   owner: QsOwner;
   /** Annual amount for salary/pension/other; ignored for social_security. */
   amount?: number;
-  /** Tax treatment override for salary/other; pension+SS are fixed by kind. */
+  /** Tax treatment override for salary/other; pension+SS are fixed by kind.
+   *
+   *  Deliberately a SUBSET of the engine's IncomeTaxType — quick-start offers a
+   *  reduced menu. Widening this is a product decision, not a refactor. */
   taxType?: "earned_income" | "ordinary_income" | "capital_gains" | "tax_exempt";
   /** Concrete years if the advisor overrode the defaults; else derived. */
   startYear?: number;

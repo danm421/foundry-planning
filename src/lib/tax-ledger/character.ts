@@ -19,6 +19,11 @@ export function rawTypeToCharacter(rawType: string): TaxCharacter {
       return "ordinary";
     case "tax_exempt":
       return "tax_exempt";
+    // Muni interest is tax-free for display purposes exactly like tax_exempt —
+    // the two differ only in MAGI treatment, which the ledger does not show.
+    // Without this arm the `default` below would render it as Ordinary Income.
+    case "muni_interest":
+      return "tax_exempt";
     case "tax_free":
       return "non_taxable";
     default:

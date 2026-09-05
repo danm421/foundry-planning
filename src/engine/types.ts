@@ -9,6 +9,7 @@ import type { AccountOwner } from "./ownership";
 import type { EntityCashFlowRow } from "./entity-cashflow";
 import type { NoteReceivable } from "./notes-receivable/types";
 import type { LiabilityType } from "./liability-kind";
+import type { IncomeTaxType } from "./tax-adjustments";
 
 // ── Shared Tax / Medicare Types ──────────────────────────────────────────────
 
@@ -1024,7 +1025,7 @@ export interface Income {
   // Cash account this income deposits into. When unset, the engine falls back to the
   // household default checking (or the entity's default checking if ownerEntityId is set).
   cashAccountId?: string;
-  taxType?: "earned_income" | "ordinary_income" | "dividends" | "capital_gains" | "qbi" | "tax_exempt" | "stcg";
+  taxType?: IncomeTaxType;
   /** Year-by-year amount overrides. When present, bypasses growth-rate calc.
    *  Plain object keyed by year (number). Maps were tried, but they JSON-
    *  serialize to `{}`, which broke client-side projection runs that go
@@ -1588,13 +1589,18 @@ export interface ProjectionYear {
     stCapitalGains: number;
     qbi: number;
     taxExempt: number;
-    /** Municipal-bond / tax-exempt interest — broken out from the generic
-     *  taxExempt total because it is needed as a MAGI input for IRMAA.
-     *  Counts the muni-interest subset only: income rows classified as
-     *  `taxType: "tax_exempt"` and trust pass-through tax-exempt deltas
-     *  (which originate from `realization.pctTaxExempt`). Does NOT include
-     *  generic non-taxable business pass-through (e.g. Roth-equivalent
-     *  distributions, return-of-capital) — those land in `taxExempt` only. */
+    /** Municipal-bond interest — broken out from the generic taxExempt total
+     *  because it is needed as a MAGI input for IRMAA and for the IRC §86
+     *  Social Security combined-income test. Three sources feed it: income
+     *  rows classified `taxType: "muni_interest"`, tax adjustments classified
+     *  `muni_interest`, and trust pass-through tax-exempt deltas (which
+     *  originate from `realization.pctTaxExempt`).
+     *
+     *  Plain `tax_exempt` is deliberately EXCLUDED — an inheritance, a VA or
+     *  disability benefit and a life-insurance payout are tax-free without
+     *  being added back for either test. So is generic non-taxable business
+     *  pass-through (Roth-equivalent distributions, return-of-capital). All of
+     *  those land in `taxExempt` only. */
     taxExemptInterest: number;
     /** Drill-down itemization. `irmaaCapTier` rides on the ROW rather than on
      *  a per-conversion lookup because it is a per-YEAR outcome: the same cap

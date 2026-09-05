@@ -167,6 +167,35 @@ describe("SOLVER_MUTATION_SCHEMA", () => {
     },
   );
 
+  // The solver's tax-treatment dropdown renders from INCOME_TAX_TYPE_LABELS,
+  // which is a Record over the engine's IncomeTaxType. A value the dropdown
+  // offers but this schema omits does not merely fail for that row: the route
+  // body wraps the schema in `z.array(...)`, so one rejected mutation 400s the
+  // whole request and the solver stops recomputing entirely.
+  it("accepts an income-tax-type mutation carrying muni_interest", () => {
+    const result = SOLVER_MUTATION_SCHEMA.safeParse({
+      kind: "income-tax-type",
+      incomeId: "00000000-0000-4000-8000-000000000002",
+      taxType: "muni_interest",
+    });
+    if (!result.success) {
+      throw new Error(`schema rejected muni_interest: ${result.error.message}`);
+    }
+    expect(result.success).toBe(true);
+  });
+
+  // Guards the assertion above against being "fixed" by loosening taxType to a
+  // free string — that would pass the muni case and silently accept typos too.
+  it("still rejects a taxType outside the union", () => {
+    expect(
+      SOLVER_MUTATION_SCHEMA.safeParse({
+        kind: "income-tax-type",
+        incomeId: "00000000-0000-4000-8000-000000000002",
+        taxType: "tax_exempt_interest",
+      }).success,
+    ).toBe(false);
+  });
+
   it("rejects unknown kinds", () => {
     const result = SOLVER_MUTATION_SCHEMA.safeParse({
       kind: "bogus-kind",

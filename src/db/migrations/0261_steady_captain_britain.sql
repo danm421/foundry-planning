@@ -1,0 +1,1 @@
+ALTER TYPE "public"."income_tax_type" ADD VALUE 'muni_interest';

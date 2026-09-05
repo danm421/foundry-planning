@@ -424,6 +424,25 @@ describe("buildIncomeCellDrill — Tax Adjustments", () => {
     expect(props.footnote).toMatch(/added to Total Income a second time/i);
   });
 
+  it("labels a muni_interest adjustment as Counted in Non-Taxable Income, not a blank memo", () => {
+    const base = makeYear();
+    const year = {
+      ...base,
+      taxDetail: {
+        ...(base.taxDetail as object),
+        bySource: {
+          ...(base.taxDetail!.bySource as object),
+          "tax_adjustment:adj_3": { type: "muni_interest", amount: 12_000 },
+        },
+      },
+    } as unknown as ProjectionYear;
+    const props = buildIncomeCellDrill({ year, columnKey: "taxAdjustments", ctx });
+    const rows = props.groups.flatMap((g) => g.rows);
+    expect(rows.find((r) => r.id === "tax_adjustment:adj_3")?.meta).toBe(
+      "Counted in Non-Taxable Income",
+    );
+  });
+
   it("the same adjustment also itemizes inside the column that actually counts it", () => {
     // The $750,000 shows in Ordinary Income once and in the memo column once —
     // one dollar of income, itemized on both surfaces, added to Total Income

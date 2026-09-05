@@ -611,9 +611,9 @@ describe("runProjection", () => {
 
   it("surfaces tax-exempt interest separately from generic taxExempt", () => {
     // Municipal-bond interest is modeled as an Income row with type "other"
-    // and `taxType: "tax_exempt"`. The pension is a non-tax-exempt baseline
-    // so the test pins both AGI-relevant ordinary income AND the new
-    // taxExemptInterest field.
+    // and `taxType: "muni_interest"`. The pension is a non-tax-exempt baseline
+    // so the test pins both AGI-relevant ordinary income AND the
+    // taxExemptInterest field that feeds IRMAA MAGI.
     const data = buildClientData({
       accounts: sampleAccounts.filter((a) => a.id === "acct-checking"),
       incomes: [
@@ -626,7 +626,7 @@ describe("runProjection", () => {
           endYear: 2026,
           growthRate: 0,
           owner: "client",
-          taxType: "tax_exempt" as const,
+          taxType: "muni_interest" as const,
         },
         {
           id: "inc-pension",

@@ -50,15 +50,21 @@ export function TaxDrillDownModal({
 
         <div className="space-y-2">
           {[
-            { label: "Earned Income", key: "earnedIncome" as const, taxType: "earned_income" },
-            { label: "Ordinary Income", key: "ordinaryIncome" as const, taxType: "ordinary_income" },
-            { label: "Dividends", key: "dividends" as const, taxType: "dividends" },
-            { label: "Capital Gains (LT)", key: "capitalGains" as const, taxType: "capital_gains" },
-            { label: "ST Capital Gains", key: "stCapitalGains" as const, taxType: "stcg" },
-            { label: "QBI", key: "qbi" as const, taxType: "qbi" },
-            { label: "Tax-Exempt", key: "taxExempt" as const, taxType: "tax_exempt" },
+            { label: "Earned Income", key: "earnedIncome" as const, taxType: "earned_income", amount: detail.earnedIncome },
+            { label: "Ordinary Income", key: "ordinaryIncome" as const, taxType: "ordinary_income", amount: detail.ordinaryIncome },
+            { label: "Dividends", key: "dividends" as const, taxType: "dividends", amount: detail.dividends },
+            { label: "Capital Gains (LT)", key: "capitalGains" as const, taxType: "capital_gains", amount: detail.capitalGains },
+            { label: "ST Capital Gains", key: "stCapitalGains" as const, taxType: "stcg", amount: detail.stCapitalGains },
+            { label: "QBI", key: "qbi" as const, taxType: "qbi", amount: detail.qbi },
+            // Partitioned, not overlapping: taxExemptInterest (muni) is a strict
+            // subset of taxExempt (broad). Subtracting it out here — rather than
+            // showing both against their raw totals — is what keeps these two
+            // rows summing back to `detail.taxExempt`, and so to the "Total
+            // Income" footer below, instead of double-counting muni on screen.
+            { label: "Other Tax-Free Income", key: "taxExempt" as const, taxType: "tax_exempt", amount: detail.taxExempt - detail.taxExemptInterest },
+            { label: "Municipal Bond Interest", key: "taxExemptInterest" as const, taxType: "muni_interest", amount: detail.taxExemptInterest },
           ]
-            .filter((row) => detail[row.key] > 0)
+            .filter((row) => row.amount > 0)
             .map((row) => {
               const isExpanded = expanded.has(row.key);
               const sources = Object.entries(detail.bySource)
@@ -89,7 +95,7 @@ export function TaxDrillDownModal({
                       <span className="text-xs text-ink-3">{sources.length > 0 ? (isExpanded ? "▾" : "▸") : " "}</span>
                       <span className="font-medium text-ink">{row.label}</span>
                     </span>
-                    <span className="tabular-nums text-ink-2">{formatCurrency(detail[row.key])}</span>
+                    <span className="tabular-nums text-ink-2">{formatCurrency(row.amount)}</span>
                   </button>
                   {isExpanded && sources.length > 0 && (
                     <ul className="divide-y divide-hair border-t border-hair">

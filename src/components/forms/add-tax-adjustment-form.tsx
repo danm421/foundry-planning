@@ -45,8 +45,19 @@ const TYPE_OPTIONS: Array<{ value: TaxAdjustmentRow["taxType"]; label: string }>
   { value: "capital_gains", label: "Long-term capital gains" },
   { value: "stcg", label: "Short-term capital gains" },
   { value: "qbi", label: "Business income (QBI)" },
-  { value: "tax_exempt", label: "Tax-exempt income" },
+  { value: "tax_exempt", label: "Other tax-free income" },
+  { value: "muni_interest", label: "Municipal bond interest" },
 ];
+
+/** Field help for the selected tax treatment — the whole point of the
+ *  muni/tax-exempt split. An advisor who cannot tell the two apart will
+ *  keep picking the wrong one. */
+const TYPE_HELP: Partial<Record<TaxAdjustmentRow["taxType"], string>> = {
+  muni_interest:
+    "Tax-free income that still counts toward Medicare surcharges and the Social Security taxability test. Form 1040 line 2a.",
+  tax_exempt:
+    "Excluded from tax entirely — an inheritance, a VA or disability benefit, a life-insurance payout. Does not affect Medicare or Social Security.",
+};
 
 const INPUT_CLASS =
   "mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
@@ -194,6 +205,9 @@ export function AddTaxAdjustmentForm({
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
+          {TYPE_HELP[taxType] && (
+            <p className="mt-1 text-xs text-gray-400">{TYPE_HELP[taxType]}</p>
+          )}
         </div>
 
         <div>

@@ -467,3 +467,85 @@ describe("recorded withholding inside the supplemental convergence loop", () => 
     expect(b.trustWarnings ?? []).toEqual([]);
   });
 });
+
+describe("municipal bond interest vs other tax-free income", () => {
+  const muniAdj: TaxAdjustmentRow = {
+    ...conversion,
+    id: "adj-muni",
+    taxType: "muni_interest",
+    name: "Muni coupons received in March",
+    annualAmount: 50_000,
+  };
+  const exemptAdj: TaxAdjustmentRow = {
+    ...muniAdj,
+    id: "adj-exempt",
+    taxType: "tax_exempt",
+    name: "Inheritance received in March",
+  };
+
+  it("a muni ADJUSTMENT raises taxExempt and taxExemptInterest, and taxable income not at all", () => {
+    const b = runProjection(buildBaseClient())[0];
+    const w = runProjection({ ...buildBaseClient(), taxAdjustments: [muniAdj] })[0];
+
+    expect(w.taxDetail!.taxExempt - b.taxDetail!.taxExempt).toBeCloseTo(50_000, 2);
+    expect(w.taxDetail!.taxExemptInterest - b.taxDetail!.taxExemptInterest).toBeCloseTo(50_000, 2);
+    expect(w.taxResult!.flow.totalTax).toBeCloseTo(b.taxResult!.flow.totalTax, 2);
+  });
+
+  it("a tax_exempt ADJUSTMENT raises taxExempt only", () => {
+    const b = runProjection(buildBaseClient())[0];
+    const w = runProjection({ ...buildBaseClient(), taxAdjustments: [exemptAdj] })[0];
+
+    expect(w.taxDetail!.taxExempt - b.taxDetail!.taxExempt).toBeCloseTo(50_000, 2);
+    expect(w.taxDetail!.taxExemptInterest).toBeCloseTo(b.taxDetail!.taxExemptInterest, 2);
+  });
+
+  // THE PRODUCTION REGRESSION. Two live prod rows — "Teresa Inheritance"
+  // ($210,000) and "VA Benefit" ($51,576/yr) — are typed tax_exempt and are
+  // currently inflating that household's Medicare MAGI and the taxable share
+  // of their Social Security. Neither is muni interest. This must fail
+  // against pre-change main (a65f83afa).
+  it("a tax_exempt INCOME ROW no longer raises taxExemptInterest", () => {
+    const base = buildBaseClient();
+    const inheritance = {
+      id: "inc-inheritance",
+      type: "other",
+      name: "Teresa Inheritance",
+      annualAmount: 210_000,
+      growthRate: 0,
+      startYear: 2026,
+      endYear: 2026,
+      owner: "client",
+      taxType: "tax_exempt" as const,
+    } as ClientData["incomes"][number];
+
+    const b = runProjection(base)[0];
+    const w = runProjection({ ...base, incomes: [...base.incomes, inheritance] })[0];
+
+    expect(w.taxDetail!.taxExempt - b.taxDetail!.taxExempt).toBeCloseTo(210_000, 2);
+    expect(w.taxDetail!.taxExemptInterest).toBeCloseTo(b.taxDetail!.taxExemptInterest, 2);
+  });
+
+  it("a muni_interest INCOME ROW raises both, identically to the adjustment", () => {
+    const base = buildBaseClient();
+    const muniRow = {
+      id: "inc-muni",
+      type: "other",
+      name: "Muni Bond Interest",
+      annualAmount: 50_000,
+      growthRate: 0,
+      startYear: 2026,
+      endYear: 2026,
+      owner: "client",
+      taxType: "muni_interest" as const,
+    } as ClientData["incomes"][number];
+
+    const b = runProjection(base)[0];
+    const viaRow = runProjection({ ...base, incomes: [...base.incomes, muniRow] })[0];
+    const viaAdj = runProjection({ ...base, taxAdjustments: [muniAdj] })[0];
+
+    // The two surfaces must agree. Disagreement here IS the bug this work fixes.
+    expect(viaRow.taxDetail!.taxExemptInterest - b.taxDetail!.taxExemptInterest)
+      .toBeCloseTo(viaAdj.taxDetail!.taxExemptInterest - b.taxDetail!.taxExemptInterest, 2);
+  });
+});

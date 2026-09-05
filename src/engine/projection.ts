@@ -177,7 +177,7 @@ import {
   type EntityFlowOverride,
 } from "./types";
 import { computeTaxForYear, type YearTaxInput } from "./year-tax";
-import { resolveTaxAdjustmentsForYear } from "./tax-adjustments";
+import { resolveTaxAdjustmentsForYear, type IncomeTaxType } from "./tax-adjustments";
 import { diffEquityTaxImpact, type EquityTaxImpact } from "./equity/tax-impact";
 import {
   buildNoteReceivableSchedules,
@@ -216,10 +216,10 @@ const QUALIFYING_CHILD_MAX_AGE_EXCLUSIVE = 17;
 /** IRC 152(c)(2): the qualifying-child relationships this engine can represent. */
 const QUALIFYING_CHILD_RELATIONSHIPS = new Set(["child", "stepchild"]);
 
-// Map legacy income type to the new tax type categories.
-function legacyTaxType(
-  incomeType: string
-): "earned_income" | "ordinary_income" | "dividends" | "capital_gains" | "qbi" | "tax_exempt" | "stcg" {
+// Map legacy income type to the new tax type categories. Declared as the full
+// IncomeTaxType, but never returns "muni_interest": an income `type` carries no
+// muni concept, so only an explicit `taxType` can classify a row as muni.
+function legacyTaxType(incomeType: string): IncomeTaxType {
   switch (incomeType) {
     case "salary": return "earned_income";
     case "social_security": return "ordinary_income";
@@ -2520,8 +2520,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       bySource: { ...realizationBySource, ...rmdBySource, ...annuityBySource },
     };
     // Tax adjustments land in their own buckets and in bySource, so the
-    // drill-down names each one. `tax_exempt` raises `taxExempt` only — NOT
-    // `taxExemptInterest`, which is the muni-interest subset feeding IRMAA MAGI.
+    // drill-down names each one. `tax_exempt` raises `taxExempt` only;
+    // `muni_interest` also raises `taxExemptInterest`, the muni-only subset
+    // feeding IRMAA MAGI and the §86 Social Security test. Identical to the
+    // income-row switch below — keep the two in lockstep.
     taxDetail.earnedIncome += taxAdj.byTaxType.earned_income;
     taxDetail.ordinaryIncome += taxAdj.byTaxType.ordinary_income;
     taxDetail.dividends += taxAdj.byTaxType.dividends;
@@ -2529,6 +2531,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     taxDetail.stCapitalGains += taxAdj.byTaxType.stcg;
     taxDetail.qbi += taxAdj.byTaxType.qbi;
     taxDetail.taxExempt += taxAdj.byTaxType.tax_exempt;
+    taxDetail.taxExempt += taxAdj.byTaxType.muni_interest;
+    taxDetail.taxExemptInterest += taxAdj.byTaxType.muni_interest;
     Object.assign(taxDetail.bySource, taxAdj.bySource);
     // Map income entries to tax categories. Social Security is intentionally
     // excluded from this loop: `socialSecurityGross` is passed separately into
@@ -2576,9 +2580,28 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         case "stcg": taxDetail.stCapitalGains += amount; break;
         case "qbi": taxDetail.qbi += amount; break;
         case "tax_exempt":
+          // Tax-free and invisible to MAGI: an inheritance, a VA or disability
+          // benefit, a life-insurance payout. Deliberately does NOT raise
+          // taxExemptInterest — that is the muni-only subset feeding IRMAA
+          // MAGI and the IRC §86 Social Security test.
+          taxDetail.taxExempt += amount;
+          break;
+        case "muni_interest":
+          // Form 1040 line 2a. Excluded from taxable income but added back for
+          // both IRMAA MAGI and the §86 combined-income test.
           taxDetail.taxExempt += amount;
           taxDetail.taxExemptInterest += amount;
           break;
+        default: {
+          // Exhaustiveness guard. A ninth IncomeTaxType must fail to compile
+          // here rather than fall through silently — an unhandled arm would
+          // still be written to bySource below while contributing nothing to
+          // taxDetail, which is exactly how tax_exempt and muni_interest came
+          // to disagree in the first place.
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const _exhaustive: never = tt;
+          break;
+        }
       }
       taxDetail.bySource[inc.id] = { type: tt, amount };
     }

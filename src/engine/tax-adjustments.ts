@@ -1,7 +1,13 @@
 import type { ProjectionYear } from "./types";
 
-/** The seven buckets the tax engine distinguishes. Mirrors the DB's
- *  `income_tax_type` enum — keep the two in lockstep. */
+/** The eight buckets the tax engine distinguishes. Mirrors the DB's
+ *  `income_tax_type` enum — keep the two in lockstep.
+ *
+ *  `tax_exempt` vs `muni_interest` is the distinction that matters for money:
+ *  both are excluded from taxable income, but only muni interest is added back
+ *  for the IRMAA MAGI test and the IRC §86 Social Security combined-income
+ *  test. An inheritance, a VA benefit and a life-insurance payout are
+ *  `tax_exempt`; a municipal bond coupon is `muni_interest`. */
 export type IncomeTaxType =
   | "earned_income"
   | "ordinary_income"
@@ -9,7 +15,8 @@ export type IncomeTaxType =
   | "capital_gains"
   | "stcg"
   | "qbi"
-  | "tax_exempt";
+  | "tax_exempt"
+  | "muni_interest";
 
 /** One advisor-entered adjustment: income that already happened, which the tax
  *  engine must see and the cash flow must not. */
@@ -29,7 +36,8 @@ export interface TaxAdjustmentRow {
 
 export interface ResolvedTaxAdjustments {
   byTaxType: Record<IncomeTaxType, number>;
-  /** Everything except `tax_exempt` — what folds into the `taxableIncome` scalar. */
+  /** Everything except `tax_exempt` and `muni_interest` — what folds into the
+   *  `taxableIncome` scalar. */
   taxableTotal: number;
   /** Long-term slice of `taxableTotal`, for `capitalGainsInTaxableIncome`. */
   capitalGainsLt: number;
@@ -50,6 +58,7 @@ function emptyByTaxType(): Record<IncomeTaxType, number> {
     stcg: 0,
     qbi: 0,
     tax_exempt: 0,
+    muni_interest: 0,
   };
 }
 
@@ -83,11 +92,14 @@ export function resolveTaxAdjustmentsForYear(
     out.byTaxType[r.taxType] += amount;
     out.bySource[`tax_adjustment:${r.id}`] = { type: r.taxType, amount };
 
-    // Tax-exempt income raises `taxDetail.taxExempt` only; it never enters the
-    // taxable scalar. It deliberately does NOT raise `taxExemptInterest`, which
-    // is the muni-interest subset used for IRMAA MAGI — a generic tax-exempt
-    // adjustment is not necessarily muni interest.
-    if (r.taxType !== "tax_exempt") out.taxableTotal += amount;
+    // Neither tax-exempt flavour enters the taxable scalar. They differ only
+    // downstream: `muni_interest` raises `taxDetail.taxExemptInterest` (and so
+    // counts toward IRMAA MAGI and the §86 Social Security test) while
+    // `tax_exempt` does not. See projection.ts's income-row switch, which
+    // applies the identical rule — that identity is the point.
+    const isTaxExemptFlavour =
+      r.taxType === "tax_exempt" || r.taxType === "muni_interest";
+    if (!isTaxExemptFlavour) out.taxableTotal += amount;
     if (r.taxType === "capital_gains") out.capitalGainsLt += amount;
     if (r.taxType === "stcg") out.capitalGainsSt += amount;
 

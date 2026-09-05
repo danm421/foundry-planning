@@ -27,6 +27,7 @@ import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
 import { isGoalExpense, educationGoalYears, EDUCATION_GOAL_YEARS } from "@/lib/goals";
 import { isTodaysDollars } from "@/lib/todays-dollars";
 import type { ClientInfo as EngineClientInfo, PlanSettings, Income as EngineIncome } from "@/engine/types";
+import type { IncomeTaxType } from "@/engine/tax-adjustments";
 import type { AccountOwner } from "@/engine/ownership";
 import { SocialSecurityCard } from "./social-security-card";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
@@ -74,15 +75,14 @@ interface Income {
   paymentMonth?: number | null;
 }
 
-type IncomeTaxType = "earned_income" | "ordinary_income" | "dividends" | "capital_gains" | "qbi" | "tax_exempt" | "stcg";
-
 const INCOME_TAX_TYPE_LABELS: Record<IncomeTaxType, string> = {
   earned_income: "Earned Income",
   ordinary_income: "Ordinary Income",
   dividends: "Dividends",
   capital_gains: "Capital Gains",
   qbi: "QBI",
-  tax_exempt: "Tax-Exempt",
+  tax_exempt: "Other Tax-Free Income",
+  muni_interest: "Municipal Bond Interest",
   stcg: "ST Capital Gains",
 };
 
