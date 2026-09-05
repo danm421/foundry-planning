@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildFirmRows } from "../firm-rows";
+import { buildFirmRows, sortFirmRows, type FirmRow } from "../firm-rows";
 import type { GrowthInput } from "../types";
 
 const NOW = new Date("2026-09-04T12:00:00Z");
@@ -111,5 +111,66 @@ describe("buildFirmRows", () => {
   it("falls back to a placeholder when the firm has no display name", () => {
     expect(buildFirmRows({ ...EMPTY, firms: [firm({ displayName: null })] })[0]!.displayName)
       .toBe("(unnamed)");
+  });
+});
+
+const row = (over: Partial<FirmRow> = {}): FirmRow => ({
+  firmId: "org_1", displayName: "Acme", isFounder: false, status: "active",
+  seats: 1, lastSignInAt: null, lastActionAt: null, clients: 0, ...over,
+});
+
+const names = (rows: FirmRow[]) => rows.map((r) => r.displayName);
+
+describe("sortFirmRows", () => {
+  it("orders a text column ascending and flips it descending", () => {
+    const rows = [row({ displayName: "Beta" }), row({ displayName: "Acme" })];
+    expect(names(sortFirmRows(rows, "displayName", "asc"))).toEqual(["Acme", "Beta"]);
+    expect(names(sortFirmRows(rows, "displayName", "desc"))).toEqual(["Beta", "Acme"]);
+  });
+
+  it("orders a count column numerically, not as text", () => {
+    // 9 vs 10: a string comparison would put "10" first.
+    const rows = [row({ displayName: "Ten", seats: 10 }), row({ displayName: "Nine", seats: 9 })];
+    expect(names(sortFirmRows(rows, "seats", "asc"))).toEqual(["Nine", "Ten"]);
+    expect(names(sortFirmRows(rows, "clients", "asc"))).toEqual(["Ten", "Nine"]);
+  });
+
+  it("orders a date column oldest-first ascending and newest-first descending", () => {
+    const rows = [
+      row({ displayName: "Older", lastSignInAt: day(-9).toISOString() }),
+      row({ displayName: "Newer", lastSignInAt: day(-1).toISOString() }),
+    ];
+    expect(names(sortFirmRows(rows, "lastSignInAt", "asc"))).toEqual(["Older", "Newer"]);
+    expect(names(sortFirmRows(rows, "lastSignInAt", "desc"))).toEqual(["Newer", "Older"]);
+  });
+
+  it("sorts 'never' last in BOTH directions, never first", () => {
+    const rows = [
+      row({ displayName: "Never", lastActionAt: null }),
+      row({ displayName: "Older", lastActionAt: day(-9).toISOString() }),
+      row({ displayName: "Newer", lastActionAt: day(-1).toISOString() }),
+    ];
+    expect(names(sortFirmRows(rows, "lastActionAt", "asc"))).toEqual(["Older", "Newer", "Never"]);
+    expect(names(sortFirmRows(rows, "lastActionAt", "desc"))).toEqual(["Newer", "Older", "Never"]);
+  });
+
+  it("does not crash when every date is null", () => {
+    const rows = [row({ displayName: "A" }), row({ displayName: "B" })];
+    expect(names(sortFirmRows(rows, "lastSignInAt", "desc"))).toEqual(["A", "B"]);
+  });
+
+  it("is stable: rows with an equal key keep their input order", () => {
+    const rows = [
+      row({ displayName: "First", status: "active" }),
+      row({ displayName: "Second", status: "active" }),
+      row({ displayName: "Third", status: "active" }),
+    ];
+    expect(names(sortFirmRows(rows, "status", "desc"))).toEqual(["First", "Second", "Third"]);
+  });
+
+  it("does not mutate the array it was given", () => {
+    const rows = [row({ displayName: "Beta" }), row({ displayName: "Acme" })];
+    sortFirmRows(rows, "displayName", "asc");
+    expect(names(rows)).toEqual(["Beta", "Acme"]);
   });
 });

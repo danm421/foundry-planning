@@ -3,7 +3,7 @@
 // "Needs you" — the section that justifies the page. Pure.
 // Every threshold is a named export so a test can pin its boundary.
 import { buildFunnel } from "./funnel";
-import { BLOCKED_ACTION, daysBetween, type GrowthInput } from "./types";
+import { BLOCKED_ACTION, activeActorIds, daysBetween, type GrowthInput } from "./types";
 
 export const TRIAL_ENDING_DAYS = 3;
 export const CANCELED_WITHIN_DAYS = 30;
@@ -56,7 +56,10 @@ export function buildAttention(input: GrowthInput): AttentionRow[] {
     if (s.canceledAt && daysBetween(s.canceledAt, now) <= CANCELED_WITHIN_DAYS) {
       rows.push({
         kind: "canceled",
-        headline: "Cancelled",
+        // A firm cancelling AT PERIOD END is still active and still paying —
+        // a save-the-account call, not a post-mortem. US spelling throughout:
+        // the kind string, the Stripe status and the DB column all use it.
+        headline: s.cancelAtPeriodEnd ? "Canceling at period end" : "Canceled",
         who: named(s.firmId),
         email: null,
         firmId: s.firmId,
@@ -70,11 +73,7 @@ export function buildAttention(input: GrowthInput): AttentionRow[] {
     billable.filter((s) => s.status === "trialing").map((s) => s.firmId),
   );
   const quietCutoff = new Date(now.getTime() - QUIET_DAYS * 86_400_000);
-  const workedRecently = new Set(
-    activity
-      .filter((a) => a.action !== BLOCKED_ACTION && a.createdAt >= quietCutoff)
-      .map((a) => a.actorId),
-  );
+  const workedRecently = activeActorIds(activity, quietCutoff);
   for (const u of users) {
     if (!u.lastSignInAt || u.lastSignInAt < quietCutoff) continue;
     if (workedRecently.has(u.userId)) continue;

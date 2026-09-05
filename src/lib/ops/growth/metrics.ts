@@ -5,9 +5,9 @@
 import {
   ACTIVE_WINDOW_DAYS,
   ANNUAL_PERIOD_THRESHOLD_DAYS,
-  BLOCKED_ACTION,
   PAID_STATUSES,
   TRIAL_TILE_HORIZON_DAYS,
+  activeActorIds,
   daysBetween,
   type GrowthInput,
   type GrowthMetrics,
@@ -48,12 +48,15 @@ export function buildMetrics(input: GrowthInput): GrowthMetrics {
 
   // --- trials ------------------------------------------------------------
   const trialsRunning = billable.filter((s) => s.status === "trialing").length;
-  const trialsEndingSoon = billable.filter(
-    (s) =>
-      s.status === "trialing" &&
-      s.trialEnd != null &&
-      daysBetween(now, s.trialEnd) <= TRIAL_TILE_HORIZON_DAYS,
-  ).length;
+  // `daysBetween` is signed, so a trial whose end date has already passed
+  // yields a NEGATIVE number. Without the lower bound a stale `trialing` row
+  // that ended 300 days ago still reads "ending this week" on the tile while
+  // the worklist correctly ignores it. attention.ts carries the same guard.
+  const trialsEndingSoon = billable.filter((s) => {
+    if (s.status !== "trialing" || s.trialEnd == null) return false;
+    const left = daysBetween(now, s.trialEnd);
+    return left >= 0 && left <= TRIAL_TILE_HORIZON_DAYS;
+  }).length;
 
   const resolved = billable.filter((s) => s.trialEnd != null && s.trialEnd <= now);
   const converted = resolved.filter(
@@ -66,11 +69,7 @@ export function buildMetrics(input: GrowthInput): GrowthMetrics {
 
   // --- usage -------------------------------------------------------------
   const cutoff = new Date(now.getTime() - ACTIVE_WINDOW_DAYS * 86_400_000);
-  const actors = new Set(
-    activity
-      .filter((a) => a.action !== BLOCKED_ACTION && a.createdAt >= cutoff)
-      .map((a) => a.actorId),
-  );
+  const actors = activeActorIds(activity, cutoff);
 
   return {
     mrrCents,

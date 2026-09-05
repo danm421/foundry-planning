@@ -92,3 +92,20 @@ export const ANNUAL_PERIOD_THRESHOLD_DAYS = 300;
 export function daysBetween(from: Date, to: Date): number {
   return (to.getTime() - from.getTime()) / 86_400_000;
 }
+
+/**
+ * The distinct advisors who did real work at or after `since`.
+ *
+ * Shared by the "Active this week" tile and the "signing in, building nothing"
+ * worklist so the two can never disagree about what counts as work — a blocked
+ * paywall attempt is a signal, never work. Only the FILTER is shared: each
+ * caller still passes its own cutoff, because ACTIVE_WINDOW_DAYS and
+ * attention.ts's QUIET_DAYS answer different questions and are free to diverge.
+ */
+export function activeActorIds(activity: ActivityInput[], since: Date): Set<string> {
+  return new Set(
+    activity
+      .filter((a) => a.action !== BLOCKED_ACTION && a.createdAt >= since)
+      .map((a) => a.actorId),
+  );
+}

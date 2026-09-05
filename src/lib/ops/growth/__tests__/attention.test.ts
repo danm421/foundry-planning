@@ -87,6 +87,22 @@ describe("buildAttention — cancellations", () => {
     };
     expect(kinds(i)).not.toContain("canceled");
   });
+
+  const canceledHeadline = (over: Partial<GrowthInput["subs"][number]>) =>
+    buildAttention({
+      ...EMPTY, firms: [firm()],
+      subs: [sub({ canceledAt: day(-3), trialEnd: day(-40), ...over })],
+    }).find((r) => r.kind === "canceled")!.headline;
+
+  it("says a firm cancelling at period end is still on the books", () => {
+    expect(canceledHeadline({ status: "active", cancelAtPeriodEnd: true }))
+      .toBe("Canceling at period end");
+  });
+
+  it("says a firm that has already gone is canceled", () => {
+    expect(canceledHeadline({ status: "canceled", cancelAtPeriodEnd: false }))
+      .toBe("Canceled");
+  });
 });
 
 describe("buildAttention — quiet and blocked", () => {

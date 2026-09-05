@@ -20,7 +20,7 @@ describe("buildDigest", () => {
   });
 
   it("counts the rows in the subject", () => {
-    const d = buildDigest([row(), row({ kind: "canceled", headline: "Cancelled" })], URL)!;
+    const d = buildDigest([row(), row({ kind: "canceled", headline: "Canceled" })], URL)!;
     expect(d.subject).toBe("Foundry: 2 things need you");
   });
 

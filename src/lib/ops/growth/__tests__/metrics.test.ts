@@ -1,7 +1,11 @@
 // src/lib/ops/growth/__tests__/metrics.test.ts
 import { describe, it, expect } from "vitest";
 import { buildMetrics } from "../metrics";
-import { ANNUAL_PERIOD_THRESHOLD_DAYS, type GrowthInput } from "../types";
+import {
+  ANNUAL_PERIOD_THRESHOLD_DAYS,
+  TRIAL_TILE_HORIZON_DAYS,
+  type GrowthInput,
+} from "../types";
 
 const NOW = new Date("2026-09-04T12:00:00Z");
 const day = (n: number) => new Date(NOW.getTime() + n * 86_400_000);
@@ -118,6 +122,48 @@ describe("buildMetrics — trials and conversion", () => {
     });
     expect(m.trialsRunning).toBe(2);
     expect(m.trialsEndingSoon).toBe(1);
+  });
+
+  // The horizon is a WINDOW, not a ceiling: `daysBetween` is signed, so a
+  // stale `trialing` row whose end date has passed yields a negative number
+  // that would slip under a bare `<=`. These pin both sides.
+  const endingSoon = (trialEnd: Date) =>
+    buildMetrics({
+      ...EMPTY,
+      firms: [firm()],
+      subs: [sub({ status: "trialing", trialEnd })],
+    });
+
+  it("counts a trial ending today", () => {
+    expect(endingSoon(day(0)).trialsEndingSoon).toBe(1);
+  });
+
+  it("counts a trial ending inside the horizon", () => {
+    expect(endingSoon(day(2)).trialsEndingSoon).toBe(1);
+  });
+
+  it("counts a trial ending exactly at the horizon", () => {
+    expect(endingSoon(day(TRIAL_TILE_HORIZON_DAYS)).trialsEndingSoon).toBe(1);
+  });
+
+  it("does not count a trial half a day past the horizon", () => {
+    expect(endingSoon(day(TRIAL_TILE_HORIZON_DAYS + 0.5)).trialsEndingSoon).toBe(0);
+  });
+
+  it("does not count a trial well beyond the horizon", () => {
+    expect(endingSoon(day(12)).trialsEndingSoon).toBe(0);
+  });
+
+  it("does not count a trial that ended yesterday", () => {
+    const m = endingSoon(day(-1));
+    expect(m.trialsRunning).toBe(1);
+    expect(m.trialsEndingSoon).toBe(0);
+  });
+
+  it("does not count a stale trialing row that ended 300 days ago", () => {
+    const m = endingSoon(day(-300));
+    expect(m.trialsRunning).toBe(1);
+    expect(m.trialsEndingSoon).toBe(0);
   });
 
   it("treats a cancellation after the trial ended as a conversion", () => {

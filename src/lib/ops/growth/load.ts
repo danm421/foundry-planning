@@ -79,17 +79,30 @@ async function memberUserIdsForOrg(
 async function membershipsByUser(firmIds: string[]): Promise<Map<string, string[]>> {
   const cc = await clerkClient();
   const map = new Map<string, string[]>();
+  const skipped: string[] = [];
   for (const organizationId of firmIds) {
     let userIds: string[];
     try {
       userIds = await memberUserIdsForOrg(cc, organizationId);
     } catch (err) {
-      if (isMissingOrganizationError(err)) continue;
+      if (isMissingOrganizationError(err)) {
+        skipped.push(organizationId);
+        continue;
+      }
       throw err;
     }
     for (const uid of userIds) {
       map.set(uid, [...(map.get(uid) ?? []), organizationId]);
     }
+  }
+  // ONE aggregated line, after the loop — 11 of dev's 13 firms take this path,
+  // so a warn per firm would print 11 lines on every page load. It matters
+  // because a skipped firm's members look org-less to the funnel, which then
+  // reads existing customers as "signed up, never started".
+  if (skipped.length > 0) {
+    console.warn(
+      `[ops/growth] ${skipped.length} firm(s) skipped — no matching Clerk organization: ${skipped.join(", ")}`,
+    );
   }
   return map;
 }

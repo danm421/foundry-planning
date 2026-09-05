@@ -25,6 +25,57 @@ function latest(dates: Array<Date | null>): string | null {
   return max?.toISOString() ?? null;
 }
 
+/** Every column of the "All firms" table the operator can sort by. */
+export type FirmSortKey =
+  | "displayName"
+  | "status"
+  | "seats"
+  | "lastSignInAt"
+  | "lastActionAt"
+  | "clients";
+
+export type SortDirection = "asc" | "desc";
+
+/**
+ * Order two rows by one column.
+ *
+ * A null date means "never", and never sorts LAST in BOTH directions — a firm
+ * nobody has ever signed into is not the most recent one, and flipping the
+ * direction should not float it to the top either.
+ */
+function compareFirmRows(
+  a: FirmRow,
+  b: FirmRow,
+  key: FirmSortKey,
+  dir: SortDirection,
+): number {
+  const flip = dir === "asc" ? 1 : -1;
+  switch (key) {
+    case "seats":
+    case "clients":
+      return (a[key] - b[key]) * flip;
+    case "lastSignInAt":
+    case "lastActionAt": {
+      const x = a[key];
+      const y = b[key];
+      if (x === null || y === null) return x === y ? 0 : x === null ? 1 : -1;
+      // ISO-8601 strings compare chronologically as text.
+      return x.localeCompare(y) * flip;
+    }
+    default:
+      return a[key].localeCompare(b[key]) * flip;
+  }
+}
+
+/** Non-mutating sort of the table's rows. Stable: equal keys keep input order. */
+export function sortFirmRows(
+  rows: FirmRow[],
+  key: FirmSortKey,
+  dir: SortDirection,
+): FirmRow[] {
+  return [...rows].sort((a, b) => compareFirmRows(a, b, key, dir));
+}
+
 export function buildFirmRows(input: GrowthInput): FirmRow[] {
   const { firms, subs, items, activity, users, clientCountByFirm } = input;
   const subByFirm = new Map(subs.map((s) => [s.firmId, s]));
