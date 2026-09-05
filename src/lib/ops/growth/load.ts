@@ -7,6 +7,7 @@ import { clerkClient } from "@clerk/nextjs/server";
 import { and, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { auditLog, clients, firms, subscriptionItems, subscriptions } from "@/db/schema";
+import { isMissingOrganizationError } from "./clerk-errors";
 import { PAID_STATUSES, type ClerkUserInput, type GrowthInput } from "./types";
 
 /** Audit rows older than this are never needed by any builder. */
@@ -39,23 +40,55 @@ async function listAllClerkUsers() {
   return out;
 }
 
-/** userId → every firm id they are a member of. */
+/**
+ * Every Clerk user id in one organization's membership list, paged.
+ * Split out of `membershipsByUser` so that function's try/catch wraps one
+ * call rather than sitting inside this inner paging loop — a `continue` in
+ * a catch nested in the loop below would restart the CURRENT page forever
+ * instead of moving on to the next firm.
+ */
+async function memberUserIdsForOrg(
+  cc: Awaited<ReturnType<typeof clerkClient>>,
+  organizationId: string,
+): Promise<string[]> {
+  const out: string[] = [];
+  for (let offset = 0; ; offset += CLERK_PAGE) {
+    const { data, totalCount } = await cc.organizations.getOrganizationMembershipList({
+      organizationId,
+      limit: CLERK_PAGE,
+      offset,
+    });
+    for (const m of data) {
+      const uid = m.publicUserData?.userId;
+      if (uid) out.push(uid);
+    }
+    if (data.length === 0 || offset + data.length >= totalCount) break;
+  }
+  return out;
+}
+
+/**
+ * userId → every firm id they are a member of.
+ *
+ * Dev/prod `firms` rows can point at a Clerk organization that no longer
+ * exists (deleted org, or a DB-only test fixture) — Clerk 404s on that id.
+ * That is a data shape, not an incident: skip the firm and keep walking.
+ * Every other error (auth, rate limit, a differently-shaped 404) still
+ * propagates and fails the page loudly, as before.
+ */
 async function membershipsByUser(firmIds: string[]): Promise<Map<string, string[]>> {
   const cc = await clerkClient();
   const map = new Map<string, string[]>();
   for (const organizationId of firmIds) {
-    for (let offset = 0; ; offset += CLERK_PAGE) {
-      const { data, totalCount } = await cc.organizations.getOrganizationMembershipList({
-        organizationId,
-        limit: CLERK_PAGE,
-        offset,
-      });
-      for (const m of data) {
-        const uid = m.publicUserData?.userId;
-        if (!uid) continue;
-        map.set(uid, [...(map.get(uid) ?? []), organizationId]);
-      }
-      if (data.length === 0 || offset + data.length >= totalCount) break;
+    let userIds: string[];
+    try {
+      userIds = await memberUserIdsForOrg(cc, organizationId);
+    } catch (err) {
+      if (isMissingOrganizationError(err)) continue;
+      throw err;
+    }
+    for (const uid of userIds) {
+      map.set(uid, [...(map.get(uid) ?? []), organizationId]);
     }
   }
   return map;
