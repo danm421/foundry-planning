@@ -38,6 +38,11 @@ export interface CellDrillContext {
   /** Optional equity-plan accountId → display-name map for `equity-vest:<id>`,
    *  `equity-ltcg:<id>`, and `equity-stcg:<id>` keys. */
   equityPlanNames?: Record<string, string>;
+  /** Optional tax-adjustment-id → display-name map for `tax_adjustment:<id>`
+   *  keys. Advisors name these ("2026 Roth conversion, already done"), and an
+   *  unnamed row is the whole reason the Tax Adjustments drill-down read as a
+   *  wall of identical "Tax Adjustment" lines. */
+  taxAdjustmentNames?: Record<string, string>;
   /** Optional filing status — used by the capital-loss drill-down rows to pick
    *  the correct §1211(b) annual ordinary-income-offset limit ($3,000, or
    *  $1,500 for married_separate). Not populated by every caller. */

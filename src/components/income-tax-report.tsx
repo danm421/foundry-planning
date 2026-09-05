@@ -96,6 +96,13 @@ export default function IncomeTaxReport({ clientId }: Props) {
         },
         {},
       ),
+      taxAdjustmentNames: (clientData?.taxAdjustments ?? []).reduce<Record<string, string>>(
+        (acc, a) => {
+          if (a.name) acc[a.id] = a.name;
+          return acc;
+        },
+        {},
+      ),
       filingStatus: clientData?.client.filingStatus,
     }),
     [accountNames, clientData],

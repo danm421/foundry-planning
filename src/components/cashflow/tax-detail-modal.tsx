@@ -24,6 +24,7 @@ import type {
   RothConversion,
   NoteReceivable,
 } from "@/engine/types";
+import type { TaxAdjustmentRow } from "@/engine/tax-adjustments";
 import type { FilingStatus } from "@/lib/tax/types";
 
 interface TaxDetailModalProps {
@@ -44,6 +45,7 @@ interface TaxDetailModalProps {
     entities?: EntitySummary[];
     rothConversions?: RothConversion[];
     notesReceivable?: NoteReceivable[];
+    taxAdjustments?: TaxAdjustmentRow[];
     filingStatus?: FilingStatus;
   };
 }
@@ -89,6 +91,13 @@ export function TaxDetailModal(props: TaxDetailModalProps) {
         },
         {},
       ),
+      taxAdjustmentNames: (clientData.taxAdjustments ?? []).reduce<Record<string, string>>(
+        (acc, a) => {
+          if (a.name) acc[a.id] = a.name;
+          return acc;
+        },
+        {},
+      ),
       filingStatus: clientData.filingStatus,
     }),
     [
@@ -97,6 +106,7 @@ export function TaxDetailModal(props: TaxDetailModalProps) {
       clientData.entities,
       clientData.rothConversions,
       clientData.notesReceivable,
+      clientData.taxAdjustments,
       clientData.filingStatus,
     ],
   );
