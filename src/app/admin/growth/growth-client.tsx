@@ -1,11 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { GrowthMetrics } from "@/lib/ops/growth/types";
 import type { FunnelStageGroup } from "@/lib/ops/growth/funnel";
 import type { AttentionRow } from "@/lib/ops/growth/attention";
-import type { FirmRow } from "@/lib/ops/growth/firm-rows";
+import {
+  sortFirmRows,
+  type FirmRow,
+  type FirmSortKey,
+  type SortDirection,
+} from "@/lib/ops/growth/firm-rows";
 
 const STATUS_STYLE: Record<string, string> = {
   founder: "bg-violet-500/15 text-violet-300",
@@ -28,13 +33,26 @@ const KIND_STYLE: Record<AttentionRow["kind"], string> = {
 
 function ago(iso: string | null): string {
   if (!iso) return "never";
-  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+  const elapsed = (Date.now() - new Date(iso).getTime()) / 86_400_000;
+  // Attention rows carry `trialEnd`, which has NOT happened yet — without this
+  // branch every "trial ending" row read "today".
+  if (elapsed < 0) return `in ${Math.ceil(-elapsed)}d`;
+  const days = Math.floor(elapsed);
   if (days <= 0) return "today";
   if (days === 1) return "yesterday";
   if (days < 30) return `${days}d ago`;
   if (days < 365) return `${Math.floor(days / 30)}mo ago`;
   return `${Math.floor(days / 365)}y ago`;
 }
+
+const FIRM_COLUMNS: Array<{ key: FirmSortKey; label: string }> = [
+  { key: "displayName", label: "Firm" },
+  { key: "status", label: "Status" },
+  { key: "seats", label: "Seats" },
+  { key: "lastSignInAt", label: "Last sign-in" },
+  { key: "lastActionAt", label: "Last action" },
+  { key: "clients", label: "Clients" },
+];
 
 function usd(cents: number): string {
   return (cents / 100).toLocaleString("en-US", {
@@ -66,6 +84,11 @@ export default function GrowthClient({
   firms: FirmRow[];
 }) {
   const [open, setOpen] = useState<string | null>(null);
+  const [sort, setSort] = useState<{ key: FirmSortKey; dir: SortDirection }>({
+    key: "displayName",
+    dir: "asc",
+  });
+  const sortedFirms = useMemo(() => sortFirmRows(firms, sort.key, sort.dir), [firms, sort]);
 
   return (
     <div className="space-y-8">
@@ -160,16 +183,37 @@ export default function GrowthClient({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-hair text-left text-xs uppercase tracking-wide text-ink-3">
-                <th className="p-3 font-normal">Firm</th>
-                <th className="p-3 font-normal">Status</th>
-                <th className="p-3 font-normal">Seats</th>
-                <th className="p-3 font-normal">Last sign-in</th>
-                <th className="p-3 font-normal">Last action</th>
-                <th className="p-3 font-normal">Clients</th>
+                {FIRM_COLUMNS.map((c) => {
+                  const active = sort.key === c.key;
+                  return (
+                    <th
+                      key={c.key}
+                      className="p-0 font-normal"
+                      aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
+                    >
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSort((s) =>
+                            s.key === c.key
+                              ? { key: c.key, dir: s.dir === "asc" ? "desc" : "asc" }
+                              : { key: c.key, dir: "asc" },
+                          )
+                        }
+                        className="flex w-full items-center gap-1 p-3 uppercase tracking-wide transition hover:text-ink-2"
+                      >
+                        {c.label}
+                        <span aria-hidden="true" className={active ? "" : "invisible"}>
+                          {active && sort.dir === "desc" ? "▼" : "▲"}
+                        </span>
+                      </button>
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
-              {firms.map((f) => (
+              {sortedFirms.map((f) => (
                 <tr key={f.firmId} className="border-b border-hair last:border-b-0">
                   <td className="p-3">
                     <Link href={`/admin/orgs/${f.firmId}`} className="text-accent hover:underline">

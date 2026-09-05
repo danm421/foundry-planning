@@ -27,7 +27,12 @@ export async function GET(req: NextRequest): Promise<Response> {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const base = process.env.NEXT_PUBLIC_APP_URL || "https://app.foundryplanning.com";
+  // Strip any trailing slash, exactly as notification-digest does: without it
+  // a trailing slash in the env var yields "…//admin/growth" in the email.
+  const base = (process.env.NEXT_PUBLIC_APP_URL || "https://app.foundryplanning.com").replace(
+    /\/+$/,
+    "",
+  );
   const input = await loadGrowthInput();
   const rows = buildAttention(input);
   const mail = buildDigest(rows, `${base}/admin/growth`);

@@ -4,10 +4,16 @@ import { getOpsAdmin } from "@/lib/ops/ops-auth";
 export const dynamic = "force-dynamic";
 
 const LINKS = [
-  { href: "/admin/growth", title: "Growth", desc: "Trials, conversion, activity, and who needs you." },
   { href: "/admin/orgs", title: "Organizations", desc: "Browse orgs, billing state, and detail." },
   { href: "/admin/beta-codes", title: "Beta codes", desc: "Mint and revoke founder access codes." },
   { href: "/admin/promo-codes", title: "Promo codes", desc: "Create checkout discounts and see who used them." },
+];
+
+// The growth page gates on requireOpsAdmin("ops"), so a support-tier operator
+// 404s on it. Keep the card behind the same rank, or the console advertises a
+// door they cannot open.
+const OPS_LINKS = [
+  { href: "/admin/growth", title: "Growth", desc: "Trials, conversion, activity, and who needs you." },
 ];
 
 const SUPERADMIN_LINKS = [
@@ -16,8 +22,11 @@ const SUPERADMIN_LINKS = [
 
 export default async function AdminHome() {
   const admin = await getOpsAdmin();
-  const links =
-    admin?.role === "superadmin" ? [...LINKS, ...SUPERADMIN_LINKS] : LINKS;
+  const links = [
+    ...(admin?.role === "ops" || admin?.role === "superadmin" ? OPS_LINKS : []),
+    ...LINKS,
+    ...(admin?.role === "superadmin" ? SUPERADMIN_LINKS : []),
+  ];
 
   return (
     <div className="space-y-6">
