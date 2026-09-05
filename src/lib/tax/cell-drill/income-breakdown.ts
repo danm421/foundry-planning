@@ -300,6 +300,7 @@ const ADJUSTMENT_BUCKET_LABEL: Record<string, string> = {
   stcg: "ST Capital Gains",
   qbi: "QBI",
   tax_exempt: "Non-Taxable Income",
+  muni_interest: "Non-Taxable Income",
 };
 
 /** The `tax_adjustment:<id>` rows of a year, itemized. Keyed by PREFIX, not by
