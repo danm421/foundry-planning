@@ -130,7 +130,11 @@ export function resolveSourceLabel(
     const planId = sourceId.slice("equity-stcg:".length);
     return `${ctx.equityPlanNames?.[planId] ?? planId} — sale (ST)`;
   }
-  if (sourceId.startsWith("tax_adjustment:")) return "Tax Adjustment";
+  if (sourceId.startsWith("tax_adjustment:")) {
+    const id = sourceId.slice("tax_adjustment:".length);
+    const name = ctx.taxAdjustmentNames?.[id];
+    return name ? `${name} — Tax Adjustment` : "Tax Adjustment";
+  }
   if (sourceId.includes(":")) {
     const [acctId, kind] = sourceId.split(":");
     const name = ctx.accountNames[acctId] ?? acctId;

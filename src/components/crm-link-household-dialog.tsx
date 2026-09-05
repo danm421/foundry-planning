@@ -187,7 +187,7 @@ export function CrmLinkHouseholdDialog({ householdId, excludeIds, open, onClose,
                 id="link-household-search"
                 type="search"
                 autoComplete="off"
-                placeholder="Search households by name…"
+                placeholder="Search by household or contact name…"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 className={`${inputClassName} pl-9`}

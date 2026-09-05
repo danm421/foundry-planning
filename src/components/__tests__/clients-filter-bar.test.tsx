@@ -108,14 +108,14 @@ describe("ClientsFilterBar", () => {
   it("hides the search, status, and book filters on the shared view", () => {
     renderBar("view=shared");
     expect(screen.getByRole("link", { name: "Shared with me" })).toBeDefined();
-    expect(screen.queryByLabelText("Search households")).toBeNull();
+    expect(screen.queryByLabelText("Search by household or contact name")).toBeNull();
     expect(screen.queryByLabelText("Filter by status")).toBeNull();
     expect(screen.queryByLabelText("Viewing advisor's book")).toBeNull();
   });
 
   it("shows the search, status, and book filters on the other views", () => {
     renderBar("view=all");
-    expect(screen.getByLabelText("Search households")).toBeDefined();
+    expect(screen.getByLabelText("Search by household or contact name")).toBeDefined();
     expect(screen.getByLabelText("Filter by status")).toBeDefined();
     expect(screen.getByLabelText("Viewing advisor's book")).toBeDefined();
   });

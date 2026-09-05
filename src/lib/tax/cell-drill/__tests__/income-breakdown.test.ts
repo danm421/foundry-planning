@@ -370,3 +370,77 @@ describe("buildIncomeCellDrill — Gross Total Income", () => {
     expect(Math.abs(sum - 137_500)).toBeLessThanOrEqual(1);
   });
 });
+
+describe("buildIncomeCellDrill — Tax Adjustments", () => {
+  /** A year carrying two advisor-entered adjustments, one of them named. The
+   *  bySource entries carry the tax type each lands in — never a
+   *  "tax_adjustment" type — which is exactly what a type-based filter missed. */
+  function yearWithAdjustments(): ProjectionYear {
+    const base = makeYear();
+    return {
+      ...base,
+      taxDetail: {
+        ...(base.taxDetail as object),
+        ordinaryIncome: 758_000,
+        bySource: {
+          ...(base.taxDetail!.bySource as object),
+          "tax_adjustment:adj_1": { type: "ordinary_income", amount: 750_000 },
+          "tax_adjustment:adj_2": { type: "dividends", amount: 5_000 },
+        },
+      },
+    } as unknown as ProjectionYear;
+  }
+
+  it("itemizes every tax_adjustment: row instead of reporting no contributing items", () => {
+    const props = buildIncomeCellDrill({
+      year: yearWithAdjustments(),
+      columnKey: "taxAdjustments",
+      ctx,
+    });
+    expect(props.title).toBe("Tax Adjustments — 2030");
+    expect(props.total).toBe(755_000);
+    const rows = props.groups.flatMap((g) => g.rows);
+    expect(rows.map((r) => r.amount)).toEqual([750_000, 5_000]);
+    expect(rows.reduce((s, r) => s + r.amount, 0)).toBe(props.total);
+  });
+
+  it("names each row and says which income column already counts it", () => {
+    const namedCtx: CellDrillContext = {
+      ...ctx,
+      taxAdjustmentNames: { adj_1: "2026 Roth conversion (done)" },
+    };
+    const props = buildIncomeCellDrill({
+      year: yearWithAdjustments(),
+      columnKey: "taxAdjustments",
+      ctx: namedCtx,
+    });
+    const rows = props.groups.flatMap((g) => g.rows);
+    expect(rows[0].label).toBe("2026 Roth conversion (done) — Tax Adjustment");
+    expect(rows[0].meta).toBe("Counted in Ordinary Income");
+    // Unnamed adjustments still get the generic label, not a bare UUID.
+    expect(rows[1].label).toBe("Tax Adjustment");
+    expect(rows[1].meta).toBe("Counted in Dividends");
+    // The footnote is what stops the memo column reading as a double count.
+    expect(props.footnote).toMatch(/added to Total Income a second time/i);
+  });
+
+  it("the same adjustment also itemizes inside the column that actually counts it", () => {
+    // The $750,000 shows in Ordinary Income once and in the memo column once —
+    // one dollar of income, itemized on both surfaces, added to Total Income
+    // only through Ordinary Income.
+    const props = buildIncomeCellDrill({
+      year: yearWithAdjustments(),
+      columnKey: "ordinaryIncome",
+      ctx,
+    });
+    const rows = props.groups.flatMap((g) => g.rows);
+    expect(rows.find((r) => r.id === "tax_adjustment:adj_1")?.amount).toBe(750_000);
+    expect(props.total).toBe(758_000);
+  });
+
+  it("a year with no adjustments yields a zero total and no rows", () => {
+    const props = buildIncomeCellDrill({ year: makeYear(), columnKey: "taxAdjustments", ctx });
+    expect(props.total).toBe(0);
+    expect(props.groups.flatMap((g) => g.rows)).toEqual([]);
+  });
+});

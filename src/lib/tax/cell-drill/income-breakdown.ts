@@ -185,10 +185,19 @@ export function buildIncomeCellDrill(args: IncomeCellDrillArgs): CellDrillProps 
 
   // taxAdjustments isn't a taxResult.income field — it's summed straight off
   // taxDetail.bySource (see sumTaxAdjustments) — so it can't fall through to
-  // the generic `taxResult.income[columnKey]` lookup below. No drill-down
-  // rows: same "no drill available" shape the simplest existing keys return.
+  // the generic `taxResult.income[columnKey]` lookup below, and its rows can't
+  // come from `directRows`: the bySource entries carry the tax TYPE they land
+  // in (ordinary_income, dividends, …), never a "tax_adjustment" type. Matching
+  // on type is what made this modal say "No contributing items" on a year that
+  // plainly had a $750,000 adjustment — the rows are found by KEY PREFIX.
   if (columnKey === "taxAdjustments") {
-    return { title, total: sumTaxAdjustments(year.taxDetail), groups: [] };
+    return {
+      title,
+      total: sumTaxAdjustments(year.taxDetail),
+      groups: [{ rows: taxAdjustmentRows(year, ctx) }],
+      footnote:
+        "Each line is already counted once in the income column named beside it — this column repeats it as a memo, and nothing here is added to Total Income a second time.",
+    };
   }
 
   return { title, total: year.taxResult?.income[columnKey] ?? 0, groups: [] };
@@ -274,4 +283,38 @@ function directRows(
   ctx: IncomeCellDrillArgs["ctx"],
 ): CellDrillRow[] {
   return bySourceRows(year.taxDetail?.bySource ?? {}, type, ctx);
+}
+
+/** Which income column a given adjustment's tax type lands in — the column the
+ *  advisor should look at to find this money already counted. */
+const ADJUSTMENT_BUCKET_LABEL: Record<string, string> = {
+  earned_income: "Earned Income",
+  ordinary_income: "Ordinary Income",
+  dividends: "Dividends",
+  capital_gains: "LT Capital Gains",
+  stcg: "ST Capital Gains",
+  qbi: "QBI",
+  tax_exempt: "Non-Taxable Income",
+};
+
+/** The `tax_adjustment:<id>` rows of a year, itemized. Keyed by PREFIX, not by
+ *  `entry.type`, because an adjustment's type is the bucket it feeds — see the
+ *  note in `buildIncomeCellDrill`. Mirrors `sumTaxAdjustments`, which totals the
+ *  same set of keys, so the rows always reconcile to the cell. */
+function taxAdjustmentRows(
+  year: IncomeCellDrillArgs["year"],
+  ctx: IncomeCellDrillArgs["ctx"],
+): CellDrillRow[] {
+  return Object.entries(year.taxDetail?.bySource ?? {})
+    .filter(([id]) => id.startsWith("tax_adjustment:"))
+    .map(([id, v]) => {
+      const bucket = ADJUSTMENT_BUCKET_LABEL[v.type];
+      return {
+        id,
+        label: resolveSourceLabel(id, ctx, v),
+        amount: v.amount,
+        meta: bucket ? `Counted in ${bucket}` : undefined,
+      };
+    })
+    .sort((a, b) => b.amount - a.amount);
 }
