@@ -21,6 +21,7 @@ export const INCOME_TAX_TYPE_LABELS: Record<IncomeTaxType, string> = {
   capital_gains: "Capital Gains",
   qbi: "QBI",
   tax_exempt: "Tax-Exempt",
+  muni_interest: "Municipal bond interest",
   stcg: "Short-Term Capital Gains",
 };
 

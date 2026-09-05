@@ -18,6 +18,7 @@ import type {
   Relocation,
 } from "@/engine/types";
 import type { ProjectionResult } from "@/engine";
+import type { IncomeTaxType } from "@/engine/tax-adjustments";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import type { DebtPaydownRow } from "./debt-paydown";
 
@@ -28,14 +29,10 @@ export type SsClaimAgeMode = "fra" | "at_retirement" | "years";
 
 export type SavingsGrowthSource = "custom" | "inflation";
 
-export type IncomeTaxType =
-  | "earned_income"
-  | "ordinary_income"
-  | "dividends"
-  | "capital_gains"
-  | "qbi"
-  | "tax_exempt"
-  | "stcg";
+/** Re-export of the engine's canonical union. The solver UI once carried its own
+ *  copy; the copies are what let income rows and tax adjustments disagree about
+ *  what `tax_exempt` meant. One definition, in `@/engine/tax-adjustments`. */
+export type { IncomeTaxType };
 
 export type SolverMutation =
   | { kind: "retirement-age"; person: SolverPerson; age: number; month?: number }

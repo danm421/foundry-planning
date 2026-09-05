@@ -177,7 +177,7 @@ import {
   type EntityFlowOverride,
 } from "./types";
 import { computeTaxForYear, type YearTaxInput } from "./year-tax";
-import { resolveTaxAdjustmentsForYear } from "./tax-adjustments";
+import { resolveTaxAdjustmentsForYear, type IncomeTaxType } from "./tax-adjustments";
 import { diffEquityTaxImpact, type EquityTaxImpact } from "./equity/tax-impact";
 import {
   buildNoteReceivableSchedules,
@@ -216,10 +216,10 @@ const QUALIFYING_CHILD_MAX_AGE_EXCLUSIVE = 17;
 /** IRC 152(c)(2): the qualifying-child relationships this engine can represent. */
 const QUALIFYING_CHILD_RELATIONSHIPS = new Set(["child", "stepchild"]);
 
-// Map legacy income type to the new tax type categories.
-function legacyTaxType(
-  incomeType: string
-): "earned_income" | "ordinary_income" | "dividends" | "capital_gains" | "qbi" | "tax_exempt" | "stcg" {
+// Map legacy income type to the new tax type categories. Declared as the full
+// IncomeTaxType, but never returns "muni_interest": an income `type` carries no
+// muni concept, so only an explicit `taxType` can classify a row as muni.
+function legacyTaxType(incomeType: string): IncomeTaxType {
   switch (incomeType) {
     case "salary": return "earned_income";
     case "social_security": return "ordinary_income";
@@ -2592,6 +2592,16 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           taxDetail.taxExempt += amount;
           taxDetail.taxExemptInterest += amount;
           break;
+        default: {
+          // Exhaustiveness guard. A ninth IncomeTaxType must fail to compile
+          // here rather than fall through silently — an unhandled arm would
+          // still be written to bySource below while contributing nothing to
+          // taxDetail, which is exactly how tax_exempt and muni_interest came
+          // to disagree in the first place.
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const _exhaustive: never = tt;
+          break;
+        }
       }
       taxDetail.bySource[inc.id] = { type: tt, amount };
     }
