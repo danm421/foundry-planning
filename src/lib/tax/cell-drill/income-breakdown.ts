@@ -232,6 +232,11 @@ function nonTaxableGroups(
     groups.push({ label: "Tax-Exempt Income", rows: exemptRows });
   }
 
+  const muniRows = directRows(year, "muni_interest", ctx);
+  if (muniRows.length > 0) {
+    groups.push({ label: "Municipal Bond Interest", rows: muniRows });
+  }
+
   const taxFreeRows = directRows(year, "tax_free", ctx);
   if (taxFreeRows.length > 0) {
     groups.push({ label: "Tax-Free Retirement Distributions", rows: taxFreeRows });

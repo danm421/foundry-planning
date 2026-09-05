@@ -81,7 +81,7 @@ const INCOME_TAX_TYPE_LABELS: Record<IncomeTaxType, string> = {
   dividends: "Dividends",
   capital_gains: "Capital Gains",
   qbi: "QBI",
-  tax_exempt: "Tax-Exempt",
+  tax_exempt: "Other tax-free income",
   muni_interest: "Municipal bond interest",
   stcg: "ST Capital Gains",
 };

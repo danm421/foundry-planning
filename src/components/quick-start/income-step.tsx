@@ -19,7 +19,7 @@ const TAX_OPTIONS: { value: NonNullable<IncomeRow["taxType"]>; label: string }[]
   { value: "earned_income", label: "Earned income" },
   { value: "ordinary_income", label: "Ordinary income" },
   { value: "capital_gains", label: "Capital gains" },
-  { value: "tax_exempt", label: "Tax-exempt" },
+  { value: "tax_exempt", label: "Other tax-free income" },
 ];
 
 const KIND_LABEL: Record<QsIncomeKind, string> = {
@@ -33,7 +33,7 @@ const TAX_LABEL: Record<NonNullable<IncomeRow["taxType"]>, string> = {
   earned_income: "Earned income",
   ordinary_income: "Ordinary income",
   capital_gains: "Capital gains",
-  tax_exempt: "Tax-exempt",
+  tax_exempt: "Other tax-free income",
 };
 
 const COLUMNS: ListColumn[] = [

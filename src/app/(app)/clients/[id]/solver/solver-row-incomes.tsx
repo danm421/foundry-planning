@@ -23,7 +23,7 @@ const TAX_TYPE_SHORT: Record<IncomeTaxType, string> = {
   dividends: "div",
   capital_gains: "LTCG",
   qbi: "QBI",
-  tax_exempt: "tax-exempt",
+  tax_exempt: "other tax-free",
   muni_interest: "muni",
   stcg: "STCG",
 };
