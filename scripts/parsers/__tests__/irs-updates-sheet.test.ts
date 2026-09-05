@@ -105,7 +105,10 @@ describe("parseIrsUpdatesSheet", () => {
     expect(y.contribLimits.ira401kCatchup50).toBe(8000);
     expect(y.contribLimits.ira401kCatchup6063).toBe(11250);
     expect(y.contribLimits.iraTradLimit).toBe(7500);
-    expect(y.contribLimits.iraCatchup50).toBe(1000);
+    // $1,100, not the long-flat $1,000: SECURE 2.0 §108 made the age-50 IRA
+    // catch-up indexed (IRC §219(b)(5)(C)) and 2026 is the first indexed year
+    // (IRS Notice 2025-67). The workbook row had been left at $1,000.
+    expect(y.contribLimits.iraCatchup50).toBe(1100);
     expect(y.contribLimits.hsaLimitSelf).toBe(4400);
     expect(y.contribLimits.hsaLimitFamily).toBe(8750);
   });
@@ -161,7 +164,7 @@ describe("parseIrsUpdatesSheet — threshold sections", () => {
     expect(y.iraDeduct.coveredStartMfj).toBe(129000);
     // The contribution section still parses independently and is unchanged.
     expect(y.contribLimits.iraTradLimit).toBe(7500);
-    expect(y.contribLimits.iraCatchup50).toBe(1000);
+    expect(y.contribLimits.iraCatchup50).toBe(1100);
   });
 
   it("derives Saver's Credit single and HoH ceilings from the MFJ figures", () => {
