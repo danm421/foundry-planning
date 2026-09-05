@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { THEME_COOKIE, type Theme } from "@/lib/theme";
+import { DEFAULT_THEME, THEME_COOKIE, type Theme } from "@/lib/theme";
 
 // Inline Lucide-style outline icons — lucide-react is not a dependency in this
 // repo. strokeWidth 1.5, currentColor, per the foundry-design icon spec.
@@ -93,8 +93,10 @@ function isTheme(value: string | undefined): value is Theme {
 
 export function ThemeToggle() {
   // The server renders <html data-theme=…> from the cookie; sync to it on mount
-  // so the icon matches without a hydration mismatch (initial render is "dark").
-  const [theme, setTheme] = useState<Theme>("dark");
+  // so the icon matches without a hydration mismatch. Seed from DEFAULT_THEME so
+  // an advisor with no cookie — now the common case — sees the right icon on the
+  // first paint instead of one that swaps after hydration.
+  const [theme, setTheme] = useState<Theme>(DEFAULT_THEME);
 
   useEffect(() => {
     const current = document.documentElement.dataset.theme;
