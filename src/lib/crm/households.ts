@@ -8,7 +8,7 @@ import {
   plaidItems,
   scenarios,
 } from "@/db/schema";
-import { and, desc, eq, ilike, inArray, isNull, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, isNull, isNotNull, or, sql, type SQL } from "drizzle-orm";
 import { containsPattern } from "@/lib/like-pattern";
 import { requireOrgId } from "@/lib/db-helpers";
 import { requireCrmHouseholdAccess } from "./authz";
@@ -30,6 +30,43 @@ import type { ClientSortKey, SortDir } from "./sort";
 import { buildOrderBy } from "./sort-order";
 
 type CrmHouseholdStatus = "prospect" | "active" | "inactive" | "archived";
+
+/**
+ * Clients-list search: the household's own name, OR any of its contacts'
+ * names. Advisors look for the person they know, and a household is often
+ * labelled something ("The Smith Family Trust") that no contact name matches.
+ *
+ * The contact half is an *uncorrelated* subquery on purpose: the relational
+ * query builder aliases the outer table (`"crmHouseholds"`) and does not
+ * rewrite table references nested inside a subquery, so a correlated
+ * `exists (... where contact.household_id = crm_households.id)` fails at the
+ * database with "invalid reference to FROM-clause entry". The subquery is not
+ * firm-scoped and does not need to be: it only supplies candidate ids, and the
+ * caller's firm and advisor-visibility conditions still gate every row.
+ */
+function householdSearchCondition(search: string) {
+  const pattern = containsPattern(search);
+  const c = crmHouseholdContacts;
+  return or(
+    ilike(crmHouseholds.name, pattern),
+    inArray(
+      crmHouseholds.id,
+      db
+        .select({ householdId: c.householdId })
+        .from(c)
+        .where(
+          or(
+            // Matching the joined name covers a first name, a last name and
+            // "First Last" in one predicate: any substring of either part is
+            // a substring of the whole. The reversed form covers "Last First".
+            ilike(sql`${c.firstName} || ' ' || ${c.lastName}`, pattern),
+            ilike(sql`${c.lastName} || ' ' || ${c.firstName}`, pattern),
+            ilike(c.preferredName, pattern),
+          ),
+        ),
+    ),
+  );
+}
 
 export async function listCrmHouseholds(opts?: {
   search?: string;
@@ -54,7 +91,8 @@ export async function listCrmHouseholds(opts?: {
   const firmId = await requireOrgId();
   const limit = opts?.limit ?? 50;
   const offset = opts?.offset ?? 0;
-  const conditions = [eq(crmHouseholds.firmId, firmId)];
+  // `or()` is typed as possibly-undefined; `and()` ignores undefined members.
+  const conditions: (SQL | undefined)[] = [eq(crmHouseholds.firmId, firmId)];
   conditions.push(
     opts?.deleted
       ? isNotNull(crmHouseholds.deletedAt)
@@ -63,7 +101,7 @@ export async function listCrmHouseholds(opts?: {
   if (opts?.status) {
     conditions.push(eq(crmHouseholds.status, opts.status as CrmHouseholdStatus));
   }
-  if (opts?.search) conditions.push(ilike(crmHouseholds.name, containsPattern(opts.search)));
+  if (opts?.search) conditions.push(householdSearchCondition(opts.search));
   const { userId, orgRole } = await auth();
   let visible = await resolveVisibleAdvisorIds(userId ?? "", orgRole, firmId);
   visible = applyBookSwitcher(visible, orgRole, opts?.viewAsAdvisorId);
@@ -122,7 +160,7 @@ export async function listRecentlyOpenedHouseholds(opts: {
   if (views.length === 0) return [];
 
   const ids = views.map((v) => v.householdId);
-  const conditions = [
+  const conditions: (SQL | undefined)[] = [
     eq(crmHouseholds.firmId, firmId),
     inArray(crmHouseholds.id, ids),
     isNull(crmHouseholds.deletedAt),
@@ -131,7 +169,7 @@ export async function listRecentlyOpenedHouseholds(opts: {
     conditions.push(eq(crmHouseholds.status, opts.status as CrmHouseholdStatus));
   }
   if (opts.search) {
-    conditions.push(ilike(crmHouseholds.name, containsPattern(opts.search)));
+    conditions.push(householdSearchCondition(opts.search));
   }
   const { userId: callerId, orgRole } = await auth();
   let visible = await resolveVisibleAdvisorIds(callerId ?? "", orgRole, firmId);

@@ -108,11 +108,11 @@ export function ClientsFilterBar({ canManage }: { canManage: boolean }) {
         <>
           <input
             type="search"
-            placeholder="Search households by name"
+            placeholder="Search by household or contact name"
             defaultValue={searchParams.get("search") ?? ""}
             onChange={(e) => updateParam("search", e.target.value, true)}
             className={`${inputBaseClassName} min-w-0 flex-1 sm:max-w-md`}
-            aria-label="Search households"
+            aria-label="Search by household or contact name"
           />
           <select
             defaultValue={searchParams.get("status") ?? ""}
