@@ -531,6 +531,9 @@ export const incomeTaxTypeEnum = pgEnum("income_tax_type", [
   "qbi",
   "tax_exempt",
   "stcg",
+  // Form 1040 line 2a. Tax-free like `tax_exempt`, but added back for IRMAA
+  // MAGI and the IRC §86 Social Security test — see engine/tax-adjustments.ts.
+  "muni_interest",
 ]);
 
 export const taxWithheldModeEnum = pgEnum("tax_withheld_mode", [

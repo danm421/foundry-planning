@@ -1828,6 +1828,13 @@
       "when": 1788553632654,
       "tag": "0260_real_thundra",
       "breakpoints": true
+    },
+    {
+      "idx": 261,
+      "version": "7",
+      "when": 1788616928284,
+      "tag": "0261_steady_captain_britain",
+      "breakpoints": true
     }
   ]
 }
