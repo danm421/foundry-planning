@@ -26,7 +26,7 @@ export default function SignInPage() {
         Plans that hold up.
       </p>
 
-      <div className="mt-7 [&_.cl-rootBox]:w-full [&_.cl-cardBox]:w-full [&_.cl-card]:!bg-transparent [&_.cl-card]:!border-0 [&_.cl-card]:!p-0 [&_.cl-card]:!shadow-none [&_.cl-header]:hidden [&_.cl-footer]:!bg-transparent">
+      <div className="mt-7 [&_.cl-rootBox]:w-full [&_.cl-cardBox]:w-full [&_.cl-cardBox]:!bg-transparent [&_.cl-cardBox]:!border-0 [&_.cl-cardBox]:!shadow-none [&_.cl-card]:!bg-transparent [&_.cl-card]:!border-0 [&_.cl-card]:!p-0 [&_.cl-card]:!shadow-none [&_.cl-header]:hidden [&_.cl-footer]:!bg-transparent">
         <SignIn
           forceRedirectUrl={LANDING_PATH}
           appearance={{

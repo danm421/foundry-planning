@@ -21,7 +21,7 @@ export default async function BetaSignUpPage() {
       <p className="mt-2 text-sm text-[var(--color-ink-3)]">
         Your beta code is applied — finish creating your account to enter the app.
       </p>
-      <div className="mt-7 [&_.cl-rootBox]:w-full [&_.cl-cardBox]:w-full [&_.cl-card]:!bg-transparent [&_.cl-card]:!border-0 [&_.cl-card]:!p-0 [&_.cl-card]:!shadow-none [&_.cl-header]:hidden [&_.cl-footer]:!bg-transparent">
+      <div className="mt-7 [&_.cl-rootBox]:w-full [&_.cl-cardBox]:w-full [&_.cl-cardBox]:!bg-transparent [&_.cl-cardBox]:!border-0 [&_.cl-cardBox]:!shadow-none [&_.cl-card]:!bg-transparent [&_.cl-card]:!border-0 [&_.cl-card]:!p-0 [&_.cl-card]:!shadow-none [&_.cl-header]:hidden [&_.cl-footer]:!bg-transparent">
         <SignUp
           forceRedirectUrl="/beta/redeem"
           signInUrl="/sign-in"

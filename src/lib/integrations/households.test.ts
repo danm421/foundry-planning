@@ -62,7 +62,15 @@ describe("integration household links", () => {
     const matching = afterRows.filter((r) => r.clientId === clientId);
     expect(matching).toHaveLength(1);
     expect(matching[0].externalHouseholdId).toBe("hhB_updated");
-    expect(matching[0].updatedAt.getTime()).toBeGreaterThanOrEqual(beforeUpdatedAt!.getTime());
+    // Strictly greater, not >=: both writes stamp updated_at from the DB clock,
+    // so the 10ms delay above must show up.
+    //
+    // This assertion is a smoke check, NOT a guard. It only catches the
+    // mixed-clock bug when Postgres happens to be running more than 10ms ahead
+    // of this process; a mutation check (reinstating `new Date()`) still passed
+    // on a run where the skew was small. The real guarantee is in the source:
+    // both the insert default and the conflict update read now() server-side.
+    expect(matching[0].updatedAt.getTime()).toBeGreaterThan(beforeUpdatedAt!.getTime());
   });
 
   it("linkHousehold re-attributes linkedByUserId to the re-linking user", async () => {
