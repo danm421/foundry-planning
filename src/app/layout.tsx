@@ -2,10 +2,10 @@ import type { Metadata, Viewport } from "next";
 import { cookies } from "next/headers";
 import { ClerkProvider } from "@clerk/nextjs";
 import { dark } from "@clerk/themes";
-import { Inter, B612_Mono } from "next/font/google";
+import { Inter, B612_Mono, Archivo_Black, IBM_Plex_Mono } from "next/font/google";
 import { SentryUserContext } from "@/components/sentry-user-context";
 import { ToastProvider } from "@/components/toast";
-import { resolveTheme, THEME_COOKIE } from "@/lib/theme";
+import { isDarkTheme, resolveTheme, THEME_COOKIE } from "@/lib/theme";
 import { colors } from "@/brand";
 import "./globals.css";
 
@@ -19,6 +19,20 @@ const b612Mono = B612_Mono({
   variable: "--font-b612",
   subsets: ["latin"],
   weight: ["400", "700"],
+});
+
+// Industrial Dark faces. Both resolve through --font-display / --font-mono in
+// globals.css, so they are inert on the dark + light themes.
+const archivoBlack = Archivo_Black({
+  variable: "--font-archivo",
+  subsets: ["latin"],
+  weight: ["400"],
+});
+
+const plexMono = IBM_Plex_Mono({
+  variable: "--font-plex-mono",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
 });
 
 export const metadata: Metadata = {
@@ -60,7 +74,7 @@ export default async function RootLayout({
         },
       }}
       appearance={{
-        theme: theme === "dark" ? dark : undefined,
+        theme: isDarkTheme(theme) ? dark : undefined,
         variables: {
           colorBackground: "var(--color-card)",
           colorForeground: "var(--color-ink)",
@@ -78,10 +92,19 @@ export default async function RootLayout({
       <html
         lang="en"
         data-theme={theme}
-        className={`${inter.variable} ${b612Mono.variable} h-full antialiased ${theme}`}
+        className={`${inter.variable} ${b612Mono.variable} ${archivoBlack.variable} ${plexMono.variable} h-full antialiased ${theme}`}
         suppressHydrationWarning
       >
         <body className="min-h-full flex flex-col">
+          {/* Skip link — first tab stop on every page (WCAG 2.4.1). Visually
+              hidden until it has keyboard focus; lands on the route's
+              <main id="main">. */}
+          <a
+            href="#main"
+            className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-md focus:border focus:border-hair-2 focus:bg-paper focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-ink focus:outline-none focus:ring-2 focus:ring-accent"
+          >
+            Skip to content
+          </a>
           <SentryUserContext />
           <ToastProvider>{children}</ToastProvider>
         </body>

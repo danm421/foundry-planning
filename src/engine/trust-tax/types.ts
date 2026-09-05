@@ -42,6 +42,24 @@ export type TrustWarning =
   | { code: "entity_missing_checking"; entityId: string; year: number }
   | { code: "trust_note_cash_shortfall"; entityId: string; year: number; shortfall: number }
   | {
+      /** A capped Roth conversion was sized to its ceiling, but the household
+       *  still finished the year past that ceiling because another conversion
+       *  solved against the same year's income took the same headroom. The
+       *  conversion is not wrong; the CAP's promise is the thing that broke,
+       *  so the engine says so rather than reporting a cap it did not deliver.
+       *  See the `it.todo` in `roth-irmaa-cap.test.ts` for the real fix, which
+       *  is blocked on how one household headroom should be split. */
+      code: "irmaa_cap_not_enforced";
+      year: number;
+      conversionId: string;
+      /** The tier the advisor asked the conversion to stay within. */
+      tier: number;
+      /** The MAGI ceiling that tier resolved to for this year's premium year. */
+      ceiling: number;
+      /** What the household's MAGI actually came out at. Always > `ceiling`. */
+      magi: number;
+    }
+  | {
       code: "engine_iteration_limit";
       year: number;
       residual: number;

@@ -39,10 +39,16 @@ export const ROUNDING_STEPS: Record<string, number> = {
   "contribLimits.ira401kCatchup50": 500,
   "contribLimits.ira401kCatchup6063": 500,
   "contribLimits.iraTradLimit": 500,
-  "contribLimits.iraCatchup50": 500,
   "contribLimits.simpleLimitRegular": 500,
   "contribLimits.simpleCatchup50": 500,
   "contribLimits.hsaCatchup55": 500,  // statutory $1000, but use $500 if it ever indexes
+
+  // IRA catch-up: $100. SECURE 2.0 Act §108 made the age-50 IRA catch-up indexed
+  // (IRC §219(b)(5)(C)), in $100 increments — first applied for 2026 at $1,100.
+  // It must NOT share the $500 step above: flooring 1,100 × inflation to $500
+  // lands on $1,000, i.e. below the 2026 base, so every projected year would
+  // silently regress the catch-up back to its pre-indexing value.
+  "contribLimits.iraCatchup50": 100,
 
   // SS wage base: $300 per SSA formula
   ssWageBase: 300,

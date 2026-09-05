@@ -66,6 +66,7 @@ export function toRothConversionInitialData(
     endYearRef: rc.endYearRef ?? null,
     indexingRate: String(rc.indexingRate),
     inflationStartYear: rc.inflationStartYear ?? null,
+    irmaaCapTier: rc.irmaaCapTier ?? null,
   };
 }
 

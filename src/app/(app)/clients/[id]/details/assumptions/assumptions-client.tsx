@@ -10,6 +10,7 @@ import WithdrawalStrategySection from "@/components/withdrawal-strategy-section"
 import type { WithdrawalAccount, WithdrawalStrategy } from "@/components/withdrawal-strategy-section";
 import type { ClientMilestones } from "@/lib/milestones";
 import { DeductionsClient } from "./deductions-client";
+import { TaxAdjustmentsList } from "@/components/tax-adjustments-list";
 import AccountGroupsTab from "./account-groups-tab";
 import type {
   DerivedRow,
@@ -20,6 +21,7 @@ import type {
 import type { LiquidAccount, AssetAccount } from "@/components/account-groups/types";
 import { type RiskLevel } from "@/lib/risk-levels";
 import type { FilingStatus } from "@/lib/tax/types";
+import type { TaxAdjustmentRow } from "@/components/forms/add-tax-adjustment-form";
 
 export interface DeductionsTabData {
   derivedRows: DerivedRow[];
@@ -115,6 +117,7 @@ interface AssumptionsClientProps {
   resolvedInflationRate: number;
   hasInflationAssetClass: boolean;
   deductionsData: DeductionsTabData;
+  taxAdjustmentRows: TaxAdjustmentRow[];
   liquidAccounts: LiquidAccount[];
   allAccounts: AssetAccount[];
 }
@@ -133,6 +136,7 @@ export default function AssumptionsClient({
   resolvedInflationRate,
   hasInflationAssetClass,
   deductionsData,
+  taxAdjustmentRows,
   liquidAccounts,
   allAccounts,
 }: AssumptionsClientProps) {
@@ -240,6 +244,16 @@ export default function AssumptionsClient({
             itemizedRows={deductionsData.itemizedRows}
             currentYear={deductionsData.currentYear}
             saltCap={deductionsData.saltCap}
+            milestones={milestones}
+            clientFirstName={clientFirstName}
+            spouseFirstName={spouseFirstName}
+          />
+        )}
+        {activeTab === "tax-adjustments" && (
+          <TaxAdjustmentsList
+            clientId={clientId}
+            rows={taxAdjustmentRows}
+            currentYear={deductionsData.currentYear}
             milestones={milestones}
             clientFirstName={clientFirstName}
             spouseFirstName={spouseFirstName}

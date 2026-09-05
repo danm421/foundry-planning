@@ -32,7 +32,7 @@ export function chartSeriesColors(n: number, theme: Theme = "dark"): string[] {
   const palette = theme === "light" ? dataLight : data;
   const named = ADJACENCY.map((key) => palette[key]);
   if (n <= named.length) return named.slice(0, n);
-  return [...named, ...dataScale(n - named.length, theme)];
+  return [...named, ...dataScale(n - named.length, theme === "light" ? "light" : "dark")];
 }
 
 /** The Deep Jewel data palette (nine named hues) for a theme. */

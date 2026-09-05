@@ -26,7 +26,7 @@ export default async function CheckoutSuccessPage({
           This page only makes sense after a Stripe Checkout. Head back to{" "}
           <a
             href="https://foundryplanning.com/pricing"
-            className="text-accent hover:underline"
+            className="text-accent underline underline-offset-4 hover:text-accent-ink"
           >
             pricing
           </a>{" "}

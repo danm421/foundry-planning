@@ -73,8 +73,8 @@ export function CrmTaskFieldRow<T>({
   }
 
   return (
-    <div className="flex items-start gap-3 border-b border-hair px-1 py-2.5 last:border-b-0">
-      <div className="w-32 shrink-0 pt-0.5 text-[12px] font-medium uppercase tracking-wide text-ink-3">
+    <div className="flex items-start gap-3 border-b border-hair px-1 py-[11px] last:border-b-0">
+      <div className="w-32 shrink-0 pt-0.5 font-mono text-[10.5px] font-semibold uppercase tracking-[0.14em] text-ink-3">
         {label}
       </div>
       <div className="min-w-0 flex-1">

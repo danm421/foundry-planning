@@ -88,6 +88,7 @@ const NUMERIC_FIELDS_BY_KIND: Partial<Record<TargetKind, readonly string[]>> = {
     "employerMatchAmount",
   ],
   client_deduction: ["annualAmount", "growthRate"],
+  client_tax_adjustment: ["annualAmount", "growthRate", "withheldValue"],
   roth_conversion: ["fixedAmount", "fillUpBracket", "indexingRate"],
   asset_transaction: ["fractionSold"],
   // Scenario reinvestment payloads are RAW-shaped (the engine `Reinvestment`
@@ -157,6 +158,7 @@ export const TARGET_KIND_TO_FIELD: Record<TargetKind, keyof ClientData | null> =
   asset_transaction: "assetTransactions",
   roth_conversion: "rothConversions",
   client_deduction: "deductions",
+  client_tax_adjustment: "taxAdjustments",
   withdrawal_strategy: "withdrawalStrategy",
   family_member: "familyMembers",
   external_beneficiary: "externalBeneficiaries",

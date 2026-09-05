@@ -35,6 +35,8 @@ export const SPEC: Record<TargetKind, KindSpec> = {
     whyAdd: "Client profile detail added.", whyRemove: "Client profile detail removed.", whyEdit: "Updates a core planning assumption." },
   client_deduction: { area: "Taxes", noun: "deduction", whatMode: "name",
     whyAdd: "A tax deduction is added.", whyRemove: "This deduction is removed.", whyEdit: "Adjusts this deduction." },
+  client_tax_adjustment: { area: "Taxes", noun: "tax adjustment", whatMode: "name",
+    whyAdd: "Income that already happened is added to the tax calculation.", whyRemove: "This tax adjustment is removed.", whyEdit: "Adjusts this tax adjustment." },
   entity: { area: "Estate", noun: "trust / entity", whatMode: "name",
     whyAdd: "A trust or entity is created to hold assets.", whyRemove: "This trust or entity is removed.", whyEdit: "Adjusts this trust or entity." },
   expense: { area: "Expenses", noun: "expense", whatMode: "name",

@@ -193,7 +193,7 @@ export default function SuccessPolling({ sessionId }: { sessionId: string }) {
         <p className="mt-8 text-xs text-ink-3">
           Didn&rsquo;t get the email after a few minutes? Email{" "}
           <a
-            className="text-accent hover:underline"
+            className="text-accent underline underline-offset-4 hover:text-accent-ink"
             href="mailto:support@foundryplanning.com"
           >
             support@foundryplanning.com
@@ -234,7 +234,7 @@ export default function SuccessPolling({ sessionId }: { sessionId: string }) {
           </button>
           <p className="mt-8 text-xs text-ink-3">
             Still nothing after a few minutes? Email{" "}
-            <a className="text-accent hover:underline" href={`mailto:${SUPPORT_EMAIL}`}>
+            <a className="text-accent underline underline-offset-4 hover:text-accent-ink" href={`mailto:${SUPPORT_EMAIL}`}>
               {SUPPORT_EMAIL}
             </a>{" "}
             and we will finish it for you.
@@ -251,7 +251,7 @@ export default function SuccessPolling({ sessionId }: { sessionId: string }) {
         <p className="mt-4 text-ink-2">
           Your sign-in invite will arrive within a few minutes. If you don&rsquo;t
           see it, email{" "}
-          <a className="text-accent hover:underline" href={`mailto:${SUPPORT_EMAIL}`}>
+          <a className="text-accent underline underline-offset-4 hover:text-accent-ink" href={`mailto:${SUPPORT_EMAIL}`}>
             {SUPPORT_EMAIL}
           </a>{" "}
           with your purchase email.
@@ -269,7 +269,7 @@ export default function SuccessPolling({ sessionId }: { sessionId: string }) {
         We couldn&rsquo;t find your checkout session. If you completed a purchase,
         email{" "}
         <a
-          className="text-accent hover:underline"
+          className="text-accent underline underline-offset-4 hover:text-accent-ink"
           href="mailto:support@foundryplanning.com"
         >
           support@foundryplanning.com

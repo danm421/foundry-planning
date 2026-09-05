@@ -20,7 +20,7 @@ export default function CheckoutUnavailablePage() {
       <p className="mt-4 text-ink-2">
         Nothing was charged. Try again in a moment, or email{" "}
         <a
-          className="text-accent hover:text-accent-ink"
+          className="text-accent underline underline-offset-4 hover:text-accent-ink"
           href="mailto:support@foundryplanning.com"
         >
           support@foundryplanning.com
@@ -29,7 +29,7 @@ export default function CheckoutUnavailablePage() {
       </p>
       <p className="mt-8">
         <a
-          className="text-sm text-accent hover:text-accent-ink"
+          className="text-sm text-accent underline underline-offset-4 hover:text-accent-ink"
           href="https://foundryplanning.com/pricing"
         >
           Back to pricing

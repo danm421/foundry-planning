@@ -12,6 +12,7 @@ import {
   beneficiaryDesignations,
   clientCmaOverrides,
   clientDeductions,
+  clientTaxAdjustments,
   clients,
   crmHouseholdContacts,
   entities,
@@ -387,6 +388,32 @@ export const loadClientDataWithContext = cache(
       growthRate: parseFloat(d.growthRate),
       startYear: d.startYear,
       endYear: d.endYear,
+    }));
+
+    // Tax-only income adjustments for the same scenario — advisor-entered
+    // income that already happened, feeding the tax engine but never the cash
+    // flow. Year refs re-resolve through resolvedStart/resolvedEnd exactly like
+    // incomes/expenses/savings/withdrawals above, since the stored
+    // startYear/endYear can go stale when retirement age changes after the row
+    // was saved.
+    const taxAdjustmentRows = await db
+      .select()
+      .from(clientTaxAdjustments)
+      .where(and(
+        eq(clientTaxAdjustments.clientId, id),
+        eq(clientTaxAdjustments.scenarioId, scenario.id),
+      ));
+
+    const parsedTaxAdjustments = taxAdjustmentRows.map((a) => ({
+      id: a.id,
+      taxType: a.taxType,
+      name: a.name,
+      annualAmount: parseFloat(a.annualAmount),
+      growthRate: parseFloat(a.growthRate),
+      startYear: resolvedStart(a.startYearRef, a.startYear),
+      endYear: resolvedEnd(a.endYearRef, a.endYear),
+      withheldMode: a.withheldMode,
+      withheldValue: parseFloat(a.withheldValue),
     }));
 
     // Load account-level asset allocations (for asset_mix growth source)
@@ -1355,6 +1382,7 @@ export const loadClientDataWithContext = cache(
         conversionType: c.conversionType,
         fixedAmount: parseFloat(c.fixedAmount),
         fillUpBracket: c.fillUpBracket != null ? parseFloat(c.fillUpBracket) : undefined,
+        irmaaCapTier: c.irmaaCapTier ?? null,
         startYear: resolvedStart(c.startYearRef ?? null, c.startYear),
         endYear: resolvedConvEnd,
         indexingRate: parseFloat(c.indexingRate),
@@ -1660,6 +1688,7 @@ export const loadClientDataWithContext = cache(
       externalBeneficiaries: mappedExternalBeneficiaries,
       taxYearRows: parsedTaxRows,
       deductions: parsedDeductions,
+      taxAdjustments: parsedTaxAdjustments,
       transfers: mappedTransfers,
       reinvestments: mappedReinvestments,
       rothConversions: mappedRothConversions,

@@ -111,7 +111,7 @@ describe("buildTaxBracketFederalDrillData — Roth conversion years", () => {
   function yearsConvertingIn2036() {
     const years = makeTaxYears();
     years.find((y) => y.year === 2036)!.rothConversions = [
-      { id: "rc1", name: "Fill the 12% bracket", gross: 40_000, taxable: 40_000 },
+      { id: "rc1", name: "Fill the 12% bracket", gross: 40_000, taxable: 40_000, requested: 40_000, limitedBy: null },
     ];
     return years;
   }

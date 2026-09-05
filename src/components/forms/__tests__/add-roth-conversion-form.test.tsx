@@ -72,6 +72,109 @@ describe("AddRothConversionForm — base mode", () => {
   });
 });
 
+describe("AddRothConversionForm — IRMAA cap", () => {
+  it("submits irmaaCapTier as null when 'No IRMAA cap' is selected", async () => {
+    render(
+      <AddRothConversionForm
+        clientId="client-123"
+        accounts={ACCOUNTS}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />,
+    );
+    const amountInput = screen.getByLabelText(/Fixed Amount/i);
+    fireEvent.change(amountInput, { target: { value: "10000" } });
+
+    await fillFormAndSubmit();
+
+    const [, init] = fetchMock.mock.calls[0];
+    const body = JSON.parse(init.body);
+    expect(body.irmaaCapTier).toBeNull();
+  });
+
+  it("submits the selected tier as a number", async () => {
+    render(
+      <AddRothConversionForm
+        clientId="client-123"
+        accounts={ACCOUNTS}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />,
+    );
+    const amountInput = screen.getByLabelText(/Fixed Amount/i);
+    fireEvent.change(amountInput, { target: { value: "10000" } });
+    // Choose "Stay surcharge-free" — tier 0 must survive: a truthiness check
+    // (`irmaaCapTier || null`, `if (irmaaCapTier)`) would silently drop it.
+    fireEvent.change(screen.getByLabelText(/IRMAA Cap/i), { target: { value: "0" } });
+
+    await fillFormAndSubmit();
+
+    const [, init] = fetchMock.mock.calls[0];
+    const body = JSON.parse(init.body);
+    expect(body.irmaaCapTier).toBe(0);
+  });
+
+  it("shows the cap control for every conversion type", async () => {
+    render(
+      <AddRothConversionForm
+        clientId="client-123"
+        accounts={ACCOUNTS}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />,
+    );
+    for (const label of [
+      "Fixed Amount",
+      "Full Account Value",
+      "Deplete Over Period",
+      "Fill Up Tax Bracket",
+    ]) {
+      fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${label}`) }));
+      expect(screen.getByLabelText(/IRMAA Cap/i)).toBeInTheDocument();
+    }
+  });
+
+  it("carries an existing cap through an edit that doesn't touch it (round trip)", async () => {
+    render(
+      <AddRothConversionForm
+        clientId="client-123"
+        accounts={ACCOUNTS}
+        initialData={{
+          id: "rc-1",
+          name: "Existing Conv",
+          destinationAccountId: "acc-roth",
+          sourceAccountIds: ["acc-trad"],
+          conversionType: "fixed_amount",
+          fixedAmount: "10000",
+          fillUpBracket: null,
+          startYear: 2030,
+          startYearRef: null,
+          endYear: 2034,
+          endYearRef: null,
+          indexingRate: "0",
+          inflationStartYear: null,
+          irmaaCapTier: 2,
+        }}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />,
+    );
+
+    // Edit an unrelated field only — the IRMAA cap select is never touched.
+    fireEvent.change(screen.getByPlaceholderText("e.g., Roth Conversion 1"), {
+      target: { value: "Renamed Conv" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/clients/client-123/roth-conversions");
+    expect(init.method).toBe("PUT");
+    const body = JSON.parse(init.body);
+    expect(body.irmaaCapTier).toBe(2);
+  });
+});
+
 describe("AddRothConversionForm — source owner filtering", () => {
   const OWNED_ACCOUNTS = [
     { id: "roth-client", name: "Client Roth", category: "retirement", subType: "roth_ira", ownerFamilyMemberId: "fm-client" },
@@ -169,6 +272,7 @@ describe("AddRothConversionForm — scenario mode", () => {
           endYearRef: null,
           indexingRate: "0",
           inflationStartYear: null,
+          irmaaCapTier: null,
         }}
         onClose={() => {}}
         onSaved={() => {}}

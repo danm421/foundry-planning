@@ -40,6 +40,62 @@ describe("resolveSourceLabel", () => {
     expect(resolveSourceLabel("roth_conversion:cv_4", ctx)).toBe("Roth Conversion");
   });
 
+  it("names the IRMAA tier that limited a conversion, reading it off the ROW", () => {
+    // The reason is a per-YEAR outcome and `ctx` is built once for every year,
+    // so it has to arrive with the row. Same ctx, two different years' rows →
+    // two different labels; a ctx-based lookup could only ever produce one.
+    const namedCtx = { ...ctx, rothConversionNames: { cv_4: "Ladder" } };
+    expect(
+      resolveSourceLabel("roth_conversion:cv_4", namedCtx, {
+        type: "ordinary_income",
+        amount: 0,
+        irmaaCapTier: 2,
+      }),
+    ).toBe("Ladder — Roth Conversion (limited by IRMAA Tier 2)");
+    expect(
+      resolveSourceLabel("roth_conversion:cv_4", namedCtx, {
+        type: "ordinary_income",
+        amount: 90_000,
+      }),
+      "a year the cap did not bind keeps the plain label",
+    ).toBe("Ladder — Roth Conversion");
+  });
+
+  it("says the cap was EXCEEDED rather than 'limited by' when it did not hold", () => {
+    // A capped conversion sharing a year with another conversion that solves
+    // against the same income is sized to the ceiling and STILL finishes above
+    // it. "limited by IRMAA Tier 2" would report a cap the engine did not
+    // deliver, which is the one thing this label must never do.
+    expect(
+      resolveSourceLabel("roth_conversion:cv_4", ctx, {
+        type: "ordinary_income",
+        amount: 120_000,
+        irmaaCapTier: 2,
+        irmaaCapExceeded: true,
+      }),
+    ).toBe("Roth Conversion (IRMAA Tier 2 cap exceeded)");
+    // The flag is meaningless without a tier and must not invent one.
+    expect(
+      resolveSourceLabel("roth_conversion:cv_4", ctx, {
+        type: "ordinary_income",
+        amount: 120_000,
+        irmaaCapExceeded: true,
+      }),
+    ).toBe("Roth Conversion");
+  });
+
+  it("labels tier 0 — the surcharge-free band — rather than treating it as absent", () => {
+    // `0` is the most common cap an advisor sets and the one a truthiness test
+    // would silently drop.
+    expect(
+      resolveSourceLabel("roth_conversion:cv_4", ctx, {
+        type: "ordinary_income",
+        amount: 0,
+        irmaaCapTier: 0,
+      }),
+    ).toBe("Roth Conversion (limited by IRMAA Tier 0)");
+  });
+
   it("handles annuity:<acctId> and its tax-free twin", () => {
     // Without a dedicated arm these fall through to the generic `split(":")`
     // path, which reads the PREFIX as the account id — so the drill-down prints
@@ -93,6 +149,14 @@ describe("resolveSourceLabel", () => {
 
   it("falls back to the raw id for unknown shapes", () => {
     expect(resolveSourceLabel("mystery_thing", ctx)).toBe("mystery_thing");
+  });
+
+  it("resolves tax_adjustment:<uuid> to 'Tax Adjustment' instead of splitting the uuid as a compound kind", () => {
+    // Without a dedicated arm this falls into the generic `split(":")` path,
+    // which reads "tax_adjustment" as an account id and uppercases the UUID
+    // half as a "kind" — printing "tax_adjustment — <UUID>" at the advisor.
+    const uuid = "3f1b0c2a-0000-4000-8000-000000000099";
+    expect(resolveSourceLabel(`tax_adjustment:${uuid}`, ctx)).toBe("Tax Adjustment");
   });
 
   it("resolves equity-vest:<planId> to '<ticker> RSU — vest'", () => {

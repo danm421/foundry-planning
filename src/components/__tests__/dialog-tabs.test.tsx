@@ -26,7 +26,9 @@ describe("DialogTabs", () => {
     render(<DialogTabs tabs={tabs} activeTab="details" onTabChange={() => {}} />);
     const active = screen.getByRole("button", { name: "Details" });
     const inactive = screen.getByRole("button", { name: "Savings" });
-    expect(active.className).toContain("text-accent-ink");
+    // The accent lives on the underline only; the label goes to full ink. State
+    // is never signalled by the accent alone.
+    expect(active.className).toContain("text-ink");
     expect(active.className).toContain("border-accent");
     expect(inactive.className).toContain("text-ink-3");
     expect(inactive.className).not.toContain("border-accent");

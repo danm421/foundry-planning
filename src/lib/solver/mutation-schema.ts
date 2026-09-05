@@ -49,6 +49,7 @@ const ROTH_CONVERSION_VALUE = z
     ]),
     fixedAmount: MONEY,
     fillUpBracket: z.number().min(0).max(1).optional(),
+    irmaaCapTier: z.number().int().min(0).max(4).nullable().optional(),
     startYear: YEAR,
     endYear: YEAR.optional(),
     indexingRate: RATE,

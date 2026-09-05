@@ -7,7 +7,15 @@ import type { HouseholdRelationshipView } from "@/lib/crm/household-relationship
 import { CrmHouseholdEditForm } from "@/components/crm-household-edit-form";
 import { deriveHouseholdNameFromContacts } from "@/lib/crm/household-name";
 import { USPS_STATE_NAMES, isUSPSStateCode } from "@/lib/usps-states";
-import { chipClass } from "@/components/crm-section-primitives";
+import {
+  DetailList,
+  DetailRow,
+  Missing,
+  SectionLabel,
+  chipClass,
+  panelClass,
+} from "@/components/crm-section-primitives";
+import { Household360 } from "./insights/household-360";
 
 type Household = NonNullable<Awaited<ReturnType<typeof getCrmHousehold>>>;
 
@@ -35,80 +43,98 @@ export function OverviewTab({
   household,
   advisorName,
   relationships,
+  planningClientId,
 }: {
   household: Household;
   advisorName: string;
   relationships: HouseholdRelationshipView[];
+  /** Linked planning client. Null households have no 360 to show. */
+  planningClientId: string | null;
 }) {
   const [editOpen, setEditOpen] = useState(false);
 
   return (
-    <div className="space-y-6">
-      <section className="rounded-[var(--radius)] border border-hair bg-card p-5">
-        <div className="mb-4 flex items-baseline gap-3">
-          <h2 className="text-[11px] font-semibold uppercase tracking-[1.2px] text-ink-3">
-            Identity
-          </h2>
+    <div className="flex flex-col gap-8">
+      <section className={`${panelClass} p-5`}>
+        <SectionLabel segments={["Identity", "Household record"]}>
           <button
             type="button"
             onClick={() => setEditOpen(true)}
-            className="text-[11px] font-medium uppercase tracking-[1.2px] text-ink-3 transition-colors hover:text-accent"
+            className="font-mono text-[10.5px] font-semibold uppercase tracking-[0.14em] text-ink-3 transition-colors duration-150 hover:text-accent"
           >
             Edit
           </button>
+        </SectionLabel>
+
+        <div className="mt-3 grid gap-x-8 [grid-template-columns:repeat(auto-fit,minmax(300px,1fr))]">
+          <DetailList>
+            <DetailRow label="Name">{household.name}</DetailRow>
+            <DetailRow label="Status">
+              {STATUS_LABELS[household.status] ?? household.status}
+            </DetailRow>
+            <DetailRow label="State">
+              {isUSPSStateCode(household.state) ? (
+                USPS_STATE_NAMES[household.state]
+              ) : (
+                <Missing />
+              )}
+            </DetailRow>
+          </DetailList>
+
+          <DetailList>
+            <DetailRow label="Advisor">{advisorName}</DetailRow>
+            <DetailRow label="Created">
+              <span className="tabular">{fmtTimestamp(household.createdAt)}</span>
+            </DetailRow>
+            <DetailRow label="Updated">
+              <span className="tabular">{fmtTimestamp(household.updatedAt)}</span>
+            </DetailRow>
+          </DetailList>
         </div>
 
-        <dl className="grid grid-cols-1 gap-y-4 sm:grid-cols-[96px_1fr] sm:gap-x-4">
-          <dt className="text-[12px] font-medium text-ink-3">Name</dt>
-          <dd className="text-[14px] text-ink">{household.name}</dd>
-
-          <dt className="text-[12px] font-medium text-ink-3">Status</dt>
-          <dd className="text-[14px] text-ink">
-            {STATUS_LABELS[household.status] ?? household.status}
-          </dd>
-
-          <dt className="text-[12px] font-medium text-ink-3">State</dt>
-          <dd className="text-[14px] text-ink-2">
-            {isUSPSStateCode(household.state)
-              ? USPS_STATE_NAMES[household.state]
-              : <span className="text-ink-3">—</span>}
-          </dd>
-
-          <dt className="text-[12px] font-medium text-ink-3">Advisor</dt>
-          <dd className="text-[14px] text-ink-2">{advisorName}</dd>
-
-          <dt className="text-[12px] font-medium text-ink-3">Notes</dt>
-          <dd className="whitespace-pre-wrap text-[14px] text-ink-2">
-            {household.notes?.trim() ? household.notes : <span className="text-ink-3">—</span>}
-          </dd>
-        </dl>
+        <div className="border-t border-hair">
+          <DetailList>
+            <DetailRow label="Notes">
+              {household.notes?.trim() ? (
+                <span className="whitespace-pre-wrap text-ink-2">{household.notes}</span>
+              ) : (
+                <Missing />
+              )}
+            </DetailRow>
+          </DetailList>
+        </div>
       </section>
 
-      <section className="rounded-[var(--radius)] border border-hair bg-card p-5">
-        <h2 className="mb-4 text-[11px] font-semibold uppercase tracking-[1.2px] text-ink-3">
-          Timestamps
-        </h2>
-        <dl className="grid grid-cols-1 gap-y-3 sm:grid-cols-[96px_1fr] sm:gap-x-4">
-          <dt className="text-[12px] font-medium text-ink-3">Created</dt>
-          <dd className="text-[14px] text-ink-2">{fmtTimestamp(household.createdAt)}</dd>
-
-          <dt className="text-[12px] font-medium text-ink-3">Last updated</dt>
-          <dd className="text-[14px] text-ink-2">{fmtTimestamp(household.updatedAt)}</dd>
-        </dl>
-      </section>
+      {planningClientId ? (
+        <Household360 clientId={planningClientId} />
+      ) : (
+        <section className="flex flex-col gap-4">
+          <SectionLabel segments={["360", "Client snapshot"]} />
+          <div className="rounded-[var(--radius)] border border-dashed border-hair-2 px-6 py-8 text-center">
+            <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-ink-3">
+              No planning client linked — start planning to unlock the 360
+            </p>
+          </div>
+        </section>
+      )}
 
       {relationships.length > 0 && (
-        <section className="rounded-[var(--radius)] border border-hair bg-card p-5">
-          <h2 className="mb-4 text-[11px] font-semibold uppercase tracking-[1.2px] text-ink-3">
-            Related households
-          </h2>
-          <ul className="space-y-2.5">
-            {relationships.map((r) => (
-              <li key={r.id} className="flex flex-wrap items-center gap-2">
+        <section className={`${panelClass} p-5`}>
+          <SectionLabel
+            segments={["Related", `${relationships.length} households`]}
+          />
+          <ul className="mt-3">
+            {relationships.map((r, i) => (
+              <li
+                key={r.id}
+                className={`flex flex-wrap items-center gap-2.5 py-3 ${
+                  i === relationships.length - 1 ? "" : "border-b border-hair"
+                }`}
+              >
                 <span className={chipClass}>{r.label}</span>
                 <Link
                   href={`/crm/households/${r.counterpart.id}`}
-                  className="text-[14px] font-medium text-ink transition-colors hover:text-accent-ink"
+                  className="text-[13.5px] font-medium text-ink transition-colors duration-150 hover:text-accent"
                 >
                   {r.counterpart.name}
                 </Link>

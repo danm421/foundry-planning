@@ -192,7 +192,12 @@ export default function RecurringsView({
         detailEl &&
         createPortal(
           <div className="max-lg:fixed max-lg:inset-0 max-lg:z-40 max-lg:flex max-lg:flex-col max-lg:justify-end">
-            <div
+            {/* Backdrop: a button so the dismiss is a real control; out of the
+                tab order because the panel carries its own Close button. */}
+            <button
+              type="button"
+              tabIndex={-1}
+              aria-label="Close details"
               onClick={() => setSelectedId(null)}
               className="absolute inset-0 -z-10 bg-black/50 lg:hidden"
             />

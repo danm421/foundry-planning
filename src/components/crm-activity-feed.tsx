@@ -5,6 +5,7 @@ import { AlertCircleIcon } from "@/components/icons";
 import type { FieldChange } from "@/lib/audit";
 import { humanizeFieldName } from "@/lib/audit/labels";
 import UpdateRowBody from "@/components/activity/update-row-body";
+import { addGhostClass, chipClass } from "@/components/crm-section-primitives";
 
 type ActivityKind =
   | "note"
@@ -42,6 +43,10 @@ const KIND_LABELS: Record<ActivityKind, string> = {
   planning_link: "Planning",
   relationship_change: "Related household",
 };
+
+/** Kinds an advisor logged by hand. These take the accent-bordered icon tile;
+ *  everything else is a system row and stays neutral. */
+const USER_LOGGED_KINDS = new Set<ActivityKind>(["note", "call", "meeting", "email"]);
 
 const PAGE_SIZE = 50;
 
@@ -224,7 +229,11 @@ export function CrmActivityFeed({ householdId, handleRef }: Props) {
   }
 
   if (loading && rows.length === 0) {
-    return <div className="text-[13px] text-ink-3">Loading activity…</div>;
+    return (
+      <div className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-ink-3">
+        Loading activity…
+      </div>
+    );
   }
 
   if (error && rows.length === 0) {
@@ -241,10 +250,12 @@ export function CrmActivityFeed({ householdId, handleRef }: Props) {
 
   if (rows.length === 0) {
     return (
-      <div className="rounded-[var(--radius)] border border-dashed border-hair bg-card-2 px-6 py-10 text-center">
-        <p className="text-[13px] text-ink-3">No activity yet.</p>
-        <p className="mt-1 text-[12px] text-ink-3">
-          Use the buttons above to log a call, note, meeting, or email.
+      <div className="rounded-[var(--radius)] border border-dashed border-hair-2 px-6 py-10 text-center">
+        <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-ink-2">
+          No activity yet.
+        </p>
+        <p className="mt-2 text-[13px] text-ink-3">
+          Use the Log panel to record a call, note, meeting, or email.
         </p>
       </div>
     );
@@ -256,9 +267,15 @@ export function CrmActivityFeed({ householdId, handleRef }: Props) {
         {rows.map((row) => (
           <li
             key={row.id}
-            className="flex items-start gap-3 rounded-[var(--radius)] border border-hair bg-card p-3.5 transition-colors hover:border-hair-2"
+            className="flex items-start gap-3 rounded-[var(--radius)] border border-hair-2 bg-card p-4 transition-colors duration-150 hover:border-hair-3 hover:bg-card-hover"
           >
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-accent/30 bg-accent/10 text-accent">
+            <div
+              className={`flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[var(--radius-sm)] border ${
+                USER_LOGGED_KINDS.has(row.kind)
+                  ? "border-accent-deep text-accent"
+                  : "border-hair-2 text-ink-2"
+              }`}
+            >
               <KindIcon kind={row.kind} />
             </div>
             <div className="min-w-0 flex-1">
@@ -269,13 +286,13 @@ export function CrmActivityFeed({ householdId, handleRef }: Props) {
                 <time
                   dateTime={row.occurredAt}
                   title={new Date(row.occurredAt).toLocaleString()}
-                  className="shrink-0 text-[11.5px] tabular-nums text-ink-3"
+                  className="tabular shrink-0 text-[11px] text-ink-3"
                 >
                   {relativeTime(row.occurredAt)}
                 </time>
               </div>
               {row.body && (
-                <p className="mt-1 whitespace-pre-wrap text-[12.5px] leading-relaxed text-ink-2">
+                <p className="mt-1.5 whitespace-pre-wrap text-[13px] leading-relaxed text-ink-2">
                   {row.body}
                 </p>
               )}
@@ -286,14 +303,12 @@ export function CrmActivityFeed({ householdId, handleRef }: Props) {
               ) : Array.isArray(row.metadata?.fields) && row.metadata.fields.length ? (
                 // Legacy rows (pre-diff) stored field names only — never values,
                 // so they cannot be backfilled into a before → after view.
-                <p className="mt-1 text-[12.5px] leading-relaxed text-ink-2">
+                <p className="mt-1.5 text-[13px] leading-relaxed text-ink-2">
                   Changed: {row.metadata.fields.map(humanizeFieldName).join(", ")}
                 </p>
               ) : null}
-              <div className="mt-1.5 flex items-center gap-2 text-[11px] text-ink-3">
-                <span className="rounded-full bg-card-2 px-1.5 py-0.5 font-medium uppercase tracking-wide">
-                  {KIND_LABELS[row.kind]}
-                </span>
+              <div className="mt-2.5 flex items-center gap-2 text-[11px] text-ink-3">
+                <span className={chipClass}>{KIND_LABELS[row.kind]}</span>
                 <span>by {row.actor?.name ?? "System"}</span>
               </div>
             </div>
@@ -317,7 +332,7 @@ export function CrmActivityFeed({ householdId, handleRef }: Props) {
             type="button"
             onClick={loadMore}
             disabled={loadingMore}
-            className="rounded-[var(--radius-sm)] border border-hair bg-card-2 px-4 py-1.5 text-[12px] font-medium text-ink-2 transition-colors hover:border-hair-2 hover:text-ink disabled:opacity-50"
+            className={`${addGhostClass} disabled:opacity-50`}
           >
             {loadingMore ? "Loading…" : "Load more"}
           </button>

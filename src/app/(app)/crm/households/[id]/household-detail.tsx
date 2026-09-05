@@ -8,6 +8,11 @@ import type { TaskListRow } from "@/lib/crm-tasks/queries";
 import type { FirmMember } from "@/lib/crm-tasks/members";
 import type { TaskDetailBundle } from "@/app/(app)/tasks/_components/tasks-page";
 import { HouseholdTrashActions } from "@/components/household-trash-actions";
+import {
+  SectionLabel,
+  chipAccentClass,
+  primaryButtonClass,
+} from "@/components/crm-section-primitives";
 import { OverviewTab } from "./tabs/overview-tab";
 import { ContactsTab } from "./tabs/contacts-tab";
 import { AccountsTab } from "./tabs/accounts-tab";
@@ -15,15 +20,15 @@ import { ActivityTab } from "./tabs/activity-tab";
 import { DocumentsTab } from "./tabs/documents-tab";
 import { TasksTab } from "./tabs/tasks-tab";
 import { NotesTab } from "./tabs/notes-tab";
-import { InsightsTab } from "./tabs/insights/insights-tab";
 
 type Household = NonNullable<Awaited<ReturnType<typeof getCrmHousehold>>>;
 
-// "insights" (the 360 AI tab) is only shown when the household has a linked
-// planning client — its data is derived entirely from plan projections.
+// The 360 AI panel used to be its own "insights" tab. It now lives at the top
+// of Overview (see `overview-tab.tsx`), so `?tab=insights` deep links fall
+// through the `tabs.includes` guard below and land on Overview — which is
+// where that content now is.
 const ALL_TABS = [
   "overview",
-  "insights",
   "contacts",
   "accounts",
   "activity",
@@ -35,7 +40,6 @@ type Tab = (typeof ALL_TABS)[number];
 
 const TAB_LABELS: Record<Tab, string> = {
   overview: "Overview",
-  insights: "360 AI",
   contacts: "Contacts",
   accounts: "Accounts",
   activity: "Activity",
@@ -77,7 +81,7 @@ export function HouseholdDetail({
   relationships: HouseholdRelationshipView[];
 }) {
   const planningClientId = household.planningClient?.id ?? null;
-  const tabs: Tab[] = ALL_TABS.filter((t) => t !== "insights" || planningClientId !== null);
+  const tabs: Tab[] = [...ALL_TABS];
 
   const [tab, setTab] = useState<Tab>(
     tabs.includes(initialTab as Tab) ? (initialTab as Tab) : "overview",
@@ -88,27 +92,37 @@ export function HouseholdDetail({
     : `/clients/new?crmHouseholdId=${household.id}`;
 
   return (
-    <div className="p-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold text-ink">{household.name}</h1>
-          <div className="mt-1 text-sm text-ink-3">
-            Status: {STATUS_LABELS[household.status] ?? household.status}
+    <div className="px-6 pb-10 pt-5 sm:px-8">
+      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
+        <div className="min-w-0">
+          <SectionLabel as="div" segments={["CRM", "Household record"]} />
+          <h1 className="mt-3 font-display text-[clamp(30px,5vw,52px)] leading-[0.94] tracking-[-0.045em] text-ink [text-wrap:pretty]">
+            {household.name}
+          </h1>
+          <div className="mt-3 flex flex-wrap items-center gap-x-2.5 gap-y-2 font-mono text-[10.5px] font-semibold uppercase tracking-[0.14em] text-ink-3">
+            <span className={chipAccentClass}>
+              {STATUS_LABELS[household.status] ?? household.status}
+            </span>
+            <span aria-hidden="true" className="text-ink-4">
+              /
+            </span>
+            <span className="tabular normal-case tracking-[0.06em]">{household.id}</span>
+            <span aria-hidden="true" className="text-ink-4">
+              /
+            </span>
+            <span>{advisorName}</span>
           </div>
         </div>
         <div className="flex items-center gap-2">
           {!household.deletedAt && (
             <Link
               href={`/crm/households/${household.id}/meeting-prep`}
-              className="inline-flex shrink-0 items-center gap-2 rounded-[var(--radius-sm)] border border-hair bg-card px-3.5 py-2 text-[13px] font-semibold text-ink-2 transition-colors hover:bg-card-2"
+              className="inline-flex shrink-0 items-center gap-2 rounded-[var(--radius-sm)] border border-hair-2 px-3.5 py-2 text-[13px] font-semibold text-ink transition-colors duration-150 hover:bg-card-hover"
             >
               Meeting Prep
             </Link>
           )}
-          <Link
-            href={planningHref}
-            className="inline-flex shrink-0 items-center gap-2 rounded-[var(--radius-sm)] bg-accent px-3.5 py-2 text-[13px] font-semibold text-accent-on shadow-[0_1px_0_rgba(0,0,0,0.25)] transition-colors hover:bg-accent-ink"
-          >
+          <Link href={planningHref} className={primaryButtonClass}>
             {household.planningClient ? "Access planning" : "Start planning"}
           </Link>
           {canManage && (
@@ -122,12 +136,15 @@ export function HouseholdDetail({
       </div>
 
       {household.deletedAt && (
-        <div className="mt-4 rounded-lg border border-hair bg-card-2 px-4 py-3 text-sm text-ink-2">
+        <div className="mt-5 rounded-[var(--radius-md)] border border-hair-2 bg-card px-4 py-3 text-[13px] text-ink-2">
           This household is in the Trash. Use the ⋯ menu to restore it or delete it permanently.
         </div>
       )}
 
-      <div role="tablist" className="mt-6 flex gap-0.5 border-b border-hair">
+      <div
+        role="tablist"
+        className="mt-6 flex gap-0 overflow-x-auto border-b border-hair [scrollbar-width:none]"
+      >
         {tabs.map((t) => (
           <button
             key={t}
@@ -137,8 +154,8 @@ export function HouseholdDetail({
             onClick={() => setTab(t)}
             className={
               tab === t
-                ? "cursor-pointer border-b-2 border-accent px-4 py-2.5 text-sm font-medium text-accent transition-colors duration-150"
-                : "cursor-pointer border-b-2 border-transparent px-4 py-2.5 text-sm text-ink-3 transition-colors duration-150 hover:text-ink-2"
+                ? "-mb-px shrink-0 cursor-pointer border-b-2 border-accent px-4 py-2.5 text-[13px] font-semibold text-ink transition-colors duration-150"
+                : "-mb-px shrink-0 cursor-pointer border-b-2 border-transparent px-4 py-2.5 text-[13px] font-medium text-ink-3 transition-colors duration-150 hover:text-ink-2"
             }
           >
             {TAB_LABELS[t]}
@@ -148,10 +165,12 @@ export function HouseholdDetail({
 
       <div className="mt-6">
         {tab === "overview" && (
-          <OverviewTab household={household} advisorName={advisorName} relationships={relationships} />
-        )}
-        {tab === "insights" && planningClientId && (
-          <InsightsTab clientId={planningClientId} />
+          <OverviewTab
+            household={household}
+            advisorName={advisorName}
+            relationships={relationships}
+            planningClientId={planningClientId}
+          />
         )}
         {tab === "contacts" && (
           <ContactsTab household={household} relationships={relationships} />

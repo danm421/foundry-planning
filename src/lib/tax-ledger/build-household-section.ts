@@ -44,7 +44,12 @@ export function buildHouseholdSection(
   // 1. Income events from taxDetail.bySource.
   const bySource = td?.bySource ?? {};
   for (const [key, entry] of Object.entries(bySource)) {
-    if (entry.amount === 0) continue;
+    // A $0 entry is normally noise. The exception is a Roth conversion the
+    // engine deliberately zeroed — an IRMAA cap that bound all the way down.
+    // Dropping that row makes an enforced cap look like a technique that never
+    // ran. It contributes 0 to every subtotal, so the reconciliation below is
+    // unaffected either way.
+    if (entry.amount === 0 && !key.startsWith("roth_conversion:")) continue;
     rows.push(parseHouseholdSource(key, entry, ctx));
   }
 

@@ -105,6 +105,49 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  {
+    // jsx-a11y. eslint-config-next registers the plugin but enables only these
+    // six rules, as warnings; a regression should fail the run, so they are
+    // errors here. (2026-09-04 accessibility audit.)
+    files: ["src/**/*.{ts,tsx}"],
+    rules: {
+      // eslint-config-next defaults this to `img: ["Image"]` so it also covers
+      // next/image. This repo imports next/image nowhere; the only <Image> is
+      // @react-pdf/renderer's, which has no alt prop and is never read by a
+      // screen reader. Dropping the component name keeps the rule on real
+      // <img> and off the PDF layer.
+      "jsx-a11y/alt-text": ["error", { elements: ["img"], img: [] }],
+      "jsx-a11y/aria-props": "error",
+      "jsx-a11y/aria-proptypes": "error",
+      "jsx-a11y/aria-unsupported-elements": "error",
+      "jsx-a11y/role-has-required-aria-props": "error",
+      "jsx-a11y/role-supports-aria-props": "error",
+    },
+  },
+  {
+    // The interaction and label rules, on the client-facing public surfaces
+    // first (the portal, the intake wizard, the risk questionnaire). The rest
+    // of src/ carries ~300 pre-existing findings under these rules; widen the
+    // scope as they are cleared.
+    files: [
+      "src/components/portal/**/*.tsx",
+      "src/components/intake/**/*.tsx",
+      "src/app/intake/**/*.tsx",
+      "src/app/risk-questionnaire/**/*.tsx",
+      "src/app/(portal)/**/*.tsx",
+    ],
+    rules: {
+      "jsx-a11y/click-events-have-key-events": "error",
+      "jsx-a11y/no-static-element-interactions": "error",
+      // CurrencyInput renders a native <input> and CategoryPicker a native
+      // <select>, so a wrapping <label> associates at runtime; the rule only
+      // needs their names to see through the component boundary.
+      "jsx-a11y/label-has-associated-control": [
+        "error",
+        { controlComponents: ["CurrencyInput", "CategoryPicker"], depth: 3 },
+      ],
+    },
+  },
   globalIgnores([
     ".next/**",
     "out/**",

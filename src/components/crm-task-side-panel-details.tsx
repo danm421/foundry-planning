@@ -367,7 +367,7 @@ export function CrmTaskSidePanelDetails({
             <button
               type="button"
               onClick={() => void commit()}
-              className="text-[11px] font-medium text-accent hover:underline"
+              className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-accent hover:underline"
             >
               Save
             </button>
@@ -401,8 +401,8 @@ export function CrmTaskSidePanelDetails({
         )}
       />
 
-      <div className="flex items-start gap-3 border-b border-hair px-1 py-2.5 last:border-b-0">
-        <div className="w-32 shrink-0 pt-1.5 text-[12px] font-medium uppercase tracking-wide text-ink-3">
+      <div className="flex items-start gap-3 border-b border-hair px-1 py-[11px] last:border-b-0">
+        <div className="w-32 shrink-0 pt-1.5 font-mono text-[10.5px] font-semibold uppercase tracking-[0.14em] text-ink-3">
           Tags
         </div>
         <div className="min-w-0 flex-1">
@@ -421,7 +421,7 @@ export function CrmTaskSidePanelDetails({
         </div>
       </div>
 
-      <div className="pt-3 text-[11px] text-ink-3">
+      <div className="pt-4 font-mono text-[10px] uppercase tracking-[0.1em] text-ink-3">
         Created {new Date(initial.createdAt).toLocaleString()} by{" "}
         {initial.createdByName ?? initial.createdByUserId}
       </div>

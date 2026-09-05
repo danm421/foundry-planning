@@ -95,7 +95,7 @@ export default async function PortalLayout({
         alerts={navAlerts}
         features={features}
       />
-      <main className="min-w-0 lg:h-dvh lg:overflow-y-auto lg:border-x lg:border-hair">
+      <main id="main" className="min-w-0 lg:h-dvh lg:overflow-y-auto lg:border-x lg:border-hair">
         {/* Mobile-only swipeable top tab bar. */}
         <PortalMobileNav
           displayName={displayName}

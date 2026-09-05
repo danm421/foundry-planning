@@ -1,0 +1,1 @@
+ALTER TABLE "roth_conversions" ADD COLUMN "irmaa_cap_tier" integer;

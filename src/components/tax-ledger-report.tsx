@@ -70,6 +70,7 @@ export default function TaxLedgerReport({ clientId }: Props) {
       rothConversionNames: (clientData?.rothConversions ?? []).reduce<Record<string, string>>((acc, r) => { if (r.name) acc[r.id] = r.name; return acc; }, {}),
       noteNames: (clientData?.notesReceivable ?? []).reduce<Record<string, string>>((acc, n) => { if (n.name) acc[n.id] = n.name; return acc; }, {}),
       equityPlanNames: (clientData?.stockOptionPlans ?? []).reduce<Record<string, string>>((acc, p) => { if (p.accountId) acc[p.accountId] = equityPlanLabel(p); return acc; }, {}),
+      taxAdjustmentNames: (clientData?.taxAdjustments ?? []).reduce<Record<string, string>>((acc, a) => { if (a.name) acc[a.id] = a.name; return acc; }, {}),
     };
   }, [clientData]);
 

@@ -199,6 +199,29 @@ describe("buildYearCellDrill — expenses & portfolio", () => {
     ]);
   });
 
+  it("taxes: names the withholding netting as 'Already withheld' instead of an anonymous negative Other", () => {
+    // A tax_adjustment's withholding pays Federal + State (9k gross) down to a
+    // 5k net cash-flow liability. Without a named item, balanced()'s balancing
+    // row absorbs the -4k gap into an unlabelled "Other".
+    const d = buildYearCellDrill(
+      "taxes",
+      makeYear({
+        expenses: { ...makeYear().expenses, taxes: 5_000 },
+        taxResult: {
+          flow: { totalFederalTax: 7_000, stateTax: 2_000, taxAlreadyPaid: 4_000 },
+        } as never,
+      }),
+      makeClientData(),
+    )!;
+    expect(d.total).toBe(5_000);
+    expect(rowsOf(d)).toEqual([
+      { id: "tax-federal", label: "Federal", amount: 7_000 },
+      { id: "tax-state", label: "State", amount: 2_000 },
+      { id: "tax-already-paid", label: "Already withheld", amount: -4_000 },
+    ]);
+    expect(rowsOf(d).some((r) => r.label === "Other")).toBe(false);
+  });
+
   it("taxes: degrades to a balancing Other row when taxResult is absent", () => {
     const d = buildYearCellDrill("taxes", makeYear({ taxResult: undefined }), makeClientData())!;
     expect(rowsOf(d)).toEqual([{ id: "taxes-other", label: "Other", amount: 9_000 }]);

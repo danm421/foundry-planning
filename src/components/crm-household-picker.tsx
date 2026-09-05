@@ -137,7 +137,7 @@ export function CrmHouseholdPicker({ onSelect, returnTo, hideCreateLink }: CrmHo
             id="crm-household-picker"
             type="search"
             autoComplete="off"
-            placeholder="Search households by name…"
+            placeholder="Search by household or contact name…"
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);

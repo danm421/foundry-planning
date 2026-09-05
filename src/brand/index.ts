@@ -72,8 +72,8 @@ export const colorsLight = {
 
   ink:         "#1a1d27",
   ink2:        "#474c59",
-  ink3:        "#767a86",
-  ink4:        "#a8abb3",
+  ink3:        "#5c5f69",
+  ink4:        "#6a6c71",
 
   hair:        "#e8e4d6",
   hair2:       "#d9d2bd",

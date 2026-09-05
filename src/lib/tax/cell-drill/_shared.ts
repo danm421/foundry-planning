@@ -7,8 +7,47 @@ const COMPOUND_KIND_LABEL: Record<string, string> = {
   rmd: "RMD",
 };
 
-/** Resolve a `taxDetail.bySource` key to a display label. */
-export function resolveSourceLabel(sourceId: string, ctx: CellDrillContext): string {
+/** One `taxDetail.bySource` row. Mirrors `ProjectionYear["taxDetail"]["bySource"]`. */
+export type BySourceEntry = {
+  type: string;
+  amount: number;
+  irmaaCapTier?: number;
+  irmaaCapExceeded?: boolean;
+};
+
+/** The IRMAA-cap suffix a `roth_conversion:` row carries, or `""` when it
+ *  carries none. Exported because the tax LEDGER parses the same rows into its
+ *  own descriptions (`lib/tax-ledger/parse-source.ts`) — two advisor-facing
+ *  surfaces, one wording, so they cannot drift apart.
+ *
+ *  ⚠️ The two outcomes are opposites and must not be collapsed. "limited by"
+ *  means the ceiling produced this conversion's number. `irmaaCapExceeded`
+ *  means the conversion was sized to that ceiling and the HOUSEHOLD still
+ *  finished above it, because a sibling conversion took the same headroom —
+ *  saying "limited by" there reports a cap the engine did not deliver. */
+export function irmaaCapSuffix(
+  entry?: Pick<BySourceEntry, "irmaaCapTier" | "irmaaCapExceeded">,
+): string {
+  const tier = entry?.irmaaCapTier;
+  if (tier == null) return "";
+  return entry?.irmaaCapExceeded
+    ? ` (IRMAA Tier ${tier} cap exceeded)`
+    : ` (limited by IRMAA Tier ${tier})`;
+}
+
+/** Resolve a `taxDetail.bySource` key to a display label.
+ *
+ *  `entry` is the ROW the key points at, and is optional only because a couple
+ *  of callers label a bare key. Pass it whenever you have it: a per-YEAR
+ *  outcome such as "this conversion was cut by the IRMAA cap" can only be read
+ *  off the row. `ctx` is built once for every year of the projection, so a
+ *  reason stored there would label 2030 and 2031 identically even when the cap
+ *  bound in only one of them. */
+export function resolveSourceLabel(
+  sourceId: string,
+  ctx: CellDrillContext,
+  entry?: BySourceEntry,
+): string {
   if (sourceId.startsWith("withdrawal:")) {
     const acctId = sourceId.slice("withdrawal:".length);
     const name = ctx.accountNames[acctId] ?? acctId;
@@ -41,7 +80,8 @@ export function resolveSourceLabel(sourceId: string, ctx: CellDrillContext): str
   if (sourceId.startsWith("roth_conversion:")) {
     const cid = sourceId.slice("roth_conversion:".length);
     const name = ctx.rothConversionNames?.[cid];
-    return name ? `${name} — Roth Conversion` : "Roth Conversion";
+    const base = name ? `${name} — Roth Conversion` : "Roth Conversion";
+    return base + irmaaCapSuffix(entry);
   }
   if (sourceId.startsWith("sale:")) {
     const tx = sourceId.slice("sale:".length);
@@ -90,6 +130,11 @@ export function resolveSourceLabel(sourceId: string, ctx: CellDrillContext): str
     const planId = sourceId.slice("equity-stcg:".length);
     return `${ctx.equityPlanNames?.[planId] ?? planId} — sale (ST)`;
   }
+  if (sourceId.startsWith("tax_adjustment:")) {
+    const id = sourceId.slice("tax_adjustment:".length);
+    const name = ctx.taxAdjustmentNames?.[id];
+    return name ? `${name} — Tax Adjustment` : "Tax Adjustment";
+  }
   if (sourceId.includes(":")) {
     const [acctId, kind] = sourceId.split(":");
     const name = ctx.accountNames[acctId] ?? acctId;
@@ -103,7 +148,7 @@ export function resolveSourceLabel(sourceId: string, ctx: CellDrillContext): str
 
 export { formatCurrency } from "@/lib/cell-drill/format";
 
-type BySource = Record<string, { type: string; amount: number }>;
+type BySource = Record<string, BySourceEntry>;
 
 /** Build descending-by-amount drill rows from a `taxDetail.bySource` map,
  *  filtered by one type or a set of types. */
@@ -118,6 +163,6 @@ export function bySourceRows(
       : (t: string) => match.has(t);
   return Object.entries(bySource)
     .filter(([, v]) => matches(v.type))
-    .map(([id, v]) => ({ id, label: resolveSourceLabel(id, ctx), amount: v.amount }))
+    .map(([id, v]) => ({ id, label: resolveSourceLabel(id, ctx, v), amount: v.amount }))
     .sort((a, b) => b.amount - a.amount);
 }

@@ -30,6 +30,13 @@ describe("parseHouseholdSource", () => {
     const r = parseHouseholdSource("roth_conversion:rc1", { type: "ordinary_income", amount: 40000 }, ctx);
     expect(r).toMatchObject({ type: "Roth Conversion", description: "2030 Conversion", account: null });
   });
+  it("flags a Roth conversion row so a $0 amount is never filtered away as noise", () => {
+    const r = parseHouseholdSource("roth_conversion:rc1", { type: "ordinary_income", amount: 0 }, ctx);
+    expect(r.zeroIsMeaningful).toBe(true);
+    // Ordinary rows stay unflagged — $0 there really is noise.
+    const rmd = parseHouseholdSource("acct1:rmd", { type: "ordinary_income", amount: 0 }, ctx);
+    expect(rmd.zeroIsMeaningful).toBeUndefined();
+  });
   it("parses business pass-through to a K-1 row", () => {
     const r = parseHouseholdSource("business_passthrough:ent1", { type: "qbi", amount: 1000 }, ctx);
     expect(r).toMatchObject({ type: "K-1 Pass-Thru Income", description: "Business 1 — K-1", character: "ordinary" });
@@ -139,9 +146,48 @@ describe("parseHouseholdSource", () => {
     const r = parseHouseholdSource("inc1", { type: "earned_income", amount: 90000 }, ctx);
     expect(r).toMatchObject({ type: "Salary / Wages", description: "Cooper Salary", character: "earned" });
   });
+  it("says a Roth conversion's IRMAA cap was EXCEEDED, not that it limited it", () => {
+    // Same row, opposite outcomes. The ledger and the tax drill each hold their
+    // own copy of this label, so both need pinning or they drift apart.
+    const held = parseHouseholdSource(
+      "roth_conversion:rc1",
+      { type: "ordinary_income", amount: 40_000, irmaaCapTier: 2 },
+      ctx,
+    );
+    expect(held.description).toMatch(/\(limited by IRMAA Tier 2\)$/);
+
+    const missed = parseHouseholdSource(
+      "roth_conversion:rc1",
+      { type: "ordinary_income", amount: 40_000, irmaaCapTier: 2, irmaaCapExceeded: true },
+      ctx,
+    );
+    expect(missed.description).toMatch(/\(IRMAA Tier 2 cap exceeded\)$/);
+    // The $0-row guarantee is independent of which way the cap went.
+    expect(missed.zeroIsMeaningful).toBe(true);
+  });
+
   it("marks tax-exempt rows non-taxable", () => {
     const r = parseHouseholdSource("business_passthrough:ent1", { type: "tax_exempt", amount: 300 }, ctx);
     expect(r.taxable).toBe(false);
     expect(r.character).toBe("tax_exempt");
+  });
+
+  it("parses a tax_adjustment:<uuid> key without leaking the uuid or a wrong category", () => {
+    // Without a dedicated arm this falls into the generic <acctId>:<kind>
+    // fallback, which reads "tax_adjustment" as the account id (rendering the
+    // wrong category, "Investment Income") and the uuid as the description —
+    // leaking the raw id at the advisor.
+    const uuid = "3f1b0c2a-0000-4000-8000-000000000099";
+    const r = parseHouseholdSource(`tax_adjustment:${uuid}`, { type: "ordinary_income", amount: 120_000 }, ctx);
+    expect(r).toMatchObject({
+      type: "Tax Adjustment",
+      description: "Income already received",
+      character: "ordinary",
+      account: null,
+      amount: 120_000,
+      taxable: true,
+    });
+    expect(r.type).not.toBe("Investment Income");
+    expect(r.description).not.toBe(uuid);
   });
 });

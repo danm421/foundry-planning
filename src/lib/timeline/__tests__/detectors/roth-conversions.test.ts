@@ -11,10 +11,10 @@ describe("detectRothConversionEvents", () => {
   it("consolidates every fire year into a single card per conversion", () => {
     const data = buildClientData();
     const projection = mkProjection([
-      { rothConversions: [{ id: "rc-1", name: "Bracket ladder", gross: 80000, taxable: 80000 }] },
-      { rothConversions: [{ id: "rc-1", name: "Bracket ladder", gross: 95000, taxable: 95000 }] },
+      { rothConversions: [{ id: "rc-1", name: "Bracket ladder", gross: 80000, taxable: 80000, requested: 80000, limitedBy: null }] },
+      { rothConversions: [{ id: "rc-1", name: "Bracket ladder", gross: 95000, taxable: 95000, requested: 95000, limitedBy: null }] },
       { rothConversions: undefined },
-      { rothConversions: [{ id: "rc-1", name: "Bracket ladder", gross: 110000, taxable: 110000 }] },
+      { rothConversions: [{ id: "rc-1", name: "Bracket ladder", gross: 110000, taxable: 110000, requested: 110000, limitedBy: null }] },
     ]);
     const events = detectRothConversionEvents(data, projection);
     const matches = events.filter((e) => e.id.startsWith("strategy:roth:rc-1"));
@@ -40,7 +40,7 @@ describe("detectRothConversionEvents", () => {
   it("surfaces the per-year taxable amount when gross != taxable", () => {
     const data = buildClientData();
     const projection = mkProjection([
-      { rothConversions: [{ id: "rc-2", name: "Backdoor", gross: 50000, taxable: 30000 }] },
+      { rothConversions: [{ id: "rc-2", name: "Backdoor", gross: 50000, taxable: 30000, requested: 50000, limitedBy: null }] },
     ]);
     const events = detectRothConversionEvents(data, projection);
     const card = events.find((e) => e.id === "strategy:roth:rc-2");
@@ -54,13 +54,87 @@ describe("detectRothConversionEvents", () => {
     const projection = mkProjection([
       {
         rothConversions: [
-          { id: "rc-a", name: "Plan A", gross: 50000, taxable: 50000 },
-          { id: "rc-b", name: "Plan B", gross: 25000, taxable: 25000 },
+          { id: "rc-a", name: "Plan A", gross: 50000, taxable: 50000, requested: 50000, limitedBy: null },
+          { id: "rc-b", name: "Plan B", gross: 25000, taxable: 25000, requested: 25000, limitedBy: null },
         ],
       },
     ]);
     const events = detectRothConversionEvents(data, projection);
     expect(events.find((e) => e.id === "strategy:roth:rc-a")).toBeDefined();
     expect(events.find((e) => e.id === "strategy:roth:rc-b")).toBeDefined();
+  });
+
+  it("ignores a year an IRMAA cap zeroed, for the anchor AND the count", () => {
+    // The engine emits a $0 entry on purpose when a cap binds all the way down,
+    // so the tax drill can say "ran, converted nothing". A timeline card records
+    // what HAPPENED: counting that year would anchor the card a year early and
+    // report "over 3 years" when only two years moved money.
+    const data = buildClientData();
+    const projection = mkProjection([
+      {
+        rothConversions: [
+          {
+            id: "rc-cap", name: "Capped ladder", gross: 0, taxable: 0,
+            requested: 600_000, limitedBy: "irmaa", irmaaCapTier: 0,
+          },
+        ],
+      },
+      {
+        rothConversions: [
+          {
+            id: "rc-cap", name: "Capped ladder", gross: 100_000, taxable: 100_000,
+            requested: 600_000, limitedBy: "irmaa", irmaaCapTier: 0,
+          },
+        ],
+      },
+      {
+        rothConversions: [
+          {
+            id: "rc-cap", name: "Capped ladder", gross: 150_000, taxable: 150_000,
+            requested: 600_000, limitedBy: "irmaa", irmaaCapTier: 0,
+          },
+        ],
+      },
+    ]);
+    const card = detectRothConversionEvents(data, projection).find(
+      (e) => e.id === "strategy:roth:rc-cap",
+    );
+    expect(card, "the two converting years still make a card").toBeDefined();
+
+    // Anchored on the first year money actually moved — 2031, not 2030.
+    expect(card!.year).toBe(2031);
+    // Two years, $250K — not three years.
+    expect(card!.supportingFigure).toBe("$250,000 converted over 2 years");
+    // And no $0 detail row.
+    const yearRows = card!.details.filter((d) => /^\d{4}$/.test(d.label));
+    expect(yearRows.map((d) => d.label)).toEqual(["2031", "2032"]);
+  });
+
+  it("emits no card at all when the cap zeroed every year", () => {
+    // Nothing happened, so there is no event to put on a timeline.
+    const data = buildClientData();
+    const projection = mkProjection([
+      {
+        rothConversions: [
+          {
+            id: "rc-dead", name: "Fully blocked", gross: 0, taxable: 0,
+            requested: 600_000, limitedBy: "irmaa", irmaaCapTier: 0,
+          },
+        ],
+      },
+      {
+        rothConversions: [
+          {
+            id: "rc-dead", name: "Fully blocked", gross: 0, taxable: 0,
+            requested: 600_000, limitedBy: "irmaa", irmaaCapTier: 0,
+          },
+        ],
+      },
+    ]);
+    expect(
+      detectRothConversionEvents(data, projection).filter((e) =>
+        e.id.startsWith("strategy:roth:rc-dead"),
+      ),
+    ).toHaveLength(0);
   });
 });

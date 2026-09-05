@@ -29,9 +29,19 @@ export function detectRothConversionEvents(
   // renders as a single timeline card rather than one card per year. Projection
   // years are ascending, so the collected fires stay chronological and the first
   // fire is the earliest year.
+  //
+  // ⚠️ `gross > 0` is load-bearing, and matches `presentations/shared/year-filter.ts`.
+  // The engine emits a $0 entry for a year an IRMAA cap zeroed the conversion —
+  // deliberately, so the tax drill can say the technique ran and converted
+  // nothing. A timeline card is a record of what HAPPENED, so counting that year
+  // would anchor the card on a year no money moved and inflate "over N years":
+  // "$1.2M converted over 4 years" when only three years converted. Filtering
+  // here rather than at each read keeps the anchor, the count, the total and the
+  // per-year rows describing the same set by construction.
   const firesByPlan = new Map<string, { name: string; fires: RothFire[] }>();
   for (const py of projection) {
     for (const fire of py.rothConversions ?? []) {
+      if (fire.gross <= 0) continue;
       let entry = firesByPlan.get(fire.id);
       if (!entry) {
         entry = { name: fire.name, fires: [] };

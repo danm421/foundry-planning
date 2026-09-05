@@ -1,6 +1,7 @@
 "use client";
 
 import type { ProjectionYear } from "@/engine";
+import { sumTaxAdjustments } from "@/engine/tax-adjustments";
 import { TaxDetailTooltip } from "./tax-detail-tooltip";
 import {
   detectRegimeTransitions,
@@ -46,6 +47,16 @@ interface Column {
   label: string;
   tooltip?: string;
   value: (y: ProjectionYear) => number;
+  /** When true, the column is hidden if all visible years have value 0 —
+   *  mirrors the flow table's `Column.zeroSuppress`. */
+  zeroSuppress?: boolean;
+  /** Memo column: money that is ALREADY counted in one of the additive columns
+   *  to its left, repeated here for visibility. It must never sit inside the
+   *  additive run — an advisor reading a row left to right adds what he sees,
+   *  and a $750,000 adjustment printed between QBI and Total Income reads as a
+   *  double count even though Total Income never included it twice. Rendered
+   *  last, muted, behind its own hairline. */
+  memo?: boolean;
 }
 
 export const INCOME_COLUMNS: Column[] = [
@@ -115,7 +126,28 @@ export const INCOME_COLUMNS: Column[] = [
     tooltip: "Total + Non-Taxable. Denominator for effective tax rate.",
     value: (y) => y.taxResult?.income.grossTotalIncome ?? 0,
   },
+  {
+    key: "taxAdjustments",
+    label: "Of Which: Tax Adjustments",
+    tooltip:
+      "Income entered as already having happened — a completed Roth conversion, a bonus already received. It is already counted in the income columns to the left, so it is not added to Total Income a second time. No money moves in the cash flow.",
+    value: (y) => sumTaxAdjustments(y.taxDetail),
+    zeroSuppress: true,
+    memo: true,
+  },
 ];
+
+/** `INCOME_COLUMNS` itself must stay the complete, exported list — existing
+ *  tests look up columns on it by key — so the zero-suppression hide is
+ *  applied to a derived subset here instead of to that array. Mirrors the
+ *  flow table's own top-level `zeroSuppress` filter; exported for the same
+ *  reason its `otherColumns`/`aboveLineColumns` are: the decision is
+ *  otherwise only reachable through a full rendered table. */
+export function visibleIncomeColumns(years: ProjectionYear[]): Column[] {
+  return INCOME_COLUMNS.filter(
+    (col) => !col.zeroSuppress || years.some((y) => col.value(y) !== 0),
+  );
+}
 
 export function TaxDetailIncomeTable({
   years,
@@ -125,6 +157,19 @@ export function TaxDetailIncomeTable({
   spouseLifeExpectancy,
 }: TaxDetailIncomeTableProps) {
   const transitions = detectRegimeTransitions(years);
+  const activeColumns = visibleIncomeColumns(years);
+  // The memo column rides to the right of Gross Total Income, so when it is
+  // present TWO columns have to stay frozen on the right edge — otherwise the
+  // bottom line scrolls away and only the memo stays visible. Mirrors the
+  // Year/Age pair frozen on the left (`left-0` + `left-20`); the memo's fixed
+  // `w-40` is what `right-40` lines up against.
+  const hasMemoColumn = activeColumns[activeColumns.length - 1]?.memo === true;
+  const frozenRight = (idx: number, z: string) => {
+    const last = activeColumns.length - 1;
+    if (idx === last) return `sticky right-0 ${z} border-l`;
+    if (hasMemoColumn && idx === last - 1) return `sticky right-40 ${z} border-l`;
+    return "";
+  };
 
   return (
     <div className="overflow-x-auto rounded-lg border border-hair bg-card">
@@ -137,21 +182,18 @@ export function TaxDetailIncomeTable({
             <th className="sticky left-20 z-20 w-24 min-w-[6rem] border-b border-r border-hair bg-card px-3 py-2 text-left">
               Age
             </th>
-            {INCOME_COLUMNS.map((col, idx) => {
-              const isLast = idx === INCOME_COLUMNS.length - 1;
-              return (
-                <th
-                  key={col.key}
-                  className={`border-b border-hair bg-card px-3 py-2 text-right font-medium ${isLast ? "sticky right-0 z-20 border-l" : ""}`}
-                >
-                  {col.tooltip ? (
-                    <TaxDetailTooltip label={col.label} text={col.tooltip} />
-                  ) : (
-                    col.label
-                  )}
-                </th>
-              );
-            })}
+            {activeColumns.map((col, idx) => (
+              <th
+                key={col.key}
+                className={`border-b border-hair bg-card px-3 py-2 text-right font-medium ${col.memo ? "w-40 min-w-[10rem] text-ink-3" : ""} ${frozenRight(idx, "z-20")}`}
+              >
+                {col.tooltip ? (
+                  <TaxDetailTooltip label={col.label} text={col.tooltip} />
+                ) : (
+                  col.label
+                )}
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody className="text-ink">
@@ -176,13 +218,12 @@ export function TaxDetailIncomeTable({
                 <td className="sticky left-20 z-10 border-b border-r border-hair bg-card px-3 py-2 text-left text-ink-2 group-hover:shadow-[inset_0_1px_0_var(--color-ink),inset_0_-1px_0_var(--color-ink)]">
                   {formatAge(y.ages, clientLifeExpectancy, spouseLifeExpectancy)}
                 </td>
-                {INCOME_COLUMNS.map((col, idx) => {
+                {activeColumns.map((col, idx) => {
                   const v = col.value(y);
-                  const isLast = idx === INCOME_COLUMNS.length - 1;
                   return (
                     <td
                       key={col.key}
-                      className={`border-b border-hair bg-card px-0 py-0 text-right tabular-nums group-hover:shadow-[inset_0_1px_0_var(--color-ink),inset_0_-1px_0_var(--color-ink)] ${isLast ? "sticky right-0 z-10 border-l" : ""}`}
+                      className={`border-b border-hair bg-card px-0 py-0 text-right tabular-nums group-hover:shadow-[inset_0_1px_0_var(--color-ink),inset_0_-1px_0_var(--color-ink)] ${col.memo ? "w-40 min-w-[10rem] text-ink-3" : ""} ${frozenRight(idx, "z-10")}`}
                     >
                       <button
                         type="button"

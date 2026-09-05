@@ -140,6 +140,19 @@ export const FLOW_COLUMNS: Column[] = [
     value: (y) => y.taxResult?.flow.totalTax ?? 0,
   },
   {
+    key: "taxAlreadyPaid",
+    label: "Already Paid",
+    tooltip:
+      "Tax already withheld or paid on a tax adjustment. Subtracted from what the plan pays out of the accounts, never from Total Tax — the same shape as a 1040's payments line.",
+    value: (y) => y.taxResult?.flow.taxAlreadyPaid ?? 0,
+  },
+  {
+    key: "balanceDue",
+    label: "Balance Due",
+    tooltip: "Total Tax less Already Paid — what actually comes out of the accounts this year.",
+    value: (y) => y.taxResult?.flow.balanceDue ?? 0,
+  },
+  {
     key: "marginalRate",
     label: "Marginal Rate",
     tooltip:
@@ -155,6 +168,28 @@ export const FLOW_COLUMNS: Column[] = [
     formatter: (n) => pctFmt.format(n),
   },
 ];
+
+/** `taxAlreadyPaid` and `balanceDue` only mean anything together: a plan with
+ *  no recorded withholding honestly has `balanceDue === totalTax` — a large
+ *  positive number on essentially every plan — so per-column `zeroSuppress`
+ *  (which drives every other column below) cannot hide this pair; it would
+ *  never hide Balance Due. Gate both on ONE shared predicate instead so they
+ *  can never disagree about whether the pair is showing.
+ *
+ *  Exported for the same reason `otherColumns` is: the filter decides what an
+ *  advisor sees and is not reachable through the rendered component without a
+ *  full ProjectionYear fixture. */
+export function topLevelColumns(years: ProjectionYear[]): Column[] {
+  const showAlreadyPaidPair = years.some(
+    (y) => (y.taxResult?.flow.taxAlreadyPaid ?? 0) > 0,
+  );
+  return FLOW_COLUMNS.filter((col) => {
+    if (col.key === "taxAlreadyPaid" || col.key === "balanceDue") {
+      return showAlreadyPaidPair;
+    }
+    return !col.zeroSuppress || years.some((y) => col.value(y) !== 0);
+  });
+}
 
 /** Exported for the same reason `otherColumns` is: the zero-suppression filter
  *  below decides which columns an advisor sees, and it is not reachable through
@@ -489,9 +524,7 @@ export function TaxDetailFlowTable({
       ? belowLineColumns()
       : drillLevel === "other"
         ? otherColumns(years)
-        : FLOW_COLUMNS.filter(
-            (col) => !col.zeroSuppress || years.some((y) => col.value(y) !== 0)
-          );
+        : topLevelColumns(years);
 
   // Bold column keys (totals/winners)
   const boldKeys = new Set(["al_total", "bl_tax_deductions", "other_total"]);

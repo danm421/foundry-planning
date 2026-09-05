@@ -61,7 +61,7 @@ function makeYear(
 }
 
 const conversion = (taxable: number, gross = taxable) => [
-  { id: "rc1", name: "Roth conversion", gross, taxable },
+  { id: "rc1", name: "Roth conversion", gross, taxable, requested: gross, limitedBy: null },
 ];
 
 describe("buildBracketFillModel", () => {

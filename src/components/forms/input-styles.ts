@@ -1,5 +1,10 @@
 // Shared input styling for dialog forms.
 //
+// Fill is `bg-paper` — the field reads as an inset one step behind whatever
+// card or panel encloses it, in every theme. (Under Industrial Dark the raised
+// panel token `card-2` is DARKER than `card`, so a field left on `card-2`
+// would disappear into the task side panel.)
+//
 // Two variants per element:
 //   - `*BaseClassName` — no width. Use when the caller controls width itself
 //     (fixed `w-N`, `flex-1 min-w-0`, etc.). Avoids cascade fights with
@@ -14,8 +19,8 @@
 //   </div>
 
 const inputCore =
-  "h-9 rounded-[var(--radius-sm)] bg-card-2 border border-hair px-3 text-[14px] text-ink placeholder:text-ink-4 outline-none " +
-  "hover:border-hair-2 focus:border-accent focus:ring-2 focus:ring-accent/25 disabled:opacity-50";
+  "h-9 rounded-[var(--radius-sm)] bg-paper border border-hair-2 px-3 text-[14px] text-ink placeholder:text-ink-4 outline-none " +
+  "hover:border-hair-3 focus:border-accent focus:ring-2 focus:ring-accent/25 disabled:opacity-50";
 
 export const inputBaseClassName = inputCore;
 export const inputClassName = "w-full " + inputCore;
@@ -29,8 +34,8 @@ export const selectBaseClassName = inputCore + selectExtras;
 export const selectClassName = "w-full " + selectBaseClassName;
 
 const textareaCore =
-  "rounded-[var(--radius-sm)] bg-card-2 border border-hair px-3 py-2 text-[14px] text-ink placeholder:text-ink-4 outline-none " +
-  "hover:border-hair-2 focus:border-accent focus:ring-2 focus:ring-accent/25 disabled:opacity-50";
+  "rounded-[var(--radius-sm)] bg-paper border border-hair-2 px-3 py-2 text-[14px] text-ink placeholder:text-ink-4 outline-none " +
+  "hover:border-hair-3 focus:border-accent focus:ring-2 focus:ring-accent/25 disabled:opacity-50";
 
 export const textareaBaseClassName = textareaCore;
 export const textareaClassName = "w-full " + textareaCore;

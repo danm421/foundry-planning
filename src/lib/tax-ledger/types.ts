@@ -27,6 +27,12 @@ export interface TaxLedgerRow {
   amount: number;
   /** False for tax-exempt / deduction / non-taxable rows (drives "hide non-taxable"). */
   taxable: boolean;
+  /** A $0 amount is a real result here, not noise — never hide this row. Set
+   *  for Roth conversions, where $0 means the IRMAA cap bound all the way down
+   *  and hiding the row would make an enforced cap look like a technique that
+   *  never ran. Carried on the row so the "hide zero rows" filter never has to
+   *  re-derive intent from a display label. */
+  zeroIsMeaningful?: boolean;
 }
 
 export interface TaxLedgerSection {

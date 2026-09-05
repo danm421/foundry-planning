@@ -90,6 +90,7 @@ const MINIMAL_PROPS = {
       endYearRef: null,
       indexingRate: "0",
       inflationStartYear: null,
+      irmaaCapTier: null,
     },
   ],
   accounts: [

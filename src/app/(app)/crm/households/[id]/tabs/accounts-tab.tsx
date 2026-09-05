@@ -3,6 +3,14 @@
 import { useState } from "react";
 import type { getCrmHousehold } from "@/lib/crm/households";
 import { ChevronRightIcon } from "@/components/icons";
+import {
+  DetailList,
+  DetailRow,
+  MetricBlock,
+  SectionLabel,
+  fmtMoney,
+  monoLabelClass,
+} from "@/components/crm-section-primitives";
 
 type Household = NonNullable<Awaited<ReturnType<typeof getCrmHousehold>>>;
 type PlanningAccount = Household["planningAccounts"][number];
@@ -67,18 +75,6 @@ function sectionForCategory(category: AccountCategory): SectionKey {
   return "other";
 }
 
-function fmtMoney(raw: string | null | undefined): string {
-  if (raw == null || raw === "") return "—";
-  const n = Number(raw);
-  if (!Number.isFinite(n)) return "—";
-  return n.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  });
-}
-
 function formatOwners(owners: PlanningAccount["owners"]): string {
   if (owners.length === 0) return "—";
   if (owners.length === 1) return owners[0].name;
@@ -93,12 +89,12 @@ function AccountRow({ account }: { account: PlanningAccount }) {
   const last4 = account.accountNumberLast4?.trim();
 
   return (
-    <li className="rounded-[var(--radius)] border border-hair bg-card transition-colors hover:border-hair-2">
+    <li className="border-hair transition-colors duration-150 [&:not(:last-child)]:border-b">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex w-full items-center gap-3 px-4 py-3 text-left"
+        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors duration-150 hover:bg-card-hover"
       >
         <ChevronRightIcon
           width={12}
@@ -106,32 +102,35 @@ function AccountRow({ account }: { account: PlanningAccount }) {
           aria-hidden="true"
           className={`shrink-0 text-ink-3 transition-transform duration-150 ${open ? "rotate-90" : ""}`}
         />
-        <span className="text-[15px] font-semibold tabular-nums text-ink">
+        <span className="tabular w-[116px] shrink-0 text-[15px] font-bold text-ink">
           {fmtMoney(account.value)}
         </span>
-        <span className="text-ink-3" aria-hidden>·</span>
+        <span className="text-ink-4" aria-hidden>·</span>
         <span className="truncate text-[14px] font-medium text-ink">{account.name}</span>
-        <span className="text-ink-3" aria-hidden>·</span>
-        <span className="text-[13px] text-ink-3">{typeLabel}</span>
+        <span className="text-ink-4" aria-hidden>·</span>
+        <span className={`shrink-0 ${monoLabelClass}`}>{typeLabel}</span>
         {last4 && (
           <>
-            <span className="text-ink-3" aria-hidden>·</span>
-            <span className="font-mono text-[12px] text-ink-3">····{last4}</span>
+            <span className="text-ink-4" aria-hidden>·</span>
+            <span className="tabular shrink-0 text-[12px] text-ink-3">····{last4}</span>
           </>
         )}
       </button>
 
       {open && (
-        <dl className="grid grid-cols-1 gap-y-1 border-t border-hair px-4 py-3 text-[12.5px] text-ink-2 sm:grid-cols-[110px_1fr] sm:gap-x-3">
-          <dt className="text-ink-3">Owner</dt>
-          <dd>{formatOwners(account.owners)}</dd>
-
-          <dt className="text-ink-3">Custodian</dt>
-          <dd>{custodian}</dd>
-
-          <dt className="text-ink-3">Basis</dt>
-          <dd className="tabular-nums">{fmtMoney(account.basis)}</dd>
-        </dl>
+        <div className="border-t border-hair px-4 py-1">
+          <DetailList>
+            <DetailRow label="Owner" dense>
+              {formatOwners(account.owners)}
+            </DetailRow>
+            <DetailRow label="Custodian" dense>
+              {custodian}
+            </DetailRow>
+            <DetailRow label="Basis" dense>
+              <span className="tabular">{fmtMoney(account.basis)}</span>
+            </DetailRow>
+          </DetailList>
+        </div>
       )}
     </li>
   );
@@ -147,16 +146,11 @@ function AccountSection({
   if (items.length === 0) return null;
   const subtotal = items.reduce((sum, a) => sum + Number(a.value || 0), 0);
   return (
-    <section className="space-y-2.5">
-      <div className="flex items-baseline justify-between gap-3">
-        <h3 className="text-[11px] font-semibold uppercase tracking-[1.2px] text-ink-3">
-          {title} ({items.length})
-        </h3>
-        <div className="text-[12px] text-ink-3">
-          <span className="font-semibold tabular-nums text-ink-2">{fmtMoney(String(subtotal))}</span>
-        </div>
-      </div>
-      <ul className="space-y-2.5">
+    <section className="flex flex-col gap-3">
+      <SectionLabel as="h3" segments={[`${title} (${items.length})`]}>
+        <span className="tabular text-[13px] font-bold text-ink-2">{fmtMoney(subtotal)}</span>
+      </SectionLabel>
+      <ul className="rounded-[var(--radius)] border border-hair-2 bg-card">
         {items.map((a) => (
           <AccountRow key={a.id} account={a} />
         ))}
@@ -171,33 +165,19 @@ export function AccountsTab({ household }: { household: Household }) {
 
   if (!household.planningClient) {
     return (
-      <div className="space-y-4">
-        <h2 className="text-[11px] font-semibold uppercase tracking-[1.2px] text-ink-3">
-          Accounts
-        </h2>
-        <div className="rounded-[var(--radius)] border border-dashed border-hair bg-card-2 px-6 py-10 text-center">
-          <p className="text-[13px] text-ink-3">No planning client linked.</p>
-          <p className="mt-1 text-[12px] text-ink-3">
-            Accounts are sourced from this household&rsquo;s planning client net worth.
-          </p>
-        </div>
-      </div>
+      <AccountsEmpty
+        headline="No planning client linked."
+        detail="Accounts are sourced from this household’s planning client net worth."
+      />
     );
   }
 
   if (items.length === 0) {
     return (
-      <div className="space-y-4">
-        <h2 className="text-[11px] font-semibold uppercase tracking-[1.2px] text-ink-3">
-          Accounts
-        </h2>
-        <div className="rounded-[var(--radius)] border border-dashed border-hair bg-card-2 px-6 py-10 text-center">
-          <p className="text-[13px] text-ink-3">No accounts on the base scenario.</p>
-          <p className="mt-1 text-[12px] text-ink-3">
-            Add accounts on the planning client&rsquo;s net worth to see them here.
-          </p>
-        </div>
-      </div>
+      <AccountsEmpty
+        headline="No accounts on the base scenario."
+        detail="Add accounts on the planning client’s net worth to see them here."
+      />
     );
   }
 
@@ -209,20 +189,52 @@ export function AccountsTab({ household }: { household: Household }) {
   for (const a of items) grouped[sectionForCategory(a.category)].push(a);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-baseline justify-between gap-3">
-        <h2 className="text-[12px] font-semibold uppercase tracking-[1.2px] text-ink-2">
-          Net Worth ({items.length})
-        </h2>
-        <div className="text-[12px] text-ink-3">
-          Total{" "}
-          <span className="font-semibold tabular-nums text-ink">{fmtMoney(String(totalValue))}</span>
+    <div className="flex flex-col gap-7">
+      <div className="flex flex-col gap-5 border-b border-hair-2 pb-6">
+        <SectionLabel segments={["Net worth", `${items.length} records`]} />
+        <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-5">
+          <MetricBlock
+            label="Total"
+            value={fmtMoney(totalValue)}
+            support="Sourced from base scenario"
+            size="lg"
+          />
+          <div className="flex min-w-[280px] flex-1 flex-wrap rounded-[var(--radius)] border border-hair-2">
+            {SECTION_ORDER.map((key) => {
+              const subtotal = grouped[key].reduce((sum, a) => sum + Number(a.value || 0), 0);
+              return (
+                <div
+                  key={key}
+                  className="min-w-0 flex-1 border-hair px-4 py-3 [&:not(:first-child)]:border-l"
+                >
+                  <MetricBlock
+                    label={SECTION_TITLES[key]}
+                    value={fmtMoney(subtotal)}
+                    size="sm"
+                    fillPct={totalValue > 0 ? (subtotal / totalValue) * 100 : 0}
+                  />
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
 
       {SECTION_ORDER.map((key) => (
         <AccountSection key={key} title={SECTION_TITLES[key]} items={grouped[key]} />
       ))}
+    </div>
+  );
+}
+
+function AccountsEmpty({ headline, detail }: { headline: string; detail: string }) {
+  return (
+    <div className="flex flex-col gap-4">
+      <SectionLabel segments={["Net worth"]} />
+      <div className="rounded-[var(--radius)] border border-dashed border-hair-2 px-6 py-10 text-center">
+        <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-ink-2">{headline}</p>
+        <p className="mt-2 text-[13px] text-ink-3">{detail}</p>
+      </div>
     </div>
   );
 }

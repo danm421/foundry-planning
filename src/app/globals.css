@@ -28,6 +28,7 @@
   --color-card: #15171f;
   --color-card-2: #1a1d27;
   --color-card-hover: #1f2330;
+  --color-card-active: #262b3a;
 
   /* Ink — high-contrast on near-black */
   --color-ink: #f4f5f7;
@@ -38,6 +39,7 @@
   /* Hairlines */
   --color-hair: #2b2f3a;
   --color-hair-2: #3a4051;
+  --color-hair-3: #4b5266;
 
   /* Status (solid hues; tinted backgrounds are color-mix at call site) */
   --color-good: #4ade80;
@@ -102,6 +104,9 @@
   /* Fonts — wired to next/font vars set on <html> by layout.tsx */
   --font-sans: var(--font-inter);
   --font-mono: var(--font-b612);
+  /* Display face. Dark/light stay on Inter (no visual change); Industrial
+     Dark overrides this to Archivo Black in its own block. */
+  --font-display: var(--font-inter);
 
   color-scheme: dark;
 }
@@ -125,16 +130,18 @@
   --color-card: #faf8ef;
   --color-card-2: #f5f1e6;
   --color-card-hover: #faf7ee;
+  --color-card-active: #efeada;
 
-  /* Ink */
+  /* Ink — ink-3/ink-4 hold ≥4.5:1 on paper, card and card-2 (WCAG AA; 2026-09-04 a11y audit) */
   --color-ink: #1a1d27;
   --color-ink-2: #474c59;
-  --color-ink-3: #767a86;
-  --color-ink-4: #a8abb3;
+  --color-ink-3: #5c5f69;
+  --color-ink-4: #6a6c71;
 
   /* Hairlines */
   --color-hair: #e8e4d6;
   --color-hair-2: #d9d2bd;
+  --color-hair-3: #c0b596;
 
   /* Status — deeper for legibility on cream */
   --color-good: #047857;
@@ -171,6 +178,87 @@
   color-scheme: light;
 }
 
+/* ------------------------------------------------------------------ */
+/* Industrial Dark (v1) — graphite + warm ivory, pale-olive accent.    */
+/* Same token NAMES as dark/light, so every surface reskins with no    */
+/* per-component color edit and the old themes stay intact for A/B +   */
+/* rollback. Source: `industrial_dark_design_system.md` handoff.       */
+/* ------------------------------------------------------------------ */
+:root[data-theme="industrial"] {
+  /* Accent — action + active state ONLY. Never on a KPI or data value. */
+  --color-accent: #d7dca0;
+  --color-accent-ink: #e3e7b2;
+  --color-accent-deep: #838866;
+  --color-accent-on: #111419;
+  --color-accent-wash: rgba(215, 220, 160, 0.12);
+
+  /* Secondary — desaturated steel; the indigo would fight the olive. */
+  --color-secondary: #94afc5;
+  --color-secondary-ink: #adc3d6;
+  --color-secondary-on: #111419;
+  --color-secondary-wash: rgba(148, 175, 197, 0.14);
+
+  /* Surfaces — graphite, never #000. */
+  --color-paper: #111419;
+  --color-card: #1c2128;
+  --color-card-2: #171b21;
+  --color-card-hover: #232932;
+  --color-card-active: #292f38;
+
+  /* Ink — warm ivory, never #fff. */
+  --color-ink: #f1f0e7;
+  --color-ink-2: #b8bcc0;
+  --color-ink-3: #858b91;
+  --color-ink-4: #60666d;
+
+  /* Hairlines — structure is carried by lines, not shadows. */
+  --color-hair: #303741;
+  --color-hair-2: #414953;
+  --color-hair-3: #626a72;
+
+  /* Status */
+  --color-good: #a8c5a0;
+  --color-warn: #d5be83;
+  --color-crit: #c99090;
+
+  /* Category taxonomy — muted to sit inside a graphite frame. */
+  --color-cat-income: #8fb8a3;
+  --color-cat-portfolio: #94afc5;
+  --color-cat-life: #a99cc0;
+  --color-cat-tax: #d5be83;
+  --color-cat-insurance: #c295a8;
+  --color-cat-transactions: #8fb4b8;
+
+  /* Estate spine palette */
+  --color-spouse: #3e5568;
+  --color-tax: #6b3d2e;
+  --color-inherit: #355267;
+  --color-heirs: #5d6a45;
+
+  /* Deep Jewel data palette — dark values hold up on graphite. */
+  --data-red: #c0392b;
+  --data-blue: #2c5fa8;
+  --data-green: #2a8a5e;
+  --data-yellow: #c99a1e;
+  --data-grey: #9ca3af;
+  --data-orange: #cf6a1f;
+  --data-purple: #6a3fa0;
+  --data-teal: #1f8a86;
+  --data-pink: #a83f6a;
+  --data-sky: #56a9dd;
+
+  /* Geometry — near-square. Nothing above 6px. */
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius: 4px;
+
+  /* Faces — display for headings/metrics, IBM Plex Mono for metadata. */
+  --font-mono: var(--font-plex-mono);
+  --font-display: var(--font-archivo);
+
+  color-scheme: dark;
+}
+
 /* Foundry brand mark: gold gradient in dark theme, solid black in light theme. */
 .fp-mark__black {
   display: none;
@@ -190,6 +278,7 @@
   --color-card: var(--color-card);
   --color-card-2: var(--color-card-2);
   --color-card-hover: var(--color-card-hover);
+  --color-card-active: var(--color-card-active);
 
   --color-ink: var(--color-ink);
   --color-ink-2: var(--color-ink-2);
@@ -209,6 +298,7 @@
 
   --color-hair: var(--color-hair);
   --color-hair-2: var(--color-hair-2);
+  --color-hair-3: var(--color-hair-3);
 
   --color-good: var(--color-good);
   --color-warn: var(--color-warn);
@@ -255,6 +345,7 @@
   /* Fonts */
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
+  --font-display: var(--font-display);
 }
 
 /* ------------------------------------------------------------------ */
@@ -285,7 +376,9 @@ html {
 /* ------------------------------------------------------------------ */
 
 .tabular {
-  font-family: "B612 Mono", ui-monospace, monospace;
+  /* var(--font-mono) is B612 Mono in dark/light and IBM Plex Mono under
+     Industrial Dark — same rendering as before on the existing themes. */
+  font-family: var(--font-mono), "B612 Mono", ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
   letter-spacing: -0.01em;
@@ -365,7 +458,7 @@ html {
   text-transform: uppercase;
   color: var(--color-ink-2);
   background: color-mix(in oklab, var(--color-ink) 4%, transparent);
-  font-family: "B612 Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono), "B612 Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   font-weight: 500;
 }
 

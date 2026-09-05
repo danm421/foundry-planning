@@ -33,6 +33,19 @@ const BRACKET_OPTIONS = [
   { value: 0.37, label: "37% bracket" },
 ];
 
+// IRMAA cap choices. No tier 5 — the top tier is unbounded above and cannot
+// serve as a ceiling. The tiers are named, not priced: this form receives no
+// tax-year parameters, so it has no thresholds to quote, and the engine
+// resolves each tier's dollars for the year the surcharge actually lands.
+const IRMAA_CAP_OPTIONS = [
+  { value: "", label: "No IRMAA cap" },
+  { value: "0", label: "Stay surcharge-free" },
+  { value: "1", label: "Stay within Tier 1" },
+  { value: "2", label: "Stay within Tier 2" },
+  { value: "3", label: "Stay within Tier 3" },
+  { value: "4", label: "Stay within Tier 4" },
+];
+
 export interface RothConversionInitialData {
   id: string;
   name: string;
@@ -47,6 +60,7 @@ export interface RothConversionInitialData {
   endYearRef: string | null;
   indexingRate: string;
   inflationStartYear: number | null;
+  irmaaCapTier: number | null;
 }
 
 export interface RothAccountCreation {
@@ -144,6 +158,9 @@ export default function AddRothConversionForm({
   const [fixedAmount, setFixedAmount] = useState(initialData?.fixedAmount ?? "");
   const [fillUpBracket, setFillUpBracket] = useState<number>(
     initialData?.fillUpBracket != null ? parseFloat(initialData.fillUpBracket) : 0.22,
+  );
+  const [irmaaCapTier, setIrmaaCapTier] = useState<number | null>(
+    initialData?.irmaaCapTier ?? null,
   );
   const [startYear, setStartYear] = useState(
     initialData?.startYear ?? new Date().getFullYear(),
@@ -300,6 +317,7 @@ export default function AddRothConversionForm({
         conversionType,
         fixedAmount: showFixedAmount ? parseFloat(fixedAmount) || 0 : 0,
         fillUpBracket: showBracketSelect ? fillUpBracket : null,
+        irmaaCapTier,
         startYear,
         endYear: requiresEndYear || conversionType === "fill_up_bracket" || conversionType === "fixed_amount"
           ? endYear
@@ -323,6 +341,7 @@ export default function AddRothConversionForm({
           conversionType: body.conversionType,
           fixedAmount: body.fixedAmount,
           ...(body.fillUpBracket != null ? { fillUpBracket: body.fillUpBracket } : {}),
+          ...(body.irmaaCapTier != null ? { irmaaCapTier: body.irmaaCapTier } : {}),
           startYear: body.startYear,
           ...(body.endYear != null ? { endYear: body.endYear } : {}),
           indexingRate: body.indexingRate,
@@ -628,6 +647,31 @@ export default function AddRothConversionForm({
             </p>
           </div>
         )}
+
+        {/* IRMAA cap — applies to every conversion type */}
+        <div>
+          <label className={fieldLabelClassName} htmlFor="rc-irmaaCap">IRMAA Cap</label>
+          <select
+            id="rc-irmaaCap"
+            value={irmaaCapTier == null ? "" : String(irmaaCapTier)}
+            onChange={(e) =>
+              setIrmaaCapTier(e.target.value === "" ? null : parseInt(e.target.value, 10))
+            }
+            className={selectClassName}
+          >
+            {IRMAA_CAP_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+          <p className="mt-1.5 text-[12px] text-ink-3">
+            Limits the conversion so the household&rsquo;s income stays at or below the
+            selected Medicare surcharge tier. The surcharge lands two years after the
+            conversion, so the cap targets that year&rsquo;s thresholds. It only applies
+            if someone is on Medicare in that later year, and each conversion is capped
+            on its own — two capped conversions in the same year can still add up past
+            the tier.
+          </p>
+        </div>
 
         {/* Indexing — fixed_amount only */}
         {showIndexing && (

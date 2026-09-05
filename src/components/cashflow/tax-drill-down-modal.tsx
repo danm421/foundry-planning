@@ -65,7 +65,7 @@ export function TaxDrillDownModal({
                 .filter(([, v]) => v.type === row.taxType)
                 .map(([sourceId, v]) => ({
                   id: sourceId,
-                  label: resolveSourceLabel(sourceId, { accountNames, incomes, accounts: [], entityNames }),
+                  label: resolveSourceLabel(sourceId, { accountNames, incomes, accounts: [], entityNames }, v),
                   amount: v.amount,
                 }))
                 .sort((a, b) => b.amount - a.amount);

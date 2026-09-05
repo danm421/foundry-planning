@@ -482,6 +482,9 @@ export interface ClientData {
   taxYearRows?: TaxYearParameters[];
   /** Itemized deduction line items (charitable, SALT, mortgage interest, etc.). */
   deductions?: ClientDeductionRow[];
+  /** Advisor-entered income that already happened — feeds the tax engine and
+   *  never the cash flow. See `src/engine/tax-adjustments.ts`. */
+  taxAdjustments?: import("./tax-adjustments").TaxAdjustmentRow[];
   /** Transfer techniques — move value between accounts with tax implications. */
   transfers?: Transfer[];
   /** Roth conversion techniques — multi-source, strategy-driven Trad → Roth conversions. */
@@ -1348,6 +1351,9 @@ export interface RothConversion {
   /** Top of the ordinary-income bracket to fill (e.g., 0.22). Used only when
    *  conversionType === "fill_up_bracket". */
   fillUpBracket?: number;
+  /** Highest IRMAA tier this conversion may push MAGI into. null/undefined =
+   *  uncapped. 0 = stay surcharge-free; 1-4 = stay within that tier. */
+  irmaaCapTier?: number | null;
   startYear: number;
   endYear?: number;
   /** Annual indexing rate applied to fixedAmount. Only meaningful for
@@ -1590,7 +1596,17 @@ export interface ProjectionYear {
      *  generic non-taxable business pass-through (e.g. Roth-equivalent
      *  distributions, return-of-capital) — those land in `taxExempt` only. */
     taxExemptInterest: number;
-    bySource: Record<string, { type: string; amount: number }>;
+    /** Drill-down itemization. `irmaaCapTier` rides on the ROW rather than on
+     *  a per-conversion lookup because it is a per-YEAR outcome: the same cap
+     *  can bind in 2030 and sit idle in 2031, and the drill's shared context
+     *  is built once for every year. Set only on `roth_conversion:<id>` rows
+     *  the cap actually limited. `irmaaCapExceeded` rides the same way and
+     *  means the OPPOSITE outcome: the cap was named but the household still
+     *  finished the year above it. */
+    bySource: Record<
+      string,
+      { type: string; amount: number; irmaaCapTier?: number; irmaaCapExceeded?: boolean }
+    >;
     /** End-of-year §1212(b) carryforward, for the drill-down. Post-drawdown:
      *  this year's §1211(b) offset has already been subtracted. */
     capitalLossCarryforward?: { shortTerm: number; longTerm: number };
@@ -1826,8 +1842,27 @@ export interface ProjectionYear {
   /** Per-conversion summary for years where Roth conversions ran. `gross` is
    *  the amount moved out of source IRAs; `taxable` is the ordinary-income
    *  portion (lower than gross when the source has after-tax basis — Form
-   *  8606 pro-rata). The Tax Bracket report consumes both columns. */
-  rothConversions?: { id: string; name: string; gross: number; taxable: number }[];
+   *  8606 pro-rata). The Tax Bracket report consumes both columns.
+   *
+   *  `requested` / `limitedBy` / `irmaaCapTier` say WHY the conversion came
+   *  out this size — see `RothConversionOutcome` in `roth-conversions.ts`.
+   *  A conversion an IRMAA cap zeroed out appears here with `gross: 0` rather
+   *  than being omitted, so the technique reads as "ran, converted nothing"
+   *  instead of vanishing from the year. */
+  rothConversions?: {
+    id: string;
+    name: string;
+    gross: number;
+    taxable: number;
+    requested: number;
+    limitedBy: "irmaa" | "bracket" | "sources" | null;
+    irmaaCapTier?: number | null;
+    /** True when the cap named by `irmaaCapTier` did NOT hold at the household
+     *  level — see the `irmaa_cap_not_enforced` warning. `limitedBy` stays
+     *  "irmaa" because this conversion WAS sized to the ceiling; what failed is
+     *  the year's total. Absent means the cap held (or there was no cap). */
+    irmaaCapExceeded?: boolean;
+  }[];
   /** Only populated on death-event years. One entry per (source × recipient).
    *  Same-year double death (4b + 4c in the same year) produces both
    *  deathOrder = 1 and deathOrder = 2 entries on the same row. */

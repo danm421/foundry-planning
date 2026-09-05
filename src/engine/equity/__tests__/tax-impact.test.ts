@@ -12,9 +12,24 @@ function flow(over: Partial<Flow>): Flow {
     belowLineDeductions: 0, taxableIncome: 0, incomeTaxBase: 0, regularTaxCalc: 0,
     amtCredit: 0, taxCredits: 0, refundableCredits: 0, aotcAllowed: 0, regularFederalIncomeTax: 0, capitalGainsTax: 0,
     amtAdditional: 0, niit: 0, additionalMedicare: 0, fica: 0, stateTax: 0,
-    totalFederalTax: 0, totalTax: 0, earlyWithdrawalPenalty: 0, ...over,
+    totalFederalTax: 0, totalTax: 0, earlyWithdrawalPenalty: 0,
+    taxAlreadyPaid: 0, ...over,
+    // Derived AFTER the spread so an explicit override still wins, but a
+    // caller who sets totalTax without balanceDue gets a truthful default
+    // instead of a type-satisfying 0 against a real liability.
+    balanceDue: over.balanceDue ?? Math.max(0, (over.totalTax ?? 0) - (over.taxAlreadyPaid ?? 0)),
   };
 }
+
+describe("flow() fixture helper", () => {
+  it("derives balanceDue from totalTax when the override doesn't set it, instead of a type-satisfying 0", () => {
+    expect(flow({ totalTax: 97_650 }).balanceDue).toBe(97_650);
+  });
+
+  it("still lets an explicit balanceDue override win", () => {
+    expect(flow({ totalTax: 97_650, balanceDue: 12_000 }).balanceDue).toBe(12_000);
+  });
+});
 
 describe("diffEquityTaxImpact", () => {
   it("maps each flow delta to the right column and sums the total", () => {

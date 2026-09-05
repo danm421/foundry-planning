@@ -18,7 +18,7 @@ interface DialogTabsProps {
 
 export default function DialogTabs({ tabs, activeTab, onTabChange, right }: DialogTabsProps) {
   return (
-    <div className="flex items-stretch justify-between border-b border-hair px-2">
+    <div className="flex items-stretch justify-between border-b border-hair-2 px-2">
       <div className="flex items-stretch">
         {tabs.map((tab) => {
           const isActive = tab.id === activeTab;
@@ -28,9 +28,9 @@ export default function DialogTabs({ tabs, activeTab, onTabChange, right }: Dial
               type="button"
               onClick={() => onTabChange(tab.id)}
               className={
-                "px-4 py-3 text-xs font-medium uppercase tracking-[0.08em] border-b-2 -mb-px transition-colors " +
+                "px-4 py-3 font-mono text-[10.5px] font-semibold uppercase tracking-[0.12em] border-b-2 -mb-px transition-colors duration-150 " +
                 (isActive
-                  ? "text-accent-ink border-accent"
+                  ? "text-ink border-accent"
                   : "text-ink-3 hover:text-ink-2 border-transparent")
               }
             >
