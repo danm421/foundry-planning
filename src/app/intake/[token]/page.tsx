@@ -50,7 +50,7 @@ function ExpiredLink({ branding }: { branding: IntakeBranding | null }) {
   return (
     <div className="flex min-h-screen flex-col bg-paper">
       <IntakeBrandingHeader branding={branding} />
-      <div className="flex flex-1 flex-col items-center justify-center px-6 py-16 text-center">
+      <main id="main" className="flex flex-1 flex-col items-center justify-center px-6 py-16 text-center">
         <div className="max-w-md">
           <p className="mb-3 font-mono text-xs uppercase tracking-widest text-ink-3">
             Link expired
@@ -63,7 +63,7 @@ function ExpiredLink({ branding }: { branding: IntakeBranding | null }) {
             advisor to receive a new one.
           </p>
         </div>
-      </div>
+      </main>
     </div>
   );
 }
@@ -94,6 +94,7 @@ export default async function IntakePage({
       <IntakeThankYou
         recipientName={form.recipientName ?? null}
         branding={branding}
+        landmark="main"
       />
     );
   }

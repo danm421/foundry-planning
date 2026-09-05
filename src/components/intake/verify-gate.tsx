@@ -59,7 +59,7 @@ export function IntakeVerifyGate({ token, branding }: IntakeVerifyGateProps) {
     <div className="flex min-h-screen flex-col bg-paper">
       <IntakeBrandingHeader branding={branding} />
 
-      <div className="flex flex-1 items-start justify-center px-4 py-16">
+      <main id="main" className="flex flex-1 items-start justify-center px-4 py-16">
         <div className="w-full max-w-md">
           <div className="mb-8 text-center">
             <p className="mb-3 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">
@@ -128,7 +128,7 @@ export function IntakeVerifyGate({ token, branding }: IntakeVerifyGateProps) {
             Trouble getting in? Contact your advisor and they can send a fresh link.
           </p>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

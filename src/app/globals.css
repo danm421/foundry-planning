@@ -126,11 +126,11 @@
   --color-card-2: #f5f1e6;
   --color-card-hover: #faf7ee;
 
-  /* Ink */
+  /* Ink — ink-3/ink-4 hold ≥4.5:1 on paper, card and card-2 (WCAG AA; 2026-09-04 a11y audit) */
   --color-ink: #1a1d27;
   --color-ink-2: #474c59;
-  --color-ink-3: #767a86;
-  --color-ink-4: #a8abb3;
+  --color-ink-3: #5c5f69;
+  --color-ink-4: #6a6c71;
 
   /* Hairlines */
   --color-hair: #e8e4d6;

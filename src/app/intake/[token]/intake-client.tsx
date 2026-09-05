@@ -198,7 +198,7 @@ export function IntakeClient({
   }, [token, value, router]);
 
   if (submitted) {
-    return <IntakeThankYou recipientName={recipientName} branding={branding} />;
+    return <IntakeThankYou recipientName={recipientName} branding={branding} landmark="main" />;
   }
 
   return (

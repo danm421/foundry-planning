@@ -8,21 +8,31 @@ import {
  * Post-submit thank-you screen shared by the public (token) and portal intake
  * wrappers. Pass `continueHref` to show a "Continue to your portal" CTA (portal
  * flow); omit it for the public flow, which has nowhere to send the visitor.
+ *
+ * `landmark="main"` makes the content the page's <main> — for the public
+ * routes, which have no other landmark. The portal and the advisor preview
+ * already render inside a <main>, so they keep the default <div>.
  */
 export function IntakeThankYou({
   recipientName,
   continueHref,
   branding,
+  landmark = "div",
 }: {
   recipientName: string | null;
   continueHref?: string;
   branding?: IntakeHeaderBranding | null;
+  landmark?: "main" | "div";
 }) {
   const greeting = recipientName ? `Thank you, ${recipientName}` : "Thank you";
+  const Content = landmark;
   return (
     <div className="flex min-h-screen flex-col bg-paper">
       <IntakeBrandingHeader branding={branding} />
-      <div className="flex flex-1 flex-col items-center justify-center px-6 py-16 text-center">
+      <Content
+        id={landmark === "main" ? "main" : undefined}
+        className="flex flex-1 flex-col items-center justify-center px-6 py-16 text-center"
+      >
         <div className="max-w-md">
           <p className="mb-3 font-mono text-xs uppercase tracking-widest text-ink-3">
             Submitted
@@ -46,7 +56,7 @@ export function IntakeThankYou({
             </Link>
           )}
         </div>
-      </div>
+      </Content>
     </div>
   );
 }

@@ -54,7 +54,7 @@ export function AuthChrome({
         </Link>
       </header>
 
-      <main className={`relative z-10 mx-auto flex w-full ${width} flex-1 flex-col justify-center px-4 pb-10 pt-2 sm:px-6`}>
+      <main id="main" className={`relative z-10 mx-auto flex w-full ${width} flex-1 flex-col justify-center px-4 pb-10 pt-2 sm:px-6`}>
         {children}
       </main>
 

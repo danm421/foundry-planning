@@ -10,7 +10,7 @@ export const PDF_THEME = {
   card2: "#ffffff",           // raised white panel on cream paper (print affordance)
   ink: colorsLight.ink,       // #1a1d27
   ink2: colorsLight.ink2,     // #474c59
-  ink3: colorsLight.ink3,     // #767a86
+  ink3: colorsLight.ink3,     // #5c5f69
   hair: colorsLight.hair,     // #e8e4d6
   accent: colorsLight.accent, // #0f7d6c verdigris (firm override applied via resolveAccentColor)
   good: colorsLight.good,     // #047857

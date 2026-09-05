@@ -49,9 +49,9 @@ export function EnterClient({ ticket }: { ticket: string | null }): ReactElement
 
   if (failed) {
     return (
-      <main className="flex min-h-screen items-center justify-center px-8 text-center">
+      <main id="main" className="flex min-h-screen items-center justify-center px-8 text-center">
         <div>
-          <p className="text-[var(--color-ink)] font-semibold">This link expired</p>
+          <h1 className="text-[var(--color-ink)] font-semibold">This link expired</h1>
           <p className="mt-2 text-sm text-[var(--color-ink-3)]">
             Reopen intake from the app to try again.
           </p>
@@ -61,7 +61,8 @@ export function EnterClient({ ticket }: { ticket: string | null }): ReactElement
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center">
+    <main id="main" className="flex min-h-screen items-center justify-center">
+      <h1 className="sr-only">Signing you in</h1>
       <div
         className="h-6 w-6 animate-spin rounded-full border-2 border-[var(--color-hair)] border-t-[var(--color-accent)]"
         aria-label="Loading"

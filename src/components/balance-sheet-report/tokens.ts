@@ -87,7 +87,7 @@ export const PDF_THEME = {
   text: {
     primary: colorsLight.ink,        // #1a1d27
     secondary: colorsLight.ink2,     // #474c59
-    muted: colorsLight.ink3,         // #767a86
+    muted: colorsLight.ink3,         // #5c5f69
   },
   status: {
     up: { bg: "#ecfdf5", fg: colorsLight.good, border: "#a7f3d0" },   // emerald tint

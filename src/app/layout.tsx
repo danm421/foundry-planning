@@ -82,6 +82,15 @@ export default async function RootLayout({
         suppressHydrationWarning
       >
         <body className="min-h-full flex flex-col">
+          {/* Skip link — first tab stop on every page (WCAG 2.4.1). Visually
+              hidden until it has keyboard focus; lands on the route's
+              <main id="main">. */}
+          <a
+            href="#main"
+            className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-md focus:border focus:border-hair-2 focus:bg-paper focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-ink focus:outline-none focus:ring-2 focus:ring-accent"
+          >
+            Skip to content
+          </a>
           <SentryUserContext />
           <ToastProvider>{children}</ToastProvider>
         </body>

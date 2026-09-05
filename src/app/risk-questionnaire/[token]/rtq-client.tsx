@@ -56,13 +56,13 @@ export function RtqClient({ token, recipientName, branding }: RtqClientProps) {
   }
 
   if (submitted) {
-    return <IntakeThankYou recipientName={recipientName} branding={branding} />;
+    return <IntakeThankYou recipientName={recipientName} branding={branding} landmark="main" />;
   }
 
   return (
     <div className="flex min-h-screen flex-col bg-paper">
       <IntakeBrandingHeader branding={branding} />
-      <div className="mx-auto w-full max-w-xl px-6 py-12">
+      <main id="main" className="mx-auto w-full max-w-xl px-6 py-12">
         <div className="mb-6">
           <p className="mb-3 font-mono text-xs uppercase tracking-widest text-ink-3">
             Risk tolerance questionnaire
@@ -72,7 +72,7 @@ export function RtqClient({ token, recipientName, branding }: RtqClientProps) {
           </h1>
         </div>
         <RtqForm questions={RTQ_V1} onSubmit={handleSubmit} showEnvironmentNote />
-      </div>
+      </main>
     </div>
   );
 }
