@@ -19,8 +19,8 @@ const TAX_TYPE_LABELS: Record<string, string> = {
   capital_gains: "Capital Gains (LT)",
   stcg: "ST Capital Gains",
   qbi: "QBI",
-  tax_exempt: "Other tax-free income",
-  muni_interest: "Municipal bond interest",
+  tax_exempt: "Other Tax-Free Income",
+  muni_interest: "Municipal Bond Interest",
 };
 
 const OWNER_LABELS: Record<string, string> = {

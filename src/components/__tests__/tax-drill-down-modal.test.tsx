@@ -56,7 +56,7 @@ describe("TaxDrillDownModal tax-free partition", () => {
     );
     // Scope each amount to its own row — "Capital Gains (LT)" is also
     // $10,000 in this fixture, so an unscoped query would be ambiguous.
-    const otherRow = screen.getByText("Other tax-free income").closest("button");
+    const otherRow = screen.getByText("Other Tax-Free Income").closest("button");
     expect(otherRow).not.toBeNull();
     expect(within(otherRow!).getByText("$10,000")).toBeDefined();
 

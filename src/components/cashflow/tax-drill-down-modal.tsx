@@ -61,7 +61,7 @@ export function TaxDrillDownModal({
             // showing both against their raw totals — is what keeps these two
             // rows summing back to `detail.taxExempt`, and so to the "Total
             // Income" footer below, instead of double-counting muni on screen.
-            { label: "Other tax-free income", key: "taxExempt" as const, taxType: "tax_exempt", amount: detail.taxExempt - detail.taxExemptInterest },
+            { label: "Other Tax-Free Income", key: "taxExempt" as const, taxType: "tax_exempt", amount: detail.taxExempt - detail.taxExemptInterest },
             { label: "Municipal Bond Interest", key: "taxExemptInterest" as const, taxType: "muni_interest", amount: detail.taxExemptInterest },
           ]
             .filter((row) => row.amount > 0)
