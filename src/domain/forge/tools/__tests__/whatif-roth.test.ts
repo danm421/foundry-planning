@@ -108,7 +108,7 @@ describe("whatif_roth", () => {
       .mockReturnValueOnce([
         projYear({
           year: 2030,
-          rothConversions: [{ id: "rc1", name: "Ladder 2030", gross: 40_000, taxable: 40_000 }],
+          rothConversions: [{ id: "rc1", name: "Ladder 2030", gross: 40_000, taxable: 40_000, requested: 40_000, limitedBy: null }],
           taxResult: { flow: { totalTax: 18_000 } } as ProjectionYear["taxResult"],
           medicare: { totalAnnualCost: 6_000 } as ProjectionYear["medicare"],
         }),

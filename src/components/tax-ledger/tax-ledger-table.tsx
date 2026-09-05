@@ -9,7 +9,10 @@ function visibleRows(section: TaxLedgerSection, f: LedgerFilterState): TaxLedger
   return section.rows.filter((r) => {
     if (f.characters.size > 0 && !f.characters.has(r.character)) return false;
     if (f.hideNonTaxable && (r.character === "tax_exempt" || r.character === "non_taxable")) return false;
-    if (f.hideZero && r.amount === 0) return false;
+    // `zeroIsMeaningful` rows opt out of "hide zero rows" only — a $0 Roth
+    // conversion is an enforced IRMAA cap, not noise. The character filters
+    // above still apply: an advisor who filters by character gets what they asked for.
+    if (f.hideZero && r.amount === 0 && !r.zeroIsMeaningful) return false;
     return true;
   });
 }

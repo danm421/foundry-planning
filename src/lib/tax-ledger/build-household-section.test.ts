@@ -122,4 +122,27 @@ describe("buildHouseholdSection", () => {
     expect(s.characterSubtotals.long_term_gain).toBe(45000);
     expect(s.characterSubtotals.ordinary).toBe(52000);
   });
+
+  it("keeps a $0 Roth conversion row but still drops other $0 noise", () => {
+    // The engine emits a $0 `roth_conversion:` row on purpose when an IRMAA cap
+    // binds all the way down. Dropping it makes an enforced cap look like a
+    // technique that never ran. Every other $0 entry stays filtered.
+    const y = fixtureYear();
+    y.taxDetail!.bySource["roth_conversion:rc1"] = {
+      type: "ordinary_income",
+      amount: 0,
+      irmaaCapTier: 0,
+    };
+    y.taxDetail!.bySource["withdrawal:ira"] = { type: "ordinary_income", amount: 0 };
+
+    const s = buildHouseholdSection(y, ctx, "Household");
+    const roth = s.rows.find((r) => r.type === "Roth Conversion");
+    expect(roth, "the $0 conversion row survives").toBeDefined();
+    expect(roth!.amount).toBe(0);
+    // And it says WHY, so the $0 doesn't read as a broken technique.
+    expect(roth!.description).toBe("Roth Conversion (limited by IRMAA Tier 0)");
+    expect(s.rows.some((r) => r.type === "Withdrawal")).toBe(false);
+    // And it changes no total — a $0 row cannot move a subtotal.
+    expect(s.taxableSubtotal).toBe(130_700);
+  });
 });

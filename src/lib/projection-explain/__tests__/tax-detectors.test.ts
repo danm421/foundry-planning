@@ -245,7 +245,7 @@ describe("detectRothConversion", () => {
     const prev = makeYear({ year: 2062 });
     const next = makeYear({
       year: 2063,
-      rothConversions: [{ id: "rc1", name: "Fill 24% bracket", gross: 100_000, taxable: 95_000 }],
+      rothConversions: [{ id: "rc1", name: "Fill 24% bracket", gross: 100_000, taxable: 95_000, requested: 100_000, limitedBy: null }],
     });
     const f = detectRothConversion(args(prev, next));
     expect(f?.incomeDelta).toBe(95_000);

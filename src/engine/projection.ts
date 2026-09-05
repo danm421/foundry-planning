@@ -22,7 +22,12 @@ import type {
   RothConversion,
   EducationGoalYear,
 } from "./types";
-import { computeMedicareYear } from "./medicare";
+import {
+  computeMedicareYear,
+  inflateIrmaaTiers,
+  irmaaCapCeiling,
+  isEnrolledInYear,
+} from "./medicare";
 import { resolveResidenceState } from "./relocation";
 import {
   computeBusinessAccountCashFlow,
@@ -93,7 +98,13 @@ import { calculateRMD } from "./rmd";
 import { initAnnuityState, stepAnnuityYear, type AnnuityState } from "./annuity";
 import { applyTransfers, type TransfersResult } from "./transfers";
 import { applyReinvestments } from "./reinvestments";
-import { applyRothConversions, fillUpBracketCeiling } from "./roth-conversions";
+import {
+  applyRothConversions,
+  fillUpBracketCeiling,
+  isTopBracketTarget,
+  strategyGrossAmount,
+  type RothConversionOutcome,
+} from "./roth-conversions";
 import { applyMarketShock } from "./market-shock";
 import {
   applyAssetSales,
@@ -2429,7 +2440,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     let rothConversionResult = {
       taxableOrdinaryIncome: 0,
       earlyWithdrawalPenalty: 0,
-      byConversion: {} as Record<string, { gross: number; taxable: number; bySource: Record<string, number> }>,
+      byConversion: {} as Record<string, RothConversionOutcome>,
     };
 
     // 5. Compute taxable income total and per-category tax detail.
@@ -4819,16 +4830,30 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       return true;
     };
 
-    // Probe: returns this year's `incomeTaxBase` if Roth taxable income were
-    // `r` and supplemental withdrawals contributed `(suppOrdinary, suppCapGains)`.
-    // Captures the year-loop's tax inputs by closure so phase 12 can call it
-    // each iteration with a fresh supplemental snapshot.
-    const buildIncomeTaxBaseProbe = (): (
-      (r: number, suppOrdinary?: number, suppCapGains?: number) => number
+    // Probe: returns this year's `incomeTaxBase` AND IRMAA MAGI if Roth taxable
+    // income were `r` and supplemental withdrawals contributed
+    // `(suppOrdinary, suppCapGains)`. Captures the year-loop's tax inputs by
+    // closure so phase 12 can call it each iteration with a fresh supplemental
+    // snapshot. Both figures come off ONE trial compute — an IRMAA-capped
+    // conversion costs no extra tax computation.
+    const buildTaxProbe = (): (
+      (
+        r: number,
+        suppOrdinary?: number,
+        suppCapGains?: number,
+      ) => { incomeTaxBase: number; magi: number }
     ) => {
-      return (r: number, suppOrdinary: number = 0, suppCapGains: number = 0): number => {
+      return (
+        r: number,
+        suppOrdinary: number = 0,
+        suppCapGains: number = 0,
+      ): { incomeTaxBase: number; magi: number } => {
         if (!useBracket || !resolved) {
-          return Math.max(0, taxableIncome + r + suppOrdinary + suppCapGains);
+          const flat = Math.max(0, taxableIncome + r + suppOrdinary + suppCapGains);
+          // Placeholder only: with no resolved params there is no AGI to read, so
+          // `magi` mirrors `incomeTaxBase`. NOT a real IRMAA MAGI — any
+          // MAGI-ceiling caller must guard this path rather than size against it.
+          return { incomeTaxBase: flat, magi: flat };
         }
         const trial = computeTaxForYear({
           taxDetail: {
@@ -4861,37 +4886,48 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           transferEarlyWithdrawalPenalty: 0,
           interestIncomeForTax,
           deductionBreakdownIn: deductionBreakdownResult ?? null,
-          // This probe reads `incomeTaxBase` and throws the rest away, and it
-          // runs once per convergence iteration — never pay for the
-          // next-dollar rate measurement here.
+          // This probe reads `incomeTaxBase` / `adjustedGrossIncome` and throws
+          // the rest away, and it runs once per convergence iteration — never
+          // pay for the next-dollar rate measurement here.
           measureNextDollarRate: false,
           // primaryAge/spouseAge: senior deductions lower incomeTaxBase, which
           // sizes the conversion. retirementBreakdown is omitted — it feeds only
-          // state exclusions (not this probe's federal incomeTaxBase) and is
-          // declared after this closure's first call site (TDZ).
+          // state exclusions (neither this probe's federal incomeTaxBase nor its
+          // federal AGI) and is declared after this closure's first call site (TDZ).
           primaryAge: ages.client,
           spouseAge: ages.spouse,
           isoSpread: equityIsoSpread,
           household: taxHousehold,
         });
-        return trial.taxResult.flow.incomeTaxBase;
+        return {
+          incomeTaxBase: trial.taxResult.flow.incomeTaxBase,
+          // IRMAA's MAGI (IRC §6334(d)(3)(C)) — the SAME definition the
+          // Medicare block uses at the `magiThisYearPreSupplemental` site.
+          // Read off the trial we already ran: the cap costs no extra tax
+          // computation. Tax-exempt interest is invariant to the conversion
+          // amount, so taking it from the enclosing taxDetail is exact.
+          magi:
+            trial.taxResult.flow.adjustedGrossIncome +
+            (taxDetail.taxExemptInterest ?? 0),
+        };
       };
     };
 
-    // Solve for the Roth taxable amount that lands `incomeTaxBase ≈ ceiling`
-    // given a fixed supplemental snapshot. Bounded fixed-point — handles
-    // non-linearities from SS taxability / QBI / piecewise deductions.
-    const sizeFillBracketConversion = (
+    /** Solve for the Roth taxable amount that lands `select(probe(r)) ≈ ceiling`
+     *  given a fixed supplemental snapshot. Bounded fixed-point — handles
+     *  non-linearities from SS taxability / QBI / piecewise deductions. */
+    const sizeConversionToCeiling = (
       ceiling: number,
-      probe: ReturnType<typeof buildIncomeTaxBaseProbe>,
+      probe: ReturnType<typeof buildTaxProbe>,
+      select: (p: { incomeTaxBase: number; magi: number }) => number,
       suppOrdinary: number,
       suppCapGains: number,
     ): number => {
-      const baseAt0 = probe(0, suppOrdinary, suppCapGains);
+      const baseAt0 = select(probe(0, suppOrdinary, suppCapGains));
       if (baseAt0 >= ceiling) return 0;
       let target = ceiling - baseAt0;
       for (let i = 0; i < 6; i++) {
-        const baseAtTarget = probe(target, suppOrdinary, suppCapGains);
+        const baseAtTarget = select(probe(target, suppOrdinary, suppCapGains));
         const delta = ceiling - baseAtTarget;
         if (Math.abs(delta) < 1) break;
         target = Math.max(0, target + delta);
@@ -4899,18 +4935,236 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       return Math.max(0, target);
     };
 
-    // Phase 5b: size-only. Splits conversions into bracket-fillers (deferred
-    // to phase 12) and the rest (applied here).
+    const selectIncomeTaxBase = (p: { incomeTaxBase: number; magi: number }) => p.incomeTaxBase;
+    // The sizer's second ceiling — read by `sizeJointConversion` for the IRMAA cap.
+    const selectMagi = (p: { incomeTaxBase: number; magi: number }) => p.magi;
+
+    // Hoisted from the Medicare/IRMAA block further down so `resolveIrmaaCeiling`
+    // (immediately below) can read it. The initializer touches nothing but
+    // `data.medicareCoverage`, so it is safe this early in the year.
+    const medicareCoverageByOwner: Record<"client" | "spouse", MedicareCoverage | undefined> = {
+      client: data.medicareCoverage?.find((c) => c.owner === "client"),
+      spouse: data.medicareCoverage?.find((c) => c.owner === "spouse"),
+    };
+
+    /** The MAGI ceiling a capped conversion must respect this year, or null
+     *  when the cap does not bind.
+     *
+     *  ⚠️ THREE RULES, EACH OF WHICH LOOKS OPTIONAL AND IS NOT:
+     *
+     *  1. PREMIUM YEAR = year + 2. IRMAA charges year N's premium against
+     *     year N-2's MAGI, so a conversion made NOW sets the premium TWO
+     *     YEARS OUT and must aim at THAT year's thresholds. They inflate
+     *     ~3%/yr, so aiming at this year's silently steals ~6% of the
+     *     headroom — about $13K of MFJ tier-1 room. The result looks right.
+     *
+     *  2. ENROLLMENT GATE. If nobody is enrolled in the premium year there is
+     *     no premium to protect and the cap MUST NOT bind — otherwise a
+     *     58-year-old gets throttled for a surcharge that will never be
+     *     charged. In practice the cap starts biting at age 63.
+     *
+     *  3. FILING STATUS IS THE PREMIUM YEAR'S. If the first death falls
+     *     between now and then, the survivor files single and the thresholds
+     *     roughly HALVE. Reading `client.filingStatus` here instead would
+     *     hand a survivor joint-sized headroom.
+     */
+    const resolveIrmaaCeiling = (conv: RothConversion): number | null => {
+      if (conv.irmaaCapTier == null) return null;
+      if (!taxResolver) return null;
+      // Flat tax mode has no AGI to read: `buildTaxProbe` short-circuits on
+      // `!useBracket || !resolved` and returns a taxable-income proxy as its
+      // `magi` (see the "Placeholder only" comment at that early return).
+      // Sizing a MAGI ceiling against that number would quietly produce a wrong
+      // conversion amount, so the cap goes inert here instead — the same
+      // posture as the enrollment gate below.
+      if (!useBracket || !resolved) return null;
+
+      const premiumYear = year + 2;
+
+      // Rule 2 — enrollment gate. `ages.*` are THIS year's ages, so the
+      // premium-year ages are simply +2.
+      const enrolledInPremiumYear = [
+        [medicareCoverageByOwner.client, ages.client] as const,
+        [medicareCoverageByOwner.spouse, ages.spouse] as const,
+      ].some(
+        ([cov, ageNow]) =>
+          cov != null &&
+          ageNow !== undefined &&
+          isEnrolledInYear(cov, ageNow + 2, premiumYear),
+      );
+      if (!enrolledInPremiumYear) return null;
+
+      const premiumResolved = taxResolver.getYear(premiumYear);
+      const premiumParams = premiumResolved?.params;
+      // Mirrors `medicareParamsReady` in the Medicare block below, INCLUDING its
+      // `standardPartBPremium` test. The cap may bind only when that block would
+      // actually run in the premium year: a row carrying IRMAA brackets but no
+      // Part B premium charges no surcharge in Y+2, so throttling a conversion
+      // in Y would guard a premium the engine never charges — the same mistake
+      // the enrollment gate above prevents. Keep the two conditions in step.
+      const rawMfj = (premiumParams?.irmaaBracketsMfj ?? []) as IrmaaTier[];
+      const rawSingle = (premiumParams?.irmaaBracketsSingle ?? []) as IrmaaTier[];
+      if (premiumParams?.standardPartBPremium == null) return null;
+      if (rawMfj.length === 0 || rawSingle.length === 0) return null;
+
+      // Same Medicare inflation the premium block applies, resolved for the
+      // PREMIUM year rather than this one.
+      const premiumSourceYear = premiumResolved?.sourceYear ?? premiumYear;
+      const medInflationEnabled = data.medicarePremiumInflationEnabled ?? true;
+      const medRate = medInflationEnabled ? (data.medicarePremiumInflationRate ?? 0.03) : 0;
+      const factor = Math.pow(1 + medRate, Math.max(0, premiumYear - premiumSourceYear));
+
+      // Rule 3 — the PREMIUM year's filing status.
+      const statusThen = effectiveFilingStatus(
+        (client.filingStatus ?? "single") as FilingStatus,
+        firstDeathYear,
+        premiumYear,
+      );
+      const tiers = inflateIrmaaTiers(
+        statusThen === "married_joint" ? rawMfj : rawSingle,
+        factor,
+      );
+
+      return irmaaCapCeiling(tiers, conv.irmaaCapTier);
+    };
+
+    // Phase 5b: size-only. Splits conversions into the ones phase 12 sizes
+    // jointly with the supplemental withdrawal (deferred) and the rest
+    // (applied here).
     const pendingFillBracketTargets: Record<string, number> = {};
-    const fillBracketCeilingsById: Record<string, number> = {};
-    // Per-conversion fundable source-pool balance. A fill_up_bracket conversion
-    // can never recognize more taxable income than its source accounts hold —
-    // applyRothConversions caps the gross at this pool. Sizing/taxing beyond it
-    // charges tax on a conversion that never happens (phantom income once the
-    // source IRA is drained). Captured here at size time; the source accounts
-    // are not debited again until the conversion is applied post-convergence.
-    const fillBracketSourceCapById: Record<string, number> = {};
-    let fillBracketProbe: ReturnType<typeof buildIncomeTaxBaseProbe> | null = null;
+
+    /** Everything the phase-12 solve needs to size ONE conversion. One record
+     *  per conversion rather than a map per field, so a conversion carrying
+     *  BOTH a bracket ceiling and an IRMAA ceiling cannot drift between
+     *  parallel maps. */
+    interface ConvTarget {
+      /** incomeTaxBase ceiling — fill_up_bracket only. */
+      bracketCeiling: number | null;
+      /** MAGI ceiling — IRMAA-capped conversions only. */
+      irmaaCeiling: number | null;
+      /** The tier `irmaaCeiling` was resolved from, carried purely so the
+       *  outcome record can name it. Null whenever `irmaaCeiling` is. */
+      irmaaCapTier: number | null;
+      /** What the strategy asks for in gross dollars — fixed/full/deplete. */
+      strategyGross: number | null;
+      /**
+       * Per-conversion fundable source-pool balance. A conversion can never
+       * recognize more taxable income than its source accounts hold —
+       * applyRothConversions caps the gross at this pool. Sizing/taxing beyond
+       * it charges tax on a conversion that never happens (phantom income once
+       * the source IRA is drained). Captured here at size time; the source
+       * accounts are not debited again until the conversion is applied
+       * post-convergence.
+       */
+      sourceCap: number;
+    }
+    const convTargets: Record<string, ConvTarget> = {};
+    /** Why each joint-solve conversion came out the size it did. Rewritten on
+     *  every `sizeJointConversion` call, so after the convergence loop it
+     *  describes the CONVERGED target — the constraint that actually bound,
+     *  not one that bound on an earlier iteration. */
+    const convOutcome: Record<
+      string,
+      Pick<RothConversionOutcome, "requested" | "limitedBy" | "irmaaCapTier">
+    > = {};
+    let fillBracketProbe: ReturnType<typeof buildTaxProbe> | null = null;
+
+    /** The converged target for one joint-solve conversion, given the current
+     *  supplemental snapshot: the SMALLEST of every ceiling that applies.
+     *
+     *  Both `incomeTaxBase(r)` and `magi(r)` are monotonically non-decreasing
+     *  in `r`, so the minimum of the two independent solutions satisfies BOTH
+     *  constraints FOR THIS CONVERSION. That much is exact, not a heuristic.
+     *
+     *  ⚠️ CEILINGS ARE SOLVED ONE CONVERSION AT A TIME — this is not a
+     *  household-level guarantee. A sibling's target is never accumulated into
+     *  any later sibling's base, so two capped conversions in the same year
+     *  each receive the FULL headroom and can breach the ceiling together. The
+     *  cap holds for the household only when a single capped conversion runs
+     *  in the year. See future-work/engine.md, "The IRMAA cap FAILS OPEN when
+     *  two capped conversions run in the same year" (P9 E4 L8) — the fix needs
+     *  a product decision on how one shared headroom is split, so do not
+     *  paper over it here.
+     *
+     *  ⚠️ The solve runs in TAXABLE dollars but the answer is applied as a
+     *  GROSS conversion amount (see the slice loop in roth-conversions.ts).
+     *  When the source IRA holds after-tax basis, gross > taxable, so the
+     *  realized income lands UNDER the ceiling. For the bracket fill that is a
+     *  documented minor shortfall; for the IRMAA cap it is the CORRECT
+     *  direction — within this one conversion the guardrail can leave room
+     *  unused but cannot fail open. (That claim is scoped to the unit
+     *  mismatch alone; the aggregation gap above is a separate matter.)
+     *  Do not "fix" this by converting between the two spaces without also
+     *  re-deriving the cap's safety argument.
+     *
+     *  Also records into `convOutcome` WHICH candidate won, so the year can
+     *  report why the conversion is the size it is.
+     */
+    const sizeJointConversion = (
+      cid: string,
+      probe: ReturnType<typeof buildTaxProbe>,
+      suppOrdinary: number,
+      suppCapGains: number,
+    ): number => {
+      const t = convTargets[cid];
+      if (!t) return 0;
+
+      // Labeled, so the winner names itself. `null` means "not limited" — the
+      // conversion did exactly what the advisor told it to.
+      const candidates: { limitedBy: RothConversionOutcome["limitedBy"]; value: number }[] = [
+        { limitedBy: "sources", value: t.sourceCap },
+      ];
+      if (t.strategyGross != null) {
+        candidates.push({ limitedBy: null, value: t.strategyGross });
+      }
+      const bracketSolve =
+        t.bracketCeiling != null
+          ? sizeConversionToCeiling(
+              t.bracketCeiling,
+              probe,
+              selectIncomeTaxBase,
+              suppOrdinary,
+              suppCapGains,
+            )
+          : null;
+      if (bracketSolve != null) {
+        candidates.push({ limitedBy: "bracket", value: bracketSolve });
+      }
+      if (t.irmaaCeiling != null) {
+        candidates.push({
+          limitedBy: "irmaa",
+          value: sizeConversionToCeiling(
+            t.irmaaCeiling,
+            probe,
+            selectMagi,
+            suppOrdinary,
+            suppCapGains,
+          ),
+        });
+      }
+
+      let winner = candidates[0];
+      for (let i = 1; i < candidates.length; i++) {
+        const c = candidates[i];
+        // Strictly smaller wins outright. On an exact TIE the unlimited
+        // candidate wins: a strategy whose own ask lands exactly on a ceiling
+        // was not limited by it, it did what it was told. Reporting "limited
+        // by IRMAA" there would name a constraint that changed nothing.
+        if (c.value < winner.value || (c.value === winner.value && c.limitedBy === null)) {
+          winner = c;
+        }
+      }
+
+      // What the advisor's instruction ALONE would have converted, ignoring
+      // the cap and the pool: a stated amount, else the bracket fill's solve,
+      // else (a top-bracket fill, which has no ceiling of its own) the pool.
+      convOutcome[cid] = {
+        requested: Math.max(0, t.strategyGross ?? bracketSolve ?? t.sourceCap),
+        limitedBy: winner.limitedBy,
+        irmaaCapTier: winner.limitedBy === "irmaa" ? t.irmaaCapTier : null,
+      };
+      return Math.max(0, winner.value);
+    };
     const convFilingStatus = effectiveFilingStatus(
       (client.filingStatus ?? "single") as FilingStatus,
       firstDeathYear,
@@ -4919,17 +5173,38 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     const convBrackets = taxResolver
       ? taxResolver.getYear(year)?.params.incomeBrackets[convFilingStatus]
       : undefined;
-    const bracketFillerById = new Map<string, RothConversion>();
+    const jointSolveConvById = new Map<string, RothConversion>();
 
     if (data.rothConversions && data.rothConversions.length > 0) {
-      const bracketFillers: RothConversion[] = [];
+      const jointSolveConvs: RothConversion[] = [];
       const otherStrategies: RothConversion[] = [];
       for (const conv of data.rothConversions) {
         if (conv.enabled === false) continue;
-        if (conv.conversionType === "fill_up_bracket") bracketFillers.push(conv);
-        else otherStrategies.push(conv);
+        // A conversion joins the phase-12 joint solve when its SIZE depends on
+        // the year's converged income — true for a bracket fill, and equally
+        // true for a capped conversion whose ceiling actually RESOLVES (that
+        // ceiling is a MAGI including the supplemental draw, which depends back
+        // on the conversion's tax). The old test asked "is it a bracket fill?";
+        // this asks what it always meant.
+        //
+        // Testing the RESOLVED ceiling rather than just the tier is
+        // load-bearing. A tier on a household nobody enrolls in the premium
+        // year — or in flat tax mode, or with incomplete premium-year params —
+        // is INERT, and an inert cap must be byte-identical to no cap. Leaving
+        // it here keeps it on the phase-5b path, where `applyRothConversions`
+        // books the real pro-rated taxable instead of the joint solve's gross
+        // target. Same function the sizing loop below calls, so the two can
+        // never disagree about whether the cap is live.
+        if (
+          conv.conversionType === "fill_up_bracket" ||
+          (conv.irmaaCapTier != null && resolveIrmaaCeiling(conv) != null)
+        ) {
+          jointSolveConvs.push(conv);
+        } else {
+          otherStrategies.push(conv);
+        }
       }
-      for (const conv of bracketFillers) bracketFillerById.set(conv.id, conv);
+      for (const conv of jointSolveConvs) jointSolveConvById.set(conv.id, conv);
 
       if (otherStrategies.length > 0) {
         rothConversionResult = applyRothConversions({
@@ -4958,25 +5233,78 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         }
       }
 
-      if (bracketFillers.length > 0 && convBrackets) {
-        fillBracketProbe = buildIncomeTaxBaseProbe();
-        for (const conv of bracketFillers) {
+      // No `&& convBrackets` gate: a cap-only conversion needs no bracket
+      // table. `convBrackets` is tested per-conversion below, on the
+      // fill_up_bracket arm that actually reads it.
+      if (jointSolveConvs.length > 0) {
+        fillBracketProbe = buildTaxProbe();
+        for (const conv of jointSolveConvs) {
           if (!_isFillBracketActiveYear(conv, year)) continue;
-          if (conv.fillUpBracket == null) continue;
-          // Shared with the sizing pass in roth-conversions.ts — see that
-          // function's comment for why the tier is found by IDENTITY rather
-          // than by the rate it currently charges.
-          const ceiling = fillUpBracketCeiling(convBrackets, conv.fillUpBracket);
-          if (ceiling == null) continue;
-          fillBracketCeilingsById[conv.id] = ceiling;
+
           const sourceCap = conv.sourceAccountIds.reduce(
             (sum, sid) => sum + Math.max(0, accountBalances[sid] ?? 0),
             0,
           );
-          fillBracketSourceCapById[conv.id] = sourceCap;
-          pendingFillBracketTargets[conv.id] = Math.min(
-            sizeFillBracketConversion(ceiling, fillBracketProbe, 0, 0),
+
+          // Shared with the sizing pass in roth-conversions.ts — see that
+          // function's comment for why the tier is found by IDENTITY rather
+          // than by the rate it currently charges.
+          let bracketCeiling: number | null = null;
+          if (
+            conv.conversionType === "fill_up_bracket" &&
+            convBrackets &&
+            conv.fillUpBracket != null
+          ) {
+            bracketCeiling = fillUpBracketCeiling(convBrackets, conv.fillUpBracket);
+          }
+          const irmaaCeiling = resolveIrmaaCeiling(conv);
+
+          // A bracket fill with no bracket ceiling is registered ONLY when it
+          // named the top (37%) tier and carries a live cap: "fill the top
+          // bracket, capped at tier N" is a coherent instruction, and the cap
+          // is the only thing that can bound it.
+          //
+          // Every other null ceiling must stay skipped, because in none of
+          // them did the advisor name a fillable bracket — and with no bracket
+          // ceiling the cap becomes the ONLY ceiling, so the conversion would
+          // fill straight TO the tier boundary. That turns a guardrail into a
+          // target, the opposite of what a cap means. Three populations reach
+          // here with a null ceiling and no top-tier intent:
+          //   - no bracket CHOSEN (`fillUpBracket == null`),
+          //   - a target rate no tier matches — stale, or orphaned by the "tax
+          //     rates rise" stressor,
+          //   - a year with no bracket table at all (`convBrackets` undefined).
+          // Each of them converts nothing without a cap, and must keep
+          // converting nothing with one. `isTopBracketTarget` identifies the
+          // top tier POSITIVELY rather than inferring it from the null.
+          const namedTopBracket =
+            conv.conversionType === "fill_up_bracket" &&
+            convBrackets != null &&
+            conv.fillUpBracket != null &&
+            isTopBracketTarget(convBrackets, conv.fillUpBracket);
+          if (
+            conv.conversionType === "fill_up_bracket" &&
+            bracketCeiling == null &&
+            !(irmaaCeiling != null && namedTopBracket)
+          ) {
+            continue;
+          }
+
+          convTargets[conv.id] = {
+            bracketCeiling,
+            irmaaCeiling,
+            irmaaCapTier: irmaaCeiling != null ? (conv.irmaaCapTier ?? null) : null,
+            strategyGross:
+              conv.conversionType === "fill_up_bracket"
+                ? null
+                : strategyGrossAmount(conv, year, sourceCap),
             sourceCap,
+          };
+          pendingFillBracketTargets[conv.id] = sizeJointConversion(
+            conv.id,
+            fillBracketProbe,
+            0,
+            0,
           );
         }
       }
@@ -5084,10 +5412,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // Only fires when (a) at least one household member has a MedicareCoverage
     // row AND (b) the tax resolver has Medicare params seeded for this year —
     // otherwise the household has no Medicare model in scope and we skip.
-    const medicareCoverageByOwner: Record<"client" | "spouse", MedicareCoverage | undefined> = {
-      client: data.medicareCoverage?.find((c) => c.owner === "client"),
-      spouse: data.medicareCoverage?.find((c) => c.owner === "spouse"),
-    };
+    // `medicareCoverageByOwner` is declared above phase 5b — the Roth IRMAA cap
+    // resolver needs it earlier in the year. Declaration moved; this block is
+    // otherwise unchanged.
     const hasAnyCoverage = !!(medicareCoverageByOwner.client || medicareCoverageByOwner.spouse);
     const taxYearParams = resolved?.params;
     const medicareParamsReady =
@@ -5162,18 +5489,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       const partBFactor = Math.pow(1 + inflationRate, Math.max(0, year - paramSourceYear));
       const standardPartBPremium = rawStandardPartB * partBFactor;
       const partDNationalBase = rawPartDBase * partBFactor;
-      const inflateTiers = (tiers: IrmaaTier[]): IrmaaTier[] =>
-        partBFactor === 1
-          ? tiers
-          : tiers.map((t) => ({
-              tier: t.tier,
-              magiLowerBound: t.magiLowerBound * partBFactor,
-              magiUpperBound: t.magiUpperBound == null ? null : t.magiUpperBound * partBFactor,
-              partBSurcharge: t.partBSurcharge * partBFactor,
-              partDSurcharge: t.partDSurcharge * partBFactor,
-            }));
-      const irmaaTiersMfj = inflateTiers(rawIrmaaMfj);
-      const irmaaTiersSingle = inflateTiers(rawIrmaaSingle);
+      const irmaaTiersMfj = inflateIrmaaTiers(rawIrmaaMfj, partBFactor);
+      const irmaaTiersSingle = inflateIrmaaTiers(rawIrmaaSingle, partBFactor);
 
       if (medicareCoverageByOwner.client) {
         const mc = resolveSourceMagi("client");
@@ -6241,19 +6558,115 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     const MAX_ITER = 5;
     const TOLERANCE = 1;
 
-    // A fill-bracket conversion is "on target" when its post-conversion base
-    // hits the ceiling — OR when it has already converted its entire fundable
-    // source pool yet still sits at/under the ceiling. The latter is the
-    // depleted-IRA case: the bracket simply can't be filled further this year,
-    // so it's converged (not an unsolved residual). Without this, the loop
-    // would size a target larger than the source pool, tax the household on a
-    // conversion that never happens, and pin the bracket report at "$1 left".
-    const fillBracketOnTarget = (cid: string, baseAtTarget: number): boolean => {
-      const ceiling = fillBracketCeilingsById[cid];
-      if (Math.abs(baseAtTarget - ceiling) <= TOLERANCE) return true;
-      const cap = fillBracketSourceCapById[cid] ?? Infinity;
-      const poolExhausted = (pendingFillBracketTargets[cid] ?? 0) >= cap - TOLERANCE;
-      return poolExhausted && baseAtTarget <= ceiling + TOLERANCE;
+    // A joint-solve conversion is "on target" when the year's realized figure
+    // sits ON each ceiling that applies to it — OR when it has already
+    // converted everything it can (its entire fundable source pool, or its
+    // stated strategy amount) and still sits at/under that ceiling. The latter
+    // is the depleted-IRA / small-fixed-amount case: the ceiling simply can't
+    // be reached this year, so it's converged (not an unsolved residual).
+    // Without it, the loop would size a target larger than the source pool, tax
+    // the household on a conversion that never happens, and pin the bracket
+    // report at "$1 left".
+    const jointConvOnTarget = (
+      cid: string,
+      probed: { incomeTaxBase: number; magi: number },
+    ): boolean => {
+      const t = convTargets[cid];
+      if (!t) return true;
+      const current = pendingFillBracketTargets[cid] ?? 0;
+      const poolExhausted = current >= t.sourceCap - TOLERANCE;
+      const atStrategyGross =
+        t.strategyGross != null && current >= t.strategyGross - TOLERANCE;
+
+      const check = (ceiling: number | null, actual: number): boolean => {
+        if (ceiling == null) return true;
+        if (Math.abs(actual - ceiling) <= TOLERANCE) return true;
+        if (actual > ceiling) {
+          // Over the ceiling with NOTHING converted: the year's own income
+          // already breached it, so no conversion size can help and $0 is the
+          // solved answer, not an unclosed residual. Without this the loop
+          // burns all five iterations and warns the advisor about a gap that
+          // is a RESULT. Reached whenever an IRMAA-capped conversion meets a
+          // big RMD or pension year — the cap's whole point.
+          return current <= TOLERANCE;
+        }
+        // Under the ceiling is on-target when something ELSE is binding.
+        return poolExhausted || atStrategyGross;
+      };
+
+      return (
+        check(t.bracketCeiling, probed.incomeTaxBase) &&
+        check(t.irmaaCeiling, probed.magi)
+      );
+    };
+
+    /** The ordinary income the CURRENT targets actually recognize — the figure
+     *  the year's tax is computed on. NOT the same as the sum of the targets.
+     *
+     *  A `fill_up_bracket` target books verbatim, exactly as it always has.
+     *  That path solves in taxable dollars and applies the answer as gross, and
+     *  the gap when the source IRA holds basis is the documented shortfall at
+     *  `sizeJointConversion`. Repairing it is a unit-space refactor that needs
+     *  its own baseline — deliberately NOT done here.
+     *
+     *  A capped conversion of any OTHER type carries a GROSS target (the
+     *  strategy's ask, the source pool, or a ceiling solve applied as gross),
+     *  so booking it as taxable would OVER-state the tax bill on any IRA
+     *  holding after-tax basis — a defect in the opposite direction from that
+     *  shortfall, and a new one. Rather than re-deriving Form 8606 pro-rata
+     *  here, ask `applyRothConversions` itself against COPIES of every map it
+     *  mutates. The booked figure is then the one the post-loop apply will
+     *  actually realize, for EVERY source type — pooled trad IRA, a 401(k)
+     *  with a Roth sleeve, an annuity — not only the pooled-IRA case a
+     *  hand-written pro-rata would cover.
+     *
+     *  Plans with no capped conversion pay nothing: the preview only runs when
+     *  one is registered.
+     */
+    const jointConvTaxable = (): number => {
+      const ids = Object.keys(convTargets);
+      if (ids.length === 0) return 0;
+
+      // Built with the SAME filter over the SAME array the post-loop apply
+      // uses, not from `Object.keys(convTargets)`. JS orders integer-like keys
+      // numerically ahead of insertion order, so a plan whose conversion ids
+      // are "1"/"2" would hand the preview a different ORDER than the apply —
+      // and two conversions sharing a source pool drain it in list order, so
+      // the preview would book a taxable figure the apply never realizes.
+      const registered = (data.rothConversions ?? []).filter(
+        (c) =>
+          c.enabled !== false &&
+          convTargets[c.id] != null &&
+          _isFillBracketActiveYear(c, year),
+      );
+      const preview = registered.some((c) => c.conversionType !== "fill_up_bracket")
+        ? applyRothConversions({
+            // Every registered conversion, in the SAME order the post-loop
+            // apply uses, so two of them sharing a source pool drain it here
+            // the way the real run will.
+            conversions: registered,
+            accounts: workingAccounts,
+            accountBalances: { ...accountBalances },
+            basisMap: { ...basisMap },
+            rothValueMap: { ...rothValueMap },
+            accountLedgers: {},
+            year,
+            ownerAges: { client: ages.client, spouse: ages.spouse },
+            spouseFamilyMemberId: spouseFmId,
+            ordinaryBrackets: convBrackets,
+            targetTaxableOverride: pendingFillBracketTargets,
+          })
+        : null;
+
+      let total = 0;
+      for (const cid of ids) {
+        const conv = jointSolveConvById.get(cid);
+        total +=
+          preview != null && conv != null && conv.conversionType !== "fill_up_bracket"
+            ? (preview.byConversion[cid]?.taxable ?? 0)
+            : (pendingFillBracketTargets[cid] ?? 0);
+      }
+      return total;
     };
 
     let cumulativeShortfall = 0;
@@ -6277,20 +6690,20 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       taxOutForIter = computeTaxForYear(finalTaxInput);
     }
     let convergenceWarning: TrustWarning | null = null;
+    const irmaaCapNotEnforcedWarnings: TrustWarning[] = [];
     // Converged draw target for the legacy no-checking branch (base deficit +
     // recomputed tax + penalty). Sized in phase 12 below; the application
     // block posts any (target − funded) remainder as an overdraft (M14).
     let legacyShortfallTarget = 0;
 
-    // If bracket-fillers exist, recompute `taxOutForIter` with the seeded
-    // fill-bracket taxable layered in. This runs whether or not we enter the
+    // If any conversion was deferred to phase 12, recompute `taxOutForIter`
+    // with its seeded taxable layered in. This runs whether or not we enter the
     // hasChecking loop — the no-checking path uses `taxOutForIter` directly
     // as the final result, and the loop path needs it for the initial
     // `checkingAfterTax` calc (else the surplus-no-draws short circuit fires
     // before `taxOutForIter` reflects the conversion's tax bill).
     if (fillBracketProbe) {
-      const seededTotal = Object.values(pendingFillBracketTargets)
-        .reduce((s, v) => s + v, 0);
+      const seededTotal = jointConvTaxable();
       if (seededTotal > 0) {
         const seededTaxDetail: typeof taxDetail = {
           ...baselineTaxDetail,
@@ -6311,7 +6724,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           itemizedDeductions,
           charityCarryforwardIn: charityCarryforward,
           capitalLossCarryforwardIn: capitalLossCarryforward,
-          // `seededTotal` is bracket-filler ORDINARY income — no capital-gain
+          // `seededTotal` is conversion ORDINARY income — no capital-gain
           // component, so the folded pair is unchanged.
           capitalGainsInTaxableIncome: capGainsInTaxableIncome,
           charityGiftsThisYear,
@@ -6355,16 +6768,17 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // loop has to raise), not the marginal liability.
       const initialTaxesToFund = taxToFund(taxOutForIter.taxes);
       for (let iter = 0; iter < MAX_ITER; iter++) {
-        // Joint convergence test: bracket fillers must also be on-target.
+        // Joint convergence test: the deferred conversions must also be
+        // on-target, against every ceiling each of them carries.
         let bracketConverged = true;
         if (fillBracketProbe) {
-          for (const cid of Object.keys(fillBracketCeilingsById)) {
-            const baseAtCurrent = fillBracketProbe(
+          for (const cid of Object.keys(convTargets)) {
+            const probed = fillBracketProbe(
               pendingFillBracketTargets[cid] ?? 0,
               supplementalPlan.recognizedIncome.ordinaryIncome,
               supplementalPlan.recognizedIncome.capitalGains,
             );
-            if (!fillBracketOnTarget(cid, baseAtCurrent)) {
+            if (!jointConvOnTarget(cid, probed)) {
               bracketConverged = false;
               break;
             }
@@ -6385,7 +6799,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         const reservedBalances: Record<string, number> = { ...householdWithdrawBalances };
         if (fillBracketProbe) {
           for (const [cid, target] of Object.entries(pendingFillBracketTargets)) {
-            const conv = bracketFillerById.get(cid);
+            const conv = jointSolveConvById.get(cid);
             if (!conv) continue;
             let remaining = target;
             for (const sid of conv.sourceAccountIds) {
@@ -6442,25 +6856,21 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           year,
         });
 
-        // Step (a): NOW size each fill_up_bracket conversion against the
+        // Step (a): NOW size each deferred conversion against the
         // freshly-planned supplemental snapshot. Final target + final supp are
         // jointly consistent inside this iter — step (c) below sees both.
         if (fillBracketProbe) {
-          for (const cid of Object.keys(fillBracketCeilingsById)) {
-            pendingFillBracketTargets[cid] = Math.min(
-              sizeFillBracketConversion(
-                fillBracketCeilingsById[cid],
-                fillBracketProbe,
-                supplementalPlan.recognizedIncome.ordinaryIncome,
-                supplementalPlan.recognizedIncome.capitalGains,
-              ),
-              fillBracketSourceCapById[cid] ?? Infinity,
+          for (const cid of Object.keys(convTargets)) {
+            pendingFillBracketTargets[cid] = sizeJointConversion(
+              cid,
+              fillBracketProbe,
+              supplementalPlan.recognizedIncome.ordinaryIncome,
+              supplementalPlan.recognizedIncome.capitalGains,
             );
           }
         }
 
-        const totalFillBracketTaxable = Object.values(pendingFillBracketTargets)
-          .reduce((s, v) => s + v, 0);
+        const totalFillBracketTaxable = jointConvTaxable();
 
         // Step (c): tax calc with BOTH fill-bracket taxable AND supplemental income.
         const taxDetailWithBoth: typeof taxDetail = {
@@ -6544,19 +6954,36 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         checkingAfterTax = preSupplementalChecking + supplementalPlan.total - taxAndPenalty;
 
         if (iter === MAX_ITER - 1) {
+          // How far each deferred conversion missed, measured against whichever
+          // ceiling it actually carries: a cap-only conversion has no bracket
+          // ceiling to subtract, so its miss is read off MAGI. When BOTH apply,
+          // a BREACH (positive) always wins over a shortfall — the warning must
+          // name the ceiling that was exceeded, never the one merely left
+          // unfilled — and among same-signed misses, the larger one wins.
           const bracketResiduals: Record<string, number> = {};
           if (fillBracketProbe) {
-            for (const [cid, ceiling] of Object.entries(fillBracketCeilingsById)) {
-              const baseAtCurrent = fillBracketProbe(
+            for (const [cid, t] of Object.entries(convTargets)) {
+              const probed = fillBracketProbe(
                 pendingFillBracketTargets[cid] ?? 0,
                 supplementalPlan.recognizedIncome.ordinaryIncome,
                 supplementalPlan.recognizedIncome.capitalGains,
               );
-              // A conversion that exhausted its source pool below the ceiling is
-              // on-target, not an unconverged residual — don't warn for it.
-              bracketResiduals[cid] = fillBracketOnTarget(cid, baseAtCurrent)
-                ? 0
-                : baseAtCurrent - ceiling;
+              // A conversion that exhausted its source pool (or reached its
+              // stated strategy amount) below the ceiling is on-target, not an
+              // unconverged residual — don't warn for it.
+              if (jointConvOnTarget(cid, probed)) {
+                bracketResiduals[cid] = 0;
+                continue;
+              }
+              const misses = [
+                t.bracketCeiling != null ? probed.incomeTaxBase - t.bracketCeiling : 0,
+                t.irmaaCeiling != null ? probed.magi - t.irmaaCeiling : 0,
+              ];
+              const breaches = misses.filter((m) => m > 0);
+              bracketResiduals[cid] = (breaches.length > 0 ? breaches : misses).reduce(
+                (worst, m) => (Math.abs(m) > Math.abs(worst) ? m : worst),
+                0,
+              );
             }
           }
           const anyBracketResidual = Object.values(bracketResiduals).some(
@@ -6623,8 +7050,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           // on top of the (fill-bracket-seeded) baseline — same input shape as
           // the hasChecking loop's step (c), minus bracket re-sizing (the
           // seeded fill-bracket targets stay fixed on this path).
-          const totalFillBracketTaxable = Object.values(pendingFillBracketTargets)
-            .reduce((s, v) => s + v, 0);
+          const totalFillBracketTaxable = jointConvTaxable();
           const taxDetailWithDraws: typeof taxDetail = {
             ...baselineTaxDetail,
             ordinaryIncome:
@@ -6718,8 +7144,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
 
-    // After phase 12 converges, actually apply the bracket-filler conversions
-    // with the converged targets. This mutates accountBalances / basisMap /
+    // After phase 12 converges, actually apply the deferred conversions with
+    // the converged targets. This mutates accountBalances / basisMap /
     // rothValueMap / accountLedgers and updates rothConversionResult so the
     // year output sees the conversions. The tax bill in `taxOutForIter`
     // already reflects these targets — we don't re-run the tax calc.
@@ -6728,14 +7154,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       data.rothConversions &&
       Object.keys(pendingFillBracketTargets).length > 0
     ) {
-      const fillerConversions = data.rothConversions.filter(
+      const jointSolveConversions = data.rothConversions.filter(
         (c) =>
           c.enabled !== false &&
-          c.conversionType === "fill_up_bracket" &&
-          pendingFillBracketTargets[c.id] != null,
+          convTargets[c.id] != null &&
+          _isFillBracketActiveYear(c, year),
       );
-      const fillerResult = applyRothConversions({
-        conversions: fillerConversions,
+      const jointSolveResult = applyRothConversions({
+        conversions: jointSolveConversions,
         accounts: workingAccounts,
         accountBalances,
         basisMap,
@@ -6748,20 +7174,46 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         targetTaxableOverride: pendingFillBracketTargets,
       });
 
-      rothConversionResult.taxableOrdinaryIncome += fillerResult.taxableOrdinaryIncome;
-      for (const [cid, info] of Object.entries(fillerResult.byConversion)) {
+      rothConversionResult.taxableOrdinaryIncome += jointSolveResult.taxableOrdinaryIncome;
+      // Iterate the REGISTERED set, not the applied one. `applyRothConversions`
+      // skips a conversion whose target came out at $0, so a cap that bound all
+      // the way down leaves no applied entry at all — and the technique would
+      // disappear from the year entirely, reading as a broken feature rather
+      // than an enforced cap. `convOutcome` is the only record that it ran.
+      for (const cid of Object.keys(convTargets)) {
+        const applied = jointSolveResult.byConversion[cid];
+        const outcome = convOutcome[cid];
+        // Two things produce no applied entry: the cap zeroed the target, or
+        // the source pool was empty. Only the first is worth reporting — an
+        // empty pool converts nothing today and stays silent.
+        if (!applied && outcome?.limitedBy !== "irmaa") continue;
+        const info: RothConversionOutcome = {
+          ...(applied ?? { gross: 0, taxable: 0, bySource: {} }),
+          // The sizer's verdict, not applyRothConversions' — that function sees
+          // only the converged target handed to it and would report "sources"
+          // (or null) for a conversion a ceiling actually cut.
+          requested: outcome?.requested ?? applied?.requested ?? 0,
+          limitedBy: outcome?.limitedBy ?? null,
+          irmaaCapTier: outcome?.irmaaCapTier ?? null,
+        };
         rothConversionResult.byConversion[cid] = info;
-        if (info.taxable > 0) {
+        // A cap that binds to $0 must still produce a row. Without this the
+        // conversion silently disappears from the tax detail and the advisor
+        // sees a technique that did nothing, with no reason given.
+        if (info.taxable > 0 || info.limitedBy === "irmaa") {
           taxDetail.bySource[`roth_conversion:${cid}`] = {
             type: "ordinary_income",
             amount: info.taxable,
+            // Per-YEAR, so it rides on the row: the drill's shared context is
+            // built once for all years and could not say which year bound.
+            ...(info.irmaaCapTier != null ? { irmaaCapTier: info.irmaaCapTier } : {}),
           };
         }
       }
 
-      if (fillerResult.taxableOrdinaryIncome > 0) {
-        taxableIncome += fillerResult.taxableOrdinaryIncome;
-        taxDetail.ordinaryIncome += fillerResult.taxableOrdinaryIncome;
+      if (jointSolveResult.taxableOrdinaryIncome > 0) {
+        taxableIncome += jointSolveResult.taxableOrdinaryIncome;
+        taxDetail.ordinaryIncome += jointSolveResult.taxableOrdinaryIncome;
       }
     }
 
@@ -6892,6 +7344,59 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       (finalTaxResult?.flow.adjustedGrossIncome ?? 0) +
       (finalTaxDetail?.taxExemptInterest ?? 0);
     magiHistory.set(year, magiThisYear);
+
+    // ── Did each live IRMAA cap actually HOLD? ──────────────────────────────
+    // Deliberately HERE, reading `magiThisYear`: that is the exact figure the
+    // year+2 surcharge is charged against, so "the cap held" and "what IRMAA
+    // bills" are the same number by construction rather than by agreement.
+    //
+    // `sizeConversionToCeiling` solves ONE conversion against the full headroom
+    // and knows nothing of its siblings, so two conversions that both solve
+    // against this year's converged income can each take that headroom and
+    // leave the household above the ceiling one of them named. Splitting a
+    // single household headroom between them is a product decision nobody has
+    // made (pro-rata / advisor priority / sequential — see the `it.todo` in
+    // `roth-irmaa-cap.test.ts`). Until it is made, the engine REPORTS the miss
+    // rather than claiming a cap it did not deliver.
+    //
+    // ⚠️ Measured from the REALIZED MAGI, never from "does this year hold more
+    // than one conversion". An uncapped fixed-amount sibling is applied on the
+    // phase-5b path BEFORE the joint solve, so its income is already in the
+    // probe and the cap still holds — counting siblings would cry wolf there.
+    for (const [cid, info] of Object.entries(rothConversionResult.byConversion)) {
+      // `convTargets` already carries the ceiling this conversion was sized
+      // against, resolved once earlier in the year. No entry means the
+      // conversion never joined the joint solve — it has no cap, or one that is
+      // inert this year — and an inert cap promised nothing, so it cannot have
+      // been broken. The two fields are null together by construction; both are
+      // tested so the narrowing reaches the warning payload.
+      const target = convTargets[cid];
+      if (target?.irmaaCeiling == null || target.irmaaCapTier == null) continue;
+      // $1 is `sizeConversionToCeiling`'s own convergence tolerance — landing
+      // ON the ceiling is the cap working, not failing.
+      if (magiThisYear <= target.irmaaCeiling + 1) continue;
+      // A conversion the cap held to $0 did everything it could: the sizer
+      // returns 0 precisely when the household was ALREADY above the ceiling
+      // with nothing converted, so the breach is not this conversion's doing
+      // and there is no engine miss to report.
+      if (info.gross <= 0) continue;
+
+      info.irmaaCapExceeded = true;
+      // The flag goes on the drill row that actually ships — `finalTaxDetail`
+      // is what the ProjectionYear carries. Display-only, and written after the
+      // year's tax is final: nothing numeric reads it, so no figure can move.
+      const drillRow = finalTaxDetail.bySource[`roth_conversion:${cid}`];
+      if (drillRow) drillRow.irmaaCapExceeded = true;
+
+      irmaaCapNotEnforcedWarnings.push({
+        code: "irmaa_cap_not_enforced",
+        year,
+        conversionId: cid,
+        tier: target.irmaaCapTier,
+        ceiling: target.irmaaCeiling,
+        magi: magiThisYear,
+      });
+    }
 
     // Apply converged supplemental + taxes to balances and ledgers.
     if (hasChecking) {
@@ -8075,6 +8580,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
                 name: data.rothConversions?.find((c) => c.id === id)?.name ?? id,
                 gross: info.gross,
                 taxable: info.taxable,
+                requested: info.requested,
+                limitedBy: info.limitedBy,
+                irmaaCapTier: info.irmaaCapTier ?? null,
+                ...(info.irmaaCapExceeded ? { irmaaCapExceeded: true } : {}),
               }),
             ),
           }
@@ -8109,6 +8618,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
        || noteShortfallWarnings.length > 0
        || missingCheckingByEntity.size > 0
        || convergenceWarning != null
+       || irmaaCapNotEnforcedWarnings.length > 0
         ? {
             ...(trustPassResult != null ? {
               trustTaxByEntity: trustPassResult.taxByEntity,
@@ -8126,6 +8636,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
                 ...noteShortfallWarnings,
                 ...missingCheckingByEntity.values(),
                 ...(convergenceWarning != null ? [convergenceWarning] : []),
+                ...irmaaCapNotEnforcedWarnings,
               ];
               return all.length > 0 ? all : undefined;
             })(),

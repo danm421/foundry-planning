@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { applyRothConversions } from "../roth-conversions";
+import {
+  applyRothConversions,
+  fillUpBracketCeiling,
+  isTopBracketTarget,
+} from "../roth-conversions";
 import type { Account, AccountLedger, RothConversion } from "../types";
 import type { BracketTier } from "@/lib/tax/types";
 
@@ -407,5 +411,41 @@ describe("applyRothConversions", () => {
     expect(entry.taxable).toBeCloseTo(75000, 0);
     expect(entry.taxable).toBeLessThan(entry.gross);
     expect(r.taxableOrdinaryIncome).toBeCloseTo(75000, 0);
+  });
+});
+
+describe("isTopBracketTarget", () => {
+  // `fillUpBracketCeiling` returns null for BOTH the top tier and a rate no
+  // tier matches, and callers must not treat those the same: "fill the top
+  // bracket" is an instruction, a stale rate is not. These two assertions are
+  // the whole reason the helper exists.
+  const tiers: BracketTier[] = [
+    { from: 0, to: 23200, rate: 0.1 },
+    { from: 23200, to: 94300, rate: 0.12 },
+    { from: 94300, to: null, rate: 0.37 },
+  ];
+
+  it("is true for the tier with no upper bound", () => {
+    expect(isTopBracketTarget(tiers, 0.37)).toBe(true);
+    expect(fillUpBracketCeiling(tiers, 0.37), "which has no ceiling to fill to").toBeNull();
+  });
+
+  it("is FALSE for a rate no tier carries, which also has no ceiling", () => {
+    expect(isTopBracketTarget(tiers, 0.99)).toBe(false);
+    expect(fillUpBracketCeiling(tiers, 0.99), "same null, opposite meaning").toBeNull();
+  });
+
+  it("is false for a bounded tier", () => {
+    expect(isTopBracketTarget(tiers, 0.12)).toBe(false);
+  });
+
+  it("matches on tier IDENTITY, so a rate stressor cannot move it", () => {
+    // `baseRate` is the tier's identity; `rate` is what it currently charges.
+    const stressed: BracketTier[] = [
+      { from: 0, to: 94300, rate: 0.15, baseRate: 0.12 },
+      { from: 94300, to: null, rate: 0.4, baseRate: 0.37 },
+    ];
+    expect(isTopBracketTarget(stressed, 0.37), "the saved 37% tier is still the top").toBe(true);
+    expect(isTopBracketTarget(stressed, 0.4), "the CHARGED rate must not match").toBe(false);
   });
 });

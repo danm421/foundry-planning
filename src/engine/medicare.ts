@@ -79,6 +79,61 @@ function pickTier(magi: number, tiers: IrmaaTier[]): {
   return { tier: 0, surchargeB: 0, surchargeD: 0, upperBound: tiers[0]?.magiLowerBound ?? null };
 }
 
+/**
+ * The MAGI ceiling a conversion must not exceed to stay at or below `capTier`.
+ *
+ * ⚠️ ORIENTATION IS LOAD-BEARING, and it is the OPPOSITE of the tax-bracket
+ * equivalent. IRMAA bounds are lower-EXCLUSIVE / upper-INCLUSIVE (20 CFR
+ * 418.2120) — see `pickTier` above, which encodes the same convention. So a
+ * MAGI landing exactly ON the tier-1 threshold is surcharge-free and the
+ * tier-0 ceiling is that threshold ITSELF, with no backoff.
+ *
+ * Contrast `fillUpBracketCeiling` in roth-conversions.ts, which subtracts $1
+ * precisely BECAUSE ordinary tax brackets are lower-inclusive and a base
+ * landing on `tier.to` classifies into the NEXT bracket. Same shaped problem,
+ * opposite correct answer; getting either backwards is wrong by a full tier
+ * and looks entirely plausible on a report.
+ *
+ * Returns null when the tier is absent from the table, and for the TOP tier,
+ * which is unbounded above and therefore cannot be a ceiling.
+ */
+export function irmaaCapCeiling(tiers: IrmaaTier[], capTier: number): number | null {
+  if (capTier <= 0) return tiers[0]?.magiLowerBound ?? null;
+  const tier = tiers.find((t) => t.tier === capTier);
+  if (!tier) return null;
+  return tier.magiUpperBound;
+}
+
+/** Scale every dollar figure on a tier table by `factor`. CMS republishes both
+ *  the thresholds and the surcharges each year; the projection inflates them
+ *  forward off the seeded row. Shared by the premium calculation and the
+ *  conversion cap so the cap can never aim at a threshold the premium
+ *  calculation does not use. */
+export function inflateIrmaaTiers(tiers: IrmaaTier[], factor: number): IrmaaTier[] {
+  if (factor === 1) return tiers;
+  return tiers.map((t) => ({
+    tier: t.tier,
+    magiLowerBound: t.magiLowerBound * factor,
+    magiUpperBound: t.magiUpperBound == null ? null : t.magiUpperBound * factor,
+    partBSurcharge: t.partBSurcharge * factor,
+    partDSurcharge: t.partDSurcharge * factor,
+  }));
+}
+
+/** Whether `coverage`'s owner is enrolled in Medicare in `year`, given their
+ *  age that year. Single definition shared by `computeMedicareYear` (which
+ *  charges the premium) and the Roth-conversion IRMAA cap (which must not bind
+ *  when nobody is enrolled in the premium year). */
+export function isEnrolledInYear(
+  coverage: MedicareCoverage,
+  ageInYear: number,
+  year: number,
+): boolean {
+  const reachesEnrollmentYear =
+    coverage.enrollmentYear === null || year >= coverage.enrollmentYear;
+  return ageInYear >= DEFAULT_ENROLLMENT_AGE && reachesEnrollmentYear;
+}
+
 export function computeMedicareYear(input: MedicareYearInput): MedicareYearDetail {
   const {
     year, age, coverage,
@@ -89,10 +144,7 @@ export function computeMedicareYear(input: MedicareYearInput): MedicareYearDetai
     defaultMedigapMonthly, defaultPartDPlanMonthly,
   } = input;
 
-  const enrollmentAge = DEFAULT_ENROLLMENT_AGE;
-  const yearReachesEnrollmentYear =
-    coverage.enrollmentYear === null || year >= coverage.enrollmentYear;
-  const enrolled = age >= enrollmentAge && yearReachesEnrollmentYear;
+  const enrolled = isEnrolledInYear(coverage, age, year);
 
   if (!enrolled) {
     return {
