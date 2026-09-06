@@ -2,6 +2,7 @@ import { desc } from "drizzle-orm";
 import { db } from "@/db";
 import { betaCodes } from "@/db/schema";
 import { CAPABILITY_KEYS } from "@/lib/ops/entitlements";
+import { requireOpsAdminPage } from "@/lib/ops/ops-auth";
 import BetaCodesClient, { type CodeRow } from "./beta-codes-client";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +15,7 @@ function deriveStatus(r: typeof betaCodes.$inferSelect): CodeRow["status"] {
 }
 
 export default async function BetaCodesPage() {
+  await requireOpsAdminPage();
   const rows = await db.select().from(betaCodes).orderBy(desc(betaCodes.createdAt));
   const codes: CodeRow[] = rows.map((r) => ({
     id: r.id,

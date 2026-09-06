@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireOrgId } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
-import { loadRebalanceInputs } from "@/lib/investments/rebalance/load-inputs";
+import {
+  loadRebalanceInputs,
+  PortfolioNotAvailableError,
+} from "@/lib/investments/rebalance/load-inputs";
 import { assembleRebalanceResult } from "@/lib/investments/rebalance/assemble";
 import { UnclassifiableTickerError } from "@/lib/investments/rebalance/resolve-target";
 
@@ -83,6 +86,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (err instanceof PortfolioNotAvailableError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
     }
     if (err instanceof UnclassifiableTickerError) {
       return NextResponse.json(

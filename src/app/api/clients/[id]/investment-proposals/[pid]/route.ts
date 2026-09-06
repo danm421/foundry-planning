@@ -12,6 +12,7 @@ import { proposalUpdateSchema, type ProposalCreateInput } from "@/lib/investment
 import { computeProposalSnapshot } from "@/lib/investments/proposals/compute";
 import { getProposal } from "@/lib/investments/proposals/queries";
 import { UnclassifiableTickerError } from "@/lib/investments/rebalance/resolve-target";
+import { PortfolioNotAvailableError } from "@/lib/investments/rebalance/load-inputs";
 
 export const dynamic = "force-dynamic";
 // A PUT with `recompute: true` runs the same rebalance compute — and the same
@@ -165,6 +166,9 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     return NextResponse.json({ id: pid, result, computedAt });
   } catch (err) {
+    if (err instanceof PortfolioNotAvailableError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
     // Same status and body shape as the rebalance/compute route: the advisor
     // needs the ticker list back to fix it, not "Internal server error".
     if (err instanceof UnclassifiableTickerError) {

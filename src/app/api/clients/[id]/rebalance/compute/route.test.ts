@@ -2,13 +2,19 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("@/lib/db-helpers", () => ({ requireOrgId: vi.fn() }));
 vi.mock("@/lib/clients/authz", () => ({ verifyClientAccess: vi.fn() }));
-vi.mock("@/lib/investments/rebalance/load-inputs", () => ({ loadRebalanceInputs: vi.fn() }));
+vi.mock("@/lib/investments/rebalance/load-inputs", () => ({
+  loadRebalanceInputs: vi.fn(),
+  PortfolioNotAvailableError: class PortfolioNotAvailableError extends Error {},
+}));
 vi.mock("@/lib/investments/rebalance/assemble", () => ({ assembleRebalanceResult: vi.fn() }));
 
 import { POST } from "./route";
 import { requireOrgId } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
-import { loadRebalanceInputs } from "@/lib/investments/rebalance/load-inputs";
+import {
+  loadRebalanceInputs,
+  PortfolioNotAvailableError,
+} from "@/lib/investments/rebalance/load-inputs";
 import { assembleRebalanceResult } from "@/lib/investments/rebalance/assemble";
 
 const ctx = { params: Promise.resolve({ id: "client-1" }) };
@@ -36,6 +42,22 @@ describe("POST rebalance/compute", () => {
 
   it("400s on an invalid body", async () => {
     const res = await POST(req({ accountIds: [] }), ctx);
+    expect(res.status).toBe(400);
+  });
+
+  it("400s — not 500 — when the target portfolio belongs to another firm", async () => {
+    vi.mocked(loadRebalanceInputs).mockRejectedValue(
+      new PortfolioNotAvailableError("Fund portfolio not available to this firm"),
+    );
+
+    const res = await POST(
+      req({
+        accountIds: ["22222222-2222-4222-8222-222222222222"],
+        target: { portfolioId: "99999999-9999-4999-8999-999999999999" },
+      }),
+      ctx,
+    );
+
     expect(res.status).toBe(400);
   });
 

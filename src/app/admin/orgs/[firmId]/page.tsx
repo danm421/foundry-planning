@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { firms, subscriptions } from "@/db/schema";
 import { listFirmMembers, type FirmMember } from "@/lib/crm-tasks/members";
 import { listOrgInvitations, type OrgInvitationRow } from "@/lib/ops/org-invitations";
+import { requireOpsAdminPage } from "@/lib/ops/ops-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -121,6 +122,7 @@ export default async function OrgOverviewPage({
 }: {
   params: Promise<{ firmId: string }>;
 }) {
+  await requireOpsAdminPage();
   const { firmId } = await params;
 
   const [firm] = await db.select().from(firms).where(eq(firms.firmId, firmId)).limit(1);

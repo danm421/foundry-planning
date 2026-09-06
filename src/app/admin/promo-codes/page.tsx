@@ -1,10 +1,12 @@
 import { listPromoCodes, listPlanPrices, type PromoCodeRow } from "@/lib/billing/promo-codes";
 import type { PlanPrice } from "@/lib/billing/promo-discount-math";
 import PromoCodesClient from "./promo-codes-client";
+import { requireOpsAdminPage } from "@/lib/ops/ops-auth";
 
 export const dynamic = "force-dynamic";
 
 export default async function PromoCodesPage() {
+  await requireOpsAdminPage();
   // Neither read needs the other, so start both before awaiting either — they
   // are the page's whole latency and they each fail on their own terms.
   //

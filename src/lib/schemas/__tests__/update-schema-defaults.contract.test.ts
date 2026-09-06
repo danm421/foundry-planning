@@ -1,5 +1,10 @@
 /**
- * Repo-wide contract: no exported update/PATCH schema may inject a default.
+ * Two repo-wide contracts on exported update/PATCH schemas, sharing one
+ * filesystem walk: (1) no schema may inject a default; (2) no schema may carry
+ * a tenancy or ownership column. The second is at the bottom of this file.
+ *
+ * ## Contract 1 — no injected defaults
+ *
  *
  * ## Why this test exists
  *
@@ -170,5 +175,65 @@ describe("update-schema default-injection contract", () => {
     if (empty.success) {
       expect(empty.data, `${name}.parse({}) must be {}`).toEqual({});
     }
+  });
+});
+
+/**
+ * ## Contract 2 — an update schema may not carry a tenancy or ownership column
+ *
+ * These columns decide WHO a row belongs to, and several of them are what an
+ * authorization check reads. Our PATCH routes apply `parsed.data` wholesale
+ * (`.set({ ...parsed.data })`), so any such key that survives into an update
+ * schema is a self-service grant, whether or not a UI ever sends it.
+ *
+ * That is not hypothetical. `updateCrmHouseholdSchema` was derived from its
+ * create schema with only `contacts` omitted, so `advisorId` stayed writable —
+ * and `requireVaultAccess` grants on `household.advisorId === userId`. Any
+ * firm member could PATCH themselves in as the advisor and then download the
+ * household's entire document vault (audit finding H2, 2026-09-05).
+ *
+ * Reassignment and re-parenting are real features, but they belong on their
+ * own role-gated endpoint, not on a general-purpose PATCH — so the fix for a
+ * failure here is `.omit({ <key>: true })` on the derived schema, not an
+ * allowlist entry. The allowlist exists for the case where the column really
+ * is an ordinary editable field; it costs a written justification.
+ */
+const TENANCY_KEYS = [
+  "advisorId",
+  "firmId",
+  "orgId",
+  "clientId",
+  "householdId",
+  "userId",
+  "createdBy",
+  "ownerId",
+] as const;
+
+/** name → the keys it may keep, each with a one-line justification. */
+const TENANCY_ALLOWLIST: Record<string, Record<string, string>> = {};
+
+describe("update-schema tenancy-column contract", () => {
+  it.each(
+    DISCOVERED.map((d) => ({ ...d, label: `${path.relative(SRC_ROOT, d.file)}::${d.name}` })),
+  )("$label carries no tenancy column", async ({ file, name }) => {
+    const mod = (await import(file)) as Record<string, unknown>;
+    const schema = mod[name] as z.ZodTypeAny | undefined;
+    expect(schema, `${name} is not exported from ${file}`).toBeDefined();
+    if (!schema) return;
+
+    const allowed = TENANCY_ALLOWLIST[name] ?? {};
+    const offenders = [
+      ...new Set(
+        shapesOf(schema)
+          .flatMap((shape) => Object.keys(shape))
+          .filter((key) => (TENANCY_KEYS as readonly string[]).includes(key))
+          .filter((key) => !allowed[key]),
+      ),
+    ];
+
+    expect(
+      offenders,
+      `${name} lets a PATCH write ${offenders.join(", ")} — omit the key from the derived schema, or move the reassignment to its own role-gated endpoint`,
+    ).toEqual([]);
   });
 });

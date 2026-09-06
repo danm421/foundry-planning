@@ -16,6 +16,7 @@ import {
   ownerRefToAccountOwnerRows,
   type OwnerRef,
 } from "@/lib/insurance-policies/owner-ref";
+import { assertOwnerRefInClient } from "@/lib/insurance-policies/assert-owner-ref";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
@@ -112,6 +113,13 @@ export async function PATCH(
       activationYear: number | null;
       activationYearRef: string | null;
     }>;
+
+    if (input.ownerRef !== undefined) {
+      const ownerCheck = await assertOwnerRefInClient(id, input.ownerRef as OwnerRef);
+      if (!ownerCheck.ok) {
+        return NextResponse.json({ error: ownerCheck.reason }, { status: 400 });
+      }
+    }
 
     // Look up FM ids for the OwnerRef → account_owners translation.
     const fmRows = await db

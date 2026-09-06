@@ -18,6 +18,7 @@ import {
   ownerRefToAccountOwnerRows,
   type OwnerRef,
 } from "@/lib/insurance-policies/owner-ref";
+import { assertOwnerRefInClient } from "@/lib/insurance-policies/assert-owner-ref";
 import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
@@ -130,6 +131,11 @@ export async function POST(
       );
     }
     const input = parsed.data;
+
+    const ownerCheck = await assertOwnerRefInClient(id, input.ownerRef as OwnerRef);
+    if (!ownerCheck.ok) {
+      return NextResponse.json({ error: ownerCheck.reason }, { status: 400 });
+    }
 
     // Look up FM ids so we can synthesize account_owners rows.
     const fmRows = await db

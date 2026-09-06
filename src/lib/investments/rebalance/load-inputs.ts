@@ -8,6 +8,7 @@ import {
   tickerPortfolioHoldings,
 } from "@/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
+import { assertTickerPortfoliosInFirm } from "@/lib/db-scoping";
 import { loadEnrichedHoldings } from "@/lib/investments/load-enriched-holdings";
 import { firmSlugToAssetClassId } from "@/lib/investments/holdings-rollup";
 import { monthlyReturns, type MonthlyReturn } from "@/lib/cma-stats";
@@ -78,10 +79,27 @@ async function loadReturns(securityIds: string[]): Promise<Map<string, MonthlyRe
   );
 }
 
-/** A saved fund portfolio, read back as the same ticker+weight list a typed target is. */
+/**
+ * The request named a saved fund portfolio this firm cannot use. Distinct from
+ * an unclassifiable ticker: nothing about the target is resolvable, so callers
+ * answer 400 rather than 422.
+ */
+export class PortfolioNotAvailableError extends Error {
+  constructor(reason: string) {
+    super(reason);
+    this.name = "PortfolioNotAvailableError";
+  }
+}
+
+/** A saved fund portfolio, read back as the same ticker+weight list a typed
+ *  target is. Takes `firmId` so the scoping cannot be left to a caller: the
+ *  holdings table has no firm column, so the check has to happen here. */
 async function loadStoredPortfolioSpec(
   portfolioId: string,
+  firmId: string,
 ): Promise<{ ticker: string; weight: number }[]> {
+  const check = await assertTickerPortfoliosInFirm(firmId, [portfolioId]);
+  if (!check.ok) throw new PortfolioNotAvailableError(check.reason);
   const rows = await db
     .select()
     .from(tickerPortfolioHoldings)
@@ -306,9 +324,15 @@ export async function loadRebalanceInputs(
   // write path never fills it in), so resolving off the stored id would drop
   // every such row and emit an empty proposed portfolio — a confident
   // sell-everything-to-cash recommendation — instead of failing loud.
+  //
+  // The portfolio id is request-supplied and the holdings query is keyed on it
+  // alone, so `loadStoredPortfolioSpec` asserts the firm before reading — the
+  // same check the account write paths run (`accounts-writes.ts`). Without it
+  // the target could name ANOTHER firm's saved model and hand back its
+  // tickers, weights and expense ratios.
   const targetSpec =
     "portfolioId" in body.target
-      ? await loadStoredPortfolioSpec(body.target.portfolioId)
+      ? await loadStoredPortfolioSpec(body.target.portfolioId, firmId)
       : body.target.holdings;
 
   const resolved = await resolveTargetAllocations(targetSpec, slugToId, resolverDeps);

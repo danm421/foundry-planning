@@ -1,13 +1,10 @@
-import { notFound } from "next/navigation";
 import Link from "next/link";
-import { requireOpsAdmin } from "@/lib/ops/ops-auth";
+import { requireOpsAdminPage } from "@/lib/ops/ops-auth";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
-  try {
-    await requireOpsAdmin();
-  } catch {
-    notFound(); // don't reveal the route to non-operators
-  }
+  // Defence in depth only — each page under here gates itself, because a
+  // forged router state tree can skip this layout entirely.
+  await requireOpsAdminPage();
   return (
     <div className="min-h-screen bg-paper text-ink">
       <header className="border-b border-hair">

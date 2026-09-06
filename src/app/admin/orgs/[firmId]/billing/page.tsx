@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { firms } from "@/db/schema";
 import { loadFirmBilling } from "@/lib/ops/billing-admin";
 import BillingClient from "./billing-client";
+import { requireOpsAdminPage } from "@/lib/ops/ops-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,7 @@ export default async function BillingPage({
 }: {
   params: Promise<{ firmId: string }>;
 }) {
+  await requireOpsAdminPage();
   const { firmId } = await params;
   const [firm] = await db.select().from(firms).where(eq(firms.firmId, firmId)).limit(1);
   if (!firm) notFound();
