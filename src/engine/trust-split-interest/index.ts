@@ -9,6 +9,7 @@ export type {
   AnnuityPaymentResult,
 } from "./compute-annual-payment";
 export {
+  hasTrustTerminated,
   isTrustTerminationYear,
   distributeAtTermination,
 } from "./trust-termination";

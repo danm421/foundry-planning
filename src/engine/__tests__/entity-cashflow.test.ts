@@ -5,6 +5,7 @@ import {
   computeEntityCashFlow,
   type BusinessAccountMetadata,
   type EntityMetadata,
+  type TrustCashFlowRow,
 } from "../entity-cashflow";
 import { runProjection } from "../projection";
 import type {
@@ -18,6 +19,18 @@ import type {
 } from "../types";
 import type { TaxYearParameters } from "../../lib/tax/types";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../ownership";
+import { buildCrtLifecycleFixture, CRT_FIXTURE_IDS } from "./_fixtures/crt";
+
+/** The trust row for `entityId`, or a loud failure — never a silent cast. */
+function trustRow(y: ProjectionYear, entityId: string): TrustCashFlowRow {
+  const row = y.entityCashFlow.get(entityId);
+  if (row?.kind !== "trust") throw new Error(`no trust row for ${entityId} in ${y.year}`);
+  return row;
+}
+/** The columns the Trust table adds up. beginning + in − out must equal ending. */
+const rowIdentityGap = (r: TrustCashFlowRow) =>
+  r.beginningBalance + r.transfersIn + r.growth + r.income
+  - r.totalDistributions - r.expenses - r.taxes - r.endingBalance;
 
 function makeYear(year: number): ProjectionYear {
   // Minimal-shape ProjectionYear for unit testing the cashflow pass.
@@ -210,6 +223,54 @@ describe("computeEntityCashFlow", () => {
     expect((row as { kind: "trust"; income: number }).income).toBe(75_000);
     expect((row as { kind: "trust"; expenses: number }).expenses).toBe(10_000);
     expect((row as { kind: "trust"; totalDistributions: number }).totalDistributions).toBe(50_000);
+  });
+
+  it("keeps a distribution debit (booked as entity_distribution) out of expenses — it is already in totalDistributions", () => {
+    const trust = {
+      id: "trust-1",
+      name: "Smith SLAT",
+      entityType: "trust" as const,
+      trustSubType: "irrevocable" as const,
+      isGrantor: false,
+      initialValue: 0,
+      initialBasis: 0,
+    };
+    const y = makeYear(2026);
+    y.accountLedgers = {
+      "trust-cash": {
+        beginningValue: 100_000,
+        endingValue: 50_000,
+        growth: 0,
+        contributions: 0,
+        distributions: 50_000,
+        internalContributions: 0,
+        internalDistributions: 0,
+        rmdAmount: 0,
+        fees: 0,
+        entries: [
+          {
+            category: "entity_distribution",
+            label: "Non-grantor trust distribution out",
+            amount: -50_000,
+            sourceId: "trust-1",
+          },
+        ],
+      },
+    };
+    y.trustDistributionsByEntity = new Map([["trust-1", 50_000]]);
+    computeEntityCashFlow({
+      years: [y],
+      entitiesById: new Map([["trust-1", trust]]),
+      accountEntityOwners: new Map([["trust-cash", { entityId: "trust-1", percent: 1 }]]),
+      giftsByEntityYear: new Map(),
+      incomes: [],
+      expenses: [],
+      entityFlowOverrides: [],
+    });
+    const row = trustRow(y, "trust-1");
+    expect(row.totalDistributions).toBe(50_000);
+    expect(row.expenses).toBe(0);
+    expect(rowIdentityGap(row)).toBe(0);
   });
 
   it("excludes asset-sale proceeds from trust income", () => {
@@ -1006,6 +1067,101 @@ describe("computeEntityCashFlow integration via runProjection", () => {
       // No entities → empty map, but the field must still exist.
       expect(y.entityCashFlow.size).toBe(0);
     }
+  });
+
+  it("holds the trust row identity through a CRT termination payout", () => {
+    const data = buildCrtLifecycleFixture({
+      inceptionYear: 2026,
+      payoutPercent: 0.06,
+      termYears: 2,
+      inceptionValue: 1_000_000,
+      trailingYears: 1,
+    });
+    const years = runProjection(data);
+    // 2028 is the year after the last payment: the corpus goes to the charity.
+    const y2028 = years.find((y) => y.year === 2028)!;
+    const row = trustRow(y2028, CRT_FIXTURE_IDS.CRT_ENTITY_ID);
+    expect(row.totalDistributions).toBeGreaterThan(0);
+    expect(row.endingBalance).toBeCloseTo(0, 2);
+    expect(rowIdentityGap(row)).toBeCloseTo(0, 2);
+  });
+
+  /** Married household + one non-grantor trust paying a $25k fixed
+   *  distribution to the spouse out of `trustAccounts`. */
+  const fixedDistributionScenario = (trustAccounts: Account[]): ClientData => ({
+    client,
+    accounts: [hhChecking, ...trustAccounts],
+    incomes: [],
+    expenses: [],
+    liabilities: [],
+    savingsRules: [],
+    withdrawalStrategy: [],
+    planSettings,
+    familyMembers: [spouseFm],
+    entities: [
+      {
+        id: "t1",
+        name: "Family Trust",
+        includeInPortfolio: true,
+        isGrantor: false,
+        entityType: "trust",
+        isIrrevocable: true,
+        grantor: "client",
+        distributionMode: "fixed",
+        distributionAmount: 25_000,
+        distributionPercent: null,
+        incomeBeneficiaries: [
+          { familyMemberId: "fm-spouse", householdRole: "spouse", percentage: 100 },
+        ],
+      },
+    ],
+    taxYearRows: [taxYearRow],
+    giftEvents: [],
+  });
+  const trustChecking = (value: number): Account => ({
+    id: "t1-checking",
+    name: "Trust Checking",
+    category: "cash",
+    subType: "checking",
+    titlingType: "jtwros",
+    value,
+    basis: value,
+    growthRate: 0,
+    rmdEnabled: false,
+    owners: [{ kind: "entity", entityId: "t1", percent: 1 }],
+    isDefaultChecking: true,
+  });
+
+  it("holds the trust row identity through a non-grantor fixed distribution", () => {
+    const row = trustRow(runProjection(fixedDistributionScenario([trustChecking(200_000)]))[0], "t1");
+    expect(row.totalDistributions).toBe(25_000);
+    expect(row.endingBalance).toBeCloseTo(175_000, 2);
+    expect(rowIdentityGap(row)).toBeCloseTo(0, 2);
+  });
+
+  it("reports the whole distribution, not just the cash slice, when it taps the trust's brokerage", () => {
+    // $10k cash + $100k brokerage; the $25k distribution draws $10k from cash
+    // and $15k from the brokerage (the gap-fill refill is an internal
+    // transfer). The row must show all $25k as distributed.
+    const trustBrokerage: Account = {
+      id: "t1-brokerage",
+      name: "Trust Brokerage",
+      category: "taxable",
+      subType: "brokerage",
+      titlingType: "jtwros",
+      value: 100_000,
+      basis: 100_000,
+      growthRate: 0,
+      rmdEnabled: false,
+      owners: [{ kind: "entity", entityId: "t1", percent: 1 }],
+    };
+    const row = trustRow(
+      runProjection(fixedDistributionScenario([trustChecking(10_000), trustBrokerage]))[0],
+      "t1",
+    );
+    expect(row.totalDistributions).toBe(25_000);
+    expect(row.endingBalance).toBeCloseTo(85_000, 2);
+    expect(rowIdentityGap(row)).toBeCloseTo(0, 2);
   });
 });
 

@@ -4,7 +4,9 @@ import type {
   ClientData,
   FamilyMember,
   Gift,
+  TrustSplitInterestSnapshot,
 } from "@/engine/types";
+import { salaryRow, spouseClientFields, spouseFamilyMember } from "./household";
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
 
@@ -58,6 +60,20 @@ export interface CltLifecycleOpts {
    * solver actually produce (audit F1).
    */
   isGrantor?: boolean;
+  /**
+   * Term basis for the split-interest snapshot. Defaults to "years". For a
+   * life leg, name the measuring life; `termYears` then only sizes the plan
+   * horizon (and the interest split, which no life-measured test asserts).
+   */
+  termType?: TrustSplitInterestSnapshot["termType"];
+  measuringLife1Id?: string | null;
+  /**
+   * Adds a spouse (born 1972, lives past plan end). The projection truncates
+   * at the FINAL death, so a single grantor's death ends the plan that year;
+   * pair this with `grantorDeathYear` to observe the trust in the years
+   * after the grantor dies.
+   */
+  spouse?: boolean;
 }
 
 /**
@@ -102,6 +118,7 @@ export function buildCltLifecycleFixture(opts: CltLifecycleOpts): ClientData {
   const charityId =
     opts.charityType === "public" ? PUBLIC_CHARITY_ID : PRIVATE_CHARITY_ID;
 
+  const spouseDob = "1972-01-01";
   const familyMembers: FamilyMember[] = [
     {
       id: CLIENT_FM_ID,
@@ -111,6 +128,7 @@ export function buildCltLifecycleFixture(opts: CltLifecycleOpts): ClientData {
       role: "client",
       dateOfBirth: "1970-01-01",
     } as FamilyMember,
+    ...(opts.spouse ? [spouseFamilyMember(spouseDob, "Grantor")] : []),
   ];
 
   const remainderRefs = opts.remainderBeneficiaries ?? [];
@@ -174,6 +192,7 @@ export function buildCltLifecycleFixture(opts: CltLifecycleOpts): ClientData {
       retirementAge: 67,
       planEndAge: 90,
       ...(lifeExpectancy != null ? { lifeExpectancy } : {}),
+      ...(opts.spouse ? spouseClientFields(spouseDob, 67) : {}),
     },
     accounts: [
       {
@@ -204,18 +223,7 @@ export function buildCltLifecycleFixture(opts: CltLifecycleOpts): ClientData {
         ],
       } as ClientData["accounts"][number],
     ],
-    incomes: [
-      {
-        id: "inc-salary",
-        name: "Salary",
-        type: "salary",
-        owner: "client",
-        annualAmount: opts.grantorAgi,
-        growthRate: 0,
-        startYear: opts.inceptionYear,
-        endYear: planEnd,
-      } as ClientData["incomes"][number],
-    ],
+    incomes: [salaryRow(opts.grantorAgi, opts.inceptionYear, planEnd)],
     expenses: [],
     liabilities: [],
     savingsRules: [],
@@ -249,9 +257,9 @@ export function buildCltLifecycleFixture(opts: CltLifecycleOpts): ClientData {
           payoutPercent: payoutType === "unitrust" ? opts.payoutPercent : null,
           payoutAmount: payoutType === "annuity" ? opts.payoutAmount! : null,
           irc7520Rate: irc7520,
-          termType: "years",
+          termType: opts.termType ?? "years",
           termYears: opts.termYears,
-          measuringLife1Id: null,
+          measuringLife1Id: opts.measuringLife1Id ?? null,
           measuringLife2Id: null,
           charityId,
           originalIncomeInterest: originalIncome,

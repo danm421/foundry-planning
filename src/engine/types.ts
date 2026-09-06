@@ -1886,7 +1886,8 @@ export interface ProjectionYear {
   trustTaxByEntity?: Map<string, TrustTaxBreakdown>;
   /** Per-entity total distribution amount in dollars. Populated for non-grantor
    *  trusts that ran an annual pass this year (mandatory + discretionary).
-   *  Sourced from trustPassResult.distributionsByEntity[entityId].drawFromCash.
+   *  Sourced from trustPassResult.distributionsByEntity[entityId].actualAmount —
+   *  the whole distribution, whichever trust account funded it.
    *  Excludes grantor-trust distributions (those flow through ledger entries
    *  with category: "expense" / "income") and CLT charity payments
    *  (read charitableOutflowDetail for those). */

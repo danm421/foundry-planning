@@ -25,8 +25,10 @@ export interface ComputeTrustTaxInputs {
 
 /**
  * Pure federal + state tax on non-grantor trust income.
- * Ordinary + dividends → compressed 1041 brackets.
- * Recognized cap gains → compressed §1(h) brackets.
+ * Ordinary → compressed 1041 brackets.
+ * Qualified dividends + recognized cap gains → compressed §1(h) brackets
+ *   (§1(h)(11) gives a trust the same 0/15/20% on qualified dividends as an
+ *   individual; the household side already treats this bucket that way).
  * NIIT = niitRate × max(0, retained NII + gains − threshold).
  * State = flatStateRate × (retained ordinary + dividends + gains).
  * Tax-exempt interest (even when retained) is NOT taxed — not in base here.
@@ -64,19 +66,21 @@ export function computeTrustTax(inp: ComputeTrustTaxInputs): TrustTaxBreakdown {
     remainingDeduction -= cgOff;
   }
 
-  const totalRetainedOrdinary = retainedOrdinary + retainedDividends;
-  const federalOrdinaryTax = calcFederalTax(totalRetainedOrdinary, inp.trustIncomeBrackets);
-  // §1(h): recognized LTCG stack ON TOP of the trust's retained ordinary income
-  // when picking the 0/15/20% rate (same as individuals). Compute the cap-gains
-  // tax as the §1(h) bracket tax on (ordinary + gains) minus the tax the ordinary
-  // base alone would incur — so retained-ordinary bracket usage is respected and
-  // gains can't fall back into the bottom 0% band.
+  const federalOrdinaryTax = calcFederalTax(retainedOrdinary, inp.trustIncomeBrackets);
+  // §1(h): qualified dividends and recognized LTCG stack ON TOP of the trust's
+  // retained ordinary income when picking the 0/15/20% rate (same as
+  // individuals). Compute the preferential tax as the §1(h) bracket tax on
+  // (ordinary + preferential) minus the tax the ordinary base alone would
+  // incur — so retained-ordinary bracket usage is respected and the
+  // preferential slice can't fall back into the bottom 0% band.
+  const preferential = retainedDividends + recognizedCapGains;
   const federalCapGainsTax =
-    calcFederalTax(totalRetainedOrdinary + recognizedCapGains, inp.trustCapGainsBrackets) -
-    calcFederalTax(totalRetainedOrdinary, inp.trustCapGainsBrackets);
-  const niitBase = Math.max(0, totalRetainedOrdinary + recognizedCapGains - inp.niitThreshold);
+    calcFederalTax(retainedOrdinary + preferential, inp.trustCapGainsBrackets) -
+    calcFederalTax(retainedOrdinary, inp.trustCapGainsBrackets);
+  const taxableBase = retainedOrdinary + preferential;
+  const niitBase = Math.max(0, taxableBase - inp.niitThreshold);
   const niit = niitBase * inp.niitRate;
-  const stateTax = (totalRetainedOrdinary + recognizedCapGains) * inp.flatStateRate;
+  const stateTax = taxableBase * inp.flatStateRate;
 
   return {
     entityId: inp.entityId,

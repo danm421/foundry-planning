@@ -168,3 +168,42 @@ describe("computeTrustTax", () => {
     expect(r.total).toBeCloseTo(r.federalOrdinaryTax + r.federalCapGainsTax + r.niit + r.stateTax, 1);
   });
 });
+
+describe("computeTrustTax — retained qualified dividends are §1(h) income", () => {
+  it("taxes retained dividends at the compressed cap-gains brackets, not the ordinary brackets", () => {
+    const r = computeTrustTax({
+      entityId: "t1",
+      retainedOrdinary: 0,
+      retainedDividends: 100_000,
+      recognizedCapGains: 0,
+      trustIncomeBrackets: trustIncome2026,
+      trustCapGainsBrackets: trustCapGains2026,
+      niitRate: 0.038,
+      niitThreshold: 16_250,
+      flatStateRate: 0,
+    });
+    expect(r.federalOrdinaryTax).toBe(0);
+    // (16300-3350)*.15 + (100000-16300)*.20 = 1,942.5 + 16,740
+    expect(r.federalCapGainsTax).toBeCloseTo(18_682.5, 1);
+    // NIIT still sees the dividends: (100000 - 16250) * .038
+    expect(r.niit).toBeCloseTo(3_182.5, 1);
+  });
+
+  it("stacks retained dividends on top of retained ordinary when picking the §1(h) rate", () => {
+    const r = computeTrustTax({
+      entityId: "t1",
+      retainedOrdinary: 10_000,
+      retainedDividends: 10_000,
+      recognizedCapGains: 0,
+      trustIncomeBrackets: trustIncome2026,
+      trustCapGainsBrackets: trustCapGains2026,
+      niitRate: 0,
+      niitThreshold: 16_250,
+      flatStateRate: 0,
+    });
+    // ordinary alone: 3300*.10 + (10000-3300)*.24 = 330 + 1,608
+    expect(r.federalOrdinaryTax).toBeCloseTo(1_938, 0);
+    // dividends occupy 10k..20k of the §1(h) stack: (16300-10000)*.15 + (20000-16300)*.20 = 945 + 740
+    expect(r.federalCapGainsTax).toBeCloseTo(1_685, 0);
+  });
+});

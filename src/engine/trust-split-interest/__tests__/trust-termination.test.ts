@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  hasTrustTerminated,
   isTrustTerminationYear,
   distributeAtTermination,
 } from "../trust-termination";
@@ -317,5 +318,22 @@ describe("isTrustTerminationYear with CRT subtype", () => {
     };
     expect(isTrustTerminationYear(trust, 2036, {})).toBe(true);
     expect(isTrustTerminationYear(trust, 2035, {})).toBe(false);
+  });
+});
+
+describe("hasTrustTerminated", () => {
+  it("is false through the last payment year and true from the termination year on (years)", () => {
+    const t = makeClut({ termType: "years", termYears: 5 }); // inception 2026 → terminates 2031
+    expect(hasTrustTerminated(t, 2030, {})).toBe(false);
+    expect(hasTrustTerminated(t, 2031, {})).toBe(true);
+    expect(hasTrustTerminated(t, 2035, {})).toBe(true);
+  });
+
+  it("is false while the measuring life is alive and true from the year after its death (single_life)", () => {
+    const t = makeClut({ termType: "single_life", termYears: null, measuringLife1Id: "fm-1" });
+    expect(hasTrustTerminated(t, 2040, {})).toBe(false);
+    expect(hasTrustTerminated(t, 2028, { measuringLife1: 2028 })).toBe(false);
+    expect(hasTrustTerminated(t, 2029, { measuringLife1: 2028 })).toBe(true);
+    expect(hasTrustTerminated(t, 2033, { measuringLife1: 2028 })).toBe(true);
   });
 });
