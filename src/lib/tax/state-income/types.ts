@@ -24,14 +24,26 @@ export interface StdDeductionRow {
   notes?: string;
 }
 
+/** "exemption" = a deduction from income; "credit" = off the tax bill; "none" = no amount of this kind. */
 export type ExemptionType = "exemption" | "credit" | "none";
 
+/**
+ * Each component of a row carries its own kind, because a state's components
+ * can differ (KY: no personal exemption but a 65+ CREDIT; AZ: a 65+ EXEMPTION
+ * beside a dependent CREDIT). A component whose kind is "none" must carry $0 —
+ * enforced by __tests__/exemptions-data.test.ts.
+ */
 export interface ExemptionRow {
+  /** Personal amount per filing status; kind given by `type`. */
   single: number;
   joint: number;
+  /** Per-dependent amount. NOT read by the engine yet; give it its own kind when wired up. */
   dependent: number;
+  /** Per-filer 65+ add-on; kind given by `add65Type`, falling back to `type`. */
   add65: number;
   type: ExemptionType;
+  /** Hand-added column — the workbook generator does not emit it yet. */
+  add65Type?: ExemptionType;
   notes?: string;
 }
 

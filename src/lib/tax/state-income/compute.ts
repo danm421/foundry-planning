@@ -263,8 +263,8 @@ export function computeStateIncomeTax(
     : getStdDeduction(input.state, input.year, stateFs, input.primaryAge, input.spouseAge);
   const exemption = getExemption(input.state, input.year, stateFs, input.primaryAge, input.spouseAge);
   const stateAGI = startingIncome + addbacks.total - subtractions.total;
-  const personalExemptionDeduction = exemption.type === "exemption" ? exemption.amount : 0;
-  const exemptionCredits = exemption.type === "credit" ? exemption.amount : 0;
+  const personalExemptionDeduction = exemption.deduction;
+  const exemptionCredits = exemption.credit;
   const stateTaxableIncome = Math.max(0, stateAGI - stdDed - personalExemptionDeduction);
   const preCreditTax = applyBrackets(stateTaxableIncome, brackets);
   const recapture = applyRecapture(input.state, {
@@ -330,6 +330,19 @@ function getBrackets(
   return byState[fs] ?? [];
 }
 
+/**
+ * Count of filers who qualify for a 65+ add-on. The spouse only counts on a
+ * joint return; both state 65+ add-ons (std deduction, exemption) are stored
+ * as per-filer amounts and multiply by this.
+ */
+function filers65(
+  fs: StateFilingStatus,
+  primaryAge: number,
+  spouseAge?: number,
+): number {
+  return (primaryAge >= 65 ? 1 : 0) + (fs === "joint" && (spouseAge ?? 0) >= 65 ? 1 : 0);
+}
+
 function getStdDeduction(
   state: USPSStateCode,
   year: number,
@@ -341,38 +354,35 @@ function getStdDeduction(
   const row = yearSet[state];
   if (!row) return 0;
   const base = fs === "joint" ? row.joint : row.single;
-  // The 65+ add-on is PER FILER. For joint returns, count each spouse who is 65+
-  // and apply add65Joint that many times (the data stores it as a per-filer amount).
-  // For single/self-only, only the primary filer can qualify.
-  const age65 =
-    fs === "joint"
-      ? row.add65Joint *
-        ((primaryAge >= 65 ? 1 : 0) + ((spouseAge ?? 0) >= 65 ? 1 : 0))
-      : primaryAge >= 65
-        ? row.add65Single
-        : 0;
-  return base + age65;
+  const perFiler65 = fs === "joint" ? row.add65Joint : row.add65Single;
+  return base + perFiler65 * filers65(fs, primaryAge, spouseAge);
 }
 
+/**
+ * Splits a state's exemption into the two buckets the tax math needs: a
+ * deduction from income and a credit against tax. Each component is routed by
+ * its OWN kind (see ExemptionRow), so a state can carry both at once — or a
+ * 65+ credit beside no personal exemption at all (KY).
+ */
 function getExemption(
   state: USPSStateCode,
   year: number,
   fs: StateFilingStatus,
   primaryAge: number,
   spouseAge?: number,
-): { type: "exemption" | "credit" | "none"; amount: number } {
+): { deduction: number; credit: number } {
   const yearSet = EXEMPTIONS[year] ?? EXEMPTIONS[2026];
   const row = yearSet[state];
-  if (!row) return { type: "none", amount: 0 };
-  if (row.type === "none") return { type: "none", amount: 0 };
+  if (!row) return { deduction: 0, credit: 0 };
   // For credit-type states, both single & joint columns express the per-filer-count credit;
   // workbook stores joint-column as 2× single, so we just use the appropriate column.
-  const base = fs === "joint" ? row.joint : row.single;
-  // §63(f)-analog state age-65 add-on, PER FILER (mirrors getStdDeduction). For
-  // joint returns count each spouse who is 65+; single/self-only counts the
-  // primary filer only. row.add65 is stored as a per-filer amount.
-  const age65Add =
-    row.add65 *
-    ((primaryAge >= 65 ? 1 : 0) + (fs === "joint" && (spouseAge ?? 0) >= 65 ? 1 : 0));
-  return { type: row.type, amount: base + age65Add };
+  const personal = fs === "joint" ? row.joint : row.single;
+  // §63(f)-analog state age-65 add-on, PER FILER (mirrors getStdDeduction).
+  const age65 = row.add65 * filers65(fs, primaryAge, spouseAge);
+  const age65Kind = row.add65Type ?? row.type;
+  return {
+    deduction:
+      (row.type === "exemption" ? personal : 0) + (age65Kind === "exemption" ? age65 : 0),
+    credit: (row.type === "credit" ? personal : 0) + (age65Kind === "credit" ? age65 : 0),
+  };
 }

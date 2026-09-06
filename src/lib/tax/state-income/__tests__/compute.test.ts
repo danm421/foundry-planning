@@ -645,3 +645,82 @@ describe("computeStateIncomeTax — AZ age-65 amount is a deduction, not a credi
     expect(r.stateTax).toBeCloseTo(2_477.5, 2);
   });
 });
+
+// ---------------------------------------------------------------------------
+// A state's exemption row can mix kinds: a personal amount that is a deduction
+// and a 65+ add-on that is a credit, or no personal amount at all beside a
+// real 65+ credit. Each component is typed on its own, so nothing sitting in a
+// row is ever discarded because the ROW's headline type happened to be "none".
+// ---------------------------------------------------------------------------
+describe("computeStateIncomeTax — exemption components are typed individually", () => {
+  const WAGE = (
+    state: ComputeStateIncomeTaxInput["state"],
+    filingStatus: ComputeStateIncomeTaxInput["filingStatus"],
+    primaryAge: number,
+    spouseAge?: number,
+  ): ComputeStateIncomeTaxInput => ({
+    state,
+    year: 2026,
+    filingStatus,
+    primaryAge,
+    spouseAge,
+    federalIncome: BASE_FEDERAL_INCOME,
+    retirementBreakdown: BASE_RETIREMENT,
+    preTaxContrib: 0,
+    fallbackFlatRate: 0,
+  });
+
+  describe("ME — $5,300 / $10,600 personal exemption is a deduction from income", () => {
+    it("single: $5,300 comes off income", () => {
+      const r = computeStateIncomeTax(WAGE("ME", "single", 40));
+      expect(r.personalExemptionDeduction).toBe(5_300);
+      expect(r.exemptionCredits).toBe(0);
+      // 100_000 − 8_350 std ded − 5_300 exemption = 86_350
+      expect(r.stateTaxableIncome).toBe(86_350);
+    });
+
+    it("single at $100K owes $5,654.34, not $6,033.29", () => {
+      const r = computeStateIncomeTax(WAGE("ME", "single", 40));
+      // 27_399 × 5.8% + 37_450 × 6.75% + (86_350 − 64_849) × 7.15%
+      // = 1_589.142 + 2_527.875 + 1_537.3215 = 5_654.3385
+      expect(r.stateTax).toBeCloseTo(5_654.34, 2);
+    });
+
+    it("joint: $10,600 comes off income", () => {
+      const r = computeStateIncomeTax(WAGE("ME", "married_joint", 40, 40));
+      expect(r.personalExemptionDeduction).toBe(10_600);
+      expect(r.exemptionCredits).toBe(0);
+      // 100_000 − 16_700 std ded − 10_600 exemption = 72_700
+      // 54_849 × 5.8% + (72_700 − 54_849) × 6.75% = 3_181.242 + 1_204.9425
+      expect(r.stateTaxableIncome).toBe(72_700);
+      expect(r.stateTax).toBeCloseTo(4_386.18, 2);
+    });
+  });
+
+  describe("KY — no personal exemption, but a $40 credit per filer 65+", () => {
+    it("single under 65: nothing", () => {
+      const r = computeStateIncomeTax(WAGE("KY", "single", 40));
+      expect(r.personalExemptionDeduction).toBe(0);
+      expect(r.exemptionCredits).toBe(0);
+    });
+
+    it("single 65+: $40 comes off the tax bill, not off income", () => {
+      const r = computeStateIncomeTax(WAGE("KY", "single", 70));
+      expect(r.personalExemptionDeduction).toBe(0);
+      expect(r.exemptionCredits).toBe(40);
+      // (100_000 − 3_360) × 3.5% = 3_382.40, less the $40 credit
+      expect(r.stateTaxableIncome).toBe(96_640);
+      expect(r.stateTax).toBeCloseTo(3_342.4, 2);
+    });
+
+    it("joint, both 65+: $80 (one credit per qualifying filer)", () => {
+      const r = computeStateIncomeTax(WAGE("KY", "married_joint", 70, 70));
+      expect(r.exemptionCredits).toBe(80);
+    });
+
+    it("joint, only the spouse 65+: $40", () => {
+      const r = computeStateIncomeTax(WAGE("KY", "married_joint", 60, 66));
+      expect(r.exemptionCredits).toBe(40);
+    });
+  });
+});
