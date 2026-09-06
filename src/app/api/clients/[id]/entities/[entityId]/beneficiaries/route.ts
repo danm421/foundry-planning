@@ -11,6 +11,7 @@ import { eq, and, asc, inArray } from "drizzle-orm";
 import { beneficiarySetSchema } from "@/lib/schemas/beneficiaries";
 import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { assertEntitiesInClient } from "@/lib/db-scoping";
 
 export const dynamic = "force-dynamic";
 
@@ -117,6 +118,20 @@ export async function PUT(
           { status: 400 },
         );
       }
+    }
+
+    // A beneficiary can itself be a trust. Its id is request-supplied and the
+    // sibling account route already asserts it — this one did not, so a foreign
+    // entity id landed in `beneficiary_designations` unchecked.
+    const entCheck = await assertEntitiesInClient(
+      id,
+      parsed.data.map((d) => d.entityIdRef),
+    );
+    if (!entCheck.ok) {
+      return NextResponse.json(
+        { error: "One or more trust entities not found for this client" },
+        { status: 400 },
+      );
     }
 
     const inserted = await db.transaction(async (tx) => {
