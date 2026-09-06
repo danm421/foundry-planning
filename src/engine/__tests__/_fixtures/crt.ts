@@ -1,11 +1,18 @@
 import { termCertainAnnuityFactor } from "@/engine/actuarial/annuity-factors";
-import type { ClientData, FamilyMember } from "@/engine/types";
+import type {
+  ClientData,
+  FamilyMember,
+  TrustSplitInterestSnapshot,
+} from "@/engine/types";
+import { salaryRow, spouseClientFields, spouseFamilyMember } from "./household";
 import { TAX_YEAR_2026 } from "./tax-year-2026";
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
 
 const PUBLIC_CHARITY_ID = "00000000-0000-0000-0000-000000000aaa";
 const CLIENT_FM_ID = "00000000-0000-0000-0000-000000000001";
+const SIBLING_INCOME_ID = "00000000-0000-0000-0000-0000000000ce";
+const SIBLING_IRA_ID = "00000000-0000-0000-0000-0000000000cf";
 const CRT_ENTITY_ID = "00000000-0000-0000-0000-0000000000c1";
 const CRT_CHECKING_ID = "00000000-0000-0000-0000-0000000000c2";
 const HOUSEHOLD_CHECKING_ID = "00000000-0000-0000-0000-0000000000c3";
@@ -130,6 +137,38 @@ export interface CrtLifecycleOpts {
    * its own so it doesn't need `realizationCorpus` to reach bracket mode.
    */
   crtGapFill?: boolean;
+  /**
+   * Adds a spouse (born 1968, lives past plan end) so the household survives
+   * the client's death and the projection keeps paying a surviving income
+   * beneficiary. Pair with `grantorDeathYear` to watch a life-measured trust
+   * after its measuring life ends.
+   */
+  spouse?: boolean;
+  /**
+   * Term basis for the split-interest snapshot. Defaults to "years". For a
+   * life leg, name the measuring life; `termYears` then only sizes the plan
+   * horizon (and the remainder split, which no life-measured test asserts).
+   */
+  termType?: TrustSplitInterestSnapshot["termType"];
+  measuringLife1Id?: string | null;
+  /**
+   * Adds a $100k/yr ordinary income row owned by the SIBLING non-grantor
+   * trust (rent, royalties, a business interest). Requires
+   * `siblingNonGrantorTrust`; seeds `taxYearRows` on its own.
+   */
+  siblingIncomeRow?: boolean;
+  /**
+   * Adds an RMD-enabled traditional IRA owned by the SIBLING non-grantor trust
+   * and moves the client's DOB back so the entity-RMD fork runs (same reason
+   * as `crtIra`). Requires `siblingNonGrantorTrust`; seeds `taxYearRows`.
+   */
+  siblingIra?: boolean;
+  /**
+   * Adds a client salary of this amount for the whole plan and seeds
+   * `taxYearRows`, so the §170 AGI limits on the inception deduction have an
+   * AGI to bite on (the base fixture has no income at all).
+   */
+  grantorAgi?: number;
 }
 
 /**
@@ -187,12 +226,14 @@ export function buildCrtLifecycleFixture(opts: CrtLifecycleOpts): ClientData {
   // crtIra moves the DOB back so the client is age 75 at inception — the
   // entity-RMD fork reads the CLIENT's birth year even for a trust-owned
   // account, and at age 60 calculateRMD returns 0 and the fork never runs.
-  const grantorBirthYear = opts.crtIra ? opts.inceptionYear - 75 : 1966;
+  const grantorBirthYear =
+    opts.crtIra || opts.siblingIra ? opts.inceptionYear - 75 : 1966;
   const grantorDob = `${grantorBirthYear}-01-01`;
   const lifeExpectancy =
     opts.grantorDeathYear != null
       ? opts.grantorDeathYear - grantorBirthYear
       : undefined;
+  const spouseDob = "1968-01-01";
 
   const familyMembers: FamilyMember[] = [
     {
@@ -203,6 +244,7 @@ export function buildCrtLifecycleFixture(opts: CrtLifecycleOpts): ClientData {
       role: "client",
       dateOfBirth: grantorDob,
     } as FamilyMember,
+    ...(opts.spouse ? [spouseFamilyMember(spouseDob, "Grantor")] : []),
   ];
 
   return {
@@ -214,6 +256,7 @@ export function buildCrtLifecycleFixture(opts: CrtLifecycleOpts): ClientData {
       retirementAge: 65,
       planEndAge: 90,
       ...(lifeExpectancy != null ? { lifeExpectancy } : {}),
+      ...(opts.spouse ? spouseClientFields(spouseDob, 65) : {}),
     },
     accounts: [
       {
@@ -329,22 +372,58 @@ export function buildCrtLifecycleFixture(opts: CrtLifecycleOpts): ClientData {
             } as ClientData["accounts"][number],
           ]
         : []),
+      ...(opts.siblingIra
+        ? [
+            {
+              id: SIBLING_IRA_ID,
+              name: "Family Trust Inherited IRA",
+              category: "retirement",
+              subType: "traditional_ira",
+              value: 500_000,
+              basis: 0,
+              growthRate: 0,
+              rmdEnabled: true,
+              isDefaultChecking: false,
+              owners: [{ kind: "entity", entityId: SIBLING_TRUST_ID, percent: 1 }],
+            } as ClientData["accounts"][number],
+          ]
+        : []),
     ],
-    incomes: opts.crtIncomeRow
-      ? ([
-          {
-            id: CRT_INCOME_ID,
-            name: "CRT royalty stream",
-            type: "other",
-            taxType: "ordinary_income",
-            annualAmount: 40_000,
-            growthRate: 0,
-            startYear: opts.inceptionYear,
-            endYear: planEnd,
-            ownerEntityId: CRT_ENTITY_ID,
-          },
-        ] as unknown as ClientData["incomes"])
-      : [],
+    incomes: [
+      ...(opts.grantorAgi != null
+        ? [salaryRow(opts.grantorAgi, opts.inceptionYear, planEnd)]
+        : []),
+      ...(opts.crtIncomeRow
+        ? [
+            {
+              id: CRT_INCOME_ID,
+              name: "CRT royalty stream",
+              type: "other",
+              taxType: "ordinary_income",
+              annualAmount: 40_000,
+              growthRate: 0,
+              startYear: opts.inceptionYear,
+              endYear: planEnd,
+              ownerEntityId: CRT_ENTITY_ID,
+            },
+          ]
+        : []),
+      ...(opts.siblingIncomeRow
+        ? [
+            {
+              id: SIBLING_INCOME_ID,
+              name: "Family Trust rental income",
+              type: "other",
+              taxType: "ordinary_income",
+              annualAmount: 100_000,
+              growthRate: 0,
+              startYear: opts.inceptionYear,
+              endYear: planEnd,
+              ownerEntityId: SIBLING_TRUST_ID,
+            },
+          ]
+        : []),
+    ] as unknown as ClientData["incomes"],
     expenses: opts.crtGapFill
       ? ([
           {
@@ -394,9 +473,9 @@ export function buildCrtLifecycleFixture(opts: CrtLifecycleOpts): ClientData {
           payoutPercent: payoutType === "unitrust" ? opts.payoutPercent! : null,
           payoutAmount: payoutType === "annuity" ? opts.payoutAmount! : null,
           irc7520Rate: irc7520,
-          termType: "years",
+          termType: opts.termType ?? "years",
           termYears: opts.termYears,
-          measuringLife1Id: null,
+          measuringLife1Id: opts.measuringLife1Id ?? null,
           measuringLife2Id: null,
           charityId: PUBLIC_CHARITY_ID,
           originalIncomeInterest: originalIncome,
@@ -421,7 +500,11 @@ export function buildCrtLifecycleFixture(opts: CrtLifecycleOpts): ClientData {
     // Bracket mode must be live for any §664(c) tax assertion — without
     // taxYearRows the engine silently falls back to flat-0 and computes no tax
     // at all, which reads identically to an exemption that works.
-    ...(opts.realizationCorpus || opts.crtGapFill
+    ...(opts.realizationCorpus ||
+    opts.crtGapFill ||
+    opts.siblingIncomeRow ||
+    opts.siblingIra ||
+    opts.grantorAgi != null
       ? { taxYearRows: [TAX_YEAR_2026] }
       : {}),
     transfers: [],
@@ -473,6 +556,8 @@ export function buildCrtLifecycleFixture(opts: CrtLifecycleOpts): ClientData {
 export const CRT_FIXTURE_IDS = {
   PUBLIC_CHARITY_ID,
   CLIENT_FM_ID,
+  SIBLING_INCOME_ID,
+  SIBLING_IRA_ID,
   CRT_ENTITY_ID,
   CRT_CHECKING_ID,
   CRT_TAXABLE_ID,

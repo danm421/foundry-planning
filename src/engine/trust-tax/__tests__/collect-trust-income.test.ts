@@ -44,3 +44,21 @@ describe("collectTrustIncome", () => {
     });
   });
 });
+
+describe("collectTrustIncome — trust income rows", () => {
+  it("folds income the trust earns outside its accounts (owned income rows, entity RMDs) into its buckets", () => {
+    const r = collectTrustIncome({
+      entityIds: [TRUST_ID],
+      yearRealizations: [],
+      assetTransactionGains: [],
+      trustIncomeRows: [
+        { ownerEntityId: TRUST_ID, ordinary: 100_000, dividends: 5_000, taxExempt: 1_000, recognizedCapGains: 2_000 },
+        { ownerEntityId: TRUST_ID, ordinary: 20_000, dividends: 0, taxExempt: 0, recognizedCapGains: 0 },
+        { ownerEntityId: "not-a-target", ordinary: 999, dividends: 0, taxExempt: 0, recognizedCapGains: 0 },
+      ],
+    });
+    expect(r.get(TRUST_ID)).toEqual({
+      ordinary: 120_000, dividends: 5_000, taxExempt: 1_000, recognizedCapGains: 2_000,
+    });
+  });
+});

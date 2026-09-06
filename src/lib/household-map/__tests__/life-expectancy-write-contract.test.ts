@@ -5,11 +5,12 @@
 // `life-expectancy-write.test.ts` next door asserts the payloads' SHAPE. Every
 // assertion there is against this module's own output, so the route rejecting a
 // `targetKind`, or the writer silently discarding a field, leaves it fully green
-// while every scenario-mode save fails in the browser. This branch found a
-// shipped example of exactly that: the Solver emits `targetId: "plan_settings"`
-// for this same slot, `scenario_changes.target_id` is a `uuid` column, and there
-// are ZERO plan_settings rows in production because every one of those inserts
-// threw.
+// while every scenario-mode save fails in the browser. There was a shipped
+// example of exactly that: the Solver emitted `targetId: "plan_settings"` for
+// this same slot, `scenario_changes.target_id` is a `uuid` column, and there
+// were ZERO plan_settings rows in production because every one of those inserts
+// threw. Fixed 2026-09-05 — the Solver now passes the clientId, like this
+// module always has — but the class of bug is why these tests exist.
 //
 // So these import the REAL maps the route and writer consume, and pin the two
 // rules that are invisible from inside the builder module.

@@ -15,7 +15,7 @@ export interface TrustIncomeBuckets {
   ordinary: number;
   dividends: number;
   taxExempt: number;
-  recognizedCapGains: number;      // ONLY from asset-transaction sales
+  recognizedCapGains: number;      // asset-transaction sales + capital-gain income rows; never ambient
 }
 
 export interface TrustLiquidityPool {

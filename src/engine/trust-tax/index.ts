@@ -1,5 +1,10 @@
 import type { BracketTier } from "@/lib/tax/types";
-import { collectTrustIncome, type AccountYearRealization, type AssetTransactionGain } from "./collect-trust-income";
+import {
+  collectTrustIncome,
+  type AccountYearRealization,
+  type AssetTransactionGain,
+  type TrustIncomeRow,
+} from "./collect-trust-income";
 import { computeDistribution } from "./compute-distribution";
 import { routeDni } from "./route-dni";
 import { computeTrustTax } from "./compute-trust-tax";
@@ -34,6 +39,8 @@ export interface ApplyTrustAnnualPassInputs {
   nonGrantorTrusts: NonGrantorTrustInput[];
   yearRealizations: AccountYearRealization[];
   assetTransactionGains: AssetTransactionGain[];
+  /** Income the trust receives directly — owned income rows, entity RMDs. */
+  trustIncomeRows?: TrustIncomeRow[];
   trustLiquidity: Map<string, TrustLiquidityPool>;
   trustIncomeBrackets: BracketTier[];
   trustCapGainsBrackets: BracketTier[];
@@ -56,6 +63,7 @@ export function applyTrustAnnualPass(
     entityIds: inp.nonGrantorTrusts.map((t) => t.entityId),
     yearRealizations: inp.yearRealizations,
     assetTransactionGains: inp.assetTransactionGains,
+    trustIncomeRows: inp.trustIncomeRows,
   });
 
   for (const trust of inp.nonGrantorTrusts) {

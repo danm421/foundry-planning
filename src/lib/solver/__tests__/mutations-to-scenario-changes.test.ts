@@ -586,7 +586,7 @@ describe("mutationsToScenarioChanges — stress overrides → plan_settings", ()
 
     const ps = drafts.filter((d) => d.targetKind === "plan_settings");
     expect(ps).toHaveLength(1); // single row → no (scenarioId, kind, id, opType) collision
-    expect(ps[0]).toMatchObject({ opType: "edit", targetId: "plan_settings" });
+    expect(ps[0]).toMatchObject({ opType: "edit", targetId: CLIENT_ID });
     expect(ps[0].payload).toEqual({
       livingExpenseInflationOverride: { from: null, to: 0.05 },
       ssBenefitHaircut: { from: null, to: { pct: 0.23, startYear: 2035 } },
@@ -627,7 +627,7 @@ describe("mutationsToScenarioChanges — surplus allocation → plan_settings", 
     ]);
     const ps = drafts.filter((d) => d.targetKind === "plan_settings");
     expect(ps).toHaveLength(1);
-    expect(ps[0]).toMatchObject({ opType: "edit", targetId: "plan_settings" });
+    expect(ps[0]).toMatchObject({ opType: "edit", targetId: CLIENT_ID });
     expect(ps[0].payload).toEqual({
       surplusSpendPct: { from: 0, to: 0.3 },
       surplusSaveAccountId: { from: null, to: "acct-1" },
@@ -742,5 +742,85 @@ describe("savings-salary-basis → savings_rule diff", () => {
       annualPercent: { from: null, to: 0.1 },
       salaryBasis: { from: "owner", to: "all" },
     });
+  });
+});
+
+describe("mutationsToScenarioChanges — every emitted targetId is a uuid", () => {
+  // `scenario_changes.target_id` is a Postgres `uuid` column (`src/db/schema.ts`),
+  // and `save-scenario/route.ts` inserts every draft's `targetId` raw inside ONE
+  // transaction. Nothing between here and Postgres validates it — not the route,
+  // not a Zod schema — so the column is the only gate. A non-uuid value fails the
+  // cast, rolls the WHOLE transaction back, and the advisor gets a 500 with no
+  // scenario created at all.
+  //
+  // That failure is invisible to every other unit test in this file, because the
+  // cast happens in the database. So the invariant is pinned here at the emit
+  // site instead: for a SINGLETON kind the emitter has no row id to pass through
+  // and has to supply one itself — and the only stable uuid to hand is the
+  // clientId. `lookupBaseEntity` (`src/lib/scenario/changes-writer.ts:87-90`)
+  // returns singletons straight off the effective tree and never reads targetId,
+  // so the clientId is free to use. This is the convention
+  // `household-map-view.tsx` already follows and documents.
+  const SINGLETON_KINDS = new Set(["plan_settings", "client"]);
+
+  const EVERY_PLAN_SETTINGS_MUTATION = [
+    { kind: "stress-inflation", rate: 0.05 },
+    { kind: "stress-ss-haircut", pct: 0.23, startYear: 2035 },
+    { kind: "stress-disability", person: "client", startYear: 2032, endYear: 2036 },
+    { kind: "stress-market-crash", year: 2030, drawdownPct: 0.4 },
+    { kind: "stress-exemption-cap", cap: 7_000_000 },
+    { kind: "stress-tax-rates", points: 0.03, startYear: 2030 },
+    {
+      kind: "surplus-allocation",
+      spendPct: 0.3,
+      saveAccountId: "acct-1",
+      spendAllUntilRetirement: false,
+    },
+  ];
+
+  it.each(EVERY_PLAN_SETTINGS_MUTATION)(
+    "$kind emits a plan_settings row whose targetId is the client uuid",
+    (mutation) => {
+      const src = {
+        ...makeSource(),
+        planSettings: {
+          planStartYear: 2026,
+          inflationRate: 0.025,
+          surplusSpendPct: 0,
+          surplusSaveAccountId: null,
+        } as ClientData["planSettings"],
+      };
+      const drafts = mutationsToScenarioChanges(src, CLIENT_ID, [
+        mutation as Parameters<typeof mutationsToScenarioChanges>[2][number],
+      ]);
+
+      const singletons = drafts.filter((d) => SINGLETON_KINDS.has(d.targetKind));
+      expect(singletons.length).toBeGreaterThan(0);
+      for (const d of singletons) {
+        expect(d.targetId).toBe(CLIENT_ID);
+      }
+    },
+  );
+
+  it("never invents a targetId equal to its own targetKind", () => {
+    // The exact shape of the bug: a sentinel string that reads fine in TypeScript
+    // and cannot cast to uuid. Catches the next singleton kind added here too.
+    const src = {
+      ...makeSource(),
+      planSettings: {
+        planStartYear: 2026,
+        inflationRate: 0.025,
+        surplusSpendPct: 0,
+      } as ClientData["planSettings"],
+    };
+    const drafts = mutationsToScenarioChanges(
+      src,
+      CLIENT_ID,
+      EVERY_PLAN_SETTINGS_MUTATION as Parameters<typeof mutationsToScenarioChanges>[2],
+    );
+    expect(drafts.length).toBeGreaterThan(0);
+    for (const d of drafts) {
+      expect(d.targetId).not.toBe(d.targetKind);
+    }
   });
 });

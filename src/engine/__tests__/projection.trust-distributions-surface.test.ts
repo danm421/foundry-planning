@@ -3,12 +3,12 @@
  *
  * Asserts that the year-result assembly inside runProjection populates
  * `trustDistributionsByEntity` from `trustPassResult.distributionsByEntity`
- * (drawFromCash). This is what Tasks 4-5 of the Entities Cash Flow Report
- * read.
+ * (actualAmount — the whole distribution, whichever trust account funded
+ * it). This is what the Entities Cash Flow Report reads.
  *
  * Minimal fixture: one non-grantor trust with a `fixed` distribution policy
- * that is fully covered by available cash. The expected drawFromCash equals
- * the configured fixed amount.
+ * that is fully covered by available cash. The expected amount equals the
+ * configured fixed amount.
  *
  * Mirrors the scaffolding pattern used by trust-tax-edge-cases.integration.test.ts.
  */
@@ -137,9 +137,9 @@ const taxYearRow: TaxYearParameters = {
 };
 
 describe("ProjectionYear.trustDistributionsByEntity surfacing", () => {
-  it("populates per-entity drawFromCash for a non-grantor trust with a fixed distribution", () => {
+  it("populates the per-entity distributed amount for a non-grantor trust with a fixed distribution", () => {
     // Trust holds $200K cash, distributes $25K fixed to a household
-    // beneficiary. drawFromCash = min(actual, cash) = $25K.
+    // beneficiary, fully covered by cash → $25K distributed.
     const trustChecking: Account = {
       id: "t1-checking",
       name: "Trust Checking",

@@ -740,11 +740,16 @@ export function mutationsToScenarioChanges(
     });
   }
   if (Object.keys(planSettingsDiff).length > 0) {
-    // Singleton: targetId is a stable sentinel (not used to locate the row).
+    // Singleton: `targetId` does not locate the row — `lookupBaseEntity` reads
+    // plan_settings straight off the effective tree — but it is still written to
+    // `scenario_changes.target_id`, a Postgres `uuid` column, so it must BE a
+    // uuid. The clientId is the only stable one to hand. Anything else (this
+    // once emitted the string "plan_settings") fails the cast and rolls back the
+    // whole save-scenario transaction. Same convention as `household-map-view`.
     drafts.push({
       opType: "edit",
       targetKind: "plan_settings",
-      targetId: "plan_settings",
+      targetId: clientId,
       payload: planSettingsDiff,
       orderIndex: 0,
     });

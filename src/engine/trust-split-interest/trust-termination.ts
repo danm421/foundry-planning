@@ -27,48 +27,68 @@ export interface TrustTerminationResult {
 }
 
 /**
- * Returns true when `currentYear` is the year-after-term-end for this CLT.
+ * The year this CLT/CRT terminates — the year after its last payment — or
+ * null while it cannot be known (a life leg whose measuring life has not died
+ * within the plan; a non-split-interest entity).
  * For 'years' termType: inceptionYear + termYears.
  * For 'single_life': measuringLife1 death year + 1.
  * For 'joint_life': max(both deaths) + 1 (term ends at second death).
  * For 'shorter_of_years_or_life': min(years-end, life-end) of whichever leg
- *   fired first; if no death yet, falls through to the years leg.
+ *   fires first; with no death yet, the years leg.
  */
+export function trustTerminationYear(
+  trust: EntitySummary,
+  deathYears: TerminationDeathYears,
+): number | null {
+  if (
+    (trust.trustSubType !== "clt" && trust.trustSubType !== "crt") ||
+    !trust.splitInterest
+  ) {
+    return null;
+  }
+  const si = trust.splitInterest;
+  const yearsEnd = si.inceptionYear + (si.termYears ?? 0);
+  switch (si.termType) {
+    case "years":
+      return yearsEnd;
+    case "single_life":
+      return deathYears.measuringLife1 != null
+        ? deathYears.measuringLife1 + 1
+        : null;
+    case "joint_life": {
+      const d1 = deathYears.measuringLife1;
+      const d2 = deathYears.measuringLife2;
+      if (d1 == null || d2 == null) return null;
+      return Math.max(d1, d2) + 1;
+    }
+    case "shorter_of_years_or_life": {
+      const lifeDeath = deathYears.measuringLife1;
+      return lifeDeath != null ? Math.min(yearsEnd, lifeDeath + 1) : yearsEnd;
+    }
+    default:
+      return null;
+  }
+}
+
+/** True only in the termination year itself — the pass that pays out the
+ *  remainder runs once. */
 export function isTrustTerminationYear(
   trust: EntitySummary,
   currentYear: number,
   deathYears: TerminationDeathYears,
 ): boolean {
-  if (
-    (trust.trustSubType !== "clt" && trust.trustSubType !== "crt") ||
-    !trust.splitInterest
-  ) {
-    return false;
-  }
-  const si = trust.splitInterest;
-  switch (si.termType) {
-    case "years":
-      return currentYear === si.inceptionYear + (si.termYears ?? 0);
-    case "single_life":
-      return (
-        deathYears.measuringLife1 != null &&
-        currentYear === deathYears.measuringLife1 + 1
-      );
-    case "joint_life": {
-      const d1 = deathYears.measuringLife1;
-      const d2 = deathYears.measuringLife2;
-      if (d1 == null || d2 == null) return false;
-      return currentYear === Math.max(d1, d2) + 1;
-    }
-    case "shorter_of_years_or_life": {
-      const yearsEnd = si.inceptionYear + (si.termYears ?? 0);
-      const lifeDeath = deathYears.measuringLife1;
-      const lifeEnd = lifeDeath != null ? lifeDeath + 1 : Infinity;
-      return currentYear === Math.min(yearsEnd, lifeEnd);
-    }
-    default:
-      return false;
-  }
+  return trustTerminationYear(trust, deathYears) === currentYear;
+}
+
+/** True from the termination year on — the trust makes no further payments
+ *  and takes no further §642(c) deduction. */
+export function hasTrustTerminated(
+  trust: EntitySummary,
+  currentYear: number,
+  deathYears: TerminationDeathYears,
+): boolean {
+  const end = trustTerminationYear(trust, deathYears);
+  return end != null && currentYear >= end;
 }
 
 export interface TerminationOptions {

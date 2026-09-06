@@ -234,6 +234,8 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
             // exclude them so the trust/business income column (and the
             // grantor-trust 1040 pass-through) isn't inflated by gross proceeds.
             if (entry.isSaleProceeds) continue;
+            // Distribution debits are booked as `entity_distribution` and
+            // reported in `totalDistributions` below, so they stay out of here.
             if (entry.category === "income") income += Math.abs(entry.amount);
             if (entry.category === "expense") expenses += Math.abs(entry.amount);
           }
