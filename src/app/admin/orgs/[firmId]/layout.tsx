@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { firms } from "@/db/schema";
 import OrgTabs from "./_org-tabs";
+import { requireOpsAdminPage } from "@/lib/ops/ops-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,7 @@ export default async function OrgDetailLayout({
   children: React.ReactNode;
   params: Promise<{ firmId: string }>;
 }) {
+  await requireOpsAdminPage();
   const { firmId } = await params;
   const [firm] = await db.select().from(firms).where(eq(firms.firmId, firmId)).limit(1);
   if (!firm) notFound();

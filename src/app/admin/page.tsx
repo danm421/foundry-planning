@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getOpsAdmin } from "@/lib/ops/ops-auth";
+import { getOpsAdmin, requireOpsAdminPage } from "@/lib/ops/ops-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +21,7 @@ const SUPERADMIN_LINKS = [
 ];
 
 export default async function AdminHome() {
+  await requireOpsAdminPage();
   const admin = await getOpsAdmin();
   const links = [
     ...(admin?.role === "ops" || admin?.role === "superadmin" ? OPS_LINKS : []),

@@ -11,6 +11,7 @@ import { deriveUserEntitlements } from "@/lib/billing/entitlements";
 import { getActiveUserOverridesForFirm } from "@/lib/entitlements/user-overrides";
 import { listFirmMembers } from "@/lib/crm-tasks/members";
 import EntitlementsClient, { type EntitlementRow } from "./entitlements-client";
+import { requireOpsAdminPage } from "@/lib/ops/ops-auth";
 import MemberEntitlements, { type MemberEntitlementRow } from "./member-entitlements";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +21,7 @@ export default async function EntitlementsPage({
 }: {
   params: Promise<{ firmId: string }>;
 }) {
+  await requireOpsAdminPage();
   const { firmId } = await params;
   const [firm] = await db.select().from(firms).where(eq(firms.firmId, firmId)).limit(1);
   if (!firm) notFound();
