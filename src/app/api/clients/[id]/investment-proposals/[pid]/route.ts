@@ -166,11 +166,11 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     return NextResponse.json({ id: pid, result, computedAt });
   } catch (err) {
-    // Same status and body shape as the rebalance/compute route: the advisor
-    // needs the ticker list back to fix it, not "Internal server error".
     if (err instanceof PortfolioNotAvailableError) {
       return NextResponse.json({ error: err.message }, { status: 400 });
     }
+    // Same status and body shape as the rebalance/compute route: the advisor
+    // needs the ticker list back to fix it, not "Internal server error".
     if (err instanceof UnclassifiableTickerError) {
       return NextResponse.json(
         { error: err.message, unresolvedTickers: err.tickers },

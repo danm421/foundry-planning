@@ -22,11 +22,13 @@ function walk(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
     const full = join(dir, e.name);
     if (e.isDirectory()) return walk(full);
-    return e.name === "page.tsx" || e.name === "layout.tsx" ? [full] : [];
+    // `actions.ts` too: a server action is a separately addressable POST
+    // endpoint, so it needs its own gate for the same reason a page does.
+    return ["page.tsx", "layout.tsx", "actions.ts"].includes(e.name) ? [full] : [];
   });
 }
 
-describe("every /admin page gates itself", () => {
+describe("every /admin page and server action gates itself", () => {
   const files = walk(ADMIN_DIR);
 
   it("finds the admin console's pages at all (guards against a moved directory)", () => {

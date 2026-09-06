@@ -2,6 +2,7 @@ import {
   assertEntitiesInClient,
   assertExternalBeneficiariesInClient,
   assertFamilyMembersInClient,
+  type FkCheck,
 } from "@/lib/db-scoping";
 import type { OwnerRef } from "./owner-ref";
 
@@ -18,7 +19,7 @@ import type { OwnerRef } from "./owner-ref";
 export async function assertOwnerRefInClient(
   clientId: string,
   ref: OwnerRef,
-): Promise<{ ok: true } | { ok: false; reason: string }> {
+): Promise<FkCheck> {
   switch (ref.kind) {
     case "joint":
       return { ok: true };

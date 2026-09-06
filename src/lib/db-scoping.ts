@@ -25,7 +25,7 @@ import { eq, and, inArray } from "drizzle-orm";
  * 400 when `ok` is false.
  */
 
-type FkCheck = { ok: true } | { ok: false; reason: string };
+export type FkCheck = { ok: true } | { ok: false; reason: string };
 
 /** Verify every account id belongs to `clientId` (and thus the firm). */
 export async function assertAccountsInClient(

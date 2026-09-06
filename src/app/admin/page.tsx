@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getOpsAdmin, requireOpsAdminPage } from "@/lib/ops/ops-auth";
+import { requireOpsAdminPage } from "@/lib/ops/ops-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -21,12 +21,12 @@ const SUPERADMIN_LINKS = [
 ];
 
 export default async function AdminHome() {
-  await requireOpsAdminPage();
-  const admin = await getOpsAdmin();
+  // The gate already resolved the row — the nav ranks off the same one.
+  const admin = await requireOpsAdminPage();
   const links = [
-    ...(admin?.role === "ops" || admin?.role === "superadmin" ? OPS_LINKS : []),
+    ...(admin.role === "ops" || admin.role === "superadmin" ? OPS_LINKS : []),
     ...LINKS,
-    ...(admin?.role === "superadmin" ? SUPERADMIN_LINKS : []),
+    ...(admin.role === "superadmin" ? SUPERADMIN_LINKS : []),
   ];
 
   return (

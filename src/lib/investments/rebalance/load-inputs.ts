@@ -91,10 +91,15 @@ export class PortfolioNotAvailableError extends Error {
   }
 }
 
-/** A saved fund portfolio, read back as the same ticker+weight list a typed target is. */
+/** A saved fund portfolio, read back as the same ticker+weight list a typed
+ *  target is. Takes `firmId` so the scoping cannot be left to a caller: the
+ *  holdings table has no firm column, so the check has to happen here. */
 async function loadStoredPortfolioSpec(
   portfolioId: string,
+  firmId: string,
 ): Promise<{ ticker: string; weight: number }[]> {
+  const check = await assertTickerPortfoliosInFirm(firmId, [portfolioId]);
+  if (!check.ok) throw new PortfolioNotAvailableError(check.reason);
   const rows = await db
     .select()
     .from(tickerPortfolioHoldings)
@@ -321,17 +326,14 @@ export async function loadRebalanceInputs(
   // sell-everything-to-cash recommendation — instead of failing loud.
   //
   // The portfolio id is request-supplied and the holdings query is keyed on it
-  // alone, so without a firm assert the target could name ANOTHER firm's saved
-  // model and hand its tickers, weights and expense ratios back in the result.
-  // Same check the account write paths run (`accounts-writes.ts`).
-  let targetSpec: { ticker: string; weight: number }[];
-  if ("portfolioId" in body.target) {
-    const tpCheck = await assertTickerPortfoliosInFirm(firmId, [body.target.portfolioId]);
-    if (!tpCheck.ok) throw new PortfolioNotAvailableError(tpCheck.reason);
-    targetSpec = await loadStoredPortfolioSpec(body.target.portfolioId);
-  } else {
-    targetSpec = body.target.holdings;
-  }
+  // alone, so `loadStoredPortfolioSpec` asserts the firm before reading — the
+  // same check the account write paths run (`accounts-writes.ts`). Without it
+  // the target could name ANOTHER firm's saved model and hand back its
+  // tickers, weights and expense ratios.
+  const targetSpec =
+    "portfolioId" in body.target
+      ? await loadStoredPortfolioSpec(body.target.portfolioId, firmId)
+      : body.target.holdings;
 
   const resolved = await resolveTargetAllocations(targetSpec, slugToId, resolverDeps);
   if (resolved.unresolved.length > 0) {

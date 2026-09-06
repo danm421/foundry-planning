@@ -111,12 +111,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     return NextResponse.json({ id: row.id, result: snapshot, computedAt });
   } catch (err) {
-    // A ticker-list target can name something the loader can't classify. The
-    // advisor needs the ticker list back to fix it, not "Internal server error"
-    // — same status and body shape as the rebalance/compute route.
     if (err instanceof PortfolioNotAvailableError) {
       return NextResponse.json({ error: err.message }, { status: 400 });
     }
+    // A ticker-list target can name something the loader can't classify. The
+    // advisor needs the ticker list back to fix it, not "Internal server error"
+    // — same status and body shape as the rebalance/compute route.
     if (err instanceof UnclassifiableTickerError) {
       return NextResponse.json(
         { error: err.message, unresolvedTickers: err.tickers },

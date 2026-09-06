@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { auth } from "@clerk/nextjs/server";
 import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
@@ -16,8 +17,14 @@ export type OpsAdmin = { clerkUserId: string; email: string; role: OpsRole };
  * Resolve the current Clerk user to an active ops_admins row, or null.
  * Null for: no session, no row, or a disabled row. Read-only — use this in
  * UI/render paths that should degrade gracefully (e.g. show/hide nav).
+ *
+ * React.cache'd: every `/admin` page gates itself (see `requireOpsAdminPage`),
+ * so one nested view now asks this question from the root layout, the org
+ * layout AND the page. Without memoization that is three sequential
+ * `ops_admins` reads per render. Outside a request scope — vitest — React's
+ * cache falls through to a plain call, so tests still see each mocked session.
  */
-export async function getOpsAdmin(): Promise<OpsAdmin | null> {
+export const getOpsAdmin = cache(async (): Promise<OpsAdmin | null> => {
   const { userId } = await auth();
   if (!userId) return null;
   const [row] = await db
@@ -30,7 +37,7 @@ export async function getOpsAdmin(): Promise<OpsAdmin | null> {
   // dropped) is treated as no access, never granted.
   if (!(row.role in RANK)) return null;
   return { clerkUserId: row.clerkUserId, email: row.email, role: row.role as OpsRole };
-}
+});
 
 /**
  * Gate for an `/admin` PAGE. Every admin page and nested layout must call this
