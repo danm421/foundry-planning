@@ -7,7 +7,7 @@ export const EXEMPTIONS: Record<number, Partial<Record<USPSStateCode, ExemptionR
   2026: {
     AL: { single: 1500, joint: 3000, dependent: 1000, add65: 0, type: "exemption", notes: "Dependent phases down: $1,000 if AGI ≤$20K, $500 if $20K-$100K, $300 above" },
     AR: { single: 29, joint: 58, dependent: 29, add65: 29, type: "credit", notes: "$29 personal credit per filer/dependent; same for 65+" },
-    AZ: { single: 0, joint: 0, dependent: 100, add65: 2100, type: "credit", notes: "$100 dependent credit (<17); $25 if 17+; phases out >$200K/$400K AGI; $2,100 age 65+ exemption" },
+    AZ: { single: 0, joint: 0, dependent: 100, add65: 2100, type: "exemption", notes: "$2,100 age 65+ EXEMPTION (A.R.S. 43-1023) — a deduction, not a credit. type was 'credit' (describing the $100 dependent credit), which made the 65+ amount worth 40x too much at AZ's 2.5% flat rate and zeroed out most AZ retirees' tax. `dependent` is not read by getExemption; if it is ever wired up, AZ needs a per-field type." },
     CA: { single: 153, joint: 306, dependent: 153, add65: 153, type: "credit", notes: "Phases out at $252K/$504K AGI; $153 add'l per filer 65+" },
     CO: { single: 0, joint: 0, dependent: 0, add65: 0, type: "none", notes: "Federal taxable income base — federal exemptions baked in (currently $0)" },
     CT: { single: 15000, joint: 24000, dependent: 0, add65: 0, type: "exemption", notes: "Phases out $1,000 per $1,000 AGI above $30K single / $48K joint" },

@@ -1,5 +1,6 @@
 // src/lib/tax/state-income/special-rules.ts
-// CA / NY / CT bracket recapture. Phase 1 simplifications documented inline.
+// NY / CT bracket recapture. CA is deliberately excluded — see the note below.
+// Phase 1 simplifications documented inline.
 import type { USPSStateCode } from "@/lib/usps-states";
 import type { StateFilingStatus } from "./types";
 
@@ -16,23 +17,13 @@ interface RecaptureResult {
 type RecaptureFn = (input: RecaptureInput) => RecaptureResult;
 
 export const RECAPTURE_RULES: Partial<Record<USPSStateCode, RecaptureFn>> = {
-  // California Mental Health Services Tax — flat 1% surcharge on taxable income
-  // > $1M for ALL filing statuses (joint, single, HoH). Phase 1 simplification:
-  // model the combined top-rate effect (12.3% top bracket + 1% MHST = 13.3%)
-  // as a top-rate recapture against the pre-credit bracket tax.
-  CA: (input) => {
-    const threshold = 1_000_000;
-    if (input.stateTaxableIncome <= threshold) {
-      return { adjustment: 0, note: "CA recapture: below threshold." };
-    }
-    const topRate = 0.133;
-    const target = input.stateTaxableIncome * topRate;
-    const adjustment = Math.max(0, target - input.preCreditTax);
-    return {
-      adjustment,
-      note: `CA recapture: top rate applied to all income above $${threshold.toLocaleString()}.`,
-    };
-  },
+  // California is deliberately ABSENT. CA has no bracket recapture: its rate
+  // schedule is purely marginal, and the 1% Mental Health Services Tax on income
+  // over $1M is already folded into the top tier of the bracket table
+  // (brackets-2026.ts: 12.3% up to $1M, 13.3% above). A rule here would
+  // double-count it. The previous rule taxed ALL income at 13.3% once income
+  // crossed $1M, overstating a $1.5M single return by ~$29K and creating a
+  // ~$29K cliff on the first dollar over the threshold.
   // NY supplemental tax (Tax Law §601(d-1)/(d-2)) recaptures the benefit of
   // lower brackets above $107,650 in piecewise fashion. Phase 1 simplification:
   // only model the *full* recapture above $25M (top-rate-on-all-income). Partial
