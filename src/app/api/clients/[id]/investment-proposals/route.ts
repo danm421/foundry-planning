@@ -12,6 +12,7 @@ import { proposalCreateSchema } from "@/lib/investments/proposals/schemas";
 import { computeProposalSnapshot } from "@/lib/investments/proposals/compute";
 import { listProposals } from "@/lib/investments/proposals/queries";
 import { UnclassifiableTickerError } from "@/lib/investments/rebalance/resolve-target";
+import { PortfolioNotAvailableError } from "@/lib/investments/rebalance/load-inputs";
 
 export const dynamic = "force-dynamic";
 // Creating a proposal runs the rebalance compute, which runs a projection to
@@ -113,6 +114,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     // A ticker-list target can name something the loader can't classify. The
     // advisor needs the ticker list back to fix it, not "Internal server error"
     // — same status and body shape as the rebalance/compute route.
+    if (err instanceof PortfolioNotAvailableError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
     if (err instanceof UnclassifiableTickerError) {
       return NextResponse.json(
         { error: err.message, unresolvedTickers: err.tickers },

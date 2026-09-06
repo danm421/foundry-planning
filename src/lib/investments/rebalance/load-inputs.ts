@@ -8,6 +8,7 @@ import {
   tickerPortfolioHoldings,
 } from "@/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
+import { assertTickerPortfoliosInFirm } from "@/lib/db-scoping";
 import { loadEnrichedHoldings } from "@/lib/investments/load-enriched-holdings";
 import { firmSlugToAssetClassId } from "@/lib/investments/holdings-rollup";
 import { monthlyReturns, type MonthlyReturn } from "@/lib/cma-stats";
@@ -76,6 +77,18 @@ async function loadReturns(securityIds: string[]): Promise<Map<string, MonthlyRe
       adjClose: parseFloat(r.adjustedClose),
     })),
   );
+}
+
+/**
+ * The request named a saved fund portfolio this firm cannot use. Distinct from
+ * an unclassifiable ticker: nothing about the target is resolvable, so callers
+ * answer 400 rather than 422.
+ */
+export class PortfolioNotAvailableError extends Error {
+  constructor(reason: string) {
+    super(reason);
+    this.name = "PortfolioNotAvailableError";
+  }
 }
 
 /** A saved fund portfolio, read back as the same ticker+weight list a typed target is. */
@@ -306,10 +319,19 @@ export async function loadRebalanceInputs(
   // write path never fills it in), so resolving off the stored id would drop
   // every such row and emit an empty proposed portfolio — a confident
   // sell-everything-to-cash recommendation — instead of failing loud.
-  const targetSpec =
-    "portfolioId" in body.target
-      ? await loadStoredPortfolioSpec(body.target.portfolioId)
-      : body.target.holdings;
+  //
+  // The portfolio id is request-supplied and the holdings query is keyed on it
+  // alone, so without a firm assert the target could name ANOTHER firm's saved
+  // model and hand its tickers, weights and expense ratios back in the result.
+  // Same check the account write paths run (`accounts-writes.ts`).
+  let targetSpec: { ticker: string; weight: number }[];
+  if ("portfolioId" in body.target) {
+    const tpCheck = await assertTickerPortfoliosInFirm(firmId, [body.target.portfolioId]);
+    if (!tpCheck.ok) throw new PortfolioNotAvailableError(tpCheck.reason);
+    targetSpec = await loadStoredPortfolioSpec(body.target.portfolioId);
+  } else {
+    targetSpec = body.target.holdings;
+  }
 
   const resolved = await resolveTargetAllocations(targetSpec, slugToId, resolverDeps);
   if (resolved.unresolved.length > 0) {

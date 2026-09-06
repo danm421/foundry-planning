@@ -93,13 +93,18 @@ vi.mock("@/lib/investments/classification/classify", async (importOriginal) => (
   classifySecurity: async () => null,
 }));
 
+// Firm scoping is a real DB read the table-routed mock above cannot express
+// (it ignores WHERE), so the assert itself is the seam these tests drive.
+vi.mock("@/lib/db-scoping", () => ({ assertTickerPortfoliosInFirm: vi.fn() }));
+
 vi.mock("@/lib/investments/load-enriched-holdings", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/investments/load-enriched-holdings")>()),
   loadEnrichedHoldings: async () => new Map(),
 }));
 
-import { loadRebalanceInputs } from "./load-inputs";
+import { loadRebalanceInputs, PortfolioNotAvailableError } from "./load-inputs";
 import { UnclassifiableTickerError } from "./resolve-target";
+import { assertTickerPortfoliosInFirm } from "@/lib/db-scoping";
 import type { RebalanceRequest } from "./types";
 
 // --- Fixtures -------------------------------------------------------------
@@ -158,6 +163,7 @@ const storedPortfolioRequest: RebalanceRequest = {
 describe("loadRebalanceInputs — saved fund portfolio as the target", () => {
   beforeEach(() => {
     seedFirm();
+    vi.mocked(assertTickerPortfoliosInFirm).mockResolvedValue({ ok: true });
   });
 
   it("resolves the target by ticker when the stored holdings carry no security_id", async () => {
@@ -209,5 +215,46 @@ describe("loadRebalanceInputs — saved fund portfolio as the target", () => {
       { securityId: SEC_VOO, ticker: "VOO", weight: 0.3 },
     ]);
     expect(inputs.targetAllocations).toHaveLength(2);
+  });
+});
+
+/**
+ * The saved-portfolio id is request-supplied and the holdings query is keyed on
+ * it alone. Without a firm assert, an advisor could name ANOTHER firm's saved
+ * model as the target and read back its tickers, weights and expense ratios —
+ * persisted into their own proposal and re-readable afterwards.
+ */
+describe("loadRebalanceInputs — the target portfolio must belong to the caller's firm", () => {
+  beforeEach(() => {
+    // One case asserts the check was NOT reached; the block above would satisfy
+    // that away with its own calls.
+    vi.clearAllMocks();
+    seedFirm();
+    vi.mocked(assertTickerPortfoliosInFirm).mockResolvedValue({ ok: true });
+    dbState.ticker_portfolio_holdings = [holdingRow("VTI", "1.0")];
+  });
+
+  it("refuses a portfolio id that is not this firm's", async () => {
+    vi.mocked(assertTickerPortfoliosInFirm).mockResolvedValue({
+      ok: false,
+      reason: "Fund portfolio not available to this firm",
+    });
+
+    await expect(
+      loadRebalanceInputs(CLIENT_ID, FIRM_ID, storedPortfolioRequest),
+    ).rejects.toBeInstanceOf(PortfolioNotAvailableError);
+  });
+
+  it("checks the id against the CALLER's firm", async () => {
+    await loadRebalanceInputs(CLIENT_ID, FIRM_ID, storedPortfolioRequest);
+    expect(assertTickerPortfoliosInFirm).toHaveBeenCalledWith(FIRM_ID, [PORTFOLIO_ID]);
+  });
+
+  it("does not run the check for a typed ticker-list target", async () => {
+    await loadRebalanceInputs(CLIENT_ID, FIRM_ID, {
+      accountIds: [ACCOUNT_ID],
+      target: { holdings: [{ ticker: "VTI", weight: 1 }] },
+    });
+    expect(assertTickerPortfoliosInFirm).not.toHaveBeenCalled();
   });
 });
