@@ -58,6 +58,19 @@ describe("updateCrmHouseholdSchema is partial", () => {
     expect(updateCrmHouseholdSchema.safeParse({ name: "" }).success).toBe(false);
   });
 
+  it("drops `advisorId` — a PATCH must not reassign the household", () => {
+    const result = updateCrmHouseholdSchema.safeParse({
+      status: "active",
+      advisorId: "user_bob",
+    });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    // `requireVaultAccess` grants on `household.advisorId`, so letting this key
+    // through the wholesale `.set()` is a self-service grant: any firm member
+    // could hand themselves another advisor's document vault.
+    expect(result.data).not.toHaveProperty("advisorId");
+  });
+
   it("still excludes create-only `contacts`", () => {
     const result = updateCrmHouseholdSchema.safeParse({
       name: "X",

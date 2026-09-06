@@ -69,8 +69,13 @@ export type ImportHouseholdInput = z.infer<typeof importHouseholdSchema>;
 // patch that omits it. The route applies `parsed.data` UNGUARDED
 // (`updateCrmHousehold` does `.set({ ...resolved })`), so that injection would
 // demote a live client household and log a phantom `status_change` activity.
+// `advisorId` is create-only. It is also the column `requireVaultAccess` grants
+// on, so a PATCH that set it would let any firm member hand themselves a
+// household's whole document vault — and re-home the household in every
+// advisor-scoped list. No UI ever sends it on a patch. Reassignment, if it ships,
+// needs its own admin-gated endpoint.
 export const updateCrmHouseholdSchema = strictPartial(
-  createCrmHouseholdSchema.omit({ contacts: true }),
+  createCrmHouseholdSchema.omit({ contacts: true, advisorId: true }),
 );
 
 export const createCrmContactSchema = z.object({
