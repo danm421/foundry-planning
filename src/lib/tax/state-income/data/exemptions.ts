@@ -1,5 +1,8 @@
 // src/lib/tax/state-income/data/exemptions.ts
 // AUTO-GENERATED. Source: Personal_Exemptions sheet.
+// Hand edits carry an inline audit note (AZ, KY, ME, WV). `add65Type` is a
+// hand-added column the generator does not emit yet — the workbook needs one
+// before this file is regenerated, or KY's 65+ credit is lost again.
 import type { USPSStateCode } from "@/lib/usps-states";
 import type { ExemptionRow } from "../types";
 
@@ -7,7 +10,7 @@ export const EXEMPTIONS: Record<number, Partial<Record<USPSStateCode, ExemptionR
   2026: {
     AL: { single: 1500, joint: 3000, dependent: 1000, add65: 0, type: "exemption", notes: "Dependent phases down: $1,000 if AGI ≤$20K, $500 if $20K-$100K, $300 above" },
     AR: { single: 29, joint: 58, dependent: 29, add65: 29, type: "credit", notes: "$29 personal credit per filer/dependent; same for 65+" },
-    AZ: { single: 0, joint: 0, dependent: 100, add65: 2100, type: "credit", notes: "$100 dependent credit (<17); $25 if 17+; phases out >$200K/$400K AGI; $2,100 age 65+ exemption" },
+    AZ: { single: 0, joint: 0, dependent: 100, add65: 2100, type: "exemption", notes: "$2,100 age 65+ EXEMPTION (A.R.S. 43-1023) — a deduction, not a credit. type was 'credit' (describing the $100 dependent credit), which made the 65+ amount worth 40x too much at AZ's 2.5% flat rate and zeroed out most AZ retirees' tax. the $100 `dependent` amount is a CREDIT and is not read by getExemption." },
     CA: { single: 153, joint: 306, dependent: 153, add65: 153, type: "credit", notes: "Phases out at $252K/$504K AGI; $153 add'l per filer 65+" },
     CO: { single: 0, joint: 0, dependent: 0, add65: 0, type: "none", notes: "Federal taxable income base — federal exemptions baked in (currently $0)" },
     CT: { single: 15000, joint: 24000, dependent: 0, add65: 0, type: "exemption", notes: "Phases out $1,000 per $1,000 AGI above $30K single / $48K joint" },
@@ -20,11 +23,11 @@ export const EXEMPTIONS: Record<number, Partial<Record<USPSStateCode, ExemptionR
     IL: { single: 2925, joint: 5850, dependent: 2925, add65: 1000, type: "exemption", notes: "$2,925 per filer/dependent; $1,000 add'l 65+; phases out at $250K/$500K AGI" },
     IN: { single: 1000, joint: 2000, dependent: 1000, add65: 1000, type: "exemption", notes: "$1,000 per filer/dependent; +$1,500 per dependent meeting conditions; +$500 65+ if AGI ≤$40K" },
     KS: { single: 9160, joint: 18320, dependent: 2320, add65: 0, type: "exemption", notes: "Major 2024 increase — was $2,250 prior" },
-    KY: { single: 0, joint: 0, dependent: 0, add65: 40, type: "none", notes: "$40 credit per filer 65+; family-size credit for low income not supported" },
+    KY: { single: 0, joint: 0, dependent: 0, add65: 40, type: "none", add65Type: "credit", notes: "$40 credit per filer 65+; family-size credit for low income not supported. add65Type added by hand: the row's headline type is 'none' (no personal exemption) while the 65+ amount is a CREDIT — under a single row type it was discarded (audit 2026-09-05)." },
     LA: { single: 0, joint: 0, dependent: 0, add65: 0, type: "none", notes: "Replaced by combined std deduction in 2024 reform" },
     MA: { single: 4400, joint: 8800, dependent: 1000, add65: 700, type: "exemption", notes: "$700 add'l per filer 65+" },
     MD: { single: 3200, joint: 6400, dependent: 3200, add65: 1000, type: "exemption", notes: "Dependent exemption phases out >$100K/$150K (single/joint); $1,000 add'l per filer 65+" },
-    ME: { single: 5300, joint: 10600, dependent: 305, add65: 0, type: "none", notes: "$5,300 personal exemption; $305 dependent credit (or $610 if dep under 6); personal phases out >$333K/$400K" },
+    ME: { single: 5300, joint: 10600, dependent: 305, add65: 0, type: "exemption", notes: "$5,300 personal exemption; $305 dependent credit (or $610 if dep under 6); personal phases out >$333K/$400K (phase-out not modeled, same as CT/RI). type was 'none', which made getExemption discard the $5,300/$10,600 outright — a single filer at $100K was overtaxed $378.95/yr (audit 2026-09-05)." },
     MI: { single: 5900, joint: 11800, dependent: 5900, add65: 0, type: "exemption", notes: "Per filer/dependent — Michigan also has age-based retirement deduction structure" },
     MN: { single: 0, joint: 0, dependent: 5300, add65: 0, type: "none", notes: "$5,300 per dependent; phases out at $244K all-other / $122K MFS" },
     MO: { single: 0, joint: 0, dependent: 0, add65: 0, type: "none", notes: "Suspended since 2019" },

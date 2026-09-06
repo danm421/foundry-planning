@@ -275,7 +275,7 @@ describe("computeStateIncomeTax — cap-gains integration", () => {
 });
 
 describe("computeStateIncomeTax — bracket recapture", () => {
-  it("CA at $1.5M MJ flags recapture", () => {
+  it("CA at $1.5M MJ does NOT flag recapture — the brackets already carry the MHST", () => {
     const r = computeStateIncomeTax({
       state: "CA",
       year: 2026,
@@ -296,8 +296,14 @@ describe("computeStateIncomeTax — bracket recapture", () => {
       preTaxContrib: 0,
       fallbackFlatRate: 0,
     });
-    expect(r.specialRulesApplied).toContain("CA-recapture");
-    expect(r.diag.notes.some((n) => n.toLowerCase().includes("ca recapture"))).toBe(true);
+    expect(r.specialRulesApplied).not.toContain("CA-recapture");
+    expect(r.diag.notes.some((n) => n.toLowerCase().includes("ca recapture"))).toBe(false);
+    // AGI $1.5M less CA's $11,080 joint std deduction.
+    expect(r.stateTaxableIncome).toBe(1_488_920);
+    // Marginal 2026 CA joint tiers on $1,488,920 = $149,699.576, less the $306
+    // personal exemption credit. Taxing every dollar at 13.3% would have been
+    // $197,720.36 — this filer was overcharged $48,326.78 a year.
+    expect(r.stateTax).toBeCloseTo(149_393.58, 1);
   });
 
   it("CA at $150K MJ does NOT flag recapture (regression net)", () => {
@@ -537,5 +543,184 @@ describe("computeStateIncomeTax — easy FAGI-base states", () => {
     expect(r.stdDeduction).toBe(8350);
     expect(r.stateTaxableIncome).toBe(91_650);
     expect(r.hasIncomeTax).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CA Mental Health Services Tax — must be MARGINAL, never a cliff.
+// The CA bracket table already tops out at 13.3% above $1M (12.3% top rate +
+// 1% MHST). A recapture rule on top of that re-taxed every dollar at 13.3%.
+// ---------------------------------------------------------------------------
+const CA_HIGH_EARNER = (
+  taxableIncome: number,
+  filingStatus: ComputeStateIncomeTaxInput["filingStatus"],
+): ComputeStateIncomeTaxInput => ({
+  state: "CA",
+  year: 2026,
+  filingStatus,
+  primaryAge: 45,
+  federalIncome: {
+    agi: taxableIncome,
+    taxableIncome,
+    ordinaryIncome: 0,
+    dividends: 0,
+    capitalGains: 0,
+    shortCapitalGains: 0,
+    earnedIncome: taxableIncome,
+    taxableSocialSecurity: 0,
+    taxExemptIncome: 0,
+  },
+  retirementBreakdown: BASE_RETIREMENT,
+  preTaxContrib: 0,
+  fallbackFlatRate: 0,
+});
+
+describe("computeStateIncomeTax — CA above $1M is marginal, not a cliff", () => {
+  it.each(["single", "married_joint"] as const)(
+    "%s: one extra dollar of income never costs more than 13.3 cents of tax",
+    (filingStatus) => {
+      const at = computeStateIncomeTax(CA_HIGH_EARNER(1_000_000, filingStatus));
+      const justOver = computeStateIncomeTax(CA_HIGH_EARNER(1_000_001, filingStatus));
+      const delta = justOver.stateTax - at.stateTax;
+      expect(delta).toBeGreaterThanOrEqual(0);
+      expect(delta).toBeLessThanOrEqual(0.133);
+    },
+  );
+
+  it("no recapture note or special rule is emitted for a $1.5M CA return", () => {
+    const r = computeStateIncomeTax(CA_HIGH_EARNER(1_500_000, "married_joint"));
+    expect(r.specialRulesApplied).not.toContain("CA-recapture");
+  });
+
+  it("single at $1.5M pays the marginal bracket total, not 13.3% of everything", () => {
+    const r = computeStateIncomeTax(CA_HIGH_EARNER(1_500_000, "single"));
+    // Flat 13.3% on all income would be $199,500. Marginal brackets are far less.
+    expect(r.stateTax).toBeLessThan(199_500);
+    // CA taxes AGI less its own $5,540 single std deduction.
+    expect(r.stateTaxableIncome).toBe(1_494_460);
+    // Sum of the 2026 CA single tiers on $1,494,460 (see brackets-2026.ts) is
+    // $169,599.788, less CA's $153 personal exemption CREDIT.
+    expect(r.stateTax).toBeCloseTo(169_446.79, 1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AZ's $2,100 age-65 amount is an EXEMPTION (A.R.S. 43-1023), i.e. a deduction
+// from income — not a credit against tax. Typed as a credit it was worth 40x
+// too much (2.5% flat rate) and zeroed out most AZ retirees' state tax.
+// ---------------------------------------------------------------------------
+describe("computeStateIncomeTax — AZ age-65 amount is a deduction, not a credit", () => {
+  const AZ_RETIREE = (): ComputeStateIncomeTaxInput => ({
+    state: "AZ",
+    year: 2026,
+    filingStatus: "married_joint",
+    primaryAge: 70,
+    spouseAge: 70,
+    federalIncome: {
+      agi: 120_000,
+      taxableIncome: 100_000,
+      ordinaryIncome: 120_000,
+      dividends: 0,
+      capitalGains: 0,
+      shortCapitalGains: 0,
+      earnedIncome: 0,
+      taxableSocialSecurity: 0,
+      taxExemptIncome: 0,
+    },
+    retirementBreakdown: BASE_RETIREMENT,
+    preTaxContrib: 0,
+    fallbackFlatRate: 0,
+  });
+
+  it("both spouses 65+ -> $4,200 comes off income, not off the tax bill", () => {
+    const r = computeStateIncomeTax(AZ_RETIREE());
+    expect(r.personalExemptionDeduction).toBe(4_200);
+    expect(r.exemptionCredits).toBe(0);
+  });
+
+  it("an AZ retiree at $120K still owes state tax", () => {
+    const r = computeStateIncomeTax(AZ_RETIREE());
+    // 120_000 − 16_700 std ded − 4_200 exemption = 99_100 × 2.5% = 2_477.50
+    expect(r.stateTaxableIncome).toBe(99_100);
+    expect(r.stateTax).toBeCloseTo(2_477.5, 2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A state's exemption row can mix kinds: a personal amount that is a deduction
+// and a 65+ add-on that is a credit, or no personal amount at all beside a
+// real 65+ credit. Each component is typed on its own, so nothing sitting in a
+// row is ever discarded because the ROW's headline type happened to be "none".
+// ---------------------------------------------------------------------------
+describe("computeStateIncomeTax — exemption components are typed individually", () => {
+  const WAGE = (
+    state: ComputeStateIncomeTaxInput["state"],
+    filingStatus: ComputeStateIncomeTaxInput["filingStatus"],
+    primaryAge: number,
+    spouseAge?: number,
+  ): ComputeStateIncomeTaxInput => ({
+    state,
+    year: 2026,
+    filingStatus,
+    primaryAge,
+    spouseAge,
+    federalIncome: BASE_FEDERAL_INCOME,
+    retirementBreakdown: BASE_RETIREMENT,
+    preTaxContrib: 0,
+    fallbackFlatRate: 0,
+  });
+
+  describe("ME — $5,300 / $10,600 personal exemption is a deduction from income", () => {
+    it("single: $5,300 comes off income", () => {
+      const r = computeStateIncomeTax(WAGE("ME", "single", 40));
+      expect(r.personalExemptionDeduction).toBe(5_300);
+      expect(r.exemptionCredits).toBe(0);
+      // 100_000 − 8_350 std ded − 5_300 exemption = 86_350
+      expect(r.stateTaxableIncome).toBe(86_350);
+    });
+
+    it("single at $100K owes $5,654.34, not $6,033.29", () => {
+      const r = computeStateIncomeTax(WAGE("ME", "single", 40));
+      // 27_399 × 5.8% + 37_450 × 6.75% + (86_350 − 64_849) × 7.15%
+      // = 1_589.142 + 2_527.875 + 1_537.3215 = 5_654.3385
+      expect(r.stateTax).toBeCloseTo(5_654.34, 2);
+    });
+
+    it("joint: $10,600 comes off income", () => {
+      const r = computeStateIncomeTax(WAGE("ME", "married_joint", 40, 40));
+      expect(r.personalExemptionDeduction).toBe(10_600);
+      expect(r.exemptionCredits).toBe(0);
+      // 100_000 − 16_700 std ded − 10_600 exemption = 72_700
+      // 54_849 × 5.8% + (72_700 − 54_849) × 6.75% = 3_181.242 + 1_204.9425
+      expect(r.stateTaxableIncome).toBe(72_700);
+      expect(r.stateTax).toBeCloseTo(4_386.18, 2);
+    });
+  });
+
+  describe("KY — no personal exemption, but a $40 credit per filer 65+", () => {
+    it("single under 65: nothing", () => {
+      const r = computeStateIncomeTax(WAGE("KY", "single", 40));
+      expect(r.personalExemptionDeduction).toBe(0);
+      expect(r.exemptionCredits).toBe(0);
+    });
+
+    it("single 65+: $40 comes off the tax bill, not off income", () => {
+      const r = computeStateIncomeTax(WAGE("KY", "single", 70));
+      expect(r.personalExemptionDeduction).toBe(0);
+      expect(r.exemptionCredits).toBe(40);
+      // (100_000 − 3_360) × 3.5% = 3_382.40, less the $40 credit
+      expect(r.stateTaxableIncome).toBe(96_640);
+      expect(r.stateTax).toBeCloseTo(3_342.4, 2);
+    });
+
+    it("joint, both 65+: $80 (one credit per qualifying filer)", () => {
+      const r = computeStateIncomeTax(WAGE("KY", "married_joint", 70, 70));
+      expect(r.exemptionCredits).toBe(80);
+    });
+
+    it("joint, only the spouse 65+: $40", () => {
+      const r = computeStateIncomeTax(WAGE("KY", "married_joint", 60, 66));
+      expect(r.exemptionCredits).toBe(40);
+    });
   });
 });

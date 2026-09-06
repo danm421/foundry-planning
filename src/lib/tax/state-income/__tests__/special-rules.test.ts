@@ -2,57 +2,41 @@
 import { describe, it, expect } from "vitest";
 import { applyRecapture, RECAPTURE_RULES } from "../special-rules";
 
-describe("applyRecapture — CA", () => {
-  it("CA below recapture threshold → no adjustment", () => {
+describe("applyRecapture — CA (no recapture: the brackets already carry the MHST)", () => {
+  // California has NO bracket recapture. Its 1% Mental Health Services Tax on
+  // income over $1M is already folded into the top tier of the CA bracket table
+  // (brackets-2026.ts: 12.3% below $1M, 13.3% above), which charges it
+  // MARGINALLY. The old rule re-taxed ALL income at 13.3% on top of that, which
+  // double-counted and created a ~$43K cliff at $1,000,001.
+  it("CA below $1M -> no adjustment", () => {
     const r = applyRecapture("CA", {
       stateTaxableIncome: 200_000,
       preCreditTax: 15_000,
       filingStatus: "joint",
     });
     expect(r.adjustment).toBe(0);
-    expect(r.note).toContain("below threshold");
   });
 
-  it("CA above 1M MJ → effective top-rate recapture", () => {
+  it("CA joint at $1.5M -> still no adjustment (brackets are marginal)", () => {
     const r = applyRecapture("CA", {
       stateTaxableIncome: 1_500_000,
       preCreditTax: 100_000,
       filingStatus: "joint",
     });
-    expect(r.adjustment).toBeGreaterThan(0);
-    // target = 1.5M × 0.133 = 199_500; adjustment = 199_500 − 100_000 = 99_500
-    expect(r.adjustment).toBeCloseTo(99_500, 2);
-  });
-
-  it("CA single at $700K (below flat $1M threshold) → no adjustment", () => {
-    // Real CA Mental Health Services Tax: flat $1M for ALL filing statuses.
-    const r = applyRecapture("CA", {
-      stateTaxableIncome: 700_000,
-      preCreditTax: 50_000,
-      filingStatus: "single",
-    });
     expect(r.adjustment).toBe(0);
-    expect(r.note).toContain("below threshold");
   });
 
-  it("CA single at $1.5M → effective top-rate recapture (same $1M threshold as joint)", () => {
+  it("CA single at $1.5M -> still no adjustment", () => {
     const r = applyRecapture("CA", {
       stateTaxableIncome: 1_500_000,
       preCreditTax: 100_000,
       filingStatus: "single",
     });
-    expect(r.adjustment).toBeGreaterThan(0);
-    // target = 1.5M × 0.133 = 199_500; adjustment = 199_500 − 100_000 = 99_500
-    expect(r.adjustment).toBeCloseTo(99_500, 2);
+    expect(r.adjustment).toBe(0);
   });
 
-  it("CA at exactly the threshold (joint) → no adjustment", () => {
-    const r = applyRecapture("CA", {
-      stateTaxableIncome: 1_000_000,
-      preCreditTax: 90_000,
-      filingStatus: "joint",
-    });
-    expect(r.adjustment).toBe(0);
+  it("CA is absent from the rule map entirely", () => {
+    expect(RECAPTURE_RULES.CA).toBeUndefined();
   });
 });
 
@@ -148,7 +132,6 @@ describe("applyRecapture — states without rules", () => {
 
   it("RECAPTURE_RULES is a partial map (TX absent)", () => {
     expect(RECAPTURE_RULES.TX).toBeUndefined();
-    expect(RECAPTURE_RULES.CA).toBeDefined();
     expect(RECAPTURE_RULES.NY).toBeDefined();
     expect(RECAPTURE_RULES.CT).toBeDefined();
   });
