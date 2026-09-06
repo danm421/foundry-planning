@@ -92,7 +92,7 @@ describe("stress-tax-rates mutation", () => {
     const drafts = mutationsToScenarioChanges(source, CLIENT_ID, [M]);
     const ps = drafts.filter((d) => d.targetKind === "plan_settings");
     expect(ps).toHaveLength(1);
-    expect(ps[0]).toMatchObject({ opType: "edit", targetId: "plan_settings" });
+    expect(ps[0]).toMatchObject({ opType: "edit", targetId: CLIENT_ID });
     expect(ps[0].payload).toEqual({
       taxRateStress: { from: null, to: { points: 0.03, startYear: 2030 } },
     });
