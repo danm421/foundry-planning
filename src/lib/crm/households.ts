@@ -218,7 +218,10 @@ export async function getCrmHousehold(id: string) {
     where: and(eq(crmHouseholds.id, id), eq(crmHouseholds.firmId, firmId)),
     with: {
       contacts: true,
-      documents: true,
+      // NOT `documents`: this query is firm-scoped only, while every document
+      // endpoint goes through `requireVaultAccess`. Eager-loading the relation
+      // handed a member denied on /documents the whole vault index — filenames,
+      // descriptions, sizes and storage keys. The vault tab loads its own list.
       planningClient: {
         columns: { id: true },
         with: {
