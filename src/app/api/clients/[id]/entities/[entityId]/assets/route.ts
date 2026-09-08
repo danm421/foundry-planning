@@ -18,6 +18,8 @@
  * row for every family member who lost share — one row per grantor, with
  * `business_entity_id`, `percent`, and a denormalized `amount` snapshot
  * (= business.value × lostPct) so the report doesn't need to re-multiply.
+ * The advisor's `valuation_discount` rides along as a fraction; `amount` stays
+ * the FULL undiscounted value and the normalizer applies the discount to it.
  *
  * NOT IDEMPOTENT: calling POST twice with the same body transfers share
  * twice AND inserts duplicate gift rows. Callers (the balance-sheet UI)
@@ -62,6 +64,10 @@ const assetOpSchema = z.discriminatedUnion("op", [
     assetType: z.enum(["account", "liability", "entity"]),
     assetId: z.string().uuid(),
     percent: z.number().min(0).max(100),
+    // NOTE the scale mismatch, which is deliberate: `percent` is 0-100 here for
+    // historical reasons, while `valuationDiscount` is a FRACTION (0.3 = 30%)
+    // matching the gifts.valuation_discount column and every other surface.
+    valuationDiscount: z.number().gte(0).lt(1).optional(),
   }),
   z.object({
     op: z.literal("remove"),
@@ -73,6 +79,11 @@ const assetOpSchema = z.discriminatedUnion("op", [
     assetType: z.enum(["account", "liability", "entity"]),
     assetId: z.string().uuid(),
     percent: z.number().min(0).max(100),
+    // Currently UNREACHABLE: every `set-percent` on an entity is rejected with
+    // an unconditional 400 below, before this field is ever read. Kept for
+    // union symmetry with `AssetTabOp`, so that when set-percent is wired the
+    // discount arrives with it rather than being a second migration.
+    valuationDiscount: z.number().gte(0).lt(1).optional(),
   }),
 ]);
 
@@ -238,6 +249,7 @@ export async function POST(
           recipientEntityId: string;
           businessEntityId: string;
           percent: string;
+          valuationDiscount: string | null;
           eventKind: "outright";
         }> = [];
 
@@ -252,11 +264,17 @@ export async function POST(
           giftRowsToInsert.push({
             clientId,
             year: currentYear,
+            // FULL undiscounted value. `entityValueAtYear` is never supplied, so
+            // the normalizer values this gift from `amount` (as amountOverride)
+            // and applies `valuationDiscount` to it there. Pre-multiplying here
+            // would double-discount.
             amount: giftAmount.toFixed(2),
             grantor: fm.role,
             recipientEntityId: trustId,
             businessEntityId: businessId,
             percent: loss.lost.toFixed(4),
+            valuationDiscount:
+              op.valuationDiscount != null ? op.valuationDiscount.toFixed(4) : null,
             eventKind: "outright",
           });
         }

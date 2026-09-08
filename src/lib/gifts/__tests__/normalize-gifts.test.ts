@@ -250,3 +250,18 @@ describe("toCanonicalGifts — discount edge cases", () => {
     expect(out).toEqual([]);
   });
 });
+
+describe("FLP path end to end — the route's row shape reaches the right exemption", () => {
+  it("a business-interest row with a full-value amount and a 35% discount consumes 65%", () => {
+    // Exactly what entities/[entityId]/assets/route.ts writes: amount =
+    // businessValue × lostPct (full), percent = lostPct, discount = advisor's.
+    const [cg] = toCanonicalGifts([], [
+      { kind: "business_interest", year: 2030, entityId: "biz-1", percent: 0.3,
+        grantor: "client", recipientEntityId: "t-nc", amountOverride: 300_000,
+        valuationDiscount: 0.35 },
+    ], ctx([nonCrummeyTrust()]));
+    expect(cg.undiscountedAmount).toBe(300_000);
+    expect(cg.amount).toBe(195_000);
+    expect(treatCanonicalGift(cg, 19_000).lifetimeUsed).toBe(195_000);
+  });
+});

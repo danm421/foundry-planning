@@ -495,6 +495,9 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
         };
         if (op.type === "add" || op.type === "set-percent") {
           apiBody.percent = op.percent;
+          if (op.valuationDiscount != null) {
+            apiBody.valuationDiscount = op.valuationDiscount;
+          }
         }
         const res = await fetch(
           `/api/clients/${clientId}/entities/${editing.id}/assets`,
@@ -1049,6 +1052,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
             familyMembers={assetFamilyMembers ?? []}
             entities={entities}
             businesses={businesses}
+            priorDiscounts={transferPriorDiscounts}
             entityLabel="trust"
             onChange={handleAssetTabOp}
           />
