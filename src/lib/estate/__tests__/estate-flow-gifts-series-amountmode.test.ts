@@ -38,6 +38,7 @@ describe("giftSeriesRowToDraft — amountMode + joint", () => {
     expect(Object.keys(draft)).toEqual([
       "kind", "id", "startYear", "endYear", "annualAmount",
       "amountMode", "inflationAdjust", "grantor", "recipient", "crummey",
+      "valuationDiscount",
     ]);
   });
 });

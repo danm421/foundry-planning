@@ -31,6 +31,10 @@ export type EstateFlowGift =
       crummey: boolean;
       /** Non-outright gift kind. Always populated by mappers (DB default is "outright"). */
       eventKind?: GiftEventKind;
+      /** Valuation discount as a fraction (0.3 = 30%). Transfer-tax only.
+       *  MUST be the last key emitted by the mappers below — the unsaved-changes
+       *  diff compares gifts with JSON.stringify, which is key-order-sensitive. */
+      valuationDiscount?: number;
       /** When false, the gift is retained but excluded from the projection
        *  (non-destructive 'off' toggle). undefined/true = active. */
       enabled?: boolean;
@@ -47,6 +51,10 @@ export type EstateFlowGift =
       amountOverride?: number;
       /** Non-outright gift kind. Always populated by mappers (DB default is "outright"). */
       eventKind?: GiftEventKind;
+      /** Valuation discount as a fraction (0.3 = 30%). Transfer-tax only.
+       *  MUST be the last key emitted by the mappers below — the unsaved-changes
+       *  diff compares gifts with JSON.stringify, which is key-order-sensitive. */
+      valuationDiscount?: number;
       /** When false, the gift is retained but excluded from the projection
        *  (non-destructive 'off' toggle). undefined/true = active. */
       enabled?: boolean;
@@ -62,6 +70,10 @@ export type EstateFlowGift =
       grantor: "client" | "spouse" | "joint";
       recipient: GiftRecipientRef; // recipient.kind may be entity, family_member, or external_beneficiary
       crummey: boolean;
+      /** Valuation discount as a fraction (0.3 = 30%). Transfer-tax only.
+       *  MUST be the last key emitted by the mappers below — the unsaved-changes
+       *  diff compares gifts with JSON.stringify, which is key-order-sensitive. */
+      valuationDiscount?: number;
       /** When false, the gift is retained but excluded from the projection
        *  (non-destructive 'off' toggle). undefined/true = active. */
       enabled?: boolean;
@@ -84,6 +96,9 @@ export interface GiftRow {
   percent: string | null;
   useCrummeyPowers: boolean;
   eventKind: GiftEventKind;
+  /** `numeric(6,4)` as a string, or NULL. Optional so existing fixtures that
+   *  build a GiftRow literal keep compiling. */
+  valuationDiscount?: string | null;
 }
 
 /** Shape of a `gift_series` table row as returned by a plain `select()`.
@@ -103,6 +118,8 @@ export interface GiftSeriesDbRow {
   amountMode: "fixed" | "annual_exclusion";
   inflationAdjust: boolean;
   useCrummeyPowers: boolean;
+  /** `numeric(6,4)` as a string, or NULL. */
+  valuationDiscount?: string | null;
 }
 
 function recipientFromRow(r: {
@@ -137,6 +154,9 @@ export function giftRowToDraft(row: GiftRow): EstateFlowGift | null {
       amountOverride: row.amount != null ? Number(row.amount) : undefined,
       // Carry eventKind (DB default is "outright"; always present).
       eventKind: row.eventKind,
+      // LAST KEY — see the JSON.stringify contract in estate-flow-gift-diff.ts.
+      valuationDiscount:
+        row.valuationDiscount != null ? Number(row.valuationDiscount) : undefined,
     };
   }
   return {
@@ -150,6 +170,9 @@ export function giftRowToDraft(row: GiftRow): EstateFlowGift | null {
     crummey: row.useCrummeyPowers,
     // Carry eventKind (DB default is "outright"; always present).
     eventKind: row.eventKind,
+    // LAST KEY — see the JSON.stringify contract in estate-flow-gift-diff.ts.
+    valuationDiscount:
+      row.valuationDiscount != null ? Number(row.valuationDiscount) : undefined,
   };
 }
 
@@ -166,6 +189,9 @@ export function giftSeriesRowToDraft(row: GiftSeriesDbRow): EstateFlowGift {
     grantor: row.grantor,
     recipient: recipientFromRow(row),
     crummey: row.useCrummeyPowers,
+    // LAST KEY — see the JSON.stringify contract in estate-flow-gift-diff.ts.
+    valuationDiscount:
+      row.valuationDiscount != null ? Number(row.valuationDiscount) : undefined,
   };
 }
 
@@ -246,6 +272,7 @@ export function applyGiftsToClientData(
         recipientExternalBeneficiaryId:
           g.recipient.kind === "external_beneficiary" ? g.recipient.id : undefined,
         useCrummeyPowers: g.crummey,
+        valuationDiscount: g.valuationDiscount,
       });
       // GiftEvent cash kind requires recipientEntityId: string (non-optional in
       // the discriminated union). For family_member / external_beneficiary
@@ -263,6 +290,7 @@ export function applyGiftsToClientData(
         recipientEntityId:
           g.recipient.kind === "entity" ? g.recipient.id : "",
         useCrummeyPowers: g.crummey,
+        valuationDiscount: g.valuationDiscount,
         eventKind: g.eventKind ?? "outright",
         sourceGiftId: g.id,
       });
@@ -280,6 +308,7 @@ export function applyGiftsToClientData(
         grantor: g.grantor as "client" | "spouse",
         ...recipientFields(g.recipient),
         amountOverride: g.amountOverride,
+        valuationDiscount: g.valuationDiscount,
         eventKind: g.eventKind ?? "outright",
         sourceGiftId: g.id,
       });
@@ -319,6 +348,7 @@ export function applyGiftsToClientData(
             amountMode: g.amountMode,
             inflationAdjust: g.inflationAdjust,
             useCrummeyPowers: g.crummey,
+            valuationDiscount: g.valuationDiscount,
           },
           { cpi, exclusionByYear },
         ),
