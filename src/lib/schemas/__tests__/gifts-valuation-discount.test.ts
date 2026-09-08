@@ -23,6 +23,65 @@ const series = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
+/** Every schema that carries `valuationDiscount`, reduced to "does this value
+ *  parse?" so the SAME bound assertions run against all four. Without this the
+ *  bounds get pinned on whichever schema the author happened to be thinking
+ *  about, and a loosened bound on the other three stays green. */
+const schemas: ReadonlyArray<readonly [string, (d: unknown) => boolean]> = [
+  ["giftCreateSchema", (d) => giftCreateSchema.safeParse(assetGift({ valuationDiscount: d })).success],
+  ["giftUpdateSchema", (d) => giftUpdateSchema.safeParse({ valuationDiscount: d }).success],
+  ["giftSeriesSchema", (d) => giftSeriesSchema.safeParse(series({ valuationDiscount: d })).success],
+  ["giftSeriesUpdateSchema", (d) => giftSeriesUpdateSchema.safeParse({ valuationDiscount: d }).success],
+];
+
+describe.each(schemas)("%s — valuationDiscount bounds", (_name, parse) => {
+  // Lower bound. 0 is the value the spec says must behave identically to NULL,
+  // so it has to stay legal on every schema that accepts a discount at all.
+  it("accepts exactly 0", () => {
+    expect(parse(0)).toBe(true);
+  });
+
+  it("accepts null", () => {
+    expect(parse(null)).toBe(true);
+  });
+
+  it("rejects a negative discount", () => {
+    expect(parse(-0.1)).toBe(false);
+  });
+
+  it("rejects a large negative discount", () => {
+    expect(parse(-1)).toBe(false);
+  });
+
+  // Upper bound. The column is numeric(6,4) and Postgres rounds half away from
+  // zero BEFORE evaluating the CHECK, so everything in [0.99995, 1) would be
+  // stored as 1.0000 and trip the CHECK. Zod has to reject that window itself,
+  // otherwise the API 500s where it should have 400'd.
+  it("accepts 0.9999 — the largest discount numeric(6,4) holds below 1", () => {
+    expect(parse(0.9999)).toBe(true);
+  });
+
+  it("accepts 0.99994 — still rounds down to 0.9999", () => {
+    expect(parse(0.99994)).toBe(true);
+  });
+
+  it("rejects 0.99995 — numeric(6,4) rounds it up to 1.0000 and the CHECK fails", () => {
+    expect(parse(0.99995)).toBe(false);
+  });
+
+  it("rejects 0.99999", () => {
+    expect(parse(0.99999)).toBe(false);
+  });
+
+  it("rejects exactly 1", () => {
+    expect(parse(1)).toBe(false);
+  });
+
+  it("rejects a discount above 1", () => {
+    expect(parse(1.5)).toBe(false);
+  });
+});
+
 describe("giftCreateSchema — valuationDiscount", () => {
   it("accepts a 30% discount as the fraction 0.3", () => {
     const r = giftCreateSchema.safeParse(assetGift({ valuationDiscount: 0.3 }));

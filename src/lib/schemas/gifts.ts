@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { uuidSchema } from "./common";
+import { uuidSchema, valuationDiscount } from "./common";
 import { strictPartial } from "./strict-partial";
 import { YEAR_REFS } from "@/lib/milestones";
 
@@ -19,10 +19,10 @@ const baseFields = {
   accountId: uuidSchema.optional().nullable(),
   liabilityId: uuidSchema.optional().nullable(),
   percent: z.number().gt(0).lte(1).optional().nullable(),
-  /** Lack-of-marketability / lack-of-control valuation discount, as a FRACTION
-   *  (0.3 = 30%). Range 0 ≤ d < 1 — mirrored by a table CHECK. Null/absent
+  /** Valuation discount as a FRACTION (0.3 = 30%) — see `valuationDiscount` in
+   *  ./common for the range and why its upper bound is 0.99995. Null/absent
    *  means no discount. Never folded into `amount` or `percent`. */
-  valuationDiscount: z.number().gte(0).lt(1).optional().nullable(),
+  valuationDiscount,
   parentGiftId: uuidSchema.optional().nullable(),
   useCrummeyPowers: z.boolean().optional().default(false),
   eventKind: z.enum(["outright", "clt_remainder_interest"]).optional().default("outright"),

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { uuidSchema, year } from "./common";
+import { uuidSchema, valuationDiscount, year } from "./common";
 import { YEAR_REFS } from "@/lib/milestones";
 
 const yearRefSchema = z
@@ -34,8 +34,8 @@ export const giftSeriesSchema = z
     endYearRef: yearRefSchema,
     annualAmount: z.number().gt(0),
     /** Valuation discount for the whole series, as a FRACTION (0.3 = 30%).
-     *  Applied to each fanned-out yearly occurrence. */
-    valuationDiscount: z.number().gte(0).lt(1).optional().nullable(),
+     *  Applied to each fanned-out yearly occurrence. See ./common. */
+    valuationDiscount,
     inflationAdjust: z.boolean().default(false),
     useCrummeyPowers: z.boolean().default(false),
     notes: z.string().trim().nullish(),
@@ -72,7 +72,7 @@ export const giftSeriesUpdateSchema = z
     endYear: year.optional(),
     endYearRef: yearRefSchema.optional(),
     annualAmount: z.number().gt(0).optional(),
-    valuationDiscount: z.number().gte(0).lt(1).optional().nullable(),
+    valuationDiscount,
     inflationAdjust: z.boolean().optional(),
     useCrummeyPowers: z.boolean().optional(),
     notes: z.string().trim().nullish(),
