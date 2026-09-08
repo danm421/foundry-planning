@@ -19,6 +19,7 @@
  *  (8-11 were added later and are not listed above.)
  *  12. POST persists valuationDiscount; PATCH updates it and null clears it.
  *  13. POST rejects an out-of-range valuationDiscount with 400; the DB CHECK backs it up.
+ *  14. A PATCH that never mentions valuationDiscount leaves a saved discount alone.
  */
 import { readFileSync } from "node:fs";
 import { crmHouseholds, crmHouseholdContacts } from "@/db/schema";
@@ -859,5 +860,42 @@ d("gift_series CRUD", () => {
     // 0.9999 is the largest discount the column can hold below 1.
     const [ok] = await insertWithDiscount("0.9999");
     expect(Number(ok.valuationDiscount)).toBeCloseTo(0.9999, 4);
+  });
+
+  it("14. A PATCH that never mentions valuationDiscount leaves a saved discount alone", async () => {
+    const { clientId, entityId } = await setupClient();
+    const { db } = dbMod;
+    const { giftSeries } = schema;
+
+    const res = await POST(
+      makePostReq(clientId, {
+        grantor: "client",
+        recipientEntityId: entityId,
+        startYear: 2026,
+        endYear: 2030,
+        annualAmount: 19000,
+        valuationDiscount: 0.45,
+      }) as never,
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    expect(res.status).toBe(201);
+    const { id: seriesId } = await res.json();
+
+    // An unrelated edit. Same guard, same gap: an unconditional
+    // `valuationDiscount: d.valuationDiscount ?? null` in the .set() would null
+    // the column here without reddening any other test.
+    const patched = await PATCH(
+      makePatchReq(clientId, seriesId, { endYear: 2031 }) as never,
+      { params: Promise.resolve({ id: clientId, seriesId }) },
+    );
+    expect(patched.status).toBe(200);
+
+    const [row] = await db
+      .select()
+      .from(giftSeries)
+      .where(drizzleOrm.eq(giftSeries.id, seriesId));
+    expect(row.endYear).toBe(2031);
+    expect(row.valuationDiscount).not.toBeNull();
+    expect(Number(row.valuationDiscount)).toBeCloseTo(0.45, 4);
   });
 });

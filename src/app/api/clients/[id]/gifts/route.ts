@@ -219,6 +219,11 @@ export async function POST(
             accountId: null,
             liabilityId: linked.id,
             percent: data.percent != null ? String(data.percent) : null,
+            // valuationDiscount is deliberately absent. A liability transfer
+            // contributes $0 to the gift ledger and the normalizer skips these
+            // rows outright, so a discount here would be dead data — and, if the
+            // normalizer ever stopped skipping them, a double count against the
+            // parent's discount. Do not "fix" this by mirroring the parent.
             parentGiftId: parent.id,
             useCrummeyPowers: false,
             notes: `Auto-bundled with asset transfer of account ${data.accountId}`,

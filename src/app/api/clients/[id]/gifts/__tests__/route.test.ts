@@ -30,7 +30,8 @@
  * 13. POST rejects a valuationDiscount of 1 with a 400.
  * 14. POST rejects a negative valuationDiscount with a 400.
  * 15. PATCH updates valuationDiscount; null clears it.
- * 16. The gifts CHECK constraint rejects an out-of-range discount written past Zod.
+ * 16. A PATCH that never mentions valuationDiscount leaves a saved discount alone.
+ * 17. The gifts CHECK constraint rejects an out-of-range discount written past Zod.
  */
 import { readFileSync } from "node:fs";
 import { crmHouseholds, crmHouseholdContacts } from "@/db/schema";
@@ -832,7 +833,46 @@ d("PATCH /api/clients/[id]/gifts/[giftId]", () => {
     expect(afterClear.valuationDiscount).toBeNull();
   });
 
-  it("16. The gifts CHECK constraint rejects an out-of-range discount written straight through drizzle", async () => {
+  it("16. A PATCH that never mentions valuationDiscount leaves a saved discount alone", async () => {
+    const { clientId, scenarioId, entityId } = await setupClient();
+    const { db } = dbMod;
+    const { gifts } = schema;
+    const account = await seedBrokerage(clientId, scenarioId, "Untouched LP Interest");
+
+    const created = await POST(
+      makePostReq(clientId, {
+        year: 2030,
+        grantor: "client",
+        recipientEntityId: entityId,
+        accountId: account.id,
+        percent: 0.25,
+        valuationDiscount: 0.45,
+      }) as never,
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    expect(created.status).toBe(201);
+    const { id: giftId } = await created.json();
+
+    // An unrelated edit. The `!== undefined` guard on the .set() spread is the
+    // only thing standing between this and a silently wiped discount — with an
+    // unconditional `valuationDiscount: patch.valuationDiscount ?? null` the
+    // route would null the column here and every other test would still pass.
+    const patched = await PATCH(
+      makePatchReq(clientId, giftId, { year: 2031 }) as never,
+      { params: Promise.resolve({ id: clientId, giftId }) },
+    );
+    expect(patched.status).toBe(200);
+
+    const [row] = await db
+      .select()
+      .from(gifts)
+      .where(drizzleOrm.eq(gifts.id, giftId));
+    expect(row.year).toBe(2031);
+    expect(row.valuationDiscount).not.toBeNull();
+    expect(Number(row.valuationDiscount)).toBeCloseTo(0.45, 4);
+  });
+
+  it("17. The gifts CHECK constraint rejects an out-of-range discount written straight through drizzle", async () => {
     const { clientId, entityId } = await setupClient();
     const { db } = dbMod;
     const { gifts } = schema;
