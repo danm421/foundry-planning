@@ -42,8 +42,25 @@ function defaultHouseholdRows(
 
 export type AssetTabOp =
   | { type: "remove"; assetType: "account" | "liability" | "entity"; assetId: string }
-  | { type: "set-percent"; assetType: "account" | "liability" | "entity"; assetId: string; percent: number }
-  | { type: "add"; assetType: "account" | "liability" | "entity"; assetId: string; percent: number };
+  | {
+      type: "set-percent";
+      assetType: "account" | "liability" | "entity";
+      assetId: string;
+      percent: number;
+      /** Valuation discount as a FRACTION (0.3 = 30%). Meaningful only for
+       *  `assetType: "entity"`, where the API route writes a §709 gift row.
+       *  Note `percent` here is 0-100 while this is 0-1 — the percent scale is
+       *  historical and the discount matches the DB column. */
+      valuationDiscount?: number;
+    }
+  | {
+      type: "add";
+      assetType: "account" | "liability" | "entity";
+      assetId: string;
+      percent: number;
+      /** Valuation discount as a FRACTION (0.3 = 30%). See the note above. */
+      valuationDiscount?: number;
+    };
 
 export interface ApplyOpContext {
   entityId: string;

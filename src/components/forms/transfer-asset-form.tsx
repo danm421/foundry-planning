@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect } from "react";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
 import { PercentInput } from "@/components/percent-input";
 import {
+  clampDiscountPct,
   discountedGiftValue,
   MAX_DISCOUNT_PCT,
 } from "@/lib/gifts/apply-valuation-discount";
@@ -77,22 +78,6 @@ interface GiftPostBody {
 // ---------------------------------------------------------------------------
 
 const RETIREMENT_SUBTYPES_SET = new Set<string>(RETIREMENT_SUBTYPES);
-
-/**
- * Hold the typed discount inside [0, MAX_DISCOUNT_PCT] so the number the field
- * shows is always the number that will be saved.
- *
- * `PercentInput` strips non-numeric characters but does not bound the value, so
- * an unclamped "150" would read as 150% beside a preview while the save guard
- * below silently dropped it. An in-range entry is returned verbatim so a
- * half-typed "30." survives.
- */
-function clampDiscountPct(raw: string): string {
-  const n = Number(raw);
-  if (raw === "" || !Number.isFinite(n)) return "";
-  if (n < 0) return "0";
-  return n > MAX_DISCOUNT_PCT ? String(MAX_DISCOUNT_PCT) : raw;
-}
 
 // ---------------------------------------------------------------------------
 // Component

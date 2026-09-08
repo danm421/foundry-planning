@@ -3,6 +3,11 @@
 import { useState } from "react";
 import { ownedByEntity } from "@/engine/ownership";
 import type { AccountOwner, EntityOwner } from "@/engine/ownership";
+import {
+  clampDiscountPct,
+  discountedGiftValue,
+  MAX_DISCOUNT_PCT,
+} from "@/lib/gifts/apply-valuation-discount";
 import { RETIREMENT_SUBTYPES } from "@/lib/ownership";
 import DialogShell from "@/components/dialog-shell";
 import { PercentInput } from "@/components/percent-input";
@@ -27,6 +32,8 @@ export interface PickerLiability {
 export interface PickerBusiness {
   id: string;
   name: string;
+  /** Flat business valuation — powers the discount dollar preview. */
+  value?: number;
   /** Current entity_owners rows on the business. Mixed family + entity owners. */
   owners: EntityOwner[];
 }
@@ -37,7 +44,16 @@ interface AssetPickerModalProps {
   liabilities: PickerLiability[];
   businesses?: PickerBusiness[];
   onClose: () => void;
-  onAdd: (op: { type: "add"; assetType: "account" | "liability" | "entity"; assetId: string; percent: number }) => void;
+  onAdd: (op: {
+    type: "add";
+    assetType: "account" | "liability" | "entity";
+    assetId: string;
+    percent: number;
+    /** Fraction 0-1. Emitted only for the business-entity branch. */
+    valuationDiscount?: number;
+  }) => void;
+  /** Most-recent discount per source, keyed `entity:<id>`. Seeds the field only. */
+  priorDiscounts?: Record<string, number>;
   /** Singular noun for user-facing copy (e.g. "trust", "business"). Defaults to "trust". */
   entityLabel?: string;
 }
@@ -72,6 +88,8 @@ interface PickedItem {
   name: string;
   assetType: AssetType;
   isRetirement: boolean;
+  /** Flat valuation, present only for a business entity. */
+  value?: number;
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -81,6 +99,7 @@ export default function AssetPickerModal({
   accounts,
   liabilities,
   businesses,
+  priorDiscounts,
   onClose,
   onAdd,
   entityLabel = "trust",
@@ -88,6 +107,7 @@ export default function AssetPickerModal({
   const [step, setStep] = useState<"pick" | "percent">("pick");
   const [picked, setPicked] = useState<PickedItem | null>(null);
   const [pctStr, setPctStr] = useState("100");
+  const [discountStr, setDiscountStr] = useState("");
   const titleNoun = entityLabel.charAt(0).toUpperCase() + entityLabel.slice(1);
 
   // Filter accounts
@@ -112,14 +132,45 @@ export default function AssetPickerModal({
   function selectItem(item: PickedItem) {
     setPicked(item);
     setPctStr(item.isRetirement ? "100" : "100");
+    // Prefill from the most recent discount used for this same business — an
+    // initial value only. The value written on the gift row is always this
+    // transfer's own; editing an earlier gift never reaches back here. The seed
+    // goes through the same clamp as typed input: the column accepts a wider
+    // range than the field does, and a seed the save guard would refuse would
+    // show a discount this form cannot store.
+    const prior =
+      item.assetType === "entity" ? priorDiscounts?.[`entity:${item.id}`] : undefined;
+    setDiscountStr(
+      prior != null ? clampDiscountPct(String(Math.round(prior * 10_000) / 100)) : "",
+    );
     setStep("percent");
   }
+
+  const discountNum = Number(discountStr);
+  // `discountStr` is clamped on entry, so the upper test is belt-and-braces —
+  // it keeps a $0 gift unreachable if that clamp is ever loosened.
+  const discountFraction =
+    picked?.assetType === "entity" &&
+    discountStr !== "" &&
+    Number.isFinite(discountNum) &&
+    discountNum > 0 &&
+    discountNum <= MAX_DISCOUNT_PCT
+      ? discountNum / 100
+      : undefined;
 
   function handleAdd() {
     if (!picked) return;
     const pct = parseFloat(pctStr);
     if (Number.isNaN(pct) || pct <= 0 || pct > 100) return;
-    onAdd({ type: "add", assetType: picked.assetType, assetId: picked.id, percent: pct });
+    onAdd({
+      type: "add",
+      assetType: picked.assetType,
+      assetId: picked.id,
+      percent: pct,
+      // Omitted entirely (not null) when absent, so the op shape is unchanged
+      // for the account and liability branches.
+      ...(discountFraction != null ? { valuationDiscount: discountFraction } : {}),
+    });
   }
 
   return (
@@ -233,6 +284,7 @@ export default function AssetPickerModal({
                             name: b.name,
                             assetType: "entity",
                             isRetirement: false,
+                            value: b.value,
                           })
                         }
                         className="w-full flex items-center justify-between rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-2 text-left hover:border-accent hover:bg-card-hover transition-colors"
@@ -275,6 +327,41 @@ export default function AssetPickerModal({
                 decimals={0}
                 placeholder="100"
               />
+            </div>
+          )}
+
+          {picked?.assetType === "entity" && !picked?.isRetirement && (
+            <div>
+              <label className={fieldLabelClassName} htmlFor="asset-picker-discount">
+                Valuation discount (optional)
+              </label>
+              <PercentInput
+                id="asset-picker-discount"
+                value={discountStr}
+                onChange={(v) => setDiscountStr(clampDiscountPct(v))}
+                decimals={2}
+                placeholder="e.g. 30"
+              />
+              {(() => {
+                const pct = parseFloat(pctStr);
+                const full =
+                  picked.value != null && Number.isFinite(pct) ? picked.value * (pct / 100) : 0;
+                if (discountFraction == null || full <= 0) return null;
+                return (
+                  <p className="mt-1.5 text-[12px] text-ink-3" data-testid="picker-discount-preview">
+                    ${Math.round(full).toLocaleString()} interest · {discountStr}% discount ·{" "}
+                    <span className="font-medium text-ink-2">
+                      ${Math.round(discountedGiftValue(full, discountFraction)).toLocaleString()}
+                    </span>{" "}
+                    uses exemption
+                  </p>
+                );
+              })()}
+              <p className="mt-1 text-[11px] text-ink-4">
+                Lack of marketability / lack of control, from the appraisal. The
+                {" "}{entityLabel} still receives the full interest — only the
+                transfer-tax value is reduced.
+              </p>
             </div>
           )}
         </div>

@@ -117,6 +117,8 @@ interface AssetsTabProps {
   /** Business entities (LLC/S-corp/etc.) eligible for assignment to this trust.
    *  Optional — when absent the picker won't show the Business Entities section. */
   businesses?: AssetsTabBusiness[];
+  /** Most-recent discount per source, keyed `entity:<id>`. Forwarded to the picker. */
+  priorDiscounts?: Record<string, number>;
   onChange: (op: AssetTabOp) => void;
   /** Singular noun for user-facing copy (e.g. "trust", "business"). Defaults to "trust". */
   entityLabel?: string;
@@ -236,6 +238,7 @@ export default function AssetsTab({
   incomes,
   expenses,
   businesses,
+  priorDiscounts,
   onChange,
   entityLabel = "trust",
 }: AssetsTabProps) {
@@ -425,6 +428,7 @@ export default function AssetsTab({
           accounts={accounts}
           liabilities={liabilities}
           businesses={businesses}
+          priorDiscounts={priorDiscounts}
           entityLabel={entityLabel}
           onClose={() => setPickerOpen(false)}
           onAdd={(op) => {

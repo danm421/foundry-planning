@@ -43,6 +43,22 @@
 export const MAX_DISCOUNT_PCT = 99;
 
 /**
+ * Hold the typed discount inside [0, MAX_DISCOUNT_PCT] so the number the field
+ * shows is always the number that will be saved.
+ *
+ * `PercentInput` strips non-numeric characters but does not bound the value, so
+ * an unclamped "150" would read as 150% beside a preview while the caller's
+ * save guard silently dropped it. An in-range entry is returned verbatim so a
+ * half-typed "30." survives.
+ */
+export function clampDiscountPct(raw: string): string {
+  const n = Number(raw);
+  if (raw === "" || !Number.isFinite(n)) return "";
+  if (n < 0) return "0";
+  return n > MAX_DISCOUNT_PCT ? String(MAX_DISCOUNT_PCT) : raw;
+}
+
+/**
  * Coerce an advisor-supplied discount into a usable fraction in `[0, 1]`.
  *
  * `null` / `undefined` / `0` / a negative / `NaN` / `±Infinity` all mean "no
