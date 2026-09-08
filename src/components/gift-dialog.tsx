@@ -59,6 +59,16 @@ export default function GiftDialog(props: GiftDialogProps) {
           inflationAdjust: draft.inflationAdjust,
           useCrummeyPowers: draft.crummey,
         };
+        // Send the discount ONLY when the advisor set one. This dialog's
+        // editing seed (`toEditingDraft`) cannot read a saved discount — the
+        // Family view's Gift / GiftSeriesLite shapes do not carry the column —
+        // so "absent on the draft" means UNKNOWN here, not "cleared". The gift
+        // routes leave an omitted field alone, so a discount entered on the
+        // estate-flow surface survives an unrelated edit made from this dialog.
+        // Clearing one is done there, where the value does round-trip.
+        if (draft.valuationDiscount != null) {
+          body.valuationDiscount = draft.valuationDiscount;
+        }
         if (draft.recipient.kind === "entity") body.recipientEntityId = draft.recipient.id;
         if (draft.recipient.kind === "family_member") body.recipientFamilyMemberId = draft.recipient.id;
         if (draft.recipient.kind === "external_beneficiary") body.recipientExternalBeneficiaryId = draft.recipient.id;
@@ -101,6 +111,10 @@ export default function GiftDialog(props: GiftDialogProps) {
         body.accountId = draft.accountId;
         body.percent = draft.percent;
         body.useCrummeyPowers = false;
+      }
+      // Set-only, never cleared from here — see the series body above.
+      if (draft.valuationDiscount != null) {
+        body.valuationDiscount = draft.valuationDiscount;
       }
 
       const url = props.editingGift

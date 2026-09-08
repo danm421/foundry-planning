@@ -33,6 +33,8 @@ interface Props {
   taxInflationRate: number;
   /** Dense year→annual-exclusion map for the gift form's max-exclusion preview. */
   annualExclusionByYear: Record<number, number>;
+  /** Most-recent discount per account id — seeds the gift form's prefill. */
+  priorDiscounts?: Record<string, number>;
   onClose: () => void;
 }
 
@@ -120,6 +122,7 @@ export default function EstateFlowChangeOwnerDialog({
   ledger,
   taxInflationRate,
   annualExclusionByYear,
+  priorDiscounts,
   onClose,
 }: Props) {
   // ── Derive available destinations ─────────────────────────────────────────
@@ -524,7 +527,9 @@ export default function EstateFlowChangeOwnerDialog({
           <GiftForm
             key={selectedDestId}
             recipients={giftFormRecipientsFromClientData(clientData)}
-            accounts={(clientData.accounts ?? []).map((a) => ({ id: a.id, name: a.name }))}
+            accounts={(clientData.accounts ?? []).map((a) => ({
+              id: a.id, name: a.name, value: a.value, subType: a.subType,
+            }))}
             hasSpouse={clientData.client.spouseDob != null}
             annualExclusionByYear={annualExclusionByYear}
             editing={null}
@@ -532,7 +537,9 @@ export default function EstateFlowChangeOwnerDialog({
               id: account.id,
               name: account.name,
               value: account.value,
+              subType: account.subType,
             }}
+            priorDiscounts={priorDiscounts}
             ledger={ledger}
             taxInflationRate={taxInflationRate}
             onChange={setGiftDraft}

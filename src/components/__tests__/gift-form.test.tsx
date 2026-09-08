@@ -43,9 +43,14 @@ describe("GiftForm", () => {
     fireEvent.click(screen.getByText("Max annual exclusion"));
     const d = lastDraft(onChange);
     expect(d).toMatchObject({ kind: "series", amountMode: "annual_exclusion", annualAmount: 38_000, grantor: "joint" });
+    // Exhaustive and ORDERED on purpose: `diffGifts` compares gifts with
+    // JSON.stringify, so the draft's key order must track giftSeriesRowToDraft
+    // exactly. `valuationDiscount` is emitted last (undefined here — the key is
+    // present, the value is not serialized).
     expect(Object.keys(d as object)).toEqual([
       "kind", "id", "startYear", "endYear", "annualAmount",
       "amountMode", "inflationAdjust", "grantor", "recipient", "crummey",
+      "valuationDiscount",
     ]);
   });
 

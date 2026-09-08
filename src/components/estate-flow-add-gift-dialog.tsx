@@ -19,6 +19,8 @@ interface EstateFlowAddGiftDialogProps {
   annualExclusionByYear: Record<number, number>;
   /** Existing gift to edit; null for the standalone add path. */
   editing: EstateFlowGift | null;
+  /** Most-recent discount per account id — seeds the gift form's prefill. */
+  priorDiscounts?: Record<string, number>;
   /** Called with the assembled draft when the advisor confirms. */
   onApply: (draft: EstateFlowGift) => void;
   /** Called when the advisor deletes the gift being edited. No-op when editing == null. */
@@ -39,6 +41,7 @@ export default function EstateFlowAddGiftDialog({
   taxInflationRate,
   annualExclusionByYear,
   editing,
+  priorDiscounts,
   onApply,
   onDelete,
   onClose,
@@ -75,11 +78,14 @@ export default function EstateFlowAddGiftDialog({
       <GiftForm
         key={editing?.id ?? "new"}
         recipients={giftFormRecipientsFromClientData(clientData)}
-        accounts={(clientData.accounts ?? []).map((a) => ({ id: a.id, name: a.name }))}
+        accounts={(clientData.accounts ?? []).map((a) => ({
+          id: a.id, name: a.name, value: a.value, subType: a.subType,
+        }))}
         hasSpouse={clientData.client.spouseDob != null}
         annualExclusionByYear={annualExclusionByYear}
         editing={editing}
         sourceAccount={null}
+        priorDiscounts={priorDiscounts}
         ledger={ledger}
         taxInflationRate={taxInflationRate}
         onChange={setDraft}

@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { ClientData } from "@/engine/types";
 import type { SolverMutation } from "@/lib/solver/types";
-import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
+import { priorDiscountsBySource, type EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import DialogShell from "@/components/dialog-shell";
 import EstateFlowAddGiftDialog from "@/components/estate-flow-add-gift-dialog";
 import { SolverSection } from "./solver-section";
@@ -154,6 +154,11 @@ export function SolverEstateTechnique({
   hideWhenUnconfigured,
 }: Props) {
   const editor = useSolverEstateEditor({ baseClientData, clientData, baseGifts, onChange });
+  // Seeds the gift form's valuation-discount field. Initial value only.
+  const priorDiscounts = useMemo(
+    () => priorDiscountsBySource(editor.gifts),
+    [editor.gifts],
+  );
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const open = controlledOpen ?? uncontrolledOpen;
   const setOpen = (next: boolean) => {
@@ -214,6 +219,7 @@ export function SolverEstateTechnique({
           taxInflationRate={editor.taxInflationRate}
           annualExclusionByYear={editor.annualExclusionByYear}
           editing={editor.editing}
+          priorDiscounts={priorDiscounts}
           onApply={editor.upsertGift}
           onDelete={() => editor.editing && editor.deleteGift(editor.editing.id)}
           onClose={() => {

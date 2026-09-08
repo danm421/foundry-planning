@@ -99,6 +99,7 @@ async function persistGiftChange(
       amountMode: gift.amountMode,
       inflationAdjust: gift.inflationAdjust,
       useCrummeyPowers: gift.crummey,
+      valuationDiscount: gift.valuationDiscount ?? null,
       notes: null,
     };
     return fetch(
@@ -136,6 +137,7 @@ async function persistGiftChange(
     grantor: gift.grantor,
     ...recipientFields,
     notes: null,
+    valuationDiscount: gift.valuationDiscount ?? null,
   };
   if (gift.kind === "cash-once") {
     oneTimeBody.amount = gift.amount;

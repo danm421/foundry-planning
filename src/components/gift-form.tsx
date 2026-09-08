@@ -7,6 +7,7 @@ import { checkExemptionImpact } from "@/engine/gift-exemption-warning";
 import type { ClientData } from "@/engine/types";
 import type { GiftLedgerYear } from "@/engine/gift-ledger";
 import type { EstateFlowGift, GiftGrantor, GiftRecipientRef } from "@/lib/estate/estate-flow-gifts";
+import { discountedGiftValue } from "@/lib/gifts/apply-valuation-discount";
 
 export interface GiftFormRecipients {
   /** Irrevocable trusts only. */
@@ -38,13 +39,18 @@ export function giftFormRecipientsFromClientData(clientData: ClientData): GiftFo
 
 export interface GiftFormProps {
   recipients: GiftFormRecipients;
-  /** Household accounts eligible for an in-kind transfer. */
-  accounts: { id: string; name: string }[];
+  /** Household accounts eligible for an in-kind transfer. `value` powers the
+   *  discount preview and `subType` the appraisal soft-warning; both are
+   *  optional so lighter callers (the Family view's gift dialog) still compile. */
+  accounts: { id: string; name: string; value?: number; subType?: string }[];
   hasSpouse: boolean;
   annualExclusionByYear: Record<number, number>;
   editing: EstateFlowGift | null;
   /** Column-1 asset path: pre-selects in-kind funding from this account. */
-  sourceAccount?: { id: string; name: string; value: number } | null;
+  sourceAccount?: { id: string; name: string; value: number; subType?: string } | null;
+  /** Most-recent discount per account id, from `priorDiscountsBySource`. Seeds
+   *  the discount field only — never written back to the source gift. */
+  priorDiscounts?: Record<string, number>;
   /** Sandbox only — when present, render the exemption warning + enforce the plan-year window. */
   ledger?: GiftLedgerYear[];
   taxInflationRate?: number;
@@ -53,6 +59,14 @@ export interface GiftFormProps {
 
 type RecipientOption = { value: string; label: string; ref: GiftRecipientRef; isTrust: boolean };
 const recipientKey = (r: GiftRecipientRef) => `${r.kind}:${r.id}`;
+
+/** Account subtypes whose holdings are readily marketable, so a lack-of-
+ *  marketability discount on them is hard to support on an appraisal. Drives a
+ *  soft warning only — a fractional interest in a brokerage account held inside
+ *  an FLP can still qualify. */
+const MARKETABLE_SUBTYPES = new Set([
+  "brokerage", "savings", "checking", "money_market", "cd", "hsa",
+]);
 
 export default function GiftForm(props: GiftFormProps) {
   const { editing, sourceAccount, ledger, annualExclusionByYear } = props;
@@ -97,6 +111,20 @@ export default function GiftForm(props: GiftFormProps) {
   const [grantor, setGrantor] = useState<GiftGrantor>(() => editing?.grantor ?? "client");
   const [crummey, setCrummey] = useState(() => (editing && editing.kind !== "asset-once" ? editing.crummey : false));
 
+  // ── Valuation discount ────────────────────────────────────────────────────
+  // Held as WHOLE PERCENT for the input; stored on the draft as a fraction.
+  const [discountPct, setDiscountPct] = useState<number>(() =>
+    editing?.valuationDiscount != null
+      ? Math.round(editing.valuationDiscount * 10_000) / 100
+      : 0,
+  );
+  // Locks out the prefill below. True from the moment the advisor types — and
+  // true from the start whenever we are editing a saved gift, whose own stored
+  // discount (INCLUDING "none") is authoritative. Without that second case,
+  // opening an undiscounted gift on an account that carries a prior discount
+  // would silently apply that discount and post a phantom "Edited gift".
+  const [discountTouched, setDiscountTouched] = useState(editing != null);
+
   const selected = recipientOptions.find((o) => o.value === recipientValue);
   const recipientIsTrust = selected?.isTrust ?? false;
   const recurringAllowed = true;
@@ -110,6 +138,44 @@ export default function GiftForm(props: GiftFormProps) {
   // Max-exclusion preview value for the relevant year.
   const exclYear = effectiveRecurring ? startYear : year;
   const exclusionAmount = (annualExclusionByYear[exclYear] ?? 0) * grantorCount;
+
+  // Prefill from the most recent discount used for the same account. Purely an
+  // initial value — see priorDiscountsBySource. Re-seeds when the advisor picks
+  // a different source account, but never once the field is locked.
+  const priorDiscounts = props.priorDiscounts;
+  useEffect(() => {
+    if (discountTouched) return;
+    const prior = effectiveAccountId ? priorDiscounts?.[effectiveAccountId] : undefined;
+    setDiscountPct(prior != null ? Math.round(prior * 10_000) / 100 : 0);
+  }, [effectiveAccountId, discountTouched, priorDiscounts]);
+
+  // Discount is offered for in-kind transfers, recurring series, and cash to a
+  // trust — the three shapes where an appraised fractional interest is plausible.
+  const discountApplicable = effectiveInKind || effectiveRecurring || recipientIsTrust;
+  const discountFraction =
+    discountApplicable && discountPct > 0 && discountPct < 100
+      ? discountPct / 100
+      : undefined;
+
+  const selectedAccount = sourceAccount
+    ?? props.accounts.find((a) => a.id === effectiveAccountId);
+
+  // Full (pre-discount) value previewed for the relevant year.
+  const previewFullValue = effectiveRecurring
+    ? (amountMode === "annual_exclusion" ? exclusionAmount : annualAmount)
+    : effectiveInKind
+      ? (selectedAccount?.value ?? 0) * (percentWhole / 100)
+      : (amountMode === "annual_exclusion" ? exclusionAmount : amount);
+  const previewDiscountedValue = discountedGiftValue(previewFullValue, discountFraction);
+
+  // A discount on cash or a marketable brokerage account has no appraisal
+  // support — but a fractional interest in a brokerage account inside an FLP
+  // might, so this warns rather than blocks.
+  const showAppraisalWarning =
+    discountFraction != null &&
+    (!effectiveInKind ||
+      (selectedAccount?.subType != null &&
+        MARKETABLE_SUBTYPES.has(selectedAccount.subType)));
 
   const draft = useMemo<EstateFlowGift | null>(() => {
     if (!selected) return null;
@@ -128,6 +194,9 @@ export default function GiftForm(props: GiftFormProps) {
         kind: "series", id, startYear, endYear, annualAmount: annual,
         amountMode, inflationAdjust: amountMode === "annual_exclusion" ? false : inflationAdjust,
         grantor, recipient, crummey: recipientIsTrust ? crummey : false,
+        // LAST KEY — must match giftSeriesRowToDraft, or the unsaved-changes
+        // diff (JSON.stringify, key-order-sensitive) reports a phantom edit.
+        valuationDiscount: discountFraction,
       };
       return editing?.kind === "series" ? { ...editing, ...base } : base;
     }
@@ -141,6 +210,8 @@ export default function GiftForm(props: GiftFormProps) {
         grantor, recipient,
         amountOverride: editing?.kind === "asset-once" ? editing.amountOverride : undefined,
         eventKind: editing?.kind === "asset-once" ? editing.eventKind : undefined,
+        // LAST KEY — must match giftRowToDraft's asset branch.
+        valuationDiscount: discountFraction,
       };
       return editing?.kind === "asset-once" ? { ...editing, ...base } : base;
     }
@@ -153,9 +224,11 @@ export default function GiftForm(props: GiftFormProps) {
       kind: "cash-once", id, year, amount: amt, grantor, recipient,
       crummey: recipientIsTrust ? crummey : false,
       eventKind: editing?.kind === "cash-once" ? editing.eventKind : undefined,
+      // LAST KEY — must match giftRowToDraft's cash branch.
+      valuationDiscount: discountFraction,
     };
     return editing?.kind === "cash-once" ? { ...editing, ...base } : base;
-  }, [selected, editing, newGiftId, effectiveRecurring, effectiveInKind, effectiveAccountId, year, percentWhole, amount, startYear, endYear, annualAmount, amountMode, exclusionAmount, inflationAdjust, grantor, crummey, recipientIsTrust, planMinYear, planMaxYear]);
+  }, [selected, editing, newGiftId, effectiveRecurring, effectiveInKind, effectiveAccountId, year, percentWhole, amount, startYear, endYear, annualAmount, amountMode, exclusionAmount, inflationAdjust, grantor, crummey, discountFraction, recipientIsTrust, planMinYear, planMaxYear]);
 
   // Fire onChange whenever the draft *content* changes (stable JSON key so a
   // new object identity for an unchanged draft does not re-fire; onChange held
@@ -173,17 +246,21 @@ export default function GiftForm(props: GiftFormProps) {
     if (!ledger || !draft) return [];
 
     // taxableContribution: cash → amount, asset → sourceAccount value × pct,
-    // series → per-year annualAmount (preview the start year).
+    // series → per-year annualAmount (preview the start year). Each is net of
+    // any valuation discount — that is the figure that consumes exemption.
     let taxableContribution: number;
     let previewYear: number;
     if (draft.kind === "series") {
-      taxableContribution = draft.annualAmount;
+      taxableContribution = discountedGiftValue(draft.annualAmount, draft.valuationDiscount);
       previewYear = draft.startYear;
     } else if (draft.kind === "asset-once") {
-      taxableContribution = (sourceAccount?.value ?? 0) * draft.percent;
+      taxableContribution = discountedGiftValue(
+        (sourceAccount?.value ?? 0) * draft.percent,
+        draft.valuationDiscount,
+      );
       previewYear = draft.year;
     } else {
-      taxableContribution = draft.amount;
+      taxableContribution = discountedGiftValue(draft.amount, draft.valuationDiscount);
       previewYear = draft.year;
     }
 
@@ -349,6 +426,40 @@ export default function GiftForm(props: GiftFormProps) {
           <input type="checkbox" checked={crummey} onChange={(e) => setCrummey(e.target.checked)} />
           Use Crummey powers (annual-exclusion gift)
         </label>
+      )}
+
+      {/* Valuation discount */}
+      {discountApplicable && (
+        <div>
+          <Field label="Valuation discount (%)">
+            <NumberInput
+              value={discountPct}
+              onChange={(n) => { setDiscountTouched(true); setDiscountPct(n); }}
+              min={0}
+              max={99}
+            />
+          </Field>
+          {discountFraction != null && previewFullValue > 0 && (
+            <p className="mt-1.5 text-xs text-ink-3" data-testid="discount-preview">
+              ${Math.round(previewFullValue).toLocaleString()} interest ·{" "}
+              {discountPct}% discount ·{" "}
+              <span className="font-medium text-ink-2">
+                ${Math.round(previewDiscountedValue).toLocaleString()}
+              </span>{" "}
+              uses exemption
+            </p>
+          )}
+          {showAppraisalWarning && (
+            <p
+              role="status"
+              data-testid="discount-appraisal-warning"
+              className="mt-1.5 rounded border border-amber-400/40 bg-amber-400/10 px-2 py-1.5 text-[11px] text-amber-200"
+            >
+              Valuation discounts normally require an appraisal supporting lack of
+              marketability or lack of control. Marketable securities rarely qualify.
+            </p>
+          )}
+        </div>
       )}
 
       {/* Exemption warning preview */}

@@ -19,6 +19,7 @@ import {
   addGift,
   updateGift,
   removeGift,
+  priorDiscountsBySource,
   type EstateFlowGift,
 } from "@/lib/estate/estate-flow-gifts";
 import type { ClientData } from "@/engine/types";
@@ -99,6 +100,13 @@ export function EstateFlowReportTab({
     }
     return map;
   }, [working.familyMembers, working.entities, working.externalBeneficiaries]);
+
+  // Seeds the gift form's valuation-discount field from the most recent
+  // discount already used for the same source account. Initial value only.
+  const priorDiscounts = useMemo(
+    () => priorDiscountsBySource(workingGifts),
+    [workingGifts],
+  );
 
   // Account display names keyed by id — used by the death columns to resolve
   // asset-gift marker labels ("P% of {account name}").
@@ -273,6 +281,7 @@ export function EstateFlowReportTab({
           ledger={projection.giftLedger}
           taxInflationRate={taxInflationRate}
           annualExclusionByYear={annualExclusionByYear}
+          priorDiscounts={priorDiscounts}
           onApply={(owners) => {
             applyEdit((d) => changeOwner(d, ownerDialogId!, owners));
             setOwnerDialogId(null);
@@ -326,6 +335,7 @@ export function EstateFlowReportTab({
           taxInflationRate={taxInflationRate}
           annualExclusionByYear={annualExclusionByYear}
           editing={null}
+          priorDiscounts={priorDiscounts}
           onApply={(draft) => {
             setWorkingGifts((cur) => addGift(cur, draft));
             setAddGiftOpen(false);
@@ -344,6 +354,7 @@ export function EstateFlowReportTab({
           taxInflationRate={taxInflationRate}
           annualExclusionByYear={annualExclusionByYear}
           editing={editingGift}
+          priorDiscounts={priorDiscounts}
           onApply={(draft) => {
             setWorkingGifts((cur) => updateGift(cur, draft));
             setEditingGiftId(null);
