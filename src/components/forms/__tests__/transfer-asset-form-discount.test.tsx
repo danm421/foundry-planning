@@ -11,20 +11,28 @@ const accounts: AccountOption[] = [
   },
 ];
 
-function renderForm(over: Partial<React.ComponentProps<typeof TransferAssetForm>> = {}) {
-  return render(
-    <TransferAssetForm
-      trustId="t1"
-      clientId="c1"
-      trustGrantor="client"
-      accounts={accounts}
-      projectionStartYear={2026}
-      currentYear={2026}
-      onClose={vi.fn()}
-      onSaved={vi.fn()}
-      {...over}
-    />,
-  );
+type FormProps = React.ComponentProps<typeof TransferAssetForm>;
+
+function formProps(over: Partial<FormProps> = {}): FormProps {
+  return {
+    trustId: "t1",
+    clientId: "c1",
+    trustGrantor: "client",
+    accounts,
+    projectionStartYear: 2026,
+    currentYear: 2026,
+    onClose: vi.fn(),
+    onSaved: vi.fn(),
+    ...over,
+  };
+}
+
+function renderForm(over: Partial<FormProps> = {}) {
+  return render(<TransferAssetForm {...formProps(over)} />);
+}
+
+function discountInput(): HTMLInputElement {
+  return screen.getByLabelText(/Valuation discount/i) as HTMLInputElement;
 }
 
 /** The parsed body of the first POST the form made. */
@@ -78,7 +86,7 @@ describe("TransferAssetForm — valuation discount", () => {
 
   it("prefills the discount from priorDiscounts for the selected account", () => {
     renderForm({ priorDiscounts: { "acct-1": 0.45 } });
-    expect((screen.getByLabelText(/Valuation discount/i) as HTMLInputElement).value).toBe("45");
+    expect(discountInput().value).toBe("45");
   });
 
   it("clamps an out-of-range entry so the field and the saved value agree", async () => {
@@ -86,7 +94,7 @@ describe("TransferAssetForm — valuation discount", () => {
     // would read as 150% in the field while the `< 100` save guard dropped it —
     // a discount shown and not stored.
     renderForm();
-    const input = screen.getByLabelText(/Valuation discount/i) as HTMLInputElement;
+    const input = discountInput();
 
     fireEvent.change(input, { target: { value: "150" } });
     expect(input.value).toBe("99");
@@ -101,14 +109,19 @@ describe("TransferAssetForm — valuation discount", () => {
     // The column accepts up to 0.9999. Seeding "99.99" would show a discount
     // the save guard then refuses, so the seed is clamped like typed input.
     renderForm({ priorDiscounts: { "acct-1": 0.9999 } });
-    expect((screen.getByLabelText(/Valuation discount/i) as HTMLInputElement).value).toBe("99");
+    expect(discountInput().value).toBe("99");
   });
 
-  it("does not re-seed from priorDiscounts once the advisor has typed", () => {
-    // The prefill is an initial value only — it must never overwrite an entry.
-    renderForm({ priorDiscounts: { "acct-1": 0.45 } });
-    const input = screen.getByLabelText(/Valuation discount/i) as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "20" } });
-    expect(input.value).toBe("20");
+  it("does not re-seed when the prefill map arrives mid-typing", () => {
+    // The case `discountTouched` exists for: the gift fetch resolves after the
+    // advisor has started typing and hands down a NEW priorDiscounts object,
+    // re-running the prefill effect. The prefill is an initial value only, so
+    // the entry must survive. Without the guard this re-seeds to "45".
+    const { rerender } = renderForm({ priorDiscounts: {} });
+    fireEvent.change(discountInput(), { target: { value: "20" } });
+
+    rerender(<TransferAssetForm {...formProps({ priorDiscounts: { "acct-1": 0.45 } })} />);
+
+    expect(discountInput().value).toBe("20");
   });
 });

@@ -331,21 +331,32 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
     // Skip the fetch on Details tab for non-CLT trusts to avoid the network hit.
     const needsGifts = activeTab === "transfers" || activeTab === "assets" || isSplitInterest;
     if (!needsGifts) return;
+    // The Assets tab wants the gifts list ONLY, to seed the valuation-discount
+    // prefill map. It must not pull the series list or the exemption ledger:
+    // this effect re-runs on every `accounts`/`liabilities` identity change, and
+    // an Assets-tab ownership edit produces one on each save (scenarioWriter →
+    // router.refresh()). Fetching all three there would bill an advisor two
+    // collateral requests per edit — one of them a client-wide ledger recompute
+    // — for panels that tab never renders.
+    const needsTransfersPanel = activeTab === "transfers" || isSplitInterest;
     let alive = true;
     setTransferFetchError(null);
     Promise.all([
       // One-time gifts are client-global (no scenario_id); series are
       // scenario-scoped, so the series list must match the active scenario.
       fetchJson<GiftRow[]>(`/api/clients/${clientId}/gifts`),
-      fetchJson<GiftSeriesRow[]>(
-        scenarioId
-          ? `/api/clients/${clientId}/gifts/series?scenario=${encodeURIComponent(scenarioId)}`
-          : `/api/clients/${clientId}/gifts/series`,
-      ),
+      needsTransfersPanel
+        ? fetchJson<GiftSeriesRow[]>(
+            scenarioId
+              ? `/api/clients/${clientId}/gifts/series?scenario=${encodeURIComponent(scenarioId)}`
+              : `/api/clients/${clientId}/gifts/series`,
+          )
+        : Promise.resolve<GiftSeriesRow[] | null>(null),
     ]).then(([allGifts, allSeries]) => {
       if (!alive) return;
       setTransferEvents(toTransferEvents(allGifts, editing.id, accounts ?? [], liabilities ?? []));
-      setTransferSeries(toTransferSeries(allSeries, editing.id));
+      // null = not fetched on this tab; leave whatever the Transfers tab loaded.
+      if (allSeries) setTransferSeries(toTransferSeries(allSeries, editing.id));
       setTransferPriorDiscounts(selectPriorDiscounts(toDiscountCandidates(allGifts)));
     }).catch((err: Error) => {
       if (!alive) return;
@@ -354,19 +365,21 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
     });
 
     // Fetch lifetime-exemption ledger — panel stays hidden on failure (exemption {} hides it).
-    fetchJson<{
-      perGrantor: { client: { used: number; total: number }; spouse?: { used: number; total: number } };
-      perTrust: Record<string, { client: number; spouse: number }>;
-    }>(
-      scenarioId
-        ? `/api/clients/${clientId}/gifts/ledger?scenario=${encodeURIComponent(scenarioId)}`
-        : `/api/clients/${clientId}/gifts/ledger`,
-    ).then((summary) => {
-      if (!alive) return;
-      if (!summary?.perGrantor) return; // unexpected shape — leave panel hidden
-      setExemption(summary.perGrantor);
-      setTotalConsumedByThisTrust(summary.perTrust[editing.id] ?? { client: 0, spouse: 0 });
-    }).catch(() => { /* panel stays hidden on failure */ });
+    if (needsTransfersPanel) {
+      fetchJson<{
+        perGrantor: { client: { used: number; total: number }; spouse?: { used: number; total: number } };
+        perTrust: Record<string, { client: number; spouse: number }>;
+      }>(
+        scenarioId
+          ? `/api/clients/${clientId}/gifts/ledger?scenario=${encodeURIComponent(scenarioId)}`
+          : `/api/clients/${clientId}/gifts/ledger`,
+      ).then((summary) => {
+        if (!alive) return;
+        if (!summary?.perGrantor) return; // unexpected shape — leave panel hidden
+        setExemption(summary.perGrantor);
+        setTotalConsumedByThisTrust(summary.perTrust[editing.id] ?? { client: 0, spouse: 0 });
+      }).catch(() => { /* panel stays hidden on failure */ });
+    }
     return () => { alive = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, editing?.id, clientId, refetchTick, accounts, liabilities, trustSubType, scenarioId]);
@@ -1427,7 +1440,9 @@ function toTransferSeries(all: GiftSeriesRow[], trustId: string): TransferSeries
  * one map. Rows with neither (cash gifts, and the auto-bundled liability child
  * of an asset transfer) have no source to key on and are dropped.
  *
- * `selectPriorDiscounts` owns which candidate wins — see its docstring.
+ * `selectPriorDiscounts` owns which candidate wins — see its docstring. Its
+ * "last listed wins" tiebreak leans on the order `/api/clients/[id]/gifts`
+ * returns rows in (`year, createdAt` ascending); do not reorder this list.
  */
 export function toDiscountCandidates(all: GiftRow[]): PriorDiscountCandidate[] {
   return all.flatMap((g) => {
