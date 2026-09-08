@@ -332,34 +332,36 @@ const BusinessDetailsForm = forwardRef<BusinessFormAutoSaveHandle, BusinessDetai
             Distribution &amp; tax policy
           </h3>
 
-          <div>
-            <label htmlFor="biz-distpct" className={fieldLabelClassName}>Distribution policy</label>
-            <PercentInput
-              id="biz-distpct"
-              value={distributionPolicyPct}
-              onChange={setDistributionPolicyPct}
-              placeholder="(no distribution)"
-            />
-            <p className="mt-1 text-xs text-ink-4">
-              Share of annual earnings paid out to owners. Leave blank for no distribution.
-            </p>
-          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="biz-distpct" className={fieldLabelClassName}>Distribution policy</label>
+              <PercentInput
+                id="biz-distpct"
+                value={distributionPolicyPct}
+                onChange={setDistributionPolicyPct}
+                placeholder="(no distribution)"
+              />
+              <p className="mt-1 text-xs text-ink-4">
+                Share of annual earnings paid out to owners. Leave blank for no distribution.
+              </p>
+            </div>
 
-          <div>
-            <label htmlFor="biz-tax" className={fieldLabelClassName}>Tax treatment</label>
-            <select
-              id="biz-tax"
-              value={taxTreatment}
-              onChange={(e) => setTaxTreatment(e.target.value as TaxTreatmentValue)}
-              className={selectClassName}
-            >
-              {TAX_TREATMENT_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-            <p className="mt-1 text-xs text-ink-4">
-              {TAX_TREATMENT_OPTIONS.find((o) => o.value === taxTreatment)?.hint}
-            </p>
+            <div>
+              <label htmlFor="biz-tax" className={fieldLabelClassName}>Tax treatment</label>
+              <select
+                id="biz-tax"
+                value={taxTreatment}
+                onChange={(e) => setTaxTreatment(e.target.value as TaxTreatmentValue)}
+                className={selectClassName}
+              >
+                {TAX_TREATMENT_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-ink-4">
+                {TAX_TREATMENT_OPTIONS.find((o) => o.value === taxTreatment)?.hint}
+              </p>
+            </div>
           </div>
         </section>
       </form>
