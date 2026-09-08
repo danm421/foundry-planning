@@ -22,6 +22,7 @@ export function buildGiftTaxDrillData(input: EstateDrillInput): DrillPageData {
   const spouseLabel = spouseName ?? "Spouse";
 
   const columns: DrillColumn[] = [
+    { key: "fullValueTransferred", header: "Full Value\nTransferred", width: 52 },
     { key: "giftsGiven",         header: "Gifts\nGiven",            width: 48 },
     { key: "taxableGiftsGiven",  header: "Taxable\nGifts",          width: 48 },
     { key: "clientCumulGifts",   header: `${clientLabel}\nCumul. Gifts`,    width: 48 },
@@ -46,6 +47,7 @@ export function buildGiftTaxDrillData(input: EstateDrillInput): DrillPageData {
     const c = g.perGrantor.client;
     const s = g.perGrantor.spouse;
     const cells: Record<string, number> = {
+      fullValueTransferred: g.fullValueTransferred,
       giftsGiven: g.giftsGiven,
       taxableGiftsGiven: g.taxableGiftsGiven,
       clientCumulGifts: c.cumulativeTaxableGifts,

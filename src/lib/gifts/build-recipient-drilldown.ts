@@ -7,7 +7,11 @@ import {
 
 export interface RecipientDrilldownRow {
   description: string;
+  /** Pre-discount fair market value transferred. */
   amount: number;
+  /** Valuation discount as a fraction; 0 when none applies. */
+  valuationDiscount: number;
+  /** Post-discount §2512 reportable value — what the exclusion nets against. */
   giftValue: number;
   exclusion: number;
   taxableGift: number;
@@ -215,7 +219,8 @@ export function buildRecipientDrilldown(
 
     addRow(rec, {
       description: describeCanonical(cg, input),
-      amount: cg.amount,
+      amount: cg.undiscountedAmount,
+      valuationDiscount: cg.valuationDiscount,
       giftValue: cg.amount,
       exclusion,
       taxableGift,

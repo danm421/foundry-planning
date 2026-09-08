@@ -39,7 +39,7 @@ export function GiftCumulativeTable({
   eventsByYear,
 }: GiftCumulativeTableProps) {
   const hasSpouse = ownerNames.spouseName !== null;
-  const colCount = hasSpouse ? 13 : 9;
+  const colCount = hasSpouse ? 14 : 10;
 
   return (
     <table className="w-full text-xs border-collapse">
@@ -47,6 +47,7 @@ export function GiftCumulativeTable({
         <tr className="border-b border-hair text-ink-3">
           <th className="text-left py-2 px-2">Year</th>
           <th className="text-left py-2 px-2">Age</th>
+          <th className="text-right py-2 px-2">Full Value Transferred</th>
           <th className="text-right py-2 px-2">Gifts Given</th>
           <th className="text-right py-2 px-2">Taxable Gifts Given</th>
           <th className="text-right py-2 px-2">
@@ -116,6 +117,9 @@ export function GiftCumulativeTable({
                   </span>
                 </td>
                 <td className="py-1.5 px-2">{ageStr}</td>
+                <td className="py-1.5 px-2 text-right">
+                  {fmt(row.fullValueTransferred)}
+                </td>
                 <td className="py-1.5 px-2 text-right">{fmt(row.giftsGiven)}</td>
                 <td className="py-1.5 px-2 text-right">
                   {fmt(row.taxableGiftsGiven)}
@@ -201,7 +205,8 @@ function DrilldownPanel({
             <thead>
               <tr className="text-ink-3 border-b border-hair">
                 <th className="text-left py-1 px-2">Description</th>
-                <th className="text-right py-1 px-2">Amount</th>
+                <th className="text-right py-1 px-2">Full Value</th>
+                <th className="text-right py-1 px-2">Discount</th>
                 <th className="text-right py-1 px-2">Gift Value</th>
                 <th className="text-right py-1 px-2">Exclusion</th>
                 <th className="text-right py-1 px-2">Taxable Gift</th>
@@ -212,6 +217,11 @@ function DrilldownPanel({
                 <tr key={i} className="border-b border-hair">
                   <td className="py-1 px-2">{r.description}</td>
                   <td className="py-1 px-2 text-right">{fmt(r.amount)}</td>
+                  <td className="py-1 px-2 text-right">
+                    {r.valuationDiscount > 0
+                      ? `${(r.valuationDiscount * 100).toFixed(0)}%`
+                      : "—"}
+                  </td>
                   <td className="py-1 px-2 text-right">{fmt(r.giftValue)}</td>
                   <td className="py-1 px-2 text-right">{fmt(r.exclusion)}</td>
                   <td className="py-1 px-2 text-right">
@@ -224,6 +234,7 @@ function DrilldownPanel({
                 <td className="py-1 px-2 text-right">
                   {fmt(g.subtotal.amount)}
                 </td>
+                <td className="py-1 px-2 text-right">—</td>
                 <td className="py-1 px-2 text-right">
                   {fmt(g.subtotal.giftValue)}
                 </td>

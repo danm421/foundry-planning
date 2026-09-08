@@ -49,6 +49,7 @@ function exhaustedLedger(year: number): GiftLedgerYear[] {
     {
       year,
       giftsGiven: 0,
+      fullValueTransferred: 0,
       taxableGiftsGiven: 0,
       perGrantor: {
         client: {

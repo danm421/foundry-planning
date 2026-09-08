@@ -19,7 +19,13 @@ export interface GrantorYearState {
 
 export interface GiftLedgerYear {
   year: number;
+  /** Post-discount §2512 reportable total — the "Gifts Given" figure. */
   giftsGiven: number;
+  /** Pre-discount fair market value transferred. Equals `giftsGiven` when no
+   *  gift that year carries a valuation discount. Reported as a companion
+   *  column so "$1,000,000 transferred / $700,000 of exemption used" reads
+   *  side by side. */
+  fullValueTransferred: number;
   taxableGiftsGiven: number;
   perGrantor: {
     client: GrantorYearState;
@@ -76,8 +82,13 @@ export function computeGiftLedger(input: GiftLedgerInput): GiftLedgerYear[] {
   // normalizer already applies the one-time-cash dedup the ledger needs — so
   // there is no separate gross-summing pass to keep in lockstep.
   const grossByYear = new Map<number, number>();
+  const fullValueByYear = new Map<number, number>();
   for (const cg of canonical) {
     grossByYear.set(cg.year, (grossByYear.get(cg.year) ?? 0) + cg.amount);
+    fullValueByYear.set(
+      cg.year,
+      (fullValueByYear.get(cg.year) ?? 0) + cg.undiscountedAmount,
+    );
   }
 
   let prevClient: GrantorYearState = {
@@ -105,6 +116,7 @@ export function computeGiftLedger(input: GiftLedgerInput): GiftLedgerYear[] {
     result.push({
       year,
       giftsGiven: grossByYear.get(year) ?? 0,
+      fullValueTransferred: fullValueByYear.get(year) ?? 0,
       taxableGiftsGiven,
       perGrantor: { client, ...(spouse ? { spouse } : {}) },
       totalGiftTax,

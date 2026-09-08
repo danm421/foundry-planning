@@ -179,6 +179,7 @@ describe("GiftSubForm", () => {
 const breachLedger: GiftLedgerYear[] = [{
   year: 2030,
   giftsGiven: 0,
+  fullValueTransferred: 0,
   taxableGiftsGiven: 0,
   perGrantor: {
     client: {

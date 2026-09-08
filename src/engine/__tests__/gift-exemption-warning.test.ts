@@ -6,6 +6,7 @@ function ledgerRow(over: Partial<GiftLedgerYear> = {}): GiftLedgerYear {
   return {
     year: 2030,
     giftsGiven: 0,
+    fullValueTransferred: 0,
     taxableGiftsGiven: 0,
     perGrantor: {
       client: {

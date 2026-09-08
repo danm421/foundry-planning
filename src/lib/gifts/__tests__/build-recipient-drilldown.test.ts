@@ -415,3 +415,60 @@ describe("buildRecipientDrilldown", () => {
     );
   });
 });
+
+describe("buildRecipientDrilldown — valuation discount", () => {
+  it("shows full value, the discount, and the reportable value on one row", () => {
+    const g: Gift = {
+      id: "g-d",
+      year: 2028,
+      amount: 1_000_000,
+      grantor: "client",
+      recipientEntityId: "ent-1",
+      useCrummeyPowers: false,
+      valuationDiscount: 0.3,
+    };
+    const [group] = buildRecipientDrilldown(baseInput({ gifts: [g] }));
+    const row = group.rows[0];
+    expect(row.amount).toBeCloseTo(1_000_000, 4);       // full value
+    expect(row.valuationDiscount).toBeCloseTo(0.3, 6);  // the discount
+    expect(row.giftValue).toBeCloseTo(700_000, 4);      // §2512 reportable
+    expect(row.taxableGift).toBeCloseTo(700_000, 4);
+  });
+
+  it("subtotals full value and reportable value independently", () => {
+    const g1: Gift = {
+      id: "g1",
+      year: 2028,
+      amount: 1_000_000,
+      grantor: "client",
+      recipientEntityId: "ent-1",
+      useCrummeyPowers: false,
+      valuationDiscount: 0.3,
+    };
+    const g2: Gift = {
+      id: "g2",
+      year: 2028,
+      amount: 200_000,
+      grantor: "client",
+      recipientEntityId: "ent-1",
+      useCrummeyPowers: false,
+    };
+    const [group] = buildRecipientDrilldown(baseInput({ gifts: [g1, g2] }));
+    expect(group.subtotal.amount).toBeCloseTo(1_200_000, 4);
+    expect(group.subtotal.giftValue).toBeCloseTo(900_000, 4);
+  });
+
+  it("reports a 0 discount and equal full/reportable values for an undiscounted gift", () => {
+    const g: Gift = {
+      id: "g-p",
+      year: 2028,
+      amount: 50_000,
+      grantor: "client",
+      recipientEntityId: "ent-1",
+      useCrummeyPowers: false,
+    };
+    const [group] = buildRecipientDrilldown(baseInput({ gifts: [g] }));
+    expect(group.rows[0].valuationDiscount).toBe(0);
+    expect(group.rows[0].amount).toBe(group.rows[0].giftValue);
+  });
+});

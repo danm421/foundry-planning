@@ -549,3 +549,38 @@ describe("computeGiftLedger — valuation discounts pool DISCOUNTED amounts", ()
     expect(y.perGrantor.client.taxableGiftsThisYear).toBeCloseTo(700_000, 6);
   });
 });
+
+describe("computeGiftLedger — fullValueTransferred", () => {
+  it("reports full value beside the discounted §2512 figure", () => {
+    const ledger = computeGiftLedger({
+      ...baseInput,
+      entities: [trustT1],
+      gifts: [
+        { id: "g-fv", year: 2026, amount: 1_000_000, grantor: "client",
+          recipientEntityId: "trust-1", useCrummeyPowers: false,
+          valuationDiscount: 0.3 },
+      ],
+    });
+    const y = ledger.find((r) => r.year === 2026)!;
+    expect(y.fullValueTransferred).toBeCloseTo(1_000_000, 6);
+    expect(y.giftsGiven).toBeCloseTo(700_000, 6);
+  });
+
+  it("equals giftsGiven when no gift carries a discount", () => {
+    const ledger = computeGiftLedger({
+      ...baseInput,
+      entities: [trustT1],
+      gifts: [
+        { id: "g-plain", year: 2026, amount: 500_000, grantor: "client",
+          recipientEntityId: "trust-1", useCrummeyPowers: false },
+      ],
+    });
+    const y = ledger.find((r) => r.year === 2026)!;
+    expect(y.fullValueTransferred).toBeCloseTo(y.giftsGiven, 6);
+  });
+
+  it("is 0 in a year with no gifts", () => {
+    const ledger = computeGiftLedger(baseInput);
+    for (const row of ledger) expect(row.fullValueTransferred).toBe(0);
+  });
+});

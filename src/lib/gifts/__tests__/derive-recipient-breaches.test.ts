@@ -6,6 +6,7 @@ import type { Gift } from "@/engine/types";
 const breachYear: GiftLedgerYear = {
   year: 2032,
   giftsGiven: 20_000_000,
+  fullValueTransferred: 20_000_000,
   taxableGiftsGiven: 19_980_000,
   perGrantor: {
     client: { taxableGiftsThisYear: 19_980_000, cumulativeTaxableGifts: 20_000_000, creditUsed: 7_637_800, giftTaxThisYear: 800_000, cumulativeGiftTax: 800_000 },

@@ -7,7 +7,7 @@ describe("computeExemptionSummary", () => {
       includeInPortfolio: false, isGrantor: false, beneficiaries: [] } as unknown as import("@/engine/types").EntitySummary;
     const summary = computeExemptionSummary({
       giftLedger: [
-        { year: 2030, giftsGiven: 100_000, taxableGiftsGiven: 100_000,
+        { year: 2030, giftsGiven: 100_000, fullValueTransferred: 100_000, taxableGiftsGiven: 100_000,
           perGrantor: { client: { taxableGiftsThisYear: 100_000, cumulativeTaxableGifts: 100_000, creditUsed: 0, giftTaxThisYear: 0, cumulativeGiftTax: 0 } },
           totalGiftTax: 0 },
       ],
@@ -29,7 +29,7 @@ describe("computeExemptionSummary", () => {
       beneficiaries: [] } as unknown as import("@/engine/types").EntitySummary;
     const summary = computeExemptionSummary({
       giftLedger: [
-        { year: 2030, giftsGiven: 70_000, taxableGiftsGiven: 70_000,
+        { year: 2030, giftsGiven: 70_000, fullValueTransferred: 100_000, taxableGiftsGiven: 70_000,
           perGrantor: { client: { taxableGiftsThisYear: 70_000, cumulativeTaxableGifts: 70_000, creditUsed: 0, giftTaxThisYear: 0, cumulativeGiftTax: 0 } },
           totalGiftTax: 0 },
       ],

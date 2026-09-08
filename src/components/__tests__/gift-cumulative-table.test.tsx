@@ -15,6 +15,7 @@ function empty(year: number, withSpouse = true): GiftLedgerYear {
   return {
     year,
     giftsGiven: 0,
+    fullValueTransferred: 0,
     taxableGiftsGiven: 0,
     perGrantor: {
       client: { ...zero },
@@ -128,6 +129,7 @@ describe("GiftCumulativeTable", () => {
                     {
                       description: "Gift 1",
                       amount: 50_000,
+                      valuationDiscount: 0,
                       giftValue: 50_000,
                       exclusion: 40_000,
                       taxableGift: 10_000,
@@ -148,5 +150,79 @@ describe("GiftCumulativeTable", () => {
     );
     expect(screen.getByText(/Caroline Sample/)).toBeInTheDocument();
     expect(screen.getByText("Gift 1")).toBeInTheDocument();
+  });
+
+  it("prints the drilldown discount as a whole percent and blanks the subtotal", () => {
+    const { container } = render(
+      <GiftCumulativeTable
+        ledger={[{ ...empty(2028), giftsGiven: 700_000, fullValueTransferred: 1_000_000 }]}
+        ownerNames={{ clientName: "Cooper", spouseName: "Susan" }}
+        ownerAges={{ 2028: { client: 53, spouse: 49 } }}
+        expandedYears={new Set([2028])}
+        onToggleYear={() => {}}
+        drilldownByYear={
+          new Map([
+            [
+              2028,
+              [
+                {
+                  label: "Sample Family ILIT",
+                  rows: [
+                    {
+                      description: "FLP interest",
+                      amount: 1_000_000,
+                      valuationDiscount: 0.3,
+                      giftValue: 700_000,
+                      exclusion: 0,
+                      taxableGift: 700_000,
+                    },
+                  ],
+                  subtotal: {
+                    amount: 1_000_000,
+                    giftValue: 700_000,
+                    exclusion: 0,
+                    taxableGift: 700_000,
+                  },
+                },
+              ],
+            ],
+          ])
+        }
+      />,
+    );
+    const [giftRow, subtotalRow] = Array.from(
+      container.querySelectorAll(".drilldown-recipient tbody tr"),
+    );
+    // Full Value | Discount | Gift Value sit at cell indexes 1..3. Assert the
+    // rendered text exactly — "300%" would still contain "30%".
+    const giftCells = Array.from(giftRow.querySelectorAll("td"));
+    expect(giftCells[1].textContent).toBe("$1,000,000");
+    expect(giftCells[2].textContent).toBe("30%");
+    expect(giftCells[3].textContent).toBe("$700,000");
+    // A percentage is not summable, so the subtotal leaves that cell blank.
+    const subtotalCells = Array.from(subtotalRow.querySelectorAll("td"));
+    expect(subtotalCells[1].textContent).toBe("$1,000,000");
+    expect(subtotalCells[2].textContent).toBe("\u2014");
+    expect(subtotalCells[3].textContent).toBe("$700,000");
+  });
+
+  it("renders the full value transferred beside the discounted gifts-given figure", () => {
+    render(
+      <GiftCumulativeTable
+        ledger={[{ ...empty(2028), giftsGiven: 700_000, fullValueTransferred: 1_000_000 }]}
+        ownerNames={{ clientName: "Cooper", spouseName: "Susan" }}
+        ownerAges={{ 2028: { client: 53, spouse: 49 } }}
+        expandedYears={new Set()}
+        onToggleYear={() => {}}
+        drilldownByYear={new Map()}
+      />,
+    );
+    expect(screen.getByText("Full Value Transferred")).toBeInTheDocument();
+    const cells = Array.from(
+      screen.getByTestId("gift-row-2028").querySelectorAll("td"),
+    );
+    // Year | Age | Full Value Transferred | Gifts Given
+    expect(cells[2].textContent?.trim()).toBe("$1,000,000");
+    expect(cells[3].textContent?.trim()).toBe("$700,000");
   });
 });

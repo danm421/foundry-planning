@@ -100,6 +100,7 @@ describe("GiftTaxReportView", () => {
     setProjectionResult([{
       year: 2032,
       giftsGiven: 20_000_000,
+      fullValueTransferred: 20_000_000,
       taxableGiftsGiven: 19_980_000,
       perGrantor: {
         client: {
