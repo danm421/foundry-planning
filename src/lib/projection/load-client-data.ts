@@ -73,6 +73,7 @@ import type {
 } from "@/engine/types";
 import { fanOutGiftSeries } from "@/engine/series-fanout";
 import { buildAnnualExclusionMap } from "@/lib/gifts/resolve-annual-exclusion";
+import { discountedGiftValue } from "@/lib/gifts/apply-valuation-discount";
 import type { AccountOwner, EntityOwner } from "@/engine/ownership";
 import { sortOwners } from "@/engine/ownership";
 import { dbRowToTaxYearParameters } from "@/lib/tax/dbMapper";
@@ -1154,12 +1155,19 @@ export const loadClientDataWithContext = cache(
     }
 
     // ── exemptionConsumed derived from gifts to each entity ──────────────────
+    // Discounted, so this display rollup agrees with the gift ledger. `amount`
+    // is NULL on asset/liability rows, so Number(null) === 0 keeps those at
+    // zero here exactly as before — they are valued in the ledger instead.
     const exemptionByEntity = new Map<string, number>();
     for (const g of giftRows) {
       if (!g.recipientEntityId) continue;
       exemptionByEntity.set(
         g.recipientEntityId,
-        (exemptionByEntity.get(g.recipientEntityId) ?? 0) + Number(g.amount),
+        (exemptionByEntity.get(g.recipientEntityId) ?? 0) +
+          discountedGiftValue(
+            Number(g.amount),
+            g.valuationDiscount != null ? Number(g.valuationDiscount) : null,
+          ),
       );
     }
 
@@ -1448,6 +1456,8 @@ export const loadClientDataWithContext = cache(
         recipientFamilyMemberId: g.recipientFamilyMemberId ?? undefined,
         recipientExternalBeneficiaryId: g.recipientExternalBeneficiaryId ?? undefined,
         useCrummeyPowers: g.useCrummeyPowers,
+        valuationDiscount:
+          g.valuationDiscount != null ? Number(g.valuationDiscount) : undefined,
       }));
 
     // ── Build giftEvents (discriminated union) ───────────────────────────────
@@ -1471,6 +1481,8 @@ export const loadClientDataWithContext = cache(
         // gets an offsetting credit.
         recipientEntityId: g.recipientEntityId ?? undefined,
         useCrummeyPowers: g.useCrummeyPowers ?? false,
+        valuationDiscount:
+          g.valuationDiscount != null ? Number(g.valuationDiscount) : undefined,
         eventKind: g.eventKind,
         sourceGiftId: g.id,
       }));
@@ -1485,6 +1497,8 @@ export const loadClientDataWithContext = cache(
         grantor: g.grantor as "client" | "spouse",
         recipientEntityId: g.recipientEntityId!,
         amountOverride: g.amount != null ? Number(g.amount) : undefined,
+        valuationDiscount:
+          g.valuationDiscount != null ? Number(g.valuationDiscount) : undefined,
         eventKind: g.eventKind,
         sourceGiftId: g.id,
       }));
@@ -1512,6 +1526,8 @@ export const loadClientDataWithContext = cache(
         grantor: g.grantor as "client" | "spouse",
         recipientEntityId: g.recipientEntityId!,
         amountOverride: g.amount != null ? Number(g.amount) : undefined,
+        valuationDiscount:
+          g.valuationDiscount != null ? Number(g.valuationDiscount) : undefined,
         eventKind: g.eventKind,
         sourceGiftId: g.id,
       }));
@@ -1543,6 +1559,8 @@ export const loadClientDataWithContext = cache(
           amountMode: (s.amountMode ?? "fixed") as "fixed" | "annual_exclusion",
           inflationAdjust: s.inflationAdjust,
           useCrummeyPowers: s.useCrummeyPowers,
+          valuationDiscount:
+            s.valuationDiscount != null ? Number(s.valuationDiscount) : undefined,
         },
         { cpi, exclusionByYear: giftExclusionByYear },
       ),

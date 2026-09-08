@@ -12,6 +12,8 @@ export interface GiftSeriesRow {
   amountMode: "fixed" | "annual_exclusion";
   inflationAdjust: boolean;
   useCrummeyPowers: boolean;
+  /** One discount for the whole series, applied to each yearly occurrence. */
+  valuationDiscount?: number;
   sourceAccountId?: string;
 }
 
@@ -43,6 +45,7 @@ export function fanOutGiftSeries(
       recipientExternalBeneficiaryId: series.recipientExternalBeneficiaryId,
       sourceAccountId: series.sourceAccountId,
       useCrummeyPowers: series.useCrummeyPowers,
+      valuationDiscount: series.valuationDiscount,
       seriesId: series.id,
     });
   }

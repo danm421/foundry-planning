@@ -67,6 +67,13 @@ export interface Gift {
   recipientExternalBeneficiaryId?: string;
   useCrummeyPowers: boolean;
   /**
+   * Lack-of-marketability / lack-of-control valuation discount as a fraction
+   * (0.3 = 30%). Applied ONCE, in `toCanonicalGifts`, before the gift-tax
+   * treatment sees a number — so the §2503(b) annual exclusion always lands on
+   * the discounted value. Absent/0 means no discount.
+   */
+  valuationDiscount?: number;
+  /**
    * Optional event kind for non-outright gifts. Set to
    * 'clt_remainder_interest' on the gift auto-emitted at CLT inception
    * (the present-value remainder portion that consumes lifetime exemption).
@@ -406,6 +413,8 @@ export type GiftEvent =
       /** Set on cash gifts auto-synthesized from a life-insurance policy whose
        *  premiumPayer ≠ owner. Used to strip + re-derive these idempotently. */
       sourcePolicyAccountId?: string;
+      /** Valuation discount as a fraction (0.3 = 30%). See `Gift.valuationDiscount`. */
+      valuationDiscount?: number;
       eventKind?: GiftEventKind;
     }
   | {
@@ -420,6 +429,10 @@ export type GiftEvent =
       recipientFamilyMemberId?: string;
       recipientExternalBeneficiaryId?: string;
       amountOverride?: number; // if advisor provided a manual amount
+      /** Valuation discount as a fraction. Applied to the resolved full value
+       *  (`amountOverride`, else `accountValueAtYear × percent`) — never to
+       *  `percent`, which stays the ownership fraction the balance sheet reads. */
+      valuationDiscount?: number;
       /** Originating gift row id. Lets a single gift's full event footprint be
        *  stripped surgically when that gift is edited/removed/toggled in the
        *  solver. Series occurrences use `seriesId`; bundled liabilities use
@@ -447,6 +460,10 @@ export type GiftEvent =
       grantor: "client" | "spouse";
       recipientEntityId: string; // receiving trust
       amountOverride?: number;
+      /** Valuation discount as a fraction. The FLP/LLC path is the flagship
+       *  case: `amount` is the full `businessValue × lostPct` and this is the
+       *  appraisal-supported discount against it. */
+      valuationDiscount?: number;
       /** Originating gift row id. Lets a single gift's full event footprint be
        *  stripped surgically when that gift is edited/removed/toggled in the
        *  solver. Series occurrences use `seriesId`; bundled liabilities use
