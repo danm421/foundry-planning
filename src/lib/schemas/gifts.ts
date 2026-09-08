@@ -19,6 +19,10 @@ const baseFields = {
   accountId: uuidSchema.optional().nullable(),
   liabilityId: uuidSchema.optional().nullable(),
   percent: z.number().gt(0).lte(1).optional().nullable(),
+  /** Lack-of-marketability / lack-of-control valuation discount, as a FRACTION
+   *  (0.3 = 30%). Range 0 ≤ d < 1 — mirrored by a table CHECK. Null/absent
+   *  means no discount. Never folded into `amount` or `percent`. */
+  valuationDiscount: z.number().gte(0).lt(1).optional().nullable(),
   parentGiftId: uuidSchema.optional().nullable(),
   useCrummeyPowers: z.boolean().optional().default(false),
   eventKind: z.enum(["outright", "clt_remainder_interest"]).optional().default("outright"),

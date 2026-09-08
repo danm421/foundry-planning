@@ -1794,6 +1794,12 @@ export const gifts = pgTable(
       onDelete: "cascade",
     }),
     percent: decimal("percent", { precision: 6, scale: 4 }),
+    /** Lack-of-marketability / lack-of-control valuation discount as a fraction
+     *  (0.3000 = 30%). NULL means no discount and is behaviourally identical to
+     *  0. Transfer-tax only: `amount` stays the FULL undiscounted value and
+     *  `percent` stays the ownership fraction — the discount is never folded
+     *  into either, and never reaches the recipient's balance sheet. */
+    valuationDiscount: decimal("valuation_discount", { precision: 6, scale: 4 }),
     parentGiftId: uuid("parent_gift_id"),
     useCrummeyPowers: boolean("use_crummey_powers").notNull().default(false),
     eventKind: giftEventKindEnum("event_kind").notNull().default("outright"),
@@ -1830,6 +1836,10 @@ export const gifts = pgTable(
         OR
         (${t.businessEntityId} IS NOT NULL AND ${t.percent} IS NOT NULL AND ${t.accountId} IS NULL AND ${t.liabilityId} IS NULL AND ${t.recipientEntityId} IS NOT NULL)
       )`,
+    ),
+    check(
+      "gifts_valuation_discount_range",
+      sql`${t.valuationDiscount} IS NULL OR (${t.valuationDiscount} >= 0 AND ${t.valuationDiscount} < 1)`,
     ),
   ],
 );
@@ -4026,6 +4036,9 @@ export const giftSeries = pgTable(
     endYear: integer("end_year").notNull(),
     endYearRef: yearRefEnum("end_year_ref"),
     annualAmount: decimal("annual_amount", { precision: 15, scale: 2 }).notNull(),
+    /** Valuation discount for the whole series as a fraction (0.3000 = 30%),
+     *  applied to each fanned-out yearly occurrence. NULL = no discount. */
+    valuationDiscount: decimal("valuation_discount", { precision: 6, scale: 4 }),
     amountMode: giftAmountModeEnum("amount_mode").notNull().default("fixed"),
     inflationAdjust: boolean("inflation_adjust").notNull().default(false),
     useCrummeyPowers: boolean("use_crummey_powers").notNull().default(false),
@@ -4044,6 +4057,10 @@ export const giftSeries = pgTable(
         (${t.recipientFamilyMemberId} IS NOT NULL)::int +
         (${t.recipientExternalBeneficiaryId} IS NOT NULL)::int
       ) = 1`,
+    ),
+    check(
+      "gift_series_valuation_discount_range",
+      sql`${t.valuationDiscount} IS NULL OR (${t.valuationDiscount} >= 0 AND ${t.valuationDiscount} < 1)`,
     ),
   ],
 );

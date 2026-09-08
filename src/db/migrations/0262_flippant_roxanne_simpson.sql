@@ -1,0 +1,4 @@
+ALTER TABLE "gift_series" ADD COLUMN "valuation_discount" numeric(6, 4);--> statement-breakpoint
+ALTER TABLE "gifts" ADD COLUMN "valuation_discount" numeric(6, 4);--> statement-breakpoint
+ALTER TABLE "gift_series" ADD CONSTRAINT "gift_series_valuation_discount_range" CHECK ("gift_series"."valuation_discount" IS NULL OR ("gift_series"."valuation_discount" >= 0 AND "gift_series"."valuation_discount" < 1));--> statement-breakpoint
+ALTER TABLE "gifts" ADD CONSTRAINT "gifts_valuation_discount_range" CHECK ("gifts"."valuation_discount" IS NULL OR ("gifts"."valuation_discount" >= 0 AND "gifts"."valuation_discount" < 1));

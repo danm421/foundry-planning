@@ -33,6 +33,9 @@ export const giftSeriesSchema = z
     endYear: year,
     endYearRef: yearRefSchema,
     annualAmount: z.number().gt(0),
+    /** Valuation discount for the whole series, as a FRACTION (0.3 = 30%).
+     *  Applied to each fanned-out yearly occurrence. */
+    valuationDiscount: z.number().gte(0).lt(1).optional().nullable(),
     inflationAdjust: z.boolean().default(false),
     useCrummeyPowers: z.boolean().default(false),
     notes: z.string().trim().nullish(),
@@ -69,6 +72,7 @@ export const giftSeriesUpdateSchema = z
     endYear: year.optional(),
     endYearRef: yearRefSchema.optional(),
     annualAmount: z.number().gt(0).optional(),
+    valuationDiscount: z.number().gte(0).lt(1).optional().nullable(),
     inflationAdjust: z.boolean().optional(),
     useCrummeyPowers: z.boolean().optional(),
     notes: z.string().trim().nullish(),
