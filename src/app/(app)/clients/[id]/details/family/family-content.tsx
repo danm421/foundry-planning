@@ -5,7 +5,6 @@ import {
   crmHouseholdContacts,
   familyMembers,
   entities,
-  entityOwners,
   externalBeneficiaries,
   beneficiaryDesignations,
   gifts,
@@ -13,7 +12,7 @@ import {
   taxYearParameters,
   scenarios as scenariosTable,
 } from "@/db/schema";
-import { eq, and, asc, inArray, notInArray } from "drizzle-orm";
+import { eq, and, asc, notInArray } from "drizzle-orm";
 import { buildAnnualExclusionMap } from "@/lib/gifts/resolve-annual-exclusion";
 import { getOrgId } from "@/lib/db-helpers";
 import FamilyView, {
@@ -27,7 +26,9 @@ import FamilyView, {
 } from "@/components/family-view";
 import OpenItemsPanel from "@/components/open-items/open-items-panel";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { loadActiveGiftChanges } from "@/lib/scenario/changes";
 import { buildFamilyPrimary } from "./family-primary";
+import { entitySummaryToRow, overlayScenarioGiftRows } from "./family-scenario-rows";
 import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
 import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
 
@@ -107,7 +108,7 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
       : scenarioRows.find((s) => s.id === (scenarioParam ?? "base"));
   if (!resolvedScenario) notFound();
 
-  const [giftSeriesRows, taxRows] = await Promise.all([
+  const [giftSeriesRows, taxRows, giftChanges] = await Promise.all([
     db
       .select()
       .from(giftSeries)
@@ -117,30 +118,22 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
       .select({ year: taxYearParameters.year, giftAnnualExclusion: taxYearParameters.giftAnnualExclusion })
       .from(taxYearParameters)
       .orderBy(asc(taxYearParameters.year)),
+    loadActiveGiftChanges(resolvedScenario.id),
   ]);
 
-  const entityIds = entityRows.map((e) => e.id);
-  const ownerRows = entityIds.length > 0
-    ? await db.select().from(entityOwners).where(inArray(entityOwners.entityId, entityIds))
-    : [];
-  // Polymorphic per-entity owner map. Rows have exactly one of
-  // familyMemberId / ownerEntityId populated (CHECK constraint).
-  const ownersByEntity = new Map<
-    string,
-    Array<
-      | { kind: "family_member"; familyMemberId: string; percent: number }
-      | { kind: "entity"; entityId: string; percent: number }
-    >
-  >();
-  for (const o of ownerRows) {
-    const arr = ownersByEntity.get(o.entityId) ?? [];
-    if (o.familyMemberId) {
-      arr.push({ kind: "family_member", familyMemberId: o.familyMemberId, percent: parseFloat(o.percent) });
-    } else if (o.ownerEntityId) {
-      arr.push({ kind: "entity", entityId: o.ownerEntityId, percent: parseFloat(o.percent) });
-    }
-    ownersByEntity.set(o.entityId, arr);
-  }
+  // The three `entities` columns the engine's EntitySummary doesn't carry.
+  // Keyed by id so a trust that exists only as a scenario change simply has no
+  // entry and falls back to the row builder's defaults.
+  const entityExtras = new Map(
+    entityRows.map((e) => [
+      e.id,
+      {
+        notes: e.notes ?? null,
+        owner: (e.owner as "client" | "spouse" | "joint" | null) ?? null,
+        beneficiaries: (e.beneficiaries as NamePctRow[] | null) ?? null,
+      },
+    ]),
+  );
 
   const members: FamilyMember[] = memberRows.map((m) => ({
     id: m.id,
@@ -155,37 +148,13 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
     claimedAsDependent: m.claimedAsDependent,
   }));
 
-  const ents: Entity[] = entityRows.map((e) => ({
-    id: e.id,
-    name: e.name,
-    entityType: e.entityType,
-    notes: e.notes ?? null,
-    includeInPortfolio: e.includeInPortfolio,
-    isGrantor: e.isGrantor,
-    value: String(e.value ?? "0"),
-    basis: String(e.basis ?? "0"),
-    owners: ownersByEntity.get(e.id) ?? [],
-    owner: (e.owner as "client" | "spouse" | "joint" | null) ?? null,
-    grantor: (e.grantor as "client" | "spouse" | null) ?? null,
-    beneficiaries: (e.beneficiaries as NamePctRow[] | null) ?? null,
-    // `revocable` is a deprecated DB-enum orphan no longer in the TrustSubType
-    // union (revocable trusts are modeled as a tag now). Legacy rows may still
-    // carry it — map it to null so it fits the narrowed Entity type.
-    trustSubType:
-      e.trustSubType != null && e.trustSubType !== "revocable" ? e.trustSubType : null,
-    isIrrevocable: e.isIrrevocable ?? null,
-    trustee: e.trustee ?? null,
-    trustEnds: (e.trustEnds as "client_death" | "spouse_death" | "survivorship" | null) ?? null,
-    distributionMode: (e.distributionMode as "fixed" | "pct_liquid" | "pct_income" | null) ?? null,
-    distributionAmount: e.distributionAmount != null ? parseFloat(String(e.distributionAmount)) : null,
-    distributionPercent: e.distributionPercent != null ? parseFloat(String(e.distributionPercent)) : null,
-    taxTreatment: e.taxTreatment ?? undefined,
-    distributionPolicyPercent: e.distributionPolicyPercent != null
-      ? Number(e.distributionPolicyPercent)
-      : null,
-    flowMode: e.flowMode,
-    valueGrowthRate: e.valueGrowthRate != null ? Number(e.valueGrowthRate) : null,
-  }));
+  // Sourced from the effective tree, not the `entities` table: that table has
+  // no scenario column, so a trust added in the solver and saved to a scenario
+  // would otherwise never appear here. The tree already carries the scenario's
+  // entity adds/edits/removes.
+  const ents: Entity[] = (effectiveTree.entities ?? [])
+    .map((e) => entitySummaryToRow(e, entityExtras.get(e.id)))
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   const externals: ExternalBeneficiary[] = externalRows.map((e) => ({
     id: e.id,
@@ -257,15 +226,17 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
     "partnership",
     "other",
   ]);
-  const fullBusinesses = entityRows
-    .filter((e) => BUSINESS_ENTITY_TYPES.has(e.entityType))
+  // Off the effective tree rather than `entityRows` so a business added in a
+  // scenario is assignable to a trust in that same scenario. Read from the tree
+  // (not `ents`) because EntitySummary.owners is already the narrow
+  // family_member | entity union the picker expects.
+  const fullBusinesses = (effectiveTree.entities ?? [])
+    .filter((e) => e.entityType != null && BUSINESS_ENTITY_TYPES.has(e.entityType))
     .map((e) => ({
       id: e.id,
-      name: e.name,
-      value: e.value != null ? parseFloat(String(e.value)) : 0,
-      // ownersByEntity rows are already polymorphic family_member | entity —
-      // matches the EntityOwner discriminated union the picker expects.
-      owners: ownersByEntity.get(e.id) ?? [],
+      name: e.name ?? "",
+      value: e.value ?? 0,
+      owners: e.owners ?? [],
     }));
 
   const designations: Designation[] = designationRows.map((d) => ({
@@ -283,7 +254,7 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
     sortOrder: d.sortOrder,
   }));
 
-  const giftsList = giftRows
+  const baseGiftsList = giftRows
     .filter((g) => g.parentGiftId == null) // hide auto-bundled liability child rows
     .map((g) => ({
       id: g.id,
@@ -299,7 +270,7 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
       notes: g.notes ?? null,
     }));
 
-  const giftSeriesList = giftSeriesRows.map((s) => ({
+  const baseGiftSeriesList = giftSeriesRows.map((s) => ({
     id: s.id,
     grantor: s.grantor as "client" | "spouse" | "joint",
     recipientEntityId: s.recipientEntityId,
@@ -312,6 +283,15 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
     inflationAdjust: s.inflationAdjust,
     useCrummeyPowers: s.useCrummeyPowers,
   }));
+
+  // Neither `gifts` nor a solver-saved gift lives in a scenario-scoped table the
+  // way `gift_series` does, so the scenario's own `gift` changes are overlaid on
+  // top — the same set the projection already counted.
+  const { gifts: giftsList, series: giftSeriesList } = overlayScenarioGiftRows(
+    baseGiftsList,
+    baseGiftSeriesList,
+    giftChanges,
+  );
 
   const planStartYear = effectiveTree.planSettings.planStartYear;
   const annualExclusionByYear = buildAnnualExclusionMap(
