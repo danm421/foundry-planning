@@ -25,6 +25,8 @@ describe("fanOutGiftSeries — valuationDiscount", () => {
 
   it("leaves the discount undefined when the series carries none", () => {
     const events = fanOutGiftSeries(base, { cpi: 0 });
+    // Without this the loop below is vacuous — an empty fan-out would pass.
+    expect(events).toHaveLength(4);
     for (const e of events) {
       if (e.kind === "cash") expect(e.valuationDiscount).toBeUndefined();
     }

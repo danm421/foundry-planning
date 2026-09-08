@@ -120,9 +120,14 @@ export default function GiftForm(props: GiftFormProps) {
 
   // ── Valuation discount ────────────────────────────────────────────────────
   // Held as WHOLE PERCENT for the input; stored on the draft as a fraction.
+  // Clamped to the SAME bound the input and the save guard use: storage accepts
+  // any d < 0.99995, so a row written elsewhere can carry more than the field
+  // can display. Unclamped, that seeds e.g. 99.5, fails
+  // `discountPct <= MAX_DISCOUNT_PCT`, and saves NULL while still showing
+  // 99.5% — silently clearing a filed §709 figure.
   const [discountPct, setDiscountPct] = useState<number>(() =>
     editing?.valuationDiscount != null
-      ? Math.round(editing.valuationDiscount * 10_000) / 100
+      ? Math.min(MAX_DISCOUNT_PCT, Math.round(editing.valuationDiscount * 10_000) / 100)
       : 0,
   );
   // Locks out the prefill below. True from the moment the advisor types — and

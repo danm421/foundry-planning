@@ -114,15 +114,17 @@ export function toCanonicalGifts(
     // §2503(b)), with no changes to compute-tax-treatment.ts.
     const normalizedDiscount = normalizeValuationDiscount(discount);
     const taxValue = discountedGiftValue(fullValue, discount);
-    // §2513 splits a joint gift into halves; both the taxed value and the
-    // reported full value split the same way.
-    const halves = grantor === "joint" ? 2 : 1;
-    for (const s of splitGrantor(grantor, taxValue)) {
+    // §2513 splits a joint gift; both the taxed value and the reported full
+    // value go through the SAME function, so they cannot drift if that rule
+    // ever changes. Re-deriving a divisor here would leave the two figures
+    // inconsistent while both still looked plausible.
+    const fullSplits = splitGrantor(grantor, fullValue);
+    for (const [i, s] of splitGrantor(grantor, taxValue).entries()) {
       out.push({
         ...base,
         grantor: s.grantor,
         amount: s.amount,
-        undiscountedAmount: fullValue / halves,
+        undiscountedAmount: fullSplits[i].amount,
         valuationDiscount: normalizedDiscount,
         entity,
         external,

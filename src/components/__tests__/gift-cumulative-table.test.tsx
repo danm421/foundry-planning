@@ -266,6 +266,56 @@ describe("GiftCumulativeTable", () => {
     expect(whole.querySelectorAll("td")[2].textContent).toBe("30%");
   });
 
+  it("surfaces an out-of-range discount instead of reading it as no discount", () => {
+    // The 0 <= d < 1 CHECK makes a negative unreachable today, so this pins
+    // WHICH WAY the guard fails. Under `> 0` a negative rendered as an em
+    // dash — "no discount" — beside a Gift Value LARGER than the Full Value.
+    // Bad data has to be visible, not disguised as clean data.
+    const { container } = render(
+      <GiftCumulativeTable
+        ledger={[{ ...empty(2028), giftsGiven: 1_200_000, fullValueTransferred: 1_000_000 }]}
+        ownerNames={{ clientName: "Cooper", spouseName: "Susan" }}
+        ownerAges={{ 2028: { client: 53, spouse: 49 } }}
+        expandedYears={new Set([2028])}
+        onToggleYear={() => {}}
+        drilldownByYear={
+          new Map([
+            [
+              2028,
+              [
+                {
+                  label: "Sample Family FLP",
+                  rows: [
+                    {
+                      description: "FLP interest",
+                      amount: 1_000_000,
+                      valuationDiscount: -0.2,
+                      giftValue: 1_200_000,
+                      exclusion: 0,
+                      taxableGift: 1_200_000,
+                    },
+                  ],
+                  subtotal: {
+                    amount: 1_000_000,
+                    giftValue: 1_200_000,
+                    exclusion: 0,
+                    taxableGift: 1_200_000,
+                  },
+                },
+              ],
+            ],
+          ])
+        }
+      />,
+    );
+    const [giftRow] = Array.from(
+      container.querySelectorAll(".drilldown-recipient tbody tr"),
+    );
+    const cell = giftRow.querySelectorAll("td")[2].textContent;
+    expect(cell).toBe("-20%");
+    expect(cell).not.toBe("\u2014");
+  });
+
   it("renders the full value transferred beside the discounted gifts-given figure", () => {
     render(
       <GiftCumulativeTable

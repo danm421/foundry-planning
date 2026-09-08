@@ -7,6 +7,7 @@ import { giftRowToDraft } from "@/lib/estate/estate-flow-gifts";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import type { GiftLedgerYear } from "@/engine/gift-ledger";
 import { beaForYear } from "@/lib/tax/estate";
+import { MAX_DISCOUNT_PCT } from "@/lib/gifts/apply-valuation-discount";
 
 const recipients = {
   trusts: [{ id: "t1", name: "Dynasty Trust" }],
@@ -106,9 +107,13 @@ describe("GiftForm — valuation discount", () => {
     expect((draft as Extract<EstateFlowGift, { kind: "asset-once" }>).percent).toBe(1);
 
     const preview = screen.getByTestId("discount-preview").textContent ?? "";
-    expect(preview).toContain("$1,000,000");
-    expect(preview).toContain("30%");
-    expect(preview).toContain("$700,000");
+    // Asserted exactly, not by substring: "0.30%" contains "30%" and
+    // "$1,000,000,000" contains "$1,000,000", so a toContain here would
+    // survive the fraction-vs-percent and x100 scale errors this whole
+    // surface exists to prevent.
+    expect(preview.replace(/\s+/g, " ").trim()).toBe(
+      "$1,000,000 interest · 30% discount · $700,000 uses exemption",
+    );
   });
 
   it("emits no discount at all when the field is left at zero", () => {
@@ -174,6 +179,38 @@ describe("GiftForm — valuation discount", () => {
     const onChange = renderForm({ editing: existing });
     const draft = lastDraft(onChange)!;
     expect(diffGifts([existing], [draft])).toEqual([]);
+  });
+
+  it("clamps a stored discount above the bound, so a save cannot silently clear it", () => {
+    // 0.9950 is legal at BOTH the API schema and the numeric(6,4) CHECK
+    // (0 <= d < 1), so it can reach this form on a row written by anything
+    // other than this branch's three UI writers. Unclamped, the seed reads
+    // 99.5, fails `discountPct <= MAX_DISCOUNT_PCT`, and puts `undefined` on
+    // the draft — which estate-flow-view PATCHes as `gift.valuationDiscount ??
+    // null`, i.e. NULL, while the field still displays 99.5%. That silently
+    // moves a filed 709 figure. The displayed value and the saved value must
+    // never disagree.
+    const existing = giftRowToDraft({
+      id: "g-high", year: 2030, amount: null, grantor: "client",
+      recipientEntityId: "t1", recipientFamilyMemberId: null,
+      recipientExternalBeneficiaryId: null, accountId: "acct-1", liabilityId: null,
+      businessEntityId: null, percent: "0.2500", useCrummeyPowers: false,
+      eventKind: "outright", valuationDiscount: "0.9950",
+    })!;
+    const onChange = renderForm({ editing: existing });
+
+    const input = screen.getByLabelText(/Valuation discount/i) as HTMLInputElement;
+    expect(input.value).toBe(String(MAX_DISCOUNT_PCT));
+
+    // What estate-flow-view actually sends on save.
+    const saved = lastDraft(onChange)!.valuationDiscount ?? null;
+    expect(saved).not.toBeNull();
+    // The saved fraction IS the displayed percent — not NULL, not the stored
+    // 0.995 the field can no longer show.
+    expect(saved).toBeCloseTo(Number(input.value) / 100, 6);
+    expect(screen.getByTestId("discount-preview").textContent).toContain(
+      `${input.value}% discount`,
+    );
   });
   it("clamps an out-of-range entry so the field and the saved value agree", () => {
     // NumberInput passes Number(e.target.value) straight through; min/max are

@@ -88,9 +88,16 @@ describe("giftRowToDraft / giftSeriesRowToDraft — valuationDiscount", () => {
   });
 
   it("leaves the discount undefined when the column is NULL", () => {
+    // All THREE branches, not just cash and series: the asset branch keeps its
+    // own copy of this ternary, so a `?? 0` slipping into it is invisible here
+    // without the middle case. (The JSON-absence half of the contract is
+    // pinned separately in estate-flow-gift-diff.test.ts.)
     expect(
       giftRowToDraft({ ...cashRow, valuationDiscount: null }),
     ).toMatchObject({ valuationDiscount: undefined });
+    expect(
+      giftRowToDraft({ ...assetRow, valuationDiscount: null }),
+    ).toMatchObject({ kind: "asset-once", valuationDiscount: undefined });
     expect(
       giftSeriesRowToDraft({ ...seriesRow, valuationDiscount: null }),
     ).toMatchObject({ valuationDiscount: undefined });

@@ -232,6 +232,26 @@ describe("toCanonicalGifts — discount edge cases", () => {
     ]);
   });
 
+  it("splits the full value on the SAME rule as the discounted amount", () => {
+    // Both figures must come out of `splitGrantor`, never from a re-derived
+    // "halves" factor. If the §2513 split rule ever changed, a re-derived
+    // divisor would leave `undiscountedAmount` inconsistent with `amount` —
+    // and BOTH would still look plausible, which is the failure shape this
+    // codebase is worst at catching. Asserted as a relationship, not as
+    // hard-coded halves, so it tracks the rule instead of restating it.
+    const out = toCanonicalGifts(
+      [{ id: "g", year: 2030, amount: 1_000_000, grantor: "joint",
+         recipientEntityId: "t-nc", useCrummeyPowers: false, valuationDiscount: 0.3 }],
+      [], ctx([nonCrummeyTrust()]),
+    );
+    expect(out).toHaveLength(2);
+    for (const c of out) {
+      expect(c.amount).toBeCloseTo(c.undiscountedAmount * (1 - c.valuationDiscount), 6);
+    }
+    // ...and the parts still add back up to the whole transfer.
+    expect(out.reduce((sum, c) => sum + c.undiscountedAmount, 0)).toBeCloseTo(1_000_000, 6);
+  });
+
   it("clamps a corrupt out-of-range discount to a $0 gift, never a negative one", () => {
     const [cg] = toCanonicalGifts(
       [{ id: "g", year: 2030, amount: 100_000, grantor: "client",

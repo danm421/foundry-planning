@@ -218,7 +218,11 @@ function DrilldownPanel({
                   <td className="py-1 px-2">{r.description}</td>
                   <td className="py-1 px-2 text-right">{fmt(r.amount)}</td>
                   <td className="py-1 px-2 text-right">
-                    {r.valuationDiscount > 0
+                    {/* `!== 0`, not `> 0`: the 0 <= d < 1 CHECK makes a
+                        negative impossible today, but if one ever lands here
+                        it must SHOW as bad data rather than read as "no
+                        discount" beside two currency cells that disagree. */}
+                    {r.valuationDiscount !== 0
                       ? `${+(r.valuationDiscount * 100).toFixed(2)}%`
                       : "—"}
                   </td>
