@@ -90,5 +90,12 @@ export const config: VercelConfig = {
       path: "/api/cron/ops-digest",
       schedule: "0 12 * * *",
     },
+    // "Why did you cancel?" note, ~24h after a trial is cancelled. Hourly so
+    // the delay stays close to 24h; most runs find nobody and send nothing.
+    // Inert until TRIAL_FEEDBACK_EMAIL_ENABLED=true -- see the route.
+    {
+      path: "/api/cron/trial-feedback",
+      schedule: "30 * * * *",
+    },
   ],
 };

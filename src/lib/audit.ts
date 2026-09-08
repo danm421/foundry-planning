@@ -259,6 +259,7 @@ export type AuditAction =
   | "billing.payment_failed"
   | "billing.payment_recovered"
   | "billing.email_queued"
+  | "billing.trial_feedback_sent"
   | "billing.dispute_created"
   | "billing.reconcile_healed"
   | "billing.access_denied"

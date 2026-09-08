@@ -1,7 +1,6 @@
 import { Resend } from "resend";
+import { FOUNDER_FROM, FOUNDER_REPLY_TO } from "@/lib/email/founder";
 
-const DEFAULT_FROM = "Dan Mueller <dan@foundryplanning.com>";
-const REPLY_TO = "dan@foundryplanning.com";
 const SUBJECT = "Welcome to Foundry Planning";
 
 /** Pure plain-text body for the signup welcome email. */
@@ -33,7 +32,7 @@ export async function sendWelcomeEmail(args: {
   firstName: string | null;
 }): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.WELCOME_EMAIL_FROM || DEFAULT_FROM;
+  const from = process.env.WELCOME_EMAIL_FROM || FOUNDER_FROM;
 
   if (!apiKey) {
     if (process.env.NODE_ENV === "development") {
@@ -47,7 +46,7 @@ export async function sendWelcomeEmail(args: {
     await resend.emails.send({
       from,
       to: args.to,
-      replyTo: REPLY_TO,
+      replyTo: FOUNDER_REPLY_TO,
       subject: SUBJECT,
       text: renderWelcomeText(args.firstName),
     });
