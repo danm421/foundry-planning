@@ -12,13 +12,14 @@
  * exercised manually in T23 (browser verification). Fetch mocks for two
  * endpoints in tandem are brittle and add little signal here.
  */
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import AddTrustForm from "../add-trust-form";
 import { designationsToRows, rowsToDesignationPayload, toDiscountCandidates } from "../add-trust-form";
 import { selectPriorDiscounts } from "@/lib/gifts/select-prior-discounts";
 import type { Entity } from "../../family-view";
 import type { Designation } from "../../family-view";
+import type { AssetsTabBusiness } from "../assets-tab";
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -764,5 +765,136 @@ describe("toDiscountCandidates", () => {
       giftRow({ id: "g2", year: 2035, accountId: "acct-1", valuationDiscount: null }),
     ];
     expect(selectPriorDiscounts(toDiscountCandidates(rows))).toEqual({ "acct-1": 0.3 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Assets tab → entity-assets API relay (Task 13)
+// ---------------------------------------------------------------------------
+
+const BUSINESS_ID = "biz-1";
+
+const BUSINESSES: AssetsTabBusiness[] = [
+  {
+    id: BUSINESS_ID,
+    name: "Acme Family LLC",
+    value: 1_000_000,
+    owners: [{ kind: "family_member", familyMemberId: "fm-c", percent: 1.0 }],
+  },
+];
+
+/**
+ * The last link in the FLP chain: the picker's op reaching the API body.
+ *
+ * Drives the REAL picker rather than calling `handleAssetTabOp` with a
+ * hand-built op — the wiring under test is exactly what a hand-built op would
+ * skip. The load-bearing assertion is that `percent` travels as a whole number
+ * (30) while `valuationDiscount` travels as a fraction (0.35): the two scales
+ * differ deliberately, and swapping them is the worst defect this surface has.
+ */
+describe("AddTrustForm — Assets tab relays the valuation discount (Task 13)", () => {
+  type GiftRowLike = Parameters<typeof toDiscountCandidates>[0][number];
+
+  function stubFetch(giftsResponse: GiftRowLike[] = []) {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (typeof url === "string" && url.endsWith("/gifts")) {
+        return { ok: true, json: () => Promise.resolve(giftsResponse) };
+      }
+      return { ok: true, json: () => Promise.resolve({ ok: true }) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  /** The parsed body of the POST to the entity-assets route. */
+  function assetsPostBody(fetchMock: ReturnType<typeof stubFetch>): Record<string, unknown> {
+    const call = fetchMock.mock.calls.find(
+      ([url]) =>
+        typeof url === "string" && url.includes(`/entities/${TRUST_ID}/assets`),
+    ) as [string, { body: string }] | undefined;
+    if (!call) throw new Error("no POST to the entity-assets route");
+    return JSON.parse(call[1].body) as Record<string, unknown>;
+  }
+
+  function pickTheBusiness() {
+    fireEvent.click(screen.getByRole("button", { name: "+ Add asset" }));
+    fireEvent.click(screen.getByLabelText("Select Acme Family LLC"));
+  }
+
+  it("sends the whole-number percent and the fractional discount in one body", async () => {
+    const fetchMock = stubFetch();
+    render(<AddTrustForm {...defaultProps("assets")} businesses={BUSINESSES} />);
+
+    pickTheBusiness();
+    fireEvent.change(screen.getByLabelText("Ownership percent"), {
+      target: { value: "30" },
+    });
+    fireEvent.change(screen.getByLabelText(/Valuation discount/i), {
+      target: { value: "35" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    // Both scales in ONE expectation, so swapping the two cannot pass: 30 in
+    // the fraction slot or 0.35 in the percent slot fails this single compare.
+    await waitFor(() =>
+      expect(assetsPostBody(fetchMock)).toEqual({
+        op: "add",
+        assetType: "entity",
+        assetId: BUSINESS_ID,
+        percent: 30,
+        valuationDiscount: 0.35,
+      }),
+    );
+  });
+
+  it("OMITS valuationDiscount entirely when the advisor leaves the field blank", async () => {
+    const fetchMock = stubFetch();
+    render(<AddTrustForm {...defaultProps("assets")} businesses={BUSINESSES} />);
+
+    pickTheBusiness();
+    fireEvent.change(screen.getByLabelText("Ownership percent"), {
+      target: { value: "30" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() =>
+      expect(assetsPostBody(fetchMock)).toEqual({
+        op: "add",
+        assetType: "entity",
+        assetId: BUSINESS_ID,
+        percent: 30,
+      }),
+    );
+    // Absent means absent — not null, not 0. `toEqual` above would let an
+    // explicit `undefined` through, so assert the key is missing outright.
+    expect("valuationDiscount" in assetsPostBody(fetchMock)).toBe(false);
+  });
+
+  it("seeds the picker from a prior discount on the same business", async () => {
+    // The Assets tab's own /gifts fetch feeds `priorDiscounts`; the picker
+    // reads it once, when the business is selected.
+    const fetchMock = stubFetch([
+      {
+        id: "g1", year: 2030, amount: "300000", grantor: "client",
+        recipientEntityId: TRUST_ID, accountId: null, liabilityId: null,
+        businessEntityId: BUSINESS_ID, percent: "0.3000", parentGiftId: null,
+        useCrummeyPowers: false, valuationDiscount: "0.2500", notes: null,
+      } as GiftRowLike,
+    ]);
+    render(<AddTrustForm {...defaultProps("assets")} businesses={BUSINESSES} />);
+
+    // Let the /gifts response land before opening the picker.
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    await act(async () => {});
+
+    pickTheBusiness();
+    expect(
+      (screen.getByLabelText(/Valuation discount/i) as HTMLInputElement).value,
+    ).toBe("25");
   });
 });
