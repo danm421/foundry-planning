@@ -39,6 +39,10 @@ export async function GET(
 
     const result = runProjectionWithEvents(data);
 
+    // Same resolver runProjectionWithEvents uses internally, so the trust
+    // dialog's exemption bar agrees with the gift ledger it sits beside.
+    const yearByYear = new Map(result.years.map((y) => [y.year, y]));
+
     // Rebuild the §2503(b) annual-exclusion map the SAME way the projection
     // does internally (same helper + inputs) so the per-trust exemption math
     // matches the ledger. `runProjectionWithEvents` consumes this map but does
@@ -58,6 +62,10 @@ export async function GET(
       giftEvents: data.giftEvents ?? [],
       entities: data.entities ?? [],
       annualExclusionsByYear,
+      // Params are named out in full: a bare `id` here would shadow the route's
+      // client id, which is in scope.
+      accountValueAtYear: (accountId: string, year: number) =>
+        yearByYear.get(year)?.accountLedgers?.[accountId]?.endingValue ?? 0,
       taxInflationRate,
       lifetimeExemptionCap: data.planSettings.lifetimeExemptionCap ?? null,
       hasSpouse: data.client.spouseDob != null,

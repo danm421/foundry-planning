@@ -9228,6 +9228,16 @@ export function runProjectionWithEvents(
   const firstIdx = years.findIndex((y) => y.estateTax?.deathOrder === 1);
   const secondIdx = years.findIndex((y) => y.estateTax?.deathOrder === 2);
   const annualExclusionsByYear = buildAnnualExclusionsMap(data.taxYearRows ?? [], data.planSettings);
+  // Value an account-percentage gift from the projection the caller just ran.
+  // `yearEndAccountBalances` inside runProjection is not in scope here, so read
+  // the per-year ledgers off the returned rows — the same shape the Gift Tax
+  // report resolver uses. A gift year before plan start, or an account not yet
+  // activated, has no ledger entry and correctly resolves to 0.
+  //
+  // An asset gift moves OWNERSHIP, not balance — `ownersForYear` rescales owner
+  // percentages and never touches accountBalances — so `endingValue` in the gift
+  // year is the whole account and `endingValue × percent` is the gift's value.
+  const yearByYear = new Map(years.map((y) => [y.year, y]));
   const giftLedger = computeGiftLedger({
     planStartYear: data.planSettings.planStartYear,
     planEndYear: data.planSettings.planEndYear,
@@ -9242,7 +9252,8 @@ export function runProjectionWithEvents(
     annualExclusionsByYear,
     taxInflationRate: data.planSettings.taxInflationRate ?? data.planSettings.inflationRate ?? 0,
     lifetimeExemptionCap: data.planSettings.lifetimeExemptionCap ?? null,
-    accountValueAtYear: () => 0,
+    accountValueAtYear: (id, y) =>
+      yearByYear.get(y)?.accountLedgers?.[id]?.endingValue ?? 0,
   });
   return {
     years,

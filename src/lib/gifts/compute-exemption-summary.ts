@@ -17,6 +17,14 @@ export interface ExemptionSummaryInput {
   giftEvents: GiftEvent[];
   entities: EntitySummary[];
   annualExclusionsByYear: Record<number, number>;
+  /**
+   * Resolver for an account's value in a given projection year, used to value
+   * account-percentage gifts. Required — a `() => 0` default silently reported
+   * $0 of trust exemption for every in-kind gift and contradicted the ledger on
+   * the same screen. Callers hold a projection; pass
+   * `(id, y) => years.find(...)?.accountLedgers?.[id]?.endingValue ?? 0`.
+   */
+  accountValueAtYear: (accountId: string, year: number) => number;
   taxInflationRate: number;
   lifetimeExemptionCap?: number | null;
   hasSpouse?: boolean;
@@ -37,7 +45,7 @@ export function computeExemptionSummary(input: ExemptionSummaryInput): Exemption
   const perTrust: ExemptionSummary["perTrust"] = {};
   const canonical = toCanonicalGifts(input.gifts, input.giftEvents, {
     entities: input.entities,
-    accountValueAtYear: () => 0,
+    accountValueAtYear: input.accountValueAtYear,
   });
   for (const cg of canonical) {
     if (!cg.recipientEntityId) continue;
