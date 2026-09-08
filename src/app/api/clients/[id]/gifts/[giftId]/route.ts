@@ -39,6 +39,7 @@ export async function PATCH(
       year?: number;
       amount?: number;
       percent?: number | null;
+      valuationDiscount?: number | null;
       grantor?: "client" | "spouse" | "joint";
       recipientEntityId?: string | null;
       recipientFamilyMemberId?: string | null;
@@ -123,6 +124,10 @@ export async function PATCH(
           ...(patch.amount !== undefined && { amount: String(patch.amount) }),
           ...(patch.percent !== undefined && {
             percent: patch.percent != null ? String(patch.percent) : null,
+          }),
+          ...(patch.valuationDiscount !== undefined && {
+            valuationDiscount:
+              patch.valuationDiscount != null ? String(patch.valuationDiscount) : null,
           }),
           ...(patch.grantor !== undefined && { grantor: patch.grantor }),
           ...(patch.recipientEntityId !== undefined && {

@@ -187,6 +187,8 @@ export async function POST(
           accountId: data.accountId ?? null,
           liabilityId: data.liabilityId ?? null,
           percent: data.percent != null ? String(data.percent) : null,
+          valuationDiscount:
+            data.valuationDiscount != null ? String(data.valuationDiscount) : null,
           parentGiftId: null,
           useCrummeyPowers: data.useCrummeyPowers ?? false,
           notes: data.notes ?? null,

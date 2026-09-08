@@ -24,6 +24,13 @@
  *  9. Past-dated asset transfer with linked liability updates both account_owners AND liability_owners.
  * 10. Drained-household guard — returns 500 when household owns 0 and transfer is attempted.
  * 11. Mid-stream household scaling — proportional preservation with client + spouse.
+ *
+ *  Valuation discount
+ * 12. POST asset transfer persists valuationDiscount as a fraction; percent untouched.
+ * 13. POST rejects a valuationDiscount of 1 with a 400.
+ * 14. POST rejects a negative valuationDiscount with a 400.
+ * 15. PATCH updates valuationDiscount; null clears it.
+ * 16. The gifts CHECK constraint rejects an out-of-range discount written past Zod.
  */
 import { readFileSync } from "node:fs";
 import { crmHouseholds, crmHouseholdContacts } from "@/db/schema";
@@ -689,6 +696,184 @@ d("PATCH /api/clients/[id]/gifts/[giftId]", () => {
       .from(gifts)
       .where(drizzleOrm.eq(gifts.id, parentRow.id));
     expect(parseFloat(parentAfter.percent!)).toBeCloseTo(0.6, 4);
+  });
+
+  // ── Valuation discount (Task 3) ───────────────────────────────────────────
+
+  /** A brokerage account has no linked liability, so an asset transfer against
+   *  it produces a single parent gift and no auto-bundled child row. */
+  async function seedBrokerage(clientId: string, scenarioId: string, name: string) {
+    const { db } = dbMod;
+    const { accounts } = schema;
+    const [account] = await db
+      .insert(accounts)
+      .values({
+        clientId,
+        scenarioId,
+        name,
+        category: "taxable" as const,
+        subType: "brokerage",
+        value: "100000",
+        basis: "80000",
+      })
+      .returning();
+    return account;
+  }
+
+  it("12. POST asset transfer with a valuation discount persists it as a fraction", async () => {
+    const { clientId, scenarioId, entityId } = await setupClient();
+    const { db } = dbMod;
+    const { gifts } = schema;
+    const account = await seedBrokerage(clientId, scenarioId, "Discounted LP Interest");
+
+    const res = await POST(
+      makePostReq(clientId, {
+        year: 2030,
+        grantor: "client",
+        recipientEntityId: entityId,
+        accountId: account.id,
+        percent: 0.25,
+        valuationDiscount: 0.3,
+      }) as never,
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(Number(body.valuationDiscount)).toBeCloseTo(0.3, 4);
+
+    const [row] = await db
+      .select()
+      .from(gifts)
+      .where(drizzleOrm.eq(gifts.id, body.id));
+    expect(Number(row.valuationDiscount)).toBeCloseTo(0.3, 4);
+    // The full undiscounted percent is untouched — the discount is never folded in.
+    expect(Number(row.percent)).toBeCloseTo(0.25, 4);
+  });
+
+  it("13. POST rejects a valuationDiscount of 1 with a 400", async () => {
+    const { clientId, scenarioId, entityId } = await setupClient();
+    const account = await seedBrokerage(clientId, scenarioId, "Full-discount LP");
+
+    const res = await POST(
+      makePostReq(clientId, {
+        year: 2030,
+        grantor: "client",
+        recipientEntityId: entityId,
+        accountId: account.id,
+        percent: 0.25,
+        valuationDiscount: 1,
+      }) as never,
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("14. POST rejects a negative valuationDiscount with a 400", async () => {
+    const { clientId, scenarioId, entityId } = await setupClient();
+    const account = await seedBrokerage(clientId, scenarioId, "Negative-discount LP");
+
+    const res = await POST(
+      makePostReq(clientId, {
+        year: 2030,
+        grantor: "client",
+        recipientEntityId: entityId,
+        accountId: account.id,
+        percent: 0.25,
+        valuationDiscount: -0.1,
+      }) as never,
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("15. PATCH updates valuationDiscount and null clears it", async () => {
+    const { clientId, scenarioId, entityId } = await setupClient();
+    const { db } = dbMod;
+    const { gifts } = schema;
+    const account = await seedBrokerage(clientId, scenarioId, "Patchable LP Interest");
+
+    const created = await POST(
+      makePostReq(clientId, {
+        year: 2030,
+        grantor: "client",
+        recipientEntityId: entityId,
+        accountId: account.id,
+        percent: 0.25,
+        valuationDiscount: 0.3,
+      }) as never,
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    expect(created.status).toBe(201);
+    const { id: giftId } = await created.json();
+
+    const bumped = await PATCH(
+      makePatchReq(clientId, giftId, { valuationDiscount: 0.45 }) as never,
+      { params: Promise.resolve({ id: clientId, giftId }) },
+    );
+    expect(bumped.status).toBe(200);
+    const [afterBump] = await db
+      .select()
+      .from(gifts)
+      .where(drizzleOrm.eq(gifts.id, giftId));
+    expect(Number(afterBump.valuationDiscount)).toBeCloseTo(0.45, 4);
+
+    // An untouched key must not be disturbed by the patch.
+    expect(Number(afterBump.percent)).toBeCloseTo(0.25, 4);
+
+    const cleared = await PATCH(
+      makePatchReq(clientId, giftId, { valuationDiscount: null }) as never,
+      { params: Promise.resolve({ id: clientId, giftId }) },
+    );
+    expect(cleared.status).toBe(200);
+    const [afterClear] = await db
+      .select()
+      .from(gifts)
+      .where(drizzleOrm.eq(gifts.id, giftId));
+    expect(afterClear.valuationDiscount).toBeNull();
+  });
+
+  it("16. The gifts CHECK constraint rejects an out-of-range discount written straight through drizzle", async () => {
+    const { clientId, entityId } = await setupClient();
+    const { db } = dbMod;
+    const { gifts } = schema;
+
+    // Deliberately bypasses Zod: this proves the DATABASE guard, so a later edit
+    // to the CHECK expression can't silently widen the range the column accepts.
+    const insertWithDiscount = (valuationDiscount: string) =>
+      db
+        .insert(gifts)
+        .values({
+          clientId,
+          year: 2030,
+          amount: "18000",
+          grantor: "client" as const,
+          recipientEntityId: entityId,
+          valuationDiscount,
+        })
+        .returning()
+        .execute();
+
+    /** Postgres names the violated constraint on the driver error; drizzle wraps
+     *  it, so the name lives on `.cause`, not in the wrapper's message. */
+    const expectRangeViolation = async (discount: string) => {
+      const err = await insertWithDiscount(discount).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect((err as { cause?: { constraint?: string } } | null)?.cause?.constraint).toBe(
+        "gifts_valuation_discount_range",
+      );
+    };
+
+    await expectRangeViolation("1.5");
+    await expectRangeViolation("-0.1");
+    // numeric(6,4) rounds 0.99995 up to 1.0000 BEFORE the CHECK runs — which is
+    // why the shared Zod bound is .lt(0.99995) rather than .lt(1).
+    await expectRangeViolation("0.99995");
+
+    // 0.9999 is the largest discount the column can hold below 1.
+    const [ok] = await insertWithDiscount("0.9999");
+    expect(Number(ok.valuationDiscount)).toBeCloseTo(0.9999, 4);
   });
 });
 

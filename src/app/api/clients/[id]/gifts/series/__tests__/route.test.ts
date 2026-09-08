@@ -16,6 +16,9 @@
  *   5. POST rejects endYear < startYear with 400.
  *   6. POST rejects revocable trust as recipient with 400.
  *   7. PATCH on a series owned by a different client returns 404.
+ *  (8-11 were added later and are not listed above.)
+ *  12. POST persists valuationDiscount; PATCH updates it and null clears it.
+ *  13. POST rejects an out-of-range valuationDiscount with 400; the DB CHECK backs it up.
  */
 import { readFileSync } from "node:fs";
 import { crmHouseholds, crmHouseholdContacts } from "@/db/schema";
@@ -745,5 +748,116 @@ d("gift_series CRUD", () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toBe("Recipient family member not found for this client");
+  });
+
+  it("12. POST persists valuationDiscount as a fraction; PATCH updates it and null clears it", async () => {
+    const { clientId, entityId } = await setupClient();
+    const { db } = dbMod;
+    const { giftSeries } = schema;
+
+    const res = await POST(
+      makePostReq(clientId, {
+        grantor: "client",
+        recipientEntityId: entityId,
+        startYear: 2026,
+        endYear: 2030,
+        annualAmount: 19000,
+        valuationDiscount: 0.35,
+      }) as never,
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    expect(res.status).toBe(201);
+    const { id: seriesId, ...body } = await res.json();
+    expect(Number(body.valuationDiscount)).toBeCloseTo(0.35, 4);
+
+    const read = async () => {
+      const [row] = await db
+        .select()
+        .from(giftSeries)
+        .where(drizzleOrm.eq(giftSeries.id, seriesId));
+      return row;
+    };
+
+    const created = await read();
+    expect(Number(created.valuationDiscount)).toBeCloseTo(0.35, 4);
+    // annualAmount stays the FULL undiscounted gift — the discount is never folded in.
+    expect(parseFloat(created.annualAmount)).toBeCloseTo(19000, 2);
+
+    const bumped = await PATCH(
+      makePatchReq(clientId, seriesId, { valuationDiscount: 0.2 }) as never,
+      { params: Promise.resolve({ id: clientId, seriesId }) },
+    );
+    expect(bumped.status).toBe(200);
+    const afterBump = await read();
+    expect(Number(afterBump.valuationDiscount)).toBeCloseTo(0.2, 4);
+    expect(parseFloat(afterBump.annualAmount)).toBeCloseTo(19000, 2);
+
+    const cleared = await PATCH(
+      makePatchReq(clientId, seriesId, { valuationDiscount: null }) as never,
+      { params: Promise.resolve({ id: clientId, seriesId }) },
+    );
+    expect(cleared.status).toBe(200);
+    expect((await read()).valuationDiscount).toBeNull();
+  });
+
+  it("13. POST rejects an out-of-range valuationDiscount with a 400, and the DB CHECK backs it up", async () => {
+    const { clientId, entityId, scenarioId } = await setupClient();
+    const { db } = dbMod;
+    const { giftSeries } = schema;
+
+    for (const bad of [1, -0.1]) {
+      const res = await POST(
+        makePostReq(clientId, {
+          grantor: "client",
+          recipientEntityId: entityId,
+          startYear: 2026,
+          endYear: 2030,
+          annualAmount: 19000,
+          valuationDiscount: bad,
+        }) as never,
+        { params: Promise.resolve({ id: clientId }) },
+      );
+      expect(res.status).toBe(400);
+    }
+
+    // Deliberately bypasses Zod: this proves the DATABASE guard, so a later edit
+    // to the CHECK expression can't silently widen the range the column accepts.
+    const insertWithDiscount = (valuationDiscount: string) =>
+      db
+        .insert(giftSeries)
+        .values({
+          clientId,
+          scenarioId,
+          grantor: "client" as const,
+          recipientEntityId: entityId,
+          startYear: 2026,
+          endYear: 2030,
+          annualAmount: "19000",
+          valuationDiscount,
+        })
+        .returning()
+        .execute();
+
+    /** Postgres names the violated constraint on the driver error; drizzle wraps
+     *  it, so the name lives on `.cause`, not in the wrapper's message. */
+    const expectRangeViolation = async (discount: string) => {
+      const err = await insertWithDiscount(discount).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect((err as { cause?: { constraint?: string } } | null)?.cause?.constraint).toBe(
+        "gift_series_valuation_discount_range",
+      );
+    };
+
+    await expectRangeViolation("1.5");
+    await expectRangeViolation("-0.1");
+    // numeric(6,4) rounds 0.99995 up to 1.0000 BEFORE the CHECK runs — which is
+    // why the shared Zod bound is .lt(0.99995) rather than .lt(1).
+    await expectRangeViolation("0.99995");
+
+    // 0.9999 is the largest discount the column can hold below 1.
+    const [ok] = await insertWithDiscount("0.9999");
+    expect(Number(ok.valuationDiscount)).toBeCloseTo(0.9999, 4);
   });
 });
