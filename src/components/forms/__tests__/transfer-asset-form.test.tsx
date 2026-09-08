@@ -213,16 +213,7 @@ describe("TransferAssetForm", () => {
     expect(screen.getByDisplayValue("100")).toBeInTheDocument();
   });
 
-  it("override amount field is disabled (reserved for future valuation-discount support)", () => {
-    // The override field is intentionally disabled — the API forces amount=null for asset
-    // transfers regardless of what the UI sends. Once the route honors overrideAmount,
-    // re-enable the input and update this test.
-    render(<TransferAssetForm {...defaultProps([{ id: "acc-submit", name: "Brokerage" }])} />);
-    const amountInput = screen.getByPlaceholderText(/e\.g\. 80,000/i);
-    expect(amountInput).toBeDisabled();
-  });
-
-  it("submits without amount when no override and year >= projectionStartYear", async () => {
+  it("submits without amount — the route forces amount=null on asset transfers", async () => {
     const mockFetch = vi.spyOn(global, "fetch").mockResolvedValue({
       ok: true,
       json: async () => ({}),
@@ -238,7 +229,6 @@ describe("TransferAssetForm", () => {
     };
     render(<TransferAssetForm {...props} />);
 
-    // Don't fill override amount — leave blank
     fireEvent.click(screen.getByRole("button", { name: /^Save$/i }));
 
     await waitFor(() => {
@@ -250,7 +240,7 @@ describe("TransferAssetForm", () => {
     expect(body.recipientEntityId).toBe(TRUST_ID);
     expect(body.accountId).toBe("acc-no-amount");
     expect(body.percent).toBeCloseTo(0.5);
-    // No override amount, year (2031) >= projectionStartYear (2026), so amount should be absent or null
+    // Asset transfers carry no dollar amount — the value comes from the account.
     expect(body.amount == null).toBe(true);
   });
 });

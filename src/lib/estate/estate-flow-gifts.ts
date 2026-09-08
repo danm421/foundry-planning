@@ -1,6 +1,7 @@
 import type { ClientData, Gift, GiftEvent, GiftEventKind } from "@/engine/types";
 import { fanOutGiftSeries } from "@/engine/series-fanout";
 import { buildAnnualExclusionMap } from "@/lib/gifts/resolve-annual-exclusion";
+import { selectPriorDiscounts } from "@/lib/gifts/select-prior-discounts";
 
 // ── Public model ─────────────────────────────────────────────────────────────
 
@@ -213,32 +214,23 @@ export function removeGift(gifts: EstateFlowGift[], id: string): EstateFlowGift[
  * Most-recent valuation discount per gift source, keyed by raw account id.
  * Feeds `GiftForm`'s prefill.
  *
- * A discount is stored per gift, never on the account or the entity: block size
- * legitimately changes the discount, and an entity-level value would silently
- * rewrite gifts already modeled or already filed on a Form 709. Prefill is the
- * UX mitigation — it is an INITIAL VALUE ONLY. The value stored on a gift is
- * always that gift's own, and editing the source gift never reaches back.
- *
- * Later gift years win. A later gift with NO discount does not clear an earlier
- * one — an advisor who left the field blank did not mean "the discount is gone".
- * Only `asset-once` gifts are considered: a discount is a property of a
- * fractional interest in a specific asset, so cash and series gifts have no
+ * The selection rule — and why prefill is an initial value only — lives in
+ * `selectPriorDiscounts`, shared with the trust dialog's asset-transfer form so
+ * the two surfaces can never disagree. This function is only the mapping into
+ * it: only `asset-once` gifts are candidates, because a discount is a property
+ * of a fractional interest in a specific asset and cash or series gifts have no
  * account to key on.
  */
 export function priorDiscountsBySource(
   gifts: EstateFlowGift[],
 ): Record<string, number> {
-  const best = new Map<string, { year: number; discount: number }>();
-  for (const g of gifts) {
-    if (g.kind !== "asset-once") continue;
-    if (g.valuationDiscount == null || g.valuationDiscount <= 0) continue;
-    const prev = best.get(g.accountId);
-    // `>=` so that, among gifts sharing a year, the last one listed wins.
-    if (prev == null || g.year >= prev.year) {
-      best.set(g.accountId, { year: g.year, discount: g.valuationDiscount });
-    }
-  }
-  return Object.fromEntries([...best].map(([k, v]) => [k, v.discount]));
+  return selectPriorDiscounts(
+    gifts.flatMap((g) =>
+      g.kind === "asset-once"
+        ? [{ key: g.accountId, year: g.year, discount: g.valuationDiscount ?? 0 }]
+        : [],
+    ),
+  );
 }
 
 // ── Materialisation ──────────────────────────────────────────────────────────

@@ -1,9 +1,12 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
-import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
+import {
+  discountedGiftValue,
+  MAX_DISCOUNT_PCT,
+} from "@/lib/gifts/apply-valuation-discount";
 import type { ClientMilestones, YearRef } from "@/lib/milestones";
 import { RETIREMENT_SUBTYPES } from "@/lib/ownership";
 import {
@@ -48,6 +51,9 @@ interface Props {
   projectionStartYear: number;
   /** Current calendar year — passed as a prop so tests can control it. */
   currentYear: number;
+  /** Most-recent discount per source, from `selectPriorDiscounts`. Seeds the
+   *  discount field only — never written back to the source gift. */
+  priorDiscounts?: Record<string, number>;
   onClose: () => void;
   onSaved: () => void;
 }
@@ -61,7 +67,9 @@ interface GiftPostBody {
   accountId: string;
   percent: number;
   notes: string | null;
-  amount?: number;
+  /** Valuation discount as a FRACTION (0.3 = 30%), never a dollar figure — a
+   *  percentage survives a change in the underlying asset value. */
+  valuationDiscount?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -69,6 +77,22 @@ interface GiftPostBody {
 // ---------------------------------------------------------------------------
 
 const RETIREMENT_SUBTYPES_SET = new Set<string>(RETIREMENT_SUBTYPES);
+
+/**
+ * Hold the typed discount inside [0, MAX_DISCOUNT_PCT] so the number the field
+ * shows is always the number that will be saved.
+ *
+ * `PercentInput` strips non-numeric characters but does not bound the value, so
+ * an unclamped "150" would read as 150% beside a preview while the save guard
+ * below silently dropped it. An in-range entry is returned verbatim so a
+ * half-typed "30." survives.
+ */
+function clampDiscountPct(raw: string): string {
+  const n = Number(raw);
+  if (raw === "" || !Number.isFinite(n)) return "";
+  if (n < 0) return "0";
+  return n > MAX_DISCOUNT_PCT ? String(MAX_DISCOUNT_PCT) : raw;
+}
 
 // ---------------------------------------------------------------------------
 // Component
@@ -83,6 +107,7 @@ export default function TransferAssetForm({
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   projectionStartYear,
   currentYear,
+  priorDiscounts,
   onClose,
   onSaved,
 }: Props) {
@@ -107,7 +132,8 @@ export default function TransferAssetForm({
   const [year, setYear] = useState(currentYear + 5);
   const [yearRef, setYearRef] = useState<YearRef | null>(null);
   const [grantor, setGrantor] = useState<"client" | "spouse">(trustGrantor);
-  const [overrideAmount, setOverrideAmount] = useState("");
+  const [discountPct, setDiscountPct] = useState("");
+  const [discountTouched, setDiscountTouched] = useState(false);
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -121,6 +147,33 @@ export default function TransferAssetForm({
       (Number(percent) / 100)
     );
   }, [account, year, percent, currentYear]);
+
+  // Prefill from the most recent discount used for this same account. Initial
+  // value only — the value saved on this gift is always this gift's own. The
+  // seed goes through the same clamp as typed input: the column accepts a
+  // wider range than the field does, and a seed the save guard would refuse
+  // would show a discount this form cannot store.
+  useEffect(() => {
+    if (discountTouched) return;
+    const prior = accountId ? priorDiscounts?.[accountId] : undefined;
+    setDiscountPct(
+      prior != null
+        ? clampDiscountPct(String(Math.round(prior * 10_000) / 100))
+        : "",
+    );
+  }, [accountId, discountTouched, priorDiscounts]);
+
+  const discountNum = Number(discountPct);
+  // `discountPct` is clamped on entry, so the upper test is belt-and-braces —
+  // it keeps a $0 gift unreachable if that clamp is ever loosened.
+  const discountFraction =
+    discountPct !== "" &&
+    Number.isFinite(discountNum) &&
+    discountNum > 0 &&
+    discountNum <= MAX_DISCOUNT_PCT
+      ? discountNum / 100
+      : undefined;
+  const discountedValue = discountedGiftValue(estimatedValue, discountFraction);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -138,11 +191,12 @@ export default function TransferAssetForm({
         notes: notes || null,
       };
 
-      // NOTE: The API route forces amount=null for asset transfers (accountId set).
-      // overrideAmount is reserved for future valuation-discount support (FLP, minority interest)
-      // and currently has no effect. Tracked in future-work/ui.md (2026-04-28).
-      if (overrideAmount) {
-        body.amount = Number(overrideAmount);
+      // The API route forces amount=null for asset transfers, so a reduced
+      // transfer-tax value is carried as a discount fraction against the
+      // resolved full value instead — never folded into `percent`, which stays
+      // the ownership share the trust actually receives.
+      if (discountFraction != null) {
+        body.valuationDiscount = discountFraction;
       }
 
       const res = await fetch(`/api/clients/${clientId}/gifts`, {
@@ -290,23 +344,35 @@ export default function TransferAssetForm({
         <span className="font-medium text-ink-2">
           ${estimatedValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
         </span>
+        {discountFraction != null && (
+          <span className="mt-0.5 block" data-testid="transfer-discounted-value">
+            After a {discountPct}% discount, uses{" "}
+            <span className="font-medium text-ink-2">
+              ${discountedValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+            </span>{" "}
+            of lifetime exemption
+          </span>
+        )}
       </div>
 
-      {/* Override amount */}
+      {/* Valuation discount */}
       <div>
-        <label htmlFor="transfer-amount" className={fieldLabelClassName}>
-          Override amount (optional)
+        <label htmlFor="transfer-discount" className={fieldLabelClassName}>
+          Valuation discount (optional)
         </label>
-        <CurrencyInput
-          id="transfer-amount"
-          value={overrideAmount}
-          onChange={setOverrideAmount}
-          placeholder="e.g. 80,000"
-          disabled
-          title="Reserved for future valuation-discount support — currently has no effect on asset transfers."
+        <PercentInput
+          id="transfer-discount"
+          value={discountPct}
+          onChange={(v) => {
+            setDiscountTouched(true);
+            setDiscountPct(clampDiscountPct(v));
+          }}
+          decimals={2}
+          placeholder="e.g. 30"
         />
         <p className="mt-1 text-[10px] text-ink-4">
-          Reserved for future valuation-discount support — currently has no effect on asset transfers.
+          Lack of marketability / lack of control, from the appraisal. The trust
+          still receives the full value — only the transfer-tax value is reduced.
         </p>
       </div>
 

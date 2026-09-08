@@ -26,6 +26,10 @@ import TransferCashForm from "./transfer-cash-form";
 import TransferSeriesForm from "./transfer-series-form";
 import SellToTrustDialog from "./sell-to-trust-dialog";
 import { useScenarioState } from "@/hooks/use-scenario-state";
+import {
+  selectPriorDiscounts,
+  type PriorDiscountCandidate,
+} from "@/lib/gifts/select-prior-discounts";
 import DialogShell from "../dialog-shell";
 import CltDetailsSection from "./clt-details-section";
 import CrtDetailsSection from "./crt-details-section";
@@ -311,6 +315,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
   const [transferEvents, setTransferEvents] = useState<TransferEvent[]>([]);
   const [transferSeries, setTransferSeries] = useState<TransferSeries[]>([]);
   const [transferFetchError, setTransferFetchError] = useState<string | null>(null);
+  const [transferPriorDiscounts, setTransferPriorDiscounts] = useState<Record<string, number>>({});
   // refetchTick is bumped after a successful save so the useEffect re-runs.
   const [refetchTick, setRefetchTick] = useState(0);
   const [exemption, setExemption] = useState<ExemptionDisplay>({});
@@ -324,7 +329,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
     // tab also needs inception-year gifts for the CLT funding picker).
     if (!editing) return;
     // Skip the fetch on Details tab for non-CLT trusts to avoid the network hit.
-    const needsGifts = activeTab === "transfers" || isSplitInterest;
+    const needsGifts = activeTab === "transfers" || activeTab === "assets" || isSplitInterest;
     if (!needsGifts) return;
     let alive = true;
     setTransferFetchError(null);
@@ -341,6 +346,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
       if (!alive) return;
       setTransferEvents(toTransferEvents(allGifts, editing.id, accounts ?? [], liabilities ?? []));
       setTransferSeries(toTransferSeries(allSeries, editing.id));
+      setTransferPriorDiscounts(selectPriorDiscounts(toDiscountCandidates(allGifts)));
     }).catch((err: Error) => {
       if (!alive) return;
       console.error("[transfers-tab] fetch failed:", err);
@@ -1166,6 +1172,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
             accounts={toAssetAccountOptions(accounts ?? [], editing.id)}
             currentYear={new Date().getFullYear()}
             projectionStartYear={new Date().getFullYear()}
+            priorDiscounts={transferPriorDiscounts}
             onClose={() => setOpenModal(null)}
             onSaved={() => {
               setOpenModal(null);
@@ -1288,9 +1295,12 @@ interface GiftRow {
   recipientEntityId: string | null;
   accountId: string | null;
   liabilityId: string | null;
+  businessEntityId: string | null;
   percent: string | null;
   parentGiftId: string | null;
   useCrummeyPowers: boolean;
+  /** Numeric column — a decimal string, e.g. "0.3000". */
+  valuationDiscount: string | null;
   notes: string | null;
 }
 
@@ -1405,6 +1415,28 @@ function toTransferSeries(all: GiftSeriesRow[], trustId: string): TransferSeries
       useCrummeyPowers: s.useCrummeyPowers,
       grantor: s.grantor === "joint" ? "client" : s.grantor,
     }));
+}
+
+/**
+ * Turn raw gift rows into valuation-discount prefill candidates.
+ *
+ * Keyed by the thing that was given away, not by the recipient: a discount
+ * belongs to a fractional interest in a source, so a discount taken on the
+ * family LLC for one trust is the right suggestion for the next. Business
+ * entities are namespaced `entity:<id>` so the two id spaces cannot collide in
+ * one map. Rows with neither (cash gifts, and the auto-bundled liability child
+ * of an asset transfer) have no source to key on and are dropped.
+ *
+ * `selectPriorDiscounts` owns which candidate wins — see its docstring.
+ */
+export function toDiscountCandidates(all: GiftRow[]): PriorDiscountCandidate[] {
+  return all.flatMap((g) => {
+    const key =
+      g.accountId ??
+      (g.businessEntityId != null ? `entity:${g.businessEntityId}` : null);
+    if (key == null) return [];
+    return [{ key, year: g.year, discount: Number(g.valuationDiscount ?? 0) }];
+  });
 }
 
 /**

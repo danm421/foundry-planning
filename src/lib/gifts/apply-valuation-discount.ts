@@ -30,6 +30,19 @@
  */
 
 /**
+ * Upper bound on a discount *input*, in whole percent — the shared clamp for
+ * every advisor-facing discount field.
+ *
+ * Not 100: Zod and the `numeric(6,4)` CHECK both reject `d >= 1`, and a 100%
+ * discount would make the gift worth $0. It sits below what storage would
+ * accept (`< 0.99995`) on purpose — every form clamps to the same number, so
+ * the value a field shows is always a value that round-trips. Do not raise it
+ * for one surface: a discount that one form can save and another cannot
+ * display is the defect this constant exists to prevent.
+ */
+export const MAX_DISCOUNT_PCT = 99;
+
+/**
  * Coerce an advisor-supplied discount into a usable fraction in `[0, 1]`.
  *
  * `null` / `undefined` / `0` / a negative / `NaN` / `±Infinity` all mean "no

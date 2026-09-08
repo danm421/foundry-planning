@@ -15,7 +15,8 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import AddTrustForm from "../add-trust-form";
-import { designationsToRows, rowsToDesignationPayload } from "../add-trust-form";
+import { designationsToRows, rowsToDesignationPayload, toDiscountCandidates } from "../add-trust-form";
+import { selectPriorDiscounts } from "@/lib/gifts/select-prior-discounts";
 import type { Entity } from "../../family-view";
 import type { Designation } from "../../family-view";
 
@@ -709,5 +710,59 @@ describe("designationsToRows + rowsToDesignationPayload round-trip", () => {
     expect(remainderRows).toHaveLength(1);
     expect(remainderRows[0].id).toBe("d6");
     expect(remainderRows[0].distributionForm).toBe("in_trust");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Valuation-discount prefill candidates
+// ---------------------------------------------------------------------------
+
+describe("toDiscountCandidates", () => {
+  type GiftRowLike = Parameters<typeof toDiscountCandidates>[0][number];
+
+  function giftRow(over: Partial<GiftRowLike> = {}): GiftRowLike {
+    return {
+      id: "g1", year: 2030, amount: null, grantor: "client",
+      recipientEntityId: "trust-1", accountId: null, liabilityId: null,
+      businessEntityId: null, percent: "0.2500", parentGiftId: null,
+      useCrummeyPowers: false, valuationDiscount: null, notes: null,
+      ...over,
+    } as GiftRowLike;
+  }
+
+  it("keys an account gift by its raw account id", () => {
+    expect(
+      toDiscountCandidates([giftRow({ accountId: "acct-1", valuationDiscount: "0.3000" })]),
+    ).toEqual([{ key: "acct-1", year: 2030, discount: 0.3 }]);
+  });
+
+  it("namespaces a business-entity gift as entity:<id>", () => {
+    // Task 13's asset picker reads this half of the map. Account ids and entity
+    // ids are separate id spaces, so an unprefixed entity key could collide.
+    expect(
+      toDiscountCandidates([
+        giftRow({ businessEntityId: "llc-1", valuationDiscount: "0.4000" }),
+      ]),
+    ).toEqual([{ key: "entity:llc-1", year: 2030, discount: 0.4 }]);
+  });
+
+  it("drops rows with no source to key on", () => {
+    // A cash gift, and the auto-bundled liability child of an asset transfer.
+    expect(
+      toDiscountCandidates([
+        giftRow({ id: "cash", amount: "10000", percent: null }),
+        giftRow({ id: "liab", liabilityId: "liab-1", parentGiftId: "g1" }),
+      ]),
+    ).toEqual([]);
+  });
+
+  it("feeds selectPriorDiscounts so a later blank discount does not clear an earlier one", () => {
+    // This is the expression the gift fetch actually runs. A NULL column has to
+    // arrive as 0, not NaN, for the shared rule to skip it rather than win.
+    const rows = [
+      giftRow({ id: "g1", year: 2030, accountId: "acct-1", valuationDiscount: "0.3000" }),
+      giftRow({ id: "g2", year: 2035, accountId: "acct-1", valuationDiscount: null }),
+    ];
+    expect(selectPriorDiscounts(toDiscountCandidates(rows))).toEqual({ "acct-1": 0.3 });
   });
 });

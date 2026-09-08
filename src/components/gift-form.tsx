@@ -7,7 +7,7 @@ import { checkExemptionImpact } from "@/engine/gift-exemption-warning";
 import type { ClientData } from "@/engine/types";
 import type { GiftLedgerYear } from "@/engine/gift-ledger";
 import type { EstateFlowGift, GiftGrantor, GiftRecipientRef } from "@/lib/estate/estate-flow-gifts";
-import { discountedGiftValue } from "@/lib/gifts/apply-valuation-discount";
+import { discountedGiftValue, MAX_DISCOUNT_PCT } from "@/lib/gifts/apply-valuation-discount";
 
 export interface GiftFormRecipients {
   /** Irrevocable trusts only. */
@@ -74,11 +74,6 @@ const recipientKey = (r: GiftRecipientRef) => `${r.kind}:${r.id}`;
 const MARKETABLE_SUBTYPES = new Set([
   "brokerage", "savings", "checking", "money_market", "cd", "hsa",
 ]);
-
-/** Upper bound on the discount input, in whole percent. Not 100: Zod and the
- *  `numeric(6,4)` CHECK both reject `d >= 1`, and a 100% discount would make
- *  the gift worth $0. */
-const MAX_DISCOUNT_PCT = 99;
 
 export default function GiftForm(props: GiftFormProps) {
   const { editing, sourceAccount, ledger, annualExclusionByYear } = props;
