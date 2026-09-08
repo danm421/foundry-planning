@@ -174,6 +174,14 @@ export default function GiftDialog(props: GiftDialogProps) {
         hasSpouse={props.hasSpouse}
         annualExclusionByYear={props.annualExclusionByYear}
         editing={initialDraft}
+        // Suppressed until the Family view carries the discount column:
+        // `AccountLite` has no `value` or `subType`, so the preview and the
+        // appraisal warning cannot work here, and `toEditingDraft` cannot
+        // read a saved discount — the field would show a flat "0%" over a
+        // gift that has one, which is a false figure in a transfer-tax
+        // dialog. Widening Gift / GiftSeriesLite / family-content's mappers
+        // is the follow-up that turns this back on.
+        showValuationDiscount={false}
         onChange={setDraft}
       />
       {error && <p data-testid="gift-error" className="mt-3 text-sm text-crit">{error}</p>}

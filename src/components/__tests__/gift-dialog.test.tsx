@@ -32,6 +32,17 @@ describe("GiftDialog", () => {
     expect([...grantor.options].map((o) => o.value)).not.toContain("joint");
   });
 
+  it("shows no valuation-discount field — this surface cannot round-trip one", () => {
+    // AccountLite carries no value/subType and toEditingDraft cannot read a
+    // saved discount, so the field would read a flat "0%" over a discounted
+    // gift. Suppressed until the Family view carries the column.
+    render(<GiftDialog {...baseProps} />);
+    fireEvent.change(screen.getByTestId("recipient"), { target: { value: "entity:t1" } });
+    expect(screen.queryByLabelText(/Valuation discount/i)).toBeNull();
+    fireEvent.click(screen.getByText("Recurring"));
+    expect(screen.queryByLabelText(/Valuation discount/i)).toBeNull();
+  });
+
   it("all recipients remain selectable when Recurring is selected (trust gate lifted)", () => {
     render(<GiftDialog {...baseProps} />);
     fireEvent.change(screen.getByTestId("recipient"), { target: { value: "entity:t1" } });

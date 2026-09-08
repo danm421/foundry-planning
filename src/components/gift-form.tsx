@@ -51,6 +51,13 @@ export interface GiftFormProps {
   /** Most-recent discount per account id, from `priorDiscountsBySource`. Seeds
    *  the discount field only — never written back to the source gift. */
   priorDiscounts?: Record<string, number>;
+  /** Opt OUT of the valuation-discount block (default: shown). A caller must
+   *  set this false when it cannot both supply account `value`/`subType` AND
+   *  round-trip a saved discount into `editing` — otherwise the field renders
+   *  "0%" over a gift that has a discount saved, with no preview and no
+   *  appraisal warning, which is a false figure in a transfer-tax dialog.
+   *  The Family view's GiftDialog is that caller today. */
+  showValuationDiscount?: boolean;
   /** Sandbox only — when present, render the exemption warning + enforce the plan-year window. */
   ledger?: GiftLedgerYear[];
   taxInflationRate?: number;
@@ -67,6 +74,11 @@ const recipientKey = (r: GiftRecipientRef) => `${r.kind}:${r.id}`;
 const MARKETABLE_SUBTYPES = new Set([
   "brokerage", "savings", "checking", "money_market", "cd", "hsa",
 ]);
+
+/** Upper bound on the discount input, in whole percent. Not 100: Zod and the
+ *  `numeric(6,4)` CHECK both reject `d >= 1`, and a 100% discount would make
+ *  the gift worth $0. */
+const MAX_DISCOUNT_PCT = 99;
 
 export default function GiftForm(props: GiftFormProps) {
   const { editing, sourceAccount, ledger, annualExclusionByYear } = props;
@@ -151,9 +163,13 @@ export default function GiftForm(props: GiftFormProps) {
 
   // Discount is offered for in-kind transfers, recurring series, and cash to a
   // trust — the three shapes where an appraised fractional interest is plausible.
-  const discountApplicable = effectiveInKind || effectiveRecurring || recipientIsTrust;
+  const discountApplicable =
+    (props.showValuationDiscount ?? true) &&
+    (effectiveInKind || effectiveRecurring || recipientIsTrust);
+  // `discountPct` is clamped on input, so the upper test is belt-and-braces —
+  // it keeps a $0 gift unreachable if that clamp is ever loosened.
   const discountFraction =
-    discountApplicable && discountPct > 0 && discountPct < 100
+    discountApplicable && discountPct > 0 && discountPct <= MAX_DISCOUNT_PCT
       ? discountPct / 100
       : undefined;
 
@@ -245,9 +261,14 @@ export default function GiftForm(props: GiftFormProps) {
   const breaches = useMemo<GiftWarningBreach[]>(() => {
     if (!ledger || !draft) return [];
 
-    // taxableContribution: cash → amount, asset → sourceAccount value × pct,
+    // taxableContribution: cash → amount, asset → selected account value × pct,
     // series → per-year annualAmount (preview the start year). Each is net of
     // any valuation discount — that is the figure that consumes exemption.
+    //
+    // `selectedAccount`, not `sourceAccount`: on the picker path (the add-gift
+    // dialog) there is no sourceAccount, so this read used to be $0 and the
+    // warning could never fire there — beside a discount preview quoting real
+    // dollars. Both now read the same account.
     let taxableContribution: number;
     let previewYear: number;
     if (draft.kind === "series") {
@@ -255,7 +276,7 @@ export default function GiftForm(props: GiftFormProps) {
       previewYear = draft.startYear;
     } else if (draft.kind === "asset-once") {
       taxableContribution = discountedGiftValue(
-        (sourceAccount?.value ?? 0) * draft.percent,
+        (selectedAccount?.value ?? 0) * draft.percent,
         draft.valuationDiscount,
       );
       previewYear = draft.year;
@@ -291,7 +312,7 @@ export default function GiftForm(props: GiftFormProps) {
       }
     }
     return out;
-  }, [ledger, draft, sourceAccount?.value, props.taxInflationRate]);
+  }, [ledger, draft, selectedAccount?.value, props.taxInflationRate]);
 
   return (
     <div className="space-y-4 text-sm">
@@ -434,9 +455,20 @@ export default function GiftForm(props: GiftFormProps) {
           <Field label="Valuation discount (%)">
             <NumberInput
               value={discountPct}
-              onChange={(n) => { setDiscountTouched(true); setDiscountPct(n); }}
+              onChange={(n) => {
+                setDiscountTouched(true);
+                // NumberInput hands back Number(e.target.value) unchanged, and
+                // min/max are HTML hints that constrain neither typing nor
+                // paste. Clamp here so the number shown is always the number
+                // that will be saved: an unclamped 150 reads as 150 while
+                // storing "no discount" — and on an edit that clears a
+                // discount already saved.
+                setDiscountPct(
+                  Number.isFinite(n) ? Math.min(MAX_DISCOUNT_PCT, Math.max(0, n)) : 0,
+                );
+              }}
               min={0}
-              max={99}
+              max={MAX_DISCOUNT_PCT}
             />
           </Field>
           {discountFraction != null && previewFullValue > 0 && (
