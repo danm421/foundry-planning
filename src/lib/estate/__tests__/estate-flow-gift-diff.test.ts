@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { diffGifts } from "../estate-flow-gift-diff";
-import type { EstateFlowGift } from "../estate-flow-gifts";
+import {
+  giftRowToDraft,
+  giftSeriesRowToDraft,
+  type EstateFlowGift,
+} from "../estate-flow-gifts";
 
 const g1: EstateFlowGift = {
   kind: "cash-once", id: "g1", year: 2030, amount: 50000,
@@ -62,5 +66,97 @@ describe("diffGifts", () => {
     const out = diffGifts([], [g1]);
     expect(typeof out[0].description).toBe("string");
     expect(out[0].description.length).toBeGreaterThan(0);
+  });
+});
+
+describe("diffGifts — valuationDiscount key-position contract", () => {
+  const cashDiscounted = giftRowToDraft({
+    id: "g-cash-d", year: 2030, amount: "1000000.00", grantor: "client",
+    recipientEntityId: "t1", recipientFamilyMemberId: null,
+    recipientExternalBeneficiaryId: null, accountId: null, liabilityId: null,
+    businessEntityId: null, percent: null, useCrummeyPowers: false,
+    eventKind: "outright", valuationDiscount: "0.3000",
+  })!;
+
+  const cashPlain = giftRowToDraft({
+    id: "g-cash-p", year: 2030, amount: "50000.00", grantor: "client",
+    recipientEntityId: null, recipientFamilyMemberId: "fm-kid",
+    recipientExternalBeneficiaryId: null, accountId: null, liabilityId: null,
+    businessEntityId: null, percent: null, useCrummeyPowers: false,
+    eventKind: "outright", valuationDiscount: null,
+  })!;
+
+  const assetDiscounted = giftRowToDraft({
+    id: "g-asset-d", year: 2031, amount: null, grantor: "spouse",
+    recipientEntityId: "t1", recipientFamilyMemberId: null,
+    recipientExternalBeneficiaryId: null, accountId: "acct-1", liabilityId: null,
+    businessEntityId: null, percent: "0.2500", useCrummeyPowers: false,
+    eventKind: "outright", valuationDiscount: "0.4500",
+  })!;
+
+  const assetPlain = giftRowToDraft({
+    id: "g-asset-p", year: 2031, amount: null, grantor: "client",
+    recipientEntityId: "t1", recipientFamilyMemberId: null,
+    recipientExternalBeneficiaryId: null, accountId: "acct-2", liabilityId: null,
+    businessEntityId: null, percent: "1.0000", useCrummeyPowers: false,
+    eventKind: "outright", valuationDiscount: null,
+  })!;
+
+  const seriesDiscounted = giftSeriesRowToDraft({
+    id: "s-d", grantor: "joint", recipientEntityId: "t1",
+    recipientFamilyMemberId: null, recipientExternalBeneficiaryId: null,
+    startYear: 2030, endYear: 2035, annualAmount: "100000.00",
+    amountMode: "fixed", inflationAdjust: true, useCrummeyPowers: true,
+    valuationDiscount: "0.2000",
+  });
+
+  const seriesPlain = giftSeriesRowToDraft({
+    id: "s-p", grantor: "client", recipientEntityId: "t1",
+    recipientFamilyMemberId: null, recipientExternalBeneficiaryId: null,
+    startYear: 2030, endYear: 2032, annualAmount: "19000.00",
+    amountMode: "annual_exclusion", inflationAdjust: false,
+    useCrummeyPowers: true, valuationDiscount: null,
+  });
+
+  const all = [
+    cashDiscounted, cashPlain,
+    assetDiscounted, assetPlain,
+    seriesDiscounted, seriesPlain,
+  ];
+
+  it("reports NO phantom edits for a mixed fixture of all three kinds", () => {
+    expect(diffGifts(all, all)).toEqual([]);
+  });
+
+  it("reports NO phantom edits when each gift is shallow-cloned", () => {
+    expect(diffGifts(all, all.map((g) => ({ ...g })))).toEqual([]);
+  });
+
+  it("still detects a real discount change as an update", () => {
+    const edited = all.map((g) =>
+      g.id === "g-asset-d" ? { ...g, valuationDiscount: 0.5 } : g,
+    );
+    const out = diffGifts(all, edited);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ op: "update", gift: { id: "g-asset-d" } });
+  });
+
+  it("detects adding a discount to a previously undiscounted gift", () => {
+    const edited = all.map((g) =>
+      g.id === "g-asset-p" ? { ...g, valuationDiscount: 0.25 } : g,
+    );
+    const out = diffGifts(all, edited);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ op: "update", gift: { id: "g-asset-p" } });
+  });
+
+  it("treats clearing a discount back to undefined as a return to the original", () => {
+    const bumped = all.map((g) =>
+      g.id === "g-asset-p" ? { ...g, valuationDiscount: 0.25 } : g,
+    );
+    const restored = bumped.map((g) =>
+      g.id === "g-asset-p" ? { ...g, valuationDiscount: undefined } : g,
+    );
+    expect(diffGifts(all, restored)).toEqual([]);
   });
 });
