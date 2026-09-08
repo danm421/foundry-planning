@@ -124,6 +124,26 @@ describe("diffGifts — valuationDiscount key-position contract", () => {
     seriesDiscounted, seriesPlain,
   ];
 
+  // The diff tests below all survive a mapper that emits no valuationDiscount at
+  // all: JSON.stringify drops an undefined value, and adding the key on only one
+  // side still changes the string. This test is what binds this block's name to
+  // the mappers — it goes red if the emission is moved off the end or removed.
+  it("emits valuationDiscount as the last key, and omits it entirely when NULL", () => {
+    for (const g of [cashDiscounted, assetDiscounted, seriesDiscounted]) {
+      expect(Object.keys(g).at(-1)).toBe("valuationDiscount");
+    }
+    expect(cashDiscounted.valuationDiscount).toBe(0.3);
+    expect(assetDiscounted.valuationDiscount).toBe(0.45);
+    expect(seriesDiscounted.valuationDiscount).toBe(0.2);
+    // A NULL DB value maps to undefined — never 0, never null — so the key
+    // vanishes from the JSON the diff compares. The asset branch keeps its own
+    // copy of this ternary, so all three kinds are checked.
+    for (const g of [cashPlain, assetPlain, seriesPlain]) {
+      expect(g.valuationDiscount).toBeUndefined();
+      expect(JSON.parse(JSON.stringify(g))).not.toHaveProperty("valuationDiscount");
+    }
+  });
+
   it("reports NO phantom edits for a mixed fixture of all three kinds", () => {
     expect(diffGifts(all, all)).toEqual([]);
   });
