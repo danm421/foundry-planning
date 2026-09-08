@@ -219,7 +219,7 @@ function DrilldownPanel({
                   <td className="py-1 px-2 text-right">{fmt(r.amount)}</td>
                   <td className="py-1 px-2 text-right">
                     {r.valuationDiscount > 0
-                      ? `${(r.valuationDiscount * 100).toFixed(0)}%`
+                      ? `${+(r.valuationDiscount * 100).toFixed(2)}%`
                       : "—"}
                   </td>
                   <td className="py-1 px-2 text-right">{fmt(r.giftValue)}</td>

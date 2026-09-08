@@ -206,6 +206,66 @@ describe("GiftCumulativeTable", () => {
     expect(subtotalCells[3].textContent).toBe("$700,000");
   });
 
+  it("renders a fractional discount at storage precision, without trailing zeros", () => {
+    // numeric(6,4) storage means a discount fraction carries at most two
+    // decimals of percent. 37.5% is the norm in an FLP/LLC appraisal, and the
+    // gift form previews it un-rounded — rounding to "38%" here would put the
+    // row $5,000 out against its own two currency cells.
+    const { container } = render(
+      <GiftCumulativeTable
+        ledger={[{ ...empty(2028), giftsGiven: 625_000, fullValueTransferred: 1_000_000 }]}
+        ownerNames={{ clientName: "Cooper", spouseName: "Susan" }}
+        ownerAges={{ 2028: { client: 53, spouse: 49 } }}
+        expandedYears={new Set([2028])}
+        onToggleYear={() => {}}
+        drilldownByYear={
+          new Map([
+            [
+              2028,
+              [
+                {
+                  label: "Sample Family FLP",
+                  rows: [
+                    {
+                      description: "FLP interest",
+                      amount: 1_000_000,
+                      valuationDiscount: 0.375,
+                      giftValue: 625_000,
+                      exclusion: 0,
+                      taxableGift: 625_000,
+                    },
+                    {
+                      description: "Second FLP interest",
+                      amount: 100_000,
+                      valuationDiscount: 0.3,
+                      giftValue: 70_000,
+                      exclusion: 0,
+                      taxableGift: 70_000,
+                    },
+                  ],
+                  subtotal: {
+                    amount: 1_100_000,
+                    giftValue: 695_000,
+                    exclusion: 0,
+                    taxableGift: 695_000,
+                  },
+                },
+              ],
+            ],
+          ])
+        }
+      />,
+    );
+    const [fractional, whole] = Array.from(
+      container.querySelectorAll(".drilldown-recipient tbody tr"),
+    );
+    // Assert EXACTLY: "38%" and "37.5%" both contain "3", so toContain is
+    // blind to the rounding defect this pins.
+    expect(fractional.querySelectorAll("td")[2].textContent).toBe("37.5%");
+    // The unary plus trims the trailing zeros .toFixed(2) would leave.
+    expect(whole.querySelectorAll("td")[2].textContent).toBe("30%");
+  });
+
   it("renders the full value transferred beside the discounted gifts-given figure", () => {
     render(
       <GiftCumulativeTable
