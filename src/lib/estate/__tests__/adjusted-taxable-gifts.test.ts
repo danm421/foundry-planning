@@ -339,3 +339,41 @@ describe("computeAdjustedTaxableGiftsByYear — unified", () => {
     expect(byYear).toEqual([{ year: 2030, amount: 12_000 }]); // 30k − 18k×1
   });
 });
+
+describe("computeAdjustedTaxableGifts — valuation discounts", () => {
+  it("adds back the DISCOUNTED value, not the full value, to the §2001(b) base", () => {
+    // The worked example: $1,000,000 interest, 30% discount, non-Crummey trust.
+    const total = computeAdjustedTaxableGifts(
+      "client",
+      [gift({ id: "g-disc", year: 2025, amount: 1_000_000,
+              recipientEntityId: "trust-1", valuationDiscount: 0.3 })],
+      [trust()],
+      ann,
+      noAccountValue,
+    );
+    expect(total).toBeCloseTo(700_000, 6);
+  });
+
+  it("tags the discounted amount to the right gift year for state lookback windows", () => {
+    const byYear = computeAdjustedTaxableGiftsByYear(
+      "client",
+      [gift({ id: "g-disc", year: 2026, amount: 1_000_000,
+              recipientEntityId: "trust-1", valuationDiscount: 0.3 })],
+      [trust()],
+      ann,
+      noAccountValue,
+    );
+    expect(byYear).toEqual([{ year: 2026, amount: 700_000 }]);
+  });
+
+  it("an undiscounted gift is unchanged", () => {
+    const total = computeAdjustedTaxableGifts(
+      "client",
+      [gift({ id: "g-plain", year: 2025, amount: 1_000_000, recipientEntityId: "trust-1" })],
+      [trust()],
+      ann,
+      noAccountValue,
+    );
+    expect(total).toBeCloseTo(1_000_000, 6);
+  });
+});

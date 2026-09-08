@@ -5,12 +5,25 @@ import {
   type GiftTreatment,
 } from "./compute-tax-treatment";
 import { crummeyBeneficiaryCount } from "./crummey-count";
+import {
+  discountedGiftValue,
+  normalizeValuationDiscount,
+} from "./apply-valuation-discount";
 
 export interface CanonicalGift {
   year: number;
   /** Joint gifts are already split into two half-gifts before this point. */
   grantor: "client" | "spouse";
+  /**
+   * Transfer-tax value AFTER any valuation discount — what
+   * `computeGiftTaxTreatment` consumes, and therefore what the §2503(b) annual
+   * exclusion is netted against.
+   */
   amount: number;
+  /** Pre-discount fair market value. Display / report only — never taxed. */
+  undiscountedAmount: number;
+  /** Normalized discount fraction in [0, 1]. 0 when no discount applies. */
+  valuationDiscount: number;
   recipientEntityId: string | null;
   recipientFamilyMemberId: string | null;
   recipientExternalBeneficiaryId: string | null;
@@ -76,10 +89,17 @@ export function toCanonicalGifts(
   const pushResolved = (
     base: Omit<
       CanonicalGift,
-      "grantor" | "amount" | "entity" | "crummeyBeneficiaryCount" | "external"
+      | "grantor"
+      | "amount"
+      | "undiscountedAmount"
+      | "valuationDiscount"
+      | "entity"
+      | "crummeyBeneficiaryCount"
+      | "external"
     >,
     grantor: "client" | "spouse" | "joint",
-    amount: number,
+    fullValue: number,
+    discount: number | null | undefined,
   ) => {
     const { entity, crummeyBeneficiaryCount: count } = resolveEntity(
       base.recipientEntityId,
@@ -88,11 +108,22 @@ export function toCanonicalGifts(
     const external = base.recipientExternalBeneficiaryId
       ? { kind: externalById.get(base.recipientExternalBeneficiaryId) ?? ("individual" as const) }
       : null;
-    for (const s of splitGrantor(grantor, amount)) {
+    // THE ONE PLACE the valuation discount is applied. It happens here — above
+    // `computeGiftTaxTreatment` — so every one of the seven treatment branches
+    // nets its exclusion against the already-discounted value (§2512 then
+    // §2503(b)), with no changes to compute-tax-treatment.ts.
+    const normalizedDiscount = normalizeValuationDiscount(discount);
+    const taxValue = discountedGiftValue(fullValue, discount);
+    // §2513 splits a joint gift into halves; both the taxed value and the
+    // reported full value split the same way.
+    const halves = grantor === "joint" ? 2 : 1;
+    for (const s of splitGrantor(grantor, taxValue)) {
       out.push({
         ...base,
         grantor: s.grantor,
         amount: s.amount,
+        undiscountedAmount: fullValue / halves,
+        valuationDiscount: normalizedDiscount,
         entity,
         external,
         crummeyBeneficiaryCount: count,
@@ -114,6 +145,7 @@ export function toCanonicalGifts(
       },
       g.grantor,
       g.amount,
+      g.valuationDiscount,
     );
   }
 
@@ -136,6 +168,7 @@ export function toCanonicalGifts(
         },
         ev.grantor,
         ev.amount,
+        ev.valuationDiscount,
       );
     } else if (ev.kind === "asset") {
       const value =
@@ -154,6 +187,7 @@ export function toCanonicalGifts(
         },
         ev.grantor,
         value,
+        ev.valuationDiscount,
       );
     } else if (ev.kind === "business_interest") {
       const value =
@@ -172,6 +206,7 @@ export function toCanonicalGifts(
         },
         ev.grantor,
         value,
+        ev.valuationDiscount,
       );
     }
     // `liability` events contribute 0 — skipped.

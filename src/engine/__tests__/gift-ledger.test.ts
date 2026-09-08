@@ -511,3 +511,41 @@ describe("computeGiftLedger — §2503(b) one exclusion per donee per year (BUG 
     expect(row.perGrantor.client.taxableGiftsThisYear).toBe(0);
   });
 });
+
+describe("computeGiftLedger — valuation discounts pool DISCOUNTED amounts", () => {
+  const kidFm = { id: "kid-1" };
+
+  it("two same-year gifts to one donee — one discounted, one not — share ONE exclusion on their discounted total", () => {
+    // $50,000 at a 40% discount → $30,000, plus a plain $20,000 → pooled $50,000.
+    // One 2026 exclusion of $19,000 → taxable $31,000.
+    // If the discount were applied inside the treatment function it would hit
+    // the pooled $70,000 instead and produce a different (wrong) number.
+    const ledger = computeGiftLedger({
+      ...baseInput,
+      gifts: [
+        { id: "g1", year: 2026, amount: 50_000, grantor: "client",
+          recipientFamilyMemberId: kidFm.id, useCrummeyPowers: false,
+          valuationDiscount: 0.4 },
+        { id: "g2", year: 2026, amount: 20_000, grantor: "client",
+          recipientFamilyMemberId: kidFm.id, useCrummeyPowers: false },
+      ],
+    });
+    const y = ledger.find((r) => r.year === 2026)!;
+    expect(y.perGrantor.client.taxableGiftsThisYear).toBeCloseTo(31_000, 6);
+  });
+
+  it("reports giftsGiven as the discounted (§2512-reportable) total", () => {
+    const ledger = computeGiftLedger({
+      ...baseInput,
+      entities: [trustT1],
+      gifts: [
+        { id: "g3", year: 2026, amount: 1_000_000, grantor: "client",
+          recipientEntityId: "trust-1", useCrummeyPowers: false,
+          valuationDiscount: 0.3 },
+      ],
+    });
+    const y = ledger.find((r) => r.year === 2026)!;
+    expect(y.giftsGiven).toBeCloseTo(700_000, 6);
+    expect(y.perGrantor.client.taxableGiftsThisYear).toBeCloseTo(700_000, 6);
+  });
+});
