@@ -63,9 +63,13 @@ describe("AssetPickerModal — valuation discount on the business branch", () =>
     fireEvent.change(screen.getByLabelText(/Valuation discount/i), { target: { value: "35" } });
     const preview = screen.getByTestId("picker-discount-preview").textContent ?? "";
     // 1,000,000 × 30% = 300,000 full → 195,000 after a 35% discount.
-    expect(preview).toContain("$300,000");
-    expect(preview).toContain("35%");
-    expect(preview).toContain("$195,000");
+    // Asserted exactly, not by substring: "0.35%" contains "35%" and
+    // "$300,000,000" contains "$300,000", so a toContain here would survive the
+    // fraction-vs-percent and ×100 scale errors this whole surface exists to
+    // prevent.
+    expect(preview.replace(/\s+/g, " ").trim()).toBe(
+      "$300,000 interest · 35% discount · $195,000 uses exemption",
+    );
   });
 
   it("passes the discount to onAdd as a fraction alongside the whole-number percent", () => {
