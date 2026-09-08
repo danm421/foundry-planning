@@ -28,6 +28,9 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { formatZodIssues } from "@/lib/schemas/common";
+// Body schema (and the shared valuationDiscount bound) live in lib/schemas so
+// they can join the cross-surface bounds guard table.
+import { assetOpSchema } from "@/lib/schemas/entity-assets";
 import { db } from "@/db";
 import {
   entities,
@@ -36,7 +39,6 @@ import {
   gifts,
 } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
-import { z } from "zod";
 import { requireOrgAndUser } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { requireClientEditAccess } from "@/lib/clients/authz";
@@ -53,38 +55,6 @@ const BUSINESS_TYPES = new Set([
   "c_corp",
   "partnership",
   "other",
-]);
-
-// Schema mirrors AssetTabOp from src/components/forms/asset-tab-ops.ts.
-// Percent comes in as 0-100 (matching the UI); we convert to fraction
-// internally before passing to the helper.
-const assetOpSchema = z.discriminatedUnion("op", [
-  z.object({
-    op: z.literal("add"),
-    assetType: z.enum(["account", "liability", "entity"]),
-    assetId: z.string().uuid(),
-    percent: z.number().min(0).max(100),
-    // NOTE the scale mismatch, which is deliberate: `percent` is 0-100 here for
-    // historical reasons, while `valuationDiscount` is a FRACTION (0.3 = 30%)
-    // matching the gifts.valuation_discount column and every other surface.
-    valuationDiscount: z.number().gte(0).lt(1).optional(),
-  }),
-  z.object({
-    op: z.literal("remove"),
-    assetType: z.enum(["account", "liability", "entity"]),
-    assetId: z.string().uuid(),
-  }),
-  z.object({
-    op: z.literal("set-percent"),
-    assetType: z.enum(["account", "liability", "entity"]),
-    assetId: z.string().uuid(),
-    percent: z.number().min(0).max(100),
-    // Currently UNREACHABLE: every `set-percent` on an entity is rejected with
-    // an unconditional 400 below, before this field is ever read. Kept for
-    // union symmetry with `AssetTabOp`, so that when set-percent is wired the
-    // discount arrives with it rather than being a second migration.
-    valuationDiscount: z.number().gte(0).lt(1).optional(),
-  }),
 ]);
 
 export async function POST(
@@ -299,6 +269,9 @@ export async function POST(
         businessId,
         trustId,
         requestedPercent: percentFraction,
+        // The one new value this mutation writes that moves lifetime-exemption
+        // consumption — audited alongside the percent it rides with.
+        valuationDiscount: op.op === "add" ? op.valuationDiscount ?? null : null,
         appliedDebit: result.appliedDebit,
         isIrrevocable: trust.isIrrevocable ?? false,
         familyLossCount: result.familyLosses.length,

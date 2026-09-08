@@ -870,8 +870,12 @@ describe("AddTrustForm — Assets tab relays the valuation discount (Task 13)", 
         percent: 30,
       }),
     );
-    // Absent means absent — not null, not 0. `toEqual` above would let an
-    // explicit `undefined` through, so assert the key is missing outright.
+    // Absent means absent: the `toEqual` above already rejects a null or a 0.
+    // This line documents the intent on the parsed body and nothing more — it
+    // cannot fail where that `toEqual` passes, because the body was serialized
+    // by JSON.stringify, which drops an undefined-valued key before we see it.
+    // An explicitly-undefined `valuationDiscount` is therefore indistinguishable
+    // from an omitted one on the wire, and both are correct.
     expect("valuationDiscount" in assetsPostBody(fetchMock)).toBe(false);
   });
 

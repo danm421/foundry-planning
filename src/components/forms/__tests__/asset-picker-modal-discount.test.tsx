@@ -33,6 +33,10 @@ function open(over: Partial<React.ComponentProps<typeof AssetPickerModal>> = {})
       accounts={[]}
       liabilities={[]}
       businesses={businesses}
+      // The discount field is only offered for an irrevocable recipient, since
+      // only that transfer is a completed gift. These cases are all about the
+      // field itself, so they declare it; the gate has its own cases below.
+      entityIsIrrevocable
       onClose={vi.fn()}
       onAdd={onAdd}
       {...over}
@@ -136,6 +140,59 @@ describe("AssetPickerModal — valuation discount on the business branch", () =>
       assetId: "biz-1",
       percent: 100,
       valuationDiscount: 0.99,
+    });
+  });
+});
+
+// ── The field is only offered where the transfer is a completed gift ─────────
+// The route writes a §709 gift row only when the receiving trust is
+// irrevocable. Offering the field on a revocable trust would show a real
+// "uses exemption" figure for a discount the route then silently discards.
+
+describe("AssetPickerModal — the discount field follows the recipient's irrevocability", () => {
+  it("does NOT offer a discount on a REVOCABLE trust", () => {
+    open({ entityIsIrrevocable: false });
+    fireEvent.click(screen.getByLabelText("Select Acme Family LLC"));
+    // The percent step is still reached — only the discount block is gone.
+    expect(screen.getByText("Set Ownership Percent")).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Valuation discount/i)).toBeNull();
+  });
+
+  it("DOES offer a discount on an irrevocable trust", () => {
+    open({ entityIsIrrevocable: true });
+    fireEvent.click(screen.getByLabelText("Select Acme Family LLC"));
+    expect(screen.getByLabelText(/Valuation discount/i)).toBeInTheDocument();
+  });
+
+  it("hides the field by default, so a caller cannot promise exemption savings by omission", () => {
+    render(
+      <AssetPickerModal
+        entityId={TRUST_ID}
+        accounts={[]}
+        liabilities={[]}
+        businesses={businesses}
+        onClose={vi.fn()}
+        onAdd={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText("Select Acme Family LLC"));
+    expect(screen.queryByLabelText(/Valuation discount/i)).toBeNull();
+  });
+
+  it("emits no valuationDiscount on a revocable trust even if one was seeded", () => {
+    // priorDiscounts seeds `discountStr` inside selectItem regardless of the
+    // gate, so this pins that the hidden value cannot ride out on the op.
+    const onAdd = open({
+      entityIsIrrevocable: false,
+      priorDiscounts: { "entity:biz-1": 0.25 },
+    });
+    fireEvent.click(screen.getByLabelText("Select Acme Family LLC"));
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    expect(onAdd).toHaveBeenCalledWith({
+      type: "add",
+      assetType: "entity",
+      assetId: "biz-1",
+      percent: 100,
     });
   });
 });

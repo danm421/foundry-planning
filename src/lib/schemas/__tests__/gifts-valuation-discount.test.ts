@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { giftCreateSchema, giftUpdateSchema } from "../gifts";
 import { giftSeriesSchema, giftSeriesUpdateSchema } from "../gift-series";
+import { assetOpSchema } from "../entity-assets";
 
 const TRUST = "11111111-1111-4111-8111-111111111111";
 const ACCOUNT = "22222222-2222-4222-8222-222222222222";
@@ -11,6 +12,18 @@ const assetGift = (over: Record<string, unknown> = {}) => ({
   recipientEntityId: TRUST,
   accountId: ACCOUNT,
   percent: 0.25,
+  ...over,
+});
+
+/** Body of POST /api/clients/[id]/entities/[entityId]/assets — the FLP path,
+ *  which writes a §709 gift row of its own. `percent` is 0-100 on this surface
+ *  (the UI scale), unlike the 0-1 fraction the gift schemas take; the discount
+ *  is a fraction on both. */
+const entityAssetOp = (over: Record<string, unknown> = {}) => ({
+  op: "add" as const,
+  assetType: "entity" as const,
+  assetId: ACCOUNT,
+  percent: 30,
   ...over,
 });
 
@@ -32,6 +45,13 @@ const schemas: ReadonlyArray<readonly [string, (d: unknown) => boolean]> = [
   ["giftUpdateSchema", (d) => giftUpdateSchema.safeParse({ valuationDiscount: d }).success],
   ["giftSeriesSchema", (d) => giftSeriesSchema.safeParse(series({ valuationDiscount: d })).success],
   ["giftSeriesUpdateSchema", (d) => giftSeriesUpdateSchema.safeParse({ valuationDiscount: d }).success],
+  // Both discount-carrying members of the entity-assets union. `set-percent` is
+  // currently unreachable at the route (an unconditional 400), but it declares
+  // the field separately from `add`, and separate declarations are exactly what
+  // this table exists to keep from drifting apart.
+  ["assetOpSchema (add)", (d) => assetOpSchema.safeParse(entityAssetOp({ valuationDiscount: d })).success],
+  ["assetOpSchema (set-percent)", (d) =>
+    assetOpSchema.safeParse(entityAssetOp({ op: "set-percent", valuationDiscount: d })).success],
 ];
 
 describe.each(schemas)("%s — valuationDiscount bounds", (_name, parse) => {

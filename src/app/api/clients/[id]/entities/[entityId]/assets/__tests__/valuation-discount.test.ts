@@ -257,9 +257,27 @@ d("POST .../entities/[entityId]/assets — valuation discount", () => {
     expect(Number(rows[0].amount)).toBeCloseTo(300_000, 2);
     expect(Number(rows[0].percent)).toBeCloseTo(0.3, 4);
     expect(Number(rows[0].valuationDiscount)).toBeCloseTo(0.35, 4);
+
+    // Audited too. The discount is the one value this mutation writes that
+    // changes lifetime-exemption consumption, so it belongs in the record.
+    const { recordAudit } = await import("@/lib/audit");
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({ valuationDiscount: 0.35 }),
+      }),
+    );
   });
 
-  it("rejects a valuationDiscount of 1 with a 400", async () => {
+  // 400, never 500: an out-of-range discount must be refused by the schema, not
+  // by the column. 0.99995 is the trap — `numeric(6,4)` rounds half away from
+  // zero BEFORE the CHECK runs, so it stores as 1.0000 and trips
+  // `valuation_discount < 1`; a Zod bound of `.lt(1)` would let that whole
+  // window through and turn a should-have-been-400 into a rolled-back 500.
+  it.each([
+    ["exactly 1", 1],
+    ["0.99995 — rounds up to 1.0000 in numeric(6,4)", 0.99995],
+    ["a negative discount", -0.1],
+  ])("rejects %s with a 400", async (_label, discount) => {
     const { clientId, trustId, businessId } = await setup();
 
     const res = await POST(
@@ -268,7 +286,7 @@ d("POST .../entities/[entityId]/assets — valuation discount", () => {
         assetType: "entity",
         assetId: businessId,
         percent: 30,
-        valuationDiscount: 1,
+        valuationDiscount: discount,
       }) as never,
       { params: Promise.resolve({ id: clientId, entityId: trustId }) },
     );

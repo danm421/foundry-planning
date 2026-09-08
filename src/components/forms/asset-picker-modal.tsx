@@ -54,6 +54,19 @@ interface AssetPickerModalProps {
   }) => void;
   /** Most-recent discount per source, keyed `entity:<id>`. Seeds the field only. */
   priorDiscounts?: Record<string, number>;
+  /**
+   * Is the receiving entity irrevocable? Gates the valuation-discount field.
+   *
+   * Assigning a business to a REVOCABLE trust is not a completed gift, so the
+   * route writes no gift row — a discount typed there would be silently
+   * discarded along with the "uses exemption" figure shown beside it.
+   *
+   * Defaults to FALSE, i.e. no discount field, deliberately: a missing field is
+   * a visible defect an advisor reports, while a false exemption promise is
+   * silent and wrong. A caller that has not declared irrevocability should not
+   * be able to make that promise by omission.
+   */
+  entityIsIrrevocable?: boolean;
   /** Singular noun for user-facing copy (e.g. "trust", "business"). Defaults to "trust". */
   entityLabel?: string;
 }
@@ -102,6 +115,7 @@ export default function AssetPickerModal({
   priorDiscounts,
   onClose,
   onAdd,
+  entityIsIrrevocable = false,
   entityLabel = "trust",
 }: AssetPickerModalProps) {
   const [step, setStep] = useState<"pick" | "percent">("pick");
@@ -146,11 +160,18 @@ export default function AssetPickerModal({
     setStep("percent");
   }
 
+  // A valuation discount is only meaningful on a completed gift, and the route
+  // writes a gift row only for an irrevocable recipient. Gating BOTH the field
+  // and the emitted value on one flag keeps a stale `discountStr` from riding
+  // out on an op whose field was never shown.
+  const showDiscountField =
+    picked?.assetType === "entity" && !picked?.isRetirement && entityIsIrrevocable;
+
   const discountNum = Number(discountStr);
   // `discountStr` is clamped on entry, so the upper test is belt-and-braces —
   // it keeps a $0 gift unreachable if that clamp is ever loosened.
   const discountFraction =
-    picked?.assetType === "entity" &&
+    showDiscountField &&
     discountStr !== "" &&
     Number.isFinite(discountNum) &&
     discountNum > 0 &&
@@ -330,7 +351,7 @@ export default function AssetPickerModal({
             </div>
           )}
 
-          {picked?.assetType === "entity" && !picked?.isRetirement && (
+          {showDiscountField && (
             <div>
               <label className={fieldLabelClassName} htmlFor="asset-picker-discount">
                 Valuation discount (optional)

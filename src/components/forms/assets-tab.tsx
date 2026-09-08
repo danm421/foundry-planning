@@ -119,6 +119,9 @@ interface AssetsTabProps {
   businesses?: AssetsTabBusiness[];
   /** Most-recent discount per source, keyed `entity:<id>`. Forwarded to the picker. */
   priorDiscounts?: Record<string, number>;
+  /** Is this entity irrevocable? Forwarded to the picker, where it gates the
+   *  valuation-discount field — see `entityIsIrrevocable` there. Defaults off. */
+  entityIsIrrevocable?: boolean;
   onChange: (op: AssetTabOp) => void;
   /** Singular noun for user-facing copy (e.g. "trust", "business"). Defaults to "trust". */
   entityLabel?: string;
@@ -239,6 +242,7 @@ export default function AssetsTab({
   expenses,
   businesses,
   priorDiscounts,
+  entityIsIrrevocable,
   onChange,
   entityLabel = "trust",
 }: AssetsTabProps) {
@@ -429,6 +433,7 @@ export default function AssetsTab({
           liabilities={liabilities}
           businesses={businesses}
           priorDiscounts={priorDiscounts}
+          entityIsIrrevocable={entityIsIrrevocable}
           entityLabel={entityLabel}
           onClose={() => setPickerOpen(false)}
           onAdd={(op) => {

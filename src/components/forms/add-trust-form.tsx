@@ -1053,6 +1053,10 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
             entities={entities}
             businesses={businesses}
             priorDiscounts={transferPriorDiscounts}
+            // Gates the picker's valuation-discount field: a business assigned
+            // to a revocable trust is not a completed gift, so the route writes
+            // no gift row and a discount there would be silently dropped.
+            entityIsIrrevocable={isIrrevocable}
             entityLabel="trust"
             onChange={handleAssetTabOp}
           />
