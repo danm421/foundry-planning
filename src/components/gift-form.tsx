@@ -62,7 +62,10 @@ export interface GiftFormProps {
   /** Sandbox only — when present, render the exemption warning + enforce the plan-year window. */
   ledger?: GiftLedgerYear[];
   taxInflationRate?: number;
-  onChange: (draft: EstateFlowGift | null) => void;
+  /** `blockedReason` is a sentence naming the field that is holding the draft
+   *  back — null whenever `draft` is non-null. Callers that refuse the save
+   *  should show it instead of a generic "complete the gift" message. */
+  onChange: (draft: EstateFlowGift | null, blockedReason: string | null) => void;
 }
 
 type RecipientOption = { value: string; label: string; ref: GiftRecipientRef; isTrust: boolean };
@@ -272,18 +275,33 @@ export default function GiftForm(props: GiftFormProps) {
       (selectedAccount?.subType != null &&
         MARKETABLE_SUBTYPES.has(selectedAccount.subType)));
 
-  const draft = useMemo<EstateFlowGift | null>(() => {
-    if (!selected) return null;
+  // Returned together so every `null` draft carries the sentence that explains
+  // it: a save that refuses with "please complete the gift" and no field named
+  // is indistinguishable from a dead button — which is exactly how a $0 source
+  // asset used to present.
+  const { draft, blockedReason } = useMemo<{
+    draft: EstateFlowGift | null;
+    blockedReason: string | null;
+  }>(() => {
+    const blocked = (reason: string) => ({ draft: null, blockedReason: reason });
+    const ok = (d: EstateFlowGift) => ({ draft: d, blockedReason: null });
+    const yearWindow =
+      planMinYear != null && planMaxYear != null ? ` between ${planMinYear} and ${planMaxYear}` : "";
+
+    if (!selected) return blocked("Choose who receives the gift.");
     const id = editing?.id ?? newGiftId;
     const recipient = selected.ref;
     const inWindow = (y: number) =>
       planMinYear == null || planMaxYear == null ? true : y >= planMinYear && y <= planMaxYear;
 
     if (effectiveRecurring) {
-      if (!Number.isFinite(startYear) || !Number.isFinite(endYear)) return null;
-      if (!inWindow(startYear) || !inWindow(endYear) || endYear < startYear) return null;
+      if (
+        !Number.isFinite(startYear) || !Number.isFinite(endYear) ||
+        !inWindow(startYear) || !inWindow(endYear)
+      ) return blocked(`Enter a start and end year${yearWindow}.`);
+      if (endYear < startYear) return blocked("The end year cannot come before the start year.");
       const annual = amountMode === "annual_exclusion" ? exclusionAmount : annualAmount;
-      if (!(annual > 0)) return null;
+      if (!(annual > 0)) return blocked("Enter an amount to give each year.");
       // Key order MUST match giftSeriesRowToDraft.
       const base: EstateFlowGift = {
         kind: "series", id, startYear, endYear, annualAmount: annual,
@@ -293,13 +311,29 @@ export default function GiftForm(props: GiftFormProps) {
         // diff (JSON.stringify, key-order-sensitive) reports a phantom edit.
         valuationDiscount: discountFraction,
       };
-      return editing?.kind === "series" ? { ...editing, ...base } : base;
+      return ok(editing?.kind === "series" ? { ...editing, ...base } : base);
     }
 
     if (effectiveInKind) {
-      if (!effectiveAccountId) return null;
-      if (!Number.isFinite(year) || !inWindow(year)) return null;
-      if (!(assetShare > 0 && assetShare <= 1)) return null;
+      if (!effectiveAccountId) return blocked("Choose the asset to give.");
+      if (!Number.isFinite(year) || !inWindow(year)) return blocked(`Enter a gift year${yearWindow}.`);
+      if (!(assetShare > 0 && assetShare <= 1)) {
+        // A gift is a SHARE of the asset, so an asset worth nothing can only
+        // ever be a 0% gift however many dollars are typed at it. Naming the
+        // account is the whole point — a household can hold two accounts one
+        // word apart, only one of which has a balance.
+        if (!(assetValueAtYear > 0)) {
+          return blocked(
+            `"${selectedAccount?.name ?? "This asset"}" is worth $0, so no share of it can be gifted.` +
+              " Pick a different asset, or give the account a value first.",
+          );
+        }
+        return blocked(
+          assetSizeMode === "dollars"
+            ? "Enter a dollar amount to give."
+            : "Enter the percentage of the asset to give.",
+        );
+      }
       const base: EstateFlowGift = {
         kind: "asset-once", id, year, accountId: effectiveAccountId, percent: assetShare,
         grantor, recipient,
@@ -308,13 +342,13 @@ export default function GiftForm(props: GiftFormProps) {
         // LAST KEY — must match giftRowToDraft's asset branch.
         valuationDiscount: discountFraction,
       };
-      return editing?.kind === "asset-once" ? { ...editing, ...base } : base;
+      return ok(editing?.kind === "asset-once" ? { ...editing, ...base } : base);
     }
 
     // cash-once
-    if (!Number.isFinite(year) || !inWindow(year)) return null;
+    if (!Number.isFinite(year) || !inWindow(year)) return blocked(`Enter a gift year${yearWindow}.`);
     const amt = amountMode === "annual_exclusion" ? exclusionAmount : amount;
-    if (!(amt > 0)) return null;
+    if (!(amt > 0)) return blocked("Enter an amount to give.");
     const base: EstateFlowGift = {
       kind: "cash-once", id, year, amount: amt, grantor, recipient,
       crummey: recipientIsTrust ? crummey : false,
@@ -322,18 +356,21 @@ export default function GiftForm(props: GiftFormProps) {
       // LAST KEY — must match giftRowToDraft's cash branch.
       valuationDiscount: discountFraction,
     };
-    return editing?.kind === "cash-once" ? { ...editing, ...base } : base;
-  }, [selected, editing, newGiftId, effectiveRecurring, effectiveInKind, effectiveAccountId, year, assetShare, amount, startYear, endYear, annualAmount, amountMode, exclusionAmount, inflationAdjust, grantor, crummey, discountFraction, recipientIsTrust, planMinYear, planMaxYear]);
+    return ok(editing?.kind === "cash-once" ? { ...editing, ...base } : base);
+  }, [selected, editing, newGiftId, effectiveRecurring, effectiveInKind, effectiveAccountId, year, assetShare, assetSizeMode, assetValueAtYear, selectedAccount?.name, amount, startYear, endYear, annualAmount, amountMode, exclusionAmount, inflationAdjust, grantor, crummey, discountFraction, recipientIsTrust, planMinYear, planMaxYear]);
 
   // Fire onChange whenever the draft *content* changes (stable JSON key so a
   // new object identity for an unchanged draft does not re-fire; onChange held
   // in a ref so a fresh parent identity does not re-fire).
-  const draftJson = useMemo(() => (draft ? JSON.stringify(draft) : null), [draft]);
+  const draftJson = useMemo(
+    () => (draft ? JSON.stringify(draft) : `blocked:${blockedReason}`),
+    [draft, blockedReason],
+  );
   const onChangeRef = useRef(props.onChange);
   useEffect(() => { onChangeRef.current = props.onChange; });
   useEffect(() => {
-    onChangeRef.current(draft);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- draftJson is draft's stable key
+    onChangeRef.current(draft, blockedReason);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- draftJson keys both
   }, [draftJson]);
 
   // ── Exemption warning preview (sandbox only) ──────────────────────────────
@@ -509,7 +546,10 @@ export default function GiftForm(props: GiftFormProps) {
               )}
             </Field>
           </div>
-          {selectedAccount && assetValueAtYear > 0 && (
+          {/* Not gated on a positive value: an asset worth $0 is the one case
+              where the advisor most needs the number on screen, and hiding the
+              line there is what made the refusal unreadable. */}
+          {selectedAccount && (
             <p className="mt-2 text-xs text-ink-3" data-testid="asset-value-preview">
               {assetValueIsProjected ? `Projected value in ${year}` : "Current value"}{" "}
               <span className="tabular text-ink-2">${Math.round(assetValueAtYear).toLocaleString()}</span>

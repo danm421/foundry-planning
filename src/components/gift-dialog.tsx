@@ -50,6 +50,8 @@ export default function GiftDialog(props: GiftDialogProps) {
     toEditingDraft(props.editingGift ?? null, props.editingSeries ?? null),
   )[0];
   const [draft, setDraft] = useState<EstateFlowGift | null>(initialDraft);
+  // Why the form is withholding a draft, so a refused save names the field.
+  const [blockedReason, setBlockedReason] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -99,7 +101,7 @@ export default function GiftDialog(props: GiftDialogProps) {
     setSaving(true);
     setError(null);
     try {
-      if (!draft) throw new Error("Please complete the gift before saving.");
+      if (!draft) throw new Error(blockedReason ?? "Please complete the gift before saving.");
       const inPlace = savesInPlace(draft);
       // The discount field is on screen exactly when the shared rule admits the
       // gift's shape, so when it does the draft is authoritative: an advisor who
@@ -232,7 +234,7 @@ export default function GiftDialog(props: GiftDialogProps) {
         hasSpouse={props.hasSpouse}
         annualExclusionByYear={props.annualExclusionByYear}
         editing={initialDraft}
-        onChange={setDraft}
+        onChange={(d, reason) => { setDraft(d); setBlockedReason(reason); }}
       />
       {error && <p data-testid="gift-error" className="mt-3 text-sm text-crit">{error}</p>}
     </DialogShell>
