@@ -23,6 +23,22 @@ function looksLikeTotal(name: string): boolean {
   return TOTAL_LABELS.some((label) => n.includes(label));
 }
 
+/**
+ * Words that mean a row is a real, individually-held account even though its
+ * name also matches `TOTAL_LABELS` — direct mutual-fund statements (Vanguard,
+ * Fidelity) name each holding its own account, and fund names routinely
+ * start with "Total": "Total Stock Market Index Fund Admiral Shares",
+ * "PIMCO Total Return Fund". Checked BEFORE the label test, so it can only
+ * ever KEEP a row, never exclude one — it exists to stop the household's
+ * single biggest position from being greyed out below the fold.
+ */
+const ROLLUP_VETO_WORDS = ["fund", "index", "etf", "shares", "stock market", "bond market", "return"];
+
+function isVetoedFromRollup(name: string): boolean {
+  const n = name.toLowerCase();
+  return ROLLUP_VETO_WORDS.some((word) => n.includes(word));
+}
+
 function withinTolerance(a: number, b: number): boolean {
   const base = Math.max(Math.abs(a), Math.abs(b));
   if (base === 0) return true;
@@ -59,9 +75,12 @@ export interface RollupResult<T extends ExtractedAccount = ExtractedAccount> {
  * "LLC") land in the same catch-all bucket and CAN be compared to each
  * other.
  *
- * A row is a rollup only when BOTH of these hold:
- *   1. it carries a total-ish label ("Total", "All Accounts", ...), AND
- *   2. among its same-custodian siblings, either its value reconciles with
+ * A row is a rollup only when ALL of these hold:
+ *   1. its name does not contain a fund/ETF word (`ROLLUP_VETO_WORDS`) — a
+ *      real fund holding can be named "Total Return Fund" and must never be
+ *      classified as a rollup no matter what the other two rules say, AND
+ *   2. it carries a total-ish label ("Total", "All Accounts", ...), AND
+ *   3. among its same-custodian siblings, either its value reconciles with
  *      their sum, or it exceeds every one of them.
  *
  * The label is a NECESSARY condition, not just a tiebreaker — it's what
@@ -97,6 +116,7 @@ export function detectRollups<T extends ExtractedAccount>(rows: T[]): RollupResu
     const isRollup =
       siblings.length >= 2 &&
       typeof row.value === "number" &&
+      !isVetoedFromRollup(row.name) &&
       looksLikeTotal(row.name) &&
       looksLikeTotalOf(row.value, siblings);
 

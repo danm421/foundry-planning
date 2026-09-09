@@ -47,8 +47,13 @@ describe("detectRollups", () => {
     const { excluded } = detectRollups([
       acct("Checking", 10_000, "Wells Fargo"),
       acct("Savings", 15_000, "Wells Fargo"),
-      acct("Brokerage", 25_000, "Schwab"),
+      acct("Total Brokerage", 25_000, "Schwab"),
     ]);
+    // "Total Brokerage" carries a total-ish label AND its value (25,000)
+    // reconciles exactly with Checking + Savings (10,000 + 15,000) — so this
+    // is only kept because it's alone in the Schwab bucket. If custodian
+    // grouping were broken (all three rows treated as one bucket), it would
+    // be wrongly excluded, which is exactly what this test pins.
     expect(excluded).toHaveLength(0);
   });
 
@@ -128,5 +133,76 @@ describe("detectRollups", () => {
     // Grouping by custodian internally must not leak into the output order:
     // if it did, this would come back Wells-Fargo-first.
     expect(kept.map((r) => r.name)).toEqual(["Checking", "Brokerage", "Savings", "Muni Bonds"]);
+  });
+
+  // --- Fix round 1, CRITICAL: fund names veto the rollup check, even though
+  // they routinely start with "Total" and are often the household's biggest
+  // single position. ---
+
+  it("keeps a real fund account even when it is the largest row on the statement", () => {
+    const { kept, excluded } = detectRollups([
+      acct("Municipal Bonds", 50_000),
+      acct("Preferred Stock", 40_000),
+      acct("Total Stock Market Index Fund Admiral Shares", 900_000),
+    ]);
+    // Without the veto, 900,000 > every sibling and this fund — the
+    // household's biggest account — would be wrongly greyed out.
+    expect(kept.map((r) => r.name)).toEqual([
+      "Municipal Bonds",
+      "Preferred Stock",
+      "Total Stock Market Index Fund Admiral Shares",
+    ]);
+    expect(excluded).toHaveLength(0);
+  });
+
+  it("keeps a real fund account even when its value happens to sum to its siblings", () => {
+    const { kept, excluded } = detectRollups([
+      acct("Brokerage Cash", 100_000),
+      acct("Municipal Bonds", 50_000),
+      acct("PIMCO Total Return Fund", 150_000),
+    ]);
+    // Without the veto, 150,000 reconciles exactly with 100,000 + 50,000 —
+    // a real fund holding would be wrongly excluded as a rollup.
+    expect(kept.map((r) => r.name)).toEqual([
+      "Brokerage Cash",
+      "Municipal Bonds",
+      "PIMCO Total Return Fund",
+    ]);
+    expect(excluded).toHaveLength(0);
+  });
+
+  // --- Fix round 1, IMPORTANT 1: pin the `sumsToSiblings` clause on its own,
+  // isolated from the `value > largestSibling` clause, so it can't be
+  // deleted without a test noticing. Both cases below are constructed so the
+  // total's value does NOT exceed its largest sibling — only the sum check
+  // can catch them. ---
+
+  it("excludes a total that sums exactly but does not exceed any sibling, when a sibling is negative", () => {
+    const { kept, excluded } = detectRollups([
+      acct("Brokerage", 100_000),
+      acct("Margin Loan", -40_000),
+      acct("Total Account Value", 60_000),
+    ]);
+    // 100,000 + (-40,000) = 60,000 exactly, but 60,000 is not > 100,000
+    // (the largest sibling) — only the sum rule catches this one.
+    expect(kept.map((r) => r.name)).toEqual(["Brokerage", "Margin Loan"]);
+    expect(excluded).toHaveLength(1);
+    expect(excluded[0].decision.label).toBe("Total Account Value");
+  });
+
+  it("excludes a total that reconciles only within tolerance, not exceeding its largest sibling", () => {
+    const { kept, excluded } = detectRollups([
+      acct("Brokerage", 100_000),
+      acct("Cash Sweep", 1_000),
+      acct("Total Account Value", 100_000),
+    ]);
+    // Siblings sum to 101,000; the total prints 100,000 — off by ~0.99%,
+    // inside the 1% tolerance but NOT an exact match, so `withinTolerance`'s
+    // real math is exercised rather than standing in for `===`. And
+    // 100,000 is not > 100,000 (the largest sibling), so only the sum rule
+    // catches it.
+    expect(kept.map((r) => r.name)).toEqual(["Brokerage", "Cash Sweep"]);
+    expect(excluded).toHaveLength(1);
+    expect(excluded[0].decision.label).toBe("Total Account Value");
   });
 });
