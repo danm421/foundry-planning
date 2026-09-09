@@ -23,6 +23,26 @@ export function isEstateFlowGiftDraft(g: unknown): g is EstateFlowGift {
   return k === "cash-once" || k === "asset-once" || k === "series";
 }
 
+/**
+ * The two things every gift overlay needs out of a scenario's `gift` changes:
+ * which gift ids it targets (their existing footprint is stripped, whether the
+ * change edits or removes them) and the draft payloads to re-materialise. The
+ * three overlays below differ only in what they do with these — tree, drafts,
+ * or DB rows — so the rule itself lives here once.
+ */
+export function partitionGiftChanges(changes: ScenarioChange[]): {
+  targeted: Set<string>;
+  adds: EstateFlowGift[];
+} {
+  return {
+    targeted: new Set(changes.map((c) => c.targetId)),
+    adds: changes
+      .filter((c) => c.opType === "add")
+      .map((c) => c.payload)
+      .filter(isEstateFlowGiftDraft),
+  };
+}
+
 export function applyGiftOverlays(
   tree: ClientData,
   giftChanges: ScenarioChange[],
@@ -30,11 +50,7 @@ export function applyGiftOverlays(
 ): ClientData {
   if (giftChanges.length === 0) return tree;
 
-  const targeted = new Set(giftChanges.map((c) => c.targetId));
-  const addDrafts = giftChanges
-    .filter((c) => c.opType === "add")
-    .map((c) => c.payload)
-    .filter(isEstateFlowGiftDraft);
+  const { targeted, adds: addDrafts } = partitionGiftChanges(giftChanges);
 
   const keptGifts = (tree.gifts ?? []).filter((g) => !targeted.has(g.id));
   const keptEvents = (tree.giftEvents ?? []).filter(
@@ -52,4 +68,21 @@ export function applyGiftOverlays(
       (a, b) => a.year - b.year,
     ),
   };
+}
+
+/**
+ * Draft-level counterpart to `applyGiftOverlays`. Same strip-and-rematerialise
+ * rule, applied to the `EstateFlowGift[]` list the *editors* render (solver
+ * estate tab, estate-flow editor, Details → Profile) rather than to the
+ * projection tree: every targeted id loses its base draft, then each `add`
+ * payload is appended. Keeping the two on one rule is what makes an editor's
+ * gift list agree with the numbers the same scenario projects.
+ */
+export function overlayGiftDrafts(
+  base: EstateFlowGift[],
+  giftChanges: ScenarioChange[],
+): EstateFlowGift[] {
+  if (giftChanges.length === 0) return base;
+  const { targeted, adds } = partitionGiftChanges(giftChanges);
+  return [...base.filter((g) => !targeted.has(g.id)), ...adds];
 }
