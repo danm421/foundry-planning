@@ -52,7 +52,10 @@ import {
   tickerPortfolioHoldingRow,
   securityAssetClassWeightRow,
   tickerPortfolioAccountRow,
+  FIXTURE_ACCOUNT_ID_1,
+  FIXTURE_FAMILY_MEMBER_ID,
 } from "./fixtures/sample-rows";
+import { ownersForYear } from "@/engine/ownership";
 
 // ---------------------------------------------------------------------------
 // DbState — mutable per-test fixture store
@@ -74,6 +77,7 @@ type DbState = {
   modelPortfolioAllocations: typeof modelPortfolioAllocationRow[];
   assetClasses: (typeof assetClassRow | typeof inflationAssetClassRow)[];
   accountAssetAllocations: unknown[];
+  accountOwners: unknown[];
   extraPayments: unknown[];
   transfers: typeof transferRow[];
   transferSchedules: unknown[];
@@ -119,6 +123,7 @@ const dbState: DbState = {
   modelPortfolioAllocations: [],
   assetClasses: [],
   accountAssetAllocations: [],
+  accountOwners: [],
   extraPayments: [],
   transfers: [],
   transferSchedules: [],
@@ -179,6 +184,7 @@ vi.mock("@/db", async () => {
     if (t === schema.modelPortfolioAllocations || n === "model_portfolio_allocations") return dbState.modelPortfolioAllocations;
     if (t === schema.assetClasses || n === "asset_classes") return dbState.assetClasses;
     if (t === schema.accountAssetAllocations || n === "account_asset_allocations") return dbState.accountAssetAllocations;
+    if (t === schema.accountOwners || n === "account_owners") return dbState.accountOwners;
     if (t === schema.extraPayments || n === "extra_payments") return dbState.extraPayments;
     if (t === schema.transfers || n === "transfers") return dbState.transfers;
     if (t === schema.transferSchedules || n === "transfer_schedules") return dbState.transferSchedules;
@@ -505,5 +511,104 @@ describe("loadClientData", () => {
     expect(data.taxAdjustments).toHaveLength(1);
     expect(data.taxAdjustments![0].startYear).toBe(2033);
     expect(data.taxAdjustments![0].endYear).toBe(2063);
+  });
+
+  // A percentage of an account gifted to a PERSON, not to a trust — the arm
+  // that carries `recipientFamilyMemberId`.
+  const assetGiftToAPersonRow = {
+    id: "00000000-0000-0000-0000-0000000000f1",
+    clientId: FIXTURE_CLIENT_ID,
+    year: 2030,
+    yearRef: null,
+    amount: null,
+    grantor: "client" as const,
+    recipientEntityId: null,
+    recipientFamilyMemberId: FIXTURE_FAMILY_MEMBER_ID,
+    recipientExternalBeneficiaryId: null,
+    accountId: FIXTURE_ACCOUNT_ID_1,
+    liabilityId: null,
+    businessEntityId: null,
+    percent: "0.3000",
+    valuationDiscount: null,
+    parentGiftId: null,
+    useCrummeyPowers: false,
+    eventKind: "outright" as const,
+    notes: null,
+    createdAt: new Date("2026-01-01T00:00:00Z"),
+    updatedAt: new Date("2026-01-01T00:00:00Z"),
+  };
+
+  it("carries the family-member recipient onto an asset gift event", async () => {
+    seedValidFixture();
+    dbState.gifts = [assetGiftToAPersonRow];
+
+    const data = await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
+
+    const assetEvents = (data.giftEvents ?? []).filter((e) => e.kind === "asset");
+    expect(assetEvents).toHaveLength(1);
+    expect(assetEvents[0]).toMatchObject({
+      accountId: FIXTURE_ACCOUNT_ID_1,
+      percent: 0.3,
+      recipientFamilyMemberId: FIXTURE_FAMILY_MEMBER_ID,
+    });
+    expect(assetEvents[0].recipientEntityId).toBeUndefined();
+  });
+
+  it("emits an asset gift to a person that ownersForYear can compose", async () => {
+    seedValidFixture();
+    dbState.gifts = [assetGiftToAPersonRow];
+    // `ownersForYear` needs a real household row to shrink — an account with no
+    // owner rows takes a different (household-fallback) path entirely.
+    dbState.accountOwners = [
+      {
+        id: "00000000-0000-0000-0000-0000000000a1",
+        accountId: FIXTURE_ACCOUNT_ID_1,
+        familyMemberId: FIXTURE_FAMILY_MEMBER_ID,
+        entityId: null,
+        externalBeneficiaryId: null,
+        percent: "1.0000",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        updatedAt: new Date("2026-01-01T00:00:00Z"),
+      },
+    ];
+
+    const data = await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
+    const account = data.accounts.find((a) => a.id === FIXTURE_ACCOUNT_ID_1)!;
+
+    // The real consumer. Before the fix this threw "gift event has no recipient".
+    const owners = ownersForYear(account, data.giftEvents ?? [], 2030, 2026);
+
+    const giftedAway = owners.filter((o) => o.kind === "gifted_away");
+    expect(giftedAway).toHaveLength(1);
+    expect(giftedAway[0]).toMatchObject({
+      recipient: { kind: "family_member", id: FIXTURE_FAMILY_MEMBER_ID },
+      percent: 0.3,
+    });
+    // The household keeps exactly the remainder — no more, no less.
+    const household = owners
+      .filter((o) => o.kind === "family_member")
+      .reduce((s, o) => s + o.percent, 0);
+    expect(household).toBeCloseTo(0.7, 10);
+  });
+
+  // A gift to a TRUST must keep behaving exactly as before — the entity arm is
+  // the path with prod data on it.
+  it("still routes an asset gift to a trust through recipientEntityId", async () => {
+    seedValidFixture();
+    dbState.gifts = [
+      {
+        ...assetGiftToAPersonRow,
+        recipientFamilyMemberId: null,
+        recipientEntityId: "00000000-0000-0000-0000-0000000000e1",
+      },
+    ];
+
+    const data = await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
+
+    const assetEvents = (data.giftEvents ?? []).filter((e) => e.kind === "asset");
+    expect(assetEvents[0]).toMatchObject({
+      recipientEntityId: "00000000-0000-0000-0000-0000000000e1",
+    });
+    expect(assetEvents[0].recipientFamilyMemberId).toBeUndefined();
   });
 });

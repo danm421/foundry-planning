@@ -123,6 +123,30 @@ export class ProjectionInputError extends Error {
   }
 }
 
+/** The recipient half of a gift, straight off a `gifts` or `gift_series` row.
+ *  Exactly one of the three is set (the create schema enforces it): a trust
+ *  recipient becomes a modeled `entity` owner, a person or charity becomes an
+ *  out-of-estate `gifted_away` owner.
+ *
+ *  The three always travel together — every gift shape built below spreads this
+ *  rather than picking fields by hand. The asset arm used to pass only
+ *  `recipientEntityId`, which left a gift to a person with NO recipient at all;
+ *  `ownersForYear` throws on that and takes down the whole projection. The one
+ *  deliberate exception is `businessInterestFromGifts`, whose `GiftEvent` arm
+ *  types `recipientEntityId` as required — a business interest is only ever
+ *  gifted to a receiving trust. */
+function giftRecipientFields(g: {
+  recipientEntityId: string | null;
+  recipientFamilyMemberId: string | null;
+  recipientExternalBeneficiaryId: string | null;
+}) {
+  return {
+    recipientEntityId: g.recipientEntityId ?? undefined,
+    recipientFamilyMemberId: g.recipientFamilyMemberId ?? undefined,
+    recipientExternalBeneficiaryId: g.recipientExternalBeneficiaryId ?? undefined,
+  };
+}
+
 export const loadClientDataWithContext = cache(
   async (
     clientId: string,
@@ -1452,9 +1476,7 @@ export const loadClientDataWithContext = cache(
         year: g.year,
         amount: parseFloat(g.amount!),
         grantor: g.grantor,
-        recipientEntityId: g.recipientEntityId ?? undefined,
-        recipientFamilyMemberId: g.recipientFamilyMemberId ?? undefined,
-        recipientExternalBeneficiaryId: g.recipientExternalBeneficiaryId ?? undefined,
+        ...giftRecipientFields(g),
         useCrummeyPowers: g.useCrummeyPowers,
         valuationDiscount:
           g.valuationDiscount != null ? Number(g.valuationDiscount) : undefined,
@@ -1495,7 +1517,7 @@ export const loadClientDataWithContext = cache(
         accountId: g.accountId!,
         percent: Number(g.percent),
         grantor: g.grantor as "client" | "spouse",
-        recipientEntityId: g.recipientEntityId!,
+        ...giftRecipientFields(g),
         amountOverride: g.amount != null ? Number(g.amount) : undefined,
         valuationDiscount:
           g.valuationDiscount != null ? Number(g.valuationDiscount) : undefined,
@@ -1511,7 +1533,7 @@ export const loadClientDataWithContext = cache(
         liabilityId: g.liabilityId!,
         percent: Number(g.percent),
         grantor: g.grantor as "client" | "spouse",
-        recipientEntityId: g.recipientEntityId!,
+        ...giftRecipientFields(g),
         parentGiftId: g.parentGiftId!,
         eventKind: g.eventKind,
       }));
@@ -1550,9 +1572,7 @@ export const loadClientDataWithContext = cache(
         {
           id: s.id,
           grantor: s.grantor as "client" | "spouse" | "joint",
-          recipientEntityId: s.recipientEntityId ?? undefined,
-          recipientFamilyMemberId: s.recipientFamilyMemberId ?? undefined,
-          recipientExternalBeneficiaryId: s.recipientExternalBeneficiaryId ?? undefined,
+          ...giftRecipientFields(s),
           startYear: s.startYear,
           endYear: s.endYear,
           annualAmount: Number(s.annualAmount),
