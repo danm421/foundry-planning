@@ -203,4 +203,53 @@ describe("narrate", () => {
       );
     });
   });
+
+  describe("matched-account caveat", () => {
+    // This is the caveat that tells the advisor committing will UPDATE an
+    // existing plan account rather than create a new one — it must fire
+    // whenever a row carries an exact match, singular wording included.
+    it("fires for a single row carrying an exact match", () => {
+      const { caveats } = narrate({
+        fileCount: 1,
+        decisions: [],
+        rows: [
+          { name: "IRA", value: 1, match: { kind: "exact", existingId: "acct-1" } },
+        ] as never,
+      });
+      expect(caveats).toContain(
+        "1 account matched an existing plan account and will update it rather than create a new one.",
+      );
+    });
+
+    // Pins the plural branch separately from the singular one above.
+    it("pluralizes for two or more rows carrying an exact match", () => {
+      const { caveats } = narrate({
+        fileCount: 1,
+        decisions: [],
+        rows: [
+          { name: "IRA", value: 1, match: { kind: "exact", existingId: "acct-1" } },
+          { name: "Roth IRA", value: 2, match: { kind: "exact", existingId: "acct-2" } },
+        ] as never,
+      });
+      expect(caveats).toContain(
+        "2 accounts matched existing plan accounts and will update them rather than create new ones.",
+      );
+    });
+
+    // `mergeAcrossFiles` stamps every row `{ kind: "new" }` — the state the
+    // chat surface actually produces today, before any matching step runs.
+    // The caveat must stay silent for it rather than firing on "new".
+    it("does not fire when every row is unmatched ('new')", () => {
+      const { caveats } = narrate({
+        fileCount: 1,
+        decisions: [],
+        rows: [
+          { name: "IRA", value: 1, match: { kind: "new" } },
+          { name: "Roth IRA", value: 2 },
+        ] as never,
+      });
+      expect(caveats.some((c) => c.includes("matched an existing plan account"))).toBe(false);
+      expect(caveats.some((c) => c.includes("matched existing plan accounts"))).toBe(false);
+    });
+  });
 });

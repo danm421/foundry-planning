@@ -91,6 +91,26 @@ function retirementBasisCaveat(rows: Annotated<ExtractedAccount>[]): string | nu
   return `For ${joinWithAnd(flagged.map((r) => `"${r.name}"`))}, the basis shown is the custodian's securities cost basis, not IRS-tracked basis for tax purposes.`;
 }
 
+/**
+ * The only caveat that describes what COMMITTING will do to the plan
+ * already on file, rather than what was read off the statements. A row
+ * carries `match: { kind: "exact" }` once the matching step (elsewhere in
+ * `lib/imports`) has linked it to an existing plan account — `mergeAcrossFiles`
+ * itself stamps every row `{ kind: "new" }`, so this stays silent until
+ * matching has actually run on this surface, and fires again on a
+ * re-narrated committed row (`linkCreated` sets the same `exact` match after
+ * commit — see `src/lib/imports/types.ts`). An advisor who misses this could
+ * overwrite a real account believing they were adding a new one, so it does
+ * not wait for a decision — `match` is a row field like `basis`/`category`.
+ */
+function matchedCaveat(rows: Annotated<ExtractedAccount>[]): string | null {
+  const matched = rows.filter((r) => r.match?.kind === "exact");
+  if (matched.length === 0) return null;
+  return matched.length === 1
+    ? "1 account matched an existing plan account and will update it rather than create a new one."
+    : `${matched.length} accounts matched existing plan accounts and will update them rather than create new ones.`;
+}
+
 export interface Narration {
   summary: string;
   caveats: string[];
@@ -132,6 +152,9 @@ export function narrate(input: {
 
   const retirementCaveat = retirementBasisCaveat(rows);
   if (retirementCaveat) caveats.push(retirementCaveat);
+
+  const matched = matchedCaveat(rows);
+  if (matched) caveats.push(matched);
 
   return { summary: sentences.join(" "), caveats };
 }
