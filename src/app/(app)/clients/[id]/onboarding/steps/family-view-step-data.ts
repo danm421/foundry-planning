@@ -41,6 +41,7 @@ export interface FamilyViewStepData {
     recipientExternalBeneficiaryId: string | null;
     accountId: string | null;
     percent: number | null;
+    valuationDiscount: number | null;
     useCrummeyPowers: boolean;
     notes: string | null;
   }[];
@@ -169,6 +170,8 @@ export async function loadFamilyViewStepData(
       recipientExternalBeneficiaryId: g.recipientExternalBeneficiaryId ?? null,
       accountId: g.accountId ?? null,
       percent: g.percent != null ? parseFloat(g.percent as string) : null,
+      valuationDiscount:
+        g.valuationDiscount != null ? parseFloat(g.valuationDiscount as string) : null,
       useCrummeyPowers: g.useCrummeyPowers,
       notes: g.notes ?? null,
     }));

@@ -28,14 +28,17 @@ export interface GiftDialogProps {
   onClose: () => void;
   onSavedGift: (g: Gift) => void;
   onSavedSeries: (s: GiftSeriesLite) => void;
+  /** A kind change re-created the row under a new id, so the old one is gone —
+   *  see `savesInPlace`. Fires before the matching onSaved* callback. */
+  onRemovedGift: (id: string) => void;
+  onRemovedSeries: (id: string) => void;
 }
 
 export default function GiftDialog(props: GiftDialogProps) {
   const editing = props.editingGift ?? props.editingSeries ?? null;
   // Stable form seed. The live `draft` (below) must NOT be fed back as the seed:
-  // GiftForm treats a non-null `editing` as "editing an existing gift" and locks
-  // the Frequency/Funding toggles, so passing the in-progress draft would freeze
-  // those controls the moment the form first becomes valid.
+  // GiftForm re-seeds every field from `editing`, so passing the in-progress
+  // draft would fight the advisor's own typing.
   const initialDraft = useState(() =>
     toEditingDraft(props.editingGift ?? null, props.editingSeries ?? null),
   )[0];
@@ -43,11 +46,65 @@ export default function GiftDialog(props: GiftDialogProps) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * True when the edit can be a PATCH of the row the advisor opened.
+   *
+   * It can't be when the advisor changed the gift's *shape*: Frequency moves
+   * the row between two tables (`gifts` and `gift_series`), and Funding or a
+   * different source asset rewrites `accountId`, which the gift PATCH schema
+   * omits on purpose — re-pointing a row would strand the liability row the
+   * POST route auto-bundles with an asset transfer. Those saves create the
+   * replacement first and delete the original after, so the new row is built
+   * by the POST route with the bundling and ownership writes its own shape
+   * needs. The gift keeps its meaning, not its id.
+   */
+  function savesInPlace(d: EstateFlowGift): boolean {
+    if (d.kind === "series") return props.editingSeries != null;
+    if (!props.editingGift) return false;
+    const savedAccountId = props.editingGift.accountId ?? null;
+    return d.kind === "asset-once"
+      ? savedAccountId === d.accountId
+      : savedAccountId === null;
+  }
+
+  /** Delete the row a shape change left behind. Runs AFTER the replacement is
+   *  saved, so a failure here leaves a duplicate rather than losing the gift. */
+  async function removeReplacedRow() {
+    const staleGift = props.editingGift;
+    const staleSeries = props.editingSeries;
+    const url = staleGift
+      ? `/api/clients/${props.clientId}/gifts/${staleGift.id}`
+      : staleSeries
+        ? `/api/clients/${props.clientId}/gifts/series/${staleSeries.id}?scenario=${props.scenarioId}`
+        : null;
+    if (!url) return;
+    const res = await fetch(url, { method: "DELETE" });
+    if (!res.ok) {
+      throw new Error(
+        "Saved the updated gift, but the original entry could not be removed. Refresh and delete it.",
+      );
+    }
+    if (staleGift) props.onRemovedGift(staleGift.id);
+    else if (staleSeries) props.onRemovedSeries(staleSeries.id);
+  }
+
   async function save() {
     setSaving(true);
     setError(null);
     try {
       if (!draft) throw new Error("Please complete the gift before saving.");
+      const inPlace = savesInPlace(draft);
+      // This dialog never renders the discount field (see showValuationDiscount
+      // below), so "absent on the draft" means UNKNOWN, not "cleared" — and an
+      // omitted field is one the routes leave alone, which is what keeps a
+      // discount entered on the estate-flow surface intact through an unrelated
+      // edit made here. A re-create has no row to leave alone, so it copies the
+      // original's discount onto the replacement.
+      const savedDiscount =
+        props.editingGift?.valuationDiscount ?? props.editingSeries?.valuationDiscount ?? null;
+      const discountToSend = inPlace
+        ? draft.valuationDiscount ?? null
+        : draft.valuationDiscount ?? savedDiscount;
 
       if (draft.kind === "series") {
         const body: Record<string, unknown> = {
@@ -59,29 +116,21 @@ export default function GiftDialog(props: GiftDialogProps) {
           inflationAdjust: draft.inflationAdjust,
           useCrummeyPowers: draft.crummey,
         };
-        // Send the discount ONLY when the advisor set one. This dialog's
-        // editing seed (`toEditingDraft`) cannot read a saved discount — the
-        // Family view's Gift / GiftSeriesLite shapes do not carry the column —
-        // so "absent on the draft" means UNKNOWN here, not "cleared". The gift
-        // routes leave an omitted field alone, so a discount entered on the
-        // estate-flow surface survives an unrelated edit made from this dialog.
-        // Clearing one is done there, where the value does round-trip.
-        if (draft.valuationDiscount != null) {
-          body.valuationDiscount = draft.valuationDiscount;
-        }
+        if (discountToSend != null) body.valuationDiscount = discountToSend;
         if (draft.recipient.kind === "entity") body.recipientEntityId = draft.recipient.id;
         if (draft.recipient.kind === "family_member") body.recipientFamilyMemberId = draft.recipient.id;
         if (draft.recipient.kind === "external_beneficiary") body.recipientExternalBeneficiaryId = draft.recipient.id;
-        const url = props.editingSeries
-          ? `/api/clients/${props.clientId}/gifts/series/${props.editingSeries.id}?scenario=${props.scenarioId}`
+        const url = inPlace
+          ? `/api/clients/${props.clientId}/gifts/series/${props.editingSeries!.id}?scenario=${props.scenarioId}`
           : `/api/clients/${props.clientId}/gifts/series?scenario=${props.scenarioId}`;
         const res = await fetch(url, {
-          method: props.editingSeries ? "PATCH" : "POST",
+          method: inPlace ? "PATCH" : "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
         const row = await res.json();
+        if (!inPlace) await removeReplacedRow();
         props.onSavedSeries({
           id: row.id,
           grantor: row.grantor,
@@ -93,6 +142,7 @@ export default function GiftDialog(props: GiftDialogProps) {
           annualAmount: typeof row.annualAmount === "string" ? parseFloat(row.annualAmount) : row.annualAmount,
           amountMode: row.amountMode ?? "fixed",
           inflationAdjust: row.inflationAdjust,
+          valuationDiscount: numOrNull(row.valuationDiscount),
           useCrummeyPowers: row.useCrummeyPowers,
         });
         return;
@@ -112,31 +162,30 @@ export default function GiftDialog(props: GiftDialogProps) {
         body.percent = draft.percent;
         body.useCrummeyPowers = false;
       }
-      // Set-only, never cleared from here — see the series body above.
-      if (draft.valuationDiscount != null) {
-        body.valuationDiscount = draft.valuationDiscount;
-      }
+      if (discountToSend != null) body.valuationDiscount = discountToSend;
 
-      const url = props.editingGift
-        ? `/api/clients/${props.clientId}/gifts/${props.editingGift.id}`
+      const url = inPlace
+        ? `/api/clients/${props.clientId}/gifts/${props.editingGift!.id}`
         : `/api/clients/${props.clientId}/gifts`;
       const res = await fetch(url, {
-        method: props.editingGift ? "PATCH" : "POST",
+        method: inPlace ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
       const row = await res.json();
+      if (!inPlace) await removeReplacedRow();
       props.onSavedGift({
         id: row.id,
         year: row.year,
-        amount: row.amount != null ? (typeof row.amount === "string" ? parseFloat(row.amount) : row.amount) : null,
+        amount: numOrNull(row.amount),
         grantor: row.grantor,
         recipientEntityId: row.recipientEntityId ?? null,
         recipientFamilyMemberId: row.recipientFamilyMemberId ?? null,
         recipientExternalBeneficiaryId: row.recipientExternalBeneficiaryId ?? null,
         accountId: row.accountId ?? null,
-        percent: row.percent != null ? (typeof row.percent === "string" ? parseFloat(row.percent) : row.percent) : null,
+        percent: numOrNull(row.percent),
+        valuationDiscount: numOrNull(row.valuationDiscount),
         useCrummeyPowers: row.useCrummeyPowers,
         notes: row.notes ?? null,
       });
@@ -187,6 +236,12 @@ export default function GiftDialog(props: GiftDialogProps) {
       {error && <p data-testid="gift-error" className="mt-3 text-sm text-crit">{error}</p>}
     </DialogShell>
   );
+}
+
+/** Postgres `decimal` columns come back as strings. */
+function numOrNull(v: unknown): number | null {
+  if (v == null) return null;
+  return typeof v === "string" ? parseFloat(v) : (v as number);
 }
 
 /** Seed an EstateFlowGift from an existing DB gift/series for editing. */

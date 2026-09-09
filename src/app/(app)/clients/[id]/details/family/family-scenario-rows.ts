@@ -83,6 +83,7 @@ export function giftDraftToRow(g: EstateFlowGift): Gift | null {
         amount: g.amountOverride ?? null,
         accountId: g.accountId,
         percent: g.percent,
+        valuationDiscount: g.valuationDiscount ?? null,
         useCrummeyPowers: false,
       }
     : {
@@ -90,6 +91,7 @@ export function giftDraftToRow(g: EstateFlowGift): Gift | null {
         amount: g.amount,
         accountId: null,
         percent: null,
+        valuationDiscount: g.valuationDiscount ?? null,
         useCrummeyPowers: g.crummey,
       };
 }
@@ -106,6 +108,7 @@ export function giftDraftToSeriesRow(g: EstateFlowGift): GiftSeriesLite | null {
     annualAmount: g.annualAmount,
     amountMode: g.amountMode,
     inflationAdjust: g.inflationAdjust,
+    valuationDiscount: g.valuationDiscount ?? null,
     useCrummeyPowers: g.crummey,
   };
 }

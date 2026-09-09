@@ -86,7 +86,8 @@ describe("gift draft → row", () => {
       id: "g1", year: 2026, grantor: "client", amount: 90000,
       recipientEntityId: "slat-1", recipientFamilyMemberId: null,
       recipientExternalBeneficiaryId: null,
-      accountId: "acct-1", percent: 0.15, useCrummeyPowers: false, notes: null,
+      accountId: "acct-1", percent: 0.15, valuationDiscount: null,
+      useCrummeyPowers: false, notes: null,
     });
   });
 
@@ -130,13 +131,14 @@ describe("overlayScenarioGiftRows", () => {
     id: "base-g", year: 2030, amount: 10000, grantor: "client",
     recipientEntityId: null, recipientFamilyMemberId: "fm1",
     recipientExternalBeneficiaryId: null, accountId: null, percent: null,
-    useCrummeyPowers: false, notes: "base note",
+    valuationDiscount: null, useCrummeyPowers: false, notes: "base note",
   };
   const baseSeries: GiftSeriesLite = {
     id: "base-s", grantor: "spouse", recipientEntityId: null,
     recipientFamilyMemberId: "fm1", recipientExternalBeneficiaryId: null,
     startYear: 2027, endYear: 2031, annualAmount: 19000,
-    amountMode: "fixed", inflationAdjust: false, useCrummeyPowers: true,
+    amountMode: "fixed", inflationAdjust: false, valuationDiscount: null,
+    useCrummeyPowers: true,
   };
 
   it("adds the scenario's asset gift alongside the base rows", () => {

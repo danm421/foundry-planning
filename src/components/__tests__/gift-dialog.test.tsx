@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import GiftDialog from "@/components/gift-dialog";
 import type {
+  Gift,
   FamilyMember,
   ExternalBeneficiary,
   Entity,
@@ -21,6 +22,8 @@ const baseProps = {
   onClose: vi.fn(),
   onSavedGift: vi.fn(),
   onSavedSeries: vi.fn(),
+  onRemovedGift: vi.fn(),
+  onRemovedSeries: vi.fn(),
 };
 
 describe("GiftDialog", () => {
@@ -107,5 +110,151 @@ describe("GiftDialog", () => {
     const body = JSON.parse((init as RequestInit).body as string);
     expect(body.amountMode).toBe("annual_exclusion");
     expect(body.annualAmount).toBe(38000); // 19000 × 2
+  });
+});
+
+// ── Editing a saved gift ─────────────────────────────────────────────────────
+// A saved gift is fully editable, including the two toggles that decide its
+// shape. Frequency crosses tables and Funding rewrites `accountId`, which the
+// PATCH schema refuses — so those saves create the replacement and delete the
+// original instead of updating in place.
+
+const savedCashGift: Gift = {
+  id: "g1",
+  year: 2026,
+  amount: 25000,
+  grantor: "client",
+  recipientEntityId: null,
+  recipientFamilyMemberId: "m1",
+  recipientExternalBeneficiaryId: null,
+  accountId: null,
+  percent: null,
+  valuationDiscount: null,
+  useCrummeyPowers: false,
+  notes: null,
+};
+
+/** Queue one response per fetch call, in order. */
+function mockFetchSequence(...bodies: unknown[]) {
+  const mock = vi.spyOn(global, "fetch");
+  for (const b of bodies) {
+    mock.mockResolvedValueOnce(new Response(JSON.stringify(b), { status: 200 }));
+  }
+  return mock;
+}
+
+describe("GiftDialog — editing a saved gift", () => {
+  // clearAllMocks too: restoreAllMocks only unwinds spies, so the shared
+  // baseProps callbacks would carry their calls across tests.
+  beforeEach(() => { vi.restoreAllMocks(); vi.clearAllMocks(); });
+
+  it("leaves Frequency and Funding editable", () => {
+    render(<GiftDialog {...baseProps} editingGift={savedCashGift} />);
+    expect(screen.getByText("Recurring").closest("button")).not.toBeDisabled();
+    expect(screen.getByText("Specific asset").closest("button")).not.toBeDisabled();
+  });
+
+  it("PATCHes in place when the shape did not change", async () => {
+    const fetchMock = mockFetchSequence({ ...savedCashGift, amount: "30000" });
+    render(<GiftDialog {...baseProps} editingGift={savedCashGift} />);
+    fireEvent.change(screen.getByLabelText(/amount/i, { selector: "input" }), {
+      target: { value: "30000" },
+    });
+    fireEvent.click(screen.getByText("Save gift"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toBe("/api/clients/c1/gifts/g1");
+    expect((init as RequestInit).method).toBe("PATCH");
+    expect(baseProps.onRemovedGift).not.toHaveBeenCalled();
+  });
+
+  it("moves a one-time gift to the series table when Frequency flips", async () => {
+    const fetchMock = mockFetchSequence(
+      { id: "se9", grantor: "client", recipientFamilyMemberId: "m1", startYear: 2026, endYear: 2035, annualAmount: "25000", amountMode: "fixed", inflationAdjust: false, useCrummeyPowers: false },
+      { ok: true },
+    );
+    render(<GiftDialog {...baseProps} editingGift={savedCashGift} />);
+    fireEvent.click(screen.getByText("Recurring"));
+    fireEvent.click(screen.getByText("Save gift"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    const [createUrl, createInit] = fetchMock.mock.calls[0];
+    expect(String(createUrl)).toBe("/api/clients/c1/gifts/series?scenario=s1");
+    expect((createInit as RequestInit).method).toBe("POST");
+    // The one-time amount carries over, so Save is never dead on a $0 draft.
+    expect(JSON.parse((createInit as RequestInit).body as string).annualAmount).toBe(25000);
+
+    const [deleteUrl, deleteInit] = fetchMock.mock.calls[1];
+    expect(String(deleteUrl)).toBe("/api/clients/c1/gifts/g1");
+    expect((deleteInit as RequestInit).method).toBe("DELETE");
+    expect(baseProps.onRemovedGift).toHaveBeenCalledWith("g1");
+    expect(baseProps.onSavedSeries).toHaveBeenCalled();
+  });
+
+  it("carries the saved year into the series, so the flip is valid on arrival", async () => {
+    const fetchMock = mockFetchSequence({ id: "se9" }, { ok: true });
+    render(<GiftDialog {...baseProps} editingGift={{ ...savedCashGift, year: 2040 }} />);
+    fireEvent.click(screen.getByText("Recurring"));
+    fireEvent.click(screen.getByText("Save gift"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.startYear).toBe(2040);
+    // A default end year behind the start year would be an invalid series.
+    expect(body.endYear).toBeGreaterThanOrEqual(2040);
+  });
+
+  it("re-creates the row when Funding flips to a specific asset", async () => {
+    const fetchMock = mockFetchSequence(
+      { id: "g9", year: 2026, grantor: "client", recipientFamilyMemberId: "m1", accountId: "a1", percent: "1", useCrummeyPowers: false },
+      { ok: true },
+    );
+    render(<GiftDialog {...baseProps} editingGift={savedCashGift} />);
+    fireEvent.click(screen.getByText("Specific asset"));
+    fireEvent.change(screen.getByTestId("account"), { target: { value: "a1" } });
+    fireEvent.click(screen.getByText("Save gift"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    const [createUrl, createInit] = fetchMock.mock.calls[0];
+    expect(String(createUrl)).toBe("/api/clients/c1/gifts");
+    expect((createInit as RequestInit).method).toBe("POST");
+    const body = JSON.parse((createInit as RequestInit).body as string);
+    expect(body.accountId).toBe("a1");
+    expect(body.percent).toBe(1);
+
+    expect(String(fetchMock.mock.calls[1][0])).toBe("/api/clients/c1/gifts/g1");
+    expect(baseProps.onRemovedGift).toHaveBeenCalledWith("g1");
+  });
+
+  it("copies a saved valuation discount onto the replacement row", async () => {
+    // This surface never renders the discount field, so the value only survives
+    // a re-create if the dialog carries it across explicitly.
+    const fetchMock = mockFetchSequence({ id: "g9" }, { ok: true });
+    render(
+      <GiftDialog
+        {...baseProps}
+        editingGift={{ ...savedCashGift, accountId: "a1", amount: null, percent: 0.5, valuationDiscount: 0.3 }}
+      />,
+    );
+    fireEvent.click(screen.getByText("Cash"));
+    fireEvent.change(screen.getByLabelText(/amount/i, { selector: "input" }), {
+      target: { value: "25000" },
+    });
+    fireEvent.click(screen.getByText("Save gift"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.valuationDiscount).toBe(0.3);
+  });
+
+  it("keeps the replacement and reports the failure when the old row will not delete", async () => {
+    const fetchMock = vi.spyOn(global, "fetch");
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ id: "g9" }), { status: 200 }));
+    fetchMock.mockResolvedValueOnce(new Response("{}", { status: 500 }));
+    render(<GiftDialog {...baseProps} editingGift={savedCashGift} />);
+    fireEvent.click(screen.getByText("Recurring"));
+    fireEvent.click(screen.getByText("Save gift"));
+    await waitFor(() => expect(screen.getByTestId("gift-error")).toBeInTheDocument());
+    expect(screen.getByTestId("gift-error").textContent).toMatch(/could not be removed/i);
+    expect(baseProps.onRemovedGift).not.toHaveBeenCalled();
   });
 });

@@ -179,6 +179,7 @@ const GIFT: import("../family-view").Gift = {
   recipientEntityId: null,
   recipientFamilyMemberId: "fm-1",
   recipientExternalBeneficiaryId: null,
+  valuationDiscount: null,
   accountId: null,
   percent: null,
   useCrummeyPowers: false,

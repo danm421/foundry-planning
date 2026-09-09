@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useClientAccess } from "./client-access-provider";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
@@ -109,6 +110,9 @@ export type Gift = {
   recipientExternalBeneficiaryId: string | null;
   accountId: string | null; // set for in-kind asset gifts
   percent: number | null; // fraction 0..1, set for in-kind asset gifts
+  /** Fraction (0.3 = 30%). Carried so an edit that has to re-create the row
+   *  (see GiftDialog) preserves a discount this surface cannot display. */
+  valuationDiscount: number | null;
   useCrummeyPowers: boolean;
   notes: string | null;
 };
@@ -124,6 +128,8 @@ export type GiftSeriesLite = {
   annualAmount: number;
   amountMode: "fixed" | "annual_exclusion";
   inflationAdjust: boolean;
+  /** See `Gift.valuationDiscount`. */
+  valuationDiscount: number | null;
   useCrummeyPowers: boolean;
 };
 
@@ -1048,8 +1054,11 @@ function GiftsSection(props: {
   annualExclusionByYear: Record<number, number>;
   scenarioId: string;
   hasSpouse: boolean;
-  onChangeGifts: (gifts: Gift[]) => void;
-  onChangeSeries: (series: GiftSeriesLite[]) => void;
+  // Setter form, not a plain array: a gift whose Frequency or Funding changed is
+  // saved as a new row plus a delete of the old one, so two updates land in the
+  // same tick and the second must not read the first's stale list.
+  onChangeGifts: Dispatch<SetStateAction<Gift[]>>;
+  onChangeSeries: Dispatch<SetStateAction<GiftSeriesLite[]>>;
   canEdit: boolean;
 }) {
   const [adding, setAdding] = useState(false);
@@ -1084,6 +1093,9 @@ function GiftsSection(props: {
   }
 
   const dialogOpen = adding || editingGift != null || editingSeries != null;
+  // A save can move a gift between the two lists, so close on BOTH, never just
+  // the one the dialog opened on.
+  const closeDialog = () => { setAdding(false); setEditingGift(null); setEditingSeries(null); };
 
   return (
     <section className="mt-6 rounded-lg border border-gray-700 bg-gray-900 p-4">
@@ -1112,17 +1124,25 @@ function GiftsSection(props: {
           annualExclusionByYear={props.annualExclusionByYear}
           editingGift={editingGift}
           editingSeries={editingSeries}
-          onClose={() => { setAdding(false); setEditingGift(null); setEditingSeries(null); }}
+          onClose={closeDialog}
           onSavedGift={(g) => {
-            const exists = props.gifts.some((x) => x.id === g.id);
-            props.onChangeGifts(exists ? props.gifts.map((x) => (x.id === g.id ? g : x)) : [...props.gifts, g]);
-            setAdding(false); setEditingGift(null);
+            props.onChangeGifts((cur) =>
+              cur.some((x) => x.id === g.id) ? cur.map((x) => (x.id === g.id ? g : x)) : [...cur, g],
+            );
+            closeDialog();
           }}
           onSavedSeries={(s) => {
-            const exists = props.series.some((x) => x.id === s.id);
-            props.onChangeSeries(exists ? props.series.map((x) => (x.id === s.id ? s : x)) : [...props.series, s]);
-            setAdding(false); setEditingSeries(null);
+            props.onChangeSeries((cur) =>
+              cur.some((x) => x.id === s.id) ? cur.map((x) => (x.id === s.id ? s : x)) : [...cur, s],
+            );
+            closeDialog();
           }}
+          onRemovedGift={(id) =>
+            props.onChangeGifts((cur) => cur.filter((x) => x.id !== id))
+          }
+          onRemovedSeries={(id) =>
+            props.onChangeSeries((cur) => cur.filter((x) => x.id !== id))
+          }
         />
       )}
 
