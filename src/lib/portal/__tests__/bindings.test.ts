@@ -86,6 +86,7 @@ import {
   isExpired,
   cooldownEndsAt,
   listActiveBindings,
+  listBindingsForUser,
   listPendingRequests,
   createPendingBinding,
   acceptBinding,
@@ -155,6 +156,46 @@ describe("listActiveBindings", () => {
   it("orders NULLS LAST so an unaccepted row can never look most-recent", async () => {
     queue = [[]];
     await listActiveBindings("user_x");
+    const compiled = compile(selectOrderByArgs[0]);
+    expect(compiled.sql).toContain("NULLS LAST");
+  });
+});
+
+describe("listBindingsForUser", () => {
+  it("skips the query and returns [] for an empty clerkUserId", async () => {
+    const result = await listBindingsForUser("");
+    expect(result).toEqual([]);
+    expect(selectFrom).not.toHaveBeenCalled();
+  });
+
+  it("returns rows in ANY status, carrying the status through", async () => {
+    const acceptedAt = new Date("2026-02-01T00:00:00Z");
+    queue = [
+      [
+        { bindingId: "b1", clientId: "c1", firmId: "firm-1", advisorId: "adv-1", acceptedAt, status: "revoked" },
+      ],
+    ];
+    const result = await listBindingsForUser("user_x");
+    expect(result).toEqual([
+      { bindingId: "b1", clientId: "c1", firmId: "firm-1", advisorId: "adv-1", acceptedAt, status: "revoked" },
+    ]);
+  });
+
+  // The whole point of this query: the dual-read chokepoint uses "zero rows at
+  // all" to decide whether the legacy `clients.clerk_user_id` column may be
+  // consulted. A status predicate here would hide a revoked user's history and
+  // let that column resurrect their access.
+  it("does NOT filter by status", async () => {
+    queue = [[]];
+    await listBindingsForUser("user_x");
+    const compiled = compile(selectWhereArgs[0]);
+    expect(compiled.params).toEqual(["user_x"]);
+    expect(compiled.sql).not.toContain("status");
+  });
+
+  it("orders NULLS LAST so an unaccepted row can never look most-recent", async () => {
+    queue = [[]];
+    await listBindingsForUser("user_x");
     const compiled = compile(selectOrderByArgs[0]);
     expect(compiled.sql).toContain("NULLS LAST");
   });

@@ -1,16 +1,27 @@
 import { cache } from "react";
 import { cookies } from "next/headers";
-import { listActiveBindings, type BindingRef } from "@/lib/portal/bindings";
+import { listBindingsForUser, type BindingRef, type BindingRow } from "@/lib/portal/bindings";
 import { pickActiveBinding, ACTIVE_HOUSEHOLD_COOKIE } from "@/lib/portal/active-household";
 import { legacyPortalClientRef } from "@/lib/portal/legacy-binding";
 
-/** Every household this login may open, newest acceptance first. Cached per request. */
-export const getPortalBindings = cache(
-  async (clerkUserId: string): Promise<BindingRef[]> => {
+/**
+ * Every binding row this login has, in ANY status. Cached per request.
+ *
+ * Internal on purpose: callers want either "which households may they open"
+ * (`getPortalBindings`) or "do they have any history at all" (the legacy
+ * fallback condition below). One query serves both.
+ */
+const getAllPortalBindings = cache(
+  async (clerkUserId: string): Promise<BindingRow[]> => {
     if (!clerkUserId) return [];
-    return listActiveBindings(clerkUserId);
+    return listBindingsForUser(clerkUserId);
   },
 );
+
+/** Every household this login may open, newest acceptance first. Cached per request. */
+export async function getPortalBindings(clerkUserId: string): Promise<BindingRef[]> {
+  return (await getAllPortalBindings(clerkUserId)).filter((b) => b.status === "active");
+}
 
 /**
  * The household this portal request is about: the ACTIVE binding.
@@ -37,20 +48,28 @@ export const getPortalClientRef = cache(async (
 ): Promise<{ id: string; firmId: string | null; advisorId: string } | null> => {
   if (!clerkUserId) return null;
 
-  const bindings = await getPortalBindings(clerkUserId);
+  const all = await getAllPortalBindings(clerkUserId);
 
-  if (bindings.length === 0) {
-    // Deploy-1 fallback only, and ONLY on an empty binding list: a client whose
-    // 0263 backfill row somehow went missing must not be locked out mid-deploy.
-    // Removed in Task 15.
-    return legacyPortalClientRef(clerkUserId);
-  }
+  // Deploy-1 fallback, and ONLY for a user with NO binding rows in ANY status:
+  // that is the one whose 0263 backfill row went missing, and locking them out
+  // mid-deploy is the risk this exists to cover. The condition is deliberately
+  // NOT "no active bindings" — revoking a binding leaves a `revoked` row and
+  // does not clear the legacy column, so an active-only test would read that
+  // column and hand the household straight back to a client their advisor just
+  // removed, silently making both revoke paths no-ops. Any history at all means
+  // `portal_bindings` is authoritative for this user. Removed in Task 15.
+  if (all.length === 0) return legacyPortalClientRef(clerkUserId);
 
+  const active = all.filter((b) => b.status === "active");
   const selected = (await cookies()).get(ACTIVE_HOUSEHOLD_COOKIE)?.value ?? null;
-  const active = pickActiveBinding(bindings, selected);
-  if (!active) return null;
+  const binding = pickActiveBinding(active, selected);
+  if (!binding) return null;
 
-  return { id: active.clientId, firmId: active.firmId, advisorId: active.advisorId };
+  // All three fields come from the SELECTED binding. `firmId` and `advisorId`
+  // are what `requireClientPortalAccess` authorizes against, so taking either
+  // from a different row would check the active household against another
+  // firm's entitlement.
+  return { id: binding.clientId, firmId: binding.firmId, advisorId: binding.advisorId };
 });
 
 /** The active `clients.id` alone. Shares the cached lookup above. */

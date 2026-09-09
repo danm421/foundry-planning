@@ -16,9 +16,9 @@ vi.mock("@/lib/billing/billing-contact", () => ({
 // `getPortalClientRef`, which now reads `portal_bindings` + the active-household
 // cookie. Mock the two data sources it consults (plus the entitlement override
 // lookup the gate finishes with) so the gate's own decision is what's measured.
-const mockListActiveBindings = vi.fn();
+const mockListBindingsForUser = vi.fn();
 vi.mock("@/lib/portal/bindings", () => ({
-  listActiveBindings: (...a: unknown[]) => mockListActiveBindings(...a),
+  listBindingsForUser: (...a: unknown[]) => mockListBindingsForUser(...a),
 }));
 
 const mockLegacyPortalClientRef = vi.fn();
@@ -49,7 +49,7 @@ beforeEach(() => {
   mockAuth.mockReset();
   mockIsBillingContact.mockReset();
   mockGetOrganization.mockReset();
-  mockListActiveBindings.mockReset();
+  mockListBindingsForUser.mockReset();
   mockLegacyPortalClientRef.mockReset();
   mockGetActiveUserOverrides.mockReset();
   mockCookies.mockReset();
@@ -317,13 +317,20 @@ describe("requireActiveSubscriptionForFirmNoSession", () => {
  * a shared id would quietly become cross-test memoization if that changed.
  */
 describe("requireClientPortalAccess", () => {
-  function bind(bindingId: string, clientId: string, acceptedAt: string) {
+  function bind(
+    bindingId: string,
+    clientId: string,
+    acceptedAt: string,
+    status: "active" | "revoked" = "active",
+    firm = { firmId: "org_portal", advisorId: "adv" },
+  ) {
     return {
       bindingId,
       clientId,
-      firmId: "org_portal",
-      advisorId: "adv",
+      firmId: firm.firmId,
+      advisorId: firm.advisorId,
       acceptedAt: new Date(acceptedAt),
+      status,
     };
   }
 
@@ -336,7 +343,7 @@ describe("requireClientPortalAccess", () => {
 
   it("resolves the cookie-selected household, inside the gate", async () => {
     mockAuth.mockResolvedValue({ userId: "user_gate_pick", orgId: null });
-    mockListActiveBindings.mockResolvedValue([
+    mockListBindingsForUser.mockResolvedValue([
       bind("b1", "client-a", "2026-01-01T00:00:00Z"),
       bind("b2", "client-b", "2026-06-01T00:00:00Z"),
     ]);
@@ -349,7 +356,7 @@ describe("requireClientPortalAccess", () => {
 
   it("ignores a cookie naming a household the caller does not hold", async () => {
     mockAuth.mockResolvedValue({ userId: "user_gate_forged", orgId: null });
-    mockListActiveBindings.mockResolvedValue([
+    mockListBindingsForUser.mockResolvedValue([
       bind("b1", "client-mine", "2026-01-01T00:00:00Z"),
     ]);
     mockCookies.mockResolvedValue({ get: () => ({ value: "client-theirs" }) });
@@ -359,18 +366,60 @@ describe("requireClientPortalAccess", () => {
     expect(clientId).toBe("client-mine");
   });
 
-  it("throws when the user holds no binding and no legacy row", async () => {
+  it("throws when the user holds no binding row and no legacy row", async () => {
     mockAuth.mockResolvedValue({ userId: "user_gate_unbound", orgId: null });
-    mockListActiveBindings.mockResolvedValue([]);
+    mockListBindingsForUser.mockResolvedValue([]);
     mockLegacyPortalClientRef.mockResolvedValue(null);
 
     await expect(requireClientPortalAccess()).rejects.toBeInstanceOf(ForbiddenError);
   });
 
+  // The gate is the surface a revoke has to actually close. A legacy fallback
+  // keyed on "no ACTIVE bindings" would let this through, because
+  // `clients.clerk_user_id` survives a revoke by design during Deploy 1.
+  it("throws for a REVOKED binding even though the legacy column still names the household", async () => {
+    mockAuth.mockResolvedValue({ userId: "user_gate_revoked", orgId: null });
+    mockListBindingsForUser.mockResolvedValue([
+      bind("b1", "client-gone", "2026-01-01T00:00:00Z", "revoked"),
+    ]);
+    mockLegacyPortalClientRef.mockResolvedValue({
+      id: "client-gone",
+      firmId: "org_portal",
+      advisorId: "adv",
+    });
+    firmHasPortal();
+
+    await expect(requireClientPortalAccess()).rejects.toBeInstanceOf(ForbiddenError);
+    expect(mockLegacyPortalClientRef).not.toHaveBeenCalled();
+  });
+
+  // The entitlement tail must be checked against the SELECTED household's firm
+  // and advisor, not another binding's.
+  it("authorizes against the selected household's own firm and advisor", async () => {
+    mockAuth.mockResolvedValue({ userId: "user_gate_twofirms", orgId: null });
+    mockListBindingsForUser.mockResolvedValue([
+      bind("b1", "client-acme", "2026-06-01T00:00:00Z", "active", {
+        firmId: "org_acme",
+        advisorId: "adv_acme",
+      }),
+      bind("b2", "client-globex", "2026-01-01T00:00:00Z", "active", {
+        firmId: "org_globex",
+        advisorId: "adv_globex",
+      }),
+    ]);
+    mockCookies.mockResolvedValue({ get: () => ({ value: "client-globex" }) });
+    firmHasPortal();
+
+    const { clientId } = await requireClientPortalAccess();
+    expect(clientId).toBe("client-globex");
+    expect(mockGetOrganization).toHaveBeenCalledWith({ organizationId: "org_globex" });
+    expect(mockGetActiveUserOverrides).toHaveBeenCalledWith("org_globex", "adv_globex");
+  });
+
   it("still refuses an advisor session outright", async () => {
     mockAuth.mockResolvedValue({ userId: "user_gate_advisor", orgId: "org_portal" });
     await expect(requireClientPortalAccess()).rejects.toThrow(/Advisor session/);
-    expect(mockListActiveBindings).not.toHaveBeenCalled();
+    expect(mockListBindingsForUser).not.toHaveBeenCalled();
   });
 
   it("throws UnauthorizedError with no session at all", async () => {

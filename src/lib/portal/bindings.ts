@@ -1,7 +1,7 @@
 import "server-only";
 import { and, eq, gt, or, isNull, isNotNull, inArray, desc, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { portalBindings, clients } from "@/db/schema";
+import { portalBindings, clients, type PortalBindingStatus } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
 
 /** How long an access request stays acceptable. */
@@ -55,6 +55,45 @@ export async function listActiveBindings(clerkUserId: string): Promise<BindingRe
     // Clean today (migration 0263 backfilled every existing row), but a later
     // task's invitation path can write `active` without acceptedAt — force
     // NULLS LAST so an unknown accept time reads as oldest, not newest.
+    .orderBy(sql`${portalBindings.acceptedAt} DESC NULLS LAST`);
+}
+
+/** A binding row in ANY status. `listBindingsForUser` is the only producer. */
+export type BindingRow = BindingRef & { status: PortalBindingStatus };
+
+/**
+ * EVERY binding row this login holds, in ANY status, newest acceptance first.
+ *
+ * Deliberately NOT filtered to `active`, because "zero rows at all" is a
+ * materially different fact from "no active rows", and the dual-read
+ * chokepoint depends on telling them apart. `getPortalClientRef` falls back to
+ * the pre-0263 `clients.clerk_user_id` column, and it may only do so for a
+ * user with no binding history whatsoever — the one whose 0263 backfill row
+ * went missing. A user whose binding was REVOKED has history, so this table is
+ * authoritative for them: falling back there would read a legacy column that
+ * revoking deliberately does not clear, and hand the household straight back
+ * to someone who was just removed from it.
+ *
+ * One query answers both questions — "does this user have any history?" and
+ * "which households may they open right now?" — because a login has a handful
+ * of rows at most, and the alternative is two round trips on every portal
+ * request.
+ */
+export async function listBindingsForUser(clerkUserId: string): Promise<BindingRow[]> {
+  if (!clerkUserId) return [];
+  return db
+    .select({
+      bindingId: portalBindings.id,
+      clientId: portalBindings.clientId,
+      firmId: clients.firmId,
+      advisorId: clients.advisorId,
+      acceptedAt: portalBindings.acceptedAt,
+      status: portalBindings.status,
+    })
+    .from(portalBindings)
+    .innerJoin(clients, eq(clients.id, portalBindings.clientId))
+    .where(eq(portalBindings.clerkUserId, clerkUserId))
+    // NULLS LAST for the same reason as listActiveBindings above.
     .orderBy(sql`${portalBindings.acceptedAt} DESC NULLS LAST`);
 }
 

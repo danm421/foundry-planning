@@ -6,19 +6,29 @@ const { listMock, cookieMock, legacyMock } = vi.hoisted(() => ({
   legacyMock: vi.fn(),
 }));
 
-vi.mock("@/lib/portal/bindings", () => ({ listActiveBindings: listMock }));
+vi.mock("@/lib/portal/bindings", () => ({ listBindingsForUser: listMock }));
 vi.mock("next/headers", () => ({ cookies: cookieMock }));
 vi.mock("@/lib/portal/legacy-binding", () => ({ legacyPortalClientRef: legacyMock }));
 
-import { getPortalClientRef, getPortalClientId } from "@/lib/portal/get-portal-client";
+import {
+  getPortalClientRef,
+  getPortalClientId,
+  getPortalBindings,
+} from "@/lib/portal/get-portal-client";
 
-function binding(clientId: string, acceptedAt: string) {
+function binding(
+  clientId: string,
+  acceptedAt: string,
+  status: "active" | "pending" | "declined" | "revoked" = "active",
+  firm = { firmId: "org_1", advisorId: "user_a" },
+) {
   return {
     bindingId: `b-${clientId}`,
     clientId,
-    firmId: "org_1",
-    advisorId: "user_a",
+    firmId: firm.firmId,
+    advisorId: firm.advisorId,
     acceptedAt: new Date(acceptedAt),
+    status,
   };
 }
 
@@ -35,7 +45,7 @@ beforeEach(() => {
 // function twice under vitest), a shared argument would silently turn into
 // cross-test memoization the day that stops being true.
 describe("getPortalClientRef", () => {
-  it("returns null for a user with no bindings and no legacy row", async () => {
+  it("returns null for a user with no binding rows and no legacy row", async () => {
     listMock.mockResolvedValue([]);
     legacyMock.mockResolvedValue(null);
     expect(await getPortalClientRef("user_none")).toBeNull();
@@ -71,24 +81,97 @@ describe("getPortalClientRef", () => {
     expect((await getPortalClientRef("user_forged"))?.id).toBe("client-mine");
   });
 
-  it("falls back to the legacy column ONLY when there are no bindings", async () => {
+  // firmId and advisorId are what `requireClientPortalAccess` authorizes
+  // against. With a single-firm fixture, a mutation that returned
+  // `bindings[0].firmId` next to the SELECTED binding's clientId would pass
+  // every other test in this file while checking the active household against
+  // another firm's entitlement.
+  it("takes id, firmId and advisorId all from the SELECTED binding", async () => {
+    listMock.mockResolvedValue([
+      binding("client-acme", "2026-06-01T00:00:00Z", "active", {
+        firmId: "org_acme",
+        advisorId: "adv_acme",
+      }),
+      binding("client-globex", "2026-01-01T00:00:00Z", "active", {
+        firmId: "org_globex",
+        advisorId: "adv_globex",
+      }),
+    ]);
+    cookieMock.mockResolvedValue({ get: () => ({ value: "client-globex" }) });
+
+    expect(await getPortalClientRef("user_twofirms")).toEqual({
+      id: "client-globex",
+      firmId: "org_globex",
+      advisorId: "adv_globex",
+    });
+  });
+
+  it("falls back to the legacy column ONLY when there are no binding rows", async () => {
     listMock.mockResolvedValue([]);
     legacyMock.mockResolvedValue({ id: "client-legacy", firmId: "org_1", advisorId: "user_a" });
     expect((await getPortalClientRef("user_legacy"))?.id).toBe("client-legacy");
   });
 
-  it("does not consult the legacy column when a binding exists", async () => {
+  it("does not consult the legacy column when an active binding exists", async () => {
     listMock.mockResolvedValue([binding("client-1", "2026-01-01T00:00:00Z")]);
     legacyMock.mockResolvedValue({ id: "client-legacy", firmId: "org_1", advisorId: "user_a" });
     expect((await getPortalClientRef("user_bound"))?.id).toBe("client-1");
     expect(legacyMock).not.toHaveBeenCalled();
   });
 
-  it("never reads the cookie when the user holds no bindings", async () => {
+  // THE revoke invariant. `clients.clerk_user_id` is still written during
+  // Deploy 1 and revoking deliberately does not clear it, so a fallback
+  // condition of "no ACTIVE bindings" would read that column and hand the
+  // household straight back — making every revoke path a no-op.
+  it("returns null for a REVOKED binding instead of resurrecting it from the legacy column", async () => {
+    listMock.mockResolvedValue([binding("client-gone", "2026-01-01T00:00:00Z", "revoked")]);
+    legacyMock.mockResolvedValue({ id: "client-gone", firmId: "org_1", advisorId: "user_a" });
+
+    expect(await getPortalClientRef("user_revoked")).toBeNull();
+    expect(legacyMock).not.toHaveBeenCalled();
+  });
+
+  it("returns null for a user whose only row is pending or declined", async () => {
+    listMock.mockResolvedValue([
+      binding("client-asked", "2026-01-01T00:00:00Z", "pending"),
+      binding("client-said-no", "2026-02-01T00:00:00Z", "declined"),
+    ]);
+    legacyMock.mockResolvedValue({ id: "client-legacy", firmId: "org_1", advisorId: "user_a" });
+
+    expect(await getPortalClientRef("user_pending")).toBeNull();
+    expect(legacyMock).not.toHaveBeenCalled();
+  });
+
+  it("selects the active binding even when a revoked one is more recent", async () => {
+    listMock.mockResolvedValue([
+      binding("client-gone", "2026-06-01T00:00:00Z", "revoked"),
+      binding("client-live", "2026-01-01T00:00:00Z", "active"),
+    ]);
+    expect((await getPortalClientRef("user_mixed"))?.id).toBe("client-live");
+  });
+
+  it("never reads the cookie when the user holds no binding rows", async () => {
     listMock.mockResolvedValue([]);
     legacyMock.mockResolvedValue(null);
     await getPortalClientRef("user_cookieless");
     expect(cookieMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("getPortalBindings", () => {
+  it("publishes only the ACTIVE bindings", async () => {
+    listMock.mockResolvedValue([
+      binding("client-live", "2026-06-01T00:00:00Z", "active"),
+      binding("client-gone", "2026-05-01T00:00:00Z", "revoked"),
+      binding("client-asked", "2026-04-01T00:00:00Z", "pending"),
+    ]);
+    const rows = await getPortalBindings("user_switcher");
+    expect(rows.map((b) => b.clientId)).toEqual(["client-live"]);
+  });
+
+  it("returns [] for an empty userId without issuing a query", async () => {
+    expect(await getPortalBindings("")).toEqual([]);
+    expect(listMock).not.toHaveBeenCalled();
   });
 });
 
