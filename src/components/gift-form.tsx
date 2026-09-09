@@ -99,11 +99,30 @@ export default function GiftForm(props: GiftFormProps) {
   const [amountMode, setAmountMode] = useState<"fixed" | "annual_exclusion">(() =>
     editing?.kind === "series" ? editing.amountMode : "fixed",
   );
-  const [year, setYear] = useState(() => (editing && editing.kind !== "series" ? editing.year : planMinYear ?? thisYear));
-  const [startYear, setStartYear] = useState(() => (editing?.kind === "series" ? editing.startYear : planMinYear ?? thisYear));
-  const [endYear, setEndYear] = useState(() => (editing?.kind === "series" ? editing.endYear : planMaxYear ?? thisYear + 9));
-  const [amount, setAmount] = useState(() => (editing?.kind === "cash-once" ? editing.amount : sourceAccount?.value ?? 0));
-  const [annualAmount, setAnnualAmount] = useState(() => (editing?.kind === "series" ? editing.annualAmount : 0));
+  // Every field below seeds from the saved gift even when it belongs to the
+  // OTHER kind, so flipping Frequency on an existing gift keeps its timing and
+  // its dollars. Seeded from the defaults instead, a flip can land on year 0 or
+  // $0 — an invalid draft, which greys out Save with nothing on screen to
+  // explain why.
+  const savedYear = editing == null ? null : editing.kind === "series" ? editing.startYear : editing.year;
+  const [year, setYear] = useState(() => savedYear ?? planMinYear ?? thisYear);
+  const [startYear, setStartYear] = useState(() => savedYear ?? planMinYear ?? thisYear);
+  const [endYear, setEndYear] = useState(() =>
+    editing?.kind === "series"
+      ? editing.endYear
+      // Never below the start year, or the series is invalid before it is touched.
+      : Math.max(planMaxYear ?? thisYear + 9, savedYear ?? 0),
+  );
+  const [amount, setAmount] = useState(() =>
+    editing?.kind === "cash-once" ? editing.amount
+    : editing?.kind === "series" ? editing.annualAmount
+    : sourceAccount?.value ?? 0,
+  );
+  const [annualAmount, setAnnualAmount] = useState(() =>
+    editing?.kind === "series" ? editing.annualAmount
+    : editing?.kind === "cash-once" ? editing.amount
+    : 0,
+  );
   const [percentWhole, setPercentWhole] = useState(() => (editing?.kind === "asset-once" ? Math.round(editing.percent * 100) : 100));
   const [selectedAccountId, setSelectedAccountId] = useState(() =>
     editing?.kind === "asset-once" ? editing.accountId : "",
@@ -133,12 +152,10 @@ export default function GiftForm(props: GiftFormProps) {
 
   const selected = recipientOptions.find((o) => o.value === recipientValue);
   const recipientIsTrust = selected?.isTrust ?? false;
-  const recurringAllowed = true;
   const effectiveRecurring = isRecurring;
   const inKindAllowed = sourceAccount != null || props.accounts.length > 0;
   const effectiveInKind = !effectiveRecurring && inKindAllowed && isInKind;
   const effectiveAccountId = sourceAccount?.id ?? selectedAccountId;
-  const kindLocked = editing != null;
   const grantorCount = grantor === "joint" ? 2 : 1;
 
   // Max-exclusion preview value for the relevant year.
@@ -315,8 +332,7 @@ export default function GiftForm(props: GiftFormProps) {
         <Segmented
           value={effectiveRecurring ? "recurring" : "one_time"}
           options={[["one_time", "One-time"], ["recurring", "Recurring"]]}
-          onChange={(v) => { if (!kindLocked) setIsRecurring(v === "recurring"); }}
-          disabled={(v) => kindLocked || (v === "recurring" && !recurringAllowed)}
+          onChange={(v) => setIsRecurring(v === "recurring")}
         />
       </Field>
 
@@ -361,8 +377,7 @@ export default function GiftForm(props: GiftFormProps) {
           <Segmented
             value={effectiveInKind ? "asset" : "cash"}
             options={[["cash", "Cash"], ["asset", "Specific asset"]]}
-            onChange={(v) => { if (!kindLocked) setIsInKind(v === "asset"); }}
-            disabled={() => kindLocked || !inKindAllowed}
+            onChange={(v) => setIsInKind(v === "asset")}
           />
         </Field>
       )}

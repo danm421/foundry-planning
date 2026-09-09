@@ -29,6 +29,10 @@ export interface GiftDialogProps {
   onClose: () => void;
   onSavedGift: (g: Gift) => void;
   onSavedSeries: (s: GiftSeriesLite) => void;
+  /** A kind change re-created the row under a new id, so the old one is gone —
+   *  see `savesInPlace`. Fires before the matching onSaved* callback. */
+  onRemovedGift: (id: string) => void;
+  onRemovedSeries: (id: string) => void;
 }
 
 export default function GiftDialog(props: GiftDialogProps) {
@@ -40,9 +44,8 @@ export default function GiftDialog(props: GiftDialogProps) {
   );
   const irrevocableTrustIds = new Set(irrevocableTrusts.map((e) => e.id));
   // Stable form seed. The live `draft` (below) must NOT be fed back as the seed:
-  // GiftForm treats a non-null `editing` as "editing an existing gift" and locks
-  // the Frequency/Funding toggles, so passing the in-progress draft would freeze
-  // those controls the moment the form first becomes valid.
+  // GiftForm re-seeds every field from `editing`, so passing the in-progress
+  // draft would fight the advisor's own typing.
   const initialDraft = useState(() =>
     toEditingDraft(props.editingGift ?? null, props.editingSeries ?? null),
   )[0];
@@ -50,12 +53,69 @@ export default function GiftDialog(props: GiftDialogProps) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * True when the edit can be a PATCH of the row the advisor opened.
+   *
+   * It can't be when the advisor changed the gift's *shape*: Frequency moves
+   * the row between two tables (`gifts` and `gift_series`), and Funding or a
+   * different source asset rewrites `accountId`, which the gift PATCH schema
+   * omits on purpose — re-pointing a row would strand the liability row the
+   * POST route auto-bundles with an asset transfer. Those saves create the
+   * replacement first and delete the original after, so the new row is built
+   * by the POST route with the bundling and ownership writes its own shape
+   * needs. The gift keeps its meaning, not its id.
+   */
+  function savesInPlace(d: EstateFlowGift): boolean {
+    if (d.kind === "series") return props.editingSeries != null;
+    if (!props.editingGift) return false;
+    const savedAccountId = props.editingGift.accountId ?? null;
+    return d.kind === "asset-once"
+      ? savedAccountId === d.accountId
+      : savedAccountId === null;
+  }
+
+  /** Delete the row a shape change left behind. Runs AFTER the replacement is
+   *  saved, so a failure here leaves a duplicate rather than losing the gift. */
+  async function removeReplacedRow() {
+    const staleGift = props.editingGift;
+    const staleSeries = props.editingSeries;
+    const url = staleGift
+      ? `/api/clients/${props.clientId}/gifts/${staleGift.id}`
+      : staleSeries
+        ? `/api/clients/${props.clientId}/gifts/series/${staleSeries.id}?scenario=${props.scenarioId}`
+        : null;
+    if (!url) return;
+    const res = await fetch(url, { method: "DELETE" });
+    if (!res.ok) {
+      throw new Error(
+        "Saved the updated gift, but the original entry could not be removed. Refresh and delete it.",
+      );
+    }
+    if (staleGift) props.onRemovedGift(staleGift.id);
+    else if (staleSeries) props.onRemovedSeries(staleSeries.id);
+  }
+
   async function save() {
     setSaving(true);
     setError(null);
     try {
       if (!draft) throw new Error("Please complete the gift before saving.");
-      const discountApplies = discountAppliesToDraft(draft, irrevocableTrustIds);
+      const inPlace = savesInPlace(draft);
+      // The discount field is on screen exactly when the shared rule admits the
+      // gift's shape, so when it does the draft is authoritative: an advisor who
+      // cleared it sends an explicit null. When it does not, the dialog has no
+      // opinion — a PATCH omits the key so the routes leave the saved row alone,
+      // and a re-create writes null because the replacement is a shape that
+      // cannot carry a discount at all.
+      //
+      // A shape change that KEEPS the discount (asset -> asset, one-time ->
+      // recurring) needs no special handling: the field is on screen on both
+      // sides, so the seeded draft carries the value onto the replacement.
+      const discountToSend = discountAppliesToDraft(draft, irrevocableTrustIds)
+        ? draft.valuationDiscount ?? null
+        : inPlace
+          ? undefined
+          : null;
 
       if (draft.kind === "series") {
         const body: Record<string, unknown> = {
@@ -67,22 +127,21 @@ export default function GiftDialog(props: GiftDialogProps) {
           inflationAdjust: draft.inflationAdjust,
           useCrummeyPowers: draft.crummey,
         };
-        // The field is on screen for every series, so the draft is
-        // authoritative — an explicit null clears a saved discount.
-        if (discountApplies) body.valuationDiscount = draft.valuationDiscount ?? null;
+        if (discountToSend !== undefined) body.valuationDiscount = discountToSend;
         if (draft.recipient.kind === "entity") body.recipientEntityId = draft.recipient.id;
         if (draft.recipient.kind === "family_member") body.recipientFamilyMemberId = draft.recipient.id;
         if (draft.recipient.kind === "external_beneficiary") body.recipientExternalBeneficiaryId = draft.recipient.id;
-        const url = props.editingSeries
-          ? `/api/clients/${props.clientId}/gifts/series/${props.editingSeries.id}?scenario=${props.scenarioId}`
+        const url = inPlace
+          ? `/api/clients/${props.clientId}/gifts/series/${props.editingSeries!.id}?scenario=${props.scenarioId}`
           : `/api/clients/${props.clientId}/gifts/series?scenario=${props.scenarioId}`;
         const res = await fetch(url, {
-          method: props.editingSeries ? "PATCH" : "POST",
+          method: inPlace ? "PATCH" : "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
         const row = await res.json();
+        if (!inPlace) await removeReplacedRow();
         props.onSavedSeries({
           id: row.id,
           grantor: row.grantor,
@@ -114,20 +173,19 @@ export default function GiftDialog(props: GiftDialogProps) {
         body.percent = draft.percent;
         body.useCrummeyPowers = false;
       }
-      // See the series body above. A one-time cash gift to an individual shows
-      // no discount field, so the row is left alone rather than cleared.
-      if (discountApplies) body.valuationDiscount = draft.valuationDiscount ?? null;
+      if (discountToSend !== undefined) body.valuationDiscount = discountToSend;
 
-      const url = props.editingGift
-        ? `/api/clients/${props.clientId}/gifts/${props.editingGift.id}`
+      const url = inPlace
+        ? `/api/clients/${props.clientId}/gifts/${props.editingGift!.id}`
         : `/api/clients/${props.clientId}/gifts`;
       const res = await fetch(url, {
-        method: props.editingGift ? "PATCH" : "POST",
+        method: inPlace ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
       const row = await res.json();
+      if (!inPlace) await removeReplacedRow();
       props.onSavedGift({
         id: row.id,
         year: row.year,

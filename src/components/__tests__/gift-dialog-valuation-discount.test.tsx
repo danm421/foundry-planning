@@ -42,11 +42,22 @@ const baseProps = {
       ownerFamilyMemberId: "m0",
       ownerEntityId: null,
     },
+    {
+      id: "a2",
+      name: "Holdco LLC",
+      category: "business",
+      value: 250_000,
+      subType: "business",
+      ownerFamilyMemberId: "m0",
+      ownerEntityId: null,
+    },
   ] as unknown as AccountLite[],
   annualExclusionByYear: { 2026: 19000 },
   onClose: vi.fn(),
   onSavedGift: vi.fn(),
   onSavedSeries: vi.fn(),
+  onRemovedGift: vi.fn(),
+  onRemovedSeries: vi.fn(),
 };
 
 /** A saved in-kind gift carrying a 30% discount. */
@@ -87,6 +98,15 @@ function mockSave(row: Record<string, unknown>) {
   return vi.spyOn(global, "fetch").mockResolvedValue(
     new Response(JSON.stringify(row), { status: 200 }),
   );
+}
+
+/** POST-then-DELETE, for a save that re-creates the row under a new id. */
+function mockFetchSequence(...bodies: unknown[]) {
+  const mock = vi.spyOn(global, "fetch");
+  for (const b of bodies) {
+    mock.mockResolvedValueOnce(new Response(JSON.stringify(b), { status: 200 }));
+  }
+  return mock;
 }
 
 /** The JSON body of the first fetch the dialog issued. */
@@ -173,5 +193,50 @@ describe("GiftDialog — valuation discount round-trip", () => {
     fireEvent.click(screen.getByText("Save gift"));
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     expect("valuationDiscount" in sentBody(fetchMock)).toBe(false);
+  });
+});
+
+// Changing Frequency or the source asset cannot be a PATCH — the row is
+// re-created under a new id and the original deleted. The replacement is built
+// from the draft, so what happens to the discount depends on whether the new
+// shape can carry one.
+describe("GiftDialog — a discount across a save that re-creates the row", () => {
+  beforeEach(() => { vi.restoreAllMocks(); vi.clearAllMocks(); });
+
+  it("carries the discount when the new shape still shows the field", async () => {
+    // Re-pointing the source asset is a re-create, not a PATCH. Both sides are
+    // in-kind, so the field stays on screen and the draft carries 30% onto the
+    // replacement. Losing it would silently re-file the gift at full value.
+    const fetchMock = mockFetchSequence(
+      { id: "g9", year: 2026, accountId: "a2", percent: "0.15" },
+      { ok: true },
+    );
+    render(<GiftDialog {...baseProps} editingGift={discountedGift} />);
+    fireEvent.change(screen.getByTestId("account"), { target: { value: "a2" } });
+    expect(discountField().value).toBe("30");
+    fireEvent.click(screen.getByText("Save gift"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const [createUrl, createInit] = fetchMock.mock.calls[0];
+    expect((createInit as RequestInit).method).toBe("POST");
+    expect(String(createUrl)).toBe("/api/clients/c1/gifts");
+    expect(sentBody(fetchMock).valuationDiscount).toBeCloseTo(0.3, 4);
+    expect(String(fetchMock.mock.calls[1][0])).toBe("/api/clients/c1/gifts/g1");
+  });
+
+  it("does not carry it onto a shape that cannot show the field", async () => {
+    // In-kind to a trust -> one-time cash to an individual. Nothing there is
+    // appraisable, so the replacement must not inherit 30% — that would
+    // under-report the exemption the gift consumes.
+    const fetchMock = mockFetchSequence({ id: "g9", year: 2026 }, { ok: true });
+    render(<GiftDialog {...baseProps} editingGift={discountedGift} />);
+    fireEvent.click(screen.getByText("Cash"));
+    fireEvent.change(screen.getByTestId("recipient"), { target: { value: "family_member:m1" } });
+    fireEvent.change(screen.getByLabelText(/amount/i, { selector: "input" }), {
+      target: { value: "19000" },
+    });
+    expect(screen.queryByLabelText(/Valuation discount/i)).toBeNull();
+    fireEvent.click(screen.getByText("Save gift"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(sentBody(fetchMock).valuationDiscount).toBeNull();
   });
 });

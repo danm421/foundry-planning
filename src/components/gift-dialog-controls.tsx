@@ -82,31 +82,25 @@ export function Segmented({
   value,
   options,
   onChange,
-  disabled,
 }: {
   value: string;
   options: [string, string][];
   onChange: (v: string) => void;
-  disabled?: (v: string) => boolean;
 }) {
   return (
     <div className="inline-flex rounded border border-ink-3 p-0.5">
-      {options.map(([val, label]) => {
-        const isDisabled = disabled?.(val) ?? false;
-        return (
-          <button
-            key={val}
-            type="button"
-            disabled={isDisabled}
-            onClick={() => onChange(val)}
-            className={`rounded px-3 py-1 text-xs ${
-              value === val ? "bg-accent text-accent-on" : "text-ink-2"
-            } ${isDisabled ? "cursor-not-allowed opacity-40" : ""}`}
-          >
-            {label}
-          </button>
-        );
-      })}
+      {options.map(([val, label]) => (
+        <button
+          key={val}
+          type="button"
+          onClick={() => onChange(val)}
+          className={`rounded px-3 py-1 text-xs ${
+            value === val ? "bg-accent text-accent-on" : "text-ink-2"
+          }`}
+        >
+          {label}
+        </button>
+      ))}
     </div>
   );
 }
