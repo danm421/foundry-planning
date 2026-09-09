@@ -139,14 +139,17 @@ export default clerkMiddleware(async (auth, request) => {
       // itself, via `resolvePortalClient` or `requireClientPortalAccess`
       // directly. An ops revoke closes the pages AND the API.
       //
-      // ONE deliberate exception: `/api/portal/requests` does neither, so an
-      // ops revoke does NOT close it. It cannot: that route serves the person
-      // being asked for their FIRST binding, who by definition holds none and
-      // so has no entitlement to check. It is safe ungated because every row it
-      // reads or writes is constrained by the `clerkUserId` predicate inside
-      // `bindings.ts` — the caller can only ever see and settle requests
-      // addressed to their own Clerk user id, and no user id is accepted from
-      // the request body. Being ungated is the design, not an oversight.
+      // TWO deliberate exceptions do neither, so an ops revoke does NOT close
+      // them. `/api/portal/requests` cannot check an entitlement: it serves the
+      // person being asked for their FIRST binding, who by definition holds
+      // none. `/api/portal/connections` must not: it lists every firm holding
+      // this login and ends any of them, so gating it on the ACTIVE household's
+      // firm would let one firm switching the portal off take away the client's
+      // ability to leave a different firm. Both are safe ungated because every
+      // row either reads or writes is constrained by the `clerkUserId`
+      // predicate inside `bindings.ts` — the caller can only ever see and
+      // settle their own bindings, and no user id is accepted from the request
+      // body. Being ungated is the design, not an oversight.
       //
       // Soft first-run gate: redirect to /portal/intake when the client has
       // an unsubmitted prefilled form (draft-only — not after submission).

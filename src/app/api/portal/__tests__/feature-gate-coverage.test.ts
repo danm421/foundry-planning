@@ -53,9 +53,15 @@ const GATED: Readonly<Record<string, { feature: PortalFeatureKey; via: "route" |
  * `requests` is core and must STAY ungated: it is the accept/decline screen's
  * endpoint, and its caller holds no binding yet — there is no household whose
  * feature switches could be read, let alone one that should hide the request.
+ *
+ * `connections` is core for the mirror reason: it lists EVERY firm holding this
+ * login and lets the client end any of them. It spans firms, so there is no one
+ * household whose switches could gate it — and a client must be able to leave a
+ * firm whose portal is switched off, not least then.
  */
 const CORE = new Set([
   "accounts",
+  "connections",
   "dashboard",
   "expenses",
   "family",
