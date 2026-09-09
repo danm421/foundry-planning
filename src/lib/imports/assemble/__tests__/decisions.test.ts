@@ -126,4 +126,55 @@ describe("merge decision log", () => {
       asOf: "2026-03-31",
     });
   });
+
+  it("stays silent when both statements carry the SAME date", () => {
+    // One DISTINCT date, reached the other way: `chooseBase` sees equal dates
+    // and falls straight through to field count (`:168` — the `!==` guard), so
+    // `basis: "date"` would be a lie. Counting raw dates instead of distinct
+    // ones would emit kept "2026-06-30" / dropped ["2026-06-30"] and narrate
+    // "a 06/30/2026 statement ... was superseded" — the same date twice.
+    const result = mergeAcrossFiles({
+      f1: er("a.pdf", {
+        accounts: [{ name: "IRA", custodian: "Schwab", accountNumberLast4: "9999", owner: "client", value: 10_000, basis: 5_000, statementDate: "2026-06-30" }],
+      }),
+      f2: er("b.pdf", {
+        accounts: [{ name: "IRA", custodian: "Schwab", accountNumberLast4: "9999", owner: "client", value: 12_000, statementDate: "2026-06-30" }],
+      }),
+    });
+
+    expect(result.decisions.some((d) => d.kind === "superseded")).toBe(false);
+    expect(result.decisions.some((d) => d.kind === "undated")).toBe(false);
+    // Two genuinely different figures both as of the same day IS a conflict,
+    // and it is still disclosed.
+    expect(result.decisions).toContainEqual({
+      kind: "value-conflict",
+      account: "IRA",
+      values: [10_000, 12_000],
+      asOf: "2026-06-30",
+    });
+  });
+
+  it("does not raise a value conflict when only ONE side has a figure", () => {
+    // `withinTolerance` returns false when exactly one side is undefined
+    // (deliberately conservative), so the conflict note fires — but there is
+    // only one number to show. "Reported as $100,000 as of 06/30/2026,
+    // confirm which is current" discloses no conflict and offers no choice.
+    // The shipped warning handles this honestly ("$100,000 vs unknown"); the
+    // decision channel must not be less truthful than the one it parallels.
+    const result = mergeAcrossFiles({
+      f1: er("dated.pdf", {
+        accounts: [{ name: "401(k)", custodian: "Fidelity", accountNumberLast4: "1234", owner: "client", value: 100_000, statementDate: "2026-06-30" }],
+      }),
+      f2: er("no-balance.pdf", {
+        accounts: [{ name: "401(k)", custodian: "Fidelity", accountNumberLast4: "1234", owner: "client" }],
+      }),
+    });
+
+    expect(result.decisions.some((d) => d.kind === "value-conflict")).toBe(false);
+    // The advisor still hears about it, through the channel that can say
+    // "unknown".
+    expect(result.payload.warnings).toContain(
+      `Merged duplicate account "401(k)" seen in 2 documents — balances differ ($100,000 vs unknown); please verify which is current.`,
+    );
+  });
 });

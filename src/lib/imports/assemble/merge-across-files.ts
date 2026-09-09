@@ -350,12 +350,19 @@ function mergeSection<T extends { name: string }>(
         });
       }
 
-      // Only disclose a figure conflict when the SURVIVING row carries a date
-      // we can print. Without one there is no truthful "as of", and the
-      // divergence is already disclosed by the `balances differ (...)`
-      // warning above.
+      // Only disclose a figure conflict when there are actually TWO figures
+      // to weigh AND the SURVIVING row carries a date we can print.
+      //
+      // Without a date there is no truthful "as of". And a single figure is
+      // not a conflict: `withinTolerance` returns false when exactly one side
+      // is undefined (deliberately conservative — see `:42-44`), so a
+      // statement that lists an account with no balance fires the note while
+      // contributing no number, leaving one figure behind. Narrating that
+      // asks the advisor to choose between a value and nothing. Either way
+      // the divergence is still disclosed by the `balances differ (...)`
+      // warning above, which can say "unknown" where this channel cannot.
       const survivorDate = orderableDate(opts.recencyOf?.(entry.content));
-      if (entry.conflictValues.length > 0 && survivorDate !== undefined) {
+      if (entry.conflictValues.length >= 2 && survivorDate !== undefined) {
         opts.decisions.push({
           kind: "value-conflict",
           account: entry.content.name,
