@@ -16,10 +16,19 @@ import {
   type ImportPayload,
   type Provenance,
 } from "../types";
+import type { MergeDecision } from "./decisions";
 
 export interface MergeAcrossFilesResult {
   payload: ImportPayload;
   mergedFileCount: number;
+  /**
+   * Structured facts about what the merge collapsed, in bucket order. A
+   * parallel channel to `payload.warnings` — the warnings are the shipped
+   * wizard copy, these are machine-readable so a narrator can only say what
+   * actually happened. Additive: existing callers destructure `{ payload,
+   * mergedFileCount }` and are unaffected.
+   */
+  decisions: MergeDecision[];
 }
 
 /** Two amounts are "the same" if they're within this fraction of each other. */
@@ -73,6 +82,13 @@ function unionFields<T extends object>(base: T, other: T): T {
 interface SourceRow<T> {
   content: T;
   provenance: Provenance;
+  /**
+   * The document's display name. `provenance` carries a `sourceFileId` — an
+   * id, not something an advisor can read — and the decision log has to name
+   * files ("seen in march.pdf and june.pdf"). Required, not optional, so tsc
+   * proves every push site supplied it.
+   */
+  sourceName: string;
 }
 
 interface DedupeBucketEntry<T> {
@@ -85,6 +101,22 @@ interface DedupeBucketEntry<T> {
   // FIX 5. Collected in the loop, joined into ONE post-loop warning (FIX 6)
   // rather than emitted per merge.
   conflictNotes: string[];
+  /**
+   * Every ORDERABLE date seen in this bucket, in read order — the raw
+   * `statementDate` is never recorded here (see `orderableDate`). Recording
+   * the raw string would let an unorderable value like "March 31, 2026" sort
+   * ahead of every ISO date and make the log name a `kept` statement that
+   * `chooseBase` did not actually keep.
+   */
+  dates: string[];
+  /** Distinct source file names for this bucket, in read order. */
+  fileNames: string[];
+  /**
+   * The raw figures behind `conflictNotes`, existing-then-incoming, deduped
+   * in first-seen order. Populated only when the caller supplies
+   * `opts.conflictValueOf` — `T` is generic here and has no `value` field.
+   */
+  conflictValues: number[];
 }
 
 /** Advisor-facing note about what a collapse actually changed, when the
@@ -176,11 +208,28 @@ function mergeSection<T extends { name: string }>(
   isSameEntity: (existing: T, incoming: T) => boolean,
   warnings: string[],
   describeConflict?: DescribeConflict<T>,
-  opts?: { recencyOf?: (row: T) => string | undefined },
+  opts?: {
+    recencyOf?: (row: T) => string | undefined;
+    /** Collector for the structured decision log. Sections with no as-of
+     * date to reason about simply don't pass it. */
+    decisions?: MergeDecision[];
+    /** Reads the figure `describeConflict` compared, so a `value-conflict`
+     * decision can carry raw numbers rather than the formatted note. */
+    conflictValueOf?: (row: T) => number | undefined;
+  },
 ): void {
   const buckets = new Map<string, DedupeBucketEntry<T>[]>();
 
-  for (const { content, provenance } of rows) {
+  /** Record what this row contributes to its bucket's decision facts. */
+  const recordSource = (entry: DedupeBucketEntry<T>, row: T, sourceName: string): void => {
+    const date = orderableDate(opts?.recencyOf?.(row));
+    if (date !== undefined) entry.dates.push(date);
+    // One file listing the same account twice must never render
+    // "appeared in a.pdf and a.pdf".
+    if (!entry.fileNames.includes(sourceName)) entry.fileNames.push(sourceName);
+  };
+
+  for (const { content, provenance, sourceName } of rows) {
     const key = computeKey(content);
     if (key === null) {
       target.push({ ...content, __provenance: provenance, match: { kind: "new" } } as Annotated<T>);
@@ -223,7 +272,17 @@ function mergeSection<T extends { name: string }>(
       // Collected here and joined into the single post-loop warning below —
       // NOT emitted per merge (see FIX 6 in the function doc comment).
       const conflictNote = describeConflict?.(priorContent, content);
-      if (conflictNote) existingEntry.conflictNotes.push(conflictNote);
+      if (conflictNote) {
+        existingEntry.conflictNotes.push(conflictNote);
+        // Same order the shipped warning uses — "($X vs $Y)", existing then
+        // incoming — so a caveat built from these reads consistently with it.
+        for (const figure of [opts?.conflictValueOf?.(priorContent), opts?.conflictValueOf?.(content)]) {
+          if (figure !== undefined && !existingEntry.conflictValues.includes(figure)) {
+            existingEntry.conflictValues.push(figure);
+          }
+        }
+      }
+      recordSource(existingEntry, content, sourceName);
       continue;
     }
 
@@ -234,7 +293,11 @@ function mergeSection<T extends { name: string }>(
       provenance,
       mergeCount: 1,
       conflictNotes: [],
+      dates: [],
+      fileNames: [],
+      conflictValues: [],
     };
+    recordSource(entry, content, sourceName);
     target.push({ ...content, __provenance: provenance, match: { kind: "new" } } as Annotated<T>);
     if (bucket) {
       bucket.push(entry);
@@ -256,6 +319,50 @@ function mergeSection<T extends { name: string }>(
           ? `Merged duplicate ${label} "${entry.content.name}" seen in ${entry.mergeCount} documents${conflictSuffix}`
           : `Merged duplicate ${label} "${entry.content.name}" seen in ${entry.mergeCount} documents.`,
       );
+      if (!opts?.decisions) continue;
+
+      // Emit on the count of DISTINCT orderable dates, because that is what
+      // `chooseBase` actually ordered by:
+      //   >= 2  the newest genuinely superseded the rest — `basis: "date"`.
+      //   == 0  nothing in the bucket was datable; say so.
+      //   == 1  SILENCE. Either the dates were equal (in which case
+      //         `chooseBase` fell through to field count, so `basis: "date"`
+      //         would be a lie and a narration would print the same date
+      //         twice) or one row was undated (so "no readable date on
+      //         either" would be a lie too). A decision arm whose narration
+      //         lies is worse than no decision: the advisor still gets the
+      //         "Merged duplicate" warning, and a real divergence still
+      //         surfaces as `value-conflict` below.
+      const distinctDates = [...new Set(entry.dates)].sort().reverse();
+      if (distinctDates.length >= 2) {
+        opts.decisions.push({
+          kind: "superseded",
+          account: entry.content.name,
+          kept: distinctDates[0],
+          dropped: distinctDates.slice(1),
+          basis: "date",
+        });
+      } else if (distinctDates.length === 0) {
+        opts.decisions.push({
+          kind: "undated",
+          account: entry.content.name,
+          fileNames: entry.fileNames,
+        });
+      }
+
+      // Only disclose a figure conflict when the SURVIVING row carries a date
+      // we can print. Without one there is no truthful "as of", and the
+      // divergence is already disclosed by the `balances differ (...)`
+      // warning above.
+      const survivorDate = orderableDate(opts.recencyOf?.(entry.content));
+      if (entry.conflictValues.length > 0 && survivorDate !== undefined) {
+        opts.decisions.push({
+          kind: "value-conflict",
+          account: entry.content.name,
+          values: entry.conflictValues,
+          asOf: survivorDate,
+        });
+      }
     }
   }
 }
@@ -308,6 +415,7 @@ export function mergeAcrossFiles(
   fileResults: Record<string, ExtractionResult>,
 ): MergeAcrossFilesResult {
   const payload = emptyImportPayload();
+  const decisions: MergeDecision[] = [];
 
   const accountRows: SourceRow<ExtractedAccount>[] = [];
   const incomeRows: SourceRow<ExtractedIncome>[] = [];
@@ -321,21 +429,24 @@ export function mergeAcrossFiles(
 
   for (const [fileId, result] of Object.entries(fileResults)) {
     const provenanceFor = (section: string): Provenance => ({ sourceFileId: fileId, section });
+    // `provenance` can only identify the file by id; the decision log has to
+    // name it. `fileName` is required on `ExtractionResult`.
+    const sourceName = result.fileName;
 
     for (const row of result.extracted.accounts) {
-      accountRows.push({ content: row, provenance: provenanceFor("accounts") });
+      accountRows.push({ content: row, provenance: provenanceFor("accounts"), sourceName });
     }
     for (const row of result.extracted.incomes) {
-      incomeRows.push({ content: row, provenance: provenanceFor("incomes") });
+      incomeRows.push({ content: row, provenance: provenanceFor("incomes"), sourceName });
     }
     for (const row of result.extracted.expenses) {
-      expenseRows.push({ content: row, provenance: provenanceFor("expenses") });
+      expenseRows.push({ content: row, provenance: provenanceFor("expenses"), sourceName });
     }
     for (const row of result.extracted.liabilities) {
-      liabilityRows.push({ content: row, provenance: provenanceFor("liabilities") });
+      liabilityRows.push({ content: row, provenance: provenanceFor("liabilities"), sourceName });
     }
     for (const row of result.extracted.entities) {
-      entityRows.push({ content: row, provenance: provenanceFor("entities") });
+      entityRows.push({ content: row, provenance: provenanceFor("entities"), sourceName });
     }
     // `?? []` for the same reason as `merge.ts`'s savings loop — see the long
     // comment there. `result` is a PERSISTED `payloadJson.fileResults` entry
@@ -344,13 +455,13 @@ export function mergeAcrossFiles(
     // pre-branch fileResults row has no key for it. This loop is older than
     // `merge.ts`'s, so this path was already crashing on those imports.
     for (const row of result.extracted.savings ?? []) {
-      savingsRows.push({ content: row, provenance: provenanceFor("savings") });
+      savingsRows.push({ content: row, provenance: provenanceFor("savings"), sourceName });
     }
     for (const row of result.extracted.lifePolicies) {
-      lifePolicyRows.push({ content: row, provenance: provenanceFor("lifePolicies") });
+      lifePolicyRows.push({ content: row, provenance: provenanceFor("lifePolicies"), sourceName });
     }
     for (const row of result.extracted.wills) {
-      willRows.push({ content: row, provenance: provenanceFor("wills") });
+      willRows.push({ content: row, provenance: provenanceFor("wills"), sourceName });
     }
 
     const family = result.extracted.family;
@@ -358,7 +469,7 @@ export function mergeAcrossFiles(
       payload.primary = mergeFamilyMember(payload.primary, family.primary, "Primary client", payload.warnings);
       payload.spouse = mergeFamilyMember(payload.spouse, family.spouse, "Spouse", payload.warnings);
       for (const dep of family.dependents ?? []) {
-        dependentRows.push({ content: dep, provenance: provenanceFor("family") });
+        dependentRows.push({ content: dep, provenance: provenanceFor("family"), sourceName });
       }
     }
 
@@ -384,7 +495,14 @@ export function mergeAcrossFiles(
         : `balances differ (${formatMoney(existing.value)} vs ${formatMoney(incoming.value)}); please verify which is current.`,
     // Accounts are the one section with an as-of date, so the newer statement
     // wins the balance rather than whichever row happened to list more fields.
-    { recencyOf: (row) => row.statementDate },
+    // They're also the only section that collects decisions: every arm of
+    // `MergeDecision` reasons about a statement date, and a section with none
+    // to offer would emit nothing but a misleading "undated" on every collapse.
+    {
+      recencyOf: (row) => row.statementDate,
+      decisions,
+      conflictValueOf: (row) => row.value,
+    },
   );
 
   mergeSection(
@@ -420,5 +538,5 @@ export function mergeAcrossFiles(
   concatSection(payload.wills, willRows);
   concatSection(payload.savings, savingsRows);
 
-  return { payload, mergedFileCount: Object.keys(fileResults).length };
+  return { payload, mergedFileCount: Object.keys(fileResults).length, decisions };
 }

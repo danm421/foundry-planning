@@ -1,13 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { mergeAcrossFiles } from "../merge-across-files";
-import type { ExtractionResult } from "@/lib/extraction/types";
-
-function er(fileName: string, extracted: Partial<ExtractionResult["extracted"]>): ExtractionResult {
-  return {
-    documentType: "account_statement", fileName, promptVersion: "test", warnings: [],
-    extracted: { accounts: [], incomes: [], expenses: [], liabilities: [], entities: [], lifePolicies: [], wills: [], savings: [], goals: [], ...extracted },
-  };
-}
+import { er } from "./fixtures";
 
 describe("mergeAcrossFiles", () => {
   it("collapses the same account seen on two statements (custodian+last4)", () => {
