@@ -296,16 +296,17 @@ describe("proxy: the access-request screen at /requests", () => {
     expect(res.headers.get("location") ?? "").not.toContain("/portal/intake");
   });
 
-  it("still sends an ADVISOR session away from /requests", async () => {
-    // Handled at the page, not here: /requests must NOT start with /portal, or
-    // isPortalRoute's (.*) would swallow it. This pins that the proxy leaves the
-    // decision to the page rather than silently routing it as a portal page.
+  it("passes an ADVISOR session through to /requests, leaving the decision to the page", async () => {
+    // /requests must NOT start with /portal, or isPortalRoute's (.*) would
+    // swallow it and apply the advisor block here. So the proxy does NOT turn
+    // an advisor away; src/app/requests/page.tsx redirects them to /clients
+    // itself (covered in src/app/requests/__tests__/page.test.tsx). This pins
+    // the handoff — a future proxy change that started redirecting here would
+    // move the auth decision without anyone noticing.
     const res = await captured.handler!(
       authWith("u1", "org_advisor") as never,
       makeReq("/requests"),
     );
-    // The proxy passes it through; src/app/requests/page.tsx redirects an
-    // org-holding session to /clients itself.
     expect(res.status).not.toBe(307);
   });
 });

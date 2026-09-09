@@ -94,12 +94,16 @@ export default function AccessRequestList(): ReactElement {
     }
   }
 
+  // A refused accept sets `error` AND re-reads the list, and the refreshed list
+  // is usually EMPTY — the request that 409'd as expired is the one that
+  // disappears. So the refusal renders OUTSIDE the state switch: returning the
+  // empty state on its own would answer the client's click with "You have no
+  // pending requests." and never tell them the link had expired.
+  let body: ReactElement;
   if (load.state === "loading") {
-    return <p className="text-[13px] text-ink-3">Loading your requests&hellip;</p>;
-  }
-
-  if (load.state === "error") {
-    return (
+    body = <p className="text-[13px] text-ink-3">Loading your requests&hellip;</p>;
+  } else if (load.state === "error") {
+    body = (
       <div className="rounded-xl border border-hair bg-card p-6">
         <p className="text-[13px] leading-relaxed text-ink-2">
           We couldn&rsquo;t load your requests just now.
@@ -109,13 +113,52 @@ export default function AccessRequestList(): ReactElement {
         </button>
       </div>
     );
-  }
-
-  if (load.requests.length === 0) {
-    return (
+  } else if (load.requests.length === 0) {
+    body = (
       <div className="rounded-xl border border-hair bg-card p-6">
         <p className="text-[13px] leading-relaxed text-ink-2">You have no pending requests.</p>
       </div>
+    );
+  } else {
+    body = (
+      <>
+        {load.requests.map((r) => (
+          <section key={r.bindingId} className="rounded-xl border border-hair bg-card p-6">
+            <h2 className="text-[15px] font-semibold text-ink">{r.firmName}</h2>
+            <p className="mt-2 text-[13px] leading-relaxed text-ink-2">
+              {r.advisorName ? `${r.advisorName} at ${r.firmName}` : r.firmName} would like to
+              connect your Foundry account to {r.householdName}.
+            </p>
+            <p className="mt-2 text-[13px] leading-relaxed text-ink-3">
+              Accepting lets you open that household from your portal. You can disconnect it
+              later from your portal settings.
+            </p>
+            {r.expiresAt ? (
+              <p className="mt-2 text-[13px] leading-relaxed text-ink-3">
+                This request expires on {fmtExpiry(r.expiresAt)}.
+              </p>
+            ) : null}
+            <div className="mt-5 flex flex-wrap gap-2">
+              <button
+                type="button"
+                className={portalBtn.primary}
+                disabled={busyId === r.bindingId}
+                onClick={() => void decide(r.bindingId, "accept")}
+              >
+                Accept
+              </button>
+              <button
+                type="button"
+                className={portalBtn.ghost}
+                disabled={busyId === r.bindingId}
+                onClick={() => void decide(r.bindingId, "decline")}
+              >
+                Decline
+              </button>
+            </div>
+          </section>
+        ))}
+      </>
     );
   }
 
@@ -126,43 +169,7 @@ export default function AccessRequestList(): ReactElement {
           {error}
         </p>
       ) : null}
-
-      {load.requests.map((r) => (
-        <section key={r.bindingId} className="rounded-xl border border-hair bg-card p-6">
-          <h2 className="text-[15px] font-semibold text-ink">{r.firmName}</h2>
-          <p className="mt-2 text-[13px] leading-relaxed text-ink-2">
-            {r.advisorName ? `${r.advisorName} at ${r.firmName}` : r.firmName} would like to
-            connect your Foundry account to {r.householdName}.
-          </p>
-          <p className="mt-2 text-[13px] leading-relaxed text-ink-3">
-            Accepting lets you open that household from your portal. You can disconnect it
-            later from your portal settings.
-          </p>
-          {r.expiresAt ? (
-            <p className="mt-2 text-[13px] leading-relaxed text-ink-3">
-              This request expires on {fmtExpiry(r.expiresAt)}.
-            </p>
-          ) : null}
-          <div className="mt-5 flex flex-wrap gap-2">
-            <button
-              type="button"
-              className={portalBtn.primary}
-              disabled={busyId === r.bindingId}
-              onClick={() => void decide(r.bindingId, "accept")}
-            >
-              Accept
-            </button>
-            <button
-              type="button"
-              className={portalBtn.ghost}
-              disabled={busyId === r.bindingId}
-              onClick={() => void decide(r.bindingId, "decline")}
-            >
-              Decline
-            </button>
-          </div>
-        </section>
-      ))}
+      {body}
     </div>
   );
 }

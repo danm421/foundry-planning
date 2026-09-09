@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth, clerkClient } from "@clerk/nextjs/server";
-import { resolveFirmName } from "@/lib/branding/branding";
+import { resolveFirmNames } from "@/lib/activity/resolve-firm-names";
+import { getFirmDisplayNames } from "@/lib/branding/db";
 import { resolveHouseholdNames } from "@/lib/portal/household-names";
 import {
   listPendingRequests,
@@ -29,16 +30,35 @@ async function requireRequestee(): Promise<{ userId: string } | Response> {
   return { userId };
 }
 
+/** What a firm is called when neither Clerk nor the cache can name it. */
+const UNNAMED_FIRM = "A firm";
+
 /**
- * One Clerk round-trip per distinct FIRM, not per request row: two households
- * at the same firm is the ordinary case. `resolveFirmName` never throws — it
- * falls back to the cached name, and the portal holds no cache of its own, so
- * `null` is the honest second argument.
+ * Who is asking, named: live Clerk organization name → the `firms.display_name`
+ * cache → a neutral "A firm".
+ *
+ * NEVER "Foundry Planning", which is where `resolveFirmName` in
+ * `@/lib/branding/branding` ends its own chain. That default is right on a
+ * report the firm exports under our roof and wrong here: this is the ONE screen
+ * where the client learns who wants their data, because the request email
+ * deliberately names no firm, advisor or household. Printing the vendor's name
+ * during a Clerk outage would take a consent decision against a misidentified
+ * party. An unnamed request is still answerable — the binding is the client's
+ * and revocable — so a nameless firm is a better failure than a wrong one.
+ *
+ * `resolveFirmNames` dedupes (two households at one firm is the ordinary case),
+ * resolves in parallel, and wraps EACH org in its own try/catch, returning only
+ * what resolved — that absent-entry contract is what makes the per-firm
+ * fallback below possible.
  */
-async function resolveFirmNames(pending: PendingRequest[]): Promise<Map<string, string>> {
-  const ids = [...new Set(pending.map((p) => p.firmId))];
-  const names = await Promise.all(ids.map((id) => resolveFirmName(id, null)));
-  return new Map(ids.map((id, i) => [id, names[i]]));
+async function resolveRequestingFirmNames(firmIds: string[]): Promise<Map<string, string>> {
+  const [live, cached] = await Promise.all([
+    resolveFirmNames(firmIds),
+    getFirmDisplayNames(firmIds),
+  ]);
+  return new Map(
+    firmIds.map((id) => [id, live.get(id)?.trim() || cached.get(id)?.trim() || UNNAMED_FIRM]),
+  );
 }
 
 /**
@@ -79,7 +99,7 @@ export async function GET(): Promise<Response> {
   // Three independent lookups — none feeds another.
   const [householdNames, firmNames, advisorNames] = await Promise.all([
     resolveHouseholdNames(pending.map((p) => p.clientId)),
-    resolveFirmNames(pending),
+    resolveRequestingFirmNames(pending.map((p) => p.firmId)),
     resolveAdvisorNames(pending),
   ]);
 
@@ -89,7 +109,7 @@ export async function GET(): Promise<Response> {
       // A household with no primary contact has no derivable name. Say
       // "your household" rather than showing a blank where a name belongs.
       householdName: householdNames.get(p.clientId) ?? "your household",
-      firmName: firmNames.get(p.firmId) ?? "A firm",
+      firmName: firmNames.get(p.firmId) ?? UNNAMED_FIRM,
       advisorName: p.requestedBy ? advisorNames.get(p.requestedBy) ?? null : null,
       expiresAt: p.expiresAt,
     })),
