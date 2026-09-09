@@ -6,6 +6,7 @@ import { clients, crmHouseholdContacts } from "@/db/schema";
 import { requireOrgAndUser } from "@/lib/db-helpers";
 import { currentUserHasClientPortal } from "@/lib/authz";
 import PortalAccessCard from "@/components/portal/portal-access-card";
+import { loadPortalAccount } from "@/lib/clients/portal-account";
 import PortalEditToggle from "@/components/portal/portal-edit-toggle";
 import PortalActivityFeed from "@/components/portal/portal-activity-feed";
 import { portalBtn } from "@/components/portal/portal-card";
@@ -61,6 +62,15 @@ export default async function PortalManagePage({ params }: Props): Promise<React
     .where(eq(clients.id, id))
     .limit(1);
 
+  // Kicked off here, awaited below: it is a Clerk round-trip that depends only
+  // on `row`, so it overlaps the contacts and intake queries instead of adding
+  // a fourth step to the waterfall. Skipped entirely when the portal is off —
+  // the card that consumes it does not render.
+  const accountPromise =
+    portalEnabled && row?.clerkUserId
+      ? loadPortalAccount(row.clerkUserId)
+      : Promise.resolve(null);
+
   let primaryEmail = "";
   let spouseEmail: string | undefined;
   let primaryName: string | undefined;
@@ -94,6 +104,8 @@ export default async function PortalManagePage({ params }: Props): Promise<React
   }
 
   const pending = await loadSubmittedFormForClient(id, orgId);
+  // Never throws — a Clerk outage blanks the account details, not the page.
+  const account = await accountPromise;
 
   const status: "not_invited" | "invited" | "active" = row?.clerkUserId
     ? "active"
@@ -137,6 +149,8 @@ export default async function PortalManagePage({ params }: Props): Promise<React
               primaryEmail={primaryEmail}
               invitedAt={row?.portalInvitedAt ?? null}
               clerkUserId={row?.clerkUserId ?? null}
+              account={account}
+              fallbackName={primaryName}
             />
           ) : (
             <PortalNotEnabled />

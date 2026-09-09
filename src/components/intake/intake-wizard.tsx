@@ -101,14 +101,16 @@ const STEP_BY_SECTION: Record<IntakeSectionKey, StepDescriptor> = {
   family:    sectionStep("family",    { section: "family" }),
   accounts:  sectionStep("accounts",  { section: "assets", subStep: "accounts" }),
   income:    sectionStep("income",    { section: "assets", subStep: "income", skipable: true }),
-  property:  sectionStep("property",  { section: "assets", subStep: "property", skipable: true }),
+  // Chip and H1 differ: the progress bar shares one line with the eyebrow, so
+  // the chip stays short while the H1 names business interests in full.
+  property:  sectionStep("property",  { section: "assets", subStep: "property", skipable: true, label: "Property" }),
   goals:     sectionStep("goals",     { section: "goals" }),
   // Skipable: a client who has not settled on a guardian must still be able to
   // send the rest of the form rather than abandoning it on this step.
   estate:    sectionStep("estate",    { section: "estate", skipable: true }),
   documents: sectionStep("documents", { section: "documents", skipable: true }),
-  // The only step whose chip and H1 differ: the progress bar lays every label
-  // out on one row, so Risk stays compact there while the H1 reads in full.
+  // Chip and H1 differ here too, for the same reason as Property: Risk stays
+  // compact in the progress bar while the H1 reads in full.
   risk:      sectionStep("risk",      { section: "risk", label: "Risk", skipable: true }),
 };
 

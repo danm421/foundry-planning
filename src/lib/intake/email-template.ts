@@ -115,11 +115,16 @@ export function buildIntakeEmailHtml(args: {
   advisorEmail?: string;
   firmName?: string;
   clientName?: string;
+  /** Button label. Defaults to the intake wording; other senders on this same
+   *  shell (risk questionnaire, portal sign-in link) override it so the button
+   *  names what the link actually opens. */
+  ctaLabel?: string;
 }): string {
   const { link, introBody, advisorName, advisorEmail, firmName, clientName } = args;
   const ctx = { advisorName, firmName, clientName };
 
   const brand = sanitizeDisplayName(firmName) ?? "Foundry Planning";
+  const cta = sanitizeDisplayName(args.ctaLabel) ?? "Open My Form";
   const greeting = clientName ? `<p>Hello ${esc(clientName)},</p>` : `<p>Hello,</p>`;
   const introHtml = renderIntroHtml(
     sanitizeIntroBody(introBody) ?? DEFAULT_INTAKE_INTRO,
@@ -136,7 +141,7 @@ export function buildIntakeEmailHtml(args: {
     ${introHtml}
     <p style="margin:24px 0">
       <a href="${esc(link)}" style="background:#1e3a5f;color:#fff;padding:10px 20px;border-radius:4px;text-decoration:none;font-weight:500;display:inline-block">
-        Open My Form
+        ${esc(cta)}
       </a>
     </p>
     <p style="color:#6b7280;font-size:12px">Or copy this link into your browser:<br/>${esc(link)}</p>

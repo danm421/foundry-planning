@@ -37,7 +37,7 @@ export const INTAKE_SECTION_LABELS: Record<IntakeSectionKey, string> = {
   family: "Family",
   accounts: "Accounts",
   income: "Income",
-  property: "Property",
+  property: "Property and business interests",
   goals: "Goals",
   estate: "Estate",
   documents: "Documents",
