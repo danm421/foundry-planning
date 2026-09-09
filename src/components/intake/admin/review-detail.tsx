@@ -272,7 +272,7 @@ export default function ReviewDetail({
       {/* ── List sections ───────────────────────────────────────────────── */}
       <ListSection label="Accounts" data={diff.accounts} />
       <ListSection label="Income" data={diff.income} />
-      <ListSection label="Property" data={diff.property} />
+      <ListSection label="Property and business interests" data={diff.property} />
       <ListSection label="Upcoming goals" data={diff.expenseGoals} />
 
       {/* ── On your radar ───────────────────────────────────────────────── */}

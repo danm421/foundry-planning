@@ -189,7 +189,7 @@ export function ReviewStep({ value, sections, onEdit }: ReviewStepProps) {
 
       {/* ── Property ──────────────────────────────────────────────── */}
       {collects("property") && (
-        <SectionCard title="Property" section="property" onEdit={onEdit}>
+        <SectionCard title="Property and business interests" section="property" onEdit={onEdit}>
           {(property?.length ?? 0) === 0 ? (
             <p className="text-[13px] text-ink-4">No property added.</p>
           ) : (
