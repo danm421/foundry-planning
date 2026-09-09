@@ -156,9 +156,9 @@ describe("createPendingBinding", () => {
     expect(insertValues).not.toHaveBeenCalled();
   });
 
-  it("succeeds once the 30-day decline cooldown has passed, and audits the request", async () => {
+  it("succeeds once the 30-day decline cooldown has passed", async () => {
     const thirtyOneDaysAgo = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
-    queue = [[], [{ endedAt: thirtyOneDaysAgo }], [{ id: "new-binding" }], [{ firmId: "firm-1" }]];
+    queue = [[], [{ endedAt: thirtyOneDaysAgo }], [{ id: "new-binding" }]];
     const before = Date.now();
     const result = await createPendingBinding({
       clientId: "c1",
@@ -172,20 +172,14 @@ describe("createPendingBinding", () => {
     expect(written.status).toBe("pending");
     const expectedExpiry = before + 5 * 24 * 60 * 60 * 1000;
     expect(Math.abs(written.expiresAt.getTime() - expectedExpiry)).toBeLessThan(5000);
-    expect(recordAudit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: "portal.access.requested",
-        resourceId: "new-binding",
-        clientId: "c1",
-        firmId: "firm-1",
-        actorId: "adv-1",
-        actorKind: "advisor",
-      }),
-    );
+    // No audit at row-creation: the email-transport task audits AFTER a
+    // successful send, not here — auditing both would claim a request was
+    // made even when the email never went out.
+    expect(recordAudit).not.toHaveBeenCalled();
   });
 
   it("succeeds when the household has never declined this login", async () => {
-    queue = [[], [], [{ id: "fresh-binding" }], [{ firmId: "firm-2" }]];
+    queue = [[], [], [{ id: "fresh-binding" }]];
     const result = await createPendingBinding({
       clientId: "c1",
       clerkUserId: "user_x",

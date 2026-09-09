@@ -142,25 +142,6 @@ export async function createPendingBinding(args: {
     })
     .returning({ id: portalBindings.id });
 
-  // firmId isn't on portalBindings — this is the write path's own lookup,
-  // paid only once the row is actually going to be created.
-  const [clientRow] = await db
-    .select({ firmId: clients.firmId })
-    .from(clients)
-    .where(eq(clients.id, clientId))
-    .limit(1);
-
-  await recordAudit({
-    action: "portal.access.requested",
-    resourceType: "portal_binding",
-    resourceId: row.id,
-    clientId,
-    firmId: clientRow?.firmId ?? "",
-    actorId: requestedBy,
-    actorKind: "advisor",
-    metadata: { clerkUserId },
-  });
-
   return { ok: true, bindingId: row.id };
 }
 
@@ -297,9 +278,14 @@ export async function revokeBinding(args: {
  * only a `portal_bindings` row and never touches that column, so without this
  * function such a client is invisible to their own advisor on those surfaces.
  *
- * A household can in principle hold more than one active binding (two
- * spouses, each with their own login) — this returns the most recently
- * accepted one, matching the single-value shape those four call sites expect.
+ * A household can deliberately hold more than one active binding — two
+ * spouses, each with their own login — and that is by design, not a gap.
+ * This returns the most recently accepted one because every advisor-side
+ * surface this feeds is single-login by design *today* (the Manage Portal
+ * card, the portal account support actions, the disable route), and this
+ * plan does not redesign them. That makes "most recently accepted" the
+ * correct answer for this deploy, not a stopgap — but it is an assumption a
+ * future multi-login household view needs to know it's inheriting.
  */
 export async function getActiveBindingClerkUserId(clientId: string): Promise<string | null> {
   if (!clientId) return null;
