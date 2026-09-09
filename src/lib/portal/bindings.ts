@@ -464,3 +464,86 @@ export async function getActiveBindingClerkUserId(clientId: string): Promise<str
     .limit(1);
   return rows[0]?.clerkUserId ?? null;
 }
+
+/**
+ * End every active binding a login holds. Used only when the Clerk account
+ * itself is being deleted — a binding pointing at a deleted user can never
+ * resolve, so leaving one behind would be a permanently broken row.
+ *
+ * One statement, no read first: there is nothing to decide per row, and the
+ * count comes from `RETURNING` rather than from a preceding SELECT that a
+ * concurrent revoke could make stale. `ended_by` is discussed at the call site
+ * in the disable route — the column's domain has no value for "their whole
+ * login was deleted", so every row records "advisor" and the audit carries the
+ * real story.
+ *
+ * Deliberately audits nothing itself: this ends rows across firms that did not
+ * act, and the one advisor action that caused them is audited once by its own
+ * route (`portal.access.disabled`, with `mode: "delete_login"`).
+ */
+export async function revokeAllForUser(clerkUserId: string): Promise<number> {
+  if (!clerkUserId) return 0;
+  const rows = await db
+    .update(portalBindings)
+    .set({ status: "revoked", endedAt: new Date(), endedBy: "advisor" })
+    .where(and(eq(portalBindings.clerkUserId, clerkUserId), eq(portalBindings.status, "active")))
+    .returning({ id: portalBindings.id });
+  return rows.length;
+}
+
+/**
+ * The household's outstanding access request, or null.
+ *
+ * Manage Portal needs this because an access request writes NO column on
+ * `clients` at all: without it the advisor's card reads "Not invited" while a
+ * live request sits in the client's inbox, and pressing Send again only earns
+ * a 409 about a decline cooldown.
+ *
+ * "Live" means un-expired, matching `listPendingRequests` — including the
+ * null-expiry row, which `isExpired` defines as never expiring.
+ */
+export async function getPendingRequestForClient(
+  clientId: string,
+): Promise<{ requestedAt: Date | null } | null> {
+  if (!clientId) return null;
+  const rows = await db
+    .select({ requestedAt: portalBindings.requestedAt })
+    .from(portalBindings)
+    .where(
+      and(
+        eq(portalBindings.clientId, clientId),
+        eq(portalBindings.status, "pending"),
+        or(isNull(portalBindings.expiresAt), gt(portalBindings.expiresAt, new Date())),
+      ),
+    )
+    .orderBy(desc(portalBindings.requestedAt))
+    .limit(1);
+  return rows[0] ? { requestedAt: rows[0].requestedAt } : null;
+}
+
+/**
+ * When the CLIENT last disconnected themselves from this household, or null.
+ *
+ * `ended_by = 'client'` is the whole point: an advisor who removed access
+ * knows they did it, and telling them "disconnected by the client" would be a
+ * lie. The column is notNull with default "none", so the predicate is safe on
+ * every row, including the 0263 backfill.
+ */
+export async function getClientDisconnectedAt(clientId: string): Promise<Date | null> {
+  if (!clientId) return null;
+  const rows = await db
+    .select({ endedAt: portalBindings.endedAt })
+    .from(portalBindings)
+    .where(
+      and(
+        eq(portalBindings.clientId, clientId),
+        eq(portalBindings.status, "revoked"),
+        eq(portalBindings.endedBy, "client"),
+      ),
+    )
+    // NULLS LAST for the same reason as listActiveBindings above: a row with
+    // no recorded end time must not outrank a genuinely recent one.
+    .orderBy(sql`${portalBindings.endedAt} DESC NULLS LAST`)
+    .limit(1);
+  return rows[0]?.endedAt ?? null;
+}

@@ -14,6 +14,11 @@ import PortalManageShell from "@/components/portal/portal-manage-shell";
 import PortalFeatureToggles from "@/components/portal/portal-feature-toggles";
 import { EyeIcon } from "@/components/portal/portal-icons";
 import { toPortalFeatures } from "@/lib/portal/features";
+import {
+  getActiveBindingClerkUserId,
+  getPendingRequestForClient,
+  getClientDisconnectedAt,
+} from "@/lib/portal/bindings";
 import { portalFeatureColumns } from "@/lib/portal/load-features";
 import SendClientForm from "@/components/intake/send-client-form";
 import { loadAdvisorDefaultSections, loadSubmittedFormForClient } from "@/lib/intake/queries";
@@ -62,13 +67,29 @@ export default async function PortalManagePage({ params }: Props): Promise<React
     .where(eq(clients.id, id))
     .limit(1);
 
+  // DEPLOY-1 DUAL-READ, bindings first. A client who ACCEPTED an access request
+  // has a `portal_bindings` row and no `clients.clerk_user_id` at all, so the
+  // legacy column alone makes them invisible to their own advisor here: the
+  // status derives to "not invited", the support actions get a null login, and
+  // the intake panel offers to invite someone who already has access. The
+  // column stays as the fallback for the household whose 0263 backfill row went
+  // missing. Removed in Task 15.
+  //
+  // Three single-row indexed lookups, run together rather than in sequence.
+  const [boundClerkUserId, pendingRequest, disconnectedAt] = await Promise.all([
+    getActiveBindingClerkUserId(id),
+    getPendingRequestForClient(id),
+    getClientDisconnectedAt(id),
+  ]);
+  const portalUserId = boundClerkUserId ?? row?.clerkUserId ?? null;
+
   // Kicked off here, awaited below: it is a Clerk round-trip that depends only
-  // on `row`, so it overlaps the contacts and intake queries instead of adding
-  // a fourth step to the waterfall. Skipped entirely when the portal is off —
-  // the card that consumes it does not render.
+  // on the resolved login, so it overlaps the contacts and intake queries
+  // instead of adding a step to the waterfall. Skipped entirely when the portal
+  // is off — the card that consumes it does not render.
   const accountPromise =
-    portalEnabled && row?.clerkUserId
-      ? loadPortalAccount(row.clerkUserId)
+    portalEnabled && portalUserId
+      ? loadPortalAccount(portalUserId)
       : Promise.resolve(null);
 
   let primaryEmail = "";
@@ -107,11 +128,15 @@ export default async function PortalManagePage({ params }: Props): Promise<React
   // Never throws — a Clerk outage blanks the account details, not the page.
   const account = await accountPromise;
 
-  const status: "not_invited" | "invited" | "active" = row?.clerkUserId
+  // A live request outranks an old invitation: the request is the thing anyone
+  // is waiting on, and it is the state that has no `clients` column of its own.
+  const status: "not_invited" | "invited" | "requested" | "active" = portalUserId
     ? "active"
-    : row?.portalInvitedAt
-      ? "invited"
-      : "not_invited";
+    : pendingRequest
+      ? "requested"
+      : row?.portalInvitedAt
+        ? "invited"
+        : "not_invited";
 
   return (
     <div className="space-y-6">
@@ -148,7 +173,9 @@ export default async function PortalManagePage({ params }: Props): Promise<React
               status={status}
               primaryEmail={primaryEmail}
               invitedAt={row?.portalInvitedAt ?? null}
-              clerkUserId={row?.clerkUserId ?? null}
+              clerkUserId={portalUserId}
+              requestedAt={pendingRequest?.requestedAt ?? null}
+              disconnectedAt={disconnectedAt}
               account={account}
               fallbackName={primaryName}
             />
@@ -163,7 +190,7 @@ export default async function PortalManagePage({ params }: Props): Promise<React
             spouseEmail={spouseEmail}
             primaryName={primaryName}
             spouseName={spouseName}
-            clientAlreadyBound={!!row?.clerkUserId}
+            clientAlreadyBound={!!portalUserId}
             pendingFormId={pending?.id ?? null}
             defaultSections={defaultSections}
             portalEnabled={portalEnabled}

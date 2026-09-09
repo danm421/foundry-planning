@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { ClerkAPIResponseError } from "@clerk/nextjs/errors";
 
 // ── Auth mocks ────────────────────────────────────────────────────────────────
 vi.mock("@/lib/db-helpers", () => ({
@@ -106,6 +107,13 @@ vi.mock("@/lib/intake/tokens", () => ({
   defaultExpiry: (now: Date) => new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000),
 }));
 
+// ── Binding layer mock (Deploy-1 dual-read) ──────────────────────────────────
+const getActiveBindingClerkUserIdMock = vi.fn();
+vi.mock("@/lib/portal/bindings", () => ({
+  getActiveBindingClerkUserId: (clientId: string) =>
+    getActiveBindingClerkUserIdMock(clientId),
+}));
+
 // ── Audit mock ────────────────────────────────────────────────────────────────
 const recordAuditMock = vi.fn();
 vi.mock("@/lib/audit", () => ({
@@ -131,6 +139,8 @@ beforeEach(() => {
   selectClientResultMock.mockReset();
   sendIntakeFormEmailMock.mockReset();
   recordAuditMock.mockReset();
+  getActiveBindingClerkUserIdMock.mockReset();
+  getActiveBindingClerkUserIdMock.mockResolvedValue(null);
   portalEntitlementMock.mockReset();
   portalForAdvisorMock.mockReset();
 
@@ -531,5 +541,78 @@ describe("POST /api/data-collection — rate limiting", () => {
     expect(checkLimitMock).not.toHaveBeenCalled();
     // And the request succeeds
     expect(res.status).toBe(200);
+  });
+});
+
+describe("POST /api/data-collection — a client bound only in portal_bindings", () => {
+  it("skips the portal invite for a client who ACCEPTED an access request", async () => {
+    // The request path writes a binding row and never `clients.clerk_user_id`,
+    // so the legacy column alone would re-invite a client who already has access.
+    selectClientResultMock.mockResolvedValue([{ clerkUserId: null }]);
+    getActiveBindingClerkUserIdMock.mockResolvedValue("user_from_binding");
+
+    const res = await POST(
+      postReq({
+        mode: "prefilled",
+        clientId: "client-1",
+        recipientEmail: "client@example.com",
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(getActiveBindingClerkUserIdMock).toHaveBeenCalledWith("client-1");
+    expect(createInvitationMock).not.toHaveBeenCalled();
+  });
+
+  it("still invites a client no binding and no legacy column knows about", async () => {
+    selectClientResultMock.mockResolvedValue([{ clerkUserId: null }]);
+    getActiveBindingClerkUserIdMock.mockResolvedValue(null);
+
+    await POST(
+      postReq({
+        mode: "prefilled",
+        clientId: "client-1",
+        recipientEmail: "client@example.com",
+      }),
+    );
+
+    expect(createInvitationMock).toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/data-collection — the email already has a Foundry account", () => {
+  function takenEmail() {
+    createInvitationMock.mockRejectedValue(
+      new ClerkAPIResponseError("Unprocessable Entity", {
+        status: 422,
+        data: [{ code: "form_identifier_exists", message: "That email address is taken." }],
+      }),
+    );
+    return POST(
+      postReq({
+        mode: "prefilled",
+        clientId: "client-1",
+        recipientEmail: "client@example.com",
+      }),
+    );
+  }
+
+  it("keeps the form and warns in words this caller can act on", async () => {
+    const res = await takenEmail();
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.ok).toBe(true);
+    expect(json.formId).toBe("form-1");
+    expect(json.warning).toMatch(/already has a Foundry account/i);
+    expect(json.warning).toMatch(/Access tab/i);
+  });
+
+  it("does not hand this caller the Manage-Portal button copy it cannot offer", async () => {
+    const res = await takenEmail();
+
+    // The shared message points at a button that lives on the Access tab, not
+    // on the intake form this advisor is looking at.
+    expect((await res.json()).warning).not.toMatch(/the button will offer/i);
   });
 });

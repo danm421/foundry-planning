@@ -13,7 +13,11 @@ import {
   requireClientPortalForAdvisor,
   authErrorResponse,
 } from "@/lib/authz";
-import { clerkInviteErrorResponse } from "@/lib/clients/portal-invite-errors";
+import {
+  clerkInviteErrorResponse,
+  isExistingAccountError,
+} from "@/lib/clients/portal-invite-errors";
+import { getActiveBindingClerkUserId } from "@/lib/portal/bindings";
 import { checkPortalInviteRateLimit } from "@/lib/rate-limit";
 import { sendPortalInvite } from "@/lib/clients/send-portal-invite";
 import { sendIntakeFormEmail } from "@/lib/intake/email";
@@ -230,7 +234,16 @@ export async function POST(req: Request): Promise<Response> {
         // firm-scoped belt-and-suspenders (requireClientEditAccess already verified ownership)
         .where(and(eq(clients.id, clientIdStr!), eq(clients.firmId, firmId)));
 
-      if (!clientRow?.clerkUserId) {
+      // DEPLOY-1 DUAL-READ, bindings first. A client who ACCEPTED an access
+      // request has a `portal_bindings` row and no `clients.clerk_user_id` at
+      // all, so the legacy column alone re-invites somebody who already has
+      // access — a second sign-up email for an account they already hold. The
+      // column stays as the fallback for the household whose 0263 backfill row
+      // went missing. Removed in Task 15.
+      const boundClerkUserId =
+        (await getActiveBindingClerkUserId(clientIdStr!)) ?? clientRow?.clerkUserId ?? null;
+
+      if (!boundClerkUserId) {
         // Not yet bound — send invite (Clerk dup errors are non-fatal here:
         // the form already exists and is the primary artifact; the client
         // can reach it once signed in through other means).
@@ -250,6 +263,16 @@ export async function POST(req: Request): Promise<Response> {
           // has an account), but we don't roll back the form row.
           const clerkRes = clerkInviteErrorResponse(inviteErr);
           if (clerkRes) {
+            // The shared copy tells the advisor a button will offer to send an
+            // access request instead. That button lives on the Access tab; this
+            // advisor is on the intake form, which has no such button — so this
+            // caller says where to find it rather than pointing at thin air.
+            const warning = isExistingAccountError(inviteErr)
+              ? `The form was sent, but ${recipientEmail} already has a Foundry ` +
+                `account, so no portal invitation went out. Open the Access tab on ` +
+                `this page to send them an access request — only they can approve it.`
+              : clerkRes.error;
+
             await recordAudit({
               action: "intake.form.sent",
               resourceType: "intake_form",
@@ -262,7 +285,7 @@ export async function POST(req: Request): Promise<Response> {
                 ok: true,
                 formId,
                 token,
-                warning: clerkRes.error,
+                warning,
               },
               { status: 200 },
             );
@@ -271,7 +294,8 @@ export async function POST(req: Request): Promise<Response> {
           throw inviteErr;
         }
       }
-      // If clerkUserId is set the client is already bound — skip the invite.
+      // A bound client needs no invite — they can already sign in and will find
+      // the form waiting in the portal.
     }
 
     // ── Audit ──────────────────────────────────────────────────────────────

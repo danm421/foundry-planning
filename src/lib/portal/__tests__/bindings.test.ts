@@ -100,7 +100,10 @@ import {
   acceptBinding,
   declineBinding,
   revokeBinding,
+  revokeAllForUser,
   getActiveBindingClerkUserId,
+  getPendingRequestForClient,
+  getClientDisconnectedAt,
 } from "@/lib/portal/bindings";
 
 const dialect = new PgDialect();
@@ -596,5 +599,114 @@ describe("authorization: the clerkUserId predicate is a real bound parameter", (
     const writeCompiled = compile(updateWhereArgs[0]);
     expect(writeCompiled.params).toContain("user_x");
     expect(writeCompiled.sql).toContain("clerk_user_id");
+  });
+});
+
+describe("revokeAllForUser", () => {
+  it("ends every ACTIVE binding the login holds and reports how many", async () => {
+    queue = [[{ id: "b1" }, { id: "b2" }]];
+    const ended = await revokeAllForUser("user_x");
+    expect(ended).toBe(2);
+    expect(updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "revoked", endedBy: "advisor" }),
+    );
+  });
+
+  it("returns 0 when the login holds nothing active", async () => {
+    queue = [[]];
+    expect(await revokeAllForUser("user_x")).toBe(0);
+  });
+
+  it("skips the write entirely for an empty clerkUserId", async () => {
+    const ended = await revokeAllForUser("");
+    expect(ended).toBe(0);
+    expect(updateSet).not.toHaveBeenCalled();
+  });
+
+  it("scopes the UPDATE to that login's ACTIVE rows — never a whole table sweep", async () => {
+    queue = [[{ id: "b1" }]];
+    await revokeAllForUser("user_x");
+    const compiled = compile(updateWhereArgs[0]);
+    expect(compiled.sql).toContain("clerk_user_id");
+    expect(compiled.params).toContain("user_x");
+    expect(compiled.params).toContain("active");
+  });
+
+  it("stamps endedAt so the row records when access ended", async () => {
+    queue = [[{ id: "b1" }]];
+    await revokeAllForUser("user_x");
+    expect(updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({ endedAt: expect.any(Date) }),
+    );
+  });
+});
+
+describe("getPendingRequestForClient", () => {
+  it("skips the query and returns null for an empty clientId", async () => {
+    expect(await getPendingRequestForClient("")).toBeNull();
+    expect(selectFrom).not.toHaveBeenCalled();
+  });
+
+  it("returns the request's requestedAt so the advisor can be told when it went out", async () => {
+    const sent = new Date("2026-09-01T00:00:00Z");
+    queue = [[{ requestedAt: sent }]];
+    expect(await getPendingRequestForClient("c1")).toEqual({ requestedAt: sent });
+  });
+
+  it("returns null when nothing is awaiting the client's answer", async () => {
+    queue = [[]];
+    expect(await getPendingRequestForClient("c1")).toBeNull();
+  });
+
+  it("asks only for PENDING rows of this household", async () => {
+    queue = [[]];
+    await getPendingRequestForClient("c1");
+    const compiled = compile(selectWhereArgs[0]);
+    expect(compiled.params).toContain("c1");
+    expect(compiled.params).toContain("pending");
+  });
+
+  it("ignores an expired request — an expired row can never be accepted", async () => {
+    queue = [[]];
+    await getPendingRequestForClient("c1");
+    const compiled = compile(selectWhereArgs[0]);
+    // Same shape as listPendingRequests: a null expiry never expires, so it
+    // matches too rather than being dropped.
+    expect(compiled.sql).toContain("expires_at");
+    expect(compiled.sql).toContain("is null");
+  });
+});
+
+describe("getClientDisconnectedAt", () => {
+  it("skips the query and returns null for an empty clientId", async () => {
+    expect(await getClientDisconnectedAt("")).toBeNull();
+    expect(selectFrom).not.toHaveBeenCalled();
+  });
+
+  it("returns when the CLIENT last disconnected themselves", async () => {
+    const left = new Date("2026-08-20T00:00:00Z");
+    queue = [[{ endedAt: left }]];
+    expect(await getClientDisconnectedAt("c1")).toEqual(left);
+  });
+
+  it("returns null when no one has disconnected", async () => {
+    queue = [[]];
+    expect(await getClientDisconnectedAt("c1")).toBeNull();
+  });
+
+  it("asks only for rows the CLIENT ended — an advisor's own revoke is not a disconnect", async () => {
+    queue = [[]];
+    await getClientDisconnectedAt("c1");
+    const compiled = compile(selectWhereArgs[0]);
+    expect(compiled.sql).toContain("ended_by");
+    expect(compiled.params).toContain("client");
+    expect(compiled.params).toContain("revoked");
+    expect(compiled.params).not.toContain("advisor");
+  });
+
+  it("orders NULLS LAST so a row with no endedAt cannot look most-recent", async () => {
+    queue = [[]];
+    await getClientDisconnectedAt("c1");
+    expect(compile(selectOrderByArgs[0]).sql).toContain("NULLS LAST");
   });
 });

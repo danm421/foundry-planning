@@ -1,6 +1,20 @@
 import { isClerkAPIResponseError } from "@clerk/nextjs/errors";
 
 /**
+ * Does this Clerk failure mean "that email already has a Foundry account"?
+ *
+ * Exported because the two callers must say DIFFERENT things about it. The
+ * portal invite route can offer to send an access request; the intake
+ * data-collection route cannot — its advisor is looking at the intake form,
+ * which carries no such button — so it substitutes its own message.
+ */
+export function isExistingAccountError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  if (!isClerkAPIResponseError(err)) return false;
+  return err.errors.some((e) => e.code === "form_identifier_exists");
+}
+
+/**
  * Maps a Clerk `createInvitation` failure to an advisor-facing response.
  *
  * Clerk rejects a portal invitation when the email can't be invited:
@@ -19,7 +33,7 @@ export function clerkInviteErrorResponse(
 
   const codes = err.errors.map((e) => e.code);
 
-  if (codes.includes("form_identifier_exists")) {
+  if (isExistingAccountError(err)) {
     return {
       status: 409,
       error:
