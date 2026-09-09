@@ -13,9 +13,9 @@ import {
 } from "../catalog";
 
 describe("notification catalog", () => {
-  it("ships exactly 18 categories, all unique", () => {
-    expect(NOTIFICATION_CATEGORIES).toHaveLength(18);
-    expect(new Set(NOTIFICATION_CATEGORIES).size).toBe(18);
+  it("ships exactly 19 categories, all unique", () => {
+    expect(NOTIFICATION_CATEGORIES).toHaveLength(19);
+    expect(new Set(NOTIFICATION_CATEGORIES).size).toBe(19);
   });
 
   it("gives every category a default and a label", () => {
@@ -50,8 +50,8 @@ describe("notification catalog", () => {
 
   it("partitions every category into exactly one group", () => {
     const grouped = NOTIFICATION_GROUPS.flatMap((g) => g.categories);
-    expect(grouped).toHaveLength(18);
-    expect(new Set(grouped).size).toBe(18);
+    expect(grouped).toHaveLength(19);
+    expect(new Set(grouped).size).toBe(19);
     expect([...grouped].sort()).toEqual([...NOTIFICATION_CATEGORIES].sort());
   });
 
