@@ -324,8 +324,9 @@ describe("POST /api/clients/[id]/portal/invite — existing account", () => {
 
     expect(res.status).toBe(502);
     expect((await res.json()).error).toMatch(/couldn't send/i);
-    // Nothing left the building, so nothing was requested: the row goes too.
-    expect(deletePendingBindingMock).toHaveBeenCalledWith("binding-1");
+    // Nothing left the building, so nothing was requested: the row goes too —
+    // scoped to THIS household, never by a bare binding id.
+    expect(deletePendingBindingMock).toHaveBeenCalledWith("binding-1", "c1");
   });
 
   it("undoes the pending row on a failed send, so the advisor's retry is not refused", async () => {
@@ -344,7 +345,12 @@ describe("POST /api/clients/[id]/portal/invite — existing account", () => {
         return { ok: true, bindingId };
       },
     );
-    deletePendingBindingMock.mockImplementation(async (id: string) => rows.delete(id));
+    // The stand-in enforces the household scope too, so a route that deleted
+    // by a bare id (or the wrong client) would leave the row and fail the retry.
+    deletePendingBindingMock.mockImplementation(async (id: string, clientId: string) => {
+      if (rows.get(id)?.split(":")[0] !== clientId) return false;
+      return rows.delete(id);
+    });
 
     sendAccessRequestMock.mockResolvedValue({ delivered: false, reason: "send_failed" });
     const failed = await POST(postReq({ email: "taken@example.com" }), ctx());

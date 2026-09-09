@@ -64,20 +64,20 @@ export type BindingRow = BindingRef & { status: PortalBindingStatus };
 /**
  * EVERY binding row this login holds, in ANY status, newest acceptance first.
  *
- * Deliberately NOT filtered to `active`, because "zero rows at all" is a
- * materially different fact from "no active rows", and the dual-read
- * chokepoint depends on telling them apart. `getPortalClientRef` falls back to
- * the pre-0263 `clients.clerk_user_id` column, and it may only do so for a
- * user with no binding history whatsoever — the one whose 0263 backfill row
- * went missing. A user whose binding was REVOKED has history, so this table is
- * authoritative for them: falling back there would read a legacy column that
- * revoking deliberately does not clear, and hand the household straight back
- * to someone who was just removed from it.
+ * Deliberately NOT filtered to `active`: the dual-read chokepoint needs the
+ * STATUSES, not just a count. `getPortalClientRef` falls back to the pre-0263
+ * `clients.clerk_user_id` column, and only for a login this table has never
+ * settled anything for — no `active` row and no `revoked` one. A REVOKED row
+ * has to be visible here, because falling back on one would read a legacy
+ * column that revoking deliberately does not clear and hand the household
+ * straight back to someone just removed from it. A `pending` or `declined` row
+ * has to be distinguishable from those, because it is a proposal from a firm
+ * that never had access and must not gate the fallback at all.
  *
- * One query answers both questions — "does this user have any history?" and
- * "which households may they open right now?" — because a login has a handful
- * of rows at most, and the alternative is two round trips on every portal
- * request.
+ * One query answers both questions — "has anything been settled for this
+ * login?" and "which households may they open right now?" — because a login
+ * has a handful of rows at most, and the alternative is two round trips on
+ * every portal request.
  */
 export async function listBindingsForUser(clerkUserId: string): Promise<BindingRow[]> {
   if (!clerkUserId) return [];
@@ -231,22 +231,35 @@ export async function createPendingBinding(args: {
  * for the full `REQUEST_TTL_DAYS`, with no way to resend.
  *
  * A HARD DELETE, deliberately, not a `revoked` tombstone. `getPortalClientRef`
- * gates its Deploy-1 legacy fallback on the login having NO binding rows at
- * all, across every household and every status — so a tombstone from one
- * firm's failed send would suppress that fallback everywhere, and a person
- * whose 0263 backfill row went missing on an unrelated household would
- * silently lose access there.
+ * gates its Deploy-1 legacy fallback on the login holding no `active` and no
+ * `revoked` row, across every household — so a tombstone from one firm's
+ * failed send would suppress that fallback everywhere, and a person whose 0263
+ * backfill row went missing on an unrelated household would silently lose
+ * access there.
  *
- * One conditional statement, no read first: `status = 'pending'` lives in the
- * WHERE, so a row a racing accept or decline has already moved off `pending`
- * can never be removed by a late-arriving cleanup. `RETURNING` is what makes
- * the answer honest. Nothing is audited — the send is what audits a request,
- * and it did not happen.
+ * Scoped to the HOUSEHOLD as well as the row, the way every other mutator here
+ * is scoped to its owner: the caller has the clientId in hand, and without it
+ * a stray binding id would be enough to reach another household's pending row.
+ *
+ * One conditional statement, no read first: `clientId` and `status = 'pending'`
+ * both live in the WHERE, so a row a racing accept or decline has already
+ * moved off `pending` can never be removed by a late-arriving cleanup.
+ * `RETURNING` is what makes the answer honest. Nothing is audited — the send is
+ * what audits a request, and it did not happen.
  */
-export async function deletePendingBinding(bindingId: string): Promise<boolean> {
+export async function deletePendingBinding(
+  bindingId: string,
+  clientId: string,
+): Promise<boolean> {
   const deleted = await db
     .delete(portalBindings)
-    .where(and(eq(portalBindings.id, bindingId), eq(portalBindings.status, "pending")))
+    .where(
+      and(
+        eq(portalBindings.id, bindingId),
+        eq(portalBindings.clientId, clientId),
+        eq(portalBindings.status, "pending"),
+      ),
+    )
     .returning({ id: portalBindings.id });
   return Boolean(deleted[0]);
 }

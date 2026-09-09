@@ -95,7 +95,7 @@ export async function POST(
         // `sendPortalAccessRequest` audits nothing on a failed send. Left
         // behind, it would make createPendingBinding refuse every retry as
         // `already_live` until the request TTL expires two weeks later.
-        await deletePendingBinding(pending.bindingId);
+        await deletePendingBinding(pending.bindingId, id);
         return NextResponse.json(
           { error: "We couldn't send the request. Try again in a moment." },
           { status: 502 },

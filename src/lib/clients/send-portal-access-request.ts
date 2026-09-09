@@ -34,6 +34,12 @@ const FROM = "Foundry Planning <noreply@foundryplanning.com>";
  * not at request-row creation. Auditing both points would write two rows per
  * request, and the earlier one would assert a request was made when no mail
  * left the building.
+ *
+ * NEVER throws on a delivery problem. The caller undoes its own `pending` row
+ * on `{ delivered: false }`, so an escaping error would skip that undo and
+ * strand a request nobody was told about — which then refuses every retry as
+ * `already_live` until the TTL expires. Rendering the email body is therefore
+ * inside `deliver`'s guard, not ahead of it.
  */
 export async function sendPortalAccessRequest(args: {
   to: string;
@@ -43,10 +49,7 @@ export async function sendPortalAccessRequest(args: {
   callerOrg: string | null;
   access: "own" | "shared";
 }): Promise<{ delivered: boolean; reason?: "unconfigured" | "send_failed" }> {
-  const link = `${APP_URL}/portal/requests`;
-  const html = buildPortalAccessRequestEmailHtml({ link });
-
-  const result = await deliver({ to: args.to, html });
+  const result = await deliver({ to: args.to, link: `${APP_URL}/portal/requests` });
   if (!result.delivered) {
     return result;
   }
@@ -67,7 +70,7 @@ export async function sendPortalAccessRequest(args: {
 
 async function deliver(args: {
   to: string;
-  html: string;
+  link: string;
 }): Promise<{ delivered: boolean; reason?: "unconfigured" | "send_failed" }> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
@@ -77,6 +80,9 @@ async function deliver(args: {
     return { delivered: false, reason: "unconfigured" };
   }
   try {
+    // Inside the guard: a builder that throws is still an email that did not
+    // send, and the caller has to hear that as a reason rather than a throw.
+    const html = buildPortalAccessRequestEmailHtml({ link: args.link });
     const resend = new Resend(apiKey);
     // resend.emails.send() resolves { data: null, error } for every non-2xx
     // response rather than throwing — the `error` check is the real net.
@@ -84,7 +90,7 @@ async function deliver(args: {
       from: FROM,
       to: args.to,
       subject: PORTAL_ACCESS_REQUEST_SUBJECT,
-      html: args.html,
+      html,
     });
     if (error) {
       console.error(
@@ -96,7 +102,7 @@ async function deliver(args: {
     return { delivered: true };
   } catch (err) {
     console.error(
-      "[portal-access-request] Resend send failed:",
+      "[portal-access-request] the request email could not be sent:",
       err instanceof Error ? err.message : err,
     );
     return { delivered: false, reason: "send_failed" };

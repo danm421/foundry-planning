@@ -10,6 +10,19 @@ vi.mock("resend", () => ({
 const recordAuditMock = vi.fn();
 vi.mock("@/lib/audit", () => ({ recordAudit: (a: unknown) => recordAuditMock(a) }));
 
+// Spread the REAL module so PORTAL_ACCESS_REQUEST_SUBJECT stays the shipped
+// constant (the subject assertion below would be a tautology against a stubbed
+// one) and only the HTML builder is steerable.
+const buildHtmlMock = vi.fn();
+vi.mock("@/lib/clients/portal-access-request-email", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/lib/clients/portal-access-request-email")>();
+  return {
+    ...actual,
+    buildPortalAccessRequestEmailHtml: (a: { link: string }) => buildHtmlMock(a),
+  };
+});
+
 import { sendPortalAccessRequest } from "../send-portal-access-request";
 
 const ARGS = {
@@ -29,6 +42,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   process.env.RESEND_API_KEY = "re_test_key";
   send.mockResolvedValue({ data: { id: "email_1" }, error: null });
+  buildHtmlMock.mockReturnValue("<html>request</html>");
 });
 
 afterEach(() => {
@@ -100,6 +114,23 @@ describe("sendPortalAccessRequest", () => {
     const result = await sendPortalAccessRequest(ARGS);
 
     expect(result).toEqual({ delivered: false, reason: "send_failed" });
+    expect(recordAuditMock).not.toHaveBeenCalled();
+  });
+
+  // The { delivered, reason } contract is what the invite route branches on to
+  // undo its pending row. A throw from ANY part of this function escapes that
+  // branch, so the row is stranded and every retry is refused as already_live
+  // for the full request TTL — the exact state the hard delete exists to
+  // prevent. Building the email body is inside the guard for that reason.
+  it("reports send_failed rather than throwing when the email body cannot be built", async () => {
+    buildHtmlMock.mockImplementation(() => {
+      throw new Error("template blew up");
+    });
+
+    const result = await sendPortalAccessRequest(ARGS);
+
+    expect(result).toEqual({ delivered: false, reason: "send_failed" });
+    expect(send).not.toHaveBeenCalled();
     expect(recordAuditMock).not.toHaveBeenCalled();
   });
 });

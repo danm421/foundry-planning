@@ -339,7 +339,7 @@ describe("createPendingBinding", () => {
 describe("deletePendingBinding", () => {
   it("removes the row in ONE conditional statement — no read first, and nothing to audit", async () => {
     queue = [[{ id: "b1" }]];
-    const result = await deletePendingBinding("b1");
+    const result = await deletePendingBinding("b1", "c1");
     expect(result).toBe(true);
     // A read-then-delete would let a racing accept slip between the two.
     expect(selectFrom).not.toHaveBeenCalled();
@@ -349,17 +349,29 @@ describe("deletePendingBinding", () => {
 
   it("returns false when the DELETE matches nothing (a racing accept already moved the row)", async () => {
     queue = [[]];
-    expect(await deletePendingBinding("b1")).toBe(false);
+    expect(await deletePendingBinding("b1", "c1")).toBe(false);
   });
 
   it("can only ever remove a PENDING row — id AND status are bound parameters of the WHERE", async () => {
     queue = [[{ id: "b1" }]];
-    await deletePendingBinding("b1");
+    await deletePendingBinding("b1", "c1");
     const compiled = compile(deleteWhereArgs[0]);
     expect(compiled.params).toContain("b1");
     // Without this, a failed send could delete a live or historical binding.
     expect(compiled.params).toContain("pending");
     expect(compiled.sql).toContain("status");
+  });
+
+  // Every other mutator here is scoped to the row's owner — `revokeBinding` by
+  // (clientId, clerkUserId), accept/decline by (bindingId, clerkUserId). A bare
+  // id would make this the one place a stray uuid reaches another household's
+  // pending row, and the caller has the clientId in hand.
+  it("is scoped to the household too — a bare bindingId cannot reach another client's row", async () => {
+    queue = [[{ id: "b1" }]];
+    await deletePendingBinding("b1", "c1");
+    const compiled = compile(deleteWhereArgs[0]);
+    expect(compiled.params).toContain("c1");
+    expect(compiled.sql).toContain("client_id");
   });
 });
 

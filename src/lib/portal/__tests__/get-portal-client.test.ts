@@ -131,14 +131,46 @@ describe("getPortalClientRef", () => {
     expect(legacyMock).not.toHaveBeenCalled();
   });
 
-  it("returns null for a user whose only row is pending or declined", async () => {
-    listMock.mockResolvedValue([
-      binding("client-asked", "2026-01-01T00:00:00Z", "pending"),
-      binding("client-said-no", "2026-02-01T00:00:00Z", "declined"),
-    ]);
+  // A `pending` or `declined` row is NOT history. It is an unanswered or a
+  // refused proposal from a firm that never had access, and it says nothing
+  // about whether this login's EXISTING household made it into the table. Let
+  // one suppress the fallback and any advisor at any firm could evict a
+  // mid-deploy client from the household they already had, permanently, just
+  // by asking them for access — nothing purges an expired pending row, and
+  // declining leaves a `declined` one.
+  it("falls back to the legacy column when the only row is a PENDING request", async () => {
+    listMock.mockResolvedValue([binding("client-asked", "2026-01-01T00:00:00Z", "pending")]);
     legacyMock.mockResolvedValue({ id: "client-legacy", firmId: "org_1", advisorId: "user_a" });
 
-    expect(await getPortalClientRef("user_pending")).toBeNull();
+    expect((await getPortalClientRef("user_pending"))?.id).toBe("client-legacy");
+  });
+
+  it("falls back to the legacy column when the only row is DECLINED", async () => {
+    listMock.mockResolvedValue([binding("client-said-no", "2026-02-01T00:00:00Z", "declined")]);
+    legacyMock.mockResolvedValue({ id: "client-legacy", firmId: "org_1", advisorId: "user_a" });
+
+    expect((await getPortalClientRef("user_declined"))?.id).toBe("client-legacy");
+  });
+
+  it("returns null for a pending-only user who has no legacy row either", async () => {
+    listMock.mockResolvedValue([binding("client-asked", "2026-01-01T00:00:00Z", "pending")]);
+    legacyMock.mockResolvedValue(null);
+
+    expect(await getPortalClientRef("user_pending_nolegacy")).toBeNull();
+  });
+
+  // The hard constraint, restated for the mixed case: a pending row must not
+  // launder a revoked one past the gate. Revoking does not clear the legacy
+  // column, so falling through here would hand back the household the advisor
+  // just removed.
+  it("still refuses the legacy column when a REVOKED row sits beside a pending one", async () => {
+    listMock.mockResolvedValue([
+      binding("client-asked", "2026-03-01T00:00:00Z", "pending"),
+      binding("client-gone", "2026-01-01T00:00:00Z", "revoked"),
+    ]);
+    legacyMock.mockResolvedValue({ id: "client-gone", firmId: "org_1", advisorId: "user_a" });
+
+    expect(await getPortalClientRef("user_pending_and_revoked")).toBeNull();
     expect(legacyMock).not.toHaveBeenCalled();
   });
 

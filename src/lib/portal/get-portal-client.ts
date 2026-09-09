@@ -8,8 +8,8 @@ import { legacyPortalClientRef } from "@/lib/portal/legacy-binding";
  * Every binding row this login has, in ANY status. Cached per request.
  *
  * Internal on purpose: callers want either "which households may they open"
- * (`getPortalBindings`) or "do they have any history at all" (the legacy
- * fallback condition below). One query serves both.
+ * (`getPortalBindings`) or "has this table ever settled anything for them"
+ * (the legacy fallback condition below). One query serves both.
  */
 const getAllPortalBindings = cache(
   async (clerkUserId: string): Promise<BindingRow[]> => {
@@ -50,15 +50,25 @@ export const getPortalClientRef = cache(async (
 
   const all = await getAllPortalBindings(clerkUserId);
 
-  // Deploy-1 fallback, and ONLY for a user with NO binding rows in ANY status:
-  // that is the one whose 0263 backfill row went missing, and locking them out
-  // mid-deploy is the risk this exists to cover. The condition is deliberately
-  // NOT "no active bindings" — revoking a binding leaves a `revoked` row and
-  // does not clear the legacy column, so an active-only test would read that
-  // column and hand the household straight back to a client their advisor just
-  // removed, silently making both revoke paths no-ops. Any history at all means
-  // `portal_bindings` is authoritative for this user. Removed in Task 15.
-  if (all.length === 0) return legacyPortalClientRef(clerkUserId);
+  // Deploy-1 fallback, and ONLY for a login this table has never SETTLED
+  // anything for — no `active` row and no `revoked` one. That is the client
+  // whose 0263 backfill row went missing, and locking them out mid-deploy is
+  // the risk this exists to cover. Removed in Task 15.
+  //
+  // `revoked` must keep suppressing it: revoking deliberately does not clear
+  // `clients.clerk_user_id`, so falling through would read that column and
+  // hand the household straight back to a client their advisor just removed,
+  // silently making both revoke paths no-ops.
+  //
+  // `pending` and `declined` must NOT suppress it. Neither is history — one is
+  // an unanswered proposal, the other a refused one, both from a firm that
+  // never had access — and neither says anything about whether this login's
+  // existing household made it into the table. Counting them would let any
+  // advisor at any firm evict a mid-deploy client from the household they
+  // already had simply by asking them for access, permanently: nothing purges
+  // an expired pending row, and declining leaves a `declined` one.
+  const settled = all.some((b) => b.status === "active" || b.status === "revoked");
+  if (!settled) return legacyPortalClientRef(clerkUserId);
 
   const active = all.filter((b) => b.status === "active");
   const selected = (await cookies()).get(ACTIVE_HOUSEHOLD_COOKIE)?.value ?? null;
