@@ -12,6 +12,7 @@ import type {
   AccountLite,
 } from "@/components/family-view";
 import type { EstateFlowGift, GiftRecipientRef } from "@/lib/estate/estate-flow-gifts";
+import { discountAppliesToDraft } from "@/lib/gifts/discount-applicability";
 
 export interface GiftDialogProps {
   clientId: string;
@@ -32,6 +33,12 @@ export interface GiftDialogProps {
 
 export default function GiftDialog(props: GiftDialogProps) {
   const editing = props.editingGift ?? props.editingSeries ?? null;
+  // The gift form offers a trust as a recipient only when it is irrevocable,
+  // and gates the valuation-discount field on the same list.
+  const irrevocableTrusts = props.entities.filter(
+    (e) => e.entityType === "trust" && e.isIrrevocable === true,
+  );
+  const irrevocableTrustIds = new Set(irrevocableTrusts.map((e) => e.id));
   // Stable form seed. The live `draft` (below) must NOT be fed back as the seed:
   // GiftForm treats a non-null `editing` as "editing an existing gift" and locks
   // the Frequency/Funding toggles, so passing the in-progress draft would freeze
@@ -48,6 +55,7 @@ export default function GiftDialog(props: GiftDialogProps) {
     setError(null);
     try {
       if (!draft) throw new Error("Please complete the gift before saving.");
+      const discountApplies = discountAppliesToDraft(draft, irrevocableTrustIds);
 
       if (draft.kind === "series") {
         const body: Record<string, unknown> = {
@@ -59,16 +67,9 @@ export default function GiftDialog(props: GiftDialogProps) {
           inflationAdjust: draft.inflationAdjust,
           useCrummeyPowers: draft.crummey,
         };
-        // Send the discount ONLY when the advisor set one. This dialog's
-        // editing seed (`toEditingDraft`) cannot read a saved discount — the
-        // Family view's Gift / GiftSeriesLite shapes do not carry the column —
-        // so "absent on the draft" means UNKNOWN here, not "cleared". The gift
-        // routes leave an omitted field alone, so a discount entered on the
-        // estate-flow surface survives an unrelated edit made from this dialog.
-        // Clearing one is done there, where the value does round-trip.
-        if (draft.valuationDiscount != null) {
-          body.valuationDiscount = draft.valuationDiscount;
-        }
+        // The field is on screen for every series, so the draft is
+        // authoritative — an explicit null clears a saved discount.
+        if (discountApplies) body.valuationDiscount = draft.valuationDiscount ?? null;
         if (draft.recipient.kind === "entity") body.recipientEntityId = draft.recipient.id;
         if (draft.recipient.kind === "family_member") body.recipientFamilyMemberId = draft.recipient.id;
         if (draft.recipient.kind === "external_beneficiary") body.recipientExternalBeneficiaryId = draft.recipient.id;
@@ -90,9 +91,10 @@ export default function GiftDialog(props: GiftDialogProps) {
           recipientExternalBeneficiaryId: row.recipientExternalBeneficiaryId ?? null,
           startYear: row.startYear,
           endYear: row.endYear,
-          annualAmount: typeof row.annualAmount === "string" ? parseFloat(row.annualAmount) : row.annualAmount,
+          annualAmount: numOrNull(row.annualAmount) ?? 0,
           amountMode: row.amountMode ?? "fixed",
           inflationAdjust: row.inflationAdjust,
+          valuationDiscount: numOrNull(row.valuationDiscount),
           useCrummeyPowers: row.useCrummeyPowers,
         });
         return;
@@ -112,10 +114,9 @@ export default function GiftDialog(props: GiftDialogProps) {
         body.percent = draft.percent;
         body.useCrummeyPowers = false;
       }
-      // Set-only, never cleared from here — see the series body above.
-      if (draft.valuationDiscount != null) {
-        body.valuationDiscount = draft.valuationDiscount;
-      }
+      // See the series body above. A one-time cash gift to an individual shows
+      // no discount field, so the row is left alone rather than cleared.
+      if (discountApplies) body.valuationDiscount = draft.valuationDiscount ?? null;
 
       const url = props.editingGift
         ? `/api/clients/${props.clientId}/gifts/${props.editingGift.id}`
@@ -130,13 +131,14 @@ export default function GiftDialog(props: GiftDialogProps) {
       props.onSavedGift({
         id: row.id,
         year: row.year,
-        amount: row.amount != null ? (typeof row.amount === "string" ? parseFloat(row.amount) : row.amount) : null,
+        amount: numOrNull(row.amount),
         grantor: row.grantor,
         recipientEntityId: row.recipientEntityId ?? null,
         recipientFamilyMemberId: row.recipientFamilyMemberId ?? null,
         recipientExternalBeneficiaryId: row.recipientExternalBeneficiaryId ?? null,
         accountId: row.accountId ?? null,
-        percent: row.percent != null ? (typeof row.percent === "string" ? parseFloat(row.percent) : row.percent) : null,
+        percent: numOrNull(row.percent),
+        valuationDiscount: numOrNull(row.valuationDiscount),
         useCrummeyPowers: row.useCrummeyPowers,
         notes: row.notes ?? null,
       });
@@ -157,9 +159,7 @@ export default function GiftDialog(props: GiftDialogProps) {
     >
       <GiftForm
         recipients={{
-          trusts: props.entities
-            .filter((e) => e.entityType === "trust" && e.isIrrevocable === true)
-            .map((e) => ({ id: e.id, name: e.name })),
+          trusts: irrevocableTrusts.map((e) => ({ id: e.id, name: e.name })),
           familyMembers: props.members.map((m) => ({
             id: m.id,
             firstName: m.firstName,
@@ -170,23 +170,21 @@ export default function GiftDialog(props: GiftDialogProps) {
         }}
         accounts={props.accounts
           .filter((a) => a.ownerEntityId == null)
-          .map((a) => ({ id: a.id, name: a.name }))}
+          .map((a) => ({ id: a.id, name: a.name, value: a.value, subType: a.subType }))}
         hasSpouse={props.hasSpouse}
         annualExclusionByYear={props.annualExclusionByYear}
         editing={initialDraft}
-        // Suppressed until the Family view carries the discount column:
-        // `AccountLite` has no `value` or `subType`, so the preview and the
-        // appraisal warning cannot work here, and `toEditingDraft` cannot
-        // read a saved discount — the field would show a flat "0%" over a
-        // gift that has one, which is a false figure in a transfer-tax
-        // dialog. Widening Gift / GiftSeriesLite / family-content's mappers
-        // is the follow-up that turns this back on.
-        showValuationDiscount={false}
         onChange={setDraft}
       />
       {error && <p data-testid="gift-error" className="mt-3 text-sm text-crit">{error}</p>}
     </DialogShell>
   );
+}
+
+/** Postgres `decimal` columns come back as strings. */
+function numOrNull(v: unknown): number | null {
+  if (v == null) return null;
+  return typeof v === "string" ? parseFloat(v) : (v as number);
 }
 
 /** Seed an EstateFlowGift from an existing DB gift/series for editing. */
@@ -200,6 +198,8 @@ function toEditingDraft(g: Gift | null, s: GiftSeriesLite | null): EstateFlowGif
       kind: "series", id: s.id, startYear: s.startYear, endYear: s.endYear,
       annualAmount: s.annualAmount, amountMode: s.amountMode, inflationAdjust: s.inflationAdjust,
       grantor: s.grantor, recipient: seriesRecipient, crummey: s.useCrummeyPowers,
+      // LAST KEY — see the JSON.stringify contract in estate-flow-gift-diff.ts.
+      valuationDiscount: s.valuationDiscount ?? undefined,
     };
   }
   if (!g) return null;
@@ -207,6 +207,8 @@ function toEditingDraft(g: Gift | null, s: GiftSeriesLite | null): EstateFlowGif
     g.recipientEntityId ? { kind: "entity", id: g.recipientEntityId }
     : g.recipientFamilyMemberId ? { kind: "family_member", id: g.recipientFamilyMemberId }
     : { kind: "external_beneficiary", id: g.recipientExternalBeneficiaryId ?? "" };
-  if (g.accountId) return { kind: "asset-once", id: g.id, year: g.year, accountId: g.accountId, percent: g.percent ?? 0, grantor: g.grantor, recipient };
-  return { kind: "cash-once", id: g.id, year: g.year, amount: g.amount ?? 0, grantor: g.grantor, recipient, crummey: g.useCrummeyPowers };
+  // `valuationDiscount` is the LAST KEY in both branches — see the
+  // JSON.stringify contract in estate-flow-gift-diff.ts.
+  if (g.accountId) return { kind: "asset-once", id: g.id, year: g.year, accountId: g.accountId, percent: g.percent ?? 0, grantor: g.grantor, recipient, valuationDiscount: g.valuationDiscount ?? undefined };
+  return { kind: "cash-once", id: g.id, year: g.year, amount: g.amount ?? 0, grantor: g.grantor, recipient, crummey: g.useCrummeyPowers, valuationDiscount: g.valuationDiscount ?? undefined };
 }

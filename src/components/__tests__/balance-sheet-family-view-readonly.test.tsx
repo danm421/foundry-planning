@@ -181,6 +181,7 @@ const GIFT: import("../family-view").Gift = {
   recipientExternalBeneficiaryId: null,
   accountId: null,
   percent: null,
+  valuationDiscount: null,
   useCrummeyPowers: false,
   notes: null,
 };

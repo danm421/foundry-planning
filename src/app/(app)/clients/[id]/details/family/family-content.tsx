@@ -167,6 +167,8 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
     id: a.id,
     name: a.name,
     category: a.category,
+    value: a.value,
+    subType: a.subType,
     ownerFamilyMemberId: controllingFamilyMember(a) ?? null,
     ownerEntityId: controllingEntity(a) ?? null,
   }));
@@ -266,6 +268,8 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
       recipientExternalBeneficiaryId: g.recipientExternalBeneficiaryId ?? null,
       accountId: g.accountId ?? null,
       percent: g.percent != null ? parseFloat(g.percent as string) : null,
+      valuationDiscount:
+        g.valuationDiscount != null ? parseFloat(g.valuationDiscount as string) : null,
       useCrummeyPowers: g.useCrummeyPowers,
       notes: g.notes ?? null,
     }));
@@ -281,6 +285,8 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
     annualAmount: parseFloat(s.annualAmount as string),
     amountMode: (s.amountMode ?? "fixed") as "fixed" | "annual_exclusion",
     inflationAdjust: s.inflationAdjust,
+    valuationDiscount:
+      s.valuationDiscount != null ? parseFloat(s.valuationDiscount as string) : null,
     useCrummeyPowers: s.useCrummeyPowers,
   }));
 

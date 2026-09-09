@@ -41,6 +41,8 @@ const rothAccount: AccountLite = {
   id: u("a1"),
   name: "Roth IRA",
   category: "retirement",
+  value: 0,
+  subType: "",
   ownerFamilyMemberId: null,
   ownerEntityId: null,
 };
@@ -49,6 +51,8 @@ const brokerageAccount: AccountLite = {
   id: u("a2"),
   name: "Brokerage",
   category: "taxable",
+  value: 0,
+  subType: "",
   ownerFamilyMemberId: null,
   ownerEntityId: null,
 };
@@ -57,6 +61,8 @@ const cashAccount: AccountLite = {
   id: u("a3"),
   name: "High-yield Savings",
   category: "cash",
+  value: 0,
+  subType: "",
   ownerFamilyMemberId: null,
   ownerEntityId: null,
 };
@@ -65,6 +71,8 @@ const lifeInsuranceAccount: AccountLite = {
   id: u("a4"),
   name: "Cooper - Term",
   category: "life_insurance",
+  value: 0,
+  subType: "",
   ownerFamilyMemberId: null,
   ownerEntityId: null,
 };

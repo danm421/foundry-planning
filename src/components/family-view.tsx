@@ -109,6 +109,9 @@ export type Gift = {
   recipientExternalBeneficiaryId: string | null;
   accountId: string | null; // set for in-kind asset gifts
   percent: number | null; // fraction 0..1, set for in-kind asset gifts
+  /** Fraction (0.3 = 30%). Seeds the gift dialog's discount field, so an edit
+   *  here shows — and preserves — a discount entered on any other surface. */
+  valuationDiscount: number | null;
   useCrummeyPowers: boolean;
   notes: string | null;
 };
@@ -124,6 +127,8 @@ export type GiftSeriesLite = {
   annualAmount: number;
   amountMode: "fixed" | "annual_exclusion";
   inflationAdjust: boolean;
+  /** See `Gift.valuationDiscount`. */
+  valuationDiscount: number | null;
   useCrummeyPowers: boolean;
 };
 
@@ -138,6 +143,10 @@ export type AccountLite = {
   id: string;
   name: string;
   category: string;
+  /** Powers the gift dialog's discounted-value preview. */
+  value: number;
+  /** Powers the gift dialog's marketable-asset appraisal warning. */
+  subType: string;
   ownerFamilyMemberId: string | null;
   ownerEntityId: string | null;
 };

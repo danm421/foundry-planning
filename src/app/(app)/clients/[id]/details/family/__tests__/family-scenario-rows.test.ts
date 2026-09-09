@@ -86,8 +86,36 @@ describe("gift draft → row", () => {
       id: "g1", year: 2026, grantor: "client", amount: 90000,
       recipientEntityId: "slat-1", recipientFamilyMemberId: null,
       recipientExternalBeneficiaryId: null,
-      accountId: "acct-1", percent: 0.15, useCrummeyPowers: false, notes: null,
+      accountId: "acct-1", percent: 0.15, valuationDiscount: null,
+      useCrummeyPowers: false, notes: null,
     });
+  });
+
+  it("carries a valuation discount through the overlay, on both gift kinds", () => {
+    // A scenario-overlaid gift that lost its discount here would show 0% in the
+    // Details -> Family dialog while the projection discounted it.
+    expect(
+      giftDraftToRow({
+        kind: "asset-once", id: "g1", year: 2026, accountId: "acct-1", percent: 0.15,
+        grantor: "client", recipient: { kind: "entity", id: "slat-1" },
+        valuationDiscount: 0.3,
+      }),
+    ).toMatchObject({ valuationDiscount: 0.3 });
+    expect(
+      giftDraftToRow({
+        kind: "cash-once", id: "g2", year: 2027, amount: 19000, grantor: "spouse",
+        recipient: { kind: "entity", id: "slat-1" }, crummey: false,
+        valuationDiscount: 0.25,
+      }),
+    ).toMatchObject({ valuationDiscount: 0.25 });
+    expect(
+      giftDraftToSeriesRow({
+        kind: "series", id: "s1", startYear: 2027, endYear: 2031, annualAmount: 19000,
+        amountMode: "fixed", inflationAdjust: true, grantor: "joint",
+        recipient: { kind: "entity", id: "slat-1" }, crummey: true,
+        valuationDiscount: 0.4,
+      }),
+    ).toMatchObject({ valuationDiscount: 0.4 });
   });
 
   it("leaves `amount` null on an asset gift with no override", () => {
@@ -130,13 +158,14 @@ describe("overlayScenarioGiftRows", () => {
     id: "base-g", year: 2030, amount: 10000, grantor: "client",
     recipientEntityId: null, recipientFamilyMemberId: "fm1",
     recipientExternalBeneficiaryId: null, accountId: null, percent: null,
-    useCrummeyPowers: false, notes: "base note",
+    valuationDiscount: null, useCrummeyPowers: false, notes: "base note",
   };
   const baseSeries: GiftSeriesLite = {
     id: "base-s", grantor: "spouse", recipientEntityId: null,
     recipientFamilyMemberId: "fm1", recipientExternalBeneficiaryId: null,
     startYear: 2027, endYear: 2031, annualAmount: 19000,
-    amountMode: "fixed", inflationAdjust: false, useCrummeyPowers: true,
+    amountMode: "fixed", inflationAdjust: false, valuationDiscount: null,
+    useCrummeyPowers: true,
   };
 
   it("adds the scenario's asset gift alongside the base rows", () => {

@@ -8,6 +8,7 @@ import type { ClientData } from "@/engine/types";
 import type { GiftLedgerYear } from "@/engine/gift-ledger";
 import type { EstateFlowGift, GiftGrantor, GiftRecipientRef } from "@/lib/estate/estate-flow-gifts";
 import { discountedGiftValue, MAX_DISCOUNT_PCT } from "@/lib/gifts/apply-valuation-discount";
+import { discountAppliesToShape } from "@/lib/gifts/discount-applicability";
 
 export interface GiftFormRecipients {
   /** Irrevocable trusts only. */
@@ -51,13 +52,6 @@ export interface GiftFormProps {
   /** Most-recent discount per account id, from `priorDiscountsBySource`. Seeds
    *  the discount field only — never written back to the source gift. */
   priorDiscounts?: Record<string, number>;
-  /** Opt OUT of the valuation-discount block (default: shown). A caller must
-   *  set this false when it cannot both supply account `value`/`subType` AND
-   *  round-trip a saved discount into `editing` — otherwise the field renders
-   *  "0%" over a gift that has a discount saved, with no preview and no
-   *  appraisal warning, which is a false figure in a transfer-tax dialog.
-   *  The Family view's GiftDialog is that caller today. */
-  showValuationDiscount?: boolean;
   /** Sandbox only — when present, render the exemption warning + enforce the plan-year window. */
   ledger?: GiftLedgerYear[];
   taxInflationRate?: number;
@@ -161,11 +155,11 @@ export default function GiftForm(props: GiftFormProps) {
     setDiscountPct(prior != null ? Math.round(prior * 10_000) / 100 : 0);
   }, [effectiveAccountId, discountTouched, priorDiscounts]);
 
-  // Discount is offered for in-kind transfers, recurring series, and cash to a
-  // trust — the three shapes where an appraised fractional interest is plausible.
-  const discountApplicable =
-    (props.showValuationDiscount ?? true) &&
-    (effectiveInKind || effectiveRecurring || recipientIsTrust);
+  const discountApplicable = discountAppliesToShape({
+    recurring: effectiveRecurring,
+    inKind: effectiveInKind,
+    recipientIsIrrevocableTrust: recipientIsTrust,
+  });
   // `discountPct` is clamped on input, so the upper test is belt-and-braces —
   // it keeps a $0 gift unreachable if that clamp is ever loosened.
   const discountFraction =

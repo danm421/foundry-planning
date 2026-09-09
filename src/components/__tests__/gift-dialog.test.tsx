@@ -16,7 +16,7 @@ const baseProps = {
   members: [{ id: "m1", firstName: "Jane", lastName: "Doe", role: "child", relationship: "child", dateOfBirth: null, notes: null, domesticPartner: false, inheritanceClassOverride: {} }] as unknown as FamilyMember[],
   externals: [{ id: "x1", name: "Red Cross", kind: "charity", notes: null }] as unknown as ExternalBeneficiary[],
   entities: [{ id: "t1", name: "ILIT", entityType: "trust", isIrrevocable: true }] as unknown as Entity[],
-  accounts: [{ id: "a1", name: "Brokerage", category: "taxable", ownerFamilyMemberId: "m0", ownerEntityId: null }] as unknown as AccountLite[],
+  accounts: [{ id: "a1", name: "Brokerage", category: "taxable", value: 500_000, subType: "brokerage", ownerFamilyMemberId: "m0", ownerEntityId: null }] as unknown as AccountLite[],
   annualExclusionByYear: { 2026: 19000 },
   onClose: vi.fn(),
   onSavedGift: vi.fn(),
@@ -32,14 +32,20 @@ describe("GiftDialog", () => {
     expect([...grantor.options].map((o) => o.value)).not.toContain("joint");
   });
 
-  it("shows no valuation-discount field — this surface cannot round-trip one", () => {
-    // AccountLite carries no value/subType and toEditingDraft cannot read a
-    // saved discount, so the field would read a flat "0%" over a discounted
-    // gift. Suppressed until the Family view carries the column.
+  it("offers the valuation-discount field now that this surface round-trips one", () => {
+    // Was suppressed while AccountLite carried no value/subType and
+    // toEditingDraft could not read a saved discount. Both are wired now, so
+    // the field is offered on the shapes where a discount is plausible.
     render(<GiftDialog {...baseProps} />);
     fireEvent.change(screen.getByTestId("recipient"), { target: { value: "entity:t1" } });
-    expect(screen.queryByLabelText(/Valuation discount/i)).toBeNull();
+    expect(screen.getByLabelText(/Valuation discount/i)).toBeTruthy();
     fireEvent.click(screen.getByText("Recurring"));
+    expect(screen.getByLabelText(/Valuation discount/i)).toBeTruthy();
+  });
+
+  it("still hides the field on a one-time cash gift to an individual (approved gate)", () => {
+    render(<GiftDialog {...baseProps} />);
+    fireEvent.change(screen.getByTestId("recipient"), { target: { value: "family_member:m1" } });
     expect(screen.queryByLabelText(/Valuation discount/i)).toBeNull();
   });
 
