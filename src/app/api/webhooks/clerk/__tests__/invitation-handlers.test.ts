@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const updateChain = vi.fn();
 const selectChain = vi.fn();
+const bindingsChain = vi.fn();
 const insertChain = vi.fn();
 vi.mock("@/db", () => ({
   db: {
@@ -15,8 +16,13 @@ vi.mock("@/db", () => ({
     }),
     select: () => ({
       from: () => ({
+        // `bindClerkUserToClient` reads the client row with `.limit(1)` and
+        // the household's portal_bindings rows by awaiting `.where(...)`
+        // itself, so this step has to answer both.
         where: () => ({
           limit: () => selectChain(),
+          then: (res: (v: unknown) => unknown, rej: (e: unknown) => unknown) =>
+            Promise.resolve(bindingsChain()).then(res, rej),
         }),
       }),
     }),
@@ -30,7 +36,10 @@ import { dispatchClerkInvitation } from "@/app/api/webhooks/clerk/invitation-han
 beforeEach(() => {
   updateChain.mockReset();
   selectChain.mockReset();
+  bindingsChain.mockReset();
   insertChain.mockReset();
+  // No binding rows yet: the household is unbound on both stores.
+  bindingsChain.mockReturnValue([]);
   insertChain.mockResolvedValue([]);
 });
 
