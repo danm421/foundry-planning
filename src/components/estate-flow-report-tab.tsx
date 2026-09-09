@@ -71,15 +71,18 @@ export function EstateFlowReportTab({
   const [editingGiftId, setEditingGiftId] = useState<string | null>(null);
 
   // ── Memos ────────────────────────────────────────────────────────────────────
+  // `engineData`, not `working` — the loader strips gifts/giftEvents from the
+  // working copy, and the column needs the materialized `giftEvents` to retire
+  // a grantor's share from the gift year on. Same tree the projection ran on.
   const ownership = useMemo(
     () =>
-      buildOwnershipColumn(working, {
+      buildOwnershipColumn(engineData, {
         projection,
         asOfYear,
         todayYear: planStartYear,
         gifts: workingGifts,
       }),
-    [working, projection, asOfYear, planStartYear, workingGifts],
+    [engineData, projection, asOfYear, planStartYear, workingGifts],
   );
 
   // Projected end-of-year balance per account — the SAME read the engine uses

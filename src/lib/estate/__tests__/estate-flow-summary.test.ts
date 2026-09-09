@@ -2020,6 +2020,83 @@ describe("buildEstateFlowSummary — year-aware OOE (gifts + projection)", () =>
     expect(summary.outOfEstate.heirs.entities).toHaveLength(0);
   });
 
+  /** Household tree whose only account is 30% gifted to Kevin in `giftYear`. */
+  function cdGiftedToChild(giftYear: number): ClientData {
+    const clientData = emptyClientData();
+    clientData.familyMembers = [
+      { id: "fm-client", role: "client", firstName: "Cooper" },
+      { id: "fm-kevin", role: "child", firstName: "Kevin", lastName: "Sample" },
+    ] as ClientData["familyMembers"];
+    clientData.accounts = [
+      {
+        id: "brokerage-1",
+        name: "Joint Brokerage",
+        subType: "brokerage",
+        value: 1_000_000,
+        owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+      },
+    ] as unknown as ClientData["accounts"];
+    // A person, not a trust — `ownersForYear` lands this as a `gifted_away` row.
+    clientData.giftEvents = [
+      {
+        kind: "asset",
+        year: giftYear,
+        accountId: "brokerage-1",
+        percent: 0.3,
+        grantor: "client",
+        recipientFamilyMemberId: "fm-kevin",
+        eventKind: "outright",
+      },
+    ] as ClientData["giftEvents"];
+    return clientData;
+  }
+
+  it("a percentage of an account gifted to a CHILD shows in OOE Heirs at its grown value", () => {
+    const gifts: EstateFlowGift[] = [
+      {
+        kind: "asset-once",
+        id: "g1",
+        year: 2025,
+        accountId: "brokerage-1",
+        percent: 0.3,
+        grantor: "client",
+        recipient: { kind: "family_member", id: "fm-kevin" },
+      },
+    ] as unknown as EstateFlowGift[];
+
+    const summary = buildEstateFlowSummary({
+      ...baseInput(),
+      clientData: cdGiftedToChild(2025),
+      gifts,
+      asOfYear: 2027,
+      // Account grew to $1.1M by EoY 2027; Kevin's 30% is $330k.
+      projection: projectionAt(2027, { "brokerage-1": 1_100_000 }),
+    })!;
+
+    expect(summary.outOfEstate.heirs.total).toBe(330_000);
+    expect(summary.outOfEstate.heirs.entities).toHaveLength(1);
+    expect(summary.outOfEstate.heirs.entities[0]).toMatchObject({
+      entityId: "fm-kevin",
+      entityLabel: "Kevin Sample",
+      amount: 330_000,
+    });
+    expect(summary.outOfEstate.heirs.entities[0].assets).toEqual([
+      { label: "Joint Brokerage", amount: 330_000 },
+    ]);
+  });
+
+  it("an account percentage gifted to a child does NOT appear before the gift year", () => {
+    const summary = buildEstateFlowSummary({
+      ...baseInput(),
+      clientData: cdGiftedToChild(2030),
+      gifts: [],
+      asOfYear: 2027,
+      projection: projectionAt(2027, { "brokerage-1": 1_100_000 }),
+    })!;
+
+    expect(summary.outOfEstate.heirs.total).toBe(0);
+  });
+
   it("irrev trust acquires ownership via gift event → OOE picks up the trust's slice", () => {
     const clientData = emptyClientData();
     clientData.familyMembers = [

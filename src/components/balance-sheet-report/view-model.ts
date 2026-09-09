@@ -503,8 +503,10 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
         const absorbedByInEstateOwner = acct.owners.some(
           (o) => o.kind === "family_member" || o.kind === "entity",
         );
+        // `sliceValue` is the resolver's own figure for this slice — it already
+        // equals value × percent, so don't recompute it here.
         if (view === "consolidated" && value > 0 && !absorbedByInEstateOwner) {
-          ooeAdd("ext", "Other (out of estate)", "external", value * owner.percent, 0);
+          ooeAdd("ext", "Other (out of estate)", "external", sliceValue, 0);
         }
         continue;
       }

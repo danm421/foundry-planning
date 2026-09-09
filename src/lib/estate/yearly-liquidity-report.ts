@@ -1,4 +1,5 @@
 import { ownersForYearOrHousehold } from "./owners-or-household";
+import { resolveOwnerSlices } from "./account-owner-slices";
 import type {
   Account,
   ClientData,
@@ -261,44 +262,20 @@ function computePortfolioAssets(args: PortfolioArgs): number {
     // Locked-share resolution: entity slices come from the engine's
     // entityAccountSharesEoY (untouched by household withdrawals), family
     // slices come from familyAccountSharesEoY when populated, else the
-    // family pool (balance − Σ entity locked) split by authored percent.
-    let totalEntityShare = 0;
-    let familyPercentTotal = 0;
-    for (const o of owners) {
-      if (o.kind === "entity") {
-        const locked = yearRow.entityAccountSharesEoY?.get(o.entityId)?.get(account.id);
-        totalEntityShare += locked ?? balance * o.percent;
-      } else if (o.kind === "family_member") {
-        familyPercentTotal += o.percent;
-      }
-      // external_beneficiary owners carry no current value — skip them.
-    }
-    const familyPool = Math.max(0, balance - totalEntityShare);
+    // family pool (balance − Σ entity locked − gifted-away) split by
+    // authored percent. Shared with the gross-estate and balance-sheet
+    // reports so all three agree on the same dollars.
+    const slices = resolveOwnerSlices(
+      account.id,
+      owners,
+      balance,
+      yearRow.entityAccountSharesEoY,
+      yearRow.familyAccountSharesEoY,
+    );
 
-    for (const owner of owners) {
+    for (const { owner, value: sliceValue } of slices) {
       const w = inEstateWeight(clientData, owner);
       if (w <= 0) continue;
-      let sliceValue: number;
-      if (owner.kind === "entity") {
-        const locked = yearRow.entityAccountSharesEoY?.get(owner.entityId)?.get(account.id);
-        sliceValue = locked ?? balance * owner.percent;
-      } else if (owner.kind === "family_member") {
-        const lockedFm = yearRow.familyAccountSharesEoY
-          ?.get(owner.familyMemberId)
-          ?.get(account.id);
-        if (lockedFm != null) {
-          sliceValue = lockedFm;
-        } else {
-          sliceValue =
-            familyPercentTotal > 0
-              ? familyPool * (owner.percent / familyPercentTotal)
-              : balance * owner.percent;
-        }
-      } else {
-        // external_beneficiary — no current value, defensive guard
-        // (inEstateWeight already returned 0 above).
-        continue;
-      }
       total += sliceValue * w;
     }
   }
