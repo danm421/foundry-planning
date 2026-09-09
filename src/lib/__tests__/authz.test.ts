@@ -12,12 +12,35 @@ vi.mock("@/lib/billing/billing-contact", () => ({
   currentUserIsBillingContact: () => mockIsBillingContact(),
 }));
 
+// `requireClientPortalAccess` reaches the household through
+// `getPortalClientRef`, which now reads `portal_bindings` + the active-household
+// cookie. Mock the two data sources it consults (plus the entitlement override
+// lookup the gate finishes with) so the gate's own decision is what's measured.
+const mockListActiveBindings = vi.fn();
+vi.mock("@/lib/portal/bindings", () => ({
+  listActiveBindings: (...a: unknown[]) => mockListActiveBindings(...a),
+}));
+
+const mockLegacyPortalClientRef = vi.fn();
+vi.mock("@/lib/portal/legacy-binding", () => ({
+  legacyPortalClientRef: (...a: unknown[]) => mockLegacyPortalClientRef(...a),
+}));
+
+const mockCookies = vi.fn();
+vi.mock("next/headers", () => ({ cookies: () => mockCookies() }));
+
+const mockGetActiveUserOverrides = vi.fn();
+vi.mock("@/lib/entitlements/user-overrides", () => ({
+  getActiveUserOverrides: (...a: unknown[]) => mockGetActiveUserOverrides(...a),
+}));
+
 import {
   requireBillingContact,
   requireOrgAdminOrOwner,
   requireActiveSubscription,
   requireActiveSubscriptionForFirm,
   requireActiveSubscriptionForFirmNoSession,
+  requireClientPortalAccess,
   ForbiddenError,
 } from "@/lib/authz";
 import { UnauthorizedError } from "@/lib/db-helpers";
@@ -26,6 +49,11 @@ beforeEach(() => {
   mockAuth.mockReset();
   mockIsBillingContact.mockReset();
   mockGetOrganization.mockReset();
+  mockListActiveBindings.mockReset();
+  mockLegacyPortalClientRef.mockReset();
+  mockGetActiveUserOverrides.mockReset();
+  mockCookies.mockReset();
+  mockCookies.mockResolvedValue({ get: () => undefined });
 });
 
 describe("requireBillingContact", () => {
@@ -275,5 +303,78 @@ describe("requireActiveSubscriptionForFirmNoSession", () => {
     await expect(
       requireActiveSubscriptionForFirmNoSession("org_a"),
     ).rejects.toBeInstanceOf(ForbiddenError);
+  });
+});
+
+/**
+ * The active-household decision must be made INSIDE the gate. A Next 16 layout
+ * is not an auth boundary — a forged router state tree skips it — so pinning
+ * that `requireClientPortalAccess` itself resolves the cookie-selected binding
+ * is the property that keeps a later refactor from moving it upward.
+ *
+ * Each case uses its own clerk user id: `getPortalClientRef` is React.cache'd,
+ * and although `cache()` degrades to a pass-through outside a request scope,
+ * a shared id would quietly become cross-test memoization if that changed.
+ */
+describe("requireClientPortalAccess", () => {
+  function bind(bindingId: string, clientId: string, acceptedAt: string) {
+    return {
+      bindingId,
+      clientId,
+      firmId: "org_portal",
+      advisorId: "adv",
+      acceptedAt: new Date(acceptedAt),
+    };
+  }
+
+  function firmHasPortal() {
+    mockGetOrganization.mockResolvedValue({
+      publicMetadata: { entitlements: ["client_portal"] },
+    });
+    mockGetActiveUserOverrides.mockResolvedValue([]);
+  }
+
+  it("resolves the cookie-selected household, inside the gate", async () => {
+    mockAuth.mockResolvedValue({ userId: "user_gate_pick", orgId: null });
+    mockListActiveBindings.mockResolvedValue([
+      bind("b1", "client-a", "2026-01-01T00:00:00Z"),
+      bind("b2", "client-b", "2026-06-01T00:00:00Z"),
+    ]);
+    mockCookies.mockResolvedValue({ get: () => ({ value: "client-a" }) });
+    firmHasPortal();
+
+    const { clientId } = await requireClientPortalAccess();
+    expect(clientId).toBe("client-a");
+  });
+
+  it("ignores a cookie naming a household the caller does not hold", async () => {
+    mockAuth.mockResolvedValue({ userId: "user_gate_forged", orgId: null });
+    mockListActiveBindings.mockResolvedValue([
+      bind("b1", "client-mine", "2026-01-01T00:00:00Z"),
+    ]);
+    mockCookies.mockResolvedValue({ get: () => ({ value: "client-theirs" }) });
+    firmHasPortal();
+
+    const { clientId } = await requireClientPortalAccess();
+    expect(clientId).toBe("client-mine");
+  });
+
+  it("throws when the user holds no binding and no legacy row", async () => {
+    mockAuth.mockResolvedValue({ userId: "user_gate_unbound", orgId: null });
+    mockListActiveBindings.mockResolvedValue([]);
+    mockLegacyPortalClientRef.mockResolvedValue(null);
+
+    await expect(requireClientPortalAccess()).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it("still refuses an advisor session outright", async () => {
+    mockAuth.mockResolvedValue({ userId: "user_gate_advisor", orgId: "org_portal" });
+    await expect(requireClientPortalAccess()).rejects.toThrow(/Advisor session/);
+    expect(mockListActiveBindings).not.toHaveBeenCalled();
+  });
+
+  it("throws UnauthorizedError with no session at all", async () => {
+    mockAuth.mockResolvedValue({ userId: null, orgId: null });
+    await expect(requireClientPortalAccess()).rejects.toBeInstanceOf(UnauthorizedError);
   });
 });
