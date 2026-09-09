@@ -49,7 +49,11 @@ export async function sendPortalAccessRequest(args: {
   callerOrg: string | null;
   access: "own" | "shared";
 }): Promise<{ delivered: boolean; reason?: "unconfigured" | "send_failed" }> {
-  const result = await deliver({ to: args.to, link: `${APP_URL}/portal/requests` });
+  // NOT /portal/requests: that URL sits under the (portal) route group, whose
+  // layouts both call requireClientPortalAccess() — which throws for a login
+  // that holds no binding, i.e. every first-time recipient of this email. The
+  // screen lives outside the portal at /requests for exactly that reason.
+  const result = await deliver({ to: args.to, link: `${APP_URL}/requests` });
   if (!result.delivered) {
     return result;
   }

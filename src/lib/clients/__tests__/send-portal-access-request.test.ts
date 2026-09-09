@@ -66,6 +66,18 @@ describe("sendPortalAccessRequest", () => {
     expect(sent.from).not.toMatch(/firm/i);
   });
 
+  it("links to /requests — NOT a path under /portal", async () => {
+    // The accept/decline screen cannot live under (portal): both layouts there
+    // call requireClientPortalAccess(), which throws for a login with no
+    // binding — every first-time recipient of this email. A link back under
+    // /portal would 403 exactly the population this mail exists for, and the
+    // failure is invisible from this module's own tests unless pinned here.
+    await sendPortalAccessRequest(ARGS);
+
+    const { link } = buildHtmlMock.mock.calls[0][0];
+    expect(new URL(link).pathname).toBe("/requests");
+  });
+
   it("delivers to the given address with the content-free subject", async () => {
     await sendPortalAccessRequest(ARGS);
 

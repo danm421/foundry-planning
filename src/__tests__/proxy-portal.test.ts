@@ -250,3 +250,62 @@ describe("proxy soft-route: intake redirect", () => {
     expect(res.headers.get("location") ?? "").not.toContain("/portal/intake");
   });
 });
+
+// The accept/decline screen a firm's access-request email links to. It lives at
+// /requests — OUTSIDE the (portal) route group — because both portal layouts
+// call requireClientPortalAccess(), which throws for a person who holds no
+// binding: exactly the population this screen exists to serve. Living outside
+// the group means BOTH org-less branches of the proxy would otherwise bounce it,
+// and each bounce breaks a different real user.
+describe("proxy: the access-request screen at /requests", () => {
+  it("lets an org-less UNBOUND user reach /requests instead of /select-organization", async () => {
+    // The first-time requester: no org, no binding anywhere. Without the
+    // isOrgPickerRoute entry they land on the org picker and can never answer.
+    getPortalClientIdMock.mockResolvedValue(null);
+    claimPortalBindingMock.mockResolvedValue(null);
+    const res = await captured.handler!(
+      authWith("u1", null) as never,
+      makeReq("/requests"),
+    );
+    expect(res.status).not.toBe(307);
+    expect(res.headers.get("location") ?? "").not.toContain("/select-organization");
+  });
+
+  it("lets an org-less BOUND user reach /requests instead of /portal/organizer", async () => {
+    // The multi-firm case the whole feature exists for: already bound to firm A,
+    // now asked by firm B. This branch — not the unbound one — is the one they
+    // take, and it bounces every non-portal page to their own organizer.
+    getPortalClientIdMock.mockResolvedValue("client-1");
+    const res = await captured.handler!(
+      authWith("u1", null) as never,
+      makeReq("/requests"),
+    );
+    expect(res.status).not.toBe(307);
+    expect(redirectPath(res)).not.toBe("/portal/organizer");
+  });
+
+  it("does not divert a bound user with a pending intake away from /requests", async () => {
+    // The soft intake gate outranks everything else on this branch. A client
+    // mid-onboarding at firm A must still be able to answer firm B.
+    getPortalClientIdMock.mockResolvedValue("client-1");
+    hasUnsubmittedPrefilledFormMock.mockResolvedValue(true);
+    const res = await captured.handler!(
+      authWith("u1", null) as never,
+      makeReq("/requests"),
+    );
+    expect(res.headers.get("location") ?? "").not.toContain("/portal/intake");
+  });
+
+  it("still sends an ADVISOR session away from /requests", async () => {
+    // Handled at the page, not here: /requests must NOT start with /portal, or
+    // isPortalRoute's (.*) would swallow it. This pins that the proxy leaves the
+    // decision to the page rather than silently routing it as a portal page.
+    const res = await captured.handler!(
+      authWith("u1", "org_advisor") as never,
+      makeReq("/requests"),
+    );
+    // The proxy passes it through; src/app/requests/page.tsx redirects an
+    // org-holding session to /clients itself.
+    expect(res.status).not.toBe(307);
+  });
+});

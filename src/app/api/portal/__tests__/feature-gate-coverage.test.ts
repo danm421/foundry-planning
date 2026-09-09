@@ -49,6 +49,10 @@ const GATED: Readonly<Record<string, { feature: PortalFeatureKey; via: "route" |
  * 403. Budget-off degrades it instead, passing `budgetEnabled` into the loader
  * so the budgeting numbers are never queried and the tiles are simply gone. A
  * client with a Budget-off portal still has a dashboard.
+ *
+ * `requests` is core and must STAY ungated: it is the accept/decline screen's
+ * endpoint, and its caller holds no binding yet — there is no household whose
+ * feature switches could be read, let alone one that should hide the request.
  */
 const CORE = new Set([
   "accounts",
@@ -62,6 +66,7 @@ const CORE = new Set([
   "me",
   "plaid",
   "push-tokens",
+  "requests",
   "savings-rules",
   "settings",
   "trusts",
