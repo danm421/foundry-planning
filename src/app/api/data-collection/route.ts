@@ -17,7 +17,7 @@ import {
   clerkInviteErrorResponse,
   isExistingAccountError,
 } from "@/lib/clients/portal-invite-errors";
-import { getActiveBindingClerkUserId } from "@/lib/portal/bindings";
+import { resolveClientPortalUserId } from "@/lib/portal/bindings";
 import { checkPortalInviteRateLimit } from "@/lib/rate-limit";
 import { sendPortalInvite } from "@/lib/clients/send-portal-invite";
 import { sendIntakeFormEmail } from "@/lib/intake/email";
@@ -234,14 +234,17 @@ export async function POST(req: Request): Promise<Response> {
         // firm-scoped belt-and-suspenders (requireClientEditAccess already verified ownership)
         .where(and(eq(clients.id, clientIdStr!), eq(clients.firmId, firmId)));
 
-      // DEPLOY-1 DUAL-READ, bindings first. A client who ACCEPTED an access
-      // request has a `portal_bindings` row and no `clients.clerk_user_id` at
-      // all, so the legacy column alone re-invites somebody who already has
-      // access — a second sign-up email for an account they already hold. The
-      // column stays as the fallback for the household whose 0263 backfill row
-      // went missing. Removed in Task 15.
-      const boundClerkUserId =
-        (await getActiveBindingClerkUserId(clientIdStr!)) ?? clientRow?.clerkUserId ?? null;
+      // DEPLOY-1 DUAL-READ. A client who ACCEPTED an access request has a
+      // `portal_bindings` row and no `clients.clerk_user_id` at all, so the
+      // legacy column alone re-invites somebody who already has access. The
+      // resolver also answers null for a household whose access was REVOKED —
+      // that column survives a revoke by design, and trusting it here would
+      // skip the invite for a client who can no longer sign in, leaving the
+      // form somewhere they cannot reach. Removed in Task 15.
+      const boundClerkUserId = await resolveClientPortalUserId(
+        clientIdStr!,
+        clientRow?.clerkUserId ?? null,
+      );
 
       if (!boundClerkUserId) {
         // Not yet bound — send invite (Clerk dup errors are non-fatal here:

@@ -8,7 +8,7 @@ import { requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { recordAudit } from "@/lib/audit";
 import {
-  getActiveBindingClerkUserId,
+  resolveClientPortalUserId,
   revokeBinding,
   revokeAllForUser,
 } from "@/lib/portal/bindings";
@@ -49,12 +49,14 @@ export async function POST(
       );
     }
 
-    // DEPLOY-1 DUAL-READ, bindings first. A client who ACCEPTED an access
-    // request has a `portal_bindings` row and no `clients.clerk_user_id` at
-    // all, so reading the legacy column alone would leave both modes silently
-    // acting on nobody. The column is still the fallback for the household
-    // whose 0263 backfill row went missing. Removed in Task 15.
-    const clerkUserId = (await getActiveBindingClerkUserId(id)) ?? client.clerkUserId ?? null;
+    // DEPLOY-1 DUAL-READ. A client who ACCEPTED an access request has a
+    // `portal_bindings` row and no `clients.clerk_user_id` at all, so reading
+    // the legacy column alone would leave both modes silently acting on
+    // nobody. The resolver — not this route — decides whether that column may
+    // still answer: a household whose access was already revoked gets null,
+    // because the revoked row is what ended access and the column survives it
+    // by design. Removed in Task 15.
+    const clerkUserId = await resolveClientPortalUserId(id, client.clerkUserId ?? null);
 
     if (body.mode === "revoke") {
       // `revokeBinding` writes the `portal.access.revoked_by_advisor` audit row

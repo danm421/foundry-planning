@@ -108,10 +108,10 @@ vi.mock("@/lib/intake/tokens", () => ({
 }));
 
 // ── Binding layer mock (Deploy-1 dual-read) ──────────────────────────────────
-const getActiveBindingClerkUserIdMock = vi.fn();
+const resolveClientPortalUserIdMock = vi.fn();
 vi.mock("@/lib/portal/bindings", () => ({
-  getActiveBindingClerkUserId: (clientId: string) =>
-    getActiveBindingClerkUserIdMock(clientId),
+  resolveClientPortalUserId: (clientId: string, legacy: string | null) =>
+    resolveClientPortalUserIdMock(clientId, legacy),
 }));
 
 // ── Audit mock ────────────────────────────────────────────────────────────────
@@ -139,8 +139,8 @@ beforeEach(() => {
   selectClientResultMock.mockReset();
   sendIntakeFormEmailMock.mockReset();
   recordAuditMock.mockReset();
-  getActiveBindingClerkUserIdMock.mockReset();
-  getActiveBindingClerkUserIdMock.mockResolvedValue(null);
+  resolveClientPortalUserIdMock.mockReset();
+  resolveClientPortalUserIdMock.mockResolvedValue(null);
   portalEntitlementMock.mockReset();
   portalForAdvisorMock.mockReset();
 
@@ -312,9 +312,12 @@ describe("POST /api/data-collection — prefilled mode, unbound client", () => {
 });
 
 describe("POST /api/data-collection — prefilled mode, already-bound client", () => {
-  it("inserts form but skips the portal invite when clerkUserId is set", async () => {
-    // Client is already bound
+  it("inserts form but skips the portal invite when the client is already bound", async () => {
+    // Already bound. The legacy column no longer decides this on its own — the
+    // resolver does, because that column outlives a revoke — so the fixture
+    // sets both, which is what a genuinely bound client looks like.
     selectClientResultMock.mockResolvedValue([{ clerkUserId: "user_clerk_123" }]);
+    resolveClientPortalUserIdMock.mockResolvedValue("user_clerk_123");
 
     const res = await POST(
       postReq({
@@ -549,7 +552,7 @@ describe("POST /api/data-collection — a client bound only in portal_bindings",
     // The request path writes a binding row and never `clients.clerk_user_id`,
     // so the legacy column alone would re-invite a client who already has access.
     selectClientResultMock.mockResolvedValue([{ clerkUserId: null }]);
-    getActiveBindingClerkUserIdMock.mockResolvedValue("user_from_binding");
+    resolveClientPortalUserIdMock.mockResolvedValue("user_from_binding");
 
     const res = await POST(
       postReq({
@@ -560,13 +563,13 @@ describe("POST /api/data-collection — a client bound only in portal_bindings",
     );
 
     expect(res.status).toBe(200);
-    expect(getActiveBindingClerkUserIdMock).toHaveBeenCalledWith("client-1");
+    expect(resolveClientPortalUserIdMock).toHaveBeenCalledWith("client-1", null);
     expect(createInvitationMock).not.toHaveBeenCalled();
   });
 
   it("still invites a client no binding and no legacy column knows about", async () => {
     selectClientResultMock.mockResolvedValue([{ clerkUserId: null }]);
-    getActiveBindingClerkUserIdMock.mockResolvedValue(null);
+    resolveClientPortalUserIdMock.mockResolvedValue(null);
 
     await POST(
       postReq({
@@ -576,6 +579,25 @@ describe("POST /api/data-collection — a client bound only in portal_bindings",
       }),
     );
 
+    expect(createInvitationMock).toHaveBeenCalled();
+  });
+
+  it("invites a client whose access was REVOKED — they can no longer sign in", async () => {
+    // The revoked row ended access; `clients.clerk_user_id` survives it by
+    // design. Reading that column here skips the invite for someone who has no
+    // way into the portal, and the form waits in a place they cannot reach.
+    selectClientResultMock.mockResolvedValue([{ clerkUserId: "user_revoked" }]);
+    resolveClientPortalUserIdMock.mockResolvedValue(null);
+
+    await POST(
+      postReq({
+        mode: "prefilled",
+        clientId: "client-1",
+        recipientEmail: "client@example.com",
+      }),
+    );
+
+    expect(resolveClientPortalUserIdMock).toHaveBeenCalledWith("client-1", "user_revoked");
     expect(createInvitationMock).toHaveBeenCalled();
   });
 });

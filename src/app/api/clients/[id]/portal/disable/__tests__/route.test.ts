@@ -21,12 +21,16 @@ vi.mock("@clerk/nextjs/server", () => ({
 }));
 
 // --- Binding layer mock ---
-const getActiveBindingClerkUserIdMock = vi.fn();
+// `resolveClientPortalUserId` takes the legacy column as its SECOND argument
+// and decides whether the fallback is allowed at all — a revoked household
+// must not fall back to it. Passing the column in is what makes that
+// decidable in one place.
+const resolveClientPortalUserIdMock = vi.fn();
 const revokeBindingMock = vi.fn();
 const revokeAllForUserMock = vi.fn();
 vi.mock("@/lib/portal/bindings", () => ({
-  getActiveBindingClerkUserId: (clientId: string) =>
-    getActiveBindingClerkUserIdMock(clientId),
+  resolveClientPortalUserId: (clientId: string, legacy: string | null) =>
+    resolveClientPortalUserIdMock(clientId, legacy),
   revokeBinding: (args: unknown) => revokeBindingMock(args),
   revokeAllForUser: (clerkUserId: string) => revokeAllForUserMock(clerkUserId),
 }));
@@ -65,7 +69,7 @@ beforeEach(() => {
   deleteUserMock.mockReset();
   updateChain.mockReset();
   recordAuditMock.mockReset();
-  getActiveBindingClerkUserIdMock.mockReset();
+  resolveClientPortalUserIdMock.mockReset();
   revokeBindingMock.mockReset();
   revokeAllForUserMock.mockReset();
 
@@ -75,7 +79,7 @@ beforeEach(() => {
     access: "own",
     client: { id: "client-1", clerkUserId: "user_1" },
   });
-  getActiveBindingClerkUserIdMock.mockResolvedValue("user_1");
+  resolveClientPortalUserIdMock.mockResolvedValue("user_1");
   revokeBindingMock.mockResolvedValue(true);
   revokeAllForUserMock.mockResolvedValue(1);
 });
@@ -132,7 +136,7 @@ describe("POST /api/clients/[id]/portal/disable — revoke", () => {
   });
 
   it("does not call the binding layer when the household has no login at all", async () => {
-    getActiveBindingClerkUserIdMock.mockResolvedValue(null);
+    resolveClientPortalUserIdMock.mockResolvedValue(null);
     requireClientEditAccessMock.mockResolvedValue({
       firmId: "firm-1",
       access: "own",
@@ -183,7 +187,7 @@ describe("POST /api/clients/[id]/portal/disable — delete_login", () => {
   });
 
   it("is a no-op for Clerk delete when no login is bound, but still nulls the legacy column", async () => {
-    getActiveBindingClerkUserIdMock.mockResolvedValue(null);
+    resolveClientPortalUserIdMock.mockResolvedValue(null);
     requireClientEditAccessMock.mockResolvedValue({
       firmId: "firm-1",
       access: "own",
@@ -214,7 +218,7 @@ describe("POST /api/clients/[id]/portal/disable — which login it acts on", () 
   it("resolves the login from portal_bindings, not the legacy column", async () => {
     // A client who ACCEPTED an access request has a binding row and no legacy
     // column at all — reading the column alone would revoke nothing.
-    getActiveBindingClerkUserIdMock.mockResolvedValue("user_from_binding");
+    resolveClientPortalUserIdMock.mockResolvedValue("user_from_binding");
     requireClientEditAccessMock.mockResolvedValue({
       firmId: "firm-1",
       access: "own",
@@ -223,14 +227,17 @@ describe("POST /api/clients/[id]/portal/disable — which login it acts on", () 
 
     await POST(req({ mode: "revoke" }), ctx("client-1"));
 
-    expect(getActiveBindingClerkUserIdMock).toHaveBeenCalledWith("client-1");
+    expect(resolveClientPortalUserIdMock).toHaveBeenCalledWith("client-1", null);
     expect(revokeBindingMock).toHaveBeenCalledWith(
       expect.objectContaining({ clerkUserId: "user_from_binding" }),
     );
   });
 
-  it("falls back to the legacy column when the bindings table knows nothing", async () => {
-    getActiveBindingClerkUserIdMock.mockResolvedValue(null);
+  it("hands the legacy column to the resolver rather than deciding the fallback itself", async () => {
+    // The route must NOT `?? client.clerkUserId` on its own: only the binding
+    // table knows whether that column is still allowed to speak. A revoked
+    // household's resolver answers null, and the route must respect it.
+    resolveClientPortalUserIdMock.mockResolvedValue("user_legacy");
     requireClientEditAccessMock.mockResolvedValue({
       firmId: "firm-1",
       access: "own",
@@ -239,11 +246,29 @@ describe("POST /api/clients/[id]/portal/disable — which login it acts on", () 
 
     await POST(req({ mode: "delete_login" }), ctx("client-1"));
 
+    expect(resolveClientPortalUserIdMock).toHaveBeenCalledWith("client-1", "user_legacy");
     expect(deleteUserMock).toHaveBeenCalledWith("user_legacy");
   });
 
-  it("prefers the binding over a STALE legacy column", async () => {
-    getActiveBindingClerkUserIdMock.mockResolvedValue("user_current");
+  it("acts on NOBODY when the household's access was already revoked", async () => {
+    // The revoked row is what ended access; `clients.clerk_user_id` survives it
+    // by design. Re-reading that column here would delete the Clerk account of
+    // somebody this firm no longer has any relationship with.
+    resolveClientPortalUserIdMock.mockResolvedValue(null);
+    requireClientEditAccessMock.mockResolvedValue({
+      firmId: "firm-1",
+      access: "own",
+      client: { id: "client-1", clerkUserId: "user_revoked" },
+    });
+
+    await POST(req({ mode: "delete_login" }), ctx("client-1"));
+
+    expect(deleteUserMock).not.toHaveBeenCalled();
+    expect(revokeAllForUserMock).not.toHaveBeenCalled();
+  });
+
+  it("uses whatever the resolver returns, never the row it was handed", async () => {
+    resolveClientPortalUserIdMock.mockResolvedValue("user_current");
     requireClientEditAccessMock.mockResolvedValue({
       firmId: "firm-1",
       access: "own",

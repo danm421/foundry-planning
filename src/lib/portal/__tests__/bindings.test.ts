@@ -102,8 +102,12 @@ import {
   revokeBinding,
   revokeAllForUser,
   getActiveBindingClerkUserId,
+  resolveClientPortalUserId,
+  pickBoundClerkUserId,
+  rankPortalStatus,
   getPendingRequestForClient,
   getClientDisconnectedAt,
+  type BindingStatusFact,
 } from "@/lib/portal/bindings";
 
 const dialect = new PgDialect();
@@ -666,6 +670,15 @@ describe("getPendingRequestForClient", () => {
     expect(compiled.params).toContain("pending");
   });
 
+  it("orders NULLS LAST so an undated request cannot outrank a real one", async () => {
+    // `requested_at` is nullable and Postgres DESC defaults to NULLS FIRST, so
+    // without this an undated row wins and the card says "Access request sent."
+    // with no date on it.
+    queue = [[]];
+    await getPendingRequestForClient("c1");
+    expect(compile(selectOrderByArgs[0]).sql).toContain("NULLS LAST");
+  });
+
   it("ignores an expired request — an expired row can never be accepted", async () => {
     queue = [[]];
     await getPendingRequestForClient("c1");
@@ -708,5 +721,173 @@ describe("getClientDisconnectedAt", () => {
     queue = [[]];
     await getClientDisconnectedAt("c1");
     expect(compile(selectOrderByArgs[0]).sql).toContain("NULLS LAST");
+  });
+});
+
+/**
+ * The advisor-side mirror of `getPortalClientRef`'s Deploy-1 fallback gate
+ * (`get-portal-client.ts:70`, `settled = active || revoked`).
+ *
+ * Pure, so the COMPOSITION the Manage Portal page performs is testable without
+ * a page harness. That composition is the thing that was wrong: every callee
+ * was individually correct and the two together resurrected a revoked login.
+ */
+function fact(
+  status: BindingStatusFact["status"],
+  clerkUserId = "user_1",
+  acceptedAt: Date | null = null,
+): BindingStatusFact {
+  return { clerkUserId, status, acceptedAt };
+}
+
+describe("pickBoundClerkUserId", () => {
+  it("returns the active binding's login", () => {
+    expect(pickBoundClerkUserId([fact("active", "user_bound")], null)).toBe("user_bound");
+  });
+
+  it("prefers the most recently accepted of two active logins", () => {
+    const rows = [
+      fact("active", "user_old", new Date("2026-01-01T00:00:00Z")),
+      fact("active", "user_new", new Date("2026-06-01T00:00:00Z")),
+    ];
+    expect(pickBoundClerkUserId(rows, null)).toBe("user_new");
+    // Input order must not decide it.
+    expect(pickBoundClerkUserId([...rows].reverse(), null)).toBe("user_new");
+  });
+
+  it("sorts an unaccepted active row LAST, never first", () => {
+    const rows = [
+      fact("active", "user_unknown_time", null),
+      fact("active", "user_real", new Date("2026-01-01T00:00:00Z")),
+    ];
+    expect(pickBoundClerkUserId(rows, null)).toBe("user_real");
+  });
+
+  it("REFUSES the legacy column once a revoked row exists", () => {
+    // Revoking deliberately does not clear `clients.clerk_user_id`. Falling
+    // through to it here hands the household straight back to the person the
+    // advisor just removed — and makes Remove portal access a dead button.
+    expect(pickBoundClerkUserId([fact("revoked", "user_1")], "user_1")).toBeNull();
+  });
+
+  it("still refuses when the revoked row belongs to a DIFFERENT login", () => {
+    expect(pickBoundClerkUserId([fact("revoked", "user_other")], "user_1")).toBeNull();
+  });
+
+  it("falls back to the legacy column for a household this table has never settled", () => {
+    expect(pickBoundClerkUserId([], "user_legacy")).toBe("user_legacy");
+  });
+
+  it("does not let a pending or declined row suppress the fallback", () => {
+    // Neither is history: one is an unanswered proposal, the other a refused
+    // one, both from a firm that never had access.
+    expect(pickBoundClerkUserId([fact("pending", "user_asker")], "user_legacy")).toBe(
+      "user_legacy",
+    );
+    expect(pickBoundClerkUserId([fact("declined", "user_asker")], "user_legacy")).toBe(
+      "user_legacy",
+    );
+  });
+
+  it("returns null when there is neither a binding nor a legacy column", () => {
+    expect(pickBoundClerkUserId([], null)).toBeNull();
+  });
+});
+
+describe("rankPortalStatus", () => {
+  it("a resolved login is active", () => {
+    expect(
+      rankPortalStatus({
+        portalUserId: "user_1",
+        hasPendingRequest: false,
+        portalInvitedAt: null,
+      }),
+    ).toBe("active");
+  });
+
+  it("a live request outranks an old invitation", () => {
+    expect(
+      rankPortalStatus({
+        portalUserId: null,
+        hasPendingRequest: true,
+        portalInvitedAt: new Date("2026-01-01T00:00:00Z"),
+      }),
+    ).toBe("requested");
+  });
+
+  it("an invitation with nothing live is invited", () => {
+    expect(
+      rankPortalStatus({
+        portalUserId: null,
+        hasPendingRequest: false,
+        portalInvitedAt: new Date("2026-01-01T00:00:00Z"),
+      }),
+    ).toBe("invited");
+  });
+
+  it("nothing at all is not_invited", () => {
+    expect(
+      rankPortalStatus({
+        portalUserId: null,
+        hasPendingRequest: false,
+        portalInvitedAt: null,
+      }),
+    ).toBe("not_invited");
+  });
+});
+
+describe("Manage Portal status: the composition, not the parts", () => {
+  const INVITED = new Date("2026-01-01T00:00:00Z");
+
+  function statusFor(rows: BindingStatusFact[], legacy: string | null, invitedAt: Date | null, pending = false) {
+    const portalUserId = pickBoundClerkUserId(rows, legacy);
+    return rankPortalStatus({ portalUserId, hasPendingRequest: pending, portalInvitedAt: invitedAt });
+  }
+
+  it("a REVOKED binding with a live legacy column is NOT active", () => {
+    // The bug this covers: the advisor presses Remove portal access, the row is
+    // written, the page refreshes — and the card renders Active again because
+    // the legacy column was never cleared. 100% of prod is invite-bound, so
+    // this was every client.
+    expect(statusFor([fact("revoked", "user_1")], "user_1", INVITED)).not.toBe("active");
+  });
+
+  it("a client who ACCEPTED an access request is active with no legacy column at all", () => {
+    expect(statusFor([fact("active", "user_1", new Date())], null, null)).toBe("active");
+  });
+
+  it("a live pending request reads as requested, not not_invited", () => {
+    expect(statusFor([fact("pending", "user_asker")], null, null, true)).toBe("requested");
+  });
+
+  it("a legacy-only household with no binding row is still active mid-deploy", () => {
+    expect(statusFor([], "user_legacy", INVITED)).toBe("active");
+  });
+});
+
+describe("resolveClientPortalUserId", () => {
+  it("skips the query and returns null for an empty clientId", async () => {
+    expect(await resolveClientPortalUserId("", "user_legacy")).toBeNull();
+    expect(selectFrom).not.toHaveBeenCalled();
+  });
+
+  it("reads EVERY status in one query — the revoked rows are the whole point", async () => {
+    queue = [[{ clerkUserId: "user_1", status: "revoked", acceptedAt: null }]];
+    const result = await resolveClientPortalUserId("c1", "user_1");
+    expect(result).toBeNull();
+    const compiled = compile(selectWhereArgs[0]);
+    expect(compiled.params).toContain("c1");
+    // No status predicate: filtering to `active` here is exactly the bug.
+    expect(compiled.params).not.toContain("active");
+  });
+
+  it("returns the active binding's login", async () => {
+    queue = [[{ clerkUserId: "user_bound", status: "active", acceptedAt: new Date() }]];
+    expect(await resolveClientPortalUserId("c1", null)).toBe("user_bound");
+  });
+
+  it("falls back to the legacy column for an unsettled household", async () => {
+    queue = [[]];
+    expect(await resolveClientPortalUserId("c1", "user_legacy")).toBe("user_legacy");
   });
 });

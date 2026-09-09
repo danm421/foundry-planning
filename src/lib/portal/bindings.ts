@@ -451,6 +451,11 @@ export async function revokeBinding(args: {
  * plan does not redesign them. That makes "most recently accepted" the
  * correct answer for this deploy, not a stopgap — but it is an assumption a
  * future multi-login household view needs to know it's inheriting.
+ *
+ * Answers ONLY "is there an active binding". It does NOT decide whether the
+ * legacy column may still speak for a household that has none — a caller that
+ * `?? clients.clerk_user_id` on this answer resurrects a login the advisor or
+ * the client just revoked. Use `resolveClientPortalUserId` for that.
  */
 export async function getActiveBindingClerkUserId(clientId: string): Promise<string | null> {
   if (!clientId) return null;
@@ -463,6 +468,100 @@ export async function getActiveBindingClerkUserId(clientId: string): Promise<str
     .orderBy(sql`${portalBindings.acceptedAt} DESC NULLS LAST`)
     .limit(1);
   return rows[0]?.clerkUserId ?? null;
+}
+
+/** The status facts one binding row contributes to `pickBoundClerkUserId`. */
+export type BindingStatusFact = {
+  clerkUserId: string;
+  status: PortalBindingStatus;
+  acceptedAt: Date | null;
+};
+
+/**
+ * Which login this household is bound to — the ADVISOR-side mirror of
+ * `getPortalClientRef`'s Deploy-1 fallback gate (`get-portal-client.ts`).
+ *
+ * Pure, so the composition every advisor surface performs is testable without
+ * a page harness. Two rules, and the second is the one that bites:
+ *
+ *  1. An `active` binding wins, most recently accepted first — the same
+ *     most-recent-wins choice `getActiveBindingClerkUserId` documents.
+ *  2. Otherwise the pre-0263 `clients.clerk_user_id` column answers, but ONLY
+ *     for a household this table has never SETTLED anything for. A `revoked`
+ *     row is history — access existed and was deliberately ended — and
+ *     revoking deliberately does not clear that column. Falling through to it
+ *     would hand the household straight back to the person just removed from
+ *     it, which is how "Remove portal access" becomes a dead button that
+ *     re-renders as Active. The portal side suppresses the same fallback for
+ *     the same reason; both sides have to agree or one of them is lying.
+ *
+ * `pending` and `declined` must NOT suppress the fallback: neither is history
+ * — one is an unanswered proposal, the other a refused one, both from a firm
+ * that never had access — so counting them would let any advisor evict a
+ * mid-deploy client from the household they already had, simply by asking.
+ */
+export function pickBoundClerkUserId(
+  rows: BindingStatusFact[],
+  legacyClerkUserId: string | null,
+): string | null {
+  const active = rows
+    .filter((r) => r.status === "active")
+    // NULLS LAST, by hand: an unknown accept time must not win "most recent"
+    // over a real one. Sorted here rather than trusted from the caller's query
+    // so the rule holds whatever order the rows arrive in.
+    .sort((a, b) => (b.acceptedAt?.getTime() ?? 0) - (a.acceptedAt?.getTime() ?? 0));
+  if (active[0]) return active[0].clerkUserId;
+
+  if (rows.some((r) => r.status === "revoked")) return null;
+  return legacyClerkUserId;
+}
+
+/** What the advisor's Portal access card says about this household. */
+export type ManagePortalStatus = "not_invited" | "invited" | "requested" | "active";
+
+/**
+ * Rank the household's portal state for Manage Portal.
+ *
+ * A live request outranks an old invitation because the request is what
+ * somebody is actually waiting on, and — unlike an invitation — it writes no
+ * column on `clients` at all, so nothing else would ever surface it.
+ */
+export function rankPortalStatus(args: {
+  portalUserId: string | null;
+  hasPendingRequest: boolean;
+  portalInvitedAt: Date | null;
+}): ManagePortalStatus {
+  if (args.portalUserId) return "active";
+  if (args.hasPendingRequest) return "requested";
+  if (args.portalInvitedAt) return "invited";
+  return "not_invited";
+}
+
+/**
+ * The login an advisor surface should act on for this household, or null.
+ *
+ * THE advisor-side dual-read for Deploy 1. Reads every row for the household
+ * in one query — deliberately unfiltered by status, because the `revoked` rows
+ * are exactly what decides whether the legacy column may still answer — and
+ * applies `pickBoundClerkUserId`. Callers pass their own already-loaded
+ * `clients.clerk_user_id`; nothing here re-reads it.
+ *
+ * Removed in Task 15 along with the column.
+ */
+export async function resolveClientPortalUserId(
+  clientId: string,
+  legacyClerkUserId: string | null,
+): Promise<string | null> {
+  if (!clientId) return null;
+  const rows = await db
+    .select({
+      clerkUserId: portalBindings.clerkUserId,
+      status: portalBindings.status,
+      acceptedAt: portalBindings.acceptedAt,
+    })
+    .from(portalBindings)
+    .where(eq(portalBindings.clientId, clientId));
+  return pickBoundClerkUserId(rows, legacyClerkUserId);
 }
 
 /**
@@ -516,7 +615,10 @@ export async function getPendingRequestForClient(
         or(isNull(portalBindings.expiresAt), gt(portalBindings.expiresAt, new Date())),
       ),
     )
-    .orderBy(desc(portalBindings.requestedAt))
+    // NULLS LAST: `requested_at` is nullable and Postgres DESC defaults to
+    // NULLS FIRST, so an undated row would outrank a real one and the card
+    // would render "Access request sent." with no date on it.
+    .orderBy(sql`${portalBindings.requestedAt} DESC NULLS LAST`)
     .limit(1);
   return rows[0] ? { requestedAt: rows[0].requestedAt } : null;
 }

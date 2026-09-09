@@ -15,7 +15,8 @@ import PortalFeatureToggles from "@/components/portal/portal-feature-toggles";
 import { EyeIcon } from "@/components/portal/portal-icons";
 import { toPortalFeatures } from "@/lib/portal/features";
 import {
-  getActiveBindingClerkUserId,
+  resolveClientPortalUserId,
+  rankPortalStatus,
   getPendingRequestForClient,
   getClientDisconnectedAt,
 } from "@/lib/portal/bindings";
@@ -67,21 +68,20 @@ export default async function PortalManagePage({ params }: Props): Promise<React
     .where(eq(clients.id, id))
     .limit(1);
 
-  // DEPLOY-1 DUAL-READ, bindings first. A client who ACCEPTED an access request
-  // has a `portal_bindings` row and no `clients.clerk_user_id` at all, so the
-  // legacy column alone makes them invisible to their own advisor here: the
-  // status derives to "not invited", the support actions get a null login, and
-  // the intake panel offers to invite someone who already has access. The
-  // column stays as the fallback for the household whose 0263 backfill row went
-  // missing. Removed in Task 15.
+  // DEPLOY-1 DUAL-READ. A client who ACCEPTED an access request has a
+  // `portal_bindings` row and no `clients.clerk_user_id` at all, so the legacy
+  // column alone makes them invisible to their own advisor here. And a client
+  // whose access was REVOKED keeps that column — so the resolver, not this
+  // page, decides when it may still answer; without that gate the card renders
+  // Active again the moment the advisor removes access, and the disconnected
+  // state below can never appear. Removed in Task 15.
   //
-  // Three single-row indexed lookups, run together rather than in sequence.
-  const [boundClerkUserId, pendingRequest, disconnectedAt] = await Promise.all([
-    getActiveBindingClerkUserId(id),
+  // Three indexed lookups, run together rather than in sequence.
+  const [portalUserId, pendingRequest, disconnectedAt] = await Promise.all([
+    resolveClientPortalUserId(id, row?.clerkUserId ?? null),
     getPendingRequestForClient(id),
     getClientDisconnectedAt(id),
   ]);
-  const portalUserId = boundClerkUserId ?? row?.clerkUserId ?? null;
 
   // Kicked off here, awaited below: it is a Clerk round-trip that depends only
   // on the resolved login, so it overlaps the contacts and intake queries
@@ -128,15 +128,11 @@ export default async function PortalManagePage({ params }: Props): Promise<React
   // Never throws — a Clerk outage blanks the account details, not the page.
   const account = await accountPromise;
 
-  // A live request outranks an old invitation: the request is the thing anyone
-  // is waiting on, and it is the state that has no `clients` column of its own.
-  const status: "not_invited" | "invited" | "requested" | "active" = portalUserId
-    ? "active"
-    : pendingRequest
-      ? "requested"
-      : row?.portalInvitedAt
-        ? "invited"
-        : "not_invited";
+  const status = rankPortalStatus({
+    portalUserId,
+    hasPendingRequest: !!pendingRequest,
+    portalInvitedAt: row?.portalInvitedAt ?? null,
+  });
 
   return (
     <div className="space-y-6">
