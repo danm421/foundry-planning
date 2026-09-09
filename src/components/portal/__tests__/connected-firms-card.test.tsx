@@ -166,8 +166,40 @@ describe("ConnectedFirmsCard", () => {
     render(<ConnectedFirmsCard />);
     fireEvent.click(await screen.findByRole("button", { name: /disconnect/i }));
 
-    expect(await screen.findByRole("alert")).toBeTruthy();
+    const alert = await screen.findByRole("alert");
+    // The route's own body is an internal diagnostic. Never echo it.
+    expect(alert.textContent).not.toMatch(/not found/i);
+    // What the client can actually do about it.
+    expect(alert.textContent).toMatch(/no longer connected/i);
+    expect(alert.textContent).toMatch(/reload/i);
     expect(screen.getByText("Northgate Advisors")).toBeTruthy();
     expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it("never shows the client the words 'Advisor session'", async () => {
+    // The 403 body reads "Advisor session — portal access denied": meaningless
+    // to a client, and it names an internal concept at them.
+    stubFetch([conn()], {
+      status: 403,
+      body: { error: "Advisor session — portal access denied" },
+    });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<ConnectedFirmsCard />);
+    fireEvent.click(await screen.findByRole("button", { name: /disconnect/i }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).not.toMatch(/advisor session/i);
+    expect(alert.textContent).toMatch(/sign in again/i);
+  });
+
+  it("falls back to the generic message on a server error", async () => {
+    stubFetch([conn()], { status: 500, body: { error: "clientId required" } });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<ConnectedFirmsCard />);
+    fireEvent.click(await screen.findByRole("button", { name: /disconnect/i }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).not.toMatch(/clientId/i);
+    expect(alert.textContent).toMatch(/something went wrong/i);
   });
 });

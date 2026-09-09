@@ -28,6 +28,29 @@ type Load =
   | { state: "error" }
   | { state: "ready"; connections: PortalConnection[] };
 
+/** What to say when there is nothing more useful to say. */
+const GENERIC_DISCONNECT_ERROR = "Something went wrong. Try again in a moment.";
+
+/**
+ * Portal copy for a refused disconnect, chosen from the STATUS.
+ *
+ * Deliberately not `data.error`: the route's error bodies are internal
+ * diagnostics — "Not found", "clientId required", "Advisor session — portal
+ * access denied" — and the last of those names a concept the client has never
+ * heard of and cannot act on. Every message here tells them what to do next.
+ */
+function disconnectError(status: number): string {
+  // The session lapsed, or this browser is signed in as an advisor.
+  if (status === 401 || status === 403) {
+    return "You're not signed in any more. Sign in again to change your connections.";
+  }
+  // The binding is already gone — usually the firm ended it first.
+  if (status === 404) {
+    return "You're no longer connected to that firm. Reload the page to see your current list.";
+  }
+  return GENERIC_DISCONNECT_ERROR;
+}
+
 /**
  * The reader's LOCAL day, deliberately. `accepted_at` is a `timestamptz` — a
  * real instant — so UTC-pinning it would print the wrong calendar day for
@@ -88,9 +111,8 @@ export default function ConnectedFirmsCard(): ReactElement {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ clientId }),
       });
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
-        setError(data.error ?? "Something went wrong. Try again in a moment.");
+        setError(disconnectError(res.status));
         return;
       }
       setLoad((prev) =>
@@ -100,7 +122,7 @@ export default function ConnectedFirmsCard(): ReactElement {
       );
       router.refresh();
     } catch {
-      setError("Something went wrong. Try again in a moment.");
+      setError(GENERIC_DISCONNECT_ERROR);
     } finally {
       setBusyId(null);
     }
