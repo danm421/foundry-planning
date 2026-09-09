@@ -58,9 +58,14 @@ const GATED: Readonly<Record<string, { feature: PortalFeatureKey; via: "route" |
  * login and lets the client end any of them. It spans firms, so there is no one
  * household whose switches could gate it — and a client must be able to leave a
  * firm whose portal is switched off, not least then.
+ *
+ * `active-household` is core on the same grounds: it MOVES the client between
+ * the households they hold, so gating it on the switches of the household they
+ * are currently in would let one firm turning a section off pin them there.
  */
 const CORE = new Set([
   "accounts",
+  "active-household",
   "connections",
   "dashboard",
   "expenses",

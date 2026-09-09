@@ -9,6 +9,18 @@ import { deriveHouseholdNameFromContacts } from "@/lib/crm/household-name";
 const NAMING_ROLES = ["primary", "spouse"] as const;
 
 /**
+ * What a household is called when it derives no name of its own.
+ *
+ * Lives here rather than in each client-facing caller for the same reason
+ * `UNNAMED_FIRM` lives beside `resolvePortalFirmNames`: a household with no
+ * `primary` contact is simply ABSENT from the map below, so every caller has
+ * to supply this fallback, and two copies of it drift. Deliberately addressed
+ * to the reader ("Your household") — these are the client's own screens, and a
+ * missing contact row is our gap, not something to spell out to them.
+ */
+export const UNNAMED_HOUSEHOLD = "Your household";
+
+/**
  * Display names for a SET of households, keyed by CLIENT id, in one query.
  *
  * Batch by design: the access-request screen names every firm asking at once,

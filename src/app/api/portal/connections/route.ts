@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { resolveHouseholdNames } from "@/lib/portal/household-names";
+import { resolveHouseholdNames, UNNAMED_HOUSEHOLD } from "@/lib/portal/household-names";
 import { resolvePortalFirmNames, UNNAMED_FIRM } from "@/lib/portal/firm-names";
 import { listActiveBindings, revokeBinding, type BindingRef } from "@/lib/portal/bindings";
 import { notifyPortalDisconnected } from "@/lib/notifications/producers/portal";
@@ -31,10 +31,6 @@ async function requireClientSession(): Promise<{ userId: string } | Response> {
   }
   return { userId };
 }
-
-/** A household with no `primary` contact derives no name — say something
- *  rather than leaving a blank where a name belongs. */
-const UNNAMED_HOUSEHOLD = "Your household";
 
 export async function GET(): Promise<Response> {
   const gate = await requireClientSession();

@@ -221,7 +221,12 @@ vi.mock("@/lib/audit", () => ({ recordAudit: auditMock }));
 vi.mock("@/lib/notifications/producers/portal", () => ({ notifyPortalDisconnected: notifyMock }));
 vi.mock("@/lib/portal/legacy-binding", () => ({ legacyPortalClientRef: legacyMock }));
 vi.mock("next/headers", () => ({ cookies: cookieMock }));
-vi.mock("@/lib/portal/household-names", () => ({ resolveHouseholdNames: householdNamesMock }));
+vi.mock("@/lib/portal/household-names", () => ({
+  resolveHouseholdNames: householdNamesMock,
+  // The route reads this constant from the same module, so the factory has
+  // to carry it or the fallback renders `undefined`.
+  UNNAMED_HOUSEHOLD: "Your household",
+}));
 
 import { DELETE } from "@/app/api/portal/connections/route";
 import {

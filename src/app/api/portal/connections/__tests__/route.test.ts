@@ -27,7 +27,12 @@ vi.mock("@/lib/portal/bindings", () => ({
 vi.mock("@/lib/notifications/producers/portal", () => ({ notifyPortalDisconnected: notifyMock }));
 // Both name lookups are mocked at their DB boundary so this suite never reaches
 // a live database.
-vi.mock("@/lib/portal/household-names", () => ({ resolveHouseholdNames: householdNamesMock }));
+vi.mock("@/lib/portal/household-names", () => ({
+  resolveHouseholdNames: householdNamesMock,
+  // The route reads this constant from the same module, so the factory has
+  // to carry it or the fallback renders `undefined`.
+  UNNAMED_HOUSEHOLD: "Your household",
+}));
 vi.mock("@/lib/branding/db", () => ({ getFirmDisplayNames: displayNamesMock }));
 // `resolveFirmNames` is deliberately NOT mocked: its dedupe and its per-org
 // try/catch are the behaviour under test here, and the only way to see "one
