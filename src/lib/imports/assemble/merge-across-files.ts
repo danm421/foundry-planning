@@ -92,15 +92,36 @@ interface DedupeBucketEntry<T> {
  * `null` means "nothing worth calling out for this pair". */
 type DescribeConflict<T> = (existing: T, incoming: T) => string | null;
 
+/** Zero-padded ISO YYYY-MM-DD — the only shape that sorts correctly as a
+ * plain string, and so the only shape `chooseBase` will order by. */
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * A recency key we can actually order with `>`, or `undefined` if we can't.
+ *
+ * The date is unvalidated model output — `extraction-schema.ts` runs account
+ * rows through `z.looseObject({})`, so ANY string reaches this code. Ordering
+ * an arbitrary string lexicographically silently inverts: "March 31, 2026" >
+ * "June 30, 2026" ("M" > "J"), and unpadded "2026-6-30" > "2026-12-31" ("6" >
+ * "1") — both of which would hand the win back to the STALER statement, the
+ * exact defect this fix exists to close. Anything that isn't zero-padded ISO
+ * is therefore treated as UNDATED, falling safe into the field-count path.
+ *
+ * A regex test, deliberately — not `Date` parsing, which would break this
+ * module's purity contract.
+ */
+function orderableDate(value: string | undefined): string | undefined {
+  return value !== undefined && ISO_DATE_RE.test(value) ? value : undefined;
+}
+
 /**
  * Choose which of two same-entity rows becomes the base — the one that wins
  * on conflicting fields. A statement date beats field richness: a June
  * statement carrying only a balance is better evidence of TODAY'S balance
  * than a March statement carrying a balance and a cost basis. Field count is
  * the fallback when dates cannot separate the rows, which preserves the
- * pre-2026-09 behaviour for every section that has no date to offer.
- *
- * ISO YYYY-MM-DD strings compare correctly with `>`; no Date parsing needed.
+ * pre-2026-09 behaviour for every section that has no date to offer — and
+ * for any date we can't trust (see `orderableDate`).
  */
 function chooseBase<T>(
   existingContent: T,
@@ -108,10 +129,10 @@ function chooseBase<T>(
   incoming: T,
   incomingFieldCount: number,
   recencyOf?: (row: T) => string | undefined,
-): [richer: T, poorer: T] {
+): [base: T, other: T] {
   if (recencyOf) {
-    const existingDate = recencyOf(existingContent);
-    const incomingDate = recencyOf(incoming);
+    const existingDate = orderableDate(recencyOf(existingContent));
+    const incomingDate = orderableDate(recencyOf(incoming));
     if (existingDate && incomingDate && existingDate !== incomingDate) {
       return incomingDate > existingDate
         ? [incoming, existingContent]
@@ -176,14 +197,14 @@ function mergeSection<T extends { name: string }>(
       // unique fields still backfill any gaps the base left, so nothing is
       // dropped. `chooseBase` prefers the more recent statement where the
       // caller supplied a date accessor, else the richer row as before.
-      const [richerContent, poorerContent] = chooseBase(
+      const [baseContent, otherContent] = chooseBase(
         existingEntry.content,
         existingEntry.fieldCount,
         content,
         incomingFieldCount,
         opts?.recencyOf,
       );
-      existingEntry.content = unionFields(richerContent, poorerContent);
+      existingEntry.content = unionFields(baseContent, otherContent);
       existingEntry.fieldCount = countNonNullFields(existingEntry.content as Record<string, unknown>);
       existingEntry.mergeCount += 1;
       // Content may have been enriched, but provenance stays pinned to the

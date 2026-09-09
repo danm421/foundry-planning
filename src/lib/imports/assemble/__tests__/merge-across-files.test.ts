@@ -200,3 +200,41 @@ describe("recency-first account dedupe", () => {
     expect(r.payload.accounts[0].value).toBe(10_000);
   });
 });
+
+describe("recency ordering only trusts a zero-padded ISO date", () => {
+  // `statementDate` is unvalidated model output — `extraction-schema.ts` runs
+  // account rows through `z.looseObject({})`, so any string reaches this code.
+  // Only zero-padded YYYY-MM-DD sorts correctly as a plain string, so anything
+  // else must be treated as UNDATED and fall safe into the field-count path
+  // rather than being trusted as an ordering key.
+
+  it("treats a human-readable date as undated instead of ordering by it", () => {
+    const r = mergeAcrossFiles({
+      f1: er("march.pdf", {
+        accounts: [{ name: "401(k)", custodian: "Fidelity", accountNumberLast4: "1234", owner: "client", value: 44_120, statementDate: "March 31, 2026" }],
+      }),
+      f2: er("june.pdf", {
+        accounts: [{ name: "401(k)", custodian: "Fidelity", accountNumberLast4: "1234", owner: "client", value: 51_880, basis: 30_000, growthRate: 0.06, statementDate: "June 30, 2026" }],
+      }),
+    });
+    // Ordered as raw strings, "March 31, 2026" > "June 30, 2026" ("M" > "J"),
+    // which would hand the win back to the STALER March row. Both dates are
+    // unusable, so field count decides — and here June is the richer row.
+    expect(r.payload.accounts[0].value).toBe(51_880);
+  });
+
+  it("treats an unpadded month as undated, so a well-formed date still wins", () => {
+    const r = mergeAcrossFiles({
+      f1: er("june.pdf", {
+        accounts: [{ name: "IRA", custodian: "Schwab", accountNumberLast4: "9999", owner: "client", value: 20_000, basis: 5_000, statementDate: "2026-6-30" }],
+      }),
+      f2: er("december.pdf", {
+        accounts: [{ name: "IRA", custodian: "Schwab", accountNumberLast4: "9999", owner: "client", value: 30_000, statementDate: "2026-12-31" }],
+      }),
+    });
+    // Ordered as raw strings, "2026-6-30" > "2026-12-31" ("6" > "1"), which
+    // would make June beat December. The unpadded value is unusable, so June
+    // counts as undated and December's well-formed date wins on its own.
+    expect(r.payload.accounts[0].value).toBe(30_000);
+  });
+});
