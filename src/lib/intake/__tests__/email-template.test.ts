@@ -136,4 +136,20 @@ describe("buildIntakeEmailHtml", () => {
     expect(html).toContain("Ampersand &amp; Co");
     expect(html).not.toContain("&amp;amp;");
   });
+
+  it("keeps the intake button label when no override is given", () => {
+    expect(buildIntakeEmailHtml(base)).toContain("Open My Form");
+  });
+
+  it("lets another sender on this shell name its own button", () => {
+    const html = buildIntakeEmailHtml({ ...base, ctaLabel: "Sign in to my portal" });
+    expect(html).toContain("Sign in to my portal");
+    expect(html).not.toContain("Open My Form");
+  });
+
+  it("escapes a button label so it cannot break out of the anchor", () => {
+    const html = buildIntakeEmailHtml({ ...base, ctaLabel: '"><script>x</script>' });
+    expect(html).not.toContain("<script>");
+    expect(html).toContain("&lt;script&gt;");
+  });
 });
