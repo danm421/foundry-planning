@@ -103,8 +103,10 @@ export async function listPendingRequests(clerkUserId: string): Promise<PendingR
  *  on `.cause` (same unwrap as `isUniqueViolation` in
  *  `lib/crm/household-relationships.ts`). `portal_bindings` carries exactly
  *  one unique index (`portal_bindings_live_idx`), so any 23505 raised by an
- *  insert into this table unambiguously means that one. */
-function isUniqueViolation(err: unknown): boolean {
+ *  insert into this table unambiguously means that one. Exported so
+ *  `bind-portal-user.ts` can reuse it rather than re-deriving the same
+ *  `.cause.code` unwrap for its own `portal_bindings` insert. */
+export function isUniqueViolation(err: unknown): boolean {
   if (typeof err !== "object" || err === null) return false;
   const e = err as { code?: unknown; cause?: { code?: unknown } };
   return e.code === "23505" || e.cause?.code === "23505";

@@ -2,8 +2,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const updateChain = vi.fn();
 const selectChain = vi.fn();
+const insertChain = vi.fn();
 vi.mock("@/db", () => ({
   db: {
+    insert: () => ({
+      values: (vals: unknown) => insertChain(vals),
+    }),
     update: () => ({
       set: (vals: unknown) => ({
         where: () => updateChain(vals),
@@ -26,6 +30,8 @@ import { dispatchClerkInvitation } from "@/app/api/webhooks/clerk/invitation-han
 beforeEach(() => {
   updateChain.mockReset();
   selectChain.mockReset();
+  insertChain.mockReset();
+  insertChain.mockResolvedValue([]);
 });
 
 describe("dispatchClerkInvitation", () => {
