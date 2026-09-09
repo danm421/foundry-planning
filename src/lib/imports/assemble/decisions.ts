@@ -30,6 +30,16 @@ export type MergeDecision =
       account: string;
       values: number[];
       asOf: string;
+      /**
+       * The figure that survived, as of `asOf`. Recorded here rather than
+       * left for a reader to re-derive: `account` is a bare display name
+       * (two different accounts — e.g. a client IRA and a spouse IRA — can
+       * share one), so matching it back to a row to find "the" winner is
+       * ambiguous and can silently pick the wrong account's figure. `kept`
+       * is read straight off the surviving row at emit time, when there is
+       * no ambiguity about which row it is.
+       */
+      kept: number;
     }
   | {
       kind: "undated";

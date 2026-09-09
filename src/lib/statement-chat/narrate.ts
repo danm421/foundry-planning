@@ -77,33 +77,30 @@ function undatedCaveat(d: Extract<MergeDecision, { kind: "undated" }>): string {
 /**
  * C2 said not to attribute a figure to a named FILE — it did not license
  * dating every figure to one statement. `asOf` is the SURVIVING row's date
- * only (`merge-across-files.ts`'s `survivorDate`); the other figures in
- * `d.values` came from other statements on other dates this decision does
- * not carry. Pairing every value with `asOf` renders a false "as of" for
- * every figure except the winner's.
+ * only; the other figures in `d.values` came from other statements on other
+ * dates this decision does not carry. Only `d.kept` — the winning figure —
+ * may be paired with `asOf`; the rest are named without a date.
  *
- * The winner is looked up by name in `rows` — NOT indexed positionally out
- * of `d.values` — because whether the winner lands first or last in that
- * array depends on the order files were merged (newest-first vs
- * oldest-first), which this decision doesn't record either. Only the
- * winning figure may be paired with `asOf`; the others are named without a
- * date.
- *
- * `rows.find` can come back empty — the account might have been excluded as
- * a rollup total, or renamed downstream of this decision being recorded.
- * With no derivable winner there is no truthful "as of" for ANY figure, so
- * the fallback dates nothing.
+ * `d.kept` is read directly off the decision rather than re-derived here.
+ * An earlier version of this function matched `d.account` (a bare display
+ * name) back against `rows` to find "the winner" — but two different
+ * accounts can share a name (a client IRA and a spouse IRA, say), so that
+ * lookup could silently resolve to the WRONG account's row and fabricate a
+ * figure that appears nowhere in the actual conflict. `merge-across-files.ts`
+ * now reads the survivor's own figure at the moment it emits the decision,
+ * when there is no ambiguity about which row it is — the narrator should
+ * never have to re-derive a fact the decision log already recorded. The
+ * emit guard also requires `kept !== undefined`, so a `value-conflict`
+ * decision with no identifiable winner cannot reach this function; there is
+ * no fallback branch because that state is unrepresentable.
  */
-function valueConflictCaveat(
-  d: Extract<MergeDecision, { kind: "value-conflict" }>,
-  rows: Annotated<ExtractedAccount>[],
-): string {
-  const winner = rows.find((r) => r.name === d.account)?.value;
-  if (winner === undefined) {
-    return `"${d.account}" was reported at ${joinWithAnd(d.values.map(money))} across these statements; confirm which is current.`;
-  }
-  const others = d.values.filter((v) => v !== winner);
-  return `"${d.account}" is recorded at ${money(winner)} from the ${usDate(d.asOf)} statement; other statements reported ${joinWithAnd(others.map(money))}.`;
+function valueConflictCaveat(d: Extract<MergeDecision, { kind: "value-conflict" }>): string {
+  const others = d.values.filter((v) => v !== d.kept);
+  const othersClause =
+    others.length === 1
+      ? `another statement reported ${money(others[0])}`
+      : `other statements reported ${joinWithAnd(others.map(money))}`;
+  return `"${d.account}" is recorded at ${money(d.kept)} from the ${usDate(d.asOf)} statement; ${othersClause}.`;
 }
 
 function retirementBasisCaveat(rows: Annotated<ExtractedAccount>[]): string | null {
@@ -166,7 +163,7 @@ export function narrate(input: {
         caveats.push(undatedCaveat(d));
         break;
       case "value-conflict":
-        caveats.push(valueConflictCaveat(d, rows));
+        caveats.push(valueConflictCaveat(d));
         break;
     }
   }

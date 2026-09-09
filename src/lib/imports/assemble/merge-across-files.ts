@@ -351,7 +351,13 @@ function mergeSection<T extends { name: string }>(
       }
 
       // Only disclose a figure conflict when there are actually TWO figures
-      // to weigh AND the SURVIVING row carries a date we can print.
+      // to weigh AND the SURVIVING row carries a date we can print AND we
+      // can read the survivor's own figure straight off it (`kept`) — a
+      // reader downstream must never have to re-derive "the winner" by
+      // matching `account` (a bare display name that two different accounts
+      // can share) back to a row, which can silently resolve to the wrong
+      // account's figure. `entry.content` IS the survivor at this point in
+      // the loop, so `conflictValueOf` reads its figure with no ambiguity.
       //
       // Without a date there is no truthful "as of". And a single figure is
       // not a conflict: `withinTolerance` returns false when exactly one side
@@ -362,12 +368,14 @@ function mergeSection<T extends { name: string }>(
       // the divergence is still disclosed by the `balances differ (...)`
       // warning above, which can say "unknown" where this channel cannot.
       const survivorDate = orderableDate(opts.recencyOf?.(entry.content));
-      if (entry.conflictValues.length >= 2 && survivorDate !== undefined) {
+      const kept = opts.conflictValueOf?.(entry.content);
+      if (entry.conflictValues.length >= 2 && survivorDate !== undefined && kept !== undefined) {
         opts.decisions.push({
           kind: "value-conflict",
           account: entry.content.name,
           values: entry.conflictValues,
           asOf: survivorDate,
+          kept,
         });
       }
     }

@@ -70,6 +70,10 @@ describe("merge decision log", () => {
       account: "IRA",
       values: [10_000, 12_000],
       asOf: "2026-06-30",
+      // Only "dated.pdf" (f2, $12,000) carries a usable date, so it's the
+      // survivor `chooseBase` picks — the winning figure is $12,000, not
+      // $10,000.
+      kept: 12_000,
     });
   });
 
@@ -124,6 +128,8 @@ describe("merge decision log", () => {
       account: "Brokerage",
       values: [100_000, 200_000, 300_000],
       asOf: "2026-03-31",
+      // mar.pdf is both the newest date AND the survivor here.
+      kept: 300_000,
     });
   });
 
@@ -151,6 +157,11 @@ describe("merge decision log", () => {
       account: "IRA",
       values: [10_000, 12_000],
       asOf: "2026-06-30",
+      // Equal dates fall through to the field-count tiebreak (`chooseBase`),
+      // and a.pdf (with `basis` populated) has the richer row — so a.pdf's
+      // $10,000 survives even though b.pdf's $12,000 is not chronologically
+      // earlier. The winner is NOT "whichever file is listed last".
+      kept: 10_000,
     });
   });
 

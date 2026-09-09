@@ -213,7 +213,7 @@ describe("narrate", () => {
     // previous fixture (`rows: []`, no companion `superseded`) was a shape
     // the merge cannot produce, and it let a false sentence — every figure
     // dated to the survivor's statement — test green.
-    it("dates only the winning figure, using the row to find it (not by position in values[])", () => {
+    it("dates only the winning figure, taken straight from the decision's `kept`", () => {
       const { summary, caveats } = narrate({
         fileCount: 3,
         decisions: [
@@ -229,6 +229,7 @@ describe("narrate", () => {
             account: "Brokerage",
             values: [100_000, 200_000, 300_000],
             asOf: "2026-03-31",
+            kept: 300_000,
           },
         ],
         rows: [{ name: "Brokerage", value: 300_000 }] as never,
@@ -241,20 +242,53 @@ describe("narrate", () => {
       );
     });
 
-    // The unresolvable path (Fix round 1, Critical): when no row in `rows`
-    // matches the decision's account name — excluded as a rollup, renamed,
-    // whatever the reason — there is no derivable winner, so NO figure may
-    // be dated. Reusing values/asOf from the original (pre-fix) test fixture.
-    it("dates nothing when the account cannot be found among the rows", () => {
+    // Fix round 2: the field-count tiebreak (`chooseBase`) can make the
+    // winner NOT the chronologically-last statement — fixture rebuilt from
+    // decisions.test.ts:130-155 ("stays silent when both statements carry
+    // the SAME date"). Equal dates fall through to field count, and the
+    // richer row ($10,000, which also carries `basis`) wins even though
+    // $12,000 is not earlier. This is also the only fixture with exactly
+    // ONE other figure, pinning the singular "another statement" branch.
+    it("names the field-count tiebreak's winner, not whichever figure sorts last", () => {
       const { caveats } = narrate({
         fileCount: 2,
         decisions: [
-          { kind: "value-conflict", account: "Brokerage", values: [102_450, 98_700], asOf: "2026-06-30" },
+          { kind: "value-conflict", account: "IRA", values: [10_000, 12_000], asOf: "2026-06-30", kept: 10_000 },
         ],
         rows: [] as never,
       });
       expect(caveats).toContain(
-        '"Brokerage" was reported at $102,450 and $98,700 across these statements; confirm which is current.',
+        '"IRA" is recorded at $10,000 from the 06/30/2026 statement; another statement reported $12,000.',
+      );
+      expect(caveats).not.toContain(
+        '"IRA" is recorded at $12,000 from the 06/30/2026 statement; another statement reported $10,000.',
+      );
+    });
+
+    // Regression test for the Important finding introduced by fix round 1:
+    // an earlier version looked the winner up via `rows.find(r => r.name ===
+    // d.account)`, which returns the FIRST name match — wrong whenever two
+    // different accounts share a display name (a client IRA and a spouse
+    // IRA). `rows` isn't even read for this decision kind anymore, so this
+    // passes by construction now; mutation-confirmed below that it fails
+    // against the old lookup-based implementation.
+    it("names each account's own winner when two accounts share a display name", () => {
+      const { caveats } = narrate({
+        fileCount: 2,
+        decisions: [
+          { kind: "value-conflict", account: "IRA", values: [10_000, 15_000], asOf: "2026-06-30", kept: 15_000 },
+          { kind: "value-conflict", account: "IRA", values: [20_000, 25_000], asOf: "2026-06-30", kept: 25_000 },
+        ],
+        rows: [
+          { name: "IRA", owner: "client", value: 15_000 },
+          { name: "IRA", owner: "spouse", value: 25_000 },
+        ] as never,
+      });
+      expect(caveats).toContain(
+        '"IRA" is recorded at $15,000 from the 06/30/2026 statement; another statement reported $10,000.',
+      );
+      expect(caveats).toContain(
+        '"IRA" is recorded at $25,000 from the 06/30/2026 statement; another statement reported $20,000.',
       );
     });
   });
