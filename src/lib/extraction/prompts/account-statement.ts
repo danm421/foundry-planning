@@ -42,6 +42,7 @@ Return a JSON object with this exact structure:
       "basis": 0,
       "accountNumberLast4": "Last 4 characters of the account number, digits or alphanumeric",
       "custodian": "Custodian / institution name (e.g. 'Fidelity', 'Charles Schwab')",
+      "statementDate": "The statement's period-end or 'as of' date, ISO YYYY-MM-DD. Omit entirely if no date is legible for this account — never guess it.",
       "beneficiaryNameHint": "529 / education accounts ONLY. The designated beneficiary / student, copied verbatim. Omit on every other account.",
       "grantorNameHint": "529 / education accounts ONLY. The account owner / participant / custodian-of-record, copied verbatim. Omit on every other account."${withHoldings ? HOLDINGS_FIELD : ""}
     }
