@@ -1,4 +1,4 @@
-export const ACCOUNT_STATEMENT_VERSION = "2026-08-24.1-529-beneficiary";
+export const ACCOUNT_STATEMENT_VERSION = "2026-09-09.1-statement-date";
 export const ACCOUNT_STATEMENT_HOLDINGS_VERSION = "2026-08-04.1-grouped-holdings-report";
 
 const HOLDINGS_FIELD = `,
@@ -91,6 +91,12 @@ Extraction rules:
 - If a margin balance or loan appears, add it to "liabilities"
 - DO NOT extract the full account number. Capture only the last 4 characters in "accountNumberLast4". If the statement only shows masked digits like "****5678", use "5678".
 - "custodian" is the institution that holds the account. Use a clean, normalized name without LLC/Inc suffixes. Only fill it when the document actually NAMES the institution — never guess or infer one. Fact finders routinely list accounts with no institution at all; omit "custodian" entirely for those.
+- STATEMENT DATE. Set "statementDate" to the statement's period END date, or its
+  "as of" date — whichever the document actually prints for that account — in
+  ISO YYYY-MM-DD form. A quarter label like "Q2 2026" is only usable if the
+  document also prints the actual date; do not convert a label into a date on
+  your own. If no date is legible for an account, OMIT "statementDate" entirely.
+  Never guess it from the file name.
 - "name" must be SHORT and descriptive — the account type, nothing else. Do NOT put the custodian in "name" even when the document names one: it has its own "custodian" field. Never copy the statement's registration header into "name". The account number belongs in "accountNumberLast4" and the registration line belongs in "ownerNameHint", so "name" needs neither. Good: "Rollover IRA", "Joint Brokerage". Bad: "Fidelity Rollover IRA", "JOHN A SMITH & JANE B SMITH JTWROS ROLLOVER IRA XXXX-1234".
 - "ownerNameHint": copy the registration/title line verbatim (all names + any 'JTWROS'/'Joint'/'TOD' wording). Still also fill the coarse "owner" enum.${withHoldings ? HOLDINGS_RULES : ""}
 
