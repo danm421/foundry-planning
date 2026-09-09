@@ -223,6 +223,35 @@ export async function createPendingBinding(args: {
 }
 
 /**
+ * Undo a `pending` row whose access-request email never actually sent.
+ *
+ * The advisor's request is two writes and only the second one — the email —
+ * tells anybody anything. When the send fails the row is a claim nobody made:
+ * `createPendingBinding`'s `already_live` guard would then refuse every retry
+ * for the full `REQUEST_TTL_DAYS`, with no way to resend.
+ *
+ * A HARD DELETE, deliberately, not a `revoked` tombstone. `getPortalClientRef`
+ * gates its Deploy-1 legacy fallback on the login having NO binding rows at
+ * all, across every household and every status — so a tombstone from one
+ * firm's failed send would suppress that fallback everywhere, and a person
+ * whose 0263 backfill row went missing on an unrelated household would
+ * silently lose access there.
+ *
+ * One conditional statement, no read first: `status = 'pending'` lives in the
+ * WHERE, so a row a racing accept or decline has already moved off `pending`
+ * can never be removed by a late-arriving cleanup. `RETURNING` is what makes
+ * the answer honest. Nothing is audited — the send is what audits a request,
+ * and it did not happen.
+ */
+export async function deletePendingBinding(bindingId: string): Promise<boolean> {
+  const deleted = await db
+    .delete(portalBindings)
+    .where(and(eq(portalBindings.id, bindingId), eq(portalBindings.status, "pending")))
+    .returning({ id: portalBindings.id });
+  return Boolean(deleted[0]);
+}
+
+/**
  * Promote a pending row to active. ONLY the owning login may call this — the
  * `clerkUserId` predicate is the authorization, not a filter, and it is
  * enforced TWICE: once by the read below (which also produces the specific

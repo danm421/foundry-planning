@@ -17,7 +17,10 @@ describe("clerkInviteErrorResponse", () => {
       ]),
     );
     expect(res?.status).toBe(409);
-    expect(res?.error).toMatch(/already has an account/i);
+    expect(res?.error).toMatch(/couldn't send an invitation/i);
+    // The route now asks the account holder instead of reaching Clerk with an
+    // existing email, so this copy must point at that, not at support.
+    expect(res?.error).toMatch(/access request/i);
   });
 
   it("maps a pending invitation (duplicate_record) to a 409 with a distinct message", () => {

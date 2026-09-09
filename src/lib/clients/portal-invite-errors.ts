@@ -23,8 +23,8 @@ export function clerkInviteErrorResponse(
     return {
       status: 409,
       error:
-        "This email already has an account, so a portal invitation can't be sent to it. " +
-        "Use a different email, or contact support to link the existing account.",
+        "We couldn't send an invitation to this email. Refresh and try again — " +
+        "if it already has a Foundry account, the button will offer to send an access request instead.",
     };
   }
 

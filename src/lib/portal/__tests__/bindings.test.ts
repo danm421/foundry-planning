@@ -24,6 +24,7 @@ const selectOrderByArgs: unknown[] = [];
 const insertValues = vi.fn();
 const updateSet = vi.fn();
 const updateWhereArgs: unknown[] = [];
+const deleteWhereArgs: unknown[] = [];
 
 const selectChain = {
   from: (...a: unknown[]) => {
@@ -74,6 +75,12 @@ vi.mock("@/db", () => ({
         };
       },
     }),
+    delete: () => ({
+      where: (cond: unknown) => {
+        deleteWhereArgs.push(cond);
+        return { returning: () => Promise.resolve(queue.shift() ?? []) };
+      },
+    }),
   },
 }));
 
@@ -89,6 +96,7 @@ import {
   listBindingsForUser,
   listPendingRequests,
   createPendingBinding,
+  deletePendingBinding,
   acceptBinding,
   declineBinding,
   revokeBinding,
@@ -112,6 +120,7 @@ beforeEach(() => {
   insertValues.mockClear();
   updateSet.mockClear();
   updateWhereArgs.length = 0;
+  deleteWhereArgs.length = 0;
   recordAudit.mockClear();
 });
 
@@ -324,6 +333,33 @@ describe("createPendingBinding", () => {
       requestedBy: "adv-1",
     });
     expect(result).toEqual({ ok: true, bindingId: "fresh-binding" });
+  });
+});
+
+describe("deletePendingBinding", () => {
+  it("removes the row in ONE conditional statement — no read first, and nothing to audit", async () => {
+    queue = [[{ id: "b1" }]];
+    const result = await deletePendingBinding("b1");
+    expect(result).toBe(true);
+    // A read-then-delete would let a racing accept slip between the two.
+    expect(selectFrom).not.toHaveBeenCalled();
+    // Nobody was ever told the request existed — the send is what audits.
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("returns false when the DELETE matches nothing (a racing accept already moved the row)", async () => {
+    queue = [[]];
+    expect(await deletePendingBinding("b1")).toBe(false);
+  });
+
+  it("can only ever remove a PENDING row — id AND status are bound parameters of the WHERE", async () => {
+    queue = [[{ id: "b1" }]];
+    await deletePendingBinding("b1");
+    const compiled = compile(deleteWhereArgs[0]);
+    expect(compiled.params).toContain("b1");
+    // Without this, a failed send could delete a live or historical binding.
+    expect(compiled.params).toContain("pending");
+    expect(compiled.sql).toContain("status");
   });
 });
 
