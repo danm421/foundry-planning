@@ -3,6 +3,7 @@
 import { useState } from "react";
 import DialogShell from "@/components/dialog-shell";
 import GiftForm, { giftFormRecipientsFromClientData } from "@/components/gift-form";
+import type { AccountValueAtYear } from "@/lib/estate/account-value-at-year";
 import type { GiftLedgerYear } from "@/engine/gift-ledger";
 import type { ClientData } from "@/engine/types";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
@@ -21,6 +22,9 @@ interface EstateFlowAddGiftDialogProps {
   editing: EstateFlowGift | null;
   /** Most-recent discount per account id — seeds the gift form's prefill. */
   priorDiscounts?: Record<string, number>;
+  /** Projected account balance at a gift year — powers the in-kind value
+   *  preview and the dollars → share conversion. */
+  accountValueAtYear?: AccountValueAtYear;
   /** Called with the assembled draft when the advisor confirms. */
   onApply: (draft: EstateFlowGift) => void;
   /** Called when the advisor deletes the gift being edited. No-op when editing == null. */
@@ -42,6 +46,7 @@ export default function EstateFlowAddGiftDialog({
   annualExclusionByYear,
   editing,
   priorDiscounts,
+  accountValueAtYear,
   onApply,
   onDelete,
   onClose,
@@ -85,6 +90,7 @@ export default function EstateFlowAddGiftDialog({
         annualExclusionByYear={annualExclusionByYear}
         editing={editing}
         sourceAccount={null}
+        accountValueAtYear={accountValueAtYear}
         priorDiscounts={priorDiscounts}
         ledger={ledger}
         taxInflationRate={taxInflationRate}

@@ -24,6 +24,7 @@ import {
 } from "@/lib/estate/estate-flow-gifts";
 import type { ClientData } from "@/engine/types";
 import type { ProjectionResult } from "@/engine/projection";
+import { buildAccountValueAtYear } from "@/lib/estate/account-value-at-year";
 
 export interface EstateFlowReportTabProps {
   working: ClientData;
@@ -79,6 +80,17 @@ export function EstateFlowReportTab({
         gifts: workingGifts,
       }),
     [working, projection, asOfYear, planStartYear, workingGifts],
+  );
+
+  // Projected end-of-year balance per account — the SAME read the engine uses
+  // to value an in-kind gift (`runProjectionWithEvents`'s `accountValueAtYear`),
+  // so the gift dialog's preview and its dollars → share conversion agree with
+  // the exemption the gift will actually consume. Returns undefined outside the
+  // projection window; the form then falls back to the account's current value
+  // and labels the preview accordingly.
+  const accountValueAtYear = useMemo(
+    () => buildAccountValueAtYear(projection.years),
+    [projection.years],
   );
 
   // Human label for each gift recipient, keyed by recipient id. Built from the
@@ -282,6 +294,7 @@ export function EstateFlowReportTab({
           taxInflationRate={taxInflationRate}
           annualExclusionByYear={annualExclusionByYear}
           priorDiscounts={priorDiscounts}
+          accountValueAtYear={accountValueAtYear}
           onApply={(owners) => {
             applyEdit((d) => changeOwner(d, ownerDialogId!, owners));
             setOwnerDialogId(null);
@@ -336,6 +349,7 @@ export function EstateFlowReportTab({
           annualExclusionByYear={annualExclusionByYear}
           editing={null}
           priorDiscounts={priorDiscounts}
+          accountValueAtYear={accountValueAtYear}
           onApply={(draft) => {
             setWorkingGifts((cur) => addGift(cur, draft));
             setAddGiftOpen(false);
@@ -355,6 +369,7 @@ export function EstateFlowReportTab({
           annualExclusionByYear={annualExclusionByYear}
           editing={editingGift}
           priorDiscounts={priorDiscounts}
+          accountValueAtYear={accountValueAtYear}
           onApply={(draft) => {
             setWorkingGifts((cur) => updateGift(cur, draft));
             setEditingGiftId(null);

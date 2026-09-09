@@ -5,6 +5,7 @@ import { verifyClientAccess } from "@/lib/clients/authz";
 import { runProjectionWithEvents } from "@/engine/projection";
 import { buildAnnualExclusionMap } from "@/lib/gifts/resolve-annual-exclusion";
 import { computeExemptionSummary } from "@/lib/gifts/compute-exemption-summary";
+import { buildAccountValueAtYear } from "@/lib/estate/account-value-at-year";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +42,7 @@ export async function GET(
 
     // Same resolver runProjectionWithEvents uses internally, so the trust
     // dialog's exemption bar agrees with the gift ledger it sits beside.
-    const yearByYear = new Map(result.years.map((y) => [y.year, y]));
+    const valueAtYear = buildAccountValueAtYear(result.years);
 
     // Rebuild the §2503(b) annual-exclusion map the SAME way the projection
     // does internally (same helper + inputs) so the per-trust exemption math
@@ -65,7 +66,7 @@ export async function GET(
       // Params are named out in full: a bare `id` here would shadow the route's
       // client id, which is in scope.
       accountValueAtYear: (accountId: string, year: number) =>
-        yearByYear.get(year)?.accountLedgers?.[accountId]?.endingValue ?? 0,
+        valueAtYear(accountId, year) ?? 0,
       taxInflationRate,
       lifetimeExemptionCap: data.planSettings.lifetimeExemptionCap ?? null,
       hasSpouse: data.client.spouseDob != null,

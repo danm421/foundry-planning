@@ -140,9 +140,9 @@ describe("GiftDialog — valuation discount round-trip", () => {
   it("preserves the saved discount through an unrelated edit", async () => {
     const fetchMock = mockSave({ ...discountedGift, percent: "0.2", valuationDiscount: "0.3" });
     render(<GiftDialog {...baseProps} editingGift={discountedGift} />);
-    fireEvent.change(screen.getByLabelText(/percent/i, { selector: "input" }), {
-      target: { value: "20" },
-    });
+    // The ownership-share field — labelled "Gift size" since it also accepts a
+    // dollar amount — so this is the unrelated edit the discount must survive.
+    fireEvent.change(screen.getByTestId("asset-percent"), { target: { value: "20" } });
     fireEvent.click(screen.getByText("Save gift"));
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     expect(sentBody(fetchMock).valuationDiscount).toBeCloseTo(0.3, 4);

@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import DialogShell from "@/components/dialog-shell";
 import { fieldLabelClassName } from "@/components/forms/input-styles";
 import GiftForm, { giftFormRecipientsFromClientData } from "@/components/gift-form";
+import type { AccountValueAtYear } from "@/lib/estate/account-value-at-year";
 import type { Account, BeneficiaryRef, ClientData } from "@/engine/types";
 import type { AccountOwner } from "@/engine/ownership";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "@/engine/ownership";
@@ -35,6 +36,9 @@ interface Props {
   annualExclusionByYear: Record<number, number>;
   /** Most-recent discount per account id — seeds the gift form's prefill. */
   priorDiscounts?: Record<string, number>;
+  /** Projected account balance at a gift year — powers the in-kind value
+   *  preview and the dollars → share conversion. */
+  accountValueAtYear?: AccountValueAtYear;
   onClose: () => void;
 }
 
@@ -123,6 +127,7 @@ export default function EstateFlowChangeOwnerDialog({
   taxInflationRate,
   annualExclusionByYear,
   priorDiscounts,
+  accountValueAtYear,
   onClose,
 }: Props) {
   // ── Derive available destinations ─────────────────────────────────────────
@@ -539,6 +544,7 @@ export default function EstateFlowChangeOwnerDialog({
               value: account.value,
               subType: account.subType,
             }}
+            accountValueAtYear={accountValueAtYear}
             priorDiscounts={priorDiscounts}
             ledger={ledger}
             taxInflationRate={taxInflationRate}

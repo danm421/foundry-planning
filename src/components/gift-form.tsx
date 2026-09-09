@@ -9,6 +9,8 @@ import type { GiftLedgerYear } from "@/engine/gift-ledger";
 import type { EstateFlowGift, GiftGrantor, GiftRecipientRef } from "@/lib/estate/estate-flow-gifts";
 import { discountedGiftValue, MAX_DISCOUNT_PCT } from "@/lib/gifts/apply-valuation-discount";
 import { discountAppliesToShape } from "@/lib/gifts/discount-applicability";
+import { giftPercentToWhole, roundGiftPercent, wholeToGiftPercent } from "@/lib/gifts/gift-percent";
+import type { AccountValueAtYear } from "@/lib/estate/account-value-at-year";
 
 export interface GiftFormRecipients {
   /** Irrevocable trusts only. */
@@ -49,6 +51,11 @@ export interface GiftFormProps {
   editing: EstateFlowGift | null;
   /** Column-1 asset path: pre-selects in-kind funding from this account. */
   sourceAccount?: { id: string; name: string; value: number; subType?: string } | null;
+  /** Projected balance of an account at a gift year — build it with
+   *  `buildAccountValueAtYear`. Supplied only by surfaces that hold a live
+   *  projection. Without it (or outside the projection window) the form falls
+   *  back to the account's CURRENT value and says so. */
+  accountValueAtYear?: AccountValueAtYear;
   /** Most-recent discount per account id, from `priorDiscountsBySource`. Seeds
    *  the discount field only — never written back to the source gift. */
   priorDiscounts?: Record<string, number>;
@@ -123,7 +130,16 @@ export default function GiftForm(props: GiftFormProps) {
     : editing?.kind === "cash-once" ? editing.amount
     : 0,
   );
-  const [percentWhole, setPercentWhole] = useState(() => (editing?.kind === "asset-once" ? Math.round(editing.percent * 100) : 100));
+  // Whether the advisor sizes the in-kind gift by share or by dollars. A saved
+  // gift only ever records the share, so an edit always opens on "percent".
+  const [assetSizeMode, setAssetSizeMode] = useState<"percent" | "dollars">("percent");
+  // WHOLE PERCENT, to 2dp — `percent` is stored as a fraction at scale 4, so
+  // 0.01% is the finest share the column can hold either way. Rounding the seed
+  // to a whole number here would silently rewrite a saved 4.25% as 4%.
+  const [percentInput, setPercentInput] = useState(() =>
+    editing?.kind === "asset-once" ? giftPercentToWhole(editing.percent) : 100,
+  );
+  const [assetDollars, setAssetDollars] = useState(0);
   const [selectedAccountId, setSelectedAccountId] = useState(() =>
     editing?.kind === "asset-once" ? editing.accountId : "",
   );
@@ -187,11 +203,63 @@ export default function GiftForm(props: GiftFormProps) {
   const selectedAccount = sourceAccount
     ?? props.accounts.find((a) => a.id === effectiveAccountId);
 
+  // ── What the asset is worth in the gift year ──────────────────────────────
+  // The engine values an in-kind gift as `accountValueAtYear(account, year) x
+  // percent`, so every dollar figure on this form — the preview, the discount
+  // line, the exemption warning, and the dollars -> share conversion — reads
+  // the SAME projected balance. Surfaces without a projection (and years
+  // outside one) fall back to the account's current value, and say so rather
+  // than passing today's number off as the gift-year number.
+  //
+  // All of it is gated on `effectiveInKind`: `effectiveAccountId` stays truthy
+  // after the advisor toggles Funding back to Cash — and for the whole life of
+  // the column-1 dialog, which always carries a sourceAccount — so without the
+  // gate every keystroke on an unrelated field would re-resolve a balance
+  // nothing on screen uses.
+  const projectedAssetValue =
+    effectiveInKind && effectiveAccountId
+      ? props.accountValueAtYear?.(effectiveAccountId, year)
+      : undefined;
+  const assetValueIsProjected = projectedAssetValue != null;
+  const assetValueAtYear = effectiveInKind
+    ? projectedAssetValue ?? selectedAccount?.value ?? 0
+    : 0;
+
+  // `roundGiftPercent` holds the share to what `gifts.percent` can store — so
+  // the figure previewed below is the figure that gets saved — and absorbs the
+  // division by a $0 balance, which is no share rather than the whole asset.
+  let assetShare = 0;
+  if (effectiveInKind) {
+    assetShare =
+      assetSizeMode === "dollars"
+        ? roundGiftPercent(assetDollars / assetValueAtYear)
+        : wholeToGiftPercent(percentInput);
+  }
+  const assetShareWholePercent = giftPercentToWhole(assetShare);
+  // Dollars the recipient actually receives — the share AFTER storage rounding,
+  // not the number typed. On a large asset those differ by up to 0.01% of it.
+  const assetGiftValue = assetValueAtYear * assetShare;
+
+  // One value, not two flags: over the asset's value the share clamps to 1 and
+  // never to 0, so these two can never both be true and the page should not be
+  // able to render them as if they could.
+  let assetDollarsWarning: "capped" | "too-small" | null = null;
+  if (effectiveInKind && assetSizeMode === "dollars" && assetValueAtYear > 0) {
+    if (assetDollars > assetValueAtYear) assetDollarsWarning = "capped";
+    else if (assetDollars > 0 && assetShare === 0) assetDollarsWarning = "too-small";
+  }
+
+  // Today's balance standing in for a future year's is a real difference in what
+  // the gift is worth, not a labelling nicety — so say it outright rather than
+  // leaving the advisor to read it off the "Current value" prefix.
+  const assetValueIsStaleForYear =
+    effectiveInKind && !assetValueIsProjected && year > thisYear;
+
   // Full (pre-discount) value previewed for the relevant year.
   const previewFullValue = effectiveRecurring
     ? (amountMode === "annual_exclusion" ? exclusionAmount : annualAmount)
     : effectiveInKind
-      ? (selectedAccount?.value ?? 0) * (percentWhole / 100)
+      ? assetGiftValue
       : (amountMode === "annual_exclusion" ? exclusionAmount : amount);
   const previewDiscountedValue = discountedGiftValue(previewFullValue, discountFraction);
 
@@ -231,9 +299,9 @@ export default function GiftForm(props: GiftFormProps) {
     if (effectiveInKind) {
       if (!effectiveAccountId) return null;
       if (!Number.isFinite(year) || !inWindow(year)) return null;
-      if (!(percentWhole >= 1 && percentWhole <= 100)) return null;
+      if (!(assetShare > 0 && assetShare <= 1)) return null;
       const base: EstateFlowGift = {
-        kind: "asset-once", id, year, accountId: effectiveAccountId, percent: percentWhole / 100,
+        kind: "asset-once", id, year, accountId: effectiveAccountId, percent: assetShare,
         grantor, recipient,
         amountOverride: editing?.kind === "asset-once" ? editing.amountOverride : undefined,
         eventKind: editing?.kind === "asset-once" ? editing.eventKind : undefined,
@@ -255,7 +323,7 @@ export default function GiftForm(props: GiftFormProps) {
       valuationDiscount: discountFraction,
     };
     return editing?.kind === "cash-once" ? { ...editing, ...base } : base;
-  }, [selected, editing, newGiftId, effectiveRecurring, effectiveInKind, effectiveAccountId, year, percentWhole, amount, startYear, endYear, annualAmount, amountMode, exclusionAmount, inflationAdjust, grantor, crummey, discountFraction, recipientIsTrust, planMinYear, planMaxYear]);
+  }, [selected, editing, newGiftId, effectiveRecurring, effectiveInKind, effectiveAccountId, year, assetShare, amount, startYear, endYear, annualAmount, amountMode, exclusionAmount, inflationAdjust, grantor, crummey, discountFraction, recipientIsTrust, planMinYear, planMaxYear]);
 
   // Fire onChange whenever the draft *content* changes (stable JSON key so a
   // new object identity for an unchanged draft does not re-fire; onChange held
@@ -272,14 +340,15 @@ export default function GiftForm(props: GiftFormProps) {
   const breaches = useMemo<GiftWarningBreach[]>(() => {
     if (!ledger || !draft) return [];
 
-    // taxableContribution: cash → amount, asset → selected account value × pct,
+    // taxableContribution: cash → amount, asset → gift-year account value × pct,
     // series → per-year annualAmount (preview the start year). Each is net of
     // any valuation discount — that is the figure that consumes exemption.
     //
-    // `selectedAccount`, not `sourceAccount`: on the picker path (the add-gift
-    // dialog) there is no sourceAccount, so this read used to be $0 and the
-    // warning could never fire there — beside a discount preview quoting real
-    // dollars. Both now read the same account.
+    // `assetValueAtYear`, not `sourceAccount.value`: on the picker path (the
+    // add-gift dialog) there is no sourceAccount, so this read used to be $0
+    // and the warning could never fire there — beside a discount preview
+    // quoting real dollars. Every dollar figure on the form now reads the one
+    // gift-year value.
     let taxableContribution: number;
     let previewYear: number;
     if (draft.kind === "series") {
@@ -287,7 +356,7 @@ export default function GiftForm(props: GiftFormProps) {
       previewYear = draft.startYear;
     } else if (draft.kind === "asset-once") {
       taxableContribution = discountedGiftValue(
-        (selectedAccount?.value ?? 0) * draft.percent,
+        assetValueAtYear * draft.percent,
         draft.valuationDiscount,
       );
       previewYear = draft.year;
@@ -323,7 +392,7 @@ export default function GiftForm(props: GiftFormProps) {
       }
     }
     return out;
-  }, [ledger, draft, selectedAccount?.value, props.taxInflationRate]);
+  }, [ledger, draft, assetValueAtYear, props.taxInflationRate]);
 
   return (
     <div className="space-y-4 text-sm">
@@ -384,29 +453,89 @@ export default function GiftForm(props: GiftFormProps) {
 
       {/* Amount controls */}
       {effectiveInKind ? (
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Asset">
-            {sourceAccount ? (
-              <select data-testid="account" value={sourceAccount.id} disabled className={selectCls}>
-                <option value={sourceAccount.id}>{sourceAccount.name}</option>
-              </select>
-            ) : (
-              <select
-                data-testid="account"
-                value={selectedAccountId}
-                onChange={(e) => setSelectedAccountId(e.target.value)}
-                className={selectCls}
-              >
-                <option value="">— select —</option>
-                {props.accounts.map((a) => (
-                  <option key={a.id} value={a.id}>{a.name}</option>
-                ))}
-              </select>
-            )}
-          </Field>
-          <Field label="Percent (%)">
-            <NumberInput value={percentWhole} onChange={setPercentWhole} min={1} max={100} />
-          </Field>
+        <div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Asset">
+              {sourceAccount ? (
+                <select data-testid="account" value={sourceAccount.id} disabled className={selectCls}>
+                  <option value={sourceAccount.id}>{sourceAccount.name}</option>
+                </select>
+              ) : (
+                <select
+                  data-testid="account"
+                  value={selectedAccountId}
+                  onChange={(e) => setSelectedAccountId(e.target.value)}
+                  className={selectCls}
+                >
+                  <option value="">— select —</option>
+                  {props.accounts.map((a) => (
+                    <option key={a.id} value={a.id}>{a.name}</option>
+                  ))}
+                </select>
+              )}
+            </Field>
+            <Field
+              label="Gift size"
+              hint="A gift of an asset is recorded as a share of it. Enter a dollar amount instead and it is converted to the share worth that much in the gift year."
+            >
+              <Segmented
+                value={assetSizeMode}
+                options={[["percent", "Percent"], ["dollars", "Dollar amount"]]}
+                onChange={(v) => {
+                  // Seed the field being switched TO from what is on screen now,
+                  // so flipping the toggle never changes the size of the gift.
+                  if (v === "dollars") setAssetDollars(Math.round(assetGiftValue));
+                  else setPercentInput(assetShareWholePercent);
+                  setAssetSizeMode(v as "percent" | "dollars");
+                }}
+              />
+              {assetSizeMode === "percent" ? (
+                <NumberInput
+                  testId="asset-percent"
+                  className="mt-2"
+                  value={percentInput}
+                  onChange={setPercentInput}
+                  min={0.01}
+                  max={100}
+                  step={0.01}
+                />
+              ) : (
+                <MoneyInput
+                  testId="asset-dollars"
+                  className="mt-2"
+                  value={assetDollars}
+                  onChange={setAssetDollars}
+                />
+              )}
+            </Field>
+          </div>
+          {selectedAccount && assetValueAtYear > 0 && (
+            <p className="mt-2 text-xs text-ink-3" data-testid="asset-value-preview">
+              {assetValueIsProjected ? `Projected value in ${year}` : "Current value"}{" "}
+              <span className="tabular text-ink-2">${Math.round(assetValueAtYear).toLocaleString()}</span>
+              {" · gifting "}
+              <span className="tabular text-ink-2">{assetShareWholePercent}%</span>
+              {" ≈ "}
+              <span className="tabular font-medium text-ink-2">${Math.round(assetGiftValue).toLocaleString()}</span>
+            </p>
+          )}
+          {assetValueIsStaleForYear && (
+            <p role="status" data-testid="asset-value-not-projected" className="mt-1.5 text-xs text-warn">
+              This screen has no projection, so the share is set from today&apos;s value —
+              not what the asset is worth in {year}.
+            </p>
+          )}
+          {assetDollarsWarning && (
+            <p
+              role="status"
+              data-testid={`asset-dollars-${assetDollarsWarning}`}
+              className="mt-1.5 text-xs text-warn"
+            >
+              {assetDollarsWarning === "capped"
+                ? `That is more than the asset is worth in ${year} — capped at the whole asset.`
+                : "Too small a slice of this asset to record — a share is stored to the nearest 0.01%."}
+            </p>
+          )}
         </div>
       ) : (
         <Field label="Amount">

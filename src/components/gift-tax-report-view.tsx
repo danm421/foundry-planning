@@ -12,6 +12,7 @@ import {
   type RecipientGroup,
 } from "@/lib/gifts/build-recipient-drilldown";
 import { buildAnnualExclusionMap } from "@/lib/gifts/resolve-annual-exclusion";
+import { buildAccountValueAtYear } from "@/lib/estate/account-value-at-year";
 import { GiftCumulativeTable } from "./gift-cumulative-table";
 import {
   GiftWarningAlert,
@@ -120,11 +121,11 @@ export default function GiftTaxReportView({
       tree.planSettings.taxInflationRate ?? tree.planSettings.inflationRate ?? 0,
     );
 
-    const yearByYear = new Map(projection.years.map((y) => [y.year, y]));
-    const accountValueAtYear = (accountId: string, year: number): number => {
-      const ledger = yearByYear.get(year)?.accountLedgers?.[accountId];
-      return ledger?.endingValue ?? 0;
-    };
+    // Engine parity: an unresolved year/account is $0 to the projection, so
+    // this reporting surface reads it the same way.
+    const valueAtYear = buildAccountValueAtYear(projection.years);
+    const accountValueAtYear = (accountId: string, year: number): number =>
+      valueAtYear(accountId, year) ?? 0;
 
     for (const ly of projection.giftLedger) {
       const groups = buildRecipientDrilldown({
