@@ -6,10 +6,10 @@ import { isUniqueViolation } from "@/lib/portal/bindings";
 
 export type BindResult =
   | { ok: true; clientId: string; firmId: string }
-  | { ok: false; reason: "client_not_found" | "already_bound_other" };
+  | { ok: false; reason: "client_not_found" | "already_bound_other" | "revoked" };
 
 /** What `activateBinding` did. `already_active` alone means "nothing to write". */
-type Activation = "created" | "promoted" | "already_active" | "blocked";
+type Activation = "created" | "promoted" | "already_active" | "blocked" | "revoked";
 
 /**
  * How many times `activateBinding` re-reads after another writer moves this
@@ -28,17 +28,22 @@ const MAX_ATTEMPTS = 3;
  * marked below, for the household whose 0263 backfill row went missing, which
  * the dual-read still serves from that column.
  *
- * The three ways a pair can already appear:
+ * The four ways a pair can already appear:
  *  - an `active` row — a genuine replay, nothing to do;
  *  - a `pending` row — an advisor's access request the client has now
  *    answered by accepting the invitation, so it is promoted, not treated as a
  *    conflict (the live index would reject a second row beside it anyway);
- *  - a `revoked`/`declined` row — over, and no obstacle to binding again.
+ *  - a `declined` row — a proposal refused, from a firm that never had access.
+ *    Over, and no obstacle to binding again on EITHER path;
+ *  - a `revoked` row — access that once existed and was deliberately ended.
+ *    Whether that blocks depends on WHO is asking, which is what `source` is
+ *    for. See the guard below.
  */
 async function activateBinding(
   clientId: string,
   clerkUserId: string,
   legacyClerkUserId: string | null,
+  source: "webhook" | "self-heal",
 ): Promise<Activation> {
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const rows = await db
@@ -49,6 +54,27 @@ async function activateBinding(
       })
       .from(portalBindings)
       .where(eq(portalBindings.clientId, clientId));
+
+    // A `revoked` row for THIS pair is the client's (or their advisor's) own
+    // deliberate end of this login's access to this household — the only way
+    // that status is ever written is from an `active` one. The middleware
+    // self-heal runs automatically on every org-less request and reads a Clerk
+    // `publicMetadata.clientId` that nothing ever clears, so without this it
+    // re-binds the household the moment the client presses Disconnect, making
+    // that button a no-op. The webhook path is the opposite case: an advisor
+    // re-inviting is a human act of consent and must still get a working bind
+    // rather than a refusal, so it is deliberately unaffected.
+    //
+    // `declined` is NOT included: it is only ever written from `pending` — a
+    // refused proposal from a firm that never had access — and blocking on it
+    // would break the one path the self-heal exists for, an invitation whose
+    // webhook failed to deliver.
+    if (
+      source === "self-heal" &&
+      rows.some((r) => r.clerkUserId === clerkUserId && r.status === "revoked")
+    ) {
+      return "revoked";
+    }
 
     const live = rows.filter((r) => r.status === "pending" || r.status === "active");
 
@@ -123,6 +149,11 @@ async function activateBinding(
  * never taken from them. Idempotent: a repeat bind of a pair that is already
  * active writes nothing and audits nothing, so Clerk's webhook retries are
  * safe.
+ *
+ * `source` is not just audit metadata — it decides one case. The self-heal is
+ * automatic and may never undo a deliberate act, so a `revoked` row for this
+ * pair refuses it with `reason: "revoked"`; the webhook is an advisor's
+ * re-invitation and binds straight over that same row.
  */
 export async function bindClerkUserToClient(
   clientId: string,
@@ -137,8 +168,9 @@ export async function bindClerkUserToClient(
   const row = rows[0];
   if (!row?.firmId) return { ok: false, reason: "client_not_found" };
 
-  const activation = await activateBinding(clientId, clerkUserId, row.existing);
+  const activation = await activateBinding(clientId, clerkUserId, row.existing, source);
   if (activation === "blocked") return { ok: false, reason: "already_bound_other" };
+  if (activation === "revoked") return { ok: false, reason: "revoked" };
 
   const legacyStale = row.existing !== clerkUserId;
   // Both stores already agree — a genuine replay. No write, no second audit.

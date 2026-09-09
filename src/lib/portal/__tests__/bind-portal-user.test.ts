@@ -176,6 +176,52 @@ describe("bindClerkUserToClient", () => {
     expect(recordAudit).toHaveBeenCalledTimes(1);
   });
 
+  it("refuses the SELF-HEAL after a revoke, so an automatic bind cannot undo the client's own act", async () => {
+    // Same fixture as the webhook test above, one argument different. The
+    // advisor re-inviting is a human act of consent; `src/proxy.ts` calling
+    // this on every org-less request is not, and it must never resurrect the
+    // binding a client just ended from their own Settings screen.
+    clientRows = [{ firmId: "org_1", existing: "user_xyz" }];
+    bindingReads = [[{ id: "b1", clerkUserId: "user_xyz", status: "revoked" }]];
+
+    const res = await bindClerkUserToClient("client-1", "user_xyz", "self-heal");
+
+    expect(res).toEqual({ ok: false, reason: "revoked" });
+    expect(insertValuesMock).not.toHaveBeenCalled();
+    expect(updateSetMock).not.toHaveBeenCalled();
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("does not let a DECLINED row block the self-heal", async () => {
+    // `declined` only ever comes from `pending` — a proposal from a firm that
+    // never had access. Blocking on it would break the one path the self-heal
+    // exists for: an invitation whose webhook failed to deliver.
+    bindingReads = [[{ id: "b1", clerkUserId: "user_xyz", status: "declined" }]];
+
+    const res = await bindClerkUserToClient("client-1", "user_xyz", "self-heal");
+
+    expect(res.ok).toBe(true);
+    expect(insertValuesMock).toHaveBeenCalledWith(
+      portalBindings,
+      expect.objectContaining({ status: "active" }),
+    );
+  });
+
+  it("does not let ANOTHER login's revoked row block the self-heal", async () => {
+    // Only the SAME (household, login) pair carries a deliberate act by this
+    // client. Someone else's ended binding says nothing about theirs.
+    clientRows = [{ firmId: "org_1", existing: "user_old" }];
+    bindingReads = [[{ id: "b1", clerkUserId: "user_old", status: "revoked" }]];
+
+    const res = await bindClerkUserToClient("client-1", "user_new", "self-heal");
+
+    expect(res).toEqual({ ok: true, clientId: "client-1", firmId: "org_1" });
+    expect(insertValuesMock).toHaveBeenCalledWith(
+      portalBindings,
+      expect.objectContaining({ clerkUserId: "user_new", status: "active" }),
+    );
+  });
+
   it("re-invites a NEW login after the previous one was revoked", async () => {
     clientRows = [{ firmId: "org_1", existing: "user_old" }];
     bindingReads = [[{ id: "b1", clerkUserId: "user_old", status: "revoked" }]];
