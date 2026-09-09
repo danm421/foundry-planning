@@ -1,19 +1,29 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
 
 /**
- * A chainable `db.select()` mock: every step (`from`/`innerJoin`/`where`/
- * `orderBy`/`limit`) returns the same chain object, and the chain itself is
- * thenable — awaiting it at ANY point shifts the next row-set off `queue`.
- * That matches every shape this module's queries take: some end in
- * `.orderBy()` (the two list functions), others in `.limit()` after an
- * optional `.orderBy()` (the point lookups) — one shared queue slot is
- * consumed per query, in call order, regardless of chain length.
+ * A chainable `db.select()` / `db.update()` mock: every step (`from`/
+ * `innerJoin`/`where`/`orderBy`/`limit`) returns the same chain object, and
+ * the chain itself is thenable — awaiting it at ANY point shifts the next
+ * row-set off `queue`. `db.update(...).set(...).where(...)` now always ends
+ * in `.returning()`, matching the module's atomic conditional-update shape.
+ *
+ * Crucially, `where()` and `orderBy()` do NOT discard their arguments — they
+ * record the real drizzle `SQL` condition (drizzle-orm and @/db/schema are
+ * NOT mocked here, only @/db, so `eq()`/`and()`/`sql` build real SQL AST
+ * objects). `compileParams`/`compileSQL` below compile those with a real
+ * `PgDialect`, with no live database involved, so tests can prove a
+ * predicate is actually present rather than just trusting the mock's answer.
  */
 let queue: unknown[][] = [];
+let insertRejection: unknown = null;
 const selectFrom = vi.fn();
+const selectWhereArgs: unknown[] = [];
+const selectOrderByArgs: unknown[] = [];
 const insertValues = vi.fn();
 const updateSet = vi.fn();
-const updateWhere = vi.fn();
+const updateWhereArgs: unknown[] = [];
 
 const selectChain = {
   from: (...a: unknown[]) => {
@@ -21,8 +31,14 @@ const selectChain = {
     return selectChain;
   },
   innerJoin: () => selectChain,
-  where: () => selectChain,
-  orderBy: () => selectChain,
+  where: (cond: unknown) => {
+    selectWhereArgs.push(cond);
+    return selectChain;
+  },
+  orderBy: (expr: unknown) => {
+    selectOrderByArgs.push(expr);
+    return selectChain;
+  },
   limit: () => selectChain,
   then: (resolve: (v: unknown) => void, reject?: (e: unknown) => void) => {
     Promise.resolve(queue.shift() ?? []).then(resolve, reject);
@@ -35,16 +51,25 @@ vi.mock("@/db", () => ({
     insert: () => ({
       values: (vals: unknown) => {
         insertValues(vals);
-        return { returning: () => Promise.resolve(queue.shift() ?? []) };
+        return {
+          returning: () => {
+            if (insertRejection) {
+              const err = insertRejection;
+              insertRejection = null;
+              return Promise.reject(err);
+            }
+            return Promise.resolve(queue.shift() ?? []);
+          },
+        };
       },
     }),
     update: () => ({
       set: (vals: unknown) => {
         updateSet(vals);
         return {
-          where: (...a: unknown[]) => {
-            updateWhere(...a);
-            return Promise.resolve(undefined);
+          where: (cond: unknown) => {
+            updateWhereArgs.push(cond);
+            return { returning: () => Promise.resolve(queue.shift() ?? []) };
           },
         };
       },
@@ -69,12 +94,23 @@ import {
   getActiveBindingClerkUserId,
 } from "@/lib/portal/bindings";
 
+const dialect = new PgDialect();
+/** Compiles a captured drizzle condition/order-by expression with a REAL
+ *  PgDialect — no DB connection required — so a test can inspect the actual
+ *  bound parameters and SQL text a predicate would send to Postgres. */
+function compile(expr: unknown) {
+  return dialect.sqlToQuery(expr as SQL);
+}
+
 beforeEach(() => {
   queue = [];
+  insertRejection = null;
   selectFrom.mockClear();
+  selectWhereArgs.length = 0;
+  selectOrderByArgs.length = 0;
   insertValues.mockClear();
   updateSet.mockClear();
-  updateWhere.mockClear();
+  updateWhereArgs.length = 0;
   recordAudit.mockClear();
 });
 
@@ -115,6 +151,13 @@ describe("listActiveBindings", () => {
     const result = await listActiveBindings("user_x");
     expect(result).toEqual([{ bindingId: "b1", clientId: "c1", firmId: "firm-1", advisorId: "adv-1", acceptedAt }]);
   });
+
+  it("orders NULLS LAST so an unaccepted row can never look most-recent", async () => {
+    queue = [[]];
+    await listActiveBindings("user_x");
+    const compiled = compile(selectOrderByArgs[0]);
+    expect(compiled.sql).toContain("NULLS LAST");
+  });
 });
 
 describe("listPendingRequests", () => {
@@ -130,10 +173,20 @@ describe("listPendingRequests", () => {
     const result = await listPendingRequests("user_x");
     expect(result).toEqual([{ bindingId: "b1", clientId: "c1", firmId: "firm-1", requestedBy: "adv-1", expiresAt }]);
   });
+
+  // Finding 5: isExpired(null) === "never expires", so the list query must
+  // not silently drop null-expiry rows — a stale invisible-but-acceptable
+  // request would be worse than a visible one.
+  it("includes a null-expiry row rather than silently dropping it (matches isExpired's semantics)", async () => {
+    queue = [[]];
+    await listPendingRequests("user_x");
+    const compiled = compile(selectWhereArgs[0]);
+    expect(compiled.sql).toContain("is null");
+  });
 });
 
 describe("createPendingBinding", () => {
-  it("refuses when a pending or active binding already exists", async () => {
+  it("refuses when a pending or active binding already exists (fast read path)", async () => {
     queue = [[{ id: "existing" }]];
     const result = await createPendingBinding({
       clientId: "c1",
@@ -142,6 +195,40 @@ describe("createPendingBinding", () => {
     });
     expect(result).toEqual({ ok: false, reason: "already_live" });
     expect(insertValues).not.toHaveBeenCalled();
+  });
+
+  // Finding 3: the read-based "live" check can't be the actual gate — two
+  // concurrent requests both pass it. The unique index is, so a 23505 raised
+  // by the insert itself must map to the same already_live reason instead of
+  // throwing.
+  it("maps a 23505 unique-violation from the insert to already_live (the create race)", async () => {
+    queue = [[], []]; // live check empty, declined check empty — both reads pass
+    insertRejection = { code: "23505", constraint: "portal_bindings_live_idx" };
+    const result = await createPendingBinding({
+      clientId: "c1",
+      clerkUserId: "user_x",
+      requestedBy: "adv-1",
+    });
+    expect(result).toEqual({ ok: false, reason: "already_live" });
+  });
+
+  it("maps a DrizzleQueryError-wrapped 23505 (code on .cause) the same way", async () => {
+    queue = [[], []];
+    insertRejection = { cause: { code: "23505" } };
+    const result = await createPendingBinding({
+      clientId: "c1",
+      clerkUserId: "user_x",
+      requestedBy: "adv-1",
+    });
+    expect(result).toEqual({ ok: false, reason: "already_live" });
+  });
+
+  it("rethrows a non-unique-violation insert error", async () => {
+    queue = [[], []];
+    insertRejection = new Error("connection reset");
+    await expect(
+      createPendingBinding({ clientId: "c1", clerkUserId: "user_x", requestedBy: "adv-1" }),
+    ).rejects.toThrow("connection reset");
   });
 
   it("refuses inside the 30-day decline cooldown", async () => {
@@ -154,6 +241,16 @@ describe("createPendingBinding", () => {
     });
     expect(result).toEqual({ ok: false, reason: "recently_declined" });
     expect(insertValues).not.toHaveBeenCalled();
+  });
+
+  // Finding 4: DESC sorts NULLs FIRST in Postgres, so a declined row with a
+  // (theoretically anomalous) null endedAt must be excluded from the
+  // cooldown lookup entirely, not merely out-ranked.
+  it("filters out a null endedAt from the cooldown lookup (NULLS FIRST would otherwise bypass it)", async () => {
+    queue = [[], [], [{ id: "new-binding" }]];
+    await createPendingBinding({ clientId: "c1", clerkUserId: "user_x", requestedBy: "adv-1" });
+    const compiled = compile(selectWhereArgs[1]);
+    expect(compiled.sql).toContain("is not null");
   });
 
   it("succeeds once the 30-day decline cooldown has passed", async () => {
@@ -192,7 +289,7 @@ describe("createPendingBinding", () => {
 describe("acceptBinding", () => {
   it("promotes a pending row to active and audits it", async () => {
     const future = new Date(Date.now() + 1000);
-    queue = [[{ clientId: "c1", status: "pending", expiresAt: future, firmId: "firm-1" }]];
+    queue = [[{ clientId: "c1", status: "pending", expiresAt: future, firmId: "firm-1" }], [{ id: "b1" }]];
     const result = await acceptBinding("b1", "user_x");
     expect(result).toEqual({ ok: true, clientId: "c1" });
     expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({ status: "active" }));
@@ -207,11 +304,7 @@ describe("acceptBinding", () => {
     );
   });
 
-  // THE authorization test: the `clerkUserId` predicate is baked into the
-  // same query as the `bindingId` lookup (one `.where(and(...))`, not a
-  // fetch-then-check), so a caller whose id doesn't own the row can never
-  // observe or act on it — the row simply isn't found.
-  it("refuses (not_found) a binding whose clerkUserId is not the caller's", async () => {
+  it("refuses (not_found) when the initial read finds no row", async () => {
     queue = [[]];
     const result = await acceptBinding("b1", "someone_elses_user_id");
     expect(result).toEqual({ ok: false, reason: "not_found" });
@@ -234,11 +327,24 @@ describe("acceptBinding", () => {
     expect(result).toEqual({ ok: false, reason: "not_pending" });
     expect(updateSet).not.toHaveBeenCalled();
   });
+
+  // Finding 2 (the race): the read approves, but the atomic UPDATE's own
+  // WHERE re-check finds the row already moved off `pending` (e.g. a
+  // concurrent decline in another tab won). The UPDATE, not the read, is
+  // authoritative — zero rows back means nothing was written and nothing
+  // is audited, even though the read looked fine.
+  it("refuses (not_pending) when the atomic UPDATE's own re-check finds zero rows — the accept/decline race", async () => {
+    const future = new Date(Date.now() + 1000);
+    queue = [[{ clientId: "c1", status: "pending", expiresAt: future, firmId: "firm-1" }], []];
+    const result = await acceptBinding("b1", "user_x");
+    expect(result).toEqual({ ok: false, reason: "not_pending" });
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
 });
 
 describe("declineBinding", () => {
   it("declines a pending row and audits it", async () => {
-    queue = [[{ clientId: "c1", status: "pending", firmId: "firm-1" }]];
+    queue = [[{ clientId: "c1", status: "pending", firmId: "firm-1" }], [{ id: "b1" }]];
     const result = await declineBinding("b1", "user_x");
     expect(result).toBe(true);
     expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({ status: "declined", endedBy: "client" }));
@@ -254,11 +360,18 @@ describe("declineBinding", () => {
     expect(updateSet).not.toHaveBeenCalled();
     expect(recordAudit).not.toHaveBeenCalled();
   });
+
+  it("refuses (false) when the atomic UPDATE's own re-check finds zero rows — the accept/decline race", async () => {
+    queue = [[{ clientId: "c1", status: "pending", firmId: "firm-1" }], []];
+    const result = await declineBinding("b1", "user_x");
+    expect(result).toBe(false);
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
 });
 
 describe("revokeBinding", () => {
   it("writes endedBy exactly as passed — 'client'", async () => {
-    queue = [[{ id: "b1", firmId: "firm-1" }]];
+    queue = [[{ id: "b1", firmId: "firm-1" }], [{ id: "b1" }]];
     const result = await revokeBinding({
       clientId: "c1",
       clerkUserId: "user_x",
@@ -273,7 +386,7 @@ describe("revokeBinding", () => {
   });
 
   it("writes endedBy exactly as passed — 'advisor' (a swap to 'client' must fail this)", async () => {
-    queue = [[{ id: "b2", firmId: "firm-1" }]];
+    queue = [[{ id: "b2", firmId: "firm-1" }], [{ id: "b2" }]];
     const result = await revokeBinding({
       clientId: "c1",
       clerkUserId: "user_x",
@@ -299,6 +412,18 @@ describe("revokeBinding", () => {
     expect(updateSet).not.toHaveBeenCalled();
     expect(recordAudit).not.toHaveBeenCalled();
   });
+
+  it("returns false (not true) when the atomic UPDATE's own re-check finds zero rows, even though the read found a row", async () => {
+    queue = [[{ id: "b1", firmId: "firm-1" }], []];
+    const result = await revokeBinding({
+      clientId: "c1",
+      clerkUserId: "user_x",
+      endedBy: "client",
+      actorId: "user_x",
+    });
+    expect(result).toBe(false);
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
 });
 
 describe("getActiveBindingClerkUserId", () => {
@@ -318,5 +443,69 @@ describe("getActiveBindingClerkUserId", () => {
     queue = [[]];
     const result = await getActiveBindingClerkUserId("c1");
     expect(result).toBeNull();
+  });
+
+  it("orders NULLS LAST so an unaccepted row can never look most-recent", async () => {
+    queue = [[]];
+    await getActiveBindingClerkUserId("c1");
+    const compiled = compile(selectOrderByArgs[0]);
+    expect(compiled.sql).toContain("NULLS LAST");
+  });
+});
+
+/**
+ * FINDING 1 (critical): the ownership predicate itself, proven by compiling
+ * the REAL condition objects `acceptBinding` / `declineBinding` /
+ * `revokeBinding` pass to `.where()` with a real `PgDialect` — no live DB
+ * needed, since drizzle-orm and @/db/schema are not mocked in this file,
+ * only @/db. This is deliberately NOT an "empty result set ⇒ not_found"
+ * behavioral test (that only proves the function handles an empty row set,
+ * which is the mock answering its own question) — it asserts the caller's
+ * clerkUserId is a literal bound parameter of the compiled WHERE clause on
+ * BOTH the read and the atomically-re-checked write.
+ *
+ * Verified by deliberately deleting `eq(portalBindings.clerkUserId,
+ * clerkUserId)` from each function's UPDATE `.where(...)` and re-running
+ * this file — see the fix report for the exact failing assertion and
+ * message, then the predicate was restored and this suite re-run green.
+ */
+describe("authorization: the clerkUserId predicate is a real bound parameter", () => {
+  it("acceptBinding: clerkUserId is bound in both the read's and the UPDATE's WHERE", async () => {
+    const future = new Date(Date.now() + 1000);
+    queue = [[{ clientId: "c1", status: "pending", expiresAt: future, firmId: "firm-1" }], [{ id: "b1" }]];
+    await acceptBinding("b1", "user_x");
+
+    const readParams = compile(selectWhereArgs[0]).params;
+    expect(readParams).toContain("user_x");
+
+    const writeCompiled = compile(updateWhereArgs[0]);
+    expect(writeCompiled.params).toContain("user_x");
+    expect(writeCompiled.sql).toContain("clerk_user_id");
+    // the status re-check that closes the accept/decline race
+    expect(writeCompiled.params).toContain("pending");
+  });
+
+  it("declineBinding: clerkUserId is bound in both the read's and the UPDATE's WHERE", async () => {
+    queue = [[{ clientId: "c1", status: "pending", firmId: "firm-1" }], [{ id: "b1" }]];
+    await declineBinding("b1", "user_x");
+
+    const readParams = compile(selectWhereArgs[0]).params;
+    expect(readParams).toContain("user_x");
+
+    const writeCompiled = compile(updateWhereArgs[0]);
+    expect(writeCompiled.params).toContain("user_x");
+    expect(writeCompiled.sql).toContain("clerk_user_id");
+  });
+
+  it("revokeBinding: clerkUserId is bound in both the read's and the UPDATE's WHERE", async () => {
+    queue = [[{ id: "b1", firmId: "firm-1" }], [{ id: "b1" }]];
+    await revokeBinding({ clientId: "c1", clerkUserId: "user_x", endedBy: "client", actorId: "user_x" });
+
+    const readParams = compile(selectWhereArgs[0]).params;
+    expect(readParams).toContain("user_x");
+
+    const writeCompiled = compile(updateWhereArgs[0]);
+    expect(writeCompiled.params).toContain("user_x");
+    expect(writeCompiled.sql).toContain("clerk_user_id");
   });
 });
