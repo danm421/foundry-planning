@@ -93,12 +93,48 @@ interface DedupeBucketEntry<T> {
 type DescribeConflict<T> = (existing: T, incoming: T) => string | null;
 
 /**
+ * Choose which of two same-entity rows becomes the base — the one that wins
+ * on conflicting fields. A statement date beats field richness: a June
+ * statement carrying only a balance is better evidence of TODAY'S balance
+ * than a March statement carrying a balance and a cost basis. Field count is
+ * the fallback when dates cannot separate the rows, which preserves the
+ * pre-2026-09 behaviour for every section that has no date to offer.
+ *
+ * ISO YYYY-MM-DD strings compare correctly with `>`; no Date parsing needed.
+ */
+function chooseBase<T>(
+  existingContent: T,
+  existingFieldCount: number,
+  incoming: T,
+  incomingFieldCount: number,
+  recencyOf?: (row: T) => string | undefined,
+): [richer: T, poorer: T] {
+  if (recencyOf) {
+    const existingDate = recencyOf(existingContent);
+    const incomingDate = recencyOf(incoming);
+    if (existingDate && incomingDate && existingDate !== incomingDate) {
+      return incomingDate > existingDate
+        ? [incoming, existingContent]
+        : [existingContent, incoming];
+    }
+    if (incomingDate && !existingDate) return [incoming, existingContent];
+    if (existingDate && !incomingDate) return [existingContent, incoming];
+  }
+  return incomingFieldCount > existingFieldCount
+    ? [incoming, existingContent]
+    : [existingContent, incoming];
+}
+
+/**
  * Append `rows` onto `target`, collapsing entries that share a dedupe key
  * (per `computeKey`) and are judged the same entity (per `isSameEntity`).
  * On a collapse, the richer row (more non-null fields) wins on conflicting
- * fields, but the surviving row is the UNION of both — a field only the
- * poorer row populated is backfilled, not dropped. The surviving row's
- * `__provenance` stays pinned to the FIRST file the entity appeared in.
+ * fields — unless the caller passes `opts.recencyOf`, in which case the more
+ * recently dated row wins instead and field count is only the tie-breaker
+ * (see `chooseBase`). Either way the surviving row is the UNION of both — a
+ * field only the losing row populated is backfilled, not dropped. The
+ * surviving row's `__provenance` stays pinned to the FIRST file the entity
+ * appeared in.
  *
  * Exactly ONE `warnings` entry is appended per bucket entry that actually
  * collapsed (mergeCount > 1), emitted AFTER the merge loop finishes rather
@@ -119,6 +155,7 @@ function mergeSection<T extends { name: string }>(
   isSameEntity: (existing: T, incoming: T) => boolean,
   warnings: string[],
   describeConflict?: DescribeConflict<T>,
+  opts?: { recencyOf?: (row: T) => string | undefined },
 ): void {
   const buckets = new Map<string, DedupeBucketEntry<T>[]>();
 
@@ -135,13 +172,17 @@ function mergeSection<T extends { name: string }>(
     if (existingEntry) {
       const priorContent = existingEntry.content;
       const incomingFieldCount = countNonNullFields(content as Record<string, unknown>);
-      // The richer row (more non-null fields) is the base — it wins on any
-      // conflicting field — but the poorer row's unique fields still
-      // backfill any gaps the richer row left, so nothing is dropped.
-      const [richerContent, poorerContent] =
-        incomingFieldCount > existingEntry.fieldCount
-          ? [content, existingEntry.content]
-          : [existingEntry.content, content];
+      // The base row wins on any conflicting field — but the other row's
+      // unique fields still backfill any gaps the base left, so nothing is
+      // dropped. `chooseBase` prefers the more recent statement where the
+      // caller supplied a date accessor, else the richer row as before.
+      const [richerContent, poorerContent] = chooseBase(
+        existingEntry.content,
+        existingEntry.fieldCount,
+        content,
+        incomingFieldCount,
+        opts?.recencyOf,
+      );
       existingEntry.content = unionFields(richerContent, poorerContent);
       existingEntry.fieldCount = countNonNullFields(existingEntry.content as Record<string, unknown>);
       existingEntry.mergeCount += 1;
@@ -320,6 +361,9 @@ export function mergeAcrossFiles(
       withinTolerance(existing.value, incoming.value)
         ? null
         : `balances differ (${formatMoney(existing.value)} vs ${formatMoney(incoming.value)}); please verify which is current.`,
+    // Accounts are the one section with an as-of date, so the newer statement
+    // wins the balance rather than whichever row happened to list more fields.
+    { recencyOf: (row) => row.statementDate },
   );
 
   mergeSection(

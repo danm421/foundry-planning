@@ -132,3 +132,71 @@ describe("mergeAcrossFiles", () => {
     expect(r.payload.accounts[0].growthRate).toBe(0.06);
   });
 });
+
+describe("recency-first account dedupe", () => {
+  it("keeps the newer statement's balance even when the older row has more fields", () => {
+    const r = mergeAcrossFiles({
+      f1: er("march.pdf", {
+        accounts: [
+          {
+            name: "401(k)", custodian: "Fidelity", accountNumberLast4: "1234",
+            owner: "client", value: 44_120, basis: 30_000, growthRate: 0.06,
+            statementDate: "2026-03-31",
+          },
+        ],
+      }),
+      f2: er("june.pdf", {
+        accounts: [
+          {
+            name: "401(k)", custodian: "Fidelity", accountNumberLast4: "1234",
+            owner: "client", value: 51_880,
+            statementDate: "2026-06-30",
+          },
+        ],
+      }),
+    });
+
+    expect(r.payload.accounts).toHaveLength(1);
+    // The June balance wins even though the March row is richer.
+    expect(r.payload.accounts[0].value).toBe(51_880);
+    // The March row's unique field still backfills — nothing is dropped.
+    expect(r.payload.accounts[0].basis).toBe(30_000);
+  });
+
+  it("prefers a dated row over an undated one", () => {
+    const r = mergeAcrossFiles({
+      f1: er("undated.pdf", {
+        accounts: [{ name: "IRA", custodian: "Schwab", accountNumberLast4: "9999", owner: "client", value: 10_000, basis: 5_000 }],
+      }),
+      f2: er("dated.pdf", {
+        accounts: [{ name: "IRA", custodian: "Schwab", accountNumberLast4: "9999", owner: "client", value: 12_000, statementDate: "2026-06-30" }],
+      }),
+    });
+    expect(r.payload.accounts[0].value).toBe(12_000);
+  });
+
+  it("falls back to field count when neither row carries a date", () => {
+    const r = mergeAcrossFiles({
+      f1: er("a.pdf", {
+        accounts: [{ name: "IRA", custodian: "Schwab", accountNumberLast4: "9999", owner: "client", value: 10_000, basis: 5_000 }],
+      }),
+      f2: er("b.pdf", {
+        accounts: [{ name: "IRA", custodian: "Schwab", accountNumberLast4: "9999", owner: "client", value: 12_000 }],
+      }),
+    });
+    // Unchanged legacy behaviour: the richer row wins.
+    expect(r.payload.accounts[0].value).toBe(10_000);
+  });
+
+  it("falls back to field count when both dates are equal", () => {
+    const r = mergeAcrossFiles({
+      f1: er("a.pdf", {
+        accounts: [{ name: "IRA", custodian: "Schwab", accountNumberLast4: "9999", owner: "client", value: 10_000, basis: 5_000, statementDate: "2026-06-30" }],
+      }),
+      f2: er("b.pdf", {
+        accounts: [{ name: "IRA", custodian: "Schwab", accountNumberLast4: "9999", owner: "client", value: 12_000, statementDate: "2026-06-30" }],
+      }),
+    });
+    expect(r.payload.accounts[0].value).toBe(10_000);
+  });
+});
