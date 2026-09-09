@@ -232,9 +232,16 @@ describe("GiftDialog — editing a saved gift", () => {
     expect(baseProps.onRemovedGift).toHaveBeenCalledWith("g1");
   });
 
-  it("copies a saved valuation discount onto the replacement row", async () => {
-    // This surface never renders the discount field, so the value only survives
-    // a re-create if the dialog carries it across explicitly.
+  it("drops a saved discount when the replacement shape cannot carry one", async () => {
+    // Superseded expectation: this used to copy the discount across, because the
+    // dialog never rendered the field and a re-create would otherwise re-file
+    // the gift at full value. The field is rendered now, and flipping to CASH
+    // for an individual visibly removes it — there is nothing to appraise. So
+    // the replacement must not inherit 30%; keeping it would discount a cash
+    // gift with no field anywhere in the app to show it, and under-report the
+    // exemption the gift consumes. A flip that KEEPS the field (asset -> asset,
+    // one-time -> recurring) still carries the value via the seeded draft — see
+    // gift-dialog-valuation-discount.test.tsx.
     const fetchMock = mockFetchSequence({ id: "g9" }, { ok: true });
     render(
       <GiftDialog
@@ -246,10 +253,11 @@ describe("GiftDialog — editing a saved gift", () => {
     fireEvent.change(screen.getByLabelText(/amount/i, { selector: "input" }), {
       target: { value: "25000" },
     });
+    expect(screen.queryByLabelText(/Valuation discount/i)).toBeNull();
     fireEvent.click(screen.getByText("Save gift"));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
-    expect(body.valuationDiscount).toBe(0.3);
+    expect(body.valuationDiscount).toBeNull();
   });
 
   it("keeps the replacement and reports the failure when the old row will not delete", async () => {

@@ -256,7 +256,9 @@ function toEditingDraft(g: Gift | null, s: GiftSeriesLite | null): EstateFlowGif
       kind: "series", id: s.id, startYear: s.startYear, endYear: s.endYear,
       annualAmount: s.annualAmount, amountMode: s.amountMode, inflationAdjust: s.inflationAdjust,
       grantor: s.grantor, recipient: seriesRecipient, crummey: s.useCrummeyPowers,
-      // LAST KEY — see the JSON.stringify contract in estate-flow-gift-diff.ts.
+      // LAST KEY — GiftForm seeds its draft as `{...editing, ...base}` and keys
+      // it by JSON.stringify, so a different order here than in its own `base`
+      // re-fires onChange for an unchanged draft.
       valuationDiscount: s.valuationDiscount ?? undefined,
     };
   }
@@ -265,8 +267,8 @@ function toEditingDraft(g: Gift | null, s: GiftSeriesLite | null): EstateFlowGif
     g.recipientEntityId ? { kind: "entity", id: g.recipientEntityId }
     : g.recipientFamilyMemberId ? { kind: "family_member", id: g.recipientFamilyMemberId }
     : { kind: "external_beneficiary", id: g.recipientExternalBeneficiaryId ?? "" };
-  // `valuationDiscount` is the LAST KEY in both branches — see the
-  // JSON.stringify contract in estate-flow-gift-diff.ts.
+  // `valuationDiscount` is the LAST KEY in both branches — see the note on the
+  // series branch above.
   if (g.accountId) return { kind: "asset-once", id: g.id, year: g.year, accountId: g.accountId, percent: g.percent ?? 0, grantor: g.grantor, recipient, valuationDiscount: g.valuationDiscount ?? undefined };
   return { kind: "cash-once", id: g.id, year: g.year, amount: g.amount ?? 0, grantor: g.grantor, recipient, crummey: g.useCrummeyPowers, valuationDiscount: g.valuationDiscount ?? undefined };
 }
