@@ -113,13 +113,31 @@ describe("narrate", () => {
   });
 
   describe("retirement basis caveat", () => {
+    // Pins the exact wording — including the "not IRS-tracked basis for tax
+    // purposes" tail, which reads better than the brief's "not the account's
+    // tax basis" and is the wording actually shipped (see the report's
+    // Deviations).
     it("flags retirement-account basis as securities cost basis", () => {
       const { caveats } = narrate({
         fileCount: 1,
         decisions: [],
         rows: [{ name: "Roth IRA", category: "retirement", basis: 10_010.17, value: 22_873.46 }] as never,
       });
-      expect(caveats.some((c) => c.includes("securities cost basis"))).toBe(true);
+      expect(caveats).toContain(
+        'For "Roth IRA", the basis shown is the custodian\'s securities cost basis, not IRS-tracked basis for tax purposes.',
+      );
+    });
+
+    // Fix round 1, Important 3: `r.basis !== undefined` shipped with no test
+    // exercising its absence — deleting that clause left all 17 prior tests
+    // green. A retirement row with no basis at all must not be flagged.
+    it("does not flag a retirement account when no basis is shown", () => {
+      const { caveats } = narrate({
+        fileCount: 1,
+        decisions: [],
+        rows: [{ name: "IRA", category: "retirement", value: 1 }] as never,
+      });
+      expect(caveats.some((c) => c.includes("securities cost basis"))).toBe(false);
     });
 
     // Pins the join across multiple retirement rows carrying a basis.
@@ -188,18 +206,55 @@ describe("narrate", () => {
   });
 
   describe("value conflict", () => {
-    // C2: `values` is drawn from the running merged row, not a named file's
-    // raw figure — the copy must not attribute either figure to a document.
-    it("states both figures and the as-of date without attributing either to a file", () => {
-      const { caveats } = narrate({
+    // Fixture rebuilt from decisions.test.ts:97 — a REAL multi-statement
+    // conflict `mergeAcrossFiles` can actually produce: three statements,
+    // its companion `superseded` decision alongside `value-conflict`, and a
+    // populated `rows` array carrying the survivor. Fix round 1: the
+    // previous fixture (`rows: []`, no companion `superseded`) was a shape
+    // the merge cannot produce, and it let a false sentence — every figure
+    // dated to the survivor's statement — test green.
+    it("dates only the winning figure, using the row to find it (not by position in values[])", () => {
+      const { summary, caveats } = narrate({
         fileCount: 3,
+        decisions: [
+          {
+            kind: "superseded",
+            account: "Brokerage",
+            kept: "2026-03-31",
+            dropped: ["2026-02-28", "2026-01-31"],
+            basis: "date",
+          },
+          {
+            kind: "value-conflict",
+            account: "Brokerage",
+            values: [100_000, 200_000, 300_000],
+            asOf: "2026-03-31",
+          },
+        ],
+        rows: [{ name: "Brokerage", value: 300_000 }] as never,
+      });
+      expect(summary).toContain(
+        'Used the 03/31/2026 statement for "Brokerage"; statements from 02/28/2026 and 01/31/2026 for the same account were superseded.',
+      );
+      expect(caveats).toContain(
+        '"Brokerage" is recorded at $300,000 from the 03/31/2026 statement; other statements reported $100,000 and $200,000.',
+      );
+    });
+
+    // The unresolvable path (Fix round 1, Critical): when no row in `rows`
+    // matches the decision's account name — excluded as a rollup, renamed,
+    // whatever the reason — there is no derivable winner, so NO figure may
+    // be dated. Reusing values/asOf from the original (pre-fix) test fixture.
+    it("dates nothing when the account cannot be found among the rows", () => {
+      const { caveats } = narrate({
+        fileCount: 2,
         decisions: [
           { kind: "value-conflict", account: "Brokerage", values: [102_450, 98_700], asOf: "2026-06-30" },
         ],
         rows: [] as never,
       });
       expect(caveats).toContain(
-        '"Brokerage" has been reported at $102,450 and $98,700 as of 06/30/2026 — confirm which figure is current.',
+        '"Brokerage" was reported at $102,450 and $98,700 across these statements; confirm which is current.',
       );
     });
   });

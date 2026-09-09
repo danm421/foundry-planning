@@ -75,14 +75,35 @@ function undatedCaveat(d: Extract<MergeDecision, { kind: "undated" }>): string {
 }
 
 /**
- * C2: `values` is collected from the running MERGED row, not any single
- * file's original figure — on the third-and-later file, the first entry is
- * the survivor's value at that point, not a specific document's number.
- * The copy therefore states both figures and the as-of date without
- * attributing either one to a named file.
+ * C2 said not to attribute a figure to a named FILE — it did not license
+ * dating every figure to one statement. `asOf` is the SURVIVING row's date
+ * only (`merge-across-files.ts`'s `survivorDate`); the other figures in
+ * `d.values` came from other statements on other dates this decision does
+ * not carry. Pairing every value with `asOf` renders a false "as of" for
+ * every figure except the winner's.
+ *
+ * The winner is looked up by name in `rows` — NOT indexed positionally out
+ * of `d.values` — because whether the winner lands first or last in that
+ * array depends on the order files were merged (newest-first vs
+ * oldest-first), which this decision doesn't record either. Only the
+ * winning figure may be paired with `asOf`; the others are named without a
+ * date.
+ *
+ * `rows.find` can come back empty — the account might have been excluded as
+ * a rollup total, or renamed downstream of this decision being recorded.
+ * With no derivable winner there is no truthful "as of" for ANY figure, so
+ * the fallback dates nothing.
  */
-function valueConflictCaveat(d: Extract<MergeDecision, { kind: "value-conflict" }>): string {
-  return `"${d.account}" has been reported at ${joinWithAnd(d.values.map(money))} as of ${usDate(d.asOf)} — confirm which figure is current.`;
+function valueConflictCaveat(
+  d: Extract<MergeDecision, { kind: "value-conflict" }>,
+  rows: Annotated<ExtractedAccount>[],
+): string {
+  const winner = rows.find((r) => r.name === d.account)?.value;
+  if (winner === undefined) {
+    return `"${d.account}" was reported at ${joinWithAnd(d.values.map(money))} across these statements; confirm which is current.`;
+  }
+  const others = d.values.filter((v) => v !== winner);
+  return `"${d.account}" is recorded at ${money(winner)} from the ${usDate(d.asOf)} statement; other statements reported ${joinWithAnd(others.map(money))}.`;
 }
 
 function retirementBasisCaveat(rows: Annotated<ExtractedAccount>[]): string | null {
@@ -145,7 +166,7 @@ export function narrate(input: {
         caveats.push(undatedCaveat(d));
         break;
       case "value-conflict":
-        caveats.push(valueConflictCaveat(d));
+        caveats.push(valueConflictCaveat(d, rows));
         break;
     }
   }
