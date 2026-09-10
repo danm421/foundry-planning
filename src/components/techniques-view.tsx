@@ -55,6 +55,8 @@ export interface AssetTransactionRow {
   purchaseTransactionId: string | null;
   /** Set when the sell sources a business account instead of a regular account. */
   businessAccountId: string | null;
+  /** Set when this record was saved as part of a multi-leg transaction. */
+  bundleId: string | null;
   fractionSold: string | null;
   overrideSaleValue: string | null;
   overrideBasis: string | null;
@@ -1242,6 +1244,11 @@ export default function TechniquesView({
           spouseFirstName={spouseFirstName}
           existingNames={assetTransactions.map((t) => t.name)}
           initialData={editingTransaction ?? undefined}
+          bundleRecords={
+            editingTransaction?.bundleId
+              ? assetTransactions.filter((t) => t.bundleId === editingTransaction.bundleId)
+              : undefined
+          }
           onClose={() => { setShowAddTransaction(false); setEditingTransaction(null); }}
           onSaved={() => { setShowAddTransaction(false); setEditingTransaction(null); router.refresh(); }}
         />
