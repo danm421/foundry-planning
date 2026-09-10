@@ -78,6 +78,9 @@ export interface EntityTableProps<Row extends EntityRow> {
    * button that does nothing reads as broken).
    */
   onRestore?: (row: Row) => void;
+  /** Disables every row's Commit button regardless of its own committed/
+   *  pending state (Ruling 95, Task 11b fix round 1). */
+  disableCommit?: boolean;
 }
 
 const RIGHT_ALIGN_KINDS: ReadonlySet<ColumnKind> = new Set([
@@ -145,6 +148,7 @@ export default function EntityTable<Row extends EntityRow>({
   onCommitRows,
   onEditCell,
   onRestore,
+  disableCommit,
 }: EntityTableProps<Row>) {
   const [editing, setEditing] = useState<{ rowId: string; key: string } | null>(null);
   // In-flight guard (Task 10 review, Important 7): without it a double-click
@@ -265,7 +269,7 @@ export default function EntityTable<Row extends EntityRow>({
                   <button
                     type="button"
                     onClick={() => commit(rowId)}
-                    disabled={isCommitted || isPending}
+                    disabled={isCommitted || isPending || disableCommit}
                     className="rounded border border-hair px-2 py-1 text-xs text-accent transition-colors hover:border-hair-2 disabled:cursor-default disabled:text-ink-4 disabled:opacity-60"
                   >
                     {isCommitted ? "Committed" : isPending ? "Committing…" : "Commit"}

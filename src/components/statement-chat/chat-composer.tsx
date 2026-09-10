@@ -21,13 +21,23 @@ export interface ChatComposerProps {
   sending: boolean;
 }
 
+/** Caps how tall the box grows for a long Shift+Enter question — beyond
+ *  this it scrolls internally rather than pushing the Send button (and the
+ *  rest of the page) further down. */
+const MAX_ROWS = 6;
+
 /**
- * The chat input (Task 11b, Step 1). A single-line textarea + Send button;
- * Enter submits, Shift+Enter inserts a newline.
+ * The chat input (Task 11b, Step 1). Starts at one row and grows with the
+ * number of lines the advisor has typed (Shift+Enter inserts a newline),
+ * up to `MAX_ROWS`, then scrolls — Minor 10 (fix round 1): the report
+ * originally described this as "growing" while the code was a fixed
+ * `rows={1}`, so a multi-line question got typed into a box that never
+ * expanded to show it.
  */
 export function ChatComposer({ onSend, disabled, sending }: ChatComposerProps) {
   const [value, setValue] = useState("");
   const isDisabled = disabled || sending;
+  const rows = Math.min(MAX_ROWS, Math.max(1, value.split("\n").length));
 
   const submit = async () => {
     const message = value.trim();
@@ -57,7 +67,7 @@ export function ChatComposer({ onSend, disabled, sending }: ChatComposerProps) {
         }}
         disabled={isDisabled}
         placeholder="Ask a question about these statements…"
-        rows={1}
+        rows={rows}
         className={textareaBaseClassName + " flex-1 resize-none"}
       />
       <button

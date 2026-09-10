@@ -10,7 +10,6 @@ export type TurnStatus = "idle" | "sending" | "error";
 
 interface TurnResponseBody {
   payload?: { accounts?: Row[] };
-  summary?: string;
   excludedRows?: ExcludedRow<Row>[];
   turnEntries?: ChatTurn[];
 }
@@ -18,6 +17,13 @@ interface TurnResponseBody {
 export interface UseChatTurnArgs {
   clientId: string;
   importId: string;
+  /** Pushes the surface's current local row state to the server BEFORE the
+   *  turn is sent (Ruling 95) — must be `useChatCommit`'s own
+   *  `flushRowsToServer`, routed through the same commit queue and making
+   *  the same `payload.accounts` write a commit does. Without this the
+   *  model answers from stale server rows, and adopting the response
+   *  (below) would revert whatever the advisor had corrected locally. */
+  flushRowsToServer: () => Promise<void>;
   /** Appends this turn's own transcript delta — always the SERVER's
    *  `turnEntries` (C1), never a client-composed user/assistant string.
    *  Owned by `useChatCommit` (the same hydration source, per C2). */
@@ -25,8 +31,10 @@ export interface UseChatTurnArgs {
   /** Adopts the turn's row state into the surface BEFORE the returned
    *  promise resolves (brief Step 2) — must be `useChatCommit`'s own
    *  `adoptTurnPayload`, which is routed through its commit queue so a
-   *  commit clicked right after can never read the pre-turn snapshot. */
-  adoptTurnPayload: (accounts: Row[], excluded: ExcludedRow<Row>[], summary: string) => Promise<void>;
+   *  commit clicked right after can never read the pre-turn snapshot. Now
+   *  correct rather than merely safe, since `flushRowsToServer` above ran
+   *  first (Ruling 95). */
+  adoptTurnPayload: (accounts: Row[], excluded: ExcludedRow<Row>[]) => Promise<void>;
   /** Fired once adoption lands on a successful turn, so the caller can bring
    *  the extracted-state panel into view even when this is the very first
    *  thing this session has to show (a resumed draft's first follow-up). */
@@ -44,6 +52,7 @@ export interface UseChatTurnArgs {
 export function useChatTurn({
   clientId,
   importId,
+  flushRowsToServer,
   appendTurnEntries,
   adoptTurnPayload,
   onAdopted,
@@ -56,6 +65,13 @@ export function useChatTurn({
       setTurnStatus("sending");
       setTurnError(null);
       try {
+        // Ruling 95: flush BEFORE the request — the model must answer from
+        // what the advisor sees, not stale server rows. `chat-surface.tsx`
+        // disables per-row Commit and Finish import for this whole
+        // `turnStatus === "sending"` window, so nothing can enqueue onto the
+        // same queue between this flush landing and the turn's own write.
+        await flushRowsToServer();
+
         const res = await fetch(`/api/clients/${clientId}/imports/${importId}/chat/turn`, {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -78,7 +94,7 @@ export function useChatTurn({
         // Step 2, the load-bearing requirement: adopt BEFORE this resolves,
         // so a commit clicked the instant `sendTurn` returns can never read
         // a pre-turn row.
-        await adoptTurnPayload(body.payload?.accounts ?? [], body.excludedRows ?? [], body.summary ?? "");
+        await adoptTurnPayload(body.payload?.accounts ?? [], body.excludedRows ?? []);
         onAdopted();
         // C1: append EXACTLY what the route returned. `turnEntries` already
         // carries the user's own message as its first element — never add it
@@ -92,7 +108,7 @@ export function useChatTurn({
         return false;
       }
     },
-    [clientId, importId, appendTurnEntries, adoptTurnPayload, onAdopted],
+    [clientId, importId, flushRowsToServer, appendTurnEntries, adoptTurnPayload, onAdopted],
   );
 
   return { turnStatus, turnError, sendTurn };

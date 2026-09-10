@@ -16,6 +16,11 @@ export interface AccountsTableProps {
   onCommitRows: (rowIds: string[]) => Promise<void>;
   onEditCell: (rowId: string, field: string, value: unknown) => void;
   onRestore?: (row: Row) => void;
+  /** Disables every row's Commit button regardless of its own committed/
+   *  pending state (Ruling 95, Task 11b fix round 1) — the caller sets this
+   *  while a chat turn is sending, so a commit can never interleave with
+   *  the turn's own flush-then-adopt round trip. */
+  disableCommit?: boolean;
 }
 
 /**

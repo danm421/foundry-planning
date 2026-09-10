@@ -464,6 +464,69 @@ describe("chat extract route gates", () => {
     expect(vi.mocked(extractDocument).mock.calls[0][1]).toBe("new.pdf");
   });
 
+  // Ruling 97 (Task 11b fix round 1, Important 3) — THE test that matters
+  // for this route's "Re-run extraction" button: with NO new files,
+  // `runImportExtraction` itself never writes `payloadJson` at all (its own
+  // "Nothing new to read" comment). This route's own post-processing used
+  // to persist unconditionally regardless, re-deriving `payload.accounts`
+  // from the RAW (pre-chat-edit) `fileResults` and silently discarding
+  // whatever a chat turn (or a commit's `linkCreated` stamp) had since
+  // written. Mutation this catches: removing the
+  // `extractionResult.filesProcessed === 0` guard — `done.rows[0].value`
+  // would then be the raw 100 from `fileResults`, not the chat-edited 999
+  // this test seeds directly on `payload`, and `payloadJsonUpdateCount`
+  // would be 1 instead of 0.
+  it("does not overwrite payload/chat.decisions/excludedRows on a 'no new files' re-run (Ruling 97)", async () => {
+    const alreadyExtracted = {
+      documentType: "other",
+      fileName: "already.pdf",
+      extracted: {
+        accounts: [{ name: "IRA", custodian: "Schwab", value: 100, __rowId: "r1" }],
+        incomes: [],
+        expenses: [],
+        liabilities: [],
+        entities: [],
+        lifePolicies: [],
+        wills: [],
+        savings: [],
+      },
+      warnings: [],
+      promptVersion: "v",
+    };
+    const standingChat = {
+      surface: "chat" as const,
+      transcript: [{ role: "user" as const, text: "fix the value", at: "t0" }],
+      decisions: [],
+      excludedRows: [{ row: { name: "Dup", __rowId: "r9" }, reason: "duplicate" }],
+      committedRowIds: ["r1"],
+    };
+    const standingPayload = { accounts: [{ name: "IRA", custodian: "Schwab", value: 999, __rowId: "r1" }] };
+    currentImportRow = {
+      id: "i1",
+      payloadJson: {
+        fileResults: { f1: alreadyExtracted },
+        payload: standingPayload,
+        chat: standingChat,
+      },
+      extractHoldings: false,
+      status: "review",
+    };
+    filesResult = [fileRow("f1", "already.pdf")]; // no new files at all
+
+    const events = await readSse(await POST(req(), params));
+    expect(extractDocument).not.toHaveBeenCalled();
+
+    const done = events.at(-1) as { rows: Array<{ value: number }> };
+    // The STANDING (chat-edited) value survives — never re-derived from
+    // the raw fileResults, which carries the pre-edit 100.
+    expect(done.rows[0]).toMatchObject({ value: 999 });
+
+    // A pure re-read: no write happened at all.
+    expect(payloadJsonUpdateCount).toBe(0);
+    expect((currentImportRow.payloadJson as ImportPayloadJson).payload).toEqual(standingPayload);
+    expect((currentImportRow.payloadJson as ImportPayloadJson).chat).toEqual(standingChat);
+  });
+
   // IMPORTANT 4 (fix round 1): proves the ROUTE actually threads its own
   // request's abort signal into runImportExtraction — run-extraction.test.ts
   // proves the check itself works, but nothing short of this proves the

@@ -14,6 +14,12 @@ export interface ExcludedRow<Row> {
   row: Row;
   reason: string;
   decision?: MergeDecision;
+  /** Ruling 96 (Task 11b fix round 1): set by a producer whose exclusion
+   *  cannot be undone (currently only `merge_rows` — the retired row's data
+   *  was folded into the surviving row). When true, "Include anyway" renders
+   *  disabled for THIS row regardless of whether `onRestore` is supplied,
+   *  even though other rows in the same list may still restore normally. */
+  irreversible?: true;
 }
 
 export interface ExcludedRowsProps<Row> {
@@ -59,7 +65,8 @@ export default function ExcludedRows<Row>({ excluded, label, onRestore }: Exclud
             <button
               type="button"
               onClick={() => onRestore?.(x.row)}
-              disabled={!onRestore}
+              disabled={!onRestore || x.irreversible}
+              title={x.irreversible ? "This row was merged into another and can't be restored on its own." : undefined}
               className="shrink-0 rounded border border-hair px-2 py-1 text-xs text-accent hover:border-hair-2 disabled:cursor-default disabled:text-ink-4 disabled:opacity-60"
             >
               Include anyway

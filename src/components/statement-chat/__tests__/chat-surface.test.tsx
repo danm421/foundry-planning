@@ -483,6 +483,16 @@ function turnResponse(overrides: {
 const composerTextbox = () => screen.getByRole("textbox", { name: /ask a follow-up question/i });
 const sendButton = () => screen.getByRole("button", { name: /^send$/i });
 
+/** Queues the two fetch calls `flushRowsToServer` makes (Ruling 95) —
+ *  ALWAYS the first two calls of any `sendTurn`, before the turn's own
+ *  POST. Every test below that sends a turn queues these first, or its
+ *  "turn response" mock is consumed by the flush's own GET instead. */
+function mockFlush() {
+  vi.mocked(fetch)
+    .mockResolvedValueOnce(importGetResponse({})) // flush: fresh GET
+    .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 })); // flush: PATCH payload.accounts
+}
+
 describe("ChatSurface — composer and transcript render outside the finished-and-result gate (C3)", () => {
   // THE test that matters for C3: a resumed draft with no extraction run
   // in THIS session never flips `status` away from "idle", so `finished`
@@ -519,6 +529,7 @@ describe("ChatSurface — the transcript renders what the route returned, never 
   it("appends the server's turnEntries verbatim, not the advisor's own typed text", async () => {
     await renderAfterExtraction();
 
+    mockFlush();
     vi.mocked(fetch).mockResolvedValueOnce(
       turnResponse({
         accounts: [{ name: "IRA", custodian: "Schwab", value: 100, __rowId: "r1" }],
@@ -556,6 +567,7 @@ describe("ChatSurface — a chat turn's row edit must survive into the next comm
   it("adopts a turn's row edit before any subsequent commit's PATCH, carrying the tool's edit not the pre-turn value", async () => {
     await renderAfterExtraction(); // r1 "IRA" value=100
 
+    mockFlush();
     vi.mocked(fetch).mockResolvedValueOnce(
       turnResponse({
         accounts: [
@@ -610,14 +622,18 @@ describe("ChatSurface — a chat turn's row edit must survive into the next comm
     await userEvent.click(within(row).getByRole("button", { name: /commit/i }));
     await screen.findByRole("button", { name: /committed/i });
 
-    const patchCall = vi.mocked(fetch).mock.calls.find(([url, init]) => {
+    // .filter(...).at(-1), not .find(...): `flushRowsToServer` ALSO PATCHes
+    // `payload.accounts` (Ruling 95), and it runs BEFORE the turn resolves —
+    // so its body still carries the PRE-turn value (100). The commit's own
+    // PATCH is the LAST such call, made after adoption landed.
+    const payloadPatchCalls = vi.mocked(fetch).mock.calls.filter(([url, init]) => {
       if (!String(url).endsWith("/imports/i1") || init?.method !== "PATCH") return false;
       const body = JSON.parse(init.body as string);
       return Boolean(body.payloadJson?.payload);
     });
-    expect(patchCall).toBeDefined();
-    const [, init] = patchCall!;
-    const accounts = JSON.parse(init!.body as string).payloadJson.payload.accounts as Array<{
+    expect(payloadPatchCalls.length).toBeGreaterThanOrEqual(2);
+    const [, commitPatchInit] = payloadPatchCalls.at(-1)!;
+    const accounts = JSON.parse(commitPatchInit!.body as string).payloadJson.payload.accounts as Array<{
       __rowId: string;
       value: number;
     }>;
@@ -625,10 +641,247 @@ describe("ChatSurface — a chat turn's row edit must survive into the next comm
   });
 });
 
+describe("ChatSurface — flushes local row state to the server BEFORE a turn is sent (Ruling 95)", () => {
+  // Critical 1 (review round 1): a read-only turn used to snap the table
+  // back to whatever the SERVER last held, discarding a restored row that
+  // only ever lived in this surface's local state. The fix is to push
+  // local state to the server first, so the model answers from what the
+  // advisor sees and the wholesale adoption of its response is correct.
+  //
+  // Mutation this catches: swapping `flushRowsToServer`'s read of
+  // `resultRef.current.rows` (the live ref) for a plain `result.rows`
+  // closure capture — `useCallback([clientId, importId])` would then freeze
+  // on whatever `result` was at mount (`null`), so the flush would find
+  // nothing to send and the restored row's data would never reach the
+  // server the turn route reads from.
+  it("carries a locally restored row into the flush's PATCH before the turn's own POST", async () => {
+    await renderAfterExtraction({ excluded: true }); // r1 kept, r2 ("All Accounts") excluded
+
+    await userEvent.click(screen.getByRole("button", { name: /include anyway/i }));
+    // Now in the working table locally — the server has never seen this.
+    expect(screen.getByRole("row", { name: /All Accounts/ })).toBeInTheDocument();
+
+    mockFlush();
+    vi.mocked(fetch).mockResolvedValueOnce(
+      turnResponse({
+        accounts: [
+          { name: "IRA", custodian: "Schwab", value: 100, __rowId: "r1" },
+          { name: "All Accounts", value: 300, __rowId: "r2" },
+        ],
+        summary: "Two accounts total $400.",
+        turnEntries: [
+          { role: "user", text: "what's the total?", at: "t1" },
+          { role: "assistant", text: "Two accounts total $400.", at: "t1" },
+        ],
+      }),
+    );
+
+    await userEvent.type(composerTextbox(), "what's the total?");
+    await userEvent.click(sendButton());
+    await screen.findByText("Two accounts total $400.");
+
+    // The flush is the FIRST PATCH to /imports/i1 — before the turn's own
+    // POST to /chat/turn — and it carries the restored row.
+    const flushPatchCall = vi
+      .mocked(fetch)
+      .mock.calls.find(([url, init]) => String(url).endsWith("/imports/i1") && init?.method === "PATCH");
+    expect(flushPatchCall).toBeDefined();
+    const [, flushInit] = flushPatchCall!;
+    const flushedAccounts = JSON.parse(flushInit!.body as string).payloadJson.payload.accounts as Array<{
+      __rowId: string;
+    }>;
+    expect(flushedAccounts.map((a) => a.__rowId).sort()).toEqual(["r1", "r2"]);
+
+    // And the read-only turn's wholesale adoption did NOT revert the
+    // restore — the row is still in the working table after the turn.
+    expect(screen.getByRole("row", { name: /All Accounts/ })).toBeInTheDocument();
+  });
+});
+
+describe("ChatSurface — Commit and Finish import are disabled for the whole in-flight window of a turn (Finding 4)", () => {
+  // Without this, a commit clicked WHILE a turn's model call is running
+  // (before its response — and this surface's own flush/adopt — land) can
+  // dequeue immediately, PATCH pre-turn values, and lock a row at the OLD
+  // value while the turn's edit shows up in the table moments later —
+  // the screen and the client's plan then disagree, with no way to
+  // re-commit the row from this surface. Mutation this catches: dropping
+  // `disableCommit={turnStatus === "sending"}` from `<AccountsTable>`, or
+  // dropping `|| turnStatus === "sending"` from Finish import's `disabled`.
+  it("disables per-row Commit and Finish import only while turnStatus is 'sending', re-enabling after", async () => {
+    await renderAfterExtraction();
+
+    mockFlush();
+    let resolveFetch!: (v: Response) => void;
+    vi.mocked(fetch).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveFetch = resolve;
+      }),
+    );
+
+    await userEvent.type(composerTextbox(), "hold on");
+    await userEvent.click(sendButton());
+
+    const row = screen.getByRole("row", { name: /IRA/ });
+    expect(within(row).getByRole("button", { name: /^commit$/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /finish import/i })).toBeDisabled();
+
+    resolveFetch(
+      turnResponse({
+        accounts: [{ name: "IRA", custodian: "Schwab", value: 100, __rowId: "r1" }],
+        summary: "ok",
+        turnEntries: [
+          { role: "user", text: "hold on", at: "t1" },
+          { role: "assistant", text: "ok", at: "t1" },
+        ],
+      }),
+    );
+
+    await screen.findByRole("button", { name: /^send$/i });
+    expect(within(screen.getByRole("row", { name: /IRA/ })).getByRole("button", { name: /^commit$/i })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /finish import/i })).toBeEnabled();
+  });
+});
+
+describe("ChatSurface — 'Re-run extraction' disables while a turn is sending (Ruling 98 / Finding 5)", () => {
+  // Finding 5: an advisor sends a question, then (before this fix) could
+  // click Re-run extraction while it was still in flight — `status` would
+  // go "streaming", the turn's `onAdopted` would then fire `setStatus("done")`
+  // unconditionally and flip `isStreaming` false WHILE the SSE stream was
+  // still open, re-enabling the composer over an open extraction (Ruling
+  // 63's second clause). Disabling this button for the whole
+  // `turnStatus === "sending"` window closes the interleaving from this
+  // side. Mutation this catches: dropping `|| turnStatus === "sending"`
+  // from the button's `disabled` condition.
+  it("disables 'Re-run extraction' for the whole in-flight window of a turn, re-enabling after", async () => {
+    await renderAfterExtraction();
+
+    mockFlush();
+    let resolveFetch!: (v: Response) => void;
+    vi.mocked(fetch).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveFetch = resolve;
+      }),
+    );
+
+    await userEvent.type(composerTextbox(), "hold on");
+    await userEvent.click(sendButton());
+
+    expect(screen.getByRole("button", { name: /re-run extraction/i })).toBeDisabled();
+
+    resolveFetch(
+      turnResponse({
+        accounts: [{ name: "IRA", custodian: "Schwab", value: 100, __rowId: "r1" }],
+        summary: "ok",
+        turnEntries: [
+          { role: "user", text: "hold on", at: "t1" },
+          { role: "assistant", text: "ok", at: "t1" },
+        ],
+      }),
+    );
+
+    await screen.findByRole("button", { name: /^send$/i });
+    expect(screen.getByRole("button", { name: /re-run extraction/i })).toBeEnabled();
+  });
+});
+
+describe("ChatSurface — transcript append survives a hydrated history plus a new turn (Important 6, executed mutation proof)", () => {
+  // Important 6 from the review, executed: mutating `use-chat-commit.ts`'s
+  // `setTranscript((prev) => [...prev, ...entries])` to `setTranscript(entries)`
+  // (a REPLACE) left 89/89 green, because every prior test hydrated an
+  // EMPTY transcript before a turn, or a non-empty one with NO turn — never
+  // both together. This test does both: a resumed draft's hydrated history
+  // must still be there after a NEW turn lands, not silently dropped.
+  //
+  // NOT `mockFlush()` before the turn here: `result` is still null on this
+  // resumed draft (no extraction ran this session), so `flushRowsToServer`
+  // no-ops — no fetch calls at all — and the turn's own POST is the very
+  // next call after the mount GET.
+  it("keeps the hydrated transcript AND appends the new turn's entries, not a replace", async () => {
+    vi.mocked(fetch).mockReset();
+    vi.mocked(fetch).mockResolvedValueOnce(
+      importGetResponse({
+        chat: {
+          transcript: [
+            { role: "user", text: "HYDRATED QUESTION", at: "t0" },
+            { role: "assistant", text: "HYDRATED ANSWER", at: "t0" },
+          ],
+        },
+      }),
+    ); // mount GET
+
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={[]} />);
+    await screen.findByText("HYDRATED QUESTION");
+
+    vi.mocked(fetch).mockResolvedValueOnce(
+      turnResponse({
+        accounts: [],
+        summary: "NEW ANSWER",
+        turnEntries: [
+          { role: "user", text: "NEW QUESTION", at: "t1" },
+          { role: "assistant", text: "NEW ANSWER", at: "t1" },
+        ],
+      }),
+    );
+
+    await userEvent.type(composerTextbox(), "NEW QUESTION");
+    await userEvent.click(sendButton());
+    await screen.findByText("NEW ANSWER");
+
+    // Both the hydrated history AND the new turn are present.
+    expect(screen.getByText("HYDRATED QUESTION")).toBeInTheDocument();
+    expect(screen.getByText("HYDRATED ANSWER")).toBeInTheDocument();
+    expect(screen.getByText("NEW QUESTION")).toBeInTheDocument();
+    expect(screen.getByText("NEW ANSWER")).toBeInTheDocument();
+  });
+});
+
+describe("ChatSurface — a merge-retired row cannot be restored (Ruling 96 / Critical 2)", () => {
+  // The brief's own contract note: restoring a merge_rows-retired row would
+  // re-add the pre-merge row alongside the merged one and double-count the
+  // account — exactly what Task 10's review graded CRITICAL for rollups.
+  // Mutation this catches: `excluded-rows.tsx`'s button `disabled` condition
+  // dropping `|| x.irreversible` — the button would render live, and
+  // clicking it would put "Brokerage" back in the working table.
+  it("renders 'Include anyway' disabled for a row merge_rows retired, and a click does nothing", async () => {
+    await renderAfterExtraction(); // r1 IRA kept
+
+    mockFlush();
+    vi.mocked(fetch).mockResolvedValueOnce(
+      turnResponse({
+        accounts: [{ name: "IRA", custodian: "Schwab", value: 300, __rowId: "r1" }],
+        summary: "Merged the two Schwab rows.",
+        turnEntries: [
+          { role: "user", text: "merge the two rows", at: "t1" },
+          { role: "tool", tool: "merge_rows", summary: 'Merged "Brokerage" into "IRA".', at: "t1" },
+          { role: "assistant", text: "Merged the two Schwab rows.", at: "t1" },
+        ],
+        excludedRows: [
+          {
+            row: { name: "Brokerage", custodian: "Schwab", value: 200, __rowId: "r2" },
+            reason: 'merged into "IRA"',
+            irreversible: true,
+          },
+        ],
+      }),
+    );
+
+    await userEvent.type(composerTextbox(), "merge the two rows");
+    await userEvent.click(sendButton());
+    await screen.findByText("Merged the two Schwab rows.");
+
+    const restoreButton = screen.getByRole("button", { name: /include anyway/i });
+    expect(restoreButton).toBeDisabled();
+
+    await userEvent.click(restoreButton);
+    expect(screen.queryByRole("row", { name: /Brokerage/ })).not.toBeInTheDocument();
+  });
+});
+
 describe("ChatSurface — turn failure modes are required behaviour, not polish (Step 3)", () => {
   it("renders the server's error copy for a failed turn, and restores the typed message", async () => {
     await renderAfterExtraction();
 
+    mockFlush();
     vi.mocked(fetch).mockResolvedValueOnce(
       new Response(JSON.stringify({ error: "Too many messages. Please wait and try again." }), {
         status: 429,
@@ -652,6 +905,7 @@ describe("ChatSurface — turn failure modes are required behaviour, not polish 
   it("disables the composer while a turn is in flight, and re-enables once it resolves", async () => {
     await renderAfterExtraction();
 
+    mockFlush();
     let resolveFetch!: (v: Response) => void;
     vi.mocked(fetch).mockReturnValueOnce(
       new Promise((resolve) => {
@@ -685,5 +939,156 @@ describe("ChatSurface — turn failure modes are required behaviour, not polish 
     expect(textbox).toBeEnabled();
     await userEvent.type(textbox, "another one");
     expect(sendButton()).toBeEnabled();
+  });
+});
+
+describe("ChatSurface — the composer disables for the whole extraction stream, not just a turn (Important 7, executed mutation proof)", () => {
+  // Important 7 from the review, executed: mutating `chat-surface.tsx`'s
+  // `disabled={isStreaming}` on `<ChatComposer>` to `disabled={false}` left
+  // 36/36 component tests green — Ruling 63's "never accept a turn while an
+  // extraction stream is open" guard was implemented but nothing caught its
+  // removal. This drives the surface into a genuinely STREAMING state (an
+  // extraction whose own fetch is deliberately held open) and asserts the
+  // composer is unusable for that whole window.
+  it("disables the composer while status is 'streaming', re-enabling once extraction settles", async () => {
+    let resolveExtractFetch!: (v: Response) => void;
+    vi.mocked(fetch).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveExtractFetch = resolve;
+      }),
+    );
+
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={initialFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+
+    expect(composerTextbox()).toBeDisabled();
+    expect(sendButton()).toBeDisabled();
+
+    resolveExtractFetch(makeFramedResponse([oneRowDoneFrame()]));
+    await screen.findByRole("table");
+
+    expect(composerTextbox()).toBeEnabled();
+  });
+});
+
+describe("ChatSurface — the transcript auto-scrolls to the newest message (Minor 9)", () => {
+  // jsdom has no real layout engine — `scrollHeight` is always 0 — so this
+  // stubs it to a nonzero value on the transcript's own scroll container
+  // (its `<ul>`) after the FIRST turn, then manually scrolls back to the
+  // top (simulating an advisor who scrolled up to read history) before a
+  // SECOND turn lands. Mutation this catches: removing the
+  // `useEffect(() => { el.scrollTop = el.scrollHeight }, [transcript])` in
+  // `chat-transcript.tsx` — `scrollTop` would stay at the `0` this test set
+  // it to, never advancing to the stubbed `scrollHeight`.
+  it("scrolls the transcript's own container to the bottom when a new turn lands", async () => {
+    await renderAfterExtraction();
+
+    mockFlush();
+    vi.mocked(fetch).mockResolvedValueOnce(
+      turnResponse({
+        accounts: [{ name: "IRA", custodian: "Schwab", value: 100, __rowId: "r1" }],
+        summary: "first",
+        turnEntries: [
+          { role: "user", text: "first question", at: "t1" },
+          { role: "assistant", text: "first", at: "t1" },
+        ],
+      }),
+    );
+    await userEvent.type(composerTextbox(), "first question");
+    await userEvent.click(sendButton());
+    await screen.findByText("first");
+
+    const list = screen.getByRole("list");
+    Object.defineProperty(list, "scrollHeight", { configurable: true, value: 777 });
+    list.scrollTop = 0; // the advisor scrolled up to read earlier history
+
+    mockFlush();
+    vi.mocked(fetch).mockResolvedValueOnce(
+      turnResponse({
+        accounts: [{ name: "IRA", custodian: "Schwab", value: 100, __rowId: "r1" }],
+        summary: "second",
+        turnEntries: [
+          { role: "user", text: "second question", at: "t2" },
+          { role: "assistant", text: "second", at: "t2" },
+        ],
+      }),
+    );
+    await userEvent.type(composerTextbox(), "second question");
+    await userEvent.click(sendButton());
+    await screen.findByText("second");
+
+    expect(list.scrollTop).toBe(777);
+  });
+});
+
+describe("ChatSurface — the composer grows with a multi-line question (Minor 10)", () => {
+  // The report originally described this as "a single-line-growing
+  // textarea" while the code was a fixed `rows={1}` — a Shift+Enter
+  // multi-line question was typed into a box that never expanded to show
+  // it. Mutation this catches: hardcoding `rows={1}` again in
+  // `chat-composer.tsx` instead of the computed value.
+  it("increases textarea rows as the advisor inserts newlines via Shift+Enter, up to the cap", async () => {
+    await renderAfterExtraction();
+    const textbox = composerTextbox() as HTMLTextAreaElement;
+    expect(textbox.rows).toBe(1);
+
+    await userEvent.type(textbox, "line one{Shift>}{Enter}{/Shift}line two{Shift>}{Enter}{/Shift}line three");
+
+    expect(textbox.rows).toBe(3);
+  });
+});
+
+describe("ChatSurface — a synthesized result never puts the turn's reply in the extraction-summary slot (Minor 8)", () => {
+  // Mutation this catches: reverting `adoptTurnPayload`'s null-`prev`
+  // branch to `{ summary, caveats: [], rows: accounts, excluded }` (the
+  // turn's own reply text) instead of `{ summary: "", ... }` — the reply
+  // would then render a SECOND time in the summary card above the table,
+  // and (since every later turn's `prev` branch preserves that `summary`
+  // untouched) the FIRST turn's reply would still be sitting there after a
+  // second, unrelated turn.
+  it("does not duplicate the first turn's reply into a summary card, and it never lingers after a later turn", async () => {
+    vi.mocked(fetch).mockReset();
+    vi.mocked(fetch).mockResolvedValueOnce(importGetResponse({}));
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={[]} />);
+    await screen.findByRole("textbox", { name: /ask a follow-up question/i });
+
+    vi.mocked(fetch).mockResolvedValueOnce(
+      turnResponse({
+        accounts: [{ name: "IRA", custodian: "Schwab", value: 100, __rowId: "r1" }],
+        summary: "FIRST REPLY",
+        turnEntries: [
+          { role: "user", text: "q1", at: "t1" },
+          { role: "assistant", text: "FIRST REPLY", at: "t1" },
+        ],
+      }),
+    );
+    await userEvent.type(composerTextbox(), "q1");
+    await userEvent.click(sendButton());
+    await screen.findByRole("table"); // the table now shows — status flipped to "done"
+
+    // "FIRST REPLY" appears exactly once — in the transcript — never a
+    // second time in a summary-card location above the table.
+    expect(screen.getAllByText("FIRST REPLY")).toHaveLength(1);
+
+    mockFlush();
+    vi.mocked(fetch).mockResolvedValueOnce(
+      turnResponse({
+        accounts: [{ name: "IRA", custodian: "Schwab", value: 100, __rowId: "r1" }],
+        summary: "SECOND REPLY",
+        turnEntries: [
+          { role: "user", text: "q2", at: "t2" },
+          { role: "assistant", text: "SECOND REPLY", at: "t2" },
+        ],
+      }),
+    );
+    await userEvent.type(composerTextbox(), "q2");
+    await userEvent.click(sendButton());
+    await screen.findByText("SECOND REPLY");
+
+    // "FIRST REPLY" legitimately stays in the TRANSCRIPT (a persisted
+    // history is supposed to keep it) — what must NOT happen is a SECOND,
+    // stuck occurrence appearing in the summary-card slot after a later,
+    // unrelated turn. Still exactly one occurrence proves that.
+    expect(screen.getAllByText("FIRST REPLY")).toHaveLength(1);
   });
 });

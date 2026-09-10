@@ -58,6 +58,33 @@ async function patchImportPayloadJson(
 }
 
 /**
+ * Reads the import's FRESH `payload.accounts` and overlays ONLY the `match`
+ * stamp from it onto each of `localRows` — never any other field (round 2
+ * review, item 3): taking `fresh` wholesale would silently discard a local
+ * field edit on a row the server shows as `exact` but the caller's own state
+ * doesn't yet know is committed. Shared by `commitRowsNow` (Task 10b) and
+ * `flushRowsToServer` (Task 11b fix round 1, Ruling 95) — both need the SAME
+ * "current local rows, freshened only on `match`" merge before their own
+ * `payload.accounts` PATCH.
+ */
+async function mergeLocalRowsWithFreshMatch(
+  clientId: string,
+  importId: string,
+  localRows: Row[],
+): Promise<Row[]> {
+  const freshPayloadJson = (await readImportPayloadJson(clientId, importId)) as
+    | { payload?: { accounts?: Row[] } }
+    | undefined;
+  const freshByRowId = new Map(
+    (freshPayloadJson?.payload?.accounts ?? []).map((r) => [r.__rowId, r] as const),
+  );
+  return localRows.map((row) => {
+    const fresh = row.__rowId ? freshByRowId.get(row.__rowId) : undefined;
+    return fresh?.match?.kind === "exact" ? { ...row, match: fresh.match } : row;
+  });
+}
+
+/**
  * Owns everything downstream of a completed extraction: the working table
  * (`result`), which rows are locked (`committedRowIds`), and closing the
  * import. Split out of `chat-surface.tsx` (Task 10b) once that file's own
@@ -196,24 +223,15 @@ export function useChatCommit(clientId: string, importId: string) {
       const current = resultRef.current;
       if (!current) return;
 
-      const freshPayloadJson = (await readImportPayloadJson(clientId, importId)) as
-        | { payload?: { accounts?: Row[] } }
-        | undefined;
-      const freshByRowId = new Map(
-        (freshPayloadJson?.payload?.accounts ?? []).map((r) => [r.__rowId, r] as const),
-      );
-      const mergedAccounts = current.rows.map((row) => {
-        const fresh = row.__rowId ? freshByRowId.get(row.__rowId) : undefined;
-        // Only `match` needs to come from the server — `linkCreated`
-        // (`lib/imports/types.ts:209`) sets nothing else on the row. Taking
-        // `fresh` wholesale (round 2 review, item 3) would silently discard
-        // a local field edit on a row the server shows as `exact` but this
-        // hook's own `committedRowIds` doesn't yet know about (reachable
-        // when the bookkeeping chat PATCH failed after a prior commit — an
-        // editable-until-locked row, since `committedRowIds`, not `match`,
-        // is what disables editing in `entity-table.tsx`).
-        return fresh?.match?.kind === "exact" ? { ...row, match: fresh.match } : row;
-      });
+      // Only `match` needs to come from the server — `linkCreated`
+      // (`lib/imports/types.ts:209`) sets nothing else on the row. Taking
+      // `fresh` wholesale (round 2 review, item 3) would silently discard a
+      // local field edit on a row the server shows as `exact` but this
+      // hook's own `committedRowIds` doesn't yet know about (reachable when
+      // the bookkeeping chat PATCH failed after a prior commit — an
+      // editable-until-locked row, since `committedRowIds`, not `match`, is
+      // what disables editing in `entity-table.tsx`).
+      const mergedAccounts = await mergeLocalRowsWithFreshMatch(clientId, importId, current.rows);
 
       await patchImportPayloadJson(clientId, importId, {
         payload: { accounts: mergedAccounts },
@@ -332,34 +350,68 @@ export function useChatCommit(clientId: string, importId: string) {
     setTranscript((prev) => [...prev, ...entries]);
   }, []);
 
-  // Adopts a turn's returned row state (Task 11b, Step 2 — THE load-bearing
-  // requirement). A tool can edit/merge/drop a row SERVER-SIDE; `commitRowsNow`
-  // above PATCHes `payload.accounts` wholesale from `resultRef.current.rows`
-  // before every commit, so a tool's edit is silently overwritten by the next
-  // commit unless it lands in `resultRef.current` FIRST. Routed through the
-  // SAME `commitQueueRef` `handleCommitRows` uses (brief: "do not invent a
-  // second ordering mechanism") — a commit clicked while this turn's fetch is
-  // still in flight, or already queued, is guaranteed to read this turn's
-  // adopted rows rather than the pre-turn snapshot, because both now
-  // serialize through the one queue.
+  // Pushes the surface's CURRENT local row state to the server BEFORE a turn
+  // is sent (Task 11b fix round 1, Ruling 95 — replaces the review's
+  // Critical 1 fix). Local edits (`handleEditCell`) and a restored row
+  // (`handleRestore`) never round-trip to the server on their own — nothing
+  // but a commit used to send them. Without this, the model would answer a
+  // question from STALE server rows the advisor had already corrected
+  // on-screen, and `adoptTurnPayload`'s wholesale replace (below) would then
+  // silently revert those same local edits the moment the response landed.
+  //
+  // Routed through the SAME `commitQueueRef` `handleCommitRows` uses, and
+  // makes the SAME write `commitRowsNow` does (`mergeLocalRowsWithFreshMatch`
+  // + a `payload.accounts` PATCH) — no second ordering mechanism, no second
+  // write shape. `chat-surface.tsx` also disables per-row Commit and Finish
+  // import for the whole `turnStatus === "sending"` window (Finding 4), so
+  // nothing can enqueue onto this queue BETWEEN the flush landing and the
+  // turn's response coming back — the interleaving Finding 4 found has no
+  // window left to race in.
+  //
+  // No-op when `result` is still null: nothing has been extracted or
+  // adopted THIS session, so there is nothing local this hook knows that the
+  // server doesn't (Step 0 already seeded it at extraction time).
+  const flushRowsToServer = useCallback((): Promise<void> => {
+    const apply = async () => {
+      const current = resultRef.current;
+      if (!current) return;
+      const mergedAccounts = await mergeLocalRowsWithFreshMatch(clientId, importId, current.rows);
+      await patchImportPayloadJson(clientId, importId, { payload: { accounts: mergedAccounts } });
+    };
+    const task = commitQueueRef.current.then(apply, apply);
+    commitQueueRef.current = task.then(
+      () => undefined,
+      () => undefined,
+    );
+    return task;
+  }, [clientId, importId]);
+
+  // Adopts a turn's returned row state (Task 11b, Step 2). Now that
+  // `flushRowsToServer` above runs before every turn, the server genuinely
+  // holds everything the advisor sees by the time the turn route reads
+  // `payload.accounts` — so this wholesale replace is CORRECT, not merely
+  // safe (Ruling 95). Routed through the SAME `commitQueueRef` a commit
+  // uses, so a commit that was already queued finishes and lands before
+  // this adoption runs.
   //
   // Always a FULL replace of `rows`/`excluded`, never a merge: the turn
   // route's `payload.accounts` and `excludedRows` are themselves the
-  // server's complete, authoritative sets (Step 0 + the route's own
-  // fresh-read merge), not deltas.
+  // server's complete, authoritative sets (Step 0 + the flush above + the
+  // route's own fresh-read merge), not deltas.
   //
   // When `prev` is null — a resumed draft with no extraction run THIS
   // session (C3) — this is the first thing to populate `result` at all, so
   // the extracted-state panel (table, Finish import) appears for the first
-  // time off the turn's own reply text as its summary. That text is real
-  // (the model's actual reply), not fabricated — unlike a hypothetical
-  // mount-time hydration, which the brief's C3 scope limit rules out because
-  // no real summary exists at mount.
+  // time. `summary` stays `""` here (Minor 8) rather than the turn's own
+  // reply text: that text already renders in the transcript, and putting it
+  // in the extraction-summary slot too would leave the FIRST turn's reply
+  // stuck there permanently (every later call takes the `prev` branch, which
+  // preserves whatever `summary` was set here once).
   const adoptTurnPayload = useCallback(
-    (accounts: Row[], excluded: ExcludedRow<Row>[], summary: string): Promise<void> => {
+    (accounts: Row[], excluded: ExcludedRow<Row>[]): Promise<void> => {
       const apply = () => {
         updateResult((prev) =>
-          prev ? { ...prev, rows: accounts, excluded } : { summary, caveats: [], rows: accounts, excluded },
+          prev ? { ...prev, rows: accounts, excluded } : { summary: "", caveats: [], rows: accounts, excluded },
         );
       };
       const task = commitQueueRef.current.then(apply, apply);
@@ -412,6 +464,7 @@ export function useChatCommit(clientId: string, importId: string) {
     resetForNewExtraction,
     applyExtractionResult,
     appendTurnEntries,
+    flushRowsToServer,
     adoptTurnPayload,
     handleCommitRows,
     handleEditCell,

@@ -222,6 +222,7 @@ describe("runImportExtraction", () => {
       failed: 0,
       status: "review",
       warnings: [],
+      filesProcessed: 0,
     });
   });
 

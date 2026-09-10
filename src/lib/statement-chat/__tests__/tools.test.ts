@@ -196,6 +196,17 @@ describe("statement chat tools", () => {
     expect(next.excludedRows?.[0].reason).toMatch(/merged into/i);
   });
 
+  // Ruling 96 (Task 11b fix round 1) — the discriminator lives at THIS
+  // producer, not inferred from `reason`'s prose downstream. Mutation this
+  // catches: dropping `irreversible: true` from `mergeRows`'s returned
+  // excludedRows entry — a surface gating "Include anyway" off this flag
+  // would then wrongly let the advisor restore a row whose data was already
+  // folded into the surviving row, double-counting the account.
+  it("merge_rows marks its retired row irreversible — the discriminator lives at the producer", () => {
+    const next = mergeRows(payload(), { keepRowId: "r1", mergeRowId: "r2" });
+    expect(next.excludedRows?.[0].irreversible).toBe(true);
+  });
+
   // Review round 1, Important 4 — the backfill must never touch internal
   // annotations. Mutation this catches: the ORIGINAL `unionAccountFields`
   // iterating every key of `other` (including `match`/`reconciliation`)

@@ -16,7 +16,7 @@ import { runImportExtraction, type ExtractionFileProgress } from "@/lib/imports/
 import { mergeAcrossFiles } from "@/lib/imports/assemble/merge-across-files";
 import { detectRollups } from "@/lib/statement-chat/rollups";
 import { narrate } from "@/lib/statement-chat/narrate";
-import { writeChatState } from "@/lib/statement-chat/state";
+import { readChatState, writeChatState } from "@/lib/statement-chat/state";
 import type { ImportPayloadJson } from "@/lib/imports/types";
 
 // SSE route: extraction can run for minutes across several files, so this
@@ -183,7 +183,7 @@ export async function POST(request: Request, { params }: Params) {
       request.signal.addEventListener("abort", onAbort);
 
       try {
-        await runImportExtraction({
+        const extractionResult = await runImportExtraction({
           importId,
           clientId,
           firmId,
@@ -215,6 +215,36 @@ export async function POST(request: Request, { params }: Params) {
           .where(eq(clientImports.id, importId))
           .limit(1);
         const payloadJson = (freshRow?.payloadJson ?? {}) as ImportPayloadJson;
+
+        // Ruling 97 (Task 11b fix round 1, Important 3): `filesProcessed`
+        // is `0` ONLY on `runImportExtraction`'s own "nothing new to read"
+        // early return — which, per that function's own comment, never
+        // writes `payloadJson` at all. Re-deriving from the UNCHANGED
+        // `fileResults` below and persisting it here would do exactly what
+        // that comment exists to prevent: a "Re-run extraction" click with
+        // no new files must be a pure re-read of the STANDING state, never
+        // a rewrite — `mergeAcrossFiles`/`detectRollups` know nothing about
+        // any `edit_row`/`merge_rows`/`drop_row` a chat turn made (or a
+        // commit's `linkCreated` stamp) since the last REAL extraction, so
+        // re-running them here would regenerate the PRE-edit table and
+        // both send it back to the client and persist it over what's
+        // actually there. Ruling 89's purpose was to SEED a payload that
+        // did not exist, never to overwrite one that does.
+        if (extractionResult.filesProcessed === 0) {
+          const standingChat = readChatState(payloadJson);
+          const standingAccounts = payloadJson.payload?.accounts ?? [];
+          if (!closed) {
+            send({
+              type: "done",
+              summary: "No new statements to read.",
+              caveats: [],
+              rows: standingAccounts,
+              excluded: standingChat.excludedRows,
+            });
+          }
+          return;
+        }
+
         const fileResults = payloadJson.fileResults ?? {};
 
         // Merge every file's extraction into one set of rows (dated

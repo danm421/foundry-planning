@@ -77,6 +77,7 @@ export function ChatSurface({ clientId, importId, initialFiles }: ChatSurfacePro
     resetForNewExtraction,
     applyExtractionResult,
     appendTurnEntries,
+    flushRowsToServer,
     adoptTurnPayload,
     handleCommitRows,
     handleEditCell,
@@ -87,15 +88,18 @@ export function ChatSurface({ clientId, importId, initialFiles }: ChatSurfacePro
   // Sends a turn and adopts what comes back (Task 11b, Steps 2/3). On the
   // FIRST turn that has anything to adopt (`result` was still null — a
   // resumed draft with no extraction run this session), also mark the local
-  // stream `status` "done" so the extracted-state panel below appears —
-  // this does NOT change how `finished` is computed (C3's scope limit), it
+  // stream `status` "done" so the extracted-state panel below appears — but
+  // ONLY from "idle" (Ruling 98): a turn that resolves while an extraction
+  // is streaming must never flip `isStreaming` false out from under it.
+  // This does NOT change how `finished` is computed (C3's scope limit), it
   // only drives the SAME `status` state a real extraction would have set.
   const { turnStatus, turnError, sendTurn } = useChatTurn({
     clientId,
     importId,
+    flushRowsToServer,
     appendTurnEntries,
     adoptTurnPayload,
-    onAdopted: () => setStatus("done"),
+    onAdopted: () => setStatus((s) => (s === "idle" ? "done" : s)),
   });
 
   const runExtraction = useCallback(async () => {
@@ -197,7 +201,11 @@ export function ChatSurface({ clientId, importId, initialFiles }: ChatSurfacePro
             <button
               type="button"
               onClick={runExtraction}
-              disabled={uploadedCount === 0 || isStreaming}
+              // Ruling 98: also disabled while a turn is sending — a turn
+              // that resolves DURING a fresh extraction must never be the
+              // thing that re-enables this button (Ruling 63's second
+              // clause, from the other direction).
+              disabled={uploadedCount === 0 || isStreaming || turnStatus === "sending"}
               className="rounded bg-accent px-5 py-2 text-sm font-medium text-accent-on hover:bg-accent/90 disabled:opacity-50"
             >
               {isStreaming
@@ -257,7 +265,7 @@ export function ChatSurface({ clientId, importId, initialFiles }: ChatSurfacePro
             Ask about these statements
           </h2>
         </CardHeader>
-        <div className="max-h-72 overflow-y-auto border-b border-hair">
+        <div className="border-b border-hair">
           <ChatTranscript transcript={transcript} />
         </div>
         {turnError && <p className="px-3 py-2 text-sm text-crit">{turnError}</p>}
@@ -266,27 +274,36 @@ export function ChatSurface({ clientId, importId, initialFiles }: ChatSurfacePro
 
       {finished && result && (
         <>
-          <Card>
-            <CardBody className="flex flex-col gap-3">
-              <p className="text-sm text-ink">{result.summary}</p>
-              {result.caveats.length > 0 && (
-                <ul className="flex flex-col gap-1.5 text-sm text-ink-3">
-                  {result.caveats.map((c, i) => (
-                    <li key={i} className="flex gap-2">
-                      <span aria-hidden="true">·</span>
-                      <span>{c}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {hasFailure && (
-                <p className="text-sm text-ink-3">
-                  One or more statements could not be read. The accounts below reflect the ones
-                  that were.
-                </p>
-              )}
-            </CardBody>
-          </Card>
+          {/*
+            Minor 8 (Task 11b fix round 1): `result.summary` is `""` for a
+            result `adoptTurnPayload` synthesized on a resumed draft's first
+            turn (never the model's reply — that already renders in the
+            transcript above). Skip the whole card rather than showing an
+            empty paragraph when there is nothing here to say.
+          */}
+          {(result.summary || result.caveats.length > 0 || hasFailure) && (
+            <Card>
+              <CardBody className="flex flex-col gap-3">
+                {result.summary && <p className="text-sm text-ink">{result.summary}</p>}
+                {result.caveats.length > 0 && (
+                  <ul className="flex flex-col gap-1.5 text-sm text-ink-3">
+                    {result.caveats.map((c, i) => (
+                      <li key={i} className="flex gap-2">
+                        <span aria-hidden="true">·</span>
+                        <span>{c}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {hasFailure && (
+                  <p className="text-sm text-ink-3">
+                    One or more statements could not be read. The accounts below reflect the ones
+                    that were.
+                  </p>
+                )}
+              </CardBody>
+            </Card>
+          )}
 
           {result.rows.length === 0 && result.excluded.length === 0 ? (
             <Card>
@@ -315,6 +332,13 @@ export function ChatSurface({ clientId, importId, initialFiles }: ChatSurfacePro
                     onCommitRows={handleCommitRows}
                     onEditCell={handleEditCell}
                     onRestore={handleRestore}
+                    // Ruling 95 / Finding 4: while a turn is sending, nothing
+                    // may enqueue onto the same commit queue `flushRowsToServer`
+                    // and `adoptTurnPayload` use — a commit that snuck in
+                    // between the flush landing and the response coming back
+                    // would lock in pre-turn values and desync the screen from
+                    // the client's plan.
+                    disableCommit={turnStatus === "sending"}
                   />
                 </CardBody>
               </Card>
@@ -344,7 +368,9 @@ export function ChatSurface({ clientId, importId, initialFiles }: ChatSurfacePro
                       // one place that actually knows, and its 409 names how
                       // many rows remain, which is more useful than a
                       // disabled button with no visible reason why.
-                      disabled={finalizeStatus === "pending"}
+                      // Ruling 95 / Finding 4: also disabled while a turn is
+                      // sending, for the same reason per-row Commit is above.
+                      disabled={finalizeStatus === "pending" || turnStatus === "sending"}
                       className="shrink-0 rounded bg-accent px-5 py-2 text-sm font-medium text-accent-on hover:bg-accent/90 disabled:opacity-50"
                     >
                       {finalizeStatus === "pending" ? "Closing…" : "Finish import"}

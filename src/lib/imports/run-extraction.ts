@@ -79,6 +79,18 @@ export interface RunExtractionResult {
     failed: number;
     status: "review" | "draft";
     warnings: string[];
+    /**
+     * How many files this call actually attempted to read (Ruling 97, Task
+     * 11b fix round 1). `0` ONLY on the "nothing new to read" early return
+     * below, which — per that branch's own comment — never writes
+     * `payloadJson` at all. A caller that re-derives and persists its OWN
+     * view of the rows (`chat/extract/route.ts`'s statement-chat post-
+     * processing) must gate that write on this being `> 0`: re-deriving
+     * from UNCHANGED `fileResults` on a no-op "Re-run extraction" click
+     * would otherwise silently overwrite whatever a chat turn (or a commit)
+     * has written into `payload`/`chat` since the last REAL extraction.
+     */
+    filesProcessed: number;
 }
 
 export async function runImportExtraction(
@@ -139,6 +151,7 @@ export async function runImportExtraction(
             failed: 0,
             status: summary.status,
             warnings: summary.warnings,
+            filesProcessed: 0,
         };
     }
 
@@ -344,5 +357,6 @@ export async function runImportExtraction(
         failed,
         status: summary.status,
         warnings: summary.warnings,
+        filesProcessed: pending.length,
     };
 }

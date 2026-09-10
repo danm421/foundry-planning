@@ -291,7 +291,12 @@ export function mergeRows(payload: PersistedImportPayload, args: MergeRowsArgs):
   return {
     payload: { ...payload, accounts: nextAccounts },
     summary: `Merged "${merge.name}" into "${keep.name}".`,
-    excludedRows: [{ row: merge, reason: `merged into "${keep.name}"` }],
+    // `irreversible: true` (Ruling 96): the retired row's own fields were
+    // folded into `keep` above — restoring it would re-add the pre-merge
+    // row alongside the merged one and double-count the account. The
+    // discriminator is set HERE, at the producer, so the surface never has
+    // to infer it from `reason`'s prose.
+    excludedRows: [{ row: merge, reason: `merged into "${keep.name}"`, irreversible: true }],
   };
 }
 

@@ -162,8 +162,22 @@ export interface ChatState {
    * Wide by design (Ruling 3 / C5), not narrowed to any one producer's
    * shape: Task 4's rollup detector always sets `decision`, but Task 11's
    * advisor-initiated `drop_row` has none, so it must stay optional.
+   *
+   * `irreversible` (Ruling 96, Task 11b fix round 1): set ONLY by
+   * `merge_rows` (`tools.ts`), on the row it retires. That row's data was
+   * folded into the surviving row (`unionAccountFields`) — restoring it
+   * would re-add the pre-merge row alongside the merged one and
+   * double-count. Rollup exclusions and an advisor's own `drop_row` leave
+   * this unset (restorable, the default) because those really are
+   * reversible. The discriminator lives here, at the producer, so a
+   * consuming surface never has to string-match `reason` to decide.
    */
-  excludedRows: Array<{ row: Annotated<ExtractedAccount>; reason: string; decision?: MergeDecision }>;
+  excludedRows: Array<{
+    row: Annotated<ExtractedAccount>;
+    reason: string;
+    decision?: MergeDecision;
+    irreversible?: true;
+  }>;
   committedRowIds: string[];
 }
 
