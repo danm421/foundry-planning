@@ -1,6 +1,7 @@
 import type { ExtractedAccount } from "@/lib/extraction/types";
 import type { Annotated } from "@/lib/imports/types";
 import type { MergeDecision } from "@/lib/imports/assemble/decisions";
+import type { RebaseOverride } from "./rebase";
 
 /**
  * Deterministic narration of what a statement import found. Every sentence
@@ -103,6 +104,58 @@ function valueConflictCaveat(d: Extract<MergeDecision, { kind: "value-conflict" 
   return `"${d.account}" is recorded at ${money(d.kept)} from the ${usDate(d.asOf)} statement; ${othersClause}.`;
 }
 
+/**
+ * `money()` for a figure that may not exist. A row with no readable balance
+ * is an ordinary extraction outcome, and the one thing this caveat must never
+ * do is invent a number to fill the gap.
+ */
+function moneyOrNone(n: number | undefined): string {
+  return n === undefined ? "no value" : money(n);
+}
+
+/**
+ * Ruling 117. The advisor's standing figure won a re-extraction; say so, and
+ * name the figure it beat. Both numbers appear, and the sentence is explicit
+ * about which of them is the one on screen — the failure this replaces was a
+ * table reading $100,000 under a caveat naming $130,000.
+ *
+ * It closes with what to DO, because there is a real decision here: the newer
+ * statement may well be the figure the advisor wants, and the only way to
+ * take it is to edit the row.
+ */
+function rebaseOverrideCaveat(o: RebaseOverride): string {
+  return (
+    `"${o.name}" is shown at ${moneyOrNone(o.standingValue)} — the figure already on this import, ` +
+    `and the one that will commit. The newly uploaded statement reports ${moneyOrNone(o.freshValue)}. ` +
+    `Edit the row if the newer figure is the one you want.`
+  );
+}
+
+/**
+ * True when this `value-conflict` decision is describing a merge result the
+ * rebase then threw away — its headline figure (`kept`) is not on the table,
+ * so `valueConflictCaveat` would print "is recorded at $130,000" directly
+ * above a row reading $100,000. The override caveat carries the same two
+ * numbers honestly, so this one is dropped rather than reworded.
+ *
+ * The join is the account NAME **and** the discarded figure, not the name
+ * alone. `valueConflictCaveat`'s own docstring records why a bare name is
+ * not an identity here — two accounts can share a display name — and
+ * `MergeDecision` carries no `__rowId` to join on properly. Requiring
+ * `kept === freshValue` makes a name collision harmless: a same-named
+ * account is only muted when its surviving figure is exactly the one the
+ * rebase held back, which is the case this is for. The residual risk is
+ * over-suppression when two same-named accounts also merged to the same
+ * figure — that is silence, never a fabricated number, and the override
+ * caveat still names both figures for the row that was actually overridden.
+ */
+function contradictsRebase(
+  d: Extract<MergeDecision, { kind: "value-conflict" }>,
+  overrides: RebaseOverride[],
+): boolean {
+  return overrides.some((o) => o.name === d.account && o.freshValue === d.kept);
+}
+
 function retirementBasisCaveat(rows: Annotated<ExtractedAccount>[]): string | null {
   const flagged = rows.filter((r) => r.basis !== undefined && r.category === "retirement");
   if (flagged.length === 0) return null;
@@ -138,8 +191,15 @@ export function narrate(input: {
   fileCount: number;
   decisions: MergeDecision[];
   rows: Annotated<ExtractedAccount>[];
+  /**
+   * Rows whose freshly-merged figure the rebase held back (Ruling 117).
+   * Optional and defaulted rather than required: only a RE-extraction can
+   * produce any, so the first read of an import has none by construction and
+   * the caller would be threading a permanent `[]` through.
+   */
+  overrides?: RebaseOverride[];
 }): Narration {
-  const { fileCount, decisions, rows } = input;
+  const { fileCount, decisions, rows, overrides = [] } = input;
 
   const sentences: string[] = [
     `Read ${fileCount} ${plural(fileCount, "statement", "statements")} covering ${rows.length} ${plural(rows.length, "account", "accounts")}.`,
@@ -163,10 +223,15 @@ export function narrate(input: {
         caveats.push(undatedCaveat(d));
         break;
       case "value-conflict":
-        caveats.push(valueConflictCaveat(d));
+        // Suppressed HERE rather than in the route: "never name a figure the
+        // table does not show" is this module's own contract, so every caller
+        // gets it — not only the one route that remembered to pre-filter.
+        if (!contradictsRebase(d, overrides)) caveats.push(valueConflictCaveat(d));
         break;
     }
   }
+
+  for (const o of overrides) caveats.push(rebaseOverrideCaveat(o));
 
   const retirementCaveat = retirementBasisCaveat(rows);
   if (retirementCaveat) caveats.push(retirementCaveat);

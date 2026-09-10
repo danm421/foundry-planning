@@ -341,4 +341,170 @@ describe("narrate", () => {
       expect(caveats.some((c) => c.includes("matched existing plan accounts"))).toBe(false);
     });
   });
+
+  /**
+   * Ruling 117. A re-extraction that finds a NEWER figure for a row the
+   * advisor has already been working on keeps the advisor's figure on
+   * screen — and now says so, naming both.
+   *
+   * The measured failure: the table showed $100,000 while the caveat
+   * directly above it named $130,000, because the route narrated the FRESH
+   * decisions against the REBASED rows.
+   */
+  describe("rebase-override caveat", () => {
+    it("names both figures and says which one will commit", () => {
+      const { caveats } = narrate({
+        fileCount: 2,
+        decisions: [],
+        rows: [{ name: "Joint Brokerage", value: 100_000 }] as never,
+        overrides: [
+          {
+            __rowId: "account:1",
+            name: "Joint Brokerage",
+            standingValue: 100_000,
+            freshValue: 130_000,
+          },
+        ],
+      });
+      expect(caveats).toContain(
+        '"Joint Brokerage" is shown at $100,000 — the figure already on this import, and the one ' +
+          "that will commit. The newly uploaded statement reports $130,000. Edit the row if the " +
+          "newer figure is the one you want.",
+      );
+    });
+
+    it("says 'no value' rather than fabricating a figure when one side has none", () => {
+      const { caveats } = narrate({
+        fileCount: 2,
+        decisions: [],
+        rows: [{ name: "IRA" }] as never,
+        overrides: [
+          { __rowId: "account:1", name: "IRA", standingValue: undefined, freshValue: 130_000 },
+        ],
+      });
+      expect(caveats).toContain(
+        '"IRA" is shown at no value — the figure already on this import, and the one that will ' +
+          "commit. The newly uploaded statement reports $130,000. Edit the row if the newer figure " +
+          "is the one you want.",
+      );
+    });
+
+    it("stays silent when there are no overrides", () => {
+      const { caveats } = narrate({
+        fileCount: 1,
+        decisions: [],
+        rows: [{ name: "IRA", value: 1 }] as never,
+        overrides: [],
+      });
+      expect(caveats).toEqual([]);
+    });
+
+    /**
+     * THE contradiction, pinned. `mergeAcrossFiles` correctly emits a
+     * `value-conflict` naming $130,000 as the figure it kept — but the
+     * rebase then held that figure back, so the table shows $100,000. Both
+     * caveats rendering together tells the advisor the merge landed on
+     * $130,000 above a row reading $100,000.
+     *
+     * The override caveat replaces it: same two numbers, honest about which
+     * one is on screen.
+     */
+    it("suppresses the value-conflict caveat naming the figure the rebase discarded", () => {
+      const { caveats } = narrate({
+        fileCount: 2,
+        decisions: [
+          {
+            kind: "value-conflict",
+            account: "Joint Brokerage",
+            values: [100_000, 130_000],
+            asOf: "2026-09-30",
+            kept: 130_000,
+          },
+        ],
+        rows: [{ name: "Joint Brokerage", value: 100_000 }] as never,
+        overrides: [
+          {
+            __rowId: "account:1",
+            name: "Joint Brokerage",
+            standingValue: 100_000,
+            freshValue: 130_000,
+          },
+        ],
+      });
+      expect(caveats.some((c) => c.includes("is recorded at $130,000"))).toBe(false);
+      expect(caveats).toEqual([
+        '"Joint Brokerage" is shown at $100,000 — the figure already on this import, and the one ' +
+          "that will commit. The newly uploaded statement reports $130,000. Edit the row if the " +
+          "newer figure is the one you want.",
+      ]);
+    });
+
+    // The suppression is targeted, not a blanket mute: another account's
+    // value-conflict on the same run still renders in full.
+    it("leaves an unrelated account's value-conflict caveat alone", () => {
+      const { caveats } = narrate({
+        fileCount: 2,
+        decisions: [
+          {
+            kind: "value-conflict",
+            account: "Joint Brokerage",
+            values: [100_000, 130_000],
+            asOf: "2026-09-30",
+            kept: 130_000,
+          },
+          {
+            kind: "value-conflict",
+            account: "Roth IRA",
+            values: [40_000, 50_000],
+            asOf: "2026-09-30",
+            kept: 50_000,
+          },
+        ],
+        rows: [
+          { name: "Joint Brokerage", value: 100_000 },
+          { name: "Roth IRA", value: 50_000 },
+        ] as never,
+        overrides: [
+          {
+            __rowId: "account:1",
+            name: "Joint Brokerage",
+            standingValue: 100_000,
+            freshValue: 130_000,
+          },
+        ],
+      });
+      expect(caveats).toContain(
+        '"Roth IRA" is recorded at $50,000 from the 09/30/2026 statement; another statement reported $40,000.',
+      );
+    });
+
+    /**
+     * The join is `account` name AND the discarded figure, not the name
+     * alone — `valueConflictCaveat`'s own docstring warns that two accounts
+     * can share a display name. A same-named account whose kept figure is
+     * NOT the one the rebase held back still gets its caveat.
+     */
+    it("does not mute a same-named account whose kept figure was not the one held back", () => {
+      const { caveats } = narrate({
+        fileCount: 2,
+        decisions: [
+          { kind: "value-conflict", account: "IRA", values: [10_000, 15_000], asOf: "2026-06-30", kept: 15_000 },
+          { kind: "value-conflict", account: "IRA", values: [20_000, 25_000], asOf: "2026-06-30", kept: 25_000 },
+        ],
+        rows: [
+          { name: "IRA", owner: "client", value: 9_000 },
+          { name: "IRA", owner: "spouse", value: 25_000 },
+        ] as never,
+        overrides: [
+          { __rowId: "account:1", name: "IRA", standingValue: 9_000, freshValue: 15_000 },
+        ],
+      });
+      // The client IRA's conflict is the one that was discarded — muted.
+      expect(caveats.some((c) => c.includes("is recorded at $15,000"))).toBe(false);
+      // The spouse IRA's is untouched.
+      expect(caveats).toContain(
+        '"IRA" is recorded at $25,000 from the 06/30/2026 statement; another statement reported $20,000.',
+      );
+    });
+  });
 });

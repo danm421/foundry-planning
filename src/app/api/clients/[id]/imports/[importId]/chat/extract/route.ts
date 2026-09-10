@@ -318,9 +318,20 @@ export async function POST(request: Request, { params }: Params) {
             .map((x) => x.row?.__rowId)
             .filter((rowId): rowId is string => typeof rowId === "string"),
         );
-        const rebasedAccounts = rebaseOntoFreshMerge(kept, priorAccounts).filter(
+        const { rows: rebasedAll, overrides: allOverrides } = rebaseOntoFreshMerge(
+          kept,
+          priorAccounts,
+        );
+        const rebasedAccounts = rebasedAll.filter(
           (row) => !(row.__rowId && chatExcludedIds.has(row.__rowId)),
         );
+        // Ruling 117: an override is only worth telling the advisor about for
+        // a row they can actually see. A row they dropped in the chat is
+        // subtracted from the table one line above, so its override is
+        // subtracted here for the same reason — a caveat about a row that is
+        // not on screen is the same failure as a caveat naming a figure that
+        // is not on screen.
+        const rebaseOverrides = allOverrides.filter((o) => !chatExcludedIds.has(o.__rowId));
         // The advisor's own exclusions are kept first and win on id — a
         // `merge_rows` entry carries `irreversible: true`, which this run's
         // freshly-detected rollup entry for the same row would not. Fresh
@@ -330,8 +341,17 @@ export async function POST(request: Request, { params }: Params) {
           ...excluded.filter((x) => !x.row.__rowId || !chatExcludedIds.has(x.row.__rowId)),
         ];
 
-        // Narrate the rows that will actually be shown, not the raw merge.
-        const narration = narrate({ fileCount: mergedFileCount, decisions, rows: rebasedAccounts });
+        // Narrate the rows that will actually be shown, not the raw merge —
+        // and hand over the rebase's overrides, which is what lets `narrate`
+        // drop any `value-conflict` caveat describing a figure the rebase
+        // held back (Ruling 117) instead of printing it above a row showing
+        // a different number.
+        const narration = narrate({
+          fileCount: mergedFileCount,
+          decisions,
+          rows: rebasedAccounts,
+          overrides: rebaseOverrides,
+        });
 
         // Ruling 89 (Step 0) / Ruling 101 (fix round 2): persist
         // `payload.accounts = kept` in the SAME write as the chat slice —
