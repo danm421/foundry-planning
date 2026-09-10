@@ -250,6 +250,10 @@ export type AuditAction =
   // one at a time — this is that closing act (Task 10b / Ruling 61/70),
   // distinct from "import.commit.tab" because no new data is written here.
   | "import.chat.finalized"
+  // One conversational turn over a statement-chat import's extracted table
+  // (Task 11) — the transcript append and any tool-driven row edit both land
+  // in the same `payloadJson` write this audits.
+  | "import.chat.turn"
   // Rebalance — reading holdings off a statement for an outside portfolio.
   // Nothing is persisted, so this audit row is the only record the read happened.
   | "rebalance.holdings.extracted"
