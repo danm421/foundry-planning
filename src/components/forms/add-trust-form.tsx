@@ -852,7 +852,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
             <select id="trust-grantor" value={grantor} onChange={(e) => setGrantor(e.target.value as "client" | "spouse" | "")} className={selectClassName}>
               <option value="">Third party (none)</option>
               <option value="client">Client</option>
-              <option value="spouse">Spouse</option>
+              <option value="spouse">Co-client</option>
             </select>
           </div>
           <div>

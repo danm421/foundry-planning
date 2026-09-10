@@ -245,7 +245,7 @@ export default function AddRothConversionForm({
 
   // A Roth IRA is owned by a single person, so a conversion may only draw from
   // tax-deferred accounts owned by that same person. Filter the source list to
-  // the destination's owner — the spouse's (or anyone else's) accounts don't
+  // the destination account owner — other household members' accounts don't
   // even appear as options. Falls back to showing everything when owner data
   // is unavailable (e.g. legacy accounts whose owner can't be determined).
   const destOwner = useMemo(

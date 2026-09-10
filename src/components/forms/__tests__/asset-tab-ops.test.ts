@@ -60,7 +60,7 @@ describe("remove op", () => {
     expect(clientRow?.percent).toBeCloseTo(2 / 3, 4);
   });
 
-  it("removes only-trust-owner and reassigns 100% to client+spouse 50/50", () => {
+  it("removes only-trust-owner and reassigns 100% to client+co-client 50/50", () => {
     const owners: AccountOwner[] = [
       { kind: "entity", entityId: "trust-1", percent: 1.0 },
     ];
@@ -72,7 +72,7 @@ describe("remove op", () => {
     expect(clientRow?.percent).toBeCloseTo(0.5, 4);
   });
 
-  it("removes only-trust-owner and gives 100% to client when no spouse", () => {
+  it("removes only-trust-owner and gives 100% to client when no co-client", () => {
     const owners: AccountOwner[] = [
       { kind: "entity", entityId: "trust-1", percent: 1.0 },
     ];
@@ -170,7 +170,7 @@ describe("add op", () => {
 // ── C1: set-percent on trust-only-owned asset ─────────────────────────────────
 
 describe("set-percent on trust-only-owned asset (C1)", () => {
-  it("shrink trust from 100% to 50%: freed 50% redistributed to client+spouse 25/25", () => {
+  it("shrink trust from 100% to 50%: freed 50% redistributed to client+co-client 25/25", () => {
     const ctx: ApplyOpContext = {
       entityId: "trust-1",
       familyMembers: [
@@ -194,7 +194,7 @@ describe("set-percent on trust-only-owned asset (C1)", () => {
     expect(spouseRow?.percent).toBeCloseTo(0.25, 4);
   });
 
-  it("shrink trust-only to 80%: freed 20% goes to client when no spouse", () => {
+  it("shrink trust-only to 80%: freed 20% goes to client when no co-client", () => {
     const ctxClientOnly: ApplyOpContext = {
       entityId: "trust-1",
       familyMembers: [{ id: "fm-c", role: "client" as const }],
@@ -216,7 +216,7 @@ describe("set-percent on trust-only-owned asset (C1)", () => {
 // ── C2: remove with zero-pct FM rows ─────────────────────────────────────────
 
 describe("remove with zero-pct FM rows (C2)", () => {
-  it("falls back to client/spouse split when all FM rows are at 0%", () => {
+  it("falls back to client/co-client split when all FM rows are at 0%", () => {
     const ctx: ApplyOpContext = {
       entityId: "trust-1",
       familyMembers: [

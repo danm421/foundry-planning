@@ -230,7 +230,7 @@ export function AddTaxAdjustmentForm({
           >
             <option value="joint">Joint</option>
             <option value="client">Client</option>
-            <option value="spouse">Spouse</option>
+            <option value="spouse">Co-client</option>
           </select>
         </div>
 

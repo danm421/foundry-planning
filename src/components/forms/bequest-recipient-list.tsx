@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { fieldLabelClassName } from "./input-styles";
 import { redistribute, splitEvenly } from "./auto-split-percentages";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import type {
   WillGrantor,
   WillsPanelEntity,
@@ -80,7 +81,7 @@ function householdOtherName(
 
 function spouseLabel(grantor: WillGrantor, p: WillsPanelPrimary): string {
   const name = householdOtherName(grantor, p);
-  return name ? `${name} (spouse)` : "Spouse";
+  return name ? `${name} (co-client)` : CO_CLIENT_LABEL;
 }
 
 const setRowPercentage = (r: BequestRecipient, percentage: number): BequestRecipient => ({ ...r, percentage });

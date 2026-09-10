@@ -254,7 +254,7 @@ export default function CrtDetailsSection({
               <label className={fieldLabelClassName} htmlFor="crt-payout">
                 Payout percentage
               </label>
-              <FieldTooltip text="Annual distribution as a percent of trust FMV — paid to the income beneficiary (grantor / spouse). §664 requires 5%-50%." />
+              <FieldTooltip text="Annual distribution as a percent of trust FMV — paid to the income beneficiary (grantor / co-client). §664 requires 5%-50%." />
             </div>
             <div className="relative">
               <input

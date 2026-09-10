@@ -61,7 +61,7 @@ describe("BequestRecipientList — asset mode", () => {
     expect(optionLabels.some((l) => l.includes("Family Trust"))).toBe(true);
   });
 
-  it("shows the client (not the grantor) under Household in the spouse's will", () => {
+  it("shows the client (not the grantor) under Household in the co-client's will", () => {
     render(
       <BequestRecipientList
         mode="asset"
@@ -78,11 +78,11 @@ describe("BequestRecipientList — asset mode", () => {
     const householdOptions = Array.from(
       select.querySelectorAll('optgroup[label="Household"] option'),
     ).map((o) => (o as HTMLOptionElement).textContent ?? "");
-    expect(householdOptions).toEqual(["Cooper (spouse)"]);
+    expect(householdOptions).toEqual(["Cooper (co-client)"]);
     expect(householdOptions.some((l) => l.includes("Sarah"))).toBe(false);
   });
 
-  it("hides the Household optgroup when no spouse is on file (asset mode)", () => {
+  it("hides the Household optgroup when no co-client is on file (asset mode)", () => {
     render(
       <BequestRecipientList
         mode="asset"
@@ -222,7 +222,7 @@ describe("BequestRecipientList — onChange", () => {
     expect(next[1].percentage).toBe(50);
   });
 
-  it("appends a family-member default in debt mode (spouse not allowed)", () => {
+  it("appends a family-member default in debt mode (co-client not allowed)", () => {
     const onChange = vi.fn();
     render(
       <BequestRecipientList

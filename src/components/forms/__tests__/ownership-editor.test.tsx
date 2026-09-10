@@ -32,12 +32,12 @@ describe("OwnershipEditor", () => {
     ]);
   });
 
-  it("Joint 50/50 preset hidden when no spouse FM", () => {
+  it("Joint 50/50 preset hidden when no co-client FM", () => {
     const onChange = vi.fn();
     render(<OwnershipEditor familyMembers={[familyMembers[0], familyMembers[2]]} entities={entities}
       value={[]} onChange={onChange} titlingType="jtwros" onTitlingTypeChange={() => {}} />);
     expect(screen.queryByText("Joint 50/50")).not.toBeInTheDocument();
-    expect(screen.queryByText("Spouse")).not.toBeInTheDocument();
+    expect(screen.queryByText("Co-client")).not.toBeInTheDocument();
   });
 
   it("Retirement mode shows single-owner caption + hides multi-owner presets", () => {
@@ -149,7 +149,7 @@ describe("OwnershipEditor", () => {
 
   // ── Community Property preset (Task 9) ────────────────────────────────────
 
-  it("renders the Community Property preset when a spouse exists", () => {
+  it("renders the Community Property preset when a co-client exists", () => {
     render(
       <OwnershipEditor
         familyMembers={familyMembers}
@@ -163,10 +163,10 @@ describe("OwnershipEditor", () => {
     expect(screen.getByRole("button", { name: /community property/i })).toBeInTheDocument();
   });
 
-  it("hides Community Property preset when no spouse exists", () => {
+  it("hides Community Property preset when no co-client exists", () => {
     render(
       <OwnershipEditor
-        familyMembers={[familyMembers[0]]} // client only — no spouse
+        familyMembers={[familyMembers[0]]} // client only — no co-client
         entities={entities}
         value={[]}
         onChange={() => {}}

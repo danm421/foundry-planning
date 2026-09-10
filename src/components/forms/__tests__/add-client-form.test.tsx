@@ -187,7 +187,7 @@ describe("AddClientForm — create mode, inline new-household checkbox", () => {
     expect(pBody.dateOfBirth).toBeUndefined();
   });
 
-  it("posts two contacts (primary + spouse) when spouse is enabled, with different-last-name household name", async () => {
+  it("posts two contacts (primary + co-client) when co-client is enabled, with different-last-name household name", async () => {
     mockSearch = "";
     fetchMock.mockReset();
     fetchMock
@@ -203,11 +203,11 @@ describe("AddClientForm — create mode, inline new-household checkbox", () => {
     fireEvent.change(screen.getByLabelText(/Last Name/i),  { target: { value: "Jordan" } });
     fireEvent.change(screen.getByLabelText(/Date of Birth/i), { target: { value: "1965-01-01" } });
 
-    // Enable spouse and provide a different last name.
-    fireEvent.click(screen.getByLabelText(/Add Spouse/i));
-    fireEvent.change(screen.getByLabelText(/Spouse First Name/i), { target: { value: "Jane" } });
-    fireEvent.change(screen.getByLabelText(/Spouse Last Name/i),  { target: { value: "Smith" } });
-    fireEvent.change(screen.getByLabelText(/Spouse Date of Birth/i), { target: { value: "1966-02-02" } });
+    // Enable the co-client and provide a different last name.
+    fireEvent.click(screen.getByLabelText(/Add Co-client/i));
+    fireEvent.change(screen.getByLabelText(/Co-client First Name/i), { target: { value: "Jane" } });
+    fireEvent.change(screen.getByLabelText(/Co-client Last Name/i),  { target: { value: "Smith" } });
+    fireEvent.change(screen.getByLabelText(/Co-client Date of Birth/i), { target: { value: "1966-02-02" } });
 
     fireEvent.submit(document.getElementById("add-client-form")!);
 

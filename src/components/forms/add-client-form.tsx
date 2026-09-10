@@ -285,7 +285,7 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
       });
       if (!sRes.ok) {
         const j = (await sRes.json().catch(() => ({}))) as { error?: string };
-        throw new Error(j.error ?? `Failed to create spouse contact (${sRes.status})`);
+        throw new Error(j.error ?? `Failed to create Co-client contact (${sRes.status})`);
       }
     }
 
@@ -544,7 +544,7 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
             birthYear={clientBirthYear}
             hint={
               <p className="text-xs text-gray-400">
-                Plan horizon ends the year of the last spouse to die.
+                Plan horizon ends the year of the last Co-client to die.
               </p>
             }
           />
@@ -558,7 +558,7 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
               onChange={(e) => setShowSpouse(e.target.checked)}
               className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
             />
-            <span className="text-sm font-medium text-gray-300">Add Spouse</span>
+            <span className="text-sm font-medium text-gray-300">Add Co-client</span>
           </label>
 
           {showSpouse && (
@@ -566,17 +566,17 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
               {showIdentityFields && (
                 <>
                   <div>
-                    <label className={fieldLabelClassName} htmlFor="spouseName">Spouse First Name</label>
+                    <label className={fieldLabelClassName} htmlFor="spouseName">Co-client First Name</label>
                     <input id="spouseName" name="spouseName" type="text" defaultValue={initial?.spouseName ?? ""} className={`mt-1 ${inputClassName}`} />
                   </div>
 
                   <div>
-                    <label className={fieldLabelClassName} htmlFor="spouseLastName">Spouse Last Name</label>
+                    <label className={fieldLabelClassName} htmlFor="spouseLastName">Co-client Last Name</label>
                     <input id="spouseLastName" name="spouseLastName" type="text" placeholder="Leave blank to inherit client's" defaultValue={initial?.spouseLastName ?? lastName} className={`mt-1 ${inputClassName}`} />
                   </div>
 
                   <div>
-                    <label className={fieldLabelClassName} htmlFor="spouseDob">Spouse Date of Birth</label>
+                    <label className={fieldLabelClassName} htmlFor="spouseDob">Co-client Date of Birth</label>
                     <input id="spouseDob" name="spouseDob" type="date" min="1910-01-01" value={spouseDob} onChange={(e) => setSpouseDob(e.target.value)} className={`mt-1 ${inputClassName}`} />
                   </div>
                 </>
@@ -584,7 +584,7 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
 
               <AgeYearField
                 name="spouseRetirementAge"
-                label="Spouse Retirement Age"
+                label="Co-client Retirement Age"
                 defaultAge={initial?.spouseRetirementAge ?? 65}
                 min={50}
                 max={85}
@@ -592,7 +592,7 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
               />
 
               <div>
-                <label className={fieldLabelClassName} htmlFor="spouseRetirementMonth">Spouse Retirement Month</label>
+                <label className={fieldLabelClassName} htmlFor="spouseRetirementMonth">Co-client Retirement Month</label>
                 <select id="spouseRetirementMonth" name="spouseRetirementMonth" defaultValue={initial?.spouseRetirementMonth ?? 1} className={`mt-1 ${selectClassName}`}>
                   {MONTH_OPTIONS.map((m) => (
                     <option key={m.value} value={m.value}>{m.label}</option>
@@ -602,7 +602,7 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
 
               <AgeYearField
                 name="spouseLifeExpectancy"
-                label="Spouse Life Expectancy"
+                label="Co-client Life Expectancy"
                 defaultAge={initial?.spouseLifeExpectancy ?? 95}
                 min={1}
                 max={120}
@@ -617,11 +617,11 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
         <ContactInfoSection heading="Client" initial={initial} prefix="" />
         {showSpouse ? (
           <div className="border-t border-gray-700 pt-4">
-            <ContactInfoSection heading="Spouse" initial={initial} prefix="spouse" />
+            <ContactInfoSection heading="Co-client" initial={initial} prefix="spouse" />
           </div>
         ) : (
           <p className="text-xs text-gray-400">
-            Add a spouse on the Details tab to enter separate spouse contact info.
+            Add a Co-client on the Details tab to enter separate Co-client contact info.
           </p>
         )}
       </div>

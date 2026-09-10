@@ -123,7 +123,7 @@ describe("SavingsRuleDialog end year follows the destination account's owner", (
   });
 
   // The control: the client-owned account must still end at the client's
-  // retirement, or "always the spouse" would pass the spouse case below.
+  // retirement, or "always the co-client" would pass the co-client case below.
   it("ends a rule into the client's account at the client's retirement", () => {
     renderDialog();
 
@@ -131,7 +131,7 @@ describe("SavingsRuleDialog end year follows the destination account's owner", (
     expect(screen.getAllByTitle("Harold Retirement").length).toBeGreaterThan(0);
   });
 
-  it("re-snaps to the spouse's retirement when the spouse's account is picked", () => {
+  it("re-snaps to the co-client's retirement when the co-client's account is picked", () => {
     renderDialog();
     pickAccount("acct-spouse");
 

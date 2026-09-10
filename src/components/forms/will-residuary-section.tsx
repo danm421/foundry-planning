@@ -129,7 +129,7 @@ export default function WillResiduarySection({
           <div className="grid gap-3 md:grid-cols-2">
             {column(
               "Primary",
-              "Used if the spouse survives the grantor.",
+              "Used if the Co-client survives the grantor.",
               <BequestRecipientList
                 mode="residuary"
                 grantor={grantor}
@@ -143,7 +143,7 @@ export default function WillResiduarySection({
             )}
             {column(
               "Contingent",
-              "Used if the spouse predeceases the grantor.",
+              "Used if the Co-client predeceases the grantor.",
               <BequestRecipientList
                 mode="residuary"
                 grantor={grantor}

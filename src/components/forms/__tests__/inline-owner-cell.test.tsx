@@ -107,7 +107,7 @@ describe("InlineOwnerCell", () => {
     });
   });
 
-  it("lists non-principal family members but not the client or spouse twice", async () => {
+  it("lists non-principal family members but not the client or co-client twice", async () => {
     const user = userEvent.setup();
     setup();
     await user.click(screen.getByRole("button"));

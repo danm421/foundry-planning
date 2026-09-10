@@ -13,6 +13,7 @@ import {
 import type { FilingStatus } from "@/lib/tax/types";
 import { USPS_STATE_NAMES, USPS_STATE_CODES, type USPSStateCode } from "@/lib/usps-states";
 import { useClientAccess } from "@/components/client-access-provider";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 interface TaxRatesFormProps {
   clientId: string;
@@ -341,8 +342,8 @@ export default function TaxRatesForm({
           </FieldRow>
           {hasSpouse && (
             <FieldRow
-              label={`${spouseFirstName ?? "Spouse"} covered by workplace plan`}
-              help="Same override, applied to the spouse's workplace-plan coverage."
+              label={`${spouseFirstName ?? CO_CLIENT_LABEL} covered by workplace plan`}
+              help="Same override, applied to the co-client's workplace-plan coverage."
             >
               <select
                 id="spouseCoveredByWorkplacePlan"
@@ -407,7 +408,7 @@ export default function TaxRatesForm({
           </FieldRow>
           <FieldRow
             label="IRD tax rate"
-            help="Applied to pre-tax retirement assets (Traditional IRA, 401(k), 403(b)) passing to a non-spouse, non-charity beneficiary at death."
+            help="Applied to pre-tax retirement assets (Traditional IRA, 401(k), 403(b)) passing to a beneficiary who isn't the Co-client or a charity at death."
           >
             <PercentInput
               id="irdTaxRate"
@@ -479,7 +480,7 @@ export default function TaxRatesForm({
       <section>
         <SectionTitle
           title="Prior lifetime gifts"
-          help="Post-1976 cumulative taxable gifts before plan start. Pull from the most recent Form 709's 'prior periods' line. Joint pre-plan gifts are pre-attributed (a $200K joint gift = $100K on each spouse)."
+          help="Post-1976 cumulative taxable gifts before plan start. Pull from the most recent Form 709's 'prior periods' line. Joint pre-plan gifts are pre-attributed (a $200K joint gift = $100K to each)."
         />
         <FieldTable>
           <FieldRow label={clientFirstName ?? "Client"}>
@@ -493,7 +494,7 @@ export default function TaxRatesForm({
             </div>
           </FieldRow>
           {hasSpouse && (
-            <FieldRow label={spouseFirstName ?? "Spouse"}>
+            <FieldRow label={spouseFirstName ?? CO_CLIENT_LABEL}>
               <div className="max-w-[12rem]">
                 <CurrencyInput
                   id="priorTaxableGiftsSpouse"

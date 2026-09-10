@@ -158,7 +158,7 @@ describe("TaxRatesForm — workplace-plan coverage overrides (Task 10)", () => {
     expect(select.closest("fieldset")?.disabled).toBe(false);
   });
 
-  it("does not render the spouse select when hasSpouse is false, and renders it with its own persisted value when true — kills a mutant that always renders it or ignores hasSpouse", () => {
+  it("does not render the co-client select when hasSpouse is false, and renders it with its own persisted value when true — kills a mutant that always renders it or ignores hasSpouse", () => {
     const { rerender } = render(
       <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
         <TaxRatesForm {...BASE_PROPS} hasSpouse={false} spouseCoveredByWorkplacePlan="no" />
@@ -176,7 +176,7 @@ describe("TaxRatesForm — workplace-plan coverage overrides (Task 10)", () => {
     expect(spouseSelect.value).toBe("no");
   });
 
-  it("submits distinct client/spouse values independently on save — kills a mutant that conflates the two fields or drops one of them (both start at the same default, so only a per-field, distinct-value check catches a dropped or swapped column)", async () => {
+  it("submits distinct client/co-client values independently on save — kills a mutant that conflates the two fields or drops one of them (both start at the same default, so only a per-field, distinct-value check catches a dropped or swapped column)", async () => {
     const { container } = render(
       <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
         <TaxRatesForm
@@ -199,7 +199,7 @@ describe("TaxRatesForm — workplace-plan coverage overrides (Task 10)", () => {
     expect(body.spouseCoveredByWorkplacePlan).toBe("no");
   });
 
-  it("falls back to 'auto' for the spouse field when submitting without a spouse — mirrors priorTaxableGiftsSpouse's existing fallback idiom", async () => {
+  it("falls back to 'auto' for the co-client field when submitting without a co-client — mirrors priorTaxableGiftsSpouse's existing fallback idiom", async () => {
     const { container } = render(
       <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
         <TaxRatesForm {...BASE_PROPS} hasSpouse={false} />
