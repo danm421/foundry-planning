@@ -124,8 +124,35 @@ interface DedupeBucketEntry<T> {
    * target row from `entry.content`, which is raw extracted content with no
    * `__rowId` of its own; without this field a collapse would silently drop
    * the id the row's earlier occurrence already had (Task 6, C2).
+   *
+   * Rewritten once by the renumber pass after the placement loop (Ruling
+   * 130) — see the ordinal derivation there.
    */
   rowId: string;
+  /**
+   * The MINIMUM `(sourceFileId, indexWithinFile)` coordinate over every row
+   * that has landed in this entry — the stable handle the renumber pass
+   * orders a bucket by (Ruling 130).
+   *
+   * The minimum, specifically, is what makes it permutation-invariant: the
+   * minimum of a set does not depend on the order the set was built in, so
+   * two runs that visit the same files in different `Object.entries` orders
+   * derive the same coordinate for the same entry.
+   */
+  sortKey: { fileId: string; index: number };
+}
+
+/**
+ * Order two bucket entries by their stable coordinate: file id first, then
+ * position within that file.
+ *
+ * A TUPLE compare, never a concatenation. `fileId` is a UUID and compares
+ * fine as a string, but `index` is a number: concatenating them would
+ * compare it lexicographically, where "10" sorts before "2".
+ */
+function compareSortKeys(a: { fileId: string; index: number }, b: { fileId: string; index: number }): number {
+  if (a.fileId !== b.fileId) return a.fileId < b.fileId ? -1 : 1;
+  return a.index - b.index;
 }
 
 /** Advisor-facing note about what a collapse actually changed, when the
@@ -337,6 +364,13 @@ function mergeSection<T extends { name: string }>(
           }
         }
       }
+      // Lower the entry's coordinate if this row's is smaller, so the field
+      // holds the MINIMUM over the entry's member rows however the loop
+      // reached them (Ruling 130).
+      const incomingSortKey = { fileId: provenance.sourceFileId, index: indexWithinFile };
+      if (compareSortKeys(incomingSortKey, existingEntry.sortKey) < 0) {
+        existingEntry.sortKey = incomingSortKey;
+      }
       recordSource(existingEntry, content, sourceName);
       continue;
     }
@@ -363,8 +397,37 @@ function mergeSection<T extends { name: string }>(
     // ids force equal keys and equal ordinals — no escaping needed, and no
     // assumption about what characters extraction text can contain.
     //
-    // `bucket` was captured above, before `.find`, so `bucket?.length ?? 0`
-    // here is exactly the count of entries already under this key.
+    // Re-review, Ruling 130: `n` is NOT this entry's arrival rank. It is its
+    // position in a DETERMINISTIC ordering of the bucket, assigned by the
+    // renumber pass below from each entry's minimum
+    // `(sourceFileId, indexWithinFile)` coordinate. The id minted here is
+    // provisional and always overwritten there — it is written at all only
+    // so the field is never momentarily undefined.
+    //
+    // The arrival rank had to go because this function's docstring forbids
+    // anything minted here from depending on where a file falls in the
+    // `Object.entries(fileResults)` loop: `payloadJson` is `jsonb` and
+    // Postgres does not preserve a jsonb object's key insertion order.
+    // Accounts were accidentally immune while `isSameEntity` was the
+    // constant `() => true` — a bucket never held two entries, so `n` was
+    // always 0 — but Ruling 120 gave accounts a real `isSameEntity`, and a
+    // bucket can now hold several. A re-extraction reading the same files
+    // back in a different jsonb order renumbered them, and `committedRowIds`
+    // and the chat's rebase then addressed the WRONG account: the same C2
+    // failure the null-key branch above was rewritten for.
+    //
+    // Sorting the input rows would NOT have fixed it — a newly uploaded file
+    // whose UUID sorts ahead still lands first in the bucket and takes `#0`.
+    // The ordinal had to stop being an arrival rank at all.
+    //
+    // The injectivity argument above is untouched: `n` is still a plain
+    // digit string, only its assignment rule changed.
+    //
+    // RESIDUAL: adding a NEW file can still change `n` when its rows join a
+    // bucket ahead of the existing entries. Permutation-invariance over a
+    // FIXED file set is the invariant the docstring states and the one this
+    // restores; new-file stability is not achievable for a merged entry with
+    // any file-derived coordinate.
     const rowId = `${label}:${key}#${bucket?.length ?? 0}`;
     const entry: DedupeBucketEntry<T> = {
       index: target.length,
@@ -377,6 +440,7 @@ function mergeSection<T extends { name: string }>(
       fileNames: [],
       conflictValues: [],
       rowId,
+      sortKey: { fileId: provenance.sourceFileId, index: indexWithinFile },
     };
     recordSource(entry, content, sourceName);
     target.push({ ...content, __provenance: provenance, __rowId: rowId, match: { kind: "new" } } as Annotated<T>);
@@ -385,6 +449,21 @@ function mergeSection<T extends { name: string }>(
     } else {
       buckets.set(key, [entry]);
     }
+  }
+
+  // Ruling 130. Assign every keyed `#n` from a deterministic ordering of its
+  // bucket rather than from the arrival rank the placement loop happened to
+  // hand out — see the derivation comment above for why an arrival rank
+  // cannot be an identity here.
+  //
+  // A COPY is sorted: the warnings loop below iterates the same buckets and
+  // its output order must not shift.
+  for (const [key, bucket] of buckets.entries()) {
+    const ordered = [...bucket].sort((a, b) => compareSortKeys(a.sortKey, b.sortKey));
+    ordered.forEach((entry, n) => {
+      entry.rowId = `${label}:${key}#${n}`;
+      target[entry.index].__rowId = entry.rowId;
+    });
   }
 
   // One warning per bucket entry that actually collapsed — see the function

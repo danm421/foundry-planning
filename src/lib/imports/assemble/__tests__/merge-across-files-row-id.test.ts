@@ -230,4 +230,63 @@ describe("mergeAcrossFiles — __rowId", () => {
     expect(new Set(ids).size).toBe(3);
     expect(ids).toEqual(["liability:card#1#0", "liability:card#0", "liability:card#1"]);
   });
+  /**
+   * Ruling 130. `mergeAcrossFiles` reads its files via
+   * `Object.entries(fileResults)`, and its own docstring binds everything
+   * minted below it: nothing may depend on where a file falls in that loop,
+   * because `payloadJson` is `jsonb` and Postgres does not preserve a jsonb
+   * object's key insertion order.
+   *
+   * The keyed `#n` ordinal used to break that: `n` was the bucket's arrival
+   * count, so whichever file the loop reached first took `#0`. Accounts were
+   * accidentally immune while `isSameEntity` was the constant `() => true`
+   * (a bucket never held two entries, so `n` was always 0) — FIX-3 ended
+   * that. A re-extraction reading the same files back in a different jsonb
+   * order then renumbered them, and `committedRowIds` and the chat's rebase
+   * addressed the WRONG account: the C2 failure again.
+   */
+  describe("bucket ordinals do not depend on file arrival order (Ruling 130)", () => {
+    // Two accounts that share a last-4 and an owner but sit at custodians
+    // `isSameEntity` refuses to match — the shape that puts TWO entries in
+    // one bucket, which is the only shape where `#n` is load-bearing.
+    const fidelity = () =>
+      er("fidelity.pdf", {
+        accounts: [{ name: "Fidelity Brokerage", custodian: "Fidelity", accountNumberLast4: "1234", owner: "client", value: 100_000 }],
+      });
+    const schwab = () =>
+      er("schwab.pdf", {
+        accounts: [{ name: "Schwab Brokerage", custodian: "Schwab", accountNumberLast4: "1234", owner: "client", value: 250_000 }],
+      });
+
+    it("mints the same __rowIds whichever order the files are read in", () => {
+      // The two `Object.entries` orders the jsonb round-trip can hand back
+      // for the SAME two files. Built as object literals with the keys
+      // inserted in each order, which is exactly what varies in production.
+      const forward = mergeAcrossFiles({ "file-a": fidelity(), "file-b": schwab() });
+      const reverse = mergeAcrossFiles({ "file-b": schwab(), "file-a": fidelity() });
+
+      expect(forward.payload.accounts).toHaveLength(2);
+      expect(reverse.payload.accounts).toHaveLength(2);
+
+      const idsOf = (r: ReturnType<typeof mergeAcrossFiles>) =>
+        new Map(r.payload.accounts.map((a) => [a.name, a.__rowId]));
+
+      // The SET of ids is the same either way even with the arrival-rank
+      // ordinal — what breaks is WHICH account holds which id, and that is
+      // the half `committedRowIds` and the rebase actually join on.
+      expect(new Set(forward.payload.accounts.map((a) => a.__rowId))).toEqual(
+        new Set(reverse.payload.accounts.map((a) => a.__rowId)),
+      );
+      expect(idsOf(forward).get("Fidelity Brokerage")).toBe(idsOf(reverse).get("Fidelity Brokerage"));
+      expect(idsOf(forward).get("Schwab Brokerage")).toBe(idsOf(reverse).get("Schwab Brokerage"));
+    });
+
+    // The common case — one entry in the bucket — must still mint `#0`. A
+    // renumber pass that mis-sorts or off-by-ones would show up here first.
+    it("still mints #0 for a single-entry bucket", () => {
+      const r = mergeAcrossFiles({ "file-a": fidelity() });
+      expect(r.payload.accounts).toHaveLength(1);
+      expect(r.payload.accounts[0].__rowId).toBe("account:1234|client#0");
+    });
+  });
 });
