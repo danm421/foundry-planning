@@ -66,7 +66,7 @@ describe("buildClientProfileData — persons", () => {
     });
   });
 
-  it("appends the spouse's surname when it differs from the primary's", () => {
+  it("appends the Co-client's surname when it differs from the primary's", () => {
     const data = buildClientProfileData({
       ...base,
       spouseName: "Teresa",
@@ -126,7 +126,7 @@ describe("buildClientProfileData — children", () => {
     expect(data.children.map((c) => c.name)).toEqual(["Emma Smith", "Noah Smith"]);
   });
 
-  it("never renders the household principals (role client/spouse) as children", () => {
+  it("never renders the household principals (role client/Co-client) as children", () => {
     // Household rows carry the schema default relationship:"child" unless a
     // creation path overrides it. The `role` column is authoritative — client
     // and spouse are person cards, never child cards.
@@ -243,7 +243,7 @@ describe("buildClientProfileData — expenses", () => {
     expect(living).toMatchObject({ current: 52400, retirement: 60000 });
   });
 
-  it("anchors the Retirement column to the LAST spouse to retire, not the first", () => {
+  it("anchors the Retirement column to the LAST Co-client to retire, not the first", () => {
     // Spouse retires (2031) before the client (2033). The Retirement column must
     // sample the client's later retirement year so the retirement-phase living
     // expense is fully active — sampling the earlier year would show current $.

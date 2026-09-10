@@ -17,6 +17,7 @@ import {
   type EnrollNote,
 } from "./aggregate";
 import { buildMedicareNarrative } from "./narrative";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 export interface MedicareSummaryPageData {
   title: string;
@@ -114,8 +115,9 @@ export function buildMedicareSummaryData(
   const horizon = firstYear != null && lastYear != null ? `${firstYear}–${lastYear}` : "—";
 
   let subtitle = `${ctx.scenarioLabel} · Medicare years ${horizon}`;
-  if (enrollment.client && enrollment.spouse) {
-    subtitle += ` · Client enrolls ${enrollment.client.year}, Spouse ${enrollment.spouse.year}`;
+  const coClientEnrollment = enrollment.spouse;
+  if (enrollment.client && coClientEnrollment) {
+    subtitle += ` · Client enrolls ${enrollment.client.year}, ${ctx.spouseName ?? CO_CLIENT_LABEL} ${coClientEnrollment.year}`;
   }
 
   return {

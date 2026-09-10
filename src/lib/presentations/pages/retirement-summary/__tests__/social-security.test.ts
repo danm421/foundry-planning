@@ -65,7 +65,7 @@ describe("buildSocialSecurity", () => {
     expect(buildSocialSecurity(cd({ incomes: [ssIncome({ piaMonthly: 0 })] }), 2026).client).toBeNull();
   });
 
-  it("builds a spouse column when a spouse SS income exists", () => {
+  it("builds a Co-client column when a Co-client SS income exists", () => {
     const data = cd({
       client: { dateOfBirth: "1964-01-01", retirementAge: 67, spouseDob: "1965-01-01", spouseRetirementAge: 70 } as never,
       incomes: [ssIncome({}), ssIncome({ id: "ss2", owner: "spouse", piaMonthly: 2100, claimingAge: 70 })],

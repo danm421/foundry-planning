@@ -34,7 +34,7 @@ describe("compactCurrency", () => {
 });
 
 describe("jointAge", () => {
-  it("formats a couple as client/spouse", () => {
+  it("formats a couple as client/Co-client", () => {
     expect(jointAge(65, 61)).toBe("65/61");
   });
 

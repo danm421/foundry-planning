@@ -99,7 +99,7 @@ describe("buildLifeInsuranceSummaryData", () => {
     expect(data.policies).toHaveLength(2); // inventory still renders
   });
 
-  it("is single when unmarried — no spouse gap or curve", () => {
+  it("is single when unmarried — no Co-client gap or curve", () => {
     const single = ctx({
       clientData: { client: { filingStatus: "single" } } as unknown as ClientData,
       spouseName: null,

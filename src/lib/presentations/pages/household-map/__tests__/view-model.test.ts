@@ -212,7 +212,7 @@ describe("Household Map — Net Worth page", () => {
     expect(data.totalValueLabel).toBe("$300,000");
   });
 
-  it("labels the middle column 'Joint' and drops the spouse column when solo", () => {
+  it("labels the middle column 'Joint' and drops the Co-client column when solo", () => {
     const data = buildMapNetWorthData(
       input({ clientData: tree({ client: clientInfo({ spouseName: undefined, spouseDob: undefined }) }) }),
     );

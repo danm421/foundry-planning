@@ -21,28 +21,28 @@ export function formatHouseholdName(
   spouseName: string | null | undefined,
 ): string {
   const primary = primaryName.trim().replace(/\s+/g, " ");
-  const spouse = (spouseName ?? "").trim().replace(/\s+/g, " ");
-  if (!spouse) return primary;
+  const secondName = (spouseName ?? "").trim().replace(/\s+/g, " ");
+  if (!secondName) return primary;
 
   const primaryTokens = primary.split(" ");
   const primaryFirst = primaryTokens.slice(0, -1).join(" ");
   const primaryLast = primaryTokens.length > 1 ? primaryTokens[primaryTokens.length - 1] : "";
 
-  const spouseTokens = spouse.split(" ");
-  const spouseFirst = spouseTokens.length > 1 ? spouseTokens.slice(0, -1).join(" ") : spouse;
-  const spouseLast = spouseTokens.length > 1 ? spouseTokens[spouseTokens.length - 1] : "";
+  const secondTokens = secondName.split(" ");
+  const secondFirst = secondTokens.length > 1 ? secondTokens.slice(0, -1).join(" ") : secondName;
+  const secondLast = secondTokens.length > 1 ? secondTokens[secondTokens.length - 1] : "";
 
   const sharesSurname =
-    spouseLast === "" ||
-    (primaryLast !== "" && spouseLast.toLowerCase() === primaryLast.toLowerCase());
+    secondLast === "" ||
+    (primaryLast !== "" && secondLast.toLowerCase() === primaryLast.toLowerCase());
 
   // Fold the shared surname onto the end ("Frank & Anita Doyle"). Requires both
   // a primary first name and a surname to fold; otherwise fall through to the
   // full join so we never drop a token.
   if (sharesSurname && primaryFirst && primaryLast) {
-    return `${primaryFirst} & ${spouseFirst} ${primaryLast}`;
+    return `${primaryFirst} & ${secondFirst} ${primaryLast}`;
   }
 
   // Distinct surnames (or too little structure to fold): keep both in full.
-  return `${primary} & ${spouse}`;
+  return `${primary} & ${secondName}`;
 }

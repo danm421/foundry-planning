@@ -14,6 +14,7 @@ import {
   ESTATE_DISCLAIMER, deriveOwnerInfo, estateCallout, naturalOrdering,
   type EstateDrillInput,
 } from "../estate-shared";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 export function buildEstateTransferDrillData(input: EstateDrillInput): DrillPageData {
   const { projection, clientData, options, scenarioLabel, clientName, spouseName } = input;
@@ -56,7 +57,7 @@ export function buildEstateTransferDrillData(input: EstateDrillInput): DrillPage
     markers,
   });
 
-  const decedentName = ordering === "spouseFirst" ? (spouseName ?? "Spouse") : clientName;
+  const decedentName = ordering === "spouseFirst" ? (spouseName ?? CO_CLIENT_LABEL) : clientName;
 
   return {
     title: "Estate Transfer",

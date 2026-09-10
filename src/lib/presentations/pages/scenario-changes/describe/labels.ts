@@ -48,13 +48,17 @@ export const ENUM_LABELS = {
     education_savings: "529 / Education",
   } as Record<string, string>,
   bequestCondition: {
-    if_spouse_survives: "if spouse survives", if_spouse_predeceased: "if spouse predeceased", always: "always",
+    if_spouse_survives: "if Co-client survives", if_spouse_predeceased: "if Co-client predeceased", always: "always",
   } as Record<string, string>,
   entityType: {
     trust: "Trust", llc: "LLC", s_corp: "S-corp", c_corp: "C-corp",
     partnership: "Partnership", foundation: "Foundation", other: "Entity",
   } as Record<string, string>,
-  grantor: { client: "Client", spouse: "Spouse", joint: "Joint" } as Record<string, string>,
+  grantor: {
+    client: "Client",
+    spouse: "Co-client",
+    joint: "Joint",
+  } as Record<string, string>,
 };
 
 export const label = (group: keyof typeof ENUM_LABELS, key: unknown): string =>

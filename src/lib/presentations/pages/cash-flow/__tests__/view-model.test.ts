@@ -199,7 +199,7 @@ describe("buildCashFlowPageData — markers", () => {
     expect(eol?.label).toContain("Cooper");
   });
 
-  it("labels spouse-only end-of-life with spouse name", () => {
+  it("labels Co-client-only end-of-life with the Co-client's name", () => {
     const eol = data.table.markers.find((m) => m.kind === "endOfLife" && m.who === "spouse");
     expect(eol?.label).toContain("Susan");
   });

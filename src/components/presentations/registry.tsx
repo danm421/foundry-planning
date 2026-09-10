@@ -1031,7 +1031,7 @@ export const estateLiquidityPage = makeEstateDrillPage(
 export const estateGiftTaxPage = makeEstateDrillPage(
   "estateGiftTax",
   "Gift Tax",
-  "Cumulative lifetime gifts, credit used, and gift tax per spouse with combined totals.",
+  "Cumulative lifetime gifts, credit used, and gift tax per Co-client with combined totals.",
   buildGiftTaxDrillData,
 );
 

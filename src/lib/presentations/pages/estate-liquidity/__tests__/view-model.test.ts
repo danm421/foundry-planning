@@ -64,7 +64,7 @@ describe("buildEstateLiquidityDrillData", () => {
 
   // F84: the liquidity drill must use the natural death ordering so its transfer
   // costs agree with the sibling Estate Transfer drill (which uses naturalOrdering).
-  it("forwards the natural death ordering to the report (spouse dies first)", () => {
+  it("forwards the natural death ordering to the report (Co-client dies first)", () => {
     vi.mocked(buildYearlyLiquidityReport).mockClear();
     vi.mocked(buildYearlyLiquidityReport).mockReturnValue(mockReport());
     buildEstateLiquidityDrillData({

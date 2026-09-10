@@ -29,7 +29,7 @@ describe("CoverPdf", () => {
     expect(buf.byteLength).toBeGreaterThan(0);
   });
 
-  it("falls back to the firm-name wordmark with no logo, tagline, or spouse", async () => {
+  it("falls back to the firm-name wordmark with no logo, tagline, or Co-client", async () => {
     ensureFontsRegistered();
     const doc = (
       <Document>
