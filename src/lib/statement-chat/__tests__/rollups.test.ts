@@ -43,6 +43,55 @@ describe("detectRollups", () => {
     expect(excluded).toHaveLength(0);
   });
 
+  // --- Final review, I6: ONE sibling is enough --------------------------
+  //
+  // The floor used to be two siblings, so a statement listing ONE account and
+  // its printed "Total Account Value" committed BOTH rows and doubled that
+  // account in the client's net worth — silently. The asymmetry is what
+  // decides it: a wrongly excluded row is greyed with its reason and a
+  // one-click "Include anyway"; a missed rollup is a silent double count.
+  //
+  // Mutation this catches: restoring `siblings.length >= 2`.
+  it("excludes the printed total on a TWO-row statement (I6)", () => {
+    const { kept, excluded } = detectRollups([
+      acct("Brokerage", 50_000),
+      acct("Total Account Value", 50_000),
+    ]);
+    expect(kept.map((r) => r.name)).toEqual(["Brokerage"]);
+    expect(excluded).toHaveLength(1);
+    expect(excluded[0].decision).toEqual({
+      kind: "rollup-excluded",
+      label: "Total Account Value",
+      value: 50_000,
+      coversCount: 1,
+    });
+    // The advisor reads this sentence next to the greyed row — it was
+    // written assuming 2+ and would have said "covering 1 accounts".
+    expect(excluded[0].reason).toBe("a total covering 1 account already listed");
+  });
+
+  // Every other guard is untouched by the lower floor. A fund holding named
+  // "Total …" is still vetoed even with exactly one sibling…
+  it("still keeps a vetoed fund row with exactly one sibling", () => {
+    const { kept, excluded } = detectRollups([
+      acct("Brokerage", 10_000),
+      acct("Total Stock Market Index Fund", 500_000),
+    ]);
+    expect(kept).toHaveLength(2);
+    expect(excluded).toHaveLength(0);
+  });
+
+  // …and a total-labelled row that neither sums to nor exceeds its single
+  // sibling is still kept — "when a judgment call is close, keep the row".
+  it("still keeps a total-labelled row that neither sums to nor exceeds its one sibling", () => {
+    const { kept, excluded } = detectRollups([
+      acct("Brokerage", 100_000),
+      acct("Total Account Value", 40_000),
+    ]);
+    expect(kept).toHaveLength(2);
+    expect(excluded).toHaveLength(0);
+  });
+
   it("does not reconcile across custodians", () => {
     const { excluded } = detectRollups([
       acct("Checking", 10_000, "Wells Fargo"),

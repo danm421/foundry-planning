@@ -49,7 +49,12 @@ function isVetoedFromRollup(name: string): boolean {
  * do this derivation itself.
  */
 export function rollupExclusionReason(coversCount: number): string {
-  return `a total covering ${coversCount} accounts already listed`;
+  // Singular since I6 dropped the sibling floor to 1 — this sentence is read
+  // by a real advisor next to the greyed row, and "covering 1 accounts" is
+  // the kind of thing that makes the whole screen look untrustworthy.
+  return coversCount === 1
+    ? "a total covering 1 account already listed"
+    : `a total covering ${coversCount} accounts already listed`;
 }
 
 function withinTolerance(a: number, b: number): boolean {
@@ -114,8 +119,8 @@ function sameCustodian(a: string | null, b: string | null): boolean {
  *      real fund holding can be named "Total Return Fund" and must never be
  *      classified as a rollup no matter what the other two rules say, AND
  *   2. it carries a total-ish label ("Total", "All Accounts", ...), AND
- *   3. among its same-custodian siblings, either its value reconciles with
- *      their sum, or it exceeds every one of them.
+ *   3. it has at least ONE same-custodian sibling, and either its value
+ *      reconciles with their sum or it exceeds every one of them.
  *
  * The label is a NECESSARY condition, not just a tiebreaker — it's what
  * keeps a coincidental sum (or the shared "no custodian" bucket) from
@@ -124,6 +129,15 @@ function sameCustodian(a: string | null, b: string | null): boolean {
  * Committing one would double-count the household's net worth; hiding one
  * without saying so would be worse. When a judgment call is close, the
  * function keeps the row.
+ *
+ * ONE sibling is enough (final review, I6). The floor used to be two, which
+ * let a SINGLE-account statement printing "Total Account Value" commit both
+ * rows and double that account outright. The asymmetry decides it: a wrongly
+ * excluded row is greyed with its reason and a one-click "Include anyway",
+ * while a missed rollup is a SILENT double count in a real client's net
+ * worth. Nothing else moved — the veto list, `looksLikeTotal`,
+ * `looksLikeTotalOf` and the keep-the-row-when-it's-close posture are all
+ * exactly as they were.
  */
 export function detectRollups<T extends ExtractedAccount>(rows: T[]): RollupResult<T> {
   const kept: T[] = [];
@@ -142,7 +156,7 @@ export function detectRollups<T extends ExtractedAccount>(rows: T[]): RollupResu
     );
 
     const isRollup =
-      siblings.length >= 2 &&
+      siblings.length >= 1 &&
       typeof row.value === "number" &&
       !isVetoedFromRollup(row.name) &&
       looksLikeTotal(row.name) &&
