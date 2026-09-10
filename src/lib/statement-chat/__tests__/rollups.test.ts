@@ -190,6 +190,59 @@ describe("detectRollups", () => {
     expect(excluded[0].decision.label).toBe("Total Account Value");
   });
 
+  // --- Ruling 104: the custodian on a relationship-summary statement is
+  // routinely spelled more formally than on the same institution's own
+  // account statements. Exact-string bucketing gave that total zero
+  // siblings, so it was never flagged and committed as a real account. ---
+
+  it("excludes a Total Portfolio whose custodian is spelled more formally than its siblings'", () => {
+    const { kept, excluded } = detectRollups([
+      acct("Brokerage", 265_000, "Fidelity"),
+      acct("Roth IRA", 180_000, "Fidelity"),
+      acct("Total Portfolio", 445_000, "Fidelity Investments"),
+    ]);
+    // Live repro: this $445,000 row committed alongside the $265,000 and
+    // $180,000 rows it sums, inflating the client's net worth by their own
+    // total. "fidelity" and "fidelity investments" are different exact keys
+    // but the same custodian.
+    expect(kept.map((r) => r.name)).toEqual(["Brokerage", "Roth IRA"]);
+    expect(excluded).toHaveLength(1);
+    expect(excluded[0].decision).toEqual({
+      kind: "rollup-excluded",
+      label: "Total Portfolio",
+      value: 445_000,
+      coversCount: 2,
+    });
+  });
+
+  // The guard on the other side: widening the comparison must not make two
+  // genuinely different institutions siblings. "Fidelity" and "Fifth Third"
+  // share a prefix as raw strings but are not a whole-word prefix of each
+  // other, so `custodianMatches` (not `startsWith`) is what this pins.
+  it("does not make two different custodians siblings just because their names share a prefix", () => {
+    const { kept, excluded } = detectRollups([
+      acct("Checking", 10_000, "Fifth Third"),
+      acct("Savings", 15_000, "Fifth Third"),
+      acct("Total Portfolio", 25_000, "Fidelity"),
+    ]);
+    expect(kept.map((r) => r.name)).toEqual(["Checking", "Savings", "Total Portfolio"]);
+    expect(excluded).toHaveLength(0);
+  });
+
+  // Ruling 104 kept the ordering guarantee: siblings are now found by
+  // scanning `rows`, so output order must still be INPUT order even when a
+  // later row's custodian matches an earlier one's by prefix rather than
+  // equality.
+  it("preserves input order when custodians match by prefix rather than equality", () => {
+    const { kept } = detectRollups([
+      acct("Checking", 10_000, "Wells Fargo Bank"),
+      acct("Brokerage", 25_000, "Fidelity Investments"),
+      acct("Savings", 15_000, "Wells Fargo"),
+      acct("Muni Bonds", 5_000, "Fidelity"),
+    ]);
+    expect(kept.map((r) => r.name)).toEqual(["Checking", "Brokerage", "Savings", "Muni Bonds"]);
+  });
+
   it("excludes a total that reconciles only within tolerance, not exceeding its largest sibling", () => {
     const { kept, excluded } = detectRollups([
       acct("Brokerage", 100_000),

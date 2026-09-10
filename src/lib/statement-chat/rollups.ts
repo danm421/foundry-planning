@@ -1,5 +1,5 @@
 import type { ExtractedAccount } from "@/lib/extraction/types";
-import { normalizeCustodian } from "@/lib/imports/normalize-custodian";
+import { custodianMatches, normalizeCustodian } from "@/lib/imports/normalize-custodian";
 import type { MergeDecision } from "@/lib/imports/assemble/decisions";
 
 /** Same 1% tolerance the cross-file merge uses for "the same figure". */
@@ -80,12 +80,33 @@ export interface RollupResult<T extends ExtractedAccount = ExtractedAccount> {
 }
 
 /**
+ * Whether two rows count as the same custodian for sibling purposes.
+ *
+ * Uses `custodianMatches` — the SAME comparison the cross-file merge path
+ * already trusts, true on equality or a whole-word prefix, so "fidelity"
+ * matches "fidelity investments" but "fid" does not match "fidelity". Exact
+ * string equality was too strict here: a relationship-summary statement
+ * naming the institution more formally than its own account statements is
+ * entirely ordinary, and it left a printed "Total Portfolio" with zero
+ * siblings, so it committed as a real account and inflated the household's
+ * net worth by their own total.
+ *
+ * Rows whose custodian normalizes to null (absent, or nothing but a legal
+ * suffix like "LLC") keep sharing one catch-all bucket and are compared only
+ * to each other — a null never matches a non-null, and `custodianMatches`
+ * only ever sees strings.
+ */
+function sameCustodian(a: string | null, b: string | null): boolean {
+  if (a === null || b === null) return a === b;
+  return custodianMatches(a, b);
+}
+
+/**
  * Separate genuine accounts from the totals statements print alongside them.
  *
- * Rows are grouped by normalized custodian first, so a Capital One total
- * never reconciles against Schwab balances, and two rows with no readable
- * custodian (an absent one, or one that's nothing but a legal suffix like
- * "LLC") land in the same catch-all bucket and CAN be compared to each
+ * A row's siblings are the other value-bearing rows at the same custodian
+ * (`sameCustodian`), so a Capital One total never reconciles against Schwab
+ * balances, and two rows with no readable custodian CAN be compared to each
  * other.
  *
  * A row is a rollup only when ALL of these hold:
@@ -108,23 +129,17 @@ export function detectRollups<T extends ExtractedAccount>(rows: T[]): RollupResu
   const kept: T[] = [];
   const excluded: RollupResult<T>["excluded"] = [];
 
-  const groups = new Map<string, T[]>();
-  for (const row of rows) {
-    const key = normalizeCustodian(row.custodian) ?? "__unknown__";
-    const group = groups.get(key);
-    if (group) {
-      group.push(row);
-    } else {
-      groups.set(key, [row]);
-    }
-  }
+  // Normalize each row's custodian ONCE, positionally alongside `rows`.
+  const custodians = rows.map((row) => normalizeCustodian(row.custodian));
 
-  // Walk `rows` in ORIGINAL order (not group order) so output order never
-  // depends on how many custodians are present — the groups map above is
-  // only used to look up each row's siblings.
-  for (const row of rows) {
-    const key = normalizeCustodian(row.custodian) ?? "__unknown__";
-    const siblings = groups.get(key)!.filter((r) => r !== row && typeof r.value === "number");
+  // Walk `rows` in ORIGINAL order so output order never depends on how many
+  // custodians are present — siblings are looked up by scanning the same
+  // array, never by iterating custodians.
+  for (const [index, row] of rows.entries()) {
+    const siblings = rows.filter(
+      (r, i) =>
+        i !== index && typeof r.value === "number" && sameCustodian(custodians[index], custodians[i]),
+    );
 
     const isRollup =
       siblings.length >= 2 &&
