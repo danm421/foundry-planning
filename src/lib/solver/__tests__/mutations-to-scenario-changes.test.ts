@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { ClientData } from "@/engine/types";
 import { mutationsToScenarioChanges } from "../mutations-to-scenario-changes";
+import { SOLVER_MUTATION_SCHEMA } from "../mutation-schema";
 
 const CLIENT_ID = "00000000-0000-4000-8000-000000000001";
 
@@ -822,5 +823,39 @@ describe("mutationsToScenarioChanges — every emitted targetId is a uuid", () =
     for (const d of drafts) {
       expect(d.targetId).not.toBe(d.targetKind);
     }
+  });
+});
+
+describe("asset-transaction bundleId round trip", () => {
+  const leg = {
+    id: "at-1", name: "Move house — Sell Oak", type: "sell" as const,
+    year: 2027, accountId: "acc-1", bundleId: "bun-1",
+  };
+
+  it("survives the mutation schema", () => {
+    const parsed = SOLVER_MUTATION_SCHEMA.parse({
+      kind: "asset-transaction-upsert", id: "at-1", value: leg,
+    });
+    expect(parsed).toMatchObject({ value: { bundleId: "bun-1" } });
+  });
+
+  it("reaches the scenario-change payload on add", () => {
+    const source = { assetTransactions: [] } as unknown as ClientData;
+    const drafts = mutationsToScenarioChanges(source, "client-1", [
+      { kind: "asset-transaction-upsert", id: "at-1", value: leg },
+    ]);
+    const add = drafts.find((d) => d.targetKind === "asset_transaction");
+    expect(add?.opType).toBe("add");
+    expect((add?.payload as { bundleId?: string }).bundleId).toBe("bun-1");
+  });
+
+  it("emits the bundleId as an edited field when a leg joins a bundle later", () => {
+    const source = { assetTransactions: [{ ...leg, bundleId: undefined }] } as unknown as ClientData;
+    const drafts = mutationsToScenarioChanges(source, "client-1", [
+      { kind: "asset-transaction-upsert", id: "at-1", value: leg },
+    ]);
+    const edit = drafts.find((d) => d.targetKind === "asset_transaction");
+    expect(edit?.opType).toBe("edit");
+    expect((edit?.payload as { bundleId?: { to: string } }).bundleId?.to).toBe("bun-1");
   });
 });
