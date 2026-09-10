@@ -5,7 +5,8 @@ import {
   type AttributionCtx,
 } from "@/lib/balance-sheet/attribute";
 import { flatBusinessValueAt } from "@/engine/entity-cashflow";
-import type { FamilyMember } from "@/engine/types";
+import type { FamilyMember, GiftEvent } from "@/engine/types";
+import { ownersAsOf } from "./view-model";
 import type { AccountLike, LiabilityLike, EntityInfo, AsOfMode } from "./view-model";
 import type { NoteLike } from "@/lib/balance-sheet/build-view-model-inputs";
 import { CATEGORY_LABELS, CATEGORY_ORDER, type AssetCategoryKey } from "./tokens";
@@ -89,6 +90,9 @@ export interface BuildHouseholdColumnsInput {
    *  (the advisor-entered current values). "eoy" = end-of-year balances for
    *  the selected year. Default: "eoy". */
   asOfMode?: AsOfMode;
+  /** Lifetime gift events. Owners are resolved as of the valuation year so a
+   *  gifted share leaves the household columns. Omit to read authored owners. */
+  giftEvents?: GiftEvent[];
 }
 
 function buildCtx(
@@ -150,6 +154,7 @@ function splitToColumns(split: { cooper: number; sarah: number; joint: number })
 export function buildHouseholdColumns(input: BuildHouseholdColumnsInput): HouseholdColumnsModel {
   const { accounts, liabilities, entities, notesReceivable, familyMembers, projectionYears, selectedYear } = input;
   const asOfMode: AsOfMode = input.asOfMode ?? "eoy";
+  const giftEvents = input.giftEvents ?? [];
   const planStartYear = projectionYears[0]?.year ?? selectedYear;
   const yearData =
     asOfMode === "today"
@@ -185,7 +190,13 @@ export function buildHouseholdColumns(input: BuildHouseholdColumnsInput): Househ
     const ledger = yearData.accountLedgers[acct.id];
     const value = (asOfMode === "today" ? ledger?.beginningValue : ledger?.endingValue) ?? 0;
     if (value <= 0) continue;
-    const cols = splitToColumns(attributeToColumns({ id: acct.id, value, owners: acct.owners }, ctx));
+    // Ownership as of the valuation year: a lifetime gift retitles the
+    // gifted share to the recipient trust (or `gifted_away` for a person),
+    // both of which `attributeToColumns` keeps out of the household columns.
+    // Shares the resolver with the slice-based view-model so the two tabs of
+    // one report can never disagree about who owns what in a given year.
+    const owners = ownersAsOf(acct, giftEvents, valuationYear, planStartYear, asOfMode);
+    const cols = splitToColumns(attributeToColumns({ id: acct.id, value, owners }, ctx));
     if (cols.total <= 0) continue; // entirely OOE / held back
     pushRow(cat, {
       key: acct.id,

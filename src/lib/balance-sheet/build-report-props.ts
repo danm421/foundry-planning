@@ -55,6 +55,10 @@ export function buildBalanceSheetReportProps(
 
   return {
     accounts,
+    // Ownership on the balance sheet is resolved per picked year from these —
+    // a gifted share of an asset has to leave the household and show up under
+    // the recipient trust.
+    giftEvents: clientData.giftEvents ?? [],
     liabilities: inputs.liabilities,
     entities: inputs.entities,
     trustDetails: buildTrustDetails(tree, { clientLabel: labels.clientLabel, spouseLabel }),

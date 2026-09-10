@@ -3,7 +3,7 @@
 
 import { useMemo, useState } from "react";
 import { useViewParam } from "@/hooks/use-view-param";
-import type { FamilyMember } from "@/engine/types";
+import type { FamilyMember, GiftEvent } from "@/engine/types";
 import type { LiabilityLike, EntityInfo, ProjectionYearLike, AsOfMode } from "./view-model";
 import { buildViewModel } from "./view-model";
 import {
@@ -44,6 +44,10 @@ export interface BalanceSheetReportProps {
    *  "side" (default) is a left column; "top" stacks it full-width above the
    *  table — used in narrow hosts like the solver pane. */
   summaryPlacement?: "side" | "top";
+  /** Lifetime gift events, so ownership is resolved as of the picked year
+   *  rather than as authored. Without them a gifted share of an asset stays on
+   *  the household's balance sheet at full value forever. */
+  giftEvents?: GiftEvent[];
 }
 
 type Tab = "household" | "entities";
@@ -70,8 +74,9 @@ export default function BalanceSheetReport(props: BalanceSheetReportProps) {
         projectionYears: props.projectionYears,
         selectedYear,
         asOfMode,
+        giftEvents: props.giftEvents,
       }),
-    [props.accounts, props.liabilities, props.entities, props.notesReceivable, props.familyMembers, props.projectionYears, selectedYear, asOfMode],
+    [props.accounts, props.liabilities, props.entities, props.notesReceivable, props.familyMembers, props.projectionYears, selectedYear, asOfMode, props.giftEvents],
   );
 
   const consolidated = useMemo(
@@ -85,8 +90,9 @@ export default function BalanceSheetReport(props: BalanceSheetReportProps) {
         selectedYear,
         view: "consolidated",
         asOfMode,
+        giftEvents: props.giftEvents,
       }),
-    [props.accounts, props.liabilities, props.entities, props.familyMembers, props.projectionYears, selectedYear, asOfMode],
+    [props.accounts, props.liabilities, props.entities, props.familyMembers, props.projectionYears, selectedYear, asOfMode, props.giftEvents],
   );
 
   const entityModel = useMemo(
@@ -101,9 +107,10 @@ export default function BalanceSheetReport(props: BalanceSheetReportProps) {
             selectedYear,
             view: "entities",
             asOfMode,
+            giftEvents: props.giftEvents,
           })
         : null,
-    [tab, props.accounts, props.liabilities, props.entities, props.familyMembers, props.projectionYears, selectedYear, asOfMode],
+    [tab, props.accounts, props.liabilities, props.entities, props.familyMembers, props.projectionYears, selectedYear, asOfMode, props.giftEvents],
   );
 
   const tabClass = (active: boolean) =>

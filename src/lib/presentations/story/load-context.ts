@@ -630,6 +630,9 @@ export async function loadStoryContext(args: LoadStoryContextArgs): Promise<Stor
     selectedYear: firstYear?.year ?? 0,
     view: "consolidated",
     asOfMode: "today",
+    // A no-op while asOfMode is "today" (that column reads authored owners by
+    // design) — passed so the call stays correct if the mode ever changes.
+    giftEvents: base.effectiveTree.giftEvents ?? [],
   });
 
   // Strategies BEFORE the facts, and the same array to both: the pack quotes

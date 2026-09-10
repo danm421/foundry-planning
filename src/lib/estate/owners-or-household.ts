@@ -1,6 +1,6 @@
 import { ownersForYear } from "@/engine/ownership";
-import type { AccountOwner } from "@/engine/ownership";
-import type { Account, GiftEvent } from "@/engine/types";
+import type { AccountOwner, AccountWithOwners } from "@/engine/ownership";
+import type { GiftEvent } from "@/engine/types";
 
 /** Synthetic ownership for an account that carries no account_owners rows
  *  (e.g. `is_default_checking` pooled household cash). A single family-member
@@ -19,7 +19,7 @@ export const HOUSEHOLD_OWNER_FALLBACK: AccountOwner[] = [
  * `familyOwnedFraction`.
  */
 export function ownersForYearOrHousehold(
-  account: Account,
+  account: AccountWithOwners,
   giftEvents: GiftEvent[],
   year: number,
   projectionStartYear: number,
@@ -41,7 +41,7 @@ export function ownersForYearOrHousehold(
  * default-checking cash keeps a household owner rather than being dropped.
  */
 export function ownersForYearSafe(
-  account: Account,
+  account: AccountWithOwners,
   giftEvents: GiftEvent[],
   year: number,
   projectionStartYear: number,
