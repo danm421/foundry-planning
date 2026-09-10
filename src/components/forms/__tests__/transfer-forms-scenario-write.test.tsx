@@ -192,34 +192,89 @@ describe("transfer forms — scenario-mode gift writes", () => {
     vi.unstubAllGlobals();
   });
 
-  it.each([
-    ["cash", renderTransferCash, "cash-once"],
-    ["asset", renderTransferAsset, "asset-once"],
-    ["series", renderTransferSeries, "series"],
-  ] as const)("%s transfer writes into the active scenario", async (_label, renderForm, expectedKind) => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
-    vi.stubGlobal("fetch", fetchMock);
+  // Full expected `entity` per form — not just a subset. This matters most
+  // for the asset form, where `Number(percent) / 100` is computed twice (once
+  // for the REST body, once for the draft): asserting only `kind`/`recipient`/
+  // `id` would stay green even if those two copies drifted apart. `id` is the
+  // one field the component mints itself (`crypto.randomUUID()`), so it's the
+  // one field asserted by shape rather than value. (Important 3, task-7
+  // review — the prior version of this test only checked kind/recipient/id.)
+  type ScenarioWriteCase = [string, (opts: RenderOpts) => void, Record<string, unknown>];
 
-    renderForm({ scenarioId: SCENARIO_ID, trustId: TRUST_ID });
-    submitForm();
+  const SCENARIO_WRITE_CASES: ScenarioWriteCase[] = [
+    [
+      "cash",
+      renderTransferCash,
+      {
+        kind: "cash-once",
+        id: expect.any(String),
+        year: 2026,
+        amount: 18000,
+        grantor: "client",
+        recipient: { kind: "entity", id: TRUST_ID },
+        crummey: false,
+        eventKind: "outright",
+      },
+    ],
+    [
+      "asset",
+      renderTransferAsset,
+      {
+        kind: "asset-once",
+        id: expect.any(String),
+        year: 2031, // default year is currentYear(2026) + 5 — see transfer-asset-form.tsx
+        accountId: ASSET_ACCOUNT.id,
+        percent: 0.5, // default percent input is "50"
+        grantor: "client",
+        recipient: { kind: "entity", id: TRUST_ID },
+        eventKind: "outright",
+        // no valuationDiscount key — no discount was entered (see the
+        // key-order test below for the discount-present case)
+      },
+    ],
+    [
+      "series",
+      renderTransferSeries,
+      {
+        kind: "series",
+        id: expect.any(String),
+        startYear: 2026,
+        endYear: 2036, // default is currentYear(2026) + 10
+        annualAmount: 18000,
+        amountMode: "fixed", // measured ruling — DB/zod/route all default to "fixed"
+        inflationAdjust: false,
+        grantor: "client",
+        recipient: { kind: "entity", id: TRUST_ID },
+        crummey: false,
+      },
+    ],
+  ];
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  it.each(SCENARIO_WRITE_CASES)(
+    "%s transfer writes into the active scenario",
+    async (_label, renderForm, expectedEntity) => {
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+      vi.stubGlobal("fetch", fetchMock);
 
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe(`/api/clients/${CLIENT_ID}/scenarios/${SCENARIO_ID}/changes`);
-    expect(init.method).toBe("POST");
+      renderForm({ scenarioId: SCENARIO_ID, trustId: TRUST_ID });
+      submitForm();
 
-    const body = JSON.parse(init.body as string);
-    expect(body.op).toBe("add");
-    expect(body.targetKind).toBe("gift");
-    expect(body.entity.kind).toBe(expectedKind);
-    expect(body.entity.recipient).toEqual({ kind: "entity", id: TRUST_ID });
-    expect(body.entity.id).toEqual(expect.any(String));
+      await waitFor(() => expect(fetchMock).toHaveBeenCalled());
 
-    // A refresh happens once the scenario write lands — same one-refresh-per-
-    // save contract as base mode (BaseFallback.skipRefresh is never set here).
-    await waitFor(() => expect(refreshMock).toHaveBeenCalledTimes(1));
-  });
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe(`/api/clients/${CLIENT_ID}/scenarios/${SCENARIO_ID}/changes`);
+      expect(init.method).toBe("POST");
+
+      const body = JSON.parse(init.body as string);
+      expect(body.op).toBe("add");
+      expect(body.targetKind).toBe("gift");
+      expect(body.entity).toEqual(expectedEntity);
+
+      // A refresh happens once the scenario write lands — same one-refresh-per-
+      // save contract as base mode (BaseFallback.skipRefresh is never set here).
+      await waitFor(() => expect(refreshMock).toHaveBeenCalledTimes(1));
+    },
+  );
 
   it.each([
     ["cash", renderTransferCash, `/api/clients/${CLIENT_ID}/gifts`],
@@ -292,14 +347,30 @@ describe("transfer forms — gift draft key order matches the canonical mappers"
     expect(keysOf(entity)).toEqual(keysOf(giftRowToDraft(row)));
   });
 
-  it("asset transfer's draft matches giftRowToDraft's asset-once key order", async () => {
+  it("asset transfer's draft matches giftRowToDraft's asset-once key order, discount included", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
     vi.stubGlobal("fetch", fetchMock);
 
     renderTransferAsset({ scenarioId: SCENARIO_ID });
+    // A discount MUST be entered here: `valuationDiscount` is undefined on an
+    // empty-discount draft and null on a no-discount row, and the JSON
+    // round-trip in `keysOf` drops the key from BOTH sides in that case — so
+    // an empty-discount render can never exercise "valuationDiscount goes
+    // LAST", the one rule this file's header comment cites. (Important 2,
+    // task-7 review — confirmed this bites by temporarily reordering the
+    // draft to put valuationDiscount before eventKind and watching this test
+    // fail; see the FIX REPORT in task-7-report.md.)
+    fireEvent.change(screen.getByLabelText(/Valuation discount/i), {
+      target: { value: "30" },
+    });
     submitForm();
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     const entity = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string).entity;
+
+    // Both sides must actually carry the key, or the keysOf comparison below
+    // is vacuous again.
+    expect(entity).toHaveProperty("valuationDiscount");
+    expect(entity.valuationDiscount).toBeCloseTo(0.3);
 
     const row: GiftRow = {
       id: "row-id",
@@ -315,7 +386,7 @@ describe("transfer forms — gift draft key order matches the canonical mappers"
       percent: "0.5000",
       useCrummeyPowers: false,
       eventKind: "outright",
-      valuationDiscount: null,
+      valuationDiscount: "0.3000",
     };
     expect(keysOf(entity)).toEqual(keysOf(giftRowToDraft(row)));
   });
