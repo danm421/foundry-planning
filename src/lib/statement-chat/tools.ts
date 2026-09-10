@@ -576,7 +576,18 @@ function resolveSourceFileId(
 ): string {
   // `named` arrives straight off the model's tool call (`args as never` at
   // the dispatch site), so it can be absent however the schema is written.
-  const wanted = (named ?? "").trim();
+  const raw = (named ?? "").trim();
+  // Final review, T3: strip a matched pair of surrounding double quotes. The
+  // row list renders `source="fidelity-2026-06.pdf"` (Ruling 103's own
+  // boundary fix) and this tool's description says to name the document
+  // "exactly as shown for a row" — so a model that includes the quotes is
+  // reading the instruction correctly, and failing it burns one of the four
+  // tool calls a turn allows. This tool has already shipped broken twice on
+  // this class of gap.
+  const wanted =
+    raw.length >= 2 && raw.startsWith('"') && raw.endsWith('"')
+      ? raw.slice(1, -1).trim()
+      : raw;
   if (wanted.length === 0) {
     throw new Error("Name the source document to re-read, exactly as it is shown for a row.");
   }

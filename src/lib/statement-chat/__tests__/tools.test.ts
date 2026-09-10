@@ -751,6 +751,37 @@ describe("statement chat tools", () => {
     expect(result.summary).toContain("set value to 20,500");
   });
 
+  // Final review, T3: the row list renders `source="fidelity-2026-06.pdf"`
+  // and this tool's description says to name the document "exactly as shown
+  // for a row" — so a model that copies the quotes along with the name is
+  // reading the instruction correctly. It used to fail resolution, and each
+  // miss burns one of the four tool calls a turn allows.
+  //
+  // Mutation this catches: dropping the quote strip.
+  it("reread_document resolves a name the model copied WITH its surrounding quotes", async () => {
+    const result = await rereadDocument(
+      payload(),
+      { fileName: '"f1.pdf"', question: "what is the Roth basis?" },
+      documentGroundedModel(),
+      { importId: "i1", fileResults: fileResultsWithText(STATEMENT_TEXT) },
+    );
+    expect(result.summary).toContain("set basis to 12,345.67");
+  });
+
+  // Quotes and nothing else still reads as "you named no document" — the
+  // strip must not turn an empty name into a confusing downstream miss.
+  it("reread_document still asks for a name when the model sends only quotes", async () => {
+    const message = await rejectionMessage(
+      rereadDocument(
+        payload(),
+        { fileName: '""', question: "?" },
+        fakeModel,
+        { importId: "i1", fileResults: fileResultsWithText(STATEMENT_TEXT) },
+      ),
+    );
+    expect(message).toMatch(/name the source document/i);
+  });
+
   // A model retyping a name rarely matches byte-for-byte. Mutation this
   // catches: dropping the trim/lowercase fold and comparing raw strings.
   it("reread_document resolves a name whose case and surrounding whitespace differ", async () => {
