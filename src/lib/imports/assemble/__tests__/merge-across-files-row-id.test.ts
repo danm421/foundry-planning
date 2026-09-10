@@ -44,7 +44,13 @@ describe("mergeAcrossFiles — __rowId", () => {
     expect(r.payload.accounts[0].__rowId).toBeDefined();
     // Round 2 review: the ordinal is now unconditional (`#0` for every
     // first entry, not just later ones) — see the derivation's comment.
-    expect(r.payload.accounts[0].__rowId).toBe("account:fidelity|1234|#0");
+    //
+    // Ruling 120 moved the CUSTODIAN out of the accounts dedupe key and into
+    // `isSameEntity`, so the key — and therefore this id — is now last-4 +
+    // owner. The id is still derived from the key, still carries the
+    // unconditional ordinal, and is still injective; only the key's contents
+    // changed.
+    expect(r.payload.accounts[0].__rowId).toBe("account:1234|#0");
   });
 
   // C6 test 3: `computeKey` returns null for accounts with no
@@ -120,9 +126,35 @@ describe("mergeAcrossFiles — __rowId", () => {
       f1: er("a.pdf", { accounts: [{ name: "401k", custodian: "Fidelity", accountNumberLast4: "1111", value: 1, category: "retirement" }] }),
       f2: er("b.pdf", { accounts: [{ name: "IRA", custodian: "Fidelity", accountNumberLast4: "2222", value: 2, category: "retirement" }] }),
     });
+    // Last-4 + owner since Ruling 120 — the custodian moved into
+    // `isSameEntity`. Two different last-4s still mint two different ids.
     expect(r.payload.accounts.map((a) => a.__rowId)).toEqual([
-      "account:fidelity|1111|#0",
-      "account:fidelity|2222|#0",
+      "account:1111|#0",
+      "account:2222|#0",
+    ]);
+  });
+
+  /**
+   * Ruling 120 makes the bucket ORDINAL load-bearing for accounts for the
+   * first time. Before it, the section's `isSameEntity` was the constant
+   * `() => true`, so every row under an accounts key merged into entry #0
+   * and `#1` was unreachable. Now a Fidelity row and a Schwab row can share
+   * the bucket `1234|client` and be held apart by `isSameEntity`, which is
+   * exactly the case round-1 Critical 1 minted the ordinal for.
+   *
+   * Two rows, one key, two ids — otherwise both accounts answer to the same
+   * `__rowId` and every id-keyed guard downstream (the rebase, the
+   * re-commit block in `committedRowIds`, `edit_row`) addresses the wrong
+   * one.
+   */
+  it("gives distinct __rowIds to two custodians sharing one last4+owner bucket", () => {
+    const r = mergeAcrossFiles({
+      f1: er("a.pdf", { accounts: [{ name: "Brokerage", custodian: "Fidelity", accountNumberLast4: "1234", owner: "client", value: 1 }] }),
+      f2: er("b.pdf", { accounts: [{ name: "Brokerage", custodian: "Schwab", accountNumberLast4: "1234", owner: "client", value: 2 }] }),
+    });
+    expect(r.payload.accounts.map((a) => a.__rowId)).toEqual([
+      "account:1234|client#0",
+      "account:1234|client#1",
     ]);
   });
 

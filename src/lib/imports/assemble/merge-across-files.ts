@@ -17,6 +17,7 @@ import {
   type Provenance,
 } from "../types";
 import type { MergeDecision } from "./decisions";
+import { custodianMatches, normalizeCustodian } from "../normalize-custodian";
 
 export interface MergeAcrossFilesResult {
   payload: ImportPayload;
@@ -603,11 +604,45 @@ export function mergeAcrossFiles(
     // `owner` is part of the key (not just an isSameEntity check) so a
     // client IRA and a spouse IRA sharing a masked last-4 at the same
     // custodian never even reach the same bucket — see FIX 5.
-    (row) =>
-      row.custodian && row.accountNumberLast4
-        ? `${row.custodian.toLowerCase()}|${row.accountNumberLast4}|${row.owner ?? ""}`
-        : null,
-    () => true,
+    //
+    // The CUSTODIAN is deliberately NOT in the key (Ruling 120/121). It used
+    // to be, as `custodian.toLowerCase()` — a raw exact string — and the
+    // section's `isSameEntity` was the constant `() => true`, which is only
+    // ever consulted WITHIN a bucket already found by key. So two spellings
+    // of one custodian never met: two Fidelity statements for the same two
+    // accounts produced FOUR committable rows, because the extractor read
+    // "Fidelity Investments" off one file and "Fidelity" off the other, from
+    // headers that are byte-identical. Committing all four double-counted
+    // the household by their own balances.
+    //
+    // Normalizing the key would not have fixed it: `normalizeCustodian`
+    // strips only TRAILING legal suffixes ("LLC", "Inc"), and "Investments"
+    // is not one, so "fidelity investments" still !== "fidelity". The
+    // comparison this needs is a whole-word PREFIX rule, which is not
+    // expressible as a bucket key at all — a key is exact-match by
+    // construction. It has to be `isSameEntity`, below.
+    //
+    // A row still needs a last-4 to be dedupable at all; without one it
+    // takes `mergeSection`'s null-key fallback id and never merges.
+    (row) => (row.accountNumberLast4 ? `${row.accountNumberLast4}|${row.owner ?? ""}` : null),
+    // Now that the bucket is only last-4 + owner, this is what keeps a
+    // Fidelity statement out of a Schwab account that happens to share four
+    // masked digits — the same `normalizeCustodian` + `custodianMatches`
+    // pair `match-keys/account.ts` already uses against the plan's own
+    // accounts, so one import can't disagree with the other about whether
+    // two custodian spellings are the same institution.
+    //
+    // A custodian that normalizes to null (absent, or nothing but a legal
+    // suffix) matches only another null — the precedent `rollups.ts` sets
+    // for the same comparison. Nulls share the one catch-all rather than
+    // each becoming its own; a null never silently joins a named custodian,
+    // which is the direction that would lose money.
+    (existing, incoming) => {
+      const a = normalizeCustodian(existing.custodian);
+      const b = normalizeCustodian(incoming.custodian);
+      if (a === null || b === null) return a === b;
+      return custodianMatches(a, b);
+    },
     payload.warnings,
     (existing, incoming) =>
       withinTolerance(existing.value, incoming.value)

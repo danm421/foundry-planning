@@ -619,9 +619,11 @@ describe("chat extract route gates", () => {
       warnings: [],
       promptVersion: "v",
     };
-    // The ids `mergeAcrossFiles` actually mints for those two rows.
-    const IRA_ROW_ID = "account:schwab|1234|#0";
-    const DUP_ROW_ID = "account:fidelity|9999|#0";
+    // The ids `mergeAcrossFiles` actually mints for those two rows. Last-4 +
+    // owner (empty here) since Ruling 120 moved the custodian out of the
+    // accounts dedupe key — and the id is derived from that key.
+    const IRA_ROW_ID = "account:1234|#0";
+    const DUP_ROW_ID = "account:9999|#0";
 
     currentImportRow = {
       id: "i1",

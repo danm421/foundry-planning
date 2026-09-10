@@ -230,4 +230,114 @@ describe("recency ordering only trusts a zero-padded ISO date", () => {
     // counts as undated and December's well-formed date wins on its own.
     expect(r.payload.accounts[0].value).toBe(30_000);
   });
+
+});
+
+/**
+ * Ruling 120/121. The accounts dedupe key used to be a RAW exact string
+ * including `custodian.toLowerCase()`, and the section's `isSameEntity` was
+ * the constant `() => true` — which is only ever consulted WITHIN a bucket
+ * already found by key. So two spellings of one custodian never met.
+ *
+ * Measured in a browser: two Fidelity statements for the SAME two accounts
+ * produced FOUR committable rows, because the extractor read the custodian
+ * as "Fidelity Investments" off one file and "Fidelity" off the other —
+ * from fixture headers that are byte-identical. Committing all four
+ * double-counted the household by $598,800.
+ *
+ * Normalizing the key alone does not fix it: `normalizeCustodian` strips
+ * only TRAILING legal suffixes, and "Investments" is not one, so
+ * "fidelity investments" still !== "fidelity". The custodian has to leave
+ * the key and be compared in `isSameEntity`, where `custodianMatches`'
+ * whole-word-prefix rule applies.
+ */
+describe("two spellings of one custodian (Ruling 120)", () => {
+  it("collapses 'Fidelity Investments' and 'Fidelity' into ONE row, keeping the newer balance", () => {
+    const r = mergeAcrossFiles({
+      f1: er("june.pdf", {
+        accounts: [{ name: "Joint Brokerage", custodian: "Fidelity Investments", accountNumberLast4: "1234", owner: "client", value: 100_000, statementDate: "2026-06-30" }],
+      }),
+      f2: er("september.pdf", {
+        accounts: [{ name: "Joint Brokerage", custodian: "Fidelity", accountNumberLast4: "1234", owner: "client", value: 130_000, statementDate: "2026-09-30" }],
+      }),
+    });
+    expect(r.payload.accounts).toHaveLength(1);
+    // `recencyOf` still reaches the bucket through the narrower key — the
+    // September statement supersedes June rather than a field-count coin
+    // flip deciding it.
+    expect(r.payload.accounts[0].value).toBe(130_000);
+    expect(r.decisions).toContainEqual(
+      expect.objectContaining({ kind: "superseded", account: "Joint Brokerage", basis: "date" }),
+    );
+  });
+
+  // The risk the wider bucket introduces, and the test that proves
+  // `isSameEntity` earns its place: without a real custodian comparison a
+  // Fidelity statement and a Schwab statement sharing masked digits would
+  // now collapse into one account.
+  it("keeps two genuinely different custodians apart even when last4 and owner match", () => {
+    const r = mergeAcrossFiles({
+      f1: er("a.pdf", {
+        accounts: [{ name: "Brokerage", custodian: "Fidelity", accountNumberLast4: "1234", owner: "client", value: 100_000 }],
+      }),
+      f2: er("b.pdf", {
+        accounts: [{ name: "Brokerage", custodian: "Schwab", accountNumberLast4: "1234", owner: "client", value: 250_000 }],
+      }),
+    });
+    expect(r.payload.accounts).toHaveLength(2);
+    expect(r.payload.warnings.some((w) => w.includes("Merged"))).toBe(false);
+  });
+
+  // "fid" is not a whole-word prefix of "fidelity" — `custodianMatches`
+  // requires a word boundary, so an abbreviation is not a match.
+  it("does not treat a bare abbreviation as the same custodian", () => {
+    const r = mergeAcrossFiles({
+      f1: er("a.pdf", { accounts: [{ name: "IRA", custodian: "Fid", accountNumberLast4: "1234", owner: "client", value: 1 }] }),
+      f2: er("b.pdf", { accounts: [{ name: "IRA", custodian: "Fidelity", accountNumberLast4: "1234", owner: "client", value: 2 }] }),
+    });
+    expect(r.payload.accounts).toHaveLength(2);
+  });
+
+  // A custodian that normalizes to null (absent, or nothing but a legal
+  // suffix) never matches a named one — the precedent `rollups.ts` already
+  // sets for the same comparison.
+  it("does not merge a null-custodian row into a named one", () => {
+    const r = mergeAcrossFiles({
+      f1: er("a.pdf", { accounts: [{ name: "IRA", custodian: "LLC", accountNumberLast4: "1234", owner: "client", value: 1 }] }),
+      f2: er("b.pdf", { accounts: [{ name: "IRA", custodian: "Fidelity", accountNumberLast4: "1234", owner: "client", value: 2 }] }),
+    });
+    expect(r.payload.accounts).toHaveLength(2);
+  });
+
+  // Two rows that BOTH normalize to null share the catch-all and are
+  // compared only to each other — same rule as `rollups.ts`.
+  it("merges two rows that both normalize to a null custodian", () => {
+    const r = mergeAcrossFiles({
+      f1: er("a.pdf", { accounts: [{ name: "IRA", custodian: "LLC", accountNumberLast4: "1234", owner: "client", value: 1 }] }),
+      f2: er("b.pdf", { accounts: [{ name: "IRA", custodian: "Inc.", accountNumberLast4: "1234", owner: "client", value: 2, basis: 1 }] }),
+    });
+    expect(r.payload.accounts).toHaveLength(1);
+  });
+
+  // FIX 5's property must survive the narrower key: `owner` is still IN it,
+  // so a client IRA and a spouse IRA sharing a masked last-4 at the same
+  // custodian never even reach the same bucket.
+  it("still separates a client IRA from a spouse IRA on owner (FIX 5 survives)", () => {
+    const r = mergeAcrossFiles({
+      f1: er("a.pdf", { accounts: [{ name: "IRA", custodian: "Fidelity Investments", accountNumberLast4: "1234", owner: "client", value: 100_000 }] }),
+      f2: er("b.pdf", { accounts: [{ name: "IRA", custodian: "Fidelity", accountNumberLast4: "1234", owner: "spouse", value: 200_000 }] }),
+    });
+    expect(r.payload.accounts).toHaveLength(2);
+    expect(r.payload.warnings.some((w) => w.includes("Merged"))).toBe(false);
+  });
+
+  // A row missing either half of the key still gets the null-key fallback
+  // id and never merges — unchanged by this.
+  it("still refuses to merge a row with no last4", () => {
+    const r = mergeAcrossFiles({
+      f1: er("a.pdf", { accounts: [{ name: "Brokerage", custodian: "Fidelity", owner: "client", value: 1 }] }),
+      f2: er("b.pdf", { accounts: [{ name: "Brokerage", custodian: "Fidelity", owner: "client", value: 1 }] }),
+    });
+    expect(r.payload.accounts).toHaveLength(2);
+  });
 });

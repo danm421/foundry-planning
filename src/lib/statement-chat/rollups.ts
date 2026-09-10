@@ -88,8 +88,11 @@ export interface RollupResult<T extends ExtractedAccount = ExtractedAccount> {
  * Whether two rows count as the same custodian for sibling purposes.
  *
  * Uses `custodianMatches` — the SAME comparison the cross-file merge path
- * already trusts, true on equality or a whole-word prefix, so "fidelity"
- * matches "fidelity investments" but "fid" does not match "fidelity". Exact
+ * already trusts (`merge-across-files.ts`'s accounts `isSameEntity`, since
+ * Ruling 120; it was an exact string key before that, and this sentence was
+ * aspirational rather than true), true on equality or a whole-word prefix,
+ * so "fidelity" matches "fidelity investments" but "fid" does not match
+ * "fidelity". Exact
  * string equality was too strict here: a relationship-summary statement
  * naming the institution more formally than its own account statements is
  * entirely ordinary, and it left a printed "Total Portfolio" with zero
