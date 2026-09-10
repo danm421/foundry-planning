@@ -1426,6 +1426,10 @@ export interface AssetTransaction {
   /** Sell-only. Fraction of the source's balance + basis to sell.
    *  null = full sale (today's behavior). 0 < x ≤ 1 = partial. */
   fractionSold?: number | null;
+  /** Display-only. Legs saved from one Add Asset Transactions dialog share this
+   *  id so the UI can present them as ONE technique. NOTHING in src/engine
+   *  reads it — the projection still treats each leg as its own buy or sell. */
+  bundleId?: string;
 }
 
 export interface Relocation {
