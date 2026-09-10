@@ -56,6 +56,8 @@ export interface AssetTransactionInitialData {
   mortgageAmount: string | null;
   mortgageRate: string | null;
   mortgageTermMonths: number | null;
+  /** Set when this record was saved as part of a multi-leg transaction. */
+  bundleId?: string | null;
 }
 
 export interface BusinessSaleOption {

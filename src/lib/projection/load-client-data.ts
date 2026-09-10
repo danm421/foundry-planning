@@ -1438,6 +1438,7 @@ export const loadClientDataWithContext = cache(
       qualifiesForHomeSaleExclusion: t.qualifiesForHomeSaleExclusion,
       purchaseTransactionId: t.purchaseTransactionId ?? null,
       fractionSold: t.fractionSold !== null ? Number(t.fractionSold) : null,
+      bundleId: t.bundleId ?? undefined,
       assetName: t.assetName ?? undefined,
       assetCategory: t.assetCategory ?? undefined,
       assetSubType: t.assetSubType ?? undefined,
