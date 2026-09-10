@@ -847,8 +847,17 @@ describe("statement chat tools", () => {
   // Ruling 86 does not weaken. A file id planted on a row's `__provenance`
   // by the unvalidated accounts-PATCH route still resolves (it is live on a
   // row), but the DB lookup is scoped to THIS import, so it finds nothing.
-  // Mutation this catches: dropping the `importId` condition — the lookup
-  // would then return another import's file and re-extract it.
+  //
+  // Final review, T1: the ORIGINAL comment here claimed "Mutation this
+  // catches: dropping the `importId` condition" — and it did not. The `@/db`
+  // mock's `where()` is inert (it never interprets the predicate) and this
+  // test sets `fileRow = undefined` unconditionally, so the call rejected
+  // whether or not the condition was built. The rejection assertion pins the
+  // BEHAVIOUR (a lookup that finds nothing refuses, and refuses BEFORE any
+  // download or re-extraction); the `eqCalls` assertion added below is what
+  // actually pins the predicate, the same way the sibling test at
+  // "scopes the file lookup by BOTH the resolved id and importId" does for
+  // the found-file path. Both now go red if the condition is dropped.
   it("reread_document still refuses a file that belongs to a different import", async () => {
     fileRow = undefined; // the importId-scoped query matches nothing
     await expect(
@@ -860,5 +869,9 @@ describe("statement chat tools", () => {
       ),
     ).rejects.toThrow(/could not be found in this import/i);
     expect(vi.mocked(downloadImportFile)).not.toHaveBeenCalled();
+    // THE assertion the old comment promised: the query really was built
+    // with the importId condition, not merely "some query ran".
+    expect(eqCalls).toContainEqual([clientImportFiles.importId, "i1"]);
+    expect(eqCalls).toContainEqual([clientImportFiles.id, "f1"]);
   });
 });
