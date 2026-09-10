@@ -183,6 +183,14 @@ async function insertWithGeneratedId(
  * owned by another firm's client can never match and can never be overwritten.
  * A foreign id therefore falls through to the INSERT and fails loudly on the
  * primary key instead of silently rewriting somebody else's row.
+ *
+ * ROW SELECTOR: always `targetId` — the id the CHANGE targets — never the
+ * payload's own `id`. The two can diverge: `desiredFields` is unconstrained
+ * (scenario changes route) and is merged straight into the add payload
+ * (changes-writer.ts:219-236), so a change targeting gift G whose payload
+ * carries `{id: H}` would otherwise rewrite base gift H with G's data and leave
+ * G alive — while the overlay stripped G and showed H untouched. `targetId` is
+ * what the overlay strips, so `targetId` is what promotion must write.
  */
 async function upsertPreservingId(
   tx: PromoteTx,
@@ -192,20 +200,19 @@ async function upsertPreservingId(
   values: Record<string, unknown>,
   ctx: ExecCtx,
 ): Promise<string> {
-  const id = typeof values.id === "string" ? values.id : targetId;
   const set = { ...values };
   delete set.id;
   if ("updatedAt" in cols) set.updatedAt = new Date();
   const [updated] = await tx
     .update(table)
     .set(set as never)
-    .where(scopeWhere(cols, id, ctx))
+    .where(scopeWhere(cols, targetId, ctx))
     .returning({ id: cols.id });
   if (updated) return (updated as { id: string }).id;
 
   const [inserted] = await tx
     .insert(table)
-    .values({ ...values, id } as never)
+    .values({ ...values, id: targetId } as never)
     .returning({ id: cols.id });
   return (inserted as { id: string }).id;
 }

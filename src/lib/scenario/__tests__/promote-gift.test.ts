@@ -387,6 +387,63 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     ); // …without eating the note
   });
 
+  it("writes the gift the change TARGETS, not whatever id its payload carries", async () => {
+    // `desiredFields` is unconstrained and `applyEntityEdit` merges it into the
+    // add row's payload (changes-writer.ts:219-236), so a change's `targetId`
+    // and its payload's `id` can genuinely disagree. The overlay strips by
+    // targetId, so promotion must write by targetId too — otherwise it rewrites
+    // a bystander gift and leaves the targeted one untouched, which is the exact
+    // overlay/promote divergence the id-preserving upsert exists to close.
+    //
+    // The row is inserted directly because `applyEntityAdd` always sets
+    // `targetId: entity.id`; only the edit-merge path can produce the skew.
+    const [targeted] = await db
+      .insert(gifts)
+      .values({
+        clientId: COOPER_CLIENT_ID,
+        year: 2033,
+        amount: "1000",
+        grantor: "client",
+        recipientEntityId: trustId,
+        useCrummeyPowers: false,
+      })
+      .returning();
+    const [bystander] = await db
+      .insert(gifts)
+      .values({
+        clientId: COOPER_CLIENT_ID,
+        year: 2034,
+        amount: "7000",
+        grantor: "client",
+        recipientEntityId: trustId,
+        useCrummeyPowers: false,
+      })
+      .returning();
+
+    await db.insert(scenarioChanges).values({
+      scenarioId,
+      opType: "add",
+      targetKind: "gift",
+      targetId: targeted.id,
+      payload: {
+        id: bystander.id, // the skew
+        kind: "cash-once",
+        year: 2033,
+        amount: 88_000,
+        grantor: "client",
+        recipient: { kind: "entity", id: trustId },
+        crummey: false,
+      },
+    });
+
+    await promoteOverlay();
+
+    const byId = new Map((await promotedGifts()).map((r) => [r.id, r]));
+    expect(byId.get(targeted.id)?.amount).toBe("88000.00"); // the targeted gift changed
+    expect(byId.get(bystander.id)?.amount).toBe("7000.00"); // the bystander did not
+    expect(byId.size).toBe(2); // and no third row appeared
+  });
+
   it("never writes another client's gift row that happens to share the id", async () => {
     // ORG SCOPING. Preserving the id means the promote now UPDATEs by id, so
     // the scoping of that update is load-bearing: an unscoped upsert would

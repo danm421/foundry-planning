@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { and, eq } from "drizzle-orm";
 import {
   accounts,
   incomes,
@@ -16,8 +17,15 @@ import type { BaseWritePlan } from "../promote-to-base-types";
 // through so getTableColumns() (used by the executor for scoping) works.
 // Inserts return sequential ids (db-1, db-2, …) so idRemap wiring is
 // observable; updates report `updateMatches` as their matched rows.
+//
+// The WHERE predicate is CAPTURED, not discarded. It is the only evidence that
+// a statement is tenant-scoped, and the DB-backed tests that would otherwise
+// prove it are gated behind `describe.skipIf(!HAS_DB)` — a fresh worktree has
+// no `.env.local`, so on such a checkout they do not run at all. Without this
+// capture, rewriting a scoped UPDATE as a bare `onConflictDoUpdate` would leave
+// every runnable test green.
 function makeTx(updateMatches: { id: string }[] = [{ id: "matched" }]) {
-  const ops: { op: string; table: unknown; arg: unknown }[] = [];
+  const ops: { op: string; table: unknown; arg: unknown; where?: unknown }[] = [];
   let seq = 0;
   const tx = {
     insert: (table: unknown) => ({
@@ -28,15 +36,15 @@ function makeTx(updateMatches: { id: string }[] = [{ id: "matched" }]) {
     }),
     update: (table: unknown) => ({
       set: (arg: unknown) => ({
-        where: () => {
-          ops.push({ op: "update", table, arg });
+        where: (predicate: unknown) => {
+          ops.push({ op: "update", table, arg, where: predicate });
           return { returning: async () => updateMatches };
         },
       }),
     }),
     delete: (table: unknown) => ({
-      where: async () => {
-        ops.push({ op: "delete", table, arg: null });
+      where: async (predicate: unknown) => {
+        ops.push({ op: "delete", table, arg: null, where: predicate });
       },
     }),
   };
@@ -160,6 +168,40 @@ describe("executeBaseWritePlan", () => {
     expect(arg.amount).toBe("5000");
     expect(arg.updatedAt).toBeInstanceOf(Date);
     expect(counts.gift).toBe(1);
+  });
+
+  // THE CROSS-TENANT GUARD. Preserving the gift's id means promote UPDATEs by
+  // id, so the scoping of that predicate is the only thing standing between a
+  // promote and another client's row. This test runs with NO database, which is
+  // the point: the real-DB proof lives in promote-gift.test.ts behind
+  // `skipIf(!HAS_DB)` and is silently absent on a fresh worktree.
+  it("scopes the gift UPDATE to the promoting client, keyed by the change's targetId", async () => {
+    const plan: BaseWritePlan = {
+      ...emptyPlan(),
+      inserts: [
+        {
+          kind: "gift",
+          targetId: "g-target",
+          // The payload's own `id` deliberately DISAGREES with targetId.
+          // `desiredFields` is unconstrained and is merged straight into the add
+          // payload (changes-writer.ts:219-236), so a change targeting gift
+          // g-target can genuinely carry `{id: g-payload}` — and promote must
+          // still write the gift the change TARGETS, which is the one the
+          // overlay stripped.
+          raw: { id: "g-payload", year: 2030, amount: 5000 },
+        },
+      ],
+    };
+    const { tx, ops } = makeTx([{ id: "g-target" }]);
+    await executeBaseWritePlan(tx as never, plan, { clientId: "c1", baseScenarioId: "base1" });
+
+    const update = ops.find((o) => o.op === "update")!;
+    expect(update.table).toBe(gifts);
+    // Spelled out rather than compared against the helper's own output, so the
+    // clientId term is asserted concretely. Fails if anyone drops the client
+    // scoping, keys off the payload id, or swaps the whole thing for an
+    // unscoped upsert (which records no update op at all).
+    expect(update.where).toEqual(and(eq(gifts.id, "g-target"), eq(gifts.clientId, "c1")));
   });
 
   it("inserts accounts before other kinds (FK-safe ordering)", async () => {
