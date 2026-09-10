@@ -8,6 +8,7 @@ import {
   entities,
   familyMembers,
   externalBeneficiaries,
+  scenarios,
 } from "@/db/schema";
 import { eq, and, asc } from "drizzle-orm";
 import { requireOrgAndUser } from "@/lib/db-helpers";
@@ -25,11 +26,47 @@ import {
   getProjectionStartYearForScenario,
   OwnershipTransferError,
 } from "@/lib/ownership";
+import { loadActiveGiftChanges } from "@/lib/scenario/changes";
+import { partitionGiftChanges } from "@/lib/scenario/apply-gift-overlays";
+import { giftDraftToRow } from "@/lib/gifts/scenario-rows";
+import type { Gift } from "@/components/family-view";
+
+/**
+ * Adapt a scenario-added `Gift` (numbers, from `giftDraftToRow`) to the same
+ * wire shape a `db.select().from(gifts)` row serializes as: numeric columns
+ * as decimal strings (Postgres `numeric`), plus the columns only a real DB
+ * row carries (`clientId`, `liabilityId`, `businessEntityId`, `parentGiftId`,
+ * `yearRef`) — none of which a scenario-only draft has. `createdAt` /
+ * `updatedAt` are left off rather than invented; nothing timestamps a gift
+ * that was never written to the `gifts` table.
+ */
+function giftRowToWireShape(g: Gift, clientId: string) {
+  return {
+    id: g.id,
+    clientId,
+    year: g.year,
+    yearRef: null,
+    amount: g.amount != null ? g.amount.toFixed(2) : null,
+    grantor: g.grantor,
+    recipientEntityId: g.recipientEntityId,
+    recipientFamilyMemberId: g.recipientFamilyMemberId,
+    recipientExternalBeneficiaryId: g.recipientExternalBeneficiaryId,
+    accountId: g.accountId,
+    liabilityId: null,
+    businessEntityId: null,
+    percent: g.percent != null ? g.percent.toFixed(4) : null,
+    valuationDiscount:
+      g.valuationDiscount != null ? g.valuationDiscount.toFixed(4) : null,
+    parentGiftId: null,
+    useCrummeyPowers: g.useCrummeyPowers,
+    notes: g.notes,
+  };
+}
 
 export const dynamic = "force-dynamic";
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
@@ -43,7 +80,42 @@ export async function GET(
       .from(gifts)
       .where(eq(gifts.clientId, id))
       .orderBy(asc(gifts.year), asc(gifts.createdAt));
-    return NextResponse.json(rows);
+
+    // No ?scenario= (or the literal "base") — today's behavior, byte-identical:
+    // no scenario lookup at all.
+    const requestedScenario = new URL(request.url).searchParams.get("scenario");
+    if (!requestedScenario || requestedScenario === "base") {
+      return NextResponse.json(rows);
+    }
+
+    // Client-scoped lookup, mirroring gifts/series/route.ts's resolveScenarioId.
+    // verifyClientAccess above already gated the client; eq(scenarios.clientId, id)
+    // still guards against a foreign scenario id resolving here.
+    const [scenario] = await db
+      .select({ id: scenarios.id })
+      .from(scenarios)
+      .where(and(eq(scenarios.id, requestedScenario), eq(scenarios.clientId, id)));
+    if (!scenario) {
+      return NextResponse.json({ error: "Scenario not found" }, { status: 404 });
+    }
+
+    const giftChanges = await loadActiveGiftChanges(scenario.id);
+    const { targeted, adds } = partitionGiftChanges(giftChanges);
+
+    // Base survivors keep their exact DB row shape (decimal-string numerics,
+    // plus the columns a Gift-shaped draft never carries) — only the added
+    // rows need adapting, so they alone go through giftRowToWireShape.
+    const survivors = rows.filter((g) => !targeted.has(g.id));
+    const added = adds
+      .map(giftDraftToRow)
+      .filter((g): g is Gift => g !== null)
+      .map((g) => giftRowToWireShape(g, id));
+
+    // RULING 27: stable sort by year. Base rows already arrive year/createdAt
+    // ascending, so this only interleaves the scenario's adds without
+    // reordering same-source ties. Array.prototype.sort is stable (ES2019+).
+    const overlaid = [...survivors, ...added].sort((a, b) => a.year - b.year);
+    return NextResponse.json(overlaid);
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
