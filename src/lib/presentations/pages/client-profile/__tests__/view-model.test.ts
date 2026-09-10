@@ -126,7 +126,7 @@ describe("buildClientProfileData — children", () => {
     expect(data.children.map((c) => c.name)).toEqual(["Emma Smith", "Noah Smith"]);
   });
 
-  it("never renders the household principals (role client/Co-client) as children", () => {
+  it("never renders the household principals (role client/spouse) as children", () => {
     // Household rows carry the schema default relationship:"child" unless a
     // creation path overrides it. The `role` column is authoritative — client
     // and spouse are person cards, never child cards.

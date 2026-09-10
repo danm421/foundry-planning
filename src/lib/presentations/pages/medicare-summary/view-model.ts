@@ -117,7 +117,7 @@ export function buildMedicareSummaryData(
   let subtitle = `${ctx.scenarioLabel} · Medicare years ${horizon}`;
   const coClientEnrollment = enrollment.spouse;
   if (enrollment.client && coClientEnrollment) {
-    subtitle += ` · Client enrolls ${enrollment.client.year}, ${ctx.spouseName ?? CO_CLIENT_LABEL} ${coClientEnrollment.year}`;
+    subtitle += ` · Client enrolls ${enrollment.client.year}, ${CO_CLIENT_LABEL} ${coClientEnrollment.year}`;
   }
 
   return {

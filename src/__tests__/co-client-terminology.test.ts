@@ -100,6 +100,15 @@ const ALLOWLIST_PREFIXES = [
  */
 const PENDING = new Set<string>([
 
+  // ── Task 7 review fix (2026-09-10): returned to PENDING deliberately.
+  // Its only hit is an `it()` title naming the DB `role` column's literal enum
+  // values, `client` and `spouse`. Those are Bucket C — never renamed — and the
+  // fixture two lines below still writes `role: "spouse"`, so a title saying
+  // "Co-client" misdescribed the data under test. Reverted to the real enum,
+  // which the scanner cannot tell from display copy. Same policy question as
+  // the block below; Task 11 decides it for all of them at once.
+  "src/lib/presentations/pages/client-profile/__tests__/view-model.test.ts",
+
   // ── Task 6 fix round 2 (2026-09-10): relocated from PERMANENT_ALLOWLIST.
   // Each of these 5 files' only hit is `it()`-title prose describing
   // spouse-side divorce mechanics (e.g. "moves the spouse 401(k) to S") — not
