@@ -25,6 +25,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { revokePlaidTokens } from "@/lib/plaid/revoke";
 import { isRiskLevel } from "@/lib/risk-levels";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 export const dynamic = "force-dynamic";
 
@@ -104,7 +105,7 @@ export async function PUT(
         if (blockers.length > 0) {
           return NextResponse.json(
             {
-              error: `Cannot remove Co-client: still referenced by ${blockers.join(", ")}. Reassign or delete those first.`,
+              error: `Cannot remove ${spouseContact?.firstName ?? CO_CLIENT_LABEL}: still referenced by ${blockers.join(", ")}. Reassign or delete those first.`,
             },
             { status: 409 },
           );

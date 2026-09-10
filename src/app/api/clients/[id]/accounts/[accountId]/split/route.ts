@@ -24,7 +24,7 @@ export async function POST(
     const { client, firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
 
-    // CRM contact — source for the split account label.
+    // CRM contacts — source for the split account labels.
     const [primaryContact] = client.crmHouseholdId
       ? await db
           .select({ firstName: crmHouseholdContacts.firstName })
@@ -37,6 +37,19 @@ export async function POST(
           )
       : [];
     const clientFirstName = primaryContact?.firstName;
+
+    const [spouseContact] = client.crmHouseholdId
+      ? await db
+          .select({ firstName: crmHouseholdContacts.firstName })
+          .from(crmHouseholdContacts)
+          .where(
+            and(
+              eq(crmHouseholdContacts.householdId, client.crmHouseholdId),
+              eq(crmHouseholdContacts.role, "spouse"),
+            ),
+          )
+      : [];
+    const spouseFirstName = spouseContact?.firstName;
 
     const [target] = await db
       .select()
@@ -131,7 +144,7 @@ export async function POST(
           value: spouseValueRounded.toFixed(2),
           basis: spouseBasisRounded.toFixed(2),
           rothValue: spouseRothValueRounded.toFixed(2),
-          name: `${target.name} (${CO_CLIENT_LABEL} share)`,
+          name: `${target.name} (${spouseFirstName ?? CO_CLIENT_LABEL} share)`,
         })
         .returning();
 
