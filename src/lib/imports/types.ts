@@ -13,6 +13,7 @@ import type {
   ExtractionResult,
 } from "@/lib/extraction/types";
 import type { AssembleGoals, AssemblePlanBasics, AssembleState } from "./assemble/types";
+import type { MergeDecision } from "./assemble/decisions";
 
 export type Provenance = {
   sourceFileId: string;
@@ -33,6 +34,14 @@ export type Annotated<T> = T & {
   /** Set when reconciliation judged this row a duplicate measurement of another
    *  row's earnings. The row is KEPT and shown; commitIncomes skips it. */
   reconciliation?: { supersededBy: string; reason: string };
+  /**
+   * Stable per-import handle. Assigned at merge time (`mergeAcrossFiles`),
+   * never reused for a different row. Derived from the row's dedupe key so
+   * it is deterministic across a re-merge of the same files — Task 6, C1:
+   * a random id would orphan every id already saved to `committedRowIds`
+   * the moment the import's files change and the merge re-runs.
+   */
+  __rowId?: string;
 };
 
 /**
@@ -121,6 +130,44 @@ export function normalizeImportPayload(
 }
 
 /**
+ * One exchange in the statement-chat transcript (Task 8+). Discriminated on
+ * `role` so a renderer can exhaustively switch without a runtime schema.
+ */
+export type ChatTurn =
+  | { role: "user"; text: string; at: string }
+  | { role: "assistant"; text: string; at: string }
+  | { role: "tool"; tool: string; summary: string; at: string };
+
+/**
+ * Persisted state for the statement-chat import surface (Task 8+).
+ *
+ * Declared here rather than in `src/lib/statement-chat/state.ts` (R55):
+ * `ImportPayloadJson` below needs this type, and `lib/statement-chat` must
+ * only ever import FROM `lib/imports`, never the reverse — so typing `chat`
+ * as an import from `lib/statement-chat` would close a circular import.
+ * `state.ts` imports and re-exports both `ChatTurn` and `ChatState`
+ * unchanged, exactly the way `assemble?: AssembleState` above is declared in
+ * `./assemble/types` and consumed from `assemble/`.
+ */
+export interface ChatState {
+  /**
+   * Literal flag, not an `import_mode` enum value (C7) — adding a value to
+   * that enum needs a migration, which this plan's constraints forbid. The
+   * drafts list (Task 8) keys its "chat" label off this field alone.
+   */
+  surface: "chat";
+  transcript: ChatTurn[];
+  decisions: MergeDecision[];
+  /**
+   * Wide by design (Ruling 3 / C5), not narrowed to any one producer's
+   * shape: Task 4's rollup detector always sets `decision`, but Task 11's
+   * advisor-initiated `drop_row` has none, so it must stay optional.
+   */
+  excludedRows: Array<{ row: Annotated<ExtractedAccount>; reason: string; decision?: MergeDecision }>;
+  committedRowIds: string[];
+}
+
+/**
  * Shape persisted to `client_imports.payloadJson`. `fileResults` is the
  * source of truth raw per-file extraction; `payload` is the post-merge,
  * post-match shape the review wizard reads. Defined here so the match
@@ -135,6 +182,7 @@ export interface ImportPayloadJson {
   fileResults?: Record<string, ExtractionResult>;
   payload?: PersistedImportPayload;
   assemble?: AssembleState;   // NEW — Forge Plan Builder sub-state
+  chat?: ChatState;           // NEW — statement-chat surface sub-state (Task 6+)
 }
 
 /**

@@ -117,6 +117,14 @@ interface DedupeBucketEntry<T> {
    * `opts.conflictValueOf` — `T` is generic here and has no `value` field.
    */
   conflictValues: number[];
+  /**
+   * The `__rowId` minted for this bucket's FIRST occurrence. Carried on the
+   * entry — not recomputed — because the collapse rewrite below rebuilds the
+   * target row from `entry.content`, which is raw extracted content with no
+   * `__rowId` of its own; without this field a collapse would silently drop
+   * the id the row's earlier occurrence already had (Task 6, C2).
+   */
+  rowId: string;
 }
 
 /** Advisor-facing note about what a collapse actually changed, when the
@@ -229,10 +237,21 @@ function mergeSection<T extends { name: string }>(
     if (!entry.fileNames.includes(sourceName)) entry.fileNames.push(sourceName);
   };
 
-  for (const { content, provenance, sourceName } of rows) {
+  for (const [rowIndex, { content, provenance, sourceName }] of rows.entries()) {
     const key = computeKey(content);
     if (key === null) {
-      target.push({ ...content, __provenance: provenance, match: { kind: "new" } } as Annotated<T>);
+      target.push({
+        ...content,
+        __provenance: provenance,
+        // No dedupe key to derive an id from — fall back to this section
+        // plus the row's position in read order, which is deterministic
+        // across a re-merge of the same files (Task 6, R54). The `:null:`
+        // marker can never collide with a real `${label}:${key}` id: every
+        // `computeKey` in this file returns a `|`-delimited string with no
+        // colon in it, so this is the only branch that ever produces one.
+        __rowId: `${label}:null:${rowIndex}:${content.name}`,
+        match: { kind: "new" },
+      } as Annotated<T>);
       continue;
     }
 
@@ -261,6 +280,9 @@ function mergeSection<T extends { name: string }>(
       target[existingEntry.index] = {
         ...existingEntry.content,
         __provenance: existingEntry.provenance,
+        // Reused, not recomputed — see the `rowId` field doc on
+        // DedupeBucketEntry (C2).
+        __rowId: existingEntry.rowId,
         match: { kind: "new" },
       } as Annotated<T>;
       // Belt-and-braces callers (accounts — see FIX 5) can name what a
@@ -286,6 +308,10 @@ function mergeSection<T extends { name: string }>(
       continue;
     }
 
+    // `key` is non-null here (the null branch above always `continue`s), so
+    // `${label}:${key}` is the row's dedupe-derived id — deterministic
+    // across a re-merge of the same files (Task 6, C1/R54).
+    const rowId = `${label}:${key}`;
     const entry: DedupeBucketEntry<T> = {
       index: target.length,
       content,
@@ -296,9 +322,10 @@ function mergeSection<T extends { name: string }>(
       dates: [],
       fileNames: [],
       conflictValues: [],
+      rowId,
     };
     recordSource(entry, content, sourceName);
-    target.push({ ...content, __provenance: provenance, match: { kind: "new" } } as Annotated<T>);
+    target.push({ ...content, __provenance: provenance, __rowId: rowId, match: { kind: "new" } } as Annotated<T>);
     if (bucket) {
       bucket.push(entry);
     } else {
@@ -382,11 +409,25 @@ function mergeSection<T extends { name: string }>(
   }
 }
 
-/** Concatenate rows onto `target` with provenance annotated, no dedupe. */
+/**
+ * Concatenate rows onto `target` with provenance annotated, no dedupe.
+ *
+ * Also stamps `__rowId` (Task 6, C3) from `provenance.section` plus this
+ * row's push index — the only identity that exists on this path, since
+ * `concatSection` has no `computeKey` and nothing here ever merges or is
+ * excluded. Each call operates on one section's rows only, and no two
+ * sections share a `provenance.section` string, so the ids stay globally
+ * unique even though `committedRowIds` is a flat list across every section.
+ */
 function concatSection<T>(target: Annotated<T>[], rows: SourceRow<T>[]): void {
-  for (const { content, provenance } of rows) {
-    target.push({ ...content, __provenance: provenance, match: { kind: "new" } } as Annotated<T>);
-  }
+  rows.forEach(({ content, provenance }, index) => {
+    target.push({
+      ...content,
+      __provenance: provenance,
+      __rowId: `${provenance.section}:${index}`,
+      match: { kind: "new" },
+    } as Annotated<T>);
+  });
 }
 
 /**
