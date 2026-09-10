@@ -170,8 +170,12 @@ function describeRows(
       // tool calls this turn is allowed, so saying it up front is the
       // difference between one clear answer and a retry loop.
       const committed = r.__rowId && committedRowIds.has(r.__rowId) ? " committed=yes" : "";
+      // M1: `name` is `JSON.stringify`'d for the same reason `source` is —
+      // it is model-extracted text from a client's document, and the
+      // hand-rolled `"${r.name}"` it replaces let an account name carrying a
+      // literal `"` break out of its own quoting.
       return (
-        `- ${r.__rowId}: "${r.name}" value=${r.value ?? "?"} basis=${r.basis ?? "?"} ` +
+        `- ${r.__rowId}: ${JSON.stringify(r.name)} value=${r.value ?? "?"} basis=${r.basis ?? "?"} ` +
         `custodian=${r.custodian ?? "?"} source=${JSON.stringify(source)}${committed}`
       );
     })

@@ -342,4 +342,29 @@ describe("runTurn", () => {
     expect(systemContent).not.toContain(FILE_ID_1);
     expect(systemContent).not.toContain(FILE_ID_2);
   });
+
+  // M1: an account NAME is model-extracted text from a client's document,
+  // exactly like the file name next to it, and the hand-rolled `"${r.name}"`
+  // it replaced let a name carrying a literal `"` break out of its own
+  // quoting inside the untrusted-data fence.
+  //
+  // Mutation this catches: reverting `JSON.stringify(r.name)` to
+  // `"${r.name}"` — the row line would then read `- r1: "Statement "Final""`,
+  // with no unambiguous end to the name.
+  it("escapes an account name containing a quote, the same way it escapes a file name", async () => {
+    const model = modelReturning(new AIMessage("ok"));
+    await runTurn({
+      chat: emptyChat(),
+      importId: "i1",
+      payload: { accounts: [{ __rowId: "r1", name: 'Joint "Rainy Day" Fund', value: 1 }] } as never,
+      fileResults,
+      message: "hi",
+      model,
+    });
+    const invoke = (model.bindTools([]) as { invoke: ReturnType<typeof vi.fn> }).invoke;
+    const systemContent = String(
+      (invoke.mock.calls[0][0] as Array<{ content: unknown }>)[0].content,
+    );
+    expect(systemContent).toContain('"Joint \\"Rainy Day\\" Fund"');
+  });
 });
