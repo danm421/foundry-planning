@@ -4,6 +4,9 @@ import { strictPartial } from "@/lib/schemas/strict-partial";
 
 const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const uuidSchema = z.string().regex(uuidRegex, "Invalid UUID format");
+// NOTE: "Invalid UUID format" is deliberately kept — `describeApiError`
+// (src/lib/api-error-message.ts) recognises it and rewrites it into "pick an
+// option from the list" against the offending field's on-screen label.
 
 const base = {
   name: z.string().trim().min(1).max(200),
@@ -52,7 +55,7 @@ function validateTermFields(
   if (d.termIssueYear == null) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "Term policies require termIssueYear",
+      message: "Term policies need a term issue year",
       path: ["termIssueYear"],
     });
   }
@@ -61,14 +64,14 @@ function validateTermFields(
   if (!hasLength && !hasRetirement) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "Term policies require either termLengthYears or endsAtInsuredRetirement",
+      message: "Term policies need either a term length or an end at the insured's retirement",
       path: ["termLengthYears"],
     });
   }
   if (hasLength && hasRetirement) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "termLengthYears and endsAtInsuredRetirement are mutually exclusive",
+      message: "Set a term length or end it at the insured's retirement, not both",
       path: ["endsAtInsuredRetirement"],
     });
   }
@@ -93,7 +96,7 @@ function validateFreeFormSchedule(
   if (!d.cashValueSchedule || d.cashValueSchedule.length === 0) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "Schedule-driven modes require at least one schedule row",
+      message: "A free-form policy needs at least one row on the Schedule tab",
       path: ["cashValueSchedule"],
     });
   }
