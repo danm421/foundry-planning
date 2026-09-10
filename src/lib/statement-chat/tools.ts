@@ -285,30 +285,62 @@ export interface MergeRowsArgs {
 }
 
 /**
- * Backfill undefined/null ALLOWLISTED fields on `base` from `other`, without
- * touching a field `base` already has. C9: deliberately mirrors `unionFields`
- * in `merge-across-files.ts` — that helper is module-local and not exported,
- * so the semantics are re-implemented here rather than exporting merge
- * internals for a tool.
+ * The four internal annotations `Annotated<T>` adds — the ONLY keys a merge
+ * must not blend between two rows. `match` and `reconciliation` describe the
+ * surviving row's OWN commit/reconciliation status and must never silently
+ * inherit another row's; `__rowId` is the row's identity; `__provenance` gets
+ * its own explicit rule in `unionAccountFields` below.
  *
- * Review round 1, Important 4: the ORIGINAL version iterated every key of
- * `other`, including `match`, `reconciliation`, and `__provenance` — the
- * internal annotations Ruling 50 exists to protect from a tool write. Only
- * `EDITABLE_ACCOUNT_FIELDS` backfill here now. `__provenance` gets its own
- * explicit rule below (not the allowlist loop): it isn't advisor-editable
- * data, but knowing where a merged row came from is still useful to
- * `explain`, so it backfills ONLY when `base` has none at all — never
- * blended with `match`/`reconciliation`, which describe `base`'s OWN
- * commit/reconciliation status and must never silently inherit a different
- * row's status.
+ * Typed as `Record<keyof Annotated<object>, true>` rather than a hand-copied
+ * array (the same construction `ACCOUNT_CATEGORY_SET` uses above): TypeScript
+ * requires EVERY annotation key be present and rejects any key that isn't, so
+ * adding a fifth annotation to `Annotated` is a compile error here rather
+ * than a field that starts silently leaking across a merge.
+ */
+const ROW_ANNOTATION_KEYS: Record<keyof Annotated<object>, true> = {
+  __provenance: true,
+  match: true,
+  reconciliation: true,
+  __rowId: true,
+};
+
+/**
+ * Backfill undefined/null fields on `base` from `other`, without touching a
+ * field `base` already has. C9: deliberately mirrors `unionFields` in
+ * `merge-across-files.ts` — that helper is module-local and not exported, so
+ * the semantics are re-implemented here rather than exporting merge internals
+ * for a tool.
+ *
+ * Review round 1, Important 4 narrowed this to `EDITABLE_ACCOUNT_FIELDS`
+ * because the ORIGINAL version iterated every key of `other`, annotations
+ * included. That over-corrected (final review, I4): it also stopped
+ * `holdings`, `owners`, `ownerNameHint`, `statementDate`, `growthRate`,
+ * `modelPortfolioId` and every other extracted-but-not-advisor-editable field
+ * from carrying over, so merging a holdings-bearing row into a holdings-less
+ * one silently threw the positions away before the row was ever committed.
+ *
+ * The correct line is the ANNOTATIONS, not the editable columns. An allowlist
+ * is essential for `edit_row`, where the field name comes from the model
+ * (Ruling 50) — but nothing names a field here: `merge_rows` takes two row
+ * ids and both rows are system-extracted data, so the failure mode is silent
+ * data LOSS and a field added to `ExtractedAccount` later should carry over
+ * by default. `ROW_ANNOTATION_KEYS` is what makes that safe, and tsc keeps it
+ * complete.
+ *
+ * `__provenance` is skipped by the loop and handled explicitly: it isn't
+ * advisor-editable data, but knowing where a merged row came from is still
+ * useful to `explain`, so it backfills ONLY when `base` has none at all.
  */
 function unionAccountFields(base: AccountRow, other: AccountRow): AccountRow {
   const merged: AccountRow = { ...base };
-  for (const field of EDITABLE_ACCOUNT_FIELDS) {
-    const baseValue = merged[field];
-    const otherValue = other[field];
+  for (const key of Object.keys(other) as Array<keyof AccountRow>) {
+    // `Object.hasOwn`, not `key in` — `in` also matches Object.prototype's
+    // own keys, so a row carrying a field called "toString" would be skipped.
+    if (Object.hasOwn(ROW_ANNOTATION_KEYS, key)) continue;
+    const baseValue = merged[key];
+    const otherValue = other[key];
     if ((baseValue === undefined || baseValue === null) && otherValue !== undefined && otherValue !== null) {
-      (merged as unknown as Record<string, unknown>)[field] = otherValue;
+      (merged as unknown as Record<string, unknown>)[key] = otherValue;
     }
   }
   if (!merged.__provenance && other.__provenance) {

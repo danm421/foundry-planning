@@ -213,10 +213,13 @@ describe("statement chat tools", () => {
   });
 
   // Review round 1, Important 4 — the backfill must never touch internal
-  // annotations. Mutation this catches: the ORIGINAL `unionAccountFields`
-  // iterating every key of `other` (including `match`/`reconciliation`)
-  // instead of only `EDITABLE_ACCOUNT_FIELDS` — `keep`'s own match status
-  // would then be silently overwritten by `merge`'s.
+  // annotations. Mutation this catches: dropping `match`/`reconciliation`
+  // from `ROW_ANNOTATION_KEYS` — `keep`'s own commit and reconciliation
+  // status would then be silently overwritten by the retired row's.
+  //
+  // (I4 widened the loop from the editable allowlist to "every key except an
+  // annotation", so this is now the assertion carrying that line, not a side
+  // effect of a narrow allowlist.)
   it("merge_rows never backfills match/reconciliation from the retired row", () => {
     const withMatch = {
       accounts: [
@@ -251,6 +254,68 @@ describe("statement chat tools", () => {
     } as unknown as PersistedImportPayload;
     const next = mergeRows(withProvenance, { keepRowId: "r1", mergeRowId: "r2" }, NONE_COMMITTED);
     expect(next.payload.accounts![0].__provenance).toEqual({ sourceFileId: "f9", section: "accounts" });
+  });
+
+  // Final review, I4 — THE test that matters: the backfill used to cover only
+  // `EDITABLE_ACCOUNT_FIELDS`, so every extracted-but-not-editable field was
+  // thrown away by a merge. Merging a holdings-bearing row into a
+  // holdings-less one lost the positions outright, before the row ever
+  // reached the client's plan.
+  //
+  // Mutation this catches: narrowing the loop back to
+  // `EDITABLE_ACCOUNT_FIELDS` — every assertion below except `custodian`
+  // reverts to undefined.
+  it("merge_rows carries the non-editable extracted fields too, not just the editable columns", () => {
+    const holdings = [{ ticker: "VTI", shares: 100, value: 30_000 }];
+    const owners = [{ familyMemberId: "fm-1", percent: 100 }];
+    const withExtras = {
+      accounts: [
+        { __rowId: "r1", name: "IRA", value: 10_000 },
+        {
+          __rowId: "r2",
+          name: "IRA",
+          value: 10_000,
+          custodian: "Schwab",
+          holdings,
+          owners,
+          ownerNameHint: "JANE Q DOE",
+          statementDate: "2026-06-30",
+          growthRate: 0.061,
+          modelPortfolioId: "mp-7",
+          rmdEnabled: true,
+        },
+      ],
+    } as unknown as PersistedImportPayload;
+
+    const survivor = mergeRows(withExtras, { keepRowId: "r1", mergeRowId: "r2" }, NONE_COMMITTED)
+      .payload.accounts![0];
+
+    expect(survivor.holdings).toEqual(holdings);
+    expect(survivor.owners).toEqual(owners);
+    expect(survivor).toMatchObject({
+      custodian: "Schwab",
+      ownerNameHint: "JANE Q DOE",
+      statementDate: "2026-06-30",
+      growthRate: 0.061,
+      modelPortfolioId: "mp-7",
+      rmdEnabled: true,
+    });
+  });
+
+  // Backfill, never overwrite — the surviving row keeps what it already had.
+  it("merge_rows does not overwrite a non-editable field the surviving row already has", () => {
+    const bothHaveHoldings = {
+      accounts: [
+        { __rowId: "r1", name: "IRA", holdings: [{ ticker: "KEEP", shares: 1 }], statementDate: "2026-06-30" },
+        { __rowId: "r2", name: "IRA", holdings: [{ ticker: "LOSE", shares: 2 }], statementDate: "2026-03-31" },
+      ],
+    } as unknown as PersistedImportPayload;
+
+    const survivor = mergeRows(bothHaveHoldings, { keepRowId: "r1", mergeRowId: "r2" }, NONE_COMMITTED)
+      .payload.accounts![0];
+
+    expect(survivor.holdings).toEqual([{ ticker: "KEEP", shares: 1 }]);
+    expect(survivor.statementDate).toBe("2026-06-30");
   });
 
   // Mutation this catches: the FOURTH excluded shape (C3) regressing to a
