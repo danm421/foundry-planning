@@ -50,6 +50,20 @@ function parseTabs(input: unknown): CommitTab[] | { error: string } {
     return out;
 }
 
+// `rowIds` is optional: absent means "commit everything", the wizard's
+// existing behaviour (see CommitContext.rowIds). When present it must be a
+// non-empty array of strings — an empty array would be a filter that
+// silently matches nothing, which reads as a dead button on the caller's
+// end rather than a rejected request, so it is refused here the same way an
+// empty `tabs` array is.
+function parseRowIds(input: unknown): string[] | undefined | { error: string } {
+    if (input === undefined) return undefined;
+    if (!Array.isArray(input) || input.length === 0 || input.some((r) => typeof r !== "string")) {
+        return { error: "Body's `rowIds`, when present, must be a non-empty array of strings." };
+    }
+    return input;
+}
+
 export async function POST(request: NextRequest, { params }: Params) {
     try {
         const firmId = await requireOrgId();
@@ -135,13 +149,19 @@ export async function POST(request: NextRequest, { params }: Params) {
         }
 
         const body = (await request.json().catch(() => null)) as
-            | { tabs?: unknown }
+            | { tabs?: unknown; rowIds?: unknown }
             | null;
         const parsed = parseTabs(body?.tabs);
         if ("error" in parsed) {
             return NextResponse.json({ error: parsed.error }, { status: 400 });
         }
         const tabs = parsed;
+
+        const parsedRowIds = parseRowIds(body?.rowIds);
+        if (parsedRowIds !== undefined && !Array.isArray(parsedRowIds)) {
+            return NextResponse.json({ error: parsedRowIds.error }, { status: 400 });
+        }
+        const rowIds = parsedRowIds;
 
         const persistedPayload = (imp.payloadJson as ImportPayloadJson)?.payload;
         if (!persistedPayload) {
@@ -176,6 +196,7 @@ export async function POST(request: NextRequest, { params }: Params) {
                 resolvedHoldings,
                 holdingsAccountIds,
                 milestones: importMilestones?.milestones,
+                rowIds,
             },
         });
 

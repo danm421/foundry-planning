@@ -136,8 +136,19 @@ export async function commitAccounts(
   const result = emptyResult();
   const family = preloadedFamily ?? (await loadFamilyRoleIds(tx, ctx.clientId));
   const now = new Date();
+  // Built once outside the loop rather than `ctx.rowIds.includes(...)` per
+  // row, which would be O(n²) over the payload.
+  const rowIdFilter = ctx.rowIds ? new Set(ctx.rowIds) : null;
 
   for (const row of payload.accounts) {
+    // An explicit id list means the advisor committed specific rows from the
+    // chat surface. Absent list = commit everything, which is what the
+    // wizard has always done and must keep doing. A row with no `__rowId`
+    // can never be "listed", so it is skipped rather than guessed at.
+    if (rowIdFilter && (!row.__rowId || !rowIdFilter.has(row.__rowId))) {
+      continue;
+    }
+
     const kind = row.match?.kind ?? "new";
 
     if (kind === "fuzzy") {
