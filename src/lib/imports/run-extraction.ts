@@ -11,7 +11,23 @@ import type { DocumentType, ExtractionResult } from "@/lib/extraction/types";
 import type { UploadKind } from "@/lib/extraction/validate-upload";
 import { downloadImportFile } from "@/lib/imports/blob";
 import { summarizeExtraction } from "@/lib/imports/extract-summary";
+import type { ImportPayloadJson } from "@/lib/imports/types";
 import { bridgeTaxReturn } from "./tax-bridge";
+
+/**
+ * Per-file progress reported to `onFile` as each file settles. `accountCount`
+ * and `statementDate` are read off the just-extracted `ExtractionResult` — the
+ * only place they exist (C12). `statementDate` is the first account carrying
+ * one; a file extracted before Task 1's per-account statementDate field has
+ * none, and the event tolerates that (undefined, not a crash).
+ */
+export interface ExtractionFileProgress {
+    fileName: string;
+    accountCount: number;
+    statementDate?: string;
+    /** Present only when this file failed to extract. */
+    error?: string;
+}
 
 export interface RunExtractionArgs {
     importId: string;
@@ -29,6 +45,18 @@ export interface RunExtractionArgs {
      * route's 300s ceiling once a handful of files are in play.
      */
     skipExtracted?: boolean;
+    /**
+     * Invoked once per file as it settles (success or failure) — additive,
+     * so the wizard (which passes nothing) is unaffected (Task 9 / C3).
+     *
+     * Fires in COMPLETION order, not upload order: files run CONCURRENCY-wide
+     * in `Promise.all` chunks, so a later-uploaded file can settle first.
+     *
+     * Called OUTSIDE `extractOne`'s own try/catch (C12) — a throw from this
+     * callback must never be recorded as an extraction failure for a file
+     * that actually succeeded.
+     */
+    onFile?: (progress: ExtractionFileProgress) => void;
 }
 
 export interface RunExtractionResult {
@@ -49,6 +77,7 @@ export async function runImportExtraction(
         extractHoldings,
         comprehensive = false,
         skipExtracted = false,
+        onFile,
     } = args;
 
     // Load all live files for this import.
@@ -71,9 +100,13 @@ export async function runImportExtraction(
 
     if (!importRow) throw new Error(`Import not found: ${importId}`);
 
+    // Read the FULL prior payload, not just `fileResults` — `chat` (the
+    // statement-chat surface's slice, Task 6+) must survive the wholesale
+    // write below (C11), and this is the only read of the pre-extraction row.
+    const priorPayload = (importRow.payloadJson ?? {}) as ImportPayloadJson;
+
     const fileResults: Record<string, ExtractionResult> = {
-        ...((importRow.payloadJson as { fileResults?: Record<string, ExtractionResult> })
-            ?.fileResults ?? {}),
+        ...(priorPayload.fileResults ?? {}),
     };
 
     const pending = skipExtracted
@@ -128,6 +161,11 @@ export async function runImportExtraction(
             firmId,
             metadata: { importId, model },
         });
+
+        let outcome: FileOutcome;
+        // Set on the success path only; read by the `onFile` call below.
+        let progress: { accountCount: number; statementDate?: string } = { accountCount: 0 };
+        let failureMessage: string | undefined;
 
         try {
             const buffer = await downloadImportFile(file.blobUrl);
@@ -185,7 +223,12 @@ export async function runImportExtraction(
                 },
             });
 
-            return { ok: true, fileId: file.id, result };
+            outcome = { ok: true, fileId: file.id, result };
+            progress = {
+                accountCount: result.extracted.accounts.length,
+                statementDate: result.extracted.accounts.find((a) => a.statementDate)
+                    ?.statementDate,
+            };
         } catch (err) {
             const safeMessage =
                 err instanceof Error
@@ -213,8 +256,32 @@ export async function runImportExtraction(
                 metadata: { importId, model, error: safeMessage },
             });
 
-            return { ok: false, fileId: file.id };
+            outcome = { ok: false, fileId: file.id };
+            failureMessage = safeMessage;
         }
+
+        // Deliberately OUTSIDE the try/catch above (C12): a throw from
+        // `onFile` must never be recorded as an extraction failure for a
+        // file that actually succeeded (or double-recorded for one that
+        // didn't). Also deliberately swallowed rather than left to propagate:
+        // `extractOne` runs inside `Promise.all`, so an uncaught throw here
+        // would reject the whole concurrency chunk and take every file in it
+        // down with it over a bug in a caller-supplied progress callback.
+        try {
+            onFile?.({
+                fileName: file.originalFilename,
+                accountCount: progress.accountCount,
+                statementDate: progress.statementDate,
+                error: failureMessage,
+            });
+        } catch (callbackErr) {
+            console.error(
+                `[import-extract] onFile callback threw for file ${file.id}:`,
+                callbackErr instanceof Error ? callbackErr.message : callbackErr,
+            );
+        }
+
+        return outcome;
     };
 
     for (let i = 0; i < pending.length; i += CONCURRENCY) {
@@ -239,7 +306,15 @@ export async function runImportExtraction(
         .update(clientImports)
         .set({
             status: summary.status,
-            payloadJson: { fileResults },
+            // `payload` and `assemble` are deliberately dropped here, as
+            // before (see the "Nothing new to read" comment above) — but `chat`
+            // (Task 6+'s statement-chat slice) did NOT exist when that
+            // wholesale-replace write was first added, and dropping it is
+            // NOT deliberate: it silently reverts a chat-surface import to
+            // the ordinary wizard the moment extraction re-runs (C11). Carry
+            // it forward when present; a wizard import has none, so its
+            // persisted value stays byte-identical.
+            payloadJson: { fileResults, ...(priorPayload.chat ? { chat: priorPayload.chat } : {}) },
             updatedAt: new Date(),
         })
         .where(eq(clientImports.id, importId));
