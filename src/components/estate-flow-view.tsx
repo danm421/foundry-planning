@@ -443,9 +443,12 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
         saved++;
       }
 
-      // writer.submit refreshes after each overlay edit, but base-mode writes
-      // and the gift routes do not — an explicit refresh reloads
-      // initialGifts/initialClientData and clears the dirty badge.
+      // Gift writes now go through `submit`, which refreshes on every
+      // successful write in both base and scenario mode. The explicit
+      // refresh below is still needed for the base-mode `pendingChanges`
+      // writes above — they call `fetch` directly and never refresh
+      // themselves — reloading initialGifts/initialClientData and
+      // clearing the dirty badge.
       if (needsExplicitRefresh) router.refresh();
     } catch {
       setSaveError("Network error while saving — please try again.");
