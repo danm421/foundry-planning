@@ -57,10 +57,16 @@ function jsonResponse(
  *     `chat/extract/route.ts` (outside this task's file list; see the task
  *     report for the residual TOCTOU window this does not close).
  *
- * `payload.accounts` is never written back here (C13): the turn's edits are
- * returned in the response for the (not-yet-built) composer to adopt into
- * its own state and persist through the EXISTING accounts-PATCH path —
- * writing it here too would race that same PATCH from the other direction.
+ * `payload.accounts` IS written back here, in the SAME write as the chat
+ * slice (task-review correction — see the task report's "Concern 2"
+ * addendum). A tool-mutated row that only lived in the HTTP response, never
+ * persisted, would leave the transcript claiming an edit that a resumed
+ * draft's table does not show — a narrated action the data never reflects,
+ * the exact class of defect Ruling 27 already refused to ship once. Only the
+ * MUTATING tools' output reaches this write: `reread_document` never mutates
+ * `runTurn`'s returned `payload` (it always hands back the same reference —
+ * proven in tools.test.ts), so a proposal-only turn persists the payload
+ * byte-identical, same as before.
  */
 export async function POST(request: Request, { params }: Params) {
   // --- Gate chain (canonical order per C7 — mirrors chat/extract/route.ts) ---
@@ -233,13 +239,23 @@ export async function POST(request: Request, { params }: Params) {
   const nextTranscript = [...freshChat.transcript, ...turnResult.turnEntries];
   const nextExcludedRows = [...freshChat.excludedRows, ...turnResult.newExcludedRows];
 
+  // Task-review correction: `payload.accounts` is persisted in the SAME
+  // write as the chat slice, not left for the (not-yet-built) composer to
+  // round-trip through the accounts-PATCH path alone — a turn that edits a
+  // row but is never committed would otherwise leave a transcript claiming
+  // an edit the payload never reflects. `writeChatState` only ever touches
+  // `chat`, so `payload` is set alongside it explicitly. Shape stays
+  // `{ accounts }` only (this surface never persists any other section).
   await db
     .update(clientImports)
     .set({
-      payloadJson: writeChatState(freshPayloadJson, {
-        transcript: nextTranscript,
-        excludedRows: nextExcludedRows,
-      }),
+      payloadJson: {
+        ...writeChatState(freshPayloadJson, {
+          transcript: nextTranscript,
+          excludedRows: nextExcludedRows,
+        }),
+        payload: { accounts: turnResult.payload.accounts ?? [] },
+      },
       updatedAt: new Date(),
     })
     .where(eq(clientImports.id, importId));

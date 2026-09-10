@@ -288,9 +288,6 @@ describe("chat turn route behavior", () => {
       { role: "tool", tool: "edit_row", summary: "Set basis to 5.", at: "t1" },
       { role: "assistant", text: "Done.", at: "t1" },
     ]);
-    // `payloadJson.payload` is a sibling of `chat` and is NEVER touched here
-    // (C13 — persistence stays owned by the accounts-PATCH path).
-    expect(written.payload).toEqual(CHAT_PAYLOAD.payload);
 
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -301,7 +298,45 @@ describe("chat turn route behavior", () => {
     );
   });
 
-  it("includes a proposal in the response when reread_document produced one", async () => {
+  // Task-review correction (Concern 2): a tool-mutated payload must be
+  // persisted to `payloadJson.payload` in the SAME write as the transcript —
+  // otherwise a turn that edits a row but is never committed leaves a
+  // transcript claiming the edit happened while a resumed draft's table
+  // still shows the old value. Mutation this catches: dropping the
+  // `payload: { accounts: ... }` key from the route's `db.update` call (i.e.
+  // reverting to "never persist payload here") — `written.payload` would
+  // then equal the ORIGINAL `CHAT_PAYLOAD.payload` (no basis), not the
+  // mutated one this test asserts.
+  it("persists a tool-mutated payload to payloadJson.payload in the same write as the transcript", async () => {
+    runTurn.mockResolvedValue({
+      payload: { accounts: [{ __rowId: "r1", name: "IRA", value: 1, basis: 5 }] },
+      turnEntries: [
+        { role: "user", text: "fix the basis", at: "t1" },
+        { role: "tool", tool: "edit_row", summary: "Set basis to 5.", at: "t1" },
+        { role: "assistant", text: "Done.", at: "t1" },
+      ],
+      newExcludedRows: [],
+      summary: "Done.",
+    });
+
+    const res = await POST(req({ message: "fix the basis" }), params);
+    expect(res.status).toBe(200);
+
+    expect(updateCalls).toHaveLength(1);
+    const written = updateCalls[0].values.payloadJson as ImportPayloadJson;
+    // The mutated payload landed in the SAME write as the transcript...
+    expect(written.payload).toEqual({ accounts: [{ __rowId: "r1", name: "IRA", value: 1, basis: 5 }] });
+    // ...on the shape this surface actually persists: `accounts` only, never
+    // widened to any other section.
+    expect(Object.keys(written.payload as object)).toEqual(["accounts"]);
+  });
+
+  // The other half of the same correction: a tool that only PROPOSES
+  // (reread_document) must never move payload.accounts. `defaultTurnResult`
+  // returns the SAME accounts CHAT_PAYLOAD started with, so this proves a
+  // proposal-bearing turn persists the payload byte-identical rather than
+  // picking up some other change.
+  it("includes a proposal in the response, and leaves payloadJson.payload untouched", async () => {
     runTurn.mockResolvedValue({
       ...defaultTurnResult(),
       proposal: { rowId: "r1", field: "basis", value: 10 },
@@ -309,6 +344,9 @@ describe("chat turn route behavior", () => {
     const res = await POST(req(), params);
     const body = await res.json();
     expect(body.proposal).toEqual({ rowId: "r1", field: "basis", value: 10 });
+
+    const written = updateCalls[0].values.payloadJson as ImportPayloadJson;
+    expect(written.payload).toEqual(CHAT_PAYLOAD.payload);
   });
 
   // THE test that matters for C12 #1: the row used to seed the model

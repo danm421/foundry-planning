@@ -210,8 +210,13 @@ export interface RunTurnArgs {
 }
 
 export interface RunTurnResult {
-  /** Final payload after every tool mutation this turn made — NOT persisted
-   *  by the route; returned so the caller (11b) can adopt it (C13 #1). */
+  /** Final payload after every tool mutation this turn made. Returned so the
+   *  caller (11b) can adopt it into React state (C13 #1) AND persisted by
+   *  the route to `payloadJson.payload` in the same write as the chat slice
+   *  (task-review correction) — a mutation a resumed draft's table must
+   *  actually show, not just a value that rode along in the HTTP response.
+   *  `reread_document` never reassigns this (it only sets `proposal`), so a
+   *  proposal-only turn returns it byte-identical to what it started with. */
   payload: PersistedImportPayload;
   /** The delta to append to the PRIOR (freshly re-read) transcript: the
    *  user's message, one entry per tool call, and the assistant's reply. */
