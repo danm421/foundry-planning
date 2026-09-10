@@ -9,6 +9,7 @@ import DialogShell from "@/components/dialog-shell";
 import { inputClassName, fieldLabelClassName } from "./input-styles";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { coerceAssetTransactionDraft } from "@/lib/solver/technique-form-data";
+import { bundleNameFromLegs } from "@/lib/solver/asset-transaction-bundles";
 import SellLegEditor from "./asset-transaction-sell-leg";
 import BuyLegEditor from "./asset-transaction-buy-leg";
 import {
@@ -56,6 +57,8 @@ export interface AssetTransactionInitialData {
   mortgageAmount: string | null;
   mortgageRate: string | null;
   mortgageTermMonths: number | null;
+  /** Set when this record was saved as part of a multi-leg transaction. */
+  bundleId?: string | null;
 }
 
 export interface BusinessSaleOption {
@@ -103,12 +106,26 @@ interface AddAssetTransactionFormProps {
   /** Names of existing transactions — used to seed a unique default name in add mode. */
   existingNames?: string[];
   initialData?: AssetTransactionInitialData;
+  /** Every record in `initialData`'s bundle, including it. When present the
+   *  dialog edits the WHOLE bundle: one leg per record, add/remove allowed,
+   *  and one save writes each record back. */
+  bundleRecords?: AssetTransactionInitialData[];
+  /** Called for a record whose leg was removed in the dialog. Draft mode only —
+   *  persisting mode issues the DELETE itself. */
+  onDeleteDraft?: (recordId: string) => void;
   /** When provided, the form emits the assembled AssetTransaction engine object
    *  via this callback and does NOT persist. Add mode fans out ONE call PER LEG;
-   *  edit mode calls exactly once. */
+   *  edit mode calls once PER RECORD it writes. */
   onSubmitDraft?: (technique: AssetTransaction) => void;
   onClose: () => void;
   onSaved: () => void;
+}
+
+/** `writer.submit` reports a failed write in the response rather than throwing;
+ *  turn one into the error the dialog shows. */
+async function throwIfFailed(res: Response, fallbackMessage: string): Promise<void> {
+  if (res.ok) return;
+  throw new Error((await res.json()).error ?? fallbackMessage);
 }
 
 /** First unused name in the "Transaction", "Transaction 2", … sequence. */
@@ -134,6 +151,8 @@ export default function AddAssetTransactionForm({
   spouseFirstName,
   existingNames,
   initialData,
+  bundleRecords,
+  onDeleteDraft,
   onSubmitDraft,
   onClose,
   onSaved,
@@ -151,16 +170,28 @@ export default function AddAssetTransactionForm({
   const [error, setError] = useState<string | null>(null);
 
   // ── Ledger state ────────────────────────────────────────────────────────────
-  const [name, setName] = useState(
-    () => initialData?.name ?? nextTransactionName(existingNames),
+  // Edit mode operates on the whole bundle. `records` is the authoritative list:
+  // the bundle when the caller knows it, else the single clicked record.
+  const records = useMemo<AssetTransactionInitialData[]>(
+    () => (bundleRecords?.length ? bundleRecords : initialData ? [initialData] : []),
+    [bundleRecords, initialData],
   );
-  const [year, setYear] = useState(initialData?.year ?? currentYear);
+  const initialLegs = useMemo(() => records.flatMap(legsFromInitialData), [records]);
+
+  const [name, setName] = useState(() =>
+    records.length === 0
+      ? nextTransactionName(existingNames)
+      : records.length === 1
+        ? records[0].name
+        : bundleNameFromLegs(records),
+  );
+  const [year, setYear] = useState(records[0]?.year ?? currentYear);
   const [yearRef, setYearRef] = useState<YearRef | null>(null);
   const [legs, setLegs] = useState<LegDraft[]>(() =>
-    initialData ? legsFromInitialData(initialData) : [emptySellLeg(crypto.randomUUID())],
+    initialLegs.length ? initialLegs : [emptySellLeg(crypto.randomUUID())],
   );
-  const [activeLegKey, setActiveLegKey] = useState<string | null>(() =>
-    initialData ? (legsFromInitialData(initialData)[0]?.key ?? null) : null,
+  const [activeLegKey, setActiveLegKey] = useState<string | null>(
+    () => initialLegs[0]?.key ?? null,
   );
 
   const sellLegs = useMemo(
@@ -310,53 +341,144 @@ export default function AddAssetTransactionForm({
   const showNet = sellLegs.some(sellHasData) || buyLegs.some(buyHasData);
 
   // ── Submit ────────────────────────────────────────────────────────────────
+  /** Write ONE new record for a leg — the create path add mode and a grown
+   *  bundle share. The callers differ only in the name and bundle id. */
+  async function createLegRecord(
+    leg: LegDraft,
+    legName: string,
+    bundleId: string | undefined,
+  ) {
+    const body = {
+      ...legToBody({ ...leg, name: legName }, year, {
+        isRealEstate: leg.kind === "sell" ? realEstateFor(leg) : false,
+      }),
+      ...(bundleId ? { bundleId } : {}),
+    };
+    const id = crypto.randomUUID();
+    if (onSubmitDraft) {
+      onSubmitDraft(coerceAssetTransactionDraft(body, id));
+      return;
+    }
+    await throwIfFailed(
+      await writer.submit(
+        { op: "add", targetKind: "asset_transaction", entity: { id, ...body } },
+        { url: `/api/clients/${clientId}/asset-transactions`, method: "POST", body },
+      ),
+      "Failed to save transaction",
+    );
+  }
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
     try {
-      if (isEdit && initialData) {
-        // One record — merge its reconstructed side(s).
-        const anySell = legs.find((l): l is SellLegDraft => l.kind === "sell");
-        const body = mergeEditBody(legs, name, year, {
-          isRealEstate: anySell ? realEstateFor(anySell) : false,
-        });
-        if (onSubmitDraft) {
-          onSubmitDraft(coerceAssetTransactionDraft(body, initialData.id));
-        } else {
-          const res = await writer.submit(
-            {
-              op: "edit",
-              targetKind: "asset_transaction",
-              targetId: initialData.id,
-              desiredFields: body,
-            },
-            {
-              url: `/api/clients/${clientId}/asset-transactions`,
-              method: "PUT",
-              body: { ...body, transactionId: initialData.id },
-            },
+      if (isEdit && records.length > 0) {
+        // One record per surviving recordId (a legacy swap row keeps BOTH of its
+        // legs and merges back into itself), plus creates for new legs and
+        // deletes for records whose leg was dropped.
+        const byRecord = new Map<string, LegDraft[]>();
+        const created: LegDraft[] = [];
+        for (const leg of legs) {
+          if (leg.recordId) {
+            const list = byRecord.get(leg.recordId);
+            if (list) list.push(leg);
+            else byRecord.set(leg.recordId, [leg]);
+          } else created.push(leg);
+        }
+        const dropped = records.filter((r) => !byRecord.has(r.id));
+
+        // Dropping a record needs somewhere to send the delete — in draft mode
+        // that is `onDeleteDraft`. Without it the leg the advisor removed would
+        // quietly survive the save, so refuse the whole save and say so.
+        if (dropped.length > 0 && onSubmitDraft && !onDeleteDraft) {
+          throw new Error(
+            "Can't remove that leg here. Delete it from the Techniques list instead.",
           );
-          if (!res.ok) throw new Error((await res.json()).error ?? "Failed to save transaction");
+        }
+
+        // A legacy swap row is ONE record holding two legs — it is not a bundle,
+        // and must save back under its own name, unchanged. So both the bundle
+        // id and the derived-name decision count RECORDS, never legs.
+        const recordCount = byRecord.size + created.length;
+        // Only a bundle-aware caller — one whose `bundleRecords` is what
+        // `records` came from — may mint an id. A caller that passed a single
+        // record without knowing its bundle would otherwise stamp a NEW id over
+        // the record's real one, silently pulling it out of its bundle and
+        // orphaning the siblings still carrying the old id.
+        const bundleAware = !!bundleRecords?.length;
+        const bundleId =
+          records.find((r) => r.bundleId)?.bundleId ??
+          (bundleAware && recordCount > 1 ? crypto.randomUUID() : undefined);
+        // A multi-record transaction derives every leg's name from the shared
+        // name — so renaming the transaction renames each leg; a lone record
+        // keeps the name field verbatim.
+        const multi = recordCount > 1;
+        const legNameFor = (leg: LegDraft): string =>
+          multi ? deriveLegName(leg, name, { assetLabel: assetLabelFor(leg) }) : name;
+
+        for (const [recordId, recordLegs] of byRecord) {
+          const sell = recordLegs.find((l): l is SellLegDraft => l.kind === "sell");
+          const body = {
+            ...mergeEditBody(recordLegs, legNameFor(recordLegs[0]), year, {
+              isRealEstate: sell ? realEstateFor(sell) : false,
+            }),
+            ...(bundleId ? { bundleId } : {}),
+          };
+          if (onSubmitDraft) {
+            onSubmitDraft(coerceAssetTransactionDraft(body, recordId));
+          } else {
+            await throwIfFailed(
+              await writer.submit(
+                {
+                  op: "edit",
+                  targetKind: "asset_transaction",
+                  targetId: recordId,
+                  desiredFields: body,
+                },
+                {
+                  url: `/api/clients/${clientId}/asset-transactions`,
+                  method: "PUT",
+                  body: { ...body, transactionId: recordId },
+                },
+              ),
+              "Failed to save transaction",
+            );
+          }
+        }
+
+        for (const leg of created) {
+          await createLegRecord(leg, legNameFor(leg), bundleId);
+        }
+
+        for (const record of dropped) {
+          if (onSubmitDraft) {
+            // The guard above already proved a handler exists.
+            onDeleteDraft?.(record.id);
+          } else {
+            await throwIfFailed(
+              await writer.submit(
+                { op: "remove", targetKind: "asset_transaction", targetId: record.id },
+                {
+                  url: `/api/clients/${clientId}/asset-transactions?transactionId=${record.id}`,
+                  method: "DELETE",
+                },
+              ),
+              "Failed to delete transaction",
+            );
+          }
         }
       } else {
-        // Add mode — fan out to N records.
+        // Add mode — fan out to N records that share ONE bundle id, so the
+        // Techniques list can render them as a single technique.
+        const bundleId = crypto.randomUUID();
         for (const leg of legs) {
-          const legName = leg.name || deriveLegName(leg, name, { assetLabel: assetLabelFor(leg) });
-          const body = legToBody({ ...leg, name: legName }, year, {
-            isRealEstate: leg.kind === "sell" ? realEstateFor(leg) : false,
-          });
-          const id = crypto.randomUUID();
-          if (onSubmitDraft) {
-            onSubmitDraft(coerceAssetTransactionDraft(body, id));
-          } else {
-            const res = await writer.submit(
-              { op: "add", targetKind: "asset_transaction", entity: { id, ...body } },
-              { url: `/api/clients/${clientId}/asset-transactions`, method: "POST", body },
-            );
-            if (!res.ok) throw new Error((await res.json()).error ?? "Failed to save transaction");
-          }
+          await createLegRecord(
+            leg,
+            deriveLegName(leg, name, { assetLabel: assetLabelFor(leg) }),
+            bundleId,
+          );
         }
       }
       onSaved();
@@ -475,7 +597,7 @@ export default function AddAssetTransactionForm({
             }))}
             onEdit={setActiveLegKey}
             onRemove={removeLeg}
-            onAdd={isEdit ? undefined : addSell}
+            onAdd={addSell}
             addLabel="Add sell"
           />
 
@@ -555,7 +677,7 @@ export default function AddAssetTransactionForm({
             }))}
             onEdit={setActiveLegKey}
             onRemove={removeLeg}
-            onAdd={isEdit ? undefined : addBuy}
+            onAdd={addBuy}
             addLabel="Add buy"
           />
         </div>

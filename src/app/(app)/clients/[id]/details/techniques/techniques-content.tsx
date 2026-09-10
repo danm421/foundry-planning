@@ -151,6 +151,7 @@ export async function TechniquesContent({ clientId: id, scenarioParam }: Techniq
     accountId: tx.accountId ?? null,
     purchaseTransactionId: tx.purchaseTransactionId ?? null,
     businessAccountId: tx.businessAccountId ?? null,
+    bundleId: tx.bundleId ?? null,
     fractionSold: tx.fractionSold == null ? null : String(tx.fractionSold),
     overrideSaleValue: tx.overrideSaleValue == null ? null : String(tx.overrideSaleValue),
     overrideBasis: tx.overrideBasis == null ? null : String(tx.overrideBasis),

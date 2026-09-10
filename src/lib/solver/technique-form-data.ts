@@ -102,6 +102,7 @@ export function toAssetTransactionInitialData(
     mortgageAmount: numToString(at.mortgageAmount),
     mortgageRate: numToString(at.mortgageRate),
     mortgageTermMonths: at.mortgageTermMonths ?? null,
+    bundleId: at.bundleId ?? null,
   };
 }
 

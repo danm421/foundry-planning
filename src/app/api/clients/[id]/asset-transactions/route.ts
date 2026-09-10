@@ -81,6 +81,8 @@ const postBodySchema = z
     // Business-sale source. Mutually exclusive with accountId / purchaseTransactionId.
     businessAccountId: z.string().uuid().nullable().optional(),
     fractionSold: z.number().gt(0).lte(1).nullable().optional(),
+    // Shared by every leg saved from one dialog. Display-only grouping key.
+    bundleId: z.string().uuid().nullable().optional(),
   })
   .superRefine((val, ctx) => {
     if (val.type === "sell") {
@@ -187,6 +189,8 @@ const putBodySchema = z
     // Business-sale source. Mutually exclusive with accountId / purchaseTransactionId.
     businessAccountId: z.string().uuid().nullable().optional(),
     fractionSold: z.number().gt(0).lte(1).nullable().optional(),
+    // Shared by every leg saved from one dialog. Display-only grouping key.
+    bundleId: z.string().uuid().nullable().optional(),
   })
   .superRefine((val, ctx) => {
     // Only enforce sell/buy source rules when type is explicitly supplied.
@@ -326,6 +330,7 @@ export async function POST(
       purchaseTransactionId,
       businessAccountId,
       fractionSold,
+      bundleId,
     } = parsed;
 
     const acctCheck = await assertAccountsInClient(id, [
@@ -428,6 +433,7 @@ export async function POST(
         businessAccountId: businessAccountId ?? null,
         fractionSold:
           fractionSold != null ? String(fractionSold) : null,
+        bundleId: bundleId ?? null,
       })
       .returning();
 
@@ -509,6 +515,7 @@ export async function PUT(
       purchaseTransactionId,
       businessAccountId,
       fractionSold,
+      bundleId,
     } = parsed;
 
     const acctCheck = await assertAccountsInClient(id, [
@@ -611,6 +618,7 @@ export async function PUT(
         ...(fractionSold !== undefined && {
           fractionSold: fractionSold !== null ? String(fractionSold) : null,
         }),
+        ...(bundleId !== undefined && { bundleId }),
         updatedAt: new Date(),
       })
       .where(and(eq(assetTransactions.id, transactionId), eq(assetTransactions.clientId, id)))

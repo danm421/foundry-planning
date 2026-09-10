@@ -469,3 +469,72 @@ describe("SolverTechniquesTab", () => {
     ]);
   });
 });
+
+describe("SolverTechniquesTab — asset transaction bundles", () => {
+  const bundleLegs = [
+    { id: "at-sell", name: "Move house — Sell Oak Ave", type: "sell" as const, year: 2027, bundleId: "bun-1" },
+    { id: "at-buy", name: "Move house — Buy Wildwood", type: "buy" as const, year: 2027, bundleId: "bun-1", assetName: "Wildwood" },
+  ];
+  const bundleTree = {
+    accounts: [], rothConversions: [], assetTransactions: bundleLegs,
+  } as unknown as ClientData;
+
+  it("shows two legs as ONE technique row", () => {
+    render(<SolverTechniquesTab {...baseProps} workingTree={bundleTree} onChange={vi.fn()} />);
+    expect(screen.getAllByRole("switch")).toHaveLength(1);
+    expect(screen.getByText("Move house")).toBeTruthy();
+    expect(screen.getByText(/Sell Oak Ave \+ Buy Wildwood · 2027/)).toBeTruthy();
+  });
+
+  it("removes every leg of the bundle", () => {
+    const onChange = vi.fn();
+    render(<SolverTechniquesTab {...baseProps} workingTree={bundleTree} onChange={onChange} />);
+    fireEvent.click(screen.getByRole("button", { name: /remove technique/i }));
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(onChange.mock.calls.map((c) => c[0].id).sort()).toEqual(["at-buy", "at-sell"]);
+    expect(onChange.mock.calls.every((c) => c[0].value === null)).toBe(true);
+  });
+
+  it("switches every leg off together", () => {
+    const onChange = vi.fn();
+    render(<SolverTechniquesTab {...baseProps} workingTree={bundleTree} onChange={onChange} />);
+    fireEvent.click(screen.getByRole("switch"));
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(onChange.mock.calls.every((c) => c[0].value.enabled === false)).toBe(true);
+  });
+
+  it("reads off when one leg is off, and clicking turns BOTH on by omission (not enabled:true)", () => {
+    const onChange = vi.fn();
+    const mixedLegs = [bundleLegs[0], { ...bundleLegs[1], enabled: false }];
+    const mixedTree = {
+      accounts: [], rothConversions: [], assetTransactions: mixedLegs,
+    } as unknown as ClientData;
+    render(<SolverTechniquesTab {...baseProps} workingTree={mixedTree} onChange={onChange} />);
+    // The card reads off overall, even though only one leg is off.
+    expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "false");
+    fireEvent.click(screen.getByRole("switch"));
+    expect(onChange).toHaveBeenCalledTimes(2);
+    // "On" is written as the ABSENCE of enabled (undefined), same convention
+    // flipEnabled uses elsewhere — a plain `true` would create a spurious
+    // scenario diff for legs that were already on by omission.
+    expect(onChange.mock.calls.every((c) => c[0].value.enabled === undefined)).toBe(true);
+  });
+
+  it("badges a bundle 'Added' when only some of its legs are in the base plan", () => {
+    render(
+      <SolverTechniquesTab
+        {...baseProps}
+        workingTree={bundleTree}
+        baseTechniqueIds={{
+          roth: new Set<string>(),
+          asset: new Set(["at-sell"]),
+          reinvestment: new Set<string>(),
+          relocation: new Set<string>(),
+        }}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Added")).toBeInTheDocument();
+    expect(screen.queryByText("Base plan")).not.toBeInTheDocument();
+  });
+});

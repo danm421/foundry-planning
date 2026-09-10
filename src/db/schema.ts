@@ -5200,6 +5200,10 @@ export const assetTransactions = pgTable("asset_transactions", {
   // Partial-sale fraction. null = full sale (today's binary behavior). 0 < x ≤ 1
   // = partial. Sell-only via CHECK; null on buys.
   fractionSold: decimal("fraction_sold", { precision: 7, scale: 6 }),
+  // Legs saved from ONE Add Asset Transactions dialog share this id, so the UI
+  // can show them as one technique. Display-only: no engine code reads it, and
+  // null (every pre-existing row) means "a standalone transaction".
+  bundleId: uuid("bundle_id"),
   // Buy fields
   assetName: text("asset_name"),
   assetCategory: accountCategoryEnum("asset_category"),
