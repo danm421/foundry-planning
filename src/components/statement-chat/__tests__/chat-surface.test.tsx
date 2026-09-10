@@ -447,114 +447,14 @@ describe("ChatSurface — payload.accounts must never regress a linked row (roun
     expect(r1Entry?.match).toEqual({ kind: "exact", existingId: "acct-1" });
   });
 
-  // Sequence 2 named in the review: "two quick clicks on different rows."
-  // `pending` is keyed per rowId (entity-table.tsx), so nothing at the
-  // table layer stops row 2's commit from starting before row 1's has
-  // finished persisting its link. Firing both without awaiting between
-  // them and inspecting the LAST payload.accounts PATCH proves the two
-  // commits ran one at a time rather than interleaved — row 2's PATCH can
-  // only show row 1 as already `exact` if row 2's own pre-commit read
-  // happened AFTER row 1's write had fully landed.
-  it("does not let two commits for different rows race and regress each other's link", async () => {
-    vi.mocked(fetch).mockReset();
-    vi.mocked(fetch)
-      .mockResolvedValueOnce(importGetResponse({})) // mount GET
-      .mockResolvedValueOnce(
-        makeFramedResponse([
-          `data: ${JSON.stringify({
-            type: "done",
-            summary: "Read 1 statement covering 2 accounts.",
-            caveats: [],
-            rows: [
-              { name: "IRA", custodian: "Schwab", value: 100, __rowId: "r1" },
-              { name: "Brokerage", custodian: "Schwab", value: 200, __rowId: "r2" },
-            ],
-            excluded: [],
-          })}\n\n`,
-        ]),
-      ); // extraction POST
-
-    render(<ChatSurface clientId="c1" importId="i1" initialFiles={initialFiles} />);
-    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
-    await screen.findByRole("table");
-
-    // Row 1's full commit chain — queued as if it runs to completion before
-    // row 2's begins (the invariant this test is checking).
-    vi.mocked(fetch)
-      .mockResolvedValueOnce(importGetResponse({})) // r1 fresh GET — nothing persisted yet
-      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 })) // r1 PATCH payload.accounts
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            ok: true,
-            payload: {
-              accounts: [
-                { name: "IRA", custodian: "Schwab", value: 100, __rowId: "r1", match: { kind: "exact", existingId: "acct-1" } },
-                { name: "Brokerage", custodian: "Schwab", value: 200, __rowId: "r2" },
-              ],
-            },
-          }),
-          { status: 200 },
-        ),
-      ) // r1 POST commit
-      .mockResolvedValueOnce(importGetResponse({})) // r1 fresh GET for chat
-      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 })) // r1 PATCH chat
-      // Row 2's chain — its fresh read must land AFTER row 1's above, so it
-      // sees row 1 already linked.
-      .mockResolvedValueOnce(
-        importGetResponse({
-          payload: {
-            accounts: [
-              { name: "IRA", custodian: "Schwab", value: 100, __rowId: "r1", match: { kind: "exact", existingId: "acct-1" } },
-            ],
-          },
-        }),
-      ) // r2 fresh GET
-      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 })) // r2 PATCH payload.accounts
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            ok: true,
-            payload: {
-              accounts: [
-                { name: "IRA", custodian: "Schwab", value: 100, __rowId: "r1", match: { kind: "exact", existingId: "acct-1" } },
-                { name: "Brokerage", custodian: "Schwab", value: 200, __rowId: "r2", match: { kind: "exact", existingId: "acct-2" } },
-              ],
-            },
-          }),
-          { status: 200 },
-        ),
-      ) // r2 POST commit
-      .mockResolvedValueOnce(importGetResponse({ chat: { committedRowIds: ["r1"] } })) // r2 fresh GET for chat
-      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 })); // r2 PATCH chat
-
-    const r1Row = screen.getByRole("row", { name: /IRA/ });
-    const r2Row = screen.getByRole("row", { name: /Brokerage/ });
-
-    // Fire both without awaiting the first's full chain — `userEvent.click`
-    // resolves once the (fire-and-forget) click handler has been invoked,
-    // not once the async commit it kicks off has settled.
-    const click1 = userEvent.click(within(r1Row).getByRole("button", { name: /^commit$/i }));
-    const click2 = userEvent.click(within(r2Row).getByRole("button", { name: /^commit$/i }));
-    await Promise.all([click1, click2]);
-
-    await within(r1Row).findByRole("button", { name: /committed/i });
-    await within(r2Row).findByRole("button", { name: /committed/i });
-
-    const payloadPatchCalls = vi.mocked(fetch).mock.calls.filter(([url, init]) => {
-      if (!String(url).endsWith("/imports/i1") || init?.method !== "PATCH") return false;
-      const body = JSON.parse(init.body as string);
-      return Boolean(body.payloadJson?.payload);
-    });
-    // The LAST payload.accounts PATCH is row 2's own — it must show row 1
-    // still linked, proving row 2's pre-commit read happened after row 1's
-    // write landed rather than racing it.
-    const lastPatch = payloadPatchCalls.at(-1)!;
-    const accounts = JSON.parse(lastPatch[1]!.body as string).payloadJson.payload.accounts as Array<{
-      __rowId: string;
-      match?: { kind: string; existingId?: string };
-    }>;
-    const r1Entry = accounts.find((a) => a.__rowId === "r1");
-    expect(r1Entry?.match).toEqual({ kind: "exact", existingId: "acct-1" });
-  });
+  // Sequence 2 named in the review ("two quick clicks on different rows")
+  // is deliberately NOT tested here. A component-level version driven
+  // through `userEvent.click` used to live in this spot; round 2 review
+  // confirmed it stayed green with EITHER the fresh-read merge OR the
+  // commit queue removed — `userEvent.click`'s own internal awaiting
+  // serializes two "simultaneous" clicks regardless of whether the hook
+  // itself does, so it proved nothing sequence 1's resume test didn't
+  // already cover. The real proof of serialization is the hook-level test
+  // in `use-chat-commit.test.tsx`, which forces genuine overlap with a
+  // manually-gated fetch rather than relying on `userEvent`'s timing.
 });

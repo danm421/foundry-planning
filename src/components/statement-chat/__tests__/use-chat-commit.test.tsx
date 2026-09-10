@@ -82,8 +82,13 @@ describe("useChatCommit — commit serialization (round 1 review, Important 1, s
     // Let row 1 run up to (and block on) its gated final fetch. A real
     // macrotask tick drains every pending microtask first, so this is
     // robust regardless of how many `await`s sit between here and the
-    // gate — counting exact microtask turns is not.
-    await new Promise((r) => setTimeout(r, 0));
+    // gate — counting exact microtask turns is not. Wrapped in `act()` so
+    // React flushes the state updates row 1 has made so far (fixing the
+    // "not wrapped in act(...)" warnings) — the gate keeps row 1 blocked
+    // either way, so the `toBe(6)` assertion right after is unaffected.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
 
     const callsBeforeRow2 = vi.mocked(fetch).mock.calls.length;
     // Row 1 has made exactly its first 4 real calls (mount GET doesn't
@@ -93,7 +98,9 @@ describe("useChatCommit — commit serialization (round 1 review, Important 1, s
 
     // Fire row 2 WHILE row 1 is still blocked on its gate.
     const p2 = result.current.handleCommitRows(["r2"]);
-    await new Promise((r) => setTimeout(r, 0));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
 
     // THE assertion: if commits are serialized, row 2 must not have made
     // ANY fetch call yet — it is queued behind row 1's still-unsettled
@@ -146,6 +153,80 @@ describe("useChatCommit — commit serialization (round 1 review, Important 1, s
       match?: { kind: string; existingId?: string };
     }>;
     const r1Entry = accounts.find((a) => a.__rowId === "r1");
+    expect(r1Entry?.match).toEqual({ kind: "exact", existingId: "acct-1" });
+  });
+});
+
+describe("useChatCommit — the fresh-read merge must not discard a local edit (round 2 review, item 3)", () => {
+  // Reachable when a row is `exact` server-side but absent from
+  // `committedRowIds` — e.g. the bookkeeping chat PATCH failed after an
+  // earlier commit (round 0 self-review flagged this exact path). Such a
+  // row is still EDITABLE in the UI (`committedRowIds`, not `match`, is
+  // what `entity-table.tsx` disables editing on), so a local edit made to
+  // it must survive the next unrelated row's commit.
+  it("keeps a local field edit on a row the server already shows as linked", async () => {
+    const { result } = renderHook(() => useChatCommit("c1", "i1"));
+
+    act(() => {
+      result.current.applyExtractionResult({
+        summary: "x",
+        caveats: [],
+        excluded: [],
+        rows: [
+          { name: "IRA", custodian: "Schwab", value: 100, __rowId: "r1" },
+          { name: "Brokerage", custodian: "Schwab", value: 200, __rowId: "r2" },
+        ] as never,
+      });
+    });
+
+    // The advisor edits r1's name locally, before ever clicking Commit on it.
+    act(() => {
+      result.current.handleEditCell("r1", "name", "IRA (edited)");
+    });
+
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        importGetResponse({
+          // Server already has r1 linked, but with its OLD (pre-edit) name
+          // — `linkCreated` never touches any field but `match`.
+          payload: {
+            accounts: [
+              { name: "IRA", custodian: "Schwab", value: 100, __rowId: "r1", match: { kind: "exact", existingId: "acct-1" } },
+            ],
+          },
+        }),
+      ) // fresh GET before the payload.accounts PATCH
+      .mockResolvedValueOnce(jsonResponse({})) // PATCH payload.accounts
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ok: true,
+          payload: {
+            accounts: [
+              { name: "IRA (edited)", custodian: "Schwab", value: 100, __rowId: "r1", match: { kind: "exact", existingId: "acct-1" } },
+              { name: "Brokerage", custodian: "Schwab", value: 200, __rowId: "r2", match: { kind: "exact", existingId: "acct-2" } },
+            ],
+          },
+        }),
+      ) // POST commit (of r2 — r1 rides along unfiltered in the payload)
+      .mockResolvedValueOnce(importGetResponse({})) // fresh GET for chat
+      .mockResolvedValueOnce(jsonResponse({})); // PATCH chat
+
+    await act(async () => {
+      await result.current.handleCommitRows(["r2"]);
+    });
+
+    const payloadPatchCall = vi.mocked(fetch).mock.calls.find(([url, init]) => {
+      if (!String(url).endsWith("/imports/i1") || init?.method !== "PATCH") return false;
+      const body = JSON.parse(init.body as string);
+      return Boolean(body.payloadJson?.payload);
+    });
+    expect(payloadPatchCall).toBeDefined();
+    const accounts = JSON.parse(payloadPatchCall![1]!.body as string).payloadJson.payload
+      .accounts as Array<{ __rowId: string; name: string; match?: { kind: string; existingId?: string } }>;
+    const r1Entry = accounts.find((a) => a.__rowId === "r1");
+    // The local edit survives...
+    expect(r1Entry?.name).toBe("IRA (edited)");
+    // ...and the server's link is still preserved alongside it.
     expect(r1Entry?.match).toEqual({ kind: "exact", existingId: "acct-1" });
   });
 });

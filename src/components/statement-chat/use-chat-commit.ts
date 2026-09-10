@@ -193,7 +193,15 @@ export function useChatCommit(clientId: string, importId: string) {
       );
       const mergedAccounts = current.rows.map((row) => {
         const fresh = row.__rowId ? freshByRowId.get(row.__rowId) : undefined;
-        return fresh?.match?.kind === "exact" ? fresh : row;
+        // Only `match` needs to come from the server — `linkCreated`
+        // (`lib/imports/types.ts:209`) sets nothing else on the row. Taking
+        // `fresh` wholesale (round 2 review, item 3) would silently discard
+        // a local field edit on a row the server shows as `exact` but this
+        // hook's own `committedRowIds` doesn't yet know about (reachable
+        // when the bookkeeping chat PATCH failed after a prior commit — an
+        // editable-until-locked row, since `committedRowIds`, not `match`,
+        // is what disables editing in `entity-table.tsx`).
+        return fresh?.match?.kind === "exact" ? { ...row, match: fresh.match } : row;
       });
 
       await patchImportPayloadJson(clientId, importId, {
