@@ -91,4 +91,29 @@ describe("mergeAcrossFiles — __rowId", () => {
     });
     expect(r.payload.dependents.map((d) => d.__rowId)).toEqual(["family:0"]);
   });
+
+  // Round 1 review, Critical 1: a bucket is an ARRAY of entries, not a
+  // single one. `computeKey` alone is not injective — two rows can share a
+  // key and still fail `isSameEntity`, landing as TWO separate entries in
+  // the same bucket. Liabilities key on the bare lowercased name and accept
+  // balances within 1% as "the same"; two statements both naming a
+  // liability "Mortgage" with balances more than 1% apart (300,000 vs
+  // 292,000, ~2.67% apart) are judged different entities and must NOT
+  // collapse — but a bare `${label}:${key}` derivation would still mint the
+  // identical id for both, silently aliasing two unrelated rows in the flat
+  // `committedRowIds` list.
+  it("gives distinct __rowIds to two same-key liabilities that fail isSameEntity", () => {
+    const r = mergeAcrossFiles({
+      f1: er("a.pdf", { liabilities: [{ name: "Mortgage", balance: 300000 }] }),
+      f2: er("b.pdf", { liabilities: [{ name: "Mortgage", balance: 292000 }] }),
+    });
+    expect(r.payload.liabilities).toHaveLength(2);
+    const ids = r.payload.liabilities.map((l) => l.__rowId);
+    expect(ids[0]).toBeDefined();
+    expect(ids[1]).toBeDefined();
+    expect(ids[0]).not.toEqual(ids[1]);
+    // Pin the exact shape too, not just "different": first entry under a
+    // key is unchanged, later ones fold in the bucket ordinal.
+    expect(ids).toEqual(["liability:mortgage", "liability:mortgage#1"]);
+  });
 });

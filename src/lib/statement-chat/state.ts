@@ -15,8 +15,14 @@ function emptyChatState(): ChatState {
 
 /**
  * Read the `chat` slice off a persisted `client_imports.payloadJson`. Returns
- * the empty shape for a payload that has never seen the chat surface (or any
- * other value lacking a usable `chat` key) — callers never have to guard.
+ * the empty shape for a payload that has never seen the chat surface, and
+ * NORMALIZES whatever it finds against that empty shape rather than
+ * returning it as-is (round 1 review — Important 2): a slice written by an
+ * earlier `ChatState` (Phase 2 is specced to extend it), a bare `{}`, or any
+ * other non-object garbage would otherwise reach a caller missing arrays it
+ * assumes exist — `readChatState(x).transcript.map(...)` would throw. Every
+ * field `chat` doesn't itself supply falls back to `emptyChatState()`'s, and
+ * the object returned is always a fresh one, never the caller's.
  *
  * `payloadJson` is `unknown`, not `ImportPayloadJson`, because the column is
  * declared `jsonb(...)` with no `.$type<>()` (see C4) — every reader across
@@ -24,7 +30,8 @@ function emptyChatState(): ChatState {
  */
 export function readChatState(payloadJson: unknown): ChatState {
   const chat = (payloadJson as ImportPayloadJson | null | undefined)?.chat;
-  return chat ?? emptyChatState();
+  const partial = chat !== null && typeof chat === "object" ? (chat as Partial<ChatState>) : {};
+  return { ...emptyChatState(), ...partial };
 }
 
 /**

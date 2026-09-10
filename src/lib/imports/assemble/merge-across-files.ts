@@ -245,10 +245,12 @@ function mergeSection<T extends { name: string }>(
         __provenance: provenance,
         // No dedupe key to derive an id from — fall back to this section
         // plus the row's position in read order, which is deterministic
-        // across a re-merge of the same files (Task 6, R54). The `:null:`
-        // marker can never collide with a real `${label}:${key}` id: every
-        // `computeKey` in this file returns a `|`-delimited string with no
-        // colon in it, so this is the only branch that ever produces one.
+        // across a re-merge of the same files (Task 6, R54). This is the
+        // only branch that ever emits a `:null:` segment right after the
+        // label — that, not any claim about what characters a key can
+        // contain (keys are extraction-derived text and can contain
+        // anything, including a colon), is what keeps this id from
+        // colliding with one minted by the other two branches below.
         __rowId: `${label}:null:${rowIndex}:${content.name}`,
         match: { kind: "new" },
       } as Annotated<T>);
@@ -310,8 +312,17 @@ function mergeSection<T extends { name: string }>(
 
     // `key` is non-null here (the null branch above always `continue`s), so
     // `${label}:${key}` is the row's dedupe-derived id — deterministic
-    // across a re-merge of the same files (Task 6, C1/R54).
-    const rowId = `${label}:${key}`;
+    // across a re-merge of the same files (Task 6, C1/R54). But a bucket is
+    // an ARRAY: `isSameEntity` can reject every existing entry under this
+    // key (e.g. two liabilities both named "Mortgage" with balances >1%
+    // apart), in which case this is a SECOND distinct entry under the SAME
+    // key, and `${label}:${key}` alone would mint the same id twice — the
+    // exact flat-list mis-commit R54 exists to prevent (review round 1,
+    // Critical 1). `bucket` was captured above, before `.find`, so
+    // `bucket.length` here is exactly the count of entries already under
+    // this key; folding it in only from the second entry on keeps the
+    // first entry's id (and every existing pinned test string) unchanged.
+    const rowId = bucket?.length ? `${label}:${key}#${bucket.length}` : `${label}:${key}`;
     const entry: DedupeBucketEntry<T> = {
       index: target.length,
       content,
