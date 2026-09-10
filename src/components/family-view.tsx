@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
+import { giftScenarioRemove } from "@/lib/gifts/gift-write";
 import { useClientAccess } from "./client-access-provider";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
 import AddClientDialog from "./add-client-dialog";
@@ -242,10 +243,6 @@ interface FamilyViewProps {
   initialGiftSeries: GiftSeriesLite[];
   annualExclusionByYear: Record<number, number>;
   scenarioId: string;
-  /** Ids rendered here that exist only as `scenario_changes` rows (a solver-saved
-   *  trust or gift). Writes against them go to the scenario changes writer —
-   *  see `GiftDialogProps.scenarioOnly`. */
-  scenarioOnly?: { giftIds: string[]; entityIds: string[] };
   /** Optional: full asset data for the trust Assets tab */
   initialFullAccounts?: AssetsTabAccount[];
   initialFullLiabilities?: AssetsTabLiability[];
@@ -347,7 +344,6 @@ export default function FamilyView({
   initialGiftSeries,
   annualExclusionByYear,
   scenarioId,
-  scenarioOnly,
   initialFullAccounts,
   initialFullLiabilities,
   initialFullIncomes,
@@ -853,7 +849,6 @@ export default function FamilyView({
         series={giftSeriesState}
         annualExclusionByYear={annualExclusionByYear}
         scenarioId={scenarioId}
-        scenarioOnly={scenarioOnly}
         hasSpouse={primary.spouseName != null}
         onChangeGifts={setGiftsState}
         onChangeSeries={setGiftSeriesState}
@@ -1064,7 +1059,6 @@ function GiftsSection(props: {
   series: GiftSeriesLite[];
   annualExclusionByYear: Record<number, number>;
   scenarioId: string;
-  scenarioOnly?: { giftIds: string[]; entityIds: string[] };
   hasSpouse: boolean;
   // Setter form, not a plain array: a gift whose Frequency or Funding changed is
   // saved as a new row plus a delete of the old one, so two updates land in the
@@ -1073,6 +1067,7 @@ function GiftsSection(props: {
   onChangeSeries: Dispatch<SetStateAction<GiftSeriesLite[]>>;
   canEdit: boolean;
 }) {
+  const writer = useScenarioWriter(props.clientId);
   const [adding, setAdding] = useState(false);
   const [editingGift, setEditingGift] = useState<Gift | null>(null);
   const [editingSeries, setEditingSeries] = useState<GiftSeriesLite | null>(null);
@@ -1092,25 +1087,23 @@ function GiftsSection(props: {
   const accountName = (id: string | null) =>
     id ? props.accounts.find((a) => a.id === id)?.name ?? "asset" : "asset";
 
+  // Inside a scenario the delete is a `remove` change, matching where the save
+  // landed: a gift added in this scenario collapses away with its `add` row
+  // (`applyEntityRemove`), and a base-plan gift is stripped from the overlay
+  // without the base table being touched. A gift that exists only as an `add`
+  // has no base row for the gift route to delete at all — that call 404s.
   async function deleteGift(id: string) {
-    // A gift that exists only as a `scenario_changes` add has no base row for
-    // the gift route to delete (it would 404). Reverting the change is the
-    // delete — `applyEntityRemove` collapses a remove-of-an-add into dropping
-    // the add row outright.
-    const res = props.scenarioOnly?.giftIds.includes(id)
-      ? await fetch(`/api/clients/${props.clientId}/scenarios/${props.scenarioId}/changes`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ op: "remove", targetKind: "gift", targetId: id }),
-        })
-      : await fetch(`/api/clients/${props.clientId}/gifts/${id}`, { method: "DELETE" });
+    const res = await writer.submit(giftScenarioRemove(id), {
+      url: `/api/clients/${props.clientId}/gifts/${id}`,
+      method: "DELETE",
+    });
     if (res.ok) props.onChangeGifts(props.gifts.filter((x) => x.id !== id));
   }
   async function deleteSeries(id: string) {
-    const res = await fetch(
-      `/api/clients/${props.clientId}/gifts/series/${id}?scenario=${props.scenarioId}`,
-      { method: "DELETE" },
-    );
+    const res = await writer.submit(giftScenarioRemove(id), {
+      url: `/api/clients/${props.clientId}/gifts/series/${id}?scenario=${props.scenarioId}`,
+      method: "DELETE",
+    });
     if (res.ok) props.onChangeSeries(props.series.filter((x) => x.id !== id));
   }
 
@@ -1144,7 +1137,6 @@ function GiftsSection(props: {
           entities={props.entities}
           accounts={props.accounts}
           annualExclusionByYear={props.annualExclusionByYear}
-          scenarioOnly={props.scenarioOnly}
           editingGift={editingGift}
           editingSeries={editingSeries}
           onClose={closeDialog}

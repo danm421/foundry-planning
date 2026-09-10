@@ -299,26 +299,6 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
     giftChanges,
   );
 
-  // Ids this page renders that have no base-table row behind them — a trust or
-  // a gift the solver wrote into this scenario. The base gift routes cannot
-  // store a write against either: they validate the recipient against base
-  // `entities`, and `gifts.recipient_entity_id` carries a real FK that would
-  // reject a scenario-only trust regardless. Those saves go to the scenario
-  // changes writer instead — see `GiftDialogProps.scenarioOnly`.
-  const baseEntityIds = new Set(entityRows.map((e) => e.id));
-  const baseGiftIds = new Set([
-    ...giftRows.map((g) => g.id),
-    ...giftSeriesRows.map((s) => s.id),
-  ]);
-  const scenarioOnly = {
-    giftIds: [...giftsList, ...giftSeriesList]
-      .map((g) => g.id)
-      .filter((gid) => !baseGiftIds.has(gid)),
-    entityIds: (effectiveTree.entities ?? [])
-      .map((e) => e.id)
-      .filter((eid) => !baseEntityIds.has(eid)),
-  };
-
   const planStartYear = effectiveTree.planSettings.planStartYear;
   const annualExclusionByYear = buildAnnualExclusionMap(
     taxRows,
@@ -347,7 +327,6 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
         initialDesignations={designations}
         initialGifts={giftsList}
         initialGiftSeries={giftSeriesList}
-        scenarioOnly={scenarioOnly}
         annualExclusionByYear={annualExclusionByYear}
         scenarioId={resolvedScenario.id}
         initialFullAccounts={fullAccounts}

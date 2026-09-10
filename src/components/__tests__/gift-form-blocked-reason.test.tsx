@@ -10,6 +10,15 @@ import type {
   AccountLite,
 } from "@/components/family-view";
 
+// GiftDialog writes through `useScenarioWriter`, which reads `?scenario=` from
+// the URL. No scenario param here, so every save below stays in BASE mode and
+// pins the legacy gift routes exactly as before.
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(""),
+  usePathname: () => "/clients/c1/details/family",
+}));
+
 // A household holding a $0 cash account alongside a valuable one — the exact
 // prod shape that made "Add gift" refuse in silence: the advisor picked the
 // $0 account, typed $15m, and got "Please complete the gift before saving."
