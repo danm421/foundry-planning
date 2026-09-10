@@ -56,7 +56,7 @@ function parseTabs(input: unknown): CommitTab[] | { error: string } {
 // silently matches nothing, which reads as a dead button on the caller's
 // end rather than a rejected request, so it is refused here the same way an
 // empty `tabs` array is.
-function parseRowIds(input: unknown): string[] | undefined | { error: string } {
+export function parseRowIds(input: unknown): string[] | undefined | { error: string } {
     if (input === undefined) return undefined;
     if (!Array.isArray(input) || input.length === 0 || input.some((r) => typeof r !== "string")) {
         return { error: "Body's `rowIds`, when present, must be a non-empty array of strings." };
@@ -175,7 +175,7 @@ export async function POST(request: NextRequest, { params }: Params) {
         const payload = normalizeImportPayload(persistedPayload);
 
         const resolvedHoldings = tabs.includes("accounts")
-            ? await resolveHoldingsForCommit(payload)
+            ? await resolveHoldingsForCommit(payload, undefined, rowIds)
             : new Map();
         const holdingsAccountIds: string[] = [];
 

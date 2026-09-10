@@ -19,19 +19,35 @@ export interface ResolveDeps {
   fetchEodCloses?: typeof defaultFetchCloses;
 }
 
-/** Accounts that are actually committed (skip fuzzy — they are skipped at commit). */
-function committableAccounts(payload: ImportPayload) {
-  return payload.accounts.filter((a) => (a.match?.kind ?? "new") !== "fuzzy");
+/**
+ * Accounts that are actually committed: skip fuzzy (never committed) and,
+ * when `rowIds` is given, any row not on the list — mirrors commitAccounts'
+ * own filter (Task 7, IMPORTANT 2) so resolving holdings for a per-row
+ * commit doesn't pay ticker classification + a live-quote fetch for every
+ * OTHER row in the payload. A row with no `__rowId` is excluded under a
+ * filter, same fail-closed direction as the committer's guard.
+ */
+function committableAccounts(payload: ImportPayload, rowIds?: readonly string[]) {
+  const filter = rowIds ? new Set(rowIds) : null;
+  return payload.accounts.filter((a) => {
+    if ((a.match?.kind ?? "new") === "fuzzy") return false;
+    if (filter && (!a.__rowId || !filter.has(a.__rowId))) return false;
+    return true;
+  });
 }
 
 /**
  * PHASE A (runs in the commit route, BEFORE the transaction). Resolve every
  * tickered holding to a securityId + live price. Network-bound; never throws —
  * an unresolved ticker is simply omitted (commit falls back to a manual row).
+ *
+ * `rowIds`, when given, restricts resolution to those rows' holdings — see
+ * `committableAccounts`.
  */
 export async function resolveHoldingsForCommit(
   payload: ImportPayload,
   deps: ResolveDeps = {},
+  rowIds?: readonly string[],
 ): Promise<ResolvedHoldingsMap> {
   const getByTicker = deps.getSecurityByTicker ?? defaultGetByTicker;
   const classify = deps.classifySecurity ?? defaultClassify;
@@ -39,7 +55,7 @@ export async function resolveHoldingsForCommit(
   const fetchCloses = deps.fetchEodCloses ?? defaultFetchCloses;
 
   const tickers = new Set<string>();
-  for (const acct of committableAccounts(payload)) {
+  for (const acct of committableAccounts(payload, rowIds)) {
     for (const h of acct.holdings ?? []) {
       const t = h.ticker?.trim().toUpperCase();
       if (t) tickers.add(t);
