@@ -1,5 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+// Important 6: spy on the REAL `gt` (delegating to it, not replacing it) so
+// a test can assert the in-flight-extraction guard is actually age-bounded —
+// the stateful `@/db` mock below doesn't interpret WHERE clauses, so it
+// can't behaviorally prove a `startedAt` cutoff exists on its own.
+const gtCalls: Array<[unknown, unknown]> = [];
+vi.mock("drizzle-orm", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("drizzle-orm")>();
+  return {
+    ...actual,
+    gt: (...args: [unknown, unknown]) => {
+      gtCalls.push(args);
+      return actual.gt(...(args as Parameters<typeof actual.gt>));
+    },
+  };
+});
+
 // Mirrors the mock setup in
 // src/app/api/clients/[id]/imports/[importId]/chat/extract/__tests__/gate.test.ts
 // and .../chat/finalize/__tests__/route.test.ts — same gate chain (C7).
@@ -70,6 +86,7 @@ import { requireActiveSubscription, ForbiddenError } from "@/lib/authz";
 import { requireImportAccess } from "@/lib/imports/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
+import { clientImportExtractions } from "@/db/schema";
 import type { ImportPayloadJson } from "@/lib/imports/types";
 
 function importRow(payloadJson: ImportPayloadJson) {
@@ -94,6 +111,8 @@ const params = { params: Promise.resolve({ id: "c1", importId: "i1" }) };
 function defaultTurnResult() {
   return {
     payload: { accounts: [{ __rowId: "r1", name: "IRA", value: 1 }] },
+    // No tool mutated anything — this is the plain "no edit" turn.
+    payloadMutated: false,
     turnEntries: [
       { role: "user", text: "hello", at: "2026-01-01T00:00:00.000Z" },
       { role: "assistant", text: "Hi there.", at: "2026-01-01T00:00:00.000Z" },
@@ -108,6 +127,7 @@ beforeEach(() => {
   inFlightRows = [];
   freshRow = { id: "i1", payloadJson: CHAT_PAYLOAD };
   updateCalls = [];
+  gtCalls.length = 0;
 
   vi.mocked(requireOrgId).mockResolvedValue("org_1");
   vi.mocked(requireActiveSubscription).mockResolvedValue(undefined);
@@ -256,12 +276,35 @@ describe("chat turn route gates", () => {
     expect(runTurn).not.toHaveBeenCalled();
     expect(updateCalls).toHaveLength(0);
   });
+
+  // Important 6 — THE test that matters: `run-extraction.ts` only clears an
+  // "extracting" row inside its own try/catch, so a killed process or
+  // serverless timeout leaves it stuck forever. Without an age bound, EVERY
+  // future turn on this import 409s permanently, telling the advisor to
+  // wait for something that will never finish. The stateful `@/db` mock
+  // above can't evaluate a real SQL predicate, so this asserts the query
+  // was actually built with a `gt(startedAt, <a real past cutoff>)` clause —
+  // mutation this catches: dropping that clause (reverting to the
+  // reviewed, unbounded guard) leaves `gtCalls` empty.
+  it("bounds the in-flight-extraction guard by age, not an unbounded 'ever extracting' check (Important 6)", async () => {
+    await POST(req(), params);
+    expect(gtCalls).toHaveLength(1);
+    const [column, cutoff] = gtCalls[0];
+    expect(column).toBe(clientImportExtractions.startedAt);
+    expect(cutoff).toBeInstanceOf(Date);
+    const ageMs = Date.now() - (cutoff as Date).getTime();
+    // Comfortably longer than chat/extract's own 300s (5 min) route cap,
+    // but genuinely bounded rather than absent or absurdly long.
+    expect(ageMs).toBeGreaterThan(5 * 60 * 1000);
+    expect(ageMs).toBeLessThan(20 * 60 * 1000);
+  });
 });
 
 describe("chat turn route behavior", () => {
   it("runs the turn and persists the transcript + excludedRows via writeChatState", async () => {
     runTurn.mockResolvedValue({
       payload: { accounts: [{ __rowId: "r1", name: "IRA", value: 1, basis: 5 }] },
+      payloadMutated: true,
       turnEntries: [
         { role: "user", text: "fix the basis", at: "t1" },
         { role: "tool", tool: "edit_row", summary: "Set basis to 5.", at: "t1" },
@@ -310,6 +353,7 @@ describe("chat turn route behavior", () => {
   it("persists a tool-mutated payload to payloadJson.payload in the same write as the transcript", async () => {
     runTurn.mockResolvedValue({
       payload: { accounts: [{ __rowId: "r1", name: "IRA", value: 1, basis: 5 }] },
+      payloadMutated: true,
       turnEntries: [
         { role: "user", text: "fix the basis", at: "t1" },
         { role: "tool", tool: "edit_row", summary: "Set basis to 5.", at: "t1" },
@@ -390,6 +434,120 @@ describe("chat turn route behavior", () => {
     // The sibling `fileResults` key survives untouched — proof `before` was
     // the FRESH row, not the stale one (which had an empty fileResults).
     expect(written.fileResults).toEqual({ f1: { fileName: "new.pdf" } });
+  });
+
+  // Important 7 — the other half of C12 #1 was unproven: the fresh-read test
+  // above seeded an EMPTY `excludedRows` on both the stale and fresh rows,
+  // so a mutation reducing `nextExcludedRows` to just `turnResult
+  // .newExcludedRows` (dropping the `...freshChat.excludedRows` spread)
+  // reddened nothing there. This seeds a PRE-EXISTING exclusion (the shape
+  // Task 4's rollup detector writes) on the FRESH row and proves the write
+  // appends onto it rather than replacing it — the mutation this catches
+  // would wipe Task 4's rollup exclusions on the very first chat turn.
+  it("appends new excludedRows onto the FRESH excludedRows, never replacing pre-existing ones (Important 7)", async () => {
+    const rollupExclusion = {
+      row: { __rowId: "rollup-1", name: "Total Accounts" },
+      reason: "it is a total covering 2 accounts already listed",
+      decision: { kind: "rollup-excluded" as const, label: "Total Accounts", value: 300, coversCount: 2 },
+    };
+    freshRow = {
+      id: "i1",
+      payloadJson: {
+        chat: {
+          surface: "chat",
+          transcript: [],
+          decisions: [],
+          excludedRows: [rollupExclusion],
+          committedRowIds: [],
+        },
+        payload: CHAT_PAYLOAD.payload,
+        fileResults: {},
+      } satisfies ImportPayloadJson,
+    };
+    runTurn.mockResolvedValue({
+      ...defaultTurnResult(),
+      newExcludedRows: [{ row: { __rowId: "r2", name: "Dup" }, reason: "duplicate" }],
+    });
+
+    const res = await POST(req({ message: "drop the duplicate" }), params);
+    expect(res.status).toBe(200);
+
+    const written = updateCalls[0].values.payloadJson as ImportPayloadJson;
+    expect(written.chat?.excludedRows).toHaveLength(2);
+    expect(written.chat?.excludedRows?.[0]).toEqual(rollupExclusion);
+    expect(written.chat?.excludedRows?.[1]).toMatchObject({ reason: "duplicate" });
+  });
+
+  // Important 1 — THE test that matters: a wholesale replace of
+  // `payload.accounts` built from the STALE start-of-request snapshot would
+  // silently erase a `match`/`linkCreated` stamp a commit wrote (via the
+  // separate accounts-PATCH route) WHILE this turn's model calls were still
+  // running. r2 here represents exactly that: unmatched at the moment this
+  // turn started, matched by the time this route re-reads fresh — and
+  // untouched by anything this turn's tools did.
+  it("preserves a concurrent commit's match stamp on a row this turn never touched (Important 1)", async () => {
+    // ONE shared object reference for r2, reused everywhere it's untouched —
+    // exactly how `editRow`/`mergeRows`/`dropRow` in `tools.ts` actually
+    // behave (they create a new object only for the row(s) they touch and
+    // preserve the exact same reference for every row they don't). A test
+    // that instead re-declares an identical-looking-but-distinct r2 literal
+    // in `turnResult.payload` would make `mergeAccountsByRowId`'s reference
+    // check see r2 as "changed" too, which is not what a real turn produces
+    // and would make this test prove nothing.
+    const startR2 = { __rowId: "r2", name: "Brokerage", value: 2 };
+    vi.mocked(requireImportAccess).mockResolvedValue(
+      importRow({
+        chat: { surface: "chat", transcript: [], decisions: [], excludedRows: [], committedRowIds: [] },
+        payload: {
+          accounts: [{ __rowId: "r1", name: "IRA", value: 1 }, startR2] as never,
+        },
+        fileResults: {},
+      }) as never,
+    );
+    freshRow = {
+      id: "i1",
+      payloadJson: {
+        chat: { surface: "chat", transcript: [], decisions: [], excludedRows: [], committedRowIds: ["r2"] },
+        payload: {
+          accounts: [
+            { __rowId: "r1", name: "IRA", value: 1 },
+            { ...startR2, match: { kind: "exact", existingId: "acct-99" } },
+          ] as never,
+        },
+        fileResults: {},
+      } satisfies ImportPayloadJson,
+    };
+    runTurn.mockResolvedValue({
+      payload: {
+        accounts: [{ __rowId: "r1", name: "IRA", value: 1, basis: 500 }, startR2],
+      },
+      payloadMutated: true,
+      turnEntries: [
+        { role: "user", text: "fix basis", at: "t1" },
+        { role: "tool", tool: "edit_row", summary: "Set basis to 500.", at: "t1" },
+        { role: "assistant", text: "Done.", at: "t1" },
+      ],
+      newExcludedRows: [],
+      summary: "Done.",
+    });
+
+    const res = await POST(req({ message: "fix basis" }), params);
+    expect(res.status).toBe(200);
+
+    const written = updateCalls[0].values.payloadJson as ImportPayloadJson;
+    const writtenAccounts = written.payload?.accounts as Array<{
+      __rowId: string;
+      basis?: number;
+      match?: unknown;
+    }>;
+    expect(writtenAccounts.find((r) => r.__rowId === "r1")?.basis).toBe(500);
+    // The concurrent commit's stamp on r2 — a row this turn's tools never
+    // touched — survives, even though `turnResult.payload` (computed from
+    // the stale start-of-request snapshot) has no match on r2 at all.
+    expect(writtenAccounts.find((r) => r.__rowId === "r2")?.match).toEqual({
+      kind: "exact",
+      existingId: "acct-99",
+    });
   });
 
   it("maps an ai_not_configured error from runTurn to a readable 503", async () => {

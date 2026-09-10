@@ -1,15 +1,21 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { clientImportFiles } from "@/db/schema";
 import { downloadImportFile } from "@/lib/imports/blob";
+import { extractDocument } from "@/lib/extraction/extract";
 import type { Annotated, ChatState, PersistedImportPayload } from "@/lib/imports/types";
-import type { ExtractedAccount } from "@/lib/extraction/types";
+import type {
+  AccountCategory,
+  AccountSubType,
+  ExtractedAccount,
+  ExtractionResult,
+} from "@/lib/extraction/types";
 
 /**
  * The five statement-chat tools (Task 11). Each one is a function over
  * `(payload, args, ...)` returning a `ToolResult` — the next payload plus a
- * one-line summary for the transcript, and (for `drop_row`/`reread_document`
- * only) the extra fields Ruling 49 allows.
+ * one-line summary for the transcript, and (for `drop_row`/`merge_rows`/
+ * `reread_document` only) the extra fields Ruling 49 allows.
  *
  * Direction rule, same as `narrate.ts`/`rollups.ts`: this module reads from
  * `@/lib/imports/` and `@/lib/extraction/`, never the reverse.
@@ -49,15 +55,99 @@ function isEditableField(field: string): field is EditableAccountField {
   return (EDITABLE_ACCOUNT_FIELDS as readonly string[]).includes(field);
 }
 
-/** Rejects an object/function/array `value` — a scalar-only guard so a
- *  prompted model can't smuggle a structured payload into a scalar column. */
-function isScalarValue(value: unknown): boolean {
-  return (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  );
+/**
+ * Review round 1, Important 5: a denylist-free allowlist of COLUMNS isn't
+ * enough on its own — `basis` accepting the string `"x"` or `category`
+ * accepting free text outside the real enum are both writes a human editing
+ * the table could never make (the UI's own inputs are typed/select-bound;
+ * see `accounts-columns.ts`). Every field gets its own domain check, not a
+ * shared "any scalar goes" rule.
+ *
+ * `Record<AccountCategory, true>` / `Record<AccountSubType, true>` rather
+ * than a hand-copied array: TypeScript requires EVERY key of the real union
+ * type be present (and rejects any key that isn't), so this can't silently
+ * drift out of sync with `@/lib/extraction/types` the way a parallel array
+ * could.
+ */
+const ACCOUNT_CATEGORY_SET: Record<AccountCategory, true> = {
+  taxable: true,
+  cash: true,
+  retirement: true,
+  annuity: true,
+  real_estate: true,
+  business: true,
+  life_insurance: true,
+  notes_receivable: true,
+  stock_options: true,
+  education_savings: true,
+};
+
+const ACCOUNT_SUB_TYPE_SET: Record<AccountSubType, true> = {
+  brokerage: true,
+  savings: true,
+  checking: true,
+  traditional_ira: true,
+  roth_ira: true,
+  "401k": true,
+  "403b": true,
+  "529": true,
+  trust: true,
+  other: true,
+  primary_residence: true,
+  rental_property: true,
+  commercial_property: true,
+  sole_proprietorship: true,
+  partnership: true,
+  s_corp: true,
+  c_corp: true,
+  llc: true,
+  term: true,
+  whole_life: true,
+  universal_life: true,
+  variable_life: true,
+};
+
+/** Human-readable domain description for an error message. */
+function fieldDomainDescription(field: EditableAccountField): string {
+  switch (field) {
+    case "value":
+    case "basis":
+      return "a finite number";
+    case "owner":
+      return `one of "client", "spouse", "joint"`;
+    case "category":
+      return `one of ${Object.keys(ACCOUNT_CATEGORY_SET).join(", ")}`;
+    case "subType":
+      return `one of ${Object.keys(ACCOUNT_SUB_TYPE_SET).join(", ")}`;
+    case "name":
+    case "custodian":
+    case "accountNumberLast4":
+      return "a plain string";
+  }
+}
+
+/**
+ * Per-field domain validation — replaces a blanket "any scalar" check
+ * (review round 1, Important 5). Exhaustive over `EditableAccountField` by
+ * construction: a field missing a `case` is a compile error, not a runtime
+ * gap.
+ */
+function isValidFieldValue(field: EditableAccountField, value: unknown): boolean {
+  switch (field) {
+    case "value":
+    case "basis":
+      return typeof value === "number" && Number.isFinite(value);
+    case "owner":
+      return value === "client" || value === "spouse" || value === "joint";
+    case "category":
+      return typeof value === "string" && value in ACCOUNT_CATEGORY_SET;
+    case "subType":
+      return typeof value === "string" && value in ACCOUNT_SUB_TYPE_SET;
+    case "name":
+    case "custodian":
+    case "accountNumberLast4":
+      return typeof value === "string";
+  }
 }
 
 /**
@@ -70,8 +160,9 @@ function isScalarValue(value: unknown): boolean {
 export interface ToolResult {
   payload: PersistedImportPayload;
   summary: string;
-  /** `drop_row` only — the newly-excluded entries this call produced (NOT
-   *  the full accumulated list; the caller appends them to the prior one). */
+  /** `drop_row`/`merge_rows` only — the newly-excluded entries this call
+   *  produced (NOT the full accumulated list; the caller appends them to the
+   *  prior one). */
   excludedRows?: ChatState["excludedRows"];
   /** `reread_document` only — a correction the advisor must accept before
    *  it ever reaches `payload`. */
@@ -108,7 +199,9 @@ export interface EditRowArgs {
  * Writes ONE field on ONE row. Ruling 50: `field` must be on the
  * `EDITABLE_ACCOUNT_FIELDS` allowlist or this throws `/not editable/i` — a
  * denylist would silently permit `__provenance`/`match`/`reconciliation` and
- * anything added to `ExtractedAccount` later.
+ * anything added to `ExtractedAccount` later. `value` must additionally pass
+ * that field's own domain check (Important 5) — the allowlist says WHICH
+ * columns are writable, not that any scalar is a legal value for them.
  */
 export function editRow(payload: PersistedImportPayload, args: EditRowArgs): ToolResult {
   const accounts = accountsOf(payload);
@@ -118,8 +211,8 @@ export function editRow(payload: PersistedImportPayload, args: EditRowArgs): Too
       `Field "${args.field}" is not editable. Editable fields: ${EDITABLE_ACCOUNT_FIELDS.join(", ")}.`,
     );
   }
-  if (!isScalarValue(args.value)) {
-    throw new Error(`Value for "${args.field}" must be a plain string, number, boolean, or null.`);
+  if (!isValidFieldValue(args.field, args.value)) {
+    throw new Error(`Value for "${args.field}" must be ${fieldDomainDescription(args.field)}.`);
   }
   const row = accounts[idx];
   const nextAccounts = accounts.map((r, i) =>
@@ -141,29 +234,46 @@ export interface MergeRowsArgs {
 }
 
 /**
- * Backfill undefined/null fields on `base` from `other`, without touching a
- * field `base` already has. C9: deliberately mirrors `unionFields` in
- * `merge-across-files.ts` — that helper is module-local and not exported, so
- * the semantics are re-implemented here rather than exporting merge
+ * Backfill undefined/null ALLOWLISTED fields on `base` from `other`, without
+ * touching a field `base` already has. C9: deliberately mirrors `unionFields`
+ * in `merge-across-files.ts` — that helper is module-local and not exported,
+ * so the semantics are re-implemented here rather than exporting merge
  * internals for a tool.
+ *
+ * Review round 1, Important 4: the ORIGINAL version iterated every key of
+ * `other`, including `match`, `reconciliation`, and `__provenance` — the
+ * internal annotations Ruling 50 exists to protect from a tool write. Only
+ * `EDITABLE_ACCOUNT_FIELDS` backfill here now. `__provenance` gets its own
+ * explicit rule below (not the allowlist loop): it isn't advisor-editable
+ * data, but knowing where a merged row came from is still useful to
+ * `explain`, so it backfills ONLY when `base` has none at all — never
+ * blended with `match`/`reconciliation`, which describe `base`'s OWN
+ * commit/reconciliation status and must never silently inherit a different
+ * row's status.
  */
 function unionAccountFields(base: AccountRow, other: AccountRow): AccountRow {
   const merged: AccountRow = { ...base };
-  for (const key of Object.keys(other) as Array<keyof AccountRow>) {
-    const baseValue = merged[key];
-    const otherValue = other[key];
+  for (const field of EDITABLE_ACCOUNT_FIELDS) {
+    const baseValue = merged[field];
+    const otherValue = other[field];
     if ((baseValue === undefined || baseValue === null) && otherValue !== undefined && otherValue !== null) {
-      (merged as unknown as Record<string, unknown>)[key as string] = otherValue;
+      (merged as unknown as Record<string, unknown>)[field] = otherValue;
     }
+  }
+  if (!merged.__provenance && other.__provenance) {
+    merged.__provenance = other.__provenance;
   }
   return merged;
 }
 
 /**
  * Unions two rows into one. `keepRowId` is the base and wins conflicting
- * fields; `mergeRowId`'s unique fields backfill (C9). `mergeRowId` is
- * retired — the row is REMOVED from `payload.accounts`, never soft-marked,
- * matching how a duplicate statement row is already handled by the merge.
+ * fields; `mergeRowId`'s unique fields backfill (C9), restricted to the
+ * editable allowlist (Important 4). `mergeRowId` is retired — removed from
+ * `payload.accounts` — but its ORIGINAL (pre-merge) data is recorded in
+ * `excludedRows`, the same as `drop_row`: merging is the one irreversible
+ * tool (a mis-merged row's conflicting fields would otherwise simply be
+ * gone), so the retired row's own values stay visible and recoverable.
  */
 export function mergeRows(payload: PersistedImportPayload, args: MergeRowsArgs): ToolResult {
   if (args.keepRowId === args.mergeRowId) {
@@ -181,6 +291,7 @@ export function mergeRows(payload: PersistedImportPayload, args: MergeRowsArgs):
   return {
     payload: { ...payload, accounts: nextAccounts },
     summary: `Merged "${merge.name}" into "${keep.name}".`,
+    excludedRows: [{ row: merge, reason: `merged into "${keep.name}"` }],
   };
 }
 
@@ -273,6 +384,14 @@ export interface RereadModel {
   invoke(prompt: string): Promise<{ content: unknown }>;
 }
 
+/** Context `reread_document` needs beyond `(payload, args, model)`: the
+ *  import id (Important 2's scoping fix) and this import's own stored
+ *  extraction results (the Critical's fix — real document text). */
+export interface RereadDocumentContext {
+  importId: string;
+  fileResults: Record<string, ExtractionResult>;
+}
+
 function pickEditable(row: AccountRow): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const key of EDITABLE_ACCOUNT_FIELDS) {
@@ -297,24 +416,42 @@ function extractJsonObject(content: unknown): Record<string, unknown> {
   return parsed as Record<string, unknown>;
 }
 
+/** The real, already-SSN-redacted text of a stored extraction result —
+ *  `text` on the single-pass path, `pages` (joined) on multi-pass; every
+ *  extraction produced by the current pipeline sets exactly one of the two
+ *  (`extract.ts`'s two `return` sites). `undefined` only for a row persisted
+ *  before this field existed. */
+function storedDocumentText(result: ExtractionResult): string | undefined {
+  if (result.text) return result.text;
+  if (result.pages && result.pages.length > 0) return result.pages.join("\n\n---\n\n");
+  return undefined;
+}
+
 /**
- * C10: the safety property of the whole toolset. This is the only tool that
- * calls a model, and the only one with access to the raw source document —
- * it PROPOSES a correction and never writes `payload` itself. `payload` on
- * the returned `ToolResult` is the SAME object handed in, untouched; the
- * advisor accepts a proposal through `edit_row`, a separate, auditable step.
+ * CRITICAL FIX (review round 1): the original version downloaded the file's
+ * bytes, used them for nothing but a null check, and then asked the model a
+ * text-only question built from data the row ALREADY carried — so the
+ * "correction" it returned was invented, not read off the statement, no
+ * matter what the advisor asked.
  *
- * `fileId` must already appear as some row's `__provenance.sourceFileId` in
- * THIS payload — a guardrail, not just a lookup convenience: `payload` here
- * is always built from this import's own `fileResults` (the route only ever
- * hands in this import's data), so restricting `fileId` to one already
- * referenced there means a prompted model cannot use this tool to read an
- * arbitrary file id belonging to a different client or firm.
+ * The fix reuses `fileResults[fileId].text`/`.pages` — the already-redacted
+ * document text `extract.ts` captures at extraction time specifically "so
+ * the planning reasoner can run without re-fetching or re-parsing the source
+ * file" (see its own doc comment in `@/lib/extraction/types`). That text is
+ * embedded directly in the prompt below, so the model's answer is grounded
+ * in what the statement actually says. A file predating that field (no
+ * `text`/`pages` stored at all) falls back to downloading the blob and
+ * re-running the real extraction pipeline (`extractDocument`,
+ * `@/lib/extraction/extract`) to obtain it fresh — never a bespoke second
+ * vision call. (Two known repo traps on that fallback path: Azure's
+ * jailbreak filter can block vision OCR, and extraction truncates long
+ * holdings tables — neither applies to the common stored-text path above.)
  */
 export async function rereadDocument(
   payload: PersistedImportPayload,
   args: RereadDocumentArgs,
   model: RereadModel,
+  ctx: RereadDocumentContext,
 ): Promise<ToolResult> {
   const accounts = accountsOf(payload);
   const candidates = accounts.filter((r) => r.__provenance?.sourceFileId === args.fileId);
@@ -322,28 +459,49 @@ export async function rereadDocument(
     throw new Error(`No rows in this import came from file "${args.fileId}".`);
   }
 
-  const [file] = await db
-    .select({ blobUrl: clientImportFiles.blobUrl })
-    .from(clientImportFiles)
-    .where(eq(clientImportFiles.id, args.fileId))
-    .limit(1);
-  if (!file) {
-    throw new Error(`Source file "${args.fileId}" could not be found.`);
-  }
-  const buffer = await downloadImportFile(file.blobUrl);
-  if (!buffer) {
-    throw new Error(`The stored file for "${args.fileId}" is unavailable.`);
+  const fileResult = ctx.fileResults[args.fileId];
+  let documentText = fileResult ? storedDocumentText(fileResult) : undefined;
+
+  if (!documentText) {
+    // Important 2: scoped by importId too, not id alone — `payload.accounts`
+    // is advisor-controlled (the accounts-PATCH route shallow-merges with no
+    // row validation), so the `__provenance` pre-check above narrows `fileId`
+    // to a value SOMEONE claimed on a row, not one this import provably owns.
+    const [file] = await db
+      .select({ blobUrl: clientImportFiles.blobUrl })
+      .from(clientImportFiles)
+      .where(and(eq(clientImportFiles.id, args.fileId), eq(clientImportFiles.importId, ctx.importId)))
+      .limit(1);
+    if (!file) {
+      throw new Error(`Source file "${args.fileId}" could not be found in this import.`);
+    }
+    const buffer = await downloadImportFile(file.blobUrl);
+    if (!buffer) {
+      throw new Error(`The stored file for "${args.fileId}" is unavailable.`);
+    }
+    const fileName = fileResult?.fileName ?? args.fileId;
+    const documentType = fileResult?.documentType ?? "auto";
+    const fresh = await extractDocument(buffer, fileName, documentType, "mini");
+    documentText = storedDocumentText(fresh);
+    if (!documentText) {
+      throw new Error(`Could not read the text of "${fileName}" to re-check it.`);
+    }
   }
 
   const rowsDescription = candidates
     .map((r) => `- rowId ${r.__rowId}: ${JSON.stringify(pickEditable(r))}`)
     .join("\n");
   const prompt = [
-    "An advisor is reviewing account rows extracted from the attached statement and has a question",
-    "about ONE of them. Answer by proposing a single corrected field on ONE of the rows below — do not",
-    "guess a row or field that isn't listed.",
+    "An advisor is reviewing account rows extracted from the statement text below and has a question",
+    "about ONE of them. Answer ONLY from the statement text — never from the row values themselves —",
+    "by proposing a single corrected field on ONE of the rows below. Do not guess a row or field that",
+    "isn't listed, and do not propose a value the statement text doesn't actually support.",
     "",
     `Rows from this file:\n${rowsDescription}`,
+    "",
+    "--- STATEMENT TEXT ---",
+    documentText,
+    "--- END STATEMENT TEXT ---",
     "",
     `Question: ${args.question}`,
     "",
@@ -365,8 +523,8 @@ export async function rereadDocument(
   if (!isEditableField(field)) {
     throw new Error(`The model proposed a field "${field}" that is not editable.`);
   }
-  if (!isScalarValue(value)) {
-    throw new Error(`The model proposed a non-scalar value for "${field}".`);
+  if (!isValidFieldValue(field, value)) {
+    throw new Error(`The model proposed a value for "${field}" outside its valid domain.`);
   }
 
   return {
