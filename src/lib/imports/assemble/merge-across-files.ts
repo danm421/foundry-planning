@@ -62,6 +62,61 @@ function formatMoney(n: number | undefined): string {
 }
 
 /**
+ * Normalize a printed registration name for EXACT comparison: lowercase,
+ * every run of non-alphanumerics collapsed to one space, trimmed. Returns
+ * null when nothing survives.
+ *
+ * Deliberately NOT `normalizeCustodian` (which also strips trailing legal
+ * suffixes, wrong for a person's name) and NOT `owner-match.ts`'s
+ * `tokenize` + `nameMatches` pair (which drops digits and absorbs a
+ * Levenshtein typo — a fuzzy rule, and fuzziness here would merge two real
+ * accounts belonging to two family members whose names are one edit apart).
+ * Nothing in `src/lib/imports/` offered exact-equality-after-cleanup for a
+ * person name, so this is a local helper.
+ */
+function normalizeOwnerNameHint(raw: string | undefined): string | null {
+  if (!raw) return null;
+  const s = raw
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+  return s || null;
+}
+
+/**
+ * Do two same-custodian, same-last-4 account rows belong to the same OWNER?
+ *
+ * `owner` is a `client | spouse | joint` enum the EXTRACTOR guesses. The
+ * household role it names appears nowhere on a statement — the page shows a
+ * NAME — so the guess is not reproducible: four imports of byte-identical
+ * fixtures read in identical order returned `spouse`/`client`,
+ * `spouse`/`spouse`, `spouse`/`spouse`, `client`/`spouse` for the same two
+ * files (Task 12). `match.ts` already demotes this same field as matching
+ * evidence for the same reason.
+ *
+ * So the enum is no longer a bucket KEY (a flipped guess used to put ONE
+ * real account in two buckets, where neither the custodian merge nor the
+ * value-conflict rebase could ever see the pair — a double count). It is
+ * consulted here instead, with `ownerNameHint` — the verbatim registration
+ * name, which the prompt tells the model to copy without normalizing, and
+ * which was byte-identical on all four runs — as the discriminator when the
+ * guesses disagree.
+ *
+ * When they disagree and there is no discriminator (either hint absent, or
+ * the hints name two different people) the answer is NOT the same owner.
+ * That is the same direction the custodian rule below takes for a null
+ * custodian: a merge that should not have happened makes a whole account
+ * disappear, which is the error that costs money.
+ */
+function sameAccountOwner(existing: ExtractedAccount, incoming: ExtractedAccount): boolean {
+  if (existing.owner === incoming.owner) return true;
+  const a = normalizeOwnerNameHint(existing.ownerNameHint);
+  const b = normalizeOwnerNameHint(incoming.ownerNameHint);
+  if (a === null || b === null) return false;
+  return a === b;
+}
+
+/**
  * Backfill any undefined/null field on `base` using the corresponding field
  * from `other`, without touching fields `base` already has populated. Used
  * so that merging two rows unions their non-null fields — the row picked as
@@ -190,13 +245,36 @@ function orderableDate(value: string | undefined): string | undefined {
  * the fallback when dates cannot separate the rows, which preserves the
  * pre-2026-09 behaviour for every section that has no date to offer — and
  * for any date we can't trust (see `orderableDate`).
+ *
+ * When NEITHER can separate them, `sortKeyCompare` does — see its parameter
+ * doc. Order of arrival never decides.
  */
 function chooseBase<T>(
   existingContent: T,
   existingFieldCount: number,
   incoming: T,
   incomingFieldCount: number,
-  recencyOf?: (row: T) => string | undefined,
+  recencyOf: ((row: T) => string | undefined) | undefined,
+  /**
+   * `compareSortKeys(incoming, existing)` — negative when the incoming row's
+   * stable `(sourceFileId, indexWithinFile)` coordinate sorts BEFORE the
+   * entry's. Consulted ONLY when the dates and the field counts both tie,
+   * where the winner used to be "whichever row the
+   * `Object.entries(fileResults)` loop reached first".
+   *
+   * That was measured, not theorised (Task 12): two equally-dated,
+   * equally-rich rows for one account kept $10,000 read forward and $12,000
+   * read in reverse. `payloadJson` is `jsonb` and Postgres does not preserve
+   * a jsonb object's key insertion order, so both orders are things
+   * production actually hands this function for the same two files — and
+   * Task 12 makes the stakes concrete, because two rows whose extracted
+   * `owner` guesses DISAGREE now merge, and exactly one of the two guesses
+   * survives.
+   *
+   * The coordinate is the same permutation-invariant minimum the `#n`
+   * ordinal is assigned from (Ruling 130), so the two agree by construction.
+   */
+  sortKeyCompare: number,
 ): [base: T, other: T] {
   if (recencyOf) {
     const existingDate = orderableDate(recencyOf(existingContent));
@@ -209,9 +287,12 @@ function chooseBase<T>(
     if (incomingDate && !existingDate) return [incoming, existingContent];
     if (existingDate && !incomingDate) return [existingContent, incoming];
   }
-  return incomingFieldCount > existingFieldCount
-    ? [incoming, existingContent]
-    : [existingContent, incoming];
+  if (incomingFieldCount !== existingFieldCount) {
+    return incomingFieldCount > existingFieldCount
+      ? [incoming, existingContent]
+      : [existingContent, incoming];
+  }
+  return sortKeyCompare < 0 ? [incoming, existingContent] : [existingContent, incoming];
 }
 
 /**
@@ -321,16 +402,22 @@ function mergeSection<T extends { name: string }>(
     if (existingEntry) {
       const priorContent = existingEntry.content;
       const incomingFieldCount = countNonNullFields(content as Record<string, unknown>);
+      // This row's stable coordinate (Ruling 130). Declared here because
+      // `chooseBase` breaks a date-and-richness tie with it; the entry's own
+      // coordinate is lowered to the minimum further down.
+      const incomingSortKey = { fileId: provenance.sourceFileId, index: indexWithinFile };
       // The base row wins on any conflicting field — but the other row's
       // unique fields still backfill any gaps the base left, so nothing is
       // dropped. `chooseBase` prefers the more recent statement where the
-      // caller supplied a date accessor, else the richer row as before.
+      // caller supplied a date accessor, else the richer row as before, else
+      // the smaller coordinate.
       const [baseContent, otherContent] = chooseBase(
         existingEntry.content,
         existingEntry.fieldCount,
         content,
         incomingFieldCount,
         opts?.recencyOf,
+        compareSortKeys(incomingSortKey, existingEntry.sortKey),
       );
       existingEntry.content = unionFields(baseContent, otherContent);
       existingEntry.fieldCount = countNonNullFields(existingEntry.content as Record<string, unknown>);
@@ -367,7 +454,6 @@ function mergeSection<T extends { name: string }>(
       // Lower the entry's coordinate if this row's is smaller, so the field
       // holds the MINIMUM over the entry's member rows however the loop
       // reached them (Ruling 130).
-      const incomingSortKey = { fileId: provenance.sourceFileId, index: indexWithinFile };
       if (compareSortKeys(incomingSortKey, existingEntry.sortKey) < 0) {
         existingEntry.sortKey = incomingSortKey;
       }
@@ -680,9 +766,19 @@ export function mergeAcrossFiles(
     payload.accounts,
     accountRows,
     "account",
-    // `owner` is part of the key (not just an isSameEntity check) so a
-    // client IRA and a spouse IRA sharing a masked last-4 at the same
-    // custodian never even reach the same bucket — see FIX 5.
+    // `owner` used to be in the key too (FIX 5), to stop a client IRA and a
+    // spouse IRA sharing a masked last-4 at the same custodian from ever
+    // reaching one bucket. It had to leave (Task 12): the enum is a model
+    // GUESS at a household role no statement prints, it flipped between two
+    // imports of the same files, and a flipped guess put ONE real account in
+    // TWO buckets whose `__rowId`s could never collide — so neither the
+    // custodian merge nor the value-conflict rebase ever ran on the pair and
+    // the newer balance became a second committable row. A double count.
+    //
+    // It moved rather than died: FIX 5's case is real, and getting it wrong
+    // LOSES an account. `isSameEntity` below now carries the owner test, with
+    // the verbatim registration name as the discriminator — the same shape
+    // Ruling 121 used for the custodian.
     //
     // The CUSTODIAN is deliberately NOT in the key (Ruling 120/121). It used
     // to be, as `custodian.toLowerCase()` — a raw exact string — and the
@@ -708,13 +804,12 @@ export function mergeAcrossFiles(
     // `isSameEntity` below nothing to compare — both sides normalize to
     // null, and null matches null — so bucketing it can only ever produce a
     // blind merge. Two unrelated accounts that happen to share four masked
-    // digits and an owner would fold into one, which is the money-losing
-    // mirror of the split this fix exists to stop.
-    (row) =>
-      row.custodian && row.accountNumberLast4 ? `${row.accountNumberLast4}|${row.owner ?? ""}` : null,
-    // Now that the bucket is only last-4 + owner, this is what keeps a
-    // Fidelity statement out of a Schwab account that happens to share four
-    // masked digits — the same `normalizeCustodian` + `custodianMatches`
+    // digits would fold into one, which is the money-losing mirror of the
+    // split this fix exists to stop.
+    (row) => (row.custodian && row.accountNumberLast4 ? row.accountNumberLast4 : null),
+    // Now that the bucket is only the last-4, this is what keeps a Fidelity
+    // statement out of a Schwab account that happens to share four masked
+    // digits — the same `normalizeCustodian` + `custodianMatches`
     // pair `match-keys/account.ts` already uses against the plan's own
     // accounts, so one import can't disagree with the other about whether
     // two custodian spellings are the same institution.
@@ -724,11 +819,15 @@ export function mergeAcrossFiles(
     // for the same comparison. Nulls share the one catch-all rather than
     // each becoming its own; a null never silently joins a named custodian,
     // which is the direction that would lose money.
+    //
+    // The OWNER test runs after the custodian one and never overrides it
+    // (Task 12) — a matching registration name is not evidence about the
+    // institution. See `sameAccountOwner`.
     (existing, incoming) => {
       const a = normalizeCustodian(existing.custodian);
       const b = normalizeCustodian(incoming.custodian);
-      if (a === null || b === null) return a === b;
-      return custodianMatches(a, b);
+      const sameCustodian = a === null || b === null ? a === b : custodianMatches(a, b);
+      return sameCustodian && sameAccountOwner(existing, incoming);
     },
     payload.warnings,
     (existing, incoming) =>

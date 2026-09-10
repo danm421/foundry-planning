@@ -356,3 +356,158 @@ describe("two spellings of one custodian (Ruling 120)", () => {
     expect(r.payload.warnings.some((w) => w.includes("Merged"))).toBe(false);
   });
 });
+
+/**
+ * Task 12. `owner` is a `client | spouse | joint` enum the EXTRACTOR guesses
+ * from an account title, and the household role it names appears nowhere on
+ * a statement — so the guess is not reproducible. Measured in the browser
+ * over four imports of byte-identical fixtures read in identical order: the
+ * same June/September Roth pair came back `spouse`/`client`, `spouse`/
+ * `spouse`, `spouse`/`spouse`, `client`/`spouse`. Runs 1 and 4 disagreed in
+ * OPPOSITE directions.
+ *
+ * While `owner` was in the dedupe KEY, a flipped guess put ONE real account
+ * in two buckets: two committable rows, two `__rowId`s that never collide,
+ * and so neither the custodian merge nor the value-conflict rebase ever ran
+ * on them. The advisor saw "3 accounts" for two, a caveat naming
+ * `"Roth IRA ••••7734"` twice, and NO override caveat — the newer balance
+ * silently became a second row instead of a flagged conflict. A DOUBLE
+ * COUNT.
+ *
+ * `match.ts:88-105` already demotes this same field as matching evidence,
+ * with a measurement, because it "is present on essentially every row and
+ * asserted with the same confidence whether the registration was
+ * unambiguous or absent". So the enum moves out of the key and into
+ * `isSameEntity`, the same shape Ruling 121 used for the custodian — where
+ * `ownerNameHint` (the verbatim registration name, byte-identical on all
+ * four runs) is the discriminator instead.
+ */
+describe("the extractor's owner guess is not a bucket key (Task 12)", () => {
+  it("collapses one Roth IRA whose owner guess flipped between two statements", () => {
+    const r = mergeAcrossFiles({
+      f1: er("june.pdf", {
+        accounts: [{
+          name: "Roth IRA", custodian: "Fidelity", accountNumberLast4: "7734",
+          owner: "spouse", ownerNameHint: "Julia B. Sample",
+          value: 190_000, basis: 74_500, statementDate: "2026-06-30",
+        }],
+      }),
+      f2: er("september.pdf", {
+        accounts: [{
+          name: "Roth IRA", custodian: "Fidelity", accountNumberLast4: "7734",
+          owner: "client", ownerNameHint: "Julia B. Sample",
+          value: 201_900, basis: 74_500, statementDate: "2026-09-30",
+        }],
+      }),
+    });
+    // ONE human, ONE account, ONE committable row.
+    expect(r.payload.accounts).toHaveLength(1);
+    // The newer statement supersedes rather than becoming a second row.
+    expect(r.payload.accounts[0].value).toBe(201_900);
+    // And the advisor now gets the override caveat the split suppressed.
+    const warning = r.payload.warnings.find((w) => w.includes("Merged duplicate account"));
+    expect(warning).toBeDefined();
+    expect(warning).toContain("190,000");
+    expect(warning).toContain("201,900");
+  });
+
+  // The normalizer is EXACT equality after cheap cleanup — case and
+  // punctuation only. Statements print a registration name in caps on one
+  // period and title case on the next; that is not two humans.
+  it("treats two spellings of one registration name as the same owner", () => {
+    const r = mergeAcrossFiles({
+      f1: er("june.pdf", {
+        accounts: [{ name: "Roth IRA", custodian: "Fidelity", accountNumberLast4: "7734", owner: "spouse", ownerNameHint: "JULIA B. SAMPLE", value: 190_000 }],
+      }),
+      f2: er("september.pdf", {
+        accounts: [{ name: "Roth IRA", custodian: "Fidelity", accountNumberLast4: "7734", owner: "client", ownerNameHint: "Julia B Sample", value: 201_900 }],
+      }),
+    });
+    expect(r.payload.accounts).toHaveLength(1);
+  });
+
+  // FIX 5's property, preserved. This is the case the key was protecting:
+  // a client IRA and a spouse IRA that share a masked last-4 at the same
+  // custodian are TWO accounts, and folding them into one LOSES an account.
+  // The hints name two different humans, so they stay apart.
+  it("keeps a client IRA and a spouse IRA apart when the registration names differ (FIX 5)", () => {
+    const r = mergeAcrossFiles({
+      f1: er("a.pdf", {
+        accounts: [{ name: "IRA", custodian: "Fidelity", accountNumberLast4: "1234", owner: "client", ownerNameHint: "John Q. Sample", value: 100_000 }],
+      }),
+      f2: er("b.pdf", {
+        accounts: [{ name: "IRA", custodian: "Fidelity", accountNumberLast4: "1234", owner: "spouse", ownerNameHint: "Julia B. Sample", value: 200_000 }],
+      }),
+    });
+    expect(r.payload.accounts).toHaveLength(2);
+    expect(r.payload.warnings.some((w) => w.includes("Merged"))).toBe(false);
+  });
+
+  // With the owners disagreeing and only ONE hint to go on there is no
+  // discriminator at all — so do NOT merge. The same direction the
+  // custodian rule already takes for a null custodian: a merge that should
+  // not have happened loses an account, which is the error that costs
+  // money.
+  it("does not merge on a disagreeing owner when either registration name is absent", () => {
+    const r = mergeAcrossFiles({
+      f1: er("a.pdf", {
+        accounts: [{ name: "IRA", custodian: "Fidelity", accountNumberLast4: "1234", owner: "client", ownerNameHint: "Julia B. Sample", value: 100_000 }],
+      }),
+      f2: er("b.pdf", {
+        accounts: [{ name: "IRA", custodian: "Fidelity", accountNumberLast4: "1234", owner: "spouse", value: 200_000 }],
+      }),
+    });
+    expect(r.payload.accounts).toHaveLength(2);
+  });
+
+  // A1's guard: widening the bucket to the last-4 alone leans harder on
+  // `isSameEntity`'s custodian comparison, and a matching registration name
+  // must never talk it out of a real institution mismatch.
+  it("still keeps two custodians apart when last4, owner AND registration name all match", () => {
+    const r = mergeAcrossFiles({
+      f1: er("a.pdf", {
+        accounts: [{ name: "Brokerage", custodian: "Fidelity", accountNumberLast4: "1234", owner: "client", ownerNameHint: "Julia B. Sample", value: 100_000 }],
+      }),
+      f2: er("b.pdf", {
+        accounts: [{ name: "Brokerage", custodian: "Schwab", accountNumberLast4: "1234", owner: "client", ownerNameHint: "Julia B. Sample", value: 250_000 }],
+      }),
+    });
+    expect(r.payload.accounts).toHaveLength(2);
+    expect(r.payload.warnings.some((w) => w.includes("Merged"))).toBe(false);
+  });
+
+  /**
+   * A3. Two rows with DIFFERENT owners now merge, so ONE of the two guesses
+   * survives — and which one must not depend on the order the files arrive
+   * in. `mergeAcrossFiles` reads its files with `Object.entries`, and
+   * `payloadJson` is `jsonb`: Postgres does not preserve a jsonb object's
+   * key insertion order, so a re-extraction of the SAME files can hand them
+   * back either way round.
+   *
+   * `chooseBase` handles the case where the statements are dated: the newer
+   * one wins, whatever order it arrived in. What it did NOT handle, measured
+   * before this test was written, is the tie — two rows with equal dates and
+   * equal field counts kept `10_000` read forward and `12_000` read in
+   * reverse, because the tie fell through to "whichever row got here first".
+   * These two rows are that tie, plus a disagreeing owner.
+   */
+  it("survives with the same owner whichever order the files are read in", () => {
+    const june = () =>
+      er("june.pdf", {
+        accounts: [{ name: "Roth IRA", custodian: "Fidelity", accountNumberLast4: "7734", owner: "client", ownerNameHint: "Julia B. Sample", value: 190_000, statementDate: "2026-06-30" }],
+      });
+    const alsoJune = () =>
+      er("also-june.pdf", {
+        accounts: [{ name: "Roth IRA", custodian: "Fidelity", accountNumberLast4: "7734", owner: "spouse", ownerNameHint: "Julia B. Sample", value: 201_900, statementDate: "2026-06-30" }],
+      });
+
+    const forward = mergeAcrossFiles({ "file-a": june(), "file-b": alsoJune() });
+    const reverse = mergeAcrossFiles({ "file-b": alsoJune(), "file-a": june() });
+
+    expect(forward.payload.accounts).toHaveLength(1);
+    expect(reverse.payload.accounts).toHaveLength(1);
+    expect(forward.payload.accounts[0].owner).toBe(reverse.payload.accounts[0].owner);
+    expect(forward.payload.accounts[0].value).toBe(reverse.payload.accounts[0].value);
+    expect(forward.payload.accounts[0].__rowId).toBe(reverse.payload.accounts[0].__rowId);
+  });
+});

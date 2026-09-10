@@ -619,11 +619,12 @@ describe("chat extract route gates", () => {
       warnings: [],
       promptVersion: "v",
     };
-    // The ids `mergeAcrossFiles` actually mints for those two rows. Last-4 +
-    // owner (empty here) since Ruling 120 moved the custodian out of the
-    // accounts dedupe key — and the id is derived from that key.
-    const IRA_ROW_ID = "account:1234|#0";
-    const DUP_ROW_ID = "account:9999|#0";
+    // The ids `mergeAcrossFiles` actually mints for those two rows. The
+    // last-4 alone: Ruling 120 moved the custodian out of the accounts
+    // dedupe key and Task 12 moved the extractor's owner guess out too — and
+    // the id is derived from that key.
+    const IRA_ROW_ID = "account:1234#0";
+    const DUP_ROW_ID = "account:9999#0";
 
     currentImportRow = {
       id: "i1",
@@ -744,7 +745,9 @@ describe("chat extract route gates", () => {
       warnings: [],
       promptVersion: "v",
     };
-    const ROW_ID = "account:1234|client#0";
+    // Last-4 alone since Task 12 took the extractor's owner guess out of the
+    // accounts dedupe key (Ruling 120 had already taken the custodian out).
+    const ROW_ID = "account:1234#0";
 
     currentImportRow = {
       id: "i1",
