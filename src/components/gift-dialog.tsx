@@ -16,7 +16,7 @@ import { discountAppliesToDraft } from "@/lib/gifts/discount-applicability";
 import {
   giftDraftToRow,
   giftDraftToSeriesRow,
-} from "@/app/(app)/clients/[id]/details/family/family-scenario-rows";
+} from "@/lib/gifts/scenario-rows";
 
 export interface GiftDialogProps {
   clientId: string;

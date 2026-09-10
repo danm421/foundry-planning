@@ -28,7 +28,7 @@ import OpenItemsPanel from "@/components/open-items/open-items-panel";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { loadActiveGiftChanges } from "@/lib/scenario/changes";
 import { buildFamilyPrimary } from "./family-primary";
-import { entitySummaryToRow, overlayScenarioGiftRows } from "./family-scenario-rows";
+import { entitySummaryToRow, overlayScenarioGiftRows } from "@/lib/gifts/scenario-rows";
 import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
 import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
 

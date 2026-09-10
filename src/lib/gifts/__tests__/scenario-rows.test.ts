@@ -8,7 +8,7 @@ import {
   giftDraftToRow,
   giftDraftToSeriesRow,
   overlayScenarioGiftRows,
-} from "../family-scenario-rows";
+} from "@/lib/gifts/scenario-rows";
 
 // The exact payload the solver's "save as scenario" writes for a SLAT — the
 // case that used to render "No trusts yet" on the Profile page.
