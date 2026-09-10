@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import AddAssetTransactionForm from "../add-asset-transaction-form";
+import type { AssetTransactionInitialData } from "../add-asset-transaction-form";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
@@ -139,6 +140,10 @@ describe("AddAssetTransactionForm — bundle edit mode", () => {
     purchasePrice: "800000",
   };
 
+  // A record shaped the way Details passes one TODAY: no bundleId field at all.
+  const UNBUNDLED_RECORD: AssetTransactionInitialData = { ...SELL_RECORD };
+  delete UNBUNDLED_RECORD.bundleId;
+
   it("seeds a leg per record and writes each one back on save", async () => {
     const drafts: unknown[] = [];
     const onSubmitDraft = vi.fn((t) => drafts.push(t));
@@ -168,6 +173,10 @@ describe("AddAssetTransactionForm — bundle edit mode", () => {
       within(screen.getByTestId("buy-column")).getAllByRole("button", { name: /^Condo/i }),
     ).toHaveLength(1);
 
+    // Renaming the transaction must rename EVERY leg — leg names are derived,
+    // never hand-typed, so nothing the advisor wrote is clobbered.
+    fireEvent.change(screen.getByLabelText(/^Name/i), { target: { value: "Moved" } });
+
     fireEvent.submit(document.getElementById("asset-transaction-form")!);
 
     await waitFor(() => expect(onSubmitDraft).toHaveBeenCalledTimes(2));
@@ -175,6 +184,13 @@ describe("AddAssetTransactionForm — bundle edit mode", () => {
     expect((drafts as any[]).map((d) => d.id).sort()).toEqual(["rec-buy", "rec-sell"]);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((drafts as any[]).every((d) => d.bundleId === "bun-1")).toBe(true);
+
+    // Each record is written under its DERIVED name: "<bundle> — <verb> <asset>",
+    // separated by an EM DASH (U+2014), never a hyphen or an en dash.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const byId = new Map<string, any>((drafts as any[]).map((d) => [d.id, d]));
+    expect(byId.get("rec-sell").name).toBe("Moved — Sell Brokerage");
+    expect(byId.get("rec-buy").name).toBe("Moved — Buy Condo");
   });
 
   it("deletes a record whose leg was removed in the dialog", async () => {
@@ -238,6 +254,188 @@ describe("AddAssetTransactionForm — bundle edit mode", () => {
     expect((drafts as any[]).map((d) => d.id)).toContain("rec-sell");
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((drafts as any[]).some((d) => d.id !== "rec-sell" && d.type === "buy")).toBe(true);
+  });
+
+  it("does not mint a bundle id for a caller that is not bundle-aware", async () => {
+    // Details hands over one row and knows nothing about bundles (its row type
+    // has no bundleId until Task 6). Minting an id here would PUT a NEW id over
+    // the record's real one, pulling it out of its bundle and orphaning the
+    // siblings still carrying the old id.
+    const drafts: unknown[] = [];
+    const onSubmitDraft = vi.fn((t) => drafts.push(t));
+    render(
+      <AddAssetTransactionForm
+        clientId="client-123"
+        accounts={ACCOUNTS}
+        liabilities={LIABILITIES}
+        onClose={() => {}}
+        onSaved={() => {}}
+        onSubmitDraft={onSubmitDraft}
+        initialData={UNBUNDLED_RECORD}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Add buy/i }));
+    fireEvent.change(screen.getByLabelText(/Asset Name/i), { target: { value: "Condo" } });
+    fireEvent.change(document.getElementById("purchasePrice") as HTMLInputElement, {
+      target: { value: "800000" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Done$/i }));
+
+    fireEvent.submit(document.getElementById("asset-transaction-form")!);
+
+    await waitFor(() => expect(onSubmitDraft).toHaveBeenCalledTimes(2));
+    // No id on either record: the edit omits the field entirely, so the route
+    // leaves the record's real bundle_id untouched.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((drafts as any[]).every((d) => d.bundleId === undefined)).toBe(true);
+  });
+
+  it("mints one shared id when a bundle-aware caller grows a bundle-less record", async () => {
+    // Same interaction, but the caller passed `bundleRecords` — so it DOES know
+    // the record has no bundle, and a fresh shared id is the right answer.
+    const drafts: unknown[] = [];
+    const onSubmitDraft = vi.fn((t) => drafts.push(t));
+    render(
+      <AddAssetTransactionForm
+        clientId="client-123"
+        accounts={ACCOUNTS}
+        liabilities={LIABILITIES}
+        onClose={() => {}}
+        onSaved={() => {}}
+        onSubmitDraft={onSubmitDraft}
+        initialData={UNBUNDLED_RECORD}
+        bundleRecords={[UNBUNDLED_RECORD]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Add buy/i }));
+    fireEvent.change(screen.getByLabelText(/Asset Name/i), { target: { value: "Condo" } });
+    fireEvent.change(document.getElementById("purchasePrice") as HTMLInputElement, {
+      target: { value: "800000" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Done$/i }));
+
+    fireEvent.submit(document.getElementById("asset-transaction-form")!);
+
+    await waitFor(() => expect(onSubmitDraft).toHaveBeenCalledTimes(2));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ids = new Set((drafts as any[]).map((d) => d.bundleId));
+    expect(ids.size).toBe(1);
+    expect([...ids][0]).toBeTruthy();
+  });
+
+  it("refuses the save when a leg was dropped and nothing can delete it", async () => {
+    // Draft mode with no `onDeleteDraft`: the dropped record cannot be deleted,
+    // and silently keeping it would make the removed leg reappear. Fail loudly.
+    const onSubmitDraft = vi.fn();
+    render(
+      <AddAssetTransactionForm
+        clientId="client-123"
+        accounts={ACCOUNTS}
+        liabilities={LIABILITIES}
+        onClose={() => {}}
+        onSaved={() => {}}
+        onSubmitDraft={onSubmitDraft}
+        initialData={SELL_RECORD}
+        bundleRecords={[SELL_RECORD, BUY_RECORD]}
+      />,
+    );
+
+    fireEvent.click(
+      within(screen.getByTestId("buy-column")).getByRole("button", { name: /Remove/i }),
+    );
+    fireEvent.submit(document.getElementById("asset-transaction-form")!);
+
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toMatch(/Can't remove that leg here/),
+    );
+    // And nothing was written — a half-save would orphan the dropped record.
+    expect(onSubmitDraft).not.toHaveBeenCalled();
+  });
+
+  it("issues the PUT, POST and DELETE itself when it is not in draft mode", async () => {
+    render(
+      <AddAssetTransactionForm
+        clientId="client-123"
+        accounts={ACCOUNTS}
+        liabilities={LIABILITIES}
+        onClose={() => {}}
+        onSaved={() => {}}
+        initialData={SELL_RECORD}
+        bundleRecords={[SELL_RECORD, BUY_RECORD]}
+      />,
+    );
+
+    // Drop the seeded buy leg and add a different one, so ONE save exercises all
+    // three persisting paths at once.
+    fireEvent.click(
+      within(screen.getByTestId("buy-column")).getByRole("button", { name: /Remove/i }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Add buy/i }));
+    fireEvent.change(screen.getByLabelText(/Asset Name/i), { target: { value: "Condo" } });
+    fireEvent.change(document.getElementById("purchasePrice") as HTMLInputElement, {
+      target: { value: "800000" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Done$/i }));
+
+    fireEvent.submit(document.getElementById("asset-transaction-form")!);
+
+    const writes = () =>
+      fetchMock.mock.calls.filter((a) => String(a[0]).includes("asset-transactions"));
+    await waitFor(() => expect(writes()).toHaveLength(3));
+
+    const URL = "/api/clients/client-123/asset-transactions";
+    expect(writes().map((a) => [a[0], a[1].method])).toEqual([
+      [URL, "PUT"],
+      [URL, "POST"],
+      [`${URL}?transactionId=rec-buy`, "DELETE"],
+    ]);
+    // The PUT names the record it updates in the body.
+    expect(JSON.parse(writes()[0][1].body).transactionId).toBe("rec-sell");
+    // The POST creates the new leg inside the SAME bundle.
+    expect(JSON.parse(writes()[1][1].body)).toEqual(
+      expect.objectContaining({ type: "buy", assetName: "Condo", bundleId: "bun-1" }),
+    );
+  });
+
+  it("keeps the name verbatim when the save ends up with ONE record again", async () => {
+    // Replace the only leg: the old record is deleted and one new record takes
+    // its place. That is still a LONE record, so its name is the Name field
+    // verbatim — the derived "<name> — Buy <asset>" form is for real bundles.
+    const drafts: unknown[] = [];
+    const onSubmitDraft = vi.fn((t) => drafts.push(t));
+    const onDeleteDraft = vi.fn();
+    render(
+      <AddAssetTransactionForm
+        clientId="client-123"
+        accounts={ACCOUNTS}
+        liabilities={LIABILITIES}
+        onClose={() => {}}
+        onSaved={() => {}}
+        onSubmitDraft={onSubmitDraft}
+        onDeleteDraft={onDeleteDraft}
+        initialData={UNBUNDLED_RECORD}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/^Name/i), { target: { value: "Swap" } });
+    fireEvent.click(
+      within(screen.getByTestId("sell-column")).getByRole("button", { name: /Remove/i }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Add buy/i }));
+    fireEvent.change(screen.getByLabelText(/Asset Name/i), { target: { value: "Condo" } });
+    fireEvent.change(document.getElementById("purchasePrice") as HTMLInputElement, {
+      target: { value: "800000" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Done$/i }));
+
+    fireEvent.submit(document.getElementById("asset-transaction-form")!);
+
+    await waitFor(() => expect(onSubmitDraft).toHaveBeenCalledTimes(1));
+    expect(onDeleteDraft).toHaveBeenCalledWith("rec-sell");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((drafts[0] as any).name).toBe("Swap");
   });
 
   it("keeps a legacy swap row's own name and stamps no bundle id", async () => {
