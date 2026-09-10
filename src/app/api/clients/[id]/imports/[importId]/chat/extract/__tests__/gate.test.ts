@@ -703,6 +703,121 @@ describe("chat extract route gates", () => {
     expect(done.rows[0].value).toBe(999);
   });
 
+  /**
+   * Ruling 117, wired end to end. The measured failure was ON SCREEN: a June
+   * statement at $100,000 and a September statement at $130,000 for a row the
+   * advisor had never touched left $100,000 in the table — correct under I1 —
+   * with a caveat directly above it announcing $130,000, because the route
+   * narrated the FRESH decisions against the REBASED rows.
+   *
+   * rebase.test.ts and narrate.test.ts pin each half. Only this pins the
+   * ROUTE handing `overrides` to `narrate` at all: without that one argument
+   * both halves stay green and the screen still contradicts itself.
+   *
+   * Mutation this catches: dropping `overrides: rebaseOverrides` from the
+   * narrate call (the $130,000 value-conflict caveat comes back and the
+   * override caveat vanishes).
+   */
+  it("names both figures when the rebase holds back a newer statement's balance (Ruling 117)", async () => {
+    const juneStatement = {
+      documentType: "account_statement",
+      fileName: "june.pdf",
+      extracted: {
+        accounts: [
+          {
+            name: "Joint Brokerage",
+            custodian: "Fidelity",
+            accountNumberLast4: "1234",
+            owner: "client",
+            value: 100_000,
+            statementDate: "2026-06-30",
+          },
+        ],
+        incomes: [],
+        expenses: [],
+        liabilities: [],
+        entities: [],
+        lifePolicies: [],
+        wills: [],
+        savings: [],
+      },
+      warnings: [],
+      promptVersion: "v",
+    };
+    const ROW_ID = "account:1234|client#0";
+
+    currentImportRow = {
+      id: "i1",
+      payloadJson: {
+        fileResults: { f1: juneStatement },
+        // What the advisor has been looking at since the June upload — the
+        // extracted figure, never corrected.
+        payload: {
+          accounts: [
+            {
+              name: "Joint Brokerage",
+              custodian: "Fidelity",
+              accountNumberLast4: "1234",
+              owner: "client",
+              value: 100_000,
+              statementDate: "2026-06-30",
+              __rowId: ROW_ID,
+            },
+          ],
+        },
+        chat: {
+          surface: "chat",
+          transcript: [],
+          decisions: [],
+          excludedRows: [],
+          committedRowIds: [],
+        },
+      },
+      extractHoldings: false,
+      status: "review",
+    };
+    filesResult = [fileRow("f1", "june.pdf"), fileRow("f2", "september.pdf")];
+    // The September statement for the SAME account, $30,000 higher.
+    vi.mocked(extractDocument).mockResolvedValue({
+      documentType: "account_statement",
+      fileName: "september.pdf",
+      extracted: {
+        accounts: [
+          {
+            name: "Joint Brokerage",
+            custodian: "Fidelity",
+            accountNumberLast4: "1234",
+            owner: "client",
+            value: 130_000,
+            statementDate: "2026-09-30",
+          },
+        ],
+        incomes: [],
+        expenses: [],
+        liabilities: [],
+        entities: [],
+        lifePolicies: [],
+        wills: [],
+        savings: [],
+      },
+      warnings: [],
+      promptVersion: "v",
+    } as never);
+
+    const events = await readSse(await POST(req(), params));
+    const done = events.at(-1) as { rows: Array<{ value: number }>; caveats: string[] };
+
+    // The advisor's standing figure is still what shows and what commits.
+    expect(done.rows.map((r) => r.value)).toEqual([100_000]);
+    // And the caveat names BOTH figures, saying which is on screen.
+    expect(done.caveats.join(" ")).toContain("$100,000");
+    expect(done.caveats.join(" ")).toContain("$130,000");
+    expect(done.caveats.some((c) => c.includes("the one that will commit"))).toBe(true);
+    // No caveat may announce $130,000 as the figure that was RECORDED — that
+    // is the sentence that used to sit directly above a row reading $100,000.
+    expect(done.caveats.some((c) => c.includes("is recorded at $130,000"))).toBe(false);
+  });
+
   // IMPORTANT 4 (fix round 1): proves the ROUTE actually threads its own
   // request's abort signal into runImportExtraction — run-extraction.test.ts
   // proves the check itself works, but nothing short of this proves the
