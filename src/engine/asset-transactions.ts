@@ -439,8 +439,18 @@ export interface ApplyAssetPurchasesInput {
   basisMap: Record<string, number>;
   accountLedgers: Record<string, AccountLedger>;
   year: number;
+  /** Anchor for the property-tax deflation. `AssetTransaction.annualPropertyTax`
+   *  is nominal at the buy year; projection.ts's injection loop compounds from
+   *  plan start, so the value stamped on the new account is divided back down
+   *  to plan-start dollars. */
+  planStartYear: number;
   defaultCheckingId: string;
 }
+
+/** Matches accounts.property_tax_growth_rate's DB default AND the fallback in
+ *  projection.ts's injection loop. The two must agree or the deflation below
+ *  does not round-trip. */
+export const DEFAULT_PROPERTY_TAX_GROWTH = 0.03;
 
 function _calcMonthlyPayment(amount: number, rate: number, termMonths: number): number {
   const monthlyRate = rate / 12;
@@ -457,6 +467,7 @@ export function applyAssetPurchases(input: ApplyAssetPurchasesInput): AssetPurch
     basisMap,
     accountLedgers,
     year,
+    planStartYear,
     defaultCheckingId,
   } = input;
 
@@ -531,6 +542,20 @@ export function applyAssetPurchases(input: ApplyAssetPurchasesInput): AssetPurch
       owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
     };
     newAccounts.push(newAccount);
+
+    // Property tax rides along with the asset. Deflate to plan-start dollars so
+    // projection.ts's injection loop — which computes
+    // `annualPropertyTax * (1 + rate) ^ (year - planStartYear)` — charges
+    // exactly the entered figure in the purchase year and grows it from there.
+    // No category gate: the injection loop already skips anything that is not
+    // real_estate, so a stray value on another category is inert.
+    if (purchase.annualPropertyTax != null && purchase.annualPropertyTax > 0) {
+      const ptRate = purchase.propertyTaxGrowthRate ?? DEFAULT_PROPERTY_TAX_GROWTH;
+      const ptElapsed = Math.max(0, year - planStartYear);
+      newAccount.annualPropertyTax =
+        purchase.annualPropertyTax / Math.pow(1 + ptRate, ptElapsed);
+      newAccount.propertyTaxGrowthRate = ptRate;
+    }
 
     // Initialize ledger for new account
     accountBalances[newAccountId] = purchasePrice;

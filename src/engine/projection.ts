@@ -1509,6 +1509,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           basisMap,
           accountLedgers,
           year,
+          planStartYear: planSettings.planStartYear,
           defaultCheckingId: defaultChecking?.id ?? "",
         });
 
