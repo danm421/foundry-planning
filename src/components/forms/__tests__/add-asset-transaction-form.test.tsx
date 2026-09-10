@@ -120,3 +120,182 @@ describe("AddAssetTransactionForm — edit mode", () => {
     );
   });
 });
+
+describe("AddAssetTransactionForm — bundle edit mode", () => {
+  const SELL_RECORD = {
+    id: "rec-sell", name: "Move house — Sell Brokerage", type: "sell" as const, year: 2031,
+    accountId: "acc-brokerage", purchaseTransactionId: null, businessAccountId: null,
+    fractionSold: null, overrideSaleValue: null, overrideBasis: null,
+    transactionCostPct: null, transactionCostFlat: null, proceedsAccountId: null,
+    qualifiesForHomeSaleExclusion: null, assetName: null, assetCategory: null, assetSubType: null,
+    purchasePrice: null, growthRate: null, basis: null, fundingAccountId: null,
+    mortgageAmount: null, mortgageRate: null, mortgageTermMonths: null,
+    bundleId: "bun-1",
+  };
+  const BUY_RECORD = {
+    ...SELL_RECORD,
+    id: "rec-buy", name: "Move house — Buy Condo", type: "buy" as const,
+    accountId: null, assetName: "Condo", assetCategory: "real_estate", assetSubType: "primary_residence",
+    purchasePrice: "800000",
+  };
+
+  it("seeds a leg per record and writes each one back on save", async () => {
+    const drafts: unknown[] = [];
+    const onSubmitDraft = vi.fn((t) => drafts.push(t));
+    render(
+      <AddAssetTransactionForm
+        clientId="client-123"
+        accounts={ACCOUNTS}
+        liabilities={LIABILITIES}
+        onClose={() => {}}
+        onSaved={() => {}}
+        onSubmitDraft={onSubmitDraft}
+        initialData={SELL_RECORD}
+        bundleRecords={[SELL_RECORD, BUY_RECORD]}
+      />,
+    );
+
+    // The Name field shows the bundle name, not one leg's derived name.
+    expect((screen.getByLabelText(/^Name/i) as HTMLInputElement).value).toBe("Move house");
+    // One row in each ledger column. The regex is start-anchored because each
+    // row renders TWO buttons — the row-select one, whose accessible name is the
+    // label plus its net figure ("Brokerage$0"), and a sibling "Remove
+    // <label>". Only the row-select name STARTS with the label.
+    expect(
+      within(screen.getByTestId("sell-column")).getAllByRole("button", { name: /^Brokerage/i }),
+    ).toHaveLength(1);
+    expect(
+      within(screen.getByTestId("buy-column")).getAllByRole("button", { name: /^Condo/i }),
+    ).toHaveLength(1);
+
+    fireEvent.submit(document.getElementById("asset-transaction-form")!);
+
+    await waitFor(() => expect(onSubmitDraft).toHaveBeenCalledTimes(2));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((drafts as any[]).map((d) => d.id).sort()).toEqual(["rec-buy", "rec-sell"]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((drafts as any[]).every((d) => d.bundleId === "bun-1")).toBe(true);
+  });
+
+  it("deletes a record whose leg was removed in the dialog", async () => {
+    const onSubmitDraft = vi.fn();
+    const onDeleteDraft = vi.fn();
+    render(
+      <AddAssetTransactionForm
+        clientId="client-123"
+        accounts={ACCOUNTS}
+        liabilities={LIABILITIES}
+        onClose={() => {}}
+        onSaved={() => {}}
+        onSubmitDraft={onSubmitDraft}
+        onDeleteDraft={onDeleteDraft}
+        initialData={SELL_RECORD}
+        bundleRecords={[SELL_RECORD, BUY_RECORD]}
+      />,
+    );
+
+    const buyColumn = screen.getByTestId("buy-column");
+    fireEvent.click(within(buyColumn).getByRole("button", { name: /Remove/i }));
+
+    fireEvent.submit(document.getElementById("asset-transaction-form")!);
+
+    await waitFor(() => expect(onDeleteDraft).toHaveBeenCalledWith("rec-buy"));
+    expect(onSubmitDraft).toHaveBeenCalledTimes(1);
+    expect(onSubmitDraft.mock.calls[0][0]).toEqual(expect.objectContaining({ id: "rec-sell" }));
+  });
+
+  it("adds a new leg to the existing bundle", async () => {
+    const drafts: unknown[] = [];
+    const onSubmitDraft = vi.fn((t) => drafts.push(t));
+    render(
+      <AddAssetTransactionForm
+        clientId="client-123"
+        accounts={ACCOUNTS}
+        liabilities={LIABILITIES}
+        onClose={() => {}}
+        onSaved={() => {}}
+        onSubmitDraft={onSubmitDraft}
+        initialData={SELL_RECORD}
+        bundleRecords={[SELL_RECORD]}
+      />,
+    );
+
+    // Edit mode can grow a bundle — the Add controls are live.
+    fireEvent.click(screen.getByRole("button", { name: /Add buy/i }));
+    fireEvent.change(screen.getByLabelText(/Asset Name/i), { target: { value: "Condo" } });
+    fireEvent.change(document.getElementById("purchasePrice") as HTMLInputElement, {
+      target: { value: "800000" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Done$/i }));
+
+    fireEvent.submit(document.getElementById("asset-transaction-form")!);
+
+    await waitFor(() => expect(onSubmitDraft).toHaveBeenCalledTimes(2));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((drafts as any[]).every((d) => d.bundleId === "bun-1")).toBe(true);
+    // The new leg is a fresh record; the existing one keeps its id.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((drafts as any[]).map((d) => d.id)).toContain("rec-sell");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((drafts as any[]).some((d) => d.id !== "rec-sell" && d.type === "buy")).toBe(true);
+  });
+
+  it("keeps a legacy swap row's own name and stamps no bundle id", async () => {
+    // ONE record carrying both a sell side and a buy side. It expands to two
+    // legs bound to the same id, merges back into itself, and is NOT a bundle —
+    // so the name must survive verbatim and no bundleId may be invented.
+    const onSubmitDraft = vi.fn();
+    render(
+      <AddAssetTransactionForm
+        clientId="client-123"
+        accounts={ACCOUNTS}
+        liabilities={LIABILITIES}
+        onClose={() => {}}
+        onSaved={() => {}}
+        onSubmitDraft={onSubmitDraft}
+        initialData={{
+          ...SELL_RECORD,
+          id: "rec-swap", name: "Lake swap", bundleId: null,
+          assetName: "Cabin", assetCategory: "real_estate",
+          assetSubType: "primary_residence", purchasePrice: "500000",
+        }}
+      />,
+    );
+
+    // Two legs, one per side of the single record.
+    expect(within(screen.getByTestId("sell-column")).getAllByRole("button", { name: /^Brokerage/i })).toHaveLength(1);
+    expect(within(screen.getByTestId("buy-column")).getAllByRole("button", { name: /^Cabin/i })).toHaveLength(1);
+
+    fireEvent.submit(document.getElementById("asset-transaction-form")!);
+
+    await waitFor(() => expect(onSubmitDraft).toHaveBeenCalledTimes(1));
+    const draft = onSubmitDraft.mock.calls[0][0];
+    expect(draft).toEqual(
+      expect.objectContaining({
+        id: "rec-swap", name: "Lake swap", type: "sell",
+        accountId: "acc-brokerage", assetName: "Cabin", purchasePrice: 500000,
+      }),
+    );
+    expect(draft.bundleId).toBeUndefined();
+  });
+
+  it("leaves a lone standalone record's name alone", async () => {
+    const onSubmitDraft = vi.fn();
+    render(
+      <AddAssetTransactionForm
+        clientId="client-123"
+        accounts={ACCOUNTS}
+        liabilities={LIABILITIES}
+        onClose={() => {}}
+        onSaved={() => {}}
+        onSubmitDraft={onSubmitDraft}
+        initialData={{ ...SELL_RECORD, id: "rec-solo", name: "Sell the boat", bundleId: null }}
+      />,
+    );
+    fireEvent.submit(document.getElementById("asset-transaction-form")!);
+    await waitFor(() => expect(onSubmitDraft).toHaveBeenCalledTimes(1));
+    expect(onSubmitDraft.mock.calls[0][0]).toEqual(
+      expect.objectContaining({ id: "rec-solo", name: "Sell the boat" }),
+    );
+  });
+});
