@@ -73,7 +73,7 @@ describe("fiduciary slots", () => {
     expect(estateSlotsFor(unknown)).toHaveLength(6);
   });
 
-  it("reads names, spouse and children off the Family step", () => {
+  it("reads names, co-client and children off the Family step", () => {
     const household = estateHousehold({
       primary: { firstName: "Matt" },
       spouse: { firstName: "Bre" },
@@ -263,21 +263,21 @@ const FAMILY = {
 } satisfies NonNullable<IntakeDraft["family"]>;
 
 describe("the beneficiary picklist", () => {
-  it("offers the spouse, then the Family step's children, then anyone added by hand", () => {
+  it("offers the co-client, then the Family step's children, then anyone added by hand", () => {
     const inheritance = {
       beneficiaries: [{ ref: "other:0", name: "Ruth Alvarez", relationship: "my sister" }],
     };
     expect(
       estateBeneficiaryOptions(FAMILY, inheritance, TODAY).map((o) => [o.ref, o.name, o.detail]),
     ).toEqual([
-      ["spouse", "Sarah Rowan", "Spouse or partner"],
+      ["spouse", "Sarah Rowan", "Co-client"],
       ["child:0", "Emma Rowan", "Age 8"],
       ["child:1", "Jack Rowan", "Age 5"],
       ["other:0", "Ruth Alvarez", "my sister"],
     ]);
   });
 
-  it("drops the spouse once the client says everything goes to them first", () => {
+  it("drops the co-client once the client says everything goes to them first", () => {
     // Otherwise the same fact is stated twice, and an attorney reading both has
     // to ask which one the client meant.
     const refs = estateBeneficiaryOptions(FAMILY, { spouseFirst: true }, TODAY).map((o) => o.ref);
@@ -405,7 +405,7 @@ describe("the inheritance summary line", () => {
     ).toBe("To Emma Rowan (60%) and Ruth Alvarez (40%)");
   });
 
-  it("still says what it knows when only the spouse question was answered", () => {
+  it("still says what it knows when only the co-client question was answered", () => {
     expect(summary({ spouseFirst: true, beneficiaries: [] })).toBe(
       "Everything to Sarah Rowan first",
     );
@@ -557,7 +557,7 @@ describe("the picklist away from a clock", () => {
     // never ages — so they read this module without a date, and it must stay
     // pure rather than reaching for one of its own.
     expect(estateBeneficiaryOptions(FAMILY, undefined).map((o) => o.detail)).toEqual([
-      "Spouse or partner",
+      "Co-client",
       "Child",
       "Child",
     ]);

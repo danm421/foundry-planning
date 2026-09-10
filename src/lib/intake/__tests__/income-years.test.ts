@@ -74,7 +74,7 @@ describe("incomeYearWindow", () => {
     expect(w).toEqual({ startYear: 2026, endYear: 2039, endYearRef: "client_retirement" });
   });
 
-  it("anchors a spouse-owned row to the spouse's own retirement", () => {
+  it("anchors a co-client-owned row to the co-client's own retirement", () => {
     const w = incomeYearWindow(
       income({ owner: "spouse", endsAtRetirement: true }),
       ANCHORS,
@@ -95,7 +95,7 @@ describe("incomeYearWindow", () => {
     expect(w.endYear).toBe(2039);
   });
 
-  it("falls back to the client anchor for spouse income in a single household", () => {
+  it("falls back to the client anchor for co-client income in a single household", () => {
     // buildClientMilestones leaves `spouseRetirement` undefined without a spouse
     // DOB, so anchoring to it would store a ref that resolves to nothing.
     const single = buildClientMilestones(
@@ -138,7 +138,7 @@ describe("incomeFormYears", () => {
     ).toEqual({ startYear: 2026, endYear: undefined, endsAtRetirement: true });
   });
 
-  it("treats a spouse retirement anchor the same way", () => {
+  it("treats a co-client retirement anchor the same way", () => {
     expect(
       incomeFormYears({ startYear: 2026, endYear: 2041, endYearRef: "spouse_retirement" }),
     ).toEqual({ startYear: 2026, endYear: undefined, endsAtRetirement: true });

@@ -176,7 +176,7 @@ describe("AccountsStep", () => {
 
   // ── Owner ────────────────────────────────────────────────────────────────
 
-  it("offers only the client as owner when there is no spouse", () => {
+  it("offers only the client as owner when there is no co-client", () => {
     const value: AccountsSlice = [{ name: "IRA", category: "retirement", value: 1000 }];
     render(<AccountsStep {...makeProps({ value, clientName: "Dana" })} />);
 
@@ -186,7 +186,7 @@ describe("AccountsStep", () => {
     expect(within(owner).getByRole("option", { name: "Dana" })).toBeInTheDocument();
   });
 
-  it("offers client, spouse, and joint when a spouse is present", () => {
+  it("offers client, co-client, and joint when a co-client is present", () => {
     const onChange = vi.fn();
     const value: AccountsSlice = [{ name: "IRA", category: "retirement", value: 1000 }];
     render(
@@ -208,7 +208,7 @@ describe("AccountsStep", () => {
     expect(next?.[0]?.owner).toBe("spouse");
   });
 
-  it("labels a collapsed row with the spouse's name when they own it", () => {
+  it("labels a collapsed row with the co-client's name when they own it", () => {
     const value: AccountsSlice = [
       { name: "Rollover IRA", category: "retirement", value: 250000, owner: "spouse" },
     ];

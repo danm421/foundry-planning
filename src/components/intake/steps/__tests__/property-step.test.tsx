@@ -100,7 +100,7 @@ describe("PropertyStep", () => {
 
   // ── Owner ──────────────────────────────────────────────────────────────────
 
-  it("offers only the client as owner when the household has no spouse", () => {
+  it("offers only the client as owner when the household has no co-client", () => {
     render(<PropertyStep {...makeProps({ value: [HOME], clientName: "Dana" })} />);
     expandRow(/edit main residence/i);
 
@@ -108,7 +108,7 @@ describe("PropertyStep", () => {
     expect(within(owner).getAllByRole("option").map((o) => o.textContent)).toEqual(["Dana"]);
   });
 
-  it("offers client, spouse, and joint once a spouse is present", () => {
+  it("offers client, co-client, and joint once a co-client is present", () => {
     render(
       <PropertyStep
         {...makeProps({ value: [HOME], clientName: "Dana", spouseName: "Alex", hasSpouse: true })}

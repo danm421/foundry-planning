@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { cleanInput, formatDisplay } from "@/components/currency-input";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 // ─── Shared input/label tokens (consumed by every intake step) ───────────────
 export const inputCls =
@@ -396,7 +397,7 @@ export function ownerOptions({
     { value: "client", label: clientName?.trim() || "Client" },
   ];
   if (hasSpouse) {
-    opts.push({ value: "spouse", label: spouseName?.trim() || "Spouse" });
+    opts.push({ value: "spouse", label: spouseName?.trim() || CO_CLIENT_LABEL });
     opts.push({ value: "joint", label: "Joint" });
   }
   return opts;

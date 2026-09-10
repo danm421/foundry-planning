@@ -28,7 +28,7 @@ export function welcomeCards(sections: readonly IntakeSectionKey[]): WelcomeCard
   });
 
   if (sections.includes("family")) {
-    cards.push(card("family", "Who the plan covers — you, a spouse, and any dependents."));
+    cards.push(card("family", "Who the plan covers — you, a co-client, and any dependents."));
   }
   if (sections.some((s) => s === "accounts" || s === "income" || s === "property")) {
     // Hand-authored: a bucket spanning three sections has no key to read from.

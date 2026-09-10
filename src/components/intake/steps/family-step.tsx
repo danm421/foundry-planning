@@ -313,7 +313,7 @@ export function FamilyStep({ value, onChange }: FamilyStepProps) {
             id="spouse-heading"
             className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3"
           >
-            Spouse or partner
+            Co-client
             <span className="ml-1 font-normal normal-case text-ink-4">(optional)</span>
           </h2>
           <button
@@ -325,7 +325,7 @@ export function FamilyStep({ value, onChange }: FamilyStepProps) {
                 : "rounded-[var(--radius-sm)] border border-hair px-3 py-1.5 text-[13px] text-ink-2 transition-colors hover:border-accent hover:text-accent"
             }
           >
-            {hasSpouse ? "Remove spouse" : "Add spouse"}
+            {hasSpouse ? "Remove co-client" : "Add co-client"}
           </button>
         </div>
 

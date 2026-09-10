@@ -96,7 +96,7 @@ describe("resolveIntakeHousehold", () => {
     expect(rows.filter((r) => r.id === first)).toHaveLength(1);
   });
 
-  it("mints exactly one household under concurrent first uploads (shared client+spouse token)", async () => {
+  it("mints exactly one household under concurrent first uploads (shared client+co-client token)", async () => {
     const formId = await seedProspectForm("Jordan Reyes");
 
     const results = await Promise.all([
