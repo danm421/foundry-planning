@@ -178,10 +178,36 @@ function accountsOf(payload: PersistedImportPayload): AccountRow[] {
   return payload.accounts ?? [];
 }
 
+/** How many row ids an unknown-row error lists before it summarises the
+ *  rest. Long enough to cover any realistic statement import, short enough
+ *  that a pathological one can't flood the turn's context. */
+const MAX_LISTED_ROW_IDS = 20;
+
+/**
+ * Final review, I5: the error LISTS the valid row ids.
+ *
+ * In the live browser pass `edit_row` failed twice with
+ * `Unknown row id "fidelity|5678|client#0"` — the model had dropped the
+ * `account:` prefix that was shown to it correctly — and a bare "unknown row"
+ * gives it nothing to self-correct from, so it retries the same wrong id and
+ * burns another of the four tool calls this turn allows.
+ * `resolveSourceFileId` below already lists what the import DOES have for
+ * exactly this reason; this is the same pattern for rows.
+ */
 function findRowIndex(accounts: AccountRow[], rowId: string): number {
   const idx = accounts.findIndex((r) => r.__rowId === rowId);
-  if (idx === -1) throw new Error(`Unknown row id "${rowId}".`);
-  return idx;
+  if (idx !== -1) return idx;
+
+  const known = accounts.map((r) => r.__rowId).filter((id): id is string => Boolean(id));
+  if (known.length === 0) {
+    throw new Error(`Unknown row id "${rowId}". This import has no rows to work on.`);
+  }
+  const listed = known.slice(0, MAX_LISTED_ROW_IDS).join(", ");
+  const more =
+    known.length > MAX_LISTED_ROW_IDS
+      ? `, and ${known.length - MAX_LISTED_ROW_IDS} more`
+      : "";
+  throw new Error(`Unknown row id "${rowId}". The rows in this import are: ${listed}${more}.`);
 }
 
 /**

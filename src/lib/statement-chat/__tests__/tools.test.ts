@@ -97,6 +97,39 @@ describe("statement chat tools", () => {
       .toThrow(/unknown row/i);
   });
 
+  // Final review, I5: in the live browser pass the model dropped the
+  // `account:` prefix and `edit_row` failed twice with a bare "Unknown row
+  // id" — nothing to self-correct from, and each retry burns one of the four
+  // tool calls a turn allows. Mutation this catches: reverting to the bare
+  // message; none of the id assertions would hold.
+  it("the unknown-row error lists the valid row ids so the model can self-correct", () => {
+    const message = (() => {
+      try {
+        editRow(payload(), { rowId: "r1-with-a-typo", field: "value", value: 1 }, NONE_COMMITTED);
+        return "";
+      } catch (err) {
+        return err instanceof Error ? err.message : String(err);
+      }
+    })();
+    expect(message).toContain("r1");
+    expect(message).toContain("r2");
+    // Every mutating tool routes through the same helper, so they all get it.
+    expect(() => dropRow(payload(), { rowId: "nope", reason: "x" }, NONE_COMMITTED))
+      .toThrow(/rows in this import are: r1, r2/);
+    expect(() => mergeRows(payload(), { keepRowId: "r1", mergeRowId: "nope" }, NONE_COMMITTED))
+      .toThrow(/rows in this import are: r1, r2/);
+  });
+
+  // Capped, so a pathological import can't flood the turn's context with a
+  // list longer than the conversation.
+  it("caps the listed row ids and says how many more there are", () => {
+    const many = {
+      accounts: Array.from({ length: 25 }, (_, i) => ({ __rowId: `row-${i}`, name: `A${i}` })),
+    } as unknown as PersistedImportPayload;
+    expect(() => dropRow(many, { rowId: "nope", reason: "x" }, NONE_COMMITTED))
+      .toThrow(/and 5 more/);
+  });
+
   // Mutation this catches: Ruling 50's allowlist regressing to a denylist —
   // this specific field (`__rowId`) is never named as "banned" anywhere, so
   // a denylist that only excludes a hardcoded few (e.g. `__provenance`,
