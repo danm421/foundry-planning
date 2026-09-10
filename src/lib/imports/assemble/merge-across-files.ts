@@ -237,21 +237,51 @@ function mergeSection<T extends { name: string }>(
     if (!entry.fileNames.includes(sourceName)) entry.fileNames.push(sourceName);
   };
 
-  for (const [rowIndex, { content, provenance, sourceName }] of rows.entries()) {
+  /**
+   * Each source file's running row count for THIS section, so the null-key
+   * fallback id below can be scoped to the file the row came from rather
+   * than to a position in the whole flattened list. Incremented for every
+   * row, keyed or not: "the 3rd account row read out of file X" then stays
+   * the same identity even if a re-extraction of file X leaves an earlier
+   * row without a custodian and so moves it onto the null-key branch.
+   */
+  const rowsSeenPerFile = new Map<string, number>();
+
+  for (const { content, provenance, sourceName } of rows) {
     const key = computeKey(content);
+    const indexWithinFile = rowsSeenPerFile.get(provenance.sourceFileId) ?? 0;
+    rowsSeenPerFile.set(provenance.sourceFileId, indexWithinFile + 1);
     if (key === null) {
       target.push({
         ...content,
         __provenance: provenance,
         // No dedupe key to derive an id from — fall back to this section
-        // plus the row's position in read order, which is deterministic
-        // across a re-merge of the same files (Task 6, R54). This is the
+        // plus the row's position WITHIN ITS OWN SOURCE FILE. This is the
         // only branch that ever emits a `:null:` segment right after the
         // label — that, not any claim about what characters a key can
         // contain (keys are extraction-derived text and can contain
         // anything, including a colon), is what keeps this id from
         // colliding with one minted by the other two branches below.
-        __rowId: `${label}:null:${rowIndex}:${content.name}`,
+        //
+        // Final review, C2: this used to be the row's position in the whole
+        // flattened read order, which is NOT stable. `payloadJson` is
+        // `jsonb`, and Postgres does not preserve a jsonb object's key
+        // insertion order — it stores keys sorted by length then bytewise,
+        // and every key here is a 36-char UUID, so the order that comes back
+        // is bytewise on random ids. Uploading one more statement can
+        // therefore sort its file id AHEAD of the existing ones and slide
+        // every later row's index by one. That matters because
+        // `run-extraction.ts` drops `payload` wholesale on a re-extraction,
+        // taking every `linkCreated` stamp with it — which leaves
+        // `committedRowIds` as the ONLY thing standing between an
+        // already-committed account and a second commit of the same account.
+        // A shifted id misses that guard and the account commits twice.
+        //
+        // Scoping to `sourceFileId` (already on the provenance, so free)
+        // makes adding a file unable to renumber another file's rows no
+        // matter how jsonb sorts the keys — which is the property the
+        // re-commit guard actually needs.
+        __rowId: `${label}:null:${provenance.sourceFileId}:${indexWithinFile}:${content.name}`,
         match: { kind: "new" },
       } as Annotated<T>);
       continue;
@@ -487,8 +517,19 @@ function mergeFamilyMember<T extends { firstName: string; lastName?: string }>(
  * the task brief). Fuzzy near-duplicates are intentionally left as
  * separate rows for the review wizard / match step to reconcile.
  *
- * Pure and deterministic: iterates `Object.entries(fileResults)` in
- * insertion order, no randomness, no clock reads.
+ * Pure: no randomness, no clock reads, same input in — same output out.
+ *
+ * It does NOT get to assume an iteration order, though (final review, C2 —
+ * the previous wording claimed `Object.entries(fileResults)` runs in
+ * "insertion order", and that is false the moment the data round-trips
+ * through the database). `fileResults` is read back out of a `jsonb` column,
+ * and Postgres does not preserve a jsonb object's key insertion order: it
+ * stores keys sorted by length, then bytewise. Every key here is a 36-char
+ * UUID, so what comes back is bytewise order on random ids, and uploading
+ * one more file can land its id anywhere in that sequence. Nothing minted
+ * below may therefore depend on where a file falls in this loop — see the
+ * `__rowId` fallback in `mergeSection`, which is scoped to its own source
+ * file for exactly this reason.
  */
 export function mergeAcrossFiles(
   fileResults: Record<string, ExtractionResult>,

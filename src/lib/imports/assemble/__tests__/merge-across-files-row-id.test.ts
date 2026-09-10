@@ -62,6 +62,59 @@ describe("mergeAcrossFiles — __rowId", () => {
     expect(ids[0]).not.toEqual(ids[1]);
   });
 
+  // Final review, C2 — THE test that matters for the null-key fallback.
+  //
+  // `fileResults` is read back out of a `jsonb` column, and Postgres does
+  // NOT hand it back in insertion order: jsonb sorts object keys by length,
+  // then bytewise. Every key is a 36-char UUID, so the order is bytewise on
+  // random ids and a newly-uploaded file's id can land anywhere — including
+  // FIRST. The keys below are therefore written in the adversarial order
+  // (added file first), because that is literally what the database returns.
+  //
+  // Before the fix the fallback id was the row's position in the whole
+  // flattened read order, so this reordering slid every row of the existing
+  // file by one. That silently orphans `committedRowIds` — and since
+  // `run-extraction.ts` drops `payload` wholesale on a re-extraction, taking
+  // every `linkCreated` stamp with it, `committedRowIds` is the ONLY guard
+  // left against committing an already-committed account a second time.
+  it("keeps a null-key row's __rowId when a file whose id sorts BEFORE it is added", () => {
+    // Real-shaped ids: the added one sorts bytewise ahead of the existing one.
+    const EXISTING_FILE = "9c3f1a02-4f7b-4c0e-9a11-2d5b8e7f6a31";
+    const ADDED_FILE = "0b7e4d19-8a2c-4f31-b6d0-1e9c3a5f2b84";
+
+    // No custodian / no last-4 → `computeKey` returns null → the fallback.
+    const existingFile = () =>
+      er("june.pdf", {
+        accounts: [
+          { name: "Brokerage", value: 100, category: "taxable" },
+          { name: "Savings", value: 200, category: "cash" },
+        ],
+      });
+    const addedFile = () =>
+      er("july.pdf", { accounts: [{ name: "New Account", value: 300, category: "taxable" }] });
+
+    const before = mergeAcrossFiles({ [EXISTING_FILE]: existingFile() });
+    const after = mergeAcrossFiles({
+      [ADDED_FILE]: addedFile(),
+      [EXISTING_FILE]: existingFile(),
+    });
+
+    const idsFrom = (r: ReturnType<typeof mergeAcrossFiles>, name: string) =>
+      r.payload.accounts.filter((a) => a.name === name).map((a) => a.__rowId);
+
+    expect(idsFrom(before, "Brokerage")).toEqual(idsFrom(after, "Brokerage"));
+    expect(idsFrom(before, "Savings")).toEqual(idsFrom(after, "Savings"));
+    // And every row still has an id of its own — three files' worth of rows,
+    // three distinct ids, no collision from the per-file numbering.
+    const allIds = after.payload.accounts.map((a) => a.__rowId);
+    expect(new Set(allIds).size).toBe(3);
+
+    // Pin the shape, not just the stability: the id must carry the SOURCE
+    // FILE, so a refactor cannot drift back to a global position and still
+    // pass the equality assertions above.
+    expect(idsFrom(before, "Savings")).toEqual([`account:null:${EXISTING_FILE}:1:Savings`]);
+  });
+
   it("gives two genuinely different accounts distinct __rowIds", () => {
     const r = mergeAcrossFiles({
       f1: er("a.pdf", { accounts: [{ name: "401k", custodian: "Fidelity", accountNumberLast4: "1111", value: 1, category: "retirement" }] }),
