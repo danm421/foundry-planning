@@ -342,7 +342,7 @@ describe("Disability stressor coverage line", () => {
     });
   });
 
-  it("says long-term pays nothing when the insured spouse has no date of birth", () => {
+  it("says long-term pays nothing when the insured co-client has no date of birth", () => {
     // The benefit period ends at an age, so it cannot resolve without a DOB.
     // `resolveCoverage` leaves `longTerm` null and flags `missing_dob`; the
     // contract still says "to age 65", so claiming that unqualified would be a

@@ -209,7 +209,7 @@ export function SolverLifeInsuranceInputs({
   mc: LiMcSolve;
   /** Display name for the client; falls back to "Client" upstream when unknown. */
   clientName: string;
-  /** Display name for the spouse; falls back to "Spouse" upstream when unknown. */
+  /** Display name for the co-client; falls back to "Co-client" upstream when unknown. */
   spouseName: string;
   /** Household liabilities for the per-liability payoff picker. */
   liabilities: { id: string; name: string; balance: number }[];
@@ -273,7 +273,7 @@ export function SolverLifeInsuranceResults({
   errorMessage: string | null;
   /** Display name for the client; falls back to "Client" upstream when unknown. */
   clientName: string;
-  /** Display name for the spouse; falls back to "Spouse" upstream when unknown. */
+  /** Display name for the co-client; falls back to "Co-client" upstream when unknown. */
   spouseName: string;
 }) {
   return (

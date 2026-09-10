@@ -90,7 +90,7 @@ describe("PUT /api/clients/[id] — contact mirror", () => {
     expect(p.country).toBe("US");
   });
 
-  it("mirrors spouse fields to spouse contact only", async () => {
+  it("mirrors co-client fields to co-client contact only", async () => {
     await PUT(mockRequest({
       spouseEmail: "sam-new@example.com",
       spousePhone: "555-3333",

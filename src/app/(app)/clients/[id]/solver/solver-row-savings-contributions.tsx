@@ -137,7 +137,7 @@ export function SolverRowSavingsContributions({
   // advisor added this session has to be selectable this session.
   // Optional-chained the same way mutations-to-scenario-changes.ts is: minimal
   // trees omit the client singleton, and toSalaryOptions falls back to
-  // "Client"/"Spouse" labels when it has no names.
+  // generic Client/Co-client labels when it has no names.
   const owner = workingClientData.client;
   const salaryOptions = toSalaryOptions(
     workingClientData.incomes ?? [],

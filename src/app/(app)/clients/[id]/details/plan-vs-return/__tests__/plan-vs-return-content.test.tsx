@@ -219,7 +219,7 @@ describe("PlanVsReturnContent", () => {
     render(<PlanVsReturnContent clientId="c1" scenarioIgnored={false} />);
 
     const card = (await screen.findByText(/globex is on the return/i)).closest("article")!;
-    await userEvent.click(within(card).getByRole("radio", { name: /spouse/i }));
+    await userEvent.click(within(card).getByRole("radio", { name: /co-client/i }));
     const amount = within(card).getByRole("textbox", { name: /amount/i });
     await userEvent.clear(amount);
     await userEvent.type(amount, "95000");

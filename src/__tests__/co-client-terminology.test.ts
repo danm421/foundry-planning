@@ -34,6 +34,20 @@ const PERMANENT_ALLOWLIST = new Set<string>([
   "src/lib/extraction/prompts/savings.ts",
   // This test states the word in order to ban it.
   "src/__tests__/co-client-terminology.test.ts",
+  // Same crm_household_contacts `role` field (primary/spouse/dependent/other) that
+  // crm-contact-form.tsx already treats as a real CRM relationship label, not a
+  // planning role (see that file's entry above) — this is its read-only badge.
+  "src/app/(app)/crm/households/[id]/tabs/contacts-tab.tsx",
+  "src/app/(app)/crm/households/[id]/tabs/__tests__/contacts-tab.test.tsx",
+  // Only hit is `currentSalaryByPerson={{ client: salaryFor("client"), spouse: salaryFor("spouse") }}` —
+  // an object key / engine person-id argument (Bucket C), not display copy. The
+  // naive quote-pairing scanner matches text spanning the two separate string
+  // literals on that line, not a real "Spouse" string.
+  "src/app/(app)/clients/[id]/details/insurance/insurance-content.tsx",
+  // Only hit is the template literal `${spouse.firstName} ${spouse.lastName}` —
+  // `spouse` there is a local variable holding a CRM contact record; the scanner
+  // matches the variable name inside the backticks, not literal display text.
+  "src/app/(app)/clients/[id]/portal/page.tsx",
 ]);
 
 /** Directory prefixes that are also allowlisted (Bucket C: machine-facing enum documentation). */
@@ -48,59 +62,12 @@ const ALLOWLIST_PREFIXES = [
  */
 const PENDING = new Set<string>([
 
-  "src/app/(app)/clients/[id]/assets/balance-sheet-report/balance-sheet-report-content.tsx",
-  "src/app/(app)/clients/[id]/details/family/__tests__/family-scenario-rows.test.ts",
-  "src/app/(app)/clients/[id]/details/insurance/insurance-content.tsx",
-  "src/app/(app)/clients/[id]/details/plan-vs-return/suggestion-card.tsx",
   "src/app/(app)/clients/[id]/estate-planning/lib/__tests__/derive-card-data.test.ts",
   "src/app/(app)/clients/[id]/estate-planning/spine/combined-block.tsx",
-  "src/app/(app)/clients/[id]/estate-planning/spine/death-spine.tsx",
   "src/app/(app)/clients/[id]/estate-planning/spine/lib/derive-beneficiary-detail.test.ts",
   "src/app/(app)/clients/[id]/estate-planning/spine/lib/derive-spine-data.test.ts",
   "src/app/(app)/clients/[id]/estate-planning/spine/lib/derive-spine-data.ts",
   "src/app/(app)/clients/[id]/estate-planning/spine/pair-row.tsx",
-  "src/app/(app)/clients/[id]/portal/page.tsx",
-  "src/app/(app)/clients/[id]/solver/__tests__/li-need-over-time-view.test.tsx",
-  "src/app/(app)/clients/[id]/solver/__tests__/live-solver-workspace.test.tsx",
-  "src/app/(app)/clients/[id]/solver/__tests__/min-savings-orchestration.test.tsx",
-  "src/app/(app)/clients/[id]/solver/__tests__/solver-balance-sheet-panel.test.tsx",
-  "src/app/(app)/clients/[id]/solver/__tests__/solver-chart-panel.test.tsx",
-  "src/app/(app)/clients/[id]/solver/__tests__/solver-stress-test-disability.test.tsx",
-  "src/app/(app)/clients/[id]/solver/solver-content.tsx",
-  "src/app/(app)/clients/[id]/solver/solver-field-actions.tsx",
-  "src/app/(app)/clients/[id]/solver/solver-row-incomes.tsx",
-  "src/app/(app)/clients/[id]/solver/solver-row-life-expectancy.tsx",
-  "src/app/(app)/clients/[id]/solver/solver-row-retirement-ages.tsx",
-  "src/app/(app)/clients/[id]/solver/solver-row-savings-contributions.tsx",
-  "src/app/(app)/clients/[id]/solver/solver-row-social-security.tsx",
-  "src/app/(app)/clients/[id]/solver/solver-split-interest-form.tsx",
-  "src/app/(app)/clients/[id]/solver/solver-ss-edit-dialog.tsx",
-  "src/app/(app)/clients/[id]/solver/solver-tab-life-insurance.tsx",
-  "src/app/(app)/clients/[id]/solver/solver-trust-form.tsx",
-  "src/app/(app)/clients/new/__tests__/quick-create-form.test.tsx",
-  "src/app/(app)/clients/new/quick-create-form.tsx",
-  "src/app/(app)/crm/households/[id]/tabs/__tests__/contacts-tab.test.tsx",
-  "src/app/(app)/crm/households/[id]/tabs/contacts-tab.tsx",
-  "src/app/(app)/risk/[clientId]/risk-detail-content.tsx",
-  "src/app/api/clients/[id]/__tests__/put-contact-mirror.test.ts",
-  "src/app/api/clients/[id]/accounts/[accountId]/split/route.ts",
-  "src/app/api/clients/[id]/accounts/__tests__/owners.test.ts",
-  "src/app/api/clients/[id]/balance-sheet-report/export-pdf/route.ts",
-  "src/app/api/clients/[id]/entities/[entityId]/assets/__tests__/route.test.ts",
-  "src/app/api/clients/[id]/entities/[entityId]/route.ts",
-  "src/app/api/clients/[id]/entities/__tests__/route.test.ts",
-  "src/app/api/clients/[id]/entities/route.ts",
-  "src/app/api/clients/[id]/gifts/__tests__/route.test.ts",
-  "src/app/api/clients/[id]/liabilities/__tests__/owners.test.ts",
-  "src/app/api/clients/[id]/life-insurance/solve/__tests__/route.test.ts",
-  "src/app/api/clients/[id]/medicare-coverage/route.ts",
-  "src/app/api/clients/[id]/risk/__tests__/rtq-post.test.ts",
-  "src/app/api/clients/[id]/route.ts",
-  "src/app/api/clients/[id]/wills/__tests__/route.test.ts",
-  "src/app/api/clients/__tests__/post-contact-mirror.test.ts",
-  "src/app/api/clients/__tests__/post-spouse-defaults.test.ts",
-  "src/app/api/portal/family/__tests__/by-id.test.ts",
-  "src/app/api/portal/household/__tests__/route.test.ts",
   "src/components/__tests__/beneficiary-summary.test.tsx",
   "src/components/__tests__/client-identity-menu.test.tsx",
   "src/components/__tests__/estate-flow-change-distribution-dialog.test.tsx",

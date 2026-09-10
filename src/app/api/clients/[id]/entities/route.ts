@@ -268,7 +268,7 @@ export async function POST(
 
         if (data.grantor !== "client" && data.grantor !== "spouse") {
           throw new BadRequestError(
-            `grantor ('client' or 'spouse') is required for ${data.trustSubType === "crt" ? "CRTs" : "CLTs"}`,
+            `grantor (the client or the Co-client) is required for ${data.trustSubType === "crt" ? "CRTs" : "CLTs"}`,
           );
         }
 

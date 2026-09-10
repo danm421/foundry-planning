@@ -6,6 +6,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { loadProjectionForRef } from "@/lib/scenario/load-projection-for-ref";
 import { buildBalanceSheetReportProps } from "@/lib/balance-sheet/build-report-props";
 import BalanceSheetReport from "@/components/balance-sheet-report/balance-sheet-report";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 interface BalanceSheetReportContentProps {
   clientId: string;
@@ -45,7 +46,7 @@ export async function BalanceSheetReportContent({ clientId: id, scenarioParam }:
   // Balance Sheet tab.
   const reportProps = buildBalanceSheetReportProps(tree, result.years, {
     clientLabel,
-    spouseName: spouseContact?.firstName ?? tree.client.spouseName ?? "Spouse",
+    spouseName: spouseContact?.firstName ?? tree.client.spouseName ?? CO_CLIENT_LABEL,
   });
 
   return <BalanceSheetReport {...reportProps} todayYear={new Date().getFullYear()} />;

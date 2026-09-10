@@ -53,8 +53,8 @@ beforeEach(() => {
   delete (globalThis as Record<string, unknown>).__barProps;
 });
 
-describe("LiNeedOverTimeView — stacked client + spouse", () => {
-  it("renders client and spouse as two stacked datasets after the solve completes", () => {
+describe("LiNeedOverTimeView — stacked client + co-client", () => {
+  it("renders client and co-client as two stacked datasets after the solve completes", () => {
     // All values are exact $50k multiples so roundUpTo50k is the identity.
     const rows = [row(2026, 1_000_000, 500_000), row(2027, 1_500_000, 1_000_000)];
 
@@ -86,7 +86,7 @@ describe("LiNeedOverTimeView — stacked client + spouse", () => {
     expect(options.scales?.y?.stacked).toBe(true);
   });
 
-  it("renders a single client dataset (no spouse) for an unmarried plan", () => {
+  it("renders a single client dataset (no co-client) for an unmarried plan", () => {
     render(
       <LiNeedOverTimeView
         rows={[row(2026, 1_000_000, null)]}
@@ -106,7 +106,7 @@ describe("LiNeedOverTimeView — stacked client + spouse", () => {
     expect(data.datasets[0].label).not.toContain("Jordan");
   });
 
-  it("does NOT render the client/spouse toggle (both are shown at once now)", () => {
+  it("does NOT render the client/co-client toggle (both are shown at once now)", () => {
     const { queryAllByRole } = render(
       <LiNeedOverTimeView
         rows={[row(2026, 1_000_000, 500_000)]}

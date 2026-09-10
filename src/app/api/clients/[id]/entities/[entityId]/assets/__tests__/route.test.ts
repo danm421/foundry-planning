@@ -452,7 +452,7 @@ d("POST /api/clients/[id]/entities/[entityId]/assets", () => {
     expect(giftRows).toHaveLength(0);
   });
 
-  it("4. 50/50 client+spouse → 100% to ILIT — 2 gift rows (one per grantor)", async () => {
+  it("4. 50/50 client+co-client → 100% to ILIT — 2 gift rows (one per grantor)", async () => {
     const { clientId, trustId, businessId } = await setup({
       members: [
         { role: "client", firstName: "Alice" },

@@ -18,6 +18,7 @@ import { SolverSolvePopover } from "./solver-solve-popover";
 import { SolverSolveProgressStrip } from "./solver-solve-progress-strip";
 import { SolverYearEdit } from "./solver-year-edit";
 import { birthYearFromDob, yearForAge } from "@/lib/age-year";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 type ActiveSolve = {
   target: SolveLeverKey;
@@ -76,8 +77,8 @@ export function SolverRowRetirementAges({
         {showSpouse ? (
           <EditableWithSolve
             id="ra-spouse"
-            label={`${workingClient.spouseName ?? "Spouse"}'s Retirement Age`}
-            displayLabel={workingClient.spouseName ?? "Spouse"}
+            label={`${workingClient.spouseName ?? CO_CLIENT_LABEL}'s Retirement Age`}
+            displayLabel={workingClient.spouseName ?? CO_CLIENT_LABEL}
             value={workingClient.spouseRetirementAge ?? 65}
             base={baseClient.spouseRetirementAge ?? 65}
             min={40}

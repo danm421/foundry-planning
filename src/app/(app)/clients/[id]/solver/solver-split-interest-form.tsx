@@ -244,7 +244,7 @@ export function SolverSplitInterestForm({
             className={inputClassName}
           >
             <option value="client">Client</option>
-            <option value="spouse">Spouse</option>
+            <option value="spouse">Co-client</option>
           </select>
         </label>
       )}

@@ -10,6 +10,7 @@ import { recordCreate, recordDelete } from "@/lib/audit";
 import { toAccountSnapshot } from "@/lib/audit/snapshots/account";
 import { parseBody } from "@/lib/schemas/common";
 import { accountSplitSchema } from "@/lib/schemas/account-split";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 export const dynamic = "force-dynamic";
 
@@ -68,7 +69,7 @@ export async function POST(
     const spouseFmId = fmRows.find((f) => f.role === "spouse")?.id ?? null;
     if (!clientFmId || !spouseFmId) {
       return NextResponse.json(
-        { error: "Client and spouse family members must both exist to split a joint account" },
+        { error: "Client and co-client family members must both exist to split a joint account" },
         { status: 400 },
       );
     }
@@ -130,7 +131,7 @@ export async function POST(
           value: spouseValueRounded.toFixed(2),
           basis: spouseBasisRounded.toFixed(2),
           rothValue: spouseRothValueRounded.toFixed(2),
-          name: `${target.name} (Spouse share)`,
+          name: `${target.name} (${CO_CLIENT_LABEL} share)`,
         })
         .returning();
 

@@ -245,7 +245,7 @@ describe("effective-tree entities → Profile trust rows", () => {
   it("surfaces trusts that exist only as scenario changes", () => {
     const { effectiveTree } = applyScenarioChanges(
       baseTree,
-      [entityAdd("slat-1", "SLAT for Client"), entityAdd("slat-2", "SLAT for Spouse")],
+      [entityAdd("slat-1", "SLAT for Client"), entityAdd("slat-2", "SLAT for Co-client")],
       {},
       [],
     );
@@ -253,7 +253,7 @@ describe("effective-tree entities → Profile trust rows", () => {
       .map((e) => entitySummaryToRow(e))
       .sort((a, b) => a.name.localeCompare(b.name));
     expect(rows.map((r) => r.name)).toEqual([
-      "Family Trust", "SLAT for Client", "SLAT for Spouse",
+      "Family Trust", "SLAT for Client", "SLAT for Co-client",
     ]);
     expect(rows[1]).toMatchObject({ trustSubType: "idgt", isIrrevocable: true, notes: null });
   });

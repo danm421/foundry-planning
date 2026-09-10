@@ -129,7 +129,7 @@ it("selects nothing when ?path= is absent", async () => {
   }
 });
 
-it("defaults filing status to married_joint when the household has a spouse", async () => {
+it("defaults filing status to married_joint when the household has a co-client", async () => {
   mockSearch = "crmHouseholdId=hh-1&path=guided";
   stubHousehold(["primary", "spouse"]);
   render(<QuickCreateForm />);
@@ -141,7 +141,7 @@ it("defaults filing status to married_joint when the household has a spouse", as
   );
 });
 
-it("defaults filing status to single when the household has no spouse", async () => {
+it("defaults filing status to single when the household has no co-client", async () => {
   // Start on a spouse household so `filingStatus` first derives away from
   // its "single" initial state. Asserting "single" straight off a no-spouse
   // mount can't tell "the derivation ran and produced single" apart from
@@ -189,7 +189,7 @@ it("keeps an advisor's manual filing-status override across an unrelated re-rend
   // Toggling the spouse-fields checkbox re-renders the form without
   // touching `householdId`, so the preview effect (keyed on `[householdId]`)
   // must not re-fire and stomp the advisor's override.
-  fireEvent.click(screen.getByRole("checkbox", { name: /add spouse planning fields/i }));
+  fireEvent.click(screen.getByRole("checkbox", { name: /add co-client planning fields/i }));
 
   // Give any (incorrectly) re-triggered household refetch a real chance to
   // resolve and land its state update before we assert. Without this flush,

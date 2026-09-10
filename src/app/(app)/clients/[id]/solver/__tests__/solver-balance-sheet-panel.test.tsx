@@ -49,7 +49,7 @@ const years = [makeYear(2026, 90_000, 100_000), makeYear(2031, 150_000)];
 describe("SolverBalanceSheetPanel", () => {
   it("renders the balance sheet from the working tree, defaulting to Today", () => {
     render(
-      <SolverBalanceSheetPanel workingTree={workingTree} years={years} clientName="Pat" spouseName="Spouse" />,
+      <SolverBalanceSheetPanel workingTree={workingTree} years={years} clientName="Pat" spouseName="Co-client" />,
     );
     expect(screen.getByText("Checking")).toBeInTheDocument();
     // Today = first projection year's beginning-of-year value.
@@ -58,18 +58,18 @@ describe("SolverBalanceSheetPanel", () => {
 
   it("shows future years through the year picker", () => {
     render(
-      <SolverBalanceSheetPanel workingTree={workingTree} years={years} clientName="Pat" spouseName="Spouse" />,
+      <SolverBalanceSheetPanel workingTree={workingTree} years={years} clientName="Pat" spouseName="Co-client" />,
     );
     expect(screen.getByRole("option", { name: "2031 · 69" })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Year"), { target: { value: "2031" } });
     expect(screen.getAllByText("$150,000").length).toBeGreaterThan(0);
   });
 
-  it("hides spouse columns when the household has no spouse", () => {
+  it("hides co-client columns when the household has no co-client", () => {
     render(
-      <SolverBalanceSheetPanel workingTree={workingTree} years={years} clientName="Pat" spouseName="Spouse" />,
+      <SolverBalanceSheetPanel workingTree={workingTree} years={years} clientName="Pat" spouseName="Co-client" />,
     );
-    expect(screen.queryByRole("columnheader", { name: "Spouse" })).toBeNull();
+    expect(screen.queryByRole("columnheader", { name: "Co-client" })).toBeNull();
     expect(screen.queryByRole("columnheader", { name: "Joint" })).toBeNull();
   });
 
@@ -91,14 +91,14 @@ describe("SolverBalanceSheetPanel", () => {
       }),
     ];
     render(
-      <SolverBalanceSheetPanel workingTree={workingTree} years={synthYears} clientName="Pat" spouseName="Spouse" />,
+      <SolverBalanceSheetPanel workingTree={workingTree} years={synthYears} clientName="Pat" spouseName="Co-client" />,
     );
     expect(screen.getByText("Vested Shares")).toBeInTheDocument();
   });
 
   it("renders an empty state instead of crashing when the projection is empty", () => {
     render(
-      <SolverBalanceSheetPanel workingTree={workingTree} years={[]} clientName="Pat" spouseName="Spouse" />,
+      <SolverBalanceSheetPanel workingTree={workingTree} years={[]} clientName="Pat" spouseName="Co-client" />,
     );
     expect(screen.getByText(/no projection/i)).toBeInTheDocument();
   });

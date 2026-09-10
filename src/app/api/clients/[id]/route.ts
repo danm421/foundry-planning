@@ -104,7 +104,7 @@ export async function PUT(
         if (blockers.length > 0) {
           return NextResponse.json(
             {
-              error: `Cannot remove spouse: still referenced by ${blockers.join(", ")}. Reassign or delete those first.`,
+              error: `Cannot remove Co-client: still referenced by ${blockers.join(", ")}. Reassign or delete those first.`,
             },
             { status: 409 },
           );
