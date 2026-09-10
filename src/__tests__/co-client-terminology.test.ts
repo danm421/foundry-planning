@@ -56,31 +56,36 @@ const PERMANENT_ALLOWLIST = new Set<string>([
   "src/app/(app)/clients/[id]/estate-planning/spine/combined-block.tsx",
   "src/app/(app)/clients/[id]/estate-planning/spine/pair-row.tsx",
 
-  // ── Task 6 fix round 1 (2026-09-10): the blanket "ex-spouse/departing
-  // spouse is the settled legal exception" comment that used to cover all 16
-  // divorce-module files below was measured hit-by-hit and did not actually
-  // apply to most of them — only commit-divorce-plan.ts and its test file
-  // contain a real "ex-spouse"/"former spouse" phrase. `division-board.tsx`,
-  // `split-dialog.tsx`, and `fixtures.ts` were REMOVED from this list: after
-  // this round's fixes (bare "Spouse" fallback labels → CO_CLIENT_LABEL, test
-  // placeholders renamed) they have zero remaining "Spouse" hits. Every file
-  // still below carries a real, specific reason of its own (noted per line) —
-  // most are a second, un-named fallback label in a file this round only
-  // partly fixed, or an it() test title describing spouse-side mechanics,
-  // neither of which this task's scope authorized changing.
-  "src/components/divorce/__tests__/division-board.test.tsx", // it() title: "...a ghost on spouse"
-  "src/components/divorce/commit-preview-dialog.tsx", // spouseName fallback ("the spouse") at :64 — not one of F3(a)'s 5 named sites
-  "src/components/divorce/divisible-card.tsx", // a 2nd, separate spouseName fallback ("spouse") at :144/:183 — not one of F3(a)'s 5 named sites
-  "src/components/divorce/divorce-workbench.tsx", // spouseName fallback ("the spouse") at :338 — never named by any fix round
-  "src/components/divorce/settings-rail.tsx", // FieldTooltip help text: "...the departing spouse's new household files..."
-  "src/lib/divorce/__tests__/allocation-rules.test.ts", // it() titles describing the primary/spouse allocation split
+  // ── Task 6 fix round 2 (2026-09-10): round 1's F3(a) named 5 specific
+  // fallback-label sites but missed 4 more in the identical class (same
+  // `people.spouseName || <literal>` pattern, same files). Fixed here, and
+  // `commit-preview-dialog.tsx`, `divorce-workbench.tsx`, and
+  // `divisible-card.tsx` all dropped to zero remaining "Spouse" hits as a
+  // result — all three REMOVED from this list entirely.
+  //
+  // Five files that were here for `it()`-title prose alone were MOVED to
+  // PENDING (see below) instead of staying permanently allowlisted: a test
+  // title is developer-facing and arguably exempt on its own, but
+  // PERMANENT_ALLOWLIST retires an entire file forever — a genuinely
+  // user-visible "Spouse" added later to one of those files would never be
+  // caught. Task 11 inherits ~150 other unowned test-file entries already in
+  // PENDING; these 5 need the same one consistent policy, decided in the
+  // open, not a one-off exemption made inside a fix round.
+  //
+  // What's left here is only what's actually settled:
   "src/lib/divorce/__tests__/commit-divorce-plan.test.ts", // genuine ex-spouse/former-spouse hits (4), plus it() titles
-  "src/lib/divorce/__tests__/commit-preview.test.ts", // it() titles describing spouse-side/spouse-destined mechanics
-  "src/lib/divorce/__tests__/divisible-objects.test.ts", // it() title: "...client + spouse family_members rows"
-  "src/lib/divorce/__tests__/side-totals.test.ts", // it() titles describing spouse-side totals mechanics
   "src/lib/divorce/commit-divorce-plan.ts", // genuine ex-spouse/former-spouse hits (12), plus an unreachable "Spouse contact is incomplete" error (F3(b): never sent to the client — see task-6-report.md)
-  "src/lib/divorce/commit-preview.ts", // comment fragments + a label referencing the departing spouse/spouse contact
-  "src/lib/divorce/divorce-plans.ts", // error message: "Household has no spouse contact"
+  // Product decision 2: both files below describe the CRM household contact
+  // whose `role` column is literally "spouse" (crmHouseholdContacts.role —
+  // commit-preview.ts:236, divorce-plans.ts:89) — a factual CRM relationship
+  // field, not a planning-role label. Renaming the message text would make it
+  // describe a role the contact record doesn't actually have.
+  "src/lib/divorce/commit-preview.ts", // label: "The spouse contact is missing a name or date of birth" (:416)
+  "src/lib/divorce/divorce-plans.ts", // error message: "Household has no spouse contact" (:110)
+  // Product decision 3: the legal, in-divorce usage — "the departing spouse"
+  // describes the real person going through this divorce, not the ordinary
+  // co-client sense the rest of the app uses "spouse" for.
+  "src/components/divorce/settings-rail.tsx", // FieldTooltip help text: "Where the departing spouse's new household files..." (:171)
 ]);
 
 /** Directory prefixes that are also allowlisted (Bucket C: machine-facing enum documentation). */
@@ -94,6 +99,21 @@ const ALLOWLIST_PREFIXES = [
  * Replace this array with the paths printed by the command in Step 2.
  */
 const PENDING = new Set<string>([
+
+  // ── Task 6 fix round 2 (2026-09-10): relocated from PERMANENT_ALLOWLIST.
+  // Each of these 5 files' only hit is `it()`-title prose describing
+  // spouse-side divorce mechanics (e.g. "moves the spouse 401(k) to S") — not
+  // display copy a person reads. That's arguably exempt on its own, but
+  // PERMANENT_ALLOWLIST retires the whole file forever, so a real
+  // user-visible "Spouse" string added to one of these later would never be
+  // caught. PENDING is the honest, reversible home until Task 11 decides one
+  // policy for this file and its ~150 unowned siblings already below. Do NOT
+  // rename these titles as part of that move — only the entry moved.
+  "src/components/divorce/__tests__/division-board.test.tsx",
+  "src/lib/divorce/__tests__/allocation-rules.test.ts",
+  "src/lib/divorce/__tests__/commit-preview.test.ts",
+  "src/lib/divorce/__tests__/divisible-objects.test.ts",
+  "src/lib/divorce/__tests__/side-totals.test.ts",
 
   "src/components/__tests__/beneficiary-summary.test.tsx",
   "src/components/__tests__/client-identity-menu.test.tsx",

@@ -61,7 +61,7 @@ export function CommitPreviewDialog({
   const [committing, setCommitting] = useState(false);
   const [commitError, setCommitError] = useState<string | null>(null);
 
-  const spouseName = people.spouseName.trim() || "the spouse";
+  const spouseName = people.spouseName.trim() || CO_CLIENT_LABEL;
   const primaryName = people.primaryName.trim() || "the primary";
   const spouseFirst = people.spouseName.trim().split(/\s+/)[0] || CO_CLIENT_LABEL;
 

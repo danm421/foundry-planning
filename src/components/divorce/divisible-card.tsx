@@ -141,7 +141,7 @@ export function DivisibleCard({
 
   const subtypeLabel = humanize(obj.subtype);
   const showBasis = isSplittable(obj);
-  const spouseName = people.spouseName || "spouse";
+  const spouseName = people.spouseName || CO_CLIENT_LABEL;
 
   function toggleMenu() {
     if (menuOpen) {
@@ -180,7 +180,7 @@ export function DivisibleCard({
       case "primary":
         return `To ${people.primaryName || "primary"}`;
       case "spouse":
-        return `To ${people.spouseName || "spouse"}`;
+        return `To ${people.spouseName || CO_CLIENT_LABEL}`;
       case "split":
         return "Split…";
       case "duplicate":
