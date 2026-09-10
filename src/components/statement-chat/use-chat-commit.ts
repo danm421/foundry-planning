@@ -76,6 +76,24 @@ function overlayFreshMatch(freshAccounts: Row[], localRows: Row[]): Row[] {
 }
 
 /**
+ * Runs `fn` after `queueRef`'s current tail settles — resolved OR
+ * rejected (`.then(fn, fn)`), so one failed queued call never blocks the
+ * next — then re-arms the tail with a promise that swallows `fn`'s own
+ * outcome the same way, so the ref always stays a bare `Promise<void>`.
+ * Shared by `handleCommitRows`/`flushRowsToServer`/`adoptTurnPayload`
+ * below — every writer that must serialize through `commitQueueRef` (see
+ * its own comment for why) used to hand-roll this exact chain.
+ */
+function enqueue<T>(queueRef: { current: Promise<void> }, fn: () => T | Promise<T>): Promise<T> {
+  const task = queueRef.current.then(fn, fn);
+  queueRef.current = task.then(
+    () => undefined,
+    () => undefined,
+  );
+  return task;
+}
+
+/**
  * Owns everything downstream of a completed extraction: the working table
  * (`result`), which rows are locked (`committedRowIds`), and closing the
  * import. Split out of `chat-surface.tsx` (Task 10b) once that file's own
@@ -281,24 +299,11 @@ export function useChatCommit(clientId: string, importId: string) {
   );
 
   // `onCommitRows` (AccountsTable → EntityTable's per-row Commit button).
-  // Chains every call through `commitQueueRef` so at most one is ever
-  // running `commitRowsNow` at a time — see that function's docstring and
-  // the queue's own comment above for why. `.then(fn, fn)` (not
-  // `.then(fn).catch(fn)`) so an earlier commit's REJECTION doesn't skip
-  // this one; the queue only sequences, it never lets one row's failure
-  // block another's.
+  // Chains every call through `commitQueueRef` (via `enqueue`) so at most
+  // one is ever running `commitRowsNow` at a time — see that function's
+  // docstring and the queue's own comment above for why.
   const handleCommitRows = useCallback(
-    (rowIds: string[]): Promise<void> => {
-      const task = commitQueueRef.current.then(
-        () => commitRowsNow(rowIds),
-        () => commitRowsNow(rowIds),
-      );
-      commitQueueRef.current = task.then(
-        () => undefined,
-        () => undefined,
-      );
-      return task;
-    },
+    (rowIds: string[]): Promise<void> => enqueue(commitQueueRef, () => commitRowsNow(rowIds)),
     [commitRowsNow],
   );
 
@@ -416,12 +421,7 @@ export function useChatCommit(clientId: string, importId: string) {
         chat: writeChatState(freshPayloadJson, { excludedRows: nextExcludedRows }).chat,
       });
     };
-    const task = commitQueueRef.current.then(apply, apply);
-    commitQueueRef.current = task.then(
-      () => undefined,
-      () => undefined,
-    );
-    return task;
+    return enqueue(commitQueueRef, apply);
   }, [clientId, importId]);
 
   // Adopts a turn's returned row state (Task 11b, Step 2). Now that
@@ -446,19 +446,12 @@ export function useChatCommit(clientId: string, importId: string) {
   // stuck there permanently (every later call takes the `prev` branch, which
   // preserves whatever `summary` was set here once).
   const adoptTurnPayload = useCallback(
-    (accounts: Row[], excluded: ExcludedRow<Row>[]): Promise<void> => {
-      const apply = () => {
+    (accounts: Row[], excluded: ExcludedRow<Row>[]): Promise<void> =>
+      enqueue(commitQueueRef, () => {
         updateResult((prev) =>
           prev ? { ...prev, rows: accounts, excluded } : { summary: "", caveats: [], rows: accounts, excluded },
         );
-      };
-      const task = commitQueueRef.current.then(apply, apply);
-      commitQueueRef.current = task.then(
-        () => undefined,
-        () => undefined,
-      );
-      return task;
-    },
+      }),
     [updateResult],
   );
 
