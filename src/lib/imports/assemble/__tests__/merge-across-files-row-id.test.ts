@@ -42,7 +42,9 @@ describe("mergeAcrossFiles — __rowId", () => {
     });
     expect(r.payload.accounts).toHaveLength(1);
     expect(r.payload.accounts[0].__rowId).toBeDefined();
-    expect(r.payload.accounts[0].__rowId).toBe("account:fidelity|1234|");
+    // Round 2 review: the ordinal is now unconditional (`#0` for every
+    // first entry, not just later ones) — see the derivation's comment.
+    expect(r.payload.accounts[0].__rowId).toBe("account:fidelity|1234|#0");
   });
 
   // C6 test 3: `computeKey` returns null for accounts with no
@@ -66,8 +68,8 @@ describe("mergeAcrossFiles — __rowId", () => {
       f2: er("b.pdf", { accounts: [{ name: "IRA", custodian: "Fidelity", accountNumberLast4: "2222", value: 2, category: "retirement" }] }),
     });
     expect(r.payload.accounts.map((a) => a.__rowId)).toEqual([
-      "account:fidelity|1111|",
-      "account:fidelity|2222|",
+      "account:fidelity|1111|#0",
+      "account:fidelity|2222|#0",
     ]);
   });
 
@@ -112,8 +114,35 @@ describe("mergeAcrossFiles — __rowId", () => {
     expect(ids[0]).toBeDefined();
     expect(ids[1]).toBeDefined();
     expect(ids[0]).not.toEqual(ids[1]);
-    // Pin the exact shape too, not just "different": first entry under a
-    // key is unchanged, later ones fold in the bucket ordinal.
-    expect(ids).toEqual(["liability:mortgage", "liability:mortgage#1"]);
+    // Pin the exact shape too, not just "different". Round 2 review:
+    // re-baselined from ["liability:mortgage", "liability:mortgage#1"] — the
+    // ordinal is now unconditional, so the first entry also carries `#0`.
+    // These ids have never shipped (no consumer exists before Task 7), so
+    // this is a re-baseline, not a regression.
+    expect(ids).toEqual(["liability:mortgage#0", "liability:mortgage#1"]);
+  });
+
+  // Round 2 review: the round-1 fix (`bucket?.length ? \`${key}#${n}\` :
+  // key`) only appended the ordinal from the SECOND entry on, so a first
+  // entry's bare id could still collide with the fold-in-the-ordinal id of
+  // an unrelated second entry — whenever the first entry's KEY ITSELF ends
+  // in the exact suffix a later collision would produce. Concretely: a
+  // liability named "Card#1" mints the bare id `liability:card#1`
+  // (its own bucket, no ordinal appended); a second, unrelated "Card" entry
+  // that fails isSameEntity against a first "Card" entry mints
+  // `liability:card#1` too (bucket length 1 at mint time) — same id, two
+  // rows. Appending the ordinal unconditionally closes this: every id ends
+  // in `#<digits>` with no exception, so the LAST `#` in any id is always
+  // the appended one, and two equal ids force equal keys AND equal ordinals.
+  it("does not collide a literal '#<digit>' in a row's name with an appended ordinal", () => {
+    const r = mergeAcrossFiles({
+      f1: er("a.pdf", { liabilities: [{ name: "Card#1", balance: 5000 }] }),
+      f2: er("b.pdf", { liabilities: [{ name: "Card", balance: 1000 }] }),
+      f3: er("c.pdf", { liabilities: [{ name: "Card", balance: 1200 }] }),
+    });
+    expect(r.payload.liabilities).toHaveLength(3);
+    const ids = r.payload.liabilities.map((l) => l.__rowId);
+    expect(new Set(ids).size).toBe(3);
+    expect(ids).toEqual(["liability:card#1#0", "liability:card#0", "liability:card#1"]);
   });
 });

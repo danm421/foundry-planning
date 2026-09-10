@@ -310,19 +310,31 @@ function mergeSection<T extends { name: string }>(
       continue;
     }
 
-    // `key` is non-null here (the null branch above always `continue`s), so
-    // `${label}:${key}` is the row's dedupe-derived id — deterministic
-    // across a re-merge of the same files (Task 6, C1/R54). But a bucket is
-    // an ARRAY: `isSameEntity` can reject every existing entry under this
-    // key (e.g. two liabilities both named "Mortgage" with balances >1%
-    // apart), in which case this is a SECOND distinct entry under the SAME
-    // key, and `${label}:${key}` alone would mint the same id twice — the
-    // exact flat-list mis-commit R54 exists to prevent (review round 1,
-    // Critical 1). `bucket` was captured above, before `.find`, so
-    // `bucket.length` here is exactly the count of entries already under
-    // this key; folding it in only from the second entry on keeps the
-    // first entry's id (and every existing pinned test string) unchanged.
-    const rowId = bucket?.length ? `${label}:${key}#${bucket.length}` : `${label}:${key}`;
+    // `key` is non-null here (the null branch above always `continue`s). A
+    // bucket is an ARRAY: `isSameEntity` can reject every existing entry
+    // under this key (e.g. two liabilities both named "Mortgage" with
+    // balances >1% apart), landing this row as a SECOND distinct entry
+    // under the SAME key — so `key` alone cannot be the id (review round 1,
+    // Critical 1).
+    //
+    // The ordinal is unconditional — every entry gets `#n`, starting at 0 —
+    // rather than only appending it from the second entry on (review round
+    // 2: that conditional form is still not injective, because `key` is raw
+    // extraction text and can itself contain `#`. A liability named
+    // "Card#1" mints the bare id `liability:card#1`; a second, unrelated
+    // "Card" entry rejected by isSameEntity would ALSO mint
+    // `liability:card#1` under the conditional scheme — same id, two rows).
+    //
+    // Appending `#n` unconditionally is provably injective for any key
+    // whatsoever: `n` is a plain digit string containing no `#`, so in
+    // `${key}#${n}` the LAST `#` in the string is always the one this line
+    // appended. Splitting there recovers `key` and `n` exactly, so two equal
+    // ids force equal keys and equal ordinals — no escaping needed, and no
+    // assumption about what characters extraction text can contain.
+    //
+    // `bucket` was captured above, before `.find`, so `bucket?.length ?? 0`
+    // here is exactly the count of entries already under this key.
+    const rowId = `${label}:${key}#${bucket?.length ?? 0}`;
     const entry: DedupeBucketEntry<T> = {
       index: target.length,
       content,
