@@ -344,6 +344,49 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     expect(rows[0].useCrummeyPowers).toBe(true);
   });
 
+  it("keeps the base gift's note when an edit of it is promoted", async () => {
+    // The in-place UPDATE above turned a harmless placeholder into a data-loss
+    // path: `EstateFlowGift` has no notes field, so `giftDraftToRow` emits
+    // `notes: null`, which on an INSERT is just the column default but on an
+    // UPDATE would wipe whatever the advisor had written on the base row. The
+    // promotion translator drops the key entirely so the column is left alone.
+    const [baseGift] = await db
+      .insert(gifts)
+      .values({
+        clientId: COOPER_CLIENT_ID,
+        year: 2031,
+        amount: "20000",
+        grantor: "client",
+        recipientEntityId: trustId,
+        useCrummeyPowers: false,
+        notes: "Funded from the 2031 annual exclusion — see engagement memo.",
+      })
+      .returning();
+
+    await applyEntityAdd({
+      scenarioId,
+      firmId: COOPER_FIRM_ID,
+      targetKind: "gift",
+      entity: {
+        id: baseGift.id,
+        kind: "cash-once",
+        year: 2031,
+        amount: 45_000, // the edit
+        grantor: "client",
+        recipient: { kind: "entity", id: trustId },
+        crummey: false,
+      },
+    });
+
+    await promoteOverlay();
+
+    const [row] = await promotedGifts();
+    expect(row.amount).toBe("45000.00"); // the edit landed…
+    expect(row.notes).toBe(
+      "Funded from the 2031 annual exclusion — see engagement memo.",
+    ); // …without eating the note
+  });
+
   it("never writes another client's gift row that happens to share the id", async () => {
     // ORG SCOPING. Preserving the id means the promote now UPDATEs by id, so
     // the scoping of that update is load-bearing: an unscoped upsert would

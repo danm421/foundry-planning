@@ -59,6 +59,13 @@ function giftRowToWireShape(g: Gift, clientId: string) {
       g.valuationDiscount != null ? g.valuationDiscount.toFixed(4) : null,
     parentGiftId: null,
     useCrummeyPowers: g.useCrummeyPowers,
+    // A base row always carries a real `event_kind` (NOT NULL DEFAULT
+    // 'outright'), so a scenario-only gift must too — otherwise one endpoint
+    // returns two different wire shapes and a non-outright gift (a CLT's
+    // remainder interest) reads as an ordinary one only while a scenario is
+    // active. The mappers always populate it; the fallback covers the older
+    // `Gift` literals that predate the field.
+    eventKind: g.eventKind ?? "outright",
     notes: g.notes,
   };
 }

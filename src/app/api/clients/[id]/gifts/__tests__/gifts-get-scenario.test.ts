@@ -281,6 +281,60 @@ d("GET /api/clients/[id]/gifts?scenario=", () => {
     expect(added.percent).toBeNull();
   });
 
+  it("serves a scenario-only gift's event kind the way a base row carries it", async () => {
+    // `gifts.event_kind` is NOT NULL DEFAULT 'outright', and this route builds
+    // a scenario-only gift's wire object field-by-field rather than returning a
+    // DB row. Omitting eventKind there made one endpoint answer with two
+    // different shapes: a charitable lead trust's remainder-interest gift kept
+    // its kind from the base table but lost it the moment a scenario was
+    // active. Asserting "outright" would prove nothing — it is the default —
+    // so both rows here carry the non-default value.
+    const { clientId, scenarioId, familyMemberId } = await setupClient();
+    const { db } = dbMod;
+    const { gifts } = schema;
+
+    const [baseGift] = await db
+      .insert(gifts)
+      .values({
+        clientId,
+        year: 2026,
+        grantor: "client",
+        amount: "1000.00",
+        recipientFamilyMemberId: familyMemberId,
+        eventKind: "clt_remainder_interest",
+      })
+      .returning();
+
+    const addedId = randomUUID();
+    await applyEntityAdd({
+      scenarioId,
+      firmId: TEST_FIRM,
+      targetKind: "gift",
+      entity: {
+        id: addedId,
+        kind: "cash-once",
+        year: 2027,
+        grantor: "client",
+        amount: 250_000,
+        recipient: { kind: "family_member", id: familyMemberId },
+        crummey: false,
+        eventKind: "clt_remainder_interest",
+      },
+    });
+
+    const res = await GET(makeGetReq(clientId, scenarioId) as never, {
+      params: Promise.resolve({ id: clientId }),
+    });
+    expect(res.status).toBe(200);
+    const rows = await res.json();
+
+    const base = rows.find((r: { id: string }) => r.id === baseGift.id);
+    const added = rows.find((r: { id: string }) => r.id === addedId);
+    expect(base.eventKind).toBe("clt_remainder_interest");
+    // Wire-shape parity: the scenario-only row answers exactly as the base one.
+    expect(added.eventKind).toBe("clt_remainder_interest");
+  });
+
   it("404s for a scenario id that doesn't belong to this client", async () => {
     const { clientId } = await setupClient();
     const bogusScenarioId = "00000000-0000-0000-0000-000000000000";

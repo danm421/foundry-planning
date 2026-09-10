@@ -38,5 +38,24 @@ export function translateGiftDraftForPromote(
         `from the scenario and re-create it on the base plan, then promote.`,
     );
   }
-  return row;
+
+  // `notes` is OMITTED here, not passed through as null. DO NOT "restore" it.
+  //
+  // `EstateFlowGift` has no notes field, so `giftDraftToRow` emits `notes: null`
+  // as a placeholder for the view. That was harmless while promotion only ever
+  // INSERTed — null is the column default. But promotion now UPDATEs a base gift
+  // in place when the change is an edit of it (`preserveId` in
+  // promote-table-registry.ts), and a null in the SET would ERASE the advisor's
+  // existing note on that row. `coerceForTable` skips keys the payload does not
+  // carry (promote-coerce.ts:19-20), so dropping the key is correct on both
+  // paths: INSERT still gets the NULL default, UPDATE leaves the note alone.
+  //
+  // `notes` is the only column with this problem. Every other value the mapper
+  // emits is one the draft genuinely represents — clearing a discount, or
+  // switching a gift from an asset to cash, SHOULD write null — and the columns
+  // the draft cannot represent at all (`yearRef`, `liabilityId`,
+  // `businessEntityId`, `parentGiftId`) are already absent from its output.
+  const { notes: _notes, ...forPromote } = row;
+  void _notes;
+  return forPromote;
 }
