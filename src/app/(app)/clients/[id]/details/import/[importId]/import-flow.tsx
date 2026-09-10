@@ -95,7 +95,9 @@ function DraftStage(props: ImportFlowProps) {
   const router = useRouter();
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState<string | null>(null);
-  const [extractHoldings, setExtractHoldings] = useState(false);
+  // Defaults ON: advisors uploading a brokerage statement expect the positions,
+  // and an unchecked box silently returned an account with an empty Holdings tab.
+  const [extractHoldings, setExtractHoldings] = useState(true);
 
   const startExtraction = async () => {
     setExtracting(true);

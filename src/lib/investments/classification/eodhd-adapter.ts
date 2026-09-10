@@ -19,7 +19,9 @@ function num(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function mapSecurityType(rawType: string | undefined): SecurityType {
+/** Map an EODHD instrument-type string (`Common Stock`, `FUND`, `ETF`, …) to
+ *  our SecurityType. Shared with the search-based name lookup. */
+export function mapSecurityType(rawType: string | undefined): SecurityType {
   const t = (rawType ?? "").toLowerCase();
   if (t.includes("etf")) return "etf";
   if (t.includes("fund")) return "mutual_fund";
