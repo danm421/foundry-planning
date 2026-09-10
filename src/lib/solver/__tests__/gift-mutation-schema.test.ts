@@ -39,6 +39,40 @@ describe("SOLVER_MUTATION_SCHEMA — gift-upsert", () => {
     expect(r.success).toBe(true);
   });
 
+  // A discount is stripped rather than rejected when the schema omits the key —
+  // `success: true` alone cannot catch that, so these read the parsed VALUE.
+  it("preserves valuationDiscount on an asset-once gift", () => {
+    const r = SOLVER_MUTATION_SCHEMA.parse({
+      kind: "gift-upsert", id: "g3",
+      value: { kind: "asset-once", id: "g3", year: 2031, accountId: "acct-1", percent: 0.15, grantor: "client", recipient: { kind: "entity", id: "t1" }, valuationDiscount: 0.3 },
+    });
+    expect(r).toMatchObject({ value: { valuationDiscount: 0.3 } });
+  });
+
+  it("preserves valuationDiscount on a cash-once gift", () => {
+    const r = SOLVER_MUTATION_SCHEMA.parse({
+      kind: "gift-upsert", id: "g1",
+      value: { kind: "cash-once", id: "g1", year: 2030, amount: 50000, grantor: "client", recipient: { kind: "entity", id: "t1" }, crummey: false, valuationDiscount: 0.25 },
+    });
+    expect(r).toMatchObject({ value: { valuationDiscount: 0.25 } });
+  });
+
+  it("preserves valuationDiscount on a series gift", () => {
+    const r = SOLVER_MUTATION_SCHEMA.parse({
+      kind: "gift-upsert", id: "g2",
+      value: { kind: "series", id: "g2", startYear: 2030, endYear: 2040, annualAmount: 18000, amountMode: "fixed", inflationAdjust: false, grantor: "client", recipient: { kind: "entity", id: "t1" }, crummey: true, valuationDiscount: 0.4 },
+    });
+    expect(r).toMatchObject({ value: { valuationDiscount: 0.4 } });
+  });
+
+  it("rejects a valuationDiscount of 1 or more", () => {
+    const r = SOLVER_MUTATION_SCHEMA.safeParse({
+      kind: "gift-upsert", id: "g3",
+      value: { kind: "asset-once", id: "g3", year: 2031, accountId: "acct-1", percent: 0.15, grantor: "client", recipient: { kind: "entity", id: "t1" }, valuationDiscount: 1 },
+    });
+    expect(r.success).toBe(false);
+  });
+
   it("rejects a bad recipient kind", () => {
     const r = SOLVER_MUTATION_SCHEMA.safeParse({
       kind: "gift-upsert", id: "g1",
