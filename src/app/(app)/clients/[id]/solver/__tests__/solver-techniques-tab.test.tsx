@@ -502,4 +502,39 @@ describe("SolverTechniquesTab — asset transaction bundles", () => {
     expect(onChange).toHaveBeenCalledTimes(2);
     expect(onChange.mock.calls.every((c) => c[0].value.enabled === false)).toBe(true);
   });
+
+  it("reads off when one leg is off, and clicking turns BOTH on by omission (not enabled:true)", () => {
+    const onChange = vi.fn();
+    const mixedLegs = [bundleLegs[0], { ...bundleLegs[1], enabled: false }];
+    const mixedTree = {
+      accounts: [], rothConversions: [], assetTransactions: mixedLegs,
+    } as unknown as ClientData;
+    render(<SolverTechniquesTab {...baseProps} workingTree={mixedTree} onChange={onChange} />);
+    // The card reads off overall, even though only one leg is off.
+    expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "false");
+    fireEvent.click(screen.getByRole("switch"));
+    expect(onChange).toHaveBeenCalledTimes(2);
+    // "On" is written as the ABSENCE of enabled (undefined), same convention
+    // flipEnabled uses elsewhere — a plain `true` would create a spurious
+    // scenario diff for legs that were already on by omission.
+    expect(onChange.mock.calls.every((c) => c[0].value.enabled === undefined)).toBe(true);
+  });
+
+  it("badges a bundle 'Added' when only some of its legs are in the base plan", () => {
+    render(
+      <SolverTechniquesTab
+        {...baseProps}
+        workingTree={bundleTree}
+        baseTechniqueIds={{
+          roth: new Set<string>(),
+          asset: new Set(["at-sell"]),
+          reinvestment: new Set<string>(),
+          relocation: new Set<string>(),
+        }}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Added")).toBeInTheDocument();
+    expect(screen.queryByText("Base plan")).not.toBeInTheDocument();
+  });
 });

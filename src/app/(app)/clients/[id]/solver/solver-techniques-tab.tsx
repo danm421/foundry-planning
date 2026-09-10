@@ -261,9 +261,8 @@ export function SolverTechniquesTab({
   );
 
   const workingRoth = workingTree.rothConversions ?? [];
-  // Memoized (unlike its siblings) because it now feeds the assetBundles
-  // useMemo below — exhaustive-deps needs a stable dependency, not a fresh
-  // `?? []` array on every render.
+  // Feeds the assetBundles useMemo below — exhaustive-deps needs a stable
+  // dependency, not a fresh `?? []` array on every render.
   const workingAsset = useMemo(
     () => workingTree.assetTransactions ?? [],
     [workingTree.assetTransactions],
@@ -374,7 +373,10 @@ export function SolverTechniquesTab({
         }
       },
       onToggle: () => {
-        const next = !b.enabled;
+        // "undefined" means on, same as every other arm's flipEnabled — a
+        // plain boolean would stamp enabled:true onto legs that were already
+        // on by omission, creating a spurious diff in the saved scenario.
+        const next = b.enabled ? false : undefined;
         for (const leg of b.legs) {
           onChange({
             kind: "asset-transaction-upsert",
