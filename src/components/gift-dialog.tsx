@@ -13,6 +13,10 @@ import type {
 } from "@/components/family-view";
 import type { EstateFlowGift, GiftRecipientRef } from "@/lib/estate/estate-flow-gifts";
 import { discountAppliesToDraft } from "@/lib/gifts/discount-applicability";
+import {
+  giftDraftToRow,
+  giftDraftToSeriesRow,
+} from "@/app/(app)/clients/[id]/details/family/family-scenario-rows";
 
 export interface GiftDialogProps {
   clientId: string;
@@ -26,6 +30,20 @@ export interface GiftDialogProps {
   /** Existing one-time gift to edit, or existing series to edit, or null to add. */
   editingGift?: Gift | null;
   editingSeries?: GiftSeriesLite | null;
+  /**
+   * Ids this page renders that exist ONLY as `scenario_changes` rows — the
+   * solver's "save as scenario" writes `entity` / `gift` adds and never touches
+   * the base tables, and the trust picker and gift list here both read the
+   * overlay, so either can be scenario-only.
+   *
+   * The base gift routes structurally cannot accept such a save: they validate
+   * `recipientEntityId` against base `entities` (the 400 "Recipient entity not
+   * found for this client"), the row lookup behind that 400 would 404, and
+   * `gifts.recipient_entity_id` carries a real FK to `entities(id)` that would
+   * reject the write even if both checks were relaxed. So these saves go to the
+   * scenario changes writer — the sanctioned path for non-base mutations.
+   */
+  scenarioOnly?: { giftIds: string[]; entityIds: string[] };
   onClose: () => void;
   onSavedGift: (g: Gift) => void;
   onSavedSeries: (s: GiftSeriesLite) => void;
@@ -76,6 +94,85 @@ export default function GiftDialog(props: GiftDialogProps) {
       : savedAccountId === null;
   }
 
+  const scenarioOnlyGiftIds = new Set(props.scenarioOnly?.giftIds ?? []);
+  const scenarioOnlyEntityIds = new Set(props.scenarioOnly?.entityIds ?? []);
+  const editingScenarioOnlyRow =
+    (props.editingGift != null && scenarioOnlyGiftIds.has(props.editingGift.id)) ||
+    (props.editingSeries != null && scenarioOnlyGiftIds.has(props.editingSeries.id));
+
+  /**
+   * True when this save has no base row to land on — the gift being edited
+   * lives only in the scenario, or it is aimed at a trust that does. Either way
+   * the base gift routes cannot store it (see `scenarioOnly` above).
+   */
+  function isScenarioOnly(d: EstateFlowGift): boolean {
+    if (editingScenarioOnlyRow) return true;
+    return d.recipient.kind === "entity" && scenarioOnlyEntityIds.has(d.recipient.id);
+  }
+
+  /**
+   * Write the gift as a `scenario_changes` row instead of a base table row.
+   *
+   * The draft GiftForm already produced is exactly the payload shape the
+   * overlay reads back (`partitionGiftChanges` → `giftDraftToRow`), so it goes
+   * over the wire as-is. Editing keeps the id, which lets `applyEntityEdit`'s
+   * edit-of-add collapse fold the new fields into the existing `add` row rather
+   * than stacking a parallel `edit` row beside it. A shape change mints a new
+   * id, so it adds the replacement and removes the original — the same
+   * "keeps its meaning, not its id" rule `savesInPlace` applies to base rows.
+   */
+  async function saveAsScenarioChange(
+    d: EstateFlowGift,
+    discountToSend: number | null | undefined,
+  ) {
+    const url = `/api/clients/${props.clientId}/scenarios/${props.scenarioId}/changes`;
+    // Key order is load-bearing: the unsaved-changes diff keys drafts by
+    // JSON.stringify, and `valuationDiscount` is the agreed LAST KEY. Assigning
+    // an existing key keeps its position, so the spread preserves the order
+    // GiftForm emitted. `undefined` would be dropped by JSON.stringify and let
+    // applyEntityEdit's merge keep a stale discount, so an advisor who cleared
+    // the field sends an explicit null.
+    const payload: Record<string, unknown> = { ...d };
+    if (discountToSend !== undefined) payload.valuationDiscount = discountToSend;
+
+    const staleId = props.editingGift?.id ?? props.editingSeries?.id ?? null;
+    const inPlace = staleId === d.id;
+
+    await postChange(
+      url,
+      inPlace
+        ? { op: "edit", targetKind: "gift", targetId: d.id, desiredFields: payload }
+        : { op: "add", targetKind: "gift", entity: payload },
+    );
+    if (!inPlace && staleId != null) {
+      await postChange(url, { op: "remove", targetKind: "gift", targetId: staleId });
+      if (props.editingGift) props.onRemovedGift(staleId);
+      else if (props.editingSeries) props.onRemovedSeries(staleId);
+    }
+
+    // No row comes back from the changes writer, so rebuild the list entry from
+    // the draft through the same mappers the page's overlay uses.
+    const saved = payload as unknown as EstateFlowGift;
+    if (saved.kind === "series") {
+      const row = giftDraftToSeriesRow(saved);
+      if (row) props.onSavedSeries(row);
+    } else {
+      const row = giftDraftToRow(saved);
+      if (row) props.onSavedGift(row);
+    }
+  }
+
+  async function postChange(url: string, body: Record<string, unknown>) {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
+    }
+  }
+
   /** Delete the row a shape change left behind. Runs AFTER the replacement is
    *  saved, so a failure here leaves a duplicate rather than losing the gift. */
   async function removeReplacedRow() {
@@ -118,6 +215,13 @@ export default function GiftDialog(props: GiftDialogProps) {
         : inPlace
           ? undefined
           : null;
+
+      // A gift with no base row to land on never reaches the base gift routes;
+      // one table's worth of shape handling below does not apply to it.
+      if (isScenarioOnly(draft)) {
+        await saveAsScenarioChange(draft, discountToSend);
+        return;
+      }
 
       if (draft.kind === "series") {
         const body: Record<string, unknown> = {

@@ -242,6 +242,10 @@ interface FamilyViewProps {
   initialGiftSeries: GiftSeriesLite[];
   annualExclusionByYear: Record<number, number>;
   scenarioId: string;
+  /** Ids rendered here that exist only as `scenario_changes` rows (a solver-saved
+   *  trust or gift). Writes against them go to the scenario changes writer —
+   *  see `GiftDialogProps.scenarioOnly`. */
+  scenarioOnly?: { giftIds: string[]; entityIds: string[] };
   /** Optional: full asset data for the trust Assets tab */
   initialFullAccounts?: AssetsTabAccount[];
   initialFullLiabilities?: AssetsTabLiability[];
@@ -343,6 +347,7 @@ export default function FamilyView({
   initialGiftSeries,
   annualExclusionByYear,
   scenarioId,
+  scenarioOnly,
   initialFullAccounts,
   initialFullLiabilities,
   initialFullIncomes,
@@ -848,6 +853,7 @@ export default function FamilyView({
         series={giftSeriesState}
         annualExclusionByYear={annualExclusionByYear}
         scenarioId={scenarioId}
+        scenarioOnly={scenarioOnly}
         hasSpouse={primary.spouseName != null}
         onChangeGifts={setGiftsState}
         onChangeSeries={setGiftSeriesState}
@@ -1058,6 +1064,7 @@ function GiftsSection(props: {
   series: GiftSeriesLite[];
   annualExclusionByYear: Record<number, number>;
   scenarioId: string;
+  scenarioOnly?: { giftIds: string[]; entityIds: string[] };
   hasSpouse: boolean;
   // Setter form, not a plain array: a gift whose Frequency or Funding changed is
   // saved as a new row plus a delete of the old one, so two updates land in the
@@ -1086,7 +1093,17 @@ function GiftsSection(props: {
     id ? props.accounts.find((a) => a.id === id)?.name ?? "asset" : "asset";
 
   async function deleteGift(id: string) {
-    const res = await fetch(`/api/clients/${props.clientId}/gifts/${id}`, { method: "DELETE" });
+    // A gift that exists only as a `scenario_changes` add has no base row for
+    // the gift route to delete (it would 404). Reverting the change is the
+    // delete — `applyEntityRemove` collapses a remove-of-an-add into dropping
+    // the add row outright.
+    const res = props.scenarioOnly?.giftIds.includes(id)
+      ? await fetch(`/api/clients/${props.clientId}/scenarios/${props.scenarioId}/changes`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ op: "remove", targetKind: "gift", targetId: id }),
+        })
+      : await fetch(`/api/clients/${props.clientId}/gifts/${id}`, { method: "DELETE" });
     if (res.ok) props.onChangeGifts(props.gifts.filter((x) => x.id !== id));
   }
   async function deleteSeries(id: string) {
@@ -1127,6 +1144,7 @@ function GiftsSection(props: {
           entities={props.entities}
           accounts={props.accounts}
           annualExclusionByYear={props.annualExclusionByYear}
+          scenarioOnly={props.scenarioOnly}
           editingGift={editingGift}
           editingSeries={editingSeries}
           onClose={closeDialog}
