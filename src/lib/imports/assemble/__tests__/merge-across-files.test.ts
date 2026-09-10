@@ -340,4 +340,19 @@ describe("two spellings of one custodian (Ruling 120)", () => {
     });
     expect(r.payload.accounts).toHaveLength(2);
   });
+
+  // Ruling 127 — the money-losing MIRROR of the bug this block is about.
+  // Moving the custodian out of the key's CONTENTS must not drop it from
+  // the key's GUARD: a row with no custodian at all has nothing for
+  // `isSameEntity` to compare (both sides normalize to null, and null
+  // matches null), so bucketing it can only ever produce a blind merge of
+  // two accounts that happen to share four masked digits and an owner.
+  it("does not merge two custodian-less rows that share a last4 and owner (Ruling 127)", () => {
+    const r = mergeAcrossFiles({
+      f1: er("a.pdf", { accounts: [{ name: "Brokerage", accountNumberLast4: "1234", owner: "client", value: 100_000 }] }),
+      f2: er("b.pdf", { accounts: [{ name: "Rollover IRA", accountNumberLast4: "1234", owner: "client", value: 250_000 }] }),
+    });
+    expect(r.payload.accounts).toHaveLength(2);
+    expect(r.payload.warnings.some((w) => w.includes("Merged"))).toBe(false);
+  });
 });

@@ -622,9 +622,17 @@ export function mergeAcrossFiles(
     // expressible as a bucket key at all — a key is exact-match by
     // construction. It has to be `isSameEntity`, below.
     //
-    // A row still needs a last-4 to be dedupable at all; without one it
-    // takes `mergeSection`'s null-key fallback id and never merges.
-    (row) => (row.accountNumberLast4 ? `${row.accountNumberLast4}|${row.owner ?? ""}` : null),
+    // A row still needs BOTH a custodian and a last-4 to be dedupable at
+    // all; without either it takes `mergeSection`'s null-key fallback id and
+    // never merges. The custodian stays in this GUARD even though it left
+    // the key's CONTENTS (Ruling 127): a row with no custodian gives
+    // `isSameEntity` below nothing to compare — both sides normalize to
+    // null, and null matches null — so bucketing it can only ever produce a
+    // blind merge. Two unrelated accounts that happen to share four masked
+    // digits and an owner would fold into one, which is the money-losing
+    // mirror of the split this fix exists to stop.
+    (row) =>
+      row.custodian && row.accountNumberLast4 ? `${row.accountNumberLast4}|${row.owner ?? ""}` : null,
     // Now that the bucket is only last-4 + owner, this is what keeps a
     // Fidelity statement out of a Schwab account that happens to share four
     // masked digits — the same `normalizeCustodian` + `custodianMatches`
