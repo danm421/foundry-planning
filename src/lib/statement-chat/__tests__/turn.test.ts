@@ -206,6 +206,44 @@ describe("runTurn", () => {
     expect(systemContent).not.toMatch(/- r2:.*committed=yes/);
   });
 
+  /**
+   * Ruling 118. The prompt used to carry a standing "do not try to edit a
+   * committed row, say it has to be corrected on the client's accounts
+   * instead" directive. Measured in a browser: the real model parroted that
+   * sentence at rows that were NOT committed — `committedRowIds` was `[]`,
+   * no row carried the `committed=yes` marker, every row still showed a live
+   * Commit button — and refused two different edit phrasings outright,
+   * calling `edit_row` neither time. That is the entire correction loop dead.
+   *
+   * Enforcement was always server-side (`assertNotCommitted`), and its error
+   * already tells the model what to say. The directive bought a tool call and
+   * cost the feature.
+   *
+   * This asserts only on the removed instruction, not on incidental prose —
+   * the rest of the prompt is free to be reworded.
+   */
+  it("does not instruct the model to refuse committed rows (Ruling 118)", async () => {
+    const model = modelReturning(new AIMessage("ok"));
+    await runTurn({
+      chat: { ...emptyChat(), committedRowIds: ["r1"] },
+      importId: "i1",
+      payload: payload(),
+      fileResults,
+      message: "hi",
+      model,
+    });
+    const invoke = (model.bindTools([]) as { invoke: ReturnType<typeof vi.fn> }).invoke;
+    const systemContent = String(
+      (invoke.mock.calls[0][0] as Array<{ content: unknown }>)[0].content,
+    );
+    expect(systemContent).not.toMatch(/will refuse it/i);
+    expect(systemContent).not.toMatch(/Do not try/i);
+    expect(systemContent).not.toMatch(/corrected on the client's accounts instead/i);
+    // The MARKER stays (Ruling 119) — it is the tool-budget hint, and it was
+    // never what fired in the failing session.
+    expect(systemContent).toMatch(/- r1:.*committed=yes/);
+  });
+
   // THE cap test (C11): a model that never stops asking for tool calls must
   // still be cut off at MAX_TOOL_CALLS_PER_TURN. Mutation this catches:
   // deleting/off-by-one-ing the `toolCallCount >= MAX_TOOL_CALLS_PER_TURN`

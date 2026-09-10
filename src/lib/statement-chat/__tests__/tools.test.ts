@@ -405,6 +405,18 @@ describe("statement chat tools", () => {
       ).toThrow(/already been committed/i);
     });
 
+    // Ruling 118 made this message load-bearing. The system prompt used to
+    // carry the same guidance as a standing instruction, and the real model
+    // over-applied it to UNCOMMITTED rows — refusing every edit request
+    // without calling a tool at all. The instruction is gone, so this error
+    // is now the ONLY thing that tells the model what to say when a row
+    // genuinely is committed. It must keep saying it.
+    it("tells the model what to say, not just that the call failed (Ruling 118)", () => {
+      expect(() =>
+        editRow(payload(), { rowId: "r1", field: "value", value: 99 }, COMMITTED_R1),
+      ).toThrow(/corrected on the client's accounts instead/i);
+    });
+
     // The other half — the guard must not have turned the tools off.
     it("still accepts an uncommitted row while another row is committed", () => {
       expect(
