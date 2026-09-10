@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { cookies } from "next/headers";
+import { requirePortalSession } from "@/lib/portal/require-portal-session";
 import { listActiveBindings } from "@/lib/portal/bindings";
 import { ACTIVE_HOUSEHOLD_COOKIE } from "@/lib/portal/active-household";
 
@@ -23,14 +23,12 @@ const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
  * cookie, `@/lib/portal/active-household`.
  *
  * NOT gated by `requireClientPortalAccess`, for the same reason
- * `/api/portal/connections` is not: that gate resolves the ONE active household
- * and checks its firm's `client_portal` entitlement, but this endpoint spans
- * every firm the login is bound to. A single firm switching the portal off
- * would otherwise trap the client inside that firm's household with no way to
- * move to another one.
- *
- * The authorization is the session plus the `clerkUserId` predicate inside
- * `bindings.ts`: no user id is ever accepted from the body, and the only thing
+ * `/api/portal/connections` is not — it spans every firm the login is bound to,
+ * so one firm switching the portal off would otherwise trap the client inside
+ * that firm's household with no way to move to another one. That reasoning, and
+ * why the weaker gate is safe, live in one place now: `requirePortalSession`.
+ * Its `clerkUserId` predicate plus the binding check below is the whole
+ * authorization — no user id is ever accepted from the body, and the only thing
  * that can be written to the cookie is a household this login already holds.
  *
  * The cookie is a convenience, not a credential — `pickActiveBinding` discards
@@ -39,11 +37,9 @@ const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
  * it, rather than silently landing you somewhere else.
  */
 export async function POST(req: Request): Promise<Response> {
-  const { userId, orgId } = await auth();
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (orgId) {
-    return NextResponse.json({ error: "Advisor session — portal access denied" }, { status: 403 });
-  }
+  const gate = await requirePortalSession();
+  if (gate instanceof Response) return gate;
+  const { userId } = gate;
 
   const body = (await req.json().catch(() => ({}))) as { clientId?: unknown };
   if (typeof body.clientId !== "string") {

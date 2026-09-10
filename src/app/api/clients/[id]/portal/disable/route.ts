@@ -75,7 +75,6 @@ export async function POST(
     }
 
     // delete_login — destructive, and global to that person.
-    let endedBindings = 0;
     if (clerkUserId) {
       // Every firm's binding ends, not only this one: the Clerk account is
       // about to stop existing, and a binding pointing at a deleted login can
@@ -90,7 +89,15 @@ export async function POST(
       //
       // Bindings end BEFORE the Clerk delete so a failure between the two
       // leaves access ended rather than a deleted account with live bindings.
-      endedBindings = await revokeAllForUser(clerkUserId);
+      const endedBindings = await revokeAllForUser(clerkUserId);
+      // Server log ONLY, deliberately never the audit row: audit metadata is
+      // read back on advisor-facing surfaces (`list-client-activity.ts`,
+      // `list-audit-rows.ts` both select it), and a count above 1 tells the
+      // acting advisor how many OTHER firms hold this person's login. The
+      // spec's non-goal is explicit that no surface ever does that.
+      console.info(
+        `[portal.disable] delete_login ended ${endedBindings} binding(s) for client ${id}`,
+      );
 
       const cc = await clerkClient();
       try {
@@ -117,7 +124,7 @@ export async function POST(
       firmId,
       actorId: userId,
       actorKind: "advisor",
-      metadata: { hadClerkUser: !!clerkUserId, mode: "delete_login", endedBindings },
+      metadata: { hadClerkUser: !!clerkUserId, mode: "delete_login" },
     });
 
     return NextResponse.json({ ok: true, mode: "delete_login" });

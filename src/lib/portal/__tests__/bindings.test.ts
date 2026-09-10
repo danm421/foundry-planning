@@ -240,6 +240,16 @@ describe("listPendingRequests", () => {
     const compiled = compile(selectWhereArgs[0]);
     expect(compiled.sql).toContain("is null");
   });
+
+  // `requested_at` is nullable and Postgres DESC defaults to NULLS FIRST, so a
+  // request with no recorded send time would sort ahead of a genuinely recent
+  // one and head the client's list. Both siblings in this module already guard
+  // it; this is the third.
+  it("orders NULLS LAST so an undated request cannot outrank a real one", async () => {
+    queue = [[]];
+    await listPendingRequests("user_x");
+    expect(compile(selectOrderByArgs[0]).sql).toContain("NULLS LAST");
+  });
 });
 
 describe("createPendingBinding", () => {
@@ -496,8 +506,15 @@ describe("revokeBinding", () => {
     );
   });
 
-  it("refuses (false) when there is no active binding to end", async () => {
-    queue = [[]];
+  it("refuses (false) and writes NOTHING when this pair is already settled", async () => {
+    // No active row, and the table already holds history for the pair — a
+    // `revoked` row from an earlier removal. There is nothing left to end, and
+    // minting a second tombstone would double-audit one act and answer the
+    // client's own second Disconnect press with a success.
+    // The rows a tombstone WOULD need are queued behind it on purpose: drop the
+    // settled check and this test fails on the insert rather than passing
+    // because the mock ran dry.
+    queue = [[], [{ id: "b-old" }], [{ firmId: "firm-1" }], [{ id: "b-new" }]];
     const result = await revokeBinding({
       clientId: "c1",
       clerkUserId: "user_x",
@@ -506,7 +523,63 @@ describe("revokeBinding", () => {
     });
     expect(result).toBe(false);
     expect(updateSet).not.toHaveBeenCalled();
+    expect(insertValues).not.toHaveBeenCalled();
     expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  // The Deploy-1 population this exists for: bound between migration 0263
+  // landing and this code shipping, so the old code wrote `clients
+  // .clerk_user_id` and nothing else. `resolveClientPortalUserId` still hands
+  // that login back, so the advisor sees "Active" — but there is no row to
+  // UPDATE, and the column survives a revoke by design. Without a tombstone
+  // "Remove portal access" reports success and the client keeps signing in.
+  it("RECORDS a revoked row for a legacy-only binding, so the removal is real", async () => {
+    queue = [[], [], [{ firmId: "firm-1" }], [{ id: "b-new" }]];
+    const result = await revokeBinding({
+      clientId: "c1",
+      clerkUserId: "user_x",
+      endedBy: "advisor",
+      actorId: "adv-1",
+    });
+    expect(result).toBe(true);
+    expect(insertValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clientId: "c1",
+        clerkUserId: "user_x",
+        // 'revoked', never 'pending'/'active' — `portal_bindings_live_idx` is
+        // partial over those two, so this insert can never collide with one.
+        status: "revoked",
+        endedBy: "advisor",
+        endedAt: expect.any(Date),
+      }),
+    );
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "portal.access.revoked_by_advisor",
+        clientId: "c1",
+        firmId: "firm-1",
+        actorId: "adv-1",
+        actorKind: "advisor",
+      }),
+    );
+  });
+
+  it("asks whether the pair is SETTLED — active or revoked — before recording one", async () => {
+    // `pending` and `declined` must not count: neither ends access, so a
+    // household still held by the legacy column still needs the tombstone.
+    queue = [[], [], [{ firmId: "firm-1" }], [{ id: "b-new" }]];
+    await revokeBinding({
+      clientId: "c1",
+      clerkUserId: "user_x",
+      endedBy: "advisor",
+      actorId: "adv-1",
+    });
+    const compiled = compile(selectWhereArgs[1]);
+    expect(compiled.params).toContain("c1");
+    expect(compiled.params).toContain("user_x");
+    expect(compiled.params).toContain("active");
+    expect(compiled.params).toContain("revoked");
+    expect(compiled.params).not.toContain("pending");
   });
 
   it("returns false (not true) when the atomic UPDATE's own re-check finds zero rows, even though the read found a row", async () => {
@@ -651,10 +724,13 @@ describe("getPendingRequestForClient", () => {
     expect(selectFrom).not.toHaveBeenCalled();
   });
 
-  it("returns the request's requestedAt so the advisor can be told when it went out", async () => {
+  it("returns the request's id and requestedAt — when it went out, and what to cancel", async () => {
     const sent = new Date("2026-09-01T00:00:00Z");
-    queue = [[{ requestedAt: sent }]];
-    expect(await getPendingRequestForClient("c1")).toEqual({ requestedAt: sent });
+    queue = [[{ bindingId: "b1", requestedAt: sent }]];
+    expect(await getPendingRequestForClient("c1")).toEqual({
+      bindingId: "b1",
+      requestedAt: sent,
+    });
   });
 
   it("returns null when nothing is awaiting the client's answer", async () => {

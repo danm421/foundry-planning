@@ -139,17 +139,22 @@ export default clerkMiddleware(async (auth, request) => {
       // itself, via `resolvePortalClient` or `requireClientPortalAccess`
       // directly. An ops revoke closes the pages AND the API.
       //
-      // TWO deliberate exceptions do neither, so an ops revoke does NOT close
+      // THREE deliberate exceptions do neither, so an ops revoke does NOT close
       // them. `/api/portal/requests` cannot check an entitlement: it serves the
       // person being asked for their FIRST binding, who by definition holds
       // none. `/api/portal/connections` must not: it lists every firm holding
       // this login and ends any of them, so gating it on the ACTIVE household's
       // firm would let one firm switching the portal off take away the client's
-      // ability to leave a different firm. Both are safe ungated because every
-      // row either reads or writes is constrained by the `clerkUserId`
-      // predicate inside `bindings.ts` — the caller can only ever see and
-      // settle their own bindings, and no user id is accepted from the request
-      // body. Being ungated is the design, not an oversight.
+      // ability to leave a different firm. `/api/portal/active-household` must
+      // not either, for the same reason: it MOVES between those firms, so that
+      // one firm could otherwise trap the client in the household it had just
+      // switched off. All three are safe ungated because every row any of them
+      // reads or writes is constrained by the `clerkUserId` predicate inside
+      // `bindings.ts` — the caller can only ever see and settle their own
+      // bindings, and no user id is accepted from the request body. Being
+      // ungated is the design, not an oversight, and the three share one
+      // named gate (`requirePortalSession`) so a fourth cannot appear by
+      // copy-paste without meeting this list.
       //
       // Soft first-run gate: redirect to /portal/intake when the client has
       // an unsubmitted prefilled form (draft-only — not after submission).

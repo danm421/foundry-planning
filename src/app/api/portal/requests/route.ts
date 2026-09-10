@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { auth, clerkClient } from "@clerk/nextjs/server";
+import { clerkClient } from "@clerk/nextjs/server";
+import { requirePortalSession } from "@/lib/portal/require-portal-session";
 import { resolveHouseholdNames } from "@/lib/portal/household-names";
 import { resolvePortalFirmNames, UNNAMED_FIRM } from "@/lib/portal/firm-names";
 import {
@@ -10,24 +11,6 @@ import {
 } from "@/lib/portal/bindings";
 
 export const dynamic = "force-dynamic";
-
-/**
- * Pending access requests for the signed-in person.
- *
- * NOT gated by requireClientPortalAccess: that gate requires an existing
- * binding, and someone being asked for their FIRST binding has none. The
- * authorization here is the session plus the `clerkUserId` predicate inside
- * `bindings.ts` — every row read or written is scoped to the caller, and no
- * user id is ever accepted from the request body.
- */
-async function requireRequestee(): Promise<{ userId: string } | Response> {
-  const { userId, orgId } = await auth();
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (orgId) {
-    return NextResponse.json({ error: "Advisor session — portal access denied" }, { status: 403 });
-  }
-  return { userId };
-}
 
 /**
  * Same dedupe for the advisor who asked. A Clerk failure — one user, or the
@@ -57,8 +40,16 @@ async function resolveAdvisorNames(pending: PendingRequest[]): Promise<Map<strin
   }
 }
 
+/**
+ * Pending access requests awaiting this person's decision.
+ *
+ * Serves someone being asked for their FIRST binding, so it is one of the three
+ * handlers gated by `requirePortalSession` rather than
+ * `requireClientPortalAccess`; that module's doc comment carries the reasoning,
+ * and `proxy.ts` enumerates all three.
+ */
 export async function GET(): Promise<Response> {
-  const gate = await requireRequestee();
+  const gate = await requirePortalSession();
   if (gate instanceof Response) return gate;
 
   const pending = await listPendingRequests(gate.userId);
@@ -85,7 +76,7 @@ export async function GET(): Promise<Response> {
 }
 
 export async function POST(req: Request): Promise<Response> {
-  const gate = await requireRequestee();
+  const gate = await requirePortalSession();
   if (gate instanceof Response) return gate;
 
   const body = (await req.json().catch(() => ({}))) as {

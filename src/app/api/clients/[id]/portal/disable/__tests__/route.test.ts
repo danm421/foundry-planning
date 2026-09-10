@@ -212,6 +212,20 @@ describe("POST /api/clients/[id]/portal/disable — delete_login", () => {
       }),
     );
   });
+
+  it("never tells the acting advisor how many OTHER firms held that login", async () => {
+    // Audit metadata is read back on advisor-facing surfaces (the client
+    // activity feed and the audit table both select it), and the spec's
+    // non-goal is explicit: no surface ever tells an advisor which — or how
+    // many — other firms a client is bound to. A count of 3 says "two firms
+    // you don't know about".
+    revokeAllForUserMock.mockResolvedValue(3);
+    await POST(req({ mode: "delete_login" }), ctx("client-1"));
+
+    const meta = recordAuditMock.mock.calls[0][0].metadata as Record<string, unknown>;
+    expect(meta).not.toHaveProperty("endedBindings");
+    expect(Object.values(meta)).not.toContain(3);
+  });
 });
 
 describe("POST /api/clients/[id]/portal/disable — which login it acts on", () => {

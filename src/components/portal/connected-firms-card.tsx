@@ -73,17 +73,29 @@ function fmtSince(iso: string): string {
  * component that owns the list can drop the row it just ended without waiting
  * on a server render.
  *
- * A successful disconnect ALSO refreshes the route. Everything else on the
- * Settings screen — the privacy toggles, the linked institutions — belongs to
- * the client's *active* household, which is the very household they may have
- * just left; leaving that on screen would show them settings for a household
- * they can no longer open.
+ * A successful disconnect ALSO refreshes the route — but ONLY while another
+ * connection remains. Everything else on the Settings screen — the privacy
+ * toggles, the linked institutions — belongs to the client's *active*
+ * household, which is the very household they may have just left; leaving that
+ * on screen would show them settings for a household they can no longer open.
+ *
+ * Leaving the LAST one is different, and refreshing there is actively wrong. A
+ * refresh re-enters `proxy.ts`, which now resolves no household for this login
+ * and redirects to `/select-organization`; for someone with no Clerk org that
+ * page renders its no-firm branch — "Your account isn't linked to a firm… Set
+ * up your firm" — an ADVISOR TRIAL pitch, handed to a client for pressing the
+ * client-facing Disconnect button. A single-firm client is the only kind that
+ * exists on production today, so that is the ordinary outcome, not an edge.
+ * This card ends on its own terminal state instead.
  */
 export default function ConnectedFirmsCard(): ReactElement {
   const router = useRouter();
   const [load, setLoad] = useState<Load>({ state: "loading" });
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** They just left their last firm. Distinct from "the list loaded empty":
+   *  this one has to say what they keep and how they get back. */
+  const [leftLastFirm, setLeftLastFirm] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoad({ state: "loading" });
@@ -115,11 +127,15 @@ export default function ConnectedFirmsCard(): ReactElement {
         setError(disconnectError(res.status));
         return;
       }
-      setLoad((prev) =>
-        prev.state === "ready"
-          ? { state: "ready", connections: prev.connections.filter((c) => c.clientId !== clientId) }
-          : prev,
-      );
+      const remaining =
+        load.state === "ready"
+          ? load.connections.filter((c) => c.clientId !== clientId)
+          : [];
+      setLoad({ state: "ready", connections: remaining });
+      if (remaining.length === 0) {
+        setLeftLastFirm(true);
+        return;
+      }
       router.refresh();
     } catch {
       setError(GENERIC_DISCONNECT_ERROR);
@@ -129,7 +145,14 @@ export default function ConnectedFirmsCard(): ReactElement {
   }
 
   let body: ReactElement;
-  if (load.state === "loading") {
+  if (leftLastFirm) {
+    body = (
+      <p className="text-[13px] leading-relaxed text-ink-2">
+        You&rsquo;re no longer connected to any firm. Your login still works —
+        an advisor can send you a new request.
+      </p>
+    );
+  } else if (load.state === "loading") {
     body = <p className="text-[13px] text-ink-3">Loading your connections&hellip;</p>;
   } else if (load.state === "error") {
     body = (

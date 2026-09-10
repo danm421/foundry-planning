@@ -15,6 +15,7 @@ import { snapshotActorName } from "@/lib/audit/actor-name";
 import { resolveFirmName } from "@/lib/branding/branding";
 import { displayNameOf, primaryEmailOf } from "@/lib/clients/portal-account";
 import { sendPortalSignInLink } from "@/lib/clients/send-portal-signin-link";
+import { resolveClientPortalUserId } from "@/lib/portal/bindings";
 
 export const dynamic = "force-dynamic";
 
@@ -55,10 +56,19 @@ export async function POST(
     }
     const action = body.action;
 
-    const clerkUserId = client.clerkUserId;
+    // DEPLOY-1 DUAL-READ, and here it is a SECURITY gate, not a display one.
+    // `clients.clerk_user_id` names the person's GLOBAL Foundry login and
+    // survives a revoke by design, so reading it directly would leave all three
+    // actions reachable after "Remove portal access" — an ex-advisor could turn
+    // off that person's two-factor, sign them out at every firm, or mail them a
+    // working sign-in link. The resolver answers null for a household whose
+    // access was ended, and the same way Manage Portal renders the card, so the
+    // page and this route can never disagree about one household. Removed in
+    // Task 15.
+    const clerkUserId = await resolveClientPortalUserId(id, client.clerkUserId ?? null);
     if (!clerkUserId) {
       // Every action here operates on a login that exists. Nothing to do before
-      // the client has signed up.
+      // the client has signed up — or once their access has been removed.
       return NextResponse.json(
         { error: "This client has no portal login yet" },
         { status: 409 },

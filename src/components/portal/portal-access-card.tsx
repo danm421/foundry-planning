@@ -41,6 +41,9 @@ interface Props {
   /** When the outstanding access request went out. Only meaningful with
    *  `status: "requested"`; null when the request predates the column. */
   requestedAt?: Date | null;
+  /** The outstanding request's binding id, so it can be withdrawn. Null when
+   *  there is no live request to cancel. */
+  requestBindingId?: string | null;
   /** When the CLIENT last disconnected themselves from this household. Shown
    *  only when nothing is live — an advisor's own revoke is not a disconnect. */
   disconnectedAt?: Date | null;
@@ -75,6 +78,7 @@ export default function PortalAccessCard({
   invitedAt,
   clerkUserId,
   requestedAt = null,
+  requestBindingId = null,
   disconnectedAt = null,
   account,
   fallbackName,
@@ -144,6 +148,34 @@ export default function PortalAccessCard({
     router.refresh();
   }
 
+  /** Withdraw an outstanding access request. The recipient's accept screen
+   *  names the firm, the advisor and the household, so a request sent to the
+   *  wrong address is the one thing an advisor most needs to be able to undo. */
+  async function cancelRequest() {
+    if (!requestBindingId) return;
+    if (
+      !confirm(
+        "Cancel this access request? The link we emailed stops working, and " +
+          "the household stays private. You can send a new request at any time.",
+      )
+    )
+      return;
+    setFeedback(null);
+    setBusy(true);
+    const res = await fetch(`/api/clients/${clientId}/portal/request`, {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ bindingId: requestBindingId }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    setBusy(false);
+    if (!res.ok) {
+      setFeedback({ kind: "error", text: body.error ?? "Failed to cancel the request" });
+      return;
+    }
+    router.refresh();
+  }
+
   /** The two ends of portal access, told apart by `mode`. Nothing is defaulted
    *  server-side, so a request that loses its body deletes nobody's login. */
   async function postDisable(mode: "revoke" | "delete_login") {
@@ -154,6 +186,7 @@ export default function PortalAccessCard({
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ mode }),
     });
+    const body = (await res.json().catch(() => ({}))) as { ended?: boolean };
     setBusy(false);
     if (!res.ok) {
       setFeedback({
@@ -164,6 +197,17 @@ export default function PortalAccessCard({
             : "Failed to delete the login",
       });
       return;
+    }
+    // A revoke that ended nothing answers 200 with `ended: false`. Reading only
+    // `res.ok` made that a dead button: the card refreshed and still said
+    // Active, with no message on it at all.
+    if (mode === "revoke" && body.ended === false) {
+      setFeedback({
+        kind: "error",
+        text:
+          "Nothing was removed — this client has no live portal access. " +
+          "The card now shows where they actually stand.",
+      });
     }
     router.refresh();
   }
@@ -281,11 +325,23 @@ export default function PortalAccessCard({
       )}
 
       {view === "requested" && (
-        <p className="text-[13px] text-ink-2">
-          Access request sent{requestedAt ? <> {formatDate(requestedAt)}</> : ""}.
-          This email already has a Foundry account, so only they can grant
-          access — they approve it from their own Foundry sign-in.
-        </p>
+        <div className="space-y-3">
+          <p className="text-[13px] text-ink-2">
+            Access request sent{requestedAt ? <> {formatDate(requestedAt)}</> : ""}.
+            This email already has a Foundry account, so only they can grant
+            access — they approve it from their own Foundry sign-in.
+          </p>
+          {requestBindingId && (
+            <button
+              type="button"
+              onClick={cancelRequest}
+              disabled={busy}
+              className={portalBtn.danger}
+            >
+              Cancel request
+            </button>
+          )}
+        </div>
       )}
 
       {view === "invited" && (

@@ -134,7 +134,10 @@ export async function listPendingRequests(clerkUserId: string): Promise<PendingR
         or(isNull(portalBindings.expiresAt), gt(portalBindings.expiresAt, new Date())),
       ),
     )
-    .orderBy(desc(portalBindings.requestedAt));
+    // NULLS LAST for the same reason as listActiveBindings above: `requested_at`
+    // is nullable, Postgres DESC defaults to NULLS FIRST, and an undated row
+    // must not head the client's list ahead of a genuinely recent request.
+    .orderBy(sql`${portalBindings.requestedAt} DESC NULLS LAST`);
 }
 
 /** Postgres unique-violation (23505). Drizzle wraps every driver error in
@@ -244,8 +247,10 @@ export async function createPendingBinding(args: {
  * One conditional statement, no read first: `clientId` and `status = 'pending'`
  * both live in the WHERE, so a row a racing accept or decline has already
  * moved off `pending` can never be removed by a late-arriving cleanup.
- * `RETURNING` is what makes the answer honest. Nothing is audited — the send is
- * what audits a request, and it did not happen.
+ * `RETURNING` is what makes the answer honest. Nothing is audited HERE, because
+ * the two callers differ on whether anything happened: the failed-send undo has
+ * nothing to record (no mail left the building), while Manage Portal's "Cancel
+ * request" is a real advisor act and audits it at its own route.
  */
 export async function deletePendingBinding(
   bindingId: string,
@@ -370,6 +375,78 @@ export async function declineBinding(bindingId: string, clerkUserId: string): Pr
 }
 
 /**
+ * End access for a household this table holds NOTHING for — the Deploy-1 client
+ * bound between migration 0263 landing and this code shipping, whose access
+ * lives in `clients.clerk_user_id` alone because the old code wrote only that
+ * column.
+ *
+ * There is no `active` row to UPDATE, and a revoke deliberately does not clear
+ * that column, so answering "false, nothing to do" left "Remove portal access"
+ * reporting success while the client kept signing in — `getPortalClientRef`
+ * falls back to the column for exactly as long as this table has settled
+ * nothing. INSERTING the `revoked` tombstone is what closes that gate, and it
+ * is legal under `portal_bindings_live_idx`, which is partial over
+ * `pending`/`active` only.
+ *
+ * Refuses when the pair is already SETTLED — the same word `getPortalClientRef`
+ * uses: an `active` row that appeared since the caller's read, or a `revoked`
+ * one meaning access is already history. That second case is what keeps the
+ * client's own Disconnect honest: pressing it twice still answers "nothing to
+ * end" rather than minting a duplicate tombstone, a duplicate audit row and a
+ * second notification to their advisor. `pending` and `declined` deliberately
+ * do NOT count, for the same reason they do not suppress the fallback — neither
+ * ends access, so a household the column still speaks for still needs this.
+ */
+async function recordRevokedForUnbound(args: {
+  clientId: string;
+  clerkUserId: string;
+  endedBy: "client" | "advisor";
+  actorId: string;
+}): Promise<boolean> {
+  const { clientId, clerkUserId, endedBy, actorId } = args;
+
+  const settled = await db
+    .select({ id: portalBindings.id })
+    .from(portalBindings)
+    .where(
+      and(
+        eq(portalBindings.clientId, clientId),
+        eq(portalBindings.clerkUserId, clerkUserId),
+        inArray(portalBindings.status, ["active", "revoked"]),
+      ),
+    )
+    .limit(1);
+  if (settled[0]) return false;
+
+  const client = await db
+    .select({ firmId: clients.firmId })
+    .from(clients)
+    .where(eq(clients.id, clientId))
+    .limit(1);
+  const firmId = client[0]?.firmId;
+  if (!firmId) return false;
+
+  const inserted = await db
+    .insert(portalBindings)
+    .values({ clientId, clerkUserId, status: "revoked", endedAt: new Date(), endedBy })
+    .returning({ id: portalBindings.id });
+  if (!inserted[0]) return false;
+
+  await recordAudit({
+    action: endedBy === "client" ? "portal.access.revoked_by_client" : "portal.access.revoked_by_advisor",
+    resourceType: "portal_binding",
+    resourceId: inserted[0].id,
+    clientId,
+    firmId,
+    actorId,
+    actorKind: endedBy === "client" ? "client" : "advisor",
+    metadata: { clerkUserId, endedBy, legacyColumnOnly: true },
+  });
+
+  return true;
+}
+
+/**
  * End an active binding. Writes ONE row and nothing else — the household, its
  * plan, its documents and its audit history are untouched by design.
  *
@@ -403,7 +480,7 @@ export async function revokeBinding(args: {
     .limit(1);
 
   const row = rows[0];
-  if (!row) return false;
+  if (!row) return recordRevokedForUnbound(args);
 
   const updated = await db
     .update(portalBindings)
@@ -600,13 +677,18 @@ export async function revokeAllForUser(clerkUserId: string): Promise<number> {
  *
  * "Live" means un-expired, matching `listPendingRequests` — including the
  * null-expiry row, which `isExpired` defines as never expiring.
+ *
+ * Returns the row's id as well as its date, because Manage Portal needs to be
+ * able to CANCEL it: an advisor who mistyped the address otherwise has no way
+ * to withdraw a request that names their firm, themselves and the household to
+ * whoever received it.
  */
 export async function getPendingRequestForClient(
   clientId: string,
-): Promise<{ requestedAt: Date | null } | null> {
+): Promise<{ bindingId: string; requestedAt: Date | null } | null> {
   if (!clientId) return null;
   const rows = await db
-    .select({ requestedAt: portalBindings.requestedAt })
+    .select({ bindingId: portalBindings.id, requestedAt: portalBindings.requestedAt })
     .from(portalBindings)
     .where(
       and(
@@ -620,7 +702,7 @@ export async function getPendingRequestForClient(
     // would render "Access request sent." with no date on it.
     .orderBy(sql`${portalBindings.requestedAt} DESC NULLS LAST`)
     .limit(1);
-  return rows[0] ? { requestedAt: rows[0].requestedAt } : null;
+  return rows[0] ? { bindingId: rows[0].bindingId, requestedAt: rows[0].requestedAt } : null;
 }
 
 /**

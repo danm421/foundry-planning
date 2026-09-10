@@ -153,11 +153,42 @@ describe("ConnectedFirmsCard", () => {
   });
 
   it("re-renders the rest of the page, which may have been about the household just left", async () => {
+    // Two firms, so one remains to land on. The settings screen around this
+    // card belongs to the ACTIVE household — possibly the one just left.
+    stubFetch([conn(), conn({ clientId: "client-2", firmName: "Halyard Wealth" })]);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<ConnectedFirmsCard />);
+    await screen.findByText("Halyard Wealth");
+    fireEvent.click(screen.getAllByRole("button", { name: /disconnect/i })[0]);
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+  });
+
+  // The single-firm client is the ONLY kind on production today, and a refresh
+  // re-enters the proxy with no household left to resolve: it redirects to
+  // /select-organization, whose no-firm branch is an ADVISOR TRIAL CTA ("Your
+  // account isn't linked to a firm… Set up your firm"). Leaving your advisor
+  // must not end on a pitch to become one.
+  it("never refreshes the route when the last connection goes", async () => {
     stubFetch([conn()]);
     vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<ConnectedFirmsCard />);
     fireEvent.click(await screen.findByRole("button", { name: /disconnect/i }));
-    await waitFor(() => expect(refresh).toHaveBeenCalled());
+
+    await waitFor(() => expect(screen.queryByText("Northgate Advisors")).toBeNull());
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it("ends on a terminal state that says the login still works", async () => {
+    stubFetch([conn()]);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<ConnectedFirmsCard />);
+    fireEvent.click(await screen.findByRole("button", { name: /disconnect/i }));
+
+    const done = await screen.findByText(/no longer connected to any firm/i);
+    // What they keep, and how they get back.
+    expect(done.textContent).toMatch(/login still works/i);
+    expect(done.textContent).toMatch(/new request/i);
+    expect(screen.queryByRole("button", { name: /disconnect/i })).toBeNull();
   });
 
   it("keeps the row and says so when the disconnect is refused", async () => {

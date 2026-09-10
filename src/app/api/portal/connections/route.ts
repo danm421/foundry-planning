@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+import { requirePortalSession } from "@/lib/portal/require-portal-session";
 import { resolveHouseholdNames, UNNAMED_HOUSEHOLD } from "@/lib/portal/household-names";
 import { resolvePortalFirmNames, UNNAMED_FIRM } from "@/lib/portal/firm-names";
 import { listActiveBindings, revokeBinding, type BindingRef } from "@/lib/portal/bindings";
@@ -8,32 +8,15 @@ import { notifyPortalDisconnected } from "@/lib/notifications/producers/portal";
 export const dynamic = "force-dynamic";
 
 /**
- * The firms holding this login, and the client's own Disconnect.
+ * The firms holding this login — the list behind the client's Connected firms
+ * card, and the source of truth for their own Disconnect below.
  *
- * NOT gated by `requireClientPortalAccess`, and deliberately the second
- * exception to "every /api/portal/* handler re-checks the entitlement" (the
- * first is `/api/portal/requests`). That gate resolves the ONE active household
- * and checks its firm's `client_portal` entitlement — but this endpoint spans
- * every firm the login is bound to, so a single firm switching the portal off
- * would take the client's ability to leave a DIFFERENT firm down with it. A
- * firm whose entitlement lapsed must not be able to hold on to someone's login.
- *
- * The authorization is the session plus the `clerkUserId` predicate inside
- * `bindings.ts`: every row read or written is scoped to the caller, no user id
- * is ever accepted from the request body, and the endpoint exposes nothing but
- * the caller's own connections.
+ * Spans every firm, so it is one of the three handlers gated by
+ * `requirePortalSession` rather than `requireClientPortalAccess`; that module's
+ * doc comment carries the reasoning, and `proxy.ts` enumerates all three.
  */
-async function requireClientSession(): Promise<{ userId: string } | Response> {
-  const { userId, orgId } = await auth();
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (orgId) {
-    return NextResponse.json({ error: "Advisor session — portal access denied" }, { status: 403 });
-  }
-  return { userId };
-}
-
 export async function GET(): Promise<Response> {
-  const gate = await requireClientSession();
+  const gate = await requirePortalSession();
   if (gate instanceof Response) return gate;
 
   const bindings = await listActiveBindings(gate.userId);
@@ -81,7 +64,7 @@ async function notifyOwningAdvisor(target: BindingRef): Promise<void> {
  * client's to erase.
  */
 export async function DELETE(req: Request): Promise<Response> {
-  const gate = await requireClientSession();
+  const gate = await requirePortalSession();
   if (gate instanceof Response) return gate;
 
   const body = (await req.json().catch(() => ({}))) as { clientId?: unknown };

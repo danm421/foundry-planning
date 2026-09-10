@@ -244,6 +244,35 @@ describe("PortalAccessCard — removing access vs deleting the login", () => {
     );
   });
 
+  // The route answers `{ok:true, ended:false}` when there was no live binding to
+  // end. `res.ok` alone reads that as success, the card refreshes, and the pill
+  // still says Active — a dead button with no error on it.
+  it("says so when the removal changed nothing, rather than reading as success", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ ok: true, mode: "revoke", ended: false }),
+    });
+    renderActive();
+
+    await userEvent.click(screen.getByRole("button", { name: "Remove portal access" }));
+
+    const msg = await screen.findByText(/nothing was removed/i);
+    expect(msg.className).toContain("text-crit");
+  });
+
+  it("stays quiet when the removal actually ended a binding", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ ok: true, mode: "revoke", ended: true }),
+    });
+    renderActive();
+
+    await userEvent.click(screen.getByRole("button", { name: "Remove portal access" }));
+
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+    expect(screen.queryByText(/nothing was removed/i)).toBeNull();
+  });
+
   it("says out loud that deleting the login reaches every firm", async () => {
     let asked = "";
     vi.stubGlobal("prompt", (message: string) => {
@@ -270,6 +299,57 @@ describe("PortalAccessCard — a request the client has not answered", () => {
     renderCard({ status: "requested", requestedAt: new Date("2026-09-01T12:00:00Z") });
 
     expect(screen.queryByRole("button", { name: "Send invite" })).toBeNull();
+  });
+
+  // A mistyped address gets the firm's name, the advisor's name AND the
+  // household's name on its accept screen, and accepting hands over the plan
+  // and the documents. Until now this view had no buttons at all.
+  it("lets the advisor withdraw the request", async () => {
+    renderCard({
+      status: "requested",
+      requestedAt: new Date("2026-09-01T12:00:00Z"),
+      requestBindingId: "b1",
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "Cancel request" }));
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/clients/c1/portal/request",
+      expect.objectContaining({
+        method: "DELETE",
+        body: JSON.stringify({ bindingId: "b1" }),
+      }),
+    );
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+  });
+
+  it("asks first — cancelling is what the recipient's link stops working on", async () => {
+    vi.stubGlobal("confirm", () => false);
+    renderCard({ status: "requested", requestBindingId: "b1" });
+
+    await userEvent.click(screen.getByRole("button", { name: "Cancel request" }));
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("surfaces the server's reason rather than claiming the request was withdrawn", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      json: async () => ({ error: "That request is no longer pending." }),
+    });
+    renderCard({ status: "requested", requestBindingId: "b1" });
+
+    await userEvent.click(screen.getByRole("button", { name: "Cancel request" }));
+
+    await waitFor(() => expect(screen.getByText(/no longer pending/i)).toBeDefined());
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it("offers no cancel button when the request's id is unknown", async () => {
+    // Nothing to address the DELETE to — a button that could only 400.
+    renderCard({ status: "requested", requestBindingId: null });
+
+    expect(screen.queryByRole("button", { name: "Cancel request" })).toBeNull();
   });
 
   it("tells the advisor a request went out instead of an invitation — as a notice, not an error", async () => {

@@ -171,6 +171,7 @@ export default async function PortalManagePage({ params }: Props): Promise<React
               invitedAt={row?.portalInvitedAt ?? null}
               clerkUserId={portalUserId}
               requestedAt={pendingRequest?.requestedAt ?? null}
+              requestBindingId={pendingRequest?.bindingId ?? null}
               disconnectedAt={disconnectedAt}
               account={account}
               fallbackName={primaryName}
