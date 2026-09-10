@@ -1,4 +1,5 @@
 import type { ScenarioChange } from "@/engine/scenario/types";
+import { visibleChangeFields } from "./hidden-change-fields";
 
 export type ChangeUnit =
   | { kind: "single"; change: ScenarioChange & { enabled: boolean } }
@@ -31,8 +32,14 @@ export function describeChangeUnit(unit: ChangeUnit, targetNames: Record<string,
     const name = nameFor(c, targetNames);
     if (c.opType === "add") return `Added: ${name}.`;
     if (c.opType === "remove") return `Removed: ${name}.`;
-    // edit
-    const payload = (c.payload ?? {}) as Record<string, { from: unknown; to: unknown }>;
+    // edit. Internal fields come off BEFORE the branch is chosen: a leg joining
+    // a bundle changes `bundleId` alone, and the one-field branch would print
+    // the raw uuid inline. With it gone that edit falls to "Edited: <name>.",
+    // and a {name, bundleId} edit reads as the single name change it is.
+    const payload = visibleChangeFields(
+      c.targetKind,
+      (c.payload ?? {}) as Record<string, { from: unknown; to: unknown }>,
+    );
     const fields = Object.keys(payload);
     if (fields.length === 0) return `Edited: ${name}.`;
     if (fields.length === 1) {

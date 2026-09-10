@@ -2,6 +2,7 @@ import { addRow, removeRow, editRow } from "../generic";
 import { nameFor } from "../format";
 import { money, yearWithRef, joinSegments, label, toNum } from "../labels";
 import { SPEC } from "../specs";
+import { visibleChangeFields } from "@/lib/scenario/hidden-change-fields";
 import { DESCRIBERS, simpleDescriber, type Describer } from "../registry";
 
 const timing = (p: Record<string, unknown>): string | null => {
@@ -44,14 +45,11 @@ const transferSchedule = simpleDescriber({
 const assetTransaction: Describer = (c, ctx) => {
   const name = nameFor(c, ctx.targetNames);
   if (c.opType === "edit") {
-    // `bundleId` links the legs of one dialog save. It is an internal uuid with
-    // no meaning to a client, and this row prints on the Scenario Changes table
-    // and in the Plan Story chapter — so drop it before the generic edit
-    // formatter renders "Bundle id: — → 7f3a91c2-…". It stays in the change
-    // payload itself: the promote path needs it to keep the legs bundled.
-    const visible = Object.fromEntries(
-      Object.entries((c.payload ?? {}) as Record<string, unknown>).filter(([f]) => f !== "bundleId"),
-    );
+    // Drop `bundleId` before the generic edit formatter renders it as
+    // "Bundle id: — → 7f3a91c2-…" on the Scenario Changes table, the
+    // comparison sheet and the Plan Story chapter. It stays in the change
+    // payload: promote needs it to keep the legs bundled.
+    const visible = visibleChangeFields(c.targetKind, (c.payload ?? {}) as Record<string, unknown>);
     return editRow({ ...c, payload: visible }, { ...SPEC.asset_transaction }, name ?? "Asset transaction");
   }
   if (c.opType === "remove") return removeRow("Assets", name ?? "Asset transaction", ["No longer in this plan"]);
