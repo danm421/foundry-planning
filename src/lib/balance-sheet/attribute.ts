@@ -54,10 +54,6 @@ export function attributeToColumns(
     return { cooper: item.value, sarah: 0, joint: 0, ooe: 0, representedPct: 1 };
   }
 
-  if (isJointTitledClientSpouseHalfHalf(item, ctx)) {
-    return { cooper: 0, sarah: 0, joint: item.value, ooe: 0, representedPct: 1 };
-  }
-
   const split: ColumnSplit = { cooper: 0, sarah: 0, joint: 0, ooe: 0, representedPct: 1 };
   let heldBackPct = 0;
 
@@ -90,6 +86,17 @@ export function attributeToColumns(
     }
   }
 
+  // A 50/50 client+spouse jtwros / community-property account reports as one
+  // "Joint" row rather than two half rows. Collapsing at the end rather than
+  // short-circuiting to `item.value` keeps the rule correct once part of the
+  // account has been given away: the household's own share becomes Joint and
+  // the gifted share keeps whatever treatment its owner row earned above.
+  if (isJointTitledClientSpouseHalfHalf(item, ctx)) {
+    split.joint += split.cooper + split.sarah;
+    split.cooper = 0;
+    split.sarah = 0;
+  }
+
   split.representedPct = Math.max(0, 1 - heldBackPct);
   return split;
 }
@@ -110,17 +117,26 @@ function isJointTitledClientSpouseHalfHalf(
 ): boolean {
   const titling = ctx.titlingByItemId.get(item.id);
   if (titling !== "jtwros" && titling !== "community_property") return false;
-  if (item.owners.length !== 2) return false;
 
-  const roles = item.owners.map((o) =>
-    o.kind === "family_member" ? roleOf(o.familyMemberId, ctx) : null,
+  // Only the household rows decide whether the titling is 50/50. A lifetime
+  // gift of a percentage adds a third owner row (the recipient trust, or a
+  // `gifted_away` marker) and shrinks both spouses proportionally —
+  // 0.50/0.50 becomes 0.425/0.425 after a 15% gift. Testing the raw percents
+  // against 0.5 made a jtwros account stop reporting as Joint the moment any
+  // of it was given away, splitting the row into Client and Spouse columns.
+  const fmOwners = item.owners.filter(
+    (o): o is Extract<AccountOwner, { kind: "family_member" }> =>
+      o.kind === "family_member",
   );
-  const hasClient = roles.includes("client");
-  const hasSpouse = roles.includes("spouse");
-  if (!hasClient || !hasSpouse) return false;
+  if (fmOwners.length !== 2) return false;
 
-  return item.owners.every(
-    (o) => o.kind === "family_member" && Math.abs(o.percent - 0.5) < HALF_EPSILON,
+  const roles = fmOwners.map((o) => roleOf(o.familyMemberId, ctx));
+  if (!roles.includes("client") || !roles.includes("spouse")) return false;
+
+  const householdShare = fmOwners.reduce((s, o) => s + o.percent, 0);
+  if (householdShare <= 0) return false;
+  return fmOwners.every(
+    (o) => Math.abs(o.percent / householdShare - 0.5) < HALF_EPSILON,
   );
 }
 

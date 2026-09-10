@@ -15,7 +15,7 @@ import type { ProjectionResult } from "@/engine/projection";
 import {
   ownedByFamilyMember,
 } from "@/engine/ownership";
-import { ownersForYearOrHousehold } from "@/lib/estate/owners-or-household";
+import { ownersForYearSafe } from "@/lib/estate/owners-or-household";
 import { resolveOwnerSlices } from "@/lib/estate/account-owner-slices";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import {
@@ -510,7 +510,7 @@ function accountAmount(a: Account): number {
  * `projection` is optional: when omitted, the function falls back to static
  * account values + authored ownership (the pre-projection behavior, used by
  * fixture tests). With a projection, ownership is composed via
- * `ownersForYearOrHousehold`, balances are read from `accountLedgers.endingValue`
+ * `ownersForYearSafe`, balances are read from `accountLedgers.endingValue`
  * at the matching year row, and `resolveOwnerSlices` distributes locked shares.
  */
 function computeOutOfEstate(
@@ -541,18 +541,7 @@ function computeOutOfEstate(
 
   const ownersAt = (account: Account) => {
     if (!yearRow) return account.owners ?? [];
-    try {
-      return ownersForYearOrHousehold(
-        account,
-        giftEvents,
-        asOfYear,
-        projectionStartYear,
-      );
-    } catch {
-      // Malformed gift events (overdraw / sum-to-1 violations) shouldn't crash
-      // the chart; fall back to authored owners so the panel still renders.
-      return account.owners ?? [];
-    }
+    return ownersForYearSafe(account, giftEvents, asOfYear, projectionStartYear);
   };
 
   const { clientRetirementYear, spouseRetirementYear } = clientData.client
@@ -565,6 +554,13 @@ function computeOutOfEstate(
   // split-owned account don't bleed into entity slices.
   const entitySliceByAccount = new Map<string, Map<string, number>>();
   const entityPercentByAccount = new Map<string, Map<string, number>>();
+  // OOE Heirs accumulator, keyed by recipient id. Filled from two sources: the
+  // `gifted_away` slices collected in the loop below, and the cumulative cash
+  // gifts gathered after the trust section.
+  const giftsByRecipient = new Map<
+    string,
+    { label: string; amount: number; gifts: { label: string; amount: number }[] }
+  >();
   for (const account of accounts) {
     const owners = ownersAt(account);
     const value = balanceAt(account.id, account);
@@ -584,6 +580,26 @@ function computeOutOfEstate(
       );
     }
     entitySliceByAccount.set(account.id, sliceByEntity);
+    // Lifetime asset gifts to a person / charity land as `gifted_away` rows.
+    // Their slice is the year-aware (grown) value of the gifted percentage —
+    // the recipient rides the account's growth after the transfer.
+    for (const sl of slices) {
+      if (sl.owner.kind !== "gifted_away") continue;
+      if (sl.value <= 0) continue;
+      const { kind, id } = sl.owner.recipient;
+      if (kind === "entity") continue; // trust gifts ride the entity slices above
+      const acc = giftsByRecipient.get(id) ?? {
+        label:
+          kind === "family_member"
+            ? familyMemberLabel(id, clientData)
+            : externalBeneficiaryLabel(id, clientData),
+        amount: 0,
+        gifts: [] as { label: string; amount: number }[],
+      };
+      acc.amount += sl.value;
+      acc.gifts.push({ label: account.name, amount: sl.value });
+      giftsByRecipient.set(id, acc);
+    }
     const pctByEntity = new Map<string, number>();
     for (const o of owners) {
       if (o.kind !== "entity") continue;
@@ -677,15 +693,10 @@ function computeOutOfEstate(
     });
   }
 
-  // Cumulative cash gifts to family members up to `asOfYear`. Series gifts
-  // and asset gifts target entities only — series flows ride the trust's
-  // account slices above; asset gifts to family members aren't representable
-  // on the engine side (the `GiftEvent` recipient is entity-only), so they
-  // never reach this branch.
-  const giftsByFm = new Map<
-    string,
-    { label: string; amount: number; gifts: { label: string; amount: number }[] }
-  >();
+  // Cumulative cash gifts to family members up to `asOfYear`, plus the
+  // year-aware value of any account percentage gifted to a person or charity
+  // (a `gifted_away` slice). Series gifts target entities only, so they ride
+  // the trust's account slices above.
   for (const gift of gifts) {
     if (gift.kind !== "cash-once") continue;
     if (gift.recipient.kind !== "family_member") continue;
@@ -693,12 +704,12 @@ function computeOutOfEstate(
     if (gift.amount <= 0) continue;
     const fmId = gift.recipient.id;
     const label = familyMemberLabel(fmId, clientData);
-    const existing = giftsByFm.get(fmId) ?? { label, amount: 0, gifts: [] };
+    const existing = giftsByRecipient.get(fmId) ?? { label, amount: 0, gifts: [] };
     existing.amount += gift.amount;
     existing.gifts.push({ label: `Cash gift (${gift.year})`, amount: gift.amount });
-    giftsByFm.set(fmId, existing);
+    giftsByRecipient.set(fmId, existing);
   }
-  for (const [fmId, agg] of giftsByFm) {
+  for (const [fmId, agg] of giftsByRecipient) {
     heirEntities.push({
       entityId: fmId,
       entityLabel: agg.label,

@@ -91,6 +91,33 @@ describe("gift draft → row", () => {
     });
   });
 
+  it("carries a valuation discount through the overlay, on both gift kinds", () => {
+    // A scenario-overlaid gift that lost its discount here would show 0% in the
+    // Details -> Family dialog while the projection discounted it.
+    expect(
+      giftDraftToRow({
+        kind: "asset-once", id: "g1", year: 2026, accountId: "acct-1", percent: 0.15,
+        grantor: "client", recipient: { kind: "entity", id: "slat-1" },
+        valuationDiscount: 0.3,
+      }),
+    ).toMatchObject({ valuationDiscount: 0.3 });
+    expect(
+      giftDraftToRow({
+        kind: "cash-once", id: "g2", year: 2027, amount: 19000, grantor: "spouse",
+        recipient: { kind: "entity", id: "slat-1" }, crummey: false,
+        valuationDiscount: 0.25,
+      }),
+    ).toMatchObject({ valuationDiscount: 0.25 });
+    expect(
+      giftDraftToSeriesRow({
+        kind: "series", id: "s1", startYear: 2027, endYear: 2031, annualAmount: 19000,
+        amountMode: "fixed", inflationAdjust: true, grantor: "joint",
+        recipient: { kind: "entity", id: "slat-1" }, crummey: true,
+        valuationDiscount: 0.4,
+      }),
+    ).toMatchObject({ valuationDiscount: 0.4 });
+  });
+
   it("leaves `amount` null on an asset gift with no override", () => {
     const row = giftDraftToRow({
       kind: "asset-once", id: "g1", year: 2026, accountId: "acct-1", percent: 0.15,

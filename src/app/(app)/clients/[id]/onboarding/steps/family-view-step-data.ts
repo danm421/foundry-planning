@@ -139,6 +139,8 @@ export async function loadFamilyViewStepData(
     id: a.id,
     name: a.name,
     category: a.category,
+    value: a.value,
+    subType: a.subType,
     ownerFamilyMemberId: controllingFamilyMember(a) ?? null,
     ownerEntityId: controllingEntity(a) ?? null,
   }));

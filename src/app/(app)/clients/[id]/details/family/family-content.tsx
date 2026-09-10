@@ -167,6 +167,8 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
     id: a.id,
     name: a.name,
     category: a.category,
+    value: a.value,
+    subType: a.subType,
     ownerFamilyMemberId: controllingFamilyMember(a) ?? null,
     ownerEntityId: controllingEntity(a) ?? null,
   }));

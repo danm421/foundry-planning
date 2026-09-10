@@ -17,7 +17,7 @@ const baseProps = {
   members: [{ id: "m1", firstName: "Jane", lastName: "Doe", role: "child", relationship: "child", dateOfBirth: null, notes: null, domesticPartner: false, inheritanceClassOverride: {} }] as unknown as FamilyMember[],
   externals: [{ id: "x1", name: "Red Cross", kind: "charity", notes: null }] as unknown as ExternalBeneficiary[],
   entities: [{ id: "t1", name: "ILIT", entityType: "trust", isIrrevocable: true }] as unknown as Entity[],
-  accounts: [{ id: "a1", name: "Brokerage", category: "taxable", ownerFamilyMemberId: "m0", ownerEntityId: null }] as unknown as AccountLite[],
+  accounts: [{ id: "a1", name: "Brokerage", category: "taxable", value: 500_000, subType: "brokerage", ownerFamilyMemberId: "m0", ownerEntityId: null }] as unknown as AccountLite[],
   annualExclusionByYear: { 2026: 19000 },
   onClose: vi.fn(),
   onSavedGift: vi.fn(),
@@ -35,14 +35,20 @@ describe("GiftDialog", () => {
     expect([...grantor.options].map((o) => o.value)).not.toContain("joint");
   });
 
-  it("shows no valuation-discount field — this surface cannot round-trip one", () => {
-    // AccountLite carries no value/subType and toEditingDraft cannot read a
-    // saved discount, so the field would read a flat "0%" over a discounted
-    // gift. Suppressed until the Family view carries the column.
+  it("offers the valuation-discount field now that this surface round-trips one", () => {
+    // Was suppressed while AccountLite carried no value/subType and
+    // toEditingDraft could not read a saved discount. Both are wired now, so
+    // the field is offered on the shapes where a discount is plausible.
     render(<GiftDialog {...baseProps} />);
     fireEvent.change(screen.getByTestId("recipient"), { target: { value: "entity:t1" } });
-    expect(screen.queryByLabelText(/Valuation discount/i)).toBeNull();
+    expect(screen.getByLabelText(/Valuation discount/i)).toBeTruthy();
     fireEvent.click(screen.getByText("Recurring"));
+    expect(screen.getByLabelText(/Valuation discount/i)).toBeTruthy();
+  });
+
+  it("still hides the field on a one-time cash gift to an individual (approved gate)", () => {
+    render(<GiftDialog {...baseProps} />);
+    fireEvent.change(screen.getByTestId("recipient"), { target: { value: "family_member:m1" } });
     expect(screen.queryByLabelText(/Valuation discount/i)).toBeNull();
   });
 
@@ -226,9 +232,16 @@ describe("GiftDialog — editing a saved gift", () => {
     expect(baseProps.onRemovedGift).toHaveBeenCalledWith("g1");
   });
 
-  it("copies a saved valuation discount onto the replacement row", async () => {
-    // This surface never renders the discount field, so the value only survives
-    // a re-create if the dialog carries it across explicitly.
+  it("drops a saved discount when the replacement shape cannot carry one", async () => {
+    // Superseded expectation: this used to copy the discount across, because the
+    // dialog never rendered the field and a re-create would otherwise re-file
+    // the gift at full value. The field is rendered now, and flipping to CASH
+    // for an individual visibly removes it — there is nothing to appraise. So
+    // the replacement must not inherit 30%; keeping it would discount a cash
+    // gift with no field anywhere in the app to show it, and under-report the
+    // exemption the gift consumes. A flip that KEEPS the field (asset -> asset,
+    // one-time -> recurring) still carries the value via the seeded draft — see
+    // gift-dialog-valuation-discount.test.tsx.
     const fetchMock = mockFetchSequence({ id: "g9" }, { ok: true });
     render(
       <GiftDialog
@@ -240,10 +253,11 @@ describe("GiftDialog — editing a saved gift", () => {
     fireEvent.change(screen.getByLabelText(/amount/i, { selector: "input" }), {
       target: { value: "25000" },
     });
+    expect(screen.queryByLabelText(/Valuation discount/i)).toBeNull();
     fireEvent.click(screen.getByText("Save gift"));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
-    expect(body.valuationDiscount).toBe(0.3);
+    expect(body.valuationDiscount).toBeNull();
   });
 
   it("keeps the replacement and reports the failure when the old row will not delete", async () => {

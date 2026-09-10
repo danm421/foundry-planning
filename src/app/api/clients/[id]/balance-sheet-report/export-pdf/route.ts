@@ -152,6 +152,9 @@ export async function POST(
       selectedYear: year,
       view: viewParam,
       asOfMode,
+      // Ownership is resolved per year from these, so a gifted share of an
+      // asset leaves the household on the PDF exactly as it does on screen.
+      giftEvents: apiData.giftEvents ?? [],
     });
 
     const clientName = [clientFirstName, clientLastName].filter(Boolean).join(" ") || "Client";

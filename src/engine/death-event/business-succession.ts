@@ -1,11 +1,12 @@
 import type {
-  Account, DeathTransfer, FamilyMember, Will, WillBequest,
+  Account, DeathTransfer, FamilyMember, GiftEvent, Will, WillBequest,
 } from "../types";
 import { collectBusinessTree } from "../business/business-tree";
 import { businessConsolidatedValue } from "./business-value";
 import {
   computeSteppedUpBasis,
   deceasedBusinessAccountShare,
+  giftAwareOwners,
   type ExternalBeneficiarySummary,
   firesAtDeath,
   selectResiduaryTier,
@@ -148,6 +149,14 @@ export function applyBusinessSuccession(input: {
   familyMembers: FamilyMember[];
   externalBeneficiaries: ExternalBeneficiarySummary[]; // reserved for future external-recipient labeling; not yet consumed
   year: number;
+  /** Lifetime gift events. With `planStartYear`, the share that becomes
+   *  dollars (transfer amounts, §1014 step-up) is resolved year-aware, so a
+   *  business interest gifted away during life doesn't transfer again at
+   *  death. Omit to read the static owners. */
+  giftEvents?: GiftEvent[];
+  /** Projection start year — gifts before it are assumed already reflected in
+   *  the static owners. Required alongside `giftEvents`. */
+  planStartYear?: number;
 }): BusinessSuccessionResult {
   const transfers: DeathTransfer[] = [];
   const ownerUpdates: BusinessOwnerSuccession[] = [];
@@ -159,8 +168,22 @@ export function applyBusinessSuccession(input: {
   );
 
   for (const business of businesses) {
-    const share = deceasedBusinessAccountShare(business, input.deceasedFmId);
-    if (share <= 1e-9) continue;
+    // Two shares, deliberately. `authoredShare` is the deceased's row on the
+    // account as titled; it drives the owner succession below, because
+    // `ownersForYear` re-applies gift events on top of the resulting owners
+    // array — handing succession a gift-reduced share would leave that array
+    // summing to less than 1 and make the next `ownersForYear` call throw.
+    // `includedShare` is what the deceased still owned at death after lifetime
+    // gifts; it drives every figure that becomes dollars, so an interest
+    // already gifted to a trust doesn't transfer to the heirs a second time.
+    const authoredShare = deceasedBusinessAccountShare(
+      business.owners, input.deceasedFmId,
+    );
+    if (authoredShare <= 1e-9) continue;
+    const share = deceasedBusinessAccountShare(
+      giftAwareOwners(business, input.giftEvents, input.year, input.planStartYear),
+      input.deceasedFmId,
+    );
 
     const consolidated = businessConsolidatedValue(
       business, input.accounts, input.accountBalances);
@@ -184,21 +207,29 @@ export function applyBusinessSuccession(input: {
 
     const successors: BusinessOwnerSuccession["successors"] = [];
     for (const rec of recipients) {
-      transfers.push({
-        year: input.year, deathOrder: input.deathOrder, deceased: input.deceased,
-        sourceAccountId: business.id, sourceAccountName: business.name,
-        sourceLiabilityId: null, sourceLiabilityName: null,
-        sourceEntityId: null,
-        via: rec.via, recipientKind: rec.recipientKind, recipientId: rec.recipientId,
-        recipientLabel: rec.recipientLabel,
-        amount: transferredValue * rec.fraction,
-        basis: flatValue * share * rec.fraction,
-        resultingAccountId: null, resultingLiabilityId: null,
-      });
+      // A business gifted away in full during life leaves nothing to transfer,
+      // but its owner rows still have to succeed (see `authoredShare` above).
+      if (share > 1e-9) {
+        transfers.push({
+          year: input.year, deathOrder: input.deathOrder, deceased: input.deceased,
+          sourceAccountId: business.id, sourceAccountName: business.name,
+          sourceLiabilityId: null, sourceLiabilityName: null,
+          sourceEntityId: null,
+          via: rec.via, recipientKind: rec.recipientKind, recipientId: rec.recipientId,
+          recipientLabel: rec.recipientLabel,
+          amount: transferredValue * rec.fraction,
+          basis: flatValue * share * rec.fraction,
+          resultingAccountId: null, resultingLiabilityId: null,
+        });
+      }
       if (rec.successorFmId != null) {
         // percent is the successor's ABSOLUTE business-ownership share:
-        // deceased's share of the business × this recipient's fraction.
-        successors.push({ familyMemberId: rec.successorFmId, percent: share * rec.fraction });
+        // deceased's AUTHORED share of the business × this recipient's
+        // fraction, so the owners array stays summing to 1 and the gift
+        // overlay re-applies cleanly on top of it.
+        successors.push({
+          familyMemberId: rec.successorFmId, percent: authoredShare * rec.fraction,
+        });
       }
     }
 

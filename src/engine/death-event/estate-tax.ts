@@ -9,58 +9,11 @@ import type { USPSStateCode } from "@/lib/usps-states";
 import { STATE_INHERITANCE_TAX } from "@/lib/tax/state-inheritance";
 import {
   deceasedBusinessAccountShare,
+  giftAwareOwners,
   type ExternalBeneficiarySummary,
 } from "./shared";
 import { computeInheritanceForDeathEvent, inheritanceCodeFor } from "./inheritance-tax";
-import type { AccountOwner } from "../ownership";
-import { controllingEntity, ownedByHousehold, controllingFamilyMember, ownersForYear } from "../ownership";
-
-/**
- * Year-aware owners for the gross-estate computation. A lifetime `kind:"asset"`
- * GiftEvent retitles ownership (`ownersForYear`) — a person/charity gift becomes
- * a `gifted_away` owner (out of estate) and an (irrevocable) trust gift becomes
- * an `entity` owner (`deceasedEntityShare` = 0) — so the gifted asset leaves the
- * gross estate. Without this the death path read static `account.owners` and
- * double-counted gifted assets (in the gross estate AND in adjusted taxable
- * gifts).
- *
- * Returns `account.owners` unchanged when gift context is absent (every existing
- * direct caller of `computeGrossEstate`) or when no in-window asset gift targets
- * this account. The household-share guard skips retitling when the static owners
- * already encode the transfer (e.g. an ILIT-gifted policy modeled as entity-owned
- * with a redundant gift event for §2035 / ATG) — there `ownersForYear` would
- * over-draw the zero household share and throw.
- */
-function giftAwareOwners(
-  account: Account,
-  giftEvents: GiftEvent[] | undefined,
-  deathYear: number | undefined,
-  planStartYear: number | undefined,
-): AccountOwner[] {
-  if (!giftEvents || deathYear == null || planStartYear == null) return account.owners;
-  let giftedPercent = 0;
-  for (const e of giftEvents) {
-    if (e.kind !== "asset") continue;
-    if (e.accountId !== account.id) continue;
-    if (e.year < planStartYear || e.year > deathYear) continue;
-    giftedPercent += e.percent;
-  }
-  if (giftedPercent <= 0) return account.owners;
-  const householdShare = account.owners
-    .filter((o) => o.kind === "family_member")
-    .reduce((s, o) => s + o.percent, 0);
-  // `ownersForYear` draws each gift sequentially from the (shrinking) household
-  // share, reducing it by exactly each gift's percent, and throws once the
-  // cumulative draw would exceed it. That throw condition is therefore precisely
-  // `Σ giftedPercent > householdShare`. Guarding on the aggregate here lets us
-  // fall back to the static owners in the one legitimate case where the gifts
-  // can't be drawn from the household — they already encode the transfer (e.g. an
-  // ILIT policy modeled as entity-owned with a redundant §2035 gift event) —
-  // without an exception, while still letting a genuine sum-to-1 integrity throw
-  // inside `ownersForYear` surface for valid-household inputs.
-  if (giftedPercent > householdShare + 1e-9) return account.owners;
-  return ownersForYear(account, giftEvents, deathYear, planStartYear);
-}
+import { controllingEntity, ownedByHousehold, controllingFamilyMember } from "../ownership";
 
 // Local helper: legacy business-entity gate. After Task 1.7 purges non-trust
 // entities from `data.entities`, this always returns false and the related
@@ -399,11 +352,21 @@ export function computeGrossEstate(input: {
   // reachable via parentAccountId. Top-level business accounts only — child
   // business accounts roll into their parent. One gross-estate line per
   // business, weighted by the deceased's family-member ownership share.
+  //
+  // The share is resolved through `giftAwareOwners` for the same reason the
+  // per-account loop above does: a lifetime gift of a business interest is
+  // already charged against lifetime exemption as an adjusted taxable gift, so
+  // counting the gifted share here too would tax it twice. Reading the static
+  // `business.owners` left a $100M LLC gifted 15% to a trust in the gross
+  // estate at the full $100M.
   const businessAccounts = input.accounts.filter(
     (a) => a.category === "business" && a.parentAccountId == null,
   );
   for (const business of businessAccounts) {
-    const pct = deceasedBusinessAccountShare(business, input.deceasedFmId);
+    const pct = deceasedBusinessAccountShare(
+      giftAwareOwners(business, input.giftEvents, input.deathYear, input.planStartYear),
+      input.deceasedFmId,
+    );
     if (pct <= 0) continue;
 
     const entityTotal = businessConsolidatedValue(

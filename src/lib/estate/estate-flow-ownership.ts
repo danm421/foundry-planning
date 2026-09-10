@@ -1,4 +1,4 @@
-import type { Account, ClientData, Will } from "@/engine/types";
+import type { Account, ClientData, GiftEvent, Will } from "@/engine/types";
 import type { ProjectionResult } from "@/engine/projection";
 import {
   type AccountOwner,
@@ -7,6 +7,7 @@ import {
   ownedByFamilyMember,
   ownedByEntity,
 } from "@/engine/ownership";
+import { ownersForYearSafe } from "./owners-or-household";
 import { consolidatedBusinessValue } from "@/engine/business/business-tree";
 import type { EstateFlowGift } from "./estate-flow-gifts";
 import { resolveOwnerSlices } from "./account-owner-slices";
@@ -191,6 +192,22 @@ export function buildOwnershipColumn(
   const displayYear =
     options.asOfYear ?? options.todayYear ?? new Date().getFullYear();
 
+  // Gift events before the plan's first year are already baked into the
+  // authored owners, so `ownersForYear` must know where the window opens.
+  const projectionStartYear =
+    options.projection?.years[0]?.year ?? options.todayYear ?? displayYear;
+
+  // Gift events grouped by the account they retitle, so `effectiveOwners`
+  // hands `ownersForYear` a short list instead of re-filtering the whole
+  // array once per account.
+  const giftEventsByAccount = new Map<string, GiftEvent[]>();
+  for (const ev of data.giftEvents ?? []) {
+    if (ev.kind !== "asset") continue;
+    const list = giftEventsByAccount.get(ev.accountId);
+    if (list) list.push(ev);
+    else giftEventsByAccount.set(ev.accountId, [ev]);
+  }
+
   const { clientRetirementYear, spouseRetirementYear } = resolveOwnerRetirementYears(
     data.client,
   );
@@ -277,13 +294,33 @@ export function buildOwnershipColumn(
   // themselves). Walk up parentAccountId to find the controlling entity or
   // family member so the child rows show under the right group.
   const accountsById = new Map(data.accounts.map((a) => [a.id, a]));
-  function effectiveOwners(account: Account): AccountOwner[] {
+  function authoredOwners(account: Account): AccountOwner[] {
     if (account.owners.length > 0 || account.parentAccountId == null) {
       return account.owners;
     }
     const parent = accountsById.get(account.parentAccountId);
     if (!parent) return account.owners;
-    return effectiveOwners(parent);
+    return authoredOwners(parent);
+  }
+
+  /**
+   * Ownership as of `displayYear`: the authored owners with every asset gift
+   * dated on or before that year applied, so a percentage gift shrinks the
+   * grantor's row from the gift year on instead of leaving them at 100%.
+   * A gift to a person/charity lands as a `gifted_away` row, which carries
+   * dollars but belongs to no column group — the value simply leaves the
+   * in-estate side, which is the point.
+   */
+  function effectiveOwners(account: Account): AccountOwner[] {
+    const authored = authoredOwners(account);
+    const accountGifts = giftEventsByAccount.get(account.id);
+    if (!accountGifts) return authored;
+    return ownersForYearSafe(
+      { ...account, owners: authored },
+      accountGifts,
+      displayYear,
+      projectionStartYear,
+    );
   }
 
   // Pre-resolve year-N balances for every account into a Record so

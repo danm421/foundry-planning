@@ -71,6 +71,9 @@ export function buildBalanceSheetPageData(
     selectedYear,
     view,
     asOfMode: options.asOf,
+    // Year-aware ownership: a gifted share of an asset must leave the
+    // household on the deck page too.
+    giftEvents: ctx.clientData.giftEvents ?? [],
   });
 
   return {

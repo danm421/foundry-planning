@@ -1036,3 +1036,62 @@ describe("buildOwnershipColumn — row kind & default cash", () => {
     expect(spouse!.assets.some((a) => a.accountId === "acc-rental")).toBe(false);
   });
 });
+
+describe("buildOwnershipColumn — lifetime asset gift to a person", () => {
+  const KID = { id: "fm-kid", role: "child", relationship: "child", firstName: "Kim", lastName: "Smith", dateOfBirth: "2005-01-01" };
+
+  function cdWithGift(giftYear: number): ClientData {
+    const cd = data({
+      accounts: [
+        {
+          id: "acc-1",
+          name: "Brokerage",
+          category: "taxable",
+          subType: "brokerage",
+          value: 1_000_000,
+          basis: 800_000,
+          growthRate: 0.06,
+          rmdEnabled: false,
+          titlingType: "jtwros",
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+          beneficiaries: [],
+        },
+      ],
+      giftEvents: [
+        {
+          kind: "asset",
+          year: giftYear,
+          accountId: "acc-1",
+          percent: 0.3,
+          grantor: "client",
+          recipientFamilyMemberId: "fm-kid",
+          eventKind: "outright",
+        },
+      ] as unknown as ClientData["giftEvents"],
+    });
+    cd.familyMembers = [...(cd.familyMembers ?? []), KID] as ClientData["familyMembers"];
+    return cd;
+  }
+
+  it("shrinks the grantor's row to the retained share from the gift year on", () => {
+    const cd = cdWithGift(2027);
+    const col = buildOwnershipColumn(cd, { asOfYear: 2027, todayYear: 2026 });
+
+    const client = col.groups.find((g) => g.key === "client")!;
+    expect(client.assets).toHaveLength(1);
+    expect(client.assets[0].value).toBeCloseTo(700_000, 2);
+    expect(client.assets[0].percent).toBeCloseTo(0.7, 6);
+    // The gifted 30% belongs to no column group — it has left the estate.
+    expect(col.grandTotal).toBeCloseTo(700_000, 2);
+  });
+
+  it("leaves the row whole in the years before the gift", () => {
+    const cd = cdWithGift(2030);
+    const col = buildOwnershipColumn(cd, { asOfYear: 2027, todayYear: 2026 });
+
+    const client = col.groups.find((g) => g.key === "client")!;
+    expect(client.assets[0].value).toBe(1_000_000);
+    expect(client.assets[0].percent).toBe(1);
+    expect(col.grandTotal).toBe(1_000_000);
+  });
+});

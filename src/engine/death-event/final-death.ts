@@ -425,6 +425,10 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     familyMembers: input.familyMembers,
     externalBeneficiaries: input.externalBeneficiaries,
     year: input.year,
+    // Gift-aware: a business interest gifted away during life must not
+    // transfer to the heirs again at death.
+    giftEvents: input.giftEvents ?? [],
+    planStartYear: input.planSettings.planStartYear,
   });
   warnings.push(...businessSuccession.warnings);
 

@@ -73,6 +73,7 @@ export function giftDraftToRow(g: EstateFlowGift): Gift | null {
     year: g.year,
     grantor: g.grantor,
     ...recipientColumns(g.recipient),
+    valuationDiscount: g.valuationDiscount ?? null,
     notes: null,
   };
   // Asset gifts carry no Crummey concept, and their `amount` column holds the
@@ -83,7 +84,6 @@ export function giftDraftToRow(g: EstateFlowGift): Gift | null {
         amount: g.amountOverride ?? null,
         accountId: g.accountId,
         percent: g.percent,
-        valuationDiscount: g.valuationDiscount ?? null,
         useCrummeyPowers: false,
       }
     : {
@@ -91,7 +91,6 @@ export function giftDraftToRow(g: EstateFlowGift): Gift | null {
         amount: g.amount,
         accountId: null,
         percent: null,
-        valuationDiscount: g.valuationDiscount ?? null,
         useCrummeyPowers: g.crummey,
       };
 }

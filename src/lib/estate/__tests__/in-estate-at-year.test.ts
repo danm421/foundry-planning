@@ -444,3 +444,77 @@ describe("business accounts (in-estate via owners + tree consolidation)", () => 
     expect(outE).toBe(0);
   });
 });
+
+describe("lifetime asset gift to a person", () => {
+  const FM_KID = "fm-kid";
+  const giftToKid: GiftEvent[] = [
+    {
+      kind: "asset",
+      accountId: "acc-1",
+      percent: 0.3,
+      year: 2027,
+      grantor: "client",
+      recipientFamilyMemberId: FM_KID,
+    } as unknown as GiftEvent,
+  ];
+
+  function soleOwned(): ClientData {
+    const { tree } = fixture();
+    tree.accounts = [tree.accounts[0]];
+    tree.accounts[0].owners = [
+      { kind: "family_member", familyMemberId: FM_CLIENT, percent: 1 },
+    ];
+    return tree;
+  }
+
+  it("drops the gifted share out of the gross estate from the gift year on", () => {
+    const tree = soleOwned();
+    const balances = new Map([["acc-1", 1_000_000]]);
+    const args = { tree, giftEvents: giftToKid, projectionStartYear: 2026, accountBalances: balances };
+
+    expect(computeInEstateAtYear({ ...args, year: 2026 })).toBe(1_000_000);
+    expect(computeInEstateAtYear({ ...args, year: 2027 })).toBe(700_000);
+  });
+
+  it("does not count the gifted share as out-of-estate either — it left the plan", () => {
+    // Out-of-estate on this report means irrevocable-trust-held value. A gift
+    // to a person is neither: it is gone. (The Estate Flow OOE Heirs panel is
+    // where the recipient's dollars surface.)
+    const tree = soleOwned();
+    const balances = new Map([["acc-1", 1_000_000]]);
+    expect(
+      computeOutOfEstateAtYear({
+        tree,
+        giftEvents: giftToKid,
+        year: 2027,
+        projectionStartYear: 2026,
+        accountBalances: balances,
+      }),
+    ).toBe(0);
+  });
+
+  it("honors the gift on a joint account whose locked family shares are gift-blind", () => {
+    const tree = soleOwned();
+    tree.accounts[0].owners = [
+      { kind: "family_member", familyMemberId: FM_CLIENT, percent: 0.5 },
+      { kind: "family_member", familyMemberId: FM_SPOUSE, percent: 0.5 },
+    ];
+    const balances = new Map([["acc-1", 1_000_000]]);
+    // What the engine publishes today: the full pre-gift family pool.
+    const familyAccountSharesEoY = new Map([
+      [FM_CLIENT, new Map([["acc-1", 500_000]])],
+      [FM_SPOUSE, new Map([["acc-1", 500_000]])],
+    ]);
+
+    expect(
+      computeInEstateAtYear({
+        tree,
+        giftEvents: giftToKid,
+        year: 2027,
+        projectionStartYear: 2026,
+        accountBalances: balances,
+        familyAccountSharesEoY,
+      }),
+    ).toBeCloseTo(700_000, 2);
+  });
+});

@@ -231,18 +231,6 @@ describe("GiftForm — valuation discount", () => {
     expect(lastDraft(onChange)!.valuationDiscount).toBeUndefined();
   });
 
-  it("hides the whole block when the caller opts out", () => {
-    // The Family view's GiftDialog cannot supply account values or round-trip a
-    // saved discount, so it must not render a field that would read a flat 0%.
-    const onChange = renderForm({ showValuationDiscount: false });
-    fireEvent.change(screen.getByTestId("recipient"), { target: { value: "entity:t1" } });
-    fireEvent.change(screen.getByLabelText(/amount/i, { selector: "input" }), { target: { value: "50000" } });
-
-    expect(screen.queryByLabelText(/Valuation discount/i)).toBeNull();
-    expect(screen.queryByTestId("discount-preview")).toBeNull();
-    expect(lastDraft(onChange)!.valuationDiscount).toBeUndefined();
-  });
-
   it("charges the DISCOUNTED value against the lifetime exemption preview", () => {
     // The exemption is already exhausted, so the overage IS the taxable value.
     // A $1,000,000 interest at a 30% discount must breach by $700,000.

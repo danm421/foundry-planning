@@ -3,14 +3,29 @@
 import type React from "react";
 import { useState } from "react";
 import { cleanInput, formatDisplay } from "@/components/currency-input";
+import { FieldTooltip } from "@/components/forms/field-tooltip";
 
 export const selectCls =
   "block w-full max-w-xs rounded border border-ink-3 bg-card px-2 py-1.5 text-sm text-ink";
 
-export function Field({ label, children }: { label: string; children: React.ReactNode }) {
+export function Field({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  /** Longer "how does this work" copy. Rendered as a `?` badge beside the
+   *  label rather than inline under the input — the dialog stays quiet enough
+   *  to be on screen in front of a client. */
+  hint?: string;
+  children: React.ReactNode;
+}) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-xs text-ink-3">{label}</span>
+      <span className="mb-1.5 flex items-center gap-1.5 text-xs text-ink-3">
+        {label}
+        {hint && <FieldTooltip text={hint} />}
+      </span>
       {children}
     </label>
   );
@@ -22,19 +37,28 @@ export function NumberInput({
   className,
   min,
   max,
+  step,
+  testId,
 }: {
   value: number;
   onChange: (n: number) => void;
   className?: string;
   min?: number;
   max?: number;
+  /** Arrow-key / spinner increment. Also what the browser validates against —
+   *  the default of 1 marks a decimal entry invalid, so any field that accepts
+   *  a fraction must pass this. */
+  step?: number;
+  testId?: string;
 }) {
   return (
     <input
       type="number"
+      data-testid={testId}
       value={value}
       min={min}
       max={max}
+      step={step}
       onChange={(e) => onChange(Number(e.target.value))}
       className={`${className ?? ""} block w-full max-w-[10rem] rounded border border-ink-3 bg-card px-2 py-1.5 text-sm text-ink`}
     />
@@ -50,10 +74,12 @@ export function MoneyInput({
   value,
   onChange,
   className,
+  testId,
 }: {
   value: number;
   onChange: (n: number) => void;
   className?: string;
+  testId?: string;
 }) {
   const [text, setText] = useState(() => (value ? String(value) : ""));
 
@@ -69,6 +95,7 @@ export function MoneyInput({
       <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-ink-3">$</span>
       <input
         type="text"
+        data-testid={testId}
         inputMode="decimal"
         value={formatDisplay(text)}
         onChange={handleChange}

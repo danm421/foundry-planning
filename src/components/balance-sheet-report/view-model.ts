@@ -7,10 +7,11 @@
 // shape the old version used.
 
 import type { AccountOwner, EntityOwner } from "@/engine/ownership";
-import type { FamilyMember } from "@/engine/types";
+import type { FamilyMember, GiftEvent } from "@/engine/types";
 import { flatBusinessValueAt } from "@/engine/entity-cashflow";
 import { collectBusinessTree } from "@/engine/business/business-tree";
 import { resolveOwnerSlices } from "@/lib/estate/account-owner-slices";
+import { ownersForYearSafe } from "@/lib/estate/owners-or-household";
 import type { OwnershipView } from "./ownership-filter";
 import { yoyPct, sliceBarAnchors, type YoyResult } from "./yoy";
 import { CATEGORY_ORDER, CATEGORY_LABELS, CATEGORY_HEX, type AssetCategoryKey } from "./tokens";
@@ -112,6 +113,12 @@ export interface BuildViewModelInput {
    * (the advisor-entered current balances). "eoy" = end-of-year balances
    * for the selected year. Default: "eoy". */
   asOfMode?: AsOfMode;
+  /** Lifetime gift events. Each account's owners are resolved as of
+   *  `selectedYear` (`ownersForYearSafe`) so a percentage of an asset gifted
+   *  to a trust shows under that trust — and out of the household — from the
+   *  gift year on. Omit to read the authored owners (pre-projection fixtures).
+   */
+  giftEvents?: GiftEvent[];
 }
 
 // ── Output shape ─────────────────────────────────────────────────────────────
@@ -391,10 +398,37 @@ function ownerLabelForFamily(
   return "Joint";
 }
 
+/**
+ * Ownership of an account as of a given year.
+ *
+ * "today" is the advisor-entered opening snapshot, before any projected
+ * activity: a gift dated in or after the plan's first year has not happened
+ * yet, and a gift dated before it is already baked into the authored owners
+ * (that is exactly what `ownersForYear` documents about its window). So the
+ * today column reads the authored owners and only the projected years apply
+ * the gift overlay.
+ *
+ * An account with no `account_owners` rows also keeps the authored (empty)
+ * array rather than picking up `ownersForYearSafe`'s household fallback — the
+ * report's existing treatment of those accounts is out of scope here.
+ */
+export function ownersAsOf(
+  account: AccountLike,
+  giftEvents: GiftEvent[],
+  year: number,
+  planStartYear: number,
+  asOfMode: AsOfMode,
+): AccountOwner[] {
+  if (asOfMode === "today") return account.owners;
+  if (account.owners.length === 0) return account.owners;
+  return ownersForYearSafe(account, giftEvents, year, planStartYear);
+}
+
 // ── Builder ──────────────────────────────────────────────────────────────────
 
 export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewModel {
   const { accounts, liabilities, entities, familyMembers, projectionYears, selectedYear, view } = input;
+  const giftEvents = input.giftEvents ?? [];
   const asOfMode: AsOfMode = input.asOfMode ?? "eoy";
   const planStartYear = projectionYears[0]?.year ?? selectedYear;
 
@@ -451,10 +485,17 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
     // account vanished from the report entirely.
     const categoryKey = DB_TO_KEY[acct.category];
     const value = accountValueForYear(yearData, acct.id, asOfMode);
+    // Ownership as of the selected year, not as authored. A lifetime gift of a
+    // percentage of an asset retitles it: the recipient trust becomes an
+    // `entity` owner and a gift to a person becomes a `gifted_away` owner
+    // (both already handled by `classifySlice` below), while the household
+    // rows shrink by the gifted percent. Reading `acct.owners` here left a
+    // gifted asset on the household's balance sheet at its full value forever.
+    const owners = ownersAsOf(acct, giftEvents, selectedYear, planStartYear, asOfMode);
     // Keep entity-owned accounts even at $0 so an entity's default-cash
     // account stays visible under its entity card — consistent with the
     // entity cash flow report. Zero-value family accounts are still dropped.
-    const isEntityOwned = acct.owners.some((o) => o.kind === "entity");
+    const isEntityOwned = owners.some((o) => o.kind === "entity");
     if (value <= 0 && !isEntityOwned) continue;
     const hasLinkedMortgage =
       categoryKey === "realEstate" &&
@@ -466,7 +507,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
     const useLockedShares = asOfMode === "eoy";
     const ownerSlices = resolveOwnerSlices(
       acct.id,
-      acct.owners,
+      owners,
       value,
       useLockedShares ? yearData.entityAccountSharesEoY : undefined,
       useLockedShares ? yearData.familyAccountSharesEoY : undefined,
@@ -482,7 +523,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
         // the full balance (resolveOwnerSlices gives them the residual pool).
         // Only surface external value when it would otherwise be dropped entirely
         // (e.g. an external-only account), to avoid double-counting into OOE.
-        const absorbedByInEstateOwner = acct.owners.some(
+        const absorbedByInEstateOwner = owners.some(
           (o) => o.kind === "family_member" || o.kind === "entity",
         );
         if (view === "consolidated" && value > 0 && !absorbedByInEstateOwner) {
@@ -498,13 +539,27 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
         }
         continue;
       }
-      // Gifted-away slices have left the estate — same treatment as external_beneficiary.
+      // Gifted-away slices — a lifetime gift of a percentage to a person or a
+      // charity — have left the estate but are real dollars on the recipient's
+      // side, so they belong in Out of Estate under that recipient.
+      //
+      // Unlike the external_beneficiary branch above, there is no
+      // "absorbed by an in-estate owner" case to guard against:
+      // `resolveOwnerSlices` explicitly subtracts gifted-away dollars from the
+      // family pool, so nobody else holds them. Guarding here made 15% of an
+      // account gifted to a child disappear from the report entirely.
+      //
+      // `sliceValue` is the resolver's own figure for this slice — it already
+      // equals value × percent, so don't recompute it here.
       if (owner.kind === "gifted_away") {
-        const absorbedByInEstateOwner = acct.owners.some(
-          (o) => o.kind === "family_member" || o.kind === "entity",
-        );
-        if (view === "consolidated" && value > 0 && !absorbedByInEstateOwner) {
-          ooeAdd("ext", "Other (out of estate)", "external", value * owner.percent, 0);
+        if (view === "consolidated" && sliceValue > 0) {
+          const { kind, id } = owner.recipient;
+          const fm = kind === "family_member" ? familyMemberById.get(id) : undefined;
+          if (fm) {
+            ooeAdd(`fm:${id}`, fm.firstName ?? "Heir", "person", sliceValue, 0);
+          } else {
+            ooeAdd("ext", "Other (out of estate)", "external", sliceValue, 0);
+          }
         }
         continue;
       }
@@ -525,7 +580,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
         ownerLabel: "", // filled in below
         value: sliceValue,
         hasLinkedMortgage,
-        accountHasMultipleOwners: acct.owners.length > 1,
+        accountHasMultipleOwners: owners.length > 1,
         revocableTrustName: acct.revocableTrustName ?? null,
       };
 
@@ -1031,6 +1086,17 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
     // its parentAccountId sub-accounts as nested rows and its sub-liabilities
     // netted out. Ownership is irrelevant here — a business gets its own card
     // whether it's family- or trust-owned.
+    //
+    // ⚠️ KNOWN GAP (Dan's call, 2026-09-09): because business-tree accounts are
+    // stripped from every entity card above, a trust that has been GIFTED a
+    // percentage of a business shows nothing on its own card, and the business
+    // card still reads at full value. The household tab and the out-of-estate
+    // section are correct — this tab alone can't express a split. Fixing it
+    // means choosing between scaling the business card to its owners' share
+    // (matching `estate-flow-ownership.ts`, but a wholly trust-owned business
+    // then loses its own card — the case the test below pins) and listing a
+    // fractional interest row on the entity card on top of a full-value
+    // business card.
     const businessGroups: EntityGroup[] = [];
     for (const { root: b, tree } of businessTrees) {
       const treeIds = new Set(tree.map((a) => a.id));
@@ -1240,7 +1306,10 @@ function computeYearTotals(
     if (value <= 0) continue;
     const ownerSlices = resolveOwnerSlices(
       acct.id,
-      acct.owners,
+      // Year-aware owners, resolved at THIS row's year — computeYearTotals is
+      // called for the prior year too (YoY) and for every bar-chart point.
+      // Always end-of-year here, so never the "today" snapshot.
+      ownersAsOf(acct, input.giftEvents ?? [], yearData.year, planStartYear, "eoy"),
       value,
       yearData.entityAccountSharesEoY,
       yearData.familyAccountSharesEoY,
