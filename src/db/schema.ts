@@ -1118,6 +1118,58 @@ export const clients = pgTable("clients", {
   index("clients_firm_idx").on(t.firmId),
 ]);
 
+export const portalBindingStatus = ["pending", "active", "declined", "revoked"] as const;
+export type PortalBindingStatus = (typeof portalBindingStatus)[number];
+
+export const portalBindingEndedBy = ["none", "client", "advisor"] as const;
+export type PortalBindingEndedBy = (typeof portalBindingEndedBy)[number];
+
+/**
+ * The relationship between a Foundry login and a household.
+ *
+ * Replaces the unique `clients.clerk_user_id` column: one person may hold
+ * several ACTIVE bindings (their own household, their parents', a new advisor
+ * during a transfer), and a household may hold several (two spouses).
+ *
+ * Status is TEXT, not a pg enum, matching `notifications.category` — an enum
+ * forces every future value through `ALTER TYPE ... ADD VALUE`, which
+ * drizzle-kit runs inside the single migration transaction and which throws
+ * PG 55P04 as soon as the new value is used in that same migration.
+ *
+ * `declined` and `revoked` rows are never deleted; they are the history of who
+ * asked and who left.
+ */
+export const portalBindings = pgTable(
+  "portal_bindings",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    clerkUserId: text("clerk_user_id").notNull(),
+    status: text("status").$type<PortalBindingStatus>().notNull(),
+    // Clerk advisor id. Null on the invitation path, where no advisor asked —
+    // the client accepted a Clerk invitation and the webhook bound them.
+    requestedBy: text("requested_by"),
+    requestedAt: timestamp("requested_at", { withTimezone: true }),
+    // Pending rows only. An expired pending row is never honoured on accept.
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    endedBy: text("ended_by").$type<PortalBindingEndedBy>().notNull().default("none"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    // THE safety constraint: one live relationship per (household, login).
+    // Partial, so declined/revoked history accumulates freely underneath it.
+    uniqueIndex("portal_bindings_live_idx")
+      .on(t.clientId, t.clerkUserId)
+      .where(sql`status IN ('pending', 'active')`),
+    index("portal_bindings_user_idx").on(t.clerkUserId, t.status),
+    index("portal_bindings_client_idx").on(t.clientId, t.status),
+  ],
+);
+
 export const scenarios = pgTable("scenarios", {
   id: uuid("id").defaultRandom().primaryKey(),
   clientId: uuid("client_id")

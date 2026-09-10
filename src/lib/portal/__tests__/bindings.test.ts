@@ -1,0 +1,969 @@
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
+
+/**
+ * A chainable `db.select()` / `db.update()` mock: every step (`from`/
+ * `innerJoin`/`where`/`orderBy`/`limit`) returns the same chain object, and
+ * the chain itself is thenable — awaiting it at ANY point shifts the next
+ * row-set off `queue`. `db.update(...).set(...).where(...)` now always ends
+ * in `.returning()`, matching the module's atomic conditional-update shape.
+ *
+ * Crucially, `where()` and `orderBy()` do NOT discard their arguments — they
+ * record the real drizzle `SQL` condition (drizzle-orm and @/db/schema are
+ * NOT mocked here, only @/db, so `eq()`/`and()`/`sql` build real SQL AST
+ * objects). `compileParams`/`compileSQL` below compile those with a real
+ * `PgDialect`, with no live database involved, so tests can prove a
+ * predicate is actually present rather than just trusting the mock's answer.
+ */
+let queue: unknown[][] = [];
+let insertRejection: unknown = null;
+const selectFrom = vi.fn();
+const selectWhereArgs: unknown[] = [];
+const selectOrderByArgs: unknown[] = [];
+const insertValues = vi.fn();
+const updateSet = vi.fn();
+const updateWhereArgs: unknown[] = [];
+const deleteWhereArgs: unknown[] = [];
+
+const selectChain = {
+  from: (...a: unknown[]) => {
+    selectFrom(...a);
+    return selectChain;
+  },
+  innerJoin: () => selectChain,
+  where: (cond: unknown) => {
+    selectWhereArgs.push(cond);
+    return selectChain;
+  },
+  orderBy: (expr: unknown) => {
+    selectOrderByArgs.push(expr);
+    return selectChain;
+  },
+  limit: () => selectChain,
+  then: (resolve: (v: unknown) => void, reject?: (e: unknown) => void) => {
+    Promise.resolve(queue.shift() ?? []).then(resolve, reject);
+  },
+};
+
+vi.mock("@/db", () => ({
+  db: {
+    select: () => selectChain,
+    insert: () => ({
+      values: (vals: unknown) => {
+        insertValues(vals);
+        return {
+          returning: () => {
+            if (insertRejection) {
+              const err = insertRejection;
+              insertRejection = null;
+              return Promise.reject(err);
+            }
+            return Promise.resolve(queue.shift() ?? []);
+          },
+        };
+      },
+    }),
+    update: () => ({
+      set: (vals: unknown) => {
+        updateSet(vals);
+        return {
+          where: (cond: unknown) => {
+            updateWhereArgs.push(cond);
+            return { returning: () => Promise.resolve(queue.shift() ?? []) };
+          },
+        };
+      },
+    }),
+    delete: () => ({
+      where: (cond: unknown) => {
+        deleteWhereArgs.push(cond);
+        return { returning: () => Promise.resolve(queue.shift() ?? []) };
+      },
+    }),
+  },
+}));
+
+const recordAudit = vi.fn().mockResolvedValue(undefined);
+vi.mock("@/lib/audit", () => ({ recordAudit: (...a: unknown[]) => recordAudit(...a) }));
+
+import {
+  REQUEST_TTL_DAYS,
+  DECLINE_COOLDOWN_DAYS,
+  isExpired,
+  cooldownEndsAt,
+  listActiveBindings,
+  listBindingsForUser,
+  listPendingRequests,
+  createPendingBinding,
+  deletePendingBinding,
+  acceptBinding,
+  declineBinding,
+  revokeBinding,
+  revokeAllForUser,
+  getActiveBindingClerkUserId,
+  resolveClientPortalUserId,
+  pickBoundClerkUserId,
+  rankPortalStatus,
+  getPendingRequestForClient,
+  getClientDisconnectedAt,
+  type BindingStatusFact,
+} from "@/lib/portal/bindings";
+
+const dialect = new PgDialect();
+/** Compiles a captured drizzle condition/order-by expression with a REAL
+ *  PgDialect — no DB connection required — so a test can inspect the actual
+ *  bound parameters and SQL text a predicate would send to Postgres. */
+function compile(expr: unknown) {
+  return dialect.sqlToQuery(expr as SQL);
+}
+
+beforeEach(() => {
+  queue = [];
+  insertRejection = null;
+  selectFrom.mockClear();
+  selectWhereArgs.length = 0;
+  selectOrderByArgs.length = 0;
+  insertValues.mockClear();
+  updateSet.mockClear();
+  updateWhereArgs.length = 0;
+  deleteWhereArgs.length = 0;
+  recordAudit.mockClear();
+});
+
+describe("binding policy", () => {
+  it("expires a pending request after the TTL", () => {
+    const past = new Date(Date.now() - 1000);
+    const future = new Date(Date.now() + 1000);
+    expect(isExpired(past)).toBe(true);
+    expect(isExpired(future)).toBe(false);
+  });
+
+  it("treats a null expiry as never expiring", () => {
+    // Invitation-path rows carry no expiry; they are not requests.
+    expect(isExpired(null)).toBe(false);
+  });
+
+  it("blocks a re-request for 30 days after a decline", () => {
+    const declinedAt = new Date("2026-03-01T00:00:00Z");
+    expect(cooldownEndsAt(declinedAt).toISOString()).toBe("2026-03-31T00:00:00.000Z");
+  });
+
+  it("uses a 14-day request TTL and a 30-day decline cooldown", () => {
+    expect(REQUEST_TTL_DAYS).toBe(14);
+    expect(DECLINE_COOLDOWN_DAYS).toBe(30);
+  });
+});
+
+describe("listActiveBindings", () => {
+  it("skips the query and returns [] for an empty clerkUserId", async () => {
+    const result = await listActiveBindings("");
+    expect(result).toEqual([]);
+    expect(selectFrom).not.toHaveBeenCalled();
+  });
+
+  it("returns the joined rows for a live login", async () => {
+    const acceptedAt = new Date("2026-02-01T00:00:00Z");
+    queue = [[{ bindingId: "b1", clientId: "c1", firmId: "firm-1", advisorId: "adv-1", acceptedAt }]];
+    const result = await listActiveBindings("user_x");
+    expect(result).toEqual([{ bindingId: "b1", clientId: "c1", firmId: "firm-1", advisorId: "adv-1", acceptedAt }]);
+  });
+
+  it("orders NULLS LAST so an unaccepted row can never look most-recent", async () => {
+    queue = [[]];
+    await listActiveBindings("user_x");
+    const compiled = compile(selectOrderByArgs[0]);
+    expect(compiled.sql).toContain("NULLS LAST");
+  });
+});
+
+describe("listBindingsForUser", () => {
+  it("skips the query and returns [] for an empty clerkUserId", async () => {
+    const result = await listBindingsForUser("");
+    expect(result).toEqual([]);
+    expect(selectFrom).not.toHaveBeenCalled();
+  });
+
+  it("returns rows in ANY status, carrying the status through", async () => {
+    const acceptedAt = new Date("2026-02-01T00:00:00Z");
+    queue = [
+      [
+        { bindingId: "b1", clientId: "c1", firmId: "firm-1", advisorId: "adv-1", acceptedAt, status: "revoked" },
+      ],
+    ];
+    const result = await listBindingsForUser("user_x");
+    expect(result).toEqual([
+      { bindingId: "b1", clientId: "c1", firmId: "firm-1", advisorId: "adv-1", acceptedAt, status: "revoked" },
+    ]);
+  });
+
+  // The whole point of this query: the dual-read chokepoint uses "zero rows at
+  // all" to decide whether the legacy `clients.clerk_user_id` column may be
+  // consulted. A status predicate here would hide a revoked user's history and
+  // let that column resurrect their access.
+  it("does NOT filter by status", async () => {
+    queue = [[]];
+    await listBindingsForUser("user_x");
+    const compiled = compile(selectWhereArgs[0]);
+    expect(compiled.params).toEqual(["user_x"]);
+    expect(compiled.sql).not.toContain("status");
+  });
+
+  it("orders NULLS LAST so an unaccepted row can never look most-recent", async () => {
+    queue = [[]];
+    await listBindingsForUser("user_x");
+    const compiled = compile(selectOrderByArgs[0]);
+    expect(compiled.sql).toContain("NULLS LAST");
+  });
+});
+
+describe("listPendingRequests", () => {
+  it("skips the query and returns [] for an empty clerkUserId", async () => {
+    const result = await listPendingRequests("");
+    expect(result).toEqual([]);
+    expect(selectFrom).not.toHaveBeenCalled();
+  });
+
+  it("returns the joined pending rows", async () => {
+    const expiresAt = new Date("2026-03-01T00:00:00Z");
+    queue = [[{ bindingId: "b1", clientId: "c1", firmId: "firm-1", requestedBy: "adv-1", expiresAt }]];
+    const result = await listPendingRequests("user_x");
+    expect(result).toEqual([{ bindingId: "b1", clientId: "c1", firmId: "firm-1", requestedBy: "adv-1", expiresAt }]);
+  });
+
+  // Finding 5: isExpired(null) === "never expires", so the list query must
+  // not silently drop null-expiry rows — a stale invisible-but-acceptable
+  // request would be worse than a visible one.
+  it("includes a null-expiry row rather than silently dropping it (matches isExpired's semantics)", async () => {
+    queue = [[]];
+    await listPendingRequests("user_x");
+    const compiled = compile(selectWhereArgs[0]);
+    expect(compiled.sql).toContain("is null");
+  });
+
+  // `requested_at` is nullable and Postgres DESC defaults to NULLS FIRST, so a
+  // request with no recorded send time would sort ahead of a genuinely recent
+  // one and head the client's list. Both siblings in this module already guard
+  // it; this is the third.
+  it("orders NULLS LAST so an undated request cannot outrank a real one", async () => {
+    queue = [[]];
+    await listPendingRequests("user_x");
+    expect(compile(selectOrderByArgs[0]).sql).toContain("NULLS LAST");
+  });
+});
+
+describe("createPendingBinding", () => {
+  it("refuses when a pending or active binding already exists (fast read path)", async () => {
+    queue = [[{ id: "existing" }]];
+    const result = await createPendingBinding({
+      clientId: "c1",
+      clerkUserId: "user_x",
+      requestedBy: "adv-1",
+    });
+    expect(result).toEqual({ ok: false, reason: "already_live" });
+    expect(insertValues).not.toHaveBeenCalled();
+  });
+
+  // Finding 3: the read-based "live" check can't be the actual gate — two
+  // concurrent requests both pass it. The unique index is, so a 23505 raised
+  // by the insert itself must map to the same already_live reason instead of
+  // throwing.
+  it("maps a 23505 unique-violation from the insert to already_live (the create race)", async () => {
+    queue = [[], []]; // live check empty, declined check empty — both reads pass
+    insertRejection = { code: "23505", constraint: "portal_bindings_live_idx" };
+    const result = await createPendingBinding({
+      clientId: "c1",
+      clerkUserId: "user_x",
+      requestedBy: "adv-1",
+    });
+    expect(result).toEqual({ ok: false, reason: "already_live" });
+  });
+
+  it("maps a DrizzleQueryError-wrapped 23505 (code on .cause) the same way", async () => {
+    queue = [[], []];
+    insertRejection = { cause: { code: "23505" } };
+    const result = await createPendingBinding({
+      clientId: "c1",
+      clerkUserId: "user_x",
+      requestedBy: "adv-1",
+    });
+    expect(result).toEqual({ ok: false, reason: "already_live" });
+  });
+
+  it("rethrows a non-unique-violation insert error", async () => {
+    queue = [[], []];
+    insertRejection = new Error("connection reset");
+    await expect(
+      createPendingBinding({ clientId: "c1", clerkUserId: "user_x", requestedBy: "adv-1" }),
+    ).rejects.toThrow("connection reset");
+  });
+
+  it("refuses inside the 30-day decline cooldown", async () => {
+    const nineDaysAgo = new Date(Date.now() - 9 * 24 * 60 * 60 * 1000);
+    queue = [[], [{ endedAt: nineDaysAgo }]];
+    const result = await createPendingBinding({
+      clientId: "c1",
+      clerkUserId: "user_x",
+      requestedBy: "adv-1",
+    });
+    expect(result).toEqual({ ok: false, reason: "recently_declined" });
+    expect(insertValues).not.toHaveBeenCalled();
+  });
+
+  // Finding 4: DESC sorts NULLs FIRST in Postgres, so a declined row with a
+  // (theoretically anomalous) null endedAt must be excluded from the
+  // cooldown lookup entirely, not merely out-ranked.
+  it("filters out a null endedAt from the cooldown lookup (NULLS FIRST would otherwise bypass it)", async () => {
+    queue = [[], [], [{ id: "new-binding" }]];
+    await createPendingBinding({ clientId: "c1", clerkUserId: "user_x", requestedBy: "adv-1" });
+    const compiled = compile(selectWhereArgs[1]);
+    expect(compiled.sql).toContain("is not null");
+  });
+
+  it("succeeds once the 30-day decline cooldown has passed", async () => {
+    const thirtyOneDaysAgo = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
+    queue = [[], [{ endedAt: thirtyOneDaysAgo }], [{ id: "new-binding" }]];
+    const before = Date.now();
+    const result = await createPendingBinding({
+      clientId: "c1",
+      clerkUserId: "user_x",
+      requestedBy: "adv-1",
+      ttlDays: 5,
+    });
+    expect(result).toEqual({ ok: true, bindingId: "new-binding" });
+    expect(insertValues).toHaveBeenCalledTimes(1);
+    const written = insertValues.mock.calls[0][0] as { expiresAt: Date; status: string };
+    expect(written.status).toBe("pending");
+    const expectedExpiry = before + 5 * 24 * 60 * 60 * 1000;
+    expect(Math.abs(written.expiresAt.getTime() - expectedExpiry)).toBeLessThan(5000);
+    // No audit at row-creation: the email-transport task audits AFTER a
+    // successful send, not here — auditing both would claim a request was
+    // made even when the email never went out.
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("succeeds when the household has never declined this login", async () => {
+    queue = [[], [], [{ id: "fresh-binding" }]];
+    const result = await createPendingBinding({
+      clientId: "c1",
+      clerkUserId: "user_x",
+      requestedBy: "adv-1",
+    });
+    expect(result).toEqual({ ok: true, bindingId: "fresh-binding" });
+  });
+});
+
+describe("deletePendingBinding", () => {
+  it("removes the row in ONE conditional statement — no read first, and nothing to audit", async () => {
+    queue = [[{ id: "b1" }]];
+    const result = await deletePendingBinding("b1", "c1");
+    expect(result).toBe(true);
+    // A read-then-delete would let a racing accept slip between the two.
+    expect(selectFrom).not.toHaveBeenCalled();
+    // Nobody was ever told the request existed — the send is what audits.
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("returns false when the DELETE matches nothing (a racing accept already moved the row)", async () => {
+    queue = [[]];
+    expect(await deletePendingBinding("b1", "c1")).toBe(false);
+  });
+
+  it("can only ever remove a PENDING row — id AND status are bound parameters of the WHERE", async () => {
+    queue = [[{ id: "b1" }]];
+    await deletePendingBinding("b1", "c1");
+    const compiled = compile(deleteWhereArgs[0]);
+    expect(compiled.params).toContain("b1");
+    // Without this, a failed send could delete a live or historical binding.
+    expect(compiled.params).toContain("pending");
+    expect(compiled.sql).toContain("status");
+  });
+
+  // Every other mutator here is scoped to the row's owner — `revokeBinding` by
+  // (clientId, clerkUserId), accept/decline by (bindingId, clerkUserId). A bare
+  // id would make this the one place a stray uuid reaches another household's
+  // pending row, and the caller has the clientId in hand.
+  it("is scoped to the household too — a bare bindingId cannot reach another client's row", async () => {
+    queue = [[{ id: "b1" }]];
+    await deletePendingBinding("b1", "c1");
+    const compiled = compile(deleteWhereArgs[0]);
+    expect(compiled.params).toContain("c1");
+    expect(compiled.sql).toContain("client_id");
+  });
+});
+
+describe("acceptBinding", () => {
+  it("promotes a pending row to active and audits it", async () => {
+    const future = new Date(Date.now() + 1000);
+    queue = [[{ clientId: "c1", status: "pending", expiresAt: future, firmId: "firm-1" }], [{ id: "b1" }]];
+    const result = await acceptBinding("b1", "user_x");
+    expect(result).toEqual({ ok: true, clientId: "c1" });
+    expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({ status: "active" }));
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "portal.access.accepted",
+        clientId: "c1",
+        firmId: "firm-1",
+        actorId: "user_x",
+        actorKind: "client",
+      }),
+    );
+  });
+
+  it("refuses (not_found) when the initial read finds no row", async () => {
+    queue = [[]];
+    const result = await acceptBinding("b1", "someone_elses_user_id");
+    expect(result).toEqual({ ok: false, reason: "not_found" });
+    expect(updateSet).not.toHaveBeenCalled();
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("refuses an expired pending row and leaves it untouched", async () => {
+    const past = new Date(Date.now() - 1000);
+    queue = [[{ clientId: "c1", status: "pending", expiresAt: past, firmId: "firm-1" }]];
+    const result = await acceptBinding("b1", "user_x");
+    expect(result).toEqual({ ok: false, reason: "expired" });
+    expect(updateSet).not.toHaveBeenCalled();
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("refuses a row that is no longer pending", async () => {
+    queue = [[{ clientId: "c1", status: "declined", expiresAt: null, firmId: "firm-1" }]];
+    const result = await acceptBinding("b1", "user_x");
+    expect(result).toEqual({ ok: false, reason: "not_pending" });
+    expect(updateSet).not.toHaveBeenCalled();
+  });
+
+  // Finding 2 (the race): the read approves, but the atomic UPDATE's own
+  // WHERE re-check finds the row already moved off `pending` (e.g. a
+  // concurrent decline in another tab won). The UPDATE, not the read, is
+  // authoritative — zero rows back means nothing was written and nothing
+  // is audited, even though the read looked fine.
+  it("refuses (not_pending) when the atomic UPDATE's own re-check finds zero rows — the accept/decline race", async () => {
+    const future = new Date(Date.now() + 1000);
+    queue = [[{ clientId: "c1", status: "pending", expiresAt: future, firmId: "firm-1" }], []];
+    const result = await acceptBinding("b1", "user_x");
+    expect(result).toEqual({ ok: false, reason: "not_pending" });
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+});
+
+describe("declineBinding", () => {
+  it("declines a pending row and audits it", async () => {
+    queue = [[{ clientId: "c1", status: "pending", firmId: "firm-1" }], [{ id: "b1" }]];
+    const result = await declineBinding("b1", "user_x");
+    expect(result).toBe(true);
+    expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({ status: "declined", endedBy: "client" }));
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "portal.access.declined", actorKind: "client" }),
+    );
+  });
+
+  it("refuses (false) when no matching pending row is found", async () => {
+    queue = [[]];
+    const result = await declineBinding("b1", "user_x");
+    expect(result).toBe(false);
+    expect(updateSet).not.toHaveBeenCalled();
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("refuses (false) when the atomic UPDATE's own re-check finds zero rows — the accept/decline race", async () => {
+    queue = [[{ clientId: "c1", status: "pending", firmId: "firm-1" }], []];
+    const result = await declineBinding("b1", "user_x");
+    expect(result).toBe(false);
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+});
+
+describe("revokeBinding", () => {
+  it("writes endedBy exactly as passed — 'client'", async () => {
+    queue = [[{ id: "b1", firmId: "firm-1" }], [{ id: "b1" }]];
+    const result = await revokeBinding({
+      clientId: "c1",
+      clerkUserId: "user_x",
+      endedBy: "client",
+      actorId: "user_x",
+    });
+    expect(result).toBe(true);
+    expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({ endedBy: "client" }));
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "portal.access.revoked_by_client", actorKind: "client" }),
+    );
+  });
+
+  it("writes endedBy exactly as passed — 'advisor' (a swap to 'client' must fail this)", async () => {
+    queue = [[{ id: "b2", firmId: "firm-1" }], [{ id: "b2" }]];
+    const result = await revokeBinding({
+      clientId: "c1",
+      clerkUserId: "user_x",
+      endedBy: "advisor",
+      actorId: "adv-1",
+    });
+    expect(result).toBe(true);
+    expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({ endedBy: "advisor" }));
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "portal.access.revoked_by_advisor", actorKind: "advisor", actorId: "adv-1" }),
+    );
+  });
+
+  it("refuses (false) and writes NOTHING when this pair is already settled", async () => {
+    // No active row, and the table already holds history for the pair — a
+    // `revoked` row from an earlier removal. There is nothing left to end, and
+    // minting a second tombstone would double-audit one act and answer the
+    // client's own second Disconnect press with a success.
+    // The rows a tombstone WOULD need are queued behind it on purpose: drop the
+    // settled check and this test fails on the insert rather than passing
+    // because the mock ran dry.
+    queue = [[], [{ id: "b-old" }], [{ firmId: "firm-1" }], [{ id: "b-new" }]];
+    const result = await revokeBinding({
+      clientId: "c1",
+      clerkUserId: "user_x",
+      endedBy: "client",
+      actorId: "user_x",
+    });
+    expect(result).toBe(false);
+    expect(updateSet).not.toHaveBeenCalled();
+    expect(insertValues).not.toHaveBeenCalled();
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  // The Deploy-1 population this exists for: bound between migration 0263
+  // landing and this code shipping, so the old code wrote `clients
+  // .clerk_user_id` and nothing else. `resolveClientPortalUserId` still hands
+  // that login back, so the advisor sees "Active" — but there is no row to
+  // UPDATE, and the column survives a revoke by design. Without a tombstone
+  // "Remove portal access" reports success and the client keeps signing in.
+  it("RECORDS a revoked row for a legacy-only binding, so the removal is real", async () => {
+    queue = [[], [], [{ firmId: "firm-1" }], [{ id: "b-new" }]];
+    const result = await revokeBinding({
+      clientId: "c1",
+      clerkUserId: "user_x",
+      endedBy: "advisor",
+      actorId: "adv-1",
+    });
+    expect(result).toBe(true);
+    expect(insertValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clientId: "c1",
+        clerkUserId: "user_x",
+        // 'revoked', never 'pending'/'active' — `portal_bindings_live_idx` is
+        // partial over those two, so this insert can never collide with one.
+        status: "revoked",
+        endedBy: "advisor",
+        endedAt: expect.any(Date),
+      }),
+    );
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "portal.access.revoked_by_advisor",
+        clientId: "c1",
+        firmId: "firm-1",
+        actorId: "adv-1",
+        actorKind: "advisor",
+      }),
+    );
+  });
+
+  it("asks whether the pair is SETTLED — active or revoked — before recording one", async () => {
+    // `pending` and `declined` must not count: neither ends access, so a
+    // household still held by the legacy column still needs the tombstone.
+    queue = [[], [], [{ firmId: "firm-1" }], [{ id: "b-new" }]];
+    await revokeBinding({
+      clientId: "c1",
+      clerkUserId: "user_x",
+      endedBy: "advisor",
+      actorId: "adv-1",
+    });
+    const compiled = compile(selectWhereArgs[1]);
+    expect(compiled.params).toContain("c1");
+    expect(compiled.params).toContain("user_x");
+    expect(compiled.params).toContain("active");
+    expect(compiled.params).toContain("revoked");
+    expect(compiled.params).not.toContain("pending");
+  });
+
+  it("returns false (not true) when the atomic UPDATE's own re-check finds zero rows, even though the read found a row", async () => {
+    queue = [[{ id: "b1", firmId: "firm-1" }], []];
+    const result = await revokeBinding({
+      clientId: "c1",
+      clerkUserId: "user_x",
+      endedBy: "client",
+      actorId: "user_x",
+    });
+    expect(result).toBe(false);
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+});
+
+describe("getActiveBindingClerkUserId", () => {
+  it("skips the query and returns null for an empty clientId", async () => {
+    const result = await getActiveBindingClerkUserId("");
+    expect(result).toBeNull();
+    expect(selectFrom).not.toHaveBeenCalled();
+  });
+
+  it("returns the clerkUserId of the active binding", async () => {
+    queue = [[{ clerkUserId: "user_x" }]];
+    const result = await getActiveBindingClerkUserId("c1");
+    expect(result).toBe("user_x");
+  });
+
+  it("returns null when the household has no active binding", async () => {
+    queue = [[]];
+    const result = await getActiveBindingClerkUserId("c1");
+    expect(result).toBeNull();
+  });
+
+  it("orders NULLS LAST so an unaccepted row can never look most-recent", async () => {
+    queue = [[]];
+    await getActiveBindingClerkUserId("c1");
+    const compiled = compile(selectOrderByArgs[0]);
+    expect(compiled.sql).toContain("NULLS LAST");
+  });
+});
+
+/**
+ * FINDING 1 (critical): the ownership predicate itself, proven by compiling
+ * the REAL condition objects `acceptBinding` / `declineBinding` /
+ * `revokeBinding` pass to `.where()` with a real `PgDialect` — no live DB
+ * needed, since drizzle-orm and @/db/schema are not mocked in this file,
+ * only @/db. This is deliberately NOT an "empty result set ⇒ not_found"
+ * behavioral test (that only proves the function handles an empty row set,
+ * which is the mock answering its own question) — it asserts the caller's
+ * clerkUserId is a literal bound parameter of the compiled WHERE clause on
+ * BOTH the read and the atomically-re-checked write.
+ *
+ * Verified by deliberately deleting `eq(portalBindings.clerkUserId,
+ * clerkUserId)` from each function's UPDATE `.where(...)` and re-running
+ * this file — see the fix report for the exact failing assertion and
+ * message, then the predicate was restored and this suite re-run green.
+ */
+describe("authorization: the clerkUserId predicate is a real bound parameter", () => {
+  it("acceptBinding: clerkUserId is bound in both the read's and the UPDATE's WHERE", async () => {
+    const future = new Date(Date.now() + 1000);
+    queue = [[{ clientId: "c1", status: "pending", expiresAt: future, firmId: "firm-1" }], [{ id: "b1" }]];
+    await acceptBinding("b1", "user_x");
+
+    const readParams = compile(selectWhereArgs[0]).params;
+    expect(readParams).toContain("user_x");
+
+    const writeCompiled = compile(updateWhereArgs[0]);
+    expect(writeCompiled.params).toContain("user_x");
+    expect(writeCompiled.sql).toContain("clerk_user_id");
+    // the status re-check that closes the accept/decline race
+    expect(writeCompiled.params).toContain("pending");
+  });
+
+  it("declineBinding: clerkUserId is bound in both the read's and the UPDATE's WHERE", async () => {
+    queue = [[{ clientId: "c1", status: "pending", firmId: "firm-1" }], [{ id: "b1" }]];
+    await declineBinding("b1", "user_x");
+
+    const readParams = compile(selectWhereArgs[0]).params;
+    expect(readParams).toContain("user_x");
+
+    const writeCompiled = compile(updateWhereArgs[0]);
+    expect(writeCompiled.params).toContain("user_x");
+    expect(writeCompiled.sql).toContain("clerk_user_id");
+  });
+
+  it("revokeBinding: clerkUserId is bound in both the read's and the UPDATE's WHERE", async () => {
+    queue = [[{ id: "b1", firmId: "firm-1" }], [{ id: "b1" }]];
+    await revokeBinding({ clientId: "c1", clerkUserId: "user_x", endedBy: "client", actorId: "user_x" });
+
+    const readParams = compile(selectWhereArgs[0]).params;
+    expect(readParams).toContain("user_x");
+
+    const writeCompiled = compile(updateWhereArgs[0]);
+    expect(writeCompiled.params).toContain("user_x");
+    expect(writeCompiled.sql).toContain("clerk_user_id");
+  });
+});
+
+describe("revokeAllForUser", () => {
+  it("ends every ACTIVE binding the login holds and reports how many", async () => {
+    queue = [[{ id: "b1" }, { id: "b2" }]];
+    const ended = await revokeAllForUser("user_x");
+    expect(ended).toBe(2);
+    expect(updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "revoked", endedBy: "advisor" }),
+    );
+  });
+
+  it("returns 0 when the login holds nothing active", async () => {
+    queue = [[]];
+    expect(await revokeAllForUser("user_x")).toBe(0);
+  });
+
+  it("skips the write entirely for an empty clerkUserId", async () => {
+    const ended = await revokeAllForUser("");
+    expect(ended).toBe(0);
+    expect(updateSet).not.toHaveBeenCalled();
+  });
+
+  it("scopes the UPDATE to that login's ACTIVE rows — never a whole table sweep", async () => {
+    queue = [[{ id: "b1" }]];
+    await revokeAllForUser("user_x");
+    const compiled = compile(updateWhereArgs[0]);
+    expect(compiled.sql).toContain("clerk_user_id");
+    expect(compiled.params).toContain("user_x");
+    expect(compiled.params).toContain("active");
+  });
+
+  it("stamps endedAt so the row records when access ended", async () => {
+    queue = [[{ id: "b1" }]];
+    await revokeAllForUser("user_x");
+    expect(updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({ endedAt: expect.any(Date) }),
+    );
+  });
+});
+
+describe("getPendingRequestForClient", () => {
+  it("skips the query and returns null for an empty clientId", async () => {
+    expect(await getPendingRequestForClient("")).toBeNull();
+    expect(selectFrom).not.toHaveBeenCalled();
+  });
+
+  it("returns the request's id and requestedAt — when it went out, and what to cancel", async () => {
+    const sent = new Date("2026-09-01T00:00:00Z");
+    queue = [[{ bindingId: "b1", requestedAt: sent }]];
+    expect(await getPendingRequestForClient("c1")).toEqual({
+      bindingId: "b1",
+      requestedAt: sent,
+    });
+  });
+
+  it("returns null when nothing is awaiting the client's answer", async () => {
+    queue = [[]];
+    expect(await getPendingRequestForClient("c1")).toBeNull();
+  });
+
+  it("asks only for PENDING rows of this household", async () => {
+    queue = [[]];
+    await getPendingRequestForClient("c1");
+    const compiled = compile(selectWhereArgs[0]);
+    expect(compiled.params).toContain("c1");
+    expect(compiled.params).toContain("pending");
+  });
+
+  it("orders NULLS LAST so an undated request cannot outrank a real one", async () => {
+    // `requested_at` is nullable and Postgres DESC defaults to NULLS FIRST, so
+    // without this an undated row wins and the card says "Access request sent."
+    // with no date on it.
+    queue = [[]];
+    await getPendingRequestForClient("c1");
+    expect(compile(selectOrderByArgs[0]).sql).toContain("NULLS LAST");
+  });
+
+  it("ignores an expired request — an expired row can never be accepted", async () => {
+    queue = [[]];
+    await getPendingRequestForClient("c1");
+    const compiled = compile(selectWhereArgs[0]);
+    // Same shape as listPendingRequests: a null expiry never expires, so it
+    // matches too rather than being dropped.
+    expect(compiled.sql).toContain("expires_at");
+    expect(compiled.sql).toContain("is null");
+  });
+});
+
+describe("getClientDisconnectedAt", () => {
+  it("skips the query and returns null for an empty clientId", async () => {
+    expect(await getClientDisconnectedAt("")).toBeNull();
+    expect(selectFrom).not.toHaveBeenCalled();
+  });
+
+  it("returns when the CLIENT last disconnected themselves", async () => {
+    const left = new Date("2026-08-20T00:00:00Z");
+    queue = [[{ endedAt: left }]];
+    expect(await getClientDisconnectedAt("c1")).toEqual(left);
+  });
+
+  it("returns null when no one has disconnected", async () => {
+    queue = [[]];
+    expect(await getClientDisconnectedAt("c1")).toBeNull();
+  });
+
+  it("asks only for rows the CLIENT ended — an advisor's own revoke is not a disconnect", async () => {
+    queue = [[]];
+    await getClientDisconnectedAt("c1");
+    const compiled = compile(selectWhereArgs[0]);
+    expect(compiled.sql).toContain("ended_by");
+    expect(compiled.params).toContain("client");
+    expect(compiled.params).toContain("revoked");
+    expect(compiled.params).not.toContain("advisor");
+  });
+
+  it("orders NULLS LAST so a row with no endedAt cannot look most-recent", async () => {
+    queue = [[]];
+    await getClientDisconnectedAt("c1");
+    expect(compile(selectOrderByArgs[0]).sql).toContain("NULLS LAST");
+  });
+});
+
+/**
+ * The advisor-side mirror of `getPortalClientRef`'s Deploy-1 fallback gate
+ * (`get-portal-client.ts:70`, `settled = active || revoked`).
+ *
+ * Pure, so the COMPOSITION the Manage Portal page performs is testable without
+ * a page harness. That composition is the thing that was wrong: every callee
+ * was individually correct and the two together resurrected a revoked login.
+ */
+function fact(
+  status: BindingStatusFact["status"],
+  clerkUserId = "user_1",
+  acceptedAt: Date | null = null,
+): BindingStatusFact {
+  return { clerkUserId, status, acceptedAt };
+}
+
+describe("pickBoundClerkUserId", () => {
+  it("returns the active binding's login", () => {
+    expect(pickBoundClerkUserId([fact("active", "user_bound")], null)).toBe("user_bound");
+  });
+
+  it("prefers the most recently accepted of two active logins", () => {
+    const rows = [
+      fact("active", "user_old", new Date("2026-01-01T00:00:00Z")),
+      fact("active", "user_new", new Date("2026-06-01T00:00:00Z")),
+    ];
+    expect(pickBoundClerkUserId(rows, null)).toBe("user_new");
+    // Input order must not decide it.
+    expect(pickBoundClerkUserId([...rows].reverse(), null)).toBe("user_new");
+  });
+
+  it("sorts an unaccepted active row LAST, never first", () => {
+    const rows = [
+      fact("active", "user_unknown_time", null),
+      fact("active", "user_real", new Date("2026-01-01T00:00:00Z")),
+    ];
+    expect(pickBoundClerkUserId(rows, null)).toBe("user_real");
+  });
+
+  it("REFUSES the legacy column once a revoked row exists", () => {
+    // Revoking deliberately does not clear `clients.clerk_user_id`. Falling
+    // through to it here hands the household straight back to the person the
+    // advisor just removed — and makes Remove portal access a dead button.
+    expect(pickBoundClerkUserId([fact("revoked", "user_1")], "user_1")).toBeNull();
+  });
+
+  it("still refuses when the revoked row belongs to a DIFFERENT login", () => {
+    expect(pickBoundClerkUserId([fact("revoked", "user_other")], "user_1")).toBeNull();
+  });
+
+  it("falls back to the legacy column for a household this table has never settled", () => {
+    expect(pickBoundClerkUserId([], "user_legacy")).toBe("user_legacy");
+  });
+
+  it("does not let a pending or declined row suppress the fallback", () => {
+    // Neither is history: one is an unanswered proposal, the other a refused
+    // one, both from a firm that never had access.
+    expect(pickBoundClerkUserId([fact("pending", "user_asker")], "user_legacy")).toBe(
+      "user_legacy",
+    );
+    expect(pickBoundClerkUserId([fact("declined", "user_asker")], "user_legacy")).toBe(
+      "user_legacy",
+    );
+  });
+
+  it("returns null when there is neither a binding nor a legacy column", () => {
+    expect(pickBoundClerkUserId([], null)).toBeNull();
+  });
+});
+
+describe("rankPortalStatus", () => {
+  it("a resolved login is active", () => {
+    expect(
+      rankPortalStatus({
+        portalUserId: "user_1",
+        hasPendingRequest: false,
+        portalInvitedAt: null,
+      }),
+    ).toBe("active");
+  });
+
+  it("a live request outranks an old invitation", () => {
+    expect(
+      rankPortalStatus({
+        portalUserId: null,
+        hasPendingRequest: true,
+        portalInvitedAt: new Date("2026-01-01T00:00:00Z"),
+      }),
+    ).toBe("requested");
+  });
+
+  it("an invitation with nothing live is invited", () => {
+    expect(
+      rankPortalStatus({
+        portalUserId: null,
+        hasPendingRequest: false,
+        portalInvitedAt: new Date("2026-01-01T00:00:00Z"),
+      }),
+    ).toBe("invited");
+  });
+
+  it("nothing at all is not_invited", () => {
+    expect(
+      rankPortalStatus({
+        portalUserId: null,
+        hasPendingRequest: false,
+        portalInvitedAt: null,
+      }),
+    ).toBe("not_invited");
+  });
+});
+
+describe("Manage Portal status: the composition, not the parts", () => {
+  const INVITED = new Date("2026-01-01T00:00:00Z");
+
+  function statusFor(rows: BindingStatusFact[], legacy: string | null, invitedAt: Date | null, pending = false) {
+    const portalUserId = pickBoundClerkUserId(rows, legacy);
+    return rankPortalStatus({ portalUserId, hasPendingRequest: pending, portalInvitedAt: invitedAt });
+  }
+
+  it("a REVOKED binding with a live legacy column is NOT active", () => {
+    // The bug this covers: the advisor presses Remove portal access, the row is
+    // written, the page refreshes — and the card renders Active again because
+    // the legacy column was never cleared. 100% of prod is invite-bound, so
+    // this was every client.
+    expect(statusFor([fact("revoked", "user_1")], "user_1", INVITED)).not.toBe("active");
+  });
+
+  it("a client who ACCEPTED an access request is active with no legacy column at all", () => {
+    expect(statusFor([fact("active", "user_1", new Date())], null, null)).toBe("active");
+  });
+
+  it("a live pending request reads as requested, not not_invited", () => {
+    expect(statusFor([fact("pending", "user_asker")], null, null, true)).toBe("requested");
+  });
+
+  it("a legacy-only household with no binding row is still active mid-deploy", () => {
+    expect(statusFor([], "user_legacy", INVITED)).toBe("active");
+  });
+});
+
+describe("resolveClientPortalUserId", () => {
+  it("skips the query and returns null for an empty clientId", async () => {
+    expect(await resolveClientPortalUserId("", "user_legacy")).toBeNull();
+    expect(selectFrom).not.toHaveBeenCalled();
+  });
+
+  it("reads EVERY status in one query — the revoked rows are the whole point", async () => {
+    queue = [[{ clerkUserId: "user_1", status: "revoked", acceptedAt: null }]];
+    const result = await resolveClientPortalUserId("c1", "user_1");
+    expect(result).toBeNull();
+    const compiled = compile(selectWhereArgs[0]);
+    expect(compiled.params).toContain("c1");
+    // No status predicate: filtering to `active` here is exactly the bug.
+    expect(compiled.params).not.toContain("active");
+  });
+
+  it("returns the active binding's login", async () => {
+    queue = [[{ clerkUserId: "user_bound", status: "active", acceptedAt: new Date() }]];
+    expect(await resolveClientPortalUserId("c1", null)).toBe("user_bound");
+  });
+
+  it("falls back to the legacy column for an unsettled household", async () => {
+    queue = [[]];
+    expect(await resolveClientPortalUserId("c1", "user_legacy")).toBe("user_legacy");
+  });
+});

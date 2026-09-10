@@ -1,0 +1,213 @@
+"use client";
+
+import { useCallback, useEffect, useState, type ReactElement } from "react";
+import { useRouter } from "next/navigation";
+import { portalBtn } from "@/components/portal/portal-card";
+
+/** One row of `GET /api/portal/connections`. `since` arrives as JSON, so it is
+ *  an ISO string here, not a Date; null means no acceptance was recorded. */
+export interface PortalConnection {
+  clientId: string;
+  firmName: string;
+  householdName: string;
+  since: string | null;
+}
+
+/**
+ * Both consequences, plainly, before anything is written: what the client
+ * loses, what they keep, and what it takes to come back. Disconnecting is
+ * immediate and only the firm can undo it.
+ */
+export const DISCONNECT_CONFIRM =
+  "Disconnect from this firm? You'll lose access to this household's documents and plan " +
+  "immediately. Your login and your other connections are unaffected. To return, your " +
+  "advisor will need to send a new request.";
+
+type Load =
+  | { state: "loading" }
+  | { state: "error" }
+  | { state: "ready"; connections: PortalConnection[] };
+
+/** What to say when there is nothing more useful to say. */
+const GENERIC_DISCONNECT_ERROR = "Something went wrong. Try again in a moment.";
+
+/**
+ * Portal copy for a refused disconnect, chosen from the STATUS.
+ *
+ * Deliberately not `data.error`: the route's error bodies are internal
+ * diagnostics — "Not found", "clientId required", "Advisor session — portal
+ * access denied" — and the last of those names a concept the client has never
+ * heard of and cannot act on. Every message here tells them what to do next.
+ */
+function disconnectError(status: number): string {
+  // The session lapsed, or this browser is signed in as an advisor.
+  if (status === 401 || status === 403) {
+    return "You're not signed in any more. Sign in again to change your connections.";
+  }
+  // The binding is already gone — usually the firm ended it first.
+  if (status === 404) {
+    return "You're no longer connected to that firm. Reload the page to see your current list.";
+  }
+  return GENERIC_DISCONNECT_ERROR;
+}
+
+/**
+ * The reader's LOCAL day, deliberately. `accepted_at` is a `timestamptz` — a
+ * real instant — so UTC-pinning it would print the wrong calendar day for
+ * anyone west of Greenwich. Same reasoning as `fmtExpiry` on the access-request
+ * screen.
+ */
+function fmtSince(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+/**
+ * The firms holding this login, and the client's own Disconnect.
+ *
+ * Fetches rather than taking server-loaded props for the same reason the
+ * access-request screen does: disconnecting changes the list in place, and a
+ * component that owns the list can drop the row it just ended without waiting
+ * on a server render.
+ *
+ * A successful disconnect ALSO refreshes the route — but ONLY while another
+ * connection remains. Everything else on the Settings screen — the privacy
+ * toggles, the linked institutions — belongs to the client's *active*
+ * household, which is the very household they may have just left; leaving that
+ * on screen would show them settings for a household they can no longer open.
+ *
+ * Leaving the LAST one is different, and refreshing there is actively wrong. A
+ * refresh re-enters `proxy.ts`, which now resolves no household for this login
+ * and redirects to `/select-organization`; for someone with no Clerk org that
+ * page renders its no-firm branch — "Your account isn't linked to a firm… Set
+ * up your firm" — an ADVISOR TRIAL pitch, handed to a client for pressing the
+ * client-facing Disconnect button. A single-firm client is the only kind that
+ * exists on production today, so that is the ordinary outcome, not an edge.
+ * This card ends on its own terminal state instead.
+ */
+export default function ConnectedFirmsCard(): ReactElement {
+  const router = useRouter();
+  const [load, setLoad] = useState<Load>({ state: "loading" });
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  /** They just left their last firm. Distinct from "the list loaded empty":
+   *  this one has to say what they keep and how they get back. */
+  const [leftLastFirm, setLeftLastFirm] = useState(false);
+
+  const refresh = useCallback(async () => {
+    setLoad({ state: "loading" });
+    try {
+      const res = await fetch("/api/portal/connections");
+      if (!res.ok) throw new Error(String(res.status));
+      const data = (await res.json()) as { connections: PortalConnection[] };
+      setLoad({ state: "ready", connections: data.connections });
+    } catch {
+      setLoad({ state: "error" });
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  async function disconnect(clientId: string) {
+    if (!window.confirm(DISCONNECT_CONFIRM)) return;
+    setBusyId(clientId);
+    setError(null);
+    try {
+      const res = await fetch("/api/portal/connections", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId }),
+      });
+      if (!res.ok) {
+        setError(disconnectError(res.status));
+        return;
+      }
+      const remaining =
+        load.state === "ready"
+          ? load.connections.filter((c) => c.clientId !== clientId)
+          : [];
+      setLoad({ state: "ready", connections: remaining });
+      if (remaining.length === 0) {
+        setLeftLastFirm(true);
+        return;
+      }
+      router.refresh();
+    } catch {
+      setError(GENERIC_DISCONNECT_ERROR);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  let body: ReactElement;
+  if (leftLastFirm) {
+    body = (
+      <p className="text-[13px] leading-relaxed text-ink-2">
+        You&rsquo;re no longer connected to any firm. Your login still works —
+        an advisor can send you a new request.
+      </p>
+    );
+  } else if (load.state === "loading") {
+    body = <p className="text-[13px] text-ink-3">Loading your connections&hellip;</p>;
+  } else if (load.state === "error") {
+    body = (
+      <div>
+        <p className="text-[13px] leading-relaxed text-ink-2">
+          We couldn&rsquo;t load your connections just now.
+        </p>
+        <button type="button" onClick={() => void refresh()} className={`${portalBtn.ghost} mt-3`}>
+          Try again
+        </button>
+      </div>
+    );
+  } else if (load.connections.length === 0) {
+    body = (
+      <p className="text-[13px] leading-relaxed text-ink-2">
+        No firms are connected to your login.
+      </p>
+    );
+  } else {
+    body = (
+      <ul className="divide-y divide-hair rounded-lg border border-hair">
+        {load.connections.map((c) => (
+          <li
+            key={c.clientId}
+            className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
+          >
+            <div className="min-w-0">
+              <p className="truncate text-[13px] font-medium text-ink">{c.firmName}</p>
+              <p className="truncate text-[12px] text-ink-3">
+                {c.householdName}
+                {c.since ? ` · Connected since ${fmtSince(c.since)}` : ""}
+              </p>
+            </div>
+            <button
+              type="button"
+              className={portalBtn.danger}
+              disabled={busyId === c.clientId}
+              onClick={() => void disconnect(c.clientId)}
+            >
+              Disconnect
+            </button>
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {error ? (
+        <p role="alert" className="text-[13px] leading-relaxed text-crit">
+          {error}
+        </p>
+      ) : null}
+      {body}
+    </div>
+  );
+}

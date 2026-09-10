@@ -16,6 +16,8 @@ import { clerkInviteErrorResponse } from "@/lib/clients/portal-invite-errors";
 import { checkPortalInviteRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { sendPortalInvite } from "@/lib/clients/send-portal-invite";
+import { createPendingBinding, deletePendingBinding } from "@/lib/portal/bindings";
+import { sendPortalAccessRequest } from "@/lib/clients/send-portal-access-request";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +31,7 @@ export async function POST(
 ): Promise<Response> {
   try {
     const { id } = await ctx.params;
-    const { orgId: callerOrg } = await requireOrgAndUser();
+    const { orgId: callerOrg, userId } = await requireOrgAndUser();
     const { client, firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
     // Granting portal access is the one advisor action the entitlement blocks;
@@ -57,6 +59,54 @@ export async function POST(
       return NextResponse.json({ error: "Valid email required" }, { status: 400 });
     }
 
+    // An email that already has a Foundry account cannot be invited — Clerk
+    // rejects it, and we do not want a second account for one person anyway.
+    // Ask the account holder instead: only they can create a binding.
+    const cc = await clerkClient();
+    const existing = await cc.users.getUserList({ emailAddress: [body.email] });
+    const existingUser = existing.data[0];
+
+    if (existingUser) {
+      const pending = await createPendingBinding({
+        clientId: id,
+        clerkUserId: existingUser.id,
+        requestedBy: userId,
+      });
+
+      if (!pending.ok) {
+        const error =
+          pending.reason === "already_live"
+            ? "This person has already been asked, or already has access to this household."
+            : "This person declined a recent request for this household. You can ask again in 30 days.";
+        return NextResponse.json({ error }, { status: 409 });
+      }
+
+      const sent = await sendPortalAccessRequest({
+        to: body.email,
+        clientId: id,
+        bindingId: pending.bindingId,
+        firmId,
+        callerOrg,
+        access,
+      });
+
+      if (!sent.delivered) {
+        // The row is a claim nobody made: no mail left the building, and
+        // `sendPortalAccessRequest` audits nothing on a failed send. Left
+        // behind, it would make createPendingBinding refuse every retry as
+        // `already_live` until the request TTL expires two weeks later.
+        await deletePendingBinding(pending.bindingId, id);
+        return NextResponse.json(
+          { error: "We couldn't send the request. Try again in a moment." },
+          { status: 502 },
+        );
+      }
+
+      // Deliberately the same shape as the invited branch: nothing here may
+      // reveal which other firms this account already belongs to.
+      return NextResponse.json({ ok: true, mode: "requested" });
+    }
+
     const { invitationId } = await sendPortalInvite({
       clientId: id,
       email: body.email,
@@ -65,7 +115,7 @@ export async function POST(
       access,
     });
 
-    return NextResponse.json({ ok: true, invitationId });
+    return NextResponse.json({ ok: true, mode: "invited", invitationId });
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });

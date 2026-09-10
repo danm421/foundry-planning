@@ -88,7 +88,12 @@ export default function SendClientForm({
         return;
       }
 
-      setSuccessMsg(`Form sent to ${recipientEmail}.`);
+      // A 200 can still carry a `warning`: the form was created, but the
+      // portal invitation was not sent (the email already has a Foundry
+      // account). Saying only "Form sent" leaves the advisor believing the
+      // client was invited when nothing reached them.
+      const body = (await res.json().catch(() => ({}))) as { warning?: string };
+      setSuccessMsg(body.warning ?? `Form sent to ${recipientEmail}.`);
       router.refresh();
     } finally {
       setSending(false);

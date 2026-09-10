@@ -45,6 +45,28 @@ vi.mock("@/lib/rate-limit", () => ({
   checkPortalInviteRateLimit: (k: string) => checkLimitMock(k),
 }));
 
+// --- The request branch's collaborators (Task 8) ---
+// vi.hoisted because the bindings factory below references its mock at
+// factory-execution time, which runs before a plain `const` is initialised.
+const {
+  getUserListMock,
+  createPendingBindingMock,
+  deletePendingBindingMock,
+  sendAccessRequestMock,
+} = vi.hoisted(() => ({
+  getUserListMock: vi.fn(),
+  createPendingBindingMock: vi.fn(),
+  deletePendingBindingMock: vi.fn(),
+  sendAccessRequestMock: vi.fn(),
+}));
+vi.mock("@/lib/portal/bindings", () => ({
+  createPendingBinding: createPendingBindingMock,
+  deletePendingBinding: deletePendingBindingMock,
+}));
+vi.mock("@/lib/clients/send-portal-access-request", () => ({
+  sendPortalAccessRequest: sendAccessRequestMock,
+}));
+
 // --- Clerk mock ---
 const createInvitationMock = vi.fn();
 const revokeInvitationMock = vi.fn();
@@ -56,6 +78,9 @@ vi.mock("@clerk/nextjs/server", () => ({
       createInvitation: (args: unknown) => createInvitationMock(args),
       revokeInvitation: (id: string) => revokeInvitationMock(id),
       getInvitationList: (args: unknown) => getInvitationListMock(args),
+    },
+    users: {
+      getUserList: (args: unknown) => getUserListMock(args),
     },
   }),
 }));
@@ -85,8 +110,19 @@ beforeEach(() => {
   updateMock.mockReset();
   portalEntitlementMock.mockReset();
   portalForAdvisorMock.mockReset();
+  createPendingBindingMock.mockReset();
+  deletePendingBindingMock.mockReset();
+  sendAccessRequestMock.mockReset();
+  getUserListMock.mockReset();
+  // Default: the email has no Foundry account, so every pre-existing test
+  // keeps taking the Clerk-invitation path it was written against.
+  getUserListMock.mockResolvedValue({ data: [], totalCount: 0 });
   h.client = { id: "c1", advisorId: "advisor-2" };
 });
+
+function ctx() {
+  return { params: Promise.resolve({ id: "c1" }) };
+}
 
 function postReq(body: unknown) {
   return new Request("http://localhost/api/clients/c1/portal/invite", {
@@ -137,7 +173,7 @@ describe("POST /api/clients/[id]/portal/invite", () => {
       params: Promise.resolve({ id: "c1" }),
     });
     expect(res.status).toBe(409);
-    expect((await res.json()).error).toMatch(/already has an account/i);
+    expect((await res.json()).error).toMatch(/couldn't send an invitation/i);
     expect(updateMock).not.toHaveBeenCalled();
   });
 
@@ -206,6 +242,143 @@ describe("POST /api/clients/[id]/portal/invite", () => {
       params: Promise.resolve({ id: "c1" }),
     });
     expect(res.status).toBe(500);
+  });
+});
+
+/**
+ * The request branch: an email that ALREADY has a Foundry account can't be
+ * invited (Clerk refuses), so the advisor asks the account holder instead.
+ * Only that person can create the binding.
+ */
+describe("POST /api/clients/[id]/portal/invite — existing account", () => {
+  beforeEach(() => {
+    checkLimitMock.mockResolvedValue({ allowed: true });
+    getUserListMock.mockResolvedValue({
+      data: [{ id: "user_existing" }],
+      totalCount: 1,
+    });
+  });
+
+  it("sends an access request instead of a 409 when the email already has an account", async () => {
+    createPendingBindingMock.mockResolvedValue({ ok: true, bindingId: "binding-1" });
+    sendAccessRequestMock.mockResolvedValue({ delivered: true });
+
+    const res = await POST(postReq({ email: "taken@example.com" }), ctx());
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, mode: "requested" });
+    // The row names the login Clerk matched and the advisor who asked — it is
+    // that person's decision to accept, and the audit trail says who asked.
+    expect(createPendingBindingMock).toHaveBeenCalledWith({
+      clientId: "c1",
+      clerkUserId: "user_existing",
+      requestedBy: "advisor-1",
+    });
+    // The Clerk invitation must NOT be attempted for an existing account, and
+    // nothing may stamp the household as invited when it was only asked.
+    expect(createInvitationMock).not.toHaveBeenCalled();
+    expect(updateMock).not.toHaveBeenCalled();
+  });
+
+  it("still uses the Clerk invitation for an email with no account", async () => {
+    getUserListMock.mockResolvedValue({ data: [], totalCount: 0 });
+    createInvitationMock.mockResolvedValue({ id: "inv_1" });
+
+    const res = await POST(postReq({ email: "new@example.com" }), ctx());
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ok: true,
+      mode: "invited",
+      invitationId: "inv_1",
+    });
+    expect(createPendingBindingMock).not.toHaveBeenCalled();
+    expect(sendAccessRequestMock).not.toHaveBeenCalled();
+  });
+
+  it("409s with a plain reason when a live binding already exists", async () => {
+    createPendingBindingMock.mockResolvedValue({ ok: false, reason: "already_live" });
+
+    const res = await POST(postReq({ email: "taken@example.com" }), ctx());
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/already has access|already been asked/i);
+    // No row was written, so no mail may go out.
+    expect(sendAccessRequestMock).not.toHaveBeenCalled();
+  });
+
+  it("409s during the decline cooldown", async () => {
+    createPendingBindingMock.mockResolvedValue({ ok: false, reason: "recently_declined" });
+
+    const res = await POST(postReq({ email: "taken@example.com" }), ctx());
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/declined/i);
+  });
+
+  it("reports a failed send rather than claiming the client was asked", async () => {
+    createPendingBindingMock.mockResolvedValue({ ok: true, bindingId: "binding-1" });
+    sendAccessRequestMock.mockResolvedValue({ delivered: false, reason: "send_failed" });
+
+    const res = await POST(postReq({ email: "taken@example.com" }), ctx());
+
+    expect(res.status).toBe(502);
+    expect((await res.json()).error).toMatch(/couldn't send/i);
+    // Nothing left the building, so nothing was requested: the row goes too —
+    // scoped to THIS household, never by a bare binding id.
+    expect(deletePendingBindingMock).toHaveBeenCalledWith("binding-1", "c1");
+  });
+
+  it("undoes the pending row on a failed send, so the advisor's retry is not refused", async () => {
+    // A stand-in for the pending-row table, so this test exercises the real
+    // one-live-row-per-(household, login) rule rather than a canned answer.
+    const rows = new Map<string, string>();
+    let seq = 0;
+    createPendingBindingMock.mockImplementation(
+      async (args: { clientId: string; clerkUserId: string }) => {
+        const key = `${args.clientId}:${args.clerkUserId}`;
+        if ([...rows.values()].includes(key)) {
+          return { ok: false, reason: "already_live" };
+        }
+        const bindingId = `binding-${++seq}`;
+        rows.set(bindingId, key);
+        return { ok: true, bindingId };
+      },
+    );
+    // The stand-in enforces the household scope too, so a route that deleted
+    // by a bare id (or the wrong client) would leave the row and fail the retry.
+    deletePendingBindingMock.mockImplementation(async (id: string, clientId: string) => {
+      if (rows.get(id)?.split(":")[0] !== clientId) return false;
+      return rows.delete(id);
+    });
+
+    sendAccessRequestMock.mockResolvedValue({ delivered: false, reason: "send_failed" });
+    const failed = await POST(postReq({ email: "taken@example.com" }), ctx());
+    expect(failed.status).toBe(502);
+
+    // The retry: the undone row leaves nothing for already_live to refuse.
+    // Left behind, it would 409 every retry for the full 14-day request TTL.
+    sendAccessRequestMock.mockResolvedValue({ delivered: true });
+    const retry = await POST(postReq({ email: "taken@example.com" }), ctx());
+    expect(retry.status).toBe(200);
+    expect(await retry.json()).toEqual({ ok: true, mode: "requested" });
+
+    // Control: the row a SUCCESSFUL send leaves behind IS refused, so the 200
+    // above is the undo working rather than the guard being toothless.
+    const again = await POST(postReq({ email: "taken@example.com" }), ctx());
+    expect(again.status).toBe(409);
+  });
+
+  it("does not reveal which other firms the account is bound to", async () => {
+    createPendingBindingMock.mockResolvedValue({ ok: true, bindingId: "binding-1" });
+    sendAccessRequestMock.mockResolvedValue({ delivered: true });
+
+    const res = await POST(postReq({ email: "taken@example.com" }), ctx());
+    const body = JSON.stringify(await res.json());
+
+    // Pinned first: an error body would satisfy the leak check vacuously.
+    expect(res.status).toBe(200);
+    expect(body).not.toMatch(/firm|household|other/i);
   });
 });
 

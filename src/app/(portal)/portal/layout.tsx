@@ -6,6 +6,7 @@ import { requireClientPortalAccess } from "@/lib/authz";
 import { resolveIntakeBrandingForClient } from "@/lib/branding/resolve-for-client";
 import { loadPortalConnectionAlert } from "@/lib/portal/load-plaid-items";
 import PortalNav from "@/components/portal/portal-nav";
+import HouseholdSwitcher from "@/components/portal/household-switcher";
 import PortalMobileNav from "@/components/portal/portal-mobile-nav";
 import PortalReadOnlyBanner from "@/components/portal/portal-read-only-banner";
 import { PortalBrandingStrip } from "@/components/portal/portal-branding-mark";
@@ -13,13 +14,15 @@ import { PortalModeProvider } from "@/components/portal/portal-mode-context";
 import { toPortalFeatures } from "@/lib/portal/features";
 import { portalGreetingName } from "@/lib/portal/greeting-name";
 import { portalFeatureColumns } from "@/lib/portal/load-features";
+import { getPortalBindings } from "@/lib/portal/get-portal-client";
+import { loadPortalHouseholdOptions } from "@/lib/portal/household-options";
 
 export default async function PortalLayout({
   children,
 }: {
   children: ReactNode;
 }): Promise<ReactElement> {
-  const { clientId } = await requireClientPortalAccess();
+  const { clientId, clerkUserId } = await requireClientPortalAccess();
 
   const [row] = await db
     .select({
@@ -65,12 +68,19 @@ export default async function PortalLayout({
   // the firm's; null → Foundry lockup (same fallback semantics as the intake
   // pages). Runs alongside the connection-alert read below — neither depends
   // on the other's result.
-  const [branding, connectionAlert] = await Promise.all([
+  const [branding, connectionAlert, householdOptions] = await Promise.all([
     row ? resolveIntakeBrandingForClient(row.firmId, row.advisorId) : Promise.resolve(null),
     // The dot is a decoration. There is no error.tsx under (portal), so an
     // unguarded rejection here would drop every portal page onto the root
     // global-error screen because a nav badge failed to resolve.
     loadPortalConnectionAlert(clientId).catch(() => false),
+    // Households this login can switch between. `getPortalBindings` shares the
+    // per-request cached read `requireClientPortalAccess` already made above,
+    // so this costs no extra query; the two NAME lookups inside only run for a
+    // login holding more than one household. Guarded for the same reason the
+    // alert above is: this reaches Clerk for firm names, and a Clerk outage
+    // must not take every portal page down over a picker.
+    getPortalBindings(clerkUserId).then(loadPortalHouseholdOptions).catch(() => []),
   ]);
   const navAlerts = { "/settings": connectionAlert };
   // Advisor-controlled section switches, read off the row above rather than in
@@ -106,6 +116,14 @@ export default async function PortalLayout({
         />
         {/* Desktop-only firm letterhead pinned above the scrolling content. */}
         <PortalBrandingStrip branding={branding} className="hidden lg:flex" />
+        {/*
+          Rendered ONCE, here in the main column, rather than inside each nav:
+          `main` exists at every breakpoint, so one node is reachable on both
+          the desktop rail layout and the mobile tab bar. Putting it in both
+          navs instead would put two <select>s with the same accessible name
+          into the DOM. Renders nothing below two households.
+        */}
+        <HouseholdSwitcher households={householdOptions} activeClientId={clientId} />
         {!row?.portalEditEnabled && <PortalReadOnlyBanner />}
         <PortalModeProvider value={{ mode: "client", clientId }}>
           {children}

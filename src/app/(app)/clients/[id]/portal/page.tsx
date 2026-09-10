@@ -14,6 +14,12 @@ import PortalManageShell from "@/components/portal/portal-manage-shell";
 import PortalFeatureToggles from "@/components/portal/portal-feature-toggles";
 import { EyeIcon } from "@/components/portal/portal-icons";
 import { toPortalFeatures } from "@/lib/portal/features";
+import {
+  resolveClientPortalUserId,
+  rankPortalStatus,
+  getPendingRequestForClient,
+  getClientDisconnectedAt,
+} from "@/lib/portal/bindings";
 import { portalFeatureColumns } from "@/lib/portal/load-features";
 import SendClientForm from "@/components/intake/send-client-form";
 import { loadAdvisorDefaultSections, loadSubmittedFormForClient } from "@/lib/intake/queries";
@@ -62,13 +68,28 @@ export default async function PortalManagePage({ params }: Props): Promise<React
     .where(eq(clients.id, id))
     .limit(1);
 
+  // DEPLOY-1 DUAL-READ. A client who ACCEPTED an access request has a
+  // `portal_bindings` row and no `clients.clerk_user_id` at all, so the legacy
+  // column alone makes them invisible to their own advisor here. And a client
+  // whose access was REVOKED keeps that column — so the resolver, not this
+  // page, decides when it may still answer; without that gate the card renders
+  // Active again the moment the advisor removes access, and the disconnected
+  // state below can never appear. Removed in Task 15.
+  //
+  // Three indexed lookups, run together rather than in sequence.
+  const [portalUserId, pendingRequest, disconnectedAt] = await Promise.all([
+    resolveClientPortalUserId(id, row?.clerkUserId ?? null),
+    getPendingRequestForClient(id),
+    getClientDisconnectedAt(id),
+  ]);
+
   // Kicked off here, awaited below: it is a Clerk round-trip that depends only
-  // on `row`, so it overlaps the contacts and intake queries instead of adding
-  // a fourth step to the waterfall. Skipped entirely when the portal is off —
-  // the card that consumes it does not render.
+  // on the resolved login, so it overlaps the contacts and intake queries
+  // instead of adding a step to the waterfall. Skipped entirely when the portal
+  // is off — the card that consumes it does not render.
   const accountPromise =
-    portalEnabled && row?.clerkUserId
-      ? loadPortalAccount(row.clerkUserId)
+    portalEnabled && portalUserId
+      ? loadPortalAccount(portalUserId)
       : Promise.resolve(null);
 
   let primaryEmail = "";
@@ -107,11 +128,11 @@ export default async function PortalManagePage({ params }: Props): Promise<React
   // Never throws — a Clerk outage blanks the account details, not the page.
   const account = await accountPromise;
 
-  const status: "not_invited" | "invited" | "active" = row?.clerkUserId
-    ? "active"
-    : row?.portalInvitedAt
-      ? "invited"
-      : "not_invited";
+  const status = rankPortalStatus({
+    portalUserId,
+    hasPendingRequest: !!pendingRequest,
+    portalInvitedAt: row?.portalInvitedAt ?? null,
+  });
 
   return (
     <div className="space-y-6">
@@ -148,7 +169,10 @@ export default async function PortalManagePage({ params }: Props): Promise<React
               status={status}
               primaryEmail={primaryEmail}
               invitedAt={row?.portalInvitedAt ?? null}
-              clerkUserId={row?.clerkUserId ?? null}
+              clerkUserId={portalUserId}
+              requestedAt={pendingRequest?.requestedAt ?? null}
+              requestBindingId={pendingRequest?.bindingId ?? null}
+              disconnectedAt={disconnectedAt}
               account={account}
               fallbackName={primaryName}
             />
@@ -163,7 +187,7 @@ export default async function PortalManagePage({ params }: Props): Promise<React
             spouseEmail={spouseEmail}
             primaryName={primaryName}
             spouseName={spouseName}
-            clientAlreadyBound={!!row?.clerkUserId}
+            clientAlreadyBound={!!portalUserId}
             pendingFormId={pending?.id ?? null}
             defaultSections={defaultSections}
             portalEnabled={portalEnabled}

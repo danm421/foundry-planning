@@ -53,10 +53,26 @@ const isPublicRoute = createRouteMatcher([
 // before paying. They are org-less there BY DESIGN: creating the Clerk org
 // before the payment lands would put them in the `missing` subscription state,
 // which this middleware blocks unconditionally.
+// The accept/decline screen an access-request email links to. Deliberately NOT
+// under /portal: both (portal) layouts call requireClientPortalAccess(), which
+// throws for a login that holds no binding — precisely the person this screen
+// exists for. Nor may it be named /portal-something: isPortalRoute's "/portal(.*)"
+// would swallow that too and apply the advisor block to it.
+//
+// One literal, two matchers, because the two org-less branches below reach it
+// for different reasons: an UNBOUND requester is exempted via isOrgPickerRoute,
+// a requester already BOUND to another firm via isAccessRequestRoute.
+const ACCESS_REQUEST_ROUTE = "/requests(.*)";
+const isAccessRequestRoute = createRouteMatcher([ACCESS_REQUEST_ROUTE]);
+
 const isOrgPickerRoute = createRouteMatcher([
   "/select-organization(.*)",
   "/beta/redeem(.*)",
   "/welcome(.*)",
+  // A person asked to grant a firm access has no org and, the first time, no
+  // binding either. This is the one authenticated page they may reach before
+  // deciding — without it they land on the org picker and can never answer.
+  ACCESS_REQUEST_ROUTE,
 ]);
 
 const isPortalRoute = createRouteMatcher(["/portal(.*)", "/api/portal(.*)"]);
@@ -123,20 +139,47 @@ export default clerkMiddleware(async (auth, request) => {
       // itself, via `resolvePortalClient` or `requireClientPortalAccess`
       // directly. An ops revoke closes the pages AND the API.
       //
+      // THREE deliberate exceptions do neither, so an ops revoke does NOT close
+      // them. `/api/portal/requests` cannot check an entitlement: it serves the
+      // person being asked for their FIRST binding, who by definition holds
+      // none. `/api/portal/connections` must not: it lists every firm holding
+      // this login and ends any of them, so gating it on the ACTIVE household's
+      // firm would let one firm switching the portal off take away the client's
+      // ability to leave a different firm. `/api/portal/active-household` must
+      // not either, for the same reason: it MOVES between those firms, so that
+      // one firm could otherwise trap the client in the household it had just
+      // switched off. All three are safe ungated because every row any of them
+      // reads or writes is constrained by the `clerkUserId` predicate inside
+      // `bindings.ts` — the caller can only ever see and settle their own
+      // bindings, and no user id is accepted from the request body. Being
+      // ungated is the design, not an oversight, and the three share one
+      // named gate (`requirePortalSession`) so a fourth cannot appear by
+      // copy-paste without meeting this list.
+      //
       // Soft first-run gate: redirect to /portal/intake when the client has
       // an unsubmitted prefilled form (draft-only — not after submission).
       // Excludes /portal/intake itself (no redirect loop) and /api/* so the
       // wizard's autosave/submit fetches pass through.
+      //
+      // /requests is excluded from the intake bounce for the same reason
+      // /portal/intake and /api/ are: a client mid-onboarding at firm A must
+      // still be able to answer firm B. Checked before the query so this costs
+      // no round trip.
       const path = request.nextUrl.pathname;
       if (
         !path.startsWith("/api/") &&
         path !== "/portal/intake" &&
+        !isAccessRequestRoute(request) &&
         (await hasUnsubmittedPrefilledForm(portalClientId))
       ) {
         return NextResponse.redirect(new URL("/portal/intake", request.url));
       }
 
       if (isPortalRoute(request)) return passthroughResponse;
+      // A client already bound to firm A, asked by firm B, takes THIS branch —
+      // /requests is not a portal route, so without this they are bounced to
+      // their own organizer and the request is unanswerable.
+      if (isAccessRequestRoute(request)) return passthroughResponse;
       if (path.startsWith("/api/")) return passthroughResponse;
       // Organizer → Household: the surface the legacy /portal/profile used to
       // render, and what that path now redirects to. Target it directly — the

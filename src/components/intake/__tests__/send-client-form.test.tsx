@@ -226,3 +226,45 @@ describe("SendClientForm", () => {
     });
   });
 });
+
+describe("SendClientForm — the server's warning", () => {
+  // Its own stub: the suite above scopes its `beforeEach` to its own describe.
+  beforeEach(() => {
+    mockRefresh.mockClear();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) }),
+    );
+  });
+
+  it("says the portal invitation did NOT go out, rather than a bare Form sent", async () => {
+    // A 200-with-warning: the form exists, but the email already has a Foundry
+    // account so no invitation could be created. Swallowing that leaves the
+    // advisor believing the client was invited.
+    const warning =
+      "The form was sent, but jane@example.com already has a Foundry account, " +
+      "so no portal invitation went out. Open the Access tab on this page to " +
+      "send them an access request — only they can approve it.";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true, formId: "form-1", warning }),
+      }),
+    );
+
+    render(<SendClientForm {...defaultProps} />);
+    fireEvent.click(screen.getByRole("button", { name: /send pre-filled form/i }));
+
+    expect(await screen.findByText(/no portal invitation went out/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^Form sent to jane@example\.com\.$/)).toBeNull();
+  });
+
+  it("still confirms the ordinary send when the server warns about nothing", async () => {
+    render(<SendClientForm {...defaultProps} />);
+    fireEvent.click(screen.getByRole("button", { name: /send pre-filled form/i }));
+
+    expect(await screen.findByText(/Form sent to jane@example\.com\./)).toBeInTheDocument();
+  });
+});
