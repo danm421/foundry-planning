@@ -84,6 +84,10 @@ const ASSET_TRANSACTION_VALUE = z
     accountId: z.string().min(1).optional(),
     purchaseTransactionId: z.string().min(1).nullable().optional(),
     businessAccountId: z.string().min(1).optional(),
+    /** Shared by every leg of one dialog save. A real `uuid` column, so a
+     *  non-uuid string must be rejected here rather than at the promote
+     *  insert, where it surfaces as a raw Postgres error. */
+    bundleId: z.string().uuid().nullable().optional(),
   })
   .passthrough()
   .refine(
