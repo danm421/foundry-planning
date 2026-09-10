@@ -67,6 +67,11 @@ const payload = (): PersistedImportPayload =>
     ],
   }) as unknown as PersistedImportPayload;
 
+/** Nothing committed yet — the state every test below except the C3 block
+ *  is about. Named rather than inlined so `new Set()` at twenty call sites
+ *  doesn't read as a meaningful argument each time. */
+const NONE_COMMITTED: ReadonlySet<string> = new Set<string>();
+
 beforeEach(() => {
   vi.clearAllMocks();
   fileRow = { blobUrl: "https://blob/f1.pdf" };
@@ -79,7 +84,7 @@ describe("statement chat tools", () => {
   // changed, value untouched" pair would then fail on whichever half the
   // mutation broke.
   it("edit_row writes only the named field on the named row", () => {
-    const next = editRow(payload(), { rowId: "r1", field: "basis", value: 10_010.17 });
+    const next = editRow(payload(), { rowId: "r1", field: "basis", value: 10_010.17 }, NONE_COMMITTED);
     expect(next.payload.accounts![0].basis).toBe(10_010.17);
     expect(next.payload.accounts![0].value).toBe(10_000);
     expect(next.payload.accounts![1]).toEqual(payload().accounts![1]);
@@ -88,7 +93,7 @@ describe("statement chat tools", () => {
   // Mutation this catches: dropping the `findRowIndex` throw (e.g.
   // `?? -1` silently falling through to writing index -1).
   it("edit_row rejects a rowId that is not in the payload", () => {
-    expect(() => editRow(payload(), { rowId: "nope", field: "value", value: 1 }))
+    expect(() => editRow(payload(), { rowId: "nope", field: "value", value: 1 }, NONE_COMMITTED))
       .toThrow(/unknown row/i);
   });
 
@@ -97,7 +102,7 @@ describe("statement chat tools", () => {
   // a denylist that only excludes a hardcoded few (e.g. `__provenance`,
   // `match`) would let this write through instead of rejecting it.
   it("edit_row rejects a field that is not an editable column", () => {
-    expect(() => editRow(payload(), { rowId: "r1", field: "__rowId", value: "x" }))
+    expect(() => editRow(payload(), { rowId: "r1", field: "__rowId", value: "x" }, NONE_COMMITTED))
       .toThrow(/not editable/i);
   });
 
@@ -120,7 +125,7 @@ describe("statement chat tools", () => {
       subType: "roth_ira",
     };
     for (const field of EDITABLE_ACCOUNT_FIELDS) {
-      expect(() => editRow(payload(), { rowId: "r1", field, value: validValues[field] })).not.toThrow();
+      expect(() => editRow(payload(), { rowId: "r1", field, value: validValues[field] }, NONE_COMMITTED)).not.toThrow();
     }
   });
 
@@ -130,31 +135,31 @@ describe("statement chat tools", () => {
   // this is the exact case (`basis: "x"`) the review called out as silently
   // accepted.
   it("edit_row rejects a non-numeric value for a money field", () => {
-    expect(() => editRow(payload(), { rowId: "r1", field: "basis", value: "x" }))
+    expect(() => editRow(payload(), { rowId: "r1", field: "basis", value: "x" }, NONE_COMMITTED))
       .toThrow(/must be a finite number/i);
-    expect(() => editRow(payload(), { rowId: "r1", field: "value", value: "12000" }))
+    expect(() => editRow(payload(), { rowId: "r1", field: "value", value: "12000" }, NONE_COMMITTED))
       .toThrow(/must be a finite number/i);
   });
 
   it("edit_row rejects a non-finite number for a money field", () => {
-    expect(() => editRow(payload(), { rowId: "r1", field: "basis", value: Infinity }))
+    expect(() => editRow(payload(), { rowId: "r1", field: "basis", value: Infinity }, NONE_COMMITTED))
       .toThrow(/must be a finite number/i);
-    expect(() => editRow(payload(), { rowId: "r1", field: "basis", value: NaN }))
+    expect(() => editRow(payload(), { rowId: "r1", field: "basis", value: NaN }, NONE_COMMITTED))
       .toThrow(/must be a finite number/i);
   });
 
   it("edit_row rejects an owner value outside client/spouse/joint", () => {
-    expect(() => editRow(payload(), { rowId: "r1", field: "owner", value: "trust" }))
+    expect(() => editRow(payload(), { rowId: "r1", field: "owner", value: "trust" }, NONE_COMMITTED))
       .toThrow(/must be one of/i);
   });
 
   it("edit_row rejects a category value outside the real enum", () => {
-    expect(() => editRow(payload(), { rowId: "r1", field: "category", value: "crypto" }))
+    expect(() => editRow(payload(), { rowId: "r1", field: "category", value: "crypto" }, NONE_COMMITTED))
       .toThrow(/must be one of/i);
   });
 
   it("edit_row rejects a subType value outside the real enum", () => {
-    expect(() => editRow(payload(), { rowId: "r1", field: "subType", value: "not_a_real_subtype" }))
+    expect(() => editRow(payload(), { rowId: "r1", field: "subType", value: "not_a_real_subtype" }, NONE_COMMITTED))
       .toThrow(/must be one of/i);
   });
 
@@ -162,7 +167,7 @@ describe("statement chat tools", () => {
   // `merge` instead of the other way — `custodian` would then be dropped
   // instead of surviving, since only r2 (the retired row) carries it.
   it("merge_rows unions two rows and retires the second id", () => {
-    const next = mergeRows(payload(), { keepRowId: "r1", mergeRowId: "r2" });
+    const next = mergeRows(payload(), { keepRowId: "r1", mergeRowId: "r2" }, NONE_COMMITTED);
     expect(next.payload.accounts!).toHaveLength(1);
     expect(next.payload.accounts![0].__rowId).toBe("r1");
     // r2's unique field survives the union.
@@ -175,13 +180,13 @@ describe("statement chat tools", () => {
   // (present on both, same number here) proves the base actually wins
   // rather than merely "some value survives".
   it("merge_rows keeps the base row's value on a field both rows carry", () => {
-    const next = mergeRows(payload(), { keepRowId: "r1", mergeRowId: "r2" });
+    const next = mergeRows(payload(), { keepRowId: "r1", mergeRowId: "r2" }, NONE_COMMITTED);
     expect(next.payload.accounts![0].value).toBe(10_000);
     expect(next.payload.accounts![0].basis).toBe(5_000);
   });
 
   it("merge_rows rejects merging a row into itself", () => {
-    expect(() => mergeRows(payload(), { keepRowId: "r1", mergeRowId: "r1" }))
+    expect(() => mergeRows(payload(), { keepRowId: "r1", mergeRowId: "r1" }, NONE_COMMITTED))
       .toThrow(/itself/i);
   });
 
@@ -190,7 +195,7 @@ describe("statement chat tools", () => {
   // `mergeRows`'s return (reverting to the reviewed behavior) — the retired
   // row's conflicting fields would then simply be gone with no record.
   it("merge_rows records the retired row in excludedRows, the same as drop_row", () => {
-    const next = mergeRows(payload(), { keepRowId: "r1", mergeRowId: "r2" });
+    const next = mergeRows(payload(), { keepRowId: "r1", mergeRowId: "r2" }, NONE_COMMITTED);
     expect(next.excludedRows).toHaveLength(1);
     expect(next.excludedRows?.[0].row).toMatchObject({ __rowId: "r2", custodian: "Schwab" });
     expect(next.excludedRows?.[0].reason).toMatch(/merged into/i);
@@ -203,7 +208,7 @@ describe("statement chat tools", () => {
   // would then wrongly let the advisor restore a row whose data was already
   // folded into the surviving row, double-counting the account.
   it("merge_rows marks its retired row irreversible — the discriminator lives at the producer", () => {
-    const next = mergeRows(payload(), { keepRowId: "r1", mergeRowId: "r2" });
+    const next = mergeRows(payload(), { keepRowId: "r1", mergeRowId: "r2" }, NONE_COMMITTED);
     expect(next.excludedRows?.[0].irreversible).toBe(true);
   });
 
@@ -225,7 +230,7 @@ describe("statement chat tools", () => {
         },
       ],
     } as unknown as PersistedImportPayload;
-    const next = mergeRows(withMatch, { keepRowId: "r1", mergeRowId: "r2" });
+    const next = mergeRows(withMatch, { keepRowId: "r1", mergeRowId: "r2" }, NONE_COMMITTED);
     expect(next.payload.accounts![0].match).toBeUndefined();
     expect(next.payload.accounts![0].reconciliation).toBeUndefined();
   });
@@ -244,7 +249,7 @@ describe("statement chat tools", () => {
         },
       ],
     } as unknown as PersistedImportPayload;
-    const next = mergeRows(withProvenance, { keepRowId: "r1", mergeRowId: "r2" });
+    const next = mergeRows(withProvenance, { keepRowId: "r1", mergeRowId: "r2" }, NONE_COMMITTED);
     expect(next.payload.accounts![0].__provenance).toEqual({ sourceFileId: "f9", section: "accounts" });
   });
 
@@ -252,14 +257,80 @@ describe("statement chat tools", () => {
   // flat `{ __rowId, __excludedReason }` — `.row` / `.reason` would then be
   // `undefined` instead of matching.
   it("drop_row moves the row to excludedRows with its reason, never deleting it", () => {
-    const next = dropRow(payload(), { rowId: "r2", reason: "duplicate of r1" });
+    const next = dropRow(payload(), { rowId: "r2", reason: "duplicate of r1" }, NONE_COMMITTED);
     expect(next.payload.accounts!.map((r) => r.__rowId)).toEqual(["r1"]);
     expect(next.excludedRows?.[0].row).toMatchObject({ __rowId: "r2" });
     expect(next.excludedRows?.[0].reason).toBe("duplicate of r1");
   });
 
   it("drop_row rejects an empty reason", () => {
-    expect(() => dropRow(payload(), { rowId: "r2", reason: "   " })).toThrow(/reason/i);
+    expect(() => dropRow(payload(), { rowId: "r2", reason: "   " }, NONE_COMMITTED)).toThrow(/reason/i);
+  });
+
+  // --- Final review, C3: a committed row is off limits to every WRITE ---
+  //
+  // Once a row is committed, `commitAccounts` has written a real account into
+  // the household and this surface has no path that updates it. Editing one
+  // changes only the on-screen table (and `entity-table.tsx` then leaves its
+  // Commit button permanently disabled, so the correction can never reach the
+  // plan); merging one leaves the plan holding BOTH accounts for the same
+  // real account. Refusing is the correct answer, not the timid one.
+  describe("a committed row (C3)", () => {
+    const COMMITTED_R1: ReadonlySet<string> = new Set(["r1"]);
+
+    it("edit_row refuses a committed row, naming it and saying why", () => {
+      expect(() =>
+        editRow(payload(), { rowId: "r1", field: "value", value: 99 }, COMMITTED_R1),
+      ).toThrow(/already been committed/i);
+      expect(() =>
+        editRow(payload(), { rowId: "r1", field: "value", value: 99 }, COMMITTED_R1),
+      ).toThrow(/IRA/);
+    });
+
+    it("merge_rows refuses when the RETIRED row is committed", () => {
+      // The double-count sequence from the review: commit r1, then fold r1
+      // into r2, then commit r2 — the plan ends up holding both.
+      expect(() =>
+        mergeRows(payload(), { keepRowId: "r2", mergeRowId: "r1" }, COMMITTED_R1),
+      ).toThrow(/already been committed/i);
+    });
+
+    it("merge_rows refuses when the SURVIVING row is committed", () => {
+      expect(() =>
+        mergeRows(payload(), { keepRowId: "r1", mergeRowId: "r2" }, COMMITTED_R1),
+      ).toThrow(/already been committed/i);
+    });
+
+    it("drop_row refuses a committed row", () => {
+      expect(() =>
+        dropRow(payload(), { rowId: "r1", reason: "not the client's" }, COMMITTED_R1),
+      ).toThrow(/already been committed/i);
+    });
+
+    // The other half — the guard must not have turned the tools off.
+    it("still accepts an uncommitted row while another row is committed", () => {
+      expect(
+        editRow(payload(), { rowId: "r2", field: "value", value: 99 }, COMMITTED_R1)
+          .payload.accounts![1].value,
+      ).toBe(99);
+      expect(
+        dropRow(payload(), { rowId: "r2", reason: "duplicate" }, COMMITTED_R1)
+          .payload.accounts!.map((r) => r.__rowId),
+      ).toEqual(["r1"]);
+      expect(
+        mergeRows(
+          { accounts: [{ __rowId: "r2", name: "A" }, { __rowId: "r3", name: "B", basis: 7 }] } as never,
+          { keepRowId: "r2", mergeRowId: "r3" },
+          COMMITTED_R1,
+        ).payload.accounts,
+      ).toHaveLength(1);
+    });
+
+    // Read-only tools are deliberately unaffected: neither writes a row, and
+    // "where did this committed number come from?" is a fair question.
+    it("explain still answers for a committed row", () => {
+      expect(explain(payload(), { rowId: "r1" }, { f1: "f1.pdf" }).summary).toMatch(/f1\.pdf/);
+    });
   });
 
   // Mutation this catches: the with-range branch (C1's fixture case) —

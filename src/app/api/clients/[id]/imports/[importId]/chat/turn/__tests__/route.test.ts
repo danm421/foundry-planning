@@ -301,6 +301,32 @@ describe("chat turn route gates", () => {
 });
 
 describe("chat turn route behavior", () => {
+  // Final review, C3: the committed-row set is what stops a chat tool from
+  // editing or merging a row whose figure is already in the client's plan.
+  // It rides in on `chat` — the persisted slice, where `committedRowIds`
+  // actually lives — so this pins that the route hands `runTurn` the REAL
+  // persisted list, not an empty default or a reconstruction.
+  //
+  // Mutation this catches: passing `{ surface: "chat", ... }` fresh, or
+  // dropping `chat` from the call — `committedRowIds` would come through
+  // empty and every mutating tool would go back to accepting a committed row.
+  it("hands runTurn the persisted committedRowIds", async () => {
+    const withCommitted: ImportPayloadJson = {
+      ...CHAT_PAYLOAD,
+      chat: { ...CHAT_PAYLOAD.chat!, committedRowIds: ["r1"] },
+    };
+    vi.mocked(requireImportAccess).mockResolvedValue(importRow(withCommitted) as never);
+    freshRow = { id: "i1", payloadJson: withCommitted };
+
+    await POST(req(), params);
+
+    expect(runTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chat: expect.objectContaining({ committedRowIds: ["r1"] }),
+      }),
+    );
+  });
+
   it("runs the turn and persists the transcript + excludedRows via writeChatState", async () => {
     runTurn.mockResolvedValue({
       payload: { accounts: [{ __rowId: "r1", name: "IRA", value: 1, basis: 5 }] },

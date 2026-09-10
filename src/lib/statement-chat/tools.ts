@@ -179,6 +179,47 @@ function findRowIndex(accounts: AccountRow[], rowId: string): number {
   return idx;
 }
 
+/**
+ * The set of `__rowId`s already committed into the client's plan
+ * (`chat.committedRowIds`). Required — never optional — on all three
+ * MUTATING tools, so tsc proves every call site supplies it rather than
+ * leaving a guard someone can forget to pass (the same reasoning
+ * `SourceRow.sourceName` is required for in `merge-across-files.ts`).
+ */
+export type CommittedRowIds = ReadonlySet<string>;
+
+/**
+ * Refuse a write to a row whose figure is already in the client's plan
+ * (final review, C3).
+ *
+ * REFUSING is the correct answer here, not merely the conservative one.
+ * Once a row is committed, `commitAccounts` has written a real account into
+ * the household and this surface has no path that updates it: `edit_row`
+ * would change only the on-screen table while the plan kept the old figure,
+ * and `entity-table.tsx` leaves that row's Commit button permanently
+ * disabled — so the correction could never reach the plan at all, and the
+ * screen would assert a change the client's net worth does not have.
+ * `merge_rows` is worse: committing B, merging B into A, then committing A
+ * leaves the plan holding BOTH accounts for the same real account — the
+ * fifth route to a double count found on this plan.
+ *
+ * Read-only tools (`explain`, `reread_document`) are deliberately
+ * unaffected: neither writes a row, and an advisor asking where a committed
+ * row's number came from is a perfectly reasonable question.
+ *
+ * Error style follows `resolveSourceFileId` below — it tells the model what
+ * to do next instead of dead-ending, so the turn ends in an explanation the
+ * advisor can act on rather than a retry loop that burns the tool budget.
+ */
+function assertNotCommitted(row: AccountRow, committedRowIds: CommittedRowIds): void {
+  if (!row.__rowId || !committedRowIds.has(row.__rowId)) return;
+  throw new Error(
+    `"${row.name}" (row ${row.__rowId}) has already been committed to the client's plan, so it ` +
+      `cannot be changed, merged or dropped here. Tell the advisor this row is already committed ` +
+      `and has to be corrected on the client's accounts instead.`,
+  );
+}
+
 function describeValue(value: unknown): string {
   if (typeof value === "number") return value.toLocaleString("en-US");
   if (value === null) return "empty";
@@ -203,9 +244,14 @@ export interface EditRowArgs {
  * that field's own domain check (Important 5) — the allowlist says WHICH
  * columns are writable, not that any scalar is a legal value for them.
  */
-export function editRow(payload: PersistedImportPayload, args: EditRowArgs): ToolResult {
+export function editRow(
+  payload: PersistedImportPayload,
+  args: EditRowArgs,
+  committedRowIds: CommittedRowIds,
+): ToolResult {
   const accounts = accountsOf(payload);
   const idx = findRowIndex(accounts, args.rowId);
+  assertNotCommitted(accounts[idx], committedRowIds);
   if (!isEditableField(args.field)) {
     throw new Error(
       `Field "${args.field}" is not editable. Editable fields: ${EDITABLE_ACCOUNT_FIELDS.join(", ")}.`,
@@ -275,7 +321,11 @@ function unionAccountFields(base: AccountRow, other: AccountRow): AccountRow {
  * tool (a mis-merged row's conflicting fields would otherwise simply be
  * gone), so the retired row's own values stay visible and recoverable.
  */
-export function mergeRows(payload: PersistedImportPayload, args: MergeRowsArgs): ToolResult {
+export function mergeRows(
+  payload: PersistedImportPayload,
+  args: MergeRowsArgs,
+  committedRowIds: CommittedRowIds,
+): ToolResult {
   if (args.keepRowId === args.mergeRowId) {
     throw new Error("Cannot merge a row into itself.");
   }
@@ -284,6 +334,12 @@ export function mergeRows(payload: PersistedImportPayload, args: MergeRowsArgs):
   const mergeIdx = findRowIndex(accounts, args.mergeRowId);
   const keep = accounts[keepIdx];
   const merge = accounts[mergeIdx];
+  // BOTH sides, not just the retired one. Retiring a committed row leaves
+  // its account in the plan while the survivor commits as a second copy of
+  // the same account; folding into a committed SURVIVOR changes fields whose
+  // committed figure this surface can no longer update.
+  assertNotCommitted(keep, committedRowIds);
+  assertNotCommitted(merge, committedRowIds);
   const merged = unionAccountFields(keep, merge);
   const nextAccounts = accounts
     .map((r, i) => (i === keepIdx ? merged : r))
@@ -319,13 +375,18 @@ export interface DropRowArgs {
  * (turn.ts / the route) appends it to the prior `excludedRows` list before
  * persisting, mirroring how `writeChatState` only ever receives what changed.
  */
-export function dropRow(payload: PersistedImportPayload, args: DropRowArgs): ToolResult {
+export function dropRow(
+  payload: PersistedImportPayload,
+  args: DropRowArgs,
+  committedRowIds: CommittedRowIds,
+): ToolResult {
   if (args.reason.trim().length === 0) {
     throw new Error("A reason is required to drop a row.");
   }
   const accounts = accountsOf(payload);
   const idx = findRowIndex(accounts, args.rowId);
   const dropped = accounts[idx];
+  assertNotCommitted(dropped, committedRowIds);
   const nextAccounts = accounts.filter((_, i) => i !== idx);
   return {
     payload: { ...payload, accounts: nextAccounts },

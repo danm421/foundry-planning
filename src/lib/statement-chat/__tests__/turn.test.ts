@@ -147,6 +147,56 @@ describe("runTurn", () => {
     expect(result.payload).toEqual(payload());
   });
 
+  // Final review, C3: the committed set has to actually REACH the tools.
+  // `runTurn` reads it off `chat.committedRowIds` — the persisted list, which
+  // the turn route already hands in whole — so this is the wiring test: a
+  // chat state naming r1 as committed must make `edit_row` on r1 fail.
+  //
+  // Mutation this catches: `dispatchTool` dropping `ctx.committedRowIds`, or
+  // `runTurn` building the set from something other than `chat`.
+  it("refuses a mutating tool call against a row chat.committedRowIds names", async () => {
+    const model = modelReturning(
+      new AIMessage({
+        content: "",
+        tool_calls: [{ id: "call_1", name: "edit_row", args: { rowId: "r1", field: "value", value: 99 } }],
+      }),
+      new AIMessage("That one is already committed."),
+    );
+    const result = await runTurn({
+      chat: { ...emptyChat(), committedRowIds: ["r1"] },
+      importId: "i1",
+      payload: payload(),
+      fileResults,
+      message: "change the IRA to 99",
+      model,
+    });
+    expect(result.turnEntries[1]).toMatchObject({ role: "tool", tool: "edit_row" });
+    expect((result.turnEntries[1] as { summary: string }).summary).toMatch(/already been committed/i);
+    // Nothing was written, and the route is told not to persist a payload.
+    expect(result.payload).toEqual(payload());
+    expect(result.payloadMutated).toBe(false);
+  });
+
+  // Every refused call still burns one of the four tool calls this turn is
+  // allowed, so the row list tells the model up front which rows are closed.
+  it("marks a committed row in the row list the model reads", async () => {
+    const model = modelReturning(new AIMessage("ok"));
+    await runTurn({
+      chat: { ...emptyChat(), committedRowIds: ["r1"] },
+      importId: "i1",
+      payload: payload(),
+      fileResults,
+      message: "hi",
+      model,
+    });
+    const invoke = (model.bindTools([]) as { invoke: ReturnType<typeof vi.fn> }).invoke;
+    const systemContent = String(
+      (invoke.mock.calls[0][0] as Array<{ content: unknown }>)[0].content,
+    );
+    expect(systemContent).toMatch(/- r1:.*committed=yes/);
+    expect(systemContent).not.toMatch(/- r2:.*committed=yes/);
+  });
+
   // THE cap test (C11): a model that never stops asking for tool calls must
   // still be cut off at MAX_TOOL_CALLS_PER_TURN. Mutation this catches:
   // deleting/off-by-one-ing the `toolCallCount >= MAX_TOOL_CALLS_PER_TURN`

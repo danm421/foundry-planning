@@ -137,6 +137,10 @@ function persistedAccounts(fileResults: Record<string, ExtractionResult>) {
   return kept.map((row, i) => ({ ...row, match: { kind: "exact", existingId: `acct-${i}` } }));
 }
 
+/** The tools refuse a row that is already committed (C3); these fixtures
+ *  build the pre-commit state, so nothing is committed at tool time. */
+const NO_COMMITTED_ROWS: ReadonlySet<string> = new Set<string>();
+
 function importRow(payloadJson: ImportPayloadJson) {
   return { id: "i1", payloadJson };
 }
@@ -335,7 +339,7 @@ describe("chat finalize verification (Ruling 70)", () => {
     const { payload } = mergeAcrossFiles(CLEAN_FILE_RESULTS);
     const { kept } = detectRollups(payload.accounts);
     const ids = kept.map((r) => r.__rowId as string);
-    const result = dropRow({ accounts: kept }, { rowId: ids[1], reason: "not the client's" });
+    const result = dropRow({ accounts: kept }, { rowId: ids[1], reason: "not the client's" }, NO_COMMITTED_ROWS);
     return { ids, result };
   }
 
@@ -370,7 +374,7 @@ describe("chat finalize verification (Ruling 70)", () => {
     const { payload } = mergeAcrossFiles(CLEAN_FILE_RESULTS);
     const { kept } = detectRollups(payload.accounts);
     const ids = kept.map((r) => r.__rowId as string);
-    const result = mergeRows({ accounts: kept }, { keepRowId: ids[0], mergeRowId: ids[1] });
+    const result = mergeRows({ accounts: kept }, { keepRowId: ids[0], mergeRowId: ids[1] }, NO_COMMITTED_ROWS);
     expect(result.excludedRows?.[0]).toMatchObject({ irreversible: true });
 
     vi.mocked(requireImportAccess).mockResolvedValue(
@@ -395,7 +399,7 @@ describe("chat finalize verification (Ruling 70)", () => {
   // The exclusion must not become a blanket amnesty: a row that is neither
   // committed NOR excluded still blocks the close.
   it("still 409s a row that is neither committed nor excluded in the chat", async () => {
-    const { ids, result } = afterDroppingSecondRow();
+    const { result } = afterDroppingSecondRow();
     vi.mocked(requireImportAccess).mockResolvedValue(
       importRow({
         fileResults: CLEAN_FILE_RESULTS,
