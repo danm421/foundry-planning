@@ -66,3 +66,55 @@ describe("accounts table", () => {
     expect(container.querySelector(".overflow-x-auto")).not.toBeNull();
   });
 });
+
+/**
+ * Task 12, requirement B. The extractor's `owner` guess is no longer a
+ * dedupe key, so it is no longer load-bearing for identity — but it IS still
+ * decisive at COMMIT: the statement-chat path never seeds `row.owners`, so
+ * `commit/accounts.ts` falls through to
+ * `synthesizeAccountOwners(tx, accountId, row.owner, family, isRetirement)`
+ * and writes ownership straight from the coarse enum. The guess stops
+ * mattering only once a human can correct it in one click before committing,
+ * which is what this cell is.
+ */
+describe("accounts table — the Owner cell is editable", () => {
+  it("opens an Owner dropdown on a row that has not been committed", async () => {
+    render(<AccountsTable rows={rows} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} />);
+    const roth = screen.getByRole("row", { name: /Schwab Roth IRA/ });
+    await userEvent.click(within(roth).getByRole("button", { name: /MICHAEL V SHARESKY ROTH IRA/ }));
+    expect(within(roth).getByLabelText("Owner")).toBeInTheDocument();
+    // The registration name is the evidence the advisor decides on — the one
+    // field that stayed stable while the guess moved — so the editor shows it.
+    expect(within(roth).getByText(/MICHAEL V SHARESKY ROTH IRA/)).toBeInTheDocument();
+  });
+
+  it("writes exactly one field, once, when an owner is picked", async () => {
+    const onEditCell = vi.fn();
+    render(<AccountsTable rows={rows} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={onEditCell} />);
+    const roth = screen.getByRole("row", { name: /Schwab Roth IRA/ });
+    await userEvent.click(within(roth).getByRole("button", { name: /MICHAEL V SHARESKY ROTH IRA/ }));
+    await userEvent.selectOptions(within(roth).getByLabelText("Owner"), "spouse");
+
+    // One field, one call — `owner` is a single value, so this must NOT go
+    // through the multi-field `fields: [...]` fan-out the Account-type
+    // editor needs.
+    expect(onEditCell).toHaveBeenCalledTimes(1);
+    expect(onEditCell).toHaveBeenCalledWith("r2", "owner", "spouse");
+  });
+
+  // `entity-table.tsx` computes `canEdit = !!col.edit && !!rowId &&
+  // !isCommitted`, so a committed row must render no editor at all —
+  // otherwise an advisor edits a row whose account is already written and
+  // the correction goes nowhere. The un-committed row in the same table is
+  // the positive control: it still offers the editor.
+  it("offers no Owner editor on a committed row", async () => {
+    render(<AccountsTable rows={rows} excluded={[]} committedRowIds={["r1"]} onCommitRows={vi.fn()} onEditCell={vi.fn()} />);
+    const taxable = screen.getByRole("row", { name: /Schwab Taxable 0707/ });
+    expect(within(taxable).queryByRole("button", { name: "Michael V Sharesky" })).toBeNull();
+    expect(within(taxable).queryByLabelText("Owner")).toBeNull();
+
+    const roth = screen.getByRole("row", { name: /Schwab Roth IRA/ });
+    await userEvent.click(within(roth).getByRole("button", { name: /MICHAEL V SHARESKY ROTH IRA/ }));
+    expect(within(roth).getByLabelText("Owner")).toBeInTheDocument();
+  });
+});

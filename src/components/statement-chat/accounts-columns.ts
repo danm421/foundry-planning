@@ -4,6 +4,7 @@ import type { Annotated } from "@/lib/imports/types";
 import { formatAccountCategory, formatAccountSubType } from "@/lib/accounts/category-labels";
 import type { ColumnSpec } from "./entity-table";
 import OwnerCell from "./owner-cell";
+import OwnerCellEdit, { type OwnerRole } from "./owner-cell-edit";
 import AccountTypeCellEdit, { type AccountTypePatch } from "./account-type-cell";
 
 /**
@@ -69,6 +70,18 @@ export const ACCOUNT_COLUMNS: ColumnSpec<Row>[] = [
         names: resolvedOwnerNames(row.owners),
         hint: row.ownerNameHint,
         role: row.owner,
+      }),
+    // ONE real field, so the plain single-value path — no `fields: [...]`
+    // fan-out (that exists for the multi-field Account-type editor, and
+    // here it would only write the same key twice). `owner` is already on
+    // `EDITABLE_ACCOUNT_FIELDS`, so `useChatCommit`'s existing
+    // `handleEditCell` -> `flushRowsToServer` carries the write; no new
+    // route and no schema change (Task 12, requirement B).
+    edit: (row, onChange) =>
+      createElement(OwnerCellEdit, {
+        owner: row.owner,
+        hint: row.ownerNameHint,
+        onDone: (owner: OwnerRole) => onChange(owner),
       }),
   },
   { key: "custodian", header: "Custodian", kind: "string" },
