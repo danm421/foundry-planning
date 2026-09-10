@@ -1,6 +1,19 @@
 // @vitest-environment jsdom
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// TransferSeriesForm now writes through `useScenarioWriter`, which reads the
+// active scenario via `useScenarioState` (next/navigation). No scenario is
+// active in these tests — base-mode behavior is what they pin. (The form's
+// own `scenarioId` prop only shapes the base-fallback URL; it is left unset
+// by `defaultProps()` below, consistent with base mode here.)
+const refreshMock = vi.fn();
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: refreshMock, push: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(""),
+  usePathname: () => "/clients/client-xyz-456/details/family",
+}));
+
 import TransferSeriesForm from "../transfer-series-form";
 
 // ---------------------------------------------------------------------------

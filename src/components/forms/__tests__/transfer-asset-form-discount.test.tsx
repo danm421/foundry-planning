@@ -1,6 +1,17 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+
+// TransferAssetForm now writes through `useScenarioWriter`, which reads the
+// active scenario via `useScenarioState` (next/navigation). No scenario is
+// active in these tests — base-mode behavior is what they pin.
+const refreshMock = vi.fn();
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: refreshMock, push: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(""),
+  usePathname: () => "/clients/c1/details/family",
+}));
+
 import TransferAssetForm, { type AccountOption } from "@/components/forms/transfer-asset-form";
 
 const accounts: AccountOption[] = [

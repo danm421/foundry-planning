@@ -4,6 +4,9 @@ import { useState } from "react";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
 import { CurrencyInput } from "@/components/currency-input";
 import type { ClientMilestones, YearRef } from "@/lib/milestones";
+import { useScenarioWriter } from "@/hooks/use-scenario-writer";
+import { giftScenarioAdd } from "@/lib/gifts/gift-write";
+import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import {
   inputClassName,
   selectClassName,
@@ -49,6 +52,8 @@ export default function TransferSeriesForm({
   onClose,
   onSaved,
 }: Props) {
+  const writer = useScenarioWriter(clientId);
+
   const fallbackMilestones: ClientMilestones = milestones ?? {
     planStart: currentYear,
     planEnd: currentYear + 50,
@@ -110,10 +115,28 @@ export default function TransferSeriesForm({
       const seriesUrl = scenarioId
         ? `/api/clients/${clientId}/gifts/series?scenario=${encodeURIComponent(scenarioId)}`
         : `/api/clients/${clientId}/gifts/series`;
-      const res = await fetch(seriesUrl, {
+
+      // Key order matches `giftSeriesRowToDraft` exactly — the unsaved-changes
+      // diff compares gifts with JSON.stringify, which is key-order-sensitive
+      // (estate-flow-gift-diff.ts). `amountMode` is always "fixed" here — this
+      // form has no annual-exclusion input, matching the DB/zod/route default.
+      const draft: EstateFlowGift = {
+        kind: "series",
+        id: crypto.randomUUID(),
+        startYear,
+        endYear,
+        annualAmount: Number(annualAmount),
+        amountMode: "fixed",
+        inflationAdjust,
+        grantor,
+        recipient: { kind: "entity", id: trustId },
+        crummey: useCrummeyPowers,
+      };
+
+      const res = await writer.submit(giftScenarioAdd(draft), {
+        url: seriesUrl,
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body,
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
