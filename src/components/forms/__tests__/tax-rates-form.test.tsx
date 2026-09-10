@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import TaxRatesForm from "../tax-rates-form";
 import { ClientAccessProvider } from "@/components/client-access-provider";
+import type { USPSStateCode } from "@/lib/usps-states";
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
@@ -20,7 +21,7 @@ const BASE_PROPS = {
   flatStateRate: "0.05",
   estateAdminExpenses: "0",
   flatStateEstateRate: "0",
-  residenceState: null,
+  residenceState: null as USPSStateCode | null,
   irdTaxRate: "0.37",
   probateCostRate: "0.03",
   pvDiscountRate: "",
@@ -44,30 +45,111 @@ function renderForm(overrides?: Partial<typeof BASE_PROPS>) {
   );
 }
 
+/** The form debounces before it saves; fake timers let a test step past that
+ *  without a real wait. */
+async function settleAutosave() {
+  await act(async () => {
+    vi.advanceTimersByTime(1000);
+  });
+}
+
+function bodyOf(fetchMock: ReturnType<typeof vi.fn>, call = 0) {
+  return JSON.parse(fetchMock.mock.calls[call][1].body as string);
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe("TaxRatesForm — Lifetime exemption cap field", () => {
   it("renders the lifetime exemption cap field with its prefilled value", () => {
     renderForm({ lifetimeExemptionCap: "20000000" });
-    // CurrencyInput renders a visible text input (no name attr) showing the
-    // comma-formatted value, plus a hidden input with name="lifetimeExemptionCap"
-    // holding the raw numeric string. FieldRow uses <span> not <label>, so
-    // getByLabelText would not find the input. Instead use getByDisplayValue
-    // which verifies both that the field is present AND that the prefilled value
-    // is formatted correctly.
     const input = screen.getByDisplayValue("20,000,000") as HTMLInputElement;
     expect(input.value).toBe("20,000,000");
   });
 
   it("renders with empty value when lifetimeExemptionCap is blank", () => {
     renderForm({ lifetimeExemptionCap: "" });
-    // The visible input should show the placeholder or empty string.
-    // Verify no stale value from other CurrencyInput fields bleeds in.
-    const hiddenInput = document.querySelector(
-      'input[type="hidden"][name="lifetimeExemptionCap"]',
-    ) as HTMLInputElement | null;
-    expect(hiddenInput).not.toBeNull();
-    expect(hiddenInput?.value).toBe("");
+    const input = document.getElementById("lifetimeExemptionCap") as HTMLInputElement;
+    expect(input).not.toBeNull();
+    expect(input.value).toBe("");
+  });
+});
+
+describe("TaxRatesForm — autosave", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("has no Save button — the form saves on change", () => {
+    renderForm();
+    expect(screen.queryByRole("button", { name: /^save$/i })).toBeNull();
+    expect(screen.getByText(/changes save automatically/i)).toBeInTheDocument();
+  });
+
+  it("sends only the field that changed, so an untouched setting is never rewritten", async () => {
+    renderForm({ probateCostRate: "0.03" });
+
+    fireEvent.change(document.getElementById("probateCostRate")!, { target: { value: "4" } });
+    await settleAutosave();
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const body = bodyOf(fetchMock);
+    expect(body).toEqual({ probateCostRate: "0.04" });
+  });
+
+  it("coalesces a burst of edits into one request", async () => {
+    renderForm();
+
+    fireEvent.change(document.getElementById("irdTaxRate")!, { target: { value: "35" } });
+    fireEvent.change(document.getElementById("probateCostRate")!, { target: { value: "2" } });
+    await settleAutosave();
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(bodyOf(fetchMock)).toEqual({ irdTaxRate: "0.35", probateCostRate: "0.02" });
+  });
+
+  it("withholds a half-typed value rather than writing a NaN", async () => {
+    renderForm();
+
+    // "-" is a legal keystroke on the way to "-1" but is not yet a number.
+    fireEvent.change(document.getElementById("irdTaxRate")!, { target: { value: "-" } });
+    await settleAutosave();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a rejected save instead of leaving a value that never landed", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      json: async () => ({ error: "probateCostRate must be between 0 and 1" }),
+    });
+    renderForm();
+
+    fireEvent.change(document.getElementById("probateCostRate")!, { target: { value: "400" } });
+    await settleAutosave();
+
+    await waitFor(() =>
+      expect(screen.getByText(/probateCostRate must be between 0 and 1/)).toBeInTheDocument(),
+    );
+    expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+  });
+
+  it("flushes a pending edit when the tab that owns the form unmounts", async () => {
+    const { unmount } = renderForm();
+
+    fireEvent.change(document.getElementById("irdTaxRate")!, { target: { value: "35" } });
+    unmount();
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(bodyOf(fetchMock)).toEqual({ irdTaxRate: "0.35" });
   });
 });
 
@@ -75,14 +157,13 @@ describe("TaxRatesForm — PV discount rate field", () => {
   let fetchMock: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({}),
-    });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
     vi.stubGlobal("fetch", fetchMock);
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -98,27 +179,24 @@ describe("TaxRatesForm — PV discount rate field", () => {
     expect(input.value).toBe("");
   });
 
-  it("submits a typed percent value as a decimal fraction, mirroring probateCostRate", async () => {
-    const { container } = renderForm({ pvDiscountRate: "" });
+  it("saves a typed percent value as a decimal fraction, mirroring probateCostRate", async () => {
+    renderForm({ pvDiscountRate: "" });
 
-    const input = document.getElementById("pvDiscountRate") as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "5" } });
-
-    fireEvent.submit(container.querySelector("form")!);
+    fireEvent.change(document.getElementById("pvDiscountRate")!, { target: { value: "5" } });
+    await settleAutosave();
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
-    expect(body.pvDiscountRate).toBe("0.05");
+    expect(bodyOf(fetchMock).pvDiscountRate).toBe("0.05");
   });
 
-  it("submits null (not 0) when left blank", async () => {
-    const { container } = renderForm({ pvDiscountRate: "" });
+  it("saves null (not 0) when cleared back to blank", async () => {
+    renderForm({ pvDiscountRate: "0.04" });
 
-    fireEvent.submit(container.querySelector("form")!);
+    fireEvent.change(document.getElementById("pvDiscountRate")!, { target: { value: "" } });
+    await settleAutosave();
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
-    expect(body.pvDiscountRate).toBeNull();
+    expect(bodyOf(fetchMock).pvDiscountRate).toBeNull();
   });
 });
 
@@ -126,11 +204,13 @@ describe("TaxRatesForm — workplace-plan coverage overrides (Task 10)", () => {
   let fetchMock: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
     vi.stubGlobal("fetch", fetchMock);
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -176,8 +256,8 @@ describe("TaxRatesForm — workplace-plan coverage overrides (Task 10)", () => {
     expect(spouseSelect.value).toBe("no");
   });
 
-  it("submits distinct client/spouse values independently on save — kills a mutant that conflates the two fields or drops one of them (both start at the same default, so only a per-field, distinct-value check catches a dropped or swapped column)", async () => {
-    const { container } = render(
+  it("saves distinct client/spouse values independently — kills a mutant that conflates the two fields or drops one of them (both start at the same default, so only a per-field, distinct-value check catches a dropped or swapped column)", async () => {
+    render(
       <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
         <TaxRatesForm
           {...BASE_PROPS}
@@ -191,47 +271,132 @@ describe("TaxRatesForm — workplace-plan coverage overrides (Task 10)", () => {
 
     fireEvent.change(document.getElementById("coveredByWorkplacePlan")!, { target: { value: "yes" } });
     fireEvent.change(document.getElementById("spouseCoveredByWorkplacePlan")!, { target: { value: "no" } });
-    fireEvent.submit(container.querySelector("form")!);
+    await settleAutosave();
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    const body = bodyOf(fetchMock);
     expect(body.coveredByWorkplacePlan).toBe("yes");
     expect(body.spouseCoveredByWorkplacePlan).toBe("no");
   });
 
-  it("falls back to 'auto' for the spouse field when submitting without a spouse — mirrors priorTaxableGiftsSpouse's existing fallback idiom", async () => {
-    const { container } = render(
+  it("never sends a spouse value the page didn't render — a spouseless household leaves the column alone rather than resetting it", async () => {
+    render(
       <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
         <TaxRatesForm {...BASE_PROPS} hasSpouse={false} />
       </ClientAccessProvider>,
     );
 
-    fireEvent.submit(container.querySelector("form")!);
+    fireEvent.change(document.getElementById("coveredByWorkplacePlan")!, { target: { value: "yes" } });
+    await settleAutosave();
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
-    expect(body.spouseCoveredByWorkplacePlan).toBe("auto");
+    expect(bodyOf(fetchMock)).not.toHaveProperty("spouseCoveredByWorkplacePlan");
+  });
+});
+
+describe("TaxRatesForm — state of residence", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  // The page used to mirror residence across an Income-Tax select and an
+  // Estate-Tax select. One control, one value: a second picker is the bug.
+  it("renders exactly one residence picker", () => {
+    renderForm({ residenceState: "WA" });
+    expect(document.querySelectorAll("select#residenceState")).toHaveLength(1);
+    expect(document.getElementById("residenceStateIncome")).toBeNull();
+  });
+
+  it("summarises the selected state's estate rules under the picker", async () => {
+    renderForm({ residenceState: null });
+    const summary = () => document.getElementById("residenceState-summary")!.textContent ?? "";
+    expect(summary()).toMatch(/no state set/i);
+
+    fireEvent.change(document.getElementById("residenceState")!, { target: { value: "WA" } });
+    await settleAutosave();
+
+    // Washington: a real state estate tax, so the exemption and top rate show.
+    expect(summary()).toMatch(/exemption · top/);
+    // Florida: no estate or inheritance tax at all — the summary has to say so
+    // rather than carrying Washington's numbers forward.
+    fireEvent.change(document.getElementById("residenceState")!, { target: { value: "FL" } });
+    expect(summary()).toMatch(/no state estate or inheritance tax/i);
+
+    await waitFor(() => expect(bodyOf(fetchMock).residenceState).toBe("WA"));
+  });
+
+  it("saves null when cleared back to unset", async () => {
+    renderForm({ residenceState: "WA" });
+
+    fireEvent.change(document.getElementById("residenceState")!, { target: { value: "" } });
+    await settleAutosave();
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(bodyOf(fetchMock).residenceState).toBeNull();
+  });
+});
+
+describe("TaxRatesForm — calculation method", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("hides the flat federal rate in bracket mode, where the engine ignores it", async () => {
+    renderForm({ initialMode: "flat" } as Partial<typeof BASE_PROPS>);
+    expect(document.getElementById("flatFederalRate")).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /bracket-based/i }));
+    expect(document.getElementById("flatFederalRate")).toBeNull();
+
+    await settleAutosave();
+    await waitFor(() => expect(bodyOf(fetchMock).taxEngineMode).toBe("bracket"));
   });
 });
 
 describe("TaxRatesForm — capital-loss carryforward field help", () => {
   it("quotes the $3,000 §1211(b) limit by default", () => {
     renderForm();
-    const tips = screen.getAllByLabelText(/Offsets future gains/);
+    const tips = screen.getAllByText(/Offsets future gains/);
     // Both the short-term and long-term fields carry the help.
     expect(tips).toHaveLength(2);
     for (const t of tips) {
-      expect(t.getAttribute("aria-label")).toContain("$3,000");
+      expect(t.textContent).toContain("$3,000");
     }
   });
 
   it("quotes the $1,500 limit for married-filing-separately", () => {
     renderForm({ filingStatus: "married_separate" } as Partial<typeof BASE_PROPS>);
-    const tips = screen.getAllByLabelText(/Offsets future gains/);
+    const tips = screen.getAllByText(/Offsets future gains/);
     expect(tips).toHaveLength(2);
     for (const t of tips) {
-      expect(t.getAttribute("aria-label")).toContain("$1,500");
-      expect(t.getAttribute("aria-label")).not.toContain("$3,000");
+      expect(t.textContent).toContain("$1,500");
+      expect(t.textContent).not.toContain("$3,000");
     }
+  });
+
+  it("wires each help badge to its copy so a screen reader hears more than 'Show help'", () => {
+    renderForm();
+    const badge = screen.getAllByRole("button", { name: "Show help" })[0];
+    const describedBy = badge.getAttribute("aria-describedby");
+    expect(describedBy).toBeTruthy();
+    expect(document.getElementById(describedBy!)?.textContent).toBeTruthy();
   });
 });

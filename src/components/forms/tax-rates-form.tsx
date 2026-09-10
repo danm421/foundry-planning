@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { PercentInput } from "@/components/percent-input";
 import { CurrencyInput } from "@/components/currency-input";
-import { HelpTip } from "@/components/help-tip";
+import { FieldTooltip } from "@/components/forms/field-tooltip";
+import { AutosaveStatus } from "@/components/autosave-status";
+import { usePlanSettingsAutosave } from "@/components/forms/use-plan-settings-autosave";
+import { selectClassName } from "@/components/forms/input-styles";
 import { STATE_ESTATE_TAX, INHERITANCE_TAX_STATES, type Bracket } from "@/lib/tax/state-estate";
 import {
   CAPITAL_LOSS_ORDINARY_LIMIT,
@@ -56,31 +58,80 @@ const pct = (v: string) => (Number(v) * 100).toFixed(2);
 // rather than defaulting to zero.
 const pctOrBlank = (v: string) => (v === "" ? "" : (Number(v) * 100).toFixed(2));
 
+/** A typed percent → the decimal fraction the API stores. `undefined` while the
+ *  box holds something that isn't a number yet ("-", "."), so a half-typed
+ *  value is withheld instead of writing a NaN. Blank means zero, matching what
+ *  the Save button used to submit. */
+function toDecimal(raw: string): string | undefined {
+  const trimmed = raw.trim();
+  if (trimmed === "") return "0";
+  const n = Number(trimmed);
+  return Number.isFinite(n) ? String(n / 100) : undefined;
+}
+
+/** Same, for percent fields whose blank state means "fall back to another
+ *  rate" rather than zero. */
+function toDecimalOrNull(raw: string): string | null | undefined {
+  return raw.trim() === "" ? null : toDecimal(raw);
+}
+
+/** A typed dollar amount → the plain number string the API stores. */
+function toAmount(raw: string): string | undefined {
+  const trimmed = raw.trim();
+  if (trimmed === "") return "0";
+  const n = Number(trimmed);
+  return Number.isFinite(n) && n >= 0 ? String(n) : undefined;
+}
+
+/** Same, for amounts whose blank state means "unset" rather than zero. */
+function toAmountOrNull(raw: string): string | null | undefined {
+  return raw.trim() === "" ? null : toAmount(raw);
+}
+
 function topRate(brackets: Bracket[]): number {
   return brackets.reduce((m, b) => Math.max(m, b.rate), 0);
 }
 
-const STATE_OPTIONS = USPS_STATE_CODES
-  .map((code) => {
-    const name = USPS_STATE_NAMES[code];
-    const estateRule = (STATE_ESTATE_TAX as Record<string, { exemption: number; brackets: Bracket[] } | undefined>)[code];
-    const hasInheritance = INHERITANCE_TAX_STATES.has(code);
-    let suffix: string;
-    if (estateRule && hasInheritance) {
-      suffix = `$${(estateRule.exemption / 1_000_000).toFixed(2)}M exemption · top ${Math.round(topRate(estateRule.brackets) * 100)}% · inheritance tax`;
-    } else if (estateRule) {
-      suffix = `$${(estateRule.exemption / 1_000_000).toFixed(2)}M exemption · top ${Math.round(topRate(estateRule.brackets) * 100)}%`;
-    } else if (hasInheritance) {
-      suffix = "inheritance tax only";
-    } else {
-      suffix = "no state estate or inheritance tax";
-    }
-    return { code, label: `${name} — ${suffix}` };
-  })
-  .sort((a, b) => a.label.localeCompare(b.label));
+type EstateRule = { exemption: number; brackets: Bracket[] } | undefined;
 
-const INPUT_CLS =
-  "block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
+function estateRuleFor(code: USPSStateCode): EstateRule {
+  return (STATE_ESTATE_TAX as Record<string, EstateRule>)[code];
+}
+
+/** What the selected state actually means for the plan, as a value line under
+ *  the picker — the numbers the advisor would otherwise have to look up. */
+function residenceSummary(code: USPSStateCode | ""): React.ReactNode {
+  if (code === "") return "No state set — the flat income and estate rates below apply.";
+  const rule = estateRuleFor(code);
+  const inheritance = INHERITANCE_TAX_STATES.has(code);
+  if (!rule) return inheritance ? "Inheritance tax only." : "No state estate or inheritance tax.";
+  return (
+    <>
+      <span className="tabular">${(rule.exemption / 1_000_000).toFixed(2)}M</span> exemption · top{" "}
+      <span className="tabular">{Math.round(topRate(rule.brackets) * 100)}%</span>
+      {inheritance && " · inheritance tax"}
+    </>
+  );
+}
+
+/** The editable settings this form owns. Every name is also the API key the
+ *  patch is sent under. */
+type FieldKey =
+  | "flatFederalRate"
+  | "flatStateRate"
+  | "estateAdminExpenses"
+  | "flatStateEstateRate"
+  | "irdTaxRate"
+  | "probateCostRate"
+  | "pvDiscountRate"
+  | "lifetimeExemptionCap"
+  | "outOfHouseholdDniRate"
+  | "priorTaxableGiftsClient"
+  | "priorTaxableGiftsSpouse"
+  | "capitalLossCarryforwardSt"
+  | "capitalLossCarryforwardLt"
+  | "coveredByWorkplacePlan"
+  | "spouseCoveredByWorkplacePlan";
 
 // Shared by the client + spouse workplace-plan-coverage selects below.
 const DEPENDENT_OVERRIDE_OPTIONS = [
@@ -89,39 +140,47 @@ const DEPENDENT_OVERRIDE_OPTIONS = [
   { value: "no", label: "No" },
 ] as const;
 
-function SectionTitle({ title, help }: { title: string; help?: string }) {
-  return (
-    <div className="mb-2 flex items-center gap-2">
-      <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-300">{title}</h3>
-      {help && <HelpTip text={help} />}
-    </div>
-  );
-}
-
-function FieldRow({
-  label,
+function Card({
+  title,
   help,
   children,
 }: {
-  label: string;
+  title: string;
   help?: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] items-center gap-4 px-3 py-2">
-      <div className="flex items-center gap-1.5 text-xs font-medium text-gray-300">
-        <span>{label}</span>
-        {help && <HelpTip text={help} />}
-      </div>
-      <div>{children}</div>
-    </div>
+    <section className="rounded-[var(--radius)] border border-hair bg-card">
+      <header className="flex items-center gap-1.5 border-b border-hair px-4 py-2.5">
+        <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-3">{title}</h3>
+        {help && <FieldTooltip text={help} />}
+      </header>
+      <div className="divide-y divide-hair">{children}</div>
+    </section>
   );
 }
 
-function FieldTable({ children }: { children: React.ReactNode }) {
+function Row({
+  label,
+  help,
+  htmlFor,
+  children,
+}: {
+  label: string;
+  help?: string;
+  htmlFor?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="divide-y divide-gray-800 rounded-md border border-gray-800 bg-gray-900/40">
-      {children}
+    <div className="flex items-center justify-between gap-3 px-4 py-2.5">
+      <label
+        htmlFor={htmlFor}
+        className="flex min-w-0 items-center gap-1.5 text-[13px] font-medium leading-snug text-ink-2"
+      >
+        <span>{label}</span>
+        {help && <FieldTooltip text={help} />}
+      </label>
+      <div className="w-40 shrink-0">{children}</div>
     </div>
   );
 }
@@ -153,16 +212,41 @@ export default function TaxRatesForm({
 }: TaxRatesFormProps) {
   const { permission } = useClientAccess();
   const canEdit = permission === "edit";
-  const router = useRouter();
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
+  const { save, state, error, retry } = usePlanSettingsAutosave(clientId);
+
   const [mode, setMode] = useState<"flat" | "bracket">(initialMode);
-  // Controlled across two `<select>`s (one in the Income Tax section, one in
-  // the Estate Tax section) since residenceState drives both engines.
-  const [residenceStateValue, setResidenceStateValue] = useState<USPSStateCode | "">(
-    residenceState ?? "",
-  );
+  // One control now, not two: residence drives both the income-tax and the
+  // estate engine, and mirroring it across two selects was the page's most
+  // reliable source of "which one is the real one?".
+  const [residence, setResidence] = useState<USPSStateCode | "">(residenceState ?? "");
+
+  // Every field is controlled so a `router.refresh()` triggered by a save can't
+  // rewrite a box the advisor is still typing in. Keys match the API's, so a
+  // patch is `{ [key]: converted }` with no lookup table in between.
+  const [values, setValues] = useState<Record<FieldKey, string>>({
+    flatFederalRate: pct(flatFederalRate),
+    flatStateRate: pct(flatStateRate),
+    estateAdminExpenses,
+    flatStateEstateRate: pct(flatStateEstateRate),
+    irdTaxRate: pct(irdTaxRate),
+    probateCostRate: pct(probateCostRate),
+    pvDiscountRate: pctOrBlank(pvDiscountRate),
+    lifetimeExemptionCap,
+    outOfHouseholdDniRate: pct(outOfHouseholdDniRate),
+    priorTaxableGiftsClient,
+    priorTaxableGiftsSpouse,
+    capitalLossCarryforwardSt,
+    capitalLossCarryforwardLt,
+    coveredByWorkplacePlan,
+    spouseCoveredByWorkplacePlan,
+  });
+
+  /** Show the raw keystrokes immediately; queue the converted value only when
+   *  it is one the API should store. */
+  function update(key: FieldKey, raw: string, apiValue: unknown) {
+    setValues((v) => ({ ...v, [key]: raw }));
+    if (apiValue !== undefined) save({ [key]: apiValue });
+  }
 
   // §1211(b) annual ordinary-income offset. Both carryforward fields quoted a
   // hardcoded "$3,000" — the same MFS error already fixed in the drill-down
@@ -175,383 +259,331 @@ export default function TaxRatesForm({
     "From Schedule D of the client's most recent return. Offsets future gains, " +
     `plus up to $${capitalLossLimit.toLocaleString("en-US")} of ordinary income per year.`;
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    setSuccess(false);
-
-    const data = new FormData(e.currentTarget);
-    const toDec = (name: string) => String(Number(data.get(name) as string) / 100);
-
-    // residenceState is mirrored across two selects; read from controlled state
-    // so the two stay in lockstep regardless of which one the user touched.
-    const residence = residenceStateValue === "" ? null : residenceStateValue;
-    const body: Record<string, string | null | undefined> = {
-      flatStateRate: toDec("flatStateRate"),
-      taxEngineMode: mode,
-      estateAdminExpenses: String(Number(data.get("estateAdminExpenses") ?? "0")),
-      flatStateEstateRate: String(Number(data.get("flatStateEstateRate") ?? "0") / 100),
-      residenceState: residence,
-      irdTaxRate: String(Number(data.get("irdTaxRate") ?? "0") / 100),
-      probateCostRate: String(Number(data.get("probateCostRate") ?? "0") / 100),
-      pvDiscountRate: (() => {
-        const raw = ((data.get("pvDiscountRate") as string | null) ?? "").trim();
-        if (raw === "") return null;
-        const n = Number(raw);
-        return Number.isFinite(n) ? String(n / 100) : null;
-      })(),
-      lifetimeExemptionCap: (() => {
-        const raw = ((data.get("lifetimeExemptionCap") as string | null) ?? "").trim();
-        if (raw === "") return null;
-        const n = Number(raw);
-        return Number.isFinite(n) && n > 0 ? String(n) : null;
-      })(),
-      outOfHouseholdDniRate: String(Number(data.get("outOfHouseholdDniRate") ?? "0") / 100),
-      priorTaxableGiftsClient: String(Number(data.get("priorTaxableGiftsClient") ?? "0")),
-      priorTaxableGiftsSpouse: hasSpouse
-        ? String(Number(data.get("priorTaxableGiftsSpouse") ?? "0"))
-        : "0",
-      coveredByWorkplacePlan: (data.get("coveredByWorkplacePlan") as string) ?? "auto",
-      // Mirrors priorTaxableGiftsSpouse above: the field isn't rendered when
-      // there's no spouse, so fall back to the schema default rather than
-      // reading a FormData key that was never on the page.
-      spouseCoveredByWorkplacePlan: hasSpouse
-        ? ((data.get("spouseCoveredByWorkplacePlan") as string) ?? "auto")
-        : "auto",
-      capitalLossCarryforwardSt: (() => {
-        const raw = ((data.get("capitalLossCarryforwardSt") as string | null) ?? "").trim();
-        if (raw === "") return null;
-        const n = Number(raw);
-        return Number.isFinite(n) && n >= 0 ? String(n) : null;
-      })(),
-      capitalLossCarryforwardLt: (() => {
-        const raw = ((data.get("capitalLossCarryforwardLt") as string | null) ?? "").trim();
-        if (raw === "") return null;
-        const n = Number(raw);
-        return Number.isFinite(n) && n >= 0 ? String(n) : null;
-      })(),
-    };
-
-    if (mode === "flat") {
-      body.flatFederalRate = toDec("flatFederalRate");
-    }
-
-    try {
-      const res = await fetch(`/api/clients/${clientId}/plan-settings`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const json = await res.json();
-        throw new Error(json.error ?? "Failed to save");
-      }
-      setSuccess(true);
-      router.refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
-    } finally {
-      setLoading(false);
-    }
-  }
+  const workplacePlanHelp =
+    "Overrides the projection's inference (active 401(k)/403(b)/SIMPLE participation or employer match that year) for the IRA deduction phaseout and Saver's Credit eligibility. Auto defers to that inference.";
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      {error && <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>}
-      {success && <p className="rounded bg-green-900/50 px-3 py-2 text-sm text-green-400">Saved.</p>}
-      <fieldset disabled={!canEdit} className="space-y-6 border-0 p-0 m-0">
-      <section>
-        <SectionTitle
-          title="Income Tax"
-          help="Flat rates applied across the projection unless bracket mode is selected."
-        />
-        <FieldTable>
-          <FieldRow
-            label="Calculation method"
-            help="Bracket mode uses progressive federal brackets, AMT, NIIT, and FICA based on filing status. Flat mode multiplies taxable income by your federal rate."
-          >
-            <div className="inline-flex rounded-md bg-gray-800 p-0.5">
-              <button
-                type="button"
-                onClick={() => setMode("flat")}
-                className={`px-2.5 py-1 text-xs rounded ${mode === "flat" ? "bg-gray-700 text-white" : "text-gray-300"}`}
+    <div className="@container space-y-4">
+      <div className="flex items-center justify-end">
+        {canEdit && <AutosaveStatus state={state} error={error} onRetry={retry} />}
+      </div>
+
+      <fieldset disabled={!canEdit} className="m-0 space-y-4 border-0 p-0">
+        {/* Residence and calculation method sit above the split because each
+            one changes what the cards below mean. */}
+        <section className="rounded-[var(--radius)] border border-hair bg-card p-4">
+          <div className="grid gap-4 @xl:grid-cols-2">
+            <div>
+              <label
+                htmlFor="residenceState"
+                className="mb-1.5 flex items-center gap-1.5 text-[13px] font-medium text-ink-2"
               >
-                Flat rate
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode("bracket")}
-                className={`px-2.5 py-1 text-xs rounded ${mode === "bracket" ? "bg-gray-700 text-white" : "text-gray-300"}`}
-              >
-                Bracket-based
-              </button>
-            </div>
-          </FieldRow>
-          {mode === "flat" && (
-            <FieldRow label="Federal rate">
-              <PercentInput
-                id="flatFederalRate"
-                name="flatFederalRate"
-                defaultValue={pct(flatFederalRate)}
-                className={`${INPUT_CLS} max-w-[10rem]`}
-              />
-            </FieldRow>
-          )}
-          <FieldRow label="State rate">
-            <PercentInput
-              id="flatStateRate"
-              name="flatStateRate"
-              defaultValue={pct(flatStateRate)}
-              className={`${INPUT_CLS} max-w-[10rem]`}
-            />
-          </FieldRow>
-          <FieldRow
-            label="State of residence"
-            help="If selected, the bracket-mode engine uses that state's brackets, deductions, and exemptions. Otherwise the flat state rate above applies. Also drives the state-of-residence used by the Estate Tax engine."
-          >
-            <select
-              id="residenceStateIncome"
-              value={residenceStateValue}
-              onChange={(e) => setResidenceStateValue(e.target.value === "" ? "" : (e.target.value as USPSStateCode))}
-              className={INPUT_CLS}
-            >
-              <option value="">— Use flat-rate fallback —</option>
-              {USPS_STATE_CODES.map((code) => (
-                <option key={code} value={code}>
-                  {USPS_STATE_NAMES[code]}
-                </option>
-              ))}
-            </select>
-          </FieldRow>
-          <FieldRow
-            label="Covered by workplace plan"
-            help="Overrides the projection's inference (active 401(k)/403(b)/SIMPLE participation or employer match that year) for the IRA deduction phaseout and Saver's Credit eligibility. Auto defers to that inference."
-          >
-            <select
-              id="coveredByWorkplacePlan"
-              name="coveredByWorkplacePlan"
-              defaultValue={coveredByWorkplacePlan}
-              className={`${INPUT_CLS} max-w-[10rem]`}
-            >
-              {DEPENDENT_OVERRIDE_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-          </FieldRow>
-          {hasSpouse && (
-            <FieldRow
-              label={`${spouseFirstName ?? "Spouse"} covered by workplace plan`}
-              help="Same override, applied to the spouse's workplace-plan coverage."
-            >
+                <span>State of residence</span>
+                <FieldTooltip text="Drives both engines. In bracket mode the income-tax engine uses this state's brackets, deductions and exemptions; the estate engine uses its estate and inheritance tax rules. Leave it unset to fall back to the flat rates." />
+              </label>
               <select
-                id="spouseCoveredByWorkplacePlan"
-                name="spouseCoveredByWorkplacePlan"
-                defaultValue={spouseCoveredByWorkplacePlan}
-                className={`${INPUT_CLS} max-w-[10rem]`}
+                id="residenceState"
+                aria-describedby="residenceState-summary"
+                value={residence}
+                onChange={(e) => {
+                  const next = e.target.value === "" ? "" : (e.target.value as USPSStateCode);
+                  setResidence(next);
+                  save({ residenceState: next === "" ? null : next });
+                }}
+                className={selectClassName}
               >
-                {DEPENDENT_OVERRIDE_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
+                <option value="">— Not set —</option>
+                {USPS_STATE_CODES.map((code) => (
+                  <option key={code} value={code}>
+                    {USPS_STATE_NAMES[code]}
+                  </option>
                 ))}
               </select>
-            </FieldRow>
-          )}
-        </FieldTable>
-      </section>
-
-      <section>
-        <SectionTitle
-          title="Estate Tax"
-          help="Applied at each death event in the projection."
-        />
-        <FieldTable>
-          <FieldRow label="Administrative expenses">
-            <div className="max-w-[12rem]">
-              <CurrencyInput
-                id="estateAdminExpenses"
-                name="estateAdminExpenses"
-                defaultValue={estateAdminExpenses}
-                className={INPUT_CLS}
-              />
+              <p id="residenceState-summary" className="mt-1.5 text-[12px] text-ink-3">
+                {residenceSummary(residence)}
+              </p>
             </div>
-          </FieldRow>
-          <FieldRow
-            label="State of residence"
-            help="Selects the state estate / inheritance tax engine. Estate rules and inheritance tax flag are summarized in the option labels."
-          >
-            <select
-              id="residenceState"
-              name="residenceState"
-              value={residenceStateValue}
-              onChange={(e) => setResidenceStateValue(e.target.value === "" ? "" : (e.target.value as USPSStateCode))}
-              className={INPUT_CLS}
-            >
-              <option value="">— Not set —</option>
-              {STATE_OPTIONS.map((s) => (
-                <option key={s.code} value={s.code}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
-          </FieldRow>
-          <FieldRow
-            label="Override rate"
-            help="Applied when no state is selected above. Leave blank to skip state estate tax entirely."
-          >
-            <PercentInput
-              id="flatStateEstateRate"
-              name="flatStateEstateRate"
-              defaultValue={pct(flatStateEstateRate)}
-              className={`${INPUT_CLS} max-w-[10rem]`}
-            />
-          </FieldRow>
-          <FieldRow
-            label="IRD tax rate"
-            help="Applied to pre-tax retirement assets (Traditional IRA, 401(k), 403(b)) passing to a non-spouse, non-charity beneficiary at death."
-          >
-            <PercentInput
-              id="irdTaxRate"
-              name="irdTaxRate"
-              defaultValue={pct(irdTaxRate)}
-              className={`${INPUT_CLS} max-w-[10rem]`}
-            />
-          </FieldRow>
-          <FieldRow
-            label="Probate cost rate"
-            help="Applied to the probate estate — assets passing through the will. Excludes jointly-titled property, beneficiary-designated accounts (life insurance, IRA/401(k), POD/TOD), and assets held in a trust."
-          >
-            <PercentInput
-              id="probateCostRate"
-              name="probateCostRate"
-              defaultValue={pct(probateCostRate)}
-              className={`${INPUT_CLS} max-w-[10rem]`}
-            />
-          </FieldRow>
-          <FieldRow
-            label="PV discount rate"
-            help="Defaults to inflation when blank."
-          >
-            <PercentInput
-              id="pvDiscountRate"
-              name="pvDiscountRate"
-              defaultValue={pctOrBlank(pvDiscountRate)}
-              placeholder="Inflation"
-              className={`${INPUT_CLS} max-w-[10rem]`}
-            />
-          </FieldRow>
-          <FieldRow
-            label="Lifetime exemption cap"
-            help="Caps how high the federal estate/gift exemption grows. Leave blank to grow with inflation indefinitely. Enter a dollar amount to grow toward that ceiling and then freeze — or, if below today's exemption (~$15M), to freeze the exemption at that value for the whole plan."
-          >
-            <div className="max-w-[12rem]">
-              <CurrencyInput
-                id="lifetimeExemptionCap"
-                name="lifetimeExemptionCap"
-                defaultValue={lifetimeExemptionCap}
-                placeholder="No cap"
-                className={INPUT_CLS}
-              />
-            </div>
-          </FieldRow>
-        </FieldTable>
-      </section>
 
-      <section>
-        <SectionTitle
-          title="Trust Tax"
-          help="Applied when a non-grantor trust distributes income to a beneficiary outside the household."
-        />
-        <FieldTable>
-          <FieldRow
-            label="Out-of-household DNI rate"
-            help="Records an estimated recipient-side tax in the plan's tax summary. Defaults to top federal bracket (37%)."
-          >
-            <PercentInput
-              id="outOfHouseholdDniRate"
-              name="outOfHouseholdDniRate"
-              defaultValue={pct(outOfHouseholdDniRate)}
-              className={`${INPUT_CLS} max-w-[10rem]`}
-            />
-          </FieldRow>
-        </FieldTable>
-      </section>
-
-      <section>
-        <SectionTitle
-          title="Prior lifetime gifts"
-          help="Post-1976 cumulative taxable gifts before plan start. Pull from the most recent Form 709's 'prior periods' line. Joint pre-plan gifts are pre-attributed (a $200K joint gift = $100K on each spouse)."
-        />
-        <FieldTable>
-          <FieldRow label={clientFirstName ?? "Client"}>
-            <div className="max-w-[12rem]">
-              <CurrencyInput
-                id="priorTaxableGiftsClient"
-                name="priorTaxableGiftsClient"
-                defaultValue={priorTaxableGiftsClient}
-                className={INPUT_CLS}
-              />
-            </div>
-          </FieldRow>
-          {hasSpouse && (
-            <FieldRow label={spouseFirstName ?? "Spouse"}>
-              <div className="max-w-[12rem]">
-                <CurrencyInput
-                  id="priorTaxableGiftsSpouse"
-                  name="priorTaxableGiftsSpouse"
-                  defaultValue={priorTaxableGiftsSpouse}
-                  className={INPUT_CLS}
-                />
+            <div>
+              <span
+                id="tax-calc-method-label"
+                className="mb-1.5 flex items-center gap-1.5 text-[13px] font-medium text-ink-2"
+              >
+                <span>Income tax calculation</span>
+                <FieldTooltip text="Bracket mode uses progressive federal brackets, AMT, NIIT, and FICA based on filing status. Flat mode multiplies taxable income by your federal rate." />
+              </span>
+              <div
+                role="group"
+                aria-labelledby="tax-calc-method-label"
+                className="inline-flex rounded-[var(--radius-sm)] border border-hair-2 bg-paper p-0.5"
+              >
+                {(["flat", "bracket"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    aria-pressed={mode === m}
+                    onClick={() => {
+                      setMode(m);
+                      save({ taxEngineMode: m });
+                    }}
+                    className={`rounded-[var(--radius-sm)] px-3 py-1.5 text-[13px] transition-colors ${
+                      // A selected mode is state, not an action — accent-wash
+                      // marks it without spending the CTA fill on a toggle.
+                      mode === m
+                        ? "bg-accent-wash font-medium text-ink"
+                        : "text-ink-3 hover:text-ink"
+                    }`}
+                  >
+                    {m === "flat" ? "Flat rate" : "Bracket-based"}
+                  </button>
+                ))}
               </div>
-            </FieldRow>
-          )}
-        </FieldTable>
-      </section>
-
-      <section>
-        <SectionTitle title="Capital loss carryforward" />
-        <FieldTable>
-          <FieldRow
-            label="Short-term"
-            help={capitalLossHelp}
-          >
-            <div className="max-w-[12rem]">
-              <CurrencyInput
-                id="capitalLossCarryforwardSt"
-                name="capitalLossCarryforwardSt"
-                defaultValue={capitalLossCarryforwardSt}
-                className={INPUT_CLS}
-              />
             </div>
-          </FieldRow>
-          <FieldRow
-            label="Long-term"
-            help={capitalLossHelp}
-          >
-            <div className="max-w-[12rem]">
-              <CurrencyInput
-                id="capitalLossCarryforwardLt"
-                name="capitalLossCarryforwardLt"
-                defaultValue={capitalLossCarryforwardLt}
-                className={INPUT_CLS}
-              />
-              {capitalLossCarryforwardLtSourceYear != null && (
-                <p className="mt-1 text-xs text-gray-500">
-                  from {capitalLossCarryforwardLtSourceYear} return — needs review
-                </p>
+          </div>
+        </section>
+
+        <div className="grid items-start gap-4 @2xl:grid-cols-2">
+          {/* Left column — everything the income-tax engine reads. */}
+          <div className="space-y-4">
+            <Card
+              title="Income tax"
+              help="Rates applied to taxable income across the projection. In bracket mode the federal rate is unused and the state rate applies only when no state of residence is set."
+            >
+              {mode === "flat" && (
+                <Row
+                  label="Federal rate"
+                  htmlFor="flatFederalRate"
+                  help="The single rate applied to every dollar of taxable income while the plan runs in flat mode. Bracket mode ignores it."
+                >
+                  <PercentInput
+                    id="flatFederalRate"
+                    value={values.flatFederalRate}
+                    onChange={(raw) => update("flatFederalRate", raw, toDecimal(raw))}
+                  />
+                </Row>
               )}
-            </div>
-          </FieldRow>
-        </FieldTable>
-      </section>
+              <Row
+                label="State rate"
+                htmlFor="flatStateRate"
+                help="Applied to taxable income whenever no state of residence is set above, and in flat mode regardless of state."
+              >
+                <PercentInput
+                  id="flatStateRate"
+                  value={values.flatStateRate}
+                  onChange={(raw) => update("flatStateRate", raw, toDecimal(raw))}
+                />
+              </Row>
+              <Row
+                label={hasSpouse ? `Workplace plan — ${clientFirstName ?? "Client"}` : "Covered by workplace plan"}
+                htmlFor="coveredByWorkplacePlan"
+                help={workplacePlanHelp}
+              >
+                <select
+                  id="coveredByWorkplacePlan"
+                  value={values.coveredByWorkplacePlan}
+                  onChange={(e) =>
+                    update(
+                      "coveredByWorkplacePlan",
+                      e.target.value,
+                      e.target.value,
+                    )
+                  }
+                  className={selectClassName}
+                >
+                  {DEPENDENT_OVERRIDE_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </Row>
+              {hasSpouse && (
+                <Row
+                  label={`Workplace plan — ${spouseFirstName ?? "Spouse"}`}
+                  htmlFor="spouseCoveredByWorkplacePlan"
+                  help="Same override, applied to the spouse's workplace-plan coverage."
+                >
+                  <select
+                    id="spouseCoveredByWorkplacePlan"
+                    value={values.spouseCoveredByWorkplacePlan}
+                    onChange={(e) =>
+                      update(
+                        "spouseCoveredByWorkplacePlan",
+                        e.target.value,
+                        e.target.value,
+                      )
+                    }
+                    className={selectClassName}
+                  >
+                    {DEPENDENT_OVERRIDE_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </Row>
+              )}
+            </Card>
 
-      {canEdit && (
-        <div className="flex justify-end pt-2">
-          <button type="submit" disabled={loading} className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-ink disabled:opacity-50">
-            {loading ? "Saving…" : "Save"}
-          </button>
+            <Card title="Capital loss carryforward">
+              <Row label="Short-term" htmlFor="capitalLossCarryforwardSt" help={capitalLossHelp}>
+                <CurrencyInput
+                  id="capitalLossCarryforwardSt"
+                  value={values.capitalLossCarryforwardSt}
+                  onChange={(raw) =>
+                    update("capitalLossCarryforwardSt", raw, toAmountOrNull(raw))
+                  }
+                />
+              </Row>
+              <Row label="Long-term" htmlFor="capitalLossCarryforwardLt" help={capitalLossHelp}>
+                <CurrencyInput
+                  id="capitalLossCarryforwardLt"
+                  value={values.capitalLossCarryforwardLt}
+                  onChange={(raw) =>
+                    update("capitalLossCarryforwardLt", raw, toAmountOrNull(raw))
+                  }
+                />
+                {capitalLossCarryforwardLtSourceYear != null && (
+                  <p className="mt-1 text-[12px] text-ink-4">
+                    from <span className="tabular">{capitalLossCarryforwardLtSourceYear}</span>{" "}
+                    return — needs review
+                  </p>
+                )}
+              </Row>
+            </Card>
+
+            <Card
+              title="Trust tax"
+              help="Applied when a non-grantor trust distributes income to a beneficiary outside the household."
+            >
+              <Row
+                label="Out-of-household DNI rate"
+                htmlFor="outOfHouseholdDniRate"
+                help="Records an estimated recipient-side tax in the plan's tax summary. Defaults to top federal bracket (37%)."
+              >
+                <PercentInput
+                  id="outOfHouseholdDniRate"
+                  value={values.outOfHouseholdDniRate}
+                  onChange={(raw) => update("outOfHouseholdDniRate", raw, toDecimal(raw))}
+                />
+              </Row>
+            </Card>
+          </div>
+
+          {/* Right column — everything settled at a death event. */}
+          <div className="space-y-4">
+            <Card title="Estate tax" help="Applied at each death event in the projection.">
+              <Row
+                label="Administrative expenses"
+                htmlFor="estateAdminExpenses"
+                help="Estimated cost of settling the estate — executor and attorney fees, appraisals, court filings. Deducted from the gross estate before federal estate tax."
+              >
+                <CurrencyInput
+                  id="estateAdminExpenses"
+                  value={values.estateAdminExpenses}
+                  onChange={(raw) => update("estateAdminExpenses", raw, toAmount(raw))}
+                />
+              </Row>
+              <Row
+                label="State estate override rate"
+                htmlFor="flatStateEstateRate"
+                help="Used only when no state of residence is set above. Set it to 0 to skip state estate tax entirely."
+              >
+                <PercentInput
+                  id="flatStateEstateRate"
+                  value={values.flatStateEstateRate}
+                  onChange={(raw) => update("flatStateEstateRate", raw, toDecimal(raw))}
+                />
+              </Row>
+              <Row
+                label="IRD tax rate"
+                htmlFor="irdTaxRate"
+                help="Applied to pre-tax retirement assets (Traditional IRA, 401(k), 403(b)) passing to a non-spouse, non-charity beneficiary at death."
+              >
+                <PercentInput
+                  id="irdTaxRate"
+                  value={values.irdTaxRate}
+                  onChange={(raw) => update("irdTaxRate", raw, toDecimal(raw))}
+                />
+              </Row>
+              <Row
+                label="Probate cost rate"
+                htmlFor="probateCostRate"
+                help="Applied to the probate estate — assets passing through the will. Excludes jointly-titled property, beneficiary-designated accounts (life insurance, IRA/401(k), POD/TOD), and assets held in a trust."
+              >
+                <PercentInput
+                  id="probateCostRate"
+                  value={values.probateCostRate}
+                  onChange={(raw) => update("probateCostRate", raw, toDecimal(raw))}
+                />
+              </Row>
+              <Row
+                label="PV discount rate"
+                htmlFor="pvDiscountRate"
+                help="Discounts future estate values back into today's dollars. Defaults to the plan's inflation rate when left blank."
+              >
+                <PercentInput
+                  id="pvDiscountRate"
+                  value={values.pvDiscountRate}
+                  placeholder="Inflation"
+                  onChange={(raw) => update("pvDiscountRate", raw, toDecimalOrNull(raw))}
+                />
+              </Row>
+              <Row
+                label="Lifetime exemption cap"
+                htmlFor="lifetimeExemptionCap"
+                help="Caps how high the federal estate/gift exemption grows. Leave blank to grow with inflation indefinitely. Enter a dollar amount to grow toward that ceiling and then freeze — or, if below today's exemption (~$15M), to freeze the exemption at that value for the whole plan."
+              >
+                <CurrencyInput
+                  id="lifetimeExemptionCap"
+                  value={values.lifetimeExemptionCap}
+                  placeholder="No cap"
+                  onChange={(raw) => {
+                    // A cap of zero is meaningless — it reads as "no cap", the
+                    // same as blank.
+                    const amount = toAmountOrNull(raw);
+                    update(
+                      "lifetimeExemptionCap",
+                      raw,
+                      amount === "0" ? null : amount,
+                    );
+                  }}
+                />
+              </Row>
+            </Card>
+
+            <Card
+              title="Prior lifetime gifts"
+              help="Post-1976 cumulative taxable gifts before plan start. Pull from the most recent Form 709's 'prior periods' line. Joint pre-plan gifts are pre-attributed (a $200K joint gift = $100K on each spouse)."
+            >
+              <Row
+                label={clientFirstName ?? "Client"}
+                htmlFor="priorTaxableGiftsClient"
+                help={`Cumulative post-1976 taxable gifts ${clientFirstName ?? "the client"} made before the plan starts. Reduces the federal exemption available at death.`}
+              >
+                <CurrencyInput
+                  id="priorTaxableGiftsClient"
+                  value={values.priorTaxableGiftsClient}
+                  onChange={(raw) => update("priorTaxableGiftsClient", raw, toAmount(raw))}
+                />
+              </Row>
+              {hasSpouse && (
+                <Row
+                  label={spouseFirstName ?? "Spouse"}
+                  htmlFor="priorTaxableGiftsSpouse"
+                  help={`Cumulative post-1976 taxable gifts ${spouseFirstName ?? "the spouse"} made before the plan starts. Reduces the federal exemption available at death.`}
+                >
+                  <CurrencyInput
+                    id="priorTaxableGiftsSpouse"
+                    value={values.priorTaxableGiftsSpouse}
+                    onChange={(raw) => update("priorTaxableGiftsSpouse", raw, toAmount(raw))}
+                  />
+                </Row>
+              )}
+            </Card>
+          </div>
         </div>
-      )}
       </fieldset>
-    </form>
+    </div>
   );
 }

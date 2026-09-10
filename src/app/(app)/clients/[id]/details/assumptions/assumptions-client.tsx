@@ -115,6 +115,7 @@ interface AssumptionsClientProps {
   clientFirstName?: string;
   spouseFirstName?: string;
   resolvedInflationRate: number;
+  assetClassInflationRate: number;
   hasInflationAssetClass: boolean;
   deductionsData: DeductionsTabData;
   taxAdjustmentRows: TaxAdjustmentRow[];
@@ -134,6 +135,7 @@ export default function AssumptionsClient({
   clientFirstName,
   spouseFirstName,
   resolvedInflationRate,
+  assetClassInflationRate,
   hasInflationAssetClass,
   deductionsData,
   taxAdjustmentRows,
@@ -190,6 +192,7 @@ export default function AssumptionsClient({
             inflationRate={settings.inflationRate}
             inflationRateSource={settings.inflationRateSource}
             resolvedInflationRate={resolvedInflationRate}
+            assetClassInflationRate={assetClassInflationRate}
             hasInflationAssetClass={hasInflationAssetClass}
             defaultGrowthTaxable={settings.defaultGrowthTaxable}
             defaultGrowthCash={settings.defaultGrowthCash}
