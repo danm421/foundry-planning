@@ -8,6 +8,7 @@ import {
   type DivorceDisposition,
 } from "@/lib/divorce/allocation-rules";
 import { splitAmounts } from "@/lib/divorce/split-math";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import type { OnAllocate } from "./divorce-workbench";
 
 const currency = new Intl.NumberFormat("en-US", {
@@ -48,7 +49,7 @@ function ownerLabel(
     case "primary":
       return people.primaryName || "Primary";
     case "spouse":
-      return people.spouseName || "Spouse";
+      return people.spouseName || CO_CLIENT_LABEL;
     case "joint":
       return "Joint";
     case "entity":

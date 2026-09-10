@@ -81,10 +81,13 @@ export function EstateComparisonChart({
     isMarried && (firstDeathYear == null || selectedYear < firstDeathYear);
 
   const c = proposedTree.client;
-  const ownerNames = {
-    clientName: `${c.firstName} ${c.lastName}`.trim(),
-    spouseName: c.spouseName ?? null,
-  };
+  const ownerNames = useMemo(
+    () => ({
+      clientName: `${c.firstName} ${c.lastName}`.trim(),
+      spouseName: c.spouseName ?? null,
+    }),
+    [c.firstName, c.lastName, c.spouseName],
+  );
   const spouseFirstLabel = personLabel("spouse", ownerNames) + " first";
 
   const comparison = useMemo(
@@ -110,9 +113,7 @@ export function EstateComparisonChart({
       ordering,
       toggleVisible,
       selectedYear,
-      c.firstName,
-      c.lastName,
-      c.spouseName,
+      ownerNames,
       c.dateOfBirth,
       c.spouseDob,
     ],

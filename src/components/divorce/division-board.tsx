@@ -10,6 +10,7 @@ import {
   type ResolvedAllocation,
 } from "@/lib/divorce/allocation-rules";
 import type { SideTotals } from "@/lib/divorce/side-totals";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import type { OnAllocate } from "./divorce-workbench";
 import { DivisibleCard } from "./divisible-card";
 import { SplitDialog } from "./split-dialog";
@@ -246,7 +247,7 @@ export const AllocationBoard = memo(function AllocationBoard({
       </section>
 
       {/* Spouse side */}
-      <SideColumn name={people.spouseName || "Spouse"} totals={totals.spouse}>
+      <SideColumn name={people.spouseName || CO_CLIENT_LABEL} totals={totals.spouse}>
         {spouse.length === 0 ? (
           <EmptyHint text="Nothing assigned here yet." />
         ) : (

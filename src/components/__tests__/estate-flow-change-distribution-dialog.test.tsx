@@ -55,3 +55,28 @@ describe("EstateFlowChangeDistributionDialog — Split among children", () => {
     expect(screen.getAllByLabelText("primary beneficiary")).toHaveLength(2);
   });
 });
+
+describe("EstateFlowChangeDistributionDialog — household beneficiary options", () => {
+  it("renders the co-client option with the lowercase parenthetical tag, beside the client tag", () => {
+    render(
+      <EstateFlowChangeDistributionDialog
+        accountId="acc-1"
+        clientData={householdData()}
+        onApplyBeneficiaries={vi.fn()}
+        onApplyWill={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    // The fixture starts with no beneficiary rows; add one to render the
+    // "Household" optgroup (both household members' real names, tagged).
+    fireEvent.click(screen.getByRole("button", { name: /add primary/i }));
+
+    expect(
+      screen.getByRole("option", { name: "Client Sample (client)" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "Robin Sample (co-client)" }),
+    ).toBeInTheDocument();
+  });
+});

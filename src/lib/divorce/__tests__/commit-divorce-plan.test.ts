@@ -298,7 +298,7 @@ d("commitDivorcePlan", () => {
         .from(beneficiaryDesignations)
         .where(eq(beneficiaryDesignations.id, f.ids.spouseBeneDesignation));
       expect(desigs).toHaveLength(0);
-      expect(result.warnings.some((w) => w.includes("Spouse 401(k)"))).toBe(true);
+      expect(result.warnings.some((w) => w.includes("Co-client 401(k)"))).toBe(true);
 
       // Spouse salary follows, owner flipped to client.
       const [inc] = await db.select().from(incomes).where(eq(incomes.id, f.ids.spouseSalary));
@@ -1133,7 +1133,7 @@ d("commitDivorcePlan", () => {
         .insert(entities)
         .values({
           clientId: f.clientId,
-          name: "Spouse Grantor Trust",
+          name: "Co-client Grantor Trust",
           entityType: "trust",
           trustSubType: "irrevocable",
           isIrrevocable: true,
@@ -1158,7 +1158,7 @@ d("commitDivorcePlan", () => {
       const sEnts = await db
         .select()
         .from(entities)
-        .where(and(eq(entities.clientId, result.spouseClientId), eq(entities.name, "Spouse Grantor Trust")));
+        .where(and(eq(entities.clientId, result.spouseClientId), eq(entities.name, "Co-client Grantor Trust")));
       expect(sEnts).toHaveLength(1);
       expect(sEnts[0].grantor).toBe("client");
       expect(sEnts[0].isGrantor).toBe(true);

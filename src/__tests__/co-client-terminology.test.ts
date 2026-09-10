@@ -56,29 +56,31 @@ const PERMANENT_ALLOWLIST = new Set<string>([
   "src/app/(app)/clients/[id]/estate-planning/spine/combined-block.tsx",
   "src/app/(app)/clients/[id]/estate-planning/spine/pair-row.tsx",
 
-  // ── Task 6: the divorce module is a settled exception — during and around
-  // a divorce, "spouse" (and "ex-spouse"/"departing spouse") is the correct,
-  // legally accurate word for the person being divorced. Renaming it to
-  // "Co-client" here would be actively wrong. Every file below is entirely
-  // about the departing spouse's name, accounts, and household split; none of
-  // it is describing the household's second person in the ordinary
-  // co-client sense the rest of the app uses.
-  "src/components/divorce/__tests__/division-board.test.tsx",
-  "src/components/divorce/commit-preview-dialog.tsx",
-  "src/components/divorce/divisible-card.tsx",
-  "src/components/divorce/division-board.tsx",
-  "src/components/divorce/divorce-workbench.tsx",
-  "src/components/divorce/settings-rail.tsx",
-  "src/components/divorce/split-dialog.tsx",
-  "src/lib/divorce/__tests__/allocation-rules.test.ts",
-  "src/lib/divorce/__tests__/commit-divorce-plan.test.ts",
-  "src/lib/divorce/__tests__/commit-preview.test.ts",
-  "src/lib/divorce/__tests__/divisible-objects.test.ts",
-  "src/lib/divorce/__tests__/fixtures.ts",
-  "src/lib/divorce/__tests__/side-totals.test.ts",
-  "src/lib/divorce/commit-divorce-plan.ts",
-  "src/lib/divorce/commit-preview.ts",
-  "src/lib/divorce/divorce-plans.ts",
+  // ── Task 6 fix round 1 (2026-09-10): the blanket "ex-spouse/departing
+  // spouse is the settled legal exception" comment that used to cover all 16
+  // divorce-module files below was measured hit-by-hit and did not actually
+  // apply to most of them — only commit-divorce-plan.ts and its test file
+  // contain a real "ex-spouse"/"former spouse" phrase. `division-board.tsx`,
+  // `split-dialog.tsx`, and `fixtures.ts` were REMOVED from this list: after
+  // this round's fixes (bare "Spouse" fallback labels → CO_CLIENT_LABEL, test
+  // placeholders renamed) they have zero remaining "Spouse" hits. Every file
+  // still below carries a real, specific reason of its own (noted per line) —
+  // most are a second, un-named fallback label in a file this round only
+  // partly fixed, or an it() test title describing spouse-side mechanics,
+  // neither of which this task's scope authorized changing.
+  "src/components/divorce/__tests__/division-board.test.tsx", // it() title: "...a ghost on spouse"
+  "src/components/divorce/commit-preview-dialog.tsx", // spouseName fallback ("the spouse") at :64 — not one of F3(a)'s 5 named sites
+  "src/components/divorce/divisible-card.tsx", // a 2nd, separate spouseName fallback ("spouse") at :144/:183 — not one of F3(a)'s 5 named sites
+  "src/components/divorce/divorce-workbench.tsx", // spouseName fallback ("the spouse") at :338 — never named by any fix round
+  "src/components/divorce/settings-rail.tsx", // FieldTooltip help text: "...the departing spouse's new household files..."
+  "src/lib/divorce/__tests__/allocation-rules.test.ts", // it() titles describing the primary/spouse allocation split
+  "src/lib/divorce/__tests__/commit-divorce-plan.test.ts", // genuine ex-spouse/former-spouse hits (4), plus it() titles
+  "src/lib/divorce/__tests__/commit-preview.test.ts", // it() titles describing spouse-side/spouse-destined mechanics
+  "src/lib/divorce/__tests__/divisible-objects.test.ts", // it() title: "...client + spouse family_members rows"
+  "src/lib/divorce/__tests__/side-totals.test.ts", // it() titles describing spouse-side totals mechanics
+  "src/lib/divorce/commit-divorce-plan.ts", // genuine ex-spouse/former-spouse hits (12), plus an unreachable "Spouse contact is incomplete" error (F3(b): never sent to the client — see task-6-report.md)
+  "src/lib/divorce/commit-preview.ts", // comment fragments + a label referencing the departing spouse/spouse contact
+  "src/lib/divorce/divorce-plans.ts", // error message: "Household has no spouse contact"
 ]);
 
 /** Directory prefixes that are also allowlisted (Bucket C: machine-facing enum documentation). */

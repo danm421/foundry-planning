@@ -688,7 +688,7 @@ function EstateFlowChangeDistributionDialogInner({
                 <optgroup label="Household">
                   <option value="hh:client">{clientName} (client)</option>
                   {spouseName && (
-                    <option value="hh:spouse">{spouseName} (spouse)</option>
+                    <option value="hh:spouse">{spouseName} (co-client)</option>
                   )}
                 </optgroup>
                 {familyMembers.length > 0 && (
