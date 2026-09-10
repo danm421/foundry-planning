@@ -10,6 +10,7 @@ import type {
 } from "@/db/schema";
 import type { OwnerRef } from "@/lib/insurance-policies/owner-ref";
 import { coerceYearRef, type ClientMilestones } from "@/lib/milestones";
+import { personLabel } from "@/lib/owner-labels";
 import InsurancePolicyDialog from "./insurance-policy-dialog";
 import { useClientAccess } from "@/components/client-access-provider";
 import { InlineAmount } from "@/components/forms/inline-amount";
@@ -199,7 +200,10 @@ export default function InsurancePanel(props: InsurancePanelProps) {
   // Name column renders as a text cell; the separate "Edit" button per row owns the action.
   // Using aria-label on the edit button to disambiguate many "Edit" buttons for screen readers.
 
-  const spouseLabel = props.spouseFirstName ?? "Spouse";
+  const spouseLabel = personLabel("spouse", {
+    clientName: props.clientFirstName,
+    spouseName: props.spouseFirstName,
+  });
   const jointLabel = props.spouseFirstName
     ? `${props.clientFirstName} & ${props.spouseFirstName}`
     : "Joint";

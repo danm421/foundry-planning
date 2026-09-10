@@ -48,7 +48,7 @@ function marriedBase(): ClientData {
       dateOfBirth: "1970-01-01",
       filingStatus: "married_joint",
       lifeExpectancy: 90,
-      spouseName: "Spouse",
+      spouseName: "Jane",
       spouseDob: "1972-01-01",
       spouseLifeExpectancy: 92,
     },

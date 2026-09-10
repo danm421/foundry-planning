@@ -86,6 +86,20 @@ const PERMANENT_ALLOWLIST = new Set<string>([
   // describes the real person going through this divorce, not the ordinary
   // co-client sense the rest of the app uses "spouse" for.
   "src/components/divorce/settings-rail.tsx", // FieldTooltip help text: "Where the departing spouse's new household files..." (:171)
+
+  // ── Task 8 (2026-09-10): scanner artifacts and machine-facing diagnostics.
+  // None of these files has a person-visible "Spouse" — the scanner's naive
+  // quote-pairing and its blindness to `${}` interpolation both produce hits
+  // that are not real display copy. Each reason below names the file's only
+  // actual hit(s), same standard as the entries above.
+  "src/lib/tax-reconciliation/rules/wages.ts", // No display copy anywhere in the file says "Spouse" — grepped case-insensitively and confirmed. Both ratchet hits are scanner artifacts: `${spouse ? "..." : ""}` (:90) matches the bare `spouse` BOOLEAN variable name inside the interpolation, and the `ownerChoices: spouse ? ["client", "spouse"]` line (:138) is a mismatched quote-pairing span (the naive scanner pairs the closing quote of an unrelated backtick-embedded string with the opening quote of `"client"`, spanning across the bare `spouse` identifier in between) — the same class already documented above for insurance-content.tsx and portal/page.tsx.
+  "src/components/cashflow/medicare/medicare-year-table.tsx", // Only hit is `` ` / ${y.ages.spouse}` `` (:89) — `y.ages.spouse` is a property access on a numeric ages object (an age, e.g. 63), never the word "Spouse"; the scanner matches the bare property name inside the template literal, not display text. Same class as `insurance-content.tsx`'s already-documented `spouse: salaryFor("spouse")` entry above.
+  "src/engine/life-insurance-expiry.ts", // Only hit is a thrown Error's message, `computeTermEndYear: missing spouse dob/retirementAge for ${insured}-insured policy` (:23) — a developer-facing exception, never rendered to an advisor or client.
+  "src/engine/what-if/life-insurance-need.ts", // Two hits, both machine-facing: a JSDoc code span documenting the `deceased === "spouse"` comparison (:79), and a thrown Error's message, `buildLifeInsuranceWhatIfData: deceased='spouse' requires spouseDob` (:333) — a developer diagnostic, not display copy.
+  "src/lib/life-insurance/need-over-time.ts", // Only hit is a JSDoc code span documenting the same `deceased === "spouse"` comparison the engine throws on (:42) — internal type documentation, not display copy.
+  "src/lib/medicare/dbMapper.ts", // Only hit is a thrown Error validating an unexpected DB row value, `medicare_coverage row has unexpected owner "${row.owner}" — expected "client" or "spouse"` (:13) — a developer diagnostic on a malformed row, never shown to a user.
+  "src/lib/risk/existing-scores.ts", // Only hit is a JSDoc "KNOWN LIMITATION" comment naming the `subject === "spouse"` branch (:26) — internal documentation of a scoring edge case, not display copy.
+  "src/lib/household-map/social-security.ts", // Only hit is a JSDoc comment, "The owner's DOB for an SS row — the SPOUSE's for a spouse-owned benefit" (:20), documenting `ownerDob`'s internal side-selection logic. The file's actual user-facing labels ("no benefit", "at 67", etc.) never mention spouse.
 ]);
 
 /** Directory prefixes that are also allowlisted (Bucket C: machine-facing enum documentation). */
@@ -137,15 +151,12 @@ const PENDING = new Set<string>([
   "src/components/balance-sheet-report/view-model.ts",
   "src/components/balance-sheet-report/year-picker.tsx",
   "src/components/cashflow-report.tsx",
-  "src/components/cashflow/medicare/medicare-year-table.tsx",
   "src/components/cashflow/projection-ages.ts",
   "src/components/client-identity-menu.tsx",
   "src/components/crm-household-form.tsx",
   "src/components/crm-import-preview.tsx",
   "src/components/deductions-derived-summary.tsx",
   "src/components/deductions-itemized-list.tsx",
-  "src/components/disability-panel.tsx",
-  "src/components/disability-policy-dialog.tsx",
   "src/components/family-view.tsx",
   "src/components/forge/forge-panel.tsx",
   "src/components/gift-form.tsx",
@@ -164,11 +175,6 @@ const PENDING = new Set<string>([
   "src/components/import/review-wizard.tsx",
   "src/components/income-expenses-view.tsx",
   "src/components/income-expenses/__tests__/row.test.tsx",
-  "src/components/insurance-panel.tsx",
-  "src/components/insurance-policy-details-tab.tsx",
-  "src/components/insurance-policy-dialog.tsx",
-  "src/components/medicare/__tests__/medicare-setup-dialog.test.tsx",
-  "src/components/medicare/medicare-setup-dialog.tsx",
   "src/components/milestone-year-picker.tsx",
   "src/components/monte-carlo/report-view.tsx",
   "src/components/monte-carlo/yearly-breakdown.tsx",
@@ -178,13 +184,6 @@ const PENDING = new Set<string>([
   "src/components/quick-start/insurance-step.tsx",
   "src/components/report-controls/death-order-toggle.tsx",
   "src/components/risk-profile-pdf/__tests__/risk-profile-pdf-document.test.tsx",
-  "src/components/risk/rtq-dialog.tsx",
-  "src/components/risk/send-rtq-dialog.tsx",
-  "src/components/social-security-card.tsx",
-  "src/components/social-security-dialog.tsx",
-  "src/components/solver/summaries/__tests__/life-insurance-summary-view.test.tsx",
-  "src/components/solver/summaries/life-insurance-summary-view.tsx",
-  "src/components/solver/summaries/medicare-summary-view.tsx",
   "src/components/state-death-tax-report-view.tsx",
   "src/components/stock-options/future-activity-ledger.tsx",
   "src/components/tax-adjustments-list.tsx",
@@ -246,7 +245,6 @@ const PENDING = new Set<string>([
   "src/engine/death-event/section-2035-lookback.ts",
   "src/engine/death-event/shared.ts",
   "src/engine/family-cashflow.ts",
-  "src/engine/life-insurance-expiry.ts",
   "src/engine/monteCarlo/__tests__/summarize.test.ts",
   "src/engine/projection.ts",
   "src/engine/scenario/__tests__/applyChanges.test.ts",
@@ -256,8 +254,6 @@ const PENDING = new Set<string>([
   "src/engine/trust-tax/__tests__/apply-trust-annual-pass.test.ts",
   "src/engine/trust-tax/route-dni.ts",
   "src/engine/what-if/__tests__/hypothetical-estate-tax.test.ts",
-  "src/engine/what-if/__tests__/life-insurance-need.test.ts",
-  "src/engine/what-if/life-insurance-need.ts",
   "src/lib/__tests__/client-search.test.ts",
   "src/lib/__tests__/entity-owners-ops.test.ts",
   "src/lib/__tests__/milestones.test.ts",
@@ -293,7 +289,6 @@ const PENDING = new Set<string>([
   "src/lib/household-map/__tests__/life-expectancy-write.test.ts",
   "src/lib/household-map/__tests__/social-security.test.ts",
   "src/lib/household-map/approximate-milestones.ts",
-  "src/lib/household-map/social-security.ts",
   "src/lib/imports/__tests__/commit-modules.test.ts",
   "src/lib/imports/__tests__/import-milestones.test.ts",
   "src/lib/imports/__tests__/living-slot.test.ts",
@@ -327,14 +322,9 @@ const PENDING = new Set<string>([
   "src/lib/insurance-policies/__tests__/disability-premium-expense.test.ts",
   "src/lib/insurance-policies/__tests__/owner-ref.test.ts",
   "src/lib/insurance-policies/__tests__/schedule-years.test.ts",
-  "src/lib/insurance-policies/load-li-inventory.ts",
   "src/lib/intake/__tests__/diff.test.ts",
   "src/lib/life-event-markers.ts",
-  "src/lib/life-insurance/__tests__/existing-coverage.test.ts",
   "src/lib/life-insurance/__tests__/need-over-time.test.ts",
-  "src/lib/life-insurance/__tests__/test-helpers.ts",
-  "src/lib/life-insurance/need-over-time.ts",
-  "src/lib/medicare/dbMapper.ts",
   "src/lib/milestones.ts",
   "src/lib/observations/draft.ts",
   "src/lib/onboarding/step-status.ts",
@@ -351,7 +341,6 @@ const PENDING = new Set<string>([
   "src/lib/quick-start/__tests__/insurance-save.test.ts",
   "src/lib/quick-start/derive.ts",
   "src/lib/retirement/__tests__/derive-retirement-summary.test.ts",
-  "src/lib/risk/existing-scores.ts",
   "src/lib/savings/__tests__/salary-options.test.ts",
   "src/lib/savings/salary-options.ts",
   "src/lib/scenario/__tests__/changes-writer.test.ts",
@@ -375,9 +364,6 @@ const PENDING = new Set<string>([
   "src/lib/tax-reconciliation/__tests__/rules-pensions.test.ts",
   "src/lib/tax-reconciliation/__tests__/rules-social-security.test.ts",
   "src/lib/tax-reconciliation/__tests__/rules-wages.test.ts",
-  "src/lib/tax-reconciliation/rules/assumptions.ts",
-  "src/lib/tax-reconciliation/rules/social-security.ts",
-  "src/lib/tax-reconciliation/rules/wages.ts",
   "src/lib/tax/__tests__/bracket.test.ts",
   "src/lib/tax/__tests__/derive-deductions.test.ts",
   "src/lib/tax/__tests__/senior-deductions.test.ts",

@@ -10,6 +10,7 @@ import {
   entities,
 } from "@/db/schema";
 import { and, eq, inArray, asc } from "drizzle-orm";
+import { individualOwnerLabel } from "@/lib/owner-labels";
 
 // ── Public shapes ─────────────────────────────────────────────────────────────
 export interface LiBeneficiaryRow {
@@ -74,16 +75,6 @@ export interface RawLiInventory {
   entityNames: Record<string, string>;
 }
 
-function personLabel(
-  person: "client" | "spouse" | "joint",
-  clientName: string,
-  spouseName: string | null,
-): string {
-  if (person === "client") return clientName;
-  if (person === "spouse") return spouseName ?? "Spouse";
-  return "Joint";
-}
-
 // ── Pure shaper (unit-tested) ─────────────────────────────────────────────────
 export function shapeLiInventory(raw: RawLiInventory): LifeInsuranceInventory {
   const policies: LiPolicyRow[] = raw.accounts.map((acct) => {
@@ -99,7 +90,7 @@ export function shapeLiInventory(raw: RawLiInventory): LifeInsuranceInventory {
     const beneficiaries: LiBeneficiaryRow[] = (raw.beneficiaries[acct.id] ?? []).map(
       (b) => {
         let name = "—";
-        if (b.householdRole) name = personLabel(b.householdRole, raw.clientName, raw.spouseName);
+        if (b.householdRole) name = individualOwnerLabel(b.householdRole, { clientName: raw.clientName, spouseName: raw.spouseName });
         else if (b.familyMemberId) name = raw.familyMemberNames[b.familyMemberId] ?? "—";
         else if (b.externalBeneficiaryId) name = raw.externalNames[b.externalBeneficiaryId] ?? "—";
         else if (b.entityIdRef) name = raw.entityNames[b.entityIdRef] ?? "—";
@@ -111,8 +102,8 @@ export function shapeLiInventory(raw: RawLiInventory): LifeInsuranceInventory {
       accountId: acct.id,
       name: acct.name,
       policyType: detail?.policyType ?? "term",
-      ownerLabel: personLabel(owner, raw.clientName, raw.spouseName),
-      insuredLabel: personLabel(acct.insuredPerson, raw.clientName, raw.spouseName),
+      ownerLabel: individualOwnerLabel(owner, { clientName: raw.clientName, spouseName: raw.spouseName }),
+      insuredLabel: individualOwnerLabel(acct.insuredPerson, { clientName: raw.clientName, spouseName: raw.spouseName }),
       insuredPerson: acct.insuredPerson,
       deathBenefit: detail?.faceValue ?? 0,
       cashValue: acct.value,

@@ -12,6 +12,7 @@ import type { PolicyFormState } from "./insurance-policy-dialog";
 import { isOwnerPrincipal } from "./insurance-policy-dialog";
 import type { OwnerRef } from "@/lib/insurance-policies/owner-ref";
 import type { ClientMilestones } from "@/lib/milestones";
+import { personLabel } from "@/lib/owner-labels";
 import MilestoneYearPicker from "./milestone-year-picker";
 import {
   inputClassName,
@@ -72,7 +73,7 @@ export default function InsurancePolicyDetailsTab({
 }: InsurancePolicyDetailsTabProps) {
   const isTerm = state.policyType === "term";
   const currentYear = new Date().getFullYear();
-  const spouseLabel = spouseFirstName ?? "Spouse";
+  const spouseLabel = personLabel("spouse", { clientName: clientFirstName, spouseName: spouseFirstName });
 
   // Build the unified owner option list.
   //   Each option's `value` is a JSON-encoded OwnerRef so React can use a

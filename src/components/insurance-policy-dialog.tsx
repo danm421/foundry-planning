@@ -21,6 +21,7 @@ import InsurancePolicyCashValueTab from "./insurance-policy-cash-value-tab";
 import DialogShell from "./dialog-shell";
 import TabAutoSaveIndicator from "./tab-auto-save-indicator";
 import { useTabAutoSave, type SaveResult } from "@/lib/use-tab-auto-save";
+import { personLabel } from "@/lib/owner-labels";
 
 export type PostPayoutGrowthSource = "model_portfolio" | "inflation" | "custom";
 
@@ -118,7 +119,7 @@ export function formatOwnerLabel(
     const fm = familyMembers.find((f) => f.id === ref.id);
     if (!fm) return "Owner";
     if (fm.role === "client") return clientFirstName;
-    if (fm.role === "spouse") return spouseFirstName ?? "Spouse";
+    if (fm.role === "spouse") return personLabel("spouse", { clientName: clientFirstName, spouseName: spouseFirstName });
     return fm.firstName;
   }
   if (ref.kind === "entity") {
