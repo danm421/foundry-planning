@@ -41,6 +41,9 @@ const buyRow: typeof assetTransactions.$inferSelect = {
   mortgageAmount: "300000.00",
   mortgageRate: "0.065",
   mortgageTermMonths: 360,
+  annualPropertyTax: null,
+  propertyTaxGrowthRate: null,
+  propertyTaxGrowthSource: null,
   createdAt: new Date(),
   updatedAt: new Date(),
 };
