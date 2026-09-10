@@ -343,12 +343,17 @@ export default function AddAssetTransactionForm({
           if (!res.ok) throw new Error((await res.json()).error ?? "Failed to save transaction");
         }
       } else {
-        // Add mode — fan out to N records.
+        // Add mode — fan out to N records that share ONE bundle id, so the
+        // Techniques list can render them as a single technique.
+        const bundleId = crypto.randomUUID();
         for (const leg of legs) {
           const legName = leg.name || deriveLegName(leg, name, { assetLabel: assetLabelFor(leg) });
-          const body = legToBody({ ...leg, name: legName }, year, {
-            isRealEstate: leg.kind === "sell" ? realEstateFor(leg) : false,
-          });
+          const body = {
+            ...legToBody({ ...leg, name: legName }, year, {
+              isRealEstate: leg.kind === "sell" ? realEstateFor(leg) : false,
+            }),
+            bundleId,
+          };
           const id = crypto.randomUUID();
           if (onSubmitDraft) {
             onSubmitDraft(coerceAssetTransactionDraft(body, id));

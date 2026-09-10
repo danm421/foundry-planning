@@ -81,6 +81,13 @@ describe("AddAssetTransactionForm — add mode fan-out", () => {
     // no persist POST in draft mode
     expect(fetchMock.mock.calls.filter((a) => String(a[0]).includes("asset-transactions"))).toHaveLength(0);
     expect(onSaved).toHaveBeenCalledTimes(1);
+
+    // Every leg from one dialog carries ONE bundle id — that is what makes the
+    // Techniques list show them as a single technique.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const bundleIds = new Set((drafts as any[]).map((d) => d.bundleId));
+    expect(bundleIds.size).toBe(1);
+    expect([...bundleIds][0]).toBeTruthy();
   });
 });
 
