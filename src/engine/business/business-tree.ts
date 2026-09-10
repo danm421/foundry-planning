@@ -1,5 +1,3 @@
-import type { Account } from "../types";
-
 /** Minimal account shape the tree walk needs. The engine passes full
  *  `Account`s; the balance-sheet report passes its slimmer `AccountLike`. */
 interface TreeNode {
@@ -38,9 +36,9 @@ export function collectBusinessTree<T extends TreeNode>(rootId: string, accounts
  * `businessConsolidatedValue` did before — same drained-account exclusion
  * (balance ≤ 0 → skipped, even the parent).
  */
-export function consolidatedBusinessValue(
+export function consolidatedBusinessValue<T extends TreeNode>(
   rootId: string,
-  accounts: Account[],
+  accounts: T[],
   accountBalances: Record<string, number>,
 ): number {
   const tree = collectBusinessTree(rootId, accounts);
