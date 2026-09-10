@@ -458,3 +458,232 @@ describe("ChatSurface — payload.accounts must never regress a linked row (roun
   // in `use-chat-commit.test.tsx`, which forces genuine overlap with a
   // manually-gated fetch rather than relying on `userEvent`'s timing.
 });
+
+// --- Task 11b: the chat itself ---------------------------------------------
+
+/** A "done" turn response, matching the shape `chat/turn/route.ts` sends
+ *  after C1 (Ruling 90) added `turnEntries`. */
+function turnResponse(overrides: {
+  accounts: Array<Record<string, unknown>>;
+  summary: string;
+  turnEntries: Array<Record<string, unknown>>;
+  excludedRows?: unknown[];
+}): Response {
+  return new Response(
+    JSON.stringify({
+      payload: { accounts: overrides.accounts },
+      summary: overrides.summary,
+      excludedRows: overrides.excludedRows ?? [],
+      turnEntries: overrides.turnEntries,
+    }),
+    { status: 200, headers: { "content-type": "application/json" } },
+  );
+}
+
+const composerTextbox = () => screen.getByRole("textbox", { name: /ask a follow-up question/i });
+const sendButton = () => screen.getByRole("button", { name: /^send$/i });
+
+describe("ChatSurface — composer and transcript render outside the finished-and-result gate (C3)", () => {
+  // THE test that matters for C3: a resumed draft with no extraction run
+  // in THIS session never flips `status` away from "idle", so `finished`
+  // stays false and `result` stays null for the entire session unless a
+  // turn lands. Mutation this catches: moving the Chat card's JSX back
+  // inside `{finished && result && (...)}` — both assertions below would
+  // then find nothing, since that block never renders here.
+  it("renders the transcript and composer for a resumed draft with no extraction run this session", async () => {
+    vi.mocked(fetch).mockReset();
+    vi.mocked(fetch).mockResolvedValueOnce(
+      importGetResponse({
+        chat: {
+          transcript: [
+            { role: "user", text: "what's the basis on the IRA?", at: "t0" },
+            { role: "assistant", text: "It's $5,000.", at: "t0" },
+          ],
+        },
+      }),
+    );
+
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={[]} />);
+
+    expect(await screen.findByText("what's the basis on the IRA?")).toBeInTheDocument();
+    expect(screen.getByText("It's $5,000.")).toBeInTheDocument();
+    expect(composerTextbox()).toBeInTheDocument();
+    expect(sendButton()).toBeInTheDocument();
+    // Nothing from the extracted-state panel is showing — this is purely
+    // the chat surface having something to show BEFORE any extraction.
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+});
+
+describe("ChatSurface — the transcript renders what the route returned, never a locally composed string (C1)", () => {
+  it("appends the server's turnEntries verbatim, not the advisor's own typed text", async () => {
+    await renderAfterExtraction();
+
+    vi.mocked(fetch).mockResolvedValueOnce(
+      turnResponse({
+        accounts: [{ name: "IRA", custodian: "Schwab", value: 100, __rowId: "r1" }],
+        summary: "server summary",
+        turnEntries: [
+          { role: "user", text: "SERVER-ECHOED TEXT", at: "t1" },
+          { role: "tool", tool: "explain", summary: "Cited page 2.", at: "t1" },
+          { role: "assistant", text: "server summary", at: "t1" },
+        ],
+      }),
+    );
+
+    await userEvent.type(composerTextbox(), "what I actually typed");
+    await userEvent.click(sendButton());
+
+    // The rendered user entry is the SERVER's text, not the local input —
+    // mutation this catches: `use-chat-turn.ts` synthesizing
+    // `{ role: "user", text: message, at: now }` client-side instead of
+    // using `body.turnEntries`.
+    expect(await screen.findByText("SERVER-ECHOED TEXT")).toBeInTheDocument();
+    expect(screen.queryByText("what I actually typed")).not.toBeInTheDocument();
+    expect(screen.getByText(/Cited page 2\./)).toBeInTheDocument();
+    expect(screen.getByText("server summary")).toBeInTheDocument();
+  });
+});
+
+describe("ChatSurface — a chat turn's row edit must survive into the next commit (Step 2, THE test that matters)", () => {
+  // Task 10b's `handleCommitRows` PATCHes `payload.accounts` wholesale from
+  // its OWN React row state before every commit. A tool that edits a row
+  // SERVER-SIDE is silently overwritten by that PATCH unless this surface
+  // adopts the turn's returned payload into its row state first. Mutation
+  // this catches: removing (or no-op-ing) the `await adoptTurnPayload(...)`
+  // call in `use-chat-turn.ts` — the commit's PATCH would then carry the
+  // PRE-turn value (100), not the tool's edit (999).
+  it("adopts a turn's row edit before any subsequent commit's PATCH, carrying the tool's edit not the pre-turn value", async () => {
+    await renderAfterExtraction(); // r1 "IRA" value=100
+
+    vi.mocked(fetch).mockResolvedValueOnce(
+      turnResponse({
+        accounts: [
+          {
+            name: "IRA",
+            custodian: "Schwab",
+            category: "taxable",
+            subType: "brokerage",
+            value: 999,
+            __rowId: "r1",
+          },
+        ],
+        summary: "Updated the value to $999.",
+        turnEntries: [
+          { role: "user", text: "fix the value", at: "t1" },
+          { role: "tool", tool: "edit_row", summary: "Set value to 999.", at: "t1" },
+          { role: "assistant", text: "Updated the value to $999.", at: "t1" },
+        ],
+      }),
+    );
+
+    await userEvent.type(composerTextbox(), "fix the value");
+    await userEvent.click(sendButton());
+    await screen.findByText("Updated the value to $999.");
+
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(importGetResponse({})) // fresh GET before the payload.accounts PATCH
+      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 })) // PATCH payload.accounts
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            payload: {
+              accounts: [
+                {
+                  name: "IRA",
+                  custodian: "Schwab",
+                  value: 999,
+                  __rowId: "r1",
+                  match: { kind: "exact", existingId: "acct-1" },
+                },
+              ],
+            },
+          }),
+          { status: 200 },
+        ),
+      ) // POST commit
+      .mockResolvedValueOnce(importGetResponse({})) // fresh GET before writeChatState
+      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 })); // PATCH chat
+
+    const row = screen.getByRole("row", { name: /IRA/ });
+    await userEvent.click(within(row).getByRole("button", { name: /commit/i }));
+    await screen.findByRole("button", { name: /committed/i });
+
+    const patchCall = vi.mocked(fetch).mock.calls.find(([url, init]) => {
+      if (!String(url).endsWith("/imports/i1") || init?.method !== "PATCH") return false;
+      const body = JSON.parse(init.body as string);
+      return Boolean(body.payloadJson?.payload);
+    });
+    expect(patchCall).toBeDefined();
+    const [, init] = patchCall!;
+    const accounts = JSON.parse(init!.body as string).payloadJson.payload.accounts as Array<{
+      __rowId: string;
+      value: number;
+    }>;
+    expect(accounts.find((a) => a.__rowId === "r1")?.value).toBe(999);
+  });
+});
+
+describe("ChatSurface — turn failure modes are required behaviour, not polish (Step 3)", () => {
+  it("renders the server's error copy for a failed turn, and restores the typed message", async () => {
+    await renderAfterExtraction();
+
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: "Too many messages. Please wait and try again." }), {
+        status: 429,
+        headers: { "retry-after": "5" },
+      }),
+    );
+
+    const textbox = composerTextbox();
+    await userEvent.type(textbox, "another question");
+    await userEvent.click(sendButton());
+
+    expect(
+      await screen.findByText("Too many messages. Please wait and try again. Retry in 5s."),
+    ).toBeInTheDocument();
+    // Re-enabled on failure (brief Step 3), and the question wasn't lost.
+    expect(sendButton()).toBeEnabled();
+    expect(textbox).toBeEnabled();
+    expect(textbox).toHaveValue("another question");
+  });
+
+  it("disables the composer while a turn is in flight, and re-enables once it resolves", async () => {
+    await renderAfterExtraction();
+
+    let resolveFetch!: (v: Response) => void;
+    vi.mocked(fetch).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveFetch = resolve;
+      }),
+    );
+
+    const textbox = composerTextbox();
+    await userEvent.type(textbox, "hello");
+    await userEvent.click(sendButton());
+
+    expect(screen.getByRole("button", { name: /sending/i })).toBeDisabled();
+    expect(textbox).toBeDisabled();
+
+    resolveFetch(
+      turnResponse({
+        accounts: [{ name: "IRA", custodian: "Schwab", value: 100, __rowId: "r1" }],
+        summary: "ok",
+        turnEntries: [
+          { role: "user", text: "hello", at: "t1" },
+          { role: "assistant", text: "ok", at: "t1" },
+        ],
+      }),
+    );
+
+    // Back to "Send" (no longer "Sending…") and the textbox is usable
+    // again — the button itself stays disabled here only because the
+    // successful send cleared it back to empty, not because anything is
+    // still in flight, so type again and confirm it re-enables.
+    await screen.findByRole("button", { name: /^send$/i });
+    expect(textbox).toBeEnabled();
+    await userEvent.type(textbox, "another one");
+    expect(sendButton()).toBeEnabled();
+  });
+});

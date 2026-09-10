@@ -368,6 +368,51 @@ describe("chat extract route gates", () => {
     expect(persistedChat?.decisions.length).toBeGreaterThan(0);
   });
 
+  // Ruling 89 / Task 11b Step 0 — THE test that matters for this route: the
+  // chat turn route (`chat/turn/route.ts:325`) reads rows from
+  // `payloadJson.payload.accounts`, and before this fix that key was never
+  // written until the advisor's FIRST commit — so the very first question on
+  // a freshly-extracted import hit `describeRows` rendering "(no rows)" and
+  // every mutating tool threw "unknown row". Mutation this catches: dropping
+  // the `payload: { accounts: kept }` key from this route's `db.update` call
+  // (reverting to persisting ONLY the chat slice) — `persistedPayload` would
+  // then be `undefined` and the `toHaveLength` assertion below would throw.
+  it("persists payload.accounts alongside the chat slice, so the chat surface's first question has rows to answer (Step 0)", async () => {
+    filesResult = [fileRow("f1", "schwab.pdf")];
+    vi.mocked(extractDocument).mockResolvedValue({
+      documentType: "other",
+      fileName: "schwab.pdf",
+      extracted: {
+        accounts: [{ name: "IRA", custodian: "Schwab", value: 100 }],
+        incomes: [],
+        expenses: [],
+        liabilities: [],
+        entities: [],
+        lifePolicies: [],
+        wills: [],
+        savings: [],
+      },
+      warnings: [],
+      promptVersion: "v",
+    } as never);
+
+    await readSse(await POST(req(), params));
+
+    const persistedPayload = (currentImportRow.payloadJson as ImportPayloadJson).payload;
+    expect(persistedPayload?.accounts).toHaveLength(1);
+    expect(persistedPayload?.accounts?.[0]).toMatchObject({ name: "IRA", value: 100 });
+    // Shape stays narrow — only `accounts`, matching what `use-chat-commit.ts`
+    // writes at commit time (brief: "Keep the shape narrow").
+    expect(Object.keys(persistedPayload as object)).toEqual(["accounts"]);
+    // `payload` lands in the SAME write as this route's own chat-state
+    // update (Ruling 63 — no THIRD write after that one). Two total updates
+    // carry a `payloadJson` key in this flow: `runImportExtraction`'s own
+    // aggregate `fileResults` write, then this route's — and it's the
+    // SECOND one that must carry `chat` and `payload` together.
+    expect(payloadJsonUpdateCount).toBe(2);
+    expect(currentImportRow.payloadJson).toHaveProperty("chat");
+  });
+
   // IMPORTANT 2 (fix round 1): the brief names `skipExtracted: true` as one
   // of "three behaviours the route must carry, each with a test" — an
   // already-extracted file must not be re-read (and re-billed) when new

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ExcludedRow } from "@/components/statement-chat/excluded-rows";
 import type { ExtractedAccount } from "@/lib/extraction/types";
 import type { Annotated } from "@/lib/imports/types";
-import { readChatState, writeChatState } from "@/lib/statement-chat/state";
+import { readChatState, writeChatState, type ChatTurn } from "@/lib/statement-chat/state";
 
 type Row = Annotated<ExtractedAccount>;
 
@@ -68,6 +68,10 @@ async function patchImportPayloadJson(
 export function useChatCommit(clientId: string, importId: string) {
   const [result, setResult] = useState<ChatCommitResult | null>(null);
   const [committedRowIds, setCommittedRowIds] = useState<string[]>([]);
+  // The persisted conversation (Task 11b, C2) — hydrated by the SAME mount
+  // GET as `committedRowIds` below, not a second request: `.transcript` sits
+  // on the identical `payloadJson` this effect already fetches and parses.
+  const [transcript, setTranscript] = useState<ChatTurn[]>([]);
   const [finalizeStatus, setFinalizeStatus] = useState<FinalizeStatus>("idle");
   const [finalizeError, setFinalizeError] = useState<string | null>(null);
 
@@ -101,21 +105,28 @@ export function useChatCommit(clientId: string, importId: string) {
   // landed, whatever order the clicks arrived in.
   const commitQueueRef = useRef<Promise<void>>(Promise.resolve());
 
-  // Hydrate `committedRowIds` from the persisted chat state on mount, so a
-  // reload (or resuming a chat import from the drafts list) shows a row
-  // already committed in an earlier session as locked instead of
-  // re-committable (brief Step 2, "survives a reload").
+  // Hydrate `committedRowIds` AND `transcript` from the persisted chat state
+  // on mount, so a reload (or resuming a chat import from the drafts list)
+  // shows a row already committed in an earlier session as locked instead of
+  // re-committable (brief Step 2, "survives a reload"), and reads the
+  // conversation's history back rather than starting blank (Task 11b, C2 —
+  // ONE request, one parse, both fields; no second GET).
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const payloadJson = await readImportPayloadJson(clientId, importId);
-        if (!cancelled) setCommittedRowIds(readChatState(payloadJson).committedRowIds);
+        if (!cancelled) {
+          const chat = readChatState(payloadJson);
+          setCommittedRowIds(chat.committedRowIds);
+          setTranscript(chat.transcript);
+        }
       } catch (err) {
         // Best-effort hydration: a failed read just means rows show as
-        // not-yet-committed until the first successful commit repopulates
-        // this list — not a mutation, so nothing to surface as an error.
-        console.error("Could not load this import's committed rows:", err);
+        // not-yet-committed (until the first successful commit repopulates
+        // that list) and the transcript starts empty — not a mutation, so
+        // nothing to surface as an error.
+        console.error("Could not load this import's chat state:", err);
       }
     })();
     return () => {
@@ -310,6 +321,57 @@ export function useChatCommit(clientId: string, importId: string) {
     [updateResult],
   );
 
+  // Appends a turn's own transcript delta (Task 11b, C1) — ALWAYS the array
+  // the turn route returned (`turnEntries`), never a locally composed
+  // user/assistant string, so the in-session transcript never disagrees with
+  // the one that reads back after a reload. Not routed through
+  // `commitQueueRef`: unlike `adoptTurnPayload` below, the transcript is
+  // display-only and never read back by a commit's PATCH, so it has nothing
+  // to race.
+  const appendTurnEntries = useCallback((entries: ChatTurn[]) => {
+    setTranscript((prev) => [...prev, ...entries]);
+  }, []);
+
+  // Adopts a turn's returned row state (Task 11b, Step 2 — THE load-bearing
+  // requirement). A tool can edit/merge/drop a row SERVER-SIDE; `commitRowsNow`
+  // above PATCHes `payload.accounts` wholesale from `resultRef.current.rows`
+  // before every commit, so a tool's edit is silently overwritten by the next
+  // commit unless it lands in `resultRef.current` FIRST. Routed through the
+  // SAME `commitQueueRef` `handleCommitRows` uses (brief: "do not invent a
+  // second ordering mechanism") — a commit clicked while this turn's fetch is
+  // still in flight, or already queued, is guaranteed to read this turn's
+  // adopted rows rather than the pre-turn snapshot, because both now
+  // serialize through the one queue.
+  //
+  // Always a FULL replace of `rows`/`excluded`, never a merge: the turn
+  // route's `payload.accounts` and `excludedRows` are themselves the
+  // server's complete, authoritative sets (Step 0 + the route's own
+  // fresh-read merge), not deltas.
+  //
+  // When `prev` is null — a resumed draft with no extraction run THIS
+  // session (C3) — this is the first thing to populate `result` at all, so
+  // the extracted-state panel (table, Finish import) appears for the first
+  // time off the turn's own reply text as its summary. That text is real
+  // (the model's actual reply), not fabricated — unlike a hypothetical
+  // mount-time hydration, which the brief's C3 scope limit rules out because
+  // no real summary exists at mount.
+  const adoptTurnPayload = useCallback(
+    (accounts: Row[], excluded: ExcludedRow<Row>[], summary: string): Promise<void> => {
+      const apply = () => {
+        updateResult((prev) =>
+          prev ? { ...prev, rows: accounts, excluded } : { summary, caveats: [], rows: accounts, excluded },
+        );
+      };
+      const task = commitQueueRef.current.then(apply, apply);
+      commitQueueRef.current = task.then(
+        () => undefined,
+        () => undefined,
+      );
+      return task;
+    },
+    [updateResult],
+  );
+
   // Closes the import (Ruling 61/70) — `persistPartialCommit` deliberately
   // never flips `status` on a row-filtered commit, so an import committed
   // entirely row-by-row stays "review" forever without this. The finalize
@@ -344,10 +406,13 @@ export function useChatCommit(clientId: string, importId: string) {
   return {
     result,
     committedRowIds,
+    transcript,
     finalizeStatus,
     finalizeError,
     resetForNewExtraction,
     applyExtractionResult,
+    appendTurnEntries,
+    adoptTurnPayload,
     handleCommitRows,
     handleEditCell,
     handleRestore,

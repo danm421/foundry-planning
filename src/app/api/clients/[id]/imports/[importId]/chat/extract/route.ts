@@ -234,10 +234,23 @@ export async function POST(request: Request, { params }: Params) {
         const decisions = [...mergeDecisions, ...excluded.map((x) => x.decision)];
         const narration = narrate({ fileCount: mergedFileCount, decisions, rows: kept });
 
+        // Ruling 89 (Step 0): persist `payload.accounts = kept` in the SAME
+        // write as the chat slice — `writeChatState` only ever touches
+        // `chat`, so `payload` is set alongside it explicitly, narrow to
+        // `{ accounts }` (matching what `use-chat-commit.ts` writes). Without
+        // this, `payloadJson.payload` is never set until the advisor's FIRST
+        // commit (`use-chat-commit.ts:207`), so the chat turn route
+        // (`chat/turn/route.ts:325`, which reads `payloadJson.payload`) sees
+        // no rows at all and every tool call fails with "unknown row" until
+        // then — the feature's primary flow (ask questions BEFORE
+        // committing) doesn't work.
         await db
           .update(clientImports)
           .set({
-            payloadJson: writeChatState(payloadJson, { decisions, excludedRows: excluded }),
+            payloadJson: {
+              ...writeChatState(payloadJson, { decisions, excludedRows: excluded }),
+              payload: { accounts: kept },
+            },
             updatedAt: new Date(),
           })
           .where(eq(clientImports.id, importId));

@@ -5,7 +5,10 @@ import { Card, CardBody, CardHeader } from "@/components/card";
 import UploadZone, { type InitialUploadedFile } from "@/components/import/upload-zone";
 import { StepLine } from "@/components/statement-chat/step-line";
 import AccountsTable from "@/components/statement-chat/accounts-table";
+import { ChatTranscript } from "@/components/statement-chat/chat-transcript";
+import { ChatComposer } from "@/components/statement-chat/chat-composer";
 import { useChatCommit, type ChatCommitResult } from "@/components/statement-chat/use-chat-commit";
+import { useChatTurn } from "@/components/statement-chat/use-chat-turn";
 
 type ChatExtractEvent =
   | {
@@ -68,15 +71,32 @@ export function ChatSurface({ clientId, importId, initialFiles }: ChatSurfacePro
   const {
     result,
     committedRowIds,
+    transcript,
     finalizeStatus,
     finalizeError,
     resetForNewExtraction,
     applyExtractionResult,
+    appendTurnEntries,
+    adoptTurnPayload,
     handleCommitRows,
     handleEditCell,
     handleRestore,
     handleFinalize,
   } = useChatCommit(clientId, importId);
+
+  // Sends a turn and adopts what comes back (Task 11b, Steps 2/3). On the
+  // FIRST turn that has anything to adopt (`result` was still null — a
+  // resumed draft with no extraction run this session), also mark the local
+  // stream `status` "done" so the extracted-state panel below appears —
+  // this does NOT change how `finished` is computed (C3's scope limit), it
+  // only drives the SAME `status` state a real extraction would have set.
+  const { turnStatus, turnError, sendTurn } = useChatTurn({
+    clientId,
+    importId,
+    appendTurnEntries,
+    adoptTurnPayload,
+    onAdopted: () => setStatus("done"),
+  });
 
   const runExtraction = useCallback(async () => {
     abortRef.current?.abort();
@@ -219,6 +239,30 @@ export function ChatSurface({ clientId, importId, initialFiles }: ChatSurfacePro
           </CardBody>
         </Card>
       )}
+
+      {/*
+        C3 (Ruling 92) — deliberately its OWN condition, NOT nested inside
+        `finished && result` below. That gate starts false and stays false
+        for a resumed draft with no extraction run this session (`status`
+        starts "idle" and only a fresh extraction in THIS render flips it),
+        so a chat surface that put its own input behind that gate would be
+        invisible exactly when the persisted transcript is worth reading —
+        the same "producer nothing consumes" shape as Rulings 68, 81 and 89.
+        Always rendered: an import with no extracted rows at all is a real
+        state the turn route can still answer (brief C3).
+      */}
+      <Card className="flex flex-col">
+        <CardHeader>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-2">
+            Ask about these statements
+          </h2>
+        </CardHeader>
+        <div className="max-h-72 overflow-y-auto border-b border-hair">
+          <ChatTranscript transcript={transcript} />
+        </div>
+        {turnError && <p className="px-3 py-2 text-sm text-crit">{turnError}</p>}
+        <ChatComposer onSend={sendTurn} disabled={isStreaming} sending={turnStatus === "sending"} />
+      </Card>
 
       {finished && result && (
         <>

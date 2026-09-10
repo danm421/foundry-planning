@@ -362,10 +362,19 @@ export async function POST(request: Request, { params }: Params) {
 
   // Ruling 49 / C13: ONE result shape, with optional members. `payload` and
   // `summary` are always present; `proposal` only when reread_document ran.
+  //
+  // C1 (Ruling 90): `turnEntries` is the exact delta the server just
+  // persisted onto the transcript (`turnResult.turnEntries` — user entry,
+  // any tool entries, assistant entry, all with SERVER timestamps), never
+  // `nextTranscript` (the full accumulated history). The surface appends
+  // this array verbatim rather than composing its own user/assistant
+  // entries — otherwise the in-session transcript would disagree with the
+  // one that reads back after a reload.
   return jsonResponse(200, {
     payload: { accounts: responseAccounts },
     summary: turnResult.summary,
     excludedRows: nextExcludedRows,
+    turnEntries: turnResult.turnEntries,
     ...(turnResult.proposal ? { proposal: turnResult.proposal } : {}),
   });
 }

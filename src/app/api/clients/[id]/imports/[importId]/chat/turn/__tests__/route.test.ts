@@ -321,8 +321,25 @@ describe("chat turn route behavior", () => {
       payload: { accounts: [{ __rowId: "r1", name: "IRA", value: 1, basis: 5 }] },
       summary: "Done.",
       excludedRows: [],
+      turnEntries: [
+        { role: "user", text: "fix the basis", at: "t1" },
+        { role: "tool", tool: "edit_row", summary: "Set basis to 5.", at: "t1" },
+        { role: "assistant", text: "Done.", at: "t1" },
+      ],
     });
     expect(body.proposal).toBeUndefined();
+    // C1 (Ruling 90) — THE assertion that matters: the response carries the
+    // user entry, the assistant entry, and any tool entries VERBATIM (the
+    // same array `runTurn` returned), not a route-composed subset or
+    // reshape. Mutation this catches: dropping `turnEntries` from the 200
+    // response, or returning `nextTranscript` (the full accumulated
+    // history, which would ALSO include the pre-existing empty prior
+    // transcript) instead of just this turn's own delta.
+    expect(body.turnEntries).toEqual([
+      { role: "user", text: "fix the basis", at: "t1" },
+      { role: "tool", tool: "edit_row", summary: "Set basis to 5.", at: "t1" },
+      { role: "assistant", text: "Done.", at: "t1" },
+    ]);
 
     expect(updateCalls).toHaveLength(1);
     const written = updateCalls[0].values.payloadJson as ImportPayloadJson;
