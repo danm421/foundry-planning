@@ -79,8 +79,13 @@ export async function executeBaseWritePlan(
     if (!entry) throw new Error(`promote: no table for kind ${ins.kind}`);
     const cols = getTableColumns(entry.table) as Cols;
     const remapped = remapRefs(ins.raw, idRemap);
+    // A kind whose change payload is an editor DRAFT rather than a row must be
+    // reshaped first — `coerceForTable` keeps only exact column-name matches,
+    // so an untranslated draft loses every field the row names differently,
+    // silently. `translate` is absent on every kind but `gift`.
+    const payload = entry.translate ? entry.translate(remapped) : remapped;
     const values: Record<string, unknown> = {
-      ...coerceForTable(entry.table, remapped),
+      ...coerceForTable(entry.table, payload),
       ...scopeValues(cols, ctx),
     };
     delete values.id; // let the DB generate a fresh uuid

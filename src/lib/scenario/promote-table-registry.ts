@@ -44,6 +44,7 @@ import {
   writeReinvestmentChildren,
   writeWillChildren,
 } from "./promote-child-writers";
+import { translateGiftDraftForPromote } from "./promote-gift-translate";
 
 /** Loosely-typed tx handle (Drizzle's tx callback param is not exported as a
  *  named type at our version). The executor passes the real tx through. */
@@ -70,8 +71,18 @@ export type ChildWriter = (
   ctx: ChildWriterCtx,
 ) => Promise<void>;
 
+/** Reshapes an add payload into the parent table's column shape BEFORE
+ *  `coerceForTable` drops every key that isn't a column name. Only needed where
+ *  a scenario change stores an editor DRAFT rather than a row — today `gift`
+ *  alone. Absent everywhere else, which is what keeps the executor's behaviour
+ *  for the other kinds unchanged. */
+export type PayloadTranslator = (
+  raw: Record<string, unknown>,
+) => Record<string, unknown>;
+
 export interface RegistryEntry {
   table: PgTable;
+  translate?: PayloadTranslator;
   childWriter?: ChildWriter;
   /** Rewrites child rows after an EDIT to the parent. Receives the edit's
    *  `set` (the diff's `to` values) instead of an add payload; the executor
@@ -116,7 +127,7 @@ export const PROMOTE_TABLE_REGISTRY: Partial<Record<TargetKind, RegistryEntry>> 
   client_tax_adjustment: { table: clientTaxAdjustments },
   family_member: { table: familyMembers },
   external_beneficiary: { table: externalBeneficiaries },
-  gift: { table: gifts },
+  gift: { table: gifts, translate: translateGiftDraftForPromote },
   will: { table: wills, childWriter: writeWillChildren },
   entity: { table: entities },
   relocation: { table: relocations },
