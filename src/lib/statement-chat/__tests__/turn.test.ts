@@ -218,4 +218,78 @@ describe("runTurn", () => {
     expect(replayedContent).toContain("<<<UNTRUSTED DATA");
     expect(replayedContent).toContain("<<<END UNTRUSTED DATA>>>");
   });
+
+  // Ruling 103 / describeRows: the quoted source="…" form is the producer
+  // half of the reread_document fix — the tool resolves a document by the
+  // exact name shown here, so if this ever reverts to an unquoted form (or
+  // to the raw sourceFileId), reread_document goes unreachable again with a
+  // green suite. Fixture shape matches the real caller: `fileResults` is
+  // `payloadJson.fileResults` keyed by source-file id with each value
+  // carrying its own `fileName`, and rows carry `__provenance.sourceFileId`
+  // set to exactly those keys, the same as `mergeAcrossFiles` produces.
+  it("quotes each row's source as the file NAME, not its id, with a space-containing name intact (Ruling 103)", async () => {
+    const FILE_ID_1 = "11111111-1111-1111-1111-111111111111";
+    const FILE_ID_2 = "22222222-2222-2222-2222-222222222222";
+    const fileResultsFixture: Record<string, ExtractionResult> = {
+      [FILE_ID_1]: {
+        documentType: "account_statement",
+        fileName: "fidelity-2026-06.pdf",
+        extracted: {
+          accounts: [], incomes: [], expenses: [], liabilities: [], entities: [],
+          lifePolicies: [], wills: [], savings: [], goals: [],
+        },
+        warnings: [],
+        promptVersion: "v",
+      } as unknown as ExtractionResult,
+      [FILE_ID_2]: {
+        documentType: "account_statement",
+        fileName: "Fidelity Statement June 2026.pdf",
+        extracted: {
+          accounts: [], incomes: [], expenses: [], liabilities: [], entities: [],
+          lifePolicies: [], wills: [], savings: [], goals: [],
+        },
+        warnings: [],
+        promptVersion: "v",
+      } as unknown as ExtractionResult,
+    };
+    const provenancedPayload: PersistedImportPayload = {
+      accounts: [
+        {
+          __rowId: "r1",
+          name: "Brokerage",
+          value: 10_000,
+          __provenance: { sourceFileId: FILE_ID_1, section: "accounts" },
+        },
+        {
+          __rowId: "r2",
+          name: "Roth IRA",
+          value: 20_000,
+          __provenance: { sourceFileId: FILE_ID_2, section: "accounts" },
+        },
+      ],
+    } as never;
+
+    const model = modelReturning(new AIMessage("ok"));
+    await runTurn({
+      chat: emptyChat(),
+      payload: provenancedPayload,
+      fileResults: fileResultsFixture,
+      message: "hi",
+      importId: "i1",
+      model,
+    });
+
+    const invoke = (model.bindTools([]) as { invoke: ReturnType<typeof vi.fn> }).invoke;
+    const firstCallMessages = invoke.mock.calls[0][0] as Array<{ content: unknown }>;
+    const systemContent = String(firstCallMessages[0].content);
+
+    expect(systemContent).toContain('source="fidelity-2026-06.pdf"');
+    // The space inside the name must survive with its boundary intact — no
+    // truncation at the first space, no missing closing quote.
+    expect(systemContent).toContain('source="Fidelity Statement June 2026.pdf"');
+    // The raw sourceFileId must never leak into the model-facing text when a
+    // name is known — that is exactly the case that breaks reread_document.
+    expect(systemContent).not.toContain(FILE_ID_1);
+    expect(systemContent).not.toContain(FILE_ID_2);
+  });
 });

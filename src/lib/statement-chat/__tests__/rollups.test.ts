@@ -218,12 +218,29 @@ describe("detectRollups", () => {
   // The guard on the other side: widening the comparison must not make two
   // genuinely different institutions siblings. "Fidelity" and "Fifth Third"
   // share a prefix as raw strings but are not a whole-word prefix of each
-  // other, so `custodianMatches` (not `startsWith`) is what this pins.
+  // other, so this case does NOT actually discriminate `custodianMatches`
+  // from a bare `startsWith`: neither implementation would match them (kept
+  // for the always-true-matcher case it does still catch).
   it("does not make two different custodians siblings just because their names share a prefix", () => {
     const { kept, excluded } = detectRollups([
       acct("Checking", 10_000, "Fifth Third"),
       acct("Savings", 15_000, "Fifth Third"),
       acct("Total Portfolio", 25_000, "Fidelity"),
+    ]);
+    expect(kept.map((r) => r.name)).toEqual(["Checking", "Savings", "Total Portfolio"]);
+    expect(excluded).toHaveLength(0);
+  });
+
+  // The case that actually pins `custodianMatches` over a bare `startsWith`:
+  // "citi" IS a character-prefix of "citibank", so a bare `startsWith` would
+  // wrongly call them siblings. `custodianMatches` requires a whole-word
+  // prefix (`a.startsWith(`${b} `)`), and "citibank" has no space after
+  // "citi", so it correctly treats them as different custodians.
+  it("does not make 'citi' and 'citibank' siblings even though one is a character-prefix of the other", () => {
+    const { kept, excluded } = detectRollups([
+      acct("Checking", 10_000, "Citi"),
+      acct("Savings", 15_000, "Citi"),
+      acct("Total Portfolio", 25_000, "Citibank"),
     ]);
     expect(kept.map((r) => r.name)).toEqual(["Checking", "Savings", "Total Portfolio"]);
     expect(excluded).toHaveLength(0);

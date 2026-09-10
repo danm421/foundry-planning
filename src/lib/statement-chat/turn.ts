@@ -148,7 +148,9 @@ function fileNameMap(fileResults: Record<string, ExtractionResult>): Record<stri
  * model's ONLY view of a document's identity, and it is now the key
  * `reread_document` is called with, so the name's boundary has to be
  * unambiguous — a statement called "Fidelity Statement Jun 2026.pdf" would
- * otherwise blur into whatever followed it.
+ * otherwise blur into whatever followed it. `JSON.stringify` (not a hand-
+ * rolled `"${source}"`) escapes an embedded `"` the same way, so a file
+ * named `Statement "Final".pdf` can't break out of its own boundary either.
  */
 function describeRows(payload: PersistedImportPayload, fileNames: Record<string, string>): string {
   const accounts = payload.accounts ?? [];
@@ -160,7 +162,7 @@ function describeRows(payload: PersistedImportPayload, fileNames: Record<string,
         : "unknown source";
       return (
         `- ${r.__rowId}: "${r.name}" value=${r.value ?? "?"} basis=${r.basis ?? "?"} ` +
-        `custodian=${r.custodian ?? "?"} source="${source}"`
+        `custodian=${r.custodian ?? "?"} source=${JSON.stringify(source)}`
       );
     })
     .join("\n");

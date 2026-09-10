@@ -456,7 +456,7 @@ function resolveSourceFileId(
   if (wanted.length === 0) {
     throw new Error("Name the source document to re-read, exactly as it is shown for a row.");
   }
-  if (wanted in fileResults) return wanted;
+  if (Object.hasOwn(fileResults, wanted)) return wanted;
   if (accounts.some((r) => r.__provenance?.sourceFileId === wanted)) return wanted;
 
   const folded = wanted.toLowerCase();
