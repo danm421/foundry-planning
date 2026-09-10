@@ -32,6 +32,13 @@ const MODE_LABEL: Record<string, string> = {
   updating: "Updating",
 };
 
+// Keyed by `row.surface`, NOT `row.mode` — `chat` is deliberately never a
+// mode value (no `import_mode` migration for this plan), so a chat import's
+// `mode` is still "onboarding" or "updating" underneath. See MODE_LABEL above.
+const SURFACE_LABEL: Record<string, string> = {
+  chat: "Statement chat",
+};
+
 function relativeTime(iso: string | Date): string {
   const then = typeof iso === "string" ? new Date(iso) : iso;
   const secs = Math.floor((Date.now() - then.getTime()) / 1000);
@@ -128,7 +135,10 @@ function DraftRow({ row, clientId, kind }: DraftRowProps) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const { access } = useClientAccess();
-  const detailHref = `/clients/${clientId}/details/import/${row.id}`;
+  const detailHref =
+    row.surface === "chat"
+      ? `/clients/${clientId}/details/import/${row.id}/chat`
+      : `/clients/${clientId}/details/import/${row.id}`;
 
   const handleDiscard = async () => {
     setError(null);
@@ -164,7 +174,9 @@ function DraftRow({ row, clientId, kind }: DraftRowProps) {
           {STATUS_LABEL[row.status] ?? row.status}
         </span>
         <span className="shrink-0 text-xs uppercase tracking-wide text-ink-3">
-          {MODE_LABEL[row.mode] ?? row.mode}
+          {row.surface
+            ? (SURFACE_LABEL[row.surface] ?? row.surface)
+            : (MODE_LABEL[row.mode] ?? row.mode)}
         </span>
         <span className="flex-1 truncate text-ink">
           {row.notes?.trim() || `Import ${row.id.slice(0, 8)}`}
