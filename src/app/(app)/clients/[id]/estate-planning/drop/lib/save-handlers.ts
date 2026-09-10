@@ -103,10 +103,16 @@ export async function saveGiftOneTime(
         eventKind: "outright",
       };
 
+  // dispatchSave (dnd-context-provider.tsx) already refreshes once after this
+  // handler resolves — it's the shared refresh for every drop action
+  // (bequest, retitle, gift). submit() would ALSO refresh on success, so
+  // skipRefresh here keeps the drop at the one refresh it billed before this
+  // handler started going through the scenario writer.
   const res = await args.submit(giftScenarioAdd(draft), {
     url: `/api/clients/${args.clientId}/gifts`,
     method: "POST",
     body,
+    skipRefresh: true,
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
@@ -167,10 +173,13 @@ export async function saveGiftRecurring(
     crummey: args.useCrummeyPowers,
   };
 
+  // See the matching comment in saveGiftOneTime — dispatchSave owns the
+  // single post-save refresh for every drop action.
   const res = await args.submit(giftScenarioAdd(draft), {
     url: `/api/clients/${args.clientId}/gifts/series`,
     method: "POST",
     body,
+    skipRefresh: true,
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");

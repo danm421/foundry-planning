@@ -22,12 +22,12 @@ describe("save-handlers", () => {
     const submit = mockSubmit(200);
     await saveGiftOneTime({
       clientId: "c1",
-      year: 2026,
+      year: 2027,
       grantor: "client",
       recipient: { kind: "entity", id: "ent-slat" },
       amountKind: "dollar",
       amount: 18_000,
-      useCrummeyPowers: false,
+      useCrummeyPowers: true,
       submit,
     });
 
@@ -36,22 +36,38 @@ describe("save-handlers", () => {
     expect(edit).toMatchObject({ op: "add", targetKind: "gift" });
     expect((edit.entity as { kind: string }).kind).toBe("cash-once");
     expect(edit.entity).toMatchObject({
+      year: 2027,
       amount: 18_000,
       grantor: "client",
       recipient: { kind: "entity", id: "ent-slat" },
-      crummey: false,
+      crummey: true,
       eventKind: "outright",
     });
-    // The base fallback must stay byte-identical to the old POST.
-    expect(fallback).toMatchObject({
+    // FIX ROUND 1 / Finding 2: the base fallback must stay byte-identical to
+    // the old POST. `toEqual` on the WHOLE object — not `toMatchObject`,
+    // which ignores keys it isn't told to check — so a field silently
+    // dropped from `body` (notes, yearRef, ...) fails this test. This is
+    // RULING 50's entire safety net: the scenario-side draft is allowed to
+    // drop notes/yearRef, but the base path must not.
+    expect(fallback).toEqual({
       url: "/api/clients/c1/gifts",
       method: "POST",
-    });
-    expect(fallback.body).toMatchObject({
-      recipientEntityId: "ent-slat",
-      amount: 18_000,
-      accountId: null,
-      useCrummeyPowers: false,
+      body: {
+        year: 2027,
+        yearRef: null,
+        grantor: "client",
+        accountId: null,
+        recipientEntityId: "ent-slat",
+        recipientFamilyMemberId: null,
+        recipientExternalBeneficiaryId: null,
+        useCrummeyPowers: true,
+        notes: null,
+        amount: 18_000,
+      },
+      // FIX ROUND 1 / Finding 1: dispatchSave already refreshes once after
+      // the handler resolves; submit() would refresh again on success
+      // without this, doubling the server round trip per drop.
+      skipRefresh: true,
     });
   });
 
@@ -62,7 +78,7 @@ describe("save-handlers", () => {
     const submit = mockSubmit(200);
     await saveGiftOneTime({
       clientId: "c1",
-      year: 2026,
+      year: 2031,
       grantor: "client",
       sourceAccountId: "a1",
       recipient: { kind: "entity", id: "ent-slat" },
@@ -76,16 +92,31 @@ describe("save-handlers", () => {
     expect(edit).toMatchObject({ op: "add", targetKind: "gift" });
     expect((edit.entity as { kind: string }).kind).toBe("asset-once");
     expect(edit.entity).toMatchObject({
+      year: 2031,
       accountId: "a1",
       percent: 0.6,
       grantor: "client",
       recipient: { kind: "entity", id: "ent-slat" },
       eventKind: "outright",
     });
-    expect(fallback.body).toMatchObject({
-      accountId: "a1",
-      recipientEntityId: "ent-slat",
-      percent: 0.6,
+    // FIX ROUND 1 / Findings 2 & 4: full fallback (url + method + body), not
+    // just `body`, and `toEqual` rather than `toMatchObject`.
+    expect(fallback).toEqual({
+      url: "/api/clients/c1/gifts",
+      method: "POST",
+      body: {
+        year: 2031,
+        yearRef: null,
+        grantor: "client",
+        accountId: "a1",
+        recipientEntityId: "ent-slat",
+        recipientFamilyMemberId: null,
+        recipientExternalBeneficiaryId: null,
+        useCrummeyPowers: false,
+        notes: null,
+        percent: 0.6,
+      },
+      skipRefresh: true,
     });
   });
 
@@ -98,7 +129,7 @@ describe("save-handlers", () => {
       startYear: 2026,
       endYear: 2030,
       annualAmount: 18_000,
-      inflationAdjust: false,
+      inflationAdjust: true,
       useCrummeyPowers: true,
       submit,
     });
@@ -112,20 +143,29 @@ describe("save-handlers", () => {
       endYear: 2030,
       annualAmount: 18_000,
       amountMode: "fixed",
-      inflationAdjust: false,
+      inflationAdjust: true,
       grantor: "client",
       recipient: { kind: "entity", id: "ent-slat" },
       crummey: true,
     });
-    // The base fallback must stay byte-identical to the old POST.
-    expect(fallback).toMatchObject({
+    // FIX ROUND 1 / Finding 2: full fallback via `toEqual`, same reasoning
+    // as the one-time-gift tests above.
+    expect(fallback).toEqual({
       url: "/api/clients/c1/gifts/series",
       method: "POST",
-    });
-    expect(fallback.body).toMatchObject({
-      recipientEntityId: "ent-slat",
-      annualAmount: 18_000,
-      useCrummeyPowers: true,
+      body: {
+        grantor: "client",
+        recipientEntityId: "ent-slat",
+        startYear: 2026,
+        startYearRef: null,
+        endYear: 2030,
+        endYearRef: null,
+        annualAmount: 18_000,
+        inflationAdjust: true,
+        useCrummeyPowers: true,
+        notes: null,
+      },
+      skipRefresh: true,
     });
   });
 
