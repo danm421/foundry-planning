@@ -190,30 +190,111 @@ describe("joint titling survives a partial gift", () => {
 });
 
 describe("By-Entity cards after a percentage gift of a business", () => {
-  // KNOWN GAP, pinned deliberately (Dan's call, 2026-09-09). Business-tree
-  // accounts are stripped from every entity card, so this tab cannot express a
-  // partially-gifted business: the trust gets no card and the business card
-  // still reads at full value. The Household tab and the Out-of-Estate section
-  // ARE correct — see the suites above. These assertions exist so the day
-  // someone changes the convention, they find this note instead of a silent
-  // behaviour flip.
-  function entityView(giftEvents: GiftEvent[]) {
+  // CONVENTION (Dan's call, 2026-09-10). `account.owners` is the AUTHORED
+  // baseline and a gift is an OVERLAY on top of it, so the By-Entity tab shows
+  // the business as authored and a gift moves a slice OUT of its card onto the
+  // recipient's. Both sides name the share against the whole enterprise value
+  // ("85% of $100,000,000") so a scaled card never reads as the business having
+  // shrunk. Cards then reconcile to enterprise value.
+  //
+  // AUTHORED entity ownership is untouched: a business a trust owns outright
+  // still gets its own card and is still excluded from the trust's — see
+  // view-model.test.ts, "does not also roll a trust-owned business-as-asset
+  // account into the trust card".
+  function entityView(giftEvents: GiftEvent[], overrides: Partial<BuildViewModelInput> = {}) {
     const model = buildViewModel({
       accounts, liabilities: [], entities, familyMembers, projectionYears,
       selectedYear: 2027, view: "entities", asOfMode: "eoy", giftEvents,
+      ...overrides,
     } as BuildViewModelInput);
     return model.entityGroups ?? [];
   }
 
-  it("still shows the business card at full value, and no card for the trust", () => {
-    const groups = entityView([GIFT]);
+  it("scales the business card to the share its authored owners retained", () => {
+    const biz = entityView([GIFT]).find((g) => g.entityId === "biz-1")!;
+    expect(biz.assetTotal).toBeCloseTo(85_000_000, 2);
+  });
+
+  it("names the retained share against the whole enterprise value", () => {
+    const biz = entityView([GIFT]).find((g) => g.entityId === "biz-1")!;
+    const root = biz.assetRows.find((r) => r.accountId === "biz-1")!;
+    expect(root.accountName).toBe("Whatnot — 85% of $100,000,000");
+  });
+
+  it("gives the recipient trust a card holding its gifted interest", () => {
+    const trust = entityView([GIFT]).find((g) => g.entityId === "trust-1");
+    expect(trust, "the IDGT should hold its 15% interest").toBeDefined();
+    expect(trust!.assetTotal).toBeCloseTo(15_000_000, 2);
+    expect(trust!.assetRows[0].accountName).toBe("Whatnot — 15% of $100,000,000");
+  });
+
+  it("reconciles: the cards sum to enterprise value", () => {
+    const total = entityView([GIFT]).reduce((s, g) => s + g.assetTotal, 0);
+    expect(total).toBeCloseTo(100_000_000, 2);
+  });
+
+  it("leaves the card whole and unlabelled with no gift", () => {
+    const groups = entityView([]);
+    expect(groups.map((g) => g.entityId)).toEqual(["biz-1"]);
+    expect(groups[0].assetTotal).toBeCloseTo(100_000_000, 2);
+    expect(groups[0].assetRows[0].accountName).toBe("Whatnot");
+  });
+
+  it("reads the pre-gift ownership in the today column", () => {
+    // A gift dated in or after plan start has not happened relative to the
+    // opening snapshot — same rule `ownersAsOf` applies everywhere else.
+    const groups = entityView([GIFT], { asOfMode: "today" });
     expect(groups.map((g) => g.entityId)).toEqual(["biz-1"]);
     expect(groups[0].assetTotal).toBeCloseTo(100_000_000, 2);
   });
 
-  it("is identical with and without the gift", () => {
-    const withGift = entityView([GIFT]).map((g) => [g.entityId, g.assetTotal]);
-    const without = entityView([]).map((g) => [g.entityId, g.assetTotal]);
-    expect(withGift).toEqual(without);
+  it("scales sub-accounts with the root and values the trust on the whole tree", () => {
+    // Whatnot's operating cash is a child account: the gifted 15% is 15% of the
+    // CONSOLIDATED tree, and the retained rows each scale to 85%.
+    const withChild = [
+      ...accounts,
+      { id: "biz-cash", name: "Whatnot — Cash", category: "cash", owners: clientOnly, parentAccountId: "biz-1", businessType: null, titlingType: null },
+    ];
+    const withChildYears = projectionYears.map((y) => ({
+      ...y,
+      accountLedgers: { ...y.accountLedgers, "biz-cash": { beginningValue: 20_000_000, endingValue: 20_000_000 } },
+    }));
+    const groups = entityView([GIFT], { accounts: withChild, projectionYears: withChildYears });
+    const biz = groups.find((g) => g.entityId === "biz-1")!;
+    expect(biz.assetRows.find((r) => r.accountId === "biz-1")!.value).toBeCloseTo(85_000_000, 2);
+    expect(biz.assetRows.find((r) => r.accountId === "biz-cash")!.value).toBeCloseTo(17_000_000, 2);
+    const trust = groups.find((g) => g.entityId === "trust-1")!;
+    expect(trust.assetTotal).toBeCloseTo(18_000_000, 2);
+    expect(trust.assetRows[0].accountName).toBe("Whatnot — 15% of $120,000,000");
+  });
+
+  it("does not name a share of a drained sub-account", () => {
+    // Whatnot's operating cash sits at $0 on the live plan — "85% of $0" is
+    // noise, not information.
+    const withEmptyChild = [
+      ...accounts,
+      { id: "biz-cash", name: "Whatnot — Cash", category: "cash", owners: clientOnly, parentAccountId: "biz-1", businessType: null, titlingType: null },
+    ];
+    const years = projectionYears.map((y) => ({
+      ...y,
+      accountLedgers: { ...y.accountLedgers, "biz-cash": { beginningValue: 0, endingValue: 0 } },
+    }));
+    const biz = entityView([GIFT], { accounts: withEmptyChild, projectionYears: years }).find((g) => g.entityId === "biz-1")!;
+    expect(biz.assetRows.find((r) => r.accountId === "biz-cash")!.accountName).toBe("Whatnot — Cash");
+  });
+
+  it("keeps business debt whole on the business card", () => {
+    // The enterprise's own books carry its debt; the gifted interest is a share
+    // of gross enterprise value. Counting the loan once keeps the tab's net
+    // worth reconciling to the enterprise's.
+    const groups = entityView([GIFT], {
+      liabilities: [{ id: "biz-loan", name: "Operating Line", parentAccountId: "biz-1", linkedPropertyId: null, owners: [] }],
+      projectionYears: projectionYears.map((y) => ({ ...y, liabilityBalancesBoY: { "biz-loan": 20_000 } })),
+    });
+    const biz = groups.find((g) => g.entityId === "biz-1")!;
+    expect(biz.liabilityTotal).toBe(20_000);
+    expect(biz.netWorth).toBeCloseTo(84_980_000, 2);
+    const trust = groups.find((g) => g.entityId === "trust-1")!;
+    expect(trust.liabilityTotal).toBe(0);
   });
 });

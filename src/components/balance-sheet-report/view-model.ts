@@ -278,6 +278,18 @@ function accountValueForYear(
   return mode === "today" ? ledger.beginningValue : ledger.endingValue;
 }
 
+/** "Whatnot — 85% of $100,000,000": a fractional holding named against the
+ *  whole, so a scaled row never reads as the asset itself having shrunk. */
+function shareOfLabel(name: string, share: number, whole: number): string {
+  const pct = Number((share * 100).toFixed(2));
+  const money = whole.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  });
+  return `${name} — ${pct}% of ${money}`;
+}
+
 function isBusinessEntity(e: EntityInfo | undefined): boolean {
   return !!e && BUSINESS_ENTITY_TYPES.has(e.entityType);
 }
@@ -1049,6 +1061,46 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
       businessTrees.flatMap(({ tree }) => tree.map((a) => a.id)),
     );
 
+    // Entity shares acquired by GIFT, per business root. `account.owners` is
+    // the authored baseline; `ownersAsOf` re-applies the gift overlay for the
+    // picked year, so the difference is what a gift moved. Only entity
+    // recipients count — they're the ones that get a card on this tab.
+    const giftedAwayByBusiness = new Map<string, number>();
+    const giftedInterestRows = new Map<string, AssetRow[]>();
+    for (const { root: b, tree } of businessTrees) {
+      const authored = new Map<string, number>();
+      for (const o of b.owners) {
+        if (o.kind === "entity") authored.set(o.entityId, (authored.get(o.entityId) ?? 0) + o.percent);
+      }
+      const consolidated = tree.reduce((sum, a) => {
+        const bal = accountValueForYear(yearData, a.id, asOfMode);
+        return bal > 0 ? sum + bal : sum;
+      }, 0);
+      let giftedAway = 0;
+      for (const o of ownersAsOf(b, giftEvents, selectedYear, planStartYear, asOfMode)) {
+        if (o.kind !== "entity") continue;
+        const gifted = o.percent - (authored.get(o.entityId) ?? 0);
+        if (gifted <= 0) continue;
+        giftedAway += gifted;
+        const list = giftedInterestRows.get(o.entityId) ?? [];
+        list.push({
+          rowKey: `bizgift:${b.id}#${o.entityId}`,
+          accountId: b.id,
+          accountName: shareOfLabel(b.name, gifted, consolidated),
+          owner: null,
+          ownerEntityId: o.entityId,
+          ownerPercent: gifted,
+          ownerLabel: b.name,
+          value: consolidated * gifted,
+          hasLinkedMortgage: false,
+          isFlatBusinessValue: false,
+          accountHasMultipleOwners: false,
+        });
+        giftedInterestRows.set(o.entityId, list);
+      }
+      if (giftedAway > 0) giftedAwayByBusiness.set(b.id, giftedAway);
+    }
+
     const allAssetRows = assetCategories.flatMap((c) => c.rows);
     const assetsByEntity = new Map<string, AssetRow[]>();
     for (const row of allAssetRows) {
@@ -1079,40 +1131,53 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
     };
 
     const trustGroups = entities
-      .map((e) => makeGroup(e.id, e.name, e.entityType, assetsByEntity.get(e.id) ?? [], liabsByEntity.get(e.id) ?? []))
+      .map((e) =>
+        makeGroup(
+          e.id,
+          e.name,
+          e.entityType,
+          [...(assetsByEntity.get(e.id) ?? []), ...(giftedInterestRows.get(e.id) ?? [])],
+          liabsByEntity.get(e.id) ?? [],
+        ),
+      )
       .filter((g) => g.assetRows.length > 0 || g.liabilityRows.length > 0);
 
     // Business-as-asset groups: one card per business with its own value plus
     // its parentAccountId sub-accounts as nested rows and its sub-liabilities
-    // netted out. Ownership is irrelevant here — a business gets its own card
-    // whether it's family- or trust-owned.
+    // netted out. AUTHORED ownership is irrelevant here — a business gets its
+    // own card whether it's family- or trust-owned.
     //
-    // ⚠️ KNOWN GAP (Dan's call, 2026-09-09): because business-tree accounts are
-    // stripped from every entity card above, a trust that has been GIFTED a
-    // percentage of a business shows nothing on its own card, and the business
-    // card still reads at full value. The household tab and the out-of-estate
-    // section are correct — this tab alone can't express a split. Fixing it
-    // means choosing between scaling the business card to its owners' share
-    // (matching `estate-flow-ownership.ts`, but a wholly trust-owned business
-    // then loses its own card — the case the test below pins) and listing a
-    // fractional interest row on the entity card on top of a full-value
-    // business card.
+    // A GIFT is different. `account.owners` is the authored baseline and a gift
+    // is an overlay on top of it, so a gifted slice moves OFF the business card
+    // and ONTO the recipient entity's card (`giftedInterestRows` above). Every
+    // scaled row names its share against the whole ("85% of $100,000,000") so a
+    // card that shrank never reads as the business itself having shrunk.
+    //
+    // The card scales by exactly what landed on another card on this tab, so
+    // the tab reconciles to enterprise value. A share gifted to a PERSON has no
+    // card here, so it leaves the business card whole — the Household tab and
+    // the Out-of-Estate section are what express that gift.
     const businessGroups: EntityGroup[] = [];
     for (const { root: b, tree } of businessTrees) {
       const treeIds = new Set(tree.map((a) => a.id));
-      const assetRows: AssetRow[] = tree.map((acct) => ({
-        rowKey: acct.id === b.id ? `biz:${acct.id}` : `bizchild:${acct.id}`,
-        accountId: acct.id,
-        accountName: acct.name,
-        owner: null,
-        ownerEntityId: b.id,
-        ownerPercent: 1,
-        ownerLabel: acct.name,
-        value: accountValueForYear(yearData, acct.id, asOfMode),
-        hasLinkedMortgage: false,
-        isFlatBusinessValue: false,
-        accountHasMultipleOwners: false,
-      }));
+      const retained = 1 - (giftedAwayByBusiness.get(b.id) ?? 0);
+      const assetRows: AssetRow[] = tree.map((acct) => {
+        const full = accountValueForYear(yearData, acct.id, asOfMode);
+        return {
+          rowKey: acct.id === b.id ? `biz:${acct.id}` : `bizchild:${acct.id}`,
+          accountId: acct.id,
+          // A drained sub-account has no whole to name a share of.
+          accountName: retained < 1 && full > 0 ? shareOfLabel(acct.name, retained, full) : acct.name,
+          owner: null,
+          ownerEntityId: b.id,
+          ownerPercent: retained,
+          ownerLabel: acct.name,
+          value: full * retained,
+          hasLinkedMortgage: false,
+          isFlatBusinessValue: false,
+          accountHasMultipleOwners: false,
+        };
+      });
       const bizLiabRows: LiabilityRow[] = [];
       for (const l of liabilities) {
         if (l.parentAccountId == null || !treeIds.has(l.parentAccountId)) continue;
