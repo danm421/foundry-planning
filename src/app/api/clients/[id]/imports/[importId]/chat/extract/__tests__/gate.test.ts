@@ -47,6 +47,10 @@ vi.mock("@/lib/imports/blob", () => ({
 // step runs on real, freshly-extracted data rather than a stale pre-read.
 let selectCallCount = 0;
 let filesResult: unknown[] = [];
+/** Count of `db.update(clientImports).set(...)` calls carrying `payloadJson`
+ *  — a terminal signal the whole route's async work has settled, since it's
+ *  the last thing either runImportExtraction or this route ever writes. */
+let payloadJsonUpdateCount = 0;
 let currentImportRow: {
   id: string;
   payloadJson: unknown;
@@ -98,6 +102,7 @@ vi.mock("@/db", () => ({
           // per-file clientImportExtractions updates never do.
           if ("payloadJson" in patch) {
             currentImportRow = { ...currentImportRow, ...patch } as typeof currentImportRow;
+            payloadJsonUpdateCount++;
           }
           return Promise.resolve();
         }),
@@ -113,12 +118,14 @@ import { requireActiveSubscription, ForbiddenError } from "@/lib/authz";
 import { requireImportAccess } from "@/lib/imports/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { extractDocument } from "@/lib/extraction/extract";
+import type { ImportPayloadJson } from "@/lib/imports/types";
 
-function req() {
+function req(signal?: AbortSignal) {
   return new Request("http://t/api/clients/c1/imports/i1/chat/extract", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: "{}",
+    ...(signal ? { signal } : {}),
   });
 }
 const params = { params: Promise.resolve({ id: "c1", importId: "i1" }) };
@@ -139,6 +146,7 @@ beforeEach(() => {
   selectCallCount = 0;
   filesResult = [];
   currentImportRow = { id: "i1", payloadJson: null, extractHoldings: false, status: "draft" };
+  payloadJsonUpdateCount = 0;
 
   vi.mocked(requireOrgId).mockResolvedValue("org_1");
   vi.mocked(requireActiveSubscription).mockResolvedValue(undefined);
@@ -328,12 +336,139 @@ describe("chat extract route gates", () => {
     } as never);
 
     const events = await readSse(await POST(req(), params));
-    const done = events.at(-1) as { type: string; summary: string; rows: unknown[]; excluded: unknown[] };
+    const done = events.at(-1) as {
+      type: string;
+      summary: string;
+      caveats: string[];
+      rows: unknown[];
+      excluded: unknown[];
+    };
 
     expect(done.rows).toHaveLength(2);
     expect(done.excluded).toHaveLength(1);
     // The rollup total must not inflate the narrated account count.
     expect(done.summary).toContain("2 accounts");
     expect(done.summary).not.toContain("3 accounts");
+    // detectRollups()'s own "rollup-excluded" decision must reach narrate()
+    // too, or the caveat explaining WHY a row is missing never renders even
+    // though the count is right — narrate.ts's `case "rollup-excluded"`
+    // only fires when that decision is in the array it's handed.
+    expect(done.caveats.join(" ")).toContain(
+      "it is a total covering 2 accounts already listed",
+    );
+
+    // IMPORTANT 1 (fix round 1): the SSE payload alone doesn't prove the
+    // brief's Step 3 requirement — "persist `decisions` and `excludedRows`
+    // via `writeChatState`" — was honored. `currentImportRow` is the shared
+    // mutable row the `@/db` mock above writes every `update(...).set(...)`
+    // patch into, so it reflects what was actually persisted, independent
+    // of what got streamed back to the client.
+    const persistedChat = (currentImportRow.payloadJson as ImportPayloadJson).chat;
+    expect(persistedChat?.excludedRows).toHaveLength(1);
+    expect(persistedChat?.decisions.length).toBeGreaterThan(0);
+  });
+
+  // IMPORTANT 2 (fix round 1): the brief names `skipExtracted: true` as one
+  // of "three behaviours the route must carry, each with a test" — an
+  // already-extracted file must not be re-read (and re-billed) when new
+  // files are added to the same import.
+  it("does not re-read a file that already has a stored extraction (skipExtracted)", async () => {
+    const alreadyExtracted = {
+      documentType: "other",
+      fileName: "already.pdf",
+      extracted: {
+        accounts: [{ name: "Old", value: 1 }],
+        incomes: [],
+        expenses: [],
+        liabilities: [],
+        entities: [],
+        lifePolicies: [],
+        wills: [],
+        savings: [],
+      },
+      warnings: [],
+      promptVersion: "v",
+    };
+    currentImportRow = {
+      id: "i1",
+      payloadJson: { fileResults: { f1: alreadyExtracted } },
+      extractHoldings: false,
+      status: "review",
+    };
+    filesResult = [fileRow("f1", "already.pdf"), fileRow("f2", "new.pdf")];
+    vi.mocked(extractDocument).mockResolvedValue({
+      documentType: "other",
+      fileName: "new.pdf",
+      extracted: {
+        accounts: [{ name: "New", value: 2 }],
+        incomes: [],
+        expenses: [],
+        liabilities: [],
+        entities: [],
+        lifePolicies: [],
+        wills: [],
+        savings: [],
+      },
+      warnings: [],
+      promptVersion: "v",
+    } as never);
+
+    await readSse(await POST(req(), params));
+
+    expect(extractDocument).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(extractDocument).mock.calls[0][1]).toBe("new.pdf");
+  });
+
+  // IMPORTANT 4 (fix round 1): proves the ROUTE actually threads its own
+  // request's abort signal into runImportExtraction — run-extraction.test.ts
+  // proves the check itself works, but nothing short of this proves the
+  // one-line `signal: request.signal` wiring survives. Six files / two
+  // CONCURRENCY (5) chunks; every call aborts the request's real signal, so
+  // the second chunk must never start.
+  it("threads request.signal into runImportExtraction (C6 third clause)", async () => {
+    filesResult = [
+      fileRow("f1", "a.pdf"),
+      fileRow("f2", "b.pdf"),
+      fileRow("f3", "c.pdf"),
+      fileRow("f4", "d.pdf"),
+      fileRow("f5", "e.pdf"),
+      fileRow("f6", "f.pdf"),
+    ];
+    const ac = new AbortController();
+    vi.mocked(extractDocument).mockImplementation(async (_buf, fileName) => {
+      ac.abort();
+      return {
+        documentType: "other",
+        fileName,
+        extracted: {
+          accounts: [{ name: "x" }],
+          incomes: [],
+          expenses: [],
+          liabilities: [],
+          entities: [],
+          lifePolicies: [],
+          wills: [],
+          savings: [],
+        },
+        warnings: [],
+        promptVersion: "v",
+      } as never;
+    });
+
+    // NOT `readSse`: aborting `ac.signal` also fires the route's own
+    // cancel-on-disconnect listener, which closes the SSE stream almost
+    // immediately — long before the background extraction work (still
+    // running; the ruling forbids cancelling it) actually finishes. Waiting
+    // on the STREAM closing would race the assertion below. Waiting for the
+    // route's OWN two `payloadJson` writes (runImportExtraction's aggregate
+    // write, then this route's chat-state write) to both land is a real
+    // terminal signal that every file settle has already happened.
+    await POST(req(ac.signal), params);
+    await vi.waitFor(() => {
+      expect(payloadJsonUpdateCount).toBe(2);
+    });
+
+    // Only the first chunk ran — the 6th file's chunk never started.
+    expect(extractDocument).toHaveBeenCalledTimes(5);
   });
 });

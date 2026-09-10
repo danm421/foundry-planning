@@ -446,4 +446,72 @@ describe("runImportExtraction", () => {
       expect(seen.sort()).toEqual(["a.pdf", "b.pdf"]);
     });
   });
+
+  // IMPORTANT 4 (fix round 1, controller ruling): an abandoned tab holds
+  // CONCURRENCY (5) Azure slots against a shared per-deployment TPM budget
+  // for up to 300s. `signal` is checked ONLY at a chunk boundary and only to
+  // `break` — never to throw, and never to cancel an in-flight
+  // `Promise.all`, either of which would lose every file that already
+  // succeeded (fileResults is written to payloadJson only after the loop).
+  describe("signal (C6 third clause, IMPORTANT 4)", () => {
+    it("stops starting new concurrency chunks once aborted, but still persists the files that already completed", async () => {
+      filesResult = [
+        fileRow("f1", "a.pdf"),
+        fileRow("f2", "b.pdf"),
+        fileRow("f3", "c.pdf"),
+        fileRow("f4", "d.pdf"),
+        fileRow("f5", "e.pdf"),
+        fileRow("f6", "f.pdf"), // 6th file: falls into a SECOND chunk (CONCURRENCY = 5)
+      ];
+      const ac = new AbortController();
+      // Every file in the first chunk aborts as a side effect — simulating
+      // the client disconnecting sometime during that chunk. Idempotent, so
+      // it doesn't matter which of the 5 concurrent calls "does" it first.
+      vi.mocked(extractDocument).mockImplementation(async (_buf, fileName) => {
+        ac.abort();
+        return storedResult(fileName as string, "x") as never;
+      });
+
+      const res = await runImportExtraction({
+        importId: "imp1",
+        clientId: "c1",
+        firmId: "org_A",
+        model: "mini",
+        extractHoldings: false,
+        signal: ac.signal,
+      });
+
+      // The 6th file's chunk never started.
+      expect(extractDocument).toHaveBeenCalledTimes(5);
+      expect(res.succeeded).toBe(5);
+      // And the completed chunk's results were NOT discarded — this is the
+      // assertion a `break` → `throw` "simplification" would break: a throw
+      // here would propagate out of runImportExtraction before the final
+      // `db.update` ever runs, leaving clientImportsUpdateCalls empty.
+      expect(clientImportsUpdateCalls).toHaveLength(1);
+      const written = clientImportsUpdateCalls[0].payloadJson as {
+        fileResults: Record<string, unknown>;
+      };
+      expect(Object.keys(written.fileResults)).toHaveLength(5);
+    });
+
+    it("runs every chunk when the signal never aborts", async () => {
+      filesResult = [fileRow("f1", "a.pdf"), fileRow("f2", "b.pdf")];
+      vi.mocked(extractDocument).mockImplementation(async (_buf, fileName) =>
+        storedResult(fileName as string, "x") as never,
+      );
+      const ac = new AbortController();
+
+      const res = await runImportExtraction({
+        importId: "imp1",
+        clientId: "c1",
+        firmId: "org_A",
+        model: "mini",
+        extractHoldings: false,
+        signal: ac.signal,
+      });
+
+      expect(res.succeeded).toBe(2);
+    });
+  });
 });

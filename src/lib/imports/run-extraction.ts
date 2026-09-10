@@ -57,6 +57,21 @@ export interface RunExtractionArgs {
      * that actually succeeded.
      */
     onFile?: (progress: ExtractionFileProgress) => void;
+    /**
+     * Aborted when the caller's connection drops (Task 9 / a route-level
+     * disconnect, C6's "thread the abort signal into the work" clause).
+     * Checked ONLY at the top of each `CONCURRENCY`-wide chunk, and only to
+     * `break` the outer loop — never to `throw` and never to cancel an
+     * in-flight `Promise.all`. Aborting the in-flight batch would lose every
+     * file that already succeeded in it, since `fileResults` is written to
+     * `payloadJson` only after the loop below finishes. Breaking cleanly
+     * instead falls through to that same write, so a disconnected run still
+     * persists whatever it completed and `skipExtracted` picks up the rest
+     * on the next request — an abandoned tab stops holding CONCURRENCY Azure
+     * slots against the shared per-deployment TPM budget, but never throws
+     * away paid-for work.
+     */
+    signal?: AbortSignal;
 }
 
 export interface RunExtractionResult {
@@ -78,6 +93,7 @@ export async function runImportExtraction(
         comprehensive = false,
         skipExtracted = false,
         onFile,
+        signal,
     } = args;
 
     // Load all live files for this import.
@@ -285,6 +301,10 @@ export async function runImportExtraction(
     };
 
     for (let i = 0; i < pending.length; i += CONCURRENCY) {
+        // Checked only at a chunk boundary, and only to stop starting NEW
+        // work — never mid-chunk, and never by rejecting the in-flight
+        // Promise.all below (see the `signal` doc comment on RunExtractionArgs).
+        if (signal?.aborted) break;
         const chunk = pending.slice(i, i + CONCURRENCY);
         const outcomes = await Promise.all(chunk.map(extractOne));
         for (const outcome of outcomes) {

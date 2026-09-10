@@ -168,9 +168,10 @@ export async function POST(request: Request, { params }: Params) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
       };
       // Cancel-on-disconnect, mirroring forge/stream (C6): stop writing once
-      // the client aborts. Extraction itself keeps running to completion —
-      // `runImportExtraction` isn't wired to an abort signal — but nothing
-      // further gets written to a closed controller.
+      // the client aborts, AND stop extraction from starting any new
+      // CONCURRENCY-wide chunk of work (request.signal is threaded into
+      // runImportExtraction below). Nothing further gets written to a
+      // closed controller either way.
       const onAbort = () => {
         closed = true;
         try {
@@ -195,6 +196,12 @@ export async function POST(request: Request, { params }: Params) {
           onFile: (progress: ExtractionFileProgress) => {
             send({ type: "file", ...progress });
           },
+          // C6, third clause: an abandoned tab must stop holding
+          // CONCURRENCY (5) Azure slots against the shared per-deployment
+          // TPM budget. Checked only at a chunk boundary and only to break
+          // cleanly — see the `signal` doc on RunExtractionArgs for why an
+          // abort here must never throw or cancel in-flight work.
+          signal: request.signal,
         });
 
         // C11 (second half): `runImportExtraction` read the import row at
@@ -216,8 +223,15 @@ export async function POST(request: Request, { params }: Params) {
         // kept rows (C10) — never the full merged set, or the summary's
         // account count double-counts every rollup the very next caveat
         // says was excluded.
-        const { payload, mergedFileCount, decisions } = mergeAcrossFiles(fileResults);
+        const { payload, mergedFileCount, decisions: mergeDecisions } = mergeAcrossFiles(fileResults);
         const { kept, excluded } = detectRollups(payload.accounts);
+        // `detectRollups` runs AFTER `mergeAcrossFiles` and produces its own
+        // "rollup-excluded" MergeDecision per dropped row — narrate()'s
+        // `case "rollup-excluded"` branch (and C10's own worked example,
+        // which presupposes that caveat already renders) only fires when
+        // that decision is folded in here; `mergeAcrossFiles` never sees a
+        // rollup row and so never emits it on its own.
+        const decisions = [...mergeDecisions, ...excluded.map((x) => x.decision)];
         const narration = narrate({ fileCount: mergedFileCount, decisions, rows: kept });
 
         await db
