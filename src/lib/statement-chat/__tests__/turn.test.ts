@@ -10,7 +10,16 @@ const chatModel = vi.fn(async () => ({
 }));
 vi.mock("@/domain/forge/llm", () => ({ chatModel: (...a: unknown[]) => chatModel(...(a as [])) }));
 
-import { runTurn, MAX_TOOL_CALLS_PER_TURN, type TurnModel } from "@/lib/statement-chat/turn";
+import { runTurn, MAX_TOOL_CALLS_PER_TURN, TOOL_DEFS, type TurnModel } from "@/lib/statement-chat/turn";
+
+/** The shape a tool def has once you only care about its parameter schema. */
+type ToolDef = {
+  function: {
+    name: string;
+    description: string;
+    parameters: { properties: Record<string, { description?: string }>; required: string[] };
+  };
+};
 
 function payload(): PersistedImportPayload {
   return {
@@ -341,6 +350,55 @@ describe("runTurn", () => {
     // name is known — that is exactly the case that breaks reread_document.
     expect(systemContent).not.toContain(FILE_ID_1);
     expect(systemContent).not.toContain(FILE_ID_2);
+  });
+
+  // --- Final review, T2: the tool SCHEMA is pinned ----------------------
+  //
+  // Nothing pinned it before. `TOOL_DEFS` was module-private, `bindTools` is
+  // stubbed to ignore its argument in every test here, and every reread test
+  // calls `rereadDocument()` directly with hand-built args — so renaming this
+  // property back to `fileId` left the entire suite green while
+  // `reread_document` was dead in production again (the model is never shown
+  // a real source file id, so it could only ever send a name). That is
+  // exactly the defect the previous fix wave existed to repair, Ruling 103.
+  it("declares reread_document's parameter as a required fileName, described as the document's NAME", () => {
+    const def = (TOOL_DEFS as unknown as ToolDef[]).find(
+      (d) => d.function.name === "reread_document",
+    );
+    expect(def).toBeDefined();
+    const { properties, required } = def!.function.parameters;
+
+    expect(Object.keys(properties)).toContain("fileName");
+    expect(Object.keys(properties)).not.toContain("fileId");
+    expect(required).toContain("fileName");
+    // The description has to tell the model it is a NAME, not an id —
+    // otherwise a correctly-named property is still called with an id.
+    expect(properties.fileName.description).toMatch(/name of the source document/i);
+    expect(properties.fileName.description).toMatch(/as shown for a row/i);
+  });
+
+  // The other half: pinning the constant proves nothing if the model is
+  // never handed it. `bindTools` is stubbed everywhere else in this file, so
+  // this is the one place that looks at what it actually received.
+  it("binds those defs to the model, so the schema reaches the real tool call", async () => {
+    const bindTools = vi.fn(() => ({ invoke: vi.fn(async () => new AIMessage("ok")) }));
+    await runTurn({
+      chat: emptyChat(),
+      importId: "i1",
+      payload: payload(),
+      fileResults,
+      message: "hi",
+      model: { bindTools } as unknown as TurnModel,
+    });
+    expect(bindTools).toHaveBeenCalledWith(TOOL_DEFS);
+    const bound = (bindTools.mock.calls[0] as unknown as [ToolDef[]])[0];
+    expect(bound.map((d) => d.function.name)).toEqual([
+      "edit_row",
+      "merge_rows",
+      "drop_row",
+      "reread_document",
+      "explain",
+    ]);
   });
 
   // M1: an account NAME is model-extracted text from a client's document,

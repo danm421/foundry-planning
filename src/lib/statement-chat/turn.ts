@@ -27,10 +27,21 @@ import {
 
 export const MAX_TOOL_CALLS_PER_TURN = 4;
 
-/** OpenAI-style function-calling defs, bound directly via `bindTools` —
- *  no `@langchain/core/tools` `tool()`/zod wrapping needed for a hand-rolled
- *  loop that dispatches on `response.tool_calls` itself. */
-const TOOL_DEFS = [
+/**
+ * OpenAI-style function-calling defs, bound directly via `bindTools` — no
+ * `@langchain/core/tools` `tool()`/zod wrapping needed for a hand-rolled loop
+ * that dispatches on `response.tool_calls` itself.
+ *
+ * EXPORTED for the schema test (final review, T2). It was module-private,
+ * `bindTools` is stubbed to ignore its argument in every test, and every
+ * reread test calls `rereadDocument()` directly with hand-built args — so
+ * renaming `fileName` back to `fileId` here left the whole suite green while
+ * `reread_document` was dead in production again, which is exactly the defect
+ * the previous fix wave existed to repair (Ruling 103). The test asserts on
+ * this constant AND on what `bindTools` is actually handed, because either
+ * one alone leaves the other half unpinned.
+ */
+export const TOOL_DEFS = [
   {
     type: "function" as const,
     function: {
