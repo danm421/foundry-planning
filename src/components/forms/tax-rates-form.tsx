@@ -171,15 +171,25 @@ function Row({
   htmlFor?: string;
   children: React.ReactNode;
 }) {
+  const labelClass =
+    "flex min-w-0 items-center gap-1.5 text-[13px] font-medium leading-snug text-ink-2";
+  const inner = (
+    <>
+      <span>{label}</span>
+      {help && <FieldTooltip text={help} />}
+    </>
+  );
   return (
     <div className="flex items-center justify-between gap-3 px-4 py-2.5">
-      <label
-        htmlFor={htmlFor}
-        className="flex min-w-0 items-center gap-1.5 text-[13px] font-medium leading-snug text-ink-2"
-      >
-        <span>{label}</span>
-        {help && <FieldTooltip text={help} />}
-      </label>
+      {/* A read-only row has no control to point at, so it gets a plain span
+          rather than a label with a dangling `for`. */}
+      {htmlFor ? (
+        <label htmlFor={htmlFor} className={labelClass}>
+          {inner}
+        </label>
+      ) : (
+        <span className={labelClass}>{inner}</span>
+      )}
       <div className="w-40 shrink-0">{children}</div>
     </div>
   );
@@ -347,7 +357,7 @@ export default function TaxRatesForm({
           <div className="space-y-4">
             <Card
               title="Income tax"
-              help="Rates applied to taxable income across the projection. In bracket mode the federal rate is unused and the state rate applies only when no state of residence is set."
+              help="Rates applied to taxable income across the projection. Bracket mode replaces both with real federal brackets and, where a state of residence is set, that state's own."
             >
               {mode === "flat" && (
                 <Row
@@ -362,17 +372,39 @@ export default function TaxRatesForm({
                   />
                 </Row>
               )}
-              <Row
-                label="State rate"
-                htmlFor="flatStateRate"
-                help="Applied to taxable income whenever no state of residence is set above, and in flat mode regardless of state."
-              >
-                <PercentInput
-                  id="flatStateRate"
-                  value={values.flatStateRate}
-                  onChange={(raw) => update("flatStateRate", raw, toDecimal(raw))}
-                />
-              </Row>
+              {/* Bracket mode with a state of residence runs that state's own
+                  brackets, so an editable percent here reads as the state income
+                  tax rate when it is not one. Name the state instead; the percent
+                  comes back with the Flat rate mode that uses it. (The stored
+                  value still feeds two secondary estimates — the SALT deduction
+                  pool and the displayed marginal combined rate — which is its own
+                  defect, not a reason to keep offering it as the state rate.) */}
+              {mode === "bracket" && residence !== "" ? (
+                <Row
+                  label="State income tax"
+                  help={`State income tax comes from ${USPS_STATE_NAMES[residence]}'s own brackets, deductions and exemptions — there is no single percent to set. Switch the calculation above to Flat rate to enter one.`}
+                >
+                  <span className="block px-3 text-[13px] text-ink-3">
+                    {USPS_STATE_NAMES[residence]} brackets
+                  </span>
+                </Row>
+              ) : (
+                <Row
+                  label="State rate"
+                  htmlFor="flatStateRate"
+                  help={
+                    mode === "flat"
+                      ? "Applied to taxable income alongside the federal rate while the plan runs in flat mode."
+                      : "Applied to taxable income because no state of residence is set above. Set one to use that state's own brackets instead."
+                  }
+                >
+                  <PercentInput
+                    id="flatStateRate"
+                    value={values.flatStateRate}
+                    onChange={(raw) => update("flatStateRate", raw, toDecimal(raw))}
+                  />
+                </Row>
+              )}
               <Row
                 label={hasSpouse ? `Workplace plan — ${clientFirstName ?? "Client"}` : "Covered by workplace plan"}
                 htmlFor="coveredByWorkplacePlan"

@@ -369,6 +369,37 @@ describe("TaxRatesForm — calculation method", () => {
     await settleAutosave();
     await waitFor(() => expect(bodyOf(fetchMock).taxEngineMode).toBe("bracket"));
   });
+
+  it("swaps the flat state rate for the state's name once brackets are driving it", () => {
+    renderForm({ residenceState: "CA", initialMode: "bracket" } as Partial<typeof BASE_PROPS>);
+
+    expect(document.getElementById("flatStateRate")).toBeNull();
+    expect(screen.getByText("California brackets")).toBeInTheDocument();
+  });
+
+  it("keeps the flat state rate wherever it is still the rate in use — flat mode, or bracket mode with no state set", () => {
+    // Flat mode ignores the state's brackets entirely.
+    const { unmount } = renderForm({ residenceState: "CA", initialMode: "flat" } as Partial<typeof BASE_PROPS>);
+    expect(document.getElementById("flatStateRate")).not.toBeNull();
+    expect(screen.queryByText("California brackets")).toBeNull();
+    unmount();
+
+    // Bracket mode with no residence falls back to the flat rate, so it stays
+    // editable — hiding it here would strand the only state rate the plan has.
+    renderForm({ residenceState: null, initialMode: "bracket" } as Partial<typeof BASE_PROPS>);
+    expect(document.getElementById("flatStateRate")).not.toBeNull();
+  });
+
+  it("follows the residence picker without a reload — picking a state mid-session retires the percent box", async () => {
+    renderForm({ residenceState: null, initialMode: "bracket" } as Partial<typeof BASE_PROPS>);
+    expect(document.getElementById("flatStateRate")).not.toBeNull();
+
+    fireEvent.change(document.getElementById("residenceState")!, { target: { value: "CA" } });
+
+    expect(document.getElementById("flatStateRate")).toBeNull();
+    expect(screen.getByText("California brackets")).toBeInTheDocument();
+    await settleAutosave();
+  });
 });
 
 describe("TaxRatesForm — capital-loss carryforward field help", () => {
