@@ -343,7 +343,7 @@ export default function TaxRatesForm({
           {hasSpouse && (
             <FieldRow
               label={`${spouseFirstName ?? CO_CLIENT_LABEL} covered by workplace plan`}
-              help="Same override, applied to the co-client's workplace-plan coverage."
+              help="Same override, applied to the Co-client's workplace-plan coverage."
             >
               <select
                 id="spouseCoveredByWorkplacePlan"
@@ -408,7 +408,7 @@ export default function TaxRatesForm({
           </FieldRow>
           <FieldRow
             label="IRD tax rate"
-            help="Applied to pre-tax retirement assets (Traditional IRA, 401(k), 403(b)) passing to a beneficiary who isn't the Co-client or a charity at death."
+            help="Applied to pre-tax retirement assets (Traditional IRA, 401(k), 403(b)) passing to a non-spouse, non-charity beneficiary at death."
           >
             <PercentInput
               id="irdTaxRate"

@@ -15,9 +15,15 @@ import { join, relative } from "node:path";
 
 const SRC = join(process.cwd(), "src");
 
-/** Tax and legal language. Changing these makes the output wrong, not just differently worded. */
+/** Tax and legal language. Changing these makes the output wrong, not just differently worded.
+ *  `non[-\s]spouse,?\s*non[-\s]charity` protects the exact IRS-defined inherited-IRA beneficiary
+ *  phrase in tax-rates-form.tsx's IRD tax rate help text (a surviving-spouse beneficiary may roll
+ *  over into their own IRA and use the Uniform Lifetime Table; a non-spouse beneficiary may not —
+ *  the same doctrinal boundary "Spousal rollover" protects, on the other side of it). Scoped to
+ *  the compound "non-spouse, non-charity" phrase, not bare "non-spouse", so it doesn't swallow
+ *  unrelated "non-spouse recipients"-style copy elsewhere that isn't this IRS term. */
 const TERMS_OF_ART =
-  /(surviving\s+spouse|spousal|married\s+filing|qualifying\s+widow|marital\s+deduction|ex[-\s]spouse|former\s+spouse|deceased\s+spouse)/i;
+  /(surviving\s+spouse|spousal|married\s+filing|qualifying\s+widow|marital\s+deduction|ex[-\s]spouse|former\s+spouse|deceased\s+spouse|non[-\s]spouse,?\s*non[-\s]charity)/i;
 
 /** Files that are legitimately about the marital relationship, forever. */
 const PERMANENT_ALLOWLIST = new Set<string>([

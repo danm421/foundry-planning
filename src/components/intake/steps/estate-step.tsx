@@ -195,7 +195,7 @@ export function EstateStep({
               <div className="border-t border-hair pt-5">
                 <PrincipalFields
                   idPrefix="estate-spouse"
-                  name={household.spouseName ?? "Your co-client"}
+                  name={household.spouseName ?? "Your Co-client"}
                   value={estate.contact?.spouse}
                   onChange={(field, next) => setPrincipal("spouse", field, next)}
                 />

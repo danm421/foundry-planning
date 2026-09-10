@@ -401,7 +401,7 @@ export function estateBeneficiaryOptions(
   if (family?.spouse != null && inheritance?.spouseFirst !== true) {
     out.push({
       ref: "spouse",
-      name: spouseName ?? "Your co-client",
+      name: spouseName ?? "Your Co-client",
       detail: "Co-client",
       fromFamily: true,
       selected: isSelected("spouse"),
@@ -510,7 +510,7 @@ export function inheritanceSummaryLine(
   const spouseName = childDisplayName(family?.spouse ?? undefined);
   const spouseFirst =
     inheritance?.spouseFirst === true
-      ? `Everything to ${spouseName ?? "your co-client"} first`
+      ? `Everything to ${spouseName ?? "your Co-client"} first`
       : null;
 
   const people = resolveEstateBeneficiaries(inheritance, family, today);
