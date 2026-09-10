@@ -69,6 +69,7 @@ import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { mergeAcrossFiles } from "@/lib/imports/assemble/merge-across-files";
 import { detectRollups } from "@/lib/statement-chat/rollups";
+import { dropRow, mergeRows } from "@/lib/statement-chat/tools";
 import type { ExtractionResult } from "@/lib/extraction/types";
 import type { ImportPayloadJson } from "@/lib/imports/types";
 
@@ -318,6 +319,101 @@ describe("chat finalize verification (Ruling 70)", () => {
     // Status untouched: no UPDATE, no audit row, for this call.
     expect(updateCalls).toHaveLength(0);
     expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  // C1 (final review): a row the advisor retired IN THE CHAT is gone from
+  // the working table but comes back out of the route's own recompute (which
+  // reads `fileResults`, raw extraction no tool ever edits). Before the fix
+  // it was demanded at close forever — a permanent 409 raised by the
+  // branch's headline tool.
+  //
+  // Both fixtures below are produced by the REAL tools (`dropRow` /
+  // `mergeRows`), not hand-written: `chat.excludedRows` and
+  // `payload.accounts` are exactly what a turn persists, so a change to
+  // either shape reddens this instead of quietly passing against a fiction.
+  function afterDroppingSecondRow() {
+    const { payload } = mergeAcrossFiles(CLEAN_FILE_RESULTS);
+    const { kept } = detectRollups(payload.accounts);
+    const ids = kept.map((r) => r.__rowId as string);
+    const result = dropRow({ accounts: kept }, { rowId: ids[1], reason: "not the client's" });
+    return { ids, result };
+  }
+
+  it("closes the import after a drop_row retired a row that was never committed", async () => {
+    const { ids, result } = afterDroppingSecondRow();
+    expect(result.excludedRows?.[0].row.__rowId).toBe(ids[1]);
+
+    vi.mocked(requireImportAccess).mockResolvedValue(
+      importRow({
+        fileResults: CLEAN_FILE_RESULTS,
+        chat: {
+          surface: "chat",
+          transcript: [],
+          decisions: [],
+          excludedRows: result.excludedRows ?? [],
+          committedRowIds: [ids[0]], // only the surviving row was committed
+        },
+        payload: result.payload as never,
+      }) as never,
+    );
+
+    const res = await POST(req(), params);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, status: "committed" });
+  });
+
+  // The unrecoverable half: `merge_rows` stamps `irreversible: true`, so
+  // "Include anyway" is disabled for the retired row (excluded-rows.tsx) and
+  // the advisor has no way to put it back and commit it. If close still
+  // demanded it, the import could never be closed by any route at all.
+  it("closes the import after an irreversible merge_rows retired a row", async () => {
+    const { payload } = mergeAcrossFiles(CLEAN_FILE_RESULTS);
+    const { kept } = detectRollups(payload.accounts);
+    const ids = kept.map((r) => r.__rowId as string);
+    const result = mergeRows({ accounts: kept }, { keepRowId: ids[0], mergeRowId: ids[1] });
+    expect(result.excludedRows?.[0]).toMatchObject({ irreversible: true });
+
+    vi.mocked(requireImportAccess).mockResolvedValue(
+      importRow({
+        fileResults: CLEAN_FILE_RESULTS,
+        chat: {
+          surface: "chat",
+          transcript: [],
+          decisions: [],
+          excludedRows: result.excludedRows ?? [],
+          committedRowIds: [ids[0]],
+        },
+        payload: result.payload as never,
+      }) as never,
+    );
+
+    const res = await POST(req(), params);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, status: "committed" });
+  });
+
+  // The exclusion must not become a blanket amnesty: a row that is neither
+  // committed NOR excluded still blocks the close.
+  it("still 409s a row that is neither committed nor excluded in the chat", async () => {
+    const { ids, result } = afterDroppingSecondRow();
+    vi.mocked(requireImportAccess).mockResolvedValue(
+      importRow({
+        fileResults: CLEAN_FILE_RESULTS,
+        chat: {
+          surface: "chat",
+          transcript: [],
+          decisions: [],
+          excludedRows: result.excludedRows ?? [],
+          committedRowIds: [], // the SURVIVING row was never committed
+        },
+        payload: result.payload as never,
+      }) as never,
+    );
+
+    const res = await POST(req(), params);
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toContain("1 account row");
+    expect(updateCalls).toHaveLength(0);
   });
 
   it("closes the import even though an excluded rollup row was never committed", async () => {

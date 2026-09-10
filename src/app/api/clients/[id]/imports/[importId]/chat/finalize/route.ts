@@ -175,7 +175,31 @@ export async function POST(request: Request, { params }: Params) {
   const { kept } = detectRollups(freshMerged.accounts);
   const chat = readChatState(payloadJson);
   const committed = new Set(chat.committedRowIds);
-  const missing = kept.filter((row) => !row.__rowId || !committed.has(row.__rowId));
+  // A row the advisor retired IN THE CHAT — `drop_row`, or the half a
+  // `merge_rows` folded away — is gone from the working table but comes
+  // straight back out of the recompute above, because `fileResults` is raw
+  // extraction that no tool ever edits. Without this it is never committed,
+  // never in `committedRowIds`, and so lands in `missing` forever: a
+  // permanent 409 that the branch's own headline tool creates. For a
+  // `merge_rows` exclusion it is unrecoverable — that entry carries
+  // `irreversible: true` and "Include anyway" is disabled for it
+  // (`excluded-rows.tsx`), so the advisor has no way to put the row back and
+  // commit it either.
+  //
+  // Treated exactly like a rollup exclusion: excluded means "not demanded at
+  // close", not a second mechanism. The two lists differ only in where they
+  // are computed — a rollup is re-derived by `detectRollups` on every read,
+  // a chat exclusion is persisted (`chat.excludedRows`) because nothing can
+  // re-derive an advisor's decision.
+  const chatExcluded = new Set(
+    chat.excludedRows
+      .map((x) => x.row?.__rowId)
+      .filter((rowId): rowId is string => typeof rowId === "string"),
+  );
+  const missing = kept.filter((row) => {
+    if (row.__rowId && chatExcluded.has(row.__rowId)) return false;
+    return !row.__rowId || !committed.has(row.__rowId);
+  });
 
   if (missing.length > 0) {
     return jsonResponse(409, {
