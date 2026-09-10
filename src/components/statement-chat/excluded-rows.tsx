@@ -21,32 +21,27 @@ export interface ExcludedRowsProps<Row> {
   /** Identity label for a row — reuses whatever the caller renders as its
    *  own first (name) column, so this stays generic over the entity shape. */
   label: (row: Row) => ReactNode;
-  onInclude: (row: Row) => void;
-}
-
-/**
- * Prose for one excluded row. Prefers the structured `decision` (C2) so the
- * copy can never drift from what the merge actually recorded; `reason` is
- * the fallback for a producer with no decision behind it (e.g. an advisor's
- * own "drop row", Task 11).
- */
-function excludedReason<Row>(x: ExcludedRow<Row>): string {
-  if (x.decision?.kind === "rollup-excluded") {
-    // C3/Ruling 32 (mirrored from narrate.ts's rollupCaveat): `coversCount`
-    // names how many sibling rows are already listed — not a claim the
-    // total's arithmetic reconciles with them.
-    return `a total covering ${x.decision.coversCount} accounts already listed`;
-  }
-  return x.reason;
+  /**
+   * Lifts a row into the working set. Optional (Task 10 review, CRITICAL):
+   * when absent, "Include anyway" renders disabled rather than silently
+   * doing something other than what its label says (it previously posted a
+   * commit — a printed total, restored "anyway", would double-count the
+   * household's net worth).
+   */
+  onRestore?: (row: Row) => void;
 }
 
 /**
  * Excluded (and superseded) rows, greyed below the working set with their
- * reason and a restore toggle. Stays generic — its copy comes from the
- * `MergeDecision`, never from anything account-shaped (controller
- * amendment, Task 10).
+ * reason and a restore toggle. Stays generic — `reason` is rendered as-is,
+ * never reformatted from `decision` here (Task 10 review, Important 4/5):
+ * every producer (`detectRollups`, an advisor's own drop) already populates
+ * `reason` with entity-appropriate prose, and rebuilding a sentence from
+ * `decision` fields in this file was itself an amendment violation — the
+ * word "accounts" doesn't belong in a component Phase 2 reuses for
+ * annuities and policies.
  */
-export default function ExcludedRows<Row>({ excluded, label, onInclude }: ExcludedRowsProps<Row>) {
+export default function ExcludedRows<Row>({ excluded, label, onRestore }: ExcludedRowsProps<Row>) {
   if (excluded.length === 0) return null;
 
   return (
@@ -59,12 +54,13 @@ export default function ExcludedRows<Row>({ excluded, label, onInclude }: Exclud
             className="flex items-center justify-between gap-3 px-3 py-2 text-sm text-ink-4 opacity-60"
           >
             <span>
-              <span className="text-ink-3">{label(x.row)}</span> — {excludedReason(x)}
+              <span className="text-ink-3">{label(x.row)}</span> — {x.reason}
             </span>
             <button
               type="button"
-              onClick={() => onInclude(x.row)}
-              className="shrink-0 rounded border border-hair px-2 py-1 text-xs text-accent hover:border-hair-2"
+              onClick={() => onRestore?.(x.row)}
+              disabled={!onRestore}
+              className="shrink-0 rounded border border-hair px-2 py-1 text-xs text-accent hover:border-hair-2 disabled:cursor-default disabled:text-ink-4 disabled:opacity-60"
             >
               Include anyway
             </button>

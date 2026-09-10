@@ -39,6 +39,19 @@ function isVetoedFromRollup(name: string): boolean {
   return ROLLUP_VETO_WORDS.some((word) => n.includes(word));
 }
 
+/**
+ * Canonical wording for why a detected rollup was excluded. Exported so the
+ * ONE place that has to backfill this sentence from a bare `rollup-excluded`
+ * `MergeDecision` (the accounts table's defensive normalizer, for an input
+ * that carries a decision but no `reason` of its own) reuses this instead of
+ * rebuilding the string a third time — see excluded-rows.tsx's review note
+ * (Task 10 review, Important 4/5) on why that generic component must never
+ * do this derivation itself.
+ */
+export function rollupExclusionReason(coversCount: number): string {
+  return `a total covering ${coversCount} accounts already listed`;
+}
+
 function withinTolerance(a: number, b: number): boolean {
   const base = Math.max(Math.abs(a), Math.abs(b));
   if (base === 0) return true;
@@ -127,7 +140,7 @@ export function detectRollups<T extends ExtractedAccount>(rows: T[]): RollupResu
 
     excluded.push({
       row,
-      reason: `a total covering ${siblings.length} accounts already listed`,
+      reason: rollupExclusionReason(siblings.length),
       decision: {
         kind: "rollup-excluded",
         label: row.name,

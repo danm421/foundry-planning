@@ -12,6 +12,7 @@ import { inputClassName, selectClassName, fieldLabelClassName } from "@/componen
 import { OwnershipEditor } from "@/components/forms/ownership-editor";
 import { matchFamilyMemberByName, matchOwnersFromHint } from "@/lib/imports/owner-match";
 import { BENEFICIARY_REQUIRED_MESSAGE, is529Account } from "@/lib/accounts/is-529";
+import { CATEGORY_OPTIONS, SUB_TYPE_OPTIONS } from "@/lib/accounts/category-labels";
 import type { GrowthSource } from "@/lib/investments/allocation";
 import type { AccountOwner } from "@/engine/ownership";
 import MatchColumn from "./match-column";
@@ -25,42 +26,13 @@ import { basisFieldLabel } from "@/lib/accounts/basis-label";
 // EMPTY_CLASS on plain inputs.
 const TINT_EMPTY = "bg-amber-900/20 border-amber-600/50";
 
-export const CATEGORY_OPTIONS: { value: AccountCategory; label: string }[] = [
-  { value: "taxable", label: "Taxable" },
-  { value: "cash", label: "Cash" },
-  { value: "retirement", label: "Retirement" },
-  { value: "real_estate", label: "Real Estate" },
-  { value: "business", label: "Business" },
-  { value: "life_insurance", label: "Life Insurance" },
-  // Label matches the canonical mapping in src/lib/accounts/category-labels.ts
-  // (ACCOUNT_CATEGORY_LABELS) — reused everywhere else this category displays.
-  { value: "education_savings", label: "529 / Education" },
-];
-
-export const SUB_TYPE_OPTIONS: { value: AccountSubType; label: string }[] = [
-  { value: "brokerage", label: "Brokerage" },
-  { value: "savings", label: "Savings" },
-  { value: "checking", label: "Checking" },
-  { value: "traditional_ira", label: "Traditional IRA" },
-  { value: "roth_ira", label: "Roth IRA" },
-  { value: "401k", label: "401(k)" },
-  { value: "403b", label: "403(b)" },
-  { value: "529", label: "529 Plan" },
-  { value: "trust", label: "Trust" },
-  { value: "other", label: "Other" },
-  { value: "primary_residence", label: "Primary Residence" },
-  { value: "rental_property", label: "Rental Property" },
-  { value: "commercial_property", label: "Commercial Property" },
-  { value: "sole_proprietorship", label: "Sole Proprietorship" },
-  { value: "partnership", label: "Partnership" },
-  { value: "s_corp", label: "S-Corp" },
-  { value: "c_corp", label: "C-Corp" },
-  { value: "llc", label: "LLC" },
-  { value: "term", label: "Term Life" },
-  { value: "whole_life", label: "Whole Life" },
-  { value: "universal_life", label: "Universal Life" },
-  { value: "variable_life", label: "Variable Life" },
-];
+// Moved to the lib (Task 10 review, Important 9): a non-UI consumer
+// (`accounts-columns.ts`) needed these option lists, and importing them from
+// this "use client" component would have dragged its whole subtree —
+// MatchColumn, DiffPreview, SourceBadge, CurrencyInput — into an unrelated
+// bundle. Re-exported here, unchanged, so anything that already imported
+// them from this file keeps working.
+export { CATEGORY_OPTIONS, SUB_TYPE_OPTIONS };
 
 // Mirrors the field map in src/lib/imports/commit/accounts.ts so the diff
 // preview matches what the commit step will actually write. The 529

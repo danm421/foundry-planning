@@ -1,17 +1,20 @@
-import { createElement, type ChangeEvent } from "react";
-import type { AccountCategory, AccountSubType, ExtractedAccount } from "@/lib/extraction/types";
+import { createElement } from "react";
+import type { ExtractedAccount } from "@/lib/extraction/types";
 import type { Annotated } from "@/lib/imports/types";
-import { CATEGORY_OPTIONS, SUB_TYPE_OPTIONS } from "@/components/import/review-step-accounts";
-import { selectClassName } from "@/components/forms/input-styles";
+import { formatAccountCategory, formatAccountSubType } from "@/lib/accounts/category-labels";
 import type { ColumnSpec } from "./entity-table";
 import OwnerCell from "./owner-cell";
+import AccountTypeCellEdit, { type AccountTypePatch } from "./account-type-cell";
 
 /**
- * Named `.ts`, not `.tsx`, per the controller amendment's file list — the
- * two `render`/`edit` overrides below build React elements with
- * `createElement` rather than JSX syntax, which a `.ts` file cannot parse
- * (`tsconfig.json`'s `jsx: "react-jsx"` still requires the `.tsx`
- * extension for angle-bracket JSX).
+ * Named `.ts`, not `.tsx`, per the controller amendment's file list. The
+ * two `render` overrides below build React elements with `createElement`
+ * rather than JSX syntax, which a `.ts` file cannot parse (`tsconfig.json`'s
+ * `jsx: "react-jsx"` still requires the `.tsx` extension for angle-bracket
+ * JSX) — this stays a genuinely JSX-free spec list now that the Account-type
+ * editor itself lives in `account-type-cell.tsx` (Task 10 review, Ruling 69
+ * revised), so there is nothing here but `createElement(Component, props)`
+ * calls with no children needing their own `key` props.
  */
 
 type Row = Annotated<ExtractedAccount>;
@@ -29,51 +32,19 @@ function resolvedOwnerNames(owners: Row["owners"]): string[] | undefined {
   return names.length > 0 ? names : undefined;
 }
 
-function accountTypeLabel(row: Row): string {
-  const category = CATEGORY_OPTIONS.find((o) => o.value === row.category)?.label;
-  const subType = SUB_TYPE_OPTIONS.find((o) => o.value === row.subType)?.label;
+/**
+ * Display label for the collapsed Account-type cell. Uses the canonical
+ * `formatAccountCategory`/`formatAccountSubType` formatters (Task 10 review,
+ * Important 9) rather than re-deriving labels by scanning the dropdown
+ * option list — that list is curated for the SELECT control, not display,
+ * and duplicating a lookup that already exists elsewhere is exactly what
+ * `src/lib/accounts/category-labels.ts` was built to prevent.
+ */
+export function accountTypeLabel(row: Row): string {
+  const category = row.category ? formatAccountCategory(row.category) : undefined;
+  const subType = row.subType ? formatAccountSubType(row.subType) : undefined;
   if (category && subType) return `${category} · ${subType}`;
   return category ?? subType ?? "—";
-}
-
-/** The Account type cell's edit view: category + sub-type, the same two
- *  dropdowns `review-step-accounts.tsx` uses, changed together — a
- *  classification change can turn a row into (or out of) a 529, and that
- *  decision needs both values at once, not two independent partial writes. */
-function accountTypeEditor(row: Row, onChange: (value: unknown) => void) {
-  const emit = (category: AccountCategory | undefined, subType: AccountSubType | undefined) =>
-    onChange({ category, subType });
-
-  return createElement(
-    "div",
-    { className: "flex flex-col gap-1" },
-    createElement(
-      "select",
-      {
-        key: "category",
-        "aria-label": "Category",
-        value: row.category ?? "",
-        className: selectClassName,
-        onChange: (e: ChangeEvent<HTMLSelectElement>) =>
-          emit((e.target.value || undefined) as AccountCategory | undefined, row.subType),
-      },
-      createElement("option", { key: "", value: "" }, "Select..."),
-      ...CATEGORY_OPTIONS.map((o) => createElement("option", { key: o.value, value: o.value }, o.label)),
-    ),
-    createElement(
-      "select",
-      {
-        key: "subType",
-        "aria-label": "Type",
-        value: row.subType ?? "",
-        className: selectClassName,
-        onChange: (e: ChangeEvent<HTMLSelectElement>) =>
-          emit(row.category, (e.target.value || undefined) as AccountSubType | undefined),
-      },
-      createElement("option", { key: "", value: "" }, "Select..."),
-      ...SUB_TYPE_OPTIONS.map((o) => createElement("option", { key: o.value, value: o.value }, o.label)),
-    ),
-  );
 }
 
 /** The seven-column spec (Name · Value · Basis · Last 4 · Owner · Custodian
@@ -106,6 +77,16 @@ export const ACCOUNT_COLUMNS: ColumnSpec<Row>[] = [
     header: "Account type",
     kind: "string",
     render: accountTypeLabel,
-    edit: accountTypeEditor,
+    // `key` is a synthetic UI grouping, not a real payload field — `fields`
+    // names the two real ones this editor writes together (Task 10 review,
+    // Important 3). `EntityTable` fans `onChange`'s patch out into one
+    // `onEditCell` call per field instead of writing a junk "accountType" key.
+    fields: ["category", "subType"],
+    edit: (row, onChange) =>
+      createElement(AccountTypeCellEdit, {
+        category: row.category,
+        subType: row.subType,
+        onDone: (patch: AccountTypePatch) => onChange(patch),
+      }),
   },
 ];

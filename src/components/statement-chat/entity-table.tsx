@@ -38,6 +38,17 @@ export interface ColumnSpec<Row> {
   render?: (row: Row) => ReactNode;
   /** Present only on columns the advisor can edit inline. */
   edit?: (row: Row, onChange: (value: unknown) => void) => ReactNode;
+  /**
+   * Real payload keys this column's `edit` writes, for a column that
+   * collapses more than one field (e.g. Account type = category + subType,
+   * changed together so a partial write is never observable — Task 10
+   * review, Important 2/3). When set, `edit`'s `onChange` value MUST be a
+   * `Record<string, unknown>` keyed by these names; `EntityTable` calls
+   * `onEditCell` once per key instead of once for `column.key` (which, for
+   * a column like this, is a synthetic UI grouping, not itself a real
+   * payload field). Omit for the common case of one column, one field.
+   */
+  fields?: string[];
 }
 
 /** The one thing every entity row is guaranteed to carry (Task 6): a stable
@@ -53,6 +64,15 @@ export interface EntityTableProps<Row extends EntityRow> {
   committedRowIds: string[];
   onCommitRows: (rowIds: string[]) => Promise<void>;
   onEditCell: (rowId: string, field: string, value: unknown) => void;
+  /**
+   * Lifts an excluded row into the working set WITHOUT committing it
+   * (Task 10 review, CRITICAL). Optional because the brief's unchangeable
+   * tests construct `<AccountsTable>` without it — when absent, the
+   * "Include anyway" button renders disabled rather than silently doing
+   * nothing (a disabled control reads as "not available here"; a live
+   * button that does nothing reads as broken).
+   */
+  onRestore?: (row: Row) => void;
 }
 
 const RIGHT_ALIGN_KINDS: ReadonlySet<ColumnKind> = new Set([
@@ -74,6 +94,11 @@ function moneyText(value: number): string {
 /**
  * Default, kind-driven cell text for a column with no `render` override.
  * The `default` branch (C3) is deliberate, not laziness — see `ColumnKind`.
+ *
+ * `"year"` is deliberately NOT grouped with `"number"` (Task 10 review,
+ * Important 6): `toLocaleString` would print a calendar year like 2026 as
+ * "2,026", which is the same class of formatting error C3 exists to guard
+ * against, just in this switch instead of the Row-shape boundary.
  */
 function formatValue(kind: ColumnKind, value: unknown): ReactNode {
   if (value === undefined || value === null || value === "") return "—";
@@ -85,8 +110,9 @@ function formatValue(kind: ColumnKind, value: unknown): ReactNode {
     case "rate":
       return typeof value === "number" ? `${(value * 100).toFixed(2)}%` : String(value);
     case "number":
-    case "year":
       return typeof value === "number" ? value.toLocaleString("en-US") : String(value);
+    case "year":
+      return String(value);
     case "boolean":
       return value ? "Yes" : "No";
     default:
@@ -113,12 +139,37 @@ export default function EntityTable<Row extends EntityRow>({
   committedRowIds,
   onCommitRows,
   onEditCell,
+  onRestore,
 }: EntityTableProps<Row>) {
   const [editing, setEditing] = useState<{ rowId: string; key: string } | null>(null);
+  // In-flight guard (Task 10 review, Important 7): without it a double-click
+  // fires two POSTs before `committedRowIds` can come back around and
+  // disable the button. Keyed by rowId rather than a single boolean so
+  // committing one row never blocks another.
+  const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
+  const [commitError, setCommitError] = useState<{ rowId: string; message: string } | null>(null);
 
   const commit = (rowId: string | undefined) => {
-    if (!rowId) return;
-    void onCommitRows([rowId]);
+    if (!rowId || pending.has(rowId)) return;
+    setCommitError(null);
+    setPending((prev) => new Set(prev).add(rowId));
+    // `Promise.resolve(...)` normalizes a mock that returns `undefined`
+    // (every brief test's `onCommitRows`) as well as a real promise — both
+    // need `.catch`/`.finally` to be safe here.
+    Promise.resolve(onCommitRows([rowId]))
+      .catch((err: unknown) => {
+        setCommitError({
+          rowId,
+          message: err instanceof Error ? err.message : "Could not commit this row.",
+        });
+      })
+      .finally(() => {
+        setPending((prev) => {
+          const next = new Set(prev);
+          next.delete(rowId);
+          return next;
+        });
+      });
   };
 
   // Reused to label an excluded row with the same identity the main table
@@ -135,8 +186,8 @@ export default function EntityTable<Row extends EntityRow>({
       className="overflow-x-auto"
       // Escape backs out of an in-progress cell edit without committing a
       // change (ui-ux-pro-max `escape-routes`) — the `edit` renderer has no
-      // cancel affordance of its own (its only callback is `onChange`), so
-      // this is the one way out of a dropdown opened by mistake.
+      // cancel affordance of its own, so this is the one way out of an
+      // editor opened by mistake.
       onKeyDown={(e) => {
         if (e.key === "Escape" && editing) setEditing(null);
       }}
@@ -159,6 +210,7 @@ export default function EntityTable<Row extends EntityRow>({
           {rows.map((row, i) => {
             const rowId = row.__rowId;
             const isCommitted = rowId != null && committedRowIds.includes(rowId);
+            const isPending = rowId != null && pending.has(rowId);
 
             return (
               <tr key={rowId ?? i} className="border-b border-hair last:border-0">
@@ -170,7 +222,14 @@ export default function EntityTable<Row extends EntityRow>({
                   let content: ReactNode;
                   if (isEditingThis && col.edit) {
                     content = col.edit(row, (value) => {
-                      onEditCell(rowId as string, col.key, value);
+                      if (col.fields && col.fields.length > 0) {
+                        const patch = value as Record<string, unknown>;
+                        for (const field of col.fields) {
+                          onEditCell(rowId as string, field, patch[field]);
+                        }
+                      } else {
+                        onEditCell(rowId as string, col.key, value);
+                      }
                       setEditing(null);
                     });
                   } else {
@@ -201,18 +260,21 @@ export default function EntityTable<Row extends EntityRow>({
                   <button
                     type="button"
                     onClick={() => commit(rowId)}
-                    disabled={isCommitted}
+                    disabled={isCommitted || isPending}
                     className="rounded border border-hair px-2 py-1 text-xs text-accent transition-colors hover:border-hair-2 disabled:cursor-default disabled:text-ink-4 disabled:opacity-60"
                   >
-                    {isCommitted ? "Committed" : "Commit"}
+                    {isCommitted ? "Committed" : isPending ? "Committing…" : "Commit"}
                   </button>
+                  {commitError && commitError.rowId === rowId && (
+                    <div className="mt-1 text-xs text-crit">{commitError.message}</div>
+                  )}
                 </td>
               </tr>
             );
           })}
         </tbody>
       </table>
-      <ExcludedRows excluded={excluded} label={label} onInclude={(row) => commit(row.__rowId)} />
+      <ExcludedRows excluded={excluded} label={label} onRestore={onRestore} />
     </div>
   );
 }
