@@ -16,9 +16,9 @@ import type { ClientMilestones } from "@/lib/milestones";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { controllingFamilyMember } from "@/engine/ownership";
 import { flipEnabled, isEnabled } from "@/lib/solver/technique-enabled";
+import { groupAssetTransactionBundles } from "@/lib/solver/asset-transaction-bundles";
 import {
   summarizeRothConversion,
-  summarizeAssetTransaction,
   summarizeReinvestment,
   summarizeRelocation,
 } from "@/lib/solver/technique-summaries";
@@ -261,7 +261,13 @@ export function SolverTechniquesTab({
   );
 
   const workingRoth = workingTree.rothConversions ?? [];
-  const workingAsset = workingTree.assetTransactions ?? [];
+  // Memoized (unlike its siblings) because it now feeds the assetBundles
+  // useMemo below — exhaustive-deps needs a stable dependency, not a fresh
+  // `?? []` array on every render.
+  const workingAsset = useMemo(
+    () => workingTree.assetTransactions ?? [],
+    [workingTree.assetTransactions],
+  );
   const workingReinv = workingTree.reinvestments ?? [];
   const workingReloc = workingTree.relocations ?? [];
 
@@ -284,6 +290,17 @@ export function SolverTechniquesTab({
       }));
     return drafts.length ? [...accounts, ...drafts] : accounts;
   }, [accounts, workingTree.accounts]);
+
+  // Legs from one dialog are ONE technique. Account names sharpen the summary
+  // ("Sell 45 Oak Avenue" rather than the derived leg name).
+  const accountNameById = useMemo(
+    () => new Map(accountsWithDrafts.map((a) => [a.id, a.name])),
+    [accountsWithDrafts],
+  );
+  const assetBundles = useMemo(
+    () => groupAssetTransactionBundles(workingAsset, accountNameById),
+    [workingAsset, accountNameById],
+  );
 
   const rothAccountCreation =
     owners && owners.length > 0 && retirementGrowthDefault != null && resolvedInflationRate != null
@@ -338,21 +355,34 @@ export function SolverTechniquesTab({
           </button>
         ) : undefined,
     })),
-    ...workingAsset.map((t) => ({
-      key: `asset:${t.id}`,
+    ...assetBundles.map((b) => ({
+      key: `asset:${b.key}`,
       kind: "asset" as const,
-      name: t.name,
-      summary: summarizeAssetTransaction(t),
-      enabled: isEnabled(t),
-      badge: badgeFor(baseTechniqueIds?.asset, t.id),
-      onEdit: () => setEditor({ kind: "asset", editId: t.id }),
-      onRemove: () => onChange({ kind: "asset-transaction-upsert", id: t.id, value: null }),
-      onToggle: () =>
-        onChange({
-          kind: "asset-transaction-upsert",
-          id: t.id,
-          value: flipEnabled(t),
-        }),
+      name: b.name,
+      summary: b.summary,
+      enabled: b.enabled,
+      // A bundle is "Base plan" only when every leg came from the base plan.
+      badge: baseTechniqueIds
+        ? b.legs.every((l) => baseTechniqueIds.asset.has(l.id))
+          ? ("Base plan" as const)
+          : ("Added" as const)
+        : undefined,
+      onEdit: () => setEditor({ kind: "asset", editId: b.legs[0].id }),
+      onRemove: () => {
+        for (const leg of b.legs) {
+          onChange({ kind: "asset-transaction-upsert", id: leg.id, value: null });
+        }
+      },
+      onToggle: () => {
+        const next = !b.enabled;
+        for (const leg of b.legs) {
+          onChange({
+            kind: "asset-transaction-upsert",
+            id: leg.id,
+            value: { ...leg, enabled: next },
+          });
+        }
+      },
     })),
     ...workingReinv.map((t) => ({
       key: `reinvestment:${t.id}`,
@@ -471,6 +501,9 @@ export function SolverTechniquesTab({
     const existing: AssetTransaction | undefined = editor.editId
       ? workingAsset.find((t) => t.id === editor.editId)
       : undefined;
+    const bundle = existing
+      ? assetBundles.find((b) => b.legs.some((l) => l.id === existing.id))
+      : undefined;
     form = (
       <AddAssetTransactionForm
         clientId={clientId}
@@ -481,13 +514,18 @@ export function SolverTechniquesTab({
         initialData={
           existing ? toAssetTransactionInitialData(existing) : undefined
         }
+        bundleRecords={bundle?.legs.map(toAssetTransactionInitialData)}
         onClose={close}
         onSaved={close}
+        onDeleteDraft={(id) =>
+          onChange({ kind: "asset-transaction-upsert", id, value: null })
+        }
         onSubmitDraft={(t) =>
           onChange({
             kind: "asset-transaction-upsert",
             id: t.id,
-            value: { ...t, enabled: existing?.enabled },
+            // Each leg keeps its OWN on/off state across an edit.
+            value: { ...t, enabled: workingAsset.find((a) => a.id === t.id)?.enabled },
           })
         }
       />
