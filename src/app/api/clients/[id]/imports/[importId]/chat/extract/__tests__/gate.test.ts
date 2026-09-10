@@ -150,7 +150,14 @@ beforeEach(() => {
 
   vi.mocked(requireOrgId).mockResolvedValue("org_1");
   vi.mocked(requireActiveSubscription).mockResolvedValue(undefined);
-  vi.mocked(requireImportAccess).mockResolvedValue(currentImportRow as never);
+  // `mockImplementation`, NOT `mockResolvedValue(currentImportRow)`: the
+  // latter captures the object as it stands in THIS beforeEach, and every
+  // test below then reassigns `currentImportRow` to a brand-new object — so
+  // the gate read would hand the route the empty seed row rather than the
+  // fixture the test set up. That went unnoticed while the route only read
+  // `extractHoldings` off it (false either way); it reads `payload.accounts`
+  // there too since I1.
+  vi.mocked(requireImportAccess).mockImplementation(async () => currentImportRow as never);
   vi.mocked(auth).mockResolvedValue({
     userId: "user_1",
     sessionClaims: { org_public_metadata: { entitlements: ["ai_import"] } },
@@ -580,6 +587,118 @@ describe("chat extract route gates", () => {
     // one that already existed (there was none).
     expect(payloadJsonUpdateCount).toBe(1);
     expect((currentImportRow.payloadJson as ImportPayloadJson).payload?.accounts).toHaveLength(1);
+  });
+
+  // Final review, I1 — THE test that matters for "upload another statement".
+  // Re-extraction used to persist `payload: { accounts: kept }` outright, so
+  // adding one more file threw away every `edit_row` correction, put every
+  // `drop_row`/`merge_rows` row back in the table, and dropped every
+  // `linkCreated` stamp — while the surface's own copy invites exactly that
+  // ("You can still upload another statement first").
+  //
+  // Mutation this catches: reverting either half — the rebase (the edited
+  // 999 and the `exact` stamp would fall back to the raw 100 / `new`), or
+  // the chat-exclusion subtraction (the dropped row would reappear).
+  it("rebases chat edits, stamps and exclusions onto the fresh merge when a file is added (I1)", async () => {
+    const alreadyExtracted = {
+      documentType: "other",
+      fileName: "already.pdf",
+      extracted: {
+        accounts: [
+          { name: "IRA", custodian: "Schwab", accountNumberLast4: "1234", value: 100 },
+          { name: "Dup", custodian: "Fidelity", accountNumberLast4: "9999", value: 50 },
+        ],
+        incomes: [],
+        expenses: [],
+        liabilities: [],
+        entities: [],
+        lifePolicies: [],
+        wills: [],
+        savings: [],
+      },
+      warnings: [],
+      promptVersion: "v",
+    };
+    // The ids `mergeAcrossFiles` actually mints for those two rows.
+    const IRA_ROW_ID = "account:schwab|1234|#0";
+    const DUP_ROW_ID = "account:fidelity|9999|#0";
+
+    currentImportRow = {
+      id: "i1",
+      payloadJson: {
+        fileResults: { f1: alreadyExtracted },
+        // What the advisor has been working on: the IRA corrected to 999 and
+        // already committed (`match: exact` is the `linkCreated` stamp), the
+        // Dup row dropped in the chat and so absent from the table entirely.
+        payload: {
+          accounts: [
+            {
+              name: "IRA",
+              custodian: "Schwab",
+              accountNumberLast4: "1234",
+              value: 999,
+              __rowId: IRA_ROW_ID,
+              match: { kind: "exact", existingId: "acct-1" },
+            },
+          ],
+        },
+        chat: {
+          surface: "chat",
+          transcript: [],
+          decisions: [],
+          excludedRows: [
+            { row: { name: "Dup", __rowId: DUP_ROW_ID }, reason: "not a real account" },
+          ],
+          committedRowIds: [IRA_ROW_ID],
+        },
+      },
+      extractHoldings: false,
+      status: "review",
+    };
+    filesResult = [fileRow("f1", "already.pdf"), fileRow("f2", "new.pdf")];
+    vi.mocked(extractDocument).mockResolvedValue({
+      documentType: "other",
+      fileName: "new.pdf",
+      extracted: {
+        accounts: [{ name: "New", custodian: "Vanguard", accountNumberLast4: "5555", value: 2 }],
+        incomes: [],
+        expenses: [],
+        liabilities: [],
+        entities: [],
+        lifePolicies: [],
+        wills: [],
+        savings: [],
+      },
+      warnings: [],
+      promptVersion: "v",
+    } as never);
+
+    const events = await readSse(await POST(req(), params));
+
+    const persisted = (currentImportRow.payloadJson as ImportPayloadJson).payload?.accounts ?? [];
+    const byId = new Map(persisted.map((r) => [r.__rowId, r]));
+
+    // 1. The chat edit survived the new upload — and so did the commit stamp.
+    expect(byId.get(IRA_ROW_ID)).toMatchObject({
+      value: 999,
+      match: { kind: "exact", existingId: "acct-1" },
+    });
+    // 2. The dropped row did NOT come back, even though it is still sitting
+    //    in `fileResults` and the fresh merge re-derives it.
+    expect(byId.has(DUP_ROW_ID)).toBe(false);
+    // 3. The genuinely new account off the new statement IS there.
+    expect(persisted.map((r) => r.name)).toEqual(["IRA", "New"]);
+    // 4. The exclusion itself is still recorded, so "Not included" still
+    //    shows the advisor what they dropped and why.
+    expect((currentImportRow.payloadJson as ImportPayloadJson).chat?.excludedRows).toEqual([
+      { row: { name: "Dup", __rowId: DUP_ROW_ID }, reason: "not a real account" },
+    ]);
+
+    // The streamed rows are what was persisted — not the raw merge, which
+    // would leave the screen disagreeing with the database from frame one.
+    const done = events.at(-1) as { rows: Array<{ name: string; value: number }> };
+    expect(done.rows.map((r) => r.name)).toEqual(["IRA", "New"]);
+    expect(done.rows[0].value).toBe(999);
   });
 
   // IMPORTANT 4 (fix round 1): proves the ROUTE actually threads its own

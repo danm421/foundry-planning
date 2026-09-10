@@ -14,6 +14,10 @@ import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { readChatState, writeChatState } from "@/lib/statement-chat/state";
 import { runTurn } from "@/lib/statement-chat/turn";
+// Shared with chat/extract/route.ts (final review, I1) — one rebase
+// mechanism, not two similar ones. See its own docstring for why
+// reference inequality is an exact "this row changed" signal.
+import { mergeAccountsByRowId } from "@/lib/statement-chat/rebase";
 import type { Annotated, ImportPayloadJson } from "@/lib/imports/types";
 import type { ExtractedAccount } from "@/lib/extraction/types";
 
@@ -40,59 +44,6 @@ const MAX_MESSAGE_LENGTH = 4_000;
 const EXTRACTION_STALE_AFTER_MS = 10 * 60 * 1000;
 
 type AccountRow = Annotated<ExtractedAccount>;
-
-/**
- * Review round 1, Important 1 (and Ruling 83's own follow-up correction):
- * merge the turn's mutated rows onto the FRESH read `by __rowId`, rather
- * than replacing `payload.accounts` wholesale with a snapshot computed from
- * the STALE row read at the top of this request. Without this, a commit
- * landing (via the separate accounts-PATCH route) while this turn's model
- * calls are in flight has its `linkCreated` stamp silently erased the moment
- * this route's write lands — the same "must never regress a linked row"
- * defect Task 10b already guards elsewhere, arriving through a fourth door.
- *
- * A row is "changed by this turn" when the turn's final object for its
- * `__rowId` is a DIFFERENT reference than what that row started as —
- * `editRow`/`mergeRows`/`dropRow` in `tools.ts` always create a new object
- * for a row they touch and preserve the exact same reference for every row
- * they don't, so reference inequality is an exact signal, not a heuristic.
- * A row present at the start but absent from the turn's final accounts was
- * retired this turn (dropped, or merged away) and is removed here too, even
- * from the fresh array. Every other fresh row is left exactly as read — a
- * concurrent write's stamps on it survive untouched.
- */
-function mergeAccountsByRowId(
-  freshAccounts: AccountRow[],
-  startAccounts: AccountRow[],
-  turnAccounts: AccountRow[],
-): AccountRow[] {
-  const startByRowId = new Map(
-    startAccounts.filter((r) => r.__rowId).map((r) => [r.__rowId as string, r]),
-  );
-  const turnByRowId = new Map(
-    turnAccounts.filter((r) => r.__rowId).map((r) => [r.__rowId as string, r]),
-  );
-
-  const changed = new Map<string, AccountRow>();
-  for (const [id, row] of turnByRowId) {
-    if (startByRowId.get(id) !== row) changed.set(id, row);
-  }
-  const retired = new Set(
-    [...startByRowId.keys()].filter((id) => !turnByRowId.has(id)),
-  );
-
-  const merged: AccountRow[] = [];
-  for (const row of freshAccounts) {
-    const id = row.__rowId;
-    if (id && retired.has(id)) continue;
-    if (id && changed.has(id)) {
-      merged.push(changed.get(id) as AccountRow);
-      continue;
-    }
-    merged.push(row);
-  }
-  return merged;
-}
 
 function jsonResponse(
   status: number,
@@ -134,7 +85,8 @@ function jsonResponse(
  * replace built from the STALE snapshot read at the top of this request
  * would erase a `linkCreated` stamp from a commit that landed (via the
  * separate accounts-PATCH route) while this turn's model calls were still
- * running — `mergeAccountsByRowId` (above) is what keeps both true at once.
+ * running — `mergeAccountsByRowId` (`lib/statement-chat/rebase.ts`, shared
+ * with the re-extraction route since I1) is what keeps both true at once.
  */
 export async function POST(request: Request, { params }: Params) {
   // --- Gate chain (canonical order per C7 — mirrors chat/extract/route.ts) ---

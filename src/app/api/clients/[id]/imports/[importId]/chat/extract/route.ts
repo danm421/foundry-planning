@@ -17,7 +17,11 @@ import { mergeAcrossFiles } from "@/lib/imports/assemble/merge-across-files";
 import { detectRollups } from "@/lib/statement-chat/rollups";
 import { narrate } from "@/lib/statement-chat/narrate";
 import { readChatState, writeChatState } from "@/lib/statement-chat/state";
-import type { ImportPayloadJson } from "@/lib/imports/types";
+// Shared with chat/turn/route.ts (final review, I1) — one rebase
+// mechanism, not two similar ones.
+import { rebaseOntoFreshMerge } from "@/lib/statement-chat/rebase";
+import type { Annotated, ImportPayloadJson } from "@/lib/imports/types";
+import type { ExtractedAccount } from "@/lib/extraction/types";
 
 // SSE route: extraction can run for minutes across several files, so this
 // mirrors the wizard extract route's (and Forge stream's) directives.
@@ -54,6 +58,9 @@ function jsonResponse(
  * this route re-reads the import row after extraction returns and merges +
  * detects rollups + narrates from the fresh `fileResults` before persisting
  * `decisions`/`excludedRows` back onto the chat slice.
+ *
+ * The advisor's standing rows are REBASED onto that fresh merge rather than
+ * replaced by it (final review, I1) — see the rebase block below.
  */
 export async function POST(request: Request, { params }: Params) {
   // --- Gate chain (canonical order per C1 — ALL resolve before the stream opens) ---
@@ -127,9 +134,19 @@ export async function POST(request: Request, { params }: Params) {
   }
 
   let extractHoldingsDefault: boolean;
+  // Final review, I1: the rows the advisor has been working on, captured
+  // BEFORE extraction runs — this is the last moment they exist.
+  // `runImportExtraction` ends with a wholesale
+  // `payloadJson: { fileResults, ...chat }` write (`run-extraction.ts:350`)
+  // that deliberately drops `payload`, so the fresh post-extraction read
+  // below can never see them. The `chat` slice DOES survive that write, so
+  // exclusions are still read fresh afterwards; only `payload.accounts` has
+  // to be carried across by hand.
+  let priorAccounts: Annotated<ExtractedAccount>[] = [];
   try {
     const imp = await requireImportAccess({ importId, clientId, firmId, userId });
     extractHoldingsDefault = imp.extractHoldings === true;
+    priorAccounts = ((imp.payloadJson ?? {}) as ImportPayloadJson).payload?.accounts ?? [];
   } catch (err) {
     if (err instanceof ForbiddenError) {
       return jsonResponse(403, { error: "Forbidden" });
@@ -272,7 +289,49 @@ export async function POST(request: Request, { params }: Params) {
         // that decision is folded in here; `mergeAcrossFiles` never sees a
         // rollup row and so never emits it on its own.
         const decisions = [...mergeDecisions, ...excluded.map((x) => x.decision)];
-        const narration = narrate({ fileCount: mergedFileCount, decisions, rows: kept });
+
+        // --- Final review, I1: REBASE onto the fresh merge, never replace ---
+        //
+        // This route used to persist `payload: { accounts: kept }` outright,
+        // so uploading one more statement threw away every `edit_row`
+        // correction, put every `drop_row`/`merge_rows` row back in the
+        // table, and dropped every `linkCreated` stamp — while the UI
+        // actively invites that path ("You can still upload another
+        // statement first"). `rebaseOntoFreshMerge` is the SAME mechanism the
+        // turn route already uses to land a turn's rows on a fresh read (one
+        // rebase, shared, not two similar ones): the fresh merge is the base,
+        // so a genuinely new account off the new statement comes through
+        // untouched, and every row the advisor has already worked on wins
+        // over its freshly-merged counterpart. A row that no longer exists in
+        // the new extraction simply disappears.
+        //
+        // C2's file-scoped `__rowId` is what makes this work at all: without
+        // it, adding a file renumbers the other files' fallback ids and the
+        // rebase matches nothing.
+        const standingChat = readChatState(payloadJson);
+        // A row the advisor retired in the chat comes straight back out of
+        // the merge (it is still in `fileResults`), so it has to be
+        // subtracted here or "drop it" would undo itself on the next upload.
+        // Same subtraction the finalize route makes for the same reason.
+        const chatExcludedIds = new Set(
+          standingChat.excludedRows
+            .map((x) => x.row?.__rowId)
+            .filter((rowId): rowId is string => typeof rowId === "string"),
+        );
+        const rebasedAccounts = rebaseOntoFreshMerge(kept, priorAccounts).filter(
+          (row) => !(row.__rowId && chatExcludedIds.has(row.__rowId)),
+        );
+        // The advisor's own exclusions are kept first and win on id — a
+        // `merge_rows` entry carries `irreversible: true`, which this run's
+        // freshly-detected rollup entry for the same row would not. Fresh
+        // rollup exclusions the chat has no record of are appended.
+        const nextExcludedRows = [
+          ...standingChat.excludedRows,
+          ...excluded.filter((x) => !x.row.__rowId || !chatExcludedIds.has(x.row.__rowId)),
+        ];
+
+        // Narrate the rows that will actually be shown, not the raw merge.
+        const narration = narrate({ fileCount: mergedFileCount, decisions, rows: rebasedAccounts });
 
         // Ruling 89 (Step 0) / Ruling 101 (fix round 2): persist
         // `payload.accounts = kept` in the SAME write as the chat slice —
@@ -289,8 +348,8 @@ export async function POST(request: Request, { params }: Params) {
             .update(clientImports)
             .set({
               payloadJson: {
-                ...writeChatState(payloadJson, { decisions, excludedRows: excluded }),
-                payload: { accounts: kept },
+                ...writeChatState(payloadJson, { decisions, excludedRows: nextExcludedRows }),
+                payload: { accounts: rebasedAccounts },
               },
               updatedAt: new Date(),
             })
@@ -302,8 +361,11 @@ export async function POST(request: Request, { params }: Params) {
             type: "done",
             summary: narration.summary,
             caveats: narration.caveats,
-            rows: kept,
-            excluded,
+            // Exactly what was just persisted — the surface adopts this
+            // wholesale, so streaming the raw merge instead would leave the
+            // screen disagreeing with the database from the first frame.
+            rows: rebasedAccounts,
+            excluded: nextExcludedRows,
           });
         }
       } catch (err) {
