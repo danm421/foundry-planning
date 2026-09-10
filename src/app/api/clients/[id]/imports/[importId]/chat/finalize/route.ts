@@ -147,6 +147,22 @@ export async function POST(request: Request, { params }: Params) {
     return jsonResponse(403, { error: "ai_import_not_entitled" });
   }
 
+  // This route only makes sense for a statement-chat import — a wizard
+  // import (tax return, wills, policies, an "updating" accounts-only add,
+  // …) has no chat step, and stamping its "accounts"/"plan-basics" tabs
+  // here would be a lie about work this route never did (round 1 review,
+  // Important 2: a wizard import with no account rows in `fileResults`
+  // would otherwise sail through the `missing` check below with nothing to
+  // verify, and get closed anyway).
+  //
+  // Direct optional-chain read — documented at `lib/imports/list.ts:26-35`
+  // — NOT `readChatState`: that normalizer reports `surface: "chat"` for
+  // ANY payload, including `{}`, which would make this guard a silent
+  // no-op. That is the exact trap that nearly broke Task 8.
+  if (payloadJson.chat?.surface !== "chat") {
+    return jsonResponse(400, { error: "This import is not a statement-chat import." });
+  }
+
   // --- Verify, from the server's OWN data, rather than trust the caller ---
   // "Kept" is recomputed fresh from `fileResults` — the same ground truth
   // chat/extract itself derives it from — not read off `payload.accounts`,

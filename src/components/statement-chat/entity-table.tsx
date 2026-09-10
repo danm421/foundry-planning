@@ -92,10 +92,7 @@ function alignFor(column: Pick<ColumnSpec<unknown>, "align" | "kind">): "left" |
   return column.align ?? (RIGHT_ALIGN_KINDS.has(column.kind) ? "right" : "left");
 }
 
-/** Exported so `chat-surface.tsx` doesn't keep a second, byte-identical copy
- *  (Task 10b) — that file needs an `undefined`-tolerant wrapper around this
- *  same core formatting for a raw `row.value` that may be absent. */
-export function moneyText(value: number): string {
+function moneyText(value: number): string {
   return `$${Math.round(value).toLocaleString("en-US")}`;
 }
 

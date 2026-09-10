@@ -342,3 +342,31 @@ describe("chat finalize verification (Ruling 70)", () => {
     expect(await res.json()).toEqual({ ok: true, status: "committed" });
   });
 });
+
+describe("chat finalize surface guard (round 1 review, Important 2)", () => {
+  // The reviewed hole: a wizard import (tax return, wills, policies — no
+  // chat step, no account rows in `fileResults`) sails through the
+  // `missing` check with nothing to verify, and without this guard would
+  // get "accounts" and "plan-basics" stamped and possibly closed, even
+  // though `commitPlanBasics` never ran and `payload.planBasics` was never
+  // written anywhere.
+  it("400s an import with no chat surface, even when it has nothing to commit", async () => {
+    vi.mocked(requireImportAccess).mockResolvedValue(
+      importRow({
+        // No `chat` key at all — `readChatState` would normalize this to
+        // `surface: "chat"` regardless (it fills in a default shape for
+        // ANY payload), which is exactly why the guard must be a direct
+        // optional-chain read instead.
+        fileResults: {},
+        payload: { accounts: [] as never, planBasics: {} as never },
+      }) as never,
+    );
+
+    const res = await POST(req(), params);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "This import is not a statement-chat import." });
+    // Never touched: no stamp, no audit row.
+    expect(updateCalls).toHaveLength(0);
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+});

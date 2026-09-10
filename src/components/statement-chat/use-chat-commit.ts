@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ExcludedRow } from "@/components/statement-chat/excluded-rows";
 import type { ExtractedAccount } from "@/lib/extraction/types";
 import type { Annotated } from "@/lib/imports/types";
@@ -71,6 +71,36 @@ export function useChatCommit(clientId: string, importId: string) {
   const [finalizeStatus, setFinalizeStatus] = useState<FinalizeStatus>("idle");
   const [finalizeError, setFinalizeError] = useState<string | null>(null);
 
+  // Mirrors `result` synchronously (unlike a `useEffect`-driven mirror,
+  // which only catches up after the next render/commit). `handleCommitRows`
+  // below is SERIALIZED through `commitQueueRef`, and a queued commit can
+  // run long after the click that enqueued it — it must read the row set
+  // as it stands the moment it actually runs, not the one captured in the
+  // closure at click time, or a fast second click would build its PATCH
+  // from data that predates the first commit's own adoption step (round 1
+  // review, Important 1 — the "two quick clicks on different rows" case).
+  const resultRef = useRef<ChatCommitResult | null>(null);
+  const updateResult = useCallback(
+    (updater: (prev: ChatCommitResult | null) => ChatCommitResult | null) => {
+      const next = updater(resultRef.current);
+      resultRef.current = next;
+      setResult(next);
+    },
+    [],
+  );
+
+  // Serializes every `handleCommitRows` call so at most one is ever
+  // mid-flight (round 1 review, Important 1). Without this, two commits for
+  // DIFFERENT rows, fired close together, can interleave their own
+  // read → PATCH → commit → persist sequences: each reads `payload.accounts`
+  // before the other's write lands, so whichever's PATCH lands second
+  // silently regresses the first row's freshly-stamped `{kind: "exact"}`
+  // back to `{kind: "new"}` — the exact hole `linkCreated` exists to close,
+  // reopened by a race rather than a stale snapshot. Chaining through one
+  // promise makes row 2's read happen only after row 1's write has fully
+  // landed, whatever order the clicks arrived in.
+  const commitQueueRef = useRef<Promise<void>>(Promise.resolve());
+
   // Hydrate `committedRowIds` from the persisted chat state on mount, so a
   // reload (or resuming a chat import from the drafts list) shows a row
   // already committed in an earlier session as locked instead of
@@ -97,50 +127,77 @@ export function useChatCommit(clientId: string, importId: string) {
   // stale finalize state from a previous run don't linger under a fresh
   // streaming pass.
   const resetForNewExtraction = useCallback(() => {
-    setResult(null);
+    updateResult(() => null);
     setFinalizeStatus("idle");
     setFinalizeError(null);
-  }, []);
+  }, [updateResult]);
 
   // Called when the extraction stream's "done" event lands.
   //
   // Re-extraction (appending a new file) re-merges EVERY row fresh from
   // `fileResults`, which carries no memory of an earlier commit —
-  // `mergeAcrossFiles` always emits `match: {kind: "new"}` (Task 1-6).
-  // Carry forward `match: "exact"` for any `__rowId` this hook already
-  // knows was linked, or the NEXT commit's payload PATCH (below) would
-  // re-persist an already-committed row as brand new and reopen the
-  // duplicate-insert hole `linkCreated` exists to close.
-  const applyExtractionResult = useCallback((ev: ChatCommitResult) => {
-    setResult((prev) => {
-      const priorByRowId = new Map((prev?.rows ?? []).map((r) => [r.__rowId, r]));
-      return {
-        ...ev,
-        rows: ev.rows.map((row) => {
-          const prior = row.__rowId ? priorByRowId.get(row.__rowId) : undefined;
-          return prior?.match?.kind === "exact" ? { ...row, match: prior.match } : row;
-        }),
-      };
-    });
-  }, []);
+  // `mergeAcrossFiles` always emits `match: {kind: "new"}` (Task 1-6). This
+  // carries forward `match: "exact"` for any `__rowId` this hook's OWN
+  // in-memory state already knows was linked — a same-session convenience,
+  // kept as a defensive second layer, but NOT what actually guarantees
+  // correctness: `commitRowsNow` below re-derives the same fact from the
+  // SERVER on every commit, which is what covers a resume this in-memory
+  // carry-forward cannot (there is no `prev` after a reload).
+  const applyExtractionResult = useCallback(
+    (ev: ChatCommitResult) => {
+      updateResult((prev) => {
+        const priorByRowId = new Map((prev?.rows ?? []).map((r) => [r.__rowId, r]));
+        return {
+          ...ev,
+          rows: ev.rows.map((row) => {
+            const prior = row.__rowId ? priorByRowId.get(row.__rowId) : undefined;
+            return prior?.match?.kind === "exact" ? { ...row, match: prior.match } : row;
+          }),
+        };
+      });
+    },
+    [updateResult],
+  );
 
-  // `onCommitRows` (AccountsTable → EntityTable's per-row Commit button).
-  // Two things have to happen server-side before the shared commit route
-  // will do anything: (1) `payloadJson.payload.accounts` has to exist at
-  // all — `chat/extract/route.ts` only ever streams `kept` to the client,
-  // it never persists it as `payload` (that's the wizard's `/match` step,
-  // which this surface doesn't run) — and (2) it has to be the CURRENT view
-  // of every row, or a row committed earlier in this session gets
-  // re-persisted as `{kind: "new"}` and the next commit of THAT row would
-  // duplicate-insert it. `result.rows` already satisfies both: it holds
-  // every row the table shows, and it's kept current by `applyExtractionResult`
-  // above and by adopting each commit response below.
-  const handleCommitRows = useCallback(
+  // The actual commit body, run ONLY from inside `commitQueueRef`'s chain
+  // (see `handleCommitRows` below) — never call this directly.
+  //
+  // `payloadJson.payload.accounts` has to exist at all before the shared
+  // commit route will do anything (`chat/extract/route.ts` only ever
+  // streams `kept` to the client; it never persists it as `payload` —
+  // that's the wizard's `/match` step, which this surface doesn't run), and
+  // it has to be the CURRENT view of every row.
+  //
+  // "Current" is NOT simply `resultRef.current` (round 1 review, Important
+  // 1): after a reload, this hook's in-memory state has no idea which rows
+  // were already committed in an earlier session, and `mergeAcrossFiles`
+  // re-emits every row as `{kind: "new"}` regardless. So this reads
+  // `payload.accounts` fresh from the server FIRST, and for every row that
+  // read shows as already `{kind: "exact"}`, uses THAT entry verbatim
+  // rather than the local one — the server's record of a link, once made,
+  // is never something this surface's own PATCH is allowed to overwrite.
+  // Because every commit is serialized through the same queue, this fresh
+  // read is also never racing an earlier commit's own write: whatever the
+  // previous queued commit persisted has already landed by the time this
+  // read happens.
+  const commitRowsNow = useCallback(
     async (rowIds: string[]) => {
-      if (!result) return;
+      const current = resultRef.current;
+      if (!current) return;
+
+      const freshPayloadJson = (await readImportPayloadJson(clientId, importId)) as
+        | { payload?: { accounts?: Row[] } }
+        | undefined;
+      const freshByRowId = new Map(
+        (freshPayloadJson?.payload?.accounts ?? []).map((r) => [r.__rowId, r] as const),
+      );
+      const mergedAccounts = current.rows.map((row) => {
+        const fresh = row.__rowId ? freshByRowId.get(row.__rowId) : undefined;
+        return fresh?.match?.kind === "exact" ? fresh : row;
+      });
 
       await patchImportPayloadJson(clientId, importId, {
-        payload: { accounts: result.rows },
+        payload: { accounts: mergedAccounts },
       });
 
       const res = await fetch(`/api/clients/${clientId}/imports/${importId}/commit`, {
@@ -162,13 +219,11 @@ export function useChatCommit(clientId: string, importId: string) {
 
       // Adopt the mutated payload the commit route just persisted — it
       // carries the `linkCreated` stamp `commitAccounts` made for the row(s)
-      // just committed, so the NEXT commit's payload PATCH (above) doesn't
-      // regress them back to "new" (same convention review-wizard.tsx
-      // documents at its own commit response handler).
+      // just committed, so the local view stays in step with the server's.
       const body = (await res.json()) as { payload?: { accounts?: Row[] } };
       const nextRows = body.payload?.accounts;
       if (nextRows) {
-        setResult((prev) => (prev ? { ...prev, rows: nextRows } : prev));
+        updateResult((prev) => (prev ? { ...prev, rows: nextRows } : prev));
       }
 
       // Lock the row in the UI regardless of whether the bookkeeping write
@@ -180,44 +235,72 @@ export function useChatCommit(clientId: string, importId: string) {
       // changed `chat.decisions` / `excludedRows` server-side since this
       // hook last read them, and `writeChatState`'s merge only ever sees
       // what THIS call passes as `before`.
-      const freshPayloadJson = await readImportPayloadJson(clientId, importId);
-      const freshChat = readChatState(freshPayloadJson);
-      const nextChat = writeChatState(freshPayloadJson, {
+      const freshChatPayloadJson = await readImportPayloadJson(clientId, importId);
+      const freshChat = readChatState(freshChatPayloadJson);
+      const nextChat = writeChatState(freshChatPayloadJson, {
         committedRowIds: Array.from(new Set([...freshChat.committedRowIds, ...rowIds])),
       }).chat;
       if (nextChat) setCommittedRowIds(nextChat.committedRowIds);
       await patchImportPayloadJson(clientId, importId, { chat: nextChat });
     },
-    [clientId, importId, result],
+    [clientId, importId, updateResult],
+  );
+
+  // `onCommitRows` (AccountsTable → EntityTable's per-row Commit button).
+  // Chains every call through `commitQueueRef` so at most one is ever
+  // running `commitRowsNow` at a time — see that function's docstring and
+  // the queue's own comment above for why. `.then(fn, fn)` (not
+  // `.then(fn).catch(fn)`) so an earlier commit's REJECTION doesn't skip
+  // this one; the queue only sequences, it never lets one row's failure
+  // block another's.
+  const handleCommitRows = useCallback(
+    (rowIds: string[]): Promise<void> => {
+      const task = commitQueueRef.current.then(
+        () => commitRowsNow(rowIds),
+        () => commitRowsNow(rowIds),
+      );
+      commitQueueRef.current = task.then(
+        () => undefined,
+        () => undefined,
+      );
+      return task;
+    },
+    [commitRowsNow],
   );
 
   // `onEditCell` — a local edit to a kept row. Nothing round-trips to the
   // server on every keystroke; the edited row rides along in `result.rows`
   // and reaches the server the next time ANY row is committed (the PATCH at
   // the top of `handleCommitRows` above sends the whole current set).
-  const handleEditCell = useCallback((rowId: string, field: string, value: unknown) => {
-    setResult((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        rows: prev.rows.map((row) => (row.__rowId === rowId ? { ...row, [field]: value } : row)),
-      };
-    });
-  }, []);
+  const handleEditCell = useCallback(
+    (rowId: string, field: string, value: unknown) => {
+      updateResult((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          rows: prev.rows.map((row) => (row.__rowId === rowId ? { ...row, [field]: value } : row)),
+        };
+      });
+    },
+    [updateResult],
+  );
 
   // `onRestore` — lifts an excluded (rollup-detected) row into the working
   // set WITHOUT committing it (Task 10 review, CRITICAL). The advisor still
   // has to click Commit on it afterward.
-  const handleRestore = useCallback((row: Row) => {
-    setResult((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        rows: [...prev.rows, row],
-        excluded: prev.excluded.filter((x) => x.row.__rowId !== row.__rowId),
-      };
-    });
-  }, []);
+  const handleRestore = useCallback(
+    (row: Row) => {
+      updateResult((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          rows: [...prev.rows, row],
+          excluded: prev.excluded.filter((x) => x.row.__rowId !== row.__rowId),
+        };
+      });
+    },
+    [updateResult],
+  );
 
   // Closes the import (Ruling 61/70) — `persistPartialCommit` deliberately
   // never flips `status` on a row-filtered commit, so an import committed

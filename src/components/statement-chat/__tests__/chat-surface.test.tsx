@@ -147,6 +147,7 @@ describe("ChatSurface — wiring the table in (Task 10b)", () => {
   it("posts tabs:['accounts'] alongside rowIds to the commit route", async () => {
     await renderAfterExtraction();
     vi.mocked(fetch)
+      .mockResolvedValueOnce(importGetResponse({})) // fresh GET before the payload.accounts PATCH
       .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 })) // PATCH payload.accounts
       .mockResolvedValueOnce(
         new Response(
@@ -188,6 +189,7 @@ describe("ChatSurface — wiring the table in (Task 10b)", () => {
   it("locks the row after a successful commit (disabled Committed button)", async () => {
     await renderAfterExtraction();
     vi.mocked(fetch)
+      .mockResolvedValueOnce(importGetResponse({})) // fresh GET before the payload.accounts PATCH
       .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 }))
       .mockResolvedValueOnce(
         new Response(
@@ -224,6 +226,7 @@ describe("ChatSurface — wiring the table in (Task 10b)", () => {
     expect(within(row).getByText(/Retirement · Roth IRA/i)).toBeInTheDocument();
 
     vi.mocked(fetch)
+      .mockResolvedValueOnce(importGetResponse({})) // fresh GET before the payload.accounts PATCH
       .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 })) // PATCH payload.accounts
       .mockResolvedValueOnce(
         new Response(
@@ -315,5 +318,243 @@ describe("ChatSurface — wiring the table in (Task 10b)", () => {
     // really committed?" check on the server, not a client precondition, so
     // the button stays clickable and the server's 409 does the talking.
     expect(screen.getByRole("button", { name: /finish import/i })).toBeEnabled();
+  });
+});
+
+describe("ChatSurface — committedRowIds mount hydration (round 1 review, Important 3)", () => {
+  // Every OTHER test in this file queues `importGetResponse()` with an
+  // EMPTY payloadJson for the mount-hydration GET, so none of them can
+  // catch a broken hydration read — deleting the line that wires it up
+  // reddens nothing there. This is the one test with a real value in that
+  // response.
+  it("hydrates committedRowIds from the persisted chat state on mount, locking the row before any commit happens", async () => {
+    vi.mocked(fetch).mockReset();
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(importGetResponse({ chat: { committedRowIds: ["r1"] } })) // mount GET
+      .mockResolvedValueOnce(makeFramedResponse([oneRowDoneFrame()])); // extraction POST
+
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={initialFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+
+    const row = await screen.findByRole("row", { name: /IRA/ });
+    expect(await within(row).findByRole("button", { name: /committed/i })).toBeDisabled();
+  });
+});
+
+describe("ChatSurface — payload.accounts must never regress a linked row (round 1 review, Important 1)", () => {
+  // Sequence 1 named in the review: "the ordinary resume." After a reload,
+  // the table only renders once a (re-)extraction has run, and
+  // `mergeAcrossFiles` re-emits EVERY row as `{kind: "new"}` — it has no
+  // memory of what an earlier session committed. Committing a DIFFERENT,
+  // not-yet-committed row must not carry that fresh "new" r1 into the
+  // PATCH and overwrite the `{kind: "exact"}` the server already has for
+  // it.
+  it("preserves an already-linked row's server match when a different row is committed after a resume", async () => {
+    vi.mocked(fetch).mockReset();
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        importGetResponse({
+          chat: { committedRowIds: ["r1"] },
+          payload: {
+            accounts: [
+              {
+                name: "IRA",
+                custodian: "Schwab",
+                value: 100,
+                __rowId: "r1",
+                match: { kind: "exact", existingId: "acct-1" },
+              },
+            ],
+          },
+        }),
+      ) // mount GET — r1 was already committed in an earlier session
+      .mockResolvedValueOnce(
+        makeFramedResponse([
+          `data: ${JSON.stringify({
+            type: "done",
+            summary: "Read 1 statement covering 2 accounts.",
+            caveats: [],
+            rows: [
+              { name: "IRA", custodian: "Schwab", value: 100, __rowId: "r1" },
+              { name: "Brokerage", custodian: "Schwab", value: 200, __rowId: "r2" },
+            ],
+            excluded: [],
+          })}\n\n`,
+        ]),
+      ); // extraction POST — re-merged fresh, BOTH rows show as "new"
+
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={initialFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+    await screen.findByRole("table");
+
+    // r1 renders locked purely from the committedRowIds hydration, even
+    // though the fresh merge it rode in on shows it as "new".
+    const r1Row = screen.getByRole("row", { name: /IRA/ });
+    expect(await within(r1Row).findByRole("button", { name: /committed/i })).toBeDisabled();
+
+    // Commit r2. The fix's pre-commit fresh read must see r1's PERSISTED
+    // exact link and carry it through, not the locally-remerged "new" r1.
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        importGetResponse({
+          payload: {
+            accounts: [
+              {
+                name: "IRA",
+                custodian: "Schwab",
+                value: 100,
+                __rowId: "r1",
+                match: { kind: "exact", existingId: "acct-1" },
+              },
+            ],
+          },
+        }),
+      ) // fresh GET before the payload.accounts PATCH
+      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 })) // PATCH payload.accounts
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            payload: {
+              accounts: [
+                { name: "IRA", custodian: "Schwab", value: 100, __rowId: "r1", match: { kind: "exact", existingId: "acct-1" } },
+                { name: "Brokerage", custodian: "Schwab", value: 200, __rowId: "r2", match: { kind: "exact", existingId: "acct-2" } },
+              ],
+            },
+          }),
+          { status: 200 },
+        ),
+      ) // POST commit
+      .mockResolvedValueOnce(importGetResponse({ chat: { committedRowIds: ["r1"] } })) // fresh GET for chat
+      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 })); // PATCH chat
+
+    const r2Row = screen.getByRole("row", { name: /Brokerage/ });
+    await userEvent.click(within(r2Row).getByRole("button", { name: /commit/i }));
+    await within(r2Row).findByRole("button", { name: /committed/i });
+
+    const payloadPatchCall = vi.mocked(fetch).mock.calls.find(([url, init]) => {
+      if (!String(url).endsWith("/imports/i1") || init?.method !== "PATCH") return false;
+      const body = JSON.parse(init.body as string);
+      return Boolean(body.payloadJson?.payload);
+    });
+    expect(payloadPatchCall).toBeDefined();
+    const [, init] = payloadPatchCall!;
+    const accounts = JSON.parse(init!.body as string).payloadJson.payload.accounts as Array<{
+      __rowId: string;
+      match?: { kind: string; existingId?: string };
+    }>;
+    const r1Entry = accounts.find((a) => a.__rowId === "r1");
+    expect(r1Entry?.match).toEqual({ kind: "exact", existingId: "acct-1" });
+  });
+
+  // Sequence 2 named in the review: "two quick clicks on different rows."
+  // `pending` is keyed per rowId (entity-table.tsx), so nothing at the
+  // table layer stops row 2's commit from starting before row 1's has
+  // finished persisting its link. Firing both without awaiting between
+  // them and inspecting the LAST payload.accounts PATCH proves the two
+  // commits ran one at a time rather than interleaved — row 2's PATCH can
+  // only show row 1 as already `exact` if row 2's own pre-commit read
+  // happened AFTER row 1's write had fully landed.
+  it("does not let two commits for different rows race and regress each other's link", async () => {
+    vi.mocked(fetch).mockReset();
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(importGetResponse({})) // mount GET
+      .mockResolvedValueOnce(
+        makeFramedResponse([
+          `data: ${JSON.stringify({
+            type: "done",
+            summary: "Read 1 statement covering 2 accounts.",
+            caveats: [],
+            rows: [
+              { name: "IRA", custodian: "Schwab", value: 100, __rowId: "r1" },
+              { name: "Brokerage", custodian: "Schwab", value: 200, __rowId: "r2" },
+            ],
+            excluded: [],
+          })}\n\n`,
+        ]),
+      ); // extraction POST
+
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={initialFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+    await screen.findByRole("table");
+
+    // Row 1's full commit chain — queued as if it runs to completion before
+    // row 2's begins (the invariant this test is checking).
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(importGetResponse({})) // r1 fresh GET — nothing persisted yet
+      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 })) // r1 PATCH payload.accounts
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            payload: {
+              accounts: [
+                { name: "IRA", custodian: "Schwab", value: 100, __rowId: "r1", match: { kind: "exact", existingId: "acct-1" } },
+                { name: "Brokerage", custodian: "Schwab", value: 200, __rowId: "r2" },
+              ],
+            },
+          }),
+          { status: 200 },
+        ),
+      ) // r1 POST commit
+      .mockResolvedValueOnce(importGetResponse({})) // r1 fresh GET for chat
+      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 })) // r1 PATCH chat
+      // Row 2's chain — its fresh read must land AFTER row 1's above, so it
+      // sees row 1 already linked.
+      .mockResolvedValueOnce(
+        importGetResponse({
+          payload: {
+            accounts: [
+              { name: "IRA", custodian: "Schwab", value: 100, __rowId: "r1", match: { kind: "exact", existingId: "acct-1" } },
+            ],
+          },
+        }),
+      ) // r2 fresh GET
+      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 })) // r2 PATCH payload.accounts
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            payload: {
+              accounts: [
+                { name: "IRA", custodian: "Schwab", value: 100, __rowId: "r1", match: { kind: "exact", existingId: "acct-1" } },
+                { name: "Brokerage", custodian: "Schwab", value: 200, __rowId: "r2", match: { kind: "exact", existingId: "acct-2" } },
+              ],
+            },
+          }),
+          { status: 200 },
+        ),
+      ) // r2 POST commit
+      .mockResolvedValueOnce(importGetResponse({ chat: { committedRowIds: ["r1"] } })) // r2 fresh GET for chat
+      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 })); // r2 PATCH chat
+
+    const r1Row = screen.getByRole("row", { name: /IRA/ });
+    const r2Row = screen.getByRole("row", { name: /Brokerage/ });
+
+    // Fire both without awaiting the first's full chain — `userEvent.click`
+    // resolves once the (fire-and-forget) click handler has been invoked,
+    // not once the async commit it kicks off has settled.
+    const click1 = userEvent.click(within(r1Row).getByRole("button", { name: /^commit$/i }));
+    const click2 = userEvent.click(within(r2Row).getByRole("button", { name: /^commit$/i }));
+    await Promise.all([click1, click2]);
+
+    await within(r1Row).findByRole("button", { name: /committed/i });
+    await within(r2Row).findByRole("button", { name: /committed/i });
+
+    const payloadPatchCalls = vi.mocked(fetch).mock.calls.filter(([url, init]) => {
+      if (!String(url).endsWith("/imports/i1") || init?.method !== "PATCH") return false;
+      const body = JSON.parse(init.body as string);
+      return Boolean(body.payloadJson?.payload);
+    });
+    // The LAST payload.accounts PATCH is row 2's own — it must show row 1
+    // still linked, proving row 2's pre-commit read happened after row 1's
+    // write landed rather than racing it.
+    const lastPatch = payloadPatchCalls.at(-1)!;
+    const accounts = JSON.parse(lastPatch[1]!.body as string).payloadJson.payload.accounts as Array<{
+      __rowId: string;
+      match?: { kind: string; existingId?: string };
+    }>;
+    const r1Entry = accounts.find((a) => a.__rowId === "r1");
+    expect(r1Entry?.match).toEqual({ kind: "exact", existingId: "acct-1" });
   });
 });
