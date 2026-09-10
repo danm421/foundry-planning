@@ -73,6 +73,13 @@ export function giftDraftToRow(g: EstateFlowGift): Gift | null {
     year: g.year,
     grantor: g.grantor,
     ...recipientColumns(g.recipient),
+    // `event_kind` is NOT NULL DEFAULT 'outright', so an omitted value does not
+    // stay absent — it becomes "outright". A charitable lead trust's
+    // remainder-interest gift carries `clt_remainder_interest`
+    // (solver/split-interest-levers.ts), and dropping it would silently convert
+    // it into an ordinary outright gift. Explicit default for the hand-built
+    // drafts that never set it.
+    eventKind: g.eventKind ?? "outright",
     valuationDiscount: g.valuationDiscount ?? null,
     notes: null,
   };

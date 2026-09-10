@@ -10,7 +10,7 @@
 // Mirrors save-to-base's security posture: every statement is scoped to the
 // base scenario / client it owns.
 import { and, eq, getTableColumns } from "drizzle-orm";
-import type { PgColumn } from "drizzle-orm/pg-core";
+import type { PgColumn, PgTable } from "drizzle-orm/pg-core";
 import { clients, planSettings } from "@/db/schema";
 import type { BaseWritePlan } from "./promote-to-base-types";
 import { PROMOTE_TABLE_REGISTRY, type PromoteTx } from "./promote-table-registry";
@@ -88,12 +88,9 @@ export async function executeBaseWritePlan(
       ...coerceForTable(entry.table, payload),
       ...scopeValues(cols, ctx),
     };
-    delete values.id; // let the DB generate a fresh uuid
-    const [row] = await tx
-      .insert(entry.table)
-      .values(values as never)
-      .returning({ id: cols.id });
-    const newId = (row as { id: string }).id;
+    const newId = entry.preserveId
+      ? await upsertPreservingId(tx, entry.table, cols, ins.targetId, values, ctx)
+      : await insertWithGeneratedId(tx, entry.table, cols, values);
     idRemap.set(ins.targetId, newId);
     if (entry.childWriter) await entry.childWriter(tx, newId, ins.raw, childCtx);
     bump(ins.kind);
@@ -150,6 +147,67 @@ export async function executeBaseWritePlan(
   }
 
   return counts;
+}
+
+/** Insert an add row and let the DB mint the id. The default: a change's
+ *  targetId is a synthetic uuid the scenario invented, and dependent rows reach
+ *  the generated id through `idRemap`. */
+async function insertWithGeneratedId(
+  tx: PromoteTx,
+  table: PgTable,
+  cols: Cols,
+  values: Record<string, unknown>,
+): Promise<string> {
+  const insertValues = { ...values };
+  delete insertValues.id; // let the DB generate a fresh uuid
+  const [row] = await tx
+    .insert(table)
+    .values(insertValues as never)
+    .returning({ id: cols.id });
+  return (row as { id: string }).id;
+}
+
+/**
+ * Write an add row under the id the change itself names, UPDATING in place when
+ * that row already exists. Gifts need this: a gift has no `edit` op, so editing
+ * a base-plan gift is written as an `add` on that gift's own id
+ * (lib/gifts/gift-write.ts). Minting a fresh uuid there left the original row
+ * untouched beside the new one — one promote, two gifts, the stale one
+ * resurrected. Updating in place is also why this is not a delete-then-insert:
+ * `gifts.parent_gift_id` is a self-FK with ON DELETE CASCADE, so deleting the
+ * base row would take its bundled liability-transfer children with it, and the
+ * re-materialised draft cannot recreate them.
+ *
+ * SCOPING: the UPDATE goes through `scopeWhere`, the same guard `plan.updates`
+ * uses — it pins clientId (and scenarioId where the table has one), so an id
+ * owned by another firm's client can never match and can never be overwritten.
+ * A foreign id therefore falls through to the INSERT and fails loudly on the
+ * primary key instead of silently rewriting somebody else's row.
+ */
+async function upsertPreservingId(
+  tx: PromoteTx,
+  table: PgTable,
+  cols: Cols,
+  targetId: string,
+  values: Record<string, unknown>,
+  ctx: ExecCtx,
+): Promise<string> {
+  const id = typeof values.id === "string" ? values.id : targetId;
+  const set = { ...values };
+  delete set.id;
+  if ("updatedAt" in cols) set.updatedAt = new Date();
+  const [updated] = await tx
+    .update(table)
+    .set(set as never)
+    .where(scopeWhere(cols, id, ctx))
+    .returning({ id: cols.id });
+  if (updated) return (updated as { id: string }).id;
+
+  const [inserted] = await tx
+    .insert(table)
+    .values({ ...values, id } as never)
+    .returning({ id: cols.id });
+  return (inserted as { id: string }).id;
 }
 
 function remapRefs(

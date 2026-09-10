@@ -83,6 +83,13 @@ export type PayloadTranslator = (
 export interface RegistryEntry {
   table: PgTable;
   translate?: PayloadTranslator;
+  /** Write the add under the id the change names instead of letting the DB mint
+   *  a fresh one, UPDATING that row when it already exists. Only for kinds whose
+   *  `add` doubles as an edit of an existing base row — today `gift` alone,
+   *  which has no `edit` op, so a save of a base-plan gift arrives as an `add`
+   *  on that gift's own id. Every other kind's add is genuinely new and its
+   *  targetId is a synthetic uuid, so they must keep the generated id. */
+  preserveId?: boolean;
   childWriter?: ChildWriter;
   /** Rewrites child rows after an EDIT to the parent. Receives the edit's
    *  `set` (the diff's `to` values) instead of an add payload; the executor
@@ -127,7 +134,7 @@ export const PROMOTE_TABLE_REGISTRY: Partial<Record<TargetKind, RegistryEntry>> 
   client_tax_adjustment: { table: clientTaxAdjustments },
   family_member: { table: familyMembers },
   external_beneficiary: { table: externalBeneficiaries },
-  gift: { table: gifts, translate: translateGiftDraftForPromote },
+  gift: { table: gifts, translate: translateGiftDraftForPromote, preserveId: true },
   will: { table: wills, childWriter: writeWillChildren },
   entity: { table: entities },
   relocation: { table: relocations },

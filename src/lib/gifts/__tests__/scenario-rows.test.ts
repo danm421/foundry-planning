@@ -87,8 +87,21 @@ describe("gift draft → row", () => {
       recipientEntityId: "slat-1", recipientFamilyMemberId: null,
       recipientExternalBeneficiaryId: null,
       accountId: "acct-1", percent: 0.15, valuationDiscount: null,
-      useCrummeyPowers: false, notes: null,
+      useCrummeyPowers: false, notes: null, eventKind: "outright",
     });
+  });
+
+  it("carries a non-outright event kind rather than defaulting it away", () => {
+    // `gifts.event_kind` is NOT NULL DEFAULT 'outright', so a dropped value does
+    // not read as missing — it silently turns a charitable lead trust's
+    // remainder-interest gift into an ordinary outright one.
+    expect(
+      giftDraftToRow({
+        kind: "cash-once", id: "g1", year: 2026, amount: 250_000,
+        grantor: "client", recipient: { kind: "entity", id: "clt-1" }, crummey: false,
+        eventKind: "clt_remainder_interest",
+      }),
+    ).toMatchObject({ eventKind: "clt_remainder_interest" });
   });
 
   it("carries a valuation discount through the overlay, on both gift kinds", () => {

@@ -14,7 +14,7 @@ import GiftDialog from "@/components/gift-dialog";
 import AddAccountDialog from "./add-account-dialog";
 import FamilyMemberDialog from "./family-member-dialog";
 import type { AccountFormInitial } from "./forms/add-account-form";
-import type { EntityFlowMode } from "@/engine/types";
+import type { EntityFlowMode, GiftEventKind } from "@/engine/types";
 import type { ClientFormInitial } from "./forms/add-client-form";
 import type { ClientWithContacts } from "@/lib/clients/get-client-with-contacts";
 import { type TrustSubType } from "@/lib/entities/trust";
@@ -116,6 +116,11 @@ export type Gift = {
    *  preserves it. */
   valuationDiscount: number | null;
   useCrummeyPowers: boolean;
+  /** Non-outright gift kind — today only `clt_remainder_interest`. Optional so
+   *  the many places that build a plain outright `Gift` literal keep compiling;
+   *  the mappers always populate it, because the column is NOT NULL and a
+   *  promoted gift that omits it silently becomes an ordinary outright gift. */
+  eventKind?: GiftEventKind;
   notes: string | null;
 };
 

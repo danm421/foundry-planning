@@ -124,12 +124,42 @@ describe("executeBaseWritePlan", () => {
         { kind: "gift", targetId: "g-syn", raw: { id: "g-syn", year: 2030, amount: 5000 } },
       ],
     };
-    const { tx, ops } = makeTx();
+    // gift is the one kind that preserves the change's id, so it upserts: a
+    // scoped UPDATE first, falling through to an INSERT when nothing matched.
+    // No base row here, so this is the insert branch.
+    const { tx, ops } = makeTx([]);
     await executeBaseWritePlan(tx as never, plan, { clientId: "c1", baseScenarioId: "base1" });
-    const arg = ops.find((o) => o.op === "insert")!.arg as Record<string, unknown>;
-    expect(ops[0].table).toBe(gifts);
+    const insert = ops.find((o) => o.op === "insert")!;
+    const arg = insert.arg as Record<string, unknown>;
+    expect(insert.table).toBe(gifts);
     expect(arg.clientId).toBe("c1"); // gifts is client-scoped
     expect("scenarioId" in arg).toBe(false); // gifts has no scenarioId column
+    expect(arg.id).toBe("g-syn"); // …and keeps the id the change names
+  });
+
+  it("updates an existing gift in place rather than inserting a second copy", async () => {
+    // A gift has no `edit` op, so editing a base gift is written as an `add` on
+    // that gift's OWN id. Minting a fresh uuid left the original row sitting
+    // beside the new one — one promote, two gifts.
+    const plan: BaseWritePlan = {
+      ...emptyPlan(),
+      inserts: [
+        { kind: "gift", targetId: "g-base", raw: { id: "g-base", year: 2030, amount: 5000 } },
+      ],
+    };
+    const { tx, ops } = makeTx([{ id: "g-base" }]); // the base gift exists
+    const counts = await executeBaseWritePlan(tx as never, plan, {
+      clientId: "c1",
+      baseScenarioId: "base1",
+    });
+    expect(ops.filter((o) => o.op === "insert")).toHaveLength(0);
+    const update = ops.find((o) => o.op === "update")!;
+    expect(update.table).toBe(gifts);
+    const arg = update.arg as Record<string, unknown>;
+    expect("id" in arg).toBe(false); // the id is the WHERE clause, never the SET
+    expect(arg.amount).toBe("5000");
+    expect(arg.updatedAt).toBeInstanceOf(Date);
+    expect(counts.gift).toBe(1);
   });
 
   it("inserts accounts before other kinds (FK-safe ordering)", async () => {

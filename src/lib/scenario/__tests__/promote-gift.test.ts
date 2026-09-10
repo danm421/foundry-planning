@@ -28,6 +28,9 @@ import { PROMOTE_TABLE_REGISTRY } from "../promote-table-registry";
 
 const COOPER_CLIENT_ID = "877a9532-f8ea-49b0-9db7-aadd64fab82a";
 const COOPER_FIRM_ID = "org_3CitTEIe8PJa1BVYw7LnEjkiP9r";
+/** A second dev client, used only to prove the id-preserving update cannot
+ *  reach across tenants. Belongs to a different firm (`firm_test_entities`). */
+const OTHER_CLIENT_ID = "55d2752a-94cf-44f7-9d4d-311cfd645ceb";
 
 const HAS_DB = !!process.env.DATABASE_URL;
 
@@ -48,15 +51,24 @@ const minimalClientData = (): ClientData =>
     giftEvents: [],
   }) as unknown as ClientData;
 
-describe("PROMOTE_TABLE_REGISTRY — translator is gift-only", () => {
-  // RULING 57's inertness claim, asserted rather than assumed: the executor now
-  // calls `entry.translate` when present, so every other kind's behaviour is
-  // unchanged only for as long as no other entry grows one silently.
+describe("PROMOTE_TABLE_REGISTRY — the gift-only opt-ins", () => {
+  // Inertness, asserted rather than assumed: the executor now branches on both
+  // of these, so every other kind's behaviour is unchanged only for as long as
+  // no other entry grows one silently.
   it("registers a translate hook for gift and for no other kind", () => {
     const withTranslate = Object.entries(PROMOTE_TABLE_REGISTRY)
       .filter(([, entry]) => entry?.translate !== undefined)
       .map(([kind]) => kind);
     expect(withTranslate).toEqual(["gift"]);
+  });
+
+  it("opts gift, and only gift, into preserving the change's own id", () => {
+    // Every other kind's add is genuinely new and its targetId is a synthetic
+    // uuid, so they must keep the DB-generated id.
+    const withPreserveId = Object.entries(PROMOTE_TABLE_REGISTRY)
+      .filter(([, entry]) => entry?.preserveId === true)
+      .map(([kind]) => kind);
+    expect(withPreserveId).toEqual(["gift"]);
   });
 });
 
@@ -184,9 +196,10 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     expect(row.valuationDiscount).toBe("0.2500");
     expect(row.accountId).toBeNull();
     expect(row.percent).toBeNull();
-    // The executor mints a fresh uuid for every promoted add (it strips `id`),
-    // so the base row is NOT the draft's id.
-    expect(row.id).not.toBe(giftId);
+    // The gift keeps the id its change names. That is what lets an edit of a
+    // base gift land on the base row instead of beside it — see the
+    // in-place-update test below.
+    expect(row.id).toBe(giftId);
   });
 
   it("carries an asset gift's account, share and manual valuation override", async () => {
@@ -252,6 +265,131 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     await expect(promoteOverlay()).rejects.toThrow(/series/i);
     // The transaction rolled back — nothing landed.
     expect(await promotedGifts()).toHaveLength(0);
+  });
+
+  it("carries a non-outright event kind instead of flattening it to outright", async () => {
+    // A charitable lead trust's remainder-interest gift is a `gift-upsert` draft
+    // carrying eventKind: "clt_remainder_interest"
+    // (solver/split-interest-levers.ts:148). `gifts.event_kind` is NOT NULL
+    // DEFAULT 'outright', so dropping the field does not leave a gap — it
+    // silently converts the gift into an ordinary outright one and moves the
+    // estate numbers. Asserting "outright" would prove nothing; only a
+    // non-default value can fail.
+    await applyEntityAdd({
+      scenarioId,
+      firmId: COOPER_FIRM_ID,
+      targetKind: "gift",
+      entity: {
+        id: randomUUID(),
+        kind: "cash-once",
+        year: 2029,
+        amount: 250_000,
+        grantor: "client",
+        recipient: { kind: "entity", id: trustId },
+        crummey: false,
+        eventKind: "clt_remainder_interest",
+      },
+    });
+
+    await promoteOverlay();
+
+    const [row] = await promotedGifts();
+    expect(row).toBeDefined();
+    expect(row.eventKind).toBe("clt_remainder_interest");
+  });
+
+  it("updates a base gift in place rather than promoting a second copy of it", async () => {
+    // THE REGRESSION. A gift has no `edit` op, so editing a base-plan gift is
+    // written as an `add` on that gift's OWN id. Promotion used to mint a fresh
+    // uuid for every add, which left the original row sitting beside the new
+    // one: the scenario showed one $99,000 gift and promoting it produced the
+    // $99,000 gift AND resurrected the un-edited $10,000 one.
+    //
+    // It updates rather than delete-then-inserts because `gifts.parent_gift_id`
+    // is a self-FK with ON DELETE CASCADE — deleting the base row would take
+    // its bundled liability-transfer children with it, and the re-materialised
+    // draft cannot recreate them.
+    const [baseGift] = await db
+      .insert(gifts)
+      .values({
+        clientId: COOPER_CLIENT_ID,
+        year: 2030,
+        amount: "10000",
+        grantor: "client",
+        recipientEntityId: trustId,
+        useCrummeyPowers: false,
+      })
+      .returning();
+
+    await applyEntityAdd({
+      scenarioId,
+      firmId: COOPER_FIRM_ID,
+      targetKind: "gift",
+      entity: {
+        id: baseGift.id, // the EXISTING gift's id — this is an edit
+        kind: "cash-once",
+        year: 2030,
+        amount: 99_000,
+        grantor: "client",
+        recipient: { kind: "entity", id: trustId },
+        crummey: true,
+      },
+    });
+
+    await promoteOverlay();
+
+    const rows = await promotedGifts();
+    expect(rows.map((r) => r.amount)).toEqual(["99000.00"]); // exactly one gift
+    expect(rows[0].id).toBe(baseGift.id); // the same row, edited in place
+    expect(rows[0].useCrummeyPowers).toBe(true);
+  });
+
+  it("never writes another client's gift row that happens to share the id", async () => {
+    // ORG SCOPING. Preserving the id means the promote now UPDATEs by id, so
+    // the scoping of that update is load-bearing: an unscoped upsert would
+    // rewrite a row belonging to a different client. `scopeWhere` pins the
+    // clientId, so a foreign id matches nothing, falls through to the insert
+    // and collides loudly on the primary key — never a cross-tenant write.
+    const foreignGiftId = randomUUID();
+    await db.insert(gifts).values({
+      id: foreignGiftId,
+      clientId: OTHER_CLIENT_ID,
+      year: 2035,
+      amount: "4242",
+      grantor: "client",
+      recipientEntityId: trustId,
+      useCrummeyPowers: false,
+    });
+
+    try {
+      await applyEntityAdd({
+        scenarioId,
+        firmId: COOPER_FIRM_ID,
+        targetKind: "gift",
+        entity: {
+          id: foreignGiftId, // an id this client does not own
+          kind: "cash-once",
+          year: 2035,
+          amount: 999_999,
+          grantor: "client",
+          recipient: { kind: "entity", id: trustId },
+          crummey: true,
+        },
+      });
+
+      await expect(promoteOverlay()).rejects.toThrow();
+
+      // The other client's row is untouched: same owner, same amount.
+      const [foreign] = await db
+        .select()
+        .from(gifts)
+        .where(eq(gifts.id, foreignGiftId));
+      expect(foreign.clientId).toBe(OTHER_CLIENT_ID);
+      expect(foreign.amount).toBe("4242.00");
+      expect(foreign.useCrummeyPowers).toBe(false);
+    } finally {
+      await db.delete(gifts).where(eq(gifts.id, foreignGiftId));
+    }
   });
 
   it("leaves an already row-shaped gift payload alone", async () => {
