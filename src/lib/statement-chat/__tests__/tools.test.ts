@@ -307,23 +307,31 @@ describe("statement chat tools", () => {
     }),
   };
 
+  /** One entry of `payloadJson.fileResults` in the shape the extract route
+   *  really persists: keyed by source file id, each value an
+   *  `ExtractionResult` carrying its own `fileName` and (usually) the
+   *  redacted document text captured at extraction time. Omitting `text`
+   *  models a file extracted before that field existed — the only case that
+   *  falls back to the DB/blob/re-extraction path. */
+  function fileResult(fileName: string, text?: string): ExtractionResult {
+    return {
+      documentType: "account_statement",
+      fileName,
+      extracted: {
+        accounts: [], incomes: [], expenses: [], liabilities: [], entities: [],
+        lifePolicies: [], wills: [], savings: [], goals: [],
+      },
+      warnings: [],
+      promptVersion: "v",
+      ...(text === undefined ? {} : { text }),
+    } as unknown as ExtractionResult;
+  }
+
   /** A fresh `ExtractionResult` fixture carrying real stored text — the
    *  common path after the Critical fix, no DB/blob/extractDocument call
    *  needed. */
   function fileResultsWithText(text: string): Record<string, ExtractionResult> {
-    return {
-      f1: {
-        documentType: "account_statement",
-        fileName: "f1.pdf",
-        extracted: {
-          accounts: [], incomes: [], expenses: [], liabilities: [], entities: [],
-          lifePolicies: [], wills: [], savings: [], goals: [],
-        },
-        warnings: [],
-        promptVersion: "v",
-        text,
-      } as unknown as ExtractionResult,
-    };
+    return { f1: fileResult("f1.pdf", text) };
   }
 
   const STATEMENT_TEXT =
@@ -351,7 +359,7 @@ describe("statement chat tools", () => {
   it("CRITICAL FIX: grounds the proposal in the real document text, not fabricated row data", async () => {
     const result = await rereadDocument(
       payload(),
-      { fileId: "f1", question: "what is the Roth basis?" },
+      { fileName: "f1.pdf", question: "what is the Roth basis?" },
       documentGroundedModel(),
       { importId: "i1", fileResults: fileResultsWithText(STATEMENT_TEXT) },
     );
@@ -374,9 +382,13 @@ describe("statement chat tools", () => {
       text: STATEMENT_TEXT,
     });
 
+    // Nothing is stored for this file, so `describeRows` shows the model
+    // `source=f1` — the raw id, since there is no name to substitute. Ruling
+    // 103's belt-and-braces rule resolves that echoed id to itself rather
+    // than punishing the model for passing back the only thing it was shown.
     const result = await rereadDocument(
       payload(),
-      { fileId: "f1", question: "what is the Roth basis?" },
+      { fileName: "f1", question: "what is the Roth basis?" },
       documentGroundedModel(),
       { importId: "i1", fileResults: {} }, // no stored text at all
     );
@@ -398,20 +410,23 @@ describe("statement chat tools", () => {
   // this catches: dropping `eq(clientImportFiles.importId, ...)` from the
   // lookup — this asserts that condition was actually built, not merely
   // that SOME query ran.
-  it("scopes the file lookup by BOTH id and importId, not id alone (Important 2)", async () => {
-    extractDocument.mockResolvedValue({
-      documentType: "account_statement", fileName: "f1.pdf",
-      extracted: { accounts: [], incomes: [], expenses: [], liabilities: [], entities: [], lifePolicies: [], wills: [], savings: [], goals: [] },
-      warnings: [], promptVersion: "v", text: STATEMENT_TEXT,
-    });
+  // Ruling 103 additionally: the query must be built from the RESOLVED id,
+  // never from the name the model typed — a lookup keyed on
+  // "fidelity-roth-jun2026.pdf" would match no row at all.
+  it("scopes the file lookup by BOTH the resolved id and importId, not the name (Important 2)", async () => {
+    extractDocument.mockResolvedValue(fileResult("fidelity-roth-jun2026.pdf", STATEMENT_TEXT));
     await rereadDocument(
       payload(),
-      { fileId: "f1", question: "what is the Roth basis?" },
+      { fileName: "fidelity-roth-jun2026.pdf", question: "what is the Roth basis?" },
       fakeModel,
-      { importId: "import-abc", fileResults: {} }, // forces the DB-lookup fallback path
+      // An entry with a name but NO stored text: resolvable by name, and it
+      // still forces the DB-lookup fallback path.
+      { importId: "import-abc", fileResults: { f1: fileResult("fidelity-roth-jun2026.pdf") } },
     );
     expect(eqCalls).toContainEqual([clientImportFiles.id, "f1"]);
     expect(eqCalls).toContainEqual([clientImportFiles.importId, "import-abc"]);
+    // And the re-extraction is told the document's NAME, not its id.
+    expect(extractDocument.mock.calls[0][1]).toBe("fidelity-roth-jun2026.pdf");
   });
 
   // Mutation this catches: `reread_document` writing straight to `payload`
@@ -421,7 +436,7 @@ describe("statement chat tools", () => {
   it("reread_document proposes a correction rather than applying one", async () => {
     const result = await rereadDocument(
       payload(),
-      { fileId: "f1", question: "what is the Roth basis?" },
+      { fileName: "f1.pdf", question: "what is the Roth basis?" },
       fakeModel,
       { importId: "i1", fileResults: fileResultsWithText(STATEMENT_TEXT) },
     );
@@ -441,7 +456,7 @@ describe("statement chat tools", () => {
     await expect(
       rereadDocument(
         payload(),
-        { fileId: "f1", question: "?" },
+        { fileName: "f1.pdf", question: "?" },
         crossFileModel,
         { importId: "i1", fileResults: fileResultsWithText(STATEMENT_TEXT) },
       ),
@@ -458,7 +473,7 @@ describe("statement chat tools", () => {
     await expect(
       rereadDocument(
         payload(),
-        { fileId: "f1", question: "?" },
+        { fileName: "f1.pdf", question: "?" },
         badFieldModel,
         { importId: "i1", fileResults: fileResultsWithText(STATEMENT_TEXT) },
       ),
@@ -474,25 +489,193 @@ describe("statement chat tools", () => {
     await expect(
       rereadDocument(
         payload(),
-        { fileId: "f1", question: "?" },
+        { fileName: "f1.pdf", question: "?" },
         badValueModel,
         { importId: "i1", fileResults: fileResultsWithText(STATEMENT_TEXT) },
       ),
     ).rejects.toThrow(/domain/i);
   });
 
-  // Mutation this catches: dropping the "fileId must already be referenced
-  // in this payload" guard — without it, any fileId (including one from a
-  // different client/firm) would reach the DB lookup.
-  it("reread_document rejects a fileId not referenced by any row in this payload", async () => {
+  // ---------------------------------------------------------------------
+  // Ruling 103: the tool takes the document's NAME, because the name is the
+  // only identifier the model is ever shown. Before this, it took a
+  // `sourceFileId` UUID that appears nowhere in the prompt or in any tool
+  // result, so it threw "No rows in this import came from file …" on 100%
+  // of real calls and the whole propose→approve→edit loop was dead.
+  // ---------------------------------------------------------------------
+
+  /** The message of the error a call rejects with — `.catch(e => e)` widens
+   *  to `Error | ToolResult`, which vitest would run happily and `tsc` would
+   *  reject. */
+  async function rejectionMessage(promise: Promise<unknown>): Promise<string> {
+    try {
+      await promise;
+    } catch (e) {
+      return e instanceof Error ? e.message : String(e);
+    }
+    throw new Error("Expected the call to reject, but it resolved.");
+  }
+
+  const SCHWAB_TEXT =
+    "Schwab One Brokerage. Account value at period end: $20,500.00. No IRA basis is reported here.";
+
+  /** Two documents in one import, keyed by source file id exactly as
+   *  `payloadJson.fileResults` is. */
+  function twoFileResults(): Record<string, ExtractionResult> {
+    return {
+      f1: fileResult("fidelity-roth-jun2026.pdf", STATEMENT_TEXT),
+      f2: fileResult("schwab-brokerage-jun2026.pdf", SCHWAB_TEXT),
+    };
+  }
+
+  const twoFilePayload = (): PersistedImportPayload =>
+    ({
+      accounts: [
+        { __rowId: "r1", name: "Roth IRA", value: 10_000, basis: 5_000,
+          __provenance: { sourceFileId: "f1", section: "accounts" } },
+        { __rowId: "r9", name: "Brokerage", value: 20_000,
+          __provenance: { sourceFileId: "f2", section: "accounts" } },
+      ],
+    }) as unknown as PersistedImportPayload;
+
+  // THE test that matters for Ruling 103: the name picks out the RIGHT
+  // document. Mutation this catches: resolving to the first (or any fixed)
+  // entry of `fileResults` instead of the named one — the model would then
+  // be handed the Fidelity statement and the Fidelity rows while the
+  // advisor asked about the Schwab one.
+  it("reread_document resolves the document by the NAME the model is actually shown", async () => {
+    const prompts: string[] = [];
+    const capturingModel: RereadModel = {
+      invoke: async (prompt: string) => {
+        prompts.push(prompt);
+        return { content: JSON.stringify({ rowId: "r9", field: "value", value: 20_500 }) };
+      },
+    };
+
+    const result = await rereadDocument(
+      twoFilePayload(),
+      { fileName: "schwab-brokerage-jun2026.pdf", question: "what is the ending value?" },
+      capturingModel,
+      { importId: "i1", fileResults: twoFileResults() },
+    );
+
+    // The named document's text reached the model, and the other one's did not.
+    expect(prompts[0]).toContain(SCHWAB_TEXT);
+    expect(prompts[0]).not.toContain(STATEMENT_TEXT);
+    // ...and so did only that document's rows.
+    expect(prompts[0]).toContain("rowId r9");
+    expect(prompts[0]).not.toContain("rowId r1");
+    expect(result.proposal).toMatchObject({ rowId: "r9", field: "value", value: 20_500 });
+  });
+
+  // A model retyping a name rarely matches byte-for-byte. Mutation this
+  // catches: dropping the trim/lowercase fold and comparing raw strings.
+  it("reread_document resolves a name whose case and surrounding whitespace differ", async () => {
+    const result = await rereadDocument(
+      payload(),
+      { fileName: "  F1.PDF  ", question: "what is the Roth basis?" },
+      documentGroundedModel(),
+      { importId: "i1", fileResults: fileResultsWithText(STATEMENT_TEXT) },
+    );
+    expect(result.proposal).toMatchObject({ rowId: "r1", field: "basis", value: 12_345.67 });
+  });
+
+  // Ambiguity ruling: two files under one name must NOT be silently picked
+  // between — that would re-read the wrong statement and propose a
+  // correction off the wrong document. Mutation this catches: taking
+  // `matches[0]` when more than one matched.
+  it("reread_document refuses to guess when two documents in the import share a name", async () => {
+    const message = await rejectionMessage(
+      rereadDocument(
+        payload(),
+        { fileName: "statement.pdf", question: "?" },
+        fakeModel,
+        {
+          importId: "i1",
+          fileResults: {
+            f1: fileResult("statement.pdf", STATEMENT_TEXT),
+            f2: fileResult("Statement.PDF", SCHWAB_TEXT),
+          },
+        },
+      ),
+    );
+
+    expect(message).toMatch(/2 documents named "statement\.pdf"/i);
+    // The collision is named, and the ids are offered as the way out — they
+    // resolve to themselves.
+    expect(message).toContain("f1");
+    expect(message).toContain("f2");
+  });
+
+  // Not-found ruling: the error has to give the model somewhere to go.
+  // Mutation this catches: reverting to a bare "no rows came from …" dead
+  // end that lists nothing.
+  it("reread_document lists the documents this import DOES have when the name matches nothing", async () => {
+    const message = await rejectionMessage(
+      rereadDocument(
+        payload(),
+        { fileName: "vanguard-2025.pdf", question: "?" },
+        fakeModel,
+        { importId: "i1", fileResults: fileResultsWithText(STATEMENT_TEXT) },
+      ),
+    );
+
+    expect(message).toMatch(/no document in this import is named "vanguard-2025\.pdf"/i);
+    expect(message).toContain("f1.pdf");
+    expect(vi.mocked(downloadImportFile)).not.toHaveBeenCalled();
+  });
+
+  // The provenance pre-check survives the rename: a document this import
+  // really owns, but that no row came from, still stops before any IO.
+  // Mutation this catches: dropping the `candidates.length === 0` throw once
+  // resolution moved ahead of it.
+  it("reread_document rejects a document in this import that no row came from", async () => {
     await expect(
       rereadDocument(
         payload(),
-        { fileId: "someone-elses-file", question: "?" },
+        { fileName: "cover-letter.pdf", question: "?" },
+        fakeModel,
+        {
+          importId: "i1",
+          fileResults: {
+            f1: fileResult("f1.pdf", STATEMENT_TEXT),
+            f7: fileResult("cover-letter.pdf", "A cover letter. No accounts."),
+          },
+        },
+      ),
+    ).rejects.toThrow(/no rows in this import came from file "cover-letter\.pdf"/i);
+    expect(vi.mocked(downloadImportFile)).not.toHaveBeenCalled();
+  });
+
+  // The model's tool-call args are unvalidated JSON, so an omitted name has
+  // to read as an instruction rather than as a TypeError from `.trim()`.
+  it("reread_document asks for a document name when the model omits one", async () => {
+    const message = await rejectionMessage(
+      rereadDocument(
+        payload(),
+        { question: "?" } as never,
+        fakeModel,
+        { importId: "i1", fileResults: fileResultsWithText(STATEMENT_TEXT) },
+      ),
+    );
+    expect(message).toMatch(/name the source document/i);
+  });
+
+  // Ruling 86 does not weaken. A file id planted on a row's `__provenance`
+  // by the unvalidated accounts-PATCH route still resolves (it is live on a
+  // row), but the DB lookup is scoped to THIS import, so it finds nothing.
+  // Mutation this catches: dropping the `importId` condition — the lookup
+  // would then return another import's file and re-extract it.
+  it("reread_document still refuses a file that belongs to a different import", async () => {
+    fileRow = undefined; // the importId-scoped query matches nothing
+    await expect(
+      rereadDocument(
+        payload(),
+        { fileName: "f1", question: "?" },
         fakeModel,
         { importId: "i1", fileResults: {} },
       ),
-    ).rejects.toThrow(/no rows/i);
+    ).rejects.toThrow(/could not be found in this import/i);
     expect(vi.mocked(downloadImportFile)).not.toHaveBeenCalled();
   });
 });

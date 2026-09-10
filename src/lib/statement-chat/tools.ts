@@ -375,7 +375,14 @@ export function explain(
 // ---------------------------------------------------------------------------
 
 export interface RereadDocumentArgs {
-  fileId: string;
+  /**
+   * The document's NAME, not its id (Ruling 103). The model is never shown a
+   * row's real `sourceFileId`: both `describeRows` (turn.ts) and `explain`
+   * substitute the human-readable file name before the model sees a source,
+   * so a name is the only identifier it can supply. `resolveSourceFileId`
+   * below turns it back into the id everything downstream keys off.
+   */
+  fileName: string;
   question: string;
 }
 
@@ -421,6 +428,66 @@ function extractJsonObject(content: unknown): Record<string, unknown> {
   return parsed as Record<string, unknown>;
 }
 
+/**
+ * Resolve the document the model NAMED to the `sourceFileId` every check
+ * below keys off (Ruling 103).
+ *
+ * The mapping has to happen here, server-side, because the model never holds
+ * a real file id: the row list it reads shows `source=<file name>` and
+ * `explain` cites a file name, so the id side of `fileNames` exists only in
+ * this process. `ctx.fileResults` — the same map the caller derives that
+ * `fileNames` from — is this import's own file list, so resolving against it
+ * cannot reach another import's document, and Ruling 86's `importId`-scoped
+ * DB lookup downstream is untouched either way.
+ *
+ * Matching is trimmed and case-insensitive. A value that is ALREADY a source
+ * file id (a key of `fileResults`, or one live on a row's provenance)
+ * resolves to itself — the model occasionally echoes an id back, and there
+ * is no reason to punish it.
+ */
+function resolveSourceFileId(
+  named: string,
+  accounts: AccountRow[],
+  fileResults: Record<string, ExtractionResult>,
+): string {
+  // `named` arrives straight off the model's tool call (`args as never` at
+  // the dispatch site), so it can be absent however the schema is written.
+  const wanted = (named ?? "").trim();
+  if (wanted.length === 0) {
+    throw new Error("Name the source document to re-read, exactly as it is shown for a row.");
+  }
+  if (wanted in fileResults) return wanted;
+  if (accounts.some((r) => r.__provenance?.sourceFileId === wanted)) return wanted;
+
+  const folded = wanted.toLowerCase();
+  const matches = Object.entries(fileResults).filter(
+    ([, result]) => (result.fileName ?? "").trim().toLowerCase() === folded,
+  );
+  if (matches.length === 1) return matches[0][0];
+
+  // Two files under one name: naming the collision beats silently picking
+  // one, which would re-read the wrong statement and propose a correction
+  // off the wrong document. The ids give a way out — they resolve to
+  // themselves above.
+  if (matches.length > 1) {
+    throw new Error(
+      `This import has ${matches.length} documents named "${wanted}", so I can't tell which one ` +
+        `you mean. Ask again by source id: ${matches.map(([id]) => id).join(", ")}.`,
+    );
+  }
+
+  // Listing what this import DOES have, so the next attempt can name a real
+  // document instead of looping on the same miss.
+  const known = Object.values(fileResults)
+    .map((result) => (result.fileName ?? "").trim())
+    .filter((name) => name.length > 0);
+  throw new Error(
+    known.length > 0
+      ? `No document in this import is named "${wanted}". This import has: ${known.join(", ")}.`
+      : `No document in this import is named "${wanted}".`,
+  );
+}
+
 /** The real, already-SSN-redacted text of a stored extraction result —
  *  `text` on the single-pass path, `pages` (joined) on multi-pass; every
  *  extraction produced by the current pipeline sets exactly one of the two
@@ -438,6 +505,13 @@ function storedDocumentText(result: ExtractionResult): string | undefined {
  * text-only question built from data the row ALREADY carried — so the
  * "correction" it returned was invented, not read off the statement, no
  * matter what the advisor asked.
+ *
+ * RULING 103 (fix wave): the tool then took a `fileId` the model could never
+ * supply — every surface substitutes the file NAME before the model sees a
+ * row's source — so it threw "No rows in this import came from file …" on
+ * every call. It now takes the name and resolves it to the id server-side
+ * (`resolveSourceFileId`); every check below is keyed on the RESOLVED id, so
+ * the provenance pre-check and Ruling 86's `importId` scoping are unchanged.
  *
  * The fix reuses `fileResults[fileId].text`/`.pages` — the already-redacted
  * document text `extract.ts` captures at extraction time specifically "so
@@ -459,12 +533,17 @@ export async function rereadDocument(
   ctx: RereadDocumentContext,
 ): Promise<ToolResult> {
   const accounts = accountsOf(payload);
-  const candidates = accounts.filter((r) => r.__provenance?.sourceFileId === args.fileId);
+  const fileId = resolveSourceFileId(args.fileName, accounts, ctx.fileResults);
+  const fileResult = ctx.fileResults[fileId];
+  /** What to CALL the document in anything the advisor or model reads — an
+   *  id is meaningless to both. */
+  const documentLabel = fileResult?.fileName ?? args.fileName.trim();
+
+  const candidates = accounts.filter((r) => r.__provenance?.sourceFileId === fileId);
   if (candidates.length === 0) {
-    throw new Error(`No rows in this import came from file "${args.fileId}".`);
+    throw new Error(`No rows in this import came from file "${documentLabel}".`);
   }
 
-  const fileResult = ctx.fileResults[args.fileId];
   let documentText = fileResult ? storedDocumentText(fileResult) : undefined;
 
   if (!documentText) {
@@ -475,21 +554,20 @@ export async function rereadDocument(
     const [file] = await db
       .select({ blobUrl: clientImportFiles.blobUrl })
       .from(clientImportFiles)
-      .where(and(eq(clientImportFiles.id, args.fileId), eq(clientImportFiles.importId, ctx.importId)))
+      .where(and(eq(clientImportFiles.id, fileId), eq(clientImportFiles.importId, ctx.importId)))
       .limit(1);
     if (!file) {
-      throw new Error(`Source file "${args.fileId}" could not be found in this import.`);
+      throw new Error(`Source file "${documentLabel}" could not be found in this import.`);
     }
     const buffer = await downloadImportFile(file.blobUrl);
     if (!buffer) {
-      throw new Error(`The stored file for "${args.fileId}" is unavailable.`);
+      throw new Error(`The stored file for "${documentLabel}" is unavailable.`);
     }
-    const fileName = fileResult?.fileName ?? args.fileId;
     const documentType = fileResult?.documentType ?? "auto";
-    const fresh = await extractDocument(buffer, fileName, documentType, "mini");
+    const fresh = await extractDocument(buffer, documentLabel, documentType, "mini");
     documentText = storedDocumentText(fresh);
     if (!documentText) {
-      throw new Error(`Could not read the text of "${fileName}" to re-check it.`);
+      throw new Error(`Could not read the text of "${documentLabel}" to re-check it.`);
     }
   }
 
