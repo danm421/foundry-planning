@@ -210,6 +210,20 @@ describe("By-Entity cards after a percentage gift of a business", () => {
     return model.entityGroups ?? [];
   }
 
+  /** Whatnot's operating cash, as a child account holding `value`. */
+  function withBizCash(value: number): Partial<BuildViewModelInput> {
+    return {
+      accounts: [
+        ...accounts,
+        { id: "biz-cash", name: "Whatnot — Cash", category: "cash", owners: clientOnly, parentAccountId: "biz-1", businessType: null, titlingType: null },
+      ],
+      projectionYears: projectionYears.map((y) => ({
+        ...y,
+        accountLedgers: { ...y.accountLedgers, "biz-cash": { beginningValue: value, endingValue: value } },
+      })),
+    } as Partial<BuildViewModelInput>;
+  }
+
   it("scales the business card to the share its authored owners retained", () => {
     const biz = entityView([GIFT]).find((g) => g.entityId === "biz-1")!;
     expect(biz.assetTotal).toBeCloseTo(85_000_000, 2);
@@ -249,17 +263,8 @@ describe("By-Entity cards after a percentage gift of a business", () => {
   });
 
   it("scales sub-accounts with the root and values the trust on the whole tree", () => {
-    // Whatnot's operating cash is a child account: the gifted 15% is 15% of the
-    // CONSOLIDATED tree, and the retained rows each scale to 85%.
-    const withChild = [
-      ...accounts,
-      { id: "biz-cash", name: "Whatnot — Cash", category: "cash", owners: clientOnly, parentAccountId: "biz-1", businessType: null, titlingType: null },
-    ];
-    const withChildYears = projectionYears.map((y) => ({
-      ...y,
-      accountLedgers: { ...y.accountLedgers, "biz-cash": { beginningValue: 20_000_000, endingValue: 20_000_000 } },
-    }));
-    const groups = entityView([GIFT], { accounts: withChild, projectionYears: withChildYears });
+    // The gifted 15% is 15% of the CONSOLIDATED tree; retained rows each scale.
+    const groups = entityView([GIFT], withBizCash(20_000_000));
     const biz = groups.find((g) => g.entityId === "biz-1")!;
     expect(biz.assetRows.find((r) => r.accountId === "biz-1")!.value).toBeCloseTo(85_000_000, 2);
     expect(biz.assetRows.find((r) => r.accountId === "biz-cash")!.value).toBeCloseTo(17_000_000, 2);
@@ -271,16 +276,20 @@ describe("By-Entity cards after a percentage gift of a business", () => {
   it("does not name a share of a drained sub-account", () => {
     // Whatnot's operating cash sits at $0 on the live plan — "85% of $0" is
     // noise, not information.
-    const withEmptyChild = [
-      ...accounts,
-      { id: "biz-cash", name: "Whatnot — Cash", category: "cash", owners: clientOnly, parentAccountId: "biz-1", businessType: null, titlingType: null },
-    ];
-    const years = projectionYears.map((y) => ({
-      ...y,
-      accountLedgers: { ...y.accountLedgers, "biz-cash": { beginningValue: 0, endingValue: 0 } },
-    }));
-    const biz = entityView([GIFT], { accounts: withEmptyChild, projectionYears: years }).find((g) => g.entityId === "biz-1")!;
+    const biz = entityView([GIFT], withBizCash(0)).find((g) => g.entityId === "biz-1")!;
     expect(biz.assetRows.find((r) => r.accountId === "biz-cash")!.accountName).toBe("Whatnot — Cash");
+  });
+
+  it("does not name a share of a drained business on the recipient card", () => {
+    // Same rule on the other card: a gift of a business worth nothing must not
+    // read "15% of $0". The whole tree is drained here, so neither card names a
+    // share and the empty business card drops out entirely.
+    const drained = projectionYears.map((y) => ({
+      ...y,
+      accountLedgers: { "biz-1": { beginningValue: 0, endingValue: 0 } },
+    }));
+    const groups = entityView([GIFT], { projectionYears: drained });
+    expect(groups.map((g) => g.entityId)).toEqual([]);
   });
 
   it("keeps business debt whole on the business card", () => {

@@ -9,7 +9,8 @@
 import type { AccountOwner, EntityOwner } from "@/engine/ownership";
 import type { FamilyMember, GiftEvent } from "@/engine/types";
 import { flatBusinessValueAt } from "@/engine/entity-cashflow";
-import { collectBusinessTree } from "@/engine/business/business-tree";
+import { collectBusinessTree, consolidatedBusinessValue } from "@/engine/business/business-tree";
+import { formatCurrency } from "@/lib/cell-drill/format";
 import { resolveOwnerSlices } from "@/lib/estate/account-owner-slices";
 import { ownersForYearSafe } from "@/lib/estate/owners-or-household";
 import type { OwnershipView } from "./ownership-filter";
@@ -137,7 +138,9 @@ export interface AssetRow {
   /** Set when this slice belongs to an entity. */
   ownerEntityId: string | null;
   /** Fraction of the underlying account this slice represents. < 1 means
-   *  the account has multiple owners and this is just one slice. */
+   *  the account has multiple owners and this is just one slice. On a
+   *  `bizgift:` row it is a fraction of the whole business tree, not of
+   *  `accountId` alone — a business interest is a share of the enterprise. */
   ownerPercent: number;
   /** Human-readable owner label baked in by the view-model so the panel
    *  doesn't have to reconstruct it. Examples: "Client", "Smith LLC". */
@@ -279,15 +282,13 @@ function accountValueForYear(
 }
 
 /** "Whatnot — 85% of $100,000,000": a fractional holding named against the
- *  whole, so a scaled row never reads as the asset itself having shrunk. */
+ *  whole, so a scaled row never reads as the asset itself having shrunk.
+ *  A whole share, or a drained asset, is just its own name — there is no
+ *  share of nothing worth spelling out. */
 function shareOfLabel(name: string, share: number, whole: number): string {
+  if (share >= 1 || whole <= 0) return name;
   const pct = Number((share * 100).toFixed(2));
-  const money = whole.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  });
-  return `${name} — ${pct}% of ${money}`;
+  return `${name} — ${pct}% of ${formatCurrency(whole)}`;
 }
 
 function isBusinessEntity(e: EntityInfo | undefined): boolean {
@@ -1067,19 +1068,23 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
     // recipients count — they're the ones that get a card on this tab.
     const giftedAwayByBusiness = new Map<string, number>();
     const giftedInterestRows = new Map<string, AssetRow[]>();
-    for (const { root: b, tree } of businessTrees) {
-      const authored = new Map<string, number>();
-      for (const o of b.owners) {
-        if (o.kind === "entity") authored.set(o.entityId, (authored.get(o.entityId) ?? 0) + o.percent);
-      }
-      const consolidated = tree.reduce((sum, a) => {
-        const bal = accountValueForYear(yearData, a.id, asOfMode);
-        return bal > 0 ? sum + bal : sum;
-      }, 0);
+    for (const { root: b, tree } of giftEvents.length > 0 ? businessTrees : []) {
+      const authoredPercent = (entityId: string) =>
+        b.owners.find((o) => o.kind === "entity" && o.entityId === entityId)?.percent ?? 0;
+      const balances: Record<string, number> = {};
+      for (const a of tree) balances[a.id] = accountValueForYear(yearData, a.id, asOfMode);
+      const consolidated = consolidatedBusinessValue(b.id, tree, balances);
+      // A business worth nothing has no interest worth carving out — and its
+      // own card is dropped as empty below, so a $0 recipient card would be the
+      // only trace left of it.
+      if (consolidated <= 0) continue;
       let giftedAway = 0;
       for (const o of ownersAsOf(b, giftEvents, selectedYear, planStartYear, asOfMode)) {
         if (o.kind !== "entity") continue;
-        const gifted = o.percent - (authored.get(o.entityId) ?? 0);
+        // `ownersForYear` only ever shrinks family-member rows and adds to an
+        // entity's, so a gift can only ever raise an entity's share. An
+        // entity-to-entity transfer would break that and land here as ≤ 0.
+        const gifted = o.percent - authoredPercent(o.entityId);
         if (gifted <= 0) continue;
         giftedAway += gifted;
         const list = giftedInterestRows.get(o.entityId) ?? [];
@@ -1160,14 +1165,15 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
     const businessGroups: EntityGroup[] = [];
     for (const { root: b, tree } of businessTrees) {
       const treeIds = new Set(tree.map((a) => a.id));
+      // 1 when nothing was gifted AND when the recipient was a person — a
+      // person has no card on this tab, so their share stays with the business.
       const retained = 1 - (giftedAwayByBusiness.get(b.id) ?? 0);
       const assetRows: AssetRow[] = tree.map((acct) => {
         const full = accountValueForYear(yearData, acct.id, asOfMode);
         return {
           rowKey: acct.id === b.id ? `biz:${acct.id}` : `bizchild:${acct.id}`,
           accountId: acct.id,
-          // A drained sub-account has no whole to name a share of.
-          accountName: retained < 1 && full > 0 ? shareOfLabel(acct.name, retained, full) : acct.name,
+          accountName: shareOfLabel(acct.name, retained, full),
           owner: null,
           ownerEntityId: b.id,
           ownerPercent: retained,
