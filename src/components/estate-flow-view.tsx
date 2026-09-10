@@ -18,7 +18,12 @@ import {
 } from "@/lib/estate/estate-flow-gifts";
 import { diffGifts, type GiftChange } from "@/lib/estate/estate-flow-gift-diff";
 import { buildAnnualExclusionMap } from "@/lib/gifts/resolve-annual-exclusion";
-import { useScenarioWriter } from "@/hooks/use-scenario-writer";
+import { giftScenarioAdd, giftScenarioRemove } from "@/lib/gifts/gift-write";
+import {
+  useScenarioWriter,
+  type ScenarioEdit,
+  type UseScenarioWriter,
+} from "@/hooks/use-scenario-writer";
 import { useClientAccess } from "@/components/client-access-provider";
 import { useSetOnboardingDirty } from "@/components/onboarding-dirty-context";
 import type { ClientData } from "@/engine/types";
@@ -61,11 +66,39 @@ export interface EstateFlowViewProps {
   doNothingScenarioName?: string;
 }
 
+// ── Scenario change payload ──────────────────────────────────────────────────
+
+/**
+ * Request body for the unified writer route. `op: "add"` carries `entity` (the
+ * full payload); `op: "edit"`/`"remove"` carry `targetId` (+ `desiredFields`
+ * for an edit). The route's zod discriminated union rejects mixing these, so
+ * only the keys belonging to the op are sent — `JSON.stringify` drops the
+ * `undefined` ones.
+ */
+function scenarioChangeBody(edit: ScenarioEdit): Record<string, unknown> {
+  return edit.op === "add"
+    ? { op: "add", targetKind: edit.targetKind, entity: edit.entity }
+    : {
+        op: edit.op,
+        targetKind: edit.targetKind,
+        targetId: edit.targetId,
+        desiredFields: edit.desiredFields,
+      };
+}
+
 // ── Gift persistence ─────────────────────────────────────────────────────────
 
 /**
- * Map a single GiftChange onto the existing gift API routes and issue the
- * request. Mirrors the body shapes in the DROP form's save-handlers.ts.
+ * Persist a single GiftChange, following the active scenario. `submit` decides
+ * where it lands: in a scenario it becomes a `gift` overlay row; in the base
+ * case it falls through to the legacy gift routes described below.
+ *
+ * Gifts have no `edit` op — a save (new gift OR edit of an existing one) is
+ * always an `add` carrying the full draft, re-using the gift's id so the base
+ * row is replaced rather than duplicated. See `@/lib/gifts/gift-write`.
+ *
+ * Base-mode routes, mirroring the body shapes in the DROP form's
+ * save-handlers.ts:
  *
  * - cash-once / asset-once → /gifts and /gifts/:id
  * - series                → /gifts/series and /gifts/series/:id
@@ -78,13 +111,15 @@ export interface EstateFlowViewProps {
 async function persistGiftChange(
   clientId: string,
   change: GiftChange,
+  submit: UseScenarioWriter["submit"],
 ): Promise<Response> {
   const { op, gift } = change;
 
   // ── series ────────────────────────────────────────────────────────────────
   if (gift.kind === "series") {
     if (op === "remove") {
-      return fetch(`/api/clients/${clientId}/gifts/series/${gift.id}`, {
+      return submit(giftScenarioRemove(gift.id), {
+        url: `/api/clients/${clientId}/gifts/series/${gift.id}`,
         method: "DELETE",
       });
     }
@@ -102,21 +137,20 @@ async function persistGiftChange(
       valuationDiscount: gift.valuationDiscount ?? null,
       notes: null,
     };
-    return fetch(
-      op === "add"
-        ? `/api/clients/${clientId}/gifts/series`
-        : `/api/clients/${clientId}/gifts/series/${gift.id}`,
-      {
-        method: op === "add" ? "POST" : "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      },
-    );
+    return submit(giftScenarioAdd(gift), {
+      url:
+        op === "add"
+          ? `/api/clients/${clientId}/gifts/series`
+          : `/api/clients/${clientId}/gifts/series/${gift.id}`,
+      method: op === "add" ? "POST" : "PATCH",
+      body,
+    });
   }
 
   // ── cash-once / asset-once ────────────────────────────────────────────────
   if (op === "remove") {
-    return fetch(`/api/clients/${clientId}/gifts/${gift.id}`, {
+    return submit(giftScenarioRemove(gift.id), {
+      url: `/api/clients/${clientId}/gifts/${gift.id}`,
       method: "DELETE",
     });
   }
@@ -151,16 +185,14 @@ async function persistGiftChange(
     if (op === "add") oneTimeBody.accountId = gift.accountId;
   }
 
-  return fetch(
-    op === "add"
-      ? `/api/clients/${clientId}/gifts`
-      : `/api/clients/${clientId}/gifts/${gift.id}`,
-    {
-      method: op === "add" ? "POST" : "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(oneTimeBody),
-    },
-  );
+  return submit(giftScenarioAdd(gift), {
+    url:
+      op === "add"
+        ? `/api/clients/${clientId}/gifts`
+        : `/api/clients/${clientId}/gifts/${gift.id}`,
+    method: op === "add" ? "POST" : "PATCH",
+    body: oneTimeBody,
+  });
 }
 
 // ── EstateFlowView ───────────────────────────────────────────────────────────
@@ -383,9 +415,12 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
       }
 
       // ── Gift channel ────────────────────────────────────────────────────
-      // Runs on ANY scenario (including base): gift routes are not overlay
-      // calls. cash/asset gift rows are client-global; series resolve the
-      // base-case scenario server-side.
+      // Gift writes follow the active scenario like every other write on the
+      // page: `submit` turns each one into a `gift` overlay row when
+      // `?scenario=` is set, and calls the legacy gift routes when it is not.
+      // That is what lets a sandbox gift name a trust that exists only as a
+      // change in this scenario — the base `gifts` table's recipient foreign
+      // key would reject it.
       //
       // On a partial failure we still want to refresh so the gifts that DID
       // persist reload into `initialGifts` (with server ids) and drop out of
@@ -393,7 +428,7 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
       // `add`s (their client UUIDs are still absent from `initialGifts`).
       for (const change of giftChanges) {
         needsExplicitRefresh = true;
-        const res = await persistGiftChange(props.clientId, change);
+        const res = await persistGiftChange(props.clientId, change, submit);
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
           const apiMsg =
@@ -452,29 +487,18 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
       const { scenario } = await createRes.json();
       const newScenarioId: string = scenario.id;
 
+      // `writer.submit` closes over the scenario named in the URL, and the one
+      // just created is not there yet — so every change below is POSTed to
+      // `newScenarioId` directly.
+      const postChange = (edit: ScenarioEdit) =>
+        fetch(`/api/clients/${props.clientId}/scenarios/${newScenarioId}/changes`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(scenarioChangeBody(edit)),
+        });
+
       for (const change of pendingChanges) {
-        const { edit } = change;
-        // op:"add" carries `entity` (full payload); op:"edit" carries
-        // `targetId` + `desiredFields`. The unified writer route's zod
-        // discriminated union rejects mixing these — send only the keys that
-        // belong to the op.
-        const body: Record<string, unknown> =
-          edit.op === "add"
-            ? { op: "add", targetKind: edit.targetKind, entity: edit.entity }
-            : {
-                op: edit.op,
-                targetKind: edit.targetKind,
-                targetId: edit.targetId,
-                desiredFields: edit.desiredFields,
-              };
-        const res = await fetch(
-          `/api/clients/${props.clientId}/scenarios/${newScenarioId}/changes`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body),
-          },
-        );
+        const res = await postChange(change.edit);
         if (!res.ok) {
           const resBody = await res.json().catch(() => ({}));
           const msg =
@@ -497,14 +521,30 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
       }
 
       // ── Gift channel ────────────────────────────────────────────────────
-      // Gift rows are client-global (cash/asset) or resolve the base-case
-      // scenario server-side (series) — they persist the same regardless of
-      // the fork. Run after the overlay writes succeed. A gift failure here
-      // leaves the (valid) new scenario in place: the scenario itself is
-      // sound, and the partially-persisted gifts cannot be cleanly rolled
-      // back, so the error is surfaced without deleting the scenario.
+      // Gifts become overlay rows in the scenario just created, alongside the
+      // overlay changes above. `persistGiftChange` speaks the writer's
+      // `submit` shape, so it gets a local one pointed at `newScenarioId`.
+      // It never falls back to a base gift write: a gift may name a trust that
+      // exists only as a change in this very scenario, which the base `gifts`
+      // recipient foreign key would reject.
+      //
+      // Run after the overlay writes succeed. A gift failure here leaves the
+      // (valid) new scenario in place: the scenario itself is sound, and the
+      // partially-persisted gifts cannot be cleanly rolled back, so the error
+      // is surfaced without deleting the scenario.
+      const submitToNewScenario: UseScenarioWriter["submit"] = async (edit) => {
+        let last: Response | null = null;
+        for (const e of Array.isArray(edit) ? edit : [edit]) {
+          const res = await postChange(e);
+          if (!res.ok) return res;
+          last = res;
+        }
+        // Only reachable for an empty batch, which no caller passes.
+        return last ?? new Response(null, { status: 204 });
+      };
+
       for (const change of giftChanges) {
-        const res = await persistGiftChange(props.clientId, change);
+        const res = await persistGiftChange(props.clientId, change, submitToNewScenario);
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
           const apiMsg =
