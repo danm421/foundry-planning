@@ -295,8 +295,9 @@ export interface RunTurnResult {
    *  than replacing the array wholesale — a wholesale replace built from
    *  this STALE starting snapshot would erase a `linkCreated` stamp from a
    *  commit that landed while this turn's model calls were in flight.
-   *  `reread_document` never reassigns this (it only sets `proposal`), so a
-   *  proposal-only turn returns it byte-identical to what it started with. */
+   *  `reread_document` never reassigns this (it only ever returns the same
+   *  reference it was handed), so a turn that only proposes a correction
+   *  returns it byte-identical to what it started with. */
   payload: PersistedImportPayload;
   /** True only when a MUTATING tool (edit_row/merge_rows/drop_row) actually
    *  ran this turn — `explain`/`reread_document` never flip this, and
@@ -311,7 +312,6 @@ export interface RunTurnResult {
   /** The assistant's reply text — populated even when no tool was called
    *  (C13 #2). Equal to the last element of `turnEntries`. */
   summary: string;
-  proposal?: ToolResult["proposal"];
 }
 
 function nowIso(): string {
@@ -349,7 +349,6 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
   let payload = args.payload;
   let payloadMutated = false;
   const newExcludedRows: ChatState["excludedRows"] = [];
-  let proposal: ToolResult["proposal"];
   const toolTurns: ChatTurn[] = [];
   let toolCallCount = 0;
   let finalText = "";
@@ -405,7 +404,6 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
         if (result.payload !== payload) payloadMutated = true;
         payload = result.payload;
         if (result.excludedRows) newExcludedRows.push(...result.excludedRows);
-        if (result.proposal) proposal = result.proposal;
         toolTurns.push({ role: "tool", tool: call.name, summary: result.summary, at: nowIso() });
         messages.push(new ToolMessage({ tool_call_id: callId, content: result.summary }));
       } catch (err) {
@@ -426,5 +424,5 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
     { role: "assistant", text: summary, at: now },
   ];
 
-  return { payload, payloadMutated, turnEntries, newExcludedRows, summary, proposal };
+  return { payload, payloadMutated, turnEntries, newExcludedRows, summary };
 }

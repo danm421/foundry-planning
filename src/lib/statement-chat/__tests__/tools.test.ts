@@ -437,7 +437,12 @@ describe("statement chat tools", () => {
     // 12,345.67 comes ONLY from the statement text, never from the row
     // (whose starting basis is 5,000) — proves the text actually reached
     // the model rather than the model guessing from row data.
-    expect(result.proposal).toMatchObject({ rowId: "r1", field: "basis", value: 12_345.67 });
+    //
+    // Asserted on `summary` since I3: the structured `proposal` field is
+    // gone (nothing ever read it) and this sentence is now the only thing
+    // that carries the correction.
+    expect(result.summary).toContain("set basis to 12,345.67");
+    expect(result.summary).toContain("r1");
     // Never touches the DB/blob when stored text is already present.
     expect(vi.mocked(downloadImportFile)).not.toHaveBeenCalled();
     expect(extractDocument).not.toHaveBeenCalled();
@@ -471,7 +476,7 @@ describe("statement chat tools", () => {
     const [bufferArg] = extractDocument.mock.calls[0];
     expect(Buffer.isBuffer(bufferArg)).toBe(true);
     expect(bufferArg.toString()).toBe("statement bytes");
-    expect(result.proposal).toMatchObject({ rowId: "r1", field: "basis", value: 12_345.67 });
+    expect(result.summary).toContain("set basis to 12,345.67");
   });
 
   // Important 2 — THE test that matters: the reviewer disproved the "closed
@@ -501,9 +506,9 @@ describe("statement chat tools", () => {
   });
 
   // Mutation this catches: `reread_document` writing straight to `payload`
-  // instead of returning a `proposal` — the `toEqual(payload())` comparison
-  // against a FRESH fixture call (C10) would then fail because the returned
-  // payload's `basis` would already be 10010.17.
+  // instead of only DESCRIBING the correction — the `toEqual(payload())`
+  // comparison against a FRESH fixture call (C10) would then fail because
+  // the returned payload's `basis` would already be 10010.17.
   it("reread_document proposes a correction rather than applying one", async () => {
     const result = await rereadDocument(
       payload(),
@@ -511,9 +516,17 @@ describe("statement chat tools", () => {
       fakeModel,
       { importId: "i1", fileResults: fileResultsWithText(STATEMENT_TEXT) },
     );
-    expect(result.proposal).toMatchObject({ rowId: "r1", field: "basis", value: 10_010.17 });
-    // The payload is untouched until the advisor accepts — compared against
-    // a FRESH payload(), not a mutated reference (C10).
+    // I3 — THE assertion that matters now that the correction travels only
+    // in prose: the summary names the ROW as well as the field and value.
+    // "set basis to 10,010.17" alone is ambiguous the instant a statement
+    // has two accounts, and the advisor's "yes, apply that" has to be
+    // unambiguous for the model's follow-up edit_row to hit the right row.
+    expect(result.summary).toContain('"IRA"');
+    expect(result.summary).toContain("r1");
+    expect(result.summary).toContain("set basis to 10,010.17");
+    // Still only a PROPOSAL: the payload is untouched until the advisor
+    // accepts — compared against a FRESH payload(), not a mutated
+    // reference (C10).
     expect(result.payload).toEqual(payload());
   });
 
@@ -636,7 +649,8 @@ describe("statement chat tools", () => {
     // ...and so did only that document's rows.
     expect(prompts[0]).toContain("rowId r9");
     expect(prompts[0]).not.toContain("rowId r1");
-    expect(result.proposal).toMatchObject({ rowId: "r9", field: "value", value: 20_500 });
+    expect(result.summary).toContain("r9");
+    expect(result.summary).toContain("set value to 20,500");
   });
 
   // A model retyping a name rarely matches byte-for-byte. Mutation this
@@ -648,7 +662,7 @@ describe("statement chat tools", () => {
       documentGroundedModel(),
       { importId: "i1", fileResults: fileResultsWithText(STATEMENT_TEXT) },
     );
-    expect(result.proposal).toMatchObject({ rowId: "r1", field: "basis", value: 12_345.67 });
+    expect(result.summary).toContain("set basis to 12,345.67");
   });
 
   // Ambiguity ruling: two files under one name must NOT be silently picked

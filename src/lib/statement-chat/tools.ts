@@ -14,8 +14,8 @@ import type {
 /**
  * The five statement-chat tools (Task 11). Each one is a function over
  * `(payload, args, ...)` returning a `ToolResult` — the next payload plus a
- * one-line summary for the transcript, and (for `drop_row`/`merge_rows`/
- * `reread_document` only) the extra fields Ruling 49 allows.
+ * one-line summary for the transcript, and (for `drop_row`/`merge_rows`
+ * only) the `excludedRows` delta Ruling 49 allows.
  *
  * Direction rule, same as `narrate.ts`/`rollups.ts`: this module reads from
  * `@/lib/imports/` and `@/lib/extraction/`, never the reverse.
@@ -153,9 +153,17 @@ function isValidFieldValue(field: EditableAccountField, value: unknown): boolean
 /**
  * ONE result type with optional members (Ruling 49 / C4) — not three ad-hoc
  * shapes. `payload` and `summary` are on every result (C13: the route can't
- * ship a turn with either missing); `excludedRows` and `proposal` are present
- * only for the tools that produce them. The route merges whatever is present
- * through `writeChatState`.
+ * ship a turn with either missing); `excludedRows` is present only for the
+ * tools that produce it. The route merges whatever is present through
+ * `writeChatState`.
+ *
+ * Final review, I3: there is no `proposal` member. `reread_document` used to
+ * return one, and NOTHING ever read it — not `use-chat-turn.ts`, not the
+ * surface, nowhere — while the transcript said "awaiting your approval" with
+ * nothing to approve. Ruling 93 had already settled that the advisor approves
+ * IN WORDS and the model then calls `edit_row`, so the structured field was
+ * dead by design, not by oversight. The correction now travels in `summary`,
+ * which is the thing the advisor and the model both actually read.
  */
 export interface ToolResult {
   payload: PersistedImportPayload;
@@ -164,9 +172,6 @@ export interface ToolResult {
    *  produced (NOT the full accumulated list; the caller appends them to the
    *  prior one). */
   excludedRows?: ChatState["excludedRows"];
-  /** `reread_document` only — a correction the advisor must accept before
-   *  it ever reaches `payload`. */
-  proposal?: { rowId: string; field: EditableAccountField; value: unknown };
 }
 
 function accountsOf(payload: PersistedImportPayload): AccountRow[] {
@@ -671,9 +676,17 @@ export async function rereadDocument(
     throw new Error(`The model proposed a value for "${field}" outside its valid domain.`);
   }
 
+  // I3: this sentence IS the proposal — it is the only thing that carries
+  // the correction now, so it names the ROW as well as the field and value.
+  // "set basis to 12,345" alone is ambiguous the moment a statement has two
+  // accounts, and "yes, apply that" has to be unambiguous for the model's
+  // follow-up `edit_row` to hit the right row.
+  const proposedRow = candidates.find((r) => r.__rowId === rowId);
   return {
     payload,
-    summary: `Found a possible correction: set ${field} to ${describeValue(value)} — awaiting your approval.`,
-    proposal: { rowId, field, value },
+    summary:
+      `Found a possible correction on "${proposedRow?.name ?? rowId}" (row ${rowId}): ` +
+      `set ${field} to ${describeValue(value)}. Nothing has changed yet — say to apply it ` +
+      `and I'll make the edit.`,
   };
 }

@@ -423,14 +423,34 @@ describe("chat turn route behavior", () => {
   // returns the SAME accounts CHAT_PAYLOAD started with, so this proves a
   // proposal-bearing turn persists the payload byte-identical rather than
   // picking up some other change.
-  it("includes a proposal in the response, and leaves payloadJson.payload untouched", async () => {
+  //
+  // Final review, I3: it must ALSO carry no `proposal` field. The route used
+  // to return one and nothing on the client ever declared it, while the
+  // transcript said "awaiting your approval" with nothing to approve. Ruling
+  // 93 settled that the advisor approves in words and the model then calls
+  // `edit_row` — so the field is gone, and the correction rides in the tool's
+  // transcript summary instead.
+  it("returns no proposal field, and leaves payloadJson.payload untouched", async () => {
     runTurn.mockResolvedValue({
       ...defaultTurnResult(),
-      proposal: { rowId: "r1", field: "basis", value: 10 },
+      turnEntries: [
+        { role: "user", text: "check the basis", at: "t1" },
+        {
+          role: "tool",
+          tool: "reread_document",
+          summary: 'Found a possible correction on "IRA" (row r1): set basis to 10.',
+          at: "t1",
+        },
+        { role: "assistant", text: "Awaiting your approval.", at: "t1" },
+      ],
     });
     const res = await POST(req(), params);
     const body = await res.json();
-    expect(body.proposal).toEqual({ rowId: "r1", field: "basis", value: 10 });
+    expect(body).not.toHaveProperty("proposal");
+    // The correction is still reachable — it is in the transcript entry the
+    // surface actually renders, naming the row, the field and the value.
+    expect(body.turnEntries[1].summary).toContain('"IRA"');
+    expect(body.turnEntries[1].summary).toContain("set basis to 10");
 
     const written = updateCalls[0].values.payloadJson as ImportPayloadJson;
     expect(written.payload).toEqual(CHAT_PAYLOAD.payload);

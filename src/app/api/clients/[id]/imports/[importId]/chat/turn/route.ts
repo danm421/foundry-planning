@@ -313,7 +313,15 @@ export async function POST(request: Request, { params }: Params) {
   });
 
   // Ruling 49 / C13: ONE result shape, with optional members. `payload` and
-  // `summary` are always present; `proposal` only when reread_document ran.
+  // `summary` are always present.
+  //
+  // Final review, I3: there is NO `proposal` field. It was returned here and
+  // read by nothing — `use-chat-turn.ts` never declared it — while the
+  // transcript told the advisor a correction was "awaiting your approval"
+  // with nothing to approve. Ruling 93 already settled that the advisor
+  // approves in words and the model then calls `edit_row`, so no button is
+  // coming; the correction travels in the tool's transcript summary, which
+  // now names the row, the field and the value.
   //
   // C1 (Ruling 90): `turnEntries` is the exact delta the server just
   // persisted onto the transcript (`turnResult.turnEntries` — user entry,
@@ -327,6 +335,5 @@ export async function POST(request: Request, { params }: Params) {
     summary: turnResult.summary,
     excludedRows: nextExcludedRows,
     turnEntries: turnResult.turnEntries,
-    ...(turnResult.proposal ? { proposal: turnResult.proposal } : {}),
   });
 }
