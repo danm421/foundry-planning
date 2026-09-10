@@ -136,8 +136,9 @@ export function SolverRowSavingsContributions({
   // other value the dialog seeds comes from the working plan, and a salary the
   // advisor added this session has to be selectable this session.
   // Optional-chained the same way mutations-to-scenario-changes.ts is: minimal
-  // trees omit the client singleton, and toSalaryOptions will fall back to
-  // generic Client/Co-client labels when it has no names.
+  // trees omit the client singleton. toSalaryOptions still returns its
+  // legacy fallback label today when it has no names; it will read
+  // Client/Co-client once salary-options.ts is swept by its own task.
   const owner = workingClientData.client;
   const salaryOptions = toSalaryOptions(
     workingClientData.incomes ?? [],
