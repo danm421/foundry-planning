@@ -16,6 +16,7 @@ import {
 import { collectCharityExternalBeneficiaryIds } from "./charity-recipients";
 import { estateDistributionAtYear } from "./estate-distribution-at-year";
 import { isPolicyInForce } from "./insurance-in-force";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 export type Ordering = "primaryFirst" | "spouseFirst";
 
@@ -274,7 +275,7 @@ function buildDeathRow(
   const decedentName =
     tax.deceased === "client"
       ? ownerNames.clientName
-      : (ownerNames.spouseName ?? "Spouse");
+      : (ownerNames.spouseName ?? CO_CLIENT_LABEL);
   return {
     deathOrder: tax.deathOrder,
     deceased: tax.deceased,

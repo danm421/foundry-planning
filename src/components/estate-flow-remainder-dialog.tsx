@@ -196,7 +196,7 @@ export default function EstateFlowRemainderDialog({
           <div className="grid gap-3 md:grid-cols-2">
             <div className="rounded-md border border-gray-800 bg-gray-900/40 p-3">
               <WillRecipientList
-                label="Primary — if spouse survives"
+                label="Primary — if Co-client survives"
                 sumMsgId="rmd-client-primary"
                 rows={clientPrimary}
                 onChange={setClientPrimary}
@@ -210,7 +210,7 @@ export default function EstateFlowRemainderDialog({
             </div>
             <div className="rounded-md border border-gray-800 bg-gray-900/40 p-3">
               <WillRecipientList
-                label="Contingent — if spouse predeceased"
+                label="Contingent — if Co-client predeceased"
                 sumMsgId="rmd-client-contingent"
                 rows={clientContingent}
                 onChange={setClientContingent}
@@ -249,7 +249,7 @@ export default function EstateFlowRemainderDialog({
           <div className="grid gap-3 md:grid-cols-2">
             <div className="rounded-md border border-gray-800 bg-gray-900/40 p-3">
               <WillRecipientList
-                label="Primary — if spouse survives"
+                label="Primary — if Co-client survives"
                 sumMsgId="rmd-spouse-primary"
                 rows={spousePrimary}
                 onChange={setSpousePrimary}
@@ -258,12 +258,12 @@ export default function EstateFlowRemainderDialog({
                 externalBeneficiaries={externalOptions}
                 entities={entityOptions}
                 childMembers={childMembers}
-                recipientAriaLabel="Spouse primary remainder recipient"
+                recipientAriaLabel="Co-client primary remainder recipient"
               />
             </div>
             <div className="rounded-md border border-gray-800 bg-gray-900/40 p-3">
               <WillRecipientList
-                label="Contingent — if spouse predeceased"
+                label="Contingent — if Co-client predeceased"
                 sumMsgId="rmd-spouse-contingent"
                 rows={spouseContingent}
                 onChange={setSpouseContingent}
@@ -272,7 +272,7 @@ export default function EstateFlowRemainderDialog({
                 externalBeneficiaries={externalOptions}
                 entities={entityOptions}
                 childMembers={childMembers}
-                recipientAriaLabel="Spouse contingent remainder recipient"
+                recipientAriaLabel="Co-client contingent remainder recipient"
               />
             </div>
           </div>

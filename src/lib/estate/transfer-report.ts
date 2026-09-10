@@ -15,6 +15,7 @@ import {
   insuredRetirementYearFor,
   resolveOwnerRetirementYears,
 } from "./insurance-in-force";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 // ── CLT termination surfacing ───────────────────────────────────────────────
 
@@ -218,7 +219,7 @@ const MECHANISM_LABELS: Record<DeathTransfer["via"], string> = {
   will: "Specific Bequest",
   will_residuary: "Bequest – remainder",
   will_liability_bequest: "Will Liability Bequest",
-  fallback_spouse: "Default Order — Spouse",
+  fallback_spouse: "Default Order — Co-client",
   fallback_children: "Default Order — Children",
   fallback_other_heirs: "Default Order — Other Heirs",
   unlinked_liability_proportional: "Unlinked Debt",
@@ -372,7 +373,7 @@ function buildDeathSection(
   ownerNames: { clientName: string; spouseName: string | null },
 ): DeathSectionData {
   const decedentName =
-    payload.decedent === "client" ? ownerNames.clientName : ownerNames.spouseName ?? "Spouse";
+    payload.decedent === "client" ? ownerNames.clientName : ownerNames.spouseName ?? CO_CLIENT_LABEL;
 
   const accountsById = new Map(
     (clientData.accounts ?? []).map((a) => [a.id, a] as const),
@@ -856,8 +857,8 @@ function joinNames(names: string[]): string {
  * compared by identity, not display label, because (a) entity labels gain a
  * " remainder" suffix on one path but not the other and (b) two distinct
  * people can share a display name. "spouse" normalizes to the resolved
- * spouse's family-member id so a will "to spouse" bequest matches a titling /
- * beneficiary transfer recorded against that same person.
+ * spouse's family-member id so a will bequest naming the spouse matches a
+ * titling / beneficiary transfer recorded against that same person.
  */
 function recipientKey(
   kind: DeathTransfer["recipientKind"],
@@ -895,9 +896,9 @@ function conditionApplies(
     case "always":
       return true;
     case "if_spouse_survives":
-      // The decedent's spouse must survive — at the decedent's death this is
-      // true unless we're modeling spouse-died-first. The conflict pass runs
-      // per-decedent, so "decedent === spouse" means this is the second death
+      // The spouse of the decedent must survive — at the decedent's death this
+      // is true unless we're modeling spouse-died-first. The conflict pass runs
+      // per-decedent, so decedent equal to spouse means this is the second death
       // and the original spouse (the client) has predeceased — condition fails.
       return decedent === "client";
     case "if_spouse_predeceased":
@@ -932,7 +933,7 @@ function describeRecipients(
       if (spouseFm) {
         return `${spouseFm.firstName}${spouseFm.lastName ? " " + spouseFm.lastName : ""}`;
       }
-      return "Spouse";
+      return CO_CLIENT_LABEL;
     }
     return "(recipient)";
   });

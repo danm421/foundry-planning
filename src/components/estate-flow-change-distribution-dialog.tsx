@@ -9,6 +9,7 @@ import WillRecipientList, {
 } from "@/components/estate-flow-will-recipient-list";
 import { buildWillUpdates, buildJointWillUpdates } from "@/lib/estate/build-will-updates";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "@/engine/ownership";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import type {
   Account,
   BeneficiaryRef,
@@ -24,8 +25,8 @@ interface Props {
   accountId: string;
   clientData: ClientData;
   onApplyBeneficiaries: (refs: BeneficiaryRef[]) => void;
-  /** Receives the will(s) to upsert: the client's will, plus the spouse's
-   *  will when the bequest cascades to the spouse. */
+  /** Receives the will(s) to upsert: the client's will, plus the co-client's
+   *  will when the bequest cascades to the co-client. */
   onApplyWill: (wills: Will[]) => void;
   onClose: () => void;
 }
@@ -521,7 +522,7 @@ function EstateFlowChangeDistributionDialogInner({
         ? crypto.randomUUID()
         : `id-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-    // Joint-owned path: each spouse's will disposes that spouse's share.
+    // Joint-owned path: each co-client's will disposes that co-client's share.
     if (isJointOwned) {
       onApplyWill(
         buildJointWillUpdates({
@@ -536,8 +537,8 @@ function EstateFlowChangeDistributionDialogInner({
       return;
     }
 
-    // Will path: build the client's will — and the spouse's, when the bequest
-    // cascades to the spouse — then hand them off to be upserted.
+    // Will path: build the client's will — and the co-client's, when the bequest
+    // cascades to the co-client — then hand them off to be upserted.
     const targetWill = willForAccount ?? defaultWillForNewBequest;
     if (!targetWill) return;
 
@@ -799,7 +800,7 @@ function EstateFlowChangeDistributionDialogInner({
             </div>
             <div className="rounded border border-hair bg-card-2 px-3 py-3">
               <p className="mb-2 text-[12px] font-medium text-ink">
-                {spouseName ?? "Spouse"}&apos;s will
+                {spouseName ?? CO_CLIENT_LABEL}&apos;s will
               </p>
               <WillRecipientList
                 label="Recipients"
@@ -811,7 +812,7 @@ function EstateFlowChangeDistributionDialogInner({
                 externalBeneficiaries={externalOptions}
                 entities={entityOptions}
                 childMembers={childMembers}
-                recipientAriaLabel="Spouse will recipient"
+                recipientAriaLabel="Co-client will recipient"
               />
             </div>
           </div>
@@ -839,7 +840,7 @@ function EstateFlowChangeDistributionDialogInner({
           <p className="text-[12px] text-ink-3">
             Editing the specific bequest for this account in{" "}
             <span className="text-ink">
-              {targetWill?.grantor === "client" ? clientName : spouseName ?? "Spouse"}
+              {targetWill?.grantor === "client" ? clientName : spouseName ?? CO_CLIENT_LABEL}
               &apos;s will
             </span>
             .
@@ -848,7 +849,7 @@ function EstateFlowChangeDistributionDialogInner({
           <p className="text-[12px] text-ink-3">
             No specific bequest exists for this account yet. Saving will create one in{" "}
             <span className="text-ink">
-              {targetWill?.grantor === "client" ? clientName : spouseName ?? "Spouse"}
+              {targetWill?.grantor === "client" ? clientName : spouseName ?? CO_CLIENT_LABEL}
               &apos;s will
             </span>
             .
@@ -863,8 +864,8 @@ function EstateFlowChangeDistributionDialogInner({
               {(
                 [
                   { value: "always" as const, label: "Always" },
-                  { value: "if_spouse_survives" as const, label: "If spouse survives" },
-                  { value: "if_spouse_predeceased" as const, label: "If spouse predeceases" },
+                  { value: "if_spouse_survives" as const, label: "If Co-client survives" },
+                  { value: "if_spouse_predeceased" as const, label: "If Co-client predeceases" },
                 ] satisfies Array<{ value: WillBequest["condition"]; label: string }>
               ).map((opt) => (
                 <button
@@ -902,9 +903,9 @@ function EstateFlowChangeDistributionDialogInner({
         {hasSpouseRecipient && (
           <div className="rounded border border-hair bg-card-2 px-3 py-3">
             <p className="mb-2 text-[12px] text-ink-3">
-              This bequest leaves the asset to {spouseName ?? "the spouse"}. Set what{" "}
-              {spouseName ?? "the spouse"}&apos;s will does with it at the second death — saving
-              writes a matching bequest into {spouseName ?? "the spouse"}&apos;s will, creating
+              This bequest leaves the asset to {spouseName ?? "the Co-client"}. Set what{" "}
+              {spouseName ?? "the Co-client"}&apos;s will does with it at the second death — saving
+              writes a matching bequest into {spouseName ?? "the Co-client"}&apos;s will, creating
               that will if it doesn&apos;t exist yet.
             </p>
             <WillRecipientList
@@ -917,7 +918,7 @@ function EstateFlowChangeDistributionDialogInner({
               externalBeneficiaries={externalOptions}
               entities={entityOptions}
               childMembers={childMembers}
-              recipientAriaLabel="Spouse cascade recipient"
+              recipientAriaLabel="Co-client cascade recipient"
             />
           </div>
         )}

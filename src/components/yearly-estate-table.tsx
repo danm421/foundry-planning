@@ -6,6 +6,7 @@ import type {
   YearlyEstateDeathRow,
 } from "@/lib/estate/yearly-estate-report";
 import type { LifeEventsByYear } from "@/lib/life-event-markers";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 const fmt = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -94,7 +95,7 @@ export function YearlyEstateTable({
   const orderingLabel =
     ordering === "primaryFirst"
       ? `${ownerNames.clientName} dies first`
-      : `${ownerNames.spouseName ?? "Spouse"} dies first`;
+      : `${ownerNames.spouseName ?? CO_CLIENT_LABEL} dies first`;
 
   const summaryColCount = 2 + visibleCols.length;
 
@@ -274,7 +275,7 @@ function DeathDetail({
               d.deathOrder === 1 ? "1st death" : "Final death";
             const altName =
               d.deceased === "client"
-                ? (ownerNames.spouseName ?? "Spouse")
+                ? (ownerNames.spouseName ?? CO_CLIENT_LABEL)
                 : ownerNames.clientName;
             return (
               <tr key={d.deathOrder} className="text-ink-2 hover:[&>td]:shadow-[inset_0_1px_0_var(--color-ink),inset_0_-1px_0_var(--color-ink)]">

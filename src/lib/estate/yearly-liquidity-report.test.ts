@@ -195,7 +195,7 @@ describe("buildYearlyLiquidityReport — iteration", () => {
     expect(report.totals.totalTransferCost).toBe(375_000);
   });
 
-  it("resolves ages from DOBs (client + spouse for married)", () => {
+  it("resolves ages from DOBs (client + co-client for married)", () => {
     const projection = {
       years: [
         projectionYear({ year: 2026, hypothetical: htMarried({ firstTax: 0, finalTax: 0 }) }),
@@ -389,7 +389,7 @@ describe("buildYearlyLiquidityReport — insurance allocation", () => {
     expect(report.rows[0].insuranceOutOfEstate).toBe(0);
   });
 
-  it("insuredPerson='spouse' with endsAtInsuredRetirement uses spouse retirement year", () => {
+  it("insuredPerson set to the co-client with endsAtInsuredRetirement uses their retirement year", () => {
     const data = emptyClientData();
     // Spouse DOB 1962-01-01, retirementAge 65 → retirement year 2027
     data.accounts = [
@@ -427,7 +427,7 @@ describe("buildYearlyLiquidityReport — insurance allocation", () => {
     expect(report.rows[1].insuranceInEstate).toBe(0);
   });
 
-  it("joint policy ends at the later of client/spouse retirement", () => {
+  it("joint policy ends at the later of client/co-client retirement", () => {
     const data = emptyClientData();
     // client retirement year 2025 (1960+65); spouse retirement year 2027
     data.client = { ...data.client, retirementAge: 65, spouseRetirementAge: 65 };
@@ -713,7 +713,7 @@ describe("buildYearlyLiquidityReport — invariants", () => {
     expect(r.surplusDeficitWithPortfolio).toBe(-200_000);
   });
 
-  it("single-life plan (no spouse) returns ageSpouse=null and uses only firstDeath", () => {
+  it("single-life plan (no co-client) returns ageSpouse=null and uses only firstDeath", () => {
     const data = emptyClientData();
     data.client = {
       ...data.client,

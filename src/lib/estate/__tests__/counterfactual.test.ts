@@ -47,7 +47,7 @@ function fixture(): ClientData {
     ],
     familyMembers: [
       { id: FM_CLIENT, firstName: "Client", lastName: "Test", relationship: "other", role: "client", dateOfBirth: "1970-01-01" } satisfies FamilyMember,
-      { id: FM_SPOUSE, firstName: "Spouse", lastName: "Test", relationship: "other", role: "spouse", dateOfBirth: "1972-01-01" } satisfies FamilyMember,
+      { id: FM_SPOUSE, firstName: "Robin", lastName: "Test", relationship: "other", role: "spouse", dateOfBirth: "1972-01-01" } satisfies FamilyMember,
       { id: FM_CHILD, firstName: "Child", lastName: "Test", relationship: "child", role: "child", dateOfBirth: "2005-01-01" } satisfies FamilyMember,
     ],
     gifts: [
@@ -107,7 +107,7 @@ describe("synthesizeNoPlanClientData", () => {
     expect(giftIds).toContain("g3");
   });
 
-  it("reassigns trust slice to spouse FM when entity.grantor is 'spouse'", () => {
+  it("reassigns trust slice to the co-client FM when the entity grantor is the co-client", () => {
     const tree = fixture();
     tree.entities![0].grantor = "spouse";
     const result = synthesizeNoPlanClientData(tree);

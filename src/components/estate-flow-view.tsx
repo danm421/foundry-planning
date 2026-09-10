@@ -201,7 +201,7 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
   // computes both first-death and second-death sections from the data.
   // `ordering` is a display-time selector consumed by the death-column
   // components to decide which death feeds which column: when "primaryFirst",
-  // column 1 shows the client's death and column 2 shows the spouse's death;
+  // column 1 shows the client's death and column 2 shows the co-client's death;
   // "spouseFirst" swaps them. The projection result is identical either way.
   // Materialise gift drafts into the engine input so the projection and report
   // reflect existing and sandbox-edited gifts. The loader strips

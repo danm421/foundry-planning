@@ -13,7 +13,7 @@ import type { ClientData } from "@/engine/types";
  */
 function householdData(): ClientData {
   return {
-    client: { firstName: "Client", lastName: "Sample", spouseName: "Spouse Sample" },
+    client: { firstName: "Client", lastName: "Sample", spouseName: "Robin Sample" },
     accounts: [
       {
         id: "acc-1",
@@ -26,7 +26,7 @@ function householdData(): ClientData {
     ],
     familyMembers: [
       { id: "fm-client", role: "client", relationship: "child", firstName: "Client", lastName: "Sample" },
-      { id: "fm-spouse", role: "spouse", relationship: "child", firstName: "Spouse", lastName: "Sample" },
+      { id: "fm-spouse", role: "spouse", relationship: "child", firstName: "Robin", lastName: "Sample" },
       { id: "fm-kid1", role: "child", relationship: "child", firstName: "Child", lastName: "Sample" },
       { id: "fm-kid2", role: "child", relationship: "child", firstName: "Second Child", lastName: "Sample" },
     ],

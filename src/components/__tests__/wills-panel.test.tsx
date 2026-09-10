@@ -57,7 +57,7 @@ describe("WillsPanel", () => {
               {
                 kind: "asset" as const,
                 id: u("b1"),
-                name: "Brokerage to spouse",
+                name: "Brokerage to Co-client",
                 assetMode: "specific" as const,
                 accountId: u("a1"),
                 percentage: 100,
@@ -78,15 +78,15 @@ describe("WillsPanel", () => {
         ]}
       />,
     );
-    expect(screen.getByText("Brokerage to spouse")).toBeDefined();
+    expect(screen.getByText("Brokerage to Co-client")).toBeDefined();
     expect(screen.getByText(/Fidelity Brokerage/)).toBeDefined();
     expect(screen.getAllByText(/100%/).length).toBeGreaterThanOrEqual(1);
     // Exact match for the bequest condition badge — avoids colliding with the
-    // residuary section's "Primary — if spouse survives" tier label.
-    expect(screen.getByText("If spouse survives")).toBeDefined();
+    // residuary section's "Primary — if Co-client survives" tier label.
+    expect(screen.getByText("If Co-client survives")).toBeDefined();
   });
 
-  it("hides the spouse section when spouseName is null", () => {
+  it("hides the co-client section when spouseName is null", () => {
     render(
       <WillsPanel
         {...baseProps}
@@ -111,7 +111,7 @@ describe("WillsPanel — add bequest modal", () => {
     expect(screen.queryByLabelText(/^Name$/i)).toBeNull();
   });
 
-  it("enables Save once an account is picked (default spouse recipient is at 100%)", () => {
+  it("enables Save once an account is picked (default co-client recipient is at 100%)", () => {
     render(<WillsPanel {...baseProps} initialWills={[]} />);
     fireEvent.click(screen.getAllByRole("button", { name: /Add bequest/i })[0]);
     const save = screen.getByRole("button", { name: /^Save$/i });

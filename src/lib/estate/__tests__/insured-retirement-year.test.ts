@@ -20,7 +20,7 @@ describe("insuredRetirementYearFor", () => {
     expect(insuredRetirementYearFor(a, 2035, 2039)).toBe(null);
   });
 
-  it("returns null when account.insuredPerson is not one of client/spouse/joint", () => {
+  it("returns null when account.insuredPerson is not one of client/co-client/joint", () => {
     const a = { ...baseAccount, insuredPerson: undefined } as Account;
     expect(insuredRetirementYearFor(a, 2035, 2039)).toBe(null);
   });
@@ -30,7 +30,7 @@ describe("insuredRetirementYearFor", () => {
     expect(insuredRetirementYearFor(a, 2035, 2039)).toBe(2035);
   });
 
-  it("resolves the spouse's retirement year", () => {
+  it("resolves the co-client's retirement year", () => {
     const a = { ...baseAccount, insuredPerson: "spouse" } as Account;
     expect(insuredRetirementYearFor(a, 2035, 2039)).toBe(2039);
   });

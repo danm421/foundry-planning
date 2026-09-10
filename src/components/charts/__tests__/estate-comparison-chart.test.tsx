@@ -75,7 +75,7 @@ describe("EstateComparisonChart death-order toggle", () => {
       screen.queryByRole("button", { name: "Client first" }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Spouse first" }),
+      screen.queryByRole("button", { name: "Sam Lee first" }),
     ).not.toBeInTheDocument();
   });
 
@@ -86,7 +86,7 @@ describe("EstateComparisonChart death-order toggle", () => {
       screen.getByRole("button", { name: "Client first" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Spouse first" }),
+      screen.getByRole("button", { name: "Sam Lee first" }),
     ).toBeInTheDocument();
   });
 

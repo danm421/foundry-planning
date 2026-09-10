@@ -5,6 +5,7 @@ import BequestDialog, { type BequestDraft } from "@/components/bequest-dialog";
 import WillResiduarySection from "@/components/forms/will-residuary-section";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useClientAccess } from "@/components/client-access-provider";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 // Local copy — `BUSINESS_ENTITY_TYPES` was removed from `in-estate-weights.ts`
 // in the business-as-asset migration. This UI is being phased out separately;
 // keep the gate inline until then.
@@ -132,8 +133,8 @@ interface WillsPanelProps {
 }
 
 const CONDITION_LABEL: Record<WillCondition, string> = {
-  if_spouse_survives: "If spouse survives",
-  if_spouse_predeceased: "If spouse predeceases",
+  if_spouse_survives: "If Co-client survives",
+  if_spouse_predeceased: "If Co-client predeceases",
   always: "Always",
 };
 
@@ -152,7 +153,7 @@ function recipientLabel(
 ): string {
   if (r.recipientKind === "spouse") {
     const otherName = grantor === "client" ? p.spouseName : p.firstName;
-    return `${otherName || "Spouse"} (spouse)`;
+    return `${otherName || CO_CLIENT_LABEL} (Co-client)`;
   }
   if (r.recipientKind === "family_member") {
     const f = fams.find((x) => x.id === r.recipientId);
@@ -465,7 +466,7 @@ export default function WillsPanel(props: WillsPanelProps) {
         if (g === "spouse" && !primary.spouseName) return null;
         const will = wills.find((w) => w.grantor === g);
         const grantorWarnings = warnings.filter((x) => x.grantor === g);
-        const heading = grantorFullName(g, primary) || (g === "client" ? "Client" : "Spouse");
+        const heading = grantorFullName(g, primary) || (g === "client" ? "Client" : CO_CLIENT_LABEL);
         const bequests = will?.bequests ?? [];
         const alreadyBequeathedLiabilityIds = bequests.flatMap((b) =>
           b.kind === "liability" && b.liabilityId ? [b.liabilityId] : [],

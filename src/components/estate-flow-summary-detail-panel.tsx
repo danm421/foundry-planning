@@ -83,7 +83,7 @@ function panelTitle(s: SelectedPanel): string {
     case "bequestsToTrusts":
       return "Bequests to Trusts";
     case "transfersToSpouse":
-      return "Transfers to Spouse";
+      return "Transfers to Co-client";
     case "transfersToHeirs":
       return "Transfers to Heirs";
     case "ooeGroup":

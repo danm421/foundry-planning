@@ -16,6 +16,7 @@ import type { Ordering } from "@/lib/estate/yearly-estate-report";
 import { buildEstateComparison } from "@/lib/estate/estate-comparison";
 import { chartChrome, useThemeName } from "@/lib/chart-colors";
 import { data as brandData, dataLight as brandDataLight } from "@/brand";
+import { personLabel } from "@/lib/owner-labels";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
@@ -80,6 +81,11 @@ export function EstateComparisonChart({
     isMarried && (firstDeathYear == null || selectedYear < firstDeathYear);
 
   const c = proposedTree.client;
+  const ownerNames = {
+    clientName: `${c.firstName} ${c.lastName}`.trim(),
+    spouseName: c.spouseName ?? null,
+  };
+  const spouseFirstLabel = personLabel("spouse", ownerNames) + " first";
 
   const comparison = useMemo(
     () =>
@@ -90,10 +96,7 @@ export function EstateComparisonChart({
         proposedTree,
         ordering: toggleVisible ? ordering : "primaryFirst",
         year: selectedYear,
-        ownerNames: {
-          clientName: `${c.firstName} ${c.lastName}`.trim(),
-          spouseName: c.spouseName ?? null,
-        },
+        ownerNames,
         ownerDobs: {
           clientDob: c.dateOfBirth,
           spouseDob: c.spouseDob ?? null,
@@ -240,7 +243,7 @@ export function EstateComparisonChart({
                   : "rounded-full bg-hair-2 px-2 py-0.5 text-ink-3 hover:text-ink"
               }
             >
-              {o === "primaryFirst" ? "Client first" : "Spouse first"}
+              {o === "primaryFirst" ? "Client first" : spouseFirstLabel}
             </button>
           ))}
         </div>

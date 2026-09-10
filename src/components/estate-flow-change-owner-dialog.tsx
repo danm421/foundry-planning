@@ -10,6 +10,7 @@ import type { AccountOwner } from "@/engine/ownership";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "@/engine/ownership";
 import type { GiftLedgerYear } from "@/engine/gift-ledger";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -104,7 +105,7 @@ function describeOwners(
     if (o.familyMemberId === LEGACY_FM_CLIENT || o.familyMemberId === clientData.client.firstName) {
       name = clientName;
     } else if (o.familyMemberId === LEGACY_FM_SPOUSE) {
-      name = spouseName ?? "Spouse";
+      name = spouseName ?? CO_CLIENT_LABEL;
     } else {
       const fm = (clientData.familyMembers ?? []).find((m) => m.id === o.familyMemberId);
       name = fm ? `${fm.firstName} ${fm.lastName ?? ""}`.trim() : o.familyMemberId;
@@ -564,7 +565,7 @@ export default function EstateFlowChangeOwnerDialog({
               if (memberId === clientFmId || memberId === LEGACY_FM_CLIENT) {
                 label = clientName;
               } else if (memberId === spouseFmId || memberId === LEGACY_FM_SPOUSE) {
-                label = spouseName ?? "Spouse";
+                label = spouseName ?? CO_CLIENT_LABEL;
               } else {
                 label = fm ? `${fm.firstName} ${fm.lastName ?? ""}`.trim() : memberId;
               }

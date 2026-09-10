@@ -16,6 +16,7 @@ import {
   insuredRetirementYearFor,
   resolveOwnerRetirementYears,
 } from "./insurance-in-force";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 // ── Output Types ─────────────────────────────────────────────────────────────
 
@@ -258,7 +259,7 @@ export function buildOwnershipColumn(
   const spouseFmId = spouseFm?.id ?? null;
 
   const clientLabel = clientFm?.firstName ?? data.client.firstName ?? "Client";
-  const spouseLabel = spouseFm?.firstName ?? data.client.spouseName ?? "Spouse";
+  const spouseLabel = spouseFm?.firstName ?? data.client.spouseName ?? CO_CLIENT_LABEL;
 
   const entityGroups = new Map<string, OwnershipGroup>();
   for (const entity of entities) {

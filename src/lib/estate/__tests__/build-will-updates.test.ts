@@ -93,7 +93,7 @@ describe("buildWillUpdates", () => {
     expect(out[0].bequests).toEqual([]);
   });
 
-  it("creates a spouse will with the cascade bequest when the spouse has none", () => {
+  it("creates a co-client will with the cascade bequest when the co-client has none", () => {
     const out = buildWillUpdates(
       baseInput({
         hasSpouseRecipient: true,
@@ -112,7 +112,7 @@ describe("buildWillUpdates", () => {
     });
   });
 
-  it("updates the spouse's existing bequest for the account in place", () => {
+  it("updates the co-client's existing bequest for the account in place", () => {
     const out = buildWillUpdates(
       baseInput({
         hasSpouseRecipient: true,
@@ -126,7 +126,7 @@ describe("buildWillUpdates", () => {
     expect(spouseWill.bequests[0].recipients).toEqual([recipient("fm-kid", 100)]);
   });
 
-  it("appends a cascade bequest to an existing spouse will without one for the account", () => {
+  it("appends a cascade bequest to an existing co-client will without one for the account", () => {
     const out = buildWillUpdates(
       baseInput({
         hasSpouseRecipient: true,
@@ -138,7 +138,7 @@ describe("buildWillUpdates", () => {
     expect(spouseWill.bequests.map((b) => b.accountId)).toEqual(["acc-9", "acc-1"]);
   });
 
-  it("skips the spouse will when the spouse is a recipient but the cascade is empty", () => {
+  it("skips the co-client will when the co-client is a recipient but the cascade is empty", () => {
     const out = buildWillUpdates(
       baseInput({ hasSpouseRecipient: true, spouseCascadeRecipients: [] }),
     );
@@ -182,7 +182,7 @@ describe("buildJointWillUpdates", () => {
     }
   });
 
-  it("mints the spouse will when the spouse has none and has recipients", () => {
+  it("mints the co-client will when the co-client has none and has recipients", () => {
     const out = buildJointWillUpdates({
       account,
       clientWill: will("will-client", "client"),

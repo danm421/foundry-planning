@@ -136,7 +136,7 @@ describe("deriveClientCardData", () => {
     expect(tom.total).toBe(500_000);
   });
 
-  it("emits both client and spouse cards when spouseName is set", () => {
+  it("emits both client and co-client cards when spouseName is set", () => {
     const tree = baseTree({
       client: baseClient({
         firstName: "Tom",
