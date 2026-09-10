@@ -33,6 +33,32 @@ describe("rebaseOntoFreshMerge", () => {
       {
         __rowId: "account:1",
         name: "Joint Brokerage",
+        freshName: "Joint Brokerage",
+        standingValue: 100_000,
+        freshValue: 130_000,
+      },
+    ]);
+  });
+
+  /**
+   * Ruling 128. The two names on an override are DIFFERENT sources: `name`
+   * is the standing row's (the label on screen, which the advisor may have
+   * renamed) and `freshName` is the fresh survivor's (what the merge's
+   * decision log calls it). Nothing above distinguishes them — every other
+   * case here has the two spellings agree — so this is the test that stops
+   * `freshName` being quietly wired to the standing name, which would leave
+   * `narrate`'s rename join no better off than a name-only join.
+   */
+  it("carries the FRESH row's name alongside the standing one after a rename", () => {
+    const { overrides } = rebaseOntoFreshMerge(
+      [row("account:1", "Joint Brokerage", 130_000)],
+      [row("account:1", "Schwab Joint — taxable", 100_000)],
+    );
+    expect(overrides).toEqual([
+      {
+        __rowId: "account:1",
+        name: "Schwab Joint — taxable",
+        freshName: "Joint Brokerage",
         standingValue: 100_000,
         freshValue: 130_000,
       },
@@ -87,7 +113,7 @@ describe("rebaseOntoFreshMerge", () => {
       [row("account:1", "IRA", undefined)],
     );
     expect(overrides).toEqual([
-      { __rowId: "account:1", name: "IRA", standingValue: undefined, freshValue: 130_000 },
+      { __rowId: "account:1", name: "IRA", freshName: "IRA", standingValue: undefined, freshValue: 130_000 },
     ]);
   });
 

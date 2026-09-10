@@ -27,6 +27,15 @@ type AccountRow = Annotated<ExtractedAccount>;
 export interface RebaseOverride {
   __rowId: string;
   name: string;
+  /**
+   * The FRESH survivor's name — what `MergeDecision.account` carries, which
+   * is NOT the standing row's name once the advisor has renamed the row
+   * (`name` is on `EDITABLE_ACCOUNT_FIELDS`, and a rename survives the
+   * rebase by construction). `narrate`'s `contradictsRebase` needs both
+   * spellings to join a decision to the override that replaces it (Ruling
+   * 128); `name` above stays the label anything advisor-facing prints.
+   */
+  freshName: string;
   /** The figure that stays on screen and will commit — the advisor's. */
   standingValue: number | undefined;
   /** The figure the new statement reported and the rebase discarded. */
@@ -160,6 +169,10 @@ export function rebaseOntoFreshMerge(
     overrides.push({
       // The standing row's own name — that is the label on screen.
       name: held.name,
+      // ...and the fresh survivor's, which is what the merge's decision log
+      // names. They differ exactly when the advisor has renamed the row
+      // (Ruling 128).
+      freshName: fresh.name,
       __rowId: id,
       standingValue: held.value,
       freshValue: fresh.value,

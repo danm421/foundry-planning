@@ -361,6 +361,7 @@ describe("narrate", () => {
           {
             __rowId: "account:1",
             name: "Joint Brokerage",
+            freshName: "Joint Brokerage",
             standingValue: 100_000,
             freshValue: 130_000,
           },
@@ -379,7 +380,7 @@ describe("narrate", () => {
         decisions: [],
         rows: [{ name: "IRA" }] as never,
         overrides: [
-          { __rowId: "account:1", name: "IRA", standingValue: undefined, freshValue: 130_000 },
+          { __rowId: "account:1", name: "IRA", freshName: "IRA", standingValue: undefined, freshValue: 130_000 },
         ],
       });
       expect(caveats).toContain(
@@ -426,6 +427,7 @@ describe("narrate", () => {
           {
             __rowId: "account:1",
             name: "Joint Brokerage",
+            freshName: "Joint Brokerage",
             standingValue: 100_000,
             freshValue: 130_000,
           },
@@ -468,6 +470,7 @@ describe("narrate", () => {
           {
             __rowId: "account:1",
             name: "Joint Brokerage",
+            freshName: "Joint Brokerage",
             standingValue: 100_000,
             freshValue: 130_000,
           },
@@ -496,7 +499,7 @@ describe("narrate", () => {
           { name: "IRA", owner: "spouse", value: 25_000 },
         ] as never,
         overrides: [
-          { __rowId: "account:1", name: "IRA", standingValue: 9_000, freshValue: 15_000 },
+          { __rowId: "account:1", name: "IRA", freshName: "IRA", standingValue: 9_000, freshValue: 15_000 },
         ],
       });
       // The client IRA's conflict is the one that was discarded — muted.
@@ -505,6 +508,54 @@ describe("narrate", () => {
       expect(caveats).toContain(
         '"IRA" is recorded at $25,000 from the 06/30/2026 statement; another statement reported $20,000.',
       );
+    });
+
+    /**
+     * Ruling 128 — the Ruling 117 Critical, re-opened by a RENAME.
+     *
+     * `o.name` is the STANDING row's name; `d.account` is the FRESH
+     * survivor's. `name` is editable and a rename survives the rebase by
+     * construction, so the moment the advisor renames a row and then
+     * uploads a newer statement the two stop matching, the suppression
+     * misses, and the screen shows "«old name» is recorded at $130,000"
+     * directly above a table row reading $100,000 — while the override
+     * caveat renders the SAME row under its NEW name at the standing
+     * figure. Carrying the fresh name on the override and matching either
+     * one closes it.
+     */
+    it("suppresses the value-conflict caveat when the advisor has RENAMED the row (Ruling 128)", () => {
+      const { caveats } = narrate({
+        fileCount: 2,
+        decisions: [
+          {
+            kind: "value-conflict",
+            // The FRESH survivor's name — what the merge emitted, and what
+            // the advisor's rename replaced on screen.
+            account: "Joint Brokerage",
+            values: [100_000, 130_000],
+            asOf: "2026-09-30",
+            kept: 130_000,
+          },
+        ],
+        rows: [{ name: "Schwab Joint — taxable", value: 100_000 }] as never,
+        overrides: [
+          {
+            __rowId: "account:1",
+            name: "Schwab Joint — taxable",
+            freshName: "Joint Brokerage",
+            standingValue: 100_000,
+            freshValue: 130_000,
+          },
+        ],
+      });
+      expect(caveats.some((c) => c.includes("is recorded at $130,000"))).toBe(false);
+      // Only the override caveat, and it still labels the row by the name
+      // the advisor gave it — that is the label on screen.
+      expect(caveats).toEqual([
+        '"Schwab Joint — taxable" is shown at $100,000 — the figure already on this import, and ' +
+          "the one that will commit. The newly uploaded statement reports $130,000. Edit the row " +
+          "if the newer figure is the one you want.",
+      ]);
     });
   });
 });

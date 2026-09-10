@@ -138,7 +138,7 @@ function rebaseOverrideCaveat(o: RebaseOverride): string {
  * above a row reading $100,000. The override caveat carries the same two
  * numbers honestly, so this one is dropped rather than reworded.
  *
- * The join is the account NAME **and** the discarded figure, not the name
+ * The join is an account NAME **and** the discarded figure, not the name
  * alone. `valueConflictCaveat`'s own docstring records why a bare name is
  * not an identity here — two accounts can share a display name — and
  * `MergeDecision` carries no `__rowId` to join on properly. Requiring
@@ -148,12 +148,24 @@ function rebaseOverrideCaveat(o: RebaseOverride): string {
  * over-suppression when two same-named accounts also merged to the same
  * figure — that is silence, never a fabricated number, and the override
  * caveat still names both figures for the row that was actually overridden.
+ *
+ * EITHER name matches (Ruling 128). `d.account` is the FRESH survivor's
+ * name; `o.name` is the STANDING row's. `name` is editable and a rename
+ * survives the rebase, so after the advisor renames a row those two stop
+ * being the same string and a name-only join silently misses — which
+ * re-opened the exact Critical this function exists to close, in the rename
+ * case. `o.freshName` carries the fresh spelling alongside, and matching
+ * either one restores the join. The `freshValue === kept` half is untouched,
+ * so widening the name side does not widen the suppression to same-named
+ * accounts with different figures.
  */
 function contradictsRebase(
   d: Extract<MergeDecision, { kind: "value-conflict" }>,
   overrides: RebaseOverride[],
 ): boolean {
-  return overrides.some((o) => o.name === d.account && o.freshValue === d.kept);
+  return overrides.some(
+    (o) => (o.name === d.account || o.freshName === d.account) && o.freshValue === d.kept,
+  );
 }
 
 function retirementBasisCaveat(rows: Annotated<ExtractedAccount>[]): string | null {
