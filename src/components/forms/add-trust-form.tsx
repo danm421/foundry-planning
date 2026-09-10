@@ -739,11 +739,21 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
         // instead. `submit` RESOLVES with the failing Response rather than
         // throwing, so every arm still has to check `.ok` and return the same
         // `{ ok: false, error }` the dialog renders.
+        //
+        // Every arm passes `skipRefresh` because these are N writes behind ONE
+        // Save button: the entity write above already refreshed, and a refresh
+        // per gift op would re-run this dialog's gift/series/ledger fetches N
+        // times (the same cost the Assets-tab note at the fetch effect avoids).
         for (const op of ops) {
           if (op.type === "create") {
             const giftRes = await scenarioWriter.submit(
               giftScenarioAdd(fundingPickCreateDraft(op.body, crypto.randomUUID())),
-              { url: `/api/clients/${clientId}/gifts`, method: "POST", body: op.body },
+              {
+                url: `/api/clients/${clientId}/gifts`,
+                method: "POST",
+                body: op.body,
+                skipRefresh: true,
+              },
             );
             if (!giftRes.ok) {
               const j = (await giftRes.json().catch(() => ({}))) as { error?: string };
@@ -764,7 +774,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
               }
               giftRes = await scenarioWriter.submit(
                 giftScenarioAdd(assertDraftable(fundingPickUpdateDraft(current, op.body), "gift")),
-                { url, method: "PATCH", body: op.body },
+                { url, method: "PATCH", body: op.body, skipRefresh: true },
               );
             } else {
               giftRes = await fetch(url, {
@@ -781,6 +791,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
             const giftRes = await scenarioWriter.submit(giftScenarioRemove(op.giftId), {
               url: `/api/clients/${clientId}/gifts/${op.giftId}`,
               method: "DELETE",
+              skipRefresh: true,
             });
             if (!giftRes.ok) {
               const j = (await giftRes.json().catch(() => ({}))) as { error?: string };
@@ -1161,18 +1172,29 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
               // Tracked in future-work/estate.md.
               onDelete={async (item) => {
                 const isSeries = "annualAmount" in item;
-                const url = isSeries
-                  ? `/api/clients/${clientId}/gifts/series/${item.id}`
-                  : `/api/clients/${clientId}/gifts/${item.id}`;
                 try {
-                  // Follows the active scenario: inside one this records a
-                  // `remove` change instead of deleting the row every scenario
-                  // shares. Series removes use the same `gift` targetKind — the
-                  // series URL is only the base-mode fallback.
-                  const res = await scenarioWriter.submit(giftScenarioRemove(item.id), {
-                    url,
-                    method: "DELETE",
-                  });
+                  // The two row kinds this list mixes are scenario-scoped in
+                  // DIFFERENT ways, so they delete differently.
+                  //
+                  // A gift_series row carries a real `scenario_id` — its own row
+                  // per scenario, not an overlay — and this list only ever shows
+                  // the active scenario's series, so the direct DELETE already
+                  // IS the scenario-correct delete. A `gift` change row would
+                  // leave that row alive: back on reload, copied into base on
+                  // promote, and gone from the projection, which honors overlays.
+                  //
+                  // A one-time gift has no scenario_id — every scenario reads the
+                  // one base row through an overlay — so a delete inside a
+                  // scenario has to record a `remove` change instead.
+                  const res = isSeries
+                    ? await fetch(
+                        `/api/clients/${clientId}/gifts/series/${item.id}`,
+                        { method: "DELETE" },
+                      )
+                    : await scenarioWriter.submit(giftScenarioRemove(item.id), {
+                        url: `/api/clients/${clientId}/gifts/${item.id}`,
+                        method: "DELETE",
+                      });
                   if (!res.ok) {
                     const j = await res.json().catch(() => ({}));
                     throw new Error((j as { error?: string }).error ?? `HTTP ${res.status}`);
@@ -1521,21 +1543,39 @@ export function toDiscountCandidates(all: GiftRow[]): PriorDiscountCandidate[] {
 // casting a REST body into a DB-row shape.
 
 /** New funding-pick gift → draft. Mirrors `giftCreateSchema`'s defaults, which
- *  is what the base POST would have applied to the same body. */
+ *  is what the base POST would have applied to the same body.
+ *
+ *  KEY ORDER IS PART OF THE CONTRACT — see `estate-flow-gift-diff.ts`. The
+ *  unsaved-changes diff compares gifts with `JSON.stringify`, so a hand-built
+ *  draft has to emit keys in the exact order `giftRowToDraft` does or an
+ *  untouched gift reads as edited. `valuationDiscount` would be last; a new
+ *  funding pick never carries one. */
 export function fundingPickCreateDraft(
   body: Extract<GiftOp, { type: "create" }>["body"],
   id: string,
 ): EstateFlowGift {
-  const common = {
-    id,
-    year: body.year,
-    grantor: body.grantor,
-    recipient: { kind: "entity" as const, id: body.recipientEntityId },
-    eventKind: "outright" as const,
-  };
+  const recipient = { kind: "entity" as const, id: body.recipientEntityId };
   return "accountId" in body
-    ? { kind: "asset-once", ...common, accountId: body.accountId, percent: body.percent }
-    : { kind: "cash-once", ...common, amount: body.amount, crummey: false };
+    ? {
+        kind: "asset-once",
+        id,
+        year: body.year,
+        accountId: body.accountId,
+        percent: body.percent,
+        grantor: body.grantor,
+        recipient,
+        eventKind: "outright",
+      }
+    : {
+        kind: "cash-once",
+        id,
+        year: body.year,
+        amount: body.amount,
+        grantor: body.grantor,
+        recipient,
+        crummey: false,
+        eventKind: "outright",
+      };
 }
 
 /** Edited funding-pick gift → draft, by merging the differ's PARTIAL patch onto

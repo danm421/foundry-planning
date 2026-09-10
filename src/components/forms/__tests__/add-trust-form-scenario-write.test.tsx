@@ -55,6 +55,7 @@ import AddTrustForm, {
   fundingPickUpdateDraft,
 } from "../add-trust-form";
 import { assertDraftable } from "@/lib/gifts/gift-write";
+import { giftRowToDraft } from "@/lib/estate/estate-flow-gifts";
 import type { Entity } from "../../family-view";
 
 // ---------------------------------------------------------------------------
@@ -183,8 +184,17 @@ function jsonResponse(body: unknown, status = 200) {
 }
 
 /** Routes every request the trust dialog makes. Order matters: the two
- *  `/gifts/...` sub-collections have to be matched before `/gifts` itself. */
-function installFetch(gifts: unknown[], series: unknown[] = []) {
+ *  `/gifts/...` sub-collections have to be matched before `/gifts` itself.
+ *
+ *  `failWrite` lets a test make ONE write route answer non-ok. Without it every
+ *  non-GET answers `{ ok: true }`, and the `if (!res.ok)` guards — which are
+ *  load-bearing, because `submit` RESOLVES with a failing Response instead of
+ *  throwing — are never exercised. */
+function installFetch(
+  gifts: unknown[],
+  series: unknown[] = [],
+  failWrite?: (url: string, init: RequestInit) => Response | undefined,
+) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const method = (init?.method ?? "GET").toUpperCase();
@@ -196,6 +206,8 @@ function installFetch(gifts: unknown[], series: unknown[] = []) {
       if (url.includes("/gifts")) return jsonResponse(gifts);
       return jsonResponse([]);
     }
+    const failed = failWrite?.(url, (init ?? {}) as RequestInit);
+    if (failed) return failed;
     if (url.includes("/entities/")) return jsonResponse(trust());
     return jsonResponse({ ok: true });
   });
@@ -302,7 +314,12 @@ describe("AddTrustForm — gift reads and writes follow the active scenario", ()
     });
   });
 
-  it("deletes a series into the scenario, keeping the series route as the base fallback", async () => {
+  it("SCENARIO MODE: deletes a series through the series route, NOT as a change row", async () => {
+    // `gift_series` carries a real `scenario_id` — it is a per-scenario row, not
+    // an overlay, and this list only ever shows the active scenario's series. So
+    // the direct DELETE already is the scenario-correct delete. A `gift` change
+    // row would leave the series row alive: back on reload, copied into base on
+    // promote, and gone from the projection, which honors the overlay.
     searchParams = new URLSearchParams(`scenario=${SCENARIO_ID}`);
     const fetchMock = installFetch([], [SERIES_ROW]);
 
@@ -311,8 +328,52 @@ describe("AddTrustForm — gift reads and writes follow the active scenario", ()
 
     await waitFor(() => expect(giftWrites(fetchMock).length).toBe(1));
     const [url, init] = giftWrites(fetchMock)[0];
-    expect(String(url)).toBe(changesUrl);
-    expect(JSON.parse((init as RequestInit).body as string).targetId).toBe(SERIES_ID);
+    expect(String(url)).toBe(`/api/clients/${CLIENT_ID}/gifts/series/${SERIES_ID}`);
+    expect((init as RequestInit).method).toBe("DELETE");
+    // Zero traffic to the scenario writer — this is the whole point.
+    expect(urlsOf(fetchMock).some((u) => u.includes("/changes"))).toBe(false);
+    // And the row still leaves the list.
+    await waitFor(() => expect(screen.queryByLabelText("Delete series")).toBeNull());
+  });
+
+  it("SCENARIO MODE: a series and a one-time gift delete take DIFFERENT paths", async () => {
+    // Both rows on screen at once, deleted in turn: the series goes direct, the
+    // one-time gift goes through the change writer. Pins the two branches apart
+    // in one test, so collapsing them back into one path fails here.
+    searchParams = new URLSearchParams(`scenario=${SCENARIO_ID}`);
+    const fetchMock = installFetch([CASH_GIFT_ROW], [SERIES_ROW]);
+
+    render(<AddTrustForm {...props("transfers", trust())} />);
+    fireEvent.click(await screen.findByLabelText("Delete series"));
+    await waitFor(() => expect(giftWrites(fetchMock).length).toBe(1));
+    fireEvent.click(await screen.findByLabelText("Delete"));
+    await waitFor(() => expect(giftWrites(fetchMock).length).toBe(2));
+
+    const [seriesCall, giftCall] = giftWrites(fetchMock);
+    expect(String(seriesCall[0])).toBe(`/api/clients/${CLIENT_ID}/gifts/series/${SERIES_ID}`);
+    expect(String(giftCall[0])).toBe(changesUrl);
+    expect(JSON.parse((giftCall[1] as RequestInit).body as string)).toEqual({
+      op: "remove",
+      targetKind: "gift",
+      targetId: CASH_GIFT_ID,
+    });
+  });
+
+  it("SCENARIO MODE: a rejected one-time delete surfaces the error and keeps the row", async () => {
+    // `submit` RESOLVES with the failing Response rather than rejecting, so a
+    // missed `.ok` check would report a save that never happened.
+    searchParams = new URLSearchParams(`scenario=${SCENARIO_ID}`);
+    const fetchMock = installFetch([CASH_GIFT_ROW], [], (url) =>
+      url.includes("/changes") ? jsonResponse({ error: "Scenario is locked" }, 400) : undefined,
+    );
+
+    render(<AddTrustForm {...props("transfers", trust())} />);
+    fireEvent.click(await screen.findByLabelText("Delete"));
+
+    expect(await screen.findByText(/Couldn't load transfers: Scenario is locked/)).toBeInTheDocument();
+    // The optimistic list filter must NOT have run — the row is still deletable.
+    expect(screen.getByLabelText("Delete")).toBeInTheDocument();
+    expect(giftWrites(fetchMock)).toHaveLength(1);
   });
 
   it("BASE MODE: deleting a one-time transfer still DELETEs the base gift route", async () => {
@@ -402,6 +463,40 @@ describe("AddTrustForm — gift reads and writes follow the active scenario", ()
     // The untouched cash pick must not be written at all.
     expect(giftWrites(fetchMock)).toHaveLength(1);
     expect(urlsOf(fetchMock).some((u) => u.includes("/changes"))).toBe(false);
+  });
+
+  it("BASE MODE: a rejected funding-pick write fails the save instead of reporting success", async () => {
+    // The ops loop's `if (!giftRes.ok)` guards, exercised. `submit` resolves
+    // with the failing Response, so an unchecked await here would close the
+    // dialog on a gift write that never landed.
+    const fetchMock = installFetch([giftRow()], [], (url, init) =>
+      url.includes(`/gifts/${ASSET_GIFT_ID}`) && init.method === "PATCH"
+        ? jsonResponse({ error: "Gift is locked" }, 400)
+        : undefined,
+    );
+    const { container } = await renderCltAndOpenPicker(fetchMock);
+
+    fireEvent.change(screen.getByLabelText("Percent of Family LP"), { target: { value: "40" } });
+    submitForm(container);
+
+    expect(await screen.findByText("Gift is locked")).toBeInTheDocument();
+  });
+
+  it("BASE MODE: two funding-pick ops in one save still cost exactly ONE router.refresh", async () => {
+    // A refresh is a full server re-render AND it re-runs this dialog's own
+    // gift/series/ledger fetches. One Save press must buy one, however many
+    // gift writes it fans out into.
+    const fetchMock = installFetch([giftRow()]);
+    const { container } = await renderCltAndOpenPicker(fetchMock);
+
+    fireEvent.change(screen.getByLabelText("Percent of Family LP"), { target: { value: "40" } });
+    fireEvent.click(screen.getByLabelText("Cash gift amount").previousSibling!.previousSibling as HTMLElement);
+    fireEvent.change(screen.getByLabelText("Cash gift amount"), { target: { value: "25000" } });
+    submitForm(container);
+
+    // Two gift ops: the percent update and the new cash pick.
+    await waitFor(() => expect(giftWrites(fetchMock)).toHaveLength(2));
+    expect(refreshMock).toHaveBeenCalledTimes(1);
   });
 
   it("SCENARIO MODE: a CLT funding-pick change is refused outright — no gift write of any kind", async () => {
@@ -495,6 +590,34 @@ describe("funding-pick gift drafts", () => {
       recipient: { kind: "entity", id: TRUST_ID },
       eventKind: "outright",
     });
+  });
+
+  it("emits keys in giftRowToDraft's exact order — the JSON.stringify diff contract", () => {
+    // `estate-flow-gift-diff.ts` compares gifts with JSON.stringify, which is
+    // key-ORDER sensitive, so a hand-built draft whose keys are shuffled makes
+    // an untouched gift show up as an unsaved edit. The reference order is
+    // whatever `giftRowToDraft` emits for the equivalent row — comparing
+    // against it (rather than a copied literal) means the two cannot drift.
+    const keys = (g: unknown) => Object.keys(JSON.parse(JSON.stringify(g)));
+
+    const assetRow = giftRow({ id: "new-id", percent: "0.2500", valuationDiscount: null });
+    expect(
+      keys(
+        fundingPickCreateDraft(
+          { year: YEAR, grantor: "client", recipientEntityId: TRUST_ID, accountId: ACCOUNT_ID, percent: 0.25 },
+          "new-id",
+        ),
+      ),
+    ).toEqual(keys(giftRowToDraft({ ...assetRow, eventKind: "outright" })));
+
+    expect(
+      keys(
+        fundingPickCreateDraft(
+          { year: YEAR, grantor: "client", recipientEntityId: TRUST_ID, amount: 25_000 },
+          "new-id",
+        ),
+      ),
+    ).toEqual(keys(giftRowToDraft({ ...CASH_GIFT_ROW, eventKind: "outright" })));
   });
 
   it("builds a cash draft from the differ's create body, matching the POST route's defaults", () => {

@@ -104,6 +104,53 @@ describe("useScenarioWriter — base mode", () => {
   });
 });
 
+describe("useScenarioWriter — skipRefresh", () => {
+  // A caller that fans ONE save out into several submits (the trust dialog's
+  // split-interest funding picks) must not bill a server re-render per write.
+  it("base mode: writes as usual but does NOT refresh", async () => {
+    setUrl("");
+    const { result } = renderHook(() => useScenarioWriter(CLIENT_ID));
+
+    const res = await result.current.submit(
+      { op: "remove", targetKind: "gift", targetId: "gift-1" },
+      { url: `/api/clients/${CLIENT_ID}/gifts/gift-1`, method: "DELETE", skipRefresh: true },
+    );
+
+    expect(res.ok).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls[0][0]).toBe(`/api/clients/${CLIENT_ID}/gifts/gift-1`);
+    expect(refreshSpy).not.toHaveBeenCalled();
+  });
+
+  it("scenario mode: writes the change row but does NOT refresh", async () => {
+    setUrl(`scenario=${SCENARIO_ID}`);
+    const { result } = renderHook(() => useScenarioWriter(CLIENT_ID));
+
+    await result.current.submit(
+      { op: "remove", targetKind: "gift", targetId: "gift-1" },
+      { url: `/api/clients/${CLIENT_ID}/gifts/gift-1`, method: "DELETE", skipRefresh: true },
+    );
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls[0][0]).toBe(
+      `/api/clients/${CLIENT_ID}/scenarios/${SCENARIO_ID}/changes`,
+    );
+    expect(refreshSpy).not.toHaveBeenCalled();
+  });
+
+  it("omitting it keeps today's behavior — every other caller still refreshes", async () => {
+    setUrl("");
+    const { result } = renderHook(() => useScenarioWriter(CLIENT_ID));
+
+    await result.current.submit(
+      { op: "remove", targetKind: "gift", targetId: "gift-1" },
+      { url: `/api/clients/${CLIENT_ID}/gifts/gift-1`, method: "DELETE" },
+    );
+
+    expect(refreshSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("useScenarioWriter — scenario mode", () => {
   it("edit → POSTs unified route with op=edit + targetKind + targetId + desiredFields", async () => {
     setUrl(`scenario=${SCENARIO_ID}`);

@@ -49,6 +49,18 @@ export interface BaseFallback {
   method: "POST" | "PATCH" | "PUT" | "DELETE";
   /** Optional. JSON-stringified into the request when present. */
   body?: unknown;
+  /**
+   * Opt out of the post-write `router.refresh()`. Default (absent/false) is to
+   * refresh, which is what every caller that saves ONE thing wants.
+   *
+   * Set it on a caller that issues SEVERAL submits for a SINGLE save — the
+   * trust dialog's split-interest funding picks are N gift writes behind one
+   * Save button. Without this each one bills a full server re-render, and on
+   * this page a refresh also re-runs the dialog's own gift/series/ledger
+   * fetches. The save's first submit (the entity write) leaves this unset, so
+   * exactly one refresh still happens per save.
+   */
+  skipRefresh?: boolean;
 }
 
 export interface UseScenarioWriter {
@@ -83,7 +95,7 @@ export function useScenarioWriter(clientId: string): UseScenarioWriter {
           init.body = JSON.stringify(baseFallback.body);
         }
         const res = await fetch(baseFallback.url, init);
-        if (res.ok) router.refresh();
+        if (res.ok && !baseFallback.skipRefresh) router.refresh();
         return res;
       }
 
@@ -111,7 +123,7 @@ export function useScenarioWriter(clientId: string): UseScenarioWriter {
         if (!res.ok) return res;
         last = res;
       }
-      if (last) router.refresh();
+      if (last && !baseFallback.skipRefresh) router.refresh();
       // Only reachable for an empty batch, which no caller passes. "Nothing to
       // write" is a success, and answering with an ok Response keeps every
       // caller's `res.ok` read honest without widening the return to nullable.
