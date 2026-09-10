@@ -14,6 +14,11 @@ interface Widget {
   __rowId?: string;
   label: string;
   qty: number;
+  // Real (if arbitrary) fields a multi-field column can fan out onto,
+  // exercised by the "combo" column below — `fields` is narrowed to
+  // `keyof Row` (Task 10b), so a fan-out target must be a real key.
+  a?: number;
+  b?: number;
 }
 
 const columns: ColumnSpec<Widget>[] = [

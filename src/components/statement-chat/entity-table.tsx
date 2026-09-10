@@ -47,8 +47,13 @@ export interface ColumnSpec<Row> {
    * `onEditCell` once per key instead of once for `column.key` (which, for
    * a column like this, is a synthetic UI grouping, not itself a real
    * payload field). Omit for the common case of one column, one field.
+   *
+   * Narrowed to `Row`'s own keys (Task 10b) — `ColumnSpec` is already
+   * generic over `Row`, so this costs nothing and catches a mistyped field
+   * name at compile time instead of silently writing `undefined` at runtime
+   * (exactly the shape of Task 10's Important 3 typo).
    */
-  fields?: string[];
+  fields?: (keyof Row & string)[];
 }
 
 /** The one thing every entity row is guaranteed to carry (Task 6): a stable
@@ -87,7 +92,10 @@ function alignFor(column: Pick<ColumnSpec<unknown>, "align" | "kind">): "left" |
   return column.align ?? (RIGHT_ALIGN_KINDS.has(column.kind) ? "right" : "left");
 }
 
-function moneyText(value: number): string {
+/** Exported so `chat-surface.tsx` doesn't keep a second, byte-identical copy
+ *  (Task 10b) — that file needs an `undefined`-tolerant wrapper around this
+ *  same core formatting for a raw `row.value` that may be absent. */
+export function moneyText(value: number): string {
   return `$${Math.round(value).toLocaleString("en-US")}`;
 }
 
