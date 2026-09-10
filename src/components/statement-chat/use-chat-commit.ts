@@ -58,26 +58,17 @@ async function patchImportPayloadJson(
 }
 
 /**
- * Reads the import's FRESH `payload.accounts` and overlays ONLY the `match`
- * stamp from it onto each of `localRows` — never any other field (round 2
- * review, item 3): taking `fresh` wholesale would silently discard a local
- * field edit on a row the server shows as `exact` but the caller's own state
- * doesn't yet know is committed. Shared by `commitRowsNow` (Task 10b) and
- * `flushRowsToServer` (Task 11b fix round 1, Ruling 95) — both need the SAME
- * "current local rows, freshened only on `match`" merge before their own
- * `payload.accounts` PATCH.
+ * Overlays ONLY the `match` stamp from `freshAccounts` onto each of
+ * `localRows` — never any other field (round 2 review, item 3): taking
+ * `fresh` wholesale would silently discard a local field edit on a row the
+ * server shows as `exact` but the caller's own state doesn't yet know is
+ * committed. Pure — no fetch — so `commitRowsNow` (Task 10b) and
+ * `flushRowsToServer` (Task 11b fix round 1/2, Ruling 95/100) can each read
+ * their OWN fresh snapshot (the latter needs `chat.excludedRows` from the
+ * SAME read too) and share only this merge step.
  */
-async function mergeLocalRowsWithFreshMatch(
-  clientId: string,
-  importId: string,
-  localRows: Row[],
-): Promise<Row[]> {
-  const freshPayloadJson = (await readImportPayloadJson(clientId, importId)) as
-    | { payload?: { accounts?: Row[] } }
-    | undefined;
-  const freshByRowId = new Map(
-    (freshPayloadJson?.payload?.accounts ?? []).map((r) => [r.__rowId, r] as const),
-  );
+function overlayFreshMatch(freshAccounts: Row[], localRows: Row[]): Row[] {
+  const freshByRowId = new Map(freshAccounts.map((r) => [r.__rowId, r] as const));
   return localRows.map((row) => {
     const fresh = row.__rowId ? freshByRowId.get(row.__rowId) : undefined;
     return fresh?.match?.kind === "exact" ? { ...row, match: fresh.match } : row;
@@ -231,7 +222,13 @@ export function useChatCommit(clientId: string, importId: string) {
       // the bookkeeping chat PATCH failed after a prior commit — an
       // editable-until-locked row, since `committedRowIds`, not `match`, is
       // what disables editing in `entity-table.tsx`).
-      const mergedAccounts = await mergeLocalRowsWithFreshMatch(clientId, importId, current.rows);
+      const freshPayloadJsonForCommit = (await readImportPayloadJson(clientId, importId)) as
+        | { payload?: { accounts?: Row[] } }
+        | undefined;
+      const mergedAccounts = overlayFreshMatch(
+        freshPayloadJsonForCommit?.payload?.accounts ?? [],
+        current.rows,
+      );
 
       await patchImportPayloadJson(clientId, importId, {
         payload: { accounts: mergedAccounts },
@@ -325,13 +322,23 @@ export function useChatCommit(clientId: string, importId: string) {
   // `onRestore` — lifts an excluded (rollup-detected) row into the working
   // set WITHOUT committing it (Task 10 review, CRITICAL). The advisor still
   // has to click Commit on it afterward.
+  // Idempotent by `__rowId` (Ruling 100, Task 11b fix round 2, clause 2): a
+  // row already in the working set is never appended twice, whatever the
+  // excluded list says. The row can legitimately reappear in `excluded` a
+  // SECOND time — this surface's own flush now removes it from the
+  // server's `chat.excludedRows` (below), but a resumed draft, a slow
+  // flush, or a genuinely fresh re-detection could still hand it back —
+  // and without this guard a second "Include anyway" click on the SAME row
+  // would insert a second copy that later commits as a duplicate account.
   const handleRestore = useCallback(
     (row: Row) => {
       updateResult((prev) => {
         if (!prev) return prev;
+        const alreadyWorking =
+          row.__rowId != null && prev.rows.some((r) => r.__rowId === row.__rowId);
         return {
           ...prev,
-          rows: [...prev.rows, row],
+          rows: alreadyWorking ? prev.rows : [...prev.rows, row],
           excluded: prev.excluded.filter((x) => x.row.__rowId !== row.__rowId),
         };
       });
@@ -351,22 +358,37 @@ export function useChatCommit(clientId: string, importId: string) {
   }, []);
 
   // Pushes the surface's CURRENT local row state to the server BEFORE a turn
-  // is sent (Task 11b fix round 1, Ruling 95 — replaces the review's
-  // Critical 1 fix). Local edits (`handleEditCell`) and a restored row
-  // (`handleRestore`) never round-trip to the server on their own — nothing
-  // but a commit used to send them. Without this, the model would answer a
-  // question from STALE server rows the advisor had already corrected
-  // on-screen, and `adoptTurnPayload`'s wholesale replace (below) would then
-  // silently revert those same local edits the moment the response landed.
+  // is sent (Task 11b, Ruling 95/100 — replaces the review's Critical 1
+  // fix, twice: round 1 covered only rows, round 2 closes the residual).
+  // Local edits (`handleEditCell`) and a restored row (`handleRestore`)
+  // never round-trip to the server on their own — nothing but a commit used
+  // to send them. Without this, the model would answer a question from
+  // STALE server rows the advisor had already corrected on-screen, and
+  // `adoptTurnPayload`'s wholesale replace (below) would then silently
+  // revert those same local edits the moment the response landed.
   //
-  // Routed through the SAME `commitQueueRef` `handleCommitRows` uses, and
-  // makes the SAME write `commitRowsNow` does (`mergeLocalRowsWithFreshMatch`
-  // + a `payload.accounts` PATCH) — no second ordering mechanism, no second
-  // write shape. `chat-surface.tsx` also disables per-row Commit and Finish
-  // import for the whole `turnStatus === "sending"` window (Finding 4), so
-  // nothing can enqueue onto this queue BETWEEN the flush landing and the
-  // turn's response coming back — the interleaving Finding 4 found has no
-  // window left to race in.
+  // Restoring a row is a TWO-PART state change (Ruling 100): the row goes
+  // INTO `payload.accounts` and must come OUT of `chat.excludedRows`, or
+  // the turn route echoes the still-accumulated exclusion list back
+  // (`chat/turn/route.ts`'s `nextExcludedRows`), `adoptTurnPayload` puts the
+  // row back into "Not included" WHILE it also sits in the table, and a
+  // second "Include anyway" click (now live again) appends a duplicate
+  // `__rowId` that a later commit inserts twice. So this flush writes BOTH
+  // keys in ONE read + ONE PATCH:
+  //   - `payload.accounts`: `current.rows` overlaid with the server's fresh
+  //     `match` stamps (same merge `commitRowsNow` does).
+  //   - `chat.excludedRows`: the FRESH server list, filtered to drop any
+  //     entry whose row is now in `current.rows` — a MERGE against the
+  //     fresh read (not a blind replace of the whole list), so a NEW
+  //     exclusion another session or an earlier turn added since this
+  //     surface last read it survives; only rows THIS surface has locally
+  //     restored are dropped.
+  //
+  // Routed through the SAME `commitQueueRef` `handleCommitRows` uses — no
+  // second ordering mechanism. `chat-surface.tsx` also disables per-row
+  // Commit and Finish import for the whole `turnStatus === "sending"`
+  // window (Finding 4), so nothing can enqueue onto this queue BETWEEN the
+  // flush landing and the turn's response coming back.
   //
   // No-op when `result` is still null: nothing has been extracted or
   // adopted THIS session, so there is nothing local this hook knows that the
@@ -375,8 +397,24 @@ export function useChatCommit(clientId: string, importId: string) {
     const apply = async () => {
       const current = resultRef.current;
       if (!current) return;
-      const mergedAccounts = await mergeLocalRowsWithFreshMatch(clientId, importId, current.rows);
-      await patchImportPayloadJson(clientId, importId, { payload: { accounts: mergedAccounts } });
+
+      const freshPayloadJson = await readImportPayloadJson(clientId, importId);
+      const freshAccounts =
+        (freshPayloadJson as { payload?: { accounts?: Row[] } } | undefined)?.payload?.accounts ?? [];
+      const mergedAccounts = overlayFreshMatch(freshAccounts, current.rows);
+
+      const freshChat = readChatState(freshPayloadJson);
+      const restoredIds = new Set(
+        current.rows.map((r) => r.__rowId).filter((id): id is string => Boolean(id)),
+      );
+      const nextExcludedRows = freshChat.excludedRows.filter(
+        (x) => !(x.row.__rowId && restoredIds.has(x.row.__rowId)),
+      );
+
+      await patchImportPayloadJson(clientId, importId, {
+        payload: { accounts: mergedAccounts },
+        chat: writeChatState(freshPayloadJson, { excludedRows: nextExcludedRows }).chat,
+      });
     };
     const task = commitQueueRef.current.then(apply, apply);
     commitQueueRef.current = task.then(

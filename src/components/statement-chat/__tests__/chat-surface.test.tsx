@@ -483,14 +483,23 @@ function turnResponse(overrides: {
 const composerTextbox = () => screen.getByRole("textbox", { name: /ask a follow-up question/i });
 const sendButton = () => screen.getByRole("button", { name: /^send$/i });
 
-/** Queues the two fetch calls `flushRowsToServer` makes (Ruling 95) —
+/** Queues the two fetch calls `flushRowsToServer` makes (Ruling 95/100) —
  *  ALWAYS the first two calls of any `sendTurn`, before the turn's own
- *  POST. Every test below that sends a turn queues these first, or its
- *  "turn response" mock is consumed by the flush's own GET instead. */
-function mockFlush() {
+ *  POST: one fresh GET, then one PATCH carrying BOTH `payload.accounts` and
+ *  `chat.excludedRows`. Every test below that sends a turn queues these
+ *  first, or its "turn response" mock is consumed by the flush's own GET
+ *  instead.
+ *
+ *  `standing` is the `payloadJson` the fresh GET returns — what the flush
+ *  reads BEFORE it writes. Defaults to `{}` (nothing excluded, nothing to
+ *  strip) for the common case; a test exercising the restore-clears-
+ *  excludedRows path must pass a `chat.excludedRows` that actually
+ *  contains the row being restored, or the flush's filter has nothing to
+ *  prove — the exact unfaithful-mock shape flagged in re-review round 1. */
+function mockFlush(standing: unknown = {}) {
   vi.mocked(fetch)
-    .mockResolvedValueOnce(importGetResponse({})) // flush: fresh GET
-    .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 })); // flush: PATCH payload.accounts
+    .mockResolvedValueOnce(importGetResponse(standing)) // flush: fresh GET
+    .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 })); // flush: PATCH payload+chat
 }
 
 describe("ChatSurface — composer and transcript render outside the finished-and-result gate (C3)", () => {
@@ -654,14 +663,42 @@ describe("ChatSurface — flushes local row state to the server BEFORE a turn is
   // on whatever `result` was at mount (`null`), so the flush would find
   // nothing to send and the restored row's data would never reach the
   // server the turn route reads from.
-  it("carries a locally restored row into the flush's PATCH before the turn's own POST", async () => {
+  // Ruling 100 (fix round 2): restoring a row is a TWO-PART state change —
+  // it goes INTO `payload.accounts` and must come OUT of
+  // `chat.excludedRows`. Round 1's mock returned `excludedRows: []` on the
+  // TURN response with no standing exclusion to strip in the first place —
+  // a shape the real route could never produce for this scenario at the
+  // time, which is exactly why it didn't catch the residual bug. This
+  // version seeds the flush's fresh GET with the REAL persisted shape
+  // `chat/extract/route.ts`'s own Step 0 write produces for a rollup
+  // exclusion (`detectRollups` + `rollupExclusionReason`), so the flush's
+  // filter has something genuine to remove.
+  it("carries a locally restored row into the flush's PATCH before the turn's own POST, and strips it from chat.excludedRows in the same write", async () => {
     await renderAfterExtraction({ excluded: true }); // r1 kept, r2 ("All Accounts") excluded
 
     await userEvent.click(screen.getByRole("button", { name: /include anyway/i }));
     // Now in the working table locally — the server has never seen this.
     expect(screen.getByRole("row", { name: /All Accounts/ })).toBeInTheDocument();
 
-    mockFlush();
+    // The REAL standing state at this moment: Step 0 persisted r1 as the
+    // kept account and r2 as a rollup exclusion — this is what the flush's
+    // fresh GET actually reads back before the advisor's first turn.
+    mockFlush({
+      payload: { accounts: [{ name: "IRA", custodian: "Schwab", value: 100, __rowId: "r1" }] },
+      chat: {
+        surface: "chat",
+        transcript: [],
+        decisions: [],
+        excludedRows: [
+          {
+            row: { name: "All Accounts", value: 300, __rowId: "r2" },
+            reason: "a total covering 1 accounts already listed",
+            decision: { kind: "rollup-excluded", label: "All Accounts", value: 300, coversCount: 1 },
+          },
+        ],
+        committedRowIds: [],
+      },
+    });
     vi.mocked(fetch).mockResolvedValueOnce(
       turnResponse({
         accounts: [
@@ -673,6 +710,11 @@ describe("ChatSurface — flushes local row state to the server BEFORE a turn is
           { role: "user", text: "what's the total?", at: "t1" },
           { role: "assistant", text: "Two accounts total $400.", at: "t1" },
         ],
+        // Faithful for THIS scenario, not an unexamined default: the flush
+        // just stripped r2 from chat.excludedRows server-side, so the real
+        // route's fresh read at turn time genuinely has nothing left to
+        // echo back.
+        excludedRows: [],
       }),
     );
 
@@ -681,20 +723,78 @@ describe("ChatSurface — flushes local row state to the server BEFORE a turn is
     await screen.findByText("Two accounts total $400.");
 
     // The flush is the FIRST PATCH to /imports/i1 — before the turn's own
-    // POST to /chat/turn — and it carries the restored row.
+    // POST to /chat/turn.
     const flushPatchCall = vi
       .mocked(fetch)
       .mock.calls.find(([url, init]) => String(url).endsWith("/imports/i1") && init?.method === "PATCH");
     expect(flushPatchCall).toBeDefined();
     const [, flushInit] = flushPatchCall!;
-    const flushedAccounts = JSON.parse(flushInit!.body as string).payloadJson.payload.accounts as Array<{
-      __rowId: string;
-    }>;
+    const flushBody = JSON.parse(flushInit!.body as string).payloadJson;
+
+    // Clause 1a: it carries the restored row into payload.accounts.
+    const flushedAccounts = flushBody.payload.accounts as Array<{ __rowId: string }>;
     expect(flushedAccounts.map((a) => a.__rowId).sort()).toEqual(["r1", "r2"]);
+    // Clause 1b — THE assertion round 1 was missing: the SAME write also
+    // strips r2 from chat.excludedRows. Mutation this catches: reverting
+    // `flushRowsToServer` to write only `{ payload }` (dropping the `chat`
+    // key entirely) — `flushBody.chat` would then be `undefined`.
+    expect(flushBody.chat.excludedRows).toEqual([]);
 
     // And the read-only turn's wholesale adoption did NOT revert the
-    // restore — the row is still in the working table after the turn.
+    // restore — the row is still in the working table after the turn, and
+    // NOT also sitting in "Not included" with a live restore button.
     expect(screen.getByRole("row", { name: /All Accounts/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /include anyway/i })).not.toBeInTheDocument();
+  });
+});
+
+describe("ChatSurface — restoring a row already in the working set never duplicates it (Ruling 100, clause 2)", () => {
+  // Defense in depth, independent of clause 1's server-side fix: even if
+  // `chat.excludedRows` still hands the SAME row back as excluded after
+  // it is already in the working set (a slow flush, a concurrent session,
+  // a genuinely fresh re-detection — adoption is a wholesale replace by
+  // design, so this is a real, reachable response shape, not a fabricated
+  // one), a second "Include anyway" click must never append a second copy
+  // — the exact shape the re-review proved inserts two accounts on commit.
+  it("does not append a duplicate row when 'Include anyway' is clicked for a row already in the working table", async () => {
+    await renderAfterExtraction({ excluded: true }); // r1 kept, r2 ("All Accounts") excluded
+
+    await userEvent.click(screen.getByRole("button", { name: /include anyway/i }));
+    expect(screen.getAllByRole("row", { name: /All Accounts/ })).toHaveLength(1);
+
+    mockFlush();
+    vi.mocked(fetch).mockResolvedValueOnce(
+      turnResponse({
+        accounts: [
+          { name: "IRA", custodian: "Schwab", value: 100, __rowId: "r1" },
+          { name: "All Accounts", value: 300, __rowId: "r2" },
+        ],
+        summary: "ok",
+        turnEntries: [
+          { role: "user", text: "hi", at: "t1" },
+          { role: "assistant", text: "ok", at: "t1" },
+        ],
+        excludedRows: [
+          {
+            row: { name: "All Accounts", value: 300, __rowId: "r2" },
+            reason: "a total covering 1 accounts already listed",
+          },
+        ],
+      }),
+    );
+    await userEvent.type(composerTextbox(), "hi");
+    await userEvent.click(sendButton());
+    await screen.findByText("ok");
+
+    // The row is back in "Not included" with a live restore button.
+    const restoreButton = await screen.findByRole("button", { name: /include anyway/i });
+    expect(restoreButton).toBeEnabled();
+
+    await userEvent.click(restoreButton);
+
+    // Mutation this catches: dropping the `alreadyWorking` guard in
+    // `handleRestore` — the row would append a second time here.
+    expect(screen.getAllByRole("row", { name: /All Accounts/ })).toHaveLength(1);
   });
 });
 
@@ -1090,5 +1190,36 @@ describe("ChatSurface — a synthesized result never puts the turn's reply in th
     // stuck occurrence appearing in the summary-card slot after a later,
     // unrelated turn. Still exactly one occurrence proves that.
     expect(screen.getAllByText("FIRST REPLY")).toHaveLength(1);
+  });
+});
+
+describe("ChatSurface — a flush failure tells the advisor their question was never sent (folded Minor, fix round 2)", () => {
+  // The flush's own PATCH failing used to fall into `sendTurn`'s generic
+  // catch and render `readImportPayloadJson`'s own message ("Could not
+  // load the import (HTTP 500).") — true of the READ that failed, but it
+  // never tells the advisor the thing they actually care about: their
+  // question was never sent at all (Step 3's "never leave them wondering
+  // whether it was heard"). Mutation this catches: removing the inner
+  // try/catch around `await flushRowsToServer()` in `use-chat-turn.ts` —
+  // the generic message would render instead, which this regex does not
+  // match.
+  it("renders a 'could not send your question' message, not a generic load/save error, when the pre-turn flush fails", async () => {
+    await renderAfterExtraction();
+
+    // The flush's own fresh GET (the first fetch call `sendTurn` makes)
+    // fails — a real, reachable failure mode (a dropped connection, a
+    // transient 500), not a fabricated shape.
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: "Database unavailable" }), { status: 500 }),
+    );
+
+    const textbox = composerTextbox();
+    await userEvent.type(textbox, "what's the total?");
+    await userEvent.click(sendButton());
+
+    expect(await screen.findByText(/could not send your question/i)).toBeInTheDocument();
+    // Re-enabled, and the question wasn't lost.
+    expect(sendButton()).toBeEnabled();
+    expect(textbox).toHaveValue("what's the total?");
   });
 });

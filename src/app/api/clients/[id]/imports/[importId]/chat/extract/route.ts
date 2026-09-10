@@ -216,23 +216,33 @@ export async function POST(request: Request, { params }: Params) {
           .limit(1);
         const payloadJson = (freshRow?.payloadJson ?? {}) as ImportPayloadJson;
 
-        // Ruling 97 (Task 11b fix round 1, Important 3): `filesProcessed`
-        // is `0` ONLY on `runImportExtraction`'s own "nothing new to read"
-        // early return — which, per that function's own comment, never
-        // writes `payloadJson` at all. Re-deriving from the UNCHANGED
-        // `fileResults` below and persisting it here would do exactly what
-        // that comment exists to prevent: a "Re-run extraction" click with
-        // no new files must be a pure re-read of the STANDING state, never
-        // a rewrite — `mergeAcrossFiles`/`detectRollups` know nothing about
-        // any `edit_row`/`merge_rows`/`drop_row` a chat turn made (or a
-        // commit's `linkCreated` stamp) since the last REAL extraction, so
-        // re-running them here would regenerate the PRE-edit table and
-        // both send it back to the client and persist it over what's
-        // actually there. Ruling 89's purpose was to SEED a payload that
-        // did not exist, never to overwrite one that does.
-        if (extractionResult.filesProcessed === 0) {
+        // Ruling 97 (Task 11b fix round 1, Important 3) gates the WRITE;
+        // Ruling 101 (fix round 2) separates it from the READ — the two are
+        // NOT the same condition. `filesProcessed` is `0` ONLY on
+        // `runImportExtraction`'s own "nothing new to read" early return —
+        // which, per that function's own comment, never writes `payloadJson`
+        // at all. Re-deriving from the UNCHANGED `fileResults` below and
+        // persisting it here would do exactly what that comment exists to
+        // prevent: a "Re-run extraction" click with no new files must be a
+        // pure re-read of the STANDING state, never a rewrite —
+        // `mergeAcrossFiles`/`detectRollups` know nothing about any
+        // `edit_row`/`merge_rows`/`drop_row` a chat turn made (or a commit's
+        // `linkCreated` stamp) since the last REAL extraction.
+        //
+        // BUT the standing payload only exists once Step 0 (or a prior
+        // real extraction) has seeded it. `standingAccounts` checked below
+        // (not just `filesProcessed`) is what distinguishes "nothing new,
+        // and nothing to lose by reflecting it" from "nothing new, and
+        // NOTHING HAS EVER BEEN SEEDED" — every import extracted before
+        // Step 0 landed is in the second bucket. Falling through in that
+        // case re-derives from `fileResults` exactly like a real
+        // extraction would, and the WRITE gate below (not just
+        // `filesProcessed > 0`) treats the absence of a standing payload as
+        // a legitimate SEED, not an overwrite — Ruling 89's original
+        // purpose, now also rescuing a legacy import's one recovery path.
+        const standingAccounts = payloadJson.payload?.accounts;
+        if (extractionResult.filesProcessed === 0 && standingAccounts) {
           const standingChat = readChatState(payloadJson);
-          const standingAccounts = payloadJson.payload?.accounts ?? [];
           if (!closed) {
             send({
               type: "done",
@@ -264,26 +274,28 @@ export async function POST(request: Request, { params }: Params) {
         const decisions = [...mergeDecisions, ...excluded.map((x) => x.decision)];
         const narration = narrate({ fileCount: mergedFileCount, decisions, rows: kept });
 
-        // Ruling 89 (Step 0): persist `payload.accounts = kept` in the SAME
-        // write as the chat slice — `writeChatState` only ever touches
-        // `chat`, so `payload` is set alongside it explicitly, narrow to
-        // `{ accounts }` (matching what `use-chat-commit.ts` writes). Without
-        // this, `payloadJson.payload` is never set until the advisor's FIRST
-        // commit (`use-chat-commit.ts:207`), so the chat turn route
-        // (`chat/turn/route.ts:325`, which reads `payloadJson.payload`) sees
-        // no rows at all and every tool call fails with "unknown row" until
-        // then — the feature's primary flow (ask questions BEFORE
-        // committing) doesn't work.
-        await db
-          .update(clientImports)
-          .set({
-            payloadJson: {
-              ...writeChatState(payloadJson, { decisions, excludedRows: excluded }),
-              payload: { accounts: kept },
-            },
-            updatedAt: new Date(),
-          })
-          .where(eq(clientImports.id, importId));
+        // Ruling 89 (Step 0) / Ruling 101 (fix round 2): persist
+        // `payload.accounts = kept` in the SAME write as the chat slice —
+        // `writeChatState` only ever touches `chat`, so `payload` is set
+        // alongside it explicitly, narrow to `{ accounts }` (matching what
+        // `use-chat-commit.ts` writes) — but ONLY when this run actually
+        // re-derived rows (`filesProcessed > 0`) OR there was no standing
+        // payload to clobber (`!standingAccounts`, the legacy-import rescue
+        // above). Skipping the write on the "no new files, has a standing
+        // payload" path is Ruling 97; this OR-clause is what Ruling 101
+        // adds without reopening it.
+        if (extractionResult.filesProcessed > 0 || !standingAccounts) {
+          await db
+            .update(clientImports)
+            .set({
+              payloadJson: {
+                ...writeChatState(payloadJson, { decisions, excludedRows: excluded }),
+                payload: { accounts: kept },
+              },
+              updatedAt: new Date(),
+            })
+            .where(eq(clientImports.id, importId));
+        }
 
         if (!closed) {
           send({

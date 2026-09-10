@@ -527,6 +527,61 @@ describe("chat extract route gates", () => {
     expect((currentImportRow.payloadJson as ImportPayloadJson).chat).toEqual(standingChat);
   });
 
+  // Ruling 101 (Task 11b fix round 2) — THE test that matters for the
+  // ruling's own defect, not the implementer's reading of Ruling 97:
+  // gating the WRITE on "no new files" is correct, but the RESPONSE must
+  // still carry the best rows it can derive. An import extracted before
+  // Step 0 ever ran has NO `payload` at all (Ruling 89's own premise), so
+  // a "no new files" re-run with no standing payload must fall through and
+  // re-derive from `fileResults` — both in the response AND in a write
+  // that SEEDS `payload` for the first time (nothing to clobber). Mutation
+  // this catches: checking only `extractionResult.filesProcessed === 0`
+  // (round 1's exact condition, without the `&& standingAccounts` guard) —
+  // `done.rows` would then be `[]` and nothing would ever get persisted for
+  // this import, since a no-new-files re-run is the only path any advisor
+  // can take.
+  it("re-derives and seeds payload for a legacy import with no standing payload, even with no new files (Ruling 101)", async () => {
+    const alreadyExtracted = {
+      documentType: "other",
+      fileName: "already.pdf",
+      extracted: {
+        accounts: [{ name: "IRA", custodian: "Schwab", value: 100 }],
+        incomes: [],
+        expenses: [],
+        liabilities: [],
+        entities: [],
+        lifePolicies: [],
+        wills: [],
+        savings: [],
+      },
+      warnings: [],
+      promptVersion: "v",
+    };
+    currentImportRow = {
+      id: "i1",
+      // NO `payload` key at all — every import extracted before Step 0
+      // landed looks exactly like this.
+      payloadJson: { fileResults: { f1: alreadyExtracted } },
+      extractHoldings: false,
+      status: "review",
+    };
+    filesResult = [fileRow("f1", "already.pdf")]; // no new files
+
+    const events = await readSse(await POST(req(), params));
+    expect(extractDocument).not.toHaveBeenCalled();
+
+    const done = events.at(-1) as { rows: Array<{ name: string; value: number }> };
+    // The response is the real re-derived row — not an empty table lying
+    // about an import that has plenty.
+    expect(done.rows).toHaveLength(1);
+    expect(done.rows[0]).toMatchObject({ name: "IRA", value: 100 });
+
+    // The write fires this time — it SEEDS payload, it does not overwrite
+    // one that already existed (there was none).
+    expect(payloadJsonUpdateCount).toBe(1);
+    expect((currentImportRow.payloadJson as ImportPayloadJson).payload?.accounts).toHaveLength(1);
+  });
+
   // IMPORTANT 4 (fix round 1): proves the ROUTE actually threads its own
   // request's abort signal into runImportExtraction — run-extraction.test.ts
   // proves the check itself works, but nothing short of this proves the

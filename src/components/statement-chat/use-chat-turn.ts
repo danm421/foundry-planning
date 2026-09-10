@@ -70,7 +70,22 @@ export function useChatTurn({
         // disables per-row Commit and Finish import for this whole
         // `turnStatus === "sending"` window, so nothing can enqueue onto the
         // same queue between this flush landing and the turn's own write.
-        await flushRowsToServer();
+        //
+        // OWN try/catch (fix round 2, folded Minor): a PATCH failure here
+        // would otherwise fall into the generic catch below and render as
+        // `patchImportPayloadJson`'s own message ("Could not save…") — true
+        // of the SAVE, but it tells the advisor nothing about the thing
+        // they actually care about: their question was never sent at all
+        // (Step 3's "never leave them wondering whether it was heard").
+        try {
+          await flushRowsToServer();
+        } catch (err) {
+          setTurnStatus("error");
+          setTurnError(
+            `Could not send your question — ${err instanceof Error ? err.message : "could not reach the server"}. Please try again.`,
+          );
+          return false;
+        }
 
         const res = await fetch(`/api/clients/${clientId}/imports/${importId}/chat/turn`, {
           method: "POST",
