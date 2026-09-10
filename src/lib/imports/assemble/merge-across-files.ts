@@ -194,7 +194,18 @@ interface DedupeBucketEntry<T> {
    * two runs that visit the same files in different `Object.entries` orders
    * derive the same coordinate for the same entry.
    */
-  sortKey: { fileId: string; index: number };
+  sortKey: SortKey;
+}
+
+/**
+ * A row's stable coordinate: which file it came from, and its position within
+ * that file. Named (fix round 1, Minor 6) so the two places that pass a PAIR
+ * of these say which end is which, instead of handing around a bare
+ * comparison number a swapped call would silently invert.
+ */
+interface SortKey {
+  fileId: string;
+  index: number;
 }
 
 /**
@@ -205,7 +216,7 @@ interface DedupeBucketEntry<T> {
  * fine as a string, but `index` is a number: concatenating them would
  * compare it lexicographically, where "10" sorts before "2".
  */
-function compareSortKeys(a: { fileId: string; index: number }, b: { fileId: string; index: number }): number {
+function compareSortKeys(a: SortKey, b: SortKey): number {
   if (a.fileId !== b.fileId) return a.fileId < b.fileId ? -1 : 1;
   return a.index - b.index;
 }
@@ -246,8 +257,8 @@ function orderableDate(value: string | undefined): string | undefined {
  * pre-2026-09 behaviour for every section that has no date to offer — and
  * for any date we can't trust (see `orderableDate`).
  *
- * When NEITHER can separate them, `sortKeyCompare` does — see its parameter
- * doc. Order of arrival never decides.
+ * When NEITHER can separate them, the two rows' stable coordinates do — see
+ * `sortKeys`. Order of arrival never decides.
  */
 function chooseBase<T>(
   existingContent: T,
@@ -256,9 +267,8 @@ function chooseBase<T>(
   incomingFieldCount: number,
   recencyOf: ((row: T) => string | undefined) | undefined,
   /**
-   * `compareSortKeys(incoming, existing)` — negative when the incoming row's
-   * stable `(sourceFileId, indexWithinFile)` coordinate sorts BEFORE the
-   * entry's. Consulted ONLY when the dates and the field counts both tie,
+   * The two rows' stable `(sourceFileId, indexWithinFile)` coordinates. The
+   * smaller one wins, and ONLY when the dates and the field counts both tie —
    * where the winner used to be "whichever row the
    * `Object.entries(fileResults)` loop reached first".
    *
@@ -271,10 +281,22 @@ function chooseBase<T>(
    * `owner` guesses DISAGREE now merge, and exactly one of the two guesses
    * survives.
    *
+   * A NAMED PAIR, not the precomputed comparison number this used to take
+   * (fix round 1, Minor 6): the direction is decided here, once, so a
+   * swapped call site cannot silently invert the tiebreak — it would have to
+   * misname `incoming` as `existing` in plain sight.
+   *
    * The coordinate is the same permutation-invariant minimum the `#n`
    * ordinal is assigned from (Ruling 130), so the two agree by construction.
+   * Since fix round 1's Important 2 the placement loop also VISITS rows in
+   * this order, so `existing` always already holds the smaller coordinate —
+   * but that does NOT make this arm inert: it still decides WHICH end wins,
+   * and pointing it the other way makes the larger coordinate win in every
+   * order. Measured, by mutation: flipping this `< 0` to `> 0` turns the
+   * "survives with the same owner whichever order" test red on the absolute
+   * survivor while leaving its symmetry intact.
    */
-  sortKeyCompare: number,
+  sortKeys: { incoming: SortKey; existing: SortKey },
 ): [base: T, other: T] {
   if (recencyOf) {
     const existingDate = orderableDate(recencyOf(existingContent));
@@ -292,7 +314,9 @@ function chooseBase<T>(
       ? [incoming, existingContent]
       : [existingContent, incoming];
   }
-  return sortKeyCompare < 0 ? [incoming, existingContent] : [existingContent, incoming];
+  return compareSortKeys(sortKeys.incoming, sortKeys.existing) < 0
+    ? [incoming, existingContent]
+    : [existingContent, incoming];
 }
 
 /**
@@ -356,10 +380,54 @@ function mergeSection<T extends { name: string }>(
    */
   const rowsSeenPerFile = new Map<string, number>();
 
-  for (const { content, provenance, sourceName } of rows) {
+  /**
+   * The rows in a CANONICAL order, stamped with the coordinate above.
+   *
+   * Fix round 1, Important 2. `isSameEntity` is a pairwise relation and NOT
+   * an equivalence relation — it never was: `custodianMatches` matches a
+   * whole-word PREFIX, so "Fidelity" matches both "Fidelity Investments" and
+   * "Fidelity Brokerage" while those two do not match each other; the amount
+   * sections accept anything within 1%, which chains the same way. Task 12
+   * widened the accounts bucket to the last-4 alone, which made a
+   * non-transitive TRIPLE easy to reach for the first time: A(client,
+   * "Julia"), B(client, no hint), C(spouse, "Julia") — A~B and A~C hold, B~C
+   * does not.
+   *
+   * A greedy first-match partition over a relation like that depends on the
+   * order the rows are VISITED. Measured: read A,B,C the three collapse into
+   * ONE row; read B,C,A they come out as TWO, and the extra row is a DOUBLE
+   * COUNT. `Object.entries(fileResults)` is what varied, and `payloadJson` is
+   * `jsonb` — Postgres stores an object's keys sorted by length then bytewise,
+   * so both orders are things production hands this function for the same set
+   * of files.
+   *
+   * Sorting here makes the partition a function of the row SET, which is
+   * exactly the invariant this function's docstring already claimed. The
+   * coordinate is computed BEFORE the sort, in read order, so it still means
+   * "the Nth row of file X" — a file's own rows arrive contiguously and in
+   * order however `Object.entries` sequences the files, so the coordinate
+   * itself is already permutation-invariant.
+   *
+   * This does NOT replace Ruling 130's minimum reduction or its renumber
+   * pass. Those state the `#n` ordinal's invariant independently of how the
+   * input happened to be ordered — a prior wave measured that sorting the
+   * input rows does not on its own fix the ordinal — and both stay below.
+   *
+   * RESIDUAL, the same one Ruling 130 discloses: adding a NEW file can still
+   * repartition a bucket, because that genuinely changes the input SET. What
+   * is fixed here is permutation-invariance over a FIXED set.
+   */
+  const orderedRows = rows
+    .map((row) => {
+      const index = rowsSeenPerFile.get(row.provenance.sourceFileId) ?? 0;
+      rowsSeenPerFile.set(row.provenance.sourceFileId, index + 1);
+      return { ...row, sortKey: { fileId: row.provenance.sourceFileId, index } };
+    })
+    .sort((a, b) => compareSortKeys(a.sortKey, b.sortKey));
+
+  for (const { content, provenance, sourceName, sortKey } of orderedRows) {
     const key = computeKey(content);
-    const indexWithinFile = rowsSeenPerFile.get(provenance.sourceFileId) ?? 0;
-    rowsSeenPerFile.set(provenance.sourceFileId, indexWithinFile + 1);
+    const indexWithinFile = sortKey.index;
     if (key === null) {
       target.push({
         ...content,
@@ -402,10 +470,6 @@ function mergeSection<T extends { name: string }>(
     if (existingEntry) {
       const priorContent = existingEntry.content;
       const incomingFieldCount = countNonNullFields(content as Record<string, unknown>);
-      // This row's stable coordinate (Ruling 130). Declared here because
-      // `chooseBase` breaks a date-and-richness tie with it; the entry's own
-      // coordinate is lowered to the minimum further down.
-      const incomingSortKey = { fileId: provenance.sourceFileId, index: indexWithinFile };
       // The base row wins on any conflicting field — but the other row's
       // unique fields still backfill any gaps the base left, so nothing is
       // dropped. `chooseBase` prefers the more recent statement where the
@@ -417,7 +481,7 @@ function mergeSection<T extends { name: string }>(
         content,
         incomingFieldCount,
         opts?.recencyOf,
-        compareSortKeys(incomingSortKey, existingEntry.sortKey),
+        { incoming: sortKey, existing: existingEntry.sortKey },
       );
       existingEntry.content = unionFields(baseContent, otherContent);
       existingEntry.fieldCount = countNonNullFields(existingEntry.content as Record<string, unknown>);
@@ -453,9 +517,13 @@ function mergeSection<T extends { name: string }>(
       }
       // Lower the entry's coordinate if this row's is smaller, so the field
       // holds the MINIMUM over the entry's member rows however the loop
-      // reached them (Ruling 130).
-      if (compareSortKeys(incomingSortKey, existingEntry.sortKey) < 0) {
-        existingEntry.sortKey = incomingSortKey;
+      // reached them (Ruling 130). Kept as the minimum, deliberately, even
+      // though the canonical visit order now means rows arrive in ascending
+      // coordinate order: this states the ordinal's invariant on its own
+      // terms, and a prior wave measured that ordering the input rows does
+      // not on its own make the ordinal stable.
+      if (compareSortKeys(sortKey, existingEntry.sortKey) < 0) {
+        existingEntry.sortKey = sortKey;
       }
       recordSource(existingEntry, content, sourceName);
       continue;
@@ -526,7 +594,7 @@ function mergeSection<T extends { name: string }>(
       fileNames: [],
       conflictValues: [],
       rowId,
-      sortKey: { fileId: provenance.sourceFileId, index: indexWithinFile },
+      sortKey,
     };
     recordSource(entry, content, sourceName);
     target.push({ ...content, __provenance: provenance, __rowId: rowId, match: { kind: "new" } } as Annotated<T>);

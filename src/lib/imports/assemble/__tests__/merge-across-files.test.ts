@@ -319,9 +319,10 @@ describe("two spellings of one custodian (Ruling 120)", () => {
     expect(r.payload.accounts).toHaveLength(1);
   });
 
-  // FIX 5's property must survive the narrower key: `owner` is still IN it,
-  // so a client IRA and a spouse IRA sharing a masked last-4 at the same
-  // custodian never even reach the same bucket.
+  // FIX 5's property must survive the narrower key. Task 12 took `owner` OUT
+  // of the key, so these two rows now DO reach the same bucket — they are
+  // held apart by `sameAccountOwner` in `isSameEntity` instead, which finds
+  // two disagreeing guesses and no registration name to arbitrate them.
   it("still separates a client IRA from a spouse IRA on owner (FIX 5 survives)", () => {
     const r = mergeAcrossFiles({
       f1: er("a.pdf", { accounts: [{ name: "IRA", custodian: "Fidelity Investments", accountNumberLast4: "1234", owner: "client", value: 100_000 }] }),
@@ -506,8 +507,109 @@ describe("the extractor's owner guess is not a bucket key (Task 12)", () => {
 
     expect(forward.payload.accounts).toHaveLength(1);
     expect(reverse.payload.accounts).toHaveLength(1);
-    expect(forward.payload.accounts[0].owner).toBe(reverse.payload.accounts[0].owner);
-    expect(forward.payload.accounts[0].value).toBe(reverse.payload.accounts[0].value);
-    expect(forward.payload.accounts[0].__rowId).toBe(reverse.payload.accounts[0].__rowId);
+
+    // The ABSOLUTE survivor, not just `forward === reverse` (fix round 1,
+    // Minor 4). Symmetry alone still holds with the tiebreak INVERTED — it
+    // would just pick the other row both times — so a symmetric assertion
+    // passes under the exact mutation this test exists to catch.
+    //
+    // `file-a` sorts before `file-b`, so the winner is the June row from
+    // `file-a`: owner "client", $190,000. Swap the tiebreak's direction, or
+    // drop the canonical visit order, and these three go red.
+    for (const r of [forward, reverse]) {
+      expect(r.payload.accounts[0].owner).toBe("client");
+      expect(r.payload.accounts[0].value).toBe(190_000);
+      expect(r.payload.accounts[0].__rowId).toBe("account:7734#0");
+    }
+  });
+});
+
+/**
+ * Every reading order of three files, as `mergeAcrossFiles` inputs, returning
+ * the account ROW COUNT each one produced. `Object.entries(fileResults)` is
+ * the only thing that varies — `payloadJson` is `jsonb` and Postgres does not
+ * preserve a jsonb object's key insertion order, so all six are orders
+ * production can hand the merge for the SAME three files.
+ */
+function accountRowCountsInEveryOrder(files: Record<string, () => ReturnType<typeof er>>): number[] {
+  const keys = Object.keys(files);
+  const orders: string[][] = [];
+  for (const a of keys) {
+    for (const b of keys) {
+      for (const c of keys) {
+        if (a !== b && b !== c && a !== c) orders.push([a, b, c]);
+      }
+    }
+  }
+  return orders.map(
+    (order) =>
+      mergeAcrossFiles(Object.fromEntries(order.map((k) => [k, files[k]()]))).payload.accounts.length,
+  );
+}
+
+/**
+ * Fix round 1, Important 2. `isSameEntity` is a pairwise relation, NOT an
+ * equivalence relation — and it never was: `custodianMatches` is a whole-word
+ * PREFIX rule, and the amount sections accept anything within 1%. Task 12
+ * widened the accounts bucket, which made a non-transitive TRIPLE easy to hit
+ * for the first time.
+ *
+ * A greedy first-match partition over a non-transitive relation depends on
+ * the order the rows are visited, and the extra entry it can produce is a
+ * DOUBLE COUNT. So the rows are now visited in the stable
+ * `(sourceFileId, indexWithinFile)` order — the partition is a function of
+ * the row SET, which is exactly the invariant `mergeSection`'s docstring
+ * already claims.
+ */
+describe("a non-transitive merge relation still partitions the same way in any file order", () => {
+  // A ~ B (owners equal), A ~ C (owners differ, registration names equal),
+  // B ~ C FALSE (owners differ and B has no registration name to compare).
+  const withHint = (owner: "client" | "spouse", value: number) => () =>
+    er("stmt.pdf", {
+      accounts: [{ name: "Roth IRA", custodian: "Fidelity", accountNumberLast4: "7734", owner, ownerNameHint: "Julia B. Sample", value }],
+    });
+  const withoutHint = () =>
+    er("stmt.pdf", {
+      accounts: [{ name: "Roth IRA", custodian: "Fidelity", accountNumberLast4: "7734", owner: "client", value: 195_000 }],
+    });
+
+  it("gives the same row count in all six orders (owner/hint triple)", () => {
+    const counts = accountRowCountsInEveryOrder({
+      "file-a": withHint("client", 190_000),
+      "file-b": withoutHint,
+      "file-c": withHint("spouse", 201_900),
+    });
+    expect(new Set(counts).size).toBe(1);
+    // ONE real account, so ONE committable row — the count the canonical
+    // order produces, and the money-safe one of the two the greedy partition
+    // used to produce.
+    expect(counts).toEqual([1, 1, 1, 1, 1, 1]);
+  });
+
+  /**
+   * The same defect on the PRE-EXISTING custodian axis, parked as a minor
+   * last wave: `custodianMatches` matches a whole-word prefix, so
+   * "Fidelity" ~ "Fidelity Investments" and "Fidelity" ~ "Fidelity Brokerage"
+   * while the two long spellings do NOT match each other.
+   *
+   * Canonical iteration retires the ORDER-DEPENDENCE, not the
+   * non-transitivity: the bucket still holds two entries (the two long
+   * spellings are still judged different institutions), but it holds two in
+   * every order instead of two or one depending on which file jsonb returned
+   * first. Widening this to merge all three would be the money-LOSING
+   * direction, so it is deliberately NOT what this fixes.
+   */
+  it("gives the same row count in all six orders (three custodian spellings)", () => {
+    const at = (custodian: string, value: number) => () =>
+      er("stmt.pdf", {
+        accounts: [{ name: "Brokerage", custodian, accountNumberLast4: "1234", owner: "client", value }],
+      });
+    const counts = accountRowCountsInEveryOrder({
+      "file-a": at("Fidelity Investments", 100_000),
+      "file-b": at("Fidelity Brokerage", 250_000),
+      "file-c": at("Fidelity", 400_000),
+    });
+    expect(new Set(counts).size).toBe(1);
+    expect(counts).toEqual([2, 2, 2, 2, 2, 2]);
   });
 });
