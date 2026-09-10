@@ -1,6 +1,8 @@
 "use client";
 
 import { selectClassName } from "@/components/forms/input-styles";
+import { FieldTooltip } from "@/components/forms/field-tooltip";
+import { OWNER_HINT_REASON } from "./owner-cell";
 
 /** The coarse ownership enum `ExtractedAccount.owner` carries. */
 export type OwnerRole = "client" | "spouse" | "joint";
@@ -43,7 +45,10 @@ export interface OwnerCellEditProps {
  * The registration name sits on the canvas rather than in a `FieldTooltip`
  * because it is not a how-it-works explanation — it is the EVIDENCE the
  * advisor decides on, and the one owner field that stayed byte-identical
- * across all four of the imports whose guesses disagreed.
+ * across all four of the imports whose guesses disagreed. The EXPLANATION of
+ * why it is only an assumption does go in a tooltip, which is legal here and
+ * is not in the read cell: an editor replaces the cell's click-to-edit
+ * button rather than rendering inside it (fix round 1, Important 1).
  */
 export default function OwnerCellEdit({ owner, hint, onDone }: OwnerCellEditProps) {
   return (
@@ -65,7 +70,12 @@ export default function OwnerCellEdit({ owner, hint, onDone }: OwnerCellEditProp
           </option>
         ))}
       </select>
-      {hint ? <span className="text-xs text-ink-3">Statement reads “{hint}”</span> : null}
+      {hint ? (
+        <span className="inline-flex items-center gap-1.5 text-xs text-ink-3">
+          Statement reads “{hint}”
+          <FieldTooltip text={OWNER_HINT_REASON} />
+        </span>
+      ) : null}
     </div>
   );
 }

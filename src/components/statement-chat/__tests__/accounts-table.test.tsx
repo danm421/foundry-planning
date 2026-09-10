@@ -118,3 +118,46 @@ describe("accounts table — the Owner cell is editable", () => {
     expect(within(roth).getByLabelText("Owner")).toBeInTheDocument();
   });
 });
+
+/**
+ * Fix round 1, Important 1. Making the Owner cell editable made
+ * `entity-table.tsx` wrap its read display in a click-to-edit `<button>` —
+ * and on the registration-hint path that display contains `AssumedChip`,
+ * which contains `FieldTooltip`, which is itself a `<button>`. Nested
+ * interactive controls (WCAG 4.1.2), on exactly the rows whose owner is a
+ * guess and so most need correcting.
+ *
+ * Fixed at the ONE consumer, not in `FieldTooltip` (61 files render it) and
+ * not by deleting the badge: the "Assumed" pill is the at-a-glance signal for
+ * which owner values are guesses, and an editable cell makes that signal
+ * worth more, not less. The chip takes an additive opt-out for its tooltip,
+ * `OwnerCell` uses it, and the reason sentence moves to the editor — where
+ * the advisor is actually deciding.
+ */
+describe("accounts table — the Owner cell holds no nested button", () => {
+  // The Owner column is the 5th of the seven (Name · Value · Basis · Last 4 ·
+  // Owner · Custodian · Account type), pinned in order by the first test in
+  // this file.
+  const ownerCellOf = (row: HTMLElement) => within(row).getAllByRole("cell")[4];
+
+  it("renders exactly one button in an editable Owner cell, and keeps the Assumed pill", () => {
+    render(<AccountsTable rows={rows} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} />);
+    const roth = screen.getByRole("row", { name: /Schwab Roth IRA/ });
+    const cell = ownerCellOf(roth) as HTMLElement;
+
+    // One button: the click-to-edit wrapper. No `Show help` button inside it.
+    expect(within(cell).getAllByRole("button")).toHaveLength(1);
+    expect(within(cell).queryByRole("button", { name: /show help/i })).toBeNull();
+    // The signal itself must survive — this is not a fix by deletion.
+    expect(within(cell).getByTestId("assumed-chip")).toBeInTheDocument();
+    // And the hint is still marked as unconfirmed by the cell itself.
+    expect(within(cell).getByText(/MICHAEL V SHARESKY ROTH IRA/).closest("[data-assumed]")).not.toBeNull();
+  });
+
+  it("makes the assumed reason reachable in the editor instead", async () => {
+    render(<AccountsTable rows={rows} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} />);
+    const roth = screen.getByRole("row", { name: /Schwab Roth IRA/ });
+    await userEvent.click(within(roth).getByRole("button", { name: /MICHAEL V SHARESKY ROTH IRA/ }));
+    expect(within(roth).getByText(/not yet matched to a family member/i)).toBeInTheDocument();
+  });
+});
