@@ -172,7 +172,6 @@ export function ChatSurface({ clientId, importId, initialFiles }: ChatSurfacePro
   }, [clientId, importId, resetForNewExtraction, applyExtractionResult]);
 
   const isStreaming = status === "streaming";
-  const finished = status === "done" || status === "error";
   const hasFailure = fileEvents.some((e) => e.error);
 
   return (
@@ -272,7 +271,18 @@ export function ChatSurface({ clientId, importId, initialFiles }: ChatSurfacePro
         <ChatComposer onSend={sendTurn} disabled={isStreaming} sending={turnStatus === "sending"} />
       </Card>
 
-      {finished && result && (
+      {/*
+        Final review, I2: gated on `result` ALONE, not on this session's
+        stream status. `result` is non-null only once something real has
+        populated it — a completed extraction, an adopted turn, or (now) the
+        mount hydration of a resumed draft — and `resetForNewExtraction`
+        nulls it again the moment a fresh extraction starts, so a streaming
+        pass still shows no stale table. The old `finished &&` clause was
+        exactly what left a resumed draft rendering a transcript and a
+        composer above nothing: `status` starts "idle" and only a fresh
+        extraction in THIS render flips it.
+      */}
+      {result && (
         <>
           {/*
             Minor 8 (Task 11b fix round 1): `result.summary` is `""` for a

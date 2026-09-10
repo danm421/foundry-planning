@@ -141,12 +141,20 @@ export function useChatCommit(clientId: string, importId: string) {
   // landed, whatever order the clicks arrived in.
   const commitQueueRef = useRef<Promise<void>>(Promise.resolve());
 
-  // Hydrate `committedRowIds` AND `transcript` from the persisted chat state
-  // on mount, so a reload (or resuming a chat import from the drafts list)
-  // shows a row already committed in an earlier session as locked instead of
-  // re-committable (brief Step 2, "survives a reload"), and reads the
-  // conversation's history back rather than starting blank (Task 11b, C2 —
-  // ONE request, one parse, both fields; no second GET).
+  // Hydrate `committedRowIds`, `transcript` AND the rows themselves from the
+  // persisted state on mount, so a reload (or resuming a chat import from the
+  // drafts list) shows a row already committed in an earlier session as
+  // locked instead of re-committable (brief Step 2, "survives a reload"),
+  // reads the conversation's history back rather than starting blank (Task
+  // 11b, C2 — ONE request, one parse, no second GET), and shows the TABLE
+  // those rows belong to (final review, I2).
+  //
+  // The rows were always in this same response and were simply ignored, so a
+  // resumed draft rendered a transcript and a composer above an empty space —
+  // which the browser pass recorded as reading like "did this lose my work?".
+  // Hydrated HERE rather than handed down as a server prop (prior Ruling 91):
+  // a prop would be a third source of truth that goes stale the instant a
+  // turn lands.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -156,6 +164,28 @@ export function useChatCommit(clientId: string, importId: string) {
           const chat = readChatState(payloadJson);
           setCommittedRowIds(chat.committedRowIds);
           setTranscript(chat.transcript);
+
+          const accounts =
+            (payloadJson as { payload?: { accounts?: Row[] } } | undefined)?.payload?.accounts ?? [];
+          // Only when there is genuinely something to show. A brand-new
+          // import that has never been extracted must keep rendering nothing
+          // at all, not the "No accounts found in these statements" empty
+          // state, which would be a claim about statements nobody has read.
+          //
+          // And only when nothing has populated `result` already: this fetch
+          // is async, so an advisor who clicks Extract immediately can have
+          // `resetForNewExtraction` (or even the stream's own "done") land
+          // first, and a late hydration must never overwrite it with the
+          // pre-extraction rows. `summary: ""` skips the summary card the
+          // same way `adoptTurnPayload` does (Minor 8).
+          if (resultRef.current === null && (accounts.length > 0 || chat.excludedRows.length > 0)) {
+            updateResult(() => ({
+              summary: "",
+              caveats: [],
+              rows: accounts,
+              excluded: chat.excludedRows,
+            }));
+          }
         }
       } catch (err) {
         // Best-effort hydration: a failed read just means rows show as
@@ -168,7 +198,7 @@ export function useChatCommit(clientId: string, importId: string) {
     return () => {
       cancelled = true;
     };
-  }, [clientId, importId]);
+  }, [clientId, importId, updateResult]);
 
   // Called at the start of a (re-)extraction run, so a stale table and a
   // stale finalize state from a previous run don't linger under a fresh

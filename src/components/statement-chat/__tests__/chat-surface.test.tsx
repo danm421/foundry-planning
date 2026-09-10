@@ -530,7 +530,70 @@ describe("ChatSurface — composer and transcript render outside the finished-an
     expect(sendButton()).toBeInTheDocument();
     // Nothing from the extracted-state panel is showing — this is purely
     // the chat surface having something to show BEFORE any extraction.
+    // (I2 keeps this true: hydration populates the table only when the
+    // persisted payload actually HAS rows, and this fixture has none.)
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+});
+
+describe("ChatSurface — a resumed draft renders its persisted rows (I2)", () => {
+  // The reviewed defect: `use-chat-commit`'s mount GET already returned
+  // `payload.accounts` and threw them away, and the table was additionally
+  // gated on this session's stream `status` — so resuming a draft showed a
+  // transcript and a composer above an empty space, which the browser pass
+  // recorded as reading like "did this lose my work?".
+  //
+  // Mutation this catches: reverting either half — dropping the hydration
+  // (no rows to render) or restoring the `finished &&` gate (`status` is
+  // "idle" here for the whole test, so the panel never appears).
+  it("renders the persisted table, its excluded rows, and the committed lock, with no extraction this session", async () => {
+    vi.mocked(fetch).mockReset();
+    vi.mocked(fetch).mockResolvedValue(
+      importGetResponse({
+        payload: {
+          accounts: [
+            { __rowId: "r1", name: "Fidelity IRA", value: 450_000, category: "retirement" },
+            { __rowId: "r2", name: "Joint Brokerage", value: 120_000, category: "taxable" },
+          ],
+        },
+        chat: {
+          surface: "chat",
+          transcript: [{ role: "assistant", text: "Two accounts found.", at: "t0" }],
+          decisions: [],
+          excludedRows: [{ row: { __rowId: "r9", name: "Total Portfolio" }, reason: "a printed total" }],
+          committedRowIds: ["r1"],
+        },
+      }),
+    );
+
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={[]} />);
+
+    // The rows are on screen…
+    expect(await screen.findByText("Fidelity IRA")).toBeInTheDocument();
+    expect(screen.getByText("Joint Brokerage")).toBeInTheDocument();
+    expect(screen.getByRole("table")).toBeInTheDocument();
+    // …the excluded row is still shown as excluded…
+    expect(screen.getByText("Total Portfolio")).toBeInTheDocument();
+    // …and the row committed in the EARLIER session is locked, not offered
+    // for a second commit.
+    expect(screen.getByRole("button", { name: "Committed" })).toBeDisabled();
+    // The panel that only appears with a table is here too.
+    expect(screen.getByRole("button", { name: "Finish import" })).toBeInTheDocument();
+  });
+
+  // The other half: an import nobody has extracted yet must still render
+  // nothing rather than "No accounts found in these statements" — that copy
+  // is a claim about statements no one has read.
+  it("renders no extracted-state panel at all for an import with nothing persisted", async () => {
+    vi.mocked(fetch).mockReset();
+    vi.mocked(fetch).mockResolvedValue(importGetResponse({}));
+
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={initialFiles} />);
+
+    expect(await screen.findByText("1 file ready.")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByText(/No accounts found/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Finish import" })).not.toBeInTheDocument();
   });
 });
 
