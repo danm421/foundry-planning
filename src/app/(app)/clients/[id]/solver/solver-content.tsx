@@ -14,6 +14,7 @@ import {
   type EducationReturnStat,
 } from "@/lib/reports/education-mc-inputs";
 import { loadReportLayout } from "@/lib/solver/report-layout-store";
+import { detectDefaultGrowthAtInflationFor } from "@/lib/investments/default-growth-at-inflation";
 import { LiveSolverWorkspace } from "./live-solver-workspace";
 
 // Deterministic fallback seed when the plan MC data can't be loaded (never
@@ -129,6 +130,16 @@ export async function SolverContent({ clientId, firmId, userId, source }: Props)
   // in parallel on this page's server-render path; a load failure resolves to
   // null and takes the neutral-fallback branch.
   const solverTree = sourceTree ?? baseTree;
+
+  // Same untouched-defaults check the Net Worth tab runs. Counts the tree this
+  // surface DISPLAYS, as Net Worth does: the CATEGORY source is base-scoped
+  // (plan_settings is resolved pre-overlay), but an account's own growthSource
+  // is scenario-overlaid, so reading the base tree here would report a
+  // different count than Net Worth for the same scenario.
+  const defaultGrowthWarning = detectDefaultGrowthAtInflationFor(
+    baseLoaded.resolutionContext,
+    solverTree.accounts,
+  );
   const hasEducationGoals = solverTree.expenses.some(
     (e) => e.type === "education" && (e.dedicatedAccountIds?.length ?? 0) > 0,
   );
@@ -200,6 +211,7 @@ export async function SolverContent({ clientId, firmId, userId, source }: Props)
       educationReturnStats={educationReturnStats}
       educationSeed={educationSeed}
       initialReportLayout={reportLayout}
+      defaultGrowthWarning={defaultGrowthWarning}
     />
   );
 }
