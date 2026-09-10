@@ -1244,9 +1244,19 @@ export default function TechniquesView({
           spouseFirstName={spouseFirstName}
           existingNames={assetTransactions.map((t) => t.name)}
           initialData={editingTransaction ?? undefined}
+          // Always bundle-aware when editing: a bundled leg resolves to its
+          // siblings, a solo record to a one-element array holding itself.
+          // Passing `undefined` for a solo record would let the dialog grow it
+          // into a second record with NO shared id minted — two legs that look
+          // bundled but carry bundle_id = NULL, which the Solver then renders
+          // as two unrelated technique rows.
           bundleRecords={
-            editingTransaction?.bundleId
-              ? assetTransactions.filter((t) => t.bundleId === editingTransaction.bundleId)
+            editingTransaction
+              ? assetTransactions.filter((t) =>
+                  editingTransaction.bundleId
+                    ? t.bundleId === editingTransaction.bundleId
+                    : t.id === editingTransaction.id,
+                )
               : undefined
           }
           onClose={() => { setShowAddTransaction(false); setEditingTransaction(null); }}

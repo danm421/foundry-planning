@@ -140,7 +140,7 @@ describe("AddAssetTransactionForm — bundle edit mode", () => {
     purchasePrice: "800000",
   };
 
-  // A record shaped the way Details passes one TODAY: no bundleId field at all.
+  // A record with no bundleId field at all — a leg saved before bundles existed.
   const UNBUNDLED_RECORD: AssetTransactionInitialData = { ...SELL_RECORD };
   delete UNBUNDLED_RECORD.bundleId;
 
@@ -257,10 +257,12 @@ describe("AddAssetTransactionForm — bundle edit mode", () => {
   });
 
   it("does not mint a bundle id for a caller that is not bundle-aware", async () => {
-    // Details hands over one row and knows nothing about bundles (its row type
-    // has no bundleId until Task 6). Minting an id here would PUT a NEW id over
+    // A caller that hands over one record without saying what its siblings are
+    // knows nothing about bundles. Minting an id here would PUT a NEW id over
     // the record's real one, pulling it out of its bundle and orphaning the
-    // siblings still carrying the old id.
+    // siblings still carrying the old id. Both real callers — Solver and
+    // Details — now always pass `bundleRecords`; this pins the guard for any
+    // future caller that does not.
     const drafts: unknown[] = [];
     const onSubmitDraft = vi.fn((t) => drafts.push(t));
     render(
