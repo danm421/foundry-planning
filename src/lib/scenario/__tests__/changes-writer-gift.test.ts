@@ -131,7 +131,7 @@ describe.skipIf(!HAS_DB)("changes-writer — gift target kind", () => {
     expect((rows[0].payload as Record<string, unknown>).valuationDiscount).toBeNull();
   });
 
-  it("removing a scenario-added gift drops the add row outright (the Profile delete)", async () => {
+  it("removing a scenario-added gift drops the add row and leaves a remove marker (the Profile delete)", async () => {
     const giftId = randomUUID();
     const trustId = randomUUID();
     await applyEntityAdd({
@@ -149,8 +149,65 @@ describe.skipIf(!HAS_DB)("changes-writer — gift target kind", () => {
       targetId: giftId,
     });
 
-    // remove-of-an-add collapses to nothing — not a lingering `remove` row that
-    // the overlay would still count as targeting a base gift.
-    expect(await giftRows()).toHaveLength(0);
+    // The `add` is gone, so nothing re-materialises. The `remove` marker stays:
+    // for a gift, `hasAdd` does NOT mean "scenario-only" (gifts have no `edit`
+    // op, so editing a BASE gift also writes an `add` on its id), and dropping
+    // the marker too is what would resurrect the base row. Here there is no
+    // base row, so the marker is a harmless no-op — it strips an id that is
+    // not in the list.
+    const rows = await giftRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].opType).toBe("remove");
+
+    const { adds, targeted } = partitionGiftChanges(rows as unknown as ScenarioChange[]);
+    expect(adds).toHaveLength(0);
+    expect(targeted.has(giftId)).toBe(true);
+  });
+
+  // THE REGRESSION. Before this, `applyEntityRemove` saw the `add` row, assumed
+  // the gift was scenario-only, deleted every row for it and wrote no marker.
+  // Nothing targeted the id any more, so the overlay stopped stripping the base
+  // row and the gift came back — un-edited — in both the Profile list and the
+  // projection, while the route answered ok and the UI showed it deleted.
+  it("editing a BASE gift in a scenario and then deleting it leaves the gift gone, not resurrected", async () => {
+    // A base-plan gift: it has a row in the `gifts` table, so its id exists
+    // outside the scenario. Editing it here writes an `add` on that same id —
+    // that is how a gift edit replaces the base row (there is no `edit` op).
+    const baseGiftId = randomUUID();
+    const trustId = randomUUID();
+    await applyEntityAdd({
+      scenarioId,
+      firmId: COOPER_FIRM_ID,
+      targetKind: "gift",
+      entity: giftDraft(baseGiftId, trustId, { percent: 0.2 }),
+    });
+
+    await applyEntityRemove({
+      scenarioId,
+      firmId: COOPER_FIRM_ID,
+      targetKind: "gift",
+      targetId: baseGiftId,
+    });
+
+    const rows = await giftRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].opType).toBe("remove");
+
+    // What the overlay does with that: the base row is stripped (the id is
+    // targeted) and nothing is put back (no add payload). The gift is gone.
+    const { adds, targeted } = partitionGiftChanges(rows as unknown as ScenarioChange[]);
+    expect(targeted.has(baseGiftId)).toBe(true);
+    expect(adds).toHaveLength(0);
+
+    // Proof against the two half-fixes: keeping the add row would
+    // re-materialise the EDITED gift, and dropping the marker would let the
+    // un-edited base row back in.
+    const baseGifts: Array<{ id: string }> = [{ id: baseGiftId }, { id: randomUUID() }];
+    const surviving: string[] = [
+      ...baseGifts.filter((g) => !targeted.has(g.id)).map((g) => g.id),
+      ...adds.map((a) => a.id),
+    ];
+    expect(surviving).not.toContain(baseGiftId);
+    expect(surviving).toHaveLength(1);
   });
 });
