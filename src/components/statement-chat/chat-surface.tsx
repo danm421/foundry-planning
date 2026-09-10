@@ -4,14 +4,11 @@ import { useCallback, useRef, useState } from "react";
 import { Card, CardBody, CardHeader } from "@/components/card";
 import UploadZone, { type InitialUploadedFile } from "@/components/import/upload-zone";
 import { StepLine } from "@/components/statement-chat/step-line";
+import type { ExcludedRow } from "@/components/statement-chat/excluded-rows";
 import type { ExtractedAccount } from "@/lib/extraction/types";
 import type { Annotated } from "@/lib/imports/types";
 
 type Row = Annotated<ExtractedAccount>;
-interface ExcludedRow {
-  row: Row;
-  reason: string;
-}
 
 type ChatExtractEvent =
   | {
@@ -21,7 +18,7 @@ type ChatExtractEvent =
       statementDate?: string;
       error?: string;
     }
-  | { type: "done"; summary: string; caveats: string[]; rows: Row[]; excluded: ExcludedRow[] }
+  | { type: "done"; summary: string; caveats: string[]; rows: Row[]; excluded: ExcludedRow<Row>[] }
   | { type: "error"; message: string };
 
 /**
@@ -293,9 +290,13 @@ export function ChatSurface({ clientId, importId, initialFiles }: ChatSurfacePro
                 </h2>
               </CardHeader>
               <CardBody className="flex flex-col gap-2">
+                {/* C7: the caveat list above already states WHY a rollup was
+                    excluded (narrate.ts's rollupCaveat) — repeating `x.reason`
+                    here duplicated that fact. This card instead carries what
+                    the caveat doesn't: the row's own value. */}
                 {result.excluded.map((x, i) => (
                   <p key={i} className="text-sm text-ink-4">
-                    <span className="font-medium">{x.row.name}</span> — {x.reason}
+                    <span className="font-medium">{x.row.name}</span> — {money(x.row.value)}
                   </p>
                 ))}
               </CardBody>

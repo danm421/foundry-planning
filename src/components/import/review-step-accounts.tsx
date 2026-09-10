@@ -25,7 +25,7 @@ import { basisFieldLabel } from "@/lib/accounts/basis-label";
 // EMPTY_CLASS on plain inputs.
 const TINT_EMPTY = "bg-amber-900/20 border-amber-600/50";
 
-const CATEGORY_OPTIONS: { value: AccountCategory; label: string }[] = [
+export const CATEGORY_OPTIONS: { value: AccountCategory; label: string }[] = [
   { value: "taxable", label: "Taxable" },
   { value: "cash", label: "Cash" },
   { value: "retirement", label: "Retirement" },
@@ -37,7 +37,7 @@ const CATEGORY_OPTIONS: { value: AccountCategory; label: string }[] = [
   { value: "education_savings", label: "529 / Education" },
 ];
 
-const SUB_TYPE_OPTIONS: { value: AccountSubType; label: string }[] = [
+export const SUB_TYPE_OPTIONS: { value: AccountSubType; label: string }[] = [
   { value: "brokerage", label: "Brokerage" },
   { value: "savings", label: "Savings" },
   { value: "checking", label: "Checking" },
