@@ -61,7 +61,7 @@ export async function loadReconciliationInput(clientId: string, firmId: string, 
       ok: false, code: "facts_unreadable",
       message: row.status === "extracting"
         ? `The ${taxYear} return is still being read. Check back in a moment.`
-        : `The ${taxYear} return's facts couldn't be read. Open it on Tax Analysis to recover it.`,
+        : `The ${taxYear} return's facts couldn't be read. Open it on the Report view to recover it.`,
     };
   }
 

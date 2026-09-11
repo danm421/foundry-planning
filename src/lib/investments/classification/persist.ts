@@ -3,6 +3,7 @@ import { eq, and } from "drizzle-orm";
 import { db } from "@/db";
 import { securities, securityAssetClassWeights } from "@/db/schema";
 import type { ClassifiedSecurity } from "./types";
+import { isStaleClassification } from "./types";
 import { classifySecurity } from "./classify";
 
 /** Upsert a classified security and replace its weight rows. Idempotent. */
@@ -68,6 +69,13 @@ export async function getSecurityByTicker(ticker: string) {
   return { security: sec, weights };
 }
 
+/** Weight rows as the callers want them. */
+function toSlugWeights(
+  rows: readonly { assetClassSlug: string; weight: string }[],
+): { slug: string; weight: number }[] {
+  return rows.map((w) => ({ slug: w.assetClassSlug, weight: parseFloat(w.weight) }));
+}
+
 /**
  * A ticker's look-through slug weights, cache first: the securities table, then
  * a live classify + persist, then `[]`.
@@ -85,19 +93,13 @@ export async function resolveSlugWeightsByTicker(
 ): Promise<{ slug: string; weight: number }[]> {
   try {
     const cached = await getSecurityByTicker(ticker);
-    if (cached) {
-      return cached.weights.map((w) => ({
-        slug: w.assetClassSlug,
-        weight: parseFloat(w.weight),
-      }));
-    }
+    if (cached && !isStaleClassification(cached.security)) return toSlugWeights(cached.weights);
     const classified = await classifySecurity(ticker);
-    if (!classified) return [];
+    // Stale beats nothing — see ensure-security.ts.
+    if (!classified) return cached ? toSlugWeights(cached.weights) : [];
     await upsertClassifiedSecurity(classified);
     const stored = await getSecurityByTicker(ticker);
-    return stored
-      ? stored.weights.map((w) => ({ slug: w.assetClassSlug, weight: parseFloat(w.weight) }))
-      : [];
+    return stored ? toSlugWeights(stored.weights) : [];
   } catch {
     return [];
   }

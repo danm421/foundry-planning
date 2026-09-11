@@ -52,6 +52,11 @@ export const outputFileTracingIncludes: Record<string, string[]> = {
     "/api/clients/*/forge/*": OCR_CANVAS_FILES,
     "/api/clients/*/imports/*/extract": OCR_CANVAS_FILES,
     "/api/clients/*/imports/*/files/*/extract": OCR_CANVAS_FILES,
+    // Statement Chat: its extract route runs the same pipeline directly, and
+    // its turn route reaches it through `reread_document`'s re-extraction
+    // fallback (src/lib/statement-chat/tools.ts).
+    "/api/clients/*/imports/*/chat/extract": OCR_CANVAS_FILES,
+    "/api/clients/*/imports/*/chat/turn": OCR_CANVAS_FILES,
     "/api/clients/*/rebalance/extract-holdings": OCR_CANVAS_FILES,
     "/api/clients/*/tax-returns": OCR_CANVAS_FILES,
     "/api/clients/*/tax-returns/*/documents": OCR_CANVAS_FILES,

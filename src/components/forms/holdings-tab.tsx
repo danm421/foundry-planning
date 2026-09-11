@@ -116,7 +116,9 @@ export function HoldingsTab({
       await createHolding(clientId, accountId, {
         securityId: classified.security?.id ?? null,
         displayTicker: t,
-        displayName: classified.security?.name ?? null,
+        // Falls back to the search-resolved name when the ticker couldn't be
+        // classified — a named row beats a bare ticker even unclassified.
+        displayName: classified.security?.name ?? classified.displayName ?? null,
         shares: shares === "" ? 0 : parseFloat(shares),
         price: price === "" ? 0 : parseFloat(price),
         priceAsOf: priceAsOf ?? undefined,

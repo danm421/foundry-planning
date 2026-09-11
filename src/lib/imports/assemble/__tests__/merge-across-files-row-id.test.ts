@@ -1,0 +1,436 @@
+import { describe, it, expect } from "vitest";
+import { keyedRowIdBucket, mergeAcrossFiles } from "../merge-across-files";
+import { er } from "./fixtures";
+
+/**
+ * `__rowId` (Task 6) tests. Separate from `merge-across-files.test.ts`
+ * because that file exercises merge/collapse BEHAVIOR (which row wins,
+ * what warning fires); these exercise the id-stability CONTRACT the row
+ * handle depends on (C6) — different axis, same function under test.
+ */
+describe("mergeAcrossFiles — __rowId", () => {
+  // C6 test 1 / C1's whole justification: `mergeAcrossFiles` is documented
+  // pure and deterministic, and `committedRowIds` persists across a
+  // re-assemble. A random id would orphan every committed row the moment
+  // the merge re-runs — this proves it doesn't.
+  it("gives identical __rowIds across two merges of the same input", () => {
+    const fileResults = {
+      f1: er("stmt.pdf", {
+        accounts: [{ name: "401k", custodian: "Fidelity", accountNumberLast4: "1234", value: 450000, category: "retirement" }],
+      }),
+    };
+    const r1 = mergeAcrossFiles(fileResults);
+    const r2 = mergeAcrossFiles(fileResults);
+    expect(r1.payload.accounts[0].__rowId).toBeDefined();
+    expect(r1.payload.accounts[0].__rowId).toEqual(r2.payload.accounts[0].__rowId);
+  });
+
+  // C6 test 2 / R57: derived-from-key ids alone make this pass even without
+  // C2's entry-carried id, because both occurrences hash to the same key.
+  // The assertion that actually bites is `toBeDefined()` — the collapse
+  // rewrite rebuilds the row from `existingEntry.content` (raw extracted
+  // content, no `__rowId`), so a stamp-at-push-time-only implementation
+  // leaves this `undefined`. Pinning the exact expected id too, per R57.
+  it("keeps a defined __rowId, equal to the dedupe-key id, after two files collapse into one row", () => {
+    const r = mergeAcrossFiles({
+      f1: er("jan.pdf", {
+        accounts: [{ name: "401k", custodian: "Fidelity", accountNumberLast4: "1234", value: 450000, category: "retirement" }],
+      }),
+      f2: er("feb.pdf", {
+        accounts: [{ name: "401k", custodian: "fidelity", accountNumberLast4: "1234", value: 455000, category: "retirement" }],
+      }),
+    });
+    expect(r.payload.accounts).toHaveLength(1);
+    expect(r.payload.accounts[0].__rowId).toBeDefined();
+    // Round 2 review: the ordinal is now unconditional (`#0` for every
+    // first entry, not just later ones) — see the derivation's comment.
+    //
+    // Ruling 120 moved the CUSTODIAN out of the accounts dedupe key and into
+    // `isSameEntity`; Task 12 moved the extractor's OWNER guess out the same
+    // way, for the same reason (it is not reproducible, and a flipped guess
+    // split one account into two committable rows). The key — and therefore
+    // this id — is now the last-4 alone. The id is still derived from the
+    // key, still carries the unconditional ordinal, and is still injective;
+    // only the key's contents changed, so this is a re-baseline, not a
+    // regression. `__rowId` does not exist on `main`, so no persisted
+    // `committedRowIds` list can be orphaned by the change.
+    // Final review #2, C-1 re-baseline: the keyed ordinal is now the entry's
+    // own `(sourceFileId, indexWithinFile)` coordinate, not its rank in the
+    // bucket — a rank is a function of bucket MEMBERSHIP, and adding a file
+    // changes membership. Every id below is DERIVED from that rule, not
+    // copied from a run. `__rowId` does not exist on `main`, so no persisted
+    // `committedRowIds` list can be orphaned by the change.
+    // One entry, members (f1,0) and (f2,0); minimum (f1,0).
+    expect(r.payload.accounts[0].__rowId).toBe("account:1234#f1:0");
+  });
+
+  // C6 test 3: `computeKey` returns null for accounts with no
+  // custodian/last4, so two such rows share no dedupe key — the fallback
+  // must separate them by position, not collide on name alone.
+  it("gives distinct __rowIds to two null-key rows with the same name", () => {
+    const r = mergeAcrossFiles({
+      f1: er("a.pdf", { accounts: [{ name: "Brokerage", value: 100, category: "taxable" }] }),
+      f2: er("b.pdf", { accounts: [{ name: "Brokerage", value: 100, category: "taxable" }] }),
+    });
+    expect(r.payload.accounts).toHaveLength(2);
+    const ids = r.payload.accounts.map((a) => a.__rowId);
+    expect(ids[0]).toBeDefined();
+    expect(ids[1]).toBeDefined();
+    expect(ids[0]).not.toEqual(ids[1]);
+  });
+
+  // Final review, C2 — THE test that matters for the null-key fallback.
+  //
+  // `fileResults` is read back out of a `jsonb` column, and Postgres does
+  // NOT hand it back in insertion order: jsonb sorts object keys by length,
+  // then bytewise. Every key is a 36-char UUID, so the order is bytewise on
+  // random ids and a newly-uploaded file's id can land anywhere — including
+  // FIRST. The keys below are therefore written in the adversarial order
+  // (added file first), because that is literally what the database returns.
+  //
+  // Before the fix the fallback id was the row's position in the whole
+  // flattened read order, so this reordering slid every row of the existing
+  // file by one. That silently orphans `committedRowIds` — and since
+  // `run-extraction.ts` drops `payload` wholesale on a re-extraction, taking
+  // every `linkCreated` stamp with it, `committedRowIds` is the ONLY guard
+  // left against committing an already-committed account a second time.
+  it("keeps a null-key row's __rowId when a file whose id sorts BEFORE it is added", () => {
+    // Real-shaped ids: the added one sorts bytewise ahead of the existing one.
+    const EXISTING_FILE = "9c3f1a02-4f7b-4c0e-9a11-2d5b8e7f6a31";
+    const ADDED_FILE = "0b7e4d19-8a2c-4f31-b6d0-1e9c3a5f2b84";
+
+    // No custodian / no last-4 → `computeKey` returns null → the fallback.
+    const existingFile = () =>
+      er("june.pdf", {
+        accounts: [
+          { name: "Brokerage", value: 100, category: "taxable" },
+          { name: "Savings", value: 200, category: "cash" },
+        ],
+      });
+    const addedFile = () =>
+      er("july.pdf", { accounts: [{ name: "New Account", value: 300, category: "taxable" }] });
+
+    const before = mergeAcrossFiles({ [EXISTING_FILE]: existingFile() });
+    const after = mergeAcrossFiles({
+      [ADDED_FILE]: addedFile(),
+      [EXISTING_FILE]: existingFile(),
+    });
+
+    const idsFrom = (r: ReturnType<typeof mergeAcrossFiles>, name: string) =>
+      r.payload.accounts.filter((a) => a.name === name).map((a) => a.__rowId);
+
+    expect(idsFrom(before, "Brokerage")).toEqual(idsFrom(after, "Brokerage"));
+    expect(idsFrom(before, "Savings")).toEqual(idsFrom(after, "Savings"));
+    // And every row still has an id of its own — three files' worth of rows,
+    // three distinct ids, no collision from the per-file numbering.
+    const allIds = after.payload.accounts.map((a) => a.__rowId);
+    expect(new Set(allIds).size).toBe(3);
+
+    // Pin the shape, not just the stability: the id must carry the SOURCE
+    // FILE, so a refactor cannot drift back to a global position and still
+    // pass the equality assertions above.
+    expect(idsFrom(before, "Savings")).toEqual([`account:null:${EXISTING_FILE}:1:Savings`]);
+  });
+
+  /**
+   * Final review #2, C-1 / Ruling 148 — the KEYED-branch analogue of the
+   * null-key test directly above, and the one the suite was missing.
+   *
+   * The null-key test proves "adding a file whose id sorts BEFORE an existing
+   * one does not move that file's row ids" for the `:null:` fallback only.
+   * The keyed branch is where the ordinal is actually load-bearing (see the
+   * `#n` derivation in `merge-across-files.ts`), and it had no equivalent —
+   * so a keyed id COULD move, and did.
+   *
+   * `extract/gate.test.ts`'s "THE test that matters for 'upload another
+   * statement'" could not see it either: every row in that fixture has a
+   * DISTINCT last-4, so every bucket is a singleton, `#n` is permanently 0,
+   * and the ordinal can never move. The shape below is the one that bites —
+   * TWO entries in ONE bucket, which since Ruling 120/Task 12 needs only two
+   * accounts sharing four masked digits at different institutions.
+   *
+   * Measured consequence when the ordinal was the bucket RANK: the existing
+   * Fidelity row's id was recycled onto the newly-arrived Schwab row, and
+   * `rebaseOntoFreshMerge` then overwrote Schwab's row with the advisor's
+   * standing Fidelity row — one real account silently gone, the other
+   * duplicated, $403,800 on screen against a truth of $289,900.
+   *
+   * ASSERTS IDENTITY (name + value + id), never just the count: a bucket that
+   * renumbers keeps exactly the same SET of ids, so a set- or
+   * length-assertion stays green through the whole failure.
+   *
+   * Mutation this catches: minting the keyed ordinal from the entry's rank in
+   * its bucket (`${label}:${key}#${n}`) instead of from its own stable
+   * coordinate — the Fidelity row's id moves from its own coordinate to `#1`
+   * and the added Schwab row takes `#0`.
+   */
+  it("keeps a KEYED row's __rowId when a file whose id sorts BEFORE it is added", () => {
+    // Real-shaped ids: the added one sorts bytewise ahead of the existing one.
+    const EXISTING_FILE = "9c3f1a02-4f7b-4c0e-9a11-2d5b8e7f6a31";
+    const ADDED_FILE = "0b7e4d19-8a2c-4f31-b6d0-1e9c3a5f2b84";
+
+    // Same last-4, different custodians — `isSameEntity` holds them apart, so
+    // ONE bucket holds TWO entries. This is the only shape where `#n` decides
+    // anything at all.
+    const existingFile = () =>
+      er("fidelity-june.pdf", {
+        accounts: [{ name: "Fidelity Roth IRA", custodian: "Fidelity", accountNumberLast4: "7734", owner: "client", value: 201_900, category: "retirement" }],
+      });
+    const addedFile = () =>
+      er("schwab-sept.pdf", {
+        accounts: [{ name: "Schwab Brokerage", custodian: "Schwab", accountNumberLast4: "7734", owner: "client", value: 88_000, category: "taxable" }],
+      });
+
+    const before = mergeAcrossFiles({ [EXISTING_FILE]: existingFile() });
+    // Written in the adversarial order the jsonb round-trip actually returns:
+    // the added file's UUID sorts first.
+    const after = mergeAcrossFiles({
+      [ADDED_FILE]: addedFile(),
+      [EXISTING_FILE]: existingFile(),
+    });
+
+    const identify = (r: ReturnType<typeof mergeAcrossFiles>) =>
+      new Map(r.payload.accounts.map((a) => [a.name, { value: a.value, rowId: a.__rowId }]));
+
+    const beforeRows = identify(before);
+    const afterRows = identify(after);
+
+    // The row that was already on the import keeps its whole identity.
+    expect(afterRows.get("Fidelity Roth IRA")).toEqual(beforeRows.get("Fidelity Roth IRA"));
+    // ...and the newly-arrived account has an id of its OWN, not the one the
+    // Fidelity row was already answering to.
+    expect(afterRows.get("Schwab Brokerage")?.value).toBe(88_000);
+    expect(afterRows.get("Schwab Brokerage")?.rowId).not.toBe(
+      beforeRows.get("Fidelity Roth IRA")?.rowId,
+    );
+
+    // Pin the SHAPE, not only the stability: the keyed id must carry the
+    // entry's own source coordinate, so a refactor cannot drift back to a
+    // bucket rank and still satisfy the equality above.
+    expect(beforeRows.get("Fidelity Roth IRA")?.rowId).toBe(`account:7734#${EXISTING_FILE}:0`);
+    expect(afterRows.get("Schwab Brokerage")?.rowId).toBe(`account:7734#${ADDED_FILE}:0`);
+  });
+
+  it("gives two genuinely different accounts distinct __rowIds", () => {
+    const r = mergeAcrossFiles({
+      f1: er("a.pdf", { accounts: [{ name: "401k", custodian: "Fidelity", accountNumberLast4: "1111", value: 1, category: "retirement" }] }),
+      f2: er("b.pdf", { accounts: [{ name: "IRA", custodian: "Fidelity", accountNumberLast4: "2222", value: 2, category: "retirement" }] }),
+    });
+    // The last-4 alone since Ruling 120 + Task 12 — the custodian and the
+    // owner guess both moved into `isSameEntity`. Two different last-4s
+    // still mint two different ids.
+    // Two singleton buckets; each entry's minimum is its own only row.
+    expect(r.payload.accounts.map((a) => a.__rowId)).toEqual([
+      "account:1111#f1:0",
+      "account:2222#f2:0",
+    ]);
+  });
+
+  /**
+   * Ruling 120 makes the bucket ORDINAL load-bearing for accounts for the
+   * first time. Before it, the section's `isSameEntity` was the constant
+   * `() => true`, so every row under an accounts key merged into entry #0
+   * and `#1` was unreachable. Now a Fidelity row and a Schwab row can share
+   * the bucket `1234` and be held apart by `isSameEntity`, which is
+   * exactly the case round-1 Critical 1 minted the ordinal for.
+   *
+   * Two rows, one key, two ids — otherwise both accounts answer to the same
+   * `__rowId` and every id-keyed guard downstream (the rebase, the
+   * re-commit block in `committedRowIds`, `edit_row`) addresses the wrong
+   * one.
+   */
+  it("gives distinct __rowIds to two custodians sharing one last4 bucket", () => {
+    const r = mergeAcrossFiles({
+      f1: er("a.pdf", { accounts: [{ name: "Brokerage", custodian: "Fidelity", accountNumberLast4: "1234", owner: "client", value: 1 }] }),
+      f2: er("b.pdf", { accounts: [{ name: "Brokerage", custodian: "Schwab", accountNumberLast4: "1234", owner: "client", value: 2 }] }),
+    });
+    // ONE bucket, TWO entries — and this is exactly where C-1 lived. The
+    // ordinal is each entry's own coordinate, so neither id can be moved by
+    // the other entry arriving, leaving, or sorting first.
+    expect(r.payload.accounts.map((a) => a.__rowId)).toEqual([
+      "account:1234#f1:0",
+      "account:1234#f2:0",
+    ]);
+  });
+
+  // C3: concatSection sections (dependents, entities, lifePolicies, wills,
+  // savings) get stamped too, from `provenance.section` + push index — the
+  // only identity that exists on that path.
+  it("stamps __rowId on concatSection rows (entities) from section + push index", () => {
+    const r = mergeAcrossFiles({
+      f1: er("a.pdf", { entities: [{ name: "Acme LLC" }] }),
+      f2: er("b.pdf", { entities: [{ name: "Other LLC" }] }),
+    });
+    expect(r.payload.entities.map((e) => e.__rowId)).toEqual(["entities:0", "entities:1"]);
+  });
+
+  // Dependents' provenance.section is "family" (not "dependents" — see
+  // `provenanceFor("family")` in mergeAcrossFiles), so its ids key off that
+  // instead. Pinned here so a future rename of that section string is caught.
+  it("stamps __rowId on concatSection rows (dependents) using the 'family' provenance section", () => {
+    const r = mergeAcrossFiles({
+      f1: er("a.pdf", { family: { dependents: [{ firstName: "Jo" }] } }),
+    });
+    expect(r.payload.dependents.map((d) => d.__rowId)).toEqual(["family:0"]);
+  });
+
+  // Round 1 review, Critical 1: a bucket is an ARRAY of entries, not a
+  // single one. `computeKey` alone is not injective — two rows can share a
+  // key and still fail `isSameEntity`, landing as TWO separate entries in
+  // the same bucket. Liabilities key on the bare lowercased name and accept
+  // balances within 1% as "the same"; two statements both naming a
+  // liability "Mortgage" with balances more than 1% apart (300,000 vs
+  // 292,000, ~2.67% apart) are judged different entities and must NOT
+  // collapse — but a bare `${label}:${key}` derivation would still mint the
+  // identical id for both, silently aliasing two unrelated rows in the flat
+  // `committedRowIds` list.
+  it("gives distinct __rowIds to two same-key liabilities that fail isSameEntity", () => {
+    const r = mergeAcrossFiles({
+      f1: er("a.pdf", { liabilities: [{ name: "Mortgage", balance: 300000 }] }),
+      f2: er("b.pdf", { liabilities: [{ name: "Mortgage", balance: 292000 }] }),
+    });
+    expect(r.payload.liabilities).toHaveLength(2);
+    const ids = r.payload.liabilities.map((l) => l.__rowId);
+    expect(ids[0]).toBeDefined();
+    expect(ids[1]).toBeDefined();
+    expect(ids[0]).not.toEqual(ids[1]);
+    // Pin the exact shape too, not just "different". Round 2 review:
+    // re-baselined from ["liability:mortgage", "liability:mortgage#1"] — the
+    // ordinal is now unconditional, so the first entry also carries `#0`.
+    // These ids have never shipped (no consumer exists before Task 7), so
+    // this is a re-baseline, not a regression.
+    expect(ids).toEqual(["liability:mortgage#f1:0", "liability:mortgage#f2:0"]);
+  });
+
+  // Round 2 review: the round-1 fix (`bucket?.length ? \`${key}#${n}\` :
+  // key`) only appended the ordinal from the SECOND entry on, so a first
+  // entry's bare id could still collide with the fold-in-the-ordinal id of
+  // an unrelated second entry — whenever the first entry's KEY ITSELF ends
+  // in the exact suffix a later collision would produce. Concretely: a
+  // liability named "Card#1" mints the bare id `liability:card#1`
+  // (its own bucket, no ordinal appended); a second, unrelated "Card" entry
+  // that fails isSameEntity against a first "Card" entry mints
+  // `liability:card#1` too (bucket length 1 at mint time) — same id, two
+  // rows. Appending the ordinal unconditionally closes this: every id ends
+  // in `#<digits>` with no exception, so the LAST `#` in any id is always
+  // the appended one, and two equal ids force equal keys AND equal ordinals.
+  it("does not collide a literal '#<digit>' in a row's name with an appended ordinal", () => {
+    const r = mergeAcrossFiles({
+      f1: er("a.pdf", { liabilities: [{ name: "Card#1", balance: 5000 }] }),
+      f2: er("b.pdf", { liabilities: [{ name: "Card", balance: 1000 }] }),
+      f3: er("c.pdf", { liabilities: [{ name: "Card", balance: 1200 }] }),
+    });
+    expect(r.payload.liabilities).toHaveLength(3);
+    const ids = r.payload.liabilities.map((l) => l.__rowId);
+    expect(new Set(ids).size).toBe(3);
+    // Keys: "card#1" (f1) and "card" (f2, f3 — 1,000 vs 1,200 is >1% apart,
+    // so f3 lands as a SECOND entry). The appended suffix is `#<fileId>:<index>`
+    // and neither half can contain a `#`, so the LAST `#` is still the one the
+    // mint appended and the two "card" ids still cannot collide with the
+    // literal `#1` in the first key.
+    expect(ids).toEqual(["liability:card#1#f1:0", "liability:card#f2:0", "liability:card#f3:0"]);
+  });
+  /**
+   * Ruling 130. `mergeAcrossFiles` reads its files via
+   * `Object.entries(fileResults)`, and its own docstring binds everything
+   * minted below it: nothing may depend on where a file falls in that loop,
+   * because `payloadJson` is `jsonb` and Postgres does not preserve a jsonb
+   * object's key insertion order.
+   *
+   * The keyed `#n` ordinal used to break that: `n` was the bucket's arrival
+   * count, so whichever file the loop reached first took `#0`. Accounts were
+   * accidentally immune while `isSameEntity` was the constant `() => true`
+   * (a bucket never held two entries, so `n` was always 0) — FIX-3 ended
+   * that. A re-extraction reading the same files back in a different jsonb
+   * order then renumbered them, and `committedRowIds` and the chat's rebase
+   * addressed the WRONG account: the C2 failure again.
+   */
+  describe("bucket ordinals do not depend on file arrival order (Ruling 130)", () => {
+    // Two accounts that share a last-4 and an owner but sit at custodians
+    // `isSameEntity` refuses to match — the shape that puts TWO entries in
+    // one bucket, which is the only shape where `#n` is load-bearing.
+    const fidelity = () =>
+      er("fidelity.pdf", {
+        accounts: [{ name: "Fidelity Brokerage", custodian: "Fidelity", accountNumberLast4: "1234", owner: "client", value: 100_000 }],
+      });
+    const schwab = () =>
+      er("schwab.pdf", {
+        accounts: [{ name: "Schwab Brokerage", custodian: "Schwab", accountNumberLast4: "1234", owner: "client", value: 250_000 }],
+      });
+
+    it("mints the same __rowIds whichever order the files are read in", () => {
+      // The two `Object.entries` orders the jsonb round-trip can hand back
+      // for the SAME two files. Built as object literals with the keys
+      // inserted in each order, which is exactly what varies in production.
+      const forward = mergeAcrossFiles({ "file-a": fidelity(), "file-b": schwab() });
+      const reverse = mergeAcrossFiles({ "file-b": schwab(), "file-a": fidelity() });
+
+      expect(forward.payload.accounts).toHaveLength(2);
+      expect(reverse.payload.accounts).toHaveLength(2);
+
+      const idsOf = (r: ReturnType<typeof mergeAcrossFiles>) =>
+        new Map(r.payload.accounts.map((a) => [a.name, a.__rowId]));
+
+      // The SET of ids is the same either way even with the arrival-rank
+      // ordinal — what breaks is WHICH account holds which id, and that is
+      // the half `committedRowIds` and the rebase actually join on.
+      expect(new Set(forward.payload.accounts.map((a) => a.__rowId))).toEqual(
+        new Set(reverse.payload.accounts.map((a) => a.__rowId)),
+      );
+      expect(idsOf(forward).get("Fidelity Brokerage")).toBe(idsOf(reverse).get("Fidelity Brokerage"));
+      expect(idsOf(forward).get("Schwab Brokerage")).toBe(idsOf(reverse).get("Schwab Brokerage"));
+    });
+
+    // The common case — one entry in the bucket — must still mint the
+    // entry's own coordinate. A renumber pass that drops the rewrite, or
+    // reads the wrong end of the coordinate, shows up here first.
+    it("still mints the entry's own coordinate for a single-entry bucket", () => {
+      const r = mergeAcrossFiles({ "file-a": fidelity() });
+      expect(r.payload.accounts).toHaveLength(1);
+      expect(r.payload.accounts[0].__rowId).toBe("account:1234#file-a:0");
+    });
+  });
+
+  /**
+   * `keyedRowIdBucket` splits a keyed id back into the DEDUPE BUCKET half —
+   * the one part a newly-added file cannot move — so `rebaseOntoFreshMerge`
+   * can re-attach a standing row whose coordinate moved. It decides which
+   * rows are eligible to inherit an advisor's edits and commit stamp, so
+   * what it REFUSES to parse matters as much as what it parses.
+   *
+   * Mutation this catches: relaxing it to a bare "split at the last `#`".
+   * Both rejected shapes below start returning a bucket, and a row this
+   * merge never minted as keyed becomes eligible for re-attachment.
+   */
+  describe("keyedRowIdBucket", () => {
+    it("recovers the label and key from an id this merge minted", () => {
+      const id = mergeAcrossFiles({
+        "file-a": er("fidelity.pdf", {
+          accounts: [{ name: "Fidelity Brokerage", custodian: "Fidelity", accountNumberLast4: "1234", value: 100 }],
+        }),
+      }).payload.accounts[0].__rowId as string;
+      expect(id).toBe("account:1234#file-a:0");
+      expect(keyedRowIdBucket(id)).toBe("account:1234");
+      // A key containing a `#` is extraction text and still round-trips —
+      // the LAST `#` is always the one the mint appended.
+      expect(keyedRowIdBucket("account:12#34#file-a:7")).toBe("account:12#34");
+      // A key of the literal string "null" is a key, not the null branch.
+      expect(keyedRowIdBucket("account:null#file-a:0")).toBe("account:null");
+    });
+
+    it("refuses an id the null-key branch minted, even when the NAME ends in a coordinate", () => {
+      // `${label}:null:${fileId}:${index}:${name}` — the name is raw
+      // extraction text and can contain anything, including a `#`.
+      expect(keyedRowIdBucket("account:null:file-a:0:Card#x:1")).toBeNull();
+      expect(keyedRowIdBucket("account:null:file-a:0:Plain Name")).toBeNull();
+    });
+
+    it("refuses an id whose suffix is not a coordinate", () => {
+      // The rank ordinal this branch used before the coordinate landed. An
+      // import still in review from that era must not be re-attached on a
+      // bucket this function only thinks it can read.
+      expect(keyedRowIdBucket("account:1234#0")).toBeNull();
+      expect(keyedRowIdBucket("account:1234")).toBeNull();
+    });
+  });
+});

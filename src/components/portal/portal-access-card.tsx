@@ -6,7 +6,16 @@ import PortalCard, { portalBtn, portalInput } from "@/components/portal/portal-c
 import { KeyIcon } from "@/components/portal/portal-icons";
 import type { PortalAccount } from "@/lib/clients/portal-account";
 
-type Status = "not_invited" | "invited" | "active";
+/** What the SERVER knows about the binding. `requested` is a live access
+ *  request the client has not answered yet — it writes no `clients` column at
+ *  all, so without it the card would claim "Not invited" while the request sits
+ *  in their inbox. */
+type Status = "not_invited" | "invited" | "requested" | "active";
+
+/** What the CARD renders. Adds `disconnected`, which is not a status of its own
+ *  but "nothing live, and the client is the one who ended the last binding" —
+ *  a different sentence and a different button from a client never invited. */
+type View = Status | "disconnected";
 
 /** What the card renders about the login. Derived from the loader's own type
  *  so the two cannot drift; the Clerk id is passed separately because it is
@@ -29,8 +38,17 @@ interface Props {
   primaryEmail: string;
   invitedAt: Date | null;
   clerkUserId: string | null;
+  /** When the outstanding access request went out. Only meaningful with
+   *  `status: "requested"`; null when the request predates the column. */
+  requestedAt?: Date | null;
+  /** The outstanding request's binding id, so it can be withdrawn. Null when
+   *  there is no live request to cancel. */
+  requestBindingId?: string | null;
+  /** When the CLIENT last disconnected themselves from this household. Shown
+   *  only when nothing is live — an advisor's own revoke is not a disconnect. */
+  disconnectedAt?: Date | null;
   /** The live Clerk account. Null when Clerk could not be reached — the card
-   *  still renders, so "Disable portal access" is never blocked by an outage. */
+   *  still renders, so removing access is never blocked by an outage. */
   account?: PortalAccountView | null;
   /** Household primary contact, used when the client signed up without a name. */
   fallbackName?: string;
@@ -59,6 +77,9 @@ export default function PortalAccessCard({
   primaryEmail,
   invitedAt,
   clerkUserId,
+  requestedAt = null,
+  requestBindingId = null,
+  disconnectedAt = null,
   account,
   fallbackName,
 }: Props): ReactElement {
@@ -69,6 +90,21 @@ export default function PortalAccessCard({
   // two states meant every handler had to remember to clear both.
   const [feedback, setFeedback] = useState<Feedback | null>(null);
 
+  // A live binding or a live request always wins: a client can disconnect and
+  // then be re-bound, and an old disconnect must not describe the present.
+  // Against a bare invitation it is a question of which happened last —
+  // `portalInvitedAt` is never cleared, so it outlives the access it granted,
+  // but an invitation sent AFTER the disconnect is the advisor's newer act.
+  const disconnectIsNewer =
+    !!disconnectedAt &&
+    (!invitedAt || new Date(disconnectedAt).getTime() > new Date(invitedAt).getTime());
+  const view: View =
+    status === "active" || status === "requested"
+      ? status
+      : disconnectIsNewer
+        ? "disconnected"
+        : status;
+
   async function send() {
     setFeedback(null);
     setBusy(true);
@@ -77,11 +113,25 @@ export default function PortalAccessCard({
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ email }),
     });
+    const body = (await res.json().catch(() => ({}))) as {
+      error?: string;
+      mode?: string;
+    };
     setBusy(false);
     if (!res.ok) {
-      const body = await res.json().catch(() => ({ error: "Failed" }));
-      setFeedback({ kind: "error", text: body.error });
+      setFeedback({ kind: "error", text: body.error ?? "Failed" });
       return;
+    }
+    if (body.mode === "requested") {
+      // Not a failure: the address already has a Foundry account, so it cannot
+      // be invited, and only the account holder can grant access. Without this
+      // the advisor sees no error, no message, and a card that has not moved.
+      setFeedback({
+        kind: "notice",
+        text:
+          `${email} already has a Foundry account, so we sent an access request ` +
+          `instead of an invitation. They have to approve it before they appear here.`,
+      });
     }
     router.refresh();
   }
@@ -98,17 +148,89 @@ export default function PortalAccessCard({
     router.refresh();
   }
 
-  async function disable() {
-    if (!confirm("Disable portal access? The client's login will be deleted.")) return;
+  /** Withdraw an outstanding access request. The recipient's accept screen
+   *  names the firm, the advisor and the household, so a request sent to the
+   *  wrong address is the one thing an advisor most needs to be able to undo. */
+  async function cancelRequest() {
+    if (!requestBindingId) return;
+    if (
+      !confirm(
+        "Cancel this access request? The link we emailed stops working, and " +
+          "the household stays private. You can send a new request at any time.",
+      )
+    )
+      return;
     setFeedback(null);
     setBusy(true);
-    const res = await fetch(`/api/clients/${clientId}/portal/disable`, { method: "POST" });
+    const res = await fetch(`/api/clients/${clientId}/portal/request`, {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ bindingId: requestBindingId }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
     setBusy(false);
     if (!res.ok) {
-      setFeedback({ kind: "error", text: "Failed to disable portal access" });
+      setFeedback({ kind: "error", text: body.error ?? "Failed to cancel the request" });
       return;
     }
     router.refresh();
+  }
+
+  /** The two ends of portal access, told apart by `mode`. Nothing is defaulted
+   *  server-side, so a request that loses its body deletes nobody's login. */
+  async function postDisable(mode: "revoke" | "delete_login") {
+    setFeedback(null);
+    setBusy(true);
+    const res = await fetch(`/api/clients/${clientId}/portal/disable`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mode }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { ended?: boolean };
+    setBusy(false);
+    if (!res.ok) {
+      setFeedback({
+        kind: "error",
+        text:
+          mode === "revoke"
+            ? "Failed to remove portal access"
+            : "Failed to delete the login",
+      });
+      return;
+    }
+    // A revoke that ended nothing answers 200 with `ended: false`. Reading only
+    // `res.ok` made that a dead button: the card refreshed and still said
+    // Active, with no message on it at all.
+    if (mode === "revoke" && body.ended === false) {
+      setFeedback({
+        kind: "error",
+        text:
+          "Nothing was removed — this client has no live portal access. " +
+          "The card now shows where they actually stand.",
+      });
+    }
+    router.refresh();
+  }
+
+  async function removeAccess() {
+    if (
+      !confirm(
+        "Remove portal access? The client can no longer sign in to this household. " +
+          "Their Foundry login, and any other firm they're connected to, are unaffected.",
+      )
+    )
+      return;
+    await postDisable("revoke");
+  }
+
+  async function deleteLogin() {
+    const typed = prompt(
+      "This permanently deletes this person's Foundry login — password, two-factor and " +
+        "sign-in history — and disconnects them from EVERY firm, not just yours. " +
+        "This cannot be undone.\n\nType DELETE to confirm.",
+    );
+    if (typed !== "DELETE") return;
+    await postDisable("delete_login");
   }
 
   /** Run one account-support action. Each reports in words — an advisor
@@ -171,10 +293,18 @@ export default function PortalAccessCard({
     <PortalCard
       icon={<KeyIcon />}
       title="Portal access"
-      action={<StatusPill status={status} />}
+      action={<StatusPill view={view} />}
     >
-      {status === "not_invited" && (
-        <div className="flex items-end gap-2">
+      {view === "disconnected" && disconnectedAt && (
+        <p className="text-[13px] text-ink-2">
+          Disconnected by the client on {formatDate(disconnectedAt)}. They kept
+          their Foundry login, so a new request lets them reconnect without
+          signing up again.
+        </p>
+      )}
+
+      {(view === "not_invited" || view === "disconnected") && (
+        <div className={`flex items-end gap-2${view === "disconnected" ? " mt-3" : ""}`}>
           <label className="flex-1">
             <span className="mb-1 block text-[12px] text-ink-3">Client email</span>
             <input
@@ -185,12 +315,36 @@ export default function PortalAccessCard({
             />
           </label>
           <button type="button" onClick={send} disabled={busy || !email} className={portalBtn.primary}>
-            {busy ? "Sending…" : "Send invite"}
+            {busy
+              ? "Sending…"
+              : view === "disconnected"
+                ? "Send a new request"
+                : "Send invite"}
           </button>
         </div>
       )}
 
-      {status === "invited" && (
+      {view === "requested" && (
+        <div className="space-y-3">
+          <p className="text-[13px] text-ink-2">
+            Access request sent{requestedAt ? <> {formatDate(requestedAt)}</> : ""}.
+            This email already has a Foundry account, so only they can grant
+            access — they approve it from their own Foundry sign-in.
+          </p>
+          {requestBindingId && (
+            <button
+              type="button"
+              onClick={cancelRequest}
+              disabled={busy}
+              className={portalBtn.danger}
+            >
+              Cancel request
+            </button>
+          )}
+        </div>
+      )}
+
+      {view === "invited" && (
         <div className="space-y-3">
           <p className="text-[13px] text-ink-2">
             Invitation sent{invitedAt ? <> {formatDate(invitedAt)}</> : ""}. Awaiting sign-up.
@@ -206,7 +360,7 @@ export default function PortalAccessCard({
         </div>
       )}
 
-      {status === "active" && (
+      {view === "active" && (
         <div className="space-y-5">
           <dl className="grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-2">
             <div className="min-w-0">
@@ -256,7 +410,7 @@ export default function PortalAccessCard({
           {!account && (
             <p className="text-[13px] text-ink-3">
               Sign-in details are unavailable right now, so the account actions
-              are turned off. Disabling access still works.
+              are turned off. Removing portal access still works.
             </p>
           )}
 
@@ -287,9 +441,32 @@ export default function PortalAccessCard({
                 Reset two-factor
               </button>
             )}
-            <button type="button" onClick={disable} disabled={busy} className={portalBtn.danger}>
-              Disable portal access
+            <button
+              type="button"
+              onClick={removeAccess}
+              disabled={busy}
+              className={portalBtn.danger}
+            >
+              Remove portal access
             </button>
+          </div>
+
+          {/* Deliberately quieter and set apart from the row above: this is the
+              rare, unrecoverable one, and the everyday action must be the
+              obvious one. */}
+          <div>
+            <button
+              type="button"
+              onClick={deleteLogin}
+              disabled={busy}
+              className="text-[12px] text-ink-4 underline underline-offset-2 transition hover:text-crit disabled:opacity-50"
+            >
+              Delete login
+            </button>
+            <p className="mt-1 text-[11px] text-ink-4">
+              Erases their Foundry login itself and disconnects them from every
+              firm they use, not just yours.
+            </p>
           </div>
         </div>
       )}
@@ -305,12 +482,14 @@ export default function PortalAccessCard({
   );
 }
 
-function StatusPill({ status }: { status: Status }): ReactElement {
+function StatusPill({ view }: { view: View }): ReactElement {
   const { label, cls } = {
     not_invited: { label: "Not invited", cls: "border-hair text-ink-3" },
+    disconnected: { label: "Disconnected", cls: "border-hair text-ink-3" },
     invited: { label: "Invited", cls: "border-warn/40 text-warn" },
+    requested: { label: "Request sent", cls: "border-warn/40 text-warn" },
     active: { label: "Active", cls: "border-good/40 text-good" },
-  }[status];
+  }[view];
   return (
     <span
       className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${cls}`}

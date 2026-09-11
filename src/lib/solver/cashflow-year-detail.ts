@@ -72,6 +72,15 @@ export function buildNameMaps(clientData: ClientData) {
       expenseNames[`synth-proptax-${acc.id}`] = `Property Tax – ${acc.name}`;
     }
   }
+  // A purchase's property tax lives on the synthetic account the engine
+  // creates for it (technique-acct-<txn.id>), which never appears in
+  // clientData.accounts — so it needs its own name-map entry, mirroring the
+  // account loop above.
+  for (const txn of clientData.assetTransactions ?? []) {
+    if (txn.type === "buy" && txn.assetCategory === "real_estate" && (txn.annualPropertyTax ?? 0) > 0) {
+      expenseNames[`synth-proptax-technique-acct-${txn.id}`] = `Property Tax – ${txn.assetName ?? txn.name}`;
+    }
+  }
   expenseNames["medicarePremiums"] = "Medicare Premiums";
 
   const otherInflowNames: Record<string, string> = {};

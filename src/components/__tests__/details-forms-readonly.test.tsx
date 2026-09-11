@@ -303,32 +303,32 @@ describe("TaxRatesForm read-only gating", () => {
     vi.resetAllMocks();
   });
 
-  it("hides Save submit button under permission='view' but shows current value", () => {
+  // The form autosaves, so there is no Save button to hide. The read-only
+  // affordance is the disabled fieldset every control sits inside, plus the
+  // absent save-status line — a mutant that drops either one lets a viewer
+  // type into a plan they can't write to.
+  it("disables every control under permission='view' but still shows current values", () => {
     render(
       <ClientAccessProvider value={{ permission: "view", access: "shared" }}>
         <TaxRatesForm {...TAX_RATES_BASE_PROPS} />
       </ClientAccessProvider>,
     );
 
-    // Save button must not be rendered
-    const saveBtn = screen.queryByRole("button", { name: /^save$/i });
-    expect(saveBtn).toBeNull();
-
-    // Current value must still be visible — federal rate input shows 24.00
-    const federalInput = screen.queryByRole("spinbutton", { name: /federal rate/i }) ??
-      document.querySelector("#flatFederalRate") as HTMLElement | null;
+    const federalInput = document.querySelector("#flatFederalRate") as HTMLInputElement | null;
     expect(federalInput).not.toBeNull();
+    expect(federalInput?.closest("fieldset")?.disabled).toBe(true);
+    expect(screen.queryByText(/changes save automatically/i)).toBeNull();
   });
 
-  it("shows Save submit button under permission='edit'", () => {
+  it("leaves the fieldset editable and announces autosave under permission='edit'", () => {
     render(
       <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
         <TaxRatesForm {...TAX_RATES_BASE_PROPS} />
       </ClientAccessProvider>,
     );
 
-    // Save button must be present
-    const saveBtn = screen.queryByRole("button", { name: /^save$/i });
-    expect(saveBtn).not.toBeNull();
+    const federalInput = document.querySelector("#flatFederalRate") as HTMLInputElement | null;
+    expect(federalInput?.closest("fieldset")?.disabled).toBe(false);
+    expect(screen.getByText(/changes save automatically/i)).toBeInTheDocument();
   });
 });

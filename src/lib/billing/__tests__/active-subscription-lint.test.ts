@@ -316,9 +316,19 @@ const ALLOWLIST: Record<string, string> = {
     "pre-Phase-3 — wire in Phase 3.5",
   "src/app/api/clients/[id]/solver/save-to-base/route.ts":
     "pre-Phase-3 — wire in Phase 3.5",
-  // Portal mutation routes were here ("deferred to Phase 3.5"); Phase 3.5 (portal
-  // slice) now gates them via requirePortalActiveSubscription — see the matcher
-  // below. No portal allowlist entries should exist.
+  // Portal mutation routes split in two. A route that writes live planning
+  // data gates via requirePortalActiveSubscription / resolvePortalWriteContext
+  // (see the matcher below) — that covers most of Phase 3.5's portal slice and
+  // needs no allowlist entry. A route that manages the client's own firm
+  // relationship (join, leave, switch) is deliberately exempt instead: the
+  // client's control over which firm(s) can see them must never depend on
+  // that firm's billing status. Every such exemption is listed here with why.
+  "src/app/api/portal/connections/route.ts":
+    "client's own Disconnect from a firm — gating this on the firm's subscription would trap a client inside a firm that stopped paying",
+  "src/app/api/portal/requests/route.ts":
+    "client's own accept/decline of a firm's access request — a client must be able to decline a request from a firm whose subscription has lapsed",
+  "src/app/api/portal/active-household/route.ts":
+    "multi-firm household switcher — gating it would let a firm that switches its own portal off pin the client inside that firm's household, the exact failure this endpoint exists to prevent",
 
   // Client intake / data-collection. The routes that write live planning data
   // gate natively: POST /api/data-collection (send) and apply/route.ts both call

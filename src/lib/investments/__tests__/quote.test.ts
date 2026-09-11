@@ -162,3 +162,103 @@ describe("fetchEodCloses (batch)", () => {
     }
   });
 });
+
+// A mutual fund doesn't strike its NAV until after the close, so EODHD's
+// real-time feed answers `"NA"` for it through the whole trading day. The
+// last-day fallback is what keeps those funds priced — see fetchLastDay.
+const lastDayRow = (code: string, date: string, close: number | string) => ({
+  code,
+  exchange_short_name: date === "NA" ? "NA" : "US",
+  date,
+  close,
+});
+const yieldsLastDay = (payload: unknown, calls?: string[][]): QuoteDeps["fetchLastDay"] =>
+  (codes) => {
+    calls?.push(codes);
+    return Promise.resolve(payload);
+  };
+
+describe("last-day fallback for symbols the real-time feed can't price", () => {
+  it("prices a mutual fund whose real-time close is NA", async () => {
+    const res = await fetchEodClose("SWCGX", {
+      fetchRealtime: yields(row("SWCGX.US", "NA", "NA")),
+      fetchLastDay: yieldsLastDay([lastDayRow("SWCGX", "2026-09-09", 16.32)]),
+    });
+    expect(res).toEqual({ price: 16.32, asOf: "2026-09-09" });
+  });
+
+  it("still returns null when the fallback can't price it either", async () => {
+    const res = await fetchEodClose("ZZZZ", {
+      fetchRealtime: yields(row("ZZZZ.US", "NA", "NA")),
+      fetchLastDay: yieldsLastDay([lastDayRow("ZZZZ", "NA", "NA")]),
+    });
+    expect(res).toBeNull();
+  });
+
+  it("fills only the unpriced symbols, in one fallback call", async () => {
+    const calls: string[][] = [];
+    const res = await fetchEodCloses(["IBM", "SWCGX", "VTINX"], {
+      fetchRealtime: yields([
+        row("IBM.US", "2026-09-10", 234.02),
+        row("SWCGX.US", "NA", "NA"),
+        row("VTINX.US", "NA", "NA"),
+      ]),
+      fetchLastDay: yieldsLastDay(
+        [lastDayRow("SWCGX", "2026-09-09", 16.32), lastDayRow("VTINX", "2026-09-09", 14.31)],
+        calls,
+      ),
+    });
+    // The fallback is asked only about what real-time missed, and asked once.
+    expect(calls).toEqual([["SWCGX", "VTINX"]]);
+    // A live real-time price is never overwritten by the older daily close.
+    expect(res.get("IBM.US")).toEqual({ price: 234.02, asOf: "2026-09-10" });
+    expect(res.get("SWCGX.US")).toEqual({ price: 16.32, asOf: "2026-09-09" });
+    expect(res.get("VTINX.US")).toEqual({ price: 14.31, asOf: "2026-09-09" });
+  });
+
+  it("does not call the fallback when real-time priced everything", async () => {
+    const calls: string[][] = [];
+    await fetchEodCloses(["IBM"], {
+      fetchRealtime: yields([row("IBM.US", "2026-09-10", 234.02)]),
+      fetchLastDay: yieldsLastDay([], calls),
+    });
+    expect(calls).toEqual([]);
+  });
+
+  it("never sends a non-US listing to the fallback (it is a US-exchange feed)", async () => {
+    const calls: string[][] = [];
+    const res = await fetchEodCloses(["BMW.XETRA", "SWCGX"], {
+      fetchRealtime: yields([]),
+      fetchLastDay: yieldsLastDay([lastDayRow("SWCGX", "2026-09-09", 16.32)], calls),
+    });
+    expect(calls).toEqual([["SWCGX"]]);
+    expect(res.has("BMW.XETRA")).toBe(false);
+  });
+
+  it("keeps the real-time results when the fallback throws", async () => {
+    const res = await fetchEodCloses(["IBM", "SWCGX"], {
+      fetchRealtime: yields([
+        row("IBM.US", "2026-09-10", 234.02),
+        row("SWCGX.US", "NA", "NA"),
+      ]),
+      fetchLastDay: () => Promise.reject(new Error("HTTP 503")),
+    });
+    expect(res.get("IBM.US")).toEqual({ price: 234.02, asOf: "2026-09-10" });
+    expect(res.size).toBe(1);
+  });
+
+  it("does not reach the network when only fetchRealtime is injected", async () => {
+    // Guards every existing test in this file: an injected transport means the
+    // caller is driving the whole thing, so no live fallback may fire.
+    const spy = vi.spyOn(globalThis, "fetch");
+    try {
+      const res = await fetchEodCloses(["SWCGX"], {
+        fetchRealtime: yields([row("SWCGX.US", "NA", "NA")]),
+      });
+      expect(spy).not.toHaveBeenCalled();
+      expect(res.size).toBe(0);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});

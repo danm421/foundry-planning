@@ -37,11 +37,13 @@ describe("TaxReportView", () => {
     expect(screen.getByText(/not tax advice/i)).toBeTruthy();
   });
 
-  it("links a ready year to Plan vs. Return with its year", () => {
+  it("carries no Compare-to-plan link — the section's view tab owns that move", () => {
     render(<TaxReportView clientId="c1" detail={detail} onEditFacts={vi.fn()} {...secondReadProps} />);
-    expect(screen.getByRole("link", { name: /compare to plan/i }).getAttribute("href")).toBe(
-      "/clients/c1/details/plan-vs-return?year=2025",
-    );
+    // Plan vs. Return is a view of this section now, reached by the tab sitting
+    // directly above this header. A second control doing the same thing would
+    // read as a different destination.
+    expect(screen.queryByRole("link", { name: /compare to plan/i })).toBeNull();
+    expect(screen.queryByText(/plan-vs-return/i)).toBeNull();
   });
 });
 

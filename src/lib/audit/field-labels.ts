@@ -63,6 +63,9 @@ export const ASSET_TRANSACTION_FIELD_LABELS: FieldLabels = {
   mortgageAmount: { label: "Mortgage amount", format: "currency" },
   mortgageRate: { label: "Mortgage rate", format: "percent" },
   mortgageTermMonths: { label: "Mortgage term (months)", format: "text" },
+  annualPropertyTax: { label: "Annual property tax", format: "currency" },
+  propertyTaxGrowthRate: { label: "Property tax growth", format: "percent" },
+  propertyTaxGrowthSource: { label: "Property tax growth source", format: "text" },
   businessAccount: { label: "Business sold", format: "reference" },
 };
 

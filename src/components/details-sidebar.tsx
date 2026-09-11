@@ -88,17 +88,6 @@ function TaxAnalysisIcon() {
   );
 }
 
-function PlanVsReturnIcon() {
-  return (
-    <svg className={ICON_CLASS} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="4" width="7" height="16" rx="1.5" />
-      <rect x="14" y="4" width="7" height="16" rx="1.5" />
-      <path d="M12.5 8.5L14 10l-1.5 1.5" />
-      <path d="M11.5 12.5L10 14l1.5 1.5" />
-    </svg>
-  );
-}
-
 function TechniquesIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -144,12 +133,6 @@ const TAX_ANALYSIS_TAB: SidebarTab = {
   href: "tax-analysis",
   icon: <TaxAnalysisIcon />,
 };
-const PLAN_VS_RETURN_TAB: SidebarTab = {
-  label: "Plan vs. Return",
-  href: "plan-vs-return",
-  icon: <PlanVsReturnIcon />,
-};
-
 function GuidedSetupLink({
   clientId,
   withScenario,
@@ -224,7 +207,6 @@ export default function DetailsSidebar({
         <div className="mt-2 flex flex-col gap-1 border-t border-gray-800 pt-3">
           {renderLink(IMPORT_TAB)}
           {renderLink(TAX_ANALYSIS_TAB)}
-          {renderLink(PLAN_VS_RETURN_TAB)}
         </div>
       )}
       {variant !== "rail" && (

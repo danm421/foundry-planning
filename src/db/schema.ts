@@ -1118,6 +1118,58 @@ export const clients = pgTable("clients", {
   index("clients_firm_idx").on(t.firmId),
 ]);
 
+export const portalBindingStatus = ["pending", "active", "declined", "revoked"] as const;
+export type PortalBindingStatus = (typeof portalBindingStatus)[number];
+
+export const portalBindingEndedBy = ["none", "client", "advisor"] as const;
+export type PortalBindingEndedBy = (typeof portalBindingEndedBy)[number];
+
+/**
+ * The relationship between a Foundry login and a household.
+ *
+ * Replaces the unique `clients.clerk_user_id` column: one person may hold
+ * several ACTIVE bindings (their own household, their parents', a new advisor
+ * during a transfer), and a household may hold several (two spouses).
+ *
+ * Status is TEXT, not a pg enum, matching `notifications.category` — an enum
+ * forces every future value through `ALTER TYPE ... ADD VALUE`, which
+ * drizzle-kit runs inside the single migration transaction and which throws
+ * PG 55P04 as soon as the new value is used in that same migration.
+ *
+ * `declined` and `revoked` rows are never deleted; they are the history of who
+ * asked and who left.
+ */
+export const portalBindings = pgTable(
+  "portal_bindings",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    clerkUserId: text("clerk_user_id").notNull(),
+    status: text("status").$type<PortalBindingStatus>().notNull(),
+    // Clerk advisor id. Null on the invitation path, where no advisor asked —
+    // the client accepted a Clerk invitation and the webhook bound them.
+    requestedBy: text("requested_by"),
+    requestedAt: timestamp("requested_at", { withTimezone: true }),
+    // Pending rows only. An expired pending row is never honoured on accept.
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    endedBy: text("ended_by").$type<PortalBindingEndedBy>().notNull().default("none"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    // THE safety constraint: one live relationship per (household, login).
+    // Partial, so declined/revoked history accumulates freely underneath it.
+    uniqueIndex("portal_bindings_live_idx")
+      .on(t.clientId, t.clerkUserId)
+      .where(sql`status IN ('pending', 'active')`),
+    index("portal_bindings_user_idx").on(t.clerkUserId, t.status),
+    index("portal_bindings_client_idx").on(t.clientId, t.status),
+  ],
+);
+
 export const scenarios = pgTable("scenarios", {
   id: uuid("id").defaultRandom().primaryKey(),
   clientId: uuid("client_id")
@@ -5148,6 +5200,10 @@ export const assetTransactions = pgTable("asset_transactions", {
   // Partial-sale fraction. null = full sale (today's binary behavior). 0 < x ≤ 1
   // = partial. Sell-only via CHECK; null on buys.
   fractionSold: decimal("fraction_sold", { precision: 7, scale: 6 }),
+  // Legs saved from ONE Add Asset Transactions dialog share this id, so the UI
+  // can show them as one technique. Display-only: no engine code reads it, and
+  // null (every pre-existing row) means "a standalone transaction".
+  bundleId: uuid("bundle_id"),
   // Buy fields
   assetName: text("asset_name"),
   assetCategory: accountCategoryEnum("asset_category"),
@@ -5161,6 +5217,19 @@ export const assetTransactions = pgTable("asset_transactions", {
   mortgageAmount: decimal("mortgage_amount", { precision: 15, scale: 2 }),
   mortgageRate: decimal("mortgage_rate", { precision: 5, scale: 4 }),
   mortgageTermMonths: integer("mortgage_term_months"),
+  // Buy-only, real-estate-only. Annual property tax on the property this
+  // purchase creates, in dollars NOMINAL AT THE BUY YEAR — unlike
+  // `accounts.annual_property_tax`, which is in plan-start dollars. The engine
+  // deflates on the way in (see applyAssetPurchases) so the shared injection
+  // loop in projection.ts reproduces this figure in the purchase year.
+  // Nullable with NO default: a null leaves the bought property untaxed, which
+  // is what every row written before migration 0265 means.
+  annualPropertyTax: decimal("annual_property_tax", { precision: 15, scale: 2 }),
+  propertyTaxGrowthRate: decimal("property_tax_growth_rate", { precision: 5, scale: 4 }),
+  // "custom" uses propertyTaxGrowthRate as typed; "inflation" makes the loader
+  // substitute the plan's resolved inflation rate, and the rate column is then
+  // a display fallback only. Mirrors accounts.property_tax_growth_source.
+  propertyTaxGrowthSource: itemGrowthSourceEnum("property_tax_growth_source"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 },
@@ -5180,6 +5249,15 @@ export const assetTransactions = pgTable("asset_transactions", {
   check(
     "asset_transactions_buy_no_source_check",
     sql`${t.type} <> 'buy' OR (${t.purchaseTransactionId} IS NULL AND ${t.accountId} IS NULL AND ${t.businessAccountId} IS NULL AND ${t.fractionSold} IS NULL)`,
+  ),
+  // Property tax describes an asset a BUY creates. A sell has no such asset.
+  check(
+    "asset_transactions_buy_only_property_tax_check",
+    sql`${t.type} <> 'sell' OR (
+      ${t.annualPropertyTax} IS NULL AND
+      ${t.propertyTaxGrowthRate} IS NULL AND
+      ${t.propertyTaxGrowthSource} IS NULL
+    )`,
   ),
   // fraction_sold must be in (0, 1] when present.
   check(

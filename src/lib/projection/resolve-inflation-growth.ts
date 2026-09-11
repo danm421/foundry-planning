@@ -64,6 +64,13 @@ export function reResolveInflationGrowth(
     savingsRules: tree.savingsRules.map((s) =>
       s.growthSource === "inflation" ? { ...s, growthRate: newRate } : s,
     ),
+    // Asset transactions keep their source (the Income / Expense pattern), so
+    // they re-resolve in place — no id set needed.
+    assetTransactions: tree.assetTransactions?.map((t) =>
+      t.propertyTaxGrowthSource === "inflation"
+        ? { ...t, propertyTaxGrowthRate: newRate }
+        : t,
+    ),
     accounts: tree.accounts.map((a) => {
       const growth = growthSet.has(a.id);
       const propertyTax = propertyTaxSet.has(a.id);

@@ -245,6 +245,15 @@ export type AuditAction =
   | "import.assemble.run"
   | "import.assemble.answered"
   | "import.commit.tab"
+  // Statement chat has no wizard tabs to click through, so nothing else
+  // ever flips a chat import to 'committed' once every row is committed
+  // one at a time — this is that closing act (Task 10b / Ruling 61/70),
+  // distinct from "import.commit.tab" because no new data is written here.
+  | "import.chat.finalized"
+  // One conversational turn over a statement-chat import's extracted table
+  // (Task 11) — the transcript append and any tool-driven row edit both land
+  // in the same `payloadJson` write this audits.
+  | "import.chat.turn"
   // Rebalance — reading holdings off a statement for an outside portfolio.
   // Nothing is persisted, so this audit row is the only record the read happened.
   | "rebalance.holdings.extracted"
@@ -400,6 +409,11 @@ export type AuditAction =
   | "portal.invite.sent"
   | "portal.invite.revoked"
   | "portal.access.disabled"
+  | "portal.access.requested"
+  | "portal.access.accepted"
+  | "portal.access.declined"
+  | "portal.access.revoked_by_client"
+  | "portal.access.revoked_by_advisor"
   | "portal.signin_link.sent"
   | "portal.sessions.revoked"
   | "portal.two_factor.reset"

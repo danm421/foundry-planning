@@ -5,6 +5,7 @@ import {
   clientImportFiles,
   clientImportExtractions,
 } from "@/db/schema";
+import type { ImportPayloadJson } from "@/lib/imports/types";
 
 export type ImportListStatus =
   | "draft"
@@ -24,6 +25,14 @@ export const IMPORT_LIST_STATUSES: readonly ImportListStatus[] = [
 export type ImportListRow = typeof clientImports.$inferSelect & {
   fileCount: number;
   extractionCount: number;
+  /**
+   * Set when this import was created (or resumed) via the statement-chat
+   * surface (Task 8+). Derived from `payloadJson.chat.surface`, not a
+   * column — deliberately NOT read via `readChatState`, which fills in an
+   * empty-shape default of `surface: "chat"` even when the import has no
+   * `chat` slice at all, so it can't be used to detect presence.
+   */
+  surface?: "chat";
 };
 
 export interface ImportListResult {
@@ -117,6 +126,7 @@ export async function listClientImports(args: {
     ...r,
     fileCount: fileCountMap.get(r.id) ?? 0,
     extractionCount: extractionCountMap.get(r.id) ?? 0,
+    surface: (r.payloadJson as ImportPayloadJson | null)?.chat?.surface,
   });
 
   return {

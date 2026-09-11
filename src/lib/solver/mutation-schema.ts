@@ -8,6 +8,7 @@
 // the bar chart stops updating.
 
 import { z } from "zod";
+import { valuationDiscount } from "@/lib/schemas/common";
 import { isUSPSStateCode } from "@/lib/usps-states";
 import { MAX_RATE_STRESS_POINTS } from "@/lib/tax/rate-stress";
 import { YEAR_REFS } from "@/lib/milestones";
@@ -83,6 +84,10 @@ const ASSET_TRANSACTION_VALUE = z
     accountId: z.string().min(1).optional(),
     purchaseTransactionId: z.string().min(1).nullable().optional(),
     businessAccountId: z.string().min(1).optional(),
+    /** Shared by every leg of one dialog save. A real `uuid` column, so a
+     *  non-uuid string must be rejected here rather than at the promote
+     *  insert, where it surfaces as a raw Postgres error. */
+    bundleId: z.string().uuid().nullable().optional(),
   })
   .passthrough()
   .refine(
@@ -222,6 +227,12 @@ const GIFT_RECIPIENT = z.object({
   id: z.string().min(1),
 });
 
+// A gift arm that omits a key does not reject it — it STRIPS it, so a saved
+// scenario silently loses the field while the live preview (which never parses)
+// keeps it. `valuationDiscount` is declared LAST in every arm on purpose: Zod
+// emits keys in shape order, and the payload written here is later read back as
+// an EstateFlowGift draft, whose JSON.stringify diff is key-order-sensitive
+// (see the LAST KEY contract in estate-flow-gifts.ts / estate-flow-gift-diff.ts).
 const GIFT_VALUE = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("cash-once"),
@@ -233,6 +244,7 @@ const GIFT_VALUE = z.discriminatedUnion("kind", [
     crummey: z.boolean(),
     eventKind: GIFT_EVENT_KIND.optional(),
     enabled: z.boolean().optional(),
+    valuationDiscount,
   }),
   z.object({
     kind: z.literal("asset-once"),
@@ -245,6 +257,7 @@ const GIFT_VALUE = z.discriminatedUnion("kind", [
     amountOverride: MONEY.optional(),
     eventKind: GIFT_EVENT_KIND.optional(),
     enabled: z.boolean().optional(),
+    valuationDiscount,
   }),
   z.object({
     kind: z.literal("series"),
@@ -258,6 +271,7 @@ const GIFT_VALUE = z.discriminatedUnion("kind", [
     recipient: GIFT_RECIPIENT,
     crummey: z.boolean(),
     enabled: z.boolean().optional(),
+    valuationDiscount,
   }),
 ]);
 

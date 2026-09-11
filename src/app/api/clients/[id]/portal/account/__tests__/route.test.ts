@@ -80,6 +80,16 @@ vi.mock("@/lib/branding/branding", () => ({
 const recordAuditMock = vi.fn();
 vi.mock("@/lib/audit", () => ({ recordAudit: (a: unknown) => recordAuditMock(a) }));
 
+// --- Binding layer mock (mirrors the disable route's test) ---
+// The route must resolve the login the same way Manage Portal renders it. The
+// default below mimics a household with NO binding rows at all, where the
+// resolver's answer is the legacy column it was handed.
+const resolveClientPortalUserIdMock = vi.fn();
+vi.mock("@/lib/portal/bindings", () => ({
+  resolveClientPortalUserId: (clientId: string, legacy: string | null) =>
+    resolveClientPortalUserIdMock(clientId, legacy),
+}));
+
 import { POST } from "@/app/api/clients/[id]/portal/account/route";
 import { ForbiddenError } from "@/lib/authz";
 
@@ -97,6 +107,9 @@ beforeEach(() => {
   });
   sendLinkMock.mockResolvedValue({ delivered: true });
   getSessionListMock.mockResolvedValue({ data: [{ id: "sess_1" }, { id: "sess_2" }] });
+  resolveClientPortalUserIdMock.mockImplementation(
+    async (_clientId: string, legacy: string | null) => legacy,
+  );
 });
 
 function postReq(body: unknown) {
@@ -126,6 +139,54 @@ describe("POST /api/clients/[id]/portal/account", () => {
     expect(sendLinkMock).not.toHaveBeenCalled();
     expect(revokeSessionMock).not.toHaveBeenCalled();
     expect(disableMfaMock).not.toHaveBeenCalled();
+  });
+
+  // Which login these three act on is a SECURITY question, not a display one.
+  // `clients.clerk_user_id` names a person's GLOBAL Foundry login and survives a
+  // revoke by design (Deploy-1 rollback depends on it), so reading it directly
+  // would let an ex-advisor turn off that person's two-factor, sign them out of
+  // every firm, and mail them a working sign-in link — all after removing them.
+  describe("the login it acts on", () => {
+    it("resolves it through the binding table, handing over the legacy column", async () => {
+      await POST(postReq({ action: "sign_out_all" }), ctx);
+      expect(resolveClientPortalUserIdMock).toHaveBeenCalledWith("c1", "user_xyz");
+    });
+
+    it("409s ALL THREE actions for a household whose access was revoked", async () => {
+      // A revoked binding plus the legacy column still set — the exact state
+      // "Remove portal access" leaves behind.
+      h.client = { id: "c1", advisorId: "advisor-2", clerkUserId: "user_revoked" };
+      resolveClientPortalUserIdMock.mockResolvedValue(null);
+
+      for (const action of ["send_signin_link", "sign_out_all", "reset_two_factor"]) {
+        const res = await POST(postReq({ action }), ctx);
+        expect(res.status).toBe(409);
+      }
+      expect(sendLinkMock).not.toHaveBeenCalled();
+      expect(revokeSessionMock).not.toHaveBeenCalled();
+      expect(disableMfaMock).not.toHaveBeenCalled();
+    });
+
+    it("runs ALL THREE for a client who ACCEPTED a request — no legacy column at all", async () => {
+      // The card already renders these three buttons for this household
+      // (`page.tsx` resolves the same way); reading the column alone made every
+      // one of them 409.
+      h.client = { id: "c1", advisorId: "advisor-2", clerkUserId: null };
+      resolveClientPortalUserIdMock.mockResolvedValue("user_from_binding");
+
+      expect((await POST(postReq({ action: "send_signin_link" }), ctx)).status).toBe(200);
+      expect(sendLinkMock).toHaveBeenCalledWith(
+        expect.objectContaining({ clerkUserId: "user_from_binding" }),
+      );
+
+      expect((await POST(postReq({ action: "sign_out_all" }), ctx)).status).toBe(200);
+      expect(getSessionListMock).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: "user_from_binding" }),
+      );
+
+      expect((await POST(postReq({ action: "reset_two_factor" }), ctx)).status).toBe(200);
+      expect(disableMfaMock).toHaveBeenCalledWith("user_from_binding");
+    });
   });
 
   describe("send_signin_link", () => {

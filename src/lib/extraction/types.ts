@@ -112,6 +112,13 @@ export interface ExtractedAccount {
   rmdEnabled?: boolean;
   accountNumberLast4?: string;
   custodian?: string;
+  /**
+   * Period-end or as-of date the statement prints for THIS account, ISO
+   * YYYY-MM-DD. Absent when the document shows no readable date — never
+   * inferred from the filename or the upload time. Used to pick a winner
+   * when two statements cover the same account; see `mergeAcrossFiles`.
+   */
+  statementDate?: string;
   growthSource?: GrowthSource;
   modelPortfolioId?: string | null;
   tickerPortfolioId?: string | null;

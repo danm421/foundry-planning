@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { PercentInput } from "@/components/percent-input";
-import { HelpTip } from "@/components/help-tip";
+import { FieldTooltip } from "@/components/forms/field-tooltip";
+import { AutosaveStatus } from "@/components/autosave-status";
+import { usePlanSettingsAutosave } from "@/components/forms/use-plan-settings-autosave";
+import { fieldLabelClassName, selectClassName } from "@/components/forms/input-styles";
 import { useClientAccess } from "@/components/client-access-provider";
 
 interface SurplusCashFlowFormProps {
@@ -16,8 +18,14 @@ interface SurplusCashFlowFormProps {
 
 const pct = (v: string) => (Number(v) * 100).toFixed(2);
 
-const INPUT_CLS =
-  "block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
+/** A typed percent → the decimal fraction the API stores. `undefined` while the
+ *  box holds something that isn't a number yet. */
+function toDecimal(raw: string): string | undefined {
+  const trimmed = raw.trim();
+  if (trimmed === "") return "0";
+  const n = Number(trimmed);
+  return Number.isFinite(n) ? String(n / 100) : undefined;
+}
 
 export default function SurplusCashFlowForm({
   clientId,
@@ -28,85 +36,58 @@ export default function SurplusCashFlowForm({
 }: SurplusCashFlowFormProps) {
   const { permission } = useClientAccess();
   const canEdit = permission === "edit";
-  const router = useRouter();
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
+  const { save, state, error, retry } = usePlanSettingsAutosave(clientId);
+  const [spendPct, setSpendPct] = useState(pct(surplusSpendPct));
+  const [saveAccountId, setSaveAccountId] = useState(surplusSaveAccountId ?? "");
   const [spendAllUntilRetirement, setSpendAllUntilRetirement] = useState(
     surplusSpendAllUntilRetirement,
   );
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    setSuccess(false);
-
-    const data = new FormData(e.currentTarget);
-    const body = {
-      surplusSpendPct: String(Number(data.get("surplusSpendPct") as string) / 100),
-      surplusSaveAccountId: (data.get("surplusSaveAccountId") as string) || null,
-      surplusSpendAllUntilRetirement: spendAllUntilRetirement,
-    };
-
-    try {
-      const res = await fetch(`/api/clients/${clientId}/plan-settings`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const json = await res.json();
-        throw new Error(json.error ?? "Failed to save");
-      }
-      setSuccess(true);
-      router.refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
-    } finally {
-      setLoading(false);
-    }
-  }
-
   return (
-    <form onSubmit={handleSubmit} className="space-y-3">
-      {error && <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>}
-      {success && <p className="rounded bg-green-900/50 px-3 py-2 text-sm text-green-400">Saved.</p>}
-
-      <fieldset disabled={!canEdit} className="space-y-3 border-0 p-0 m-0">
-        <div className="mb-2 flex items-center gap-2">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-300">
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-1.5">
+          <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-3">
             Surplus Cash Flow
           </h3>
-          <HelpTip text="Controls what happens to any positive net cash flow each year, after savings, gifts, and taxes are applied. By default, surplus accumulates in the household checking account." />
+          <FieldTooltip text="Controls what happens to any positive net cash flow each year, after savings, gifts, and taxes are applied. By default, surplus accumulates in the household checking account." />
         </div>
+        {canEdit && <AutosaveStatus state={state} error={error} onRetry={retry} />}
+      </div>
 
-        <div className="grid grid-cols-2 gap-4 rounded-md border border-gray-800 bg-gray-900/40 p-3">
+      <fieldset disabled={!canEdit} className="m-0 space-y-3 border-0 p-0">
+        <div className="grid grid-cols-2 gap-4 rounded-[var(--radius)] border border-hair bg-card p-3">
           <div>
-            <label className="block text-xs font-medium text-gray-300" htmlFor="surplusSpendPct">
+            <label className={fieldLabelClassName} htmlFor="surplusSpendPct">
               Spend % of surplus
             </label>
             <PercentInput
               id="surplusSpendPct"
-              name="surplusSpendPct"
-              defaultValue={pct(surplusSpendPct)}
-              className={`${INPUT_CLS} mt-1`}
+              value={spendPct}
+              onChange={(raw) => {
+                setSpendPct(raw);
+                const decimal = toDecimal(raw);
+                if (decimal !== undefined) save({ surplusSpendPct: decimal });
+              }}
             />
-            <p className="mt-1 text-xs text-gray-500">
+            <p className="mt-1 text-[12px] text-ink-3">
               {spendAllUntilRetirement
                 ? "Applies from the first retirement year onward."
                 : 'The spent portion appears as "Surplus spent" on the Cash Flow report.'}
             </p>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-300" htmlFor="surplusSaveAccountId">
+            <label className={fieldLabelClassName} htmlFor="surplusSaveAccountId">
               Save remainder to
             </label>
             <select
               id="surplusSaveAccountId"
-              name="surplusSaveAccountId"
-              defaultValue={surplusSaveAccountId ?? ""}
-              className={`${INPUT_CLS} mt-1`}
+              value={saveAccountId}
+              onChange={(e) => {
+                setSaveAccountId(e.target.value);
+                save({ surplusSaveAccountId: e.target.value || null });
+              }}
+              className={selectClassName}
             >
               <option value="">Household checking (default)</option>
               {householdAccounts.map((a) => (
@@ -116,29 +97,23 @@ export default function SurplusCashFlowForm({
           </div>
         </div>
 
-        <label className="flex items-center gap-2 text-sm text-gray-300">
+        <label className="flex items-center gap-2 text-sm text-ink-2">
           <input
             type="checkbox"
             checked={spendAllUntilRetirement}
-            onChange={(e) => setSpendAllUntilRetirement(e.target.checked)}
+            onChange={(e) => {
+              setSpendAllUntilRetirement(e.target.checked);
+              // Explicit boolean, not a FormData read: the route treats an
+              // absent key as "don't touch", so an unchecked box has to send
+              // `false` or it could never be turned back off.
+              save({ surplusSpendAllUntilRetirement: e.target.checked });
+            }}
             className="accent-accent"
           />
           Spend all surplus until retirement
-          <HelpTip text="Treats 100% of each year's surplus as spent through the year before the first person retires. From that retirement year onward, the percentage above applies." />
+          <FieldTooltip text="Treats 100% of each year's surplus as spent through the year before the first person retires. From that retirement year onward, the percentage above applies." />
         </label>
-
-        {canEdit && (
-          <div className="flex justify-end pt-1">
-            <button
-              type="submit"
-              disabled={loading}
-              className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-ink disabled:opacity-50"
-            >
-              {loading ? "Saving..." : "Save"}
-            </button>
-          </div>
-        )}
       </fieldset>
-    </form>
+    </div>
   );
 }

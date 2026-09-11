@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { ClerkAPIResponseError } from "@clerk/nextjs/errors";
 
 // ── Auth mocks ────────────────────────────────────────────────────────────────
 vi.mock("@/lib/db-helpers", () => ({
@@ -106,6 +107,13 @@ vi.mock("@/lib/intake/tokens", () => ({
   defaultExpiry: (now: Date) => new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000),
 }));
 
+// ── Binding layer mock (Deploy-1 dual-read) ──────────────────────────────────
+const resolveClientPortalUserIdMock = vi.fn();
+vi.mock("@/lib/portal/bindings", () => ({
+  resolveClientPortalUserId: (clientId: string, legacy: string | null) =>
+    resolveClientPortalUserIdMock(clientId, legacy),
+}));
+
 // ── Audit mock ────────────────────────────────────────────────────────────────
 const recordAuditMock = vi.fn();
 vi.mock("@/lib/audit", () => ({
@@ -131,6 +139,8 @@ beforeEach(() => {
   selectClientResultMock.mockReset();
   sendIntakeFormEmailMock.mockReset();
   recordAuditMock.mockReset();
+  resolveClientPortalUserIdMock.mockReset();
+  resolveClientPortalUserIdMock.mockResolvedValue(null);
   portalEntitlementMock.mockReset();
   portalForAdvisorMock.mockReset();
 
@@ -302,9 +312,12 @@ describe("POST /api/data-collection — prefilled mode, unbound client", () => {
 });
 
 describe("POST /api/data-collection — prefilled mode, already-bound client", () => {
-  it("inserts form but skips the portal invite when clerkUserId is set", async () => {
-    // Client is already bound
+  it("inserts form but skips the portal invite when the client is already bound", async () => {
+    // Already bound. The legacy column no longer decides this on its own — the
+    // resolver does, because that column outlives a revoke — so the fixture
+    // sets both, which is what a genuinely bound client looks like.
     selectClientResultMock.mockResolvedValue([{ clerkUserId: "user_clerk_123" }]);
+    resolveClientPortalUserIdMock.mockResolvedValue("user_clerk_123");
 
     const res = await POST(
       postReq({
@@ -531,5 +544,97 @@ describe("POST /api/data-collection — rate limiting", () => {
     expect(checkLimitMock).not.toHaveBeenCalled();
     // And the request succeeds
     expect(res.status).toBe(200);
+  });
+});
+
+describe("POST /api/data-collection — a client bound only in portal_bindings", () => {
+  it("skips the portal invite for a client who ACCEPTED an access request", async () => {
+    // The request path writes a binding row and never `clients.clerk_user_id`,
+    // so the legacy column alone would re-invite a client who already has access.
+    selectClientResultMock.mockResolvedValue([{ clerkUserId: null }]);
+    resolveClientPortalUserIdMock.mockResolvedValue("user_from_binding");
+
+    const res = await POST(
+      postReq({
+        mode: "prefilled",
+        clientId: "client-1",
+        recipientEmail: "client@example.com",
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(resolveClientPortalUserIdMock).toHaveBeenCalledWith("client-1", null);
+    expect(createInvitationMock).not.toHaveBeenCalled();
+  });
+
+  it("still invites a client no binding and no legacy column knows about", async () => {
+    selectClientResultMock.mockResolvedValue([{ clerkUserId: null }]);
+    resolveClientPortalUserIdMock.mockResolvedValue(null);
+
+    await POST(
+      postReq({
+        mode: "prefilled",
+        clientId: "client-1",
+        recipientEmail: "client@example.com",
+      }),
+    );
+
+    expect(createInvitationMock).toHaveBeenCalled();
+  });
+
+  it("invites a client whose access was REVOKED — they can no longer sign in", async () => {
+    // The revoked row ended access; `clients.clerk_user_id` survives it by
+    // design. Reading that column here skips the invite for someone who has no
+    // way into the portal, and the form waits in a place they cannot reach.
+    selectClientResultMock.mockResolvedValue([{ clerkUserId: "user_revoked" }]);
+    resolveClientPortalUserIdMock.mockResolvedValue(null);
+
+    await POST(
+      postReq({
+        mode: "prefilled",
+        clientId: "client-1",
+        recipientEmail: "client@example.com",
+      }),
+    );
+
+    expect(resolveClientPortalUserIdMock).toHaveBeenCalledWith("client-1", "user_revoked");
+    expect(createInvitationMock).toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/data-collection — the email already has a Foundry account", () => {
+  function takenEmail() {
+    createInvitationMock.mockRejectedValue(
+      new ClerkAPIResponseError("Unprocessable Entity", {
+        status: 422,
+        data: [{ code: "form_identifier_exists", message: "That email address is taken." }],
+      }),
+    );
+    return POST(
+      postReq({
+        mode: "prefilled",
+        clientId: "client-1",
+        recipientEmail: "client@example.com",
+      }),
+    );
+  }
+
+  it("keeps the form and warns in words this caller can act on", async () => {
+    const res = await takenEmail();
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.ok).toBe(true);
+    expect(json.formId).toBe("form-1");
+    expect(json.warning).toMatch(/already has a Foundry account/i);
+    expect(json.warning).toMatch(/Access tab/i);
+  });
+
+  it("does not hand this caller the Manage-Portal button copy it cannot offer", async () => {
+    const res = await takenEmail();
+
+    // The shared message points at a button that lives on the Access tab, not
+    // on the intake form this advisor is looking at.
+    expect((await res.json()).warning).not.toMatch(/the button will offer/i);
   });
 });

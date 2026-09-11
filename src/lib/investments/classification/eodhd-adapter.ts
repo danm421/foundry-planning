@@ -19,13 +19,94 @@ function num(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function mapSecurityType(rawType: string | undefined): SecurityType {
+/** Map an EODHD instrument-type string (`Common Stock`, `FUND`, `ETF`, …) to
+ *  our SecurityType. Shared with the search-based name lookup. */
+export function mapSecurityType(rawType: string | undefined): SecurityType {
   const t = (rawType ?? "").toLowerCase();
   if (t.includes("etf")) return "etf";
   if (t.includes("fund")) return "mutual_fund";
   if (t.includes("bond") || t.includes("note")) return "bond";
   if (t.includes("stock") || t.includes("share") || t.includes("equity")) return "stock";
   return "other";
+}
+
+// ── Mutual-fund payload normalisation ────────────────────────────────────────
+// EODHD's `MutualFund_Data` block is NOT the same shape as `ETF_Data` — every
+// field we read is renamed or re-nested. Normalising it up front keeps the
+// classification logic below single-shape. Measured against the live responses
+// for SWPPX.US / GFAFX.US / VFIDX.US on 2026-09-10.
+
+/** `{ "4": { Type: "US Stock", "Net_%": "99.1" } }` → `{ "Stock US": { "Net_Assets_%": "99.1" } }` */
+const MF_ALLOCATION_TYPES: Record<string, string> = {
+  "us stock": "Stock US",
+  "non us stock": "Stock non-US",
+  bond: "Bond",
+  cash: "Cash",
+  other: "Other",
+};
+
+/** Morningstar's fund tiers vs the ETF block's. `AverageMarketCap` is an
+ *  absolute dollar figure, not a percentage, and is deliberately dropped. */
+const MF_CAP_TIERS: Record<string, string> = {
+  giant: "Mega",
+  large: "Big",
+  medium: "Medium",
+  small: "Small",
+  micro: "Micro",
+};
+
+/** Rows of an index-keyed EODHD object (`{ "0": {...}, "1": {...} }`). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function rowsOf(obj: unknown): any[] {
+  return obj && typeof obj === "object" ? Object.values(obj as Record<string, unknown>) : [];
+}
+
+/** Flatten a group-of-rows block (`{ Americas: { "0": { Name, <valueKey> } } }`)
+ *  into the ETF block's flat `{ [Name]: { "Equity_%": value } }`. */
+function flattenNamedGroups(groups: unknown, valueKey: string): Record<string, { "Equity_%": number }> {
+  const out: Record<string, { "Equity_%": number }> = {};
+  for (const group of rowsOf(groups)) {
+    for (const row of rowsOf(group)) {
+      const name = row?.Name;
+      if (typeof name === "string") out[name] = { "Equity_%": num(row?.[valueKey]) };
+    }
+  }
+  return out;
+}
+
+/** Re-express a `MutualFund_Data` block in `ETF_Data`'s shape. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function normalizeMutualFundData(mf: any): any {
+  const allocation: Record<string, { "Net_Assets_%": number }> = {};
+  for (const row of rowsOf(mf?.Asset_Allocation)) {
+    const key = MF_ALLOCATION_TYPES[String(row?.Type ?? "").toLowerCase()];
+    if (key) allocation[key] = { "Net_Assets_%": num(row?.["Net_%"]) };
+  }
+
+  const caps: Record<string, number> = {};
+  for (const row of rowsOf(mf?.Market_Capitalization)) {
+    const tier = MF_CAP_TIERS[String(row?.Size ?? "").toLowerCase()];
+    if (tier) caps[tier] = num(row?.["Portfolio_%"]);
+  }
+
+  return {
+    Asset_Allocation: allocation,
+    Market_Capitalisation: caps,
+    World_Regions: flattenNamedGroups(mf?.World_Regions, "Stocks_%"),
+    Sector_Weights: flattenNamedGroups(mf?.Sector_Weights, "Amount_%"),
+    Index_Name: mf?.Fund_Category,
+  };
+}
+
+/** The Morningstar category, wherever this payload happens to carry it.
+ *  `General.Category` is populated for ETFs and is ALWAYS null for funds. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function resolveCategory(raw: any): string | undefined {
+  return raw?.General?.Category
+    ?? raw?.General?.Fund_Category
+    ?? raw?.MutualFund_Data?.Fund_Category
+    ?? raw?.MutualFund_Data?.Morning_Star_Category
+    ?? undefined;
 }
 
 /** Pure: raw EODHD fundamentals JSON → ClassifierInput. */
@@ -39,7 +120,7 @@ export function mapEodhdToInput(ticker: string, raw: any): ClassifierInput {
   if (securityType === "etf" || securityType === "mutual_fund" || securityType === "other") {
     const fundType: SecurityType = securityType === "etf" ? "etf" : "mutual_fund";
 
-    const catSlug = classifyCategory(raw?.General?.Category);
+    const catSlug = classifyCategory(resolveCategory(raw));
     if (catSlug) return { securityType: fundType, ticker, definitiveSlug: catSlug };
 
     if (isCashFund(ticker, raw?.General?.Name, raw?.General?.Type)) {
@@ -48,7 +129,9 @@ export function mapEodhdToInput(ticker: string, raw: any): ClassifierInput {
   }
 
   if (securityType === "etf" || securityType === "mutual_fund") {
-    const data = raw.ETF_Data ?? raw.MutualFund_Data ?? {};
+    const data = raw.ETF_Data
+      ?? (raw.MutualFund_Data ? normalizeMutualFundData(raw.MutualFund_Data) : undefined)
+      ?? {};
     const alloc = data.Asset_Allocation ?? {};
     const pick = (k: string) => num(alloc[k]?.["Net_Assets_%"]);
     const assetAllocation = {

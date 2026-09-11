@@ -49,9 +49,24 @@ const GATED: Readonly<Record<string, { feature: PortalFeatureKey; via: "route" |
  * 403. Budget-off degrades it instead, passing `budgetEnabled` into the loader
  * so the budgeting numbers are never queried and the tiles are simply gone. A
  * client with a Budget-off portal still has a dashboard.
+ *
+ * `requests` is core and must STAY ungated: it is the accept/decline screen's
+ * endpoint, and its caller holds no binding yet — there is no household whose
+ * feature switches could be read, let alone one that should hide the request.
+ *
+ * `connections` is core for the mirror reason: it lists EVERY firm holding this
+ * login and lets the client end any of them. It spans firms, so there is no one
+ * household whose switches could gate it — and a client must be able to leave a
+ * firm whose portal is switched off, not least then.
+ *
+ * `active-household` is core on the same grounds: it MOVES the client between
+ * the households they hold, so gating it on the switches of the household they
+ * are currently in would let one firm turning a section off pin them there.
  */
 const CORE = new Set([
   "accounts",
+  "active-household",
+  "connections",
   "dashboard",
   "expenses",
   "family",
@@ -62,6 +77,7 @@ const CORE = new Set([
   "me",
   "plaid",
   "push-tokens",
+  "requests",
   "savings-rules",
   "settings",
   "trusts",

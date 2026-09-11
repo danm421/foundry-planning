@@ -10,6 +10,8 @@ import { isAbsorbingLivingRow } from "@/engine/surplus-spend";
 import type { QuickAddType } from "@/lib/solver/quick-add-account";
 import { buildAdditionalSavingsAccount } from "@/lib/solver/quick-add-account";
 import { applyMutations } from "@/lib/solver/apply-mutations";
+import type { DefaultGrowthAtInflation } from "@/lib/investments/default-growth-at-inflation";
+import { DefaultGrowthBanner } from "@/components/default-growth-banner";
 import { parseProjectionResponse } from "@/lib/solver/projection-wire";
 import { mutationKey, type SolverMutation, type SolverMutationKey } from "@/lib/solver/types";
 import { isBaseSavableMutation } from "@/lib/solver/mutations-to-base-updates";
@@ -118,6 +120,10 @@ interface Props {
   educationSeed?: number;
   /** Advisor's persisted report order + visibility, reconciled server-side. */
   initialReportLayout: ReportLayoutEntry[];
+  /** Set when the plan's taxable / retirement growth is still on the untouched
+   *  inflation default; null/absent when the plan has real return assumptions
+   *  (optional so the many workspace tests need not stub it). */
+  defaultGrowthWarning?: DefaultGrowthAtInflation | null;
 }
 
 /** Left-pane input tabs, in display order. Mirrors SolverChartPanel's REPORT_TABS.
@@ -192,6 +198,7 @@ export function LiveSolverWorkspace({
   educationReturnStats,
   educationSeed,
   initialReportLayout,
+  defaultGrowthWarning,
 }: Props) {
   const router = useRouter();
   const currentYear = new Date().getFullYear();
@@ -1319,6 +1326,13 @@ export function LiveSolverWorkspace({
 
   return (
     <div data-fills-viewport className="flex min-h-0 flex-1 flex-col">
+      {/* Plan-assumption warning sits above the two panes so it reads on every
+          tab. shrink-0 keeps it out of the flex-1 height negotiation below. */}
+      {defaultGrowthWarning && (
+        <div className="shrink-0 border-b border-hair px-3 py-2">
+          <DefaultGrowthBanner clientId={clientId} warning={defaultGrowthWarning} />
+        </div>
+      )}
       {/* data-fills-viewport tells the app shell to take a definite height on
           desktop (see AppLayout). That's what makes flex-1/min-h-0 resolve here
           instead of growing to fit content, so each pane's own overflow-y-auto

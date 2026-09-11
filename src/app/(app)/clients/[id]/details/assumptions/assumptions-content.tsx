@@ -199,6 +199,15 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
     clientInflationOverride,
   );
 
+  // What the "Asset class" inflation option would resolve to regardless of the
+  // current source — the radio row quotes it, and `resolvedInflationRate`
+  // returns the *custom* rate whenever the source is custom.
+  const assetClassInflationRate = resolveInflationRate(
+    { inflationRateSource: "asset_class", inflationRate: null },
+    firmInflationAc ?? null,
+    clientInflationOverride,
+  );
+
   const modelPortfolioOptions = buildModelPortfolioOptions(
     portfolioRows,
     allocationRows,
@@ -333,7 +342,9 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
   }));
 
   return (
-    <div className="max-w-3xl space-y-6">
+    // Wide enough for the Tax Rates tab's two columns of setting cards; still
+    // capped so a line of body copy never runs the width of an ultrawide.
+    <div className="max-w-6xl space-y-6">
       <div>
         <h2 className="text-xl font-bold text-ink">Assumptions</h2>
         <p className="mt-1 text-sm text-ink-2">
@@ -392,6 +403,7 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
           spouseCoveredByWorkplacePlan: clientRow.spouseCoveredByWorkplacePlan,
         }}
         resolvedInflationRate={resolvedInflationRate}
+        assetClassInflationRate={assetClassInflationRate}
         hasInflationAssetClass={firmInflationAc != null}
         modelPortfolios={modelPortfolioOptions}
         accounts={accountRows.map((a) => ({

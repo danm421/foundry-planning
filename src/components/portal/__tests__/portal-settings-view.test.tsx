@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import type { PortalPrivacy } from "@/lib/portal/privacy";
 
@@ -46,6 +46,15 @@ vi.mock("@/components/portal/institutions-section", async () => {
   };
 });
 
+// ConnectedFirmsCard fetches its own list on mount. Serve it an empty one so
+// these renders never reach the network; what this file asserts about it is
+// whether the SECTION is there at all, not what the list contains.
+beforeEach(() => {
+  globalThis.fetch = vi.fn(
+    async () => ({ ok: true, status: 200, json: async () => ({ connections: [] }) }) as Response,
+  ) as unknown as typeof fetch;
+});
+
 const privacy: PortalPrivacy = {
   shareTransactions: true,
   shareBudgets: true,
@@ -90,5 +99,28 @@ describe("PortalSettingsView — Connections authorization gate", () => {
     expect(screen.getByRole("button", { name: /unlink/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /refresh/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /manage/i })).toBeInTheDocument();
+  });
+});
+
+// "Connected firms" is the client's own control over which firms hold their
+// login. It is not an advisor surface at all: the list spans firms, so showing
+// it in the preview would tell one firm which OTHER firms this person works
+// with. The endpoint 403s an advisor session; this is the same decision on the
+// page, so a preview never even renders a Disconnect it could not use.
+describe("PortalSettingsView — Connected firms", () => {
+  it("is absent from the advisor preview", async () => {
+    const { PortalSettingsView } = await import("../portal-settings-view");
+    render(
+      await PortalSettingsView({ privacy, clientId: "client-1", editEnabled: true, readOnly: true }),
+    );
+    expect(screen.queryByText("Connected firms")).toBeNull();
+    expect(screen.queryByRole("button", { name: /disconnect/i })).toBeNull();
+  });
+
+  it("is present on the client's own settings page", async () => {
+    const { PortalSettingsView } = await import("../portal-settings-view");
+    render(await PortalSettingsView({ privacy, clientId: "client-1", editEnabled: true }));
+    // The control for the assertion above: the same query does find it here.
+    expect(screen.getByText("Connected firms")).toBeInTheDocument();
   });
 });

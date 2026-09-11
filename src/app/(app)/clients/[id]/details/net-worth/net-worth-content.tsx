@@ -28,6 +28,8 @@ import { controllingEntity } from "@/engine/ownership";
 import { buildAccountRows, loadAccountMetaRows, linkedSourceMapFrom } from "@/lib/accounts/load-account-rows";
 import { categoryDefaultRates } from "@/lib/investments/category-default-rates";
 import { buildIncomeRows } from "@/lib/balance-sheet/build-income-rows";
+import { detectDefaultGrowthAtInflationFor } from "@/lib/investments/default-growth-at-inflation";
+import { DefaultGrowthBanner } from "@/components/default-growth-banner";
 
 interface NetWorthContentProps {
   clientId: string;
@@ -82,7 +84,7 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
     portfolioRows,
     allocationRows,
     assetClassRows,
-    { effectiveTree },
+    { effectiveTree, resolutionContext },
     notesReceivableRows,
     fundPortfolioOptions,
   ] = await Promise.all([
@@ -314,44 +316,56 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
     ),
   };
 
+  // Untouched plan defaults leave taxable / retirement accounts compounding at
+  // inflation. `effectiveTree.accounts` carries the account's own growthSource
+  // (view-only metadata the loader passes through), which is what says whether
+  // the account inherits the category default or overrides it.
+  const defaultGrowthWarning = detectDefaultGrowthAtInflationFor(
+    resolutionContext,
+    effectiveTree.accounts,
+  );
+
   return (
-    <BalanceSheetView
-      clientId={id}
-      accounts={accountProps}
-      liabilities={liabilityProps}
-      notesReceivable={notesReceivableRows}
-      incomes={buildIncomeRows(effectiveTree.incomes)}
-      expenses={effectiveTree.expenses.map((e) => ({
-        id: e.id,
-        name: e.name,
-        annualAmount: e.annualAmount,
-        ownerAccountId: e.ownerAccountId ?? null,
-        startYear: e.startYear,
-        endYear: e.endYear,
-        growthRate: e.growthRate,
-        inflationStartYear: e.inflationStartYear ?? null,
-      }))}
-      planStartYear={planStartYear}
-      planEndYear={planEndYear}
-      primaryClientBirthYear={parseInt(primaryContact.dateOfBirth.slice(0, 4), 10)}
-      entities={entityOptions}
-      familyMembers={familyMemberRows}
-      categoryDefaults={categoryDefaults}
-      modelPortfolios={modelPortfolioOptions}
-      fundPortfolios={fundPortfolioOptions}
-      ownerNames={{
-        clientName: `${effectiveTree.client.firstName} ${effectiveTree.client.lastName}`,
-        spouseName: effectiveTree.client.spouseName
-          ? `${effectiveTree.client.spouseName} ${client.spouseLastName ?? effectiveTree.client.lastName}`.trim()
-          : null,
-      }}
-      assetClasses={assetClassOptions}
-      portfolioAllocationsMap={portfolioAllocationsMap}
-      categoryDefaultSources={categoryDefaultSources}
-      milestones={milestones}
-      resolvedInflationRate={resolvedInflationRate}
-      growthContext={growthContext}
-      categoryDefaultRates={categoryDefaults}
-    />
+    <div className="space-y-6">
+      <DefaultGrowthBanner clientId={id} warning={defaultGrowthWarning} />
+      <BalanceSheetView
+        clientId={id}
+        accounts={accountProps}
+        liabilities={liabilityProps}
+        notesReceivable={notesReceivableRows}
+        incomes={buildIncomeRows(effectiveTree.incomes)}
+        expenses={effectiveTree.expenses.map((e) => ({
+          id: e.id,
+          name: e.name,
+          annualAmount: e.annualAmount,
+          ownerAccountId: e.ownerAccountId ?? null,
+          startYear: e.startYear,
+          endYear: e.endYear,
+          growthRate: e.growthRate,
+          inflationStartYear: e.inflationStartYear ?? null,
+        }))}
+        planStartYear={planStartYear}
+        planEndYear={planEndYear}
+        primaryClientBirthYear={parseInt(primaryContact.dateOfBirth.slice(0, 4), 10)}
+        entities={entityOptions}
+        familyMembers={familyMemberRows}
+        categoryDefaults={categoryDefaults}
+        modelPortfolios={modelPortfolioOptions}
+        fundPortfolios={fundPortfolioOptions}
+        ownerNames={{
+          clientName: `${effectiveTree.client.firstName} ${effectiveTree.client.lastName}`,
+          spouseName: effectiveTree.client.spouseName
+            ? `${effectiveTree.client.spouseName} ${client.spouseLastName ?? effectiveTree.client.lastName}`.trim()
+            : null,
+        }}
+        assetClasses={assetClassOptions}
+        portfolioAllocationsMap={portfolioAllocationsMap}
+        categoryDefaultSources={categoryDefaultSources}
+        milestones={milestones}
+        resolvedInflationRate={resolvedInflationRate}
+        growthContext={growthContext}
+        categoryDefaultRates={categoryDefaults}
+      />
+    </div>
   );
 }

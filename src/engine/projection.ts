@@ -111,6 +111,7 @@ import {
   applyAssetPurchases,
   applyBusinessSales,
   _resetSyntheticIdCounter,
+  DEFAULT_PROPERTY_TAX_GROWTH,
 } from "./asset-transactions";
 import type { AssetSalesResult, BusinessSalesResult } from "./asset-transactions";
 import { createEquityState, computeEquityYear } from "./equity/tax-events";
@@ -1509,6 +1510,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           basisMap,
           accountLedgers,
           year,
+          planStartYear: planSettings.planStartYear,
           defaultCheckingId: defaultChecking?.id ?? "",
         });
 
@@ -1771,7 +1773,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       const propTax = acct.annualPropertyTax ?? 0;
       if (propTax <= 0) continue;
       const elapsed = year - planSettings.planStartYear;
-      const inflated = propTax * Math.pow(1 + (acct.propertyTaxGrowthRate ?? 0.03), Math.max(0, elapsed));
+      const inflated = propTax * Math.pow(1 + (acct.propertyTaxGrowthRate ?? DEFAULT_PROPERTY_TAX_GROWTH), Math.max(0, elapsed));
       // T9: use year-aware helpers so gift events that transferred real-estate
       // ownership to an entity are reflected in the correct year's property-tax
       // routing (household vs entity synthetic expense rows).
@@ -4418,7 +4420,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             // T9: year-aware helper so gift events that transferred real-estate
             // ownership to an entity reduce the household SALT deduction.
             annualPropertyTax: (a.annualPropertyTax ?? 0) * ownedByHouseholdAtYear(a, data.giftEvents, year, planSettings.planStartYear),
-            propertyTaxGrowthRate: a.propertyTaxGrowthRate ?? 0.03,
+            propertyTaxGrowthRate: a.propertyTaxGrowthRate ?? DEFAULT_PROPERTY_TAX_GROWTH,
           })),
           planSettings.planStartYear
         ),

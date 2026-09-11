@@ -2,6 +2,7 @@ import type { ReactElement } from "react";
 import type { PortalPrivacy } from "@/lib/portal/privacy";
 import { PrivacyToggles } from "@/components/portal/privacy-toggles";
 import { InstitutionsSection } from "@/components/portal/institutions-section";
+import ConnectedFirmsCard from "@/components/portal/connected-firms-card";
 
 /**
  * The portal Settings screen. Rendered by the client's /portal/settings page
@@ -57,6 +58,27 @@ export async function PortalSettingsView({
             refresh, re-authenticate or unlink a client's institution. */}
         <InstitutionsSection clientId={clientId} editEnabled={editEnabled && !readOnly} />
       </section>
+
+      {/* Not rendered in the advisor preview, and not merely disabled there.
+          This lists EVERY firm holding the client's login — including other
+          firms — so showing it read-only would leak one firm's client
+          relationships to another. The endpoint refuses an advisor session
+          anyway; this is the surface half of the same decision. */}
+      {readOnly ? null : (
+        <section
+          aria-labelledby="connected-firms-title"
+          className="rounded-xl border border-hair bg-card p-5"
+        >
+          <h2 id="connected-firms-title" className="mb-2 text-[15px] font-semibold text-ink">
+            Connected firms
+          </h2>
+          <p className="mb-3 text-[13px] text-ink-3">
+            Firms whose advisors can open a household with this login. Disconnecting ends that
+            access straight away and leaves your login and your other connections alone.
+          </p>
+          <ConnectedFirmsCard />
+        </section>
+      )}
 
       <section className="rounded-xl border border-hair bg-card-2 p-5">
         <h2 className="mb-1 text-[13px] font-semibold text-ink-2">
