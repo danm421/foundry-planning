@@ -1,4 +1,5 @@
 import { compactCurrency } from "@/lib/presentations/format";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import { YEAR_REF_LABELS, type YearRef } from "@/lib/milestones";
 
 export const toNum = (v: unknown): number | null => {
@@ -54,9 +55,13 @@ export const ENUM_LABELS = {
     trust: "Trust", llc: "LLC", s_corp: "S-corp", c_corp: "C-corp",
     partnership: "Partnership", foundation: "Foundation", other: "Entity",
   } as Record<string, string>,
+  /** The individual-person enum — one map, shared by every field that stores it
+   *  (a gift's `grantor`, an income's `owner`). A pure formatter with no
+   *  household names to work with, so the second person falls back to the
+   *  shared CO_CLIENT_LABEL rather than a real name. */
   grantor: {
     client: "Client",
-    spouse: "Co-client",
+    spouse: CO_CLIENT_LABEL,
     joint: "Joint",
   } as Record<string, string>,
 };

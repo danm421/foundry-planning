@@ -2,7 +2,7 @@ import type { ScenarioChange } from "@/engine/scenario/types";
 import type { ChangeRow } from "../types";
 import type { KindSpec } from "./specs";
 import type { ResolveContext } from "./resolve";
-import { nameFor, fieldLabel, fmtValue } from "./format";
+import { nameFor, fieldLabel, fmtFieldValue } from "./format";
 
 export interface DescribeContext {
   targetNames: Record<string, string>;
@@ -45,7 +45,7 @@ export function editRow(
     // "this changes your spending". Table hides it; chapter keeps it.
     return {
       area: spec.area, what, op: "edit",
-      before: fmtValue(from), after: fmtValue(to),
+      before: fmtFieldValue(f, from), after: fmtFieldValue(f, to),
       detail: [spec.whyEdit], restatesRow: true,
     };
   }
@@ -55,7 +55,7 @@ export function editRow(
   const detail =
     fields.length === 0
       ? [spec.whyEdit]
-      : fields.map((f) => `${fieldLabel(f)}: ${fmtValue(payload[f]?.from)} → ${fmtValue(payload[f]?.to)}`);
+      : fields.map((f) => `${fieldLabel(f)}: ${fmtFieldValue(f, payload[f]?.from)} → ${fmtFieldValue(f, payload[f]?.to)}`);
   return { area: spec.area, what, op: "edit", before: "—", after: "Updated", detail };
 }
 
