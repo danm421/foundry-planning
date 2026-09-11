@@ -52,6 +52,15 @@ export interface EstateCompareColumnArgs<TData> {
   /** Already resolved against THIS column's own projection years. */
   asOf: AsOfValue;
   ordering: Ordering;
+  /**
+   * Report this column's projection metadata and report data upward.
+   *
+   * `meta` may be rebuilt every render — the shell compares it by content.
+   * `data` is compared by IDENTITY, so a view MUST hold `data` in state or a
+   * memo rather than rebuilding it inline each render. A freshly-built `data`
+   * listed in the reporting effect's dependencies re-reports forever and
+   * loops the browser.
+   */
   onReady: (ready: EstateColumnReady<TData>) => void;
   /** The left column's data. Always null on the left; null on the right until the left loads. */
   baseline: TData | null;
@@ -101,11 +110,32 @@ function toCompareAsOf(value: AsOfValue, years: ColumnYears | null): CompareAsOf
   return { kind: "year", year: value };
 }
 
+/** One column's latest reading, tagged with the ref it describes. */
+interface ColumnReport<TData> extends EstateColumnReady<TData> {
+  ref: string;
+}
+
 /**
  * A column re-reports whenever it re-renders. Storing a fresh object identity
  * for an unchanged reading would re-render the column, which would report
- * again — so compare by content and keep the old object when nothing moved.
+ * again — so keep the previous object whenever nothing actually moved.
  */
+function nextReport<TData>(
+  prev: ColumnReport<TData> | null,
+  ref: string,
+  ready: EstateColumnReady<TData>,
+): ColumnReport<TData> {
+  if (
+    prev !== null &&
+    prev.ref === ref &&
+    sameMeta(prev.meta, ready.meta) &&
+    Object.is(prev.data, ready.data)
+  ) {
+    return prev;
+  }
+  return { ref, ...ready };
+}
+
 function sameMeta(a: EstateColumnMeta | null, b: EstateColumnMeta): boolean {
   return (
     a !== null &&
@@ -150,19 +180,8 @@ export function EstateCompareShell<TData>({
 
   const [sharedAsOf, setSharedAsOf] = useState<CompareAsOf>(initialAsOf ?? TODAY);
   const [ordering, setOrdering] = useState<Ordering>("primaryFirst");
-  const [leftMeta, setLeftMeta] = useState<EstateColumnMeta | null>(null);
-  const [leftData, setLeftData] = useState<TData | null>(null);
-  const [rightMeta, setRightMeta] = useState<EstateColumnMeta | null>(null);
-
-  // Stable per side: each column calls `onReady` from an effect that lists it
-  // as a dependency, so a fresh identity every render would never settle.
-  const onLeftReady = useCallback((ready: EstateColumnReady<TData>) => {
-    setLeftMeta((prev) => (sameMeta(prev, ready.meta) ? prev : ready.meta));
-    setLeftData(ready.data);
-  }, []);
-  const onRightReady = useCallback((ready: EstateColumnReady<TData>) => {
-    setRightMeta((prev) => (sameMeta(prev, ready.meta) ? prev : ready.meta));
-  }, []);
+  const [leftState, setLeftState] = useState<ColumnReport<TData> | null>(null);
+  const [rightState, setRightState] = useState<ColumnReport<TData> | null>(null);
 
   const selection = readCompareSelection(searchParams);
 
@@ -174,6 +193,39 @@ export function EstateCompareShell<TData>({
     (selection.right === BASE_REF ||
       scenarios.some((s) => s.id === selection.right));
   const rightRef = rightExists ? selection.right : null;
+
+  // Identity changes only when the column's ref does — and that already
+  // re-runs the child's effect, since its `scenarioRef` prop changed too. It
+  // never changes render-to-render, which is what would loop.
+  const onLeftReady = useCallback(
+    (ready: EstateColumnReady<TData>) => {
+      setLeftState((prev) => nextReport(prev, selection.left, ready));
+    },
+    [selection.left],
+  );
+  const onRightReady = useCallback(
+    (ready: EstateColumnReady<TData>) => {
+      setRightState((prev) =>
+        rightRef === null
+          ? prev
+          : // Deltas read the LEFT column's data as the baseline, so the right
+            // column's data has no consumer. Dropping it means a right-hand
+            // view that rebuilds `data` inline cannot force a state update.
+            nextReport(prev, rightRef, { meta: ready.meta, data: null }),
+      );
+    },
+    [rightRef],
+  );
+
+  // A reading describing ref X must never be read while the selection names
+  // ref Y. The shell survives a `?scenario=`/`?compare=` change, so without
+  // this the right column would keep showing deltas against the PREVIOUS left
+  // scenario for the whole of the new one's fetch, and a column header would
+  // print the old scenario's year beside the new scenario's name.
+  const leftReport = leftState?.ref === selection.left ? leftState : null;
+  const rightReport = rightState?.ref === rightRef ? rightState : null;
+  const leftMeta = leftReport?.meta ?? null;
+  const rightMeta = rightReport?.meta ?? null;
   const notice = selection.unsupportedRight
     ? SNAPSHOT_NOTICE
     : selection.right !== null && !rightExists
@@ -195,7 +247,7 @@ export function EstateCompareShell<TData>({
   const canSplit =
     isMarried &&
     leftMeta?.firstDeathYear != null &&
-    leftMeta?.secondDeathYear != null;
+    leftMeta.secondDeathYear != null;
 
   const milestones = leftMeta
     ? [
@@ -244,7 +296,7 @@ export function EstateCompareShell<TData>({
           ordering,
           onReady: side === "left" ? onLeftReady : onRightReady,
           // Deltas read right − left, so the left column never gets a baseline.
-          baseline: side === "left" ? null : leftData,
+          baseline: side === "left" ? null : (leftReport?.data ?? null),
         })}
       </section>
     );
