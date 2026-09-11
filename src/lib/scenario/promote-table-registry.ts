@@ -43,6 +43,7 @@ import {
   writeRothConversionChildren,
   writeReinvestmentChildren,
   writeWillChildren,
+  writeGiftChildren,
 } from "./promote-child-writers";
 import { translateGiftDraftForPromote } from "./promote-gift-translate";
 
@@ -134,7 +135,15 @@ export const PROMOTE_TABLE_REGISTRY: Partial<Record<TargetKind, RegistryEntry>> 
   client_tax_adjustment: { table: clientTaxAdjustments },
   family_member: { table: familyMembers },
   external_beneficiary: { table: externalBeneficiaries },
-  gift: { table: gifts, translate: translateGiftDraftForPromote, preserveId: true },
+  gift: {
+    table: gifts,
+    translate: translateGiftDraftForPromote,
+    preserveId: true,
+    // An asset gift on an account with a linked liability carries a bundled
+    // liability-transfer child row, exactly as the gift route creates one.
+    // Without it the mortgage stops following the property at promote.
+    childWriter: writeGiftChildren,
+  },
   will: { table: wills, childWriter: writeWillChildren },
   entity: { table: entities },
   relocation: { table: relocations },

@@ -8,7 +8,7 @@
 // Field mapping follows the same patterns established in:
 //   - save-to-base/route.ts  (account owners)
 //   - create-with-clone.ts   (savings/transfer/roth children)
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
   accountOwners,
   liabilityOwners,
@@ -24,6 +24,8 @@ import {
   willBequests,
   willBequestRecipients,
   willResiduaryRecipients,
+  gifts,
+  liabilities,
 } from "@/db/schema";
 import { replaceSalaryIncomes } from "@/lib/clients/salary-basis-incomes";
 import { coerceForTable } from "./promote-coerce";
@@ -362,4 +364,98 @@ export async function writeWillChildren(
     });
     await tx.insert(willResiduaryRecipients).values(values as never);
   }
+}
+
+// ── Gift children ──────────────────────────────────────────────────────────
+
+/**
+ * Re-creates the bundled liability transfer that rides along with an asset gift.
+ *
+ * `POST /api/clients/[id]/gifts` does two things for an asset transfer: it
+ * inserts the gift row AND, when the gifted account has a linked liability,
+ * a SECOND `gifts` row carrying `liabilityId` and `parentGiftId` — so the
+ * mortgage leaves the estate with the property. A scenario bypasses that route.
+ * While the scenario is live the numbers are still right, because the overlay
+ * synthesises the matching liability event from `linkedPropertyId`
+ * (`estate-flow-gifts.ts`). Promotion had no equivalent step: it emitted one
+ * row, and the projection loader builds liability gift events from STORED rows
+ * with `liabilityId != null`. So at the moment of promote the debt silently
+ * stopped following the property — 30% of a property moved out of the estate
+ * while 30% of its mortgage stayed with the household, with no error.
+ *
+ * Rewrite, not append: a promoted EDIT of a base asset gift reaches this
+ * function too (the id-preserving upsert UPDATEs the parent, then this runs),
+ * so the parent's children are cleared and rebuilt from the promoted payload.
+ * That keeps a re-promoted gift from growing a second mortgage row, keeps the
+ * child's year/percent in step with the parent, and drops the child entirely
+ * when the gift stops being an asset transfer.
+ *
+ * SCOPING: `clientId` comes from `ctx`, never from the payload, and the
+ * liability lookup is pinned to that client AND the base scenario — the same
+ * posture as `scopeValues`/`scopeWhere` in the executor.
+ *
+ * ONE deliberate difference from the route: the recipient is carried across in
+ * full (whichever of the three columns the draft names), where the route copies
+ * only `recipientEntityId`. The route's version cannot satisfy
+ * `gifts_recipient_exactly_one` for a non-entity recipient, and the overlay this
+ * mirrors carries the whole recipient — so copying the route literally would
+ * promote a row the scenario never showed, or fail the whole promote.
+ */
+export async function writeGiftChildren(
+  tx: PromoteTx,
+  parentId: string,
+  raw: Record<string, unknown>,
+  ctx: ChildWriterCtx,
+): Promise<void> {
+  // Clear first — see the rewrite note above. Scoped to this client so the
+  // delete can never reach another tenant's rows.
+  await tx
+    .delete(gifts)
+    .where(and(eq(gifts.parentGiftId, parentId), eq(gifts.clientId, ctx.clientId)));
+
+  if (raw.kind !== "asset-once") return;
+  const draftAccountId = typeof raw.accountId === "string" ? raw.accountId : null;
+  const percent = typeof raw.percent === "number" ? raw.percent : null;
+  const year = typeof raw.year === "number" ? raw.year : null;
+  if (draftAccountId == null || percent == null || year == null) return;
+
+  // The same remap the parent payload got: an account added in this very batch
+  // lives in the DB under a generated uuid, not the synthetic id the draft names.
+  const accountId = ctx.idRemap.get(draftAccountId) ?? draftAccountId;
+
+  const [linked] = await tx
+    .select({ id: liabilities.id })
+    .from(liabilities)
+    .where(
+      and(
+        eq(liabilities.linkedPropertyId, accountId),
+        eq(liabilities.clientId, ctx.clientId),
+        eq(liabilities.scenarioId, ctx.baseScenarioId),
+      ),
+    );
+  if (!linked) return;
+
+  const recipient = raw.recipient as { kind?: string; id?: string } | undefined;
+  await tx.insert(gifts).values({
+    clientId: ctx.clientId,
+    year,
+    amount: null,
+    grantor: raw.grantor as typeof gifts.$inferInsert["grantor"],
+    recipientEntityId: recipient?.kind === "entity" ? recipient.id ?? null : null,
+    recipientFamilyMemberId:
+      recipient?.kind === "family_member" ? recipient.id ?? null : null,
+    recipientExternalBeneficiaryId:
+      recipient?.kind === "external_beneficiary" ? recipient.id ?? null : null,
+    accountId: null,
+    liabilityId: linked.id,
+    percent: String(percent),
+    // valuationDiscount is deliberately absent, exactly as in the gift route: a
+    // liability transfer contributes $0 to the gift ledger and the normalizer
+    // skips these rows, so a discount here would be dead data — and a double
+    // count against the parent's discount if that ever changed.
+    parentGiftId: parentId,
+    useCrummeyPowers: false,
+    eventKind: (raw.eventKind as typeof gifts.$inferInsert["eventKind"]) ?? "outright",
+    notes: `Auto-bundled with asset transfer of account ${accountId}`,
+  });
 }

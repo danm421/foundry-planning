@@ -18,7 +18,14 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { accounts, entities, gifts, scenarios, scenarioChanges } from "@/db/schema";
+import {
+  accounts,
+  entities,
+  gifts,
+  liabilities,
+  scenarios,
+  scenarioChanges,
+} from "@/db/schema";
 import type { ClientData } from "@/engine/types";
 import type { ScenarioChange } from "@/engine/scenario/types";
 import { applyEntityAdd } from "../changes-writer";
@@ -155,6 +162,14 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     );
   }
 
+  /** `liabilities` → `gifts.liability_id` is ON DELETE SET NULL, and a gift row
+   *  with neither an account nor a liability but a `percent` fails the
+   *  `gifts_event_kind` check — so the bundled children have to go first. */
+  async function dropMortgage(liabilityId: string) {
+    await db.delete(gifts).where(eq(gifts.liabilityId, liabilityId));
+    await db.delete(liabilities).where(eq(liabilities.id, liabilityId));
+  }
+
   async function promotedGifts() {
     return db.select().from(gifts).where(eq(gifts.recipientEntityId, trustId));
   }
@@ -236,12 +251,167 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     expect(row.useCrummeyPowers).toBe(false);
   });
 
+  it("lands the bundled liability transfer beside a promoted asset gift", async () => {
+    // THE DEFECT. `POST /gifts` inserts TWO rows for an asset transfer whose
+    // account carries a mortgage: the gift, and a bundled child with
+    // `liabilityId` set and `parentGiftId` pointing at it. A scenario bypasses
+    // that route, and while the scenario is live the overlay synthesises the
+    // matching liability event from `linkedPropertyId` — so the scenario's
+    // numbers are right. Promotion emitted one row, and the projection loader
+    // builds liability gift events from STORED rows with `liabilityId != null`.
+    // So the property left the estate on promote and 30% of its mortgage
+    // silently stayed with the household.
+    const [mortgage] = await db
+      .insert(liabilities)
+      .values({
+        clientId: COOPER_CLIENT_ID,
+        scenarioId: baseScenarioId,
+        name: "promote-gift-test-mortgage",
+        balance: "400000",
+        startYear: 2020,
+        linkedPropertyId: accountId,
+      })
+      .returning();
+
+    try {
+      const giftId = randomUUID();
+      await applyEntityAdd({
+        scenarioId,
+        firmId: COOPER_FIRM_ID,
+        targetKind: "gift",
+        entity: {
+          id: giftId,
+          kind: "asset-once",
+          year: 2028,
+          accountId,
+          percent: 0.3,
+          grantor: "client",
+          recipient: { kind: "entity", id: trustId },
+        },
+      });
+
+      await promoteOverlay();
+
+      const rows = await promotedGifts();
+      expect(rows).toHaveLength(2);
+
+      const parent = rows.find((r) => r.id === giftId);
+      const child = rows.find((r) => r.id !== giftId);
+      expect(parent).toBeDefined();
+      expect(child).toBeDefined();
+
+      // The child points at the mortgage and at its own parent — the two
+      // columns the loader reads to rebuild the liability gift event.
+      expect(child!.liabilityId).toBe(mortgage.id);
+      expect(child!.parentGiftId).toBe(giftId);
+      expect(child!.accountId).toBeNull();
+      // …and agrees with the parent on everything the event carries.
+      expect(child!.percent).toBe("0.3000");
+      expect(child!.year).toBe(2028);
+      expect(child!.grantor).toBe("client");
+      expect(child!.recipientEntityId).toBe(trustId);
+      expect(child!.clientId).toBe(COOPER_CLIENT_ID);
+      expect(child!.amount).toBeNull();
+      expect(child!.useCrummeyPowers).toBe(false);
+      // A liability transfer contributes $0 to the gift ledger, so a discount
+      // on it would be dead data — and a double count against the parent's.
+      expect(child!.valuationDiscount).toBeNull();
+
+      // The parent is unchanged by the child write.
+      expect(parent!.accountId).toBe(accountId);
+      expect(parent!.liabilityId).toBeNull();
+      expect(parent!.parentGiftId).toBeNull();
+    } finally {
+      await dropMortgage(mortgage.id);
+    }
+  });
+
+  it("rewrites the bundled child on a re-promote instead of stacking a second one", async () => {
+    // A gift has no `edit` op, so editing a base asset gift is an `add` on its
+    // own id and the parent is UPDATEd in place. Appending the child instead of
+    // rewriting it would leave the plan with two mortgage transfers for one
+    // property — and the stale one would keep the OLD year and percent.
+    const [mortgage] = await db
+      .insert(liabilities)
+      .values({
+        clientId: COOPER_CLIENT_ID,
+        scenarioId: baseScenarioId,
+        name: "promote-gift-test-mortgage-2",
+        balance: "250000",
+        startYear: 2020,
+        linkedPropertyId: accountId,
+      })
+      .returning();
+
+    try {
+      const giftId = randomUUID();
+      const add = (year: number, percent: number) =>
+        applyEntityAdd({
+          scenarioId,
+          firmId: COOPER_FIRM_ID,
+          targetKind: "gift",
+          entity: {
+            id: giftId,
+            kind: "asset-once",
+            year,
+            accountId,
+            percent,
+            grantor: "client",
+            recipient: { kind: "entity", id: trustId },
+          },
+        });
+
+      await add(2028, 0.3);
+      await promoteOverlay();
+      await add(2029, 0.45); // the edit, re-promoted
+      await promoteOverlay();
+
+      const rows = await promotedGifts();
+      expect(rows).toHaveLength(2); // one parent, one child — not three
+      const child = rows.find((r) => r.id !== giftId)!;
+      expect(child.liabilityId).toBe(mortgage.id);
+      // The child followed the edit rather than keeping 2028 / 30%.
+      expect(child.year).toBe(2029);
+      expect(child.percent).toBe("0.4500");
+    } finally {
+      await dropMortgage(mortgage.id);
+    }
+  });
+
+  it("writes no bundled child for an asset gift whose account has no linked liability", async () => {
+    // The inert half, asserted rather than assumed: the child writer now runs
+    // for EVERY promoted gift, so "nothing happens" has to be a measured fact.
+    const giftId = randomUUID();
+    await applyEntityAdd({
+      scenarioId,
+      firmId: COOPER_FIRM_ID,
+      targetKind: "gift",
+      entity: {
+        id: giftId,
+        kind: "asset-once",
+        year: 2028,
+        accountId,
+        percent: 0.3,
+        grantor: "client",
+        recipient: { kind: "entity", id: trustId },
+      },
+    });
+
+    await promoteOverlay();
+
+    const rows = await promotedGifts();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe(giftId);
+  });
+
   it("fails loudly, naming the gift, when a recurring series reaches gift promotion", async () => {
-    // A series gift IS written as a `gift` change (transfer-series-form.tsx),
-    // but `gift_series` is not a TargetKind and the executor has no per-row
-    // table choice — so there is nowhere to put it. Inserting it into `gifts`
-    // would die on the NOT NULL `year` column with an opaque DB error, and
-    // dropping it would lose an advisor's gift in silence.
+    // No CURRENT surface writes a series as a `gift` change — `gift_series` is
+    // scenario-partitioned, so every one of them posts straight to the series
+    // route. This pins the LEGACY path: a scenario written before that rule
+    // can still hold a series draft, `gift_series` is not a TargetKind and the
+    // executor has no per-row table choice, so there is nowhere to put it.
+    // Inserting it into `gifts` would die on the NOT NULL `year` column with an
+    // opaque DB error, and dropping it would lose an advisor's gift in silence.
     const seriesId = randomUUID();
     await applyEntityAdd({
       scenarioId,
