@@ -89,4 +89,18 @@ describe("POST /api/clients/[id]/imports — surface handling (C1)", () => {
     const json = await res.json();
     expect(json.error).toBe("Invalid or missing mode");
   });
+
+  it("creates a chat-surface import with holdings extraction already on", async () => {
+    const res = await POST(makeReq({ mode: "onboarding", surface: "chat" }), params);
+    expect(res.status).toBe(201);
+    // The INSERTED row, not the response body — the column is what the
+    // extract route reads.
+    expect(insertedValues).toMatchObject({ extractHoldings: true });
+  });
+
+  it("leaves a non-chat import's holdings flag at the column default", async () => {
+    const res = await POST(makeReq({ mode: "onboarding" }), params);
+    expect(res.status).toBe(201);
+    expect(insertedValues?.extractHoldings).toBeUndefined();
+  });
 });

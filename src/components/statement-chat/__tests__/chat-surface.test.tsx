@@ -103,6 +103,36 @@ describe("ChatSurface", () => {
   });
 });
 
+describe("ChatSurface — the holdings toggle", () => {
+  it("PATCHes extractHoldings to the import row when switched off", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({}), { status: 200 }),
+    ); // PATCH extractHoldings
+
+    render(
+      <ChatSurface
+        clientId="c1"
+        importId="i1"
+        initialFiles={initialFiles}
+        initialExtractHoldings
+      />,
+    );
+    const toggle = await screen.findByRole("checkbox", { name: /extract holdings/i });
+    expect(toggle).toBeChecked();
+
+    await userEvent.click(toggle);
+
+    const patch = vi.mocked(fetch).mock.calls.find(
+      ([, init]) => (init as RequestInit | undefined)?.method === "PATCH",
+    );
+    expect(patch).toBeDefined();
+    expect(JSON.parse(String((patch![1] as RequestInit).body))).toEqual({
+      extractHoldings: false,
+    });
+    expect(toggle).not.toBeChecked();
+  });
+});
+
 /** A "done" SSE frame carrying one kept row and (optionally) one excluded
  *  rollup row, matching the shape `chat/extract/route.ts` actually sends. */
 function oneRowDoneFrame(opts?: { excluded?: boolean }): string {

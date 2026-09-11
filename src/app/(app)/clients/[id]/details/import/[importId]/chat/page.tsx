@@ -36,7 +36,11 @@ export default async function StatementChatPage({ params, searchParams }: PagePr
   if (!client) redirect("/clients");
 
   const [imp] = await db
-    .select({ id: clientImports.id, status: clientImports.status })
+    .select({
+      id: clientImports.id,
+      status: clientImports.status,
+      extractHoldings: clientImports.extractHoldings,
+    })
     .from(clientImports)
     .where(
       and(
@@ -84,6 +88,7 @@ export default async function StatementChatPage({ params, searchParams }: PagePr
             name: f.originalFilename,
             documentType: f.documentType,
           }))}
+          initialExtractHoldings={imp.extractHoldings === true}
         />
       </div>
     </DetailsPageShell>

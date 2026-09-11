@@ -54,11 +54,18 @@ interface ChatSurfaceProps {
   clientId: string;
   importId: string;
   initialFiles: InitialUploadedFile[];
+  initialExtractHoldings?: boolean;
 }
 
-export function ChatSurface({ clientId, importId, initialFiles }: ChatSurfaceProps) {
+export function ChatSurface({
+  clientId,
+  importId,
+  initialFiles,
+  initialExtractHoldings,
+}: ChatSurfaceProps) {
   const [uploadedCount, setUploadedCount] = useState(initialFiles.length);
   const [status, setStatus] = useState<Status>("idle");
+  const [extractHoldings, setExtractHoldings] = useState(initialExtractHoldings ?? false);
   const [fileEvents, setFileEvents] = useState<Array<Extract<ChatExtractEvent, { type: "file" }>>>(
     [],
   );
@@ -101,6 +108,21 @@ export function ChatSurface({ clientId, importId, initialFiles }: ChatSurfacePro
     adoptTurnPayload,
     onAdopted: () => setStatus((s) => (s === "idle" ? "done" : s)),
   });
+
+  const toggleHoldings = useCallback(
+    (next: boolean) => {
+      // Optimistic, like UploadZone's own document-type PATCH: the advisor
+      // sees the switch move, and the value that matters is read server-side
+      // at the next extraction, not now.
+      setExtractHoldings(next);
+      fetch(`/api/clients/${clientId}/imports/${importId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ extractHoldings: next }),
+      }).catch((err) => console.error("Failed to update holdings extraction:", err));
+    },
+    [clientId, importId],
+  );
 
   const runExtraction = useCallback(async () => {
     abortRef.current?.abort();
@@ -197,22 +219,34 @@ export function ChatSurface({ clientId, importId, initialFiles }: ChatSurfacePro
                 ? "Upload one or more account statements to get started."
                 : `${uploadedCount} ${uploadedCount === 1 ? "file" : "files"} ready.`}
             </p>
-            <button
-              type="button"
-              onClick={runExtraction}
-              // Ruling 98: also disabled while a turn is sending — a turn
-              // that resolves DURING a fresh extraction must never be the
-              // thing that re-enables this button (Ruling 63's second
-              // clause, from the other direction).
-              disabled={uploadedCount === 0 || isStreaming || turnStatus === "sending"}
-              className="rounded bg-accent px-5 py-2 text-sm font-medium text-accent-on hover:bg-accent/90 disabled:opacity-50"
-            >
-              {isStreaming
-                ? "Reading statements…"
-                : status === "done" || status === "error"
-                  ? "Re-run extraction"
-                  : "Extract statements"}
-            </button>
+            <div className="flex items-center gap-4">
+              <label className="flex items-center gap-2 text-sm text-ink-3">
+                <input
+                  type="checkbox"
+                  checked={extractHoldings}
+                  onChange={(e) => toggleHoldings(e.target.checked)}
+                  disabled={isStreaming || turnStatus === "sending"}
+                  className="h-4 w-4 rounded border-hair accent-accent"
+                />
+                Extract holdings
+              </label>
+              <button
+                type="button"
+                onClick={runExtraction}
+                // Ruling 98: also disabled while a turn is sending — a turn
+                // that resolves DURING a fresh extraction must never be the
+                // thing that re-enables this button (Ruling 63's second
+                // clause, from the other direction).
+                disabled={uploadedCount === 0 || isStreaming || turnStatus === "sending"}
+                className="rounded bg-accent px-5 py-2 text-sm font-medium text-accent-on hover:bg-accent/90 disabled:opacity-50"
+              >
+                {isStreaming
+                  ? "Reading statements…"
+                  : status === "done" || status === "error"
+                    ? "Re-run extraction"
+                    : "Extract statements"}
+              </button>
+            </div>
           </div>
         </CardBody>
       </Card>
