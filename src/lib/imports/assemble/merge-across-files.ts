@@ -221,6 +221,51 @@ function compareSortKeys(a: SortKey, b: SortKey): number {
   return a.index - b.index;
 }
 
+/**
+ * The `__rowId` a KEYED dedupe entry gets: its section label and dedupe key,
+ * then the entry's own minimum `(sourceFileId, indexWithinFile)` coordinate.
+ * See the long derivation at the mint site in `mergeSection`.
+ *
+ * One function rather than two literals so the provisional write and the
+ * renumber pass cannot drift from each other — or from `keyedRowIdBucket`
+ * below, which has to split this string back apart.
+ */
+function keyedRowId(label: string, key: string, sortKey: SortKey): string {
+  return `${label}:${key}#${sortKey.fileId}:${sortKey.index}`;
+}
+
+/**
+ * The `${label}:${key}` half of a keyed `__rowId` — the DEDUPE BUCKET the row
+ * belonged to — or `null` when the id was not minted by `keyedRowId`.
+ *
+ * This is the only stable, NON-EDITABLE statement of "which account is this"
+ * that survives a re-extraction: the coordinate half of the id moves when a
+ * newly-added file changes an entry's minimum, but the bucket half is the
+ * dedupe key and does not. `lib/statement-chat/rebase.ts` uses it to re-attach
+ * a standing row whose id moved.
+ *
+ * Splitting at the LAST `#` is the same argument the mint's injectivity rests
+ * on: a `sourceFileId` is a database UUID and `indexWithinFile` is a counter,
+ * so neither can contain a `#` and the last one in the string is always the
+ * one `keyedRowId` appended.
+ *
+ * Two shapes are rejected, because the NULL-KEY branch's id
+ * (`${label}:null:${fileId}:${index}:${name}`) ends in raw extraction text
+ * that can contain anything:
+ *  - a suffix that is not `<no-# no-: string>:<digits>` — the coordinate shape;
+ *  - a `:null:` marker sitting where the key would be. A real key of `"null"`
+ *    mints `${label}:null#...`, which has no trailing colon and so still
+ *    parses.
+ */
+export function keyedRowIdBucket(rowId: string): string | null {
+  const hash = rowId.lastIndexOf("#");
+  if (hash < 0) return null;
+  if (!/^[^#:]+:\d+$/.test(rowId.slice(hash + 1))) return null;
+  const bucket = rowId.slice(0, hash);
+  if (/^[^:]*:null:/.test(bucket)) return null;
+  return bucket;
+}
+
 /** Advisor-facing note about what a collapse actually changed, when the
  * caller opts in (currently: account balance conflicts — FIX 5). Returning
  * `null` means "nothing worth calling out for this pair". */
@@ -600,13 +645,21 @@ function mergeSection<T extends { name: string }>(
     // extraction text, and it is the same one the null-key branch above
     // already makes when it interpolates `sourceFileId` into an id.
     //
-    // RESIDUAL, narrowed but not closed: a MERGED entry's minimum moves when
-    // a lower-coordinate row from a newly-added file joins it, so its id
-    // changes and a standing row can find no counterpart at all. That loses
-    // the advisor's edit — it can no longer land it on the WRONG account,
-    // which is what C-1 was. The remaining half is guarded at the join
-    // itself, in `lib/statement-chat/rebase.ts` (Ruling 146).
-    const rowId = `${label}:${key}#${sortKey.fileId}:${sortKey.index}`;
+    // RESIDUAL, and it is NOT closeable here: a MERGED entry's minimum moves
+    // when a lower-coordinate row from a newly-added file joins it, so its id
+    // changes and a standing row can find no counterpart at all. That is the
+    // COMMON case — a newer statement for an account already on the import —
+    // and it cannot be fixed by choosing a better derivation, because any
+    // derived id is a function of the input set and re-extraction changes the
+    // input set by definition.
+    //
+    // So it is closed where identity actually lives: `rebaseOntoFreshMerge`
+    // (`lib/statement-chat/rebase.ts`) carries the standing row's id FORWARD
+    // onto the fresh row it re-attaches to, matching on the BUCKET half of
+    // this id (`keyedRowIdBucket` above), which does not move. Measured cost
+    // of leaving it open: the replacement row committed as `kind: "new"` and
+    // INSERTED a second plan account for one real account.
+    const rowId = keyedRowId(label, key, sortKey);
     const entry: DedupeBucketEntry<T> = {
       index: target.length,
       content,
@@ -644,7 +697,7 @@ function mergeSection<T extends { name: string }>(
   // loop below depends on.
   for (const [key, bucket] of buckets.entries()) {
     for (const entry of bucket) {
-      entry.rowId = `${label}:${key}#${entry.sortKey.fileId}:${entry.sortKey.index}`;
+      entry.rowId = keyedRowId(label, key, entry.sortKey);
       target[entry.index].__rowId = entry.rowId;
     }
   }

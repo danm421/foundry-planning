@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mergeAcrossFiles } from "../merge-across-files";
+import { keyedRowIdBucket, mergeAcrossFiles } from "../merge-across-files";
 import { er } from "./fixtures";
 
 /**
@@ -388,6 +388,49 @@ describe("mergeAcrossFiles — __rowId", () => {
       const r = mergeAcrossFiles({ "file-a": fidelity() });
       expect(r.payload.accounts).toHaveLength(1);
       expect(r.payload.accounts[0].__rowId).toBe("account:1234#file-a:0");
+    });
+  });
+
+  /**
+   * `keyedRowIdBucket` splits a keyed id back into the DEDUPE BUCKET half —
+   * the one part a newly-added file cannot move — so `rebaseOntoFreshMerge`
+   * can re-attach a standing row whose coordinate moved. It decides which
+   * rows are eligible to inherit an advisor's edits and commit stamp, so
+   * what it REFUSES to parse matters as much as what it parses.
+   *
+   * Mutation this catches: relaxing it to a bare "split at the last `#`".
+   * Both rejected shapes below start returning a bucket, and a row this
+   * merge never minted as keyed becomes eligible for re-attachment.
+   */
+  describe("keyedRowIdBucket", () => {
+    it("recovers the label and key from an id this merge minted", () => {
+      const id = mergeAcrossFiles({
+        "file-a": er("fidelity.pdf", {
+          accounts: [{ name: "Fidelity Brokerage", custodian: "Fidelity", accountNumberLast4: "1234", value: 100 }],
+        }),
+      }).payload.accounts[0].__rowId as string;
+      expect(id).toBe("account:1234#file-a:0");
+      expect(keyedRowIdBucket(id)).toBe("account:1234");
+      // A key containing a `#` is extraction text and still round-trips —
+      // the LAST `#` is always the one the mint appended.
+      expect(keyedRowIdBucket("account:12#34#file-a:7")).toBe("account:12#34");
+      // A key of the literal string "null" is a key, not the null branch.
+      expect(keyedRowIdBucket("account:null#file-a:0")).toBe("account:null");
+    });
+
+    it("refuses an id the null-key branch minted, even when the NAME ends in a coordinate", () => {
+      // `${label}:null:${fileId}:${index}:${name}` — the name is raw
+      // extraction text and can contain anything, including a `#`.
+      expect(keyedRowIdBucket("account:null:file-a:0:Card#x:1")).toBeNull();
+      expect(keyedRowIdBucket("account:null:file-a:0:Plain Name")).toBeNull();
+    });
+
+    it("refuses an id whose suffix is not a coordinate", () => {
+      // The rank ordinal this branch used before the coordinate landed. An
+      // import still in review from that era must not be re-attached on a
+      // bucket this function only thinks it can read.
+      expect(keyedRowIdBucket("account:1234#0")).toBeNull();
+      expect(keyedRowIdBucket("account:1234")).toBeNull();
     });
   });
 });
