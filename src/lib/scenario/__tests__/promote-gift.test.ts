@@ -21,6 +21,7 @@ import { db } from "@/db";
 import {
   accounts,
   entities,
+  giftSeries,
   gifts,
   liabilities,
   scenarios,
@@ -28,9 +29,10 @@ import {
 } from "@/db/schema";
 import type { ClientData } from "@/engine/types";
 import type { ScenarioChange } from "@/engine/scenario/types";
-import { applyEntityAdd } from "../changes-writer";
+import { applyEntityAdd, applyEntityRemove } from "../changes-writer";
 import { scenarioChangesToBaseWrites } from "../scenario-changes-to-base-writes";
 import { executeBaseWritePlan } from "../execute-base-write-plan";
+import { copyGiftSeriesToBase } from "../promote-direct-tables";
 import { PROMOTE_TABLE_REGISTRY } from "../promote-table-registry";
 
 const COOPER_CLIENT_ID = "877a9532-f8ea-49b0-9db7-aadd64fab82a";
@@ -67,6 +69,30 @@ describe("PROMOTE_TABLE_REGISTRY — the gift-only opt-ins", () => {
       .filter(([, entry]) => entry?.translate !== undefined)
       .map(([kind]) => kind);
     expect(withTranslate).toEqual(["gift"]);
+  });
+
+  it("still refuses to translate a recurring series into a `gifts` row", () => {
+    // A TRIPWIRE, and deliberately unreachable: `scenarioChangesToBaseWrites`
+    // now partitions series-shaped `gift` changes out of `plan.inserts` into
+    // `plan.giftSeries`, so nothing reaches this hook with one. It stays
+    // because the failure it prevents is silent — `gift_series` is not a
+    // TargetKind, and a series forced into `gifts` dies on the NOT NULL `year`
+    // column with an opaque DB error, or worse, lands half-formed.
+    const translate = PROMOTE_TABLE_REGISTRY.gift!.translate!;
+    expect(() =>
+      translate({
+        id: "gs-direct",
+        kind: "series",
+        startYear: 2027,
+        endYear: 2031,
+        annualAmount: 19_000,
+        amountMode: "fixed",
+        inflationAdjust: false,
+        grantor: "client",
+        recipient: { kind: "entity", id: "trust-1" },
+        crummey: true,
+      }),
+    ).toThrow(/gs-direct.*series/is);
   });
 
   it("opts gift, and only gift, into preserving the change's own id", () => {
@@ -178,9 +204,22 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
       [],
       {},
     );
-    return db.transaction((tx) =>
-      executeBaseWritePlan(tx, plan, { clientId: COOPER_CLIENT_ID, baseScenarioId }),
-    );
+    return db.transaction(async (tx) => {
+      const { counts, idRemap } = await executeBaseWritePlan(tx, plan, {
+        clientId: COOPER_CLIENT_ID,
+        baseScenarioId,
+      });
+      // The scenario-PARTITIONED half of the same promote, in the order
+      // `promote-to-base.ts` runs it. There is only one call to make: RULING 81
+      // put the fold-then-copy order INSIDE the function precisely so that a
+      // helper like this one cannot get it wrong.
+      await copyGiftSeriesToBase(
+        tx,
+        { clientId: COOPER_CLIENT_ID, scenarioId, baseScenarioId },
+        { ...plan.giftSeries, idRemap },
+      );
+      return counts;
+    });
   }
 
   /** Hand the classifier the `gift` change FIRST, so the pre-fix executor is
@@ -435,15 +474,14 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     expect(rows[0].id).toBe(giftId);
   });
 
-  it("fails loudly, naming the gift, when a recurring series reaches gift promotion", async () => {
-    // None of the gift FORMS writes a series as a `gift` change any more —
-    // `gift_series` is scenario-partitioned, so they all post straight to the
-    // series route. Two producers remain: the solver's estate editor (whose
-    // gift dialog still offers Recurring) and legacy rows. `gift_series` is not
-    // a TargetKind and the executor has no per-row table choice, so there is
-    // nowhere to put either. Inserting into `gifts` would die on the NOT NULL
-    // `year` column with an opaque DB error, and dropping it would lose an
-    // advisor's gift in silence.
+  it("never lands a recurring series in the `gifts` table", async () => {
+    // The solver's estate editor still offers Recurring and records it as a
+    // `gift` change (so do legacy scenarios). It used to reach the one-table-
+    // per-kind executor, where it threw by name and rolled the WHOLE promote
+    // back — a scenario holding a recurring gift could not be promoted at all.
+    // It now goes to `gift_series` (see the series tests at the bottom of this
+    // file); what must never happen is a series row in `gifts`, where it would
+    // die on the NOT NULL `year` column or land as a one-time gift.
     const seriesId = randomUUID();
     await applyEntityAdd({
       scenarioId,
@@ -463,10 +501,26 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
       },
     });
 
-    await expect(promoteOverlay()).rejects.toThrow(seriesId);
-    await expect(promoteOverlay()).rejects.toThrow(/series/i);
-    // The transaction rolled back — nothing landed.
+    const counts = await promoteOverlay();
+
     expect(await promotedGifts()).toHaveLength(0);
+    // …and it was not counted as a `gifts` write either: the classifier took it
+    // out of plan.inserts entirely.
+    expect(counts.gift).toBeUndefined();
+    // It landed where it belongs. (The columns are asserted by the series
+    // tests; this one is about the table it did NOT go to.)
+    const series = await db
+      .select()
+      .from(giftSeries)
+      .where(
+        and(
+          eq(giftSeries.clientId, COOPER_CLIENT_ID),
+          eq(giftSeries.scenarioId, baseScenarioId),
+          eq(giftSeries.recipientEntityId, trustId),
+        ),
+      );
+    expect(series).toHaveLength(1);
+    expect(series[0].startYear).toBe(2027);
   });
 
   it("carries a non-outright event kind instead of flattening it to outright", async () => {
@@ -1029,5 +1083,179 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     } finally {
       await dropMortgage(mortgage.id);
     }
+  });
+
+  // ── A recurring SERIES the solver wrote (RULING 56 / 77 / 81) ──────────────
+  //
+  // The solver's estate tab still offers Recurring, and it has no DB access at
+  // edit time, so a series it creates is saved as a `gift` change carrying a
+  // series draft. `gift_series` is scenario-PARTITIONED and is not a TargetKind,
+  // so promotion folds those changes into the PROMOTED SCENARIO's own partition
+  // and lets the copy carry the result into base — the same composition the
+  // projection does (`partition rows + gift-change overlay`), in the same order.
+
+  /** A series draft exactly as `gift-upsert` → `mutations-to-scenario-changes`
+   *  records it: the full `EstateFlowGift`, nested recipient and all. */
+  const seriesDraft = (over: Record<string, unknown> = {}) => ({
+    id: randomUUID(),
+    kind: "series" as const,
+    startYear: 2027,
+    endYear: 2031,
+    annualAmount: 19_000,
+    amountMode: "annual_exclusion" as const,
+    inflationAdjust: true,
+    grantor: "spouse" as const,
+    recipient: { kind: "entity" as const, id: trustId },
+    crummey: true,
+    ...over,
+  });
+
+  /** A real row in the PROMOTED SCENARIO's partition — what the series route
+   *  writes when a series is created with `?scenario=` (RULING 68). */
+  async function addPartitionSeries(over: Record<string, unknown> = {}) {
+    const [row] = await db
+      .insert(giftSeries)
+      .values({
+        clientId: COOPER_CLIENT_ID,
+        scenarioId,
+        grantor: "client",
+        recipientEntityId: trustId,
+        startYear: 2027,
+        endYear: 2031,
+        annualAmount: "19000",
+        ...over,
+      })
+      .returning();
+    return row;
+  }
+
+  /** The base plan's series for one recipient. Filtered by recipient rather
+   *  than by client so a concurrent run of this file is never counted. */
+  async function baseSeriesFor(recipientEntityId: string) {
+    return db
+      .select()
+      .from(giftSeries)
+      .where(
+        and(
+          eq(giftSeries.clientId, COOPER_CLIENT_ID),
+          eq(giftSeries.scenarioId, baseScenarioId),
+          eq(giftSeries.recipientEntityId, recipientEntityId),
+        ),
+      );
+  }
+
+  it("series: promotes a solver-written recurring series into the base plan", async () => {
+    // THE HEADLINE. Before this, promoting the scenario threw by name at the
+    // gift translator and rolled the whole thing back, so a scenario holding a
+    // recurring gift could not be promoted at all.
+    const draft = seriesDraft({ valuationDiscount: 0.3 });
+    await applyEntityAdd({
+      scenarioId,
+      firmId: COOPER_FIRM_ID,
+      targetKind: "gift",
+      entity: draft,
+    });
+
+    await promoteOverlay();
+
+    const rows = await baseSeriesFor(trustId);
+    expect(rows).toHaveLength(1);
+    const [row] = rows;
+    expect(row.grantor).toBe("spouse");
+    expect(row.startYear).toBe(2027);
+    expect(row.endYear).toBe(2031);
+    expect(row.annualAmount).toBe("19000.00"); // numeric comes back as a string
+    expect(row.amountMode).toBe("annual_exclusion");
+    expect(row.inflationAdjust).toBe(true);
+    expect(row.useCrummeyPowers).toBe(true);
+    expect(row.valuationDiscount).toBe("0.3000");
+    expect(row.recipientFamilyMemberId).toBeNull();
+    expect(row.recipientExternalBeneficiaryId).toBeNull();
+    // Base's copies are re-scoped with a FRESH id (`reScope` drops it), which
+    // is exactly why the change is folded into the SCENARIO's partition first:
+    // after the copy there is no id left for a targetId to name.
+    expect(row.id).not.toBe(draft.id);
+    // …and it landed in base, not merely in the scenario's own partition.
+    expect(row.scenarioId).toBe(baseScenarioId);
+  });
+
+  it("series: a deleted series does not come back in base", async () => {
+    // RULING 71. The solver's delete is a `remove` gift change; the overlay
+    // hides the series from the editor and the projection, but the real
+    // `gift_series` row stays alive in the scenario's partition and the copy
+    // below resurrected it into base on promote — a gift the advisor deleted,
+    // permanently restored by promoting.
+    const partition = await addPartitionSeries();
+    await applyEntityRemove({
+      scenarioId,
+      firmId: COOPER_FIRM_ID,
+      targetKind: "gift",
+      targetId: partition.id,
+    });
+
+    await promoteOverlay();
+
+    expect(await baseSeriesFor(trustId)).toHaveLength(0);
+    // And it is gone from the scenario's partition too — that is what the copy
+    // reads, so anything left there would have landed in base.
+    const survivors = await db
+      .select()
+      .from(giftSeries)
+      .where(eq(giftSeries.id, partition.id));
+    expect(survivors).toHaveLength(0);
+  });
+
+  it("series: promoting an edit keeps the partition row's note and milestone anchor", async () => {
+    // RULING 61's lesson, applied before it bites a second table. An
+    // `EstateFlowGift` cannot represent `notes`, `start_year_ref` or
+    // `end_year_ref`, so writing them as null on the UPDATE would erase the
+    // advisor's own note and the milestone the start year is anchored to.
+    const partition = await addPartitionSeries({
+      notes: "Crummey letters mailed each January — see the trust binder.",
+      startYearRef: "client_retirement",
+      annualAmount: "12000",
+    });
+
+    await applyEntityAdd({
+      scenarioId,
+      firmId: COOPER_FIRM_ID,
+      targetKind: "gift",
+      entity: seriesDraft({ id: partition.id, annualAmount: 25_000 }),
+    });
+
+    await promoteOverlay();
+
+    const rows = await baseSeriesFor(trustId);
+    expect(rows).toHaveLength(1); // edited in place, not added beside itself
+    const [row] = rows;
+    expect(row.annualAmount).toBe("25000.00"); // the edit landed…
+    expect(row.notes).toBe(
+      "Crummey letters mailed each January — see the trust binder.",
+    ); // …without eating the note
+    expect(row.startYearRef).toBe("client_retirement"); // …or the anchor
+  });
+
+  it("series: promotes a series to a trust the SAME scenario created", async () => {
+    // The 56 × 60 intersection. The series names its recipient by the synthetic
+    // id the change invented; the real `entities` row exists only under the
+    // uuid the executor generated moments earlier in this same transaction.
+    const { syntheticId, name } = await addScenarioTrust();
+    await applyEntityAdd({
+      scenarioId,
+      firmId: COOPER_FIRM_ID,
+      targetKind: "gift",
+      entity: seriesDraft({ recipient: { kind: "entity", id: syntheticId } }),
+    });
+
+    await promoteOverlay();
+
+    const trust = await promotedEntityByName(name);
+    expect(trust).toBeDefined();
+    expect(trust.id).not.toBe(syntheticId);
+    const rows = await baseSeriesFor(trust.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].recipientEntityId).toBe(trust.id);
+    expect(rows[0].recipientEntityId).not.toBe(syntheticId);
+    expect(rows[0].annualAmount).toBe("19000.00");
   });
 });

@@ -39,10 +39,12 @@ interface ExecCtx {
  * is listed because `liabilities.parent_account_id` is a genuine cross-kind FK.
  *
  * Each entry is INERT unless the value it finds is a synthetic targetId inserted
- * in this same batch — a base-plan id passes through untouched.
+ * in this same batch — a base-plan id passes through untouched. That is why the
+ * rule above is stated as "can appear in the payload" and not "is emitted by
+ * today's writers": on the legacy row-shaped path the gift translator returns
+ * the payload untouched, so a pre-convention change row can carry any `gifts`
+ * column — `liabilityId` exactly as much as `businessEntityId`.
  *
- * Deliberately NOT listed: `gifts.liability_id`. The gift translator omits it
- * (`promote-gift-translate.ts`), so no draft payload carries it.
  * `surplusSaveAccountId` is pre-existing and lives on `plan_settings`, which is
  * a singleton the executor updates without remapping — left alone rather than
  * removed, since nothing here made it dead.
@@ -73,6 +75,8 @@ const REF_COLUMNS = [
   "recipientFamilyMemberId",
   // → external_beneficiaries
   "recipientExternalBeneficiaryId",
+  // → liabilities
+  "liabilityId",
 ];
 
 /**
@@ -126,11 +130,21 @@ function scopeWhere(cols: Cols, id: string, ctx: ExecCtx) {
   return and(...conds);
 }
 
+/** What the executor did, and the synthetic→generated id map it built doing it.
+ *  The map is RETURNED rather than kept private because the promote has a
+ *  second half: `copyGiftSeriesToBase` writes `gift_series` rows whose
+ *  recipient may be a trust this very batch created, and only this map knows
+ *  the uuid the DB minted for it. */
+export interface BaseWriteResult {
+  counts: Record<string, number>;
+  idRemap: ReadonlyMap<string, string>;
+}
+
 export async function executeBaseWritePlan(
   tx: PromoteTx,
   plan: BaseWritePlan,
   ctx: ExecCtx,
-): Promise<Record<string, number>> {
+): Promise<BaseWriteResult> {
   const counts: Record<string, number> = {};
   const bump = (k: string) => {
     counts[k] = (counts[k] ?? 0) + 1;
@@ -222,7 +236,7 @@ export async function executeBaseWritePlan(
     bump(`${r.kind}.remove`);
   }
 
-  return counts;
+  return { counts, idRemap };
 }
 
 /** Insert an add row and let the DB mint the id. The default: a change's

@@ -59,6 +59,9 @@ const emptyPlan = (): BaseWritePlan => ({
   updates: [],
   singletonUpdates: [],
   removes: [],
+  // Series-shaped `gift` changes never reach this executor: `gift_series` is
+  // scenario-partitioned and is promoted by copyGiftSeriesToBase instead.
+  giftSeries: { upserts: [], removes: [] },
 });
 
 describe("executeBaseWritePlan", () => {
@@ -74,7 +77,7 @@ describe("executeBaseWritePlan", () => {
       ],
     };
     const { tx, ops } = makeTx();
-    const counts = await executeBaseWritePlan(tx as never, plan, {
+    const { counts } = await executeBaseWritePlan(tx as never, plan, {
       clientId: "c1",
       baseScenarioId: "base1",
     });
@@ -113,7 +116,7 @@ describe("executeBaseWritePlan", () => {
       ],
     };
     const { tx, ops } = makeTx();
-    const counts = await executeBaseWritePlan(tx as never, plan, {
+    const { counts } = await executeBaseWritePlan(tx as never, plan, {
       clientId: "c1",
       baseScenarioId: "base1",
     });
@@ -159,7 +162,7 @@ describe("executeBaseWritePlan", () => {
       ],
     };
     const { tx, ops } = makeTx([{ id: "g-base" }]); // the base gift exists
-    const counts = await executeBaseWritePlan(tx as never, plan, {
+    const { counts } = await executeBaseWritePlan(tx as never, plan, {
       clientId: "c1",
       baseScenarioId: "base1",
     });
@@ -394,7 +397,7 @@ describe("executeBaseWritePlan", () => {
       updates: [{ kind: "account", id: "a1", set: { value: 250 } }],
     };
     const { tx, ops } = makeTx();
-    const counts = await executeBaseWritePlan(tx as never, plan, {
+    const { counts } = await executeBaseWritePlan(tx as never, plan, {
       clientId: "c1",
       baseScenarioId: "base1",
     });
@@ -412,7 +415,7 @@ describe("executeBaseWritePlan", () => {
       singletonUpdates: [{ kind: "plan_settings", set: { inflationRate: 0.025 } }],
     };
     const { tx, ops } = makeTx();
-    const counts = await executeBaseWritePlan(tx as never, plan, {
+    const { counts } = await executeBaseWritePlan(tx as never, plan, {
       clientId: "c1",
       baseScenarioId: "base1",
     });
@@ -461,7 +464,7 @@ describe("executeBaseWritePlan", () => {
       ],
     };
     const { tx, ops } = makeTx([{ id: "e1" }]);
-    const counts = await executeBaseWritePlan(tx as never, plan, {
+    const { counts } = await executeBaseWritePlan(tx as never, plan, {
       clientId: "c1",
       baseScenarioId: "base1",
     });
@@ -492,7 +495,7 @@ describe("executeBaseWritePlan", () => {
       removes: [{ kind: "account", id: "a1", cascade: false }],
     };
     const { tx, ops } = makeTx();
-    const counts = await executeBaseWritePlan(tx as never, plan, {
+    const { counts } = await executeBaseWritePlan(tx as never, plan, {
       clientId: "c1",
       baseScenarioId: "base1",
     });

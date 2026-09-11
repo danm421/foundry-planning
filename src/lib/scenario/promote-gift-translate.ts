@@ -16,24 +16,21 @@ import { giftDraftToRow } from "@/lib/gifts/scenario-rows";
 /**
  * Reshape a `gift` add payload into `gifts`-column shape ahead of coercion.
  *
- * Throws for a recurring series. `gift_series` is deliberately not a
- * TargetKind and the executor picks one table per kind, so a series draft has
- * nowhere to go: inserting it into `gifts` dies on the NOT NULL `year` column
- * with an opaque DB error, and skipping it would lose an advisor's gift in
- * silence.
+ * Throws for a recurring series, and is now UNREACHABLE — a tripwire, kept
+ * because the failure it prevents is silent. `gift_series` is deliberately not
+ * a TargetKind and the executor picks one table per kind, so a series draft
+ * has nowhere to go here: inserting it into `gifts` dies on the NOT NULL
+ * `year` column with an opaque DB error, and skipping it would lose an
+ * advisor's gift in silence.
  *
- * It is NOT reachable from the gift forms any more: `gift_series` is scenario-
- * partitioned, so every one of them writes a series straight to the series
- * route in both modes and none records it as a `gift` change. Two producers
- * remain, and both need the named failure rather than a Postgres one:
- *
- *  - the SOLVER's estate editor, whose gift dialog still offers Recurring and
- *    emits a `gift-upsert` mutation that becomes a `gift` change
- *    (mutations-to-scenario-changes.ts); a scenario saved that way cannot be
- *    promoted, and never could — before this message it died on the NOT NULL
- *    `year` column instead; and
- *  - legacy rows, from scenarios written before the gift forms stopped
- *    recording series as changes.
+ * Series promotion belongs to `copyGiftSeriesToBase` (promote-direct-tables.ts)
+ * instead: `scenarioChangesToBaseWrites` partitions every series-shaped `gift`
+ * change out of `plan.inserts` into `plan.giftSeries`, and that function folds
+ * them into the promoted scenario's own `gift_series` partition before copying
+ * the partition into base. Both of this function's former producers go that
+ * way now — the SOLVER's estate editor (whose gift dialog still offers
+ * Recurring and emits a `gift-upsert` that becomes a `gift` change) and legacy
+ * rows written before the gift forms stopped recording series as changes.
  */
 export function translateGiftDraftForPromote(
   raw: Record<string, unknown>,

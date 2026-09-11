@@ -991,6 +991,11 @@ export async function describeProposedWrite(
       const plan = scenarioChangesToBaseWrites(baseTree, changes, groups, {});
       const lines: string[] = [
         ...plan.inserts.map((w) => `ADD ${w.kind}`),
+        // A recurring series is a `gift` change that is promoted into
+        // `gift_series` rather than `gifts`, so it is not in `inserts`. Its
+        // deletes ARE in `plan.removes` (as `REMOVE gift <id>`) and must not be
+        // listed twice.
+        ...plan.giftSeries.upserts.map(() => "ADD gift (recurring series)"),
         ...plan.updates.map((w) => `EDIT ${w.kind} ${w.id}`),
         ...plan.singletonUpdates.map((w) => `EDIT ${w.kind} (singleton)`),
         ...plan.removes.map((w) => `REMOVE ${w.kind} ${w.id}`),

@@ -5,9 +5,10 @@
 //   2. snapshot the current base (safety net; created before the tx, compensating
 //      delete on tx failure)
 //   3. in ONE transaction: replay the overlay onto the base rows, copy the
-//      scenario-scoped direct tables, resolve toggle-gated notes, delete all
-//      non-base scenarios (DB cascade clears their overlay rows), and invalidate
-//      the base's compute cache
+//      scenario-scoped direct tables (gift_series first absorbing the overlay's
+//      own series changes), resolve toggle-gated notes, delete all non-base
+//      scenarios (DB cascade clears their overlay rows), and invalidate the
+//      base's compute cache
 //   4. audit
 //
 // The base scenario's UUID never changes (no is_base_case flag-swap), so the ~40
@@ -134,9 +135,19 @@ export async function promoteScenarioToBase(args: PromoteArgs): Promise<PromoteR
     if (!salaryCheck.ok) throw new PromoteError("invalid_ref", salaryCheck.reason);
 
     await db.transaction(async (tx) => {
-      counts = await executeBaseWritePlan(tx, plan, { clientId, baseScenarioId });
+      const executed = await executeBaseWritePlan(tx, plan, { clientId, baseScenarioId });
+      counts = executed.counts;
       await copyFlowOverridesToBase(tx, { clientId, scenarioId, baseScenarioId });
-      await copyGiftSeriesToBase(tx, { clientId, scenarioId, baseScenarioId });
+      // The series-shaped `gift` changes travel with the id map the executor
+      // just built: a series to a trust THIS scenario created names it by a
+      // synthetic id, and the real entities row exists only under the uuid the
+      // insert above generated. `copyGiftSeriesToBase` folds them into the
+      // scenario's own partition before carrying that partition into base.
+      await copyGiftSeriesToBase(
+        tx,
+        { clientId, scenarioId, baseScenarioId },
+        { ...plan.giftSeries, idRemap: executed.idRemap },
+      );
       notes = await resolveToggleGatedNotesOnBase(tx, {
         clientId,
         baseScenarioId,
