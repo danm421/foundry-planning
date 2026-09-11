@@ -10,6 +10,7 @@ import type {
   AssetTransaction,
   Reinvestment,
   Account,
+  Liability,
   Income,
   Expense,
   SavingsRule,
@@ -97,6 +98,9 @@ export type SolverMutation =
    *  carries at most one paydown. `null` clears it. */
   | { kind: "debt-paydown"; liabilityId: string; value: DebtPaydownRow | null }
   | { kind: "account-upsert"; id: string; value: Account | null }
+  /** A liability retitled into or out of a trust from the estate dialog's
+   *  Assets tab. `null` removes the row. */
+  | { kind: "liability-upsert"; id: string; value: Liability | null }
   | { kind: "income-upsert"; id: string; value: Income | null }
   | { kind: "expense-upsert"; id: string; value: Expense | null }
   | { kind: "savings-rule-upsert"; id: string; value: SavingsRule | null }
@@ -157,6 +161,7 @@ export type SolverMutationKey =
   | `relocation-upsert:${string}`
   | `debt-paydown:${string}`
   | `account-upsert:${string}`
+  | `liability-upsert:${string}`
   | `income-upsert:${string}`
   | `expense-upsert:${string}`
   | `savings-rule-upsert:${string}`
@@ -249,6 +254,8 @@ export function mutationKey(m: SolverMutation): SolverMutationKey {
       return `debt-paydown:${m.liabilityId}`;
     case "account-upsert":
       return `account-upsert:${m.id}`;
+    case "liability-upsert":
+      return `liability-upsert:${m.id}`;
     case "income-upsert":
       return `income-upsert:${m.id}`;
     case "expense-upsert":

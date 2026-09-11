@@ -163,6 +163,58 @@ const ACCOUNT_VALUE = z
   })
   .passthrough();
 
+// Mirrors `Liability` in src/engine/types.ts. Only the fields the engine's
+// amortization schedule cannot run without are required; the rest are optional,
+// and `.passthrough()` carries the view-only columns (source, refs) through
+// untouched, exactly as ACCOUNT_VALUE does.
+const LIABILITY_VALUE = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    balance: MONEY,
+    interestRate: RATE,
+    monthlyPayment: MONEY,
+    startYear: YEAR,
+    startMonth: z.number().int().min(1).max(12),
+    termMonths: z.number().int().min(0),
+    balanceAsOfMonth: z.number().int().min(1).max(12).optional(),
+    balanceAsOfYear: YEAR.optional(),
+    linkedPropertyId: z.string().min(1).optional(),
+    ownerFamilyMemberId: z.string().min(1).optional(),
+    isInterestDeductible: z.boolean().optional(),
+    forgiveAtTermEnd: z.boolean().optional(),
+    // Must match LiabilityType in src/engine/liability-kind.ts exactly — a
+    // missing member 400s the whole recompute, not just this row.
+    liabilityType: z
+      .enum(["mortgage", "heloc", "auto", "student", "personal", "credit_card", "other"])
+      .nullable()
+      .optional(),
+    // Optional on the wire even though the engine type requires it: every
+    // consumer guards with `?? []` (engine/liability-schedules.ts:33,
+    // promote-child-writers.writeLiabilityChildren), so a payload without it
+    // is legitimate and must not 400 the whole recompute. `type` is
+    // enumerated because it lands in a Postgres enum column on promotion.
+    extraPayments: z
+      .array(
+        z
+          .object({
+            year: YEAR,
+            type: z.enum(["per_payment", "lump_sum"]),
+            amount: MONEY,
+          })
+          .passthrough(),
+      )
+      .optional(),
+    // Retitling IS the mutation, so owners must survive the parse rather than
+    // being stripped. `AccountOwner` (src/engine/ownership.ts) is a four-member
+    // union whose arms differ only in their id field, so the shape is left loose
+    // + passthrough — same treatment ACCOUNT_VALUE gives it, and no `.min(1)`
+    // for the same reason: an ownerless liability is a real state.
+    owners: z.array(z.object({ kind: z.string(), percent: z.number() }).passthrough()),
+    parentAccountId: z.string().min(1).nullable().optional(),
+  })
+  .passthrough();
+
 const INCOME_VALUE = z
   .object({
     id: z.string().min(1),
@@ -524,6 +576,11 @@ export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
     kind: z.literal("account-upsert"),
     id: z.string().min(1),
     value: ACCOUNT_VALUE.nullable(),
+  }),
+  z.object({
+    kind: z.literal("liability-upsert"),
+    id: z.string().min(1),
+    value: LIABILITY_VALUE.nullable(),
   }),
   z.object({
     kind: z.literal("income-upsert"),
