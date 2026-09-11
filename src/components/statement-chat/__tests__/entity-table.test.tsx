@@ -233,7 +233,11 @@ describe("entity table (generic)", () => {
           expand={() => null}
         />,
       );
-      expect(screen.queryByRole("button", { name: /show positions/i })).not.toBeInTheDocument();
+      // No `expandLabel` is given, so a wrongly-rendered button would carry
+      // the DEFAULT accessible name "Show details" — assert against that,
+      // not against `/show positions/i` (which nothing in this render, right
+      // or wrong, would ever match).
+      expect(screen.queryByRole("button", { name: /show details/i })).not.toBeInTheDocument();
     });
   });
 });

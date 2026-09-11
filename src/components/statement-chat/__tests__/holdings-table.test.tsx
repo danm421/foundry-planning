@@ -15,4 +15,18 @@ describe("HoldingsTable", () => {
     expect(screen.queryByText("Microsoft")).not.toBeInTheDocument();
     expect(container).toHaveTextContent("$80");
   });
+
+  it("renders nothing when every position is tombstoned", () => {
+    const { container } = render(
+      <HoldingsTable row={{ value: 100, holdings: [{ __holdingId: "t:AAPL#0", ticker: "AAPL", marketValue: 100, __dropped: true }] }} />,
+    );
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("renders the placeholder for a holding missing a figure", () => {
+    const { container } = render(
+      <HoldingsTable row={{ value: 100, holdings: [{ __holdingId: "t:AAPL#0", ticker: "AAPL", name: "Apple Inc" }] }} />,
+    );
+    expect(container).toHaveTextContent("—");
+  });
 });
