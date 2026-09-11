@@ -79,3 +79,35 @@ describe("reResolveInflationGrowth", () => {
     expect(reResolveInflationGrowth(t, bareCtx)).toBe(t);
   });
 });
+
+function txnTree(rate: number): ClientData {
+  return {
+    incomes: [], expenses: [], savingsRules: [], accounts: [],
+    assetTransactions: [{
+      id: "buy-1", name: "Buy", type: "buy", year: 2032,
+      annualPropertyTax: 16_500,
+      propertyTaxGrowthRate: rate,
+      propertyTaxGrowthSource: "inflation",
+    }],
+    planSettings: { inflationRate: 0.04 },
+  } as unknown as ClientData;
+}
+
+describe("reResolveInflationGrowth — asset transactions", () => {
+  it("re-resolves an inflation-sourced property tax rate", () => {
+    const out = reResolveInflationGrowth(txnTree(0.025), ctx(0.025));
+    expect(out.assetTransactions![0].propertyTaxGrowthRate).toBe(0.04);
+  });
+
+  it("leaves a custom-sourced rate alone", () => {
+    const t = txnTree(0.025);
+    t.assetTransactions![0].propertyTaxGrowthSource = "custom";
+    const out = reResolveInflationGrowth(t, ctx(0.025));
+    expect(out.assetTransactions![0].propertyTaxGrowthRate).toBe(0.025);
+  });
+
+  it("returns the same tree reference when the rate is unchanged", () => {
+    const t = txnTree(0.04);
+    expect(reResolveInflationGrowth(t, ctx(0.04))).toBe(t);
+  });
+});

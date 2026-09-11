@@ -1449,6 +1449,17 @@ export const loadClientDataWithContext = cache(
       mortgageAmount: t.mortgageAmount ? parseFloat(t.mortgageAmount) : undefined,
       mortgageRate: t.mortgageRate ? parseFloat(t.mortgageRate) : undefined,
       mortgageTermMonths: t.mortgageTermMonths ?? undefined,
+      annualPropertyTax: t.annualPropertyTax ? parseFloat(t.annualPropertyTax) : undefined,
+      // "inflation" resolves to the plan's rate here, exactly as it does for a
+      // real-estate account a few hundred lines up; the stored rate is then a
+      // display fallback only.
+      propertyTaxGrowthRate:
+        t.propertyTaxGrowthSource === "inflation"
+          ? resolvedInflationRate
+          : t.propertyTaxGrowthRate
+            ? parseFloat(t.propertyTaxGrowthRate)
+            : undefined,
+      propertyTaxGrowthSource: t.propertyTaxGrowthSource ?? undefined,
     }));
 
     const mappedRelocations = relocationRows.map((r) => ({
