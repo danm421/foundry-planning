@@ -82,6 +82,9 @@ function completeHomePurchase(overrides: Partial<HomePurchaseGoal> = {}): HomePu
     mortgageAmount: "560000",
     mortgageRate: "6.25",
     mortgageTermMonths: "360",
+    annualPropertyTax: "",
+    propertyTaxGrowthRate: "3",
+    propertyTaxGrowthSource: "custom",
     ...overrides,
   };
 }
@@ -568,6 +571,31 @@ describe("commitGoals — home purchase", () => {
     const txValues = insertValues(fake, "asset_transactions");
     expect(txValues.fundingAccountId).toBeNull();
     expect(result.warnings.join(" ")).toContain("no longer available");
+  });
+
+  it("commits a planned home purchase's property tax", async () => {
+    const fake = makeFakeTx();
+    const payload = payloadWithHomePurchase({
+      annualPropertyTax: "16500",
+      propertyTaxGrowthRate: "3", // PERCENT string, like growthRate above
+      propertyTaxGrowthSource: "custom",
+    });
+
+    const result = await commitGoals(fake.tx, payload, CTX);
+    expect(result.created).toBe(1);
+
+    expect(insertValues(fake, "asset_transactions")).toMatchObject({
+      annualPropertyTax: "16500",
+      propertyTaxGrowthRate: "0.03", // divided by 100 on the way in
+      propertyTaxGrowthSource: "custom",
+    });
+  });
+
+  it("writes no property tax when the advisor left it blank", async () => {
+    const fake = makeFakeTx();
+    const payload = payloadWithHomePurchase({ annualPropertyTax: "" });
+    await commitGoals(fake.tx, payload, CTX);
+    expect(insertValues(fake, "asset_transactions").annualPropertyTax).toBeNull();
   });
 });
 

@@ -301,6 +301,12 @@ export async function commitGoals(
       mortgageAmount: goal.showMortgage ? num(goal.mortgageAmount) : null,
       mortgageRate: goal.showMortgage ? pct(goal.mortgageRate) : null,
       mortgageTermMonths: goal.showMortgage ? Number(goal.mortgageTermMonths) || null : null,
+      // A planned purchase in this wizard is always a home, so these always
+      // apply — no category gate here (unlike the Transactions dialog, whose
+      // buy leg can be any category).
+      annualPropertyTax: num(goal.annualPropertyTax),
+      propertyTaxGrowthRate: pct(goal.propertyTaxGrowthRate),
+      propertyTaxGrowthSource: goal.propertyTaxGrowthSource ?? "custom",
     };
 
     const purchaseId = getExistingId(goal);

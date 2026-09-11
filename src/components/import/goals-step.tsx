@@ -57,12 +57,6 @@ function toBuyLeg(goal: HomePurchaseGoal): BuyLegDraft {
     key: id,
     kind: "buy",
     assetCategory: "real_estate",
-    // HomePurchaseGoal doesn't carry these yet (Task 8 adds them); default
-    // to emptyBuyLeg's own inert values so a goal-sourced buy leg still
-    // satisfies BuyLegDraft's shape without inventing real data.
-    annualPropertyTax: "",
-    propertyTaxGrowthRate: "3",
-    propertyTaxGrowthSource: "custom",
   };
 }
 
@@ -108,6 +102,7 @@ function blankHomePurchase(id: string, currentYear: number): HomePurchaseGoal {
     assetSubType: "primary_residence", purchasePrice: "", growthRate: "", basis: "",
     fundingAccountId: "", showMortgage: false,
     mortgageAmount: "", mortgageRate: "", mortgageTermMonths: "360",
+    annualPropertyTax: "", propertyTaxGrowthRate: "3", propertyTaxGrowthSource: "custom",
   };
 }
 
