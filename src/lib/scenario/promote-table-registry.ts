@@ -54,9 +54,10 @@ export type PromoteTx = Parameters<
 >[0];
 
 /** Context threaded into child writers/updaters. `idRemap` maps synthetic add
- *  ids → DB-generated uuids; the executor inserts accounts and then incomes
- *  first, so any same-batch account or income reference is already remapped by
- *  the time a dependent kind's writer runs. */
+ *  ids → DB-generated uuids; the executor inserts kinds in FK order (recipients
+ *  and family members, then accounts, then incomes and liabilities — see
+ *  `INSERT_RANK` in execute-base-write-plan.ts), so any same-batch reference to
+ *  one of those is already remapped by the time a dependent kind's writer runs. */
 export interface ChildWriterCtx {
   clientId: string;
   baseScenarioId: string;

@@ -84,8 +84,13 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
   let baseScenarioId: string;
   let trustId: string;
   let accountId: string;
+  /** Names of entities a PROMOTE minted (a scenario-created trust gets a fresh
+   *  DB uuid, so there is no id to collect up front). Nothing else in this file
+   *  creates them, and the existing trust-cascade teardown cannot reach them. */
+  let promotedEntityNames: string[];
 
   beforeEach(async () => {
+    promotedEntityNames = [];
     const [base] = await db
       .select({ id: scenarios.id })
       .from(scenarios)
@@ -134,6 +139,16 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
   });
 
   afterEach(async () => {
+    // A promote-minted entity goes FIRST, and by name: its id is generated
+    // inside the promote, the name is per-run unique (so a concurrent run of
+    // this file is never touched), and this runs even when the test threw.
+    // Before the account, because `gifts.account_id` is ON DELETE SET NULL and
+    // a gift row left with a `percent` but no account fails `gifts_event_kind`.
+    for (const name of promotedEntityNames) {
+      await db
+        .delete(entities)
+        .where(and(eq(entities.clientId, COOPER_CLIENT_ID), eq(entities.name, name)));
+    }
     // `gifts.recipient_entity_id` is ON DELETE CASCADE, so dropping the test
     // trust takes every gift this test promoted with it.
     await db.delete(entities).where(eq(entities.id, trustId));
@@ -146,14 +161,20 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
    *  the half of `promoteScenarioToBase` that drives PROMOTE_TABLE_REGISTRY; the
    *  rest of that function (snapshot, sibling-scenario deletion, audit) would
    *  rewrite a shared dev client's whole plan and proves nothing about gifts. */
-  async function promoteOverlay(): Promise<Record<string, number>> {
-    const rows = await db
+  async function promoteOverlay(
+    /** Re-orders the loaded change rows before classification. `loadScenarioChanges`
+     *  has no ORDER BY, so the real promote sees them in Postgres row order —
+     *  this is how a test pins that BOTH orders promote identically rather than
+     *  waiting for the DB to happen to hand back the unlucky one. */
+    orderRows?: (rows: ScenarioChange[]) => ScenarioChange[],
+  ): Promise<Record<string, number>> {
+    const rows = (await db
       .select()
       .from(scenarioChanges)
-      .where(eq(scenarioChanges.scenarioId, scenarioId));
+      .where(eq(scenarioChanges.scenarioId, scenarioId))) as unknown as ScenarioChange[];
     const plan = scenarioChangesToBaseWrites(
       minimalClientData(),
-      rows as unknown as ScenarioChange[],
+      orderRows ? orderRows(rows) : rows,
       [],
       {},
     );
@@ -161,6 +182,16 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
       executeBaseWritePlan(tx, plan, { clientId: COOPER_CLIENT_ID, baseScenarioId }),
     );
   }
+
+  /** Hand the classifier the `gift` change FIRST, so the pre-fix executor is
+   *  guaranteed to try the gift insert before the entity it depends on. */
+  const giftFirst = (rows: ScenarioChange[]): ScenarioChange[] =>
+    [...rows].sort((a, b) => Number(b.targetKind === "gift") - Number(a.targetKind === "gift"));
+
+  /** Hand it the `entity` change first — the lucky order the pre-fix code
+   *  sometimes got, which cause 2 (the un-remapped recipient id) still breaks. */
+  const entityFirst = (rows: ScenarioChange[]): ScenarioChange[] =>
+    [...rows].sort((a, b) => Number(b.targetKind === "entity") - Number(a.targetKind === "entity"));
 
   /** `liabilities` → `gifts.liability_id` is ON DELETE SET NULL, and a gift row
    *  with neither an account nor a liability but a `percent` fails the
@@ -811,6 +842,190 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
       // only a non-default parent can make the child's value fail.
       expect(rows.find((r) => r.id === giftId)?.eventKind).toBe("clt_remainder_interest");
       expect(rows.find((r) => r.id !== giftId)?.eventKind).toBe("outright");
+    } finally {
+      await dropMortgage(mortgage.id);
+    }
+  });
+
+  // ── A trust the scenario itself created ────────────────────────────────────
+  //
+  // THE DEFECT, measured on prod: both of the two `gift` change rows that exist
+  // recipient an entity id that is also an `entity` ADD in the same scenario and
+  // does not exist in `entities`. Promoting either FK-violated and rolled the
+  // whole transaction back, so the only gift-carrying scenario flow on prod
+  // could never be promoted. Two independent causes: the executor ranked
+  // `entity` and `gift` in the same bucket (so which inserted first was Postgres
+  // row order), and the synthetic entity id was never remapped — the gift's
+  // recipient is NESTED in the draft and only becomes a column after translation.
+
+  /** The entity row a promote minted for a scenario-created trust. Looked up by
+   *  name because its id is generated inside the promote transaction. */
+  async function promotedEntityByName(name: string) {
+    const [row] = await db
+      .select()
+      .from(entities)
+      .where(and(eq(entities.clientId, COOPER_CLIENT_ID), eq(entities.name, name)));
+    return row;
+  }
+
+  /** Register a scenario-only trust `add` and return the name + synthetic id the
+   *  gift will recipient. The name is tracked for teardown before anything runs. */
+  async function addScenarioTrust(): Promise<{ syntheticId: string; name: string }> {
+    const syntheticId = randomUUID();
+    const name = `promote-gift-test-new-trust-${randomUUID().slice(0, 8)}`;
+    promotedEntityNames.push(name);
+    await applyEntityAdd({
+      scenarioId,
+      firmId: COOPER_FIRM_ID,
+      targetKind: "entity",
+      entity: { id: syntheticId, name, entityType: "trust" },
+    });
+    return { syntheticId, name };
+  }
+
+  it("promotes a gift to a trust the SAME scenario created, pointed at the new entity row", async () => {
+    const { syntheticId, name } = await addScenarioTrust();
+    const giftId = randomUUID();
+    await applyEntityAdd({
+      scenarioId,
+      firmId: COOPER_FIRM_ID,
+      targetKind: "gift",
+      entity: {
+        id: giftId,
+        kind: "cash-once",
+        year: 2030,
+        amount: 75_000,
+        grantor: "client",
+        recipient: { kind: "entity", id: syntheticId },
+        crummey: true,
+      },
+    });
+
+    const counts = await promoteOverlay(giftFirst);
+    expect(counts.entity).toBe(1);
+    expect(counts.gift).toBe(1);
+
+    const trust = await promotedEntityByName(name);
+    expect(trust).toBeDefined();
+    // `entity` does not preserve the change's id, so the DB minted a fresh one.
+    expect(trust.id).not.toBe(syntheticId);
+
+    const [row] = await db.select().from(gifts).where(eq(gifts.id, giftId));
+    expect(row).toBeDefined();
+    // The whole point: the promoted gift points at the ENTITIES ROW'S new id —
+    // not the synthetic one, and not merely "the promote did not throw".
+    expect(row.recipientEntityId).toBe(trust.id);
+    expect(row.recipientEntityId).not.toBe(syntheticId);
+    expect(row.amount).toBe("75000.00");
+    expect(row.useCrummeyPowers).toBe(true);
+  });
+
+  it("promotes that scenario whichever order the two change rows come back in", async () => {
+    // `loadScenarioChanges` has no ORDER BY, so which of the two inserts first is
+    // Postgres row order. Ranking by kind is what makes that stop mattering.
+    const { syntheticId, name } = await addScenarioTrust();
+    const giftId = randomUUID();
+    await applyEntityAdd({
+      scenarioId,
+      firmId: COOPER_FIRM_ID,
+      targetKind: "gift",
+      entity: {
+        id: giftId,
+        kind: "cash-once",
+        year: 2032,
+        amount: 42_000,
+        grantor: "client",
+        recipient: { kind: "entity", id: syntheticId },
+        crummey: false,
+      },
+    });
+
+    const promoteThenReset = async (
+      order: (rows: ScenarioChange[]) => ScenarioChange[],
+    ) => {
+      await promoteOverlay(order);
+      const trust = await promotedEntityByName(name);
+      const [gift] = await db.select().from(gifts).where(eq(gifts.id, giftId));
+      const seen = {
+        trustId: trust?.id ?? null,
+        recipientEntityId: gift?.recipientEntityId ?? null,
+        amount: gift?.amount ?? null,
+      };
+      // Back to the pre-promote state for the second run. The entity delete
+      // cascades the gift it recipients, so both rows go.
+      await db
+        .delete(entities)
+        .where(and(eq(entities.clientId, COOPER_CLIENT_ID), eq(entities.name, name)));
+      return seen;
+    };
+
+    const withGiftFirst = await promoteThenReset(giftFirst);
+    const withEntityFirst = await promoteThenReset(entityFirst);
+
+    for (const seen of [withGiftFirst, withEntityFirst]) {
+      expect(seen.trustId).not.toBeNull();
+      expect(seen.recipientEntityId).toBe(seen.trustId);
+      expect(seen.recipientEntityId).not.toBe(syntheticId);
+      expect(seen.amount).toBe("42000.00");
+    }
+    // Same result both ways — the two runs differ only in the generated id.
+    expect(withGiftFirst.trustId).not.toBe(withEntityFirst.trustId);
+  });
+
+  it("points the bundled liability transfer at the scenario-created trust too", async () => {
+    // The child writer builds its three recipient columns straight from
+    // `raw.recipient.id`, so without its own remap it re-opens the very FK
+    // violation the parent just stopped hitting — and the whole promote
+    // still rolls back.
+    const [mortgage] = await db
+      .insert(liabilities)
+      .values({
+        clientId: COOPER_CLIENT_ID,
+        scenarioId: baseScenarioId,
+        name: "promote-gift-test-mortgage-new-trust",
+        balance: "400000",
+        startYear: 2020,
+        linkedPropertyId: accountId,
+      })
+      .returning();
+
+    try {
+      const { syntheticId, name } = await addScenarioTrust();
+      const giftId = randomUUID();
+      await applyEntityAdd({
+        scenarioId,
+        firmId: COOPER_FIRM_ID,
+        targetKind: "gift",
+        entity: {
+          id: giftId,
+          kind: "asset-once",
+          year: 2029,
+          accountId,
+          percent: 0.3,
+          grantor: "client",
+          recipient: { kind: "entity", id: syntheticId },
+        },
+      });
+
+      await promoteOverlay(giftFirst);
+
+      const trust = await promotedEntityByName(name);
+      expect(trust).toBeDefined();
+      const rows = await db
+        .select()
+        .from(gifts)
+        .where(eq(gifts.recipientEntityId, trust.id));
+      expect(rows).toHaveLength(2);
+
+      const parent = rows.find((r) => r.id === giftId);
+      const child = rows.find((r) => r.id !== giftId);
+      expect(parent).toBeDefined();
+      expect(child).toBeDefined();
+      expect(parent!.recipientEntityId).toBe(trust.id);
+      expect(child!.recipientEntityId).toBe(trust.id);
+      expect(child!.liabilityId).toBe(mortgage.id);
+      expect(child!.parentGiftId).toBe(giftId);
+      expect(child!.percent).toBe("0.3000");
     } finally {
       await dropMortgage(mortgage.id);
     }

@@ -1,7 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { and, eq } from "drizzle-orm";
+import { and, eq, getTableName } from "drizzle-orm";
+import type { PgTable } from "drizzle-orm/pg-core";
 import {
   accounts,
+  entities,
+  familyMembers,
   incomes,
   planSettings,
   gifts,
@@ -252,6 +255,137 @@ describe("executeBaseWritePlan", () => {
     expect(joinInsert.arg).toEqual([
       { savingsRuleId: "db-3", incomeId: "db-2", sortOrder: 0 },
     ]);
+  });
+
+  it("inserts a gift's recipient kinds, and family members, ahead of the rows that FK to them", async () => {
+    // THE DEFECT. A scenario that creates a trust and gifts to it could never be
+    // promoted. The old ranking was `account 0, income 1, everything else 2`, so
+    // `entity` and `gift` shared a bucket and Postgres row order decided which
+    // insert went first — and it also ranked `account` AHEAD of the
+    // `family_member` its grantor/beneficiary columns FK to.
+    //
+    // The ranking is derived from the FK graph in src/db/schema.ts:
+    // `entities`, `family_members` and `external_beneficiaries` have no outgoing
+    // FK to any other promotable kind; `accounts` FKs to `family_members`;
+    // `gifts` FKs to entities/family_members/external_beneficiaries/accounts.
+    const plan: BaseWritePlan = {
+      ...emptyPlan(),
+      inserts: [
+        {
+          kind: "gift",
+          targetId: "g1",
+          raw: { id: "g1", year: 2030, amount: 5000, recipientEntityId: "e-syn" },
+        },
+        {
+          kind: "account",
+          targetId: "a1",
+          raw: { id: "a1", name: "Emma 529", grantorFamilyMemberId: "fm-syn" },
+        },
+        { kind: "family_member", targetId: "fm-syn", raw: { id: "fm-syn", firstName: "Emma" } },
+        {
+          kind: "entity",
+          targetId: "e-syn",
+          raw: { id: "e-syn", name: "2030 Family Trust", entityType: "trust" },
+        },
+      ],
+    };
+    // `gift` preserves the change's id, so it upserts: no base row here means the
+    // scoped UPDATE misses and it falls through to an INSERT.
+    const { tx, ops } = makeTx([]);
+    await executeBaseWritePlan(tx as never, plan, { clientId: "c1", baseScenarioId: "base1" });
+
+    // Compared by table NAME: a failed `toEqual` on drizzle table objects prints
+    // thousands of lines of column metadata and hides which order actually ran.
+    const insertTables = ops
+      .filter((o) => o.op === "insert")
+      .map((o) => getTableName(o.table as PgTable));
+    // Rank 0 holds family_member and entity, and Array#sort is stable, so the
+    // two keep the plan's own relative order inside that rank.
+    expect(insertTables).toEqual([
+      getTableName(familyMembers),
+      getTableName(entities),
+      getTableName(accounts),
+      getTableName(gifts),
+    ]);
+  });
+
+  it("remaps a gift DRAFT's recipient, which only becomes a column once translated", async () => {
+    // The second half of the same defect: `remapRefs` used to run BEFORE
+    // `entry.translate`. A gift change's payload is an EstateFlowGift DRAFT
+    // whose recipient is NESTED (`recipient: {kind, id}`), and it only becomes a
+    // flat `recipientEntityId` once the translator has run — so a remap that
+    // fired first could never see it, and the synthetic entity id went straight
+    // into the FK column.
+    const plan: BaseWritePlan = {
+      ...emptyPlan(),
+      inserts: [
+        {
+          kind: "entity",
+          targetId: "e-syn",
+          raw: { id: "e-syn", name: "2030 Family Trust", entityType: "trust" },
+        },
+        {
+          kind: "gift",
+          targetId: "g1",
+          raw: {
+            id: "g1",
+            kind: "cash-once",
+            year: 2030,
+            amount: 50_000,
+            grantor: "client",
+            recipient: { kind: "entity", id: "e-syn" },
+            crummey: false,
+          },
+        },
+      ],
+    };
+    const { tx, ops } = makeTx([]);
+    await executeBaseWritePlan(tx as never, plan, { clientId: "c1", baseScenarioId: "base1" });
+
+    const giftInsert = ops.find((o) => o.op === "insert" && o.table === gifts)!;
+    const arg = giftInsert.arg as Record<string, unknown>;
+    expect(arg.recipientEntityId).toBe("db-1"); // the entity's generated id…
+    expect(arg.recipientEntityId).not.toBe("e-syn"); // …not the synthetic one
+    // The translation itself still ran — a remap that ate it would be worse.
+    expect(arg.amount).toBe("50000");
+    expect(arg.useCrummeyPowers).toBe(false);
+  });
+
+  it("remaps only ref ids added in this same batch and leaves every other id alone", async () => {
+    // INERTNESS. `REF_COLUMNS` grew to every FK column pointing at another
+    // promotable kind, so the "unchanged for every other kind" claim has to be a
+    // measured fact: a column only ever rewrites a value that IS a synthetic
+    // targetId inserted in the same batch. A base-plan entity id must survive
+    // untouched, or promotion would re-point live rows at the wrong parent.
+    const plan: BaseWritePlan = {
+      ...emptyPlan(),
+      inserts: [
+        {
+          kind: "entity",
+          targetId: "e-syn",
+          raw: { id: "e-syn", name: "2030 Family Trust", entityType: "trust" },
+        },
+        {
+          kind: "income",
+          targetId: "i1",
+          raw: { id: "i1", name: "Trust distribution", ownerEntityId: "e-syn" },
+        },
+        {
+          kind: "income",
+          targetId: "i2",
+          raw: { id: "i2", name: "Rental", ownerEntityId: "e-already-in-the-base-plan" },
+        },
+      ],
+    };
+    const { tx, ops } = makeTx();
+    await executeBaseWritePlan(tx as never, plan, { clientId: "c1", baseScenarioId: "base1" });
+
+    const incomeArgs = ops
+      .filter((o) => o.op === "insert" && o.table === incomes)
+      .map((o) => o.arg as Record<string, unknown>);
+    expect(incomeArgs).toHaveLength(2);
+    expect(incomeArgs[0].ownerEntityId).toBe("db-1"); // in-batch → remapped
+    expect(incomeArgs[1].ownerEntityId).toBe("e-already-in-the-base-plan"); // untouched
   });
 
   it("updates a base row with a scoped set carrying updatedAt", async () => {

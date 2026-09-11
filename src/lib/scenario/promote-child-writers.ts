@@ -447,16 +447,22 @@ export async function writeGiftChildren(
   if (!linked) return;
 
   const recipient = raw.recipient as { kind?: string; id?: string } | undefined;
+  // The same remap `accountId` got above, for the same reason: a scenario that
+  // CREATES the trust and gifts to it names it by a synthetic id, and the real
+  // entities row only exists under a generated uuid. Without this the child
+  // re-opens the FK violation the parent insert just stopped hitting — and the
+  // whole promote transaction rolls back.
+  const recipientId =
+    recipient?.id == null ? null : ctx.idRemap.get(recipient.id) ?? recipient.id;
   await tx.insert(gifts).values({
     clientId: ctx.clientId,
     year,
     amount: null,
     grantor: raw.grantor as typeof gifts.$inferInsert["grantor"],
-    recipientEntityId: recipient?.kind === "entity" ? recipient.id ?? null : null,
-    recipientFamilyMemberId:
-      recipient?.kind === "family_member" ? recipient.id ?? null : null,
+    recipientEntityId: recipient?.kind === "entity" ? recipientId : null,
+    recipientFamilyMemberId: recipient?.kind === "family_member" ? recipientId : null,
     recipientExternalBeneficiaryId:
-      recipient?.kind === "external_beneficiary" ? recipient.id ?? null : null,
+      recipient?.kind === "external_beneficiary" ? recipientId : null,
     accountId: null,
     liabilityId: linked.id,
     percent: String(percent),
