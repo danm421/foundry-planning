@@ -52,7 +52,18 @@ function isEducationAccount(a: { category: string; subType: string }): boolean {
 function toBuyLeg(goal: HomePurchaseGoal): BuyLegDraft {
   const { id, year: _year, ...rest } = goal;
   void _year;
-  return { ...rest, key: id, kind: "buy", assetCategory: "real_estate" };
+  return {
+    ...rest,
+    key: id,
+    kind: "buy",
+    assetCategory: "real_estate",
+    // HomePurchaseGoal doesn't carry these yet (Task 8 adds them); default
+    // to emptyBuyLeg's own inert values so a goal-sourced buy leg still
+    // satisfies BuyLegDraft's shape without inventing real data.
+    annualPropertyTax: "",
+    propertyTaxGrowthRate: "3",
+    propertyTaxGrowthSource: "custom",
+  };
 }
 
 /**

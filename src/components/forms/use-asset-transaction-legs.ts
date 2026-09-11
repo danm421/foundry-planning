@@ -65,6 +65,14 @@ function buyLegToBody(leg: BuyLegDraft, year: number): Record<string, unknown> {
     mortgageAmount: leg.showMortgage ? optStr(leg.mortgageAmount) : null,
     mortgageRate: leg.showMortgage ? optDec(leg.mortgageRate) : null,
     mortgageTermMonths: leg.showMortgage && leg.mortgageTermMonths ? Number(leg.mortgageTermMonths) : null,
+    // Real-estate only; the API rejects these on a sell and they are
+    // meaningless on any other category.
+    annualPropertyTax:
+      leg.assetCategory === "real_estate" ? optStr(leg.annualPropertyTax) : null,
+    propertyTaxGrowthRate:
+      leg.assetCategory === "real_estate" ? optDec(leg.propertyTaxGrowthRate) : null,
+    propertyTaxGrowthSource:
+      leg.assetCategory === "real_estate" ? leg.propertyTaxGrowthSource : null,
   };
 }
 
@@ -130,6 +138,10 @@ export function legsFromInitialData(d: AssetTransactionInitialData): LegDraft[] 
     b.mortgageRate = d.mortgageRate
       ? String(Math.round(Number(d.mortgageRate) * 10000) / 100) : "";
     b.mortgageTermMonths = String(d.mortgageTermMonths ?? 360);
+    b.annualPropertyTax = d.annualPropertyTax ?? "";
+    b.propertyTaxGrowthRate = d.propertyTaxGrowthRate
+      ? String(Math.round(Number(d.propertyTaxGrowthRate) * 10000) / 100) : "3";
+    b.propertyTaxGrowthSource = d.propertyTaxGrowthSource === "inflation" ? "inflation" : "custom";
     legs.push(b);
   }
   return legs;
