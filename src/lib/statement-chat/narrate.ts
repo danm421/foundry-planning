@@ -200,16 +200,44 @@ function rebaseDropCaveat(d: RebaseDrop): string {
  * the positions underneath it, which can change (a fund swap, a new
  * purchase) even when the account's own balance does not move.
  *
- * Both counts and both sums are named, same shape as the balance override,
- * and the sentence closes with what to DO for the same reason: the newer
- * set may be the one the advisor wants, and re-running extraction on the
- * account is the only way to take it.
+ * Both counts and both sums are named. No remedy sentence (fix round 1,
+ * C1/R40): the caveat used to close with "Re-run extraction on this account
+ * to take the newer set.", which is impossible — there is no per-account
+ * extraction, re-running the import-wide extraction reads nothing once a
+ * file is already in `fileResults`, and there is no add-position tool.
+ * Spec §7 stops at naming both figures; the advisor decides.
+ *
+ * Branches on either count being 0 (fix round 1, I3/R43), stating only what
+ * is known rather than a copy that only reads right when both sides have
+ * positions:
+ *   - `standingCount === 0` is spec §8's own upgrade path: an existing chat
+ *     import kept `extractHoldings: false`, so its standing side has no
+ *     positions at all — "the 0 you reviewed were kept" is nonsense for
+ *     every such account's first re-read after the toggle is flipped on.
+ *   - `freshCount === 0` must not assert, as fact, that the newer statement
+ *     "lists 0 positions" — the merge did not establish WHY (the toggle
+ *     could be off for that file, or the extractor could have missed the
+ *     table), only that none came through.
  */
 function rebaseHoldingsOverrideCaveat(o: RebaseHoldingsOverride): string {
+  const freshPositions = `${o.freshCount} ${plural(o.freshCount, "position", "positions")}`;
+  const standingWas = o.standingCount === 1 ? "was" : "were";
+
+  if (o.standingCount === 0) {
+    return (
+      `"${o.name}" has no positions reviewed on this import yet; the newer statement lists ` +
+      `${freshPositions} for it (${money(o.freshSum)}), and they have not been added automatically.`
+    );
+  }
+  if (o.freshCount === 0) {
+    return (
+      `The newer statement for "${o.name}" reported no positions, so the ${o.standingCount} ` +
+      `you reviewed (${money(o.standingSum)}) ${standingWas} kept.`
+    );
+  }
   return (
-    `The newer statement lists ${o.freshCount} ${plural(o.freshCount, "position", "positions")} for ` +
-    `"${o.name}" (${money(o.freshSum)}); the ${o.standingCount} you reviewed ` +
-    `(${money(o.standingSum)}) were kept. Re-run extraction on this account to take the newer set.`
+    `The newer statement lists ${freshPositions} for "${o.name}" (${money(o.freshSum)}); the ` +
+    `${o.standingCount} you reviewed (${money(o.standingSum)}) ${standingWas} kept.`
   );
 }
 

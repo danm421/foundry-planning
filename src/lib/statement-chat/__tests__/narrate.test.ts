@@ -738,6 +738,77 @@ describe("narrate", () => {
         expect.stringContaining("18 positions"),
       );
       expect(caveats.join(" ")).toContain("14");
+      // R40 (fix round 1, C1): the caveat used to end with "Re-run
+      // extraction on this account to take the newer set." — impossible,
+      // since re-running extraction on an already-extracted file reads
+      // nothing (`skipExtracted: true`). No remedy sentence at all.
+      expect(caveats.join(" ")).not.toContain("Re-run extraction");
+      // I5 (fix round 1): each dollar figure belongs to its OWN clause —
+      // the fresh count's sum next to the fresh count, the standing count's
+      // sum next to the standing count. Swapping `money(o.freshSum)` and
+      // `money(o.standingSum)` would put $1,240,000 next to "18 positions"
+      // and $1,500,000 next to "14 you reviewed", and this is specific
+      // enough to catch that.
+      expect(caveats[0]).toContain('18 positions for "Schwab ···1234" ($1,500,000)');
+      expect(caveats[0]).toContain("14 you reviewed ($1,240,000)");
+    });
+
+    /**
+     * Item 6 / Minor 1: advisor-facing grammar. "the 1 you reviewed ...
+     * were kept" reads wrong — singular count needs a singular verb.
+     */
+    it("uses a singular verb when exactly one standing position was kept", () => {
+      const { caveats } = narrate({
+        fileCount: 2, decisions: [], rows: [], overrides: [], refusals: [], dropped: [],
+        holdingsOverrides: [{
+          __rowId: "account:1234#0", name: "Schwab ···1234",
+          standingCount: 1, freshCount: 3, standingSum: 100, freshSum: 300,
+        }],
+      });
+      expect(caveats[0]).toContain("1 you reviewed ($100) was kept");
+      expect(caveats[0]).not.toContain("were kept");
+    });
+
+    /**
+     * R43 (fix round 1, I3). `standingCount: 0` is spec §8's own documented
+     * upgrade path: an existing chat import kept `extractHoldings: false`,
+     * so its standing side has NO positions at all, and the old copy
+     * ("the 0 you reviewed ($0) were kept") is nonsense for the first
+     * re-read after the advisor flips the toggle.
+     */
+    it("does not claim positions were reviewed when the standing side has none", () => {
+      const { caveats } = narrate({
+        fileCount: 2, decisions: [], rows: [], overrides: [], refusals: [], dropped: [],
+        holdingsOverrides: [{
+          __rowId: "account:1234#0", name: "Schwab ···1234",
+          standingCount: 0, freshCount: 5, standingSum: 0, freshSum: 40000,
+        }],
+      });
+      expect(caveats[0]).not.toContain("0 you reviewed");
+      expect(caveats[0]).not.toContain("were kept");
+      expect(caveats[0]).toContain("Schwab ···1234");
+      expect(caveats[0]).toContain("5");
+      expect(caveats[0]).toContain("$40,000");
+    });
+
+    /**
+     * R43 (fix round 1, I3). `freshCount: 0` must not assert, as fact, that
+     * "the newer statement lists 0 positions" — the merge did not establish
+     * WHY there are none (toggle off for that file, or the extractor missed
+     * the table). The kept side's figures still get said plainly.
+     */
+    it("does not overclaim when the fresh side has no positions", () => {
+      const { caveats } = narrate({
+        fileCount: 2, decisions: [], rows: [], overrides: [], refusals: [], dropped: [],
+        holdingsOverrides: [{
+          __rowId: "account:1234#0", name: "Schwab ···1234",
+          standingCount: 3, freshCount: 0, standingSum: 900, freshSum: 0,
+        }],
+      });
+      expect(caveats[0]).not.toContain("lists 0 positions");
+      expect(caveats[0]).toContain("Schwab ···1234");
+      expect(caveats[0]).toContain("3");
+      expect(caveats[0]).toContain("$900");
     });
   });
 });

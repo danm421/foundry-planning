@@ -2,6 +2,7 @@ import { keyedRowIdBucket } from "@/lib/imports/assemble/merge-across-files";
 import { custodianMatches, normalizeCustodian } from "@/lib/imports/normalize-custodian";
 import { livingHoldings } from "@/lib/imports/living-rows";
 import { holdingMarketValue } from "@/lib/extraction/normalize-holdings";
+import { holdingKey } from "@/lib/extraction/holdings-completion";
 import type { Annotated } from "@/lib/imports/types";
 import type { ExtractedAccount, ExtractedHolding } from "@/lib/extraction/types";
 
@@ -571,17 +572,6 @@ export function rebaseOntoFreshMerge(
     adopted.filter((r) => r.__rowId).map((r) => [r.__rowId as string, r]),
   );
 
-  // Identity for "same position set" (holdings override, below). `__holdingId`
-  // is OPTIONAL (`ExtractedHolding.__holdingId`), and every extraction from
-  // before this branch carries none at all — keying on it with a `Set` would
-  // collapse every id-less position into one `undefined` entry, so a
-  // one-position standing row would compare equal to a five-position fresh
-  // one. A sorted array keeps duplicates significant (a `Set` would silently
-  // drop them) and falls back to whatever identity the statement itself gives
-  // a position when the merge has not minted one.
-  const holdingKeys = (hs: ExtractedHolding[]) =>
-    hs.map((h) => h.__holdingId ?? h.ticker ?? h.name ?? "").sort();
-
   const overrides: RebaseOverride[] = [];
   const holdingsOverrides: RebaseHoldingsOverride[] = [];
   for (const fresh of base) {
@@ -594,30 +584,65 @@ export function rebaseOntoFreshMerge(
     // makes a holdings EDIT survive a re-extraction — and the same rule means
     // a NEWER statement's positions never reach an account already on the
     // table. Silently, until here. Who wins does not change; the advisor
-    // being told does. Run against `livingHoldings`, not `.holdings`
-    // directly, so a position the advisor already dropped in the chat is not
-    // reported as a difference the newer statement introduced.
+    // being told does.
+    //
+    // R41 (fix round 1, I1): tombstones live ONLY on the standing side
+    // (`base` comes from `mergeAcrossFiles`, which never sets `__dropped`),
+    // so a position the advisor already dropped in the chat has to be
+    // subtracted from the FRESH side before comparing — otherwise the
+    // fresh side still carries it and the advisor's OWN edit reads as the
+    // newer statement adding a position back. That is the tombstone's
+    // documented purpose (`extraction/types.ts`: "stays in the array so the
+    // next extraction cannot resurrect it") — resurrecting it into THIS
+    // caveat is the same failure. Counts and sums stay computed on the
+    // living (post-subtraction) sets.
     const standingLiving = livingHoldings(held);
-    const freshLiving = livingHoldings(fresh);
-    if (standingLiving.length > 0 || freshLiving.length > 0) {
-      const a = holdingKeys(standingLiving);
-      const b = holdingKeys(freshLiving);
-      const same = a.length === b.length && a.every((k, i) => k === b[i]);
-      if (!same) {
-        holdingsOverrides.push({
-          __rowId: id,
-          name: held.name,
-          standingCount: standingLiving.length,
-          freshCount: freshLiving.length,
-          // `holdingMarketValue`, not a bare `marketValue ?? 0`: it is the
-          // repo's one definition of a position's value and DERIVES
-          // shares * price when the statement gave those instead — the
-          // extraction prompt explicitly allows that shape, and these sums
-          // are advisor-facing money.
-          standingSum: standingLiving.reduce((s, h) => s + holdingMarketValue(h), 0),
-          freshSum: freshLiving.reduce((s, h) => s + holdingMarketValue(h), 0),
-        });
-      }
+    const tombstoned = (held.holdings ?? []).filter((h) => h.__dropped === true);
+    const freshLivingAll = livingHoldings(fresh);
+
+    // R39 (fix round 1, I2): identity for "same position set" is chosen ONCE
+    // PER COMPARISON, not per holding. `__holdingId` is the edit-stable
+    // handle `stampHoldingIds` mints for every position `mergeAcrossFiles`
+    // produces — the fresh side always has it — but a standing row that
+    // predates this branch (or was persisted before the last merge ran) may
+    // carry none. Falling back to `holdingKey` per HOLDING compares two
+    // different identities across the two sides: the same real position
+    // gets a bare "AAPL" on one side and "t:AAPL#0" on the other, which can
+    // never match — a false override on a position set that did not change.
+    // Keying BOTH sides on `holdingKey` unconditionally is also wrong:
+    // ticker/name are on `EDITABLE_HOLDING_FIELDS`, so an advisor correcting
+    // a misread ticker would make the sides disagree and blame the newer
+    // statement (see `sameInstitution`'s docstring for the account-level
+    // version of this same rule). So: `__holdingId` only when EVERY holding
+    // on BOTH sides already carries one — the only shape the route
+    // produces — else `holdingKey` on both. The mixed shape then cannot
+    // arise.
+    const bothFullyStamped =
+      standingLiving.every((h) => h.__holdingId !== undefined) &&
+      freshLivingAll.every((h) => h.__holdingId !== undefined);
+    const identity = (h: ExtractedHolding): string =>
+      bothFullyStamped ? (h.__holdingId as string) : holdingKey(h);
+
+    const tombstonedKeys = new Set(tombstoned.map(identity));
+    const freshLiving = freshLivingAll.filter((h) => !tombstonedKeys.has(identity(h)));
+
+    const a = standingLiving.map(identity).sort();
+    const b = freshLiving.map(identity).sort();
+    const same = a.length === b.length && a.every((k, i) => k === b[i]);
+    if (!same) {
+      holdingsOverrides.push({
+        __rowId: id,
+        name: held.name,
+        standingCount: standingLiving.length,
+        freshCount: freshLiving.length,
+        // `holdingMarketValue`, not a bare `marketValue ?? 0`: it is the
+        // repo's one definition of a position's value and DERIVES
+        // shares * price when the statement gave those instead — the
+        // extraction prompt explicitly allows that shape, and these sums
+        // are advisor-facing money.
+        standingSum: standingLiving.reduce((s, h) => s + holdingMarketValue(h), 0),
+        freshSum: freshLiving.reduce((s, h) => s + holdingMarketValue(h), 0),
+      });
     }
 
     // BY VALUE, not by reference. `standing` is parsed back out of jsonb on
