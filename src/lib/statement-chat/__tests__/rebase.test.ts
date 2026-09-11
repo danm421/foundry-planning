@@ -263,6 +263,305 @@ describe("rebaseOntoFreshMerge", () => {
     expect(rows.map((r) => r.value)).toEqual([1]);
     expect(overrides).toEqual([]);
   });
+
+  /**
+   * ── Fix wave 2, Concern 1: RE-ATTACHING AN ORPHANED STANDING ROW ────────
+   *
+   * THE COMMON CASE, and the one the coordinate ordinal regressed.
+   *
+   * A row's id is minted from the dedupe entry's MINIMUM member coordinate.
+   * Uploading a newer statement for the SAME account merges into that entry,
+   * and if the new file's id sorts lower the minimum moves — so the entry's
+   * id moves with it and the advisor's standing row finds no counterpart at
+   * all. It was then dropped silently: the rename and the `linkCreated`
+   * commit stamp gone, and — measured in `task1-severity` — the replacement
+   * row committing as `kind: "new"`, INSERTING a SECOND plan account for one
+   * real account.
+   *
+   * A derived id cannot be made stable across a re-extraction (three waves
+   * have tried; the input set changes by definition). So identity is
+   * ASSIGNED ONCE and carried forward here, at the rebase — the boundary
+   * where the advisor's work lives.
+   *
+   * Mutation this catches: deleting the re-attachment pass. The row comes
+   * back named "Roth IRA" at the fresh id with `match: { kind: "new" }`, so
+   * the advisor's rename and commit stamp are gone and `committedRowIds` no
+   * longer names the row on screen.
+   */
+  it("re-attaches a standing row whose id moved when a newer statement merged in", () => {
+    const JUNE = "9c3f1a02-4f7b-4c0e-9a11-2d5b8e7f6a31";
+    const SEPT = "0b7e4d19-8a2c-4f31-b6d0-1e9c3a5f2b84"; // sorts FIRST
+    const STANDING_ID = `account:7734#${JUNE}:0`;
+    const FRESH_ID = `account:7734#${SEPT}:0`;
+
+    // One merged entry off two statements. Its minimum coordinate — and so
+    // its id and its provenance — is now the SEPTEMBER file's.
+    const fresh = [
+      sourced(FRESH_ID, "Roth IRA", 201_900, SEPT, {
+        custodian: "Fidelity",
+        accountNumberLast4: "7734",
+      }),
+    ];
+    const standing = [
+      sourced(STANDING_ID, "Julia — Roth (rollover)", 190_000, JUNE, {
+        custodian: "Fidelity",
+        accountNumberLast4: "7734",
+        match: { kind: "exact", existingId: "acct-1" },
+      }),
+    ];
+
+    const { rows, overrides, refusals, dropped } = rebaseOntoFreshMerge(fresh, standing);
+
+    expect(refusals).toEqual([]);
+    expect(dropped).toEqual([]);
+    expect(rows).toHaveLength(1);
+    // The advisor's work survived...
+    expect(rows[0]).toMatchObject({
+      name: "Julia — Roth (rollover)",
+      value: 190_000,
+      match: { kind: "exact", existingId: "acct-1" },
+    });
+    // ...and — the half that re-attachment alone would NOT discharge — the
+    // row still answers to the id `committedRowIds` holds, so its Commit
+    // button cannot re-arm and the account cannot be committed twice.
+    expect(rows[0].__rowId).toBe(STANDING_ID);
+    // Ruling 117 still applies to a re-attached row: the newer statement's
+    // figure was held back, so the advisor is told both numbers.
+    expect(overrides).toEqual([
+      {
+        __rowId: STANDING_ID,
+        name: "Julia — Roth (rollover)",
+        freshName: "Roth IRA",
+        standingValue: 190_000,
+        freshValue: 201_900,
+      },
+    ]);
+  });
+
+  /**
+   * UNIQUENESS — the trap. A carried-forward id lands on a fresh row that
+   * already had an id of its own, so nothing here may produce two rows under
+   * one key, and nothing may re-stamp a slot another standing row is already
+   * holding by id (which would take that row's counterpart away and delete
+   * it, since the loop only ever emits fresh rows).
+   *
+   * The argument, all three clauses exercised by this one fixture:
+   *  - an orphan's id is by definition ABSENT from the fresh set, so it can
+   *    never equal the id of a fresh row that keeps its own;
+   *  - every fresh row is claimed at most once — `claimed` holds the ones an
+   *    id match already took (the committed Fidelity row here), and the 1:1
+   *    rule gives each remaining candidate a single claimant;
+   *  - two orphans cannot carry the same id, because the orphan set is keyed
+   *    BY id.
+   *
+   * Three standing rows against two fresh ones: one joins by id, one
+   * re-attaches beside it, and one has nowhere to go.
+   *
+   * Mutation this catches: dropping `claimed` from the candidate filter. The
+   * stranded "Fidelity — old rollover" orphan then re-attaches onto the
+   * COMMITTED Fidelity row's slot and re-stamps it, so that committed row
+   * loses its counterpart and vanishes from the table entirely — its stamp,
+   * its figure and its id all gone — while `dropped` reports nothing.
+   */
+  it("never re-stamps a fresh row another standing row already holds by id", () => {
+    const JUNE = "9c3f1a02-4f7b-4c0e-9a11-2d5b8e7f6a31";
+    const SEPT = "0b7e4d19-8a2c-4f31-b6d0-1e9c3a5f2b84";
+    const FIDELITY_ID = `account:7734#${JUNE}:1`;
+    const STRANDED_ID = `account:7734#${JUNE}:2`;
+    const SCHWAB_STANDING_ID = `account:7734#${JUNE}:0`;
+    const SCHWAB_FRESH_ID = `account:7734#${SEPT}:0`;
+
+    const fresh = [
+      sourced(SCHWAB_FRESH_ID, "Schwab Brokerage", 88_000, SEPT, {
+        custodian: "Schwab",
+        accountNumberLast4: "7734",
+      }),
+      sourced(FIDELITY_ID, "Fidelity Roth IRA", 201_900, JUNE, {
+        custodian: "Fidelity",
+        accountNumberLast4: "7734",
+      }),
+    ];
+    const standing = [
+      // Joins by id — its own slot is spoken for and must stay so.
+      sourced(FIDELITY_ID, "Fidelity Roth IRA", 201_900, JUNE, {
+        custodian: "Fidelity",
+        accountNumberLast4: "7734",
+        match: { kind: "exact", existingId: "acct-1" },
+      }),
+      // Orphaned, and the Schwab row is its unclaimed same-institution
+      // counterpart — this one IS re-attached.
+      sourced(SCHWAB_STANDING_ID, "Schwab — joint", 88_000, JUNE, {
+        custodian: "Schwab",
+        accountNumberLast4: "7734",
+      }),
+      // Orphaned, and the only Fidelity row in the bucket is already taken.
+      sourced(STRANDED_ID, "Fidelity — old rollover", 12_000, JUNE, {
+        custodian: "Fidelity",
+        accountNumberLast4: "7734",
+      }),
+    ];
+
+    const { rows, dropped } = rebaseOntoFreshMerge(fresh, standing);
+
+    const ids = rows.map((r) => r.__rowId);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toEqual([SCHWAB_STANDING_ID, FIDELITY_ID]);
+    expect(rows.map((r) => r.name)).toEqual(["Schwab — joint", "Fidelity Roth IRA"]);
+    // The committed row is untouched — id, figure and stamp.
+    expect(rows[1]).toMatchObject({
+      value: 201_900,
+      match: { kind: "exact", existingId: "acct-1" },
+    });
+    // The row that genuinely had nowhere to go is REPORTED, not silent.
+    expect(dropped).toEqual([
+      { __rowId: STRANDED_ID, name: "Fidelity — old rollover", committed: false },
+    ]);
+  });
+
+  /**
+   * AMBIGUITY IS NOT RE-ATTACHED. Two standing rows in one bucket competing
+   * for a single fresh row (the extractor's owner guess stopped flipping, so
+   * what used to be two entries is now one) has no right answer — landing
+   * either row's edits on it is a coin flip, and a coin flip here is the C-1
+   * failure again. Neither is attached; both are reported.
+   *
+   * Pinning this is also what makes the uniqueness argument order-free: the
+   * pairing is accepted only when the orphan has exactly one candidate AND
+   * the candidate has exactly one claimant, so the result cannot depend on
+   * which orphan is considered first.
+   *
+   * Mutation this catches: accepting the first candidate instead of requiring
+   * an unambiguous 1:1 pair. One of the two standing rows silently wins the
+   * fresh row's slot, and which one depends on array order.
+   */
+  it("refuses to re-attach when two standing rows compete for one fresh row", () => {
+    const JUNE = "9c3f1a02-4f7b-4c0e-9a11-2d5b8e7f6a31";
+    const SEPT = "0b7e4d19-8a2c-4f31-b6d0-1e9c3a5f2b84";
+    const FRESH_ID = `account:7734#${SEPT}:0`;
+
+    const fresh = [
+      sourced(FRESH_ID, "Roth IRA", 201_900, SEPT, {
+        custodian: "Fidelity",
+        accountNumberLast4: "7734",
+      }),
+    ];
+    const standing = [
+      sourced(`account:7734#${JUNE}:0`, "Roth IRA (client)", 190_000, JUNE, {
+        custodian: "Fidelity",
+        accountNumberLast4: "7734",
+      }),
+      sourced(`account:7734#${JUNE}:1`, "Roth IRA (spouse)", 120_000, JUNE, {
+        custodian: "Fidelity",
+        accountNumberLast4: "7734",
+      }),
+    ];
+
+    const { rows, dropped } = rebaseOntoFreshMerge(fresh, standing);
+
+    // The fresh row keeps its OWN identity and its own figure.
+    expect(rows).toHaveLength(1);
+    expect(rows[0].__rowId).toBe(FRESH_ID);
+    expect(rows[0].name).toBe("Roth IRA");
+    // Both losses are reported, in standing order.
+    expect(dropped).toEqual([
+      { __rowId: `account:7734#${JUNE}:0`, name: "Roth IRA (client)", committed: false },
+      { __rowId: `account:7734#${JUNE}:1`, name: "Roth IRA (spouse)", committed: false },
+    ]);
+  });
+
+  /**
+   * The bucket alone is NOT a fingerprint. Post-Task-12 the accounts dedupe
+   * key is the masked last-4 ALONE, so a Fidelity IRA and a Schwab brokerage
+   * that happen to share four digits live in one bucket — which is exactly
+   * the pair C-1 was built from. Re-attaching on the bucket alone would land
+   * the Fidelity row's edits and commit stamp on the Schwab account: C-1
+   * again, through a new door.
+   *
+   * The institution test is `normalizeCustodian` + `custodianMatches`, the
+   * same pair the merge's own `isSameEntity` uses. Custodian IS editable, so
+   * an advisor who corrects it loses the re-attachment — but a failure to
+   * re-attach is the status quo (the row is dropped, and now reported),
+   * whereas a wrong re-attachment moves money. That asymmetry is why this
+   * field is right HERE and wrong in `plausiblySameAccount`, where a
+   * false rejection would discard a correction that survives today.
+   *
+   * Mutation this catches: dropping the institution test from the
+   * re-attachment fingerprint. "Fidelity Roth IRA" lands on the Schwab row,
+   * the Schwab figure is replaced by the Fidelity one, and the commit stamp
+   * follows it onto the wrong account.
+   */
+  it("does not re-attach across two institutions sharing a masked last-4", () => {
+    const JUNE = "9c3f1a02-4f7b-4c0e-9a11-2d5b8e7f6a31";
+    const SEPT = "0b7e4d19-8a2c-4f31-b6d0-1e9c3a5f2b84";
+    const STANDING_ID = `account:7734#${JUNE}:0`;
+
+    const fresh = [
+      sourced(`account:7734#${SEPT}:0`, "Schwab Brokerage", 88_000, SEPT, {
+        custodian: "Schwab",
+        accountNumberLast4: "7734",
+      }),
+    ];
+    const standing = [
+      sourced(STANDING_ID, "Fidelity Roth IRA", 201_900, JUNE, {
+        custodian: "Fidelity",
+        accountNumberLast4: "7734",
+        match: { kind: "exact", existingId: "acct-1" },
+      }),
+    ];
+
+    const { rows, dropped } = rebaseOntoFreshMerge(fresh, standing);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ name: "Schwab Brokerage", value: 88_000 });
+    expect(rows[0].__rowId).toBe(`account:7734#${SEPT}:0`);
+    // Requirement 4: no plausible counterpart, so the row is dropped — but
+    // VISIBLY, and the fact that it had been committed travels with it.
+    expect(dropped).toEqual([
+      { __rowId: STANDING_ID, name: "Fidelity Roth IRA", committed: true },
+    ]);
+  });
+
+  /**
+   * A row the advisor RETIRED in the chat (`drop_row`, or the losing side of
+   * an irreversible `merge_rows`) is still re-derived by every fresh merge —
+   * the route subtracts it by id afterwards. If an orphan could re-attach
+   * onto it, the carried-forward id would no longer be the excluded one and
+   * that subtraction would miss: a row the advisor explicitly dropped would
+   * come back on screen, which is the very failure I1 exists to prevent.
+   *
+   * Mutation this catches: ignoring `retiredRowIds` when collecting
+   * candidates. The standing row re-attaches onto the retired fresh row and
+   * comes back under an id the route's exclusion filter cannot see.
+   */
+  it("never re-attaches onto a fresh row the advisor retired in the chat", () => {
+    const JUNE = "9c3f1a02-4f7b-4c0e-9a11-2d5b8e7f6a31";
+    const SEPT = "0b7e4d19-8a2c-4f31-b6d0-1e9c3a5f2b84";
+    const RETIRED_ID = `account:7734#${SEPT}:0`;
+    const STANDING_ID = `account:7734#${JUNE}:0`;
+
+    const fresh = [
+      sourced(RETIRED_ID, "Roth IRA", 201_900, SEPT, {
+        custodian: "Fidelity",
+        accountNumberLast4: "7734",
+      }),
+    ];
+    const standing = [
+      sourced(STANDING_ID, "Julia — Roth (rollover)", 190_000, JUNE, {
+        custodian: "Fidelity",
+        accountNumberLast4: "7734",
+      }),
+    ];
+
+    const { rows, dropped } = rebaseOntoFreshMerge(fresh, standing, {
+      retiredRowIds: new Set([RETIRED_ID]),
+    });
+
+    expect(rows.map((r) => r.__rowId)).toEqual([RETIRED_ID]);
+    expect(rows[0].name).toBe("Roth IRA");
+    expect(dropped).toEqual([
+      { __rowId: STANDING_ID, name: "Julia — Roth (rollover)", committed: false },
+    ]);
+  });
 });
 
 /**

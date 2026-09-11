@@ -1,3 +1,5 @@
+import { keyedRowIdBucket } from "@/lib/imports/assemble/merge-across-files";
+import { custodianMatches, normalizeCustodian } from "@/lib/imports/normalize-custodian";
 import type { Annotated } from "@/lib/imports/types";
 import type { ExtractedAccount } from "@/lib/extraction/types";
 
@@ -57,6 +59,30 @@ export interface RebaseRefusal {
 }
 
 /**
+ * One standing row that has left the table: its `__rowId` has no counterpart
+ * in the fresh set and no fresh row could be identified as the same account,
+ * so the row is simply gone. That has always been the behaviour — a row the
+ * new extraction does not produce is not in `freshMerged`, and the loop only
+ * ever emits fresh rows — but it used to be SILENT.
+ *
+ * Fix wave 2, requirement 4. The row vanishing changes what will commit, and
+ * an advisor who does not see it happen has no way to tell "this account left
+ * the statements" from "the app lost my work". One sentence is cheap and can
+ * never be wrong.
+ */
+export interface RebaseDrop {
+  __rowId: string;
+  /** The STANDING row's name — the label the advisor has been looking at. */
+  name: string;
+  /**
+   * True when the row carried a `linkCreated` stamp, i.e. it had already been
+   * committed to the plan. That plan account is untouched by any of this, and
+   * saying so is the difference between a note and an alarm.
+   */
+  committed: boolean;
+}
+
+/**
  * Could these two rows, which share a `__rowId`, be the same account?
  *
  * WHY A GUARD AT ALL. `__rowId` is minted by `mergeAcrossFiles` from the
@@ -104,6 +130,32 @@ function plausiblySameAccount(standing: AccountRow, fresh: AccountRow): boolean 
   const freshFile = fresh.__provenance?.sourceFileId;
   if (standingFile === undefined || freshFile === undefined) return true;
   return standingFile === freshFile;
+}
+
+/**
+ * Same institution? `normalizeCustodian` + `custodianMatches` — the same pair
+ * `mergeAcrossFiles`'s own `isSameEntity` uses to keep a Schwab statement out
+ * of a Fidelity account that shares four masked digits, so the rebase cannot
+ * disagree with the merge about what one institution is.
+ *
+ * A null on either side matches only another null, the direction both that
+ * function and `rollups.ts` already take: a row with no readable custodian
+ * gives this nothing to compare, and joining it to a named one blind is how
+ * two real accounts become one.
+ *
+ * WHY CUSTODIAN IS RIGHT HERE AND WRONG IN `plausiblySameAccount`. It is on
+ * `EDITABLE_ACCOUNT_FIELDS`, so an advisor who corrects a misread institution
+ * makes the two sides disagree. In the guard above that costs a LEGITIMATE
+ * join and silently discards the correction — a new defect. Here it costs a
+ * re-attachment that would not have happened at all before this wave, so the
+ * row is dropped exactly as it was, and now reported. A false negative is the
+ * status quo; a false positive moves money onto the wrong account.
+ */
+function sameInstitution(standing: AccountRow, fresh: AccountRow): boolean {
+  const a = normalizeCustodian(standing.custodian);
+  const b = normalizeCustodian(fresh.custodian);
+  if (a === null || b === null) return a === b;
+  return custodianMatches(a, b);
 }
 
 /**
@@ -155,6 +207,87 @@ export function mergeAccountsByRowId(
 }
 
 /**
+ * Pair each ORPHANED standing row — one whose `__rowId` has no counterpart in
+ * the fresh set — with the fresh row that is genuinely the same account, and
+ * return `freshRowId -> standingRowId`: the identity to carry forward.
+ *
+ * WHY THIS EXISTS. `__rowId` is DERIVED, from the dedupe key plus the entry's
+ * minimum member coordinate. Uploading a newer statement for an account
+ * already on the import merges into that entry, and if the new file's id
+ * sorts lower the minimum — and so the id — moves. Three waves have now tried
+ * to make a derived id stable across a re-extraction; it cannot be, because a
+ * derived id is a function of the input set and re-extraction changes the
+ * input set by definition. Identity has to be ASSIGNED ONCE and carried
+ * forward, and this is the boundary where the advisor's work lives.
+ *
+ * THE FINGERPRINT is the BUCKET half of the id (`keyedRowIdBucket`) plus the
+ * institution. The bucket half is the merge's own dedupe key — the masked
+ * last-4 for accounts — and it is the one part of the id a new file cannot
+ * move. It is also not editable: it is read off the id both sides were minted
+ * with, NOT off `accountNumberLast4`, so an advisor correcting a misread
+ * masked number does not lose their row. The institution test is what stops
+ * the bucket being used alone: post-Task-12 the key is the last-4 ALONE, so a
+ * Fidelity IRA and a Schwab brokerage sharing four digits are one bucket —
+ * the exact pair C-1 was built from.
+ *
+ * A NULL-KEY id (`${label}:null:${fileId}:${index}:${name}`) returns `null`
+ * from `keyedRowIdBucket` and is never re-attached. It does not need to be:
+ * that id is already scoped to its own file and index, so adding a file
+ * cannot move it.
+ *
+ * ONLY UNAMBIGUOUS 1:1 PAIRS are accepted — the orphan must have exactly one
+ * candidate AND that candidate exactly one claimant. Two standing rows
+ * competing for one fresh row (the extractor's owner guess stopped flipping,
+ * so two entries became one) has no right answer, and picking one is the
+ * coin flip C-1 already cost. Requiring both directions also makes the result
+ * independent of the order the orphans are considered in.
+ *
+ * UNIQUENESS — the trap. A carried-forward id cannot collide with an id
+ * already in the fresh set:
+ *  - an orphan's id is, by definition, absent from `freshByRowId`, so it
+ *    cannot equal the id of any fresh row that keeps its own;
+ *  - every fresh row is claimed at most once — `claimed` holds the ones an id
+ *    match already took, and the 1:1 rule gives each remaining candidate a
+ *    single claimant — so no fresh row is re-stamped twice;
+ *  - two orphans cannot carry the same id: `orphans` is keyed BY id.
+ * Pinned by "never mints a duplicate __rowId when it carries an id forward".
+ */
+function reattachOrphans(
+  orphans: ReadonlyMap<string, AccountRow>,
+  freshMerged: AccountRow[],
+  claimed: ReadonlySet<string>,
+  retiredRowIds: ReadonlySet<string> | undefined,
+): Map<string, string> {
+  const candidatesFor = new Map<string, string[]>();
+  const claimantCount = new Map<string, number>();
+
+  for (const [standingId, held] of orphans) {
+    const bucket = keyedRowIdBucket(standingId);
+    if (bucket === null) continue;
+    const candidates = freshMerged
+      .filter((fresh) => {
+        const freshId = fresh.__rowId;
+        if (!freshId || claimed.has(freshId) || retiredRowIds?.has(freshId)) return false;
+        return keyedRowIdBucket(freshId) === bucket && sameInstitution(held, fresh);
+      })
+      .map((fresh) => fresh.__rowId as string);
+    if (candidates.length === 0) continue;
+    candidatesFor.set(standingId, candidates);
+    for (const freshId of candidates) {
+      claimantCount.set(freshId, (claimantCount.get(freshId) ?? 0) + 1);
+    }
+  }
+
+  const carried = new Map<string, string>();
+  for (const [standingId, freshIds] of candidatesFor) {
+    if (freshIds.length !== 1) continue;
+    if (claimantCount.get(freshIds[0]) !== 1) continue;
+    carried.set(freshIds[0], standingId);
+  }
+  return carried;
+}
+
+/**
  * Rebase the rows the advisor has been working on (`standing` — the persisted
  * `payload.accounts`) onto a freshly re-merged set (`freshMerged` — this
  * extraction's `detectRollups().kept`).
@@ -178,8 +311,13 @@ export function mergeAccountsByRowId(
  *     `fileResults` has changed — and an empty start also means nothing is
  *     ever treated as retired, so a genuinely new row is never dropped.
  *
- * A row that no longer exists in the new extraction simply disappears: it is
- * absent from `freshMerged`, and the loop only ever emits fresh rows.
+ * Fix wave 2: a standing row whose id has NO counterpart in the fresh set is
+ * no longer lost on sight. `reattachOrphans` looks for the fresh row that is
+ * genuinely the same account and carries the STANDING row's id onto it, which
+ * is what keeps `committedRowIds` pointing at it. One with no counterpart the
+ * fingerprint will accept still disappears — it is absent from `freshMerged`
+ * and the loop only ever emits fresh rows — but it comes out in `dropped` so
+ * the advisor is told rather than left to notice.
  *
  * For a row present in BOTH sets the standing row wins wholesale, so a
  * re-merge that would have moved that row's balance (a newer statement
@@ -207,7 +345,24 @@ export function mergeAccountsByRowId(
 export function rebaseOntoFreshMerge(
   freshMerged: AccountRow[],
   standing: AccountRow[],
-): { rows: AccountRow[]; overrides: RebaseOverride[]; refusals: RebaseRefusal[] } {
+  opts?: {
+    /**
+     * Fresh `__rowId`s the advisor has already retired in the chat
+     * (`chat.excludedRows`). They are still in every fresh merge — they are
+     * still in `fileResults` — and the caller subtracts them by id AFTER this
+     * returns. So they must never be re-attachment targets: a carried-forward
+     * id would no longer be the excluded one, that subtraction would miss,
+     * and a row the advisor explicitly dropped would come back on screen.
+     */
+    retiredRowIds?: ReadonlySet<string>;
+  },
+): {
+  rows: AccountRow[];
+  overrides: RebaseOverride[];
+  refusals: RebaseRefusal[];
+  dropped: RebaseDrop[];
+} {
+  const retiredRowIds = opts?.retiredRowIds;
   const freshByRowId = new Map(
     freshMerged.filter((r) => r.__rowId).map((r) => [r.__rowId as string, r]),
   );
@@ -218,25 +373,51 @@ export function rebaseOntoFreshMerge(
   // recycled there, `__rowId` is a valid identity, and that path has no
   // defect to fix. It must not absorb this one's risk.
   const refusals: RebaseRefusal[] = [];
+  // Fresh rows already spoken for — by an id match, refused or not. A refused
+  // row's fresh counterpart keeps its own slot, so it is claimed either way.
+  const claimed = new Set<string>();
+  // Keyed by id, so two standing rows sharing one (jsonb carries whatever was
+  // written) collapse the same way `mergeAccountsByRowId`'s own Map collapses
+  // them, and an id can never be carried forward twice.
+  const orphans = new Map<string, AccountRow>();
   for (const held of standing) {
     const id = held.__rowId;
     if (!id) continue;
     const fresh = freshByRowId.get(id);
-    // No counterpart at all is not a refusal — the row simply is not in this
-    // extraction any more, which the docstring above already covers.
-    if (!fresh) continue;
+    if (!fresh) {
+      orphans.set(id, held);
+      continue;
+    }
+    claimed.add(id);
     if (plausiblySameAccount(held, fresh)) continue;
     refusals.push({ __rowId: id, name: held.name, freshName: fresh.name });
   }
+
+  const carried = reattachOrphans(orphans, freshMerged, claimed, retiredRowIds);
+  const carriedStandingIds = new Set(carried.values());
+  const dropped: RebaseDrop[] = [];
+  for (const [id, held] of orphans) {
+    if (carriedStandingIds.has(id)) continue;
+    dropped.push({ __rowId: id, name: held.name, committed: held.match?.kind === "exact" });
+  }
+
+  // Re-attachment is EXPRESSED as re-stamping the fresh row's slot with the
+  // identity being carried onto it. Everything downstream — the id join, the
+  // override comparison, the caller's `committedRowIds` and `chatExcludedIds`
+  // lookups — then works unchanged, because the row genuinely IS that id now.
+  const base = freshMerged.map((r) => {
+    const carriedId = r.__rowId === undefined ? undefined : carried.get(r.__rowId);
+    return carriedId === undefined ? r : { ...r, __rowId: carriedId };
+  });
 
   // A refused row is withheld from the CHANGED set, so the fresh row keeps
   // its own slot untouched. It is never appended alongside: putting it back
   // would be the duplicate half of the same failure.
   const refused = new Set(refusals.map((r) => r.__rowId));
   const adopted = standing.filter((r) => !(r.__rowId && refused.has(r.__rowId)));
-  const rows = mergeAccountsByRowId(freshMerged, [], adopted);
+  const rows = mergeAccountsByRowId(base, [], adopted);
 
-  // Computed HERE, against the ADOPTED standing rows and `freshMerged`
+  // Computed HERE, against the ADOPTED standing rows and `base`
   // directly, rather than
   // inside `mergeAccountsByRowId` — that function is the shared mechanism the
   // turn route also depends on, where "changed" means reference inequality
@@ -246,7 +427,7 @@ export function rebaseOntoFreshMerge(
   );
 
   const overrides: RebaseOverride[] = [];
-  for (const fresh of freshMerged) {
+  for (const fresh of base) {
     const id = fresh.__rowId;
     if (!id) continue;
     const held = standingByRowId.get(id);
@@ -275,5 +456,5 @@ export function rebaseOntoFreshMerge(
     });
   }
 
-  return { rows, overrides, refusals };
+  return { rows, overrides, refusals, dropped };
 }
