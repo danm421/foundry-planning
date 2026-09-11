@@ -34,6 +34,7 @@ import {
   giftScenarioAdd,
   giftScenarioRemove,
   assertDraftable,
+  assertNotPastDatedAssetGift,
 } from "@/lib/gifts/gift-write";
 import {
   giftRowToDraft,
@@ -758,10 +759,29 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
         // Save button: the entity write above already refreshed, and a refresh
         // per gift op would re-run this dialog's gift/series/ledger fetches N
         // times (the same cost the Assets-tab note at the fetch effect avoids).
+
+        // `assertNotPastDatedAssetGift` below is the same save-boundary refusal
+        // the gift dialog and the two transfer forms apply: an asset transfer
+        // dated before the plan starts moves ownership through `account_owners`,
+        // which only the base gift route writes, so inside a scenario the save
+        // would move no number at all. Every funding-pick gift is dated
+        // `splitInterest.inceptionYear`, a free year input, so a past-dated one
+        // is expressible here.
+        //
+        // INERT TODAY, exactly like the scenario fork it sits beside: the gate
+        // above returns for `scenarioActive && isSplitInterest`, and this loop
+        // runs only when `isSplitInterest`, so `scenarioActive` is provably
+        // false by the time we get here and the guard stands down on its first
+        // line. It is here so that lifting that gate does not re-open the hole
+        // silently. When it does fire, the throw lands in this function's own
+        // try/catch and comes back as `{ ok: false, error }` — the contract
+        // every other failure in this loop keeps.
         for (const op of ops) {
           if (op.type === "create") {
+            const draft = fundingPickCreateDraft(op.body, crypto.randomUUID());
+            assertNotPastDatedAssetGift(draft, { scenarioActive, planStartYear });
             const giftRes = await scenarioWriter.submit(
-              giftScenarioAdd(fundingPickCreateDraft(op.body, crypto.randomUUID())),
+              giftScenarioAdd(draft),
               {
                 url: `/api/clients/${clientId}/gifts`,
                 method: "POST",
@@ -786,8 +806,13 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
               if (!current) {
                 return { ok: false, error: "Couldn't find the gift this funding change edits. Reopen the trust and try again." };
               }
+              const draft = assertDraftable(
+                fundingPickUpdateDraft(current, op.body),
+                "gift",
+              );
+              assertNotPastDatedAssetGift(draft, { scenarioActive, planStartYear });
               giftRes = await scenarioWriter.submit(
-                giftScenarioAdd(assertDraftable(fundingPickUpdateDraft(current, op.body), "gift")),
+                giftScenarioAdd(draft),
                 { url, method: "PATCH", body: op.body, skipRefresh: true },
               );
             } else {
@@ -860,7 +885,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
     isGrantor, grantorStatusEndYear,
     isIrrevocable, grantor, trustee, trustEnds, showDistributionAndIncome,
     distributionAmount, distributionPercent, remainderRows,
-    originalSplitInterestFundingPicks, onAutoSaved,
+    originalSplitInterestFundingPicks, onAutoSaved, planStartYear,
   ]);
 
   async function handleSubmit(e: React.FormEvent) {
