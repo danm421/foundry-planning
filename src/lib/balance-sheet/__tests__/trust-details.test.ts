@@ -91,7 +91,7 @@ describe("buildTrustDetails", () => {
     ]);
   });
 
-  it("falls back to 'Spouse' when spouseLabel is null", () => {
+  it("falls back to 'Co-client' when spouseLabel is null", () => {
     const out2 = buildTrustDetails(
       {
         entities: [
@@ -107,8 +107,8 @@ describe("buildTrustDetails", () => {
       } as unknown as ClientData,
       { clientLabel: "Cooper", spouseLabel: null },
     );
-    expect(out2[0].grantor).toBe("Spouse");
-    expect(out2[0].beneficiaries[0].name).toBe("Spouse");
+    expect(out2[0].grantor).toBe("Co-client");
+    expect(out2[0].beneficiaries[0].name).toBe("Co-client");
   });
 
   it("tolerates a missing entities array", () => {

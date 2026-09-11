@@ -83,7 +83,7 @@ describe("describeChangeTarget", () => {
   it("will: spouse grantor", () => {
     expect(
       describeChangeTarget("will", { id: "w1", grantor: "spouse" }, accounts),
-    ).toBe("Spouse's will");
+    ).toBe("Co-client's will");
   });
 
   it("returns null for an un-nameable unknown entity", () => {

@@ -17,7 +17,7 @@ describe("PA golden — four-recipient family scenario", () => {
       grossEstate: 1_800_000,
       recipients: [
         {
-          key: "sp", label: "Spouse", grossShare: 1_000_000,
+          key: "sp", label: "Co-client", grossShare: 1_000_000,
           components: [{ kind: "other", amount: 1_000_000 }],
           relationship: "spouse", isMinorChild: false, age: 65,
           domesticPartner: false, isCharity: false, isExternalIndividual: false,

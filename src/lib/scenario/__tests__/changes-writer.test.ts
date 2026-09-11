@@ -412,7 +412,7 @@ describe.skipIf(!HAS_DB)("changes-writer", () => {
             {
               id: newBequestId,
               kind: "asset",
-              name: "Vacation home to spouse",
+              name: "Vacation home to Co-client",
               assetMode: "specific",
               accountId: null,
               liabilityId: null,

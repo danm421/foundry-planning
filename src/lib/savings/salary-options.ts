@@ -1,4 +1,5 @@
 import type { SalaryOption } from "@/components/forms/salary-basis-fields";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 /**
  * Turn a plan's incomes into the salary checkboxes. Salaries only — the
@@ -18,7 +19,7 @@ export function toSalaryOptions(
   ownerNames: { clientName: string; spouseName: string | null } | undefined,
 ): SalaryOption[] {
   // Truthiness, not `??`: an empty-string name (not just a missing one)
-  // must also fall through to the "Spouse"/"Client" default below, or an
+  // must also fall through to the "Co-client"/"Client" default below, or an
   // empty `ownerNames.spouseName` renders the row as "Base Salary — ".
   const first = (full: string | null | undefined) => full?.split(" ")[0] || null;
   return incomes
@@ -28,7 +29,7 @@ export function toSalaryOptions(
       name: i.name,
       ownerLabel:
         i.owner === "spouse"
-          ? (first(ownerNames?.spouseName) ?? "Spouse")
+          ? (first(ownerNames?.spouseName) ?? CO_CLIENT_LABEL)
           : i.owner === "joint"
             ? "Joint"
             : (first(ownerNames?.clientName) ?? "Client"),

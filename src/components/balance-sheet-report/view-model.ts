@@ -13,6 +13,7 @@ import { collectBusinessTree, consolidatedBusinessValue } from "@/engine/busines
 import { formatCurrency } from "@/lib/cell-drill/format";
 import { resolveOwnerSlices } from "@/lib/estate/account-owner-slices";
 import { ownersForYearSafe } from "@/lib/estate/owners-or-household";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import type { OwnershipView } from "./ownership-filter";
 import { yoyPct, sliceBarAnchors, type YoyResult } from "./yoy";
 import { CATEGORY_ORDER, CATEGORY_LABELS, CATEGORY_HEX, type AssetCategoryKey } from "./tokens";
@@ -407,7 +408,7 @@ function ownerLabelForFamily(
 ): string {
   if (firstName) return firstName;
   if (role === "client") return "Client";
-  if (role === "spouse") return "Spouse";
+  if (role === "spouse") return CO_CLIENT_LABEL;
   return "Joint";
 }
 

@@ -7,6 +7,7 @@ import { AddDeductionForm } from "@/components/forms/add-deduction-form";
 import { HelpTip } from "@/components/help-tip";
 import type { ClientMilestones } from "@/lib/milestones";
 import { useClientAccess } from "@/components/client-access-provider";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 interface ItemizedRow {
   id: string;
@@ -32,7 +33,7 @@ const TYPE_LABELS: Record<string, string> = {
 
 const OWNER_LABELS: Record<string, string> = {
   client: "Client",
-  spouse: "Spouse",
+  spouse: CO_CLIENT_LABEL,
   joint: "Joint",
 };
 

@@ -14,6 +14,7 @@ import {
   noteReceivableItems,
   taxLineItems,
 } from "./cashflow-year-detail";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 export type YearDrillColumnKey =
   | "socialSecurity"
@@ -133,7 +134,7 @@ function computeYearCellDrill(
       let rows: CellDrillRow[];
       if (d) {
         const clientName = (clientData.client.firstName ?? "").trim() || "Client";
-        const spouseName = (clientData.client.spouseName ?? "").trim() || "Spouse";
+        const spouseName = (clientData.client.spouseName ?? "").trim() || CO_CLIENT_LABEL;
         const person = (
           name: string,
           keyPrefix: string,

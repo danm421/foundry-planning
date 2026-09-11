@@ -83,10 +83,10 @@ function householdStatus(tree: ClientData): StepStatus {
     if (!val) gaps.push(label);
   }
   if (c.filingStatus === "married_joint") {
-    if (!c.spouseName) gaps.push("Spouse first name");
-    if (!c.spouseDob) gaps.push("Spouse date of birth");
-    if (!c.spouseRetirementAge) gaps.push("Spouse retirement age");
-    if (!c.spouseLifeExpectancy) gaps.push("Spouse life expectancy");
+    if (!c.spouseName) gaps.push("Co-client first name");
+    if (!c.spouseDob) gaps.push("Co-client date of birth");
+    if (!c.spouseRetirementAge) gaps.push("Co-client retirement age");
+    if (!c.spouseLifeExpectancy) gaps.push("Co-client life expectancy");
   }
   const filledCount = requiredSingle.filter(([, v]) => Boolean(v)).length;
   let kind: StepStatus["kind"] = "untouched";

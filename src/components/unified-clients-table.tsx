@@ -6,6 +6,7 @@ import { HouseholdStatusSelect, HOUSEHOLD_STATUS_LABELS } from "./household-stat
 import { HouseholdTrashActions } from "./household-trash-actions";
 import { daysUntilPurge } from "@/lib/crm/trash";
 import type { ClientSortKey, SortDir } from "@/lib/crm/sort";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 export interface UnifiedClientRow {
   householdId: string;
@@ -125,8 +126,8 @@ export function UnifiedClientsTable({ rows, emptyMessage, canManage, sort }: Uni
             />
             <ClientsSortHeader
               sortKey="spouse"
-              label="Spouse"
-              srLabel="Sort by spouse last name"
+              label={CO_CLIENT_LABEL}
+              srLabel="Sort by Co-client last name"
               activeKey={sort?.key ?? null}
               activeDir={sort?.dir ?? "asc"}
             />

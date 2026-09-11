@@ -102,7 +102,7 @@ export default function HouseholdContactDialog({
       onOpenChange={(o) => {
         if (!o) onClose();
       }}
-      title={`Edit ${ROLE_LABEL[role].toLowerCase()}`}
+      title={`Edit ${contact.firstName}`}
       size="sm"
       primaryAction={{
         label: "Save",

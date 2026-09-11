@@ -8,6 +8,7 @@ import type { QsAccountKind, QsRetirementSubtype } from "@/lib/quick-start/types
 import type { QsAccountsStepProps } from "./step-props";
 import { CollapsibleListEditor, type ListColumn } from "./collapsible-list-editor";
 import { Labeled, OwnerPills, sendJson, fmtMoney } from "./ui";
+import { individualOwnerLabel } from "@/lib/owner-labels";
 
 const KIND_OPTIONS: { value: QsAccountKind; label: string }[] = [
   { value: "cash", label: "Cash" },
@@ -43,11 +44,7 @@ export function AccountsStep({
     setRows((rs) => rs.map((r) => (r._id === id ? { ...r, ...patch } : r)));
 
   const ownerLabel = (r: AccountRow) =>
-    r.owner === "spouse"
-      ? ctx.spouseFirstName ?? "Spouse"
-      : r.owner === "joint"
-        ? "Joint"
-        : ctx.clientFirstName;
+    individualOwnerLabel(r.owner, { clientName: ctx.clientFirstName, spouseName: ctx.spouseFirstName });
 
   registerSave(async () => {
     const result = await saveAccountRows(rows, deletedServerIds, {

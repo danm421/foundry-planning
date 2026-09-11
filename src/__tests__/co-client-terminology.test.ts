@@ -100,6 +100,19 @@ const PERMANENT_ALLOWLIST = new Set<string>([
   "src/lib/medicare/dbMapper.ts", // Only hit is a thrown Error validating an unexpected DB row value, `medicare_coverage row has unexpected owner "${row.owner}" — expected "client" or "spouse"` (:13) — a developer diagnostic on a malformed row, never shown to a user.
   "src/lib/risk/existing-scores.ts", // Only hit is a JSDoc "KNOWN LIMITATION" comment naming the `subject === "spouse"` branch (:26) — internal documentation of a scoring edge case, not display copy.
   "src/lib/household-map/social-security.ts", // Only hit is a JSDoc comment, "The owner's DOB for an SS row — the SPOUSE's for a spouse-owned benefit" (:20), documenting `ownerDob`'s internal side-selection logic. The file's actual user-facing labels ("no benefit", "at 67", etc.) never mention spouse.
+
+  // ── Task 9 (2026-09-10): scanner artifacts (numeric-age/property-name false
+  // positives) and machine-facing JSDoc enum documentation. Each reason names
+  // the file's only actual hit(s), same standard as the Task 8 block above.
+  "src/components/balance-sheet-report/year-picker.tsx", // Only hit is `` `${a.client} & ${a.spouse}` `` (:26) — `a.spouse` is a numeric age property access (e.g. 65), never the word "Spouse" rendered; same class as `medicare-year-table.tsx` above.
+  "src/components/cashflow/projection-ages.ts", // Only hit is `` `${client} / ${spouse}` `` (:24) — `spouse` is a local const already resolved to a dash or a numeric-age string (:23), never the literal word "Spouse".
+  "src/components/client-identity-menu.tsx", // Only hits are `spouse.firstName`/`spouseLast` (:57-60) — `spouse` is a local variable holding a real PersonInfo record; the interpolation renders the person's actual name, never the word "Spouse". The component has no other display copy naming the role at all — the household title and age line always use real names.
+  "src/components/monte-carlo/yearly-breakdown.tsx", // Only hit is `` `${y.age.client} / ${y.age.spouse}` `` (:38) — `y.age.spouse` is a numeric age property access, same class as year-picker.tsx above.
+  "src/components/income-expenses/__tests__/row.test.tsx", // Only hit is a comment documenting the `InlineOwnerCell` owner enum, `` `"client" | "spouse" | "joint"` `` (:8) — machine-facing type documentation, not display copy.
+  "src/components/income-expenses-view.tsx", // The one real display hit — the Medicare-eligibility owner `<option value="spouse">Spouse</option>` (:1666, pre-edit) — was renamed to `{CO_CLIENT_LABEL}` in this task. The only hit left is a JSDoc comment documenting the income `owner` enum, `` `client | spouse | joint` `` (:1835) — machine-facing type documentation. This file is large and actively edited; a future user-visible "Spouse" string elsewhere in it would not be caught by the ratchet, but the residual hit is genuinely enum documentation, not a scanner artifact worth leaving in PENDING forever.
+  "src/components/tax-ledger/tax-ledger-year-picker.tsx", // The real display hit — the age-label fallback `spouseName?.trim() || "Spouse"` (:53, pre-edit) — was renamed to `CO_CLIENT_LABEL` in this task. The residual hit is a scanner artifact: the same backtick template literal also references the `spouseName` parameter and `ages.spouse` property by name, so the naive scanner still matches the line even though it no longer renders the word "Spouse".
+  "src/lib/solver/cashflow-year-detail.ts", // Only hit is `` `Age ${year.ages.client} / ${year.ages.spouse}` `` (:114) — `year.ages.spouse` is a numeric age property access, same class as the two age-label files above.
+  "src/lib/tax/state-inheritance/types.ts", // Only hit is a JSDoc comment describing PA's actual statutory Class A definition, `"PA Class A is \"spouse + minor child only\""` (:24) — a real, accurate tax-law description (analogous to "Married filing jointly"), not app terminology, and not display copy (this file has no runtime logic, only type declarations). The `"spouse-role"` classSource literal (:53) and the `"spouse"` union member (:93) are single-word Bucket C enum references the scanner already excludes.
 ]);
 
 /** Directory prefixes that are also allowlisted (Bucket C: machine-facing enum documentation). */
@@ -144,26 +157,15 @@ const PENDING = new Set<string>([
   "src/components/__tests__/gift-dialog.test.tsx",
   "src/components/__tests__/income-expenses-view-owner-years.test.tsx",
   "src/components/__tests__/insurance-panel.test.tsx",
-  "src/components/balance-sheet-report-pdf/__tests__/balance-sheet-pdf-document.test.tsx",
   "src/components/balance-sheet-report/__tests__/balance-sheet-report.test.tsx",
   "src/components/balance-sheet-report/__tests__/household-columns.test.ts",
   "src/components/balance-sheet-report/__tests__/view-model.test.ts",
-  "src/components/balance-sheet-report/view-model.ts",
-  "src/components/balance-sheet-report/year-picker.tsx",
-  "src/components/cashflow-report.tsx",
-  "src/components/cashflow/projection-ages.ts",
-  "src/components/client-identity-menu.tsx",
   "src/components/crm-household-form.tsx",
   "src/components/crm-import-preview.tsx",
-  "src/components/deductions-derived-summary.tsx",
-  "src/components/deductions-itemized-list.tsx",
-  "src/components/family-view.tsx",
   "src/components/forge/forge-panel.tsx",
-  "src/components/gift-form.tsx",
   "src/components/household-map/__tests__/goals-board.test.tsx",
   "src/components/household-map/__tests__/household-map-view.test.tsx",
   "src/components/household-map/__tests__/quick-edit-drawer.test.tsx",
-  "src/components/household-map/net-worth-board.tsx",
   "src/components/import/__tests__/assumed-chip.test.tsx",
   "src/components/import/__tests__/plan-basics-step.test.tsx",
   "src/components/import/__tests__/review-step-accounts.test.tsx",
@@ -173,22 +175,8 @@ const PENDING = new Set<string>([
   "src/components/import/review-step-insurance.tsx",
   "src/components/import/review-step-savings.tsx",
   "src/components/import/review-wizard.tsx",
-  "src/components/income-expenses-view.tsx",
-  "src/components/income-expenses/__tests__/row.test.tsx",
-  "src/components/milestone-year-picker.tsx",
-  "src/components/monte-carlo/report-view.tsx",
-  "src/components/monte-carlo/yearly-breakdown.tsx",
   "src/components/portal/household-contact-dialog.tsx",
-  "src/components/quick-start/accounts-step.tsx",
-  "src/components/quick-start/income-step.tsx",
-  "src/components/quick-start/insurance-step.tsx",
-  "src/components/report-controls/death-order-toggle.tsx",
   "src/components/risk-profile-pdf/__tests__/risk-profile-pdf-document.test.tsx",
-  "src/components/state-death-tax-report-view.tsx",
-  "src/components/stock-options/future-activity-ledger.tsx",
-  "src/components/tax-adjustments-list.tsx",
-  "src/components/tax-ledger/tax-ledger-year-picker.tsx",
-  "src/components/unified-clients-table.tsx",
   "src/db/schema.ts",
   "src/domain/forge/__tests__/preview.test.ts",
   "src/domain/forge/__tests__/row-lines.test.ts",
@@ -261,10 +249,7 @@ const PENDING = new Set<string>([
   "src/lib/__tests__/owner-labels.test.ts",
   "src/lib/__tests__/plan-horizon.test.ts",
   "src/lib/account-groups/__tests__/mutations.test.ts",
-  "src/lib/audit/field-labels.ts",
   "src/lib/balance-sheet/__tests__/attribute.test.ts",
-  "src/lib/balance-sheet/__tests__/trust-details.test.ts",
-  "src/lib/balance-sheet/trust-details.ts",
   "src/lib/clients/__tests__/mirror-contact-to-crm.test.ts",
   "src/lib/clients/get-client-with-contacts.test.ts",
   "src/lib/compute-cache/assemble-monte-carlo-result.test.ts",
@@ -288,7 +273,6 @@ const PENDING = new Set<string>([
   "src/lib/household-map/__tests__/goals.test.ts",
   "src/lib/household-map/__tests__/life-expectancy-write.test.ts",
   "src/lib/household-map/__tests__/social-security.test.ts",
-  "src/lib/household-map/approximate-milestones.ts",
   "src/lib/imports/__tests__/commit-modules.test.ts",
   "src/lib/imports/__tests__/import-milestones.test.ts",
   "src/lib/imports/__tests__/living-slot.test.ts",
@@ -323,11 +307,8 @@ const PENDING = new Set<string>([
   "src/lib/insurance-policies/__tests__/owner-ref.test.ts",
   "src/lib/insurance-policies/__tests__/schedule-years.test.ts",
   "src/lib/intake/__tests__/diff.test.ts",
-  "src/lib/life-event-markers.ts",
   "src/lib/life-insurance/__tests__/need-over-time.test.ts",
-  "src/lib/milestones.ts",
   "src/lib/observations/draft.ts",
-  "src/lib/onboarding/step-status.ts",
   "src/lib/plan-text/observation-library.ts",
   "src/lib/plan-text/tokens.ts",
   "src/lib/portal/__tests__/greeting-name.test.ts",
@@ -339,14 +320,10 @@ const PENDING = new Set<string>([
   "src/lib/projection-explain/__tests__/tax-diff.test.ts",
   "src/lib/projection/resolve-entity.ts",
   "src/lib/quick-start/__tests__/insurance-save.test.ts",
-  "src/lib/quick-start/derive.ts",
   "src/lib/retirement/__tests__/derive-retirement-summary.test.ts",
   "src/lib/savings/__tests__/salary-options.test.ts",
-  "src/lib/savings/salary-options.ts",
-  "src/lib/scenario/__tests__/changes-writer.test.ts",
   "src/lib/scenario/__tests__/scenario-changes-resolve.test.ts",
   "src/lib/scenario/describe-change-target.test.ts",
-  "src/lib/scenario/describe-change-target.ts",
   "src/lib/schemas/__tests__/expenses.test.ts",
   "src/lib/schemas/__tests__/incomes.test.ts",
   "src/lib/schemas/__tests__/resources.test.ts",
@@ -354,8 +331,6 @@ const PENDING = new Set<string>([
   "src/lib/solver/__tests__/apply-mutations.test.ts",
   "src/lib/solver/__tests__/cashflow-year-detail.test.ts",
   "src/lib/solver/__tests__/mutations-to-scenario-changes.test.ts",
-  "src/lib/solver/cashflow-year-detail.ts",
-  "src/lib/solver/year-cell-drill.ts",
   "src/lib/tax-analysis/findings/business.ts",
   "src/lib/tax-analysis/findings/money-flags.ts",
   "src/lib/tax-ledger/build-diagnostics.test.ts",
@@ -368,13 +343,9 @@ const PENDING = new Set<string>([
   "src/lib/tax/__tests__/derive-deductions.test.ts",
   "src/lib/tax/__tests__/senior-deductions.test.ts",
   "src/lib/tax/__tests__/thresholds.test.ts",
-  "src/lib/tax/cell-drill/__tests__/_shared.test.ts",
-  "src/lib/tax/cell-drill/__tests__/income-breakdown.test.ts",
   "src/lib/tax/state-income/__tests__/compute.test.ts",
   "src/lib/tax/state-inheritance/__tests__/classify.test.ts",
-  "src/lib/tax/state-inheritance/__tests__/golden/pa.test.ts",
   "src/lib/tax/state-inheritance/__tests__/special-rules.test.ts",
-  "src/lib/tax/state-inheritance/types.ts",
   "src/lib/tax/thresholds.ts",
   "src/lib/timeline/__tests__/detectors/life.test.ts",
 ]);/** A quoted string literal or a JSX text node — i.e. something a person reads.

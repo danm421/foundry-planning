@@ -5,9 +5,10 @@ import type {
   FutureActivityGrantYearRow,
   FutureActivitySubtotal,
 } from "@/engine/equity/future-activity";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 const TYPE_LABEL: Record<GrantType, string> = { rsu: "RSU", nqso: "NQSO", iso: "ISO" };
-const OWNER_LABEL: Record<"client" | "spouse", string> = { client: "Client", spouse: "Spouse" };
+const OWNER_LABEL: Record<"client" | "spouse", string> = { client: "Client", spouse: CO_CLIENT_LABEL };
 
 const dash = <span className="text-ink-4">—</span>;
 const sh = (n: number): React.ReactNode => (Math.round(n) === 0 ? dash : Math.round(n).toLocaleString("en-US"));

@@ -14,7 +14,7 @@ const ctx: CellDrillContext = {
   incomes: [
     { id: "inc_w", name: "Client Salary", type: "salary", owner: "client", annualAmount: 0, startYear: 0, endYear: 0, growthRate: 0 } as never,
     { id: "inc_ss_c", name: "Client SS", type: "social_security", owner: "client", annualAmount: 0, startYear: 0, endYear: 0, growthRate: 0 } as never,
-    { id: "inc_ss_s", name: "Spouse SS", type: "social_security", owner: "spouse", annualAmount: 0, startYear: 0, endYear: 0, growthRate: 0 } as never,
+    { id: "inc_ss_s", name: "Co-client SS", type: "social_security", owner: "spouse", annualAmount: 0, startYear: 0, endYear: 0, growthRate: 0 } as never,
   ],
   accounts: [
     { id: "acc_1", subType: "brokerage" } as never,
@@ -180,7 +180,7 @@ describe("buildIncomeCellDrill — Taxable Social Security", () => {
     expect(rows).toHaveLength(2);
     // Sorted desc by taxable amount.
     expect(rows[0]).toMatchObject({ id: "inc_ss_c", label: "Client SS", amount: 10_200 });
-    expect(rows[1]).toMatchObject({ id: "inc_ss_s", label: "Spouse SS", amount: 6_800 });
+    expect(rows[1]).toMatchObject({ id: "inc_ss_s", label: "Co-client SS", amount: 6_800 });
     // Sum reconciles exactly with the cell value.
     const sum = rows.reduce((s, r) => s + r.amount, 0);
     expect(sum).toBe(17_000);

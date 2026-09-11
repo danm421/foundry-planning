@@ -5,14 +5,14 @@ import type { CellDrillContext } from "../types";
 const ctx: CellDrillContext = {
   accountNames: { acc_1: "Joint Brokerage", acc_2: "401k", acc_3: "Deferred Annuity" },
   incomes: [
-    { id: "inc_1", name: "Spouse Salary", type: "salary", annualAmount: 0, startYear: 0, endYear: 0, growthRate: 0, owner: "spouse" } as never,
+    { id: "inc_1", name: "Co-client Salary", type: "salary", annualAmount: 0, startYear: 0, endYear: 0, growthRate: 0, owner: "spouse" } as never,
   ],
   accounts: [],
 };
 
 describe("resolveSourceLabel", () => {
   it("resolves a plain income id to its name", () => {
-    expect(resolveSourceLabel("inc_1", ctx)).toBe("Spouse Salary");
+    expect(resolveSourceLabel("inc_1", ctx)).toBe("Co-client Salary");
   });
 
   it("resolves an account:kind compound id to 'Account — Kind'", () => {

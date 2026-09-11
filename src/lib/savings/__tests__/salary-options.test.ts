@@ -44,7 +44,7 @@ describe("toSalaryOptions", () => {
         expected: "Joint",
       },
       {
-        name: 'missing ownerNames → the generic "Client"/"Spouse" fallback',
+        name: 'missing ownerNames → the generic "Client"/"Co-client" fallback',
         owner: "client",
         ownerNames: undefined,
         expected: "Client",
@@ -64,15 +64,15 @@ describe("toSalaryOptions", () => {
       expect(options[0].ownerLabel).toBe("Joint");
     });
 
-    it("falls back to Spouse when the spouse's name is an empty string, not just missing", () => {
+    it("falls back to Co-client when the spouse's name is an empty string, not just missing", () => {
       // `"".split(" ")[0]` is `""`, and `"" ?? null` never substitutes — a
       // plain `??` fallback would render the row as "Base Salary — " instead
-      // of falling back to "Spouse". Regression for that exact bug.
+      // of falling back to "Co-client". Regression for that exact bug.
       const options = toSalaryOptions(
         [income({ owner: "spouse" })],
         { clientName: "Harold Mueller", spouseName: "" }
       );
-      expect(options).toEqual([{ id: "inc-1", name: "Base Salary", ownerLabel: "Spouse" }]);
+      expect(options).toEqual([{ id: "inc-1", name: "Base Salary", ownerLabel: "Co-client" }]);
     });
 
     it("takes only the first name out of a full name", () => {

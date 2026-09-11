@@ -8,6 +8,7 @@ import type { QsPolicyType } from "@/lib/quick-start/types";
 import type { QsInsuranceStepProps } from "./step-props";
 import { CollapsibleListEditor, type ListColumn } from "./collapsible-list-editor";
 import { Labeled, sendJson, fmtMoney } from "./ui";
+import { personLabel } from "@/lib/owner-labels";
 
 // Canonical labels (POLICY_LABEL) come from derive.ts so the table matches the
 // persisted policy name; this local list only drives the Policy-type <select>.
@@ -31,7 +32,7 @@ export function InsuranceStep({ ctx, bootstrap, registerSave, list }: QsInsuranc
     setRows((rs) => rs.map((r) => (r._id === id ? { ...r, ...patch } : r)));
 
   const insuredLabel = (r: InsuranceRow) =>
-    r.insured === "spouse" ? (ctx.spouseFirstName ?? "Spouse") : ctx.clientFirstName;
+    personLabel(r.insured, { clientName: ctx.clientFirstName, spouseName: ctx.spouseFirstName });
 
   registerSave(async () => {
     // Validation runs here, not in the reducer: it throws a user-visible error and
@@ -104,8 +105,7 @@ export function InsuranceStep({ ctx, bootstrap, registerSave, list }: QsInsuranc
                   {(
                     ["client", ...(ctx.hasSpouse ? ["spouse"] : [])] as Array<"client" | "spouse">
                   ).map((v) => {
-                    const label =
-                      v === "client" ? ctx.clientFirstName : (ctx.spouseFirstName ?? "Spouse");
+                    const label = personLabel(v, { clientName: ctx.clientFirstName, spouseName: ctx.spouseFirstName });
                     return (
                       <button
                         key={v}
