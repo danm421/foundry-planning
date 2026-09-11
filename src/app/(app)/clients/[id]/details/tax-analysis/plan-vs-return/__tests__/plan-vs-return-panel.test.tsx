@@ -11,7 +11,7 @@ vi.mock("next/link", () => ({
   ),
 }));
 
-import { PlanVsReturnContent } from "../plan-vs-return-content";
+import { PlanVsReturnPanel } from "../plan-vs-return-panel";
 import type { Reconciliation, Suggestion } from "@/lib/tax-reconciliation/types";
 
 const fetchMock = vi.fn();
@@ -98,12 +98,30 @@ const bundle = (over: Partial<Reconciliation> = {}): Reconciliation => ({
   ...over,
 });
 
-const list = (status = "ready") => ({
-  returns: [
-    { taxYear: 2025, status, warningCount: 0, sourceFilename: "a.pdf", updatedAt: "2026-07-10T00:00:00Z" },
-    { taxYear: 2024, status: "ready", warningCount: 0, sourceFilename: "b.pdf", updatedAt: "2026-07-10T00:00:00Z" },
-  ],
-});
+type PanelProps = React.ComponentProps<typeof PlanVsReturnPanel>;
+
+/** The section owns the year and its review status; the panel is handed both.
+ *  Every test renders through this so a prop rename can't silently drift.
+ *  `switchYear` stands in for the section's year tabs — the panel stays
+ *  mounted across a year change, which is what its sequence guards assume. */
+function renderPanel(props: Partial<PanelProps> = {}) {
+  const element = (over: Partial<PanelProps>) => (
+    <PlanVsReturnPanel
+      clientId="c1"
+      year={2025}
+      status="ready"
+      scenarioIgnored={false}
+      onGoToReport={() => {}}
+      {...props}
+      {...over}
+    />
+  );
+  const result = render(element({}));
+  return {
+    ...result,
+    switchYear: (year: number) => result.rerender(element({ year })),
+  };
+}
 
 /** The tile the open count lives in — located by its own label, so a swapped
  *  tile can't satisfy the assertion. */
@@ -111,16 +129,14 @@ function openTile(): HTMLElement {
   return screen.getByText(/open suggestions/i).closest("div")!;
 }
 
-describe("PlanVsReturnContent", () => {
-  it("renders year tabs, the overview strip, the cards, the note, and the in-line list", async () => {
-    fetchMock.mockReturnValueOnce(json(list())).mockReturnValueOnce(json({ reconciliation: bundle() }));
-    render(<PlanVsReturnContent clientId="c1" scenarioIgnored={false} />);
+describe("PlanVsReturnPanel", () => {
+  it("renders the overview strip, the cards, the note, and the in-line list", async () => {
+    fetchMock.mockReturnValueOnce(json({ reconciliation: bundle() }));
+    renderPanel();
 
     // The AGI tile only exists once the bundle has landed, so waiting on it
     // covers both fetches.
     await screen.findByText("$190,000");
-    expect(screen.getByRole("tab", { name: /2025/ })).toBeTruthy();
-    expect(screen.getByRole("tab", { name: /2024/ })).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/clients/c1/tax-returns/2025/reconcile",
       expect.anything(),
@@ -177,27 +193,28 @@ describe("PlanVsReturnContent", () => {
     }
   });
 
-  it("gates a needs_review year and honours ?year=", async () => {
-    fetchMock.mockReturnValueOnce(json(list("needs_review")));
-    render(<PlanVsReturnContent clientId="c1" initialYear={2025} scenarioIgnored={false} />);
+  it("gates a needs_review year and sends the advisor to the Report view, not another screen", async () => {
+    const onGoToReport = vi.fn();
+    renderPanel({ status: "needs_review", onGoToReport });
 
-    await waitFor(() => expect(screen.getByText(/finish reviewing the 2025 return/i)).toBeTruthy());
-    expect(screen.getByRole("link", { name: /tax analysis/i }).getAttribute("href")).toBe(
-      "/clients/c1/details/tax-analysis",
-    );
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(/finish reviewing the 2025 return/i)).toBeTruthy();
+    // Reviewing happens on the Report view of this same section, so this is a
+    // view switch — a link out would leave the section and drop the year.
+    await userEvent.click(screen.getByRole("button", { name: /review the return/i }));
+    expect(onGoToReport).toHaveBeenCalledTimes(1);
+    // Nothing is compared until the figures are confirmed.
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("shows the 409 message and the scenario note", async () => {
     fetchMock
-      .mockReturnValueOnce(json(list()))
       .mockReturnValueOnce(
         json(
           { error: "no_plan", message: "This household has no base-case plan to compare against yet." },
           409,
         ),
       );
-    render(<PlanVsReturnContent clientId="c1" scenarioIgnored />);
+    renderPanel({ scenarioIgnored: true });
 
     await waitFor(() => expect(screen.getByText(/no base-case plan/i)).toBeTruthy());
     expect(screen.getByText(/compares the base case/i)).toBeTruthy();
@@ -205,18 +222,9 @@ describe("PlanVsReturnContent", () => {
     expect(screen.queryByText(/no_plan/)).toBeNull();
   });
 
-  it("offers the upload path when the client has no return on file", async () => {
-    fetchMock.mockReturnValueOnce(json({ returns: [] }));
-    render(<PlanVsReturnContent clientId="c2" scenarioIgnored={false} />);
-    await waitFor(() => expect(screen.getByRole("link", { name: /upload a return/i })).toBeTruthy());
-    expect(screen.getByRole("link", { name: /upload a return/i }).getAttribute("href")).toBe(
-      "/clients/c2/details/tax-analysis",
-    );
-  });
-
   it("applies with the edited amount and the chosen owner, announces it, and refreshes the strip", async () => {
-    fetchMock.mockReturnValueOnce(json(list())).mockReturnValueOnce(json({ reconciliation: bundle() }));
-    render(<PlanVsReturnContent clientId="c1" scenarioIgnored={false} />);
+    fetchMock.mockReturnValueOnce(json({ reconciliation: bundle() }));
+    renderPanel();
 
     const card = (await screen.findByText(/globex is on the return/i)).closest("article")!;
     await userEvent.click(within(card).getByRole("radio", { name: /spouse/i }));
@@ -247,7 +255,7 @@ describe("PlanVsReturnContent", () => {
     expect(live.getAttribute("aria-live")).toBe("polite");
     expect(screen.queryByText(/globex is on the return/i)).toBeNull();
 
-    const [, init] = fetchMock.mock.calls[2];
+    const [, init] = fetchMock.mock.calls[1];
     expect(JSON.parse(init.body)).toEqual({
       suggestionId: "income.wages.w2.1.create",
       amount: 95000,
@@ -261,8 +269,8 @@ describe("PlanVsReturnContent", () => {
   });
 
   it("R60: surfaces the server's own message when an apply fails", async () => {
-    fetchMock.mockReturnValueOnce(json(list())).mockReturnValueOnce(json({ reconciliation: bundle() }));
-    render(<PlanVsReturnContent clientId="c1" scenarioIgnored={false} />);
+    fetchMock.mockReturnValueOnce(json({ reconciliation: bundle() }));
+    renderPanel();
     const card = (await screen.findByText(/acme paid/i)).closest("article")!;
 
     fetchMock.mockReturnValueOnce(
@@ -277,8 +285,8 @@ describe("PlanVsReturnContent", () => {
   });
 
   it("Ruling 9: the first click disables the button, so a double-click writes once", async () => {
-    fetchMock.mockReturnValueOnce(json(list())).mockReturnValueOnce(json({ reconciliation: bundle() }));
-    render(<PlanVsReturnContent clientId="c1" scenarioIgnored={false} />);
+    fetchMock.mockReturnValueOnce(json({ reconciliation: bundle() }));
+    renderPanel();
     const card = (await screen.findByText(/acme paid/i)).closest("article")!;
 
     let release!: (r: Response) => void;
@@ -289,7 +297,7 @@ describe("PlanVsReturnContent", () => {
     expect(apply).toBeDisabled();
     expect(card).toHaveAttribute("aria-busy", "true");
     await userEvent.click(apply);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
 
     release(
       new Response(
@@ -304,8 +312,8 @@ describe("PlanVsReturnContent", () => {
   });
 
   it("takes one write at a time, so no other card can be clicked into the void", async () => {
-    fetchMock.mockReturnValueOnce(json(list())).mockReturnValueOnce(json({ reconciliation: bundle() }));
-    render(<PlanVsReturnContent clientId="c1" scenarioIgnored={false} />);
+    fetchMock.mockReturnValueOnce(json({ reconciliation: bundle() }));
+    renderPanel();
     const acme = (await screen.findByText(/acme paid/i)).closest("article")!;
     const globex = screen.getByText(/globex is on the return/i).closest("article")!;
 
@@ -319,7 +327,7 @@ describe("PlanVsReturnContent", () => {
     expect(within(globex).getByRole("textbox", { name: /amount/i })).toBeDisabled();
     expect(globex).toHaveAttribute("aria-busy", "false");
     await userEvent.click(within(globex).getByRole("button", { name: /add salary/i }));
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
 
     release(
       new Response(
@@ -336,8 +344,8 @@ describe("PlanVsReturnContent", () => {
   });
 
   it("dismisses into the Not applicable list and restores from it", async () => {
-    fetchMock.mockReturnValueOnce(json(list())).mockReturnValueOnce(json({ reconciliation: bundle() }));
-    render(<PlanVsReturnContent clientId="c1" scenarioIgnored={false} />);
+    fetchMock.mockReturnValueOnce(json({ reconciliation: bundle() }));
+    renderPanel();
     const card = (await screen.findByText(/acme paid/i)).closest("article")!;
 
     fetchMock.mockReturnValueOnce(
@@ -353,18 +361,18 @@ describe("PlanVsReturnContent", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", { name: /not applicable \(1\)/i })).toBeTruthy(),
     );
-    expect(fetchMock.mock.calls[2][0]).toBe("/api/clients/c1/tax-returns/2025/reconcile/dismiss");
-    expect(fetchMock.mock.calls[2][1].method).toBe("POST");
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/clients/c1/tax-returns/2025/reconcile/dismiss");
+    expect(fetchMock.mock.calls[1][1].method).toBe("POST");
 
     await userEvent.click(screen.getByRole("button", { name: /not applicable \(1\)/i }));
     fetchMock.mockReturnValueOnce(json({ reconciliation: bundle() }));
     await userEvent.click(screen.getByRole("button", { name: /^restore$/i }));
-    expect(fetchMock.mock.calls[3][1].method).toBe("DELETE");
+    expect(fetchMock.mock.calls[2][1].method).toBe("DELETE");
   });
 
   it("explains a 503 rather than showing a machine code", async () => {
-    fetchMock.mockReturnValueOnce(json(list())).mockReturnValueOnce(json({ reconciliation: bundle() }));
-    render(<PlanVsReturnContent clientId="c1" scenarioIgnored={false} />);
+    fetchMock.mockReturnValueOnce(json({ reconciliation: bundle() }));
+    renderPanel();
     const card = (await screen.findByText(/acme paid/i)).closest("article")!;
 
     fetchMock.mockReturnValueOnce(json({ error: "dismissals_unavailable" }, 503));
@@ -389,8 +397,8 @@ describe("PlanVsReturnContent", () => {
   });
 
   it("moves focus to the confirmation, which replaced the card the button was on", async () => {
-    fetchMock.mockReturnValueOnce(json(list())).mockReturnValueOnce(json({ reconciliation: bundle() }));
-    render(<PlanVsReturnContent clientId="c1" scenarioIgnored={false} />);
+    fetchMock.mockReturnValueOnce(json({ reconciliation: bundle() }));
+    renderPanel();
     const card = (await screen.findByText(/acme paid/i)).closest("article")!;
 
     fetchMock.mockReturnValueOnce(
@@ -408,17 +416,14 @@ describe("PlanVsReturnContent", () => {
 
   it("ignores a bundle that arrives after the advisor moved to another year", async () => {
     let releaseStale!: (r: Response) => void;
-    fetchMock
-      .mockReturnValueOnce(json(list()))
-      .mockReturnValueOnce(new Promise<Response>((resolve) => { releaseStale = resolve; }));
-    render(<PlanVsReturnContent clientId="c1" scenarioIgnored={false} />);
-    await screen.findByRole("tab", { name: /2024/ });
+    fetchMock.mockReturnValueOnce(new Promise<Response>((resolve) => { releaseStale = resolve; }));
+    const { switchYear } = renderPanel();
 
     // Switch to 2024 while 2025's bundle is still in flight, then let 2025 land.
     fetchMock.mockReturnValueOnce(
       json({ reconciliation: bundle({ taxYear: 2024, sections: [], notes: ["2024 note"] }) }),
     );
-    await userEvent.click(screen.getByRole("tab", { name: /2024/ }));
+    switchYear(2024);
     releaseStale(new Response(JSON.stringify({ reconciliation: bundle() }), { status: 200 }));
 
     await waitFor(() => expect(screen.getByText("2024 note")).toBeTruthy());
@@ -428,8 +433,8 @@ describe("PlanVsReturnContent", () => {
   });
 
   it("reloads on a stale apply and says so", async () => {
-    fetchMock.mockReturnValueOnce(json(list())).mockReturnValueOnce(json({ reconciliation: bundle() }));
-    render(<PlanVsReturnContent clientId="c1" scenarioIgnored={false} />);
+    fetchMock.mockReturnValueOnce(json({ reconciliation: bundle() }));
+    renderPanel();
     const card = (await screen.findByText(/acme paid/i)).closest("article")!;
 
     fetchMock.mockReturnValueOnce(

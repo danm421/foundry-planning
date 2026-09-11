@@ -75,6 +75,63 @@ describe("TaxAnalysisContent", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/clients/c1/tax-returns/2025", expect.anything());
   });
 
+  it("honours ?year= when picking the year to open", async () => {
+    fetchMock
+      .mockReturnValueOnce(
+        jsonResponse({
+          returns: [
+            { taxYear: 2025, status: "ready", warningCount: 0, sourceFilename: "a.pdf", updatedAt: "2026-07-10T00:00:00Z" },
+            { taxYear: 2024, status: "ready", warningCount: 0, sourceFilename: "b.pdf", updatedAt: "2026-07-10T00:00:00Z" },
+          ],
+        }),
+      )
+      .mockReturnValueOnce(jsonResponse(readyDetail({ taxYear: 2024 })));
+    render(<TaxAnalysisContent clientId="c1" initialYear={2024} />);
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith("/api/clients/c1/tax-returns/2024", expect.anything()),
+    );
+    // Not the newest — the deep link's year wins.
+    expect(fetchMock).not.toHaveBeenCalledWith(YEAR_URL, expect.anything());
+  });
+
+  it("switches between the Report and Plan vs. Return views on one year selector", async () => {
+    fetchMock
+      .mockReturnValueOnce(jsonResponse(readyList()))
+      .mockReturnValueOnce(jsonResponse(readyDetail()));
+    render(<TaxAnalysisContent clientId="c1" />);
+    await screen.findByRole("tab", { name: /^Report$/ });
+    expect(screen.getByRole("tab", { name: /^Report$/ }).getAttribute("aria-selected")).toBe("true");
+
+    // The year the report was on carries into the comparison — one selector
+    // serves both views, which is the whole point of folding the screen in.
+    fetchMock.mockReturnValueOnce(jsonResponse({ error: "no_plan", message: "No base-case plan yet." }, 409));
+    await userEvent.click(screen.getByRole("tab", { name: /plan vs\. return/i }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/clients/c1/tax-returns/2025/reconcile",
+        expect.anything(),
+      ),
+    );
+    expect(screen.getByRole("heading", { name: /2025 plan vs\. return/i })).toBeTruthy();
+    // The report is gone, not merely scrolled past.
+    expect(screen.queryByRole("heading", { name: /2025 tax analysis/i })).toBeNull();
+
+    await userEvent.click(screen.getByRole("tab", { name: /^Report$/ }));
+    expect(screen.getByRole("heading", { name: /2025 tax analysis/i })).toBeTruthy();
+  });
+
+  it("opens straight onto Plan vs. Return when the deep link asks for it", async () => {
+    fetchMock
+      .mockReturnValueOnce(jsonResponse(readyList()))
+      .mockReturnValueOnce(jsonResponse(readyDetail()))
+      .mockReturnValueOnce(jsonResponse({ error: "no_plan", message: "No base-case plan yet." }, 409));
+    render(<TaxAnalysisContent clientId="c1" initialView="plan-vs-return" scenarioIgnored />);
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: /2025 plan vs\. return/i })).toBeTruthy(),
+    );
+    expect(screen.getByText(/compares the base case/i)).toBeTruthy();
+  });
+
   it("D2: renders the report (not the corrupt notice) when facts is valid but extractedFacts is stale/corrupt", async () => {
     fetchMock
       .mockReturnValueOnce(
