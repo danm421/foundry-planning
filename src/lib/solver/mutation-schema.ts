@@ -171,7 +171,14 @@ const LIABILITY_VALUE = z
   .object({
     id: z.string().min(1),
     name: z.string().min(1),
-    balance: MONEY,
+    // NOT `MONEY` — its `.min(0)` would reject a legitimate row. An overpaid
+    // credit card reports a credit balance, and Plaid writes
+    // `balances.current` through unclamped (plaid/liabilities-refresh.ts:46).
+    // Every solver route wraps this in `z.array(SOLVER_MUTATION_SCHEMA)`, so
+    // one rejected element 400s the whole request and the solver stops
+    // recomputing entirely. Matches the base liability POST path, which has
+    // no lower bound (schemas/liabilities.ts:93) — the upper sanity cap stays.
+    balance: z.number().max(100_000_000),
     interestRate: RATE,
     monthlyPayment: MONEY,
     startYear: YEAR,

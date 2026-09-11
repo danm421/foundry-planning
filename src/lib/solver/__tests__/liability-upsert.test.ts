@@ -67,6 +67,24 @@ describe("liability-upsert — wire schema", () => {
     expect(parsed?.owners[0]).toEqual({ kind: "entity", entityId: "ent-1", percent: 1 });
   });
 
+  it("accepts an overpaid credit card's negative balance", () => {
+    // Plaid writes `balances.current` straight through with no clamp
+    // (plaid/liabilities-refresh.ts:46), so an overpaid card lands as a real
+    // row with a credit balance. `MONEY` (min 0) would reject it — and every
+    // solver route wraps this in `z.array(SOLVER_MUTATION_SCHEMA)`, so one
+    // rejected element 400s the WHOLE request, stopping the recompute
+    // entirely rather than dropping that one row. The base liability POST
+    // path (schemas/liabilities.ts:93) has no lower bound either.
+    const r = SOLVER_MUTATION_SCHEMA.safeParse({
+      kind: "liability-upsert",
+      id: mortgage.id,
+      value: { ...mortgage, liabilityType: "credit_card", termMonths: 0, balance: -312.4 },
+    });
+    expect(r.success).toBe(true);
+    const parsed = r.success && r.data.kind === "liability-upsert" ? r.data.value : null;
+    expect(parsed?.balance).toBe(-312.4);
+  });
+
   it("keeps an external_beneficiary owner and a gifted_away owner", () => {
     const r = SOLVER_MUTATION_SCHEMA.safeParse({
       kind: "liability-upsert",
