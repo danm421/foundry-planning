@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { ExtractedAccount, ExtractedHolding } from "@/lib/extraction/types";
 import { livingHoldings } from "@/lib/imports/living-rows";
 import { isEditableHoldingField, isValidHoldingValue } from "@/lib/statement-chat/holding-fields";
+import { formatValue, type ColumnKind } from "./entity-table";
 import { HOLDING_COLUMNS } from "./holdings-columns";
 
 export interface HoldingsTableProps {
@@ -126,7 +127,7 @@ export function HoldingsTable({
                       // the name; this column instead needs the field/ticker
                       // context the brief's tests query by, so the value is
                       // suffixed onto it rather than dropped.
-                      aria-label={`Edit ${col.header.toLowerCase()} for ${holdingLabel(h)}: ${formatCellValue(col.kind, h[col.key as keyof ExtractedHolding])}`}
+                      aria-label={`Edit ${col.header.toLowerCase()} for ${holdingLabel(h)}: ${formatValue(col.kind, h[col.key as keyof ExtractedHolding])}`}
                       className="text-ink hover:text-accent-ink disabled:cursor-default"
                     >
                       {cellText(col.kind, h[col.key as keyof ExtractedHolding])}
@@ -155,39 +156,13 @@ export function HoldingsTable({
   );
 }
 
-/** Plain-string rendering shared by `cellText` (the display) and the R21
- *  `aria-label` suffix (which cannot hold JSX). ONE formatting definition, so
- *  the accessible name can never drift from what the cell visibly shows. */
-function formatCellValue(kind: string, value: unknown): string {
-  if (value === undefined || value === null || value === "") return "—";
-  if (kind === "money" && typeof value === "number") {
-    return `$${Math.round(value).toLocaleString("en-US")}`;
-  }
-  // A per-unit quote, NOT whole dollars. The prod failure this feature traces
-  // back to was a muni ladder, and bonds price per $100 par: rounding renders
-  // 99.875 as "$100" and a $0.42 position as "$0", which makes the one screen
-  // built for checking a position's price unable to show it.
-  if (kind === "price" && typeof value === "number") {
-    return value.toLocaleString("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 4,
-    });
-  }
-  if (kind === "number" && typeof value === "number") {
-    return value.toLocaleString("en-US");
-  }
-  return String(value);
-}
-
-function cellText(kind: string, value: unknown) {
-  // Wrapped in `tabular` only on the exact same condition `formatCellValue`
+function cellText(kind: ColumnKind, value: unknown) {
+  // Wrapped in `tabular` only on the exact same condition `formatValue`
   // used to produce a numerically-formatted string — never inferred from
   // `kind` alone, or a money/number COLUMN holding a stray non-numeric value
   // (defensive; shouldn't happen) would wrap plain text in a figure font.
   if ((kind === "money" || kind === "number" || kind === "price") && typeof value === "number") {
-    return <span className="tabular">{formatCellValue(kind, value)}</span>;
+    return <span className="tabular">{formatValue(kind, value)}</span>;
   }
-  return formatCellValue(kind, value);
+  return formatValue(kind, value);
 }

@@ -54,7 +54,6 @@ function withReason(excluded: ExcludedRow<Row>[]): ExcludedRow<Row>[] {
  */
 export default function AccountsTable({
   excluded,
-  committedRowIds,
   onEditHolding,
   onDropHolding,
   ...props
@@ -62,9 +61,8 @@ export default function AccountsTable({
   return (
     <EntityTable
       columns={ACCOUNT_COLUMNS}
-      committedRowIds={committedRowIds}
       excluded={withReason(excluded)}
-      expand={(row) =>
+      expand={(row, { isCommitted }) =>
         livingHoldings(row).length > 0 && row.__rowId ? (
           <HoldingsTable
             rowId={row.__rowId}
@@ -78,7 +76,7 @@ export default function AccountsTable({
             // the account's own cells for the same reason — the positions
             // table was the one surface still offering an edit whose only
             // effect would be to change the screen.
-            readOnly={!!row.__rowId && committedRowIds.includes(row.__rowId)}
+            readOnly={isCommitted}
             onEditHolding={onEditHolding}
             onDropHolding={onDropHolding}
           />

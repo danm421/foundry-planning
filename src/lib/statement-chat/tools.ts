@@ -10,7 +10,7 @@ import {
   isValidHoldingValue,
   holdingFieldDomainDescription,
 } from "@/lib/statement-chat/holding-fields";
-import { livingHoldings } from "@/lib/imports/living-rows";
+import { isDroppedHolding, livingHoldings } from "@/lib/imports/living-rows";
 import type { Annotated, ChatState, PersistedImportPayload } from "@/lib/imports/types";
 import type {
   AccountCategory,
@@ -454,11 +454,18 @@ export function mergeRows(
   // back to them. That was inert while chat imports never extracted holdings;
   // it is not any more. Silence here is the same failure the holdings caveat
   // exists to prevent, so the summary says it outright.
+  // `keep.holdings != null` reads as a null check but is really asking "did
+  // keep's array WIN the union?" — `unionAccountFields` backfills only where
+  // the base has nothing. If that backfill rule ever changes, this is the
+  // predicate that silently stops matching.
   const discardedPositions = keep.holdings != null ? livingHoldings(merge).length : 0;
+  const noun = discardedPositions === 1 ? "position" : "positions";
+  const was = discardedPositions === 1 ? "was" : "were";
   const positionsNote =
-    discardedPositions > 0
-      ? ` The ${discardedPositions} ${discardedPositions === 1 ? "position" : "positions"} on "${merge.name}" ${discardedPositions === 1 ? "was" : "were"} not carried over — "${keep.name}"'s ${livingHoldings(keep).length} were kept.`
-      : "";
+    discardedPositions === 0
+      ? ""
+      : ` The ${discardedPositions} ${noun} on "${merge.name}" ${was} not carried over` +
+        ` — "${keep.name}"'s ${livingHoldings(keep).length} were kept.`;
   return {
     payload: { ...payload, accounts: nextAccounts },
     summary: `Merged "${merge.name}" into "${keep.name}".${positionsNote}`,
@@ -544,7 +551,7 @@ function findHoldingIndex(row: AccountRow, holdingId: string): number {
     // mutators report a confident `Set shares to 150 on ABBV` for a write
     // with no effect, which is a post-write confirmation that is not
     // grounded. The model gets told what actually happened instead.
-    if (holdings[idx].__dropped === true) {
+    if (isDroppedHolding(holdings[idx])) {
       throw new Error(
         `Holding "${holdingId}" on row ${row.__rowId} was dropped from this import, so it cannot be edited or dropped again.`,
       );

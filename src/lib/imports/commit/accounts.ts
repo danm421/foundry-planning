@@ -11,7 +11,7 @@ import {
 } from "@/lib/ownership";
 
 import { getExistingId, linkCreated, type ImportPayload } from "../types";
-import { livingHoldings } from "../living-rows";
+import { holdingsWereReviewed, livingHoldings } from "../living-rows";
 import {
   loadFamilyRoleIds,
   synthesizeAccountOwners,
@@ -291,8 +291,9 @@ export async function commitAccounts(
     // account's existing holdings must be left alone. A non-empty array the
     // advisor emptied by dropping every row IS a statement — an explicit one.
     // Note this asks only whether the array is populated; `__dropped` itself
-    // is still interpreted in exactly one place (`living-rows.ts`).
-    const holdingsReviewed = (row.holdings?.length ?? 0) > 0;
+    // is still interpreted in exactly one place (`living-rows.ts`), which is
+    // also where this question now lives, beside its two siblings.
+    const holdingsReviewed = holdingsWereReviewed(row);
     if (living.length) {
       const guard = accountHoldingsGuardrail(row);
       updates.deriveFromHoldings = guard.deriveFromHoldings;

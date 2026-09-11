@@ -127,9 +127,12 @@ export async function writeAccountHoldings(
     await tx.delete(accountHoldings).where(eq(accountHoldings.accountId, accountId));
   }
   if (!holdings.length) {
-    // A delete with nothing to insert is still a write this account's asset
-    // mix has to be resynced from, or it keeps an allocation derived from
-    // positions that no longer exist.
+    // A delete with nothing to insert is still a write, so the account joins
+    // the post-commit asset-mix resync like any other. Belt-and-braces: the
+    // only path that reaches here also sets `deriveFromHoldings = false` in
+    // the same transaction, and `syncAccountFromHoldings` returns early on
+    // that — so this is insurance against a future caller, not load-bearing
+    // today.
     if (replace) sink?.push(accountId);
     return;
   }

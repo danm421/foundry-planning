@@ -93,7 +93,14 @@ export interface EntityTableProps<Row extends EntityRow> {
    * row has nothing to disclose and gets no button — an empty expander reads
    * as broken (same reasoning as `onRestore`'s disabled state above).
    */
-  expand?: (row: Row) => ReactNode;
+  /**
+   * `meta.isCommitted` is handed DOWN rather than recomputed by the caller:
+   * this component already owns commit state (it withholds `canEdit` and
+   * disables the Commit button from the same flag), and a second
+   * `committedRowIds.includes(...)` in a caller's closure is a copy that can
+   * drift from this one.
+   */
+  expand?: (row: Row, meta: { isCommitted: boolean }) => ReactNode;
   /** Accessible name for the disclosure button. Defaults to "Show details". */
   expandLabel?: (row: Row) => string;
 }
@@ -134,12 +141,21 @@ function priceText(value: number): string {
  * Default, kind-driven cell text for a column with no `render` override.
  * The `default` branch (C3) is deliberate, not laziness — see `ColumnKind`.
  *
+ * Returns a `string`, not a `ReactNode`, and is EXPORTED — `holdings-table.tsx`
+ * renders `ColumnSpec`s of its own but needs plain text for an `aria-label`,
+ * which cannot hold JSX. It used to keep a private copy of this switch for
+ * that, and the copy was byte-identical for every kind the two tables share;
+ * adding a kind to one and not the other would have produced an accessible
+ * name disagreeing with the figure beside it — the exact drift that copy was
+ * written to prevent, one scope up. A string IS a ReactNode, so this file's
+ * own JSX use is unaffected.
+ *
  * `"year"` is deliberately NOT grouped with `"number"` (Task 10 review,
  * Important 6): `toLocaleString` would print a calendar year like 2026 as
  * "2,026", which is the same class of formatting error C3 exists to guard
  * against, just in this switch instead of the Row-shape boundary.
  */
-function formatValue(kind: ColumnKind, value: unknown): ReactNode {
+export function formatValue(kind: ColumnKind, value: unknown): string {
   if (value === undefined || value === null || value === "") return "—";
   switch (kind) {
     case "money":
@@ -263,7 +279,7 @@ export default function EntityTable<Row extends EntityRow>({
             const rowId = row.__rowId;
             const isCommitted = rowId != null && committedRowIds.includes(rowId);
             const isPending = rowId != null && pending.has(rowId);
-            const child = expand?.(row);
+            const child = expand?.(row, { isCommitted });
             const isExpanded = rowId != null && expanded.has(rowId);
 
             return (

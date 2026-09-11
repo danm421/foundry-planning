@@ -58,13 +58,26 @@ export interface RebaseOverride {
  * Counts and sums travel for both sides, same shape as `RebaseOverride`, so
  * the narrator can say what changed without the advisor opening the
  * statement to find out.
+ *
+ * ⚠️ The two sides are NOT symmetric, despite the matching names. The
+ * `standing*` pair are comparison operands — the living positions the advisor
+ * reviewed. The `fresh*` pair are NOT: they describe the DOCUMENT, i.e. every
+ * living position the newer statement lists, including ones the advisor had
+ * already dropped. The comparison that decides whether this override exists
+ * at all subtracts those tombstones first; the reported figures deliberately
+ * do not, because `narrate` renders them as a claim about a statement the
+ * advisor can open and count ("The newer statement lists N positions …").
+ * Reporting the subtracted set there stated a number the document contradicts.
  */
 export interface RebaseHoldingsOverride {
   __rowId: string;
   name: string;
+  /** Living positions the advisor reviewed — a comparison operand. */
   standingCount: number;
+  /** Positions the newer statement LISTS — not a comparison operand. */
   freshCount: number;
   standingSum: number;
+  /** Value of the positions the newer statement LISTS. */
   freshSum: number;
 }
 
