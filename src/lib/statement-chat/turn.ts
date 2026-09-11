@@ -117,7 +117,8 @@ export const TOOL_DEFS = [
     function: {
       name: "drop_holding",
       description:
-        "Remove one position from an account so it is not saved. The position stays visible as dropped and can be restored.",
+        "Mark one position as dropped so it is not saved with the account. It stops showing in the " +
+        "review table and cannot be restored from this chat.",
       parameters: {
         type: "object",
         properties: {

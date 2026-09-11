@@ -1021,6 +1021,45 @@ describe("statement chat tools", () => {
         ),
       ).toThrow(/committed/i);
     });
+
+    // Fix round 1, Important 2: this branch already shipped the exact defect
+    // class once — a prior task stamped shared holding objects IN PLACE.
+    // Every other test here calls a fresh `payload()`, so a mutate-in-place
+    // `editHolding` would pass all of them; this is the one test that holds
+    // the ORIGINAL object across the call and looks at it afterward.
+    it("does not mutate the original payload object", () => {
+      const original = payload();
+      editHolding(
+        original,
+        { rowId: "r1", holdingId: "t:AAPL#0", field: "shares", value: 12 },
+        NONE_COMMITTED,
+      );
+      expect(original.accounts![0].holdings![0].shares).toBe(10);
+    });
+
+    // Capped, so a pathological import can't flood the turn's context with a
+    // list longer than the conversation — mirrors the account-level
+    // `findRowIndex` cap test, but drives `findHoldingIndex` specifically:
+    // the two helpers share the `MAX_LISTED_IDS` constant but each build
+    // their own truncated, "and N more"-suffixed message.
+    it("caps the listed holding ids and says how many more there are", () => {
+      const manyHoldings = {
+        accounts: [
+          {
+            __rowId: "r1",
+            name: "Brokerage",
+            holdings: Array.from({ length: 25 }, (_, i) => ({ __holdingId: `h-${i}`, ticker: `T${i}` })),
+          },
+        ],
+      } as unknown as PersistedImportPayload;
+      expect(() =>
+        editHolding(
+          manyHoldings,
+          { rowId: "r1", holdingId: "nope", field: "shares", value: 1 },
+          NONE_COMMITTED,
+        ),
+      ).toThrow(/and 5 more/);
+    });
   });
 
   describe("dropHolding", () => {
@@ -1050,6 +1089,19 @@ describe("statement chat tools", () => {
           new Set(["r1"]),
         ),
       ).toThrow(/committed/i);
+    });
+
+    // Fix round 1, Important 2: same defect class as `editHolding`'s
+    // immutability test — the ORIGINAL object must still show no tombstone
+    // after the call.
+    it("does not mutate the original payload object", () => {
+      const original = {
+        accounts: [
+          { __rowId: "r1", name: "B", holdings: [{ __holdingId: "t:AAPL#0", ticker: "AAPL" }] },
+        ],
+      } as unknown as PersistedImportPayload;
+      dropHolding(original, { rowId: "r1", holdingId: "t:AAPL#0" }, NONE_COMMITTED);
+      expect(original.accounts![0].holdings![0].__dropped).toBeUndefined();
     });
   });
 });

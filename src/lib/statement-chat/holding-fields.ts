@@ -40,3 +40,24 @@ export function isValidHoldingValue(field: EditableHoldingField, value: unknown)
   if (field === "ticker" || field === "name") return typeof value === "string";
   return typeof value === "number" && Number.isFinite(value);
 }
+
+/**
+ * Human-readable domain description for an error message — mirrors
+ * `fieldDomainDescription` in `tools.ts` for account fields (fix round 1,
+ * Minor 2). Exhaustive over `EditableHoldingField` by construction (no
+ * `default` case): a field added to the allowlist without a case here is a
+ * compile error, not a silently wrong message baked into `editHolding` as an
+ * inline ternary.
+ */
+export function holdingFieldDomainDescription(field: EditableHoldingField): string {
+  switch (field) {
+    case "ticker":
+    case "name":
+      return "text";
+    case "shares":
+    case "price":
+    case "marketValue":
+    case "costBasis":
+      return "a number";
+  }
+}

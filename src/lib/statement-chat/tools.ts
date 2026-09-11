@@ -8,6 +8,7 @@ import {
   EDITABLE_HOLDING_FIELDS,
   isEditableHoldingField,
   isValidHoldingValue,
+  holdingFieldDomainDescription,
 } from "@/lib/statement-chat/holding-fields";
 import type { Annotated, ChatState, PersistedImportPayload } from "@/lib/imports/types";
 import type {
@@ -18,7 +19,8 @@ import type {
 } from "@/lib/extraction/types";
 
 /**
- * The five statement-chat tools (Task 11). Each one is a function over
+ * The seven statement-chat tools (Task 11, plus `edit_holding`/`drop_holding`
+ * from Task 7). Each one is a function over
  * `(payload, args, ...)` returning a `ToolResult` — the next payload plus a
  * one-line summary for the transcript, and (for `drop_row`/`merge_rows`
  * only) the `excludedRows` delta Ruling 49 allows.
@@ -235,7 +237,7 @@ function findRowIndex(accounts: AccountRow[], rowId: string): number {
 
 /**
  * The set of `__rowId`s already committed into the client's plan
- * (`chat.committedRowIds`). Required — never optional — on all three
+ * (`chat.committedRowIds`). Required — never optional — on all five
  * MUTATING tools, so tsc proves every call site supplies it rather than
  * leaving a guard someone can forget to pass (the same reasoning
  * `SourceRow.sourceName` is required for in `merge-across-files.ts`).
@@ -557,7 +559,7 @@ export function editHolding(
   }
   if (!isValidHoldingValue(args.field, args.value)) {
     throw new Error(
-      `Value for "${args.field}" must be ${args.field === "ticker" || args.field === "name" ? "text" : "a number"}.`,
+      `Value for "${args.field}" must be ${holdingFieldDomainDescription(args.field)}.`,
     );
   }
   const row = accounts[rowIdx];
