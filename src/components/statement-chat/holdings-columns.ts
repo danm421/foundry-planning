@@ -7,7 +7,7 @@ export const HOLDING_COLUMNS: ColumnSpec<ExtractedHolding>[] = [
   { key: "ticker", header: "Ticker", kind: "string" },
   { key: "name", header: "Name", kind: "string" },
   { key: "shares", header: "Shares", kind: "number" },
-  { key: "price", header: "Price", kind: "money" },
+  { key: "price", header: "Price", kind: "price" },
   { key: "marketValue", header: "Market value", kind: "money" },
   { key: "costBasis", header: "Cost basis", kind: "money" },
 ];

@@ -221,6 +221,51 @@ describe("statement chat tools", () => {
     expect(next.payload.accounts![0].basis).toBe(5_000);
   });
 
+  /**
+   * `unionAccountFields` backfills only where the base has nothing, so when
+   * BOTH rows carry positions the merged row keeps `keep`'s and `merge`'s are
+   * gone — and the retired row is `irreversible: true`, so there is no way
+   * back to them. On the 4-account statement this feature was built for that
+   * is ~93 positions vanishing behind a summary reading only
+   * `Merged "X" into "Y".`, with the merged row reconciling perfectly.
+   *
+   * Inert until this branch (chat imports never extracted holdings), which is
+   * why nothing caught it before.
+   *
+   * Mutation this catches: dropping the positions note from the summary.
+   */
+  it("merge_rows says when the retired row's positions were not carried over", () => {
+    const withHoldings = {
+      accounts: [
+        {
+          __rowId: "r1", name: "Taxable Brokerage", value: 10_000,
+          holdings: [{ __holdingId: "t:AAPL#0", ticker: "AAPL", marketValue: 100 }],
+        },
+        {
+          __rowId: "r2", name: "Brokerage", value: 10_000,
+          holdings: [
+            { __holdingId: "t:VTI#0", ticker: "VTI", marketValue: 200 },
+            { __holdingId: "t:BND#0", ticker: "BND", marketValue: 300 },
+          ],
+        },
+      ],
+    } as unknown as PersistedImportPayload;
+
+    const next = mergeRows(withHoldings, { keepRowId: "r1", mergeRowId: "r2" }, NONE_COMMITTED);
+
+    // The behaviour is unchanged — keep's positions win. What changes is that
+    // the advisor is told the other two are gone.
+    expect(next.payload.accounts![0].holdings).toHaveLength(1);
+    expect(next.summary).toContain("2 positions");
+    expect(next.summary).toContain("were not carried over");
+  });
+
+  it("merge_rows stays silent about positions when there were none to lose", () => {
+    const next = mergeRows(payload(), { keepRowId: "r1", mergeRowId: "r2" }, NONE_COMMITTED);
+    expect(next.summary).not.toMatch(/position/i);
+    expect(next.summary).toMatch(/^Merged ".*" into ".*"\.$/);
+  });
+
   it("merge_rows rejects merging a row into itself", () => {
     expect(() => mergeRows(payload(), { keepRowId: "r1", mergeRowId: "r1" }, NONE_COMMITTED))
       .toThrow(/itself/i);
@@ -981,6 +1026,39 @@ describe("statement chat tools", () => {
         NONE_COMMITTED,
       );
       expect(res.payload.accounts![0].holdings![0].shares).toBe(12);
+    });
+
+    /**
+     * A tombstoned position is still IN the array — that is what stops the
+     * next extraction resurrecting it — so it was findable, and both mutators
+     * reported a confident `Set shares to 12 on ABBV` for a write no surface
+     * shows and no commit writes. The repo's rule is that a post-write
+     * confirmation must be grounded.
+     *
+     * Mutation this catches: dropping the `__dropped` check in
+     * `findHoldingIndex`.
+     */
+    it("refuses to edit a position that was already dropped", () => {
+      const withDropped = () =>
+        ({
+          accounts: [
+            {
+              __rowId: "r1",
+              name: "Brokerage",
+              holdings: [{ __holdingId: "t:AAPL#0", ticker: "AAPL", shares: 10, __dropped: true }],
+            },
+          ],
+        }) as unknown as PersistedImportPayload;
+      expect(() =>
+        editHolding(
+          withDropped(),
+          { rowId: "r1", holdingId: "t:AAPL#0", field: "shares", value: 12 },
+          NONE_COMMITTED,
+        ),
+      ).toThrow(/was dropped/i);
+      expect(() =>
+        dropHolding(withDropped(), { rowId: "r1", holdingId: "t:AAPL#0" }, NONE_COMMITTED),
+      ).toThrow(/was dropped/i);
     });
 
     it("refuses a field outside the holdings allowlist", () => {

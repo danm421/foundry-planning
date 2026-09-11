@@ -54,7 +54,7 @@ export {
 
 /**
  * Ruling 50: `edit_row` uses an ALLOWLIST, never a denylist. These are
- * Task 10's seven columns (`ACCOUNT_COLUMNS` in
+ * Task 10's account columns (`ACCOUNT_COLUMNS` in
  * `src/components/statement-chat/accounts-columns.ts` — Account type expands
  * to its two real fields, `category`/`subType`) — named here as ONE constant
  * so a future column spec (Phase 2, per Dan's Task 10 amendment) can supply
@@ -448,9 +448,20 @@ export function mergeRows(
   const nextAccounts = accounts
     .map((r, i) => (i === keepIdx ? merged : r))
     .filter((_, i) => i !== mergeIdx);
+  // `unionAccountFields` backfills only where the base has nothing, so when
+  // BOTH rows carry positions the merged row keeps `keep`'s and `merge`'s are
+  // gone — and the retired row is `irreversible: true`, so there is no way
+  // back to them. That was inert while chat imports never extracted holdings;
+  // it is not any more. Silence here is the same failure the holdings caveat
+  // exists to prevent, so the summary says it outright.
+  const discardedPositions = keep.holdings != null ? livingHoldings(merge).length : 0;
+  const positionsNote =
+    discardedPositions > 0
+      ? ` The ${discardedPositions} ${discardedPositions === 1 ? "position" : "positions"} on "${merge.name}" ${discardedPositions === 1 ? "was" : "were"} not carried over — "${keep.name}"'s ${livingHoldings(keep).length} were kept.`
+      : "";
   return {
     payload: { ...payload, accounts: nextAccounts },
-    summary: `Merged "${merge.name}" into "${keep.name}".`,
+    summary: `Merged "${merge.name}" into "${keep.name}".${positionsNote}`,
     // `irreversible: true` (Ruling 96): the retired row's own fields were
     // folded into `keep` above — restoring it would re-add the pre-merge
     // row alongside the merged one and double-count the account. The
@@ -526,7 +537,20 @@ export interface DropHoldingArgs {
 function findHoldingIndex(row: AccountRow, holdingId: string): number {
   const holdings = row.holdings ?? [];
   const idx = holdings.findIndex((h) => h.__holdingId === holdingId);
-  if (idx !== -1) return idx;
+  if (idx !== -1) {
+    // A tombstoned position is still IN the array (that is what stops the
+    // next extraction resurrecting it), so it is findable — but no surface
+    // shows it and no commit writes it. Returning its index let both
+    // mutators report a confident `Set shares to 150 on ABBV` for a write
+    // with no effect, which is a post-write confirmation that is not
+    // grounded. The model gets told what actually happened instead.
+    if (holdings[idx].__dropped === true) {
+      throw new Error(
+        `Holding "${holdingId}" on row ${row.__rowId} was dropped from this import, so it cannot be edited or dropped again.`,
+      );
+    }
+    return idx;
+  }
 
   const known = holdings.map((h) => h.__holdingId).filter((id): id is string => Boolean(id));
   if (known.length === 0) {

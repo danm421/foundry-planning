@@ -9,6 +9,11 @@ import { HOLDING_COLUMNS } from "./holdings-columns";
 export interface HoldingsTableProps {
   rowId: string;
   row: Pick<ExtractedAccount, "value" | "holdings">;
+  /** The account is already committed, so its positions are in the plan and
+   *  this surface can no longer change them. Renders every figure as plain
+   *  text — no editors, no Drop — matching what `EntityTable` does to the
+   *  account's own cells and what the chat tools do to the same request. */
+  readOnly?: boolean;
   onEditHolding: (rowId: string, holdingId: string, field: string, value: unknown) => void;
   onDropHolding: (rowId: string, holdingId: string) => void;
 }
@@ -28,7 +33,13 @@ const TEXT_FIELDS: ReadonlySet<string> = new Set(["ticker", "name"]);
  * footer), and a position is never committed on its own — it commits with
  * its account. Task 6 adds per-cell editing and a drop action here directly.
  */
-export function HoldingsTable({ rowId, row, onEditHolding, onDropHolding }: HoldingsTableProps) {
+export function HoldingsTable({
+  rowId,
+  row,
+  readOnly = false,
+  onEditHolding,
+  onDropHolding,
+}: HoldingsTableProps) {
   const living = livingHoldings(row);
   const [editing, setEditing] = useState<{ holdingId: string; key: string } | null>(null);
 
@@ -65,7 +76,7 @@ export function HoldingsTable({ rowId, row, onEditHolding, onDropHolding }: Hold
               {col.header}
             </th>
           ))}
-          <th className="px-2 py-1" />
+          {!readOnly && <th className="px-2 py-1" />}
         </tr>
       </thead>
       <tbody>
@@ -81,7 +92,9 @@ export function HoldingsTable({ rowId, row, onEditHolding, onDropHolding }: Hold
             <tr key={holdingId ?? i}>
               {HOLDING_COLUMNS.map((col) => (
                 <td key={col.key} className="px-2 py-1">
-                  {holdingId && editing?.holdingId === holdingId && editing.key === col.key ? (
+                  {readOnly ? (
+                    cellText(col.kind, h[col.key as keyof ExtractedHolding])
+                  ) : holdingId && editing?.holdingId === holdingId && editing.key === col.key ? (
                     <input
                       autoFocus
                       type={TEXT_FIELDS.has(col.key) ? "text" : "number"}
@@ -121,17 +134,19 @@ export function HoldingsTable({ rowId, row, onEditHolding, onDropHolding }: Hold
                   )}
                 </td>
               ))}
-              <td className="px-2 py-1 text-right">
-                <button
-                  type="button"
-                  disabled={!holdingId}
-                  onClick={() => onDropHolding(rowId, holdingId!)}
-                  aria-label={`Drop ${holdingLabel(h)}`}
-                  className="text-ink-3 hover:text-crit disabled:cursor-default"
-                >
-                  Drop
-                </button>
-              </td>
+              {!readOnly && (
+                <td className="px-2 py-1 text-right">
+                  <button
+                    type="button"
+                    disabled={!holdingId}
+                    onClick={() => onDropHolding(rowId, holdingId!)}
+                    aria-label={`Drop ${holdingLabel(h)}`}
+                    className="text-ink-3 hover:text-crit disabled:cursor-default"
+                  >
+                    Drop
+                  </button>
+                </td>
+              )}
             </tr>
           );
         })}
@@ -148,6 +163,18 @@ function formatCellValue(kind: string, value: unknown): string {
   if (kind === "money" && typeof value === "number") {
     return `$${Math.round(value).toLocaleString("en-US")}`;
   }
+  // A per-unit quote, NOT whole dollars. The prod failure this feature traces
+  // back to was a muni ladder, and bonds price per $100 par: rounding renders
+  // 99.875 as "$100" and a $0.42 position as "$0", which makes the one screen
+  // built for checking a position's price unable to show it.
+  if (kind === "price" && typeof value === "number") {
+    return value.toLocaleString("en-US", {
+      style: "currency",
+      currency: "USD",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 4,
+    });
+  }
   if (kind === "number" && typeof value === "number") {
     return value.toLocaleString("en-US");
   }
@@ -159,7 +186,7 @@ function cellText(kind: string, value: unknown) {
   // used to produce a numerically-formatted string — never inferred from
   // `kind` alone, or a money/number COLUMN holding a stray non-numeric value
   // (defensive; shouldn't happen) would wrap plain text in a figure font.
-  if ((kind === "money" || kind === "number") && typeof value === "number") {
+  if ((kind === "money" || kind === "number" || kind === "price") && typeof value === "number") {
     return <span className="tabular">{formatCellValue(kind, value)}</span>;
   }
   return formatCellValue(kind, value);

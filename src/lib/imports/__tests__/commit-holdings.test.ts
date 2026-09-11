@@ -151,6 +151,77 @@ describe("commit writes only tombstoned-free holdings", () => {
     expect(rows.map((r) => r.displayTicker)).toEqual(["AAPL"]);
   });
 
+  /**
+   * The gate that decides "does this account have positions to speak of" read
+   * the RAW array while everything it guards reads `livingHoldings`. Dropping
+   * every position therefore kept the gate truthy, ran the guardrail on an
+   * empty set (which returns `deriveFromHoldings: true`), and then hit
+   * `writeAccountHoldings`' empty-array early return BEFORE its `replace`
+   * delete — so the account's old positions survived in `account_holdings`
+   * while the flag now told the plan to derive its value from them.
+   *
+   * Mutation this catches: restoring `if (row.holdings?.length)` on the
+   * guardrail gate, or ordering the `replace` delete after the empty check.
+   */
+  it("clears an existing account's positions when the advisor drops them all, and stops deriving", async () => {
+    const { tx, calls } = makeFakeTx();
+    const payload: ImportPayload = {
+      ...emptyImportPayload(),
+      accounts: [
+        {
+          name: "Brokerage", accountNumberLast4: "1234", custodian: "Schwab", value: 604756,
+          match: { kind: "exact", existingId: "acct-1" },
+          holdings: [
+            { ticker: "AAPL", marketValue: 100, __holdingId: "t:AAPL#0", __dropped: true },
+            { ticker: "MSFT", marketValue: 200, __holdingId: "t:MSFT#0", __dropped: true },
+          ],
+        },
+      ] as ImportPayload["accounts"],
+    };
+    await commitAccounts(tx, payload, ctx);
+
+    // The stale rows are actually removed — not left behind an early return.
+    const holdingCalls = callsForTable(calls, "account_holdings");
+    expect(holdingCalls.filter((c) => c.op === "delete")).toHaveLength(1);
+    expect(holdingCalls.filter((c) => c.op === "insert")).toHaveLength(0);
+
+    // ...and the account is told to stop deriving, or it would roll up the
+    // positions we just deleted and value itself at $0.
+    const accountUpdate = callsForTable(calls, "accounts").find((c) => c.op === "update");
+    const values = (accountUpdate as { values: Record<string, unknown> }).values;
+    expect(values.deriveFromHoldings).toBe(false);
+    // The stated value is what governs now, so it must still be written.
+    expect(values.value).toBe("604756");
+  });
+
+  /**
+   * The other half of the same asymmetry: an import that says NOTHING about
+   * an account's positions (a CSV of balances, a statement with no position
+   * table) must leave that account's existing holdings alone. Deleting on
+   * every `replace` would make the fix above a data-loss bug in the opposite
+   * direction.
+   *
+   * Mutation this catches: deleting unconditionally when `replace` is true.
+   */
+  it("leaves an existing account's positions alone when the import carries none", async () => {
+    const { tx, calls } = makeFakeTx();
+    const payload: ImportPayload = {
+      ...emptyImportPayload(),
+      accounts: [
+        {
+          name: "Brokerage", accountNumberLast4: "1234", custodian: "Schwab", value: 604756,
+          match: { kind: "exact", existingId: "acct-1" },
+        },
+      ] as ImportPayload["accounts"],
+    };
+    await commitAccounts(tx, payload, ctx);
+
+    expect(callsForTable(calls, "account_holdings")).toHaveLength(0);
+    const accountUpdate = callsForTable(calls, "accounts").find((c) => c.op === "update");
+    const values = (accountUpdate as { values: Record<string, unknown> }).values;
+    expect(values.deriveFromHoldings).toBeUndefined();
+  });
+
   it("reconciles the value against living positions only", () => {
     // $100 of living holdings against a $300 stated value materially
     // undershoots, so the stated value is preserved rather than derived.

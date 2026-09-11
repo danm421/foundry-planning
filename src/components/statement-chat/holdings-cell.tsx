@@ -24,6 +24,12 @@ export function HoldingsCell({ row }: { row: Pick<ExtractedAccount, "value" | "h
 
   const { sum, total, gap, flagged } = holdingsReconciliation(living, row.value);
   const short = materiallyUndershoots({ flagged, gap });
+  // `holdingsReconciliation` defaults a missing stated value to 0 (and then
+  // suppresses `flagged` on `total > 0`, so nothing warns). Printing that
+  // default reads as "$604,756 of $0" — a reconciliation catastrophe rather
+  // than the missing input it is. There is nothing to reconcile against, so
+  // this says so instead of naming a number the statement never gave.
+  const hasStatedValue = row.value != null;
 
   return (
     <span className="flex flex-col items-end">
@@ -32,9 +38,16 @@ export function HoldingsCell({ row }: { row: Pick<ExtractedAccount, "value" | "h
         {living.length === 1 ? "holding" : "holdings"}
       </span>
       <span className={`text-xs ${flagged ? "text-warn" : "text-ink-3"}`}>
-        <span className="tabular">{money(sum)}</span> of{" "}
-        <span className="tabular">{money(total)}</span>
-        {short ? " · short" : flagged ? " · over" : ""}
+        <span className="tabular">{money(sum)}</span>
+        {hasStatedValue ? (
+          <>
+            {" of "}
+            <span className="tabular">{money(total)}</span>
+            {short ? " · short" : flagged ? " · over" : ""}
+          </>
+        ) : (
+          " · no stated total"
+        )}
       </span>
     </span>
   );

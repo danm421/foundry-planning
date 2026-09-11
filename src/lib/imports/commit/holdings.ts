@@ -117,9 +117,21 @@ export async function writeAccountHoldings(
   replace: boolean,
   sink?: string[],
 ): Promise<void> {
-  if (!holdings.length) return;
+  // The delete comes FIRST, and is not gated on there being rows to write.
+  // `replace` means the reviewed payload is authoritative for this account's
+  // positions; an authoritative payload that lists none — every position
+  // dropped in review — is an instruction to clear them, not a reason to skip
+  // the write entirely. Ordering this after the empty check silently kept the
+  // old positions behind an advisor's explicit removal.
   if (replace) {
     await tx.delete(accountHoldings).where(eq(accountHoldings.accountId, accountId));
+  }
+  if (!holdings.length) {
+    // A delete with nothing to insert is still a write this account's asset
+    // mix has to be resynced from, or it keeps an allocation derived from
+    // positions that no longer exist.
+    if (replace) sink?.push(accountId);
+    return;
   }
   let sortOrder = 0;
   const rows = holdings.map((raw) => {

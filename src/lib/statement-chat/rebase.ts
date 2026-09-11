@@ -1,6 +1,6 @@
 import { keyedRowIdBucket } from "@/lib/imports/assemble/merge-across-files";
 import { custodianMatches, normalizeCustodian } from "@/lib/imports/normalize-custodian";
-import { livingHoldings } from "@/lib/imports/living-rows";
+import { livingHoldings, tombstonedHoldings } from "@/lib/imports/living-rows";
 import { holdingMarketValue } from "@/lib/extraction/normalize-holdings";
 import { holdingKey } from "@/lib/extraction/holdings-completion";
 import type { Annotated } from "@/lib/imports/types";
@@ -594,10 +594,11 @@ export function rebaseOntoFreshMerge(
     // newer statement adding a position back. That is the tombstone's
     // documented purpose (`extraction/types.ts`: "stays in the array so the
     // next extraction cannot resurrect it") — resurrecting it into THIS
-    // caveat is the same failure. Counts and sums stay computed on the
-    // living (post-subtraction) sets.
+    // caveat is the same failure. The subtraction governs the COMPARISON
+    // only; the reported counts and sums come off `freshLivingAll` (see the
+    // override push below).
     const standingLiving = livingHoldings(held);
-    const tombstoned = (held.holdings ?? []).filter((h) => h.__dropped === true);
+    const tombstoned = tombstonedHoldings(held);
     const freshLivingAll = livingHoldings(fresh);
 
     // R39 (fix round 1, I2): identity for "same position set" is chosen ONCE
@@ -634,14 +635,25 @@ export function rebaseOntoFreshMerge(
         __rowId: id,
         name: held.name,
         standingCount: standingLiving.length,
-        freshCount: freshLiving.length,
+        // `freshLivingAll`, NOT the subtracted `freshLiving`. The subtraction
+        // above exists to stop the advisor's own drop reading as the newer
+        // statement ADDING a position back — that is a question about whether
+        // the position SETS differ, so it belongs to the comparison and only
+        // to the comparison. These two fields are rendered by `narrate` as a
+        // claim about the document ("The newer statement lists N positions for
+        // X ($Y)"), so reporting the subtracted set states something false:
+        // a statement listing AAPL, VTI and BND, with VTI dropped by the
+        // advisor, would be narrated as listing 2 positions worth $350 when it
+        // lists 3 worth $750. Compare on the subtracted set, report on the set
+        // the statement actually carries.
+        freshCount: freshLivingAll.length,
         // `holdingMarketValue`, not a bare `marketValue ?? 0`: it is the
         // repo's one definition of a position's value and DERIVES
         // shares * price when the statement gave those instead — the
         // extraction prompt explicitly allows that shape, and these sums
         // are advisor-facing money.
         standingSum: standingLiving.reduce((s, h) => s + holdingMarketValue(h), 0),
-        freshSum: freshLiving.reduce((s, h) => s + holdingMarketValue(h), 0),
+        freshSum: freshLivingAll.reduce((s, h) => s + holdingMarketValue(h), 0),
       });
     }
 

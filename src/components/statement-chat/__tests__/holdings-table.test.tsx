@@ -17,6 +17,61 @@ describe("HoldingsTable", () => {
     expect(container).toHaveTextContent("$80");
   });
 
+  /**
+   * A committed account's positions are already in the plan and nothing on
+   * this surface can update them — the Commit button is spent,
+   * `handleCommitRows` will not resend the row, and `finalize` only marks
+   * tabs. `EntityTable` already withholds editing from the account's own
+   * cells, and `edit_holding`/`drop_holding` refuse a committed row outright.
+   * Offering an editor here changed the screen and nothing else.
+   *
+   * Mutation this catches: ignoring `readOnly` and rendering the edit/Drop
+   * buttons for a committed account.
+   */
+  it("offers no editor and no Drop for a committed account's positions", () => {
+    render(
+      <HoldingsTable rowId="r1" readOnly onEditHolding={vi.fn()} onDropHolding={vi.fn()} row={{ value: 100, holdings: [
+        { __holdingId: "t:AAPL#0", ticker: "AAPL", name: "Apple Inc", shares: 10, marketValue: 100 },
+      ] }} />,
+    );
+    // The figures are still READABLE — this is a review surface, so hiding
+    // them would be a worse answer than freezing them.
+    expect(screen.getByText("Apple Inc")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Drop AAPL/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Edit shares for AAPL/ })).not.toBeInTheDocument();
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
+  });
+
+  it("keeps the editors for an account that is not committed yet", () => {
+    render(
+      <HoldingsTable rowId="r1" onEditHolding={vi.fn()} onDropHolding={vi.fn()} row={{ value: 100, holdings: [
+        { __holdingId: "t:AAPL#0", ticker: "AAPL", name: "Apple Inc", shares: 10, marketValue: 100 },
+      ] }} />,
+    );
+    expect(screen.getByRole("button", { name: /Drop AAPL/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Edit shares for AAPL/ })).toBeInTheDocument();
+  });
+
+  /**
+   * The prod failure this whole feature traces back to was a muni ladder, and
+   * bonds price per $100 par. Whole dollars render 99.875 as "$100" and a
+   * sub-dollar position as "$0", which makes the one screen built for
+   * checking a position's price unable to show it.
+   *
+   * Mutation this catches: formatting `price` as whole-dollar money.
+   */
+  it("keeps a bond's per-unit price at the precision it was quoted", () => {
+    const { container } = render(
+      <HoldingsTable rowId="r1" onEditHolding={vi.fn()} onDropHolding={vi.fn()} row={{ value: 100, holdings: [
+        { __holdingId: "n:MUNI#0", name: "CA ST 4.125% 11/15/2032", shares: 100, price: 99.875, marketValue: 9987.5 },
+      ] }} />,
+    );
+    expect(container).toHaveTextContent("$99.875");
+    // The market value beside it stays whole dollars — only the QUOTE needs
+    // the precision.
+    expect(container).toHaveTextContent("$9,988");
+  });
+
   it("renders nothing when every position is tombstoned", () => {
     const { container } = render(
       <HoldingsTable rowId="r1" onEditHolding={vi.fn()} onDropHolding={vi.fn()} row={{ value: 100, holdings: [{ __holdingId: "t:AAPL#0", ticker: "AAPL", marketValue: 100, __dropped: true }] }} />,

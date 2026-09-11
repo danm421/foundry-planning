@@ -54,6 +54,7 @@ function withReason(excluded: ExcludedRow<Row>[]): ExcludedRow<Row>[] {
  */
 export default function AccountsTable({
   excluded,
+  committedRowIds,
   onEditHolding,
   onDropHolding,
   ...props
@@ -61,12 +62,23 @@ export default function AccountsTable({
   return (
     <EntityTable
       columns={ACCOUNT_COLUMNS}
+      committedRowIds={committedRowIds}
       excluded={withReason(excluded)}
       expand={(row) =>
         livingHoldings(row).length > 0 && row.__rowId ? (
           <HoldingsTable
             rowId={row.__rowId}
             row={row}
+            // A committed row's positions are ALREADY in the plan, and
+            // nothing on this surface can update them: the Commit button is
+            // spent, `handleCommitRows` will not resend the row, and
+            // `finalize` only marks tabs. `edit_holding`/`drop_holding`
+            // refuse a committed row outright (`assertNotCommitted` in
+            // `tools.ts`), and `EntityTable` already withholds `canEdit` from
+            // the account's own cells for the same reason — the positions
+            // table was the one surface still offering an edit whose only
+            // effect would be to change the screen.
+            readOnly={!!row.__rowId && committedRowIds.includes(row.__rowId)}
             onEditHolding={onEditHolding}
             onDropHolding={onDropHolding}
           />

@@ -277,7 +277,23 @@ export async function commitAccounts(
       Object.assign(updates, education529Columns(row, family.allFmIds));
       updates.rmdEnabled = false;
     }
-    if (row.holdings?.length) {
+    // `livingHoldings`, not the raw array: a tombstoned position still makes
+    // `row.holdings.length` truthy, and every reader this gate guards counts
+    // only living ones. Before positions could be dropped in review the two
+    // were the same statement; now they can disagree, and the disagreement
+    // ran the guardrail on an empty set, which returns `deriveFromHoldings:
+    // true` — telling an account with no positions left to derive its value
+    // from them.
+    const living = livingHoldings(row);
+    // Did the reviewed payload have anything to SAY about this account's
+    // positions? An empty/absent array means the import never spoke to them
+    // (a CSV of balances, a statement with no position table), and the
+    // account's existing holdings must be left alone. A non-empty array the
+    // advisor emptied by dropping every row IS a statement — an explicit one.
+    // Note this asks only whether the array is populated; `__dropped` itself
+    // is still interpreted in exactly one place (`living-rows.ts`).
+    const holdingsReviewed = (row.holdings?.length ?? 0) > 0;
+    if (living.length) {
       const guard = accountHoldingsGuardrail(row);
       updates.deriveFromHoldings = guard.deriveFromHoldings;
       if (guard.note) {
@@ -285,6 +301,14 @@ export async function commitAccounts(
         updates.notes = sql`COALESCE(${accounts.notes} || E'\n', '') || ${guard.note}`;
         result.warnings.push(`${row.name}: ${guard.note}`);
       }
+    } else if (holdingsReviewed) {
+      // Every extracted position was dropped in review, and the delete below
+      // is about to clear this account's holdings. Leaving the flag alone
+      // would be the mirror of the bug above: an account still marked
+      // "derive from holdings" with no holdings left rolls up to $0. The
+      // stated value governs instead — the guardrail's own fail-safe
+      // direction, never silently understate.
+      updates.deriveFromHoldings = false;
     }
     if (row.externalProvider) {
       updates.source = externalProviderToSource(row.externalProvider);
@@ -318,9 +342,15 @@ export async function commitAccounts(
     await writeAccountHoldings(
       tx,
       existingId,
-      livingHoldings(row),
+      living,
       ctx.resolvedHoldings ?? new Map(),
-      true,
+      // `replace` means "the reviewed payload is authoritative for this
+      // account's positions", which is true exactly when it carried some.
+      // Passing an unconditional `true` was harmless only while an empty
+      // array could not mean "the advisor cleared it": the writer's own
+      // empty-array early return then skipped the delete, leaving stale
+      // positions behind the advisor's explicit removal.
+      holdingsReviewed,
       ctx.holdingsAccountIds,
     );
     result.updated += 1;

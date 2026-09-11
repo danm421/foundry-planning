@@ -1040,7 +1040,57 @@ describe("rebaseOntoFreshMerge", () => {
     expect(holdingsOverrides).toEqual([]);
   });
 
-  it("reports an override counting only a genuinely new position, alongside a dropped one", () => {
+  /**
+   * The spec's headline "Survival" test: *"an edited share count survives
+   * re-running extraction with a second file attached. This is the test that
+   * would have caught the old replace-outright behaviour."*
+   *
+   * The suite had the STRUCTURAL half of this (`rows[0].holdings` keeps its
+   * length) but nothing asserted a FIELD, so the one thing the advisor
+   * actually cares about was unpinned. Survival is currently structural —
+   * `mergeAccountsByRowId` takes the standing row wholesale — and that is
+   * exactly the line a plausible-looking "improvement" would touch: overlay
+   * the fresh figures onto the standing positions by `__holdingId`, now that
+   * the ids match across both sides, and the array length never moves while
+   * the advisor's corrected 150 is silently replaced by the statement's 100.
+   *
+   * Mutation this catches: merging fresh holding FIELDS onto the standing
+   * positions instead of keeping the standing position whole.
+   */
+  it("keeps the advisor's edited share count when a newer statement reports the original", () => {
+    const standing = [
+      {
+        __rowId: "account:1234#0",
+        name: "Schwab",
+        value: 100,
+        // The advisor corrected 100 -> 150 in review.
+        holdings: [{ __holdingId: "t:AAPL#0", ticker: "AAPL", shares: 150, price: 10, marketValue: 1500 }],
+      } as Row,
+    ];
+    const fresh = [
+      {
+        __rowId: "account:1234#0",
+        name: "Schwab",
+        value: 100,
+        // Re-extraction reads the statement's own figure again.
+        holdings: [{ __holdingId: "t:AAPL#0", ticker: "AAPL", shares: 100, price: 10, marketValue: 1000 }],
+      } as Row,
+    ];
+
+    const { rows } = rebaseOntoFreshMerge(fresh, standing);
+
+    expect(rows[0].holdings).toHaveLength(1);
+    expect(rows[0].holdings![0].shares).toBe(150);
+    // `typeof`, not just the value: `"150" == 150` is true, and a share count
+    // stored as a string is the repo's own concatenation defect.
+    expect(typeof rows[0].holdings![0].shares).toBe("number");
+    // The derived figure travels with it — a surviving `shares` beside a
+    // replaced `marketValue` would be a half-survival that still reconciles
+    // against the wrong number.
+    expect(rows[0].holdings![0].marketValue).toBe(1500);
+  });
+
+  it("raises an override for a genuinely new position, and reports what the statement lists", () => {
     const standing = [
       {
         __rowId: "account:1234#0",
@@ -1065,10 +1115,15 @@ describe("rebaseOntoFreshMerge", () => {
 
     const { holdingsOverrides } = rebaseOntoFreshMerge(fresh, standing);
 
-    // freshCount/freshSum exclude the dropped VTI position entirely — only
-    // the genuinely new BND position (alongside the unchanged AAPL) counts.
+    // The COMPARISON excludes the dropped VTI — that is what stops the
+    // advisor's own drop reading as the newer statement adding a position
+    // back, and it is why an override is raised at all here (the genuinely
+    // new BND). But freshCount/freshSum REPORT the statement, because
+    // `narrate` renders them as a claim about the document: it lists three
+    // positions totalling $750, and saying "2 positions ($350)" would be
+    // false about a document the advisor can go and read.
     expect(holdingsOverrides).toEqual([
-      { __rowId: "account:1234#0", name: "Schwab", standingCount: 1, freshCount: 2, standingSum: 100, freshSum: 350 },
+      { __rowId: "account:1234#0", name: "Schwab", standingCount: 1, freshCount: 3, standingSum: 100, freshSum: 750 },
     ]);
   });
 

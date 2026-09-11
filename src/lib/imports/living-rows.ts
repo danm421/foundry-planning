@@ -129,3 +129,18 @@ export function livingTotalSupersedesRows(payload: ImportPayload): boolean {
 export function livingHoldings(row: { holdings?: ExtractedHolding[] }): ExtractedHolding[] {
   return (row.holdings ?? []).filter((h) => h.__dropped !== true);
 }
+
+/**
+ * The complement of `livingHoldings` — the positions the advisor dropped.
+ *
+ * Lives HERE, next to its complement, for the reason the plan's global
+ * constraint gives: `__dropped` is interpreted in exactly one module. A
+ * caller that needs the tombstones (the rebase, to subtract the advisor's own
+ * drops from the fresh side before comparing position sets) would otherwise
+ * write `filter((h) => h.__dropped === true)` inline, and the two predicates
+ * would be free to drift apart — which is the failure the single definition
+ * exists to prevent, not a style nit.
+ */
+export function tombstonedHoldings(row: { holdings?: ExtractedHolding[] }): ExtractedHolding[] {
+  return (row.holdings ?? []).filter((h) => h.__dropped === true);
+}

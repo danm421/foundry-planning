@@ -24,7 +24,12 @@ export type ColumnKind =
   | "year"
   | "date"
   | "boolean"
-  | "enum";
+  | "enum"
+  /** A per-unit quote, which whole dollars destroy: a bond prices per $100
+   *  par (99.875 -> "$100"), a money market sits at $1.00, and a sub-dollar
+   *  position rounds to "$0" beside a real market value. Separate from
+   *  "money" for the same reason "year" is separate from "number". */
+  | "price";
 
 export interface ColumnSpec<Row> {
   /** Payload key on the row. */
@@ -99,6 +104,7 @@ const RIGHT_ALIGN_KINDS: ReadonlySet<ColumnKind> = new Set([
   "percent",
   "rate",
   "year",
+  "price",
 ]);
 
 function alignFor(column: Pick<ColumnSpec<unknown>, "align" | "kind">): "left" | "right" {
@@ -107,6 +113,21 @@ function alignFor(column: Pick<ColumnSpec<unknown>, "align" | "kind">): "left" |
 
 function moneyText(value: number): string {
   return `$${Math.round(value).toLocaleString("en-US")}`;
+}
+
+/**
+ * A per-unit quote, kept to the precision the advisor has to check it at.
+ * Two decimals minimum so $1 reads "$1.00"; four maximum so a bond quoted
+ * 99.875 or a fund at 12.3456 survives, without inventing digits a whole
+ * number never had.
+ */
+function priceText(value: number): string {
+  return value.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  });
 }
 
 /**
@@ -123,6 +144,8 @@ function formatValue(kind: ColumnKind, value: unknown): ReactNode {
   switch (kind) {
     case "money":
       return typeof value === "number" ? moneyText(value) : String(value);
+    case "price":
+      return typeof value === "number" ? priceText(value) : String(value);
     case "percent":
       return typeof value === "number" ? `${value}%` : String(value);
     case "rate":
