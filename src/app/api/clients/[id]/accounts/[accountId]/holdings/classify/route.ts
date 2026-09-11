@@ -7,6 +7,7 @@ import { parseBody } from "@/lib/schemas/common";
 import { classifyTickerSchema } from "@/lib/schemas/holdings";
 import { getSecurityByTicker, upsertClassifiedSecurity } from "@/lib/investments/classification/persist";
 import { classifySecurity } from "@/lib/investments/classification/classify";
+import { lookupSecurityName } from "@/lib/investments/classification/lookup-name";
 import { verifyClientAccess } from "@/lib/clients/authz";
 
 export const dynamic = "force-dynamic";
@@ -54,7 +55,18 @@ export async function POST(
     // Miss → classify + cache. classifySecurity NEVER throws (soft-fail → null).
     const classified = await classifySecurity(ticker);
     if (!classified) {
-      return NextResponse.json({ security: null, weights: [] });
+      // Classification needs EODHD's fundamentals feed, which is licensed
+      // separately; when it's unavailable the advisor would otherwise get a
+      // nameless row back and no sign the ticker was even recognised. Search is
+      // on the base plan and still knows the name — return it for display only,
+      // unpersisted, so the holding stays honestly unclassified and a later
+      // run can still write the real security row.
+      const named = await lookupSecurityName(ticker);
+      return NextResponse.json({
+        security: null,
+        displayName: named?.name ?? null,
+        weights: [],
+      });
     }
     await upsertClassifiedSecurity(classified);
     const stored = await getSecurityByTicker(ticker);

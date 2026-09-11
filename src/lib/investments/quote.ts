@@ -14,9 +14,15 @@ export interface QuoteDeps {
    *  returns the parsed real-time JSON — an object for one symbol, an array for
    *  many. Defaults to the live EODHD call. */
   fetchRealtime?: (symbols: string[]) => Promise<unknown>;
+  /** Injectable last-day fallback: takes bare US codes (e.g. ["SWCGX"]) and
+   *  returns the parsed bulk end-of-day JSON. Defaults to the live EODHD call —
+   *  but ONLY when `fetchRealtime` is left at its default, so an injected
+   *  transport can never leak a live request. */
+  fetchLastDay?: (codes: string[]) => Promise<unknown>;
 }
 
 const EODHD_REALTIME_BASE = "https://eodhd.com/api/real-time";
+const EODHD_BULK_EOD_BASE = "https://eodhd.com/api/eod-bulk-last-day";
 // EODHD takes one primary symbol in the path plus a comma list in `s=`. Keep
 // chunks modest so one failing chunk can't sink a large refresh.
 const BATCH_SIZE = 50;
@@ -81,11 +87,25 @@ async function fetchRealtimeLive(symbols: string[], apiKey: string): Promise<unk
   return res.json();
 }
 
+/** Live EODHD bulk end-of-day fetch for one chunk of bare US codes. Throws on
+ *  HTTP error; callers catch and fail soft. */
+async function fetchLastDayLive(codes: string[], apiKey: string): Promise<unknown> {
+  const url = `${EODHD_BULK_EOD_BASE}/US?api_token=${apiKey}&fmt=json&symbols=${codes.join(",")}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`EODHD bulk EOD ${codes.length} symbols: HTTP ${res.status}`);
+  return res.json();
+}
+
 /** EODHD epoch-seconds timestamp → YYYY-MM-DD (UTC). US closes land on the same
  *  UTC day, so this is the trading date for our daily priceAsOf model. */
 function tsToDate(ts: number): string | null {
   if (!Number.isFinite(ts) || ts <= 0) return null;
   return new Date(ts * 1000).toISOString().slice(0, 10);
+}
+
+/** EODHD answers with a bare object for one symbol and an array for many. */
+function asRows<T>(raw: unknown): T[] {
+  return (Array.isArray(raw) ? raw : [raw]) as T[];
 }
 
 /** Normalize a real-time response (object for one symbol, array for many) into
@@ -95,8 +115,7 @@ function collectRows(
   raw: unknown,
   out: Map<string, { price: number; asOf: string }>,
 ): void {
-  const rows: RealtimeRow[] = Array.isArray(raw) ? raw : [raw as RealtimeRow];
-  for (const r of rows) {
+  for (const r of asRows<RealtimeRow>(raw)) {
     if (!r || typeof r.code !== "string") continue;
     const price = typeof r.close === "number" ? r.close : Number(r.close);
     const asOf = tsToDate(typeof r.timestamp === "number" ? r.timestamp : Number(r.timestamp));
@@ -105,12 +124,94 @@ function collectRows(
   }
 }
 
+interface LastDayRow {
+  code?: unknown;
+  exchange_short_name?: unknown;
+  date?: unknown;
+  close?: unknown;
+  change_p?: unknown;
+}
+
+/** Normalize a bulk end-of-day response into map entries keyed the same way the
+ *  real-time rows are (`SWCGX.US`), so either feed can fill the same map.
+ *  Unknown symbols come back as all-`"NA"` rows and are dropped. */
+function collectLastDayRows(raw: unknown, out: Map<string, LiveQuote>): void {
+  for (const r of asRows<LastDayRow>(raw)) {
+    if (!r || typeof r.code !== "string" || typeof r.exchange_short_name !== "string") continue;
+    const asOf = typeof r.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(r.date) ? r.date : null;
+    const price = typeof r.close === "number" ? r.close : Number(r.close);
+    if (!asOf || !Number.isFinite(price) || price <= 0) continue;
+    const cp = r.change_p == null ? null : Number(r.change_p);
+    out.set(`${r.code}.${r.exchange_short_name}`.toUpperCase(), {
+      price,
+      asOf,
+      changePct: cp !== null && Number.isFinite(cp) ? cp : null,
+    });
+  }
+}
+
+/** The configured EODHD key, or "" when none is available. */
+function resolveApiKey(deps: QuoteDeps): string {
+  return deps.apiKey ?? process.env.EODHD_API_KEY ?? "";
+}
+
+/** Resolve the last-day fallback transport, or null when it must not run.
+ *
+ *  `fetchRealtime` is injected by unit tests only (no production caller passes
+ *  one), so treating it as "the caller drives every transport" keeps those
+ *  tests off the network without changing any live behavior. A future
+ *  production injector must pass `fetchLastDay` too, or it silently loses the
+ *  fallback. */
+function resolveLastDay(deps: QuoteDeps): ((codes: string[]) => Promise<unknown>) | null {
+  if (deps.fetchLastDay) return deps.fetchLastDay;
+  if (deps.fetchRealtime) return null;
+  const apiKey = resolveApiKey(deps);
+  if (!apiKey) return null;
+  return (codes) => fetchLastDayLive(codes, apiKey);
+}
+
+/**
+ * Last daily close for the symbols the real-time feed couldn't price.
+ * Never throws — an unresolvable symbol is simply absent.
+ *
+ * Why this exists: a mutual fund strikes one NAV per day, after the close, so
+ * EODHD's real-time endpoint answers `close: "NA"` for it right through the
+ * trading day. Without this pass a client's Schwab/Vanguard funds — often most
+ * of the portfolio — show a $0.00 price and a $0 market value. The end-of-day
+ * row still carries the prior session's NAV *and* its own date, which is what
+ * priceAsOf needs; `previousClose` on the real-time row has no date to go with it.
+ *
+ * Only `.US` symbols are eligible: the bulk feed is addressed per exchange.
+ */
+async function fetchLastDayFor(
+  unpriced: readonly string[],
+  deps: QuoteDeps,
+): Promise<Map<string, LiveQuote>> {
+  const out = new Map<string, LiveQuote>();
+  const fetchLastDay = resolveLastDay(deps);
+  if (!fetchLastDay) return out;
+  const codes = unpriced.filter((s) => s.endsWith(".US")).map((s) => s.slice(0, -".US".length));
+  const chunks: string[][] = [];
+  for (let i = 0; i < codes.length; i += BATCH_SIZE) chunks.push(codes.slice(i, i + BATCH_SIZE));
+  // Chunks are independent, so the nightly price cron doesn't pay for them serially.
+  await Promise.all(
+    chunks.map(async (c) => {
+      try {
+        collectLastDayRows(await fetchLastDay(c), out);
+      } catch {
+        // fail-soft: this chunk stays unpriced, the rest of the map survives
+      }
+    }),
+  );
+  return out;
+}
+
 /** Resolve the transport: an injected fetcher wins; otherwise the live EODHD
  *  call bound to the configured key. Throws if neither is available — callers
  *  decide whether to swallow (fail-soft) or surface. */
 function resolveFetch(deps: QuoteDeps): (symbols: string[]) => Promise<unknown> {
   if (deps.fetchRealtime) return deps.fetchRealtime;
-  const apiKey = deps.apiKey ?? process.env.EODHD_API_KEY ?? "";
+  const apiKey = resolveApiKey(deps);
   if (!apiKey) {
     // Distinguish misconfig (loud) from a routine unresolved ticker (silent).
     // The callers below fail soft, so without this a missing key looks identical
@@ -125,20 +226,14 @@ function resolveFetch(deps: QuoteDeps): (symbols: string[]) => Promise<unknown> 
   return (symbols) => fetchRealtimeLive(symbols, apiKey);
 }
 
-/** Latest close for one ticker, or null on ANY failure. Never throws. */
+/** Latest close for one ticker, or null on ANY failure. Never throws.
+ *  A one-element batch — same real-time call, same chunk retry, same last-day
+ *  fallback, so the single- and many-ticker paths can't drift apart. */
 export async function fetchEodClose(
   ticker: string,
   deps: QuoteDeps = {},
 ): Promise<{ price: number; asOf: string } | null> {
-  try {
-    const fetchRealtime = resolveFetch(deps);
-    const sym = eodhdSymbol(ticker);
-    const out = new Map<string, { price: number; asOf: string }>();
-    collectRows(await fetchRealtime([sym]), out);
-    return out.get(sym) ?? null;
-  } catch {
-    return null;
-  }
+  return (await fetchEodCloses([ticker], deps)).get(eodhdSymbol(ticker)) ?? null;
 }
 
 const QUOTE_TTL_MS = 60_000;
@@ -189,6 +284,12 @@ export async function fetchEodQuotes(
   } catch {
     // fail-soft: missing symbols simply absent; cached hits preserved
   }
+  // Mutual funds show no real-time close until their NAV strikes — fall back to
+  // the last daily close so they aren't blank all session.
+  for (const [sym, q] of await fetchLastDayFor(miss.filter((s) => !out.has(s)), deps)) {
+    out.set(sym, q);
+    if (useCache) quoteCache.set(sym, { q, at: now });
+  }
   return out;
 }
 
@@ -221,6 +322,9 @@ export async function fetchEodCloses(
       }
     }
     if (ok) collectRows(raw, out);
+  }
+  for (const [sym, hit] of await fetchLastDayFor(symbols.filter((s) => !out.has(s)), deps)) {
+    out.set(sym, { price: hit.price, asOf: hit.asOf });
   }
   return out;
 }

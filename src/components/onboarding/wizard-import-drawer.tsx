@@ -49,7 +49,9 @@ export default function WizardImportDrawer({
   const [error, setError] = useState<string | null>(null);
   const [imp, setImp] = useState<LoadedImport | null>(null);
   const [busy, setBusy] = useState(false);
-  const [extractHoldings, setExtractHoldings] = useState(false);
+  // Defaults ON: advisors uploading a brokerage statement expect the positions,
+  // and an unchecked box silently returned an account with an empty Holdings tab.
+  const [extractHoldings, setExtractHoldings] = useState(true);
   /** Non-blocking note carried from the last extraction into the review pane. */
   const [notice, setNotice] = useState<string | null>(null);
 
