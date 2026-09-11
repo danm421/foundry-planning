@@ -1,7 +1,7 @@
 import type { ExtractedAccount } from "@/lib/extraction/types";
 import type { Annotated } from "@/lib/imports/types";
 import type { MergeDecision } from "@/lib/imports/assemble/decisions";
-import type { RebaseOverride, RebaseRefusal } from "./rebase";
+import type { RebaseDrop, RebaseOverride, RebaseRefusal } from "./rebase";
 
 /**
  * Deterministic narration of what a statement import found. Every sentence
@@ -152,6 +152,25 @@ function rebaseRefusalCaveat(r: RebaseRefusal): string {
 }
 
 /**
+ * Fix wave 2, requirement 4. The re-extraction produced nothing this standing
+ * row could be carried onto, so it has left the table. That was always the
+ * behaviour and it is the right one — the account is not in this extraction
+ * any more — but it used to happen in silence, and a row disappearing from
+ * the table changes both what is on screen and what will commit.
+ *
+ * The `committed` clause exists because that case reads as alarming and is
+ * not: the plan account the row created is a separate record and nothing here
+ * touches it. Saying so turns "where did my account go" into a note.
+ */
+function rebaseDropCaveat(d: RebaseDrop): string {
+  return (
+    `"${d.name}" is no longer among the accounts read from these statements, so it has been ` +
+    `removed from the table along with any changes you made to it.` +
+    (d.committed ? ` It had already been committed, and that plan account is unchanged.` : "")
+  );
+}
+
+/**
  * True when this `value-conflict` decision is describing a merge result the
  * rebase then threw away — its headline figure (`kept`) is not on the table,
  * so `valueConflictCaveat` would print "is recorded at $130,000" directly
@@ -236,8 +255,14 @@ export function narrate(input: {
    * re-extraction can produce any.
    */
   refusals?: RebaseRefusal[];
+  /**
+   * Standing rows the re-extraction could not carry forward at all (fix wave
+   * 2, requirement 4). Optional and defaulted for the same reason as
+   * `overrides`: only a re-extraction can produce any.
+   */
+  dropped?: RebaseDrop[];
 }): Narration {
-  const { fileCount, decisions, rows, overrides = [], refusals = [] } = input;
+  const { fileCount, decisions, rows, overrides = [], refusals = [], dropped = [] } = input;
 
   const sentences: string[] = [
     `Read ${fileCount} ${plural(fileCount, "statement", "statements")} covering ${rows.length} ${plural(rows.length, "account", "accounts")}.`,
@@ -271,6 +296,7 @@ export function narrate(input: {
 
   for (const o of overrides) caveats.push(rebaseOverrideCaveat(o));
   for (const r of refusals) caveats.push(rebaseRefusalCaveat(r));
+  for (const d of dropped) caveats.push(rebaseDropCaveat(d));
 
   const retirementCaveat = retirementBasisCaveat(rows);
   if (retirementCaveat) caveats.push(retirementCaveat);

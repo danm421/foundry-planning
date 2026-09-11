@@ -421,6 +421,39 @@ describe("narrate", () => {
       ]);
     });
 
+    /**
+     * Fix wave 2, requirement 4. A standing row the fresh extraction no
+     * longer produces has ALWAYS just vanished from the table — correct, but
+     * silent, and a silent disappearance is indistinguishable from the app
+     * losing the advisor's work. The row's figure was also part of the total
+     * on screen a moment ago.
+     *
+     * The `committed` clause is the materially different case: the plan
+     * account that row created still exists and is untouched by any of this,
+     * and an advisor who is not told that will go looking for it.
+     *
+     * Mutation this catches: dropping the `dropped` loop from `narrate` — the
+     * row leaves the table with nothing said about it at all.
+     */
+    it("names a standing row the re-extraction could not carry forward", () => {
+      const { caveats } = narrate({
+        fileCount: 2,
+        decisions: [],
+        rows: [{ name: "Schwab Brokerage", value: 88_000 }] as never,
+        dropped: [
+          { __rowId: "account:7734#f1:0", name: "Fidelity Roth IRA", committed: true },
+          { __rowId: "account:9999#f1:1", name: "Old 401(k)", committed: false },
+        ],
+      });
+      expect(caveats).toEqual([
+        '"Fidelity Roth IRA" is no longer among the accounts read from these statements, so it ' +
+          "has been removed from the table along with any changes you made to it. It had already " +
+          "been committed, and that plan account is unchanged.",
+        '"Old 401(k)" is no longer among the accounts read from these statements, so it has been ' +
+          "removed from the table along with any changes you made to it.",
+      ]);
+    });
+
     it("stays silent when there are no overrides", () => {
       const { caveats } = narrate({
         fileCount: 1,

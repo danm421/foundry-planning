@@ -852,6 +852,119 @@ describe("chat extract route gates", () => {
   });
 
   /**
+   * Fix wave 2, Concern 1 — the COMMON case, end to end, and the regression
+   * the coordinate ordinal introduced on it.
+   *
+   * The C-1 sibling above is two DIFFERENT accounts sharing a bucket. This is
+   * the ordinary one the surface invites: a NEWER statement for an account
+   * already on the import. The two rows merge into ONE entry, so the entry's
+   * minimum coordinate — and therefore its `__rowId` — becomes the newly
+   * added file's whenever that file's id sorts lower. Roughly half the time.
+   *
+   * Measured before the fix, on this exact fixture: the standing row found no
+   * counterpart, so the rename and the `linkCreated` commit stamp were
+   * dropped in silence; the row on screen came back with the FRESH id and
+   * `match: { kind: "new" }`; and because that id is not the one in
+   * `committedRowIds` its Commit button re-armed. Committing it then INSERTED
+   * a SECOND plan account for one real account — measured by driving
+   * `commitAccounts` itself, not inferred.
+   *
+   * Mutation this catches: deleting the re-attachment pass from
+   * `rebaseOntoFreshMerge`. Assertions 1, 2 and 3 all go red — the id, the
+   * rename and the stamp.
+   */
+  it("carries a committed row's id, edit and stamp forward when a NEWER statement for the same account is added", async () => {
+    const JUNE_FILE = "9c3f1a02-4f7b-4c0e-9a11-2d5b8e7f6a31";
+    const SEPT_FILE = "0b7e4d19-8a2c-4f31-b6d0-1e9c3a5f2b84"; // sorts FIRST
+    const STANDING_ROW_ID = `account:7734#${JUNE_FILE}:0`;
+
+    currentImportRow = {
+      id: "i1",
+      payloadJson: {
+        fileResults: {
+          [JUNE_FILE]: {
+            documentType: "account_statement",
+            fileName: "fidelity-june.pdf",
+            extracted: {
+              accounts: [
+                { name: "Roth IRA", custodian: "Fidelity", accountNumberLast4: "7734", owner: "client", value: 190_000, category: "retirement", statementDate: "2026-06-30" },
+              ],
+              incomes: [], expenses: [], liabilities: [], entities: [], lifePolicies: [], wills: [], savings: [],
+            },
+            warnings: [],
+            promptVersion: "v",
+          },
+        },
+        payload: {
+          accounts: [
+            {
+              name: "Julia — Roth (rollover)", // renamed in the chat
+              custodian: "Fidelity",
+              accountNumberLast4: "7734",
+              owner: "client",
+              value: 190_000,
+              category: "retirement",
+              statementDate: "2026-06-30",
+              __rowId: STANDING_ROW_ID,
+              __provenance: { sourceFileId: JUNE_FILE, section: "accounts" },
+              match: { kind: "exact", existingId: "acct-1" },
+            },
+          ],
+        },
+        chat: {
+          surface: "chat",
+          transcript: [],
+          decisions: [],
+          excludedRows: [],
+          committedRowIds: [STANDING_ROW_ID],
+        },
+      },
+      extractHoldings: false,
+      status: "review",
+    };
+    filesResult = [fileRow(JUNE_FILE, "fidelity-june.pdf"), fileRow(SEPT_FILE, "fidelity-sept.pdf")];
+    // The SAME account, three months later. Same custodian, same last-4.
+    vi.mocked(extractDocument).mockResolvedValue({
+      documentType: "account_statement",
+      fileName: "fidelity-sept.pdf",
+      extracted: {
+        accounts: [
+          { name: "Roth IRA", custodian: "Fidelity", accountNumberLast4: "7734", owner: "client", value: 201_900, category: "retirement", statementDate: "2026-09-30" },
+        ],
+        incomes: [], expenses: [], liabilities: [], entities: [], lifePolicies: [], wills: [], savings: [],
+      },
+      warnings: [],
+      promptVersion: "v",
+    } as never);
+
+    const events = await readSse(await POST(req(), params));
+    const persisted = (currentImportRow.payloadJson as ImportPayloadJson).payload?.accounts ?? [];
+    const chat = (currentImportRow.payloadJson as ImportPayloadJson).chat;
+
+    // 0. ONE account, because there is one real account.
+    expect(persisted).toHaveLength(1);
+    // 1. It still answers to the id the advisor's session recorded, so the
+    //    Commit button stays locked (`entity-table.tsx` gates on exactly
+    //    this) and `finalize` does not 409 asking for it again.
+    expect(persisted[0].__rowId).toBe(STANDING_ROW_ID);
+    expect(chat?.committedRowIds).toEqual([STANDING_ROW_ID]);
+    expect(chat?.committedRowIds).toContain(persisted[0].__rowId);
+    // 2. The rename survived.
+    expect(persisted[0].name).toBe("Julia — Roth (rollover)");
+    // 3. So did the commit stamp — which is what stops a second commit from
+    //    INSERTING a duplicate plan account rather than updating this one.
+    expect(persisted[0].match).toEqual({ kind: "exact", existingId: "acct-1" });
+
+    // 4. The newer figure is disclosed rather than silently applied or
+    //    silently lost (Ruling 117) — and nothing claims the row vanished.
+    const done = events.at(-1) as { rows: Array<{ name: string }>; caveats: string[] };
+    expect(done.caveats.some((c) => c.includes("$201,900") && c.includes("Edit the row"))).toBe(true);
+    expect(done.caveats.some((c) => c.includes("no longer among the accounts"))).toBe(false);
+    // 5. The stream agrees with the database.
+    expect(done.rows.map((r) => r.name)).toEqual(["Julia — Roth (rollover)"]);
+  });
+
+  /**
    * Ruling 117, wired end to end. The measured failure was ON SCREEN: a June
    * statement at $100,000 and a September statement at $130,000 for a row the
    * advisor had never touched left $100,000 in the table — correct under I1 —

@@ -322,7 +322,16 @@ export async function POST(request: Request, { params }: Params) {
           rows: rebasedAll,
           overrides: allOverrides,
           refusals: allRefusals,
-        } = rebaseOntoFreshMerge(kept, priorAccounts);
+          dropped: allDropped,
+        } = rebaseOntoFreshMerge(kept, priorAccounts, {
+          // Fix wave 2. The rebase now re-attaches a standing row whose id
+          // moved onto the fresh row that is the same account, carrying the
+          // standing id forward. A fresh row the advisor already retired must
+          // never be that target: the carried id would not be the excluded
+          // one, the subtraction two lines below would miss it, and the
+          // dropped row would come back on screen.
+          retiredRowIds: chatExcludedIds,
+        });
         const rebasedAccounts = rebasedAll.filter(
           (row) => !(row.__rowId && chatExcludedIds.has(row.__rowId)),
         );
@@ -337,6 +346,8 @@ export async function POST(request: Request, { params }: Params) {
         // about a row the advisor already dropped in the chat is a caveat
         // about a row that is not on screen.
         const rebaseRefusals = allRefusals.filter((r) => !chatExcludedIds.has(r.__rowId));
+        // Fix wave 2, requirement 4. Same subtraction, same reason.
+        const rebaseDropped = allDropped.filter((d) => !chatExcludedIds.has(d.__rowId));
         // The advisor's own exclusions are kept first and win on id — a
         // `merge_rows` entry carries `irreversible: true`, which this run's
         // freshly-detected rollup entry for the same row would not. Fresh
@@ -357,6 +368,7 @@ export async function POST(request: Request, { params }: Params) {
           rows: rebasedAccounts,
           overrides: rebaseOverrides,
           refusals: rebaseRefusals,
+          dropped: rebaseDropped,
         });
 
         // Ruling 89 (Step 0) / Ruling 101 (fix round 2): persist
