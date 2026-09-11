@@ -282,6 +282,10 @@ export async function commitGoals(
       );
     }
 
+    // Computed once so the amount and the presence check that gates the growth
+    // rate and source don't re-derive it (mirrors `buyLegToBody`).
+    const propertyTax = num(goal.annualPropertyTax ?? "");
+
     const purchaseValues = {
       name: name || "Planned purchase",
       type: "buy" as const,
@@ -301,12 +305,23 @@ export async function commitGoals(
       mortgageAmount: goal.showMortgage ? num(goal.mortgageAmount) : null,
       mortgageRate: goal.showMortgage ? pct(goal.mortgageRate) : null,
       mortgageTermMonths: goal.showMortgage ? Number(goal.mortgageTermMonths) || null : null,
-      // A planned purchase in this wizard is always a home, so these always
-      // apply — no category gate here (unlike the Transactions dialog, whose
-      // buy leg can be any category).
-      annualPropertyTax: num(goal.annualPropertyTax),
-      propertyTaxGrowthRate: pct(goal.propertyTaxGrowthRate),
-      propertyTaxGrowthSource: goal.propertyTaxGrowthSource ?? "custom",
+      // A planned purchase in this wizard is always a home, so there is no
+      // category gate here (unlike the Transactions dialog, whose buy leg can
+      // be any category) — but the rate and source still follow the AMOUNT, as
+      // they do in `buyLegToBody`. Without that gate this branch (which also
+      // UPDATEs an already-linked purchase) stamped a phantom 0.0300/'custom'
+      // onto a pre-feature row whose columns were NULL.
+      //
+      // The `?? ""` / `?? "custom"` fallbacks are load-bearing, not defensive
+      // noise: a `HomePurchaseGoal` read back from a `client_imports.payloadJson`
+      // written before this feature has NO property-tax keys at all, and
+      // `normalizeImportPayload` backfills missing SECTIONS, not missing FIELDS
+      // — so `num(undefined)` threw on `raw.trim()` and 500'd the commit.
+      annualPropertyTax: propertyTax,
+      propertyTaxGrowthRate:
+        propertyTax != null ? pct(goal.propertyTaxGrowthRate ?? "") : null,
+      propertyTaxGrowthSource:
+        propertyTax != null ? (goal.propertyTaxGrowthSource ?? "custom") : null,
     };
 
     const purchaseId = getExistingId(goal);

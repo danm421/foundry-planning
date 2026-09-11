@@ -55,7 +55,9 @@ function buyLegToBody(leg: BuyLegDraft, year: number): Record<string, unknown> {
     ? null : (optStr(leg.fundingAccountId) || null);
   // Real-estate only; the API rejects these on a sell and they are
   // meaningless on any other category. Computed once so the amount and its
-  // presence check (for the growth source) don't re-derive it.
+  // presence check (which gates BOTH the growth rate and the source) don't
+  // re-derive it — the rate defaults to "3" on every buy leg, so gating it on
+  // the category alone stamped a phantom 0.0300 onto rows with no amount.
   const propertyTax = leg.assetCategory === "real_estate" ? optStr(leg.annualPropertyTax) : null;
   return {
     type: "buy", name: leg.name, year,
@@ -70,8 +72,7 @@ function buyLegToBody(leg: BuyLegDraft, year: number): Record<string, unknown> {
     mortgageRate: leg.showMortgage ? optDec(leg.mortgageRate) : null,
     mortgageTermMonths: leg.showMortgage && leg.mortgageTermMonths ? Number(leg.mortgageTermMonths) : null,
     annualPropertyTax: propertyTax,
-    propertyTaxGrowthRate:
-      leg.assetCategory === "real_estate" ? optDec(leg.propertyTaxGrowthRate) : null,
+    propertyTaxGrowthRate: propertyTax != null ? optDec(leg.propertyTaxGrowthRate) : null,
     propertyTaxGrowthSource: propertyTax != null ? leg.propertyTaxGrowthSource : null,
   };
 }
@@ -158,6 +159,17 @@ export function mergeEditBody(
   if (sell) Object.assign(body, sellLegToBody(sell, year, ctx.isRealEstate));
   if (buy) Object.assign(body, buyLegToBody(buy, year));
   body.type = sell ? "sell" : "buy";   // re-assert after Object.assign
+  if (sell) {
+    // A legacy swap merges the buy leg's body onto a row typed "sell", and the
+    // DB CHECK (asset_transactions_buy_only_property_tax_check) forbids all
+    // three columns there. Mirrors resolvePropertyTaxUpdateFields on the
+    // server. Without this, base mode 422s on a field typed on the purchase,
+    // and scenario mode stores a change that fails the CHECK as a raw Postgres
+    // error on promote — rolling the whole promote back.
+    body.annualPropertyTax = null;
+    body.propertyTaxGrowthRate = null;
+    body.propertyTaxGrowthSource = null;
+  }
   body.name = name; body.year = year;
   return body;
 }
