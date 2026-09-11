@@ -2,10 +2,12 @@
 
 import type { ExtractedAccount } from "@/lib/extraction/types";
 import type { Annotated } from "@/lib/imports/types";
+import { livingHoldings } from "@/lib/imports/living-rows";
 import { rollupExclusionReason } from "@/lib/statement-chat/rollups";
 import EntityTable from "./entity-table";
 import type { ExcludedRow } from "./excluded-rows";
 import { ACCOUNT_COLUMNS } from "./accounts-columns";
+import { HoldingsTable } from "./holdings-table";
 
 type Row = Annotated<ExtractedAccount>;
 
@@ -49,5 +51,13 @@ function withReason(excluded: ExcludedRow<Row>[]): ExcludedRow<Row>[] {
  * the same way, each supplying its own column spec.
  */
 export default function AccountsTable({ excluded, ...props }: AccountsTableProps) {
-  return <EntityTable columns={ACCOUNT_COLUMNS} excluded={withReason(excluded)} {...props} />;
+  return (
+    <EntityTable
+      columns={ACCOUNT_COLUMNS}
+      excluded={withReason(excluded)}
+      expand={(row) => (livingHoldings(row).length > 0 ? <HoldingsTable row={row} /> : null)}
+      expandLabel={(row) => `Show positions for ${row.name}`}
+      {...props}
+    />
+  );
 }

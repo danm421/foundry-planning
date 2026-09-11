@@ -18,8 +18,11 @@ const rows = [
 describe("accounts table", () => {
   it("renders the eight spec columns in order", () => {
     render(<AccountsTable rows={rows} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} />);
+    // Leading "" is the Task 5 disclosure column's header cell — AccountsTable
+    // always supplies `expand` to EntityTable now, so every row gets one,
+    // trailing "" is still the Commit column's.
     expect(screen.getAllByRole("columnheader").map((h) => h.textContent)).toEqual([
-      "Name", "Value", "Basis", "Last 4", "Owner", "Custodian", "Account type", "Holdings", "",
+      "", "Name", "Value", "Basis", "Last 4", "Owner", "Custodian", "Account type", "Holdings", "",
     ]);
   });
 
@@ -137,8 +140,9 @@ describe("accounts table — the Owner cell is editable", () => {
 describe("accounts table — the Owner cell holds no nested button", () => {
   // The Owner column is the 5th of the seven (Name · Value · Basis · Last 4 ·
   // Owner · Custodian · Account type), pinned in order by the first test in
-  // this file.
-  const ownerCellOf = (row: HTMLElement) => within(row).getAllByRole("cell")[4];
+  // this file — shifted one further right (index 5, not 4) by the Task 5
+  // disclosure `<td>` every row now leads with.
+  const ownerCellOf = (row: HTMLElement) => within(row).getAllByRole("cell")[5];
 
   it("renders exactly one button in an editable Owner cell, and keeps the Assumed pill", () => {
     render(<AccountsTable rows={rows} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} />);
@@ -179,7 +183,9 @@ describe("accounts table — the Owner cell holds no nested button", () => {
  * subordinate context.
  */
 describe("accounts table — the Owner cell shows the value that commits", () => {
-  const ownerCellOf = (row: HTMLElement) => within(row).getAllByRole("cell")[4] as HTMLElement;
+  // Shifted one further right (index 5, not 4) by the Task 5 disclosure
+  // `<td>` every row now leads with — see the note above.
+  const ownerCellOf = (row: HTMLElement) => within(row).getAllByRole("cell")[5] as HTMLElement;
 
   const withRoleAndHint = (owner: "client" | "spouse" | "joint") =>
     [

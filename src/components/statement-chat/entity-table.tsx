@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import ExcludedRows, { type ExcludedRow } from "./excluded-rows";
 
 /**
@@ -81,6 +81,16 @@ export interface EntityTableProps<Row extends EntityRow> {
   /** Disables every row's Commit button regardless of its own committed/
    *  pending state (Ruling 95, Task 11b fix round 1). */
   disableCommit?: boolean;
+  /**
+   * Optional child content for a row. A row this returns a non-null node for
+   * gets a leading disclosure button; open, the node renders in its own
+   * full-width `<tr>` beneath the row. Returning `null` for a row means that
+   * row has nothing to disclose and gets no button — an empty expander reads
+   * as broken (same reasoning as `onRestore`'s disabled state above).
+   */
+  expand?: (row: Row) => ReactNode;
+  /** Accessible name for the disclosure button. Defaults to "Show details". */
+  expandLabel?: (row: Row) => string;
 }
 
 const RIGHT_ALIGN_KINDS: ReadonlySet<ColumnKind> = new Set([
@@ -149,8 +159,17 @@ export default function EntityTable<Row extends EntityRow>({
   onEditCell,
   onRestore,
   disableCommit,
+  expand,
+  expandLabel,
 }: EntityTableProps<Row>) {
   const [editing, setEditing] = useState<{ rowId: string; key: string } | null>(null);
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
+  const toggleExpanded = (rowId: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(rowId)) next.add(rowId);
+      return next;
+    });
   // In-flight guard (Task 10 review, Important 7): without it a double-click
   // fires two POSTs before `committedRowIds` can come back around and
   // disable the button. Keyed by rowId rather than a single boolean so
@@ -204,6 +223,7 @@ export default function EntityTable<Row extends EntityRow>({
       <table className="w-full text-left text-sm">
         <thead>
           <tr className="border-b border-hair text-xs uppercase tracking-wide text-ink-3">
+            {expand && <th className="w-8 px-3 py-2" />}
             {columns.map((col) => (
               <th
                 key={col.key}
@@ -220,70 +240,108 @@ export default function EntityTable<Row extends EntityRow>({
             const rowId = row.__rowId;
             const isCommitted = rowId != null && committedRowIds.includes(rowId);
             const isPending = rowId != null && pending.has(rowId);
+            const child = expand?.(row);
+            const isExpanded = rowId != null && expanded.has(rowId);
 
             return (
-              <tr key={rowId ?? i} className="border-b border-hair last:border-0">
-                {columns.map((col) => {
-                  const align = alignFor(col);
-                  const isEditingThis = !!rowId && editing?.rowId === rowId && editing.key === col.key;
-                  const canEdit = !!col.edit && !!rowId && !isCommitted;
-
-                  let content: ReactNode;
-                  if (isEditingThis && col.edit) {
-                    content = col.edit(row, (value) => {
-                      if (col.fields && col.fields.length > 0) {
-                        const patch = value as Record<string, unknown>;
-                        for (const field of col.fields) {
-                          onEditCell(rowId as string, field, patch[field]);
-                        }
-                      } else {
-                        onEditCell(rowId as string, col.key, value);
-                      }
-                      setEditing(null);
-                    });
-                  } else {
-                    const display = col.render ? col.render(row) : formatValue(col.kind, rowValue(row, col.key));
-                    content = canEdit ? (
-                      <button
-                        type="button"
-                        onClick={() => setEditing({ rowId: rowId as string, key: col.key })}
-                        className={`w-full ${align === "right" ? "text-right" : "text-left"} text-ink hover:text-accent-ink`}
-                      >
-                        {display}
-                      </button>
-                    ) : (
-                      display
-                    );
-                  }
-
-                  return (
-                    <td
-                      key={col.key}
-                      className={`px-3 py-2 ${align === "right" ? "tabular text-right" : "text-ink"}`}
-                    >
-                      {content}
+              <Fragment key={rowId ?? i}>
+                <tr className="border-b border-hair last:border-0">
+                  {expand && (
+                    <td className="px-3 py-2 align-top">
+                      {child && rowId && (
+                        <button
+                          type="button"
+                          onClick={() => toggleExpanded(rowId)}
+                          aria-expanded={isExpanded}
+                          aria-label={expandLabel?.(row) ?? "Show details"}
+                          className="text-ink-3 transition-colors hover:text-accent-ink"
+                        >
+                          <ChevronIcon open={isExpanded} />
+                        </button>
+                      )}
                     </td>
-                  );
-                })}
-                <td className="px-3 py-2 text-right">
-                  <button
-                    type="button"
-                    onClick={() => commit(rowId)}
-                    disabled={isCommitted || isPending || disableCommit}
-                    className="rounded border border-hair px-2 py-1 text-xs text-accent transition-colors hover:border-hair-2 disabled:cursor-default disabled:text-ink-4 disabled:opacity-60"
-                  >
-                    {isCommitted ? "Committed" : isPending ? "Committing…" : "Commit"}
-                  </button>
-                  {commitError && commitError.rowId === rowId && (
-                    <div className="mt-1 text-xs text-crit">{commitError.message}</div>
                   )}
-                </td>
-              </tr>
+                  {columns.map((col) => {
+                    const align = alignFor(col);
+                    const isEditingThis = !!rowId && editing?.rowId === rowId && editing.key === col.key;
+                    const canEdit = !!col.edit && !!rowId && !isCommitted;
+
+                    let content: ReactNode;
+                    if (isEditingThis && col.edit) {
+                      content = col.edit(row, (value) => {
+                        if (col.fields && col.fields.length > 0) {
+                          const patch = value as Record<string, unknown>;
+                          for (const field of col.fields) {
+                            onEditCell(rowId as string, field, patch[field]);
+                          }
+                        } else {
+                          onEditCell(rowId as string, col.key, value);
+                        }
+                        setEditing(null);
+                      });
+                    } else {
+                      const display = col.render ? col.render(row) : formatValue(col.kind, rowValue(row, col.key));
+                      content = canEdit ? (
+                        <button
+                          type="button"
+                          onClick={() => setEditing({ rowId: rowId as string, key: col.key })}
+                          className={`w-full ${align === "right" ? "text-right" : "text-left"} text-ink hover:text-accent-ink`}
+                        >
+                          {display}
+                        </button>
+                      ) : (
+                        display
+                      );
+                    }
+
+                    return (
+                      <td
+                        key={col.key}
+                        className={`px-3 py-2 ${align === "right" ? "tabular text-right" : "text-ink"}`}
+                      >
+                        {content}
+                      </td>
+                    );
+                  })}
+                  <td className="px-3 py-2 text-right">
+                    <button
+                      type="button"
+                      onClick={() => commit(rowId)}
+                      disabled={isCommitted || isPending || disableCommit}
+                      className="rounded border border-hair px-2 py-1 text-xs text-accent transition-colors hover:border-hair-2 disabled:cursor-default disabled:text-ink-4 disabled:opacity-60"
+                    >
+                      {isCommitted ? "Committed" : isPending ? "Committing…" : "Commit"}
+                    </button>
+                    {commitError && commitError.rowId === rowId && (
+                      <div className="mt-1 text-xs text-crit">{commitError.message}</div>
+                    )}
+                  </td>
+                </tr>
+                {isExpanded && child && (
+                  <tr className="border-b border-hair bg-card-2 last:border-0">
+                    <td colSpan={columns.length + 2} className="px-3 py-2">
+                      {child}
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
             );
           })}
         </tbody>
       </table>
       <ExcludedRows excluded={excluded} label={label} onRestore={onRestore} />
     </div>
+  );
+}
+
+function ChevronIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      className={`h-4 w-4 transition-transform ${open ? "rotate-90" : ""}`}
+      viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+    >
+      <path d="m9 6 6 6-6 6" />
+    </svg>
   );
 }
