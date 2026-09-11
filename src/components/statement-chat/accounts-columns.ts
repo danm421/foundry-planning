@@ -6,6 +6,7 @@ import type { ColumnSpec } from "./entity-table";
 import OwnerCell from "./owner-cell";
 import OwnerCellEdit, { type OwnerRole } from "./owner-cell-edit";
 import AccountTypeCellEdit, { type AccountTypePatch } from "./account-type-cell";
+import { HoldingsCell } from "./holdings-cell";
 
 /**
  * Named `.ts`, not `.tsx`, per the controller amendment's file list. The
@@ -48,8 +49,9 @@ export function accountTypeLabel(row: Row): string {
   return category ?? subType ?? "—";
 }
 
-/** The seven-column spec (Name · Value · Basis · Last 4 · Owner · Custodian
- *  · Account type), unchanged from the original single-file task. */
+/** The eight-column spec (Name · Value · Basis · Last 4 · Owner · Custodian
+ *  · Account type · Holdings); the first seven are unchanged from the
+ *  original single-file task. */
 export const ACCOUNT_COLUMNS: ColumnSpec<Row>[] = [
   { key: "name", header: "Name", kind: "string" },
   { key: "value", header: "Value", kind: "money" },
@@ -101,5 +103,14 @@ export const ACCOUNT_COLUMNS: ColumnSpec<Row>[] = [
         subType: row.subType,
         onDone: (patch: AccountTypePatch) => onChange(patch),
       }),
+  },
+  {
+    key: "holdings",
+    header: "Holdings",
+    // `money` would right-align it, but the cell renders its own two-line
+    // stack — `number` gets the right alignment without claiming the value
+    // is a single figure.
+    kind: "number",
+    render: (row) => createElement(HoldingsCell, { row }),
   },
 ];

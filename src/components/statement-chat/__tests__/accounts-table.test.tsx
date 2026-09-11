@@ -16,10 +16,10 @@ const rows = [
 ] as never;
 
 describe("accounts table", () => {
-  it("renders the seven spec columns in order", () => {
+  it("renders the eight spec columns in order", () => {
     render(<AccountsTable rows={rows} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} />);
     expect(screen.getAllByRole("columnheader").map((h) => h.textContent)).toEqual([
-      "Name", "Value", "Basis", "Last 4", "Owner", "Custodian", "Account type", "",
+      "Name", "Value", "Basis", "Last 4", "Owner", "Custodian", "Account type", "Holdings", "",
     ]);
   });
 
