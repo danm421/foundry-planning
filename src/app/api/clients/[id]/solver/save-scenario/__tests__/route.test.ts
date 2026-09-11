@@ -18,6 +18,17 @@ vi.mock("@/lib/scenario/changes-writer", () => ({
   applyEntityRemove: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
+// `gift_series` is the one piece of the client's plan that is scenario-
+// PARTITIONED, so a scenario this route creates must be seeded from the source
+// scenario's partition or the saved scenario projects with the client's
+// recurring gifts missing — and promoting it deletes them from the base plan.
+// Spied, not exercised: the copy's own behaviour is pinned in
+// src/lib/scenario/__tests__/create-with-clone.test.ts. What this route owes is
+// the CALL, with the right source partition.
+vi.mock("@/lib/scenario/create-with-clone", () => ({
+  cloneGiftSeriesIntoScenario: vi.fn().mockResolvedValue(undefined),
+  findBaseScenarioId: vi.fn().mockResolvedValue("22222222-2222-4222-8222-222222222222"),
+}));
 vi.mock("@/lib/authz", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/authz")>();
   return { ...actual, requireActiveSubscriptionForFirm: vi.fn().mockResolvedValue(undefined) };
@@ -95,10 +106,15 @@ import {
   applyEntityRemove,
 } from "@/lib/scenario/changes-writer";
 import { recordAudit } from "@/lib/audit";
+import {
+  cloneGiftSeriesIntoScenario,
+  findBaseScenarioId,
+} from "@/lib/scenario/create-with-clone";
 
 const CLIENT_ID = "00000000-0000-4000-8000-000000000001";
 const FIRM_ID = "00000000-0000-4000-8000-000000000099";
 const SCENARIO_ID = "11111111-1111-4111-8111-111111111111";
+const BASE_SCENARIO_ID = "22222222-2222-4222-8222-222222222222";
 
 function makeRequest(body: unknown) {
   return new Request(
@@ -137,6 +153,8 @@ beforeEach(() => {
   vi.mocked(applyEntityEdit).mockClear();
   vi.mocked(applyEntityAdd).mockClear();
   vi.mocked(applyEntityRemove).mockClear();
+  vi.mocked(cloneGiftSeriesIntoScenario).mockClear();
+  vi.mocked(findBaseScenarioId).mockClear().mockResolvedValue(BASE_SCENARIO_ID);
   vi.mocked(loadEffectiveTree).mockResolvedValue({
     effectiveTree: {
       client: {
@@ -179,6 +197,48 @@ describe("POST /api/clients/[id]/solver/save-scenario", () => {
       opType: "edit",
       payload: { retirementAge: { from: 65, to: 67 } },
     });
+  });
+
+  it("seeds the new scenario's recurring gifts from the base partition when saving off base", async () => {
+    await POST(
+      makeRequest({
+        source: "base",
+        mutations: [{ kind: "retirement-age", person: "client", age: 67 }],
+        name: "Retire at 67",
+      }),
+      ctx as never,
+    );
+
+    expect(cloneGiftSeriesIntoScenario).toHaveBeenCalledWith(
+      expect.anything(),
+      {
+        clientId: CLIENT_ID,
+        fromScenarioId: BASE_SCENARIO_ID,
+        toScenarioId: "new-scenario-id",
+      },
+    );
+  });
+
+  it("seeds from the SOURCE scenario's partition when saving off a named scenario", async () => {
+    await POST(
+      makeRequest({
+        source: SCENARIO_ID,
+        mutations: [{ kind: "retirement-age", person: "client", age: 67 }],
+        name: "Retire at 67",
+      }),
+      ctx as never,
+    );
+
+    // No base lookup — the source scenario carries its own partition.
+    expect(findBaseScenarioId).not.toHaveBeenCalled();
+    expect(cloneGiftSeriesIntoScenario).toHaveBeenCalledWith(
+      expect.anything(),
+      {
+        clientId: CLIENT_ID,
+        fromScenarioId: SCENARIO_ID,
+        toScenarioId: "new-scenario-id",
+      },
+    );
   });
 
   it("records an audit row with source: solver", async () => {
