@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { clientImportFiles } from "@/db/schema";
 import { downloadImportFile } from "@/lib/imports/blob";
+import { stampAccountHoldingIds } from "@/lib/imports/assemble/merge-across-files";
 import { extractDocument } from "@/lib/extraction/extract";
 import type { Annotated, ChatState, PersistedImportPayload } from "@/lib/imports/types";
 import type {
@@ -404,6 +405,10 @@ export function mergeRows(
   assertNotCommitted(keep, committedRowIds);
   assertNotCommitted(merge, committedRowIds);
   const merged = unionAccountFields(keep, merge);
+  // The kept row may have just absorbed the retired row's positions, whose
+  // ids were minted under a DIFFERENT account's scope. Re-stamping is
+  // idempotent for positions that were already the kept row's own.
+  stampAccountHoldingIds(merged);
   const nextAccounts = accounts
     .map((r, i) => (i === keepIdx ? merged : r))
     .filter((_, i) => i !== mergeIdx);

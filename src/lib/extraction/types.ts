@@ -99,6 +99,12 @@ export interface ExtractedHolding {
   marketValue?: number;
   /** Cost basis of the position. */
   costBasis?: number;
+  /** Stable handle within ONE account, minted by `mergeAcrossFiles`. Identity
+   *  is the pair (account `__rowId`, this) — never this alone. */
+  __holdingId?: string;
+  /** Tombstone. A dropped position stays in the array so the next extraction
+   *  cannot resurrect it; read ONLY through `livingHoldings`. */
+  __dropped?: boolean;
 }
 
 export interface ExtractedAccount {

@@ -10,6 +10,7 @@ import type {
   ExtractedWill,
   ExtractionResult,
 } from "@/lib/extraction/types";
+import { holdingKey } from "@/lib/extraction/holdings-completion";
 import {
   emptyImportPayload,
   type Annotated,
@@ -827,6 +828,34 @@ function mergeFamilyMember<T extends { firstName: string; lastName?: string }>(
   return unionFields(existing, incoming);
 }
 
+/** The single-account half of `stampHoldingIds`, exported for `merge_rows`
+ *  — the one operation that moves a holdings array between accounts. */
+export function stampAccountHoldingIds(account: Annotated<ExtractedAccount>): void {
+  if (!account.holdings?.length) return;
+  const seen = new Map<string, number>();
+  for (const h of account.holdings) {
+    const key = holdingKey(h);
+    const occurrence = seen.get(key) ?? 0;
+    seen.set(key, occurrence + 1);
+    h.__holdingId = `${key}#${occurrence}`;
+  }
+}
+
+/**
+ * Mint `__holdingId` for every position on every account.
+ *
+ * Deliberately a single post-pass rather than threaded through the three
+ * sites that stamp `__rowId`: a holding's id is scoped to its own account and
+ * does not depend on that account's id, so it only has to run once, after the
+ * account set is final. Idempotent — re-stamping a payload that already
+ * carries ids produces the same ids.
+ */
+function stampHoldingIds(accounts: Annotated<ExtractedAccount>[]): void {
+  for (const account of accounts) {
+    stampAccountHoldingIds(account);
+  }
+}
+
 /**
  * Merge per-file `ExtractionResult`s into a single `ImportPayload`,
  * collapsing only high-confidence exact duplicates (see dedupe rules in
@@ -1029,5 +1058,6 @@ export function mergeAcrossFiles(
   concatSection(payload.wills, willRows);
   concatSection(payload.savings, savingsRows);
 
+  stampHoldingIds(payload.accounts);
   return { payload, mergedFileCount: Object.keys(fileResults).length, decisions };
 }

@@ -347,8 +347,40 @@ describe("statement chat tools", () => {
     const survivor = mergeRows(bothHaveHoldings, { keepRowId: "r1", mergeRowId: "r2" }, NONE_COMMITTED)
       .payload.accounts![0];
 
-    expect(survivor.holdings).toEqual([{ ticker: "KEEP", shares: 1 }]);
+    // `mergeRows` now re-stamps `__holdingId` on every holding of the
+    // merged row (Task 2), including ones the kept row already had — hence
+    // `KEEP` picks up an id here even though it never crossed accounts.
+    expect(survivor.holdings).toEqual([{ ticker: "KEEP", shares: 1, __holdingId: "t:KEEP#0" }]);
     expect(survivor.statementDate).toBe("2026-06-30");
+  });
+
+  // `__holdingId` is unique only WITHIN an account. `merge_rows` is the one
+  // operation that moves a whole `holdings` array between accounts
+  // (`unionAccountFields` backfills it wholesale when the kept row has
+  // none), so it is the one place two accounts' id scopes can meet. This
+  // pins that `mergeRows` re-stamps the merged row rather than leaving ids
+  // minted under the retired row's scope (or, as here, never minted at all).
+  //
+  // Deviation from the task brief's literal fixture: the brief pre-set
+  // `__holdingId: "t:AAPL#0"` on the donor holding, which made the
+  // assertion pass even with the re-stamp call removed — `unionAccountFields`
+  // backfills the holdings array by reference, and recomputing the SAME
+  // key+occurrence over the SAME single-item array reproduces the SAME id
+  // either way, so that fixture doesn't distinguish "re-stamped" from
+  // "never touched". Verified by temporarily deleting the
+  // `stampAccountHoldingIds(merged)` call and re-running: the brief's
+  // fixture still passed. Leaving the donor holding UNSTAMPED (no
+  // `__holdingId`) is what makes the assertion depend on the fix: it fails
+  // (`undefined`) without the call and passes (`"t:AAPL#0"`) with it.
+  it("re-stamps holding ids when merge_rows folds one account's positions into another", () => {
+    const payload = { accounts: [
+      { __rowId: "r1", name: "Schwab", custodian: "Schwab", accountNumberLast4: "1234" },
+      { __rowId: "r2", name: "Schwab", custodian: "Schwab", accountNumberLast4: "1234",
+        holdings: [{ ticker: "AAPL" }] },
+    ] } as unknown as PersistedImportPayload;
+    const res = mergeRows(payload, { keepRowId: "r1", mergeRowId: "r2" }, NONE_COMMITTED);
+    const kept = res.payload.accounts!.find((a) => a.__rowId === "r1");
+    expect(kept?.holdings?.[0].__holdingId).toBe("t:AAPL#0");
   });
 
   // Mutation this catches: the FOURTH excluded shape (C3) regressing to a
