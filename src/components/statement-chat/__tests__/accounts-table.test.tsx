@@ -161,3 +161,65 @@ describe("accounts table — the Owner cell holds no nested button", () => {
     expect(within(roth).getByText(/not yet matched to a family member/i)).toBeInTheDocument();
   });
 });
+
+/**
+ * Fix round 2. The browser pass found the Owner dropdown doing nothing
+ * visible: `OwnerCell` tested `names`, then `hint`, then `role`, so whenever
+ * the statement printed a registration name — essentially always — the hint
+ * branch won and the picked role was NEVER rendered. The advisor picks
+ * "Spouse", the cell keeps showing the printed name plus "Assumed", and the
+ * control reads as dead. This repo has logged that exact failure mode before.
+ *
+ * The deeper problem the dropdown only exposed: the cell was headlining a
+ * string that NEVER COMMITS. In the chat path `row.owners` is never seeded
+ * (`matchOwnersFromHint` is wizard-only), so `synthesizeAccountOwners`
+ * consumes `row.owner` — the ENUM is the committed value and the registration
+ * name is only the evidence for choosing it. So this is a reorder, not a
+ * patch: resolved names, then the ROLE as the value, then the name as
+ * subordinate context.
+ */
+describe("accounts table — the Owner cell shows the value that commits", () => {
+  const ownerCellOf = (row: HTMLElement) => within(row).getAllByRole("cell")[4] as HTMLElement;
+
+  const withRoleAndHint = (owner: "client" | "spouse" | "joint") =>
+    [
+      { __rowId: "r5", name: "Schwab Roth IRA", value: 22_873.46, accountNumberLast4: "1168",
+        custodian: "Charles Schwab", owner, ownerNameHint: "MICHAEL V SHARESKY ROTH IRA" },
+    ] as never;
+
+  it("renders the role as the primary value, with the printed name subordinate", () => {
+    render(<AccountsTable rows={withRoleAndHint("spouse")} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} />);
+    const cell = ownerCellOf(screen.getByRole("row", { name: /Schwab Roth IRA/ }));
+
+    // Catches the defect exactly: with hint-before-role precedence the role
+    // word is absent from the cell altogether.
+    expect(within(cell).getByText("Spouse")).toBeInTheDocument();
+    // PRIMACY, not just presence — the committed value reads first. Catches a
+    // "fix" that appends the role after the name instead of leading with it.
+    expect(cell.textContent?.startsWith("Spouse")).toBe(true);
+
+    // The evidence survives as context, still marked unconfirmed, still
+    // wearing the pill (Ruling 137) — catches a fix by deletion.
+    expect(within(cell).getByText(/MICHAEL V SHARESKY ROTH IRA/).closest("[data-assumed]")).not.toBeNull();
+    expect(within(cell).getByTestId("assumed-chip")).toBeInTheDocument();
+    // And still exactly one button, so round 1's a11y fix is not undone.
+    expect(within(cell).getAllByRole("button")).toHaveLength(1);
+  });
+
+  it("changes what the cell displays when owner changes", () => {
+    const { rerender } = render(
+      <AccountsTable rows={withRoleAndHint("client")} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} />,
+    );
+    expect(within(ownerCellOf(screen.getByRole("row", { name: /Schwab Roth IRA/ }))).getByText("Client")).toBeInTheDocument();
+
+    // The whole point of the control: a different `owner` must read
+    // differently on screen. Catches any rendering that ignores the field —
+    // including the defect, where both renders showed the identical cell.
+    rerender(
+      <AccountsTable rows={withRoleAndHint("joint")} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} />,
+    );
+    const cell = ownerCellOf(screen.getByRole("row", { name: /Schwab Roth IRA/ }));
+    expect(within(cell).getByText("Joint")).toBeInTheDocument();
+    expect(within(cell).queryByText("Client")).toBeNull();
+  });
+});
