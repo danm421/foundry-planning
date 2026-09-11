@@ -707,6 +707,151 @@ describe("chat extract route gates", () => {
   });
 
   /**
+   * Final review #2, C-1 / Ruling 148 — the SIBLING of the I1 test above,
+   * and the one that would have caught the Critical.
+   *
+   * The I1 test is labelled "THE test that matters for 'upload another
+   * statement'", but every row in its fixture has a DISTINCT last-4
+   * (1234 / 9999 / 5555). Every bucket is therefore a singleton, the keyed
+   * ordinal can never move, and the test passes with the whole ordinal
+   * mechanism deleted. It is blind to this failure BY CONSTRUCTION.
+   *
+   * A SIBLING rather than a fixture change to that test: it pins a different
+   * contract (edits, commit stamps and chat exclusions all survive a new
+   * upload), and its distinct-last-4 fixture is the honest shape for that
+   * one. Widening it would conflate two invariants and let a regression in
+   * either hide behind the other. This names the new invariant on its own.
+   *
+   * THE SHAPE THAT BITES: two accounts at different institutions sharing four
+   * masked digits — one bucket, two entries — and the newly uploaded file's
+   * id sorting AHEAD of the existing one, which is what the jsonb round-trip
+   * hands back roughly half the time.
+   *
+   * Measured failure before the fix, from this exact fixture: the Schwab
+   * account SILENTLY GONE, the Fidelity IRA duplicated, $403,800 on screen
+   * against a truth of $289,900, a caveat naming $88,000 against the Fidelity
+   * row that no statement ever reported about it, and `finalize` 409ing until
+   * the advisor commits the duplicate.
+   *
+   * Mutation this catches: reverting the coordinate ordinal in
+   * `merge-across-files.ts` (back to the entry's rank in its bucket). The
+   * Fidelity row's id is recycled onto Schwab, the rebase guard then refuses
+   * the stale standing row, and assertions 1, 2 and 3 all go red.
+   *
+   * It does NOT redden if the rebase guard alone is reverted — MEASURED, not
+   * assumed. With the coordinate ordinal in place no id is recycled on this
+   * path, so the guard never has to fire here. That is the point of having
+   * two independent halves, and it is `rebase.test.ts`'s "refuses to adopt a
+   * standing row onto a fresh row from a different source file" that pins the
+   * guard on its own.
+   */
+  it("does not recycle a row id when the added file shares a last-4 bucket (C-1)", async () => {
+    // Real-shaped ids: the added one sorts bytewise AHEAD of the existing one.
+    const EXISTING_FILE = "9c3f1a02-4f7b-4c0e-9a11-2d5b8e7f6a31";
+    const ADDED_FILE = "0b7e4d19-8a2c-4f31-b6d0-1e9c3a5f2b84";
+    // Derived from the mint rule: `${label}:${key}#${fileId}:${index}`, on the
+    // entry's own minimum coordinate. The Fidelity row is file
+    // EXISTING_FILE's row 0.
+    const FIDELITY_ROW_ID = `account:7734#${EXISTING_FILE}:0`;
+
+    currentImportRow = {
+      id: "i1",
+      payloadJson: {
+        fileResults: {
+          [EXISTING_FILE]: {
+            documentType: "account_statement",
+            fileName: "fidelity-june.pdf",
+            extracted: {
+              accounts: [
+                { name: "Fidelity Roth IRA", custodian: "Fidelity", accountNumberLast4: "7734", owner: "client", value: 201_900, category: "retirement" },
+              ],
+              incomes: [], expenses: [], liabilities: [], entities: [], lifePolicies: [], wills: [], savings: [],
+            },
+            warnings: [],
+            promptVersion: "v",
+          },
+        },
+        // What the advisor has been working on, committed. `__provenance` is
+        // on it because the merge stamps it and it round-trips through jsonb
+        // — the guard's fingerprint is present on BOTH sides in production.
+        payload: {
+          accounts: [
+            {
+              name: "Fidelity Roth IRA",
+              custodian: "Fidelity",
+              accountNumberLast4: "7734",
+              owner: "client",
+              value: 201_900,
+              category: "retirement",
+              __rowId: FIDELITY_ROW_ID,
+              __provenance: { sourceFileId: EXISTING_FILE, section: "accounts" },
+              match: { kind: "exact", existingId: "acct-1" },
+            },
+          ],
+        },
+        chat: {
+          surface: "chat",
+          transcript: [],
+          decisions: [],
+          excludedRows: [],
+          committedRowIds: [FIDELITY_ROW_ID],
+        },
+      },
+      extractHoldings: false,
+      status: "review",
+    };
+    filesResult = [fileRow(EXISTING_FILE, "fidelity-june.pdf"), fileRow(ADDED_FILE, "schwab-sept.pdf")];
+    // A DIFFERENT real account that happens to share the four masked digits.
+    vi.mocked(extractDocument).mockResolvedValue({
+      documentType: "account_statement",
+      fileName: "schwab-sept.pdf",
+      extracted: {
+        accounts: [
+          { name: "Schwab Brokerage", custodian: "Schwab", accountNumberLast4: "7734", owner: "client", value: 88_000, category: "taxable" },
+        ],
+        incomes: [], expenses: [], liabilities: [], entities: [], lifePolicies: [], wills: [], savings: [],
+      },
+      warnings: [],
+      promptVersion: "v",
+    } as never);
+
+    const events = await readSse(await POST(req(), params));
+    const persisted = (currentImportRow.payloadJson as ImportPayloadJson).payload?.accounts ?? [];
+
+    // 1. TWO rows for TWO real accounts — never one account twice.
+    expect([...persisted.map((r) => r.name)].sort()).toEqual([
+      "Fidelity Roth IRA",
+      "Schwab Brokerage",
+    ]);
+    // 2. The money on screen is the money on the statements.
+    expect(persisted.reduce((sum, r) => sum + (r.value ?? 0), 0)).toBe(289_900);
+    // 3. The committed row kept its own id AND its commit stamp, so the
+    //    advisor cannot be pushed into committing it a second time.
+    const fidelity = persisted.find((r) => r.__rowId === FIDELITY_ROW_ID);
+    expect(fidelity).toMatchObject({
+      name: "Fidelity Roth IRA",
+      value: 201_900,
+      match: { kind: "exact", existingId: "acct-1" },
+    });
+    // 4. The new account has an id of its OWN.
+    const schwab = persisted.find((r) => r.name === "Schwab Brokerage");
+    expect(schwab?.value).toBe(88_000);
+    expect(schwab?.__rowId).toBe(`account:7734#${ADDED_FILE}:0`);
+
+    // 5. No caveat attributes the Schwab figure to the Fidelity row. That
+    //    sentence is `rebaseOverrideCaveat`, which only fires when a standing
+    //    row's figure beat a fresh one — here nothing was overridden at all.
+    const done = events.at(-1) as { rows: Array<{ name: string }>; caveats: string[] };
+    expect(done.caveats.some((c) => c.includes("the one that will commit"))).toBe(false);
+    expect(done.caveats.join(" ")).not.toContain("$88,000");
+    // 6. The stream agrees with the database.
+    expect([...done.rows.map((r) => r.name)].sort()).toEqual([
+      "Fidelity Roth IRA",
+      "Schwab Brokerage",
+    ]);
+  });
+
+  /**
    * Ruling 117, wired end to end. The measured failure was ON SCREEN: a June
    * statement at $100,000 and a September statement at $130,000 for a row the
    * advisor had never touched left $100,000 in the table — correct under I1 —
