@@ -719,4 +719,25 @@ describe("narrate", () => {
       ]);
     });
   });
+
+  /**
+   * Task 9 / Ruling 117, one level down. The whole-account override already
+   * names both figures when a newer statement's BALANCE was held back; this
+   * is the same caveat for the POSITIONS underneath it.
+   */
+  describe("holdings-override caveat", () => {
+    it("names both position counts when a newer statement's holdings were held back", () => {
+      const { caveats } = narrate({
+        fileCount: 2, decisions: [], rows: [], overrides: [], refusals: [], dropped: [],
+        holdingsOverrides: [{
+          __rowId: "account:1234#0", name: "Schwab ···1234",
+          standingCount: 14, freshCount: 18, standingSum: 1240000, freshSum: 1500000,
+        }],
+      });
+      expect(caveats).toContainEqual(
+        expect.stringContaining("18 positions"),
+      );
+      expect(caveats.join(" ")).toContain("14");
+    });
+  });
 });

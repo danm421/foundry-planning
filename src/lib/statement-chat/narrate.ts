@@ -1,7 +1,7 @@
 import type { ExtractedAccount } from "@/lib/extraction/types";
 import type { Annotated } from "@/lib/imports/types";
 import type { MergeDecision } from "@/lib/imports/assemble/decisions";
-import type { RebaseDrop, RebaseOverride, RebaseRefusal } from "./rebase";
+import type { RebaseDrop, RebaseHoldingsOverride, RebaseOverride, RebaseRefusal } from "./rebase";
 
 /**
  * Deterministic narration of what a statement import found. Every sentence
@@ -194,6 +194,26 @@ function rebaseDropCaveat(d: RebaseDrop): string {
 }
 
 /**
+ * Ruling 117, one level down. A newer statement's POSITIONS under an
+ * account already on the table are held back exactly like its balance —
+ * `rebaseOverrideCaveat` already says so for the figure; this says so for
+ * the positions underneath it, which can change (a fund swap, a new
+ * purchase) even when the account's own balance does not move.
+ *
+ * Both counts and both sums are named, same shape as the balance override,
+ * and the sentence closes with what to DO for the same reason: the newer
+ * set may be the one the advisor wants, and re-running extraction on the
+ * account is the only way to take it.
+ */
+function rebaseHoldingsOverrideCaveat(o: RebaseHoldingsOverride): string {
+  return (
+    `The newer statement lists ${o.freshCount} ${plural(o.freshCount, "position", "positions")} for ` +
+    `"${o.name}" (${money(o.freshSum)}); the ${o.standingCount} you reviewed ` +
+    `(${money(o.standingSum)}) were kept. Re-run extraction on this account to take the newer set.`
+  );
+}
+
+/**
  * True when this `value-conflict` decision is describing a merge result the
  * rebase then threw away — its headline figure (`kept`) is not on the table,
  * so `valueConflictCaveat` would print "is recorded at $130,000" directly
@@ -284,8 +304,22 @@ export function narrate(input: {
    * `overrides`: only a re-extraction can produce any.
    */
   dropped?: RebaseDrop[];
+  /**
+   * Rows whose fresh POSITIONS differ from the standing ones (Ruling 117,
+   * one level down). Optional and defaulted for the same reason as
+   * `overrides`: only a re-extraction can produce any.
+   */
+  holdingsOverrides?: RebaseHoldingsOverride[];
 }): Narration {
-  const { fileCount, decisions, rows, overrides = [], refusals = [], dropped = [] } = input;
+  const {
+    fileCount,
+    decisions,
+    rows,
+    overrides = [],
+    refusals = [],
+    dropped = [],
+    holdingsOverrides = [],
+  } = input;
 
   const sentences: string[] = [
     `Read ${fileCount} ${plural(fileCount, "statement", "statements")} covering ${rows.length} ${plural(rows.length, "account", "accounts")}.`,
@@ -320,6 +354,7 @@ export function narrate(input: {
   for (const o of overrides) caveats.push(rebaseOverrideCaveat(o));
   for (const r of refusals) caveats.push(rebaseRefusalCaveat(r));
   for (const d of dropped) caveats.push(rebaseDropCaveat(d));
+  for (const h of holdingsOverrides) caveats.push(rebaseHoldingsOverrideCaveat(h));
 
   const retirementCaveat = retirementBasisCaveat(rows);
   if (retirementCaveat) caveats.push(retirementCaveat);

@@ -760,6 +760,158 @@ describe("rebaseOntoFreshMerge", () => {
       { __rowId: undefined, name: "Hand-entered IRA", committed: true, stillOnTable: [] },
     ]);
   });
+
+  /**
+   * Task 9. Ruling 117 already covers a whole-account FIGURE the rebase held
+   * back; this is the same silence one level down. A newer statement can
+   * change the POSITIONS under an account whose balance did not move at all
+   * (a fund swap, a new purchase folded into the same total) and the advisor
+   * was never told the standing positions are stale.
+   */
+  it("reports when a fresh row's positions differ from the standing row's, and keeps the standing ones", () => {
+    const standing = [
+      {
+        __rowId: "account:1234#0",
+        name: "Schwab",
+        value: 100,
+        holdings: [{ __holdingId: "t:AAPL#0", ticker: "AAPL", marketValue: 100 }],
+      } as Row,
+    ];
+    const fresh = [
+      {
+        __rowId: "account:1234#0",
+        name: "Schwab",
+        value: 100,
+        holdings: [
+          { __holdingId: "t:AAPL#0", ticker: "AAPL", marketValue: 100 },
+          { __holdingId: "t:VTI#0", ticker: "VTI", marketValue: 400 },
+        ],
+      } as Row,
+    ];
+
+    const { rows, holdingsOverrides } = rebaseOntoFreshMerge(fresh, standing);
+
+    // The standing row still wins — that is what makes an edit survive.
+    expect(rows[0].holdings).toHaveLength(1);
+    expect(holdingsOverrides).toEqual([
+      { __rowId: "account:1234#0", name: "Schwab", standingCount: 1, freshCount: 2, standingSum: 100, freshSum: 500 },
+    ]);
+  });
+
+  it("reports nothing when the position sets match", () => {
+    const one = () => [
+      {
+        __rowId: "account:1234#0",
+        name: "Schwab",
+        holdings: [{ __holdingId: "t:AAPL#0", ticker: "AAPL", marketValue: 100 }],
+      } as Row,
+    ];
+    expect(rebaseOntoFreshMerge(one(), one()).holdingsOverrides).toEqual([]);
+  });
+
+  it("reports nothing for a row that has no positions on either side", () => {
+    const one = () => [{ __rowId: "account:1234#0", name: "Checking" } as Row];
+    expect(rebaseOntoFreshMerge(one(), one()).holdingsOverrides).toEqual([]);
+  });
+
+  /**
+   * R35. The brief placed this comparison inside the id-match loop (the one
+   * that walks `standing` against `freshByRowId`, above), guarded by
+   * `plausiblySameAccount`. A RE-ATTACHED row never reaches that loop's
+   * comparison at all: its standing id has no counterpart in `freshByRowId`,
+   * so it is collected into `orphans` and `continue`s past the point the
+   * brief's snippet occupied. Re-attachment — a newer statement moving the
+   * merge's minimum coordinate and so the id — is this task's own worked
+   * example, so the holdings comparison has to run in the loop that walks
+   * `base`/`adopted` AFTER re-attachment, where `id` is once again the
+   * STANDING id (re-stamped onto the fresh row's slot).
+   *
+   * Mutation this catches: putting the comparison back in the id-match loop.
+   * This fixture's standing row is an orphan there and the comparison would
+   * never run, so `holdingsOverrides` would come back empty.
+   */
+  it("reports a holdings override for a standing row whose id moved when a newer statement merged in", () => {
+    const JUNE = "9c3f1a02-4f7b-4c0e-9a11-2d5b8e7f6a31";
+    const SEPT = "0b7e4d19-8a2c-4f31-b6d0-1e9c3a5f2b84"; // sorts FIRST
+    const STANDING_ID = `account:7734#${JUNE}:0`;
+    const FRESH_ID = `account:7734#${SEPT}:0`;
+
+    const fresh = [
+      sourced(FRESH_ID, "Roth IRA", 201_900, SEPT, {
+        custodian: "Fidelity",
+        accountNumberLast4: "7734",
+        holdings: [
+          { __holdingId: "t:AAPL#0", ticker: "AAPL", marketValue: 100_000 },
+          { __holdingId: "t:VTI#0", ticker: "VTI", marketValue: 101_900 },
+        ],
+      }),
+    ];
+    const standing = [
+      sourced(STANDING_ID, "Julia — Roth (rollover)", 190_000, JUNE, {
+        custodian: "Fidelity",
+        accountNumberLast4: "7734",
+        match: { kind: "exact", existingId: "acct-1" },
+        holdings: [{ __holdingId: "t:AAPL#0", ticker: "AAPL", marketValue: 190_000 }],
+      }),
+    ];
+
+    const { rows, holdingsOverrides } = rebaseOntoFreshMerge(fresh, standing);
+
+    // Re-attachment itself is pinned by the sibling test above; this asserts
+    // the holdings override rides along with it, under the STANDING id.
+    expect(rows[0].__rowId).toBe(STANDING_ID);
+    expect(holdingsOverrides).toEqual([
+      {
+        __rowId: STANDING_ID,
+        name: "Julia — Roth (rollover)",
+        standingCount: 1,
+        freshCount: 2,
+        standingSum: 190_000,
+        freshSum: 201_900,
+      },
+    ]);
+  });
+
+  /**
+   * R36. The brief's identity comparison keyed a `Set` on `__holdingId`
+   * alone — but the field is OPTIONAL (`ExtractedHolding.__holdingId`), and
+   * every extraction from before this branch carries none. Every id-less
+   * position then collapses into the SAME `undefined` Set entry, so a
+   * one-position standing row and a five-position fresh row both reduce to
+   * `Set([undefined])` and compare as identical — the override this task
+   * exists to add would never fire on today's payloads.
+   *
+   * Mutation this catches: keying the comparison on `__holdingId` alone
+   * (via a `Set`) instead of falling back to `ticker`/`name`. Both sides of
+   * this fixture carry no `__holdingId` at all.
+   */
+  it("reports a holdings override when neither side's positions carry a __holdingId", () => {
+    const standing = [
+      {
+        __rowId: "account:1234#0",
+        name: "Schwab",
+        value: 100,
+        holdings: [{ ticker: "AAPL", marketValue: 100 }],
+      } as Row,
+    ];
+    const fresh = [
+      {
+        __rowId: "account:1234#0",
+        name: "Schwab",
+        value: 100,
+        holdings: [
+          { ticker: "AAPL", marketValue: 100 },
+          { ticker: "VTI", marketValue: 400 },
+        ],
+      } as Row,
+    ];
+
+    const { holdingsOverrides } = rebaseOntoFreshMerge(fresh, standing);
+
+    expect(holdingsOverrides).toEqual([
+      { __rowId: "account:1234#0", name: "Schwab", standingCount: 1, freshCount: 2, standingSum: 100, freshSum: 500 },
+    ]);
+  });
 });
 
 /**
