@@ -54,7 +54,14 @@ describe("mergeAcrossFiles — __rowId", () => {
     // only the key's contents changed, so this is a re-baseline, not a
     // regression. `__rowId` does not exist on `main`, so no persisted
     // `committedRowIds` list can be orphaned by the change.
-    expect(r.payload.accounts[0].__rowId).toBe("account:1234#0");
+    // Final review #2, C-1 re-baseline: the keyed ordinal is now the entry's
+    // own `(sourceFileId, indexWithinFile)` coordinate, not its rank in the
+    // bucket — a rank is a function of bucket MEMBERSHIP, and adding a file
+    // changes membership. Every id below is DERIVED from that rule, not
+    // copied from a run. `__rowId` does not exist on `main`, so no persisted
+    // `committedRowIds` list can be orphaned by the change.
+    // One entry, members (f1,0) and (f2,0); minimum (f1,0).
+    expect(r.payload.accounts[0].__rowId).toBe("account:1234#f1:0");
   });
 
   // C6 test 3: `computeKey` returns null for accounts with no
@@ -125,6 +132,85 @@ describe("mergeAcrossFiles — __rowId", () => {
     expect(idsFrom(before, "Savings")).toEqual([`account:null:${EXISTING_FILE}:1:Savings`]);
   });
 
+  /**
+   * Final review #2, C-1 / Ruling 148 — the KEYED-branch analogue of the
+   * null-key test directly above, and the one the suite was missing.
+   *
+   * The null-key test proves "adding a file whose id sorts BEFORE an existing
+   * one does not move that file's row ids" for the `:null:` fallback only.
+   * The keyed branch is where the ordinal is actually load-bearing (see the
+   * `#n` derivation in `merge-across-files.ts`), and it had no equivalent —
+   * so a keyed id COULD move, and did.
+   *
+   * `extract/gate.test.ts`'s "THE test that matters for 'upload another
+   * statement'" could not see it either: every row in that fixture has a
+   * DISTINCT last-4, so every bucket is a singleton, `#n` is permanently 0,
+   * and the ordinal can never move. The shape below is the one that bites —
+   * TWO entries in ONE bucket, which since Ruling 120/Task 12 needs only two
+   * accounts sharing four masked digits at different institutions.
+   *
+   * Measured consequence when the ordinal was the bucket RANK: the existing
+   * Fidelity row's id was recycled onto the newly-arrived Schwab row, and
+   * `rebaseOntoFreshMerge` then overwrote Schwab's row with the advisor's
+   * standing Fidelity row — one real account silently gone, the other
+   * duplicated, $403,800 on screen against a truth of $289,900.
+   *
+   * ASSERTS IDENTITY (name + value + id), never just the count: a bucket that
+   * renumbers keeps exactly the same SET of ids, so a set- or
+   * length-assertion stays green through the whole failure.
+   *
+   * Mutation this catches: minting the keyed ordinal from the entry's rank in
+   * its bucket (`${label}:${key}#${n}`) instead of from its own stable
+   * coordinate — the Fidelity row's id moves from its own coordinate to `#1`
+   * and the added Schwab row takes `#0`.
+   */
+  it("keeps a KEYED row's __rowId when a file whose id sorts BEFORE it is added", () => {
+    // Real-shaped ids: the added one sorts bytewise ahead of the existing one.
+    const EXISTING_FILE = "9c3f1a02-4f7b-4c0e-9a11-2d5b8e7f6a31";
+    const ADDED_FILE = "0b7e4d19-8a2c-4f31-b6d0-1e9c3a5f2b84";
+
+    // Same last-4, different custodians — `isSameEntity` holds them apart, so
+    // ONE bucket holds TWO entries. This is the only shape where `#n` decides
+    // anything at all.
+    const existingFile = () =>
+      er("fidelity-june.pdf", {
+        accounts: [{ name: "Fidelity Roth IRA", custodian: "Fidelity", accountNumberLast4: "7734", owner: "client", value: 201_900, category: "retirement" }],
+      });
+    const addedFile = () =>
+      er("schwab-sept.pdf", {
+        accounts: [{ name: "Schwab Brokerage", custodian: "Schwab", accountNumberLast4: "7734", owner: "client", value: 88_000, category: "taxable" }],
+      });
+
+    const before = mergeAcrossFiles({ [EXISTING_FILE]: existingFile() });
+    // Written in the adversarial order the jsonb round-trip actually returns:
+    // the added file's UUID sorts first.
+    const after = mergeAcrossFiles({
+      [ADDED_FILE]: addedFile(),
+      [EXISTING_FILE]: existingFile(),
+    });
+
+    const identify = (r: ReturnType<typeof mergeAcrossFiles>) =>
+      new Map(r.payload.accounts.map((a) => [a.name, { value: a.value, rowId: a.__rowId }]));
+
+    const beforeRows = identify(before);
+    const afterRows = identify(after);
+
+    // The row that was already on the import keeps its whole identity.
+    expect(afterRows.get("Fidelity Roth IRA")).toEqual(beforeRows.get("Fidelity Roth IRA"));
+    // ...and the newly-arrived account has an id of its OWN, not the one the
+    // Fidelity row was already answering to.
+    expect(afterRows.get("Schwab Brokerage")?.value).toBe(88_000);
+    expect(afterRows.get("Schwab Brokerage")?.rowId).not.toBe(
+      beforeRows.get("Fidelity Roth IRA")?.rowId,
+    );
+
+    // Pin the SHAPE, not only the stability: the keyed id must carry the
+    // entry's own source coordinate, so a refactor cannot drift back to a
+    // bucket rank and still satisfy the equality above.
+    expect(beforeRows.get("Fidelity Roth IRA")?.rowId).toBe(`account:7734#${EXISTING_FILE}:0`);
+    expect(afterRows.get("Schwab Brokerage")?.rowId).toBe(`account:7734#${ADDED_FILE}:0`);
+  });
+
   it("gives two genuinely different accounts distinct __rowIds", () => {
     const r = mergeAcrossFiles({
       f1: er("a.pdf", { accounts: [{ name: "401k", custodian: "Fidelity", accountNumberLast4: "1111", value: 1, category: "retirement" }] }),
@@ -133,9 +219,10 @@ describe("mergeAcrossFiles — __rowId", () => {
     // The last-4 alone since Ruling 120 + Task 12 — the custodian and the
     // owner guess both moved into `isSameEntity`. Two different last-4s
     // still mint two different ids.
+    // Two singleton buckets; each entry's minimum is its own only row.
     expect(r.payload.accounts.map((a) => a.__rowId)).toEqual([
-      "account:1111#0",
-      "account:2222#0",
+      "account:1111#f1:0",
+      "account:2222#f2:0",
     ]);
   });
 
@@ -157,9 +244,12 @@ describe("mergeAcrossFiles — __rowId", () => {
       f1: er("a.pdf", { accounts: [{ name: "Brokerage", custodian: "Fidelity", accountNumberLast4: "1234", owner: "client", value: 1 }] }),
       f2: er("b.pdf", { accounts: [{ name: "Brokerage", custodian: "Schwab", accountNumberLast4: "1234", owner: "client", value: 2 }] }),
     });
+    // ONE bucket, TWO entries — and this is exactly where C-1 lived. The
+    // ordinal is each entry's own coordinate, so neither id can be moved by
+    // the other entry arriving, leaving, or sorting first.
     expect(r.payload.accounts.map((a) => a.__rowId)).toEqual([
-      "account:1234#0",
-      "account:1234#1",
+      "account:1234#f1:0",
+      "account:1234#f2:0",
     ]);
   });
 
@@ -209,7 +299,7 @@ describe("mergeAcrossFiles — __rowId", () => {
     // ordinal is now unconditional, so the first entry also carries `#0`.
     // These ids have never shipped (no consumer exists before Task 7), so
     // this is a re-baseline, not a regression.
-    expect(ids).toEqual(["liability:mortgage#0", "liability:mortgage#1"]);
+    expect(ids).toEqual(["liability:mortgage#f1:0", "liability:mortgage#f2:0"]);
   });
 
   // Round 2 review: the round-1 fix (`bucket?.length ? \`${key}#${n}\` :
@@ -233,7 +323,12 @@ describe("mergeAcrossFiles — __rowId", () => {
     expect(r.payload.liabilities).toHaveLength(3);
     const ids = r.payload.liabilities.map((l) => l.__rowId);
     expect(new Set(ids).size).toBe(3);
-    expect(ids).toEqual(["liability:card#1#0", "liability:card#0", "liability:card#1"]);
+    // Keys: "card#1" (f1) and "card" (f2, f3 — 1,000 vs 1,200 is >1% apart,
+    // so f3 lands as a SECOND entry). The appended suffix is `#<fileId>:<index>`
+    // and neither half can contain a `#`, so the LAST `#` is still the one the
+    // mint appended and the two "card" ids still cannot collide with the
+    // literal `#1` in the first key.
+    expect(ids).toEqual(["liability:card#1#f1:0", "liability:card#f2:0", "liability:card#f3:0"]);
   });
   /**
    * Ruling 130. `mergeAcrossFiles` reads its files via
@@ -286,12 +381,13 @@ describe("mergeAcrossFiles — __rowId", () => {
       expect(idsOf(forward).get("Schwab Brokerage")).toBe(idsOf(reverse).get("Schwab Brokerage"));
     });
 
-    // The common case — one entry in the bucket — must still mint `#0`. A
-    // renumber pass that mis-sorts or off-by-ones would show up here first.
-    it("still mints #0 for a single-entry bucket", () => {
+    // The common case — one entry in the bucket — must still mint the
+    // entry's own coordinate. A renumber pass that drops the rewrite, or
+    // reads the wrong end of the coordinate, shows up here first.
+    it("still mints the entry's own coordinate for a single-entry bucket", () => {
       const r = mergeAcrossFiles({ "file-a": fidelity() });
       expect(r.payload.accounts).toHaveLength(1);
-      expect(r.payload.accounts[0].__rowId).toBe("account:1234#0");
+      expect(r.payload.accounts[0].__rowId).toBe("account:1234#file-a:0");
     });
   });
 });

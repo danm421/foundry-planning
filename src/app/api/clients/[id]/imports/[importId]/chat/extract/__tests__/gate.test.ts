@@ -622,9 +622,11 @@ describe("chat extract route gates", () => {
     // The ids `mergeAcrossFiles` actually mints for those two rows. The
     // last-4 alone: Ruling 120 moved the custodian out of the accounts
     // dedupe key and Task 12 moved the extractor's owner guess out too — and
-    // the id is derived from that key.
-    const IRA_ROW_ID = "account:1234#0";
-    const DUP_ROW_ID = "account:9999#0";
+    // the id is derived from that key, plus (final review #2, C-1) the
+    // entry's own `(sourceFileId, indexWithinFile)` coordinate. Both rows are
+    // in file `f1`; the IRA is its row 0 and Dup its row 1.
+    const IRA_ROW_ID = "account:1234#f1:0";
+    const DUP_ROW_ID = "account:9999#f1:1";
 
     currentImportRow = {
       id: "i1",
@@ -746,8 +748,11 @@ describe("chat extract route gates", () => {
       promptVersion: "v",
     };
     // Last-4 alone since Task 12 took the extractor's owner guess out of the
-    // accounts dedupe key (Ruling 120 had already taken the custodian out).
-    const ROW_ID = "account:1234#0";
+    // accounts dedupe key (Ruling 120 had already taken the custodian out),
+    // plus the entry's own coordinate since final review #2's C-1. Both
+    // statements collapse into ONE entry whose minimum coordinate is file
+    // `f1`'s row 0.
+    const ROW_ID = "account:1234#f1:0";
 
     currentImportRow = {
       id: "i1",

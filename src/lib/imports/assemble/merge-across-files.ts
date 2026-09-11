@@ -551,12 +551,11 @@ function mergeSection<T extends { name: string }>(
     // ids force equal keys and equal ordinals — no escaping needed, and no
     // assumption about what characters extraction text can contain.
     //
-    // Re-review, Ruling 130: `n` is NOT this entry's arrival rank. It is its
-    // position in a DETERMINISTIC ordering of the bucket, assigned by the
-    // renumber pass below from each entry's minimum
-    // `(sourceFileId, indexWithinFile)` coordinate. The id minted here is
-    // provisional and always overwritten there — it is written at all only
-    // so the field is never momentarily undefined.
+    // Re-review, Ruling 130: the ordinal is NOT this entry's arrival rank.
+    // It is derived from the entry's minimum `(sourceFileId,
+    // indexWithinFile)` coordinate, assigned by the renumber pass below. The
+    // id minted here is provisional and always overwritten there — it is
+    // written at all only so the field is never momentarily undefined.
     //
     // The arrival rank had to go because this function's docstring forbids
     // anything minted here from depending on where a file falls in the
@@ -574,15 +573,40 @@ function mergeSection<T extends { name: string }>(
     // whose UUID sorts ahead still lands first in the bucket and takes `#0`.
     // The ordinal had to stop being an arrival rank at all.
     //
-    // The injectivity argument above is untouched: `n` is still a plain
-    // digit string, only its assignment rule changed.
+    // Final review #2, C-1: the ordinal is the entry's COORDINATE, not its
+    // RANK within the sorted bucket. Ruling 130 made the rank deterministic
+    // for a FIXED file set, which is all it claimed — but a rank is still a
+    // function of bucket MEMBERSHIP, and adding a file changes membership. A
+    // newly-uploaded file whose UUID sorts ahead of an existing entry pushed
+    // every entry behind it up by one, so an id that named account P came
+    // back naming account Q. `rebaseOntoFreshMerge` joins standing rows onto
+    // fresh ones by this id, so it then overwrote Q's row with P's content
+    // and emitted Q again as a second, uncommitted copy: one real account
+    // silently gone, another duplicated, $403,800 on screen against a truth
+    // of $289,900, and a caveat quoting a figure no statement reported.
     //
-    // RESIDUAL: adding a NEW file can still change `n` when its rows join a
-    // bucket ahead of the existing entries. Permutation-invariance over a
-    // FIXED file set is the invariant the docstring states and the one this
-    // restores; new-file stability is not achievable for a merged entry with
-    // any file-derived coordinate.
-    const rowId = `${label}:${key}#${bucket?.length ?? 0}`;
+    // `${fileId}:${index}` is the entry's own minimum coordinate, so it is a
+    // function of the entry ALONE. Nothing another entry does — joining the
+    // bucket, leaving it, arriving first — can move it.
+    //
+    // The injectivity argument above survives intact, on a slightly narrower
+    // premise. Two entries under one key always have DIFFERENT minima (their
+    // member rows are disjoint and every row's coordinate is unique), so the
+    // suffix separates them. And the suffix still contains no `#`, so the
+    // LAST `#` in the id is still the one this line appended and splitting
+    // there still recovers `key` exactly — the premise being that neither a
+    // `sourceFileId` (a database UUID) nor `indexWithinFile` (a counter) can
+    // contain one. That is a claim about SYSTEM-generated values, not about
+    // extraction text, and it is the same one the null-key branch above
+    // already makes when it interpolates `sourceFileId` into an id.
+    //
+    // RESIDUAL, narrowed but not closed: a MERGED entry's minimum moves when
+    // a lower-coordinate row from a newly-added file joins it, so its id
+    // changes and a standing row can find no counterpart at all. That loses
+    // the advisor's edit — it can no longer land it on the WRONG account,
+    // which is what C-1 was. The remaining half is guarded at the join
+    // itself, in `lib/statement-chat/rebase.ts` (Ruling 146).
+    const rowId = `${label}:${key}#${sortKey.fileId}:${sortKey.index}`;
     const entry: DedupeBucketEntry<T> = {
       index: target.length,
       content,
@@ -605,19 +629,24 @@ function mergeSection<T extends { name: string }>(
     }
   }
 
-  // Ruling 130. Assign every keyed `#n` from a deterministic ordering of its
-  // bucket rather than from the arrival rank the placement loop happened to
-  // hand out — see the derivation comment above for why an arrival rank
-  // cannot be an identity here.
+  // Ruling 130's renumber pass, kept (Ruling 140 forbids deleting it) and
+  // re-pointed at the entry's coordinate — see the derivation comment above.
   //
-  // A COPY is sorted: the warnings loop below iterates the same buckets and
-  // its output order must not shift.
+  // Still a PASS rather than a mint-and-forget, because `entry.sortKey` is
+  // the MINIMUM over the entry's members and the placement loop can lower it
+  // (`:519-527`) after the provisional id is written. Re-deriving every id
+  // here, once, after every merge has landed, is what makes the id a
+  // function of the finished entry rather than of whichever row created it.
+  //
+  // No sort any more: the id no longer depends on the entry's position in
+  // its bucket, so ordering the bucket to assign one would be theatre. The
+  // bucket's own iteration order is untouched, which is what the warnings
+  // loop below depends on.
   for (const [key, bucket] of buckets.entries()) {
-    const ordered = [...bucket].sort((a, b) => compareSortKeys(a.sortKey, b.sortKey));
-    ordered.forEach((entry, n) => {
-      entry.rowId = `${label}:${key}#${n}`;
+    for (const entry of bucket) {
+      entry.rowId = `${label}:${key}#${entry.sortKey.fileId}:${entry.sortKey.index}`;
       target[entry.index].__rowId = entry.rowId;
-    });
+    }
   }
 
   // One warning per bucket entry that actually collapsed — see the function

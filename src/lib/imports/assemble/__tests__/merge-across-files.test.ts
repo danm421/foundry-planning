@@ -519,7 +519,12 @@ describe("the extractor's owner guess is not a bucket key (Task 12)", () => {
     for (const r of [forward, reverse]) {
       expect(r.payload.accounts[0].owner).toBe("client");
       expect(r.payload.accounts[0].value).toBe(190_000);
-      expect(r.payload.accounts[0].__rowId).toBe("account:7734#0");
+      // Final review #2, C-1 re-baseline: the keyed ordinal is the entry's
+      // own minimum coordinate. Both files' rows collapse into ONE entry
+      // whose minimum is `file-a`'s row 0 — the same coordinate the tiebreak
+      // two lines up just picked the winner by, so the id and the survivor
+      // now agree by construction rather than by coincidence.
+      expect(r.payload.accounts[0].__rowId).toBe("account:7734#file-a:0");
     }
   });
 });
