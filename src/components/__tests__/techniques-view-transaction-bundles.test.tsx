@@ -14,13 +14,19 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import type { AssetTransactionRow } from "@/components/techniques-view";
+import type { AssetTransactionInitialData } from "@/components/forms/add-asset-transaction-form";
 
 // ---------------------------------------------------------------------------
 // Mocks — declared before any module imports
 // ---------------------------------------------------------------------------
 
+type DialogProps = {
+  bundleRecords?: { id: string; bundleId: string | null }[];
+  initialData?: AssetTransactionInitialData;
+};
+
 const { dialogProps } = vi.hoisted(() => ({
-  dialogProps: [] as Array<{ bundleRecords?: { id: string; bundleId: string | null }[] }>,
+  dialogProps: [] as DialogProps[],
 }));
 
 vi.mock("next/navigation", () => ({
@@ -45,7 +51,7 @@ vi.mock("@/components/help-tip", () => ({ HelpTip: () => null }));
 
 // The dialog under observation: records the props it was mounted with.
 vi.mock("@/components/forms/add-asset-transaction-form", () => ({
-  default: (props: { bundleRecords?: { id: string; bundleId: string | null }[] }) => {
+  default: (props: DialogProps) => {
     dialogProps.push(props);
     return null;
   },
@@ -96,6 +102,9 @@ function txn(over: Partial<AssetTransactionRow> & { id: string; name: string }):
     mortgageAmount: null,
     mortgageRate: null,
     mortgageTermMonths: null,
+    annualPropertyTax: null,
+    propertyTaxGrowthRate: null,
+    propertyTaxGrowthSource: null,
     ...over,
   };
 }
@@ -177,5 +186,24 @@ describe("TechniquesView — asset-transaction bundle wiring", () => {
     fireEvent.click(screen.getByText("+ Add Transaction"));
 
     expect(lastDialogProps().bundleRecords).toBeUndefined();
+  });
+
+  it("hands the dialog a purchase's property tax", () => {
+    renderWithRows([
+      txn({
+        id: "solo-buy", name: "Buy House", type: "buy",
+        accountId: null, assetName: "New House",
+        assetCategory: "real_estate", assetSubType: "primary_residence",
+        purchasePrice: "1500000",
+        annualPropertyTax: "16500",
+        propertyTaxGrowthRate: "0.0300",
+        propertyTaxGrowthSource: "custom",
+      }),
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: /^Edit/i }));
+    const initial = lastDialogProps().initialData;
+    expect(initial?.annualPropertyTax).toBe("16500");
+    expect(initial?.propertyTaxGrowthRate).toBe("0.0300");
+    expect(initial?.propertyTaxGrowthSource).toBe("custom");
   });
 });
