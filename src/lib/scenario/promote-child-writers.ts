@@ -30,6 +30,7 @@ import {
 import { replaceSalaryIncomes } from "@/lib/clients/salary-basis-incomes";
 import { coerceForTable } from "./promote-coerce";
 import type { PromoteTx, ChildWriterCtx } from "./promote-table-registry";
+import { isEstateFlowGiftDraft } from "./apply-gift-overlays";
 
 // ── Account children ───────────────────────────────────────────────────────
 
@@ -399,7 +400,9 @@ export async function writeWillChildren(
  * only `recipientEntityId`. The route's version cannot satisfy
  * `gifts_recipient_exactly_one` for a non-entity recipient, and the overlay this
  * mirrors carries the whole recipient — so copying the route literally would
- * promote a row the scenario never showed, or fail the whole promote.
+ * promote a row the scenario never showed, or fail the whole promote. Every
+ * OTHER column matches the route, `event_kind` and `valuation_discount`
+ * included; see the notes at the insert.
  */
 export async function writeGiftChildren(
   tx: PromoteTx,
@@ -407,6 +410,14 @@ export async function writeGiftChildren(
   raw: Record<string, unknown>,
   ctx: ChildWriterCtx,
 ): Promise<void> {
+  // A payload that is not a DRAFT at all is a legacy row-shaped change, written
+  // before the draft convention. It says nothing about the gift's children, so
+  // it must not clear them: doing that destroys the base gift's bundled
+  // liability row and never rebuilds it — F5's own defect, inverted. Checked
+  // BEFORE the delete; `kind !== "asset-once"` below is checked after, because
+  // a draft that stopped being an asset transfer really does drop its child.
+  if (!isEstateFlowGiftDraft(raw)) return;
+
   // Clear first — see the rewrite note above. Scoped to this client so the
   // delete can never reach another tenant's rows.
   await tx
@@ -455,7 +466,11 @@ export async function writeGiftChildren(
     // count against the parent's discount if that ever changed.
     parentGiftId: parentId,
     useCrummeyPowers: false,
-    eventKind: (raw.eventKind as typeof gifts.$inferInsert["eventKind"]) ?? "outright",
+    // eventKind is deliberately absent, exactly as in the gift route: the child
+    // is a debt transfer, not the parent's transfer-tax event, so copying a
+    // `clt_remainder_interest` parent onto it would label the mortgage row with
+    // a treatment it never has. The column defaults to `outright`, which is what
+    // the route's own child rows carry.
     notes: `Auto-bundled with asset transfer of account ${accountId}`,
   });
 }

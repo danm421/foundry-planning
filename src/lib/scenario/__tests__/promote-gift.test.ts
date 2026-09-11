@@ -692,4 +692,127 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     expect(row.amount).toBe("7500.00");
     expect(row.year).toBe(2032);
   });
+
+  it("leaves a base gift's bundled child alone when a ROW-SHAPED payload is promoted", async () => {
+    // The inverse of the bundled-child fix. A row-shaped payload (a change row
+    // written before the draft convention) says nothing about the gift's
+    // children, so clearing them on its behalf destroys the base gift's bundled
+    // liability transfer and never rebuilds it — the property keeps leaving the
+    // estate while its mortgage stays with the household, which is the exact
+    // defect the child writer exists to prevent.
+    const [mortgage] = await db
+      .insert(liabilities)
+      .values({
+        clientId: COOPER_CLIENT_ID,
+        scenarioId: baseScenarioId,
+        name: "promote-gift-test-mortgage",
+        balance: "400000",
+        startYear: 2020,
+        linkedPropertyId: accountId,
+      })
+      .returning();
+
+    try {
+      const [parent] = await db
+        .insert(gifts)
+        .values({
+          clientId: COOPER_CLIENT_ID,
+          year: 2030,
+          grantor: "client",
+          recipientEntityId: trustId,
+          accountId,
+          percent: "0.2500",
+        })
+        .returning();
+      const [child] = await db
+        .insert(gifts)
+        .values({
+          clientId: COOPER_CLIENT_ID,
+          year: 2030,
+          grantor: "client",
+          recipientEntityId: trustId,
+          liabilityId: mortgage.id,
+          percent: "0.2500",
+          parentGiftId: parent.id,
+          notes: `Auto-bundled with asset transfer of account ${accountId}`,
+        })
+        .returning();
+
+      // Row-shaped, i.e. NO `kind` — the shape `isEstateFlowGiftDraft` rejects.
+      await applyEntityAdd({
+        scenarioId,
+        firmId: COOPER_FIRM_ID,
+        targetKind: "gift",
+        entity: {
+          id: parent.id,
+          year: 2031,
+          grantor: "client",
+          recipientEntityId: trustId,
+          accountId,
+          percent: 0.25,
+        },
+      });
+
+      await promoteOverlay();
+
+      const rows = await promotedGifts();
+      // The parent still promoted (the year moved), and the child it never
+      // spoke about is untouched.
+      expect(rows.find((r) => r.id === parent.id)?.year).toBe(2031);
+      const survivor = rows.find((r) => r.id === child.id);
+      expect(survivor).toBeDefined();
+      expect(survivor!.liabilityId).toBe(mortgage.id);
+      expect(survivor!.parentGiftId).toBe(parent.id);
+    } finally {
+      await dropMortgage(mortgage.id);
+    }
+  });
+
+  it("leaves the bundled child's event kind at the column default, exactly as the gift route does", async () => {
+    // The child is a DEBT transfer, not the parent's transfer-tax event, so it
+    // must not inherit a `clt_remainder_interest` parent's treatment.
+    // `POST /gifts` omits the column on its own bundled child and lets the
+    // `outright` default stand; promotion has to land the same row.
+    const [mortgage] = await db
+      .insert(liabilities)
+      .values({
+        clientId: COOPER_CLIENT_ID,
+        scenarioId: baseScenarioId,
+        name: "promote-gift-test-mortgage",
+        balance: "400000",
+        startYear: 2020,
+        linkedPropertyId: accountId,
+      })
+      .returning();
+
+    try {
+      const giftId = randomUUID();
+      await applyEntityAdd({
+        scenarioId,
+        firmId: COOPER_FIRM_ID,
+        targetKind: "gift",
+        entity: {
+          id: giftId,
+          kind: "asset-once",
+          year: 2028,
+          accountId,
+          percent: 0.3,
+          grantor: "client",
+          recipient: { kind: "entity", id: trustId },
+          eventKind: "clt_remainder_interest",
+        },
+      });
+
+      await promoteOverlay();
+
+      const rows = await promotedGifts();
+      expect(rows).toHaveLength(2);
+      // The parent keeps its non-default kind (that rule is pinned elsewhere);
+      // only a non-default parent can make the child's value fail.
+      expect(rows.find((r) => r.id === giftId)?.eventKind).toBe("clt_remainder_interest");
+      expect(rows.find((r) => r.id !== giftId)?.eventKind).toBe("outright");
+    } finally {
+      await dropMortgage(mortgage.id);
+    }
+  });
 });
