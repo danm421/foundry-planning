@@ -348,6 +348,81 @@ describe("GiftDialog — gift writes follow the active scenario", () => {
     expect((fetchMock.mock.calls[1][1] as RequestInit).method).toBe("DELETE");
   });
 
+  // ── Funding / source-asset change: the replacement KEEPS the gift's id ────
+  // The other shape change. `savesInPlace` is false for it too, but unlike
+  // Frequency it does NOT move the row to another table: `gift-form.tsx` seeds
+  // the replacement draft with `editing.id`, so in a scenario the `add` lands
+  // on the very id a `remove` would target. These two tests pin the two halves
+  // of that split — a scenario must write the add ALONE, base mode must still
+  // create-then-delete.
+  it("a Funding change inside a scenario writes the add alone — never a `remove` on the id it just added", async () => {
+    const fetchMock = vi
+      .spyOn(global, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    const onSavedGift = vi.fn();
+
+    render(
+      <GiftDialog {...baseProps} editingGift={baseGift} onSavedGift={onSavedGift} />,
+    );
+    // Cash → Specific asset. The gift keeps its id, so a `remove` here would
+    // name the row the `add` just wrote — and `applyEntityRemove`'s gift branch
+    // DELETES the add before writing the marker, so the gift would vanish from
+    // the scenario while the dialog repainted it as saved.
+    fireEvent.click(screen.getByText("Specific asset"));
+    fireEvent.change(screen.getByTestId("account"), { target: { value: "a1" } });
+    fireEvent.click(screen.getByText("Save gift"));
+    await waitFor(() => expect(onSavedGift).toHaveBeenCalled());
+
+    expect(fetchMock.mock.calls).toHaveLength(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toBe("/api/clients/c1/scenarios/s1/changes");
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body.op).toBe("add");
+    expect(body.entity.id).toBe(BASE_GIFT_ID);
+    expect(body.entity.kind).toBe("asset-once");
+    expect(body.entity.accountId).toBe("a1");
+
+    // The assertion that matters: no `remove` on this gift, from anywhere.
+    for (const call of fetchMock.mock.calls) {
+      const parsed = JSON.parse(((call[1] as RequestInit).body as string) ?? "{}");
+      expect(parsed.op).not.toBe("remove");
+      expect((call[1] as RequestInit).method).not.toBe("DELETE");
+    }
+    // …and the gift is still in the list, under its own id.
+    expect(onSavedGift).toHaveBeenCalledWith(
+      expect.objectContaining({ id: BASE_GIFT_ID, accountId: "a1" }),
+    );
+  });
+
+  it("the same Funding change in base mode still creates the replacement then deletes the original", async () => {
+    searchParams = new URLSearchParams("");
+    const fetchMock = vi
+      .spyOn(global, "fetch")
+      .mockImplementation(async (_url, init) =>
+        (init as RequestInit | undefined)?.method === "DELETE"
+          ? new Response(null, { status: 204 })
+          : new Response(
+              JSON.stringify({ id: "g-new", year: 2026, grantor: "client", accountId: "a1", percent: "1" }),
+              { status: 201 },
+            ),
+      );
+
+    render(<GiftDialog {...baseProps} editingGift={baseGift} />);
+    fireEvent.click(screen.getByText("Specific asset"));
+    fireEvent.change(screen.getByTestId("account"), { target: { value: "a1" } });
+    fireEvent.click(screen.getByText("Save gift"));
+    await waitFor(() => expect(fetchMock.mock.calls).toHaveLength(2));
+
+    // Base mode re-creates under a NEW server-side id, so the original has to
+    // go — the gate added for the scenario half must not reach this arm.
+    expect(String(fetchMock.mock.calls[0][0])).toBe("/api/clients/c1/gifts");
+    expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe("POST");
+    expect(String(fetchMock.mock.calls[1][0])).toBe(
+      `/api/clients/c1/gifts/${BASE_GIFT_ID}`,
+    );
+    expect((fetchMock.mock.calls[1][1] as RequestInit).method).toBe("DELETE");
+  });
+
   it("keeps `valuationDiscount` last so the draft's JSON.stringify diff stays stable", async () => {
     const fetchMock = vi
       .spyOn(global, "fetch")

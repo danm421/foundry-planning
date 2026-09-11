@@ -128,11 +128,13 @@ export default function GiftDialog(props: GiftDialogProps) {
    *  - A stale one-time `gifts` row is OVERLAID — every scenario reads the one
    *    base row — so base mode deletes it and a scenario records a `remove`
    *    change, which strips it from the overlay while the base plan keeps it.
-   *    The replacement series now lands under its own `gift_series` id, so
-   *    nothing else strips the old row.
+   *
+   *  That `remove` is only ever right when the replacement landed SOMEWHERE
+   *  ELSE, which is why `replacement` is a parameter rather than a read of the
+   *  draft: see the gate below.
    *
    *  Neither refreshes: the save that called this already did. */
-  async function removeReplacedRow() {
+  async function removeReplacedRow(replacement: EstateFlowGift) {
     const staleGift = props.editingGift;
     const staleSeries = props.editingSeries;
     const failed = () =>
@@ -151,6 +153,29 @@ export default function GiftDialog(props: GiftDialogProps) {
       return;
     }
     if (!staleGift) return;
+    // Only a replacement that lands under a DIFFERENT id leaves the old row
+    // needing to be retired:
+    //
+    //  - base mode: always. The POST route mints a new server-side id, so the
+    //    original is a genuine second row and the DELETE is what removes it.
+    //  - a scenario: only when the replacement is a recurring series, which
+    //    gets a fresh `gift_series` id of its own. A one-time replacement
+    //    re-uses the gift's own id (`gift-form.tsx` seeds the draft from
+    //    `editing.id`), so the `remove` would name the row the `add` had just
+    //    written — and `applyEntityRemove`'s gift branch deletes the `add`
+    //    before writing the marker, so the gift the advisor just saved would
+    //    disappear from the scenario while the dialog repainted it as saved.
+    //    The overlay strips that id and re-materialises the new payload under
+    //    it, so the row replaces itself and needs no remove. (The strip is by
+    //    gift id alone — `apply-gift-overlays.ts` — so an auto-bundled
+    //    liability CHILD row is not swept with it; pre-existing, and not what
+    //    a `remove` on the PARENT id would have fixed either.) The list
+    //    callback still fires: the caller's `onSavedGift` upserts the
+    //    replacement back under the same id straight after.
+    if (writer.scenarioActive && replacement.kind !== "series") {
+      props.onRemovedGift(staleGift.id);
+      return;
+    }
     const res = await writer.submit(giftScenarioRemove(staleGift.id), {
       url: `/api/clients/${props.clientId}/gifts/${staleGift.id}`,
       method: "DELETE",
@@ -225,7 +250,7 @@ export default function GiftDialog(props: GiftDialogProps) {
         });
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
         const row = await res.json();
-        if (!inPlace) await removeReplacedRow();
+        if (!inPlace) await removeReplacedRow(draft);
         props.onSavedSeries({
           id: row.id,
           grantor: row.grantor,
@@ -269,14 +294,14 @@ export default function GiftDialog(props: GiftDialogProps) {
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
       if (writer.scenarioActive) {
-        if (!inPlace) await removeReplacedRow();
+        if (!inPlace) await removeReplacedRow(draft);
         // See the series branch — no gift row comes back from the changes writer.
         const overlayRow = giftDraftToRow(draft);
         if (overlayRow) props.onSavedGift(overlayRow);
         return;
       }
       const row = await res.json();
-      if (!inPlace) await removeReplacedRow();
+      if (!inPlace) await removeReplacedRow(draft);
       props.onSavedGift({
         id: row.id,
         year: row.year,
