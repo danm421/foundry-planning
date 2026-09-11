@@ -22,12 +22,18 @@ import { giftDraftToRow } from "@/lib/gifts/scenario-rows";
  * with an opaque DB error, and skipping it would lose an advisor's gift in
  * silence.
  *
- * No CURRENT writer can reach this branch: `gift_series` is scenario-
- * partitioned, so every surface writes a series straight to the series route in
- * both modes and none of them records it as a `gift` change. The throw stays as
- * a guard for LEGACY rows — a scenario written before that rule was applied can
- * still hold a series draft, and it must fail by name rather than by Postgres
- * error.
+ * It is NOT reachable from the gift forms any more: `gift_series` is scenario-
+ * partitioned, so every one of them writes a series straight to the series
+ * route in both modes and none records it as a `gift` change. Two producers
+ * remain, and both need the named failure rather than a Postgres one:
+ *
+ *  - the SOLVER's estate editor, whose gift dialog still offers Recurring and
+ *    emits a `gift-upsert` mutation that becomes a `gift` change
+ *    (mutations-to-scenario-changes.ts); a scenario saved that way cannot be
+ *    promoted, and never could — before this message it died on the NOT NULL
+ *    `year` column instead; and
+ *  - legacy rows, from scenarios written before the gift forms stopped
+ *    recording series as changes.
  */
 export function translateGiftDraftForPromote(
   raw: Record<string, unknown>,

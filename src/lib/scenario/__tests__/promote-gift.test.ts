@@ -405,13 +405,14 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
   });
 
   it("fails loudly, naming the gift, when a recurring series reaches gift promotion", async () => {
-    // No CURRENT surface writes a series as a `gift` change — `gift_series` is
-    // scenario-partitioned, so every one of them posts straight to the series
-    // route. This pins the LEGACY path: a scenario written before that rule
-    // can still hold a series draft, `gift_series` is not a TargetKind and the
-    // executor has no per-row table choice, so there is nowhere to put it.
-    // Inserting it into `gifts` would die on the NOT NULL `year` column with an
-    // opaque DB error, and dropping it would lose an advisor's gift in silence.
+    // None of the gift FORMS writes a series as a `gift` change any more —
+    // `gift_series` is scenario-partitioned, so they all post straight to the
+    // series route. Two producers remain: the solver's estate editor (whose
+    // gift dialog still offers Recurring) and legacy rows. `gift_series` is not
+    // a TargetKind and the executor has no per-row table choice, so there is
+    // nowhere to put either. Inserting into `gifts` would die on the NOT NULL
+    // `year` column with an opaque DB error, and dropping it would lose an
+    // advisor's gift in silence.
     const seriesId = randomUUID();
     await applyEntityAdd({
       scenarioId,
