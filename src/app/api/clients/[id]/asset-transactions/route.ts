@@ -18,6 +18,31 @@ import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 // Zod schemas
 // ---------------------------------------------------------------------------
 
+/** Shared by both schemas' superRefine: the DB CHECK
+ *  (`asset_transactions_buy_only_property_tax_check`) rejects all three
+ *  property-tax fields on a sell, so this turns that into a 400 instead of a
+ *  raw Postgres error. */
+function checkNoPropertyTaxOnSale(
+  val: {
+    annualPropertyTax?: number | null;
+    propertyTaxGrowthRate?: number | null;
+    propertyTaxGrowthSource?: string | null;
+  },
+  ctx: z.RefinementCtx,
+) {
+  if (
+    val.annualPropertyTax != null ||
+    val.propertyTaxGrowthRate != null ||
+    val.propertyTaxGrowthSource != null
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Property tax applies to a purchase, not a sale",
+      path: ["annualPropertyTax"],
+    });
+  }
+}
+
 export const postBodySchema = z
   .object({
     name: z.string().min(1),
@@ -110,17 +135,7 @@ export const postBodySchema = z
             "A sell must have exactly one source: accountId, purchaseTransactionId, or businessAccountId.",
         });
       }
-      if (
-        val.annualPropertyTax != null ||
-        val.propertyTaxGrowthRate != null ||
-        val.propertyTaxGrowthSource != null
-      ) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "Property tax applies to a purchase, not a sale",
-          path: ["annualPropertyTax"],
-        });
-      }
+      checkNoPropertyTaxOnSale(val, ctx);
     }
     if (val.type === "buy") {
       if (
@@ -235,17 +250,7 @@ export const putBodySchema = z
             "A sell must have exactly one source: accountId, purchaseTransactionId, or businessAccountId.",
         });
       }
-      if (
-        val.annualPropertyTax != null ||
-        val.propertyTaxGrowthRate != null ||
-        val.propertyTaxGrowthSource != null
-      ) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "Property tax applies to a purchase, not a sale",
-          path: ["annualPropertyTax"],
-        });
-      }
+      checkNoPropertyTaxOnSale(val, ctx);
     }
     if (val.type === "buy") {
       if (

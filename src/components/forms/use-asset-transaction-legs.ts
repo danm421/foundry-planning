@@ -53,6 +53,10 @@ function sellLegToBody(leg: SellLegDraft, year: number, isRealEstate: boolean): 
 function buyLegToBody(leg: BuyLegDraft, year: number): Record<string, unknown> {
   const funding = leg.fundingAccountId === "__from_sale_proceeds__"
     ? null : (optStr(leg.fundingAccountId) || null);
+  // Real-estate only; the API rejects these on a sell and they are
+  // meaningless on any other category. Computed once so the amount and its
+  // presence check (for the growth source) don't re-derive it.
+  const propertyTax = leg.assetCategory === "real_estate" ? optStr(leg.annualPropertyTax) : null;
   return {
     type: "buy", name: leg.name, year,
     assetName: optStr(leg.assetName),
@@ -65,15 +69,10 @@ function buyLegToBody(leg: BuyLegDraft, year: number): Record<string, unknown> {
     mortgageAmount: leg.showMortgage ? optStr(leg.mortgageAmount) : null,
     mortgageRate: leg.showMortgage ? optDec(leg.mortgageRate) : null,
     mortgageTermMonths: leg.showMortgage && leg.mortgageTermMonths ? Number(leg.mortgageTermMonths) : null,
-    // Real-estate only; the API rejects these on a sell and they are
-    // meaningless on any other category.
-    annualPropertyTax:
-      leg.assetCategory === "real_estate" ? optStr(leg.annualPropertyTax) : null,
+    annualPropertyTax: propertyTax,
     propertyTaxGrowthRate:
       leg.assetCategory === "real_estate" ? optDec(leg.propertyTaxGrowthRate) : null,
-    propertyTaxGrowthSource:
-      leg.assetCategory === "real_estate" && optStr(leg.annualPropertyTax) != null
-        ? leg.propertyTaxGrowthSource : null,
+    propertyTaxGrowthSource: propertyTax != null ? leg.propertyTaxGrowthSource : null,
   };
 }
 
