@@ -13,6 +13,7 @@ import type {
 } from "@/components/family-view";
 import type { EstateFlowGift, GiftRecipientRef } from "@/lib/estate/estate-flow-gifts";
 import { discountAppliesToDraft } from "@/lib/gifts/discount-applicability";
+import { familyMemberRoleLabel } from "@/lib/owner-labels";
 
 export interface GiftDialogProps {
   clientId: string;
@@ -224,7 +225,7 @@ export default function GiftDialog(props: GiftDialogProps) {
             id: m.id,
             firstName: m.firstName,
             lastName: m.lastName,
-            roleLabel: m.role,
+            roleLabel: familyMemberRoleLabel(m.role),
           })),
           externals: props.externals.map((x) => ({ id: x.id, name: x.name, kindLabel: x.kind })),
         }}

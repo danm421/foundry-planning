@@ -184,8 +184,9 @@ export default function EstateFlowRemainderDialog({
     >
       <p className="mb-4 text-[12px] text-ink-3">
         The remainder clause routes everything a will&apos;s specific bequests
-        leave behind. The primary tier governs when the spouse survives the
-        grantor; the contingent tier governs when the spouse predeceased.
+        leave behind. The primary tier governs when the Co-client survives
+        the grantor; the contingent tier governs when the Co-client
+        predeceased.
       </p>
 
       <section className="mb-6 rounded-md border border-gray-800 bg-gray-900/30 p-4">

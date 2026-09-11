@@ -119,7 +119,7 @@ export default function SendClientForm({
               onClick={() => setRecipientEmail(spouseEmail)}
               className="shrink-0 text-[12px] text-accent hover:underline"
             >
-              Use spouse email
+              Use co-client email
             </button>
           )}
           {spouseEmail && spouseEmail === recipientEmail && primaryEmail && primaryEmail !== spouseEmail && (

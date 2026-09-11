@@ -318,7 +318,7 @@ export default function TransferAssetForm({
               onChange={() => setGrantor("spouse")}
               className="accent-accent"
             />
-            Spouse
+            Co-client
           </label>
         </div>
       </div>

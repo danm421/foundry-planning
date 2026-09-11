@@ -146,7 +146,7 @@ describe("SendClientForm", () => {
 
   it("shows the co-client email toggle when spouseEmail is present", () => {
     render(<SendClientForm {...defaultProps} spouseEmail="spouse@example.com" />);
-    expect(screen.getByRole("button", { name: /use spouse email/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /use co-client email/i })).toBeInTheDocument();
   });
 
   it("switches to co-client email on toggle click", () => {
@@ -157,7 +157,7 @@ describe("SendClientForm", () => {
         spouseEmail="spouse@example.com"
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /use spouse email/i }));
+    fireEvent.click(screen.getByRole("button", { name: /use co-client email/i }));
     expect(screen.getByLabelText(/recipient email/i)).toHaveValue("spouse@example.com");
   });
 
@@ -180,7 +180,7 @@ describe("SendClientForm", () => {
         spouseName="Bob Smith"
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /use spouse email/i }));
+    fireEvent.click(screen.getByRole("button", { name: /use co-client email/i }));
     fireEvent.click(screen.getByRole("button", { name: /send blank form/i }));
 
     await waitFor(() => {

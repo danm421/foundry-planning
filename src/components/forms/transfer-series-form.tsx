@@ -206,7 +206,7 @@ export default function TransferSeriesForm({
               onChange={() => setGrantor("spouse")}
               className="accent-accent"
             />
-            Spouse
+            Co-client
           </label>
         </div>
       </div>

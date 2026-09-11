@@ -53,3 +53,10 @@ export function resolveOwnerLabel(args: {
   }
   return individualOwnerLabel(args.owner, args.names);
 }
+
+/** The parenthetical role shown beside a household member's name in recipient
+ *  dropdowns — `Mary Singer (co-client)`. The `family_member_role` enum stays
+ *  unchanged in the database; only the household role is renamed for display. */
+export function familyMemberRoleLabel(role: string | undefined): string | undefined {
+  return role === "spouse" ? "co-client" : role;
+}
