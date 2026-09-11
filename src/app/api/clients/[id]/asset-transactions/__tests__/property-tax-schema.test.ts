@@ -40,6 +40,21 @@ describe("asset-transaction property tax validation", () => {
     expect(postBodySchema.safeParse({ ...buy, annualPropertyTax: -1 }).success).toBe(false);
   });
 
+  // -1 is the one value .min(-1) admitted that the engine cannot survive: the
+  // deflation step divides by (1 + rate)^n = 0, giving Infinity, and the
+  // re-inflation multiplies that by 0, giving NaN — which then propagates
+  // through the whole cash flow. The percent input accepts a leading minus, so
+  // it is reachable.
+  it("rejects a growth rate of exactly -1 but keeps the rest of the range", () => {
+    expect(postBodySchema.safeParse({ ...buy, propertyTaxGrowthRate: -1 }).success).toBe(false);
+    expect(postBodySchema.safeParse({ ...buy, propertyTaxGrowthRate: -0.99 }).success).toBe(true);
+    expect(postBodySchema.safeParse({ ...buy, propertyTaxGrowthRate: 1 }).success).toBe(true);
+    const transactionId = "22222222-2222-4222-8222-222222222222";
+    expect(
+      putBodySchema.safeParse({ ...buy, transactionId, propertyTaxGrowthRate: -1 }).success,
+    ).toBe(false);
+  });
+
   it("rejects an unknown growth source", () => {
     expect(postBodySchema.safeParse({ ...buy, propertyTaxGrowthSource: "cpi" }).success).toBe(false);
   });

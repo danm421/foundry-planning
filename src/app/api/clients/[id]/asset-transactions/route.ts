@@ -20,7 +20,7 @@ import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 /** Shared by both schemas' superRefine: the DB CHECK
  *  (`asset_transactions_buy_only_property_tax_check`) rejects all three
- *  property-tax fields on a sell, so this turns that into a 400 instead of a
+ *  property-tax fields on a sell, so this turns that into a 422 instead of a
  *  raw Postgres error. */
 function checkNoPropertyTaxOnSale(
   val: {
@@ -102,9 +102,9 @@ export const postBodySchema = z
     mortgageRate: z.number().nullable().optional(),
     mortgageTermMonths: z.number().int().nullable().optional(),
     // Buy-only; the DB CHECK rejects them on a sell, so the superRefine below
-    // turns that into a 400 rather than a raw Postgres error.
+    // turns that into a 422 rather than a raw Postgres error.
     annualPropertyTax: z.number().nonnegative().nullable().optional(),
-    propertyTaxGrowthRate: z.number().min(-1).max(1).nullable().optional(),
+    propertyTaxGrowthRate: z.number().gt(-1).max(1).nullable().optional(),
     propertyTaxGrowthSource: z.enum(["custom", "inflation"]).nullable().optional(),
     // Resell fields
     purchaseTransactionId: z.string().uuid().nullable().optional(),
@@ -216,9 +216,9 @@ export const putBodySchema = z
     mortgageRate: z.number().nullable().optional(),
     mortgageTermMonths: z.number().int().nullable().optional(),
     // Buy-only; the DB CHECK rejects them on a sell, so the superRefine below
-    // turns that into a 400 rather than a raw Postgres error.
+    // turns that into a 422 rather than a raw Postgres error.
     annualPropertyTax: z.number().nonnegative().nullable().optional(),
-    propertyTaxGrowthRate: z.number().min(-1).max(1).nullable().optional(),
+    propertyTaxGrowthRate: z.number().gt(-1).max(1).nullable().optional(),
     propertyTaxGrowthSource: z.enum(["custom", "inflation"]).nullable().optional(),
     // Resell fields
     purchaseTransactionId: z.string().uuid().nullable().optional(),
