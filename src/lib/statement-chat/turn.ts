@@ -7,9 +7,12 @@ import {
   editRow,
   mergeRows,
   dropRow,
+  editHolding,
+  dropHolding,
   explain,
   rereadDocument,
   EDITABLE_ACCOUNT_FIELDS,
+  EDITABLE_HOLDING_FIELDS,
   type ToolResult,
   type RereadModel,
 } from "./tools";
@@ -89,6 +92,39 @@ export const TOOL_DEFS = [
           reason: { type: "string", description: "Why this row should not be imported." },
         },
         required: ["rowId", "reason"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "edit_holding",
+      description: "Change one field on one position inside an account row.",
+      parameters: {
+        type: "object",
+        properties: {
+          rowId: { type: "string", description: "The account row's __rowId." },
+          holdingId: { type: "string", description: "The position's __holdingId, unique within that row." },
+          field: { type: "string", enum: [...EDITABLE_HOLDING_FIELDS] },
+          value: { description: "The corrected value. Text for ticker and name; a number otherwise." },
+        },
+        required: ["rowId", "holdingId", "field", "value"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "drop_holding",
+      description:
+        "Remove one position from an account so it is not saved. The position stays visible as dropped and can be restored.",
+      parameters: {
+        type: "object",
+        properties: {
+          rowId: { type: "string", description: "The account row's __rowId." },
+          holdingId: { type: "string", description: "The position's __holdingId." },
+        },
+        required: ["rowId", "holdingId"],
       },
     },
   },
@@ -213,9 +249,10 @@ function systemPrompt(
     "You are a statement-import assistant helping a financial advisor review account rows extracted",
     "from client statements. You can call at most " + MAX_TOOL_CALLS_PER_TURN + " tools per turn.",
     "Use edit_row to correct a single field, merge_rows to combine two rows that are the same account,",
-    "drop_row to exclude a row (always with a reason), explain to cite where a row's numbers came",
-    "from, and reread_document to look at the original file again for something the extracted row",
-    "does not answer — naming the document with the exact source name quoted on its row.",
+    "drop_row to exclude a row (always with a reason), edit_holding to correct a single field on one",
+    "position inside a row, drop_holding to remove one position from a row, explain to cite where a",
+    "row's numbers came from, and reread_document to look at the original file again for something the",
+    "extracted row does not answer — naming the document with the exact source name quoted on its row.",
     "reread_document only PROPOSES a correction — never say you fixed something from",
     "it; say you found a possible correction and it is awaiting the advisor's approval.",
     "",
@@ -252,8 +289,9 @@ interface DispatchContext {
   importId: string;
   fileResults: Record<string, ExtractionResult>;
   /** Final review, C3: the rows already committed into the client's plan.
-   *  Only the three MUTATING tools consult it — `explain` and
-   *  `reread_document` write nothing and stay available on any row. */
+   *  Only the five MUTATING tools (edit_row/merge_rows/drop_row/
+   *  edit_holding/drop_holding) consult it — `explain` and `reread_document`
+   *  write nothing and stay available on any row. */
   committedRowIds: ReadonlySet<string>;
 }
 
@@ -270,6 +308,10 @@ async function dispatchTool(
       return mergeRows(payload, args as never, ctx.committedRowIds);
     case "drop_row":
       return dropRow(payload, args as never, ctx.committedRowIds);
+    case "edit_holding":
+      return editHolding(payload, args as never, ctx.committedRowIds);
+    case "drop_holding":
+      return dropHolding(payload, args as never, ctx.committedRowIds);
     case "explain":
       return explain(payload, args as never, ctx.fileNames);
     case "reread_document":
@@ -320,10 +362,11 @@ export interface RunTurnResult {
    *  reference it was handed), so a turn that only proposes a correction
    *  returns it byte-identical to what it started with. */
   payload: PersistedImportPayload;
-  /** True only when a MUTATING tool (edit_row/merge_rows/drop_row) actually
-   *  ran this turn — `explain`/`reread_document` never flip this, and
-   *  neither does a turn that called no tool at all. The route uses this to
-   *  decide whether to touch `payloadJson.payload` at all (Important 1). */
+  /** True only when a MUTATING tool (edit_row/merge_rows/drop_row/
+   *  edit_holding/drop_holding) actually ran this turn — `explain`/
+   *  `reread_document` never flip this, and neither does a turn that called
+   *  no tool at all. The route uses this to decide whether to touch
+   *  `payloadJson.payload` at all (Important 1). */
   payloadMutated: boolean;
   /** The delta to append to the PRIOR (freshly re-read) transcript: the
    *  user's message, one entry per tool call, and the assistant's reply. */

@@ -4,6 +4,11 @@ import { clientImportFiles } from "@/db/schema";
 import { downloadImportFile } from "@/lib/imports/blob";
 import { stampAccountHoldingIds } from "@/lib/imports/assemble/merge-across-files";
 import { extractDocument } from "@/lib/extraction/extract";
+import {
+  EDITABLE_HOLDING_FIELDS,
+  isEditableHoldingField,
+  isValidHoldingValue,
+} from "@/lib/statement-chat/holding-fields";
 import type { Annotated, ChatState, PersistedImportPayload } from "@/lib/imports/types";
 import type {
   AccountCategory,
@@ -194,10 +199,14 @@ function accountsOf(payload: PersistedImportPayload): AccountRow[] {
   return payload.accounts ?? [];
 }
 
-/** How many row ids an unknown-row error lists before it summarises the
- *  rest. Long enough to cover any realistic statement import, short enough
- *  that a pathological one can't flood the turn's context. */
-const MAX_LISTED_ROW_IDS = 20;
+/** How many ids an unknown-row (`findRowIndex`) or unknown-holding
+ *  (`findHoldingIndex`) error lists before it summarises the rest. Long
+ *  enough to cover any realistic statement import, short enough that a
+ *  pathological one can't flood the turn's context — holdings are the more
+ *  numerous of the two lists (the production failure behind this whole plan
+ *  was ~63 positions in one account), so both share this one cap rather than
+ *  holdings getting an uncapped join. */
+const MAX_LISTED_IDS = 20;
 
 /**
  * Final review, I5: the error LISTS the valid row ids.
@@ -218,11 +227,9 @@ function findRowIndex(accounts: AccountRow[], rowId: string): number {
   if (known.length === 0) {
     throw new Error(`Unknown row id "${rowId}". This import has no rows to work on.`);
   }
-  const listed = known.slice(0, MAX_LISTED_ROW_IDS).join(", ");
+  const listed = known.slice(0, MAX_LISTED_IDS).join(", ");
   const more =
-    known.length > MAX_LISTED_ROW_IDS
-      ? `, and ${known.length - MAX_LISTED_ROW_IDS} more`
-      : "";
+    known.length > MAX_LISTED_IDS ? `, and ${known.length - MAX_LISTED_IDS} more` : "";
   throw new Error(`Unknown row id "${rowId}". The rows in this import are: ${listed}${more}.`);
 }
 
@@ -485,6 +492,114 @@ export function dropRow(
     payload: { ...payload, accounts: nextAccounts },
     summary: `Dropped "${dropped.name}" — ${args.reason}.`,
     excludedRows: [{ row: dropped, reason: args.reason }],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// edit_holding / drop_holding
+// ---------------------------------------------------------------------------
+
+export interface EditHoldingArgs {
+  rowId: string;
+  holdingId: string;
+  field: string;
+  value: unknown;
+}
+
+export interface DropHoldingArgs {
+  rowId: string;
+  holdingId: string;
+}
+
+/**
+ * Locate one position, or throw naming the ids that DO exist — `findRowIndex`
+ * does the same for rows (I5), because a model told only "not found" retries
+ * with another guess and burns the turn's tool budget. Shares
+ * `MAX_LISTED_IDS` with `findRowIndex` rather than a second, uncapped list:
+ * holdings are the more numerous of the two (a real import had ~63 positions
+ * on one account), so this is the list most likely to need the cap.
+ */
+function findHoldingIndex(row: AccountRow, holdingId: string): number {
+  const holdings = row.holdings ?? [];
+  const idx = holdings.findIndex((h) => h.__holdingId === holdingId);
+  if (idx !== -1) return idx;
+
+  const known = holdings.map((h) => h.__holdingId).filter((id): id is string => Boolean(id));
+  if (known.length === 0) {
+    throw new Error(`No holding "${holdingId}" on row ${row.__rowId}. That row has no holdings.`);
+  }
+  const listed = known.slice(0, MAX_LISTED_IDS).join(", ");
+  const more = known.length > MAX_LISTED_IDS ? `, and ${known.length - MAX_LISTED_IDS} more` : "";
+  throw new Error(
+    `No holding "${holdingId}" on row ${row.__rowId}. Valid holding ids: ${listed}${more}.`,
+  );
+}
+
+/**
+ * Writes ONE field on ONE position inside ONE row. Mirrors `editRow`:
+ * `field` must be on the `EDITABLE_HOLDING_FIELDS` allowlist (`holding-
+ * fields.ts`) and `value` must additionally pass that field's own domain
+ * check — a numeric field that accepted a string would be stored as one and
+ * later concatenated (the defect this whole plan traces back to).
+ */
+export function editHolding(
+  payload: PersistedImportPayload,
+  args: EditHoldingArgs,
+  committedRowIds: CommittedRowIds,
+): ToolResult {
+  const accounts = accountsOf(payload);
+  const rowIdx = findRowIndex(accounts, args.rowId);
+  assertNotCommitted(accounts[rowIdx], committedRowIds);
+  if (!isEditableHoldingField(args.field)) {
+    throw new Error(
+      `Field "${args.field}" is not editable on a holding. Editable fields: ${EDITABLE_HOLDING_FIELDS.join(", ")}.`,
+    );
+  }
+  if (!isValidHoldingValue(args.field, args.value)) {
+    throw new Error(
+      `Value for "${args.field}" must be ${args.field === "ticker" || args.field === "name" ? "text" : "a number"}.`,
+    );
+  }
+  const row = accounts[rowIdx];
+  const hIdx = findHoldingIndex(row, args.holdingId);
+  const holdings = [...(row.holdings ?? [])];
+  holdings[hIdx] = { ...holdings[hIdx], [args.field]: args.value };
+  const nextAccounts = [...accounts];
+  nextAccounts[rowIdx] = { ...row, holdings };
+  return {
+    payload: { ...payload, accounts: nextAccounts },
+    summary: `Set ${args.field} to ${describeValue(args.value)} on ${
+      holdings[hIdx].ticker ?? holdings[hIdx].name ?? args.holdingId
+    } in "${row.name}".`,
+  };
+}
+
+/**
+ * Tombstones ONE position — sets `__dropped: true` and leaves it in the
+ * array (never removes it), so `livingHoldings` (the ONE reader of that
+ * flag) excludes it from anything that counts while the row keeps its
+ * original position count. Unlike `dropRow`, this returns no `excludedRows`:
+ * that delta exists for the row-level excluded list the advisor sees
+ * separately, and a dropped position isn't a row.
+ */
+export function dropHolding(
+  payload: PersistedImportPayload,
+  args: DropHoldingArgs,
+  committedRowIds: CommittedRowIds,
+): ToolResult {
+  const accounts = accountsOf(payload);
+  const rowIdx = findRowIndex(accounts, args.rowId);
+  assertNotCommitted(accounts[rowIdx], committedRowIds);
+  const row = accounts[rowIdx];
+  const hIdx = findHoldingIndex(row, args.holdingId);
+  const holdings = [...(row.holdings ?? [])];
+  const dropped = holdings[hIdx];
+  holdings[hIdx] = { ...dropped, __dropped: true };
+  const nextAccounts = [...accounts];
+  nextAccounts[rowIdx] = { ...row, holdings };
+  return {
+    payload: { ...payload, accounts: nextAccounts },
+    summary: `Dropped ${dropped.ticker ?? dropped.name ?? args.holdingId} from "${row.name}". It will not be saved with the account.`,
   };
 }
 

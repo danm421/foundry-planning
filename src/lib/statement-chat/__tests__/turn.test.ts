@@ -434,9 +434,53 @@ describe("runTurn", () => {
       "edit_row",
       "merge_rows",
       "drop_row",
+      "edit_holding",
+      "drop_holding",
       "reread_document",
       "explain",
     ]);
+  });
+
+  // Task 7: edit_holding/drop_holding get the model the same two powers the
+  // advisor already has on the review table. The schema half (what
+  // bindTools is handed) is already pinned by the test above — this pins
+  // that TOOL_DEFS carries both names AND that a real edit_holding tool call
+  // actually reaches the payload, not just that the def exists.
+  it("dispatches edit_holding to the payload", async () => {
+    expect(TOOL_DEFS.map((d) => d.function.name)).toEqual(
+      expect.arrayContaining(["edit_holding", "drop_holding"]),
+    );
+    const holdingsPayload = {
+      accounts: [
+        {
+          __rowId: "r1",
+          name: "Brokerage",
+          holdings: [{ __holdingId: "t:AAPL#0", ticker: "AAPL", shares: 10 }],
+        },
+      ],
+    } as unknown as PersistedImportPayload;
+    const model = modelReturning(
+      new AIMessage({
+        content: "",
+        tool_calls: [
+          {
+            id: "call_1",
+            name: "edit_holding",
+            args: { rowId: "r1", holdingId: "t:AAPL#0", field: "shares", value: 12 },
+          },
+        ],
+      }),
+      new AIMessage("Updated the share count."),
+    );
+    const result = await runTurn({
+      chat: emptyChat(),
+      importId: "i1",
+      payload: holdingsPayload,
+      fileResults,
+      message: "fix the AAPL share count to 12",
+      model,
+    });
+    expect(result.payload.accounts![0].holdings![0].shares).toBe(12);
   });
 
   // M1: an account NAME is model-extracted text from a client's document,

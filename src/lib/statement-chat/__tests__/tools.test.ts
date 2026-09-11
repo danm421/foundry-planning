@@ -49,6 +49,8 @@ import {
   editRow,
   mergeRows,
   dropRow,
+  editHolding,
+  dropHolding,
   explain,
   rereadDocument,
   EDITABLE_ACCOUNT_FIELDS,
@@ -953,5 +955,101 @@ describe("statement chat tools", () => {
     // with the importId condition, not merely "some query ran".
     expect(eqCalls).toContainEqual([clientImportFiles.importId, "i1"]);
     expect(eqCalls).toContainEqual([clientImportFiles.id, "f1"]);
+  });
+
+  // Task 7: the two holdings tools, mirroring editRow/dropRow but scoped to
+  // one position inside a row rather than the row itself. Local fixture —
+  // the outer `payload()` has no `holdings`, and widening it would touch
+  // every existing account-row test above.
+  describe("editHolding", () => {
+    const payload = () =>
+      ({
+        accounts: [
+          {
+            __rowId: "r1",
+            name: "Brokerage",
+            holdings: [{ __holdingId: "t:AAPL#0", ticker: "AAPL", shares: 10 }],
+          },
+        ],
+      }) as unknown as PersistedImportPayload;
+
+    it("writes one field on one position", () => {
+      const res = editHolding(
+        payload(),
+        { rowId: "r1", holdingId: "t:AAPL#0", field: "shares", value: 12 },
+        NONE_COMMITTED,
+      );
+      expect(res.payload.accounts![0].holdings![0].shares).toBe(12);
+    });
+
+    it("refuses a field outside the holdings allowlist", () => {
+      expect(() =>
+        editHolding(
+          payload(),
+          { rowId: "r1", holdingId: "t:AAPL#0", field: "__dropped", value: true },
+          NONE_COMMITTED,
+        ),
+      ).toThrow(/not editable/i);
+    });
+
+    it("refuses a string for a numeric field", () => {
+      expect(() =>
+        editHolding(
+          payload(),
+          { rowId: "r1", holdingId: "t:AAPL#0", field: "shares", value: "12" },
+          NONE_COMMITTED,
+        ),
+      ).toThrow(/must be/i);
+    });
+
+    it("names the valid holding ids when it cannot find one", () => {
+      expect(() =>
+        editHolding(
+          payload(),
+          { rowId: "r1", holdingId: "t:NOPE#0", field: "shares", value: 1 },
+          NONE_COMMITTED,
+        ),
+      ).toThrow(/t:AAPL#0/);
+    });
+
+    it("refuses to touch a position on a committed row", () => {
+      expect(() =>
+        editHolding(
+          payload(),
+          { rowId: "r1", holdingId: "t:AAPL#0", field: "shares", value: 12 },
+          new Set(["r1"]),
+        ),
+      ).toThrow(/committed/i);
+    });
+  });
+
+  describe("dropHolding", () => {
+    it("tombstones rather than removes", () => {
+      const res = dropHolding(
+        {
+          accounts: [
+            { __rowId: "r1", name: "B", holdings: [{ __holdingId: "t:AAPL#0", ticker: "AAPL" }] },
+          ],
+        } as unknown as PersistedImportPayload,
+        { rowId: "r1", holdingId: "t:AAPL#0" },
+        NONE_COMMITTED,
+      );
+      expect(res.payload.accounts![0].holdings).toHaveLength(1);
+      expect(res.payload.accounts![0].holdings![0].__dropped).toBe(true);
+    });
+
+    it("refuses a position on a committed row", () => {
+      expect(() =>
+        dropHolding(
+          {
+            accounts: [
+              { __rowId: "r1", name: "B", holdings: [{ __holdingId: "t:AAPL#0", ticker: "AAPL" }] },
+            ],
+          } as unknown as PersistedImportPayload,
+          { rowId: "r1", holdingId: "t:AAPL#0" },
+          new Set(["r1"]),
+        ),
+      ).toThrow(/committed/i);
+    });
   });
 });
