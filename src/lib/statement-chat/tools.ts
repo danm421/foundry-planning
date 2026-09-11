@@ -616,24 +616,63 @@ export interface ReadHoldingsArgs {
 }
 
 /**
- * R29: same guard as `describeHoldingLine` in `turn.ts` — `__holdingId` is
- * optional, and a payload persisted before this branch may carry a position
- * with none. Printing it unconditionally would render the literal string
- * "undefined" as an id in a tool RESULT the model reads next, inviting the
- * same unreachable `edit_holding`/`drop_holding` call the prompt's own
- * listing guards against.
+ * Fix round 1, R32: how many positions `readHoldings` lists before
+ * truncating with a truthful "…and N more" suffix.
+ *
+ * This is NOT the same budget as `HOLDINGS_PROMPT_BUDGET_CHARS`
+ * (`turn.ts`), and capping one does not cap the other. That block is
+ * rebuilt fresh every turn and thrown away with the rest of the system
+ * prompt — it never accumulates. This tool's `summary`, by contrast, is
+ * pushed onto `turnEntries`, PERSISTED to the chat transcript, and REPLAYED
+ * by `transcriptToMessages` (`turn.ts`) on every LATER turn — and a turn can
+ * call this tool up to `MAX_TOOL_CALLS_PER_TURN` times. An uncapped join
+ * here doesn't cost one turn's budget, it costs every turn's budget from
+ * here on, growing without bound. 100 is far past any realistic account's
+ * holding count (the production failure behind this whole plan was ~63
+ * positions in one account), so the cap should never bite in practice — it
+ * exists for the account that would otherwise never stop growing the
+ * transcript.
  */
-function describeHoldingLine(h: ExtractedHolding): string {
-  const label = h.ticker ?? h.name ?? "?";
-  const figures = `shares=${h.shares ?? "?"} value=${h.marketValue ?? "?"} basis=${h.costBasis ?? "?"}`;
+const MAX_HOLDINGS_PER_READ = 100;
+
+/**
+ * Fix round 1, R31: the ONE way to render a position — used by both the
+ * prompt's inline listing (`describeHoldings` in `turn.ts`) and this tool's
+ * own result, so the two views of "positions in an account" can't drift the
+ * way they did at birth: three differences (`price=`, the `JSON.stringify`,
+ * the indent prefix) in the copy carrying the R29 guard below, the one thing
+ * that must not drift. Lives here, not in `turn.ts`, because the import
+ * direction only runs one way — `turn.ts` already imports seven symbols from
+ * this file (`editRow`, `mergeRows`, …), and this file must never import
+ * from `turn.ts`.
+ *
+ * `indent` is supplied by the caller, not baked in: the prompt's inline
+ * block nests one line per position under its account heading (`"  - "`),
+ * this tool's flat list does not.
+ *
+ * R29: `__holdingId` is optional on `ExtractedHolding` — a payload persisted
+ * before this branch carries positions with none. Printing
+ * `${h.__holdingId}:` unconditionally renders the literal string "undefined"
+ * as an id, and a model reading that as a real handle would call
+ * `edit_holding`/`drop_holding` with it — both throw (neither tool has a
+ * holding whose id IS "undefined"), burning one of the four tool calls a
+ * turn allows on a position that genuinely cannot be corrected through this
+ * surface: both tools match on `__holdingId` alone.
+ */
+export function formatHoldingLine(h: ExtractedHolding, indent = ""): string {
+  const label = JSON.stringify(h.ticker ?? h.name ?? "?");
+  const figures =
+    `shares=${h.shares ?? "?"} price=${h.price ?? "?"} ` +
+    `value=${h.marketValue ?? "?"} basis=${h.costBasis ?? "?"}`;
   return h.__holdingId
-    ? `${h.__holdingId}: ${label} ${figures}`
-    : `${label} ${figures} (no id — not correctable here)`;
+    ? `${indent}${h.__holdingId}: ${label} ${figures}`
+    : `${indent}${label} ${figures} (no id — not correctable here)`;
 }
 
 /**
  * Read-only: returns one account's positions as prose. Writes nothing, so —
- * like `explain` and `reread_document` — it is available on a committed row,
+ * like `explain` and `reread_document` — it is available on a committed row
+ * (it takes no `committedRowIds` at all, unlike `editHolding`/`dropHolding`),
  * and (Important 1's reference-identity contract) always returns the SAME
  * `payload` it was handed rather than a copy, so `runTurn` never mistakes a
  * read for a mutation.
@@ -645,8 +684,13 @@ export function readHoldings(payload: PersistedImportPayload, args: ReadHoldings
   if (living.length === 0) {
     return { payload, summary: `"${row.name}" has no positions.` };
   }
-  const lines = living.map(describeHoldingLine).join("\n");
-  return { payload, summary: `Positions in "${row.name}":\n${lines}` };
+  const shown = living.slice(0, MAX_HOLDINGS_PER_READ);
+  const lines = shown.map((h) => formatHoldingLine(h)).join("\n");
+  const more =
+    living.length > MAX_HOLDINGS_PER_READ
+      ? `\n…and ${living.length - MAX_HOLDINGS_PER_READ} more.`
+      : "";
+  return { payload, summary: `Positions in "${row.name}":\n${lines}${more}` };
 }
 
 // ---------------------------------------------------------------------------

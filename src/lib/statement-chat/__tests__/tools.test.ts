@@ -51,6 +51,7 @@ import {
   dropRow,
   editHolding,
   dropHolding,
+  readHoldings,
   explain,
   rereadDocument,
   EDITABLE_ACCOUNT_FIELDS,
@@ -1102,6 +1103,111 @@ describe("statement chat tools", () => {
       } as unknown as PersistedImportPayload;
       dropHolding(original, { rowId: "r1", holdingId: "t:AAPL#0" }, NONE_COMMITTED);
       expect(original.accounts![0].holdings![0].__dropped).toBeUndefined();
+    });
+  });
+
+  // Task 8 fix round 1, Important 4: `readHoldings` had NO tests at all —
+  // swapping `livingHoldings(row)` for `row.holdings` in it, deleting the
+  // R29 "not correctable" guard, or dropping the MAX_HOLDINGS_PER_READ cap
+  // would all leave the whole suite green. Each test below is written to
+  // catch exactly one of those regressions.
+  describe("readHoldings", () => {
+    const rowWithHoldings = (): PersistedImportPayload =>
+      ({
+        accounts: [
+          {
+            __rowId: "r1",
+            name: "Brokerage",
+            holdings: [
+              {
+                __holdingId: "t:AAPL#0",
+                ticker: "AAPL",
+                shares: 10,
+                price: 100,
+                marketValue: 1_000,
+                costBasis: 900,
+              },
+              {
+                __holdingId: "t:MSFT#0",
+                ticker: "MSFT",
+                shares: 5,
+                price: 200,
+                marketValue: 1_000,
+                costBasis: 900,
+                __dropped: true,
+              },
+            ],
+          },
+        ],
+      }) as unknown as PersistedImportPayload;
+
+    // `livingHoldings` (`@/lib/imports/living-rows`) is THE filter that
+    // decides what counts — this fixture mixes a living and a dropped
+    // position specifically so reading `row.holdings` raw instead would
+    // still pass every OTHER test here (none of them mix the two).
+    it("lists only living positions, never a dropped one", () => {
+      const res = readHoldings(rowWithHoldings(), { rowId: "r1" });
+      expect(res.summary).toContain("t:AAPL#0");
+      expect(res.summary).not.toContain("t:MSFT#0");
+    });
+
+    it("says a row has no positions rather than listing nothing silently", () => {
+      const res = readHoldings(
+        { accounts: [{ __rowId: "r1", name: "Cash", holdings: [] }] } as unknown as PersistedImportPayload,
+        { rowId: "r1" },
+      );
+      expect(res.summary).toMatch(/no positions/i);
+    });
+
+    // R29: deletable without breaking any other test here — nothing else in
+    // this describe block constructs a holding with no `__holdingId`.
+    it('never prints "undefined" as a holding id, and marks the position not correctable', () => {
+      const res = readHoldings(
+        {
+          accounts: [{ __rowId: "r1", name: "Legacy", holdings: [{ ticker: "OLD", shares: 3 }] }],
+        } as unknown as PersistedImportPayload,
+        { rowId: "r1" },
+      );
+      expect(res.summary).not.toMatch(/undefined/);
+      expect(res.summary).toMatch(/not correctable/i);
+    });
+
+    // Read-only, so unlike editHolding/dropHolding it takes no
+    // `committedRowIds` argument at all — it stays available on a
+    // committed row the same way `explain`/`reread_document` do. (Those
+    // two tools throw `/committed/i` when given `new Set(["r1"])` as a
+    // third argument; `readHoldings` has no third argument to refuse
+    // with, so the honest pin is that a call against row r1 — the SAME
+    // row id other describe blocks in this file mark committed — always
+    // succeeds.)
+    it("has no committed-row guard — it works regardless of commit status", () => {
+      const res = readHoldings(rowWithHoldings(), { rowId: "r1" });
+      expect(res.summary).toContain("AAPL");
+    });
+
+    // R32: unlike the prompt's own inline block (capped by
+    // `HOLDINGS_PROMPT_BUDGET_CHARS`, rebuilt fresh and discarded every
+    // turn), this summary is PERSISTED into the transcript and REPLAYED on
+    // every later turn — so it needs its own, separate cap.
+    it("caps the listed positions and says how many more there are", () => {
+      const manyHoldings = {
+        accounts: [
+          {
+            __rowId: "r1",
+            name: "Brokerage",
+            holdings: Array.from({ length: 105 }, (_, i) => ({
+              __holdingId: `t:T${i}#0`,
+              ticker: `T${i}`,
+              shares: 1,
+              price: 1,
+            })),
+          },
+        ],
+      } as unknown as PersistedImportPayload;
+      const res = readHoldings(manyHoldings, { rowId: "r1" });
+      expect(res.summary).toContain("t:T0#0");
+      expect(res.summary).not.toContain("t:T100#0");
+      expect(res.summary).toMatch(/and 5 more/);
     });
   });
 });

@@ -2,8 +2,9 @@ import { AIMessage, HumanMessage, SystemMessage, ToolMessage } from "@langchain/
 import type { BaseMessage } from "@langchain/core/messages";
 import { chatModel } from "@/domain/forge/llm";
 import type { Annotated, ChatState, ChatTurn, PersistedImportPayload } from "@/lib/imports/types";
-import type { ExtractedAccount, ExtractedHolding, ExtractionResult } from "@/lib/extraction/types";
+import type { ExtractedAccount, ExtractionResult } from "@/lib/extraction/types";
 import { livingHoldings } from "@/lib/imports/living-rows";
+import { holdingMarketValue } from "@/lib/extraction/normalize-holdings";
 import {
   editRow,
   mergeRows,
@@ -11,6 +12,7 @@ import {
   editHolding,
   dropHolding,
   readHoldings,
+  formatHoldingLine,
   explain,
   rereadDocument,
   EDITABLE_ACCOUNT_FIELDS,
@@ -215,32 +217,24 @@ type AccountRow = Annotated<ExtractedAccount>;
 export const HOLDINGS_PROMPT_BUDGET_CHARS = 24_000;
 
 /**
- * R29: `__holdingId` is optional on `ExtractedHolding` — a payload persisted
- * before this branch carries positions with none. Printing
- * `${h.__holdingId}:` unconditionally renders the literal string "undefined"
- * as an id, and a model reading that as a real handle would call
- * `edit_holding`/`drop_holding` with it — both throw (neither tool has a
- * holding whose id IS "undefined"), burning one of the four tool calls this
- * turn allows on a position that genuinely cannot be corrected through this
- * surface: both tools match on `__holdingId` alone.
- */
-function describeHoldingLine(h: ExtractedHolding): string {
-  const label = JSON.stringify(h.ticker ?? h.name ?? "?");
-  const figures =
-    `shares=${h.shares ?? "?"} price=${h.price ?? "?"} ` +
-    `value=${h.marketValue ?? "?"} basis=${h.costBasis ?? "?"}`;
-  return h.__holdingId
-    ? `  - ${h.__holdingId}: ${label} ${figures}`
-    : `  - ${label} ${figures} (no id — not correctable here)`;
-}
-
-/**
  * Positions for every account that has living ones (`livingHoldings` —
  * `@/lib/imports/living-rows` — is THE filter that decides what counts, so a
- * dropped position never reaches the model here). Inlined in full while the
- * whole block fits `HOLDINGS_PROMPT_BUDGET_CHARS`; past that, each account
- * degrades to a one-line total and the model is told to call `read_holdings`
- * for the detail it can no longer see inline.
+ * dropped position never reaches the model here). Inlined in full via the
+ * ONE formatter (`formatHoldingLine`, `tools.ts` — R31: the same one
+ * `read_holdings` renders its result with) while the whole block fits
+ * `HOLDINGS_PROMPT_BUDGET_CHARS`; past that, each account degrades to a
+ * one-line total instead — the model is told about `read_holdings` in
+ * `systemPrompt`'s own prose (outside the untrusted-data fence, R34), not in
+ * this block, so a directive never sits inside the fence this prompt itself
+ * says is never an instruction.
+ *
+ * R33: the degraded total sums through `holdingMarketValue`
+ * (`@/lib/extraction/normalize-holdings`) — THE definition of a position's
+ * value, which DERIVES it as shares × price when `marketValue` itself is
+ * absent (the extraction prompt explicitly allows submitting one without the
+ * other). Reading `h.marketValue ?? 0` directly would report 0 for that
+ * shape — the one case that exists precisely because the positions
+ * couldn't be shown in full.
  */
 function describeHoldings(accounts: AccountRow[]): string {
   const withPositions = accounts.filter((a) => livingHoldings(a).length > 0);
@@ -248,23 +242,22 @@ function describeHoldings(accounts: AccountRow[]): string {
 
   const full = withPositions
     .map((a) => {
-      const lines = livingHoldings(a).map(describeHoldingLine).join("\n");
+      const lines = livingHoldings(a)
+        .map((h) => formatHoldingLine(h, "  - "))
+        .join("\n");
       return `${a.__rowId}:\n${lines}`;
     })
     .join("\n");
 
   if (full.length <= HOLDINGS_PROMPT_BUDGET_CHARS) return full;
 
-  return (
-    withPositions
-      .map((a) => {
-        const living = livingHoldings(a);
-        const sum = living.reduce((s, h) => s + (h.marketValue ?? 0), 0);
-        return `${a.__rowId}: ${living.length} holdings totalling ${Math.round(sum)}`;
-      })
-      .join("\n") +
-    "\n(Positions are not listed here because there are too many. Call read_holdings with a rowId to see one account's positions.)"
-  );
+  return withPositions
+    .map((a) => {
+      const living = livingHoldings(a);
+      const sum = living.reduce((s, h) => s + holdingMarketValue(h), 0);
+      return `${a.__rowId}: ${living.length} holdings totalling ${Math.round(sum)}`;
+    })
+    .join("\n");
 }
 
 /**
@@ -342,9 +335,11 @@ function systemPrompt(
     "from client statements. You can call at most " + MAX_TOOL_CALLS_PER_TURN + " tools per turn.",
     "Use edit_row to correct a single field, merge_rows to combine two rows that are the same account,",
     "drop_row to exclude a row (always with a reason), edit_holding to correct a single field on one",
-    "position inside a row, drop_holding to remove one position from a row, explain to cite where a",
-    "row's numbers came from, and reread_document to look at the original file again for something the",
-    "extracted row does not answer — naming the document with the exact source name quoted on its row.",
+    "position inside a row, drop_holding to remove one position from a row, read_holdings to see every",
+    "position in an account whose row only shows a totals summary because there are too many to list",
+    "inline, explain to cite where a row's numbers came from, and reread_document to look at the",
+    "original file again for something the extracted row does not answer — naming the document with",
+    "the exact source name quoted on its row.",
     "reread_document only PROPOSES a correction — never say you fixed something from",
     "it; say you found a possible correction and it is awaiting the advisor's approval.",
     "",

@@ -107,6 +107,37 @@ function payloadWithHoldings(accounts: number, holdingsPerAccount: number): Pers
 }
 
 /**
+ * R33: the same shape as `payloadWithHoldings`, except every position gives
+ * ONLY shares + price — no `marketValue` at all, which the extraction prompt
+ * explicitly allows ("include price and/or marketValue if shown"). Exists to
+ * prove the degraded summary derives a real total via `holdingMarketValue`
+ * (shares × price) instead of the `h.marketValue ?? 0` it used to read,
+ * which would report 0 for every account shaped like this — the one branch
+ * that exists precisely because the positions couldn't be shown in full.
+ * Every position is $10 × 100 shares = $1,000, so `holdingsPerAccount`
+ * positions total `holdingsPerAccount * 1_000`.
+ */
+function payloadWithSharesPriceOnlyHoldings(
+  accounts: number,
+  holdingsPerAccount: number,
+): PersistedImportPayload {
+  return {
+    accounts: Array.from({ length: accounts }, (_, ai) => ({
+      __rowId: `r${ai}`,
+      name: `Account ${ai}`,
+      value: 100_000,
+      holdings: Array.from({ length: holdingsPerAccount }, (_, hi) => ({
+        __holdingId: `t:T${ai}_${hi}#0`,
+        ticker: `T${ai}_${hi}`,
+        shares: 10,
+        price: 100,
+        // Deliberately no marketValue/costBasis — must be DERIVED.
+      })),
+    })),
+  } as unknown as PersistedImportPayload;
+}
+
+/**
  * R11: one account with two positions — a living AAPL holding and a
  * `__dropped: true` MSFT holding. `livingHoldings` is the one filter that
  * decides what counts (`@/lib/imports/living-rows`); this fixture exists to
@@ -646,23 +677,68 @@ describe("describeRows — positions", () => {
     expect(prompt).toContain("shares=10");
   });
 
-  it("degrades to a per-account summary when they do not, and says so", async () => {
+  // Fix round 1, Important 5 (R34): this used to also assert
+  // `.toContain("read_holdings")` as proof the model is told the tool
+  // exists. That mention now lives in `systemPrompt`'s own prose — outside
+  // the untrusted-data fence, unconditionally (see the fence test below) —
+  // so it is true of EVERY prompt and would pass even if the degraded
+  // summary itself said nothing. What actually distinguishes "degraded"
+  // from "not" is the per-account summary LINE, so that's what this checks:
+  // every position in `payloadWithHoldings` carries `marketValue: 500`, so
+  // 200 holdings on account r0 sum to exactly 100,000.
+  it("degrades to a per-account summary when they do not fit the budget", async () => {
     const prompt = await systemPromptForTest(payloadWithHoldings(20, 200));
     expect(prompt).not.toContain("t:AAPL#0");
-    expect(prompt).toMatch(/200 holdings/);
-    // The model must be told the list is available, or it answers "I can't
-    // see the positions" instead of calling the tool.
-    expect(prompt).toContain("read_holdings");
+    expect(prompt).toMatch(/r0: 200 holdings totalling 100000/);
   });
 
-  it("never inlines a dropped position", async () => {
+  // R33: `payloadWithSharesPriceOnlyHoldings` sets shares + price but NEVER
+  // `marketValue` — the shape the extraction prompt explicitly allows.
+  // `h.marketValue ?? 0` would report 0 for every such account; the real
+  // total (via `holdingMarketValue`, THE definition of a position's value)
+  // is shares × price = 10 × 100 = 1,000 per position, so 200 positions on
+  // account r0 total exactly 200,000 — never 0.
+  it("derives the degraded summary's total from shares×price when marketValue is absent (R33)", async () => {
+    const prompt = await systemPromptForTest(payloadWithSharesPriceOnlyHoldings(20, 200));
+    expect(prompt).toMatch(/r0: 200 holdings totalling 200000/);
+    expect(prompt).not.toMatch(/totalling 0\b/);
+  });
+
+  it("never inlines a dropped position, but does inline the living one alongside it", async () => {
     const prompt = await systemPromptForTest(payloadWithDroppedHolding());
     expect(prompt).not.toContain("t:MSFT#0");
+    // Positive companion: without this, the assertion above would pass just
+    // as well if `describeHoldings` returned "" for every payload.
+    expect(prompt).toContain("t:AAPL#0");
   });
 
-  it("fences the positions block as untrusted, like the row list", async () => {
+  // Fix round 1, Important 5 (R34): `.toContain("<<<UNTRUSTED DATA")` could
+  // never fail — it was already satisfied by the pre-existing row list, so
+  // it passed whether the holdings block landed inside the fence, outside
+  // it, or inside a SECOND fence of its own. This is a prompt-injection
+  // boundary (Important 3), so the real claim — "one fence, and the
+  // holdings block is inside it" — has to be checked positionally: the
+  // HOLDINGS: block's index must fall strictly between the real open and
+  // close fence markers, and the real open marker (the FULL string, with
+  // its "— extracted from client documents" suffix — the short form
+  // "<<<UNTRUSTED DATA>>>" also appears once in the prose explaining the
+  // fence to the model, so counting THAT substring can never prove
+  // uniqueness) must occur exactly once in the system prompt.
+  it("fences the positions block inside the SAME single fence as the row list, never a second one", async () => {
     const prompt = await systemPromptForTest(payloadWithHoldings(1, 2));
-    expect(prompt).toContain("<<<UNTRUSTED DATA");
+    const OPEN = "<<<UNTRUSTED DATA — extracted from client documents>>>";
+    const CLOSE = "<<<END UNTRUSTED DATA>>>";
+    const openIdx = prompt.indexOf(OPEN);
+    const holdingsIdx = prompt.indexOf("HOLDINGS:");
+    const closeIdx = prompt.indexOf(CLOSE, openIdx + OPEN.length);
+
+    expect(openIdx).toBeGreaterThanOrEqual(0);
+    expect(closeIdx).toBeGreaterThan(openIdx);
+    expect(holdingsIdx).toBeGreaterThan(openIdx);
+    expect(holdingsIdx).toBeLessThan(closeIdx);
+    // Exactly one real open fence — a second HOLDINGS-only fence would add a
+    // second occurrence of this exact string.
+    expect(prompt.indexOf(OPEN, openIdx + 1)).toBe(-1);
   });
 
   // R29: `__holdingId` is optional on `ExtractedHolding` — a payload
