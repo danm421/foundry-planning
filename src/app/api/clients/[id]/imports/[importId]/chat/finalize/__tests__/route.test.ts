@@ -441,6 +441,183 @@ describe("chat finalize verification (Ruling 70)", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, status: "committed" });
   });
+
+  /**
+   * ── Fix wave 3, C-A: THE ID THE ADVISOR'S SESSION HOLDS IS AN OLD ONE ───
+   *
+   * `__rowId` is DERIVED — the dedupe key plus the entry's minimum source
+   * coordinate — so adding a statement whose file id sorts lower MOVES it.
+   * Wave 4 made the rebase carry the standing row's id forward onto the
+   * fresh row, which satisfies every reader of `payload.accounts`. This
+   * route is not one of those readers: it re-derives `kept` from
+   * `fileResults` (deliberately — see its own comment) and compared THAT
+   * against `chat.committedRowIds`, which holds the id minted by the
+   * EARLIER merge. The two are in different id namespaces, so the row the
+   * advisor already committed counted as missing and the import 409'd
+   * forever: the row shows Committed so its button is disabled,
+   * `assertNotCommitted` blocks `drop_row`, and there is no force-close.
+   *
+   * WHY THE EXISTING TESTS COULD NOT CATCH IT. Every other fixture in this
+   * file derives `committedRowIds` from `keptRowIds(...)` — the SAME merge
+   * the route is about to run — so the two ids can never disagree and the
+   * suite is blind by construction. The ids below are LITERAL and
+   * old-shaped: minted off the June file alone, before September existed.
+   *
+   * Mutation this catches: taking `missing` from the raw recompute instead
+   * of from the reconciled rows (i.e. reverting the rebase call). 409.
+   */
+  const JUNE_FILE = "9c3f1a02-4f7b-4c0e-9a11-2d5b8e7f6a31";
+  const SEPT_FILE = "0b7e4d19-8a2c-4f31-b6d0-1e9c3a5f2b84"; // sorts FIRST
+  /** The id the June-only merge minted, and the only id the advisor's
+   *  session ever recorded. Written out, never derived. */
+  const OLD_ROTH_ID = `account:7734#${JUNE_FILE}:0`;
+  const OLD_DADS_ID = `account:5521#${JUNE_FILE}:1`;
+
+  function statement(statementDate: string, values: [number, number]): ExtractionResult {
+    return extractionResult([
+      {
+        name: "Roth IRA",
+        custodian: "Fidelity",
+        accountNumberLast4: "7734",
+        owner: "client",
+        value: values[0],
+        statementDate,
+      },
+      {
+        name: "Dad's IRA",
+        custodian: "Fidelity",
+        accountNumberLast4: "5521",
+        owner: "client",
+        value: values[1],
+        statementDate,
+      },
+    ] as never);
+  }
+
+  /** June read first, then a NEWER September statement added for the same
+   *  two accounts — the path the UI actively invites ("You can still upload
+   *  another statement first"). */
+  const TWO_STATEMENTS: Record<string, ExtractionResult> = {
+    [JUNE_FILE]: statement("2026-06-30", [190_000, 44_000]),
+    [SEPT_FILE]: statement("2026-09-30", [201_900, 45_100]),
+  };
+
+  /** What wave 4's rebase leaves in `payload.accounts`: the fresh rows,
+   *  re-stamped with the ids the advisor's session holds. */
+  function standingRow(rowId: string, name: string, last4: string, value: number) {
+    return {
+      name,
+      custodian: "Fidelity",
+      accountNumberLast4: last4,
+      owner: "client",
+      value,
+      statementDate: "2026-06-30",
+      __rowId: rowId,
+      __provenance: { sourceFileId: JUNE_FILE, section: "accounts" },
+      match: { kind: "exact", existingId: `acct-${last4}` },
+    };
+  }
+
+  it("closes an import whose committed row ids were minted by an EARLIER merge", async () => {
+    // Proof the fixture is the drifted case and not a tautology: the ids
+    // this merge produces are NOT the ids the advisor's session holds.
+    expect(keptRowIds(TWO_STATEMENTS)).not.toContain(OLD_ROTH_ID);
+
+    vi.mocked(requireImportAccess).mockResolvedValue(
+      importRow({
+        fileResults: TWO_STATEMENTS,
+        chat: {
+          surface: "chat",
+          transcript: [],
+          decisions: [],
+          excludedRows: [],
+          committedRowIds: [OLD_ROTH_ID, OLD_DADS_ID],
+        },
+        payload: {
+          accounts: [
+            standingRow(OLD_ROTH_ID, "Julia — Roth (rollover)", "7734", 190_000),
+            standingRow(OLD_DADS_ID, "Dad's IRA", "5521", 44_000),
+          ] as never,
+        },
+      }) as never,
+    );
+
+    const res = await POST(req(), params);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, status: "committed" });
+    expect(updateCalls).toHaveLength(1);
+  });
+
+  /**
+   * Fix wave 3, I-A, at this route. The advisor's `drop_row` decision is
+   * persisted under the id the row had AT THE TIME, and the same drift
+   * leaves `chatExcluded` naming nothing in the recompute — so the row they
+   * explicitly dropped is demanded at close.
+   *
+   * Mutation this catches: the same one — comparing against the raw
+   * recompute rather than the reconciled rows.
+   */
+  it("does not demand a chat-excluded row whose id moved after a newer upload", async () => {
+    vi.mocked(requireImportAccess).mockResolvedValue(
+      importRow({
+        fileResults: TWO_STATEMENTS,
+        chat: {
+          surface: "chat",
+          transcript: [],
+          decisions: [],
+          // Dropped when June was the only file, so keyed by the June id.
+          excludedRows: [
+            {
+              row: standingRow(OLD_DADS_ID, "Dad's IRA", "5521", 44_000) as never,
+              reason: "not the client's account",
+            },
+          ],
+          committedRowIds: [OLD_ROTH_ID],
+        },
+        payload: {
+          accounts: [standingRow(OLD_ROTH_ID, "Julia — Roth (rollover)", "7734", 190_000)] as never,
+        },
+      }) as never,
+    );
+
+    const res = await POST(req(), params);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, status: "committed" });
+  });
+
+  /**
+   * The other half of the same edit, and the property the route's own
+   * comment at `:166-172` defends: the base stays the SERVER's recompute
+   * from `fileResults`, never `payload.accounts`. A row that never reached
+   * the persisted payload at all must still be demanded.
+   *
+   * Mutation this catches: "fixing" C-A by taking `missing` from
+   * `payload.accounts` instead of rebasing the recompute onto it. This
+   * import would then close with a real, uncommitted account unimported.
+   */
+  it("still 409s an account that is missing from payload.accounts entirely", async () => {
+    vi.mocked(requireImportAccess).mockResolvedValue(
+      importRow({
+        fileResults: TWO_STATEMENTS,
+        chat: {
+          surface: "chat",
+          transcript: [],
+          decisions: [],
+          excludedRows: [],
+          committedRowIds: [OLD_ROTH_ID],
+        },
+        // Only ONE of the two real accounts is on the table.
+        payload: {
+          accounts: [standingRow(OLD_ROTH_ID, "Julia — Roth (rollover)", "7734", 190_000)] as never,
+        },
+      }) as never,
+    );
+
+    const res = await POST(req(), params);
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toContain("1 account row");
+    expect(updateCalls).toHaveLength(0);
+  });
 });
 
 describe("chat finalize surface guard (round 1 review, Important 2)", () => {

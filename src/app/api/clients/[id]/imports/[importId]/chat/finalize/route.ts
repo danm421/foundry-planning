@@ -15,7 +15,8 @@ import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { mergeAcrossFiles } from "@/lib/imports/assemble/merge-across-files";
 import { detectRollups } from "@/lib/statement-chat/rollups";
-import { readChatState } from "@/lib/statement-chat/state";
+import { advisorRetiredRows, readChatState } from "@/lib/statement-chat/state";
+import { rebaseOntoFreshMerge } from "@/lib/statement-chat/rebase";
 import { markTabsCommitted } from "@/lib/imports/commit/orchestrator";
 import { normalizeImportPayload, type ImportPayloadJson } from "@/lib/imports/types";
 
@@ -174,6 +175,28 @@ export async function POST(request: Request, { params }: Params) {
   const { payload: freshMerged } = mergeAcrossFiles(fileResults);
   const { kept } = detectRollups(freshMerged.accounts);
   const chat = readChatState(payloadJson);
+
+  // ...then RECONCILE that recompute with the identities the advisor's
+  // session actually holds, before comparing anything against them (fix
+  // wave 3, C-A). `__rowId` is DERIVED — the dedupe key plus the entry's
+  // minimum source coordinate — so uploading one more statement whose file
+  // id sorts lower MOVES it. Every id below (`committedRowIds`,
+  // `excludedRows[].row.__rowId`) was minted by an EARLIER merge, and
+  // comparing them against freshly-minted ids compares two different
+  // namespaces: the row the advisor already committed counts as missing and
+  // this route 409s FOREVER. There is no way out of that on the surface —
+  // the row reads Committed so its button is disabled, `assertNotCommitted`
+  // makes `drop_row` throw, and there is no force-close.
+  //
+  // This is the SAME call `chat/extract` makes, deliberately — one
+  // reconciliation, not one per consumer, or they drift apart again. The
+  // base is still `kept`, so the ground-truth property the comment above
+  // defends is untouched: a row that never reached `payload.accounts` is
+  // still in here, still under its own fresh id, and is still demanded.
+  const persistedPayload = normalizeImportPayload(payloadJson.payload);
+  const { rows: current } = rebaseOntoFreshMerge(kept, persistedPayload.accounts, {
+    retiredRows: advisorRetiredRows(chat),
+  });
   const committed = new Set(chat.committedRowIds);
   // A row the advisor retired IN THE CHAT — `drop_row`, or the half a
   // `merge_rows` folded away — is gone from the working table but comes
@@ -196,7 +219,7 @@ export async function POST(request: Request, { params }: Params) {
       .map((x) => x.row?.__rowId)
       .filter((rowId): rowId is string => typeof rowId === "string"),
   );
-  const missing = kept.filter((row) => {
+  const missing = current.filter((row) => {
     if (row.__rowId && chatExcluded.has(row.__rowId)) return false;
     return !row.__rowId || !committed.has(row.__rowId);
   });
@@ -210,12 +233,14 @@ export async function POST(request: Request, { params }: Params) {
     });
   }
 
-  // Persist the CURRENT persisted payload — never a fresh recompute. The
-  // per-row commits already stamped `linkCreated` onto it (each commit's
-  // `persistPartialCommit` call re-saves the mutated payload), and a fresh
-  // `mergeAcrossFiles` result would reset every row back to
-  // `{ kind: "new" }`, reopening the duplicate-insert hole Ruling 61 names.
-  const persistedPayload = normalizeImportPayload(payloadJson.payload);
+  // What gets PERSISTED is `persistedPayload` — the payload as it stands on
+  // disk, read above — never a fresh recompute and never the reconciled
+  // `current`. The per-row commits already stamped `linkCreated` onto it
+  // (each commit's `persistPartialCommit` call re-saves the mutated
+  // payload), and a fresh `mergeAcrossFiles` result would reset every row
+  // back to `{ kind: "new" }`, reopening the duplicate-insert hole Ruling 61
+  // names. The rebase above is a READ used to compare identities; it never
+  // becomes the record.
 
   // `ALWAYS_REQUIRED_TABS` (`required-tabs.ts`) makes "plan-basics"
   // mandatory on every import regardless of mode or content — statement

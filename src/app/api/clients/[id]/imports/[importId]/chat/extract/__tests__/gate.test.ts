@@ -944,8 +944,18 @@ describe("chat extract route gates", () => {
     // 0. ONE account, because there is one real account.
     expect(persisted).toHaveLength(1);
     // 1. It still answers to the id the advisor's session recorded, so the
-    //    Commit button stays locked (`entity-table.tsx` gates on exactly
-    //    this) and `finalize` does not 409 asking for it again.
+    //    Commit button stays locked — `entity-table.tsx:221` gates on
+    //    exactly this list.
+    //
+    //    This says NOTHING about `finalize`, and a previous version of this
+    //    comment claimed it did (final review #2, C-A / Ruling 155). That
+    //    route does not read `payload.accounts` for its close gate: it
+    //    re-derives `kept` from `fileResults` and so mints the FRESH id,
+    //    which this carried-forward id deliberately is not. It 409'd forever
+    //    on exactly this fixture until fix wave 3 ran the same reconciliation
+    //    there. `finalize/__tests__/route.test.ts` — "closes an import whose
+    //    committed row ids were minted by an EARLIER merge" — is what pins
+    //    that, with a LITERAL old-shape id; a comment here cannot.
     expect(persisted[0].__rowId).toBe(STANDING_ROW_ID);
     expect(chat?.committedRowIds).toEqual([STANDING_ROW_ID]);
     expect(chat?.committedRowIds).toContain(persisted[0].__rowId);
