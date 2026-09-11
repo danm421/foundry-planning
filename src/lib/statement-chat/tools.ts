@@ -10,11 +10,13 @@ import {
   isValidHoldingValue,
   holdingFieldDomainDescription,
 } from "@/lib/statement-chat/holding-fields";
+import { livingHoldings } from "@/lib/imports/living-rows";
 import type { Annotated, ChatState, PersistedImportPayload } from "@/lib/imports/types";
 import type {
   AccountCategory,
   AccountSubType,
   ExtractedAccount,
+  ExtractedHolding,
   ExtractionResult,
 } from "@/lib/extraction/types";
 
@@ -603,6 +605,48 @@ export function dropHolding(
     payload: { ...payload, accounts: nextAccounts },
     summary: `Dropped ${dropped.ticker ?? dropped.name ?? args.holdingId} from "${row.name}". It will not be saved with the account.`,
   };
+}
+
+// ---------------------------------------------------------------------------
+// read_holdings
+// ---------------------------------------------------------------------------
+
+export interface ReadHoldingsArgs {
+  rowId: string;
+}
+
+/**
+ * R29: same guard as `describeHoldingLine` in `turn.ts` — `__holdingId` is
+ * optional, and a payload persisted before this branch may carry a position
+ * with none. Printing it unconditionally would render the literal string
+ * "undefined" as an id in a tool RESULT the model reads next, inviting the
+ * same unreachable `edit_holding`/`drop_holding` call the prompt's own
+ * listing guards against.
+ */
+function describeHoldingLine(h: ExtractedHolding): string {
+  const label = h.ticker ?? h.name ?? "?";
+  const figures = `shares=${h.shares ?? "?"} value=${h.marketValue ?? "?"} basis=${h.costBasis ?? "?"}`;
+  return h.__holdingId
+    ? `${h.__holdingId}: ${label} ${figures}`
+    : `${label} ${figures} (no id — not correctable here)`;
+}
+
+/**
+ * Read-only: returns one account's positions as prose. Writes nothing, so —
+ * like `explain` and `reread_document` — it is available on a committed row,
+ * and (Important 1's reference-identity contract) always returns the SAME
+ * `payload` it was handed rather than a copy, so `runTurn` never mistakes a
+ * read for a mutation.
+ */
+export function readHoldings(payload: PersistedImportPayload, args: ReadHoldingsArgs): ToolResult {
+  const accounts = accountsOf(payload);
+  const row = accounts[findRowIndex(accounts, args.rowId)];
+  const living = livingHoldings(row);
+  if (living.length === 0) {
+    return { payload, summary: `"${row.name}" has no positions.` };
+  }
+  const lines = living.map(describeHoldingLine).join("\n");
+  return { payload, summary: `Positions in "${row.name}":\n${lines}` };
 }
 
 // ---------------------------------------------------------------------------

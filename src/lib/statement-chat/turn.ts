@@ -1,14 +1,16 @@
 import { AIMessage, HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
 import type { BaseMessage } from "@langchain/core/messages";
 import { chatModel } from "@/domain/forge/llm";
-import type { ChatState, ChatTurn, PersistedImportPayload } from "@/lib/imports/types";
-import type { ExtractionResult } from "@/lib/extraction/types";
+import type { Annotated, ChatState, ChatTurn, PersistedImportPayload } from "@/lib/imports/types";
+import type { ExtractedAccount, ExtractedHolding, ExtractionResult } from "@/lib/extraction/types";
+import { livingHoldings } from "@/lib/imports/living-rows";
 import {
   editRow,
   mergeRows,
   dropRow,
   editHolding,
   dropHolding,
+  readHoldings,
   explain,
   rereadDocument,
   EDITABLE_ACCOUNT_FIELDS,
@@ -132,6 +134,22 @@ export const TOOL_DEFS = [
   {
     type: "function" as const,
     function: {
+      name: "read_holdings",
+      description:
+        "List every position in one account row. Call this when the row list says positions are " +
+        "not listed inline because there are too many — it is the only way to see them.",
+      parameters: {
+        type: "object",
+        properties: {
+          rowId: { type: "string", description: "The account row's __rowId." },
+        },
+        required: ["rowId"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
       name: "reread_document",
       description:
         "Look at the original source document again to answer a question about one of its rows. " +
@@ -179,6 +197,74 @@ export interface TurnModel {
 
 function fileNameMap(fileResults: Record<string, ExtractionResult>): Record<string, string> {
   return Object.fromEntries(Object.entries(fileResults).map(([id, r]) => [id, r.fileName]));
+}
+
+type AccountRow = Annotated<ExtractedAccount>;
+
+/**
+ * Positions are inlined while the whole block fits this many characters,
+ * and summarised past it.
+ *
+ * The prompt is rebuilt and re-sent on EVERY turn, and the transcript is
+ * persisted and replayed — so eight accounts of sixty positions is ~480
+ * lines per turn, forever. Two or three accounts (the common case) fit
+ * comfortably; the cap is what stops the tail case crowding out the
+ * conversation itself. Characters, not tokens, because the count has to be
+ * exact and cheap; ~4 chars per token puts this near 6,000 tokens.
+ */
+export const HOLDINGS_PROMPT_BUDGET_CHARS = 24_000;
+
+/**
+ * R29: `__holdingId` is optional on `ExtractedHolding` — a payload persisted
+ * before this branch carries positions with none. Printing
+ * `${h.__holdingId}:` unconditionally renders the literal string "undefined"
+ * as an id, and a model reading that as a real handle would call
+ * `edit_holding`/`drop_holding` with it — both throw (neither tool has a
+ * holding whose id IS "undefined"), burning one of the four tool calls this
+ * turn allows on a position that genuinely cannot be corrected through this
+ * surface: both tools match on `__holdingId` alone.
+ */
+function describeHoldingLine(h: ExtractedHolding): string {
+  const label = JSON.stringify(h.ticker ?? h.name ?? "?");
+  const figures =
+    `shares=${h.shares ?? "?"} price=${h.price ?? "?"} ` +
+    `value=${h.marketValue ?? "?"} basis=${h.costBasis ?? "?"}`;
+  return h.__holdingId
+    ? `  - ${h.__holdingId}: ${label} ${figures}`
+    : `  - ${label} ${figures} (no id — not correctable here)`;
+}
+
+/**
+ * Positions for every account that has living ones (`livingHoldings` —
+ * `@/lib/imports/living-rows` — is THE filter that decides what counts, so a
+ * dropped position never reaches the model here). Inlined in full while the
+ * whole block fits `HOLDINGS_PROMPT_BUDGET_CHARS`; past that, each account
+ * degrades to a one-line total and the model is told to call `read_holdings`
+ * for the detail it can no longer see inline.
+ */
+function describeHoldings(accounts: AccountRow[]): string {
+  const withPositions = accounts.filter((a) => livingHoldings(a).length > 0);
+  if (withPositions.length === 0) return "";
+
+  const full = withPositions
+    .map((a) => {
+      const lines = livingHoldings(a).map(describeHoldingLine).join("\n");
+      return `${a.__rowId}:\n${lines}`;
+    })
+    .join("\n");
+
+  if (full.length <= HOLDINGS_PROMPT_BUDGET_CHARS) return full;
+
+  return (
+    withPositions
+      .map((a) => {
+        const living = livingHoldings(a);
+        const sum = living.reduce((s, h) => s + (h.marketValue ?? 0), 0);
+        return `${a.__rowId}: ${living.length} holdings totalling ${Math.round(sum)}`;
+      })
+      .join("\n") +
+    "\n(Positions are not listed here because there are too many. Call read_holdings with a rowId to see one account's positions.)"
+  );
 }
 
 /**
@@ -238,7 +324,12 @@ function describeRows(
       );
     })
     .join("\n");
-  return `<<<UNTRUSTED DATA — extracted from client documents>>>\n${rows}\n<<<END UNTRUSTED DATA>>>`;
+  const holdings = describeHoldings(accounts);
+  return (
+    `<<<UNTRUSTED DATA — extracted from client documents>>>\n${rows}` +
+    (holdings ? `\nHOLDINGS:\n${holdings}` : "") +
+    `\n<<<END UNTRUSTED DATA>>>`
+  );
 }
 
 function systemPrompt(
@@ -313,6 +404,8 @@ async function dispatchTool(
       return editHolding(payload, args as never, ctx.committedRowIds);
     case "drop_holding":
       return dropHolding(payload, args as never, ctx.committedRowIds);
+    case "read_holdings":
+      return readHoldings(payload, args as never);
     case "explain":
       return explain(payload, args as never, ctx.fileNames);
     case "reread_document":

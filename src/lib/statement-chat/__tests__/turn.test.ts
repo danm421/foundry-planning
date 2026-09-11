@@ -54,6 +54,97 @@ function infiniteToolCaller(): { model: TurnModel; invoke: ReturnType<typeof vi.
   return { model: { bindTools: () => ({ invoke }) }, invoke };
 }
 
+/**
+ * Task 8 / R28: `systemPrompt`/`TOOL_DEFS`'s companion `systemPromptForTest`
+ * the brief calls for does not exist, and `systemPrompt` stays
+ * module-private (the brief's name for it is wrong — nothing exports it).
+ * Rather than widen turn.ts's exports for a test, this wraps the one path
+ * every other test in this file already uses to read the REAL prompt: run a
+ * turn with a model that calls no tool, then read the system message the
+ * mocked `bindTools().invoke` actually received. That is deliberate — the
+ * scar comment on the schema test below exists because a prior version of
+ * this suite asserted on a module-private constant instead of what reached
+ * the model, and a tool stayed dead in production with the whole suite
+ * green.
+ */
+async function systemPromptForTest(payload: PersistedImportPayload): Promise<string> {
+  const model = modelReturning(new AIMessage("ok"));
+  await runTurn({ chat: emptyChat(), importId: "i1", payload, fileResults, message: "hi", model });
+  const invoke = (model.bindTools([]) as { invoke: ReturnType<typeof vi.fn> }).invoke;
+  return String((invoke.mock.calls[0][0] as Array<{ content: unknown }>)[0].content);
+}
+
+/**
+ * R11: named by the brief but never defined there. Builds `accounts` rows
+ * each with `holdingsPerAccount` positions, all living (`__dropped` unset).
+ * The first account's first holding is always ticker AAPL with shares=10,
+ * matching the literal strings the Step 1 assertions name — every other
+ * holding gets a distinct ticker so `JSON.stringify`d labels don't collide.
+ * Budget arithmetic this relies on: (2, 3) = 6 lines, comfortably under
+ * `HOLDINGS_PROMPT_BUDGET_CHARS` (24,000); (20, 200) = 4,000 lines at ~70
+ * chars each, comfortably over it.
+ */
+function payloadWithHoldings(accounts: number, holdingsPerAccount: number): PersistedImportPayload {
+  return {
+    accounts: Array.from({ length: accounts }, (_, ai) => ({
+      __rowId: `r${ai}`,
+      name: `Account ${ai}`,
+      value: 100_000,
+      holdings: Array.from({ length: holdingsPerAccount }, (_, hi) => {
+        const isFirst = ai === 0 && hi === 0;
+        const ticker = isFirst ? "AAPL" : `T${ai}_${hi}`;
+        return {
+          __holdingId: `t:${ticker}#0`,
+          ticker,
+          shares: isFirst ? 10 : 5,
+          price: 100,
+          marketValue: 500,
+          costBasis: 450,
+        };
+      }),
+    })),
+  } as unknown as PersistedImportPayload;
+}
+
+/**
+ * R11: one account with two positions — a living AAPL holding and a
+ * `__dropped: true` MSFT holding. `livingHoldings` is the one filter that
+ * decides what counts (`@/lib/imports/living-rows`); this fixture exists to
+ * prove `describeHoldings` goes through it rather than reading
+ * `row.holdings` raw, which would leak the dropped MSFT position into the
+ * prompt.
+ */
+function payloadWithDroppedHolding(): PersistedImportPayload {
+  return {
+    accounts: [
+      {
+        __rowId: "r0",
+        name: "Account 0",
+        value: 10_000,
+        holdings: [
+          {
+            __holdingId: "t:AAPL#0",
+            ticker: "AAPL",
+            shares: 10,
+            price: 100,
+            marketValue: 1_000,
+            costBasis: 900,
+          },
+          {
+            __holdingId: "t:MSFT#0",
+            ticker: "MSFT",
+            shares: 5,
+            price: 200,
+            marketValue: 1_000,
+            costBasis: 900,
+            __dropped: true,
+          },
+        ],
+      },
+    ],
+  } as unknown as PersistedImportPayload;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -436,6 +527,7 @@ describe("runTurn", () => {
       "drop_row",
       "edit_holding",
       "drop_holding",
+      "read_holdings",
       "reread_document",
       "explain",
     ]);
@@ -483,6 +575,44 @@ describe("runTurn", () => {
     expect(result.payload.accounts![0].holdings![0].shares).toBe(12);
   });
 
+  // Task 8: `read_holdings` is read-only — like `explain`/`reread_document`,
+  // it must never flip `payloadMutated`. The brief's contract (turn.ts:425)
+  // is reference identity: `readHoldings` has to return the SAME payload
+  // object it was handed, not an equal-by-value copy, or a turn that only
+  // READ positions would falsely tell the route to persist a "mutated"
+  // payload. Mutation this catches: `readHoldings` spreading `{ ...payload }`
+  // instead of returning `payload` itself.
+  it("dispatches read_holdings without mutating the payload", async () => {
+    const holdingsPayload = {
+      accounts: [
+        {
+          __rowId: "r1",
+          name: "Brokerage",
+          holdings: [{ __holdingId: "t:AAPL#0", ticker: "AAPL", shares: 10 }],
+        },
+      ],
+    } as unknown as PersistedImportPayload;
+    const model = modelReturning(
+      new AIMessage({
+        content: "",
+        tool_calls: [{ id: "call_1", name: "read_holdings", args: { rowId: "r1" } }],
+      }),
+      new AIMessage("Here they are."),
+    );
+    const result = await runTurn({
+      chat: emptyChat(),
+      importId: "i1",
+      payload: holdingsPayload,
+      fileResults,
+      message: "what's in the brokerage account?",
+      model,
+    });
+    expect(result.payload).toBe(holdingsPayload);
+    expect(result.payloadMutated).toBe(false);
+    expect(result.turnEntries[1]).toMatchObject({ role: "tool", tool: "read_holdings" });
+    expect((result.turnEntries[1] as { summary: string }).summary).toContain("AAPL");
+  });
+
   // M1: an account NAME is model-extracted text from a client's document,
   // exactly like the file name next to it, and the hand-rolled `"${r.name}"`
   // it replaced let a name carrying a literal `"` break out of its own
@@ -506,5 +636,56 @@ describe("runTurn", () => {
       (invoke.mock.calls[0][0] as Array<{ content: unknown }>)[0].content,
     );
     expect(systemContent).toContain('"Joint \\"Rainy Day\\" Fund"');
+  });
+});
+
+describe("describeRows — positions", () => {
+  it("inlines every position when they fit the budget", async () => {
+    const prompt = await systemPromptForTest(payloadWithHoldings(2, 3));
+    expect(prompt).toContain("t:AAPL#0");
+    expect(prompt).toContain("shares=10");
+  });
+
+  it("degrades to a per-account summary when they do not, and says so", async () => {
+    const prompt = await systemPromptForTest(payloadWithHoldings(20, 200));
+    expect(prompt).not.toContain("t:AAPL#0");
+    expect(prompt).toMatch(/200 holdings/);
+    // The model must be told the list is available, or it answers "I can't
+    // see the positions" instead of calling the tool.
+    expect(prompt).toContain("read_holdings");
+  });
+
+  it("never inlines a dropped position", async () => {
+    const prompt = await systemPromptForTest(payloadWithDroppedHolding());
+    expect(prompt).not.toContain("t:MSFT#0");
+  });
+
+  it("fences the positions block as untrusted, like the row list", async () => {
+    const prompt = await systemPromptForTest(payloadWithHoldings(1, 2));
+    expect(prompt).toContain("<<<UNTRUSTED DATA");
+  });
+
+  // R29: `__holdingId` is optional on `ExtractedHolding` — a payload
+  // persisted before this branch carries positions with none. Printing
+  // `${h.__holdingId}:` unconditionally renders the literal string
+  // "undefined" as an id, and a model reading that as a real handle would
+  // call edit_holding/drop_holding with it — both throw, since neither tool
+  // has a holding whose id IS "undefined", burning one of the four tool
+  // calls this turn allows on a position that was never correctable through
+  // this surface to begin with (both tools match on __holdingId).
+  it('never prints "undefined" as a holding id, and marks that position not correctable', async () => {
+    const payloadMissingId: PersistedImportPayload = {
+      accounts: [
+        {
+          __rowId: "r0",
+          name: "Legacy Account",
+          value: 5_000,
+          holdings: [{ ticker: "OLD", shares: 3 }],
+        },
+      ],
+    } as unknown as PersistedImportPayload;
+    const prompt = await systemPromptForTest(payloadMissingId);
+    expect(prompt).not.toMatch(/undefined/);
+    expect(prompt).toMatch(/not correctable/i);
   });
 });
