@@ -1,4 +1,4 @@
-import type { ExtractedExpense } from "@/lib/extraction/types";
+import type { ExtractedExpense, ExtractedHolding } from "@/lib/extraction/types";
 
 import type { Annotated, ImportPayload } from "./types";
 
@@ -111,4 +111,21 @@ export function sumExtractedLiving(
  */
 export function livingTotalSupersedesRows(payload: ImportPayload): boolean {
   return payload.planBasics?.currentLivingSpending.value != null;
+}
+
+/**
+ * THE rule for "this position counts".
+ *
+ * Defined exactly once, here, for the same reason `isSummedLivingRow` above
+ * is: it is consumed from BOTH sides of the fold — the commit writer decides
+ * what reaches `account_holdings`, the reconciliation decides whether the
+ * account's value is derivable, and the review table decides what number the
+ * advisor is shown. A second, drifting copy is how the screen ends up
+ * promising a total the commit does not write.
+ *
+ * Only `=== true` is a tombstone: a persisted `__dropped: false` (which a
+ * restore would write) is a living position, not an ambiguous one.
+ */
+export function livingHoldings(row: { holdings?: ExtractedHolding[] }): ExtractedHolding[] {
+  return (row.holdings ?? []).filter((h) => h.__dropped !== true);
 }

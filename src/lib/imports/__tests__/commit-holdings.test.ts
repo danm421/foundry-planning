@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
+import { commitAccounts } from "@/lib/imports/commit/accounts";
+import { accountHoldingsGuardrail } from "@/lib/imports/commit/holdings-guardrail";
 import { resolveHoldingsForCommit } from "@/lib/imports/commit/holdings";
-import type { ImportPayload } from "@/lib/imports/types";
+import type { CommitContext } from "@/lib/imports/commit/types";
+import { emptyImportPayload, type ImportPayload } from "@/lib/imports/types";
+
+import { callsForTable, makeFakeTx } from "./commit-test-helpers";
 
 function payloadWith(accounts: ImportPayload["accounts"]): ImportPayload {
   return {
@@ -106,5 +111,56 @@ describe("resolveHoldingsForCommit", () => {
     );
     expect(getSecurityByTicker).not.toHaveBeenCalled();
     expect(map.size).toBe(0);
+  });
+});
+
+// R7: the brief's Step 4 calls a `commitAccountsForTest([row])` helper that
+// does not exist. The commit-half assertion below goes through the real
+// write path instead — `commitAccounts` against the `makeFakeTx` harness
+// (as `accounts-row-filter.test.ts` already does), asserting directly on the
+// `account_holdings` insert the fake tx recorded. That is narrower and more
+// honest than routing through `resolveHoldingsForCommit`, which is Phase A
+// (ticker resolution) and never reaches `account_holdings` at all — a test
+// through it could pass while a tombstoned position was still written.
+describe("commit writes only tombstoned-free holdings", () => {
+  const ctx: CommitContext = {
+    clientId: "client-1",
+    scenarioId: "scenario-1",
+    orgId: "org-1",
+    userId: "user-1",
+  };
+
+  it("never writes a tombstoned position to account_holdings", async () => {
+    const { tx, calls } = makeFakeTx();
+    const payload: ImportPayload = {
+      ...emptyImportPayload(),
+      accounts: [
+        {
+          name: "Brokerage", accountNumberLast4: "1234", custodian: "Schwab", value: 300,
+          holdings: [
+            { ticker: "AAPL", marketValue: 100, __holdingId: "t:AAPL#0" },
+            { ticker: "MSFT", marketValue: 200, __holdingId: "t:MSFT#0", __dropped: true },
+          ],
+        },
+      ] as ImportPayload["accounts"],
+    };
+    await commitAccounts(tx, payload, ctx);
+    const inserts = callsForTable(calls, "account_holdings").filter((c) => c.op === "insert");
+    expect(inserts).toHaveLength(1);
+    const rows = (inserts[0] as { values: Array<{ displayTicker: string | null }> }).values;
+    expect(rows.map((r) => r.displayTicker)).toEqual(["AAPL"]);
+  });
+
+  it("reconciles the value against living positions only", () => {
+    // $100 of living holdings against a $300 stated value materially
+    // undershoots, so the stated value is preserved rather than derived.
+    const decision = accountHoldingsGuardrail({
+      value: 300,
+      holdings: [
+        { ticker: "AAPL", marketValue: 100 },
+        { ticker: "MSFT", marketValue: 200, __dropped: true },
+      ],
+    });
+    expect(decision.deriveFromHoldings).toBe(false);
   });
 });

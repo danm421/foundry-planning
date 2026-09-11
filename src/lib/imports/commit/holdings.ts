@@ -9,6 +9,7 @@ import {
 import { fetchEodCloses as defaultFetchCloses, eodhdSymbol } from "@/lib/investments/quote";
 import { normalizeExtractedHolding } from "@/lib/extraction/normalize-holdings";
 import type { ExtractedHolding } from "@/lib/extraction/types";
+import { livingHoldings } from "@/lib/imports/living-rows";
 import type { ImportPayload } from "@/lib/imports/types";
 import type { ResolvedHoldingsMap, Tx } from "./types";
 
@@ -56,7 +57,7 @@ export async function resolveHoldingsForCommit(
 
   const tickers = new Set<string>();
   for (const acct of committableAccounts(payload, rowIds)) {
-    for (const h of acct.holdings ?? []) {
+    for (const h of livingHoldings(acct)) {
       const t = h.ticker?.trim().toUpperCase();
       if (t) tickers.add(t);
     }

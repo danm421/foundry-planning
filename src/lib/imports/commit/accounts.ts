@@ -11,6 +11,7 @@ import {
 } from "@/lib/ownership";
 
 import { getExistingId, linkCreated, type ImportPayload } from "../types";
+import { livingHoldings } from "../living-rows";
 import {
   loadFamilyRoleIds,
   synthesizeAccountOwners,
@@ -219,7 +220,7 @@ export async function commitAccounts(
       await writeAccountHoldings(
         tx,
         inserted.id,
-        row.holdings ?? [],
+        livingHoldings(row),
         ctx.resolvedHoldings ?? new Map(),
         false,
         ctx.holdingsAccountIds,
@@ -317,7 +318,7 @@ export async function commitAccounts(
     await writeAccountHoldings(
       tx,
       existingId,
-      row.holdings ?? [],
+      livingHoldings(row),
       ctx.resolvedHoldings ?? new Map(),
       true,
       ctx.holdingsAccountIds,
