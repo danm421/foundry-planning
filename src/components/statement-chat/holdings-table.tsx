@@ -37,6 +37,16 @@ export function HoldingsTable({ rowId, row, onEditHolding, onDropHolding }: Hold
   const commitEdit = (holdingId: string, field: string, raw: string) => {
     setEditing(null);
     if (!isEditableHoldingField(field)) return;
+    // R20: `Number("")` is `0`, and `Number.isFinite(0)` is `true` — so a
+    // blank numeric cell would otherwise sail past `isValidHoldingValue`
+    // below and silently write `0`. `<input type="number">`'s own value-
+    // sanitization sets `.value` to `""` for ANY unparseable entry (not just
+    // an explicit clear), so this is the common case for a typo, not an edge
+    // case. Rejected here, before coercion, so it never reaches `Number()`.
+    // Clearing a TEXT field is different and deliberate: it writes `""`,
+    // which `cellText` renders as `—` — a real clear, not a typo, so it is
+    // NOT rejected here.
+    if (!TEXT_FIELDS.has(field) && raw.trim() === "") return;
     // Coerced HERE, at the one boundary a string becomes a payload value. A
     // numeric field that reaches the payload as a string is STORED as one,
     // and the engine then concatenates instead of adding — `1 + "0.03"` is
@@ -92,7 +102,18 @@ export function HoldingsTable({ rowId, row, onEditHolding, onDropHolding }: Hold
                       type="button"
                       disabled={!holdingId}
                       onClick={() => setEditing({ holdingId: holdingId!, key: col.key })}
-                      aria-label={`Edit ${col.header.toLowerCase()} for ${holdingLabel(h)}`}
+                      // R21: appended, never a replacement — an `aria-label`
+                      // OVERRIDES a button's text content as its accessible
+                      // name, so a label with no value in it would make every
+                      // figure in this table unreadable to a screen reader,
+                      // on a table whose only purpose is reviewing figures
+                      // before they reach a client's plan. `entity-table.tsx`
+                      // avoids this by giving its own edit button NO
+                      // `aria-label` at all, letting the displayed value BE
+                      // the name; this column instead needs the field/ticker
+                      // context the brief's tests query by, so the value is
+                      // suffixed onto it rather than dropped.
+                      aria-label={`Edit ${col.header.toLowerCase()} for ${holdingLabel(h)}: ${formatCellValue(col.kind, h[col.key as keyof ExtractedHolding])}`}
                       className="text-ink hover:text-accent-ink disabled:cursor-default"
                     >
                       {cellText(col.kind, h[col.key as keyof ExtractedHolding])}
@@ -119,13 +140,27 @@ export function HoldingsTable({ rowId, row, onEditHolding, onDropHolding }: Hold
   );
 }
 
-function cellText(kind: string, value: unknown) {
+/** Plain-string rendering shared by `cellText` (the display) and the R21
+ *  `aria-label` suffix (which cannot hold JSX). ONE formatting definition, so
+ *  the accessible name can never drift from what the cell visibly shows. */
+function formatCellValue(kind: string, value: unknown): string {
   if (value === undefined || value === null || value === "") return "—";
   if (kind === "money" && typeof value === "number") {
-    return <span className="tabular">${Math.round(value).toLocaleString("en-US")}</span>;
+    return `$${Math.round(value).toLocaleString("en-US")}`;
   }
   if (kind === "number" && typeof value === "number") {
-    return <span className="tabular">{value.toLocaleString("en-US")}</span>;
+    return value.toLocaleString("en-US");
   }
   return String(value);
+}
+
+function cellText(kind: string, value: unknown) {
+  // Wrapped in `tabular` only on the exact same condition `formatCellValue`
+  // used to produce a numerically-formatted string — never inferred from
+  // `kind` alone, or a money/number COLUMN holding a stray non-numeric value
+  // (defensive; shouldn't happen) would wrap plain text in a figure font.
+  if ((kind === "money" || kind === "number") && typeof value === "number") {
+    return <span className="tabular">{formatCellValue(kind, value)}</span>;
+  }
+  return formatCellValue(kind, value);
 }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ExcludedRow } from "@/components/statement-chat/excluded-rows";
-import type { ExtractedAccount } from "@/lib/extraction/types";
+import type { ExtractedAccount, ExtractedHolding } from "@/lib/extraction/types";
 import type { Annotated } from "@/lib/imports/types";
 import { readChatState, writeChatState, type ChatTurn } from "@/lib/statement-chat/state";
 
@@ -354,10 +354,20 @@ export function useChatCommit(clientId: string, importId: string) {
     [updateResult],
   );
 
-  /** Patch one position, addressed by its account AND its own id — a
-   *  `__holdingId` is unique only within its account (Task 2). */
-  const handleEditHolding = useCallback(
-    (rowId: string, holdingId: string, field: string, value: unknown) => {
+  /**
+   * R22: the shared body of `handleEditHolding`/`handleDropHolding` below —
+   * both are "find the row, find the position within it, merge a partial
+   * patch onto it" and previously differed only in the shape of that patch.
+   * Kept INTERNAL (not returned from the hook): the two named handlers are
+   * the public surface both `holdings-table.tsx` and its tests call, and
+   * Task 7's server-side handler needs the same merge, not this hook's own
+   * `updateResult` plumbing.
+   *
+   * Patch one position, addressed by its account AND its own id — a
+   * `__holdingId` is unique only within its account (Task 2).
+   */
+  const patchHolding = useCallback(
+    (rowId: string, holdingId: string, patch: Partial<ExtractedHolding>) => {
       updateResult((prev) =>
         prev && {
           ...prev,
@@ -367,7 +377,7 @@ export function useChatCommit(clientId: string, importId: string) {
               : {
                   ...row,
                   holdings: (row.holdings ?? []).map((h) =>
-                    h.__holdingId === holdingId ? { ...h, [field]: value } : h,
+                    h.__holdingId === holdingId ? { ...h, ...patch } : h,
                   ),
                 },
           ),
@@ -377,27 +387,20 @@ export function useChatCommit(clientId: string, importId: string) {
     [updateResult],
   );
 
+  const handleEditHolding = useCallback(
+    (rowId: string, holdingId: string, field: string, value: unknown) => {
+      patchHolding(rowId, holdingId, { [field]: value } as Partial<ExtractedHolding>);
+    },
+    [patchHolding],
+  );
+
   /** Tombstone, never a splice: the position is still in `fileResults` and a
    *  re-extraction would put a removed one straight back. */
   const handleDropHolding = useCallback(
     (rowId: string, holdingId: string) => {
-      updateResult((prev) =>
-        prev && {
-          ...prev,
-          rows: prev.rows.map((row) =>
-            row.__rowId !== rowId
-              ? row
-              : {
-                  ...row,
-                  holdings: (row.holdings ?? []).map((h) =>
-                    h.__holdingId === holdingId ? { ...h, __dropped: true } : h,
-                  ),
-                },
-          ),
-        },
-      );
+      patchHolding(rowId, holdingId, { __dropped: true });
     },
-    [updateResult],
+    [patchHolding],
   );
 
   // `onRestore` — lifts an excluded (rollup-detected) row into the working
