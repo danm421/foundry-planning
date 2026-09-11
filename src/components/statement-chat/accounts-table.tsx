@@ -17,6 +17,8 @@ export interface AccountsTableProps {
   committedRowIds: string[];
   onCommitRows: (rowIds: string[]) => Promise<void>;
   onEditCell: (rowId: string, field: string, value: unknown) => void;
+  onEditHolding: (rowId: string, holdingId: string, field: string, value: unknown) => void;
+  onDropHolding: (rowId: string, holdingId: string) => void;
   onRestore?: (row: Row) => void;
   /** Disables every row's Commit button regardless of its own committed/
    *  pending state (Ruling 95, Task 11b fix round 1) — the caller sets this
@@ -50,12 +52,26 @@ function withReason(excluded: ExcludedRow<Row>[]): ExcludedRow<Row>[] {
  * column spec applied. Phase 2 adds sibling `<entity>-table.tsx` wrappers
  * the same way, each supplying its own column spec.
  */
-export default function AccountsTable({ excluded, ...props }: AccountsTableProps) {
+export default function AccountsTable({
+  excluded,
+  onEditHolding,
+  onDropHolding,
+  ...props
+}: AccountsTableProps) {
   return (
     <EntityTable
       columns={ACCOUNT_COLUMNS}
       excluded={withReason(excluded)}
-      expand={(row) => (livingHoldings(row).length > 0 ? <HoldingsTable row={row} /> : null)}
+      expand={(row) =>
+        livingHoldings(row).length > 0 && row.__rowId ? (
+          <HoldingsTable
+            rowId={row.__rowId}
+            row={row}
+            onEditHolding={onEditHolding}
+            onDropHolding={onDropHolding}
+          />
+        ) : null
+      }
       expandLabel={(row) => `Show positions for ${row.name}`}
       {...props}
     />

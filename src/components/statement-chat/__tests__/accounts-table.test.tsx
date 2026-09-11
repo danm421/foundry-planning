@@ -17,7 +17,7 @@ const rows = [
 
 describe("accounts table", () => {
   it("renders the eight spec columns in order", () => {
-    render(<AccountsTable rows={rows} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} />);
+    render(<AccountsTable rows={rows} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} onEditHolding={vi.fn()} onDropHolding={vi.fn()} />);
     // Leading "" is the Task 5 disclosure column's header cell — AccountsTable
     // always supplies `expand` to EntityTable now, so every row gets one,
     // trailing "" is still the Commit column's.
@@ -28,27 +28,27 @@ describe("accounts table", () => {
 
   it("commits a single row without touching its neighbours", async () => {
     const onCommitRows = vi.fn();
-    render(<AccountsTable rows={rows} excluded={[]} committedRowIds={[]} onCommitRows={onCommitRows} onEditCell={vi.fn()} />);
+    render(<AccountsTable rows={rows} excluded={[]} committedRowIds={[]} onCommitRows={onCommitRows} onEditCell={vi.fn()} onEditHolding={vi.fn()} onDropHolding={vi.fn()} />);
     const roth = screen.getByRole("row", { name: /Schwab Roth IRA/ });
     await userEvent.click(within(roth).getByRole("button", { name: /commit/i }));
     expect(onCommitRows).toHaveBeenCalledWith(["r2"]);
   });
 
   it("renders a resolved owner name when matching succeeded", () => {
-    render(<AccountsTable rows={rows} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} />);
+    render(<AccountsTable rows={rows} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} onEditHolding={vi.fn()} onDropHolding={vi.fn()} />);
     const taxable = screen.getByRole("row", { name: /Schwab Taxable 0707/ });
     expect(within(taxable).getByText("Michael V Sharesky")).toBeInTheDocument();
   });
 
   it("falls back to the registration hint, marked as unconfirmed", () => {
-    render(<AccountsTable rows={rows} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} />);
+    render(<AccountsTable rows={rows} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} onEditHolding={vi.fn()} onDropHolding={vi.fn()} />);
     const roth = screen.getByRole("row", { name: /Schwab Roth IRA/ });
     const owner = within(roth).getByText(/MICHAEL V SHARESKY ROTH IRA/);
     expect(owner.closest("[data-assumed]")).not.toBeNull();
   });
 
   it("locks a committed row against re-posting", () => {
-    render(<AccountsTable rows={rows} excluded={[]} committedRowIds={["r1"]} onCommitRows={vi.fn()} onEditCell={vi.fn()} />);
+    render(<AccountsTable rows={rows} excluded={[]} committedRowIds={["r1"]} onCommitRows={vi.fn()} onEditCell={vi.fn()} onEditHolding={vi.fn()} onDropHolding={vi.fn()} />);
     const taxable = screen.getByRole("row", { name: /Schwab Taxable 0707/ });
     expect(within(taxable).getByRole("button", { name: /committed/i })).toBeDisabled();
   });
@@ -59,13 +59,13 @@ describe("accounts table", () => {
       row: { __rowId: "r9", name: "All Accounts", value: 21_475.2 },
       decision: { kind: "rollup-excluded", label: "All Accounts", value: 21_475.2, coversCount: 3 },
     }] as never;
-    render(<AccountsTable rows={rows} excluded={excluded} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={onEditCell} />);
+    render(<AccountsTable rows={rows} excluded={excluded} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={onEditCell} onEditHolding={vi.fn()} onDropHolding={vi.fn()} />);
     expect(screen.getByText(/total covering 3 accounts/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /include anyway/i })).toBeInTheDocument();
   });
 
   it("scrolls the table sideways rather than the page", () => {
-    const { container } = render(<AccountsTable rows={rows} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} />);
+    const { container } = render(<AccountsTable rows={rows} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} onEditHolding={vi.fn()} onDropHolding={vi.fn()} />);
     expect(container.querySelector(".overflow-x-auto")).not.toBeNull();
   });
 });
@@ -82,7 +82,7 @@ describe("accounts table", () => {
  */
 describe("accounts table — the Owner cell is editable", () => {
   it("opens an Owner dropdown on a row that has not been committed", async () => {
-    render(<AccountsTable rows={rows} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} />);
+    render(<AccountsTable rows={rows} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} onEditHolding={vi.fn()} onDropHolding={vi.fn()} />);
     const roth = screen.getByRole("row", { name: /Schwab Roth IRA/ });
     await userEvent.click(within(roth).getByRole("button", { name: /MICHAEL V SHARESKY ROTH IRA/ }));
     expect(within(roth).getByLabelText("Owner")).toBeInTheDocument();
@@ -93,7 +93,7 @@ describe("accounts table — the Owner cell is editable", () => {
 
   it("writes exactly one field, once, when an owner is picked", async () => {
     const onEditCell = vi.fn();
-    render(<AccountsTable rows={rows} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={onEditCell} />);
+    render(<AccountsTable rows={rows} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={onEditCell} onEditHolding={vi.fn()} onDropHolding={vi.fn()} />);
     const roth = screen.getByRole("row", { name: /Schwab Roth IRA/ });
     await userEvent.click(within(roth).getByRole("button", { name: /MICHAEL V SHARESKY ROTH IRA/ }));
     await userEvent.selectOptions(within(roth).getByLabelText("Owner"), "spouse");
@@ -111,7 +111,7 @@ describe("accounts table — the Owner cell is editable", () => {
   // the correction goes nowhere. The un-committed row in the same table is
   // the positive control: it still offers the editor.
   it("offers no Owner editor on a committed row", async () => {
-    render(<AccountsTable rows={rows} excluded={[]} committedRowIds={["r1"]} onCommitRows={vi.fn()} onEditCell={vi.fn()} />);
+    render(<AccountsTable rows={rows} excluded={[]} committedRowIds={["r1"]} onCommitRows={vi.fn()} onEditCell={vi.fn()} onEditHolding={vi.fn()} onDropHolding={vi.fn()} />);
     const taxable = screen.getByRole("row", { name: /Schwab Taxable 0707/ });
     expect(within(taxable).queryByRole("button", { name: "Michael V Sharesky" })).toBeNull();
     expect(within(taxable).queryByLabelText("Owner")).toBeNull();
@@ -145,7 +145,7 @@ describe("accounts table — the Owner cell holds no nested button", () => {
   const ownerCellOf = (row: HTMLElement) => within(row).getAllByRole("cell")[5];
 
   it("renders exactly one button in an editable Owner cell, and keeps the Assumed pill", () => {
-    render(<AccountsTable rows={rows} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} />);
+    render(<AccountsTable rows={rows} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} onEditHolding={vi.fn()} onDropHolding={vi.fn()} />);
     const roth = screen.getByRole("row", { name: /Schwab Roth IRA/ });
     const cell = ownerCellOf(roth) as HTMLElement;
 
@@ -159,7 +159,7 @@ describe("accounts table — the Owner cell holds no nested button", () => {
   });
 
   it("makes the assumed reason reachable in the editor instead", async () => {
-    render(<AccountsTable rows={rows} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} />);
+    render(<AccountsTable rows={rows} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} onEditHolding={vi.fn()} onDropHolding={vi.fn()} />);
     const roth = screen.getByRole("row", { name: /Schwab Roth IRA/ });
     await userEvent.click(within(roth).getByRole("button", { name: /MICHAEL V SHARESKY ROTH IRA/ }));
     expect(within(roth).getByText(/not yet matched to a family member/i)).toBeInTheDocument();
@@ -194,7 +194,7 @@ describe("accounts table — the Owner cell shows the value that commits", () =>
     ] as never;
 
   it("renders the role as the primary value, with the printed name subordinate", () => {
-    render(<AccountsTable rows={withRoleAndHint("spouse")} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} />);
+    render(<AccountsTable rows={withRoleAndHint("spouse")} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} onEditHolding={vi.fn()} onDropHolding={vi.fn()} />);
     const cell = ownerCellOf(screen.getByRole("row", { name: /Schwab Roth IRA/ }));
 
     // Catches the defect exactly: with hint-before-role precedence the role
@@ -214,7 +214,7 @@ describe("accounts table — the Owner cell shows the value that commits", () =>
 
   it("changes what the cell displays when owner changes", () => {
     const { rerender } = render(
-      <AccountsTable rows={withRoleAndHint("client")} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} />,
+      <AccountsTable rows={withRoleAndHint("client")} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} onEditHolding={vi.fn()} onDropHolding={vi.fn()} />,
     );
     expect(within(ownerCellOf(screen.getByRole("row", { name: /Schwab Roth IRA/ }))).getByText("Client")).toBeInTheDocument();
 
@@ -222,7 +222,7 @@ describe("accounts table — the Owner cell shows the value that commits", () =>
     // differently on screen. Catches any rendering that ignores the field —
     // including the defect, where both renders showed the identical cell.
     rerender(
-      <AccountsTable rows={withRoleAndHint("joint")} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} />,
+      <AccountsTable rows={withRoleAndHint("joint")} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} onEditHolding={vi.fn()} onDropHolding={vi.fn()} />,
     );
     const cell = ownerCellOf(screen.getByRole("row", { name: /Schwab Roth IRA/ }));
     expect(within(cell).getByText("Joint")).toBeInTheDocument();

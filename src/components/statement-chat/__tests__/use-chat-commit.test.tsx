@@ -230,3 +230,59 @@ describe("useChatCommit — the fresh-read merge must not discard a local edit (
     expect(r1Entry?.match).toEqual({ kind: "exact", existingId: "acct-1" });
   });
 });
+
+describe("useChatCommit — editing and dropping one position (Task 6)", () => {
+  it("edits one position by (rowId, holdingId) and leaves its siblings alone", () => {
+    const { result } = renderHook(() => useChatCommit("c1", "i1"));
+    act(() =>
+      result.current.applyExtractionResult({
+        summary: "",
+        caveats: [],
+        excluded: [],
+        rows: [
+          {
+            __rowId: "r1",
+            name: "Brokerage",
+            value: 300,
+            holdings: [
+              { __holdingId: "t:AAPL#0", ticker: "AAPL", shares: 10 },
+              { __holdingId: "t:VTI#0", ticker: "VTI", shares: 20 },
+            ],
+          } as never,
+        ],
+      }),
+    );
+
+    act(() => result.current.handleEditHolding("r1", "t:AAPL#0", "shares", 12));
+
+    const holdings = result.current.result!.rows[0].holdings!;
+    expect(holdings[0].shares).toBe(12);
+    expect(holdings[1].shares).toBe(20);
+    expect(typeof holdings[0].shares).toBe("number");
+  });
+
+  it("tombstones a dropped position rather than removing it from the array", () => {
+    const { result } = renderHook(() => useChatCommit("c1", "i1"));
+    act(() =>
+      result.current.applyExtractionResult({
+        summary: "",
+        caveats: [],
+        excluded: [],
+        rows: [
+          {
+            __rowId: "r1",
+            name: "Brokerage",
+            holdings: [{ __holdingId: "t:AAPL#0", ticker: "AAPL" }],
+          } as never,
+        ],
+      }),
+    );
+
+    act(() => result.current.handleDropHolding("r1", "t:AAPL#0"));
+
+    // Still present, so the next extraction cannot resurrect it.
+    const holdings = result.current.result!.rows[0].holdings!;
+    expect(holdings).toHaveLength(1);
+    expect(holdings[0].__dropped).toBe(true);
+  });
+});

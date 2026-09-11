@@ -354,6 +354,52 @@ export function useChatCommit(clientId: string, importId: string) {
     [updateResult],
   );
 
+  /** Patch one position, addressed by its account AND its own id — a
+   *  `__holdingId` is unique only within its account (Task 2). */
+  const handleEditHolding = useCallback(
+    (rowId: string, holdingId: string, field: string, value: unknown) => {
+      updateResult((prev) =>
+        prev && {
+          ...prev,
+          rows: prev.rows.map((row) =>
+            row.__rowId !== rowId
+              ? row
+              : {
+                  ...row,
+                  holdings: (row.holdings ?? []).map((h) =>
+                    h.__holdingId === holdingId ? { ...h, [field]: value } : h,
+                  ),
+                },
+          ),
+        },
+      );
+    },
+    [updateResult],
+  );
+
+  /** Tombstone, never a splice: the position is still in `fileResults` and a
+   *  re-extraction would put a removed one straight back. */
+  const handleDropHolding = useCallback(
+    (rowId: string, holdingId: string) => {
+      updateResult((prev) =>
+        prev && {
+          ...prev,
+          rows: prev.rows.map((row) =>
+            row.__rowId !== rowId
+              ? row
+              : {
+                  ...row,
+                  holdings: (row.holdings ?? []).map((h) =>
+                    h.__holdingId === holdingId ? { ...h, __dropped: true } : h,
+                  ),
+                },
+          ),
+        },
+      );
+    },
+    [updateResult],
+  );
+
   // `onRestore` — lifts an excluded (rollup-detected) row into the working
   // set WITHOUT committing it (Task 10 review, CRITICAL). The advisor still
   // has to click Commit on it afterward.
@@ -529,6 +575,8 @@ export function useChatCommit(clientId: string, importId: string) {
     adoptTurnPayload,
     handleCommitRows,
     handleEditCell,
+    handleEditHolding,
+    handleDropHolding,
     handleRestore,
     handleFinalize,
   };

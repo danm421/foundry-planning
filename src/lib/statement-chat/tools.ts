@@ -29,6 +29,21 @@ import type {
 type AccountRow = Annotated<ExtractedAccount>;
 
 /**
+ * The holdings allowlist and its validators live in `holding-fields.ts`,
+ * not here: that module has no runtime imports, so `holdings-table.tsx`
+ * (a `"use client"` component) can import it directly without pulling this
+ * file's `{ db } from "@/db"` into the browser bundle. Re-exported here so
+ * any server-side reference keeps resolving from `tools.ts` — one
+ * definition, two safe import paths.
+ */
+export {
+  EDITABLE_HOLDING_FIELDS,
+  isEditableHoldingField,
+  isValidHoldingValue,
+  type EditableHoldingField,
+} from "@/lib/statement-chat/holding-fields";
+
+/**
  * Ruling 50: `edit_row` uses an ALLOWLIST, never a denylist. These are
  * Task 10's seven columns (`ACCOUNT_COLUMNS` in
  * `src/components/statement-chat/accounts-columns.ts` — Account type expands

@@ -89,6 +89,8 @@ export function ChatSurface({
     adoptTurnPayload,
     handleCommitRows,
     handleEditCell,
+    handleEditHolding,
+    handleDropHolding,
     handleRestore,
     handleFinalize,
   } = useChatCommit(clientId, importId);
@@ -397,6 +399,8 @@ export function ChatSurface({
                     committedRowIds={committedRowIds}
                     onCommitRows={handleCommitRows}
                     onEditCell={handleEditCell}
+                    onEditHolding={handleEditHolding}
+                    onDropHolding={handleDropHolding}
                     onRestore={handleRestore}
                     // Ruling 95 / Finding 4: while a turn is sending, nothing
                     // may enqueue onto the same commit queue `flushRowsToServer`
