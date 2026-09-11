@@ -68,11 +68,19 @@ const FAMILY_DEPENDENT_TABS: ReadonlySet<CommitTab> = new Set([
  * After dispatch, the import row's `perTabCommittedAt` jsonb is patched
  * with the just-finished tabs and the import status is flipped to
  * 'committed' if every tab this import requires (see `requiredCommitTabs`)
- * is now present.
+ * is now present — UNLESS `ctx.rowIds` is set, meaning this is a row-
+ * filtered commit from the chat surface. A partial commit is by definition
+ * not a completed tab, so it takes the `persistPartialCommit` path instead:
+ * still persists `payloadJson` (carrying the links `linkCreated` just
+ * stamped, so a re-commit of the same row updates rather than duplicates),
+ * but never stamps `perTabCommittedAt` or flips `status`/`committedAt`. See
+ * `persistPartialCommit`'s docstring for why the "just skip persistence"
+ * fix is worse than the bug it would fix.
  */
 export async function commitTabs(args: CommitTabsArgs): Promise<CommitTabsResult> {
   const requested = new Set<CommitTab>(args.tabs);
   const ordered = COMMIT_TABS.filter((t) => requested.has(t));
+  const isPartialCommit = args.ctx.rowIds !== undefined;
 
   return await db.transaction(async (tx) => {
     const results = {} as Record<CommitTab, CommitResult>;
@@ -98,12 +106,9 @@ export async function commitTabs(args: CommitTabsArgs): Promise<CommitTabsResult
       }
     }
 
-    const { allTabsCommitted, firstTimeAllCommitted } = await markTabsCommitted(
-      tx,
-      args.importId,
-      ordered,
-      args.payload,
-    );
+    const { allTabsCommitted, firstTimeAllCommitted } = isPartialCommit
+      ? await persistPartialCommit(tx, args.importId, args.payload)
+      : await markTabsCommitted(tx, args.importId, ordered, args.payload);
     return { results, allTabsCommitted, firstTimeAllCommitted };
   });
 }
@@ -217,4 +222,60 @@ export async function markTabsCommitted(
     .where(eq(clientImports.id, importId));
 
   return { allTabsCommitted: allCommitted, firstTimeAllCommitted };
+}
+
+/**
+ * The partial-commit counterpart to `markTabsCommitted`, used when
+ * `ctx.rowIds` is set (Task 7, fix round 1 / IMPORTANT 1).
+ *
+ * A row-filtered commit is by definition not a completed tab — the other
+ * N-1 rows in `accounts` are still sitting uncommitted — so this must NOT
+ * patch `perTabCommittedAt` or flip `status`/`committedAt` the way
+ * `markTabsCommitted` does. Doing so would mark the WHOLE tab committed
+ * (and, once every required tab happens to have an entry, flip the import
+ * to 'committed') after only one row landed, making the import's own record
+ * of what was imported false.
+ *
+ * It MUST, however, still persist `payloadJson`. That single UPDATE is the
+ * only place the `linkCreated` links the commit modules just stamped onto
+ * `payload` survive past this request — dropping it (the "obviously
+ * simpler" fix of skipping persistence entirely for a partial commit) would
+ * mean the NEXT commit of the same row re-reads a payload that still says
+ * `{ kind: "new" }` and inserts a second, duplicate account. That is a worse
+ * defect than the one this function exists to fix, and it is exactly the
+ * mechanism `accounts-row-filter.test.ts`'s double-post test and this file's
+ * `persistPartialCommit` tests both pin down.
+ *
+ * `allTabsCommitted` reflects the import's EXISTING perTabCommittedAt state
+ * (this call never adds to it), and `firstTimeAllCommitted` is always
+ * false — a partial commit can never BE the transition to fully-committed.
+ * Closing the import once every row has been committed belongs to the
+ * surface that knows `committedRowIds` (Tasks 9/10), which this dispatcher
+ * has no visibility into and should not try to infer.
+ */
+export async function persistPartialCommit(
+  tx: Tx,
+  importId: string,
+  payload: ImportPayload,
+): Promise<{ allTabsCommitted: boolean; firstTimeAllCommitted: boolean }> {
+  const now = new Date();
+
+  const [existing] = await tx
+    .select({ perTabCommittedAt: clientImports.perTabCommittedAt })
+    .from(clientImports)
+    .where(eq(clientImports.id, importId));
+
+  const merged = (existing?.perTabCommittedAt as Record<string, unknown> | null) ?? {};
+  const required = requiredCommitTabs(presenceFromPayload(payload));
+  const allTabsCommitted = required.every((t) => merged[t] != null);
+
+  await tx
+    .update(clientImports)
+    .set({
+      payloadJson: sql`COALESCE(${clientImports.payloadJson}, '{}'::jsonb) || ${JSON.stringify({ payload })}::jsonb`,
+      updatedAt: now,
+    })
+    .where(eq(clientImports.id, importId));
+
+  return { allTabsCommitted, firstTimeAllCommitted: false };
 }

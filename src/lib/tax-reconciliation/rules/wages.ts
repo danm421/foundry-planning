@@ -133,7 +133,7 @@ export const wageRules: Rule = (input) => {
       // "the salary amount is off", and those ids are persisted.
       suggestions.push({ id: `${id}.create`, section: "income", kind: "update", status: "open",
         headline: `The return shows ${money(wages)} of wages; the plan has no salary.`,
-        meaning: "Without W-2s the return cannot say which employer or whose. Add one salary row now and rename it, or upload the W-2s on Tax Analysis for a per-employer comparison.",
+        meaning: "Without W-2s the return cannot say which employer or whose. Add one salary row now and rename it, or upload the W-2s on the Report view for a per-employer comparison.",
         returnFigure, planFigure, delta: makeDelta(wages, 0),
         action: { label: `Add wages of ${money(wages)}`, describe: `Adds a salary "Wages (from ${taxYear} return)" of ${money(wages)}`, amountEditable: true, defaultAmount: wages, ownerChoices: spouse ? ["client", "spouse"] : undefined,
           target: { kind: "income.create", input: createInput(`Wages (from ${taxYear} return)`, wages), amountField: "annualAmount", ownerField: "owner" } } });
@@ -148,7 +148,7 @@ export const wageRules: Rule = (input) => {
     } else {
       suggestions.push({ id, section: "income", kind: "review", status: "open",
         headline: `Wages on the return are ${money(wages)}; the plan's ${rows.length} salaries total ${money(p)}.`,
-        meaning: "Which salary is off cannot be told from line 1a alone. Upload the W-2s on Tax Analysis, or adjust the rows on Inflows & Outflows.",
+        meaning: "Which salary is off cannot be told from line 1a alone. Upload the W-2s on the Report view, or adjust the rows on Inflows & Outflows.",
         returnFigure, planFigure, delta: makeDelta(wages, p), link: { label: "Open Inflows & Outflows", href: detailsHref(input, "income-expenses") } });
     }
   }

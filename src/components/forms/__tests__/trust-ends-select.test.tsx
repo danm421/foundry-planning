@@ -4,7 +4,10 @@ import TrustEndsSelect from "../trust-ends-select";
 import { describe, it, expect, vi } from "vitest";
 
 describe("TrustEndsSelect", () => {
-  const household = { client: { firstName: "John" }, spouse: { firstName: "Jane" } };
+  const household = {
+    client: { firstName: "John" },
+    spouse: { firstName: "Jane" },
+  };
 
   it("renders three options labeled with names + survivorship", () => {
     render(<TrustEndsSelect household={household} value={null} onChange={() => {}} />);
@@ -20,9 +23,9 @@ describe("TrustEndsSelect", () => {
     expect(onChange).toHaveBeenCalledWith("spouse_death");
   });
 
-  it("hides spouse option when no spouse in household", () => {
+  it("hides co-client option when no co-client in household", () => {
     render(<TrustEndsSelect household={{ client: { firstName: "John" }, spouse: null }} value={null} onChange={() => {}} />);
-    // Spouse option should not be present; the four options become: blank, client_death, survivorship.
+    // Co-client option should not be present; the four options become: blank, client_death, survivorship.
     expect(screen.queryByRole("option", { name: /jane's death/i })).not.toBeInTheDocument();
     // Verify exact remaining options exist
     expect(screen.getByRole("option", { name: /john's death/i })).toBeInTheDocument();

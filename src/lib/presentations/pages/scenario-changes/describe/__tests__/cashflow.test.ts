@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import { describeChange } from "../index";
 import { buildResolveContext, EMPTY_RESOLVE_DATA } from "../resolve";
 import { visibleDetail } from "../../types";
@@ -53,6 +54,54 @@ describe("cashflow/estate describers", () => {
     expect(visibleDetail(row, true)).toHaveLength(2);
     expect(row.detail.join(" ")).toContain("$100k → $150k");
     expect(row.detail.join(" ")).not.toContain("Adjusts this expense.");
+  });
+
+  // An owner change is a field-level diff, so it takes the GENERIC edit path,
+  // where the payload value used to be printed verbatim — putting the raw
+  // lowercase enum token for the household's second person into a before/after
+  // cell on a page that IS the client deliverable. The add path never had this
+  // (kinds/cashflow.ts already labels `owner`); only the edit path did.
+  it("income edit: the owner enum is humanised in the before/after cells", () => {
+    const row = describeChange(
+      {
+        id: "c", scenarioId: "s", opType: "edit", targetKind: "income",
+        targetId: "i", toggleGroupId: null, orderIndex: 0,
+        payload: { owner: { from: "client", to: "spouse" } },
+      },
+      { targetNames: { "income:i": "Consulting" }, resolve: buildResolveContext(EMPTY_RESOLVE_DATA) },
+    );
+    expect(row.before).toBe("Client");
+    expect(row.after).toBe(CO_CLIENT_LABEL);
+  });
+
+  // Same defect on the multi-field path, which builds "Label: from → to"
+  // detail segments instead of columns — and on `grantor`, the gift's copy of
+  // the same client/spouse/joint enum.
+  it("gift edit: the grantor enum is humanised in the detail segments", () => {
+    const row = describeChange(
+      {
+        id: "c", scenarioId: "s", opType: "edit", targetKind: "gift",
+        targetId: "g", toggleGroupId: null, orderIndex: 0,
+        payload: { grantor: { from: "client", to: "spouse" }, amount: { from: 10000, to: 20000 } },
+      },
+      { targetNames: { "gift:g": "Annual exclusion gift" }, resolve: buildResolveContext(EMPTY_RESOLVE_DATA) },
+    );
+    expect(row.detail.join(" ")).toContain(`Grantor: Client \u2192 ${CO_CLIENT_LABEL}`);
+  });
+
+  // The guard: a field whose NAME is owner-ish but whose VALUE is an id must
+  // keep falling through untouched, the way row-lines.ts scopes its own map.
+  it("leaves an owning-entity id alone", () => {
+    const row = describeChange(
+      {
+        id: "c", scenarioId: "s", opType: "edit", targetKind: "income",
+        targetId: "i", toggleGroupId: null, orderIndex: 0,
+        payload: { ownerEntityId: { from: "spouse-trust-1", to: "client-trust-2" } },
+      },
+      { targetNames: { "income:i": "Consulting" }, resolve: buildResolveContext(EMPTY_RESOLVE_DATA) },
+    );
+    expect(row.before).toBe("spouse-trust-1");
+    expect(row.after).toBe("client-trust-2");
   });
 
   it("liability add: balance, rate, payment", () => {

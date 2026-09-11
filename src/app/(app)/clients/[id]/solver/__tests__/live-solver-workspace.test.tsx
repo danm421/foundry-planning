@@ -200,7 +200,7 @@ const baseProps = {
     scenarioRef: "base",
   },
   clientName: "Client",
-  spouseName: "Spouse",
+  spouseName: "Co-client",
   categoryGrowthDefaults: { taxable: 0.06, retirement: 0.06, cash: 0.02 },
   retirementDefaultMix: [],
   baseGifts: [],

@@ -5,6 +5,7 @@ import DialogShell from "@/components/dialog-shell";
 import type { DivorceDisposition } from "@/lib/divorce/allocation-rules";
 import type { CommitPreview } from "@/lib/divorce/commit-preview";
 import type { CommitResult } from "@/lib/divorce/commit-divorce-plan";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 const currency = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -60,9 +61,9 @@ export function CommitPreviewDialog({
   const [committing, setCommitting] = useState(false);
   const [commitError, setCommitError] = useState<string | null>(null);
 
-  const spouseName = people.spouseName.trim() || "the spouse";
+  const spouseName = people.spouseName.trim() || CO_CLIENT_LABEL;
   const primaryName = people.primaryName.trim() || "the primary";
-  const spouseFirst = people.spouseName.trim().split(/\s+/)[0] || "Spouse";
+  const spouseFirst = people.spouseName.trim().split(/\s+/)[0] || CO_CLIENT_LABEL;
 
   // Load the preview on open; reset every step/field so a reopen is clean.
   useEffect(() => {

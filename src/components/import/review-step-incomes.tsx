@@ -6,6 +6,7 @@ import type { ClientMilestones, YearRef } from "@/lib/milestones";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import SourceBadge from "./source-badge";
 
 // The file's amber flag pair. Layered on top of CurrencyInput/PercentInput's
@@ -25,7 +26,7 @@ const INCOME_TYPE_OPTIONS: { value: IncomeType; label: string }[] = [
 
 const OWNER_OPTIONS = [
   { value: "client", label: "Client" },
-  { value: "spouse", label: "Spouse" },
+  { value: "spouse", label: CO_CLIENT_LABEL },
   { value: "joint", label: "Joint" },
 ];
 

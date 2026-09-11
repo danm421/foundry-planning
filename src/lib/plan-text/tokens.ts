@@ -71,7 +71,7 @@ export const PLAN_TOKENS: PlanToken[] = [
   },
   {
     id: "spouse_first_name",
-    label: "Spouse first name",
+    label: "Co-client first name",
     category: "People",
     resolve: safe(({ clientData }) => clientData.client.spouseName ?? null),
   },
@@ -94,7 +94,7 @@ export const PLAN_TOKENS: PlanToken[] = [
   },
   {
     id: "spouse_retirement_age",
-    label: "Spouse retirement age",
+    label: "Co-client retirement age",
     category: "People",
     resolve: safe(({ clientData }) => {
       const age = clientData.client.spouseRetirementAge;

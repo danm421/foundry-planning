@@ -11,6 +11,7 @@ import {
 import { activeIncomes } from "@/lib/solver/active-incomes";
 import { addedQuickAddRows, draftFromIncome } from "@/lib/solver/quick-add-cashflow";
 import { FieldHintPopover, type HintRow } from "@/components/forms/field-hint-popover";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import { SolverAddedCashflowRow } from "./solver-added-cashflow-row";
 import { SolverBaseHint } from "./solver-base-hint";
 import { CurrencyAmountInput } from "./solver-currency-amount-input";
@@ -113,7 +114,7 @@ export function SolverRowIncomes({
 function labelFor(income: Income, client: ClientData["client"]): string {
   const ownerSuffix =
     income.owner === "spouse"
-      ? ` — ${client.spouseName?.split(" ")[0] ?? "Spouse"}`
+      ? ` — ${client.spouseName?.split(" ")[0] ?? CO_CLIENT_LABEL}`
       : income.owner === "client"
         ? ` — ${client.firstName.split(" ")[0]}`
         : "";

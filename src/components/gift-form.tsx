@@ -11,6 +11,7 @@ import { discountedGiftValue, MAX_DISCOUNT_PCT } from "@/lib/gifts/apply-valuati
 import { discountAppliesToShape } from "@/lib/gifts/discount-applicability";
 import { giftPercentToWhole, roundGiftPercent, wholeToGiftPercent } from "@/lib/gifts/gift-percent";
 import type { AccountValueAtYear } from "@/lib/estate/account-value-at-year";
+import { CO_CLIENT_LABEL, familyMemberRoleLabel } from "@/lib/owner-labels";
 
 export interface GiftFormRecipients {
   /** Irrevocable trusts only. */
@@ -30,7 +31,7 @@ export function giftFormRecipientsFromClientData(clientData: ClientData): GiftFo
       id: m.id,
       firstName: m.firstName,
       lastName: m.lastName,
-      roleLabel: m.role,
+      roleLabel: familyMemberRoleLabel(m.role),
     })),
     externals: (clientData.externalBeneficiaries ?? []).map((x) => ({
       id: x.id,
@@ -414,7 +415,7 @@ export default function GiftForm(props: GiftFormProps) {
     });
     if (!result.exceeds) return [];
 
-    const nameFor = (gname: GiftGrantor) => (gname === "client" ? "Client" : "Spouse");
+    const nameFor = (gname: GiftGrantor) => (gname === "client" ? "Client" : CO_CLIENT_LABEL);
 
     const out: GiftWarningBreach[] = [];
     for (const g of ["client", "spouse"] as const) {
@@ -467,12 +468,12 @@ export default function GiftForm(props: GiftFormProps) {
           className={selectCls}
         >
           <option value="client">Client</option>
-          {props.hasSpouse && <option value="spouse">Spouse</option>}
+          {props.hasSpouse && <option value="spouse">{CO_CLIENT_LABEL}</option>}
           {props.hasSpouse && <option value="joint">Both (split gift)</option>}
         </select>
         {grantor === "joint" && (
           <p className="mt-1 text-xs text-ink-3">
-            Treated as half from each spouse — uses both annual exclusions / Crummey powers.
+            Treated as half from each Co-client — uses both annual exclusions / Crummey powers.
           </p>
         )}
       </Field>
@@ -592,7 +593,7 @@ export default function GiftForm(props: GiftFormProps) {
             )
           ) : (
             <p className="mt-2 text-xs text-ink-3" data-testid="exclusion-hint">
-              ≈ ${exclusionAmount.toLocaleString()}/yr{grantor === "joint" ? " (both spouses)" : ""}
+              ≈ ${exclusionAmount.toLocaleString()}/yr{grantor === "joint" ? " (both Co-clients)" : ""}
             </p>
           )}
           {effectiveRecurring && amountMode === "fixed" && (

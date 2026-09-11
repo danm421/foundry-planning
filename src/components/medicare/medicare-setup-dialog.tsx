@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { MedicareCoverage } from "@/engine/types";
 import DialogShell from "../dialog-shell";
 import { MedicareDialogTab } from "./medicare-dialog-tab";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 interface Props {
   clientId: string;
@@ -31,7 +32,7 @@ export function MedicareSetupDialog({ clientId, ownerDobs, hasSpouse, onClose, o
                 owner === o ? "bg-accent text-accent-on" : "bg-card-2 text-ink-2 border border-hair"
               }`}
             >
-              {o === "client" ? "Client" : "Spouse"}
+              {o === "client" ? "Client" : CO_CLIENT_LABEL}
             </button>
           ))}
         </div>

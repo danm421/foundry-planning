@@ -152,7 +152,7 @@ export default function BeneficiaryRowList({
               <option value="">— select beneficiary —</option>
               <optgroup label="Household">
                 <option value="hh:client">{household.client.firstName} (client)</option>
-                {household.spouse && <option value="hh:spouse">{household.spouse.firstName} (spouse)</option>}
+                {household.spouse && <option value="hh:spouse">{household.spouse.firstName} (co-client)</option>}
               </optgroup>
               <optgroup label="Family">
                 {members.map((m) => (

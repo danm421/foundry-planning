@@ -57,7 +57,7 @@ describe("computeAdjustedTaxableGifts", () => {
     expect(computeAdjustedTaxableGifts("client", gifts, [], ann, noAccountValue)).toBeCloseTo(81_000 + 10_500, 2);
   });
 
-  it("excludes spouse-grantor gifts when decedent is client", () => {
+  it("excludes co-client-grantor gifts when decedent is client", () => {
     const gifts = [
       gift({ grantor: "client", amount: 100_000 }),
       gift({ grantor: "spouse", amount: 100_000 }),

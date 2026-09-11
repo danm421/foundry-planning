@@ -63,6 +63,9 @@ export const ASSET_TRANSACTION_FIELD_LABELS: FieldLabels = {
   mortgageAmount: { label: "Mortgage amount", format: "currency" },
   mortgageRate: { label: "Mortgage rate", format: "percent" },
   mortgageTermMonths: { label: "Mortgage term (months)", format: "text" },
+  annualPropertyTax: { label: "Annual property tax", format: "currency" },
+  propertyTaxGrowthRate: { label: "Property tax growth", format: "percent" },
+  propertyTaxGrowthSource: { label: "Property tax growth source", format: "text" },
   businessAccount: { label: "Business sold", format: "reference" },
 };
 
@@ -108,9 +111,9 @@ export const CLIENT_FIELD_LABELS: FieldLabels = {
   retirementMonth: { label: "Retirement month", format: "text" },
   planEndAge: { label: "Plan end age", format: "text" },
   lifeExpectancy: { label: "Life expectancy", format: "text" },
-  spouseRetirementAge: { label: "Spouse retirement age", format: "text" },
-  spouseRetirementMonth: { label: "Spouse retirement month", format: "text" },
-  spouseLifeExpectancy: { label: "Spouse life expectancy", format: "text" },
+  spouseRetirementAge: { label: "Co-client retirement age", format: "text" },
+  spouseRetirementMonth: { label: "Co-client retirement month", format: "text" },
+  spouseLifeExpectancy: { label: "Co-client life expectancy", format: "text" },
   filingStatus: { label: "Filing status", format: "text" },
   riskTolerance: { label: "Risk tolerance", format: "text" },
 };

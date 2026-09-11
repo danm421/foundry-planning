@@ -69,7 +69,7 @@ describe("existingCoverageInForce", () => {
         lifeInsurance: { faceValue: 250_000, policyType: "whole" } as Account["lifeInsurance"],
       }),
       policy({
-        name: "Spouse Term",
+        name: "Co-client Term",
         insuredPerson: "spouse",
         lifeInsurance: {
           faceValue: 999_000,

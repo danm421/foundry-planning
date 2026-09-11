@@ -38,6 +38,9 @@ export type HoldingUpdateInput = Partial<HoldingCreateInput>;
 
 export interface ClassifyResult {
   security: { id: string; name: string | null; securityType: string | null } | null;
+  /** Name resolved for DISPLAY only, when the ticker could not be classified
+   *  into a persisted security row. No id, no weights — see lookup-name.ts. */
+  displayName?: string | null;
   weights: { slug: string; weight: number }[];
 }
 

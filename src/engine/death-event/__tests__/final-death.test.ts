@@ -329,7 +329,7 @@ describe("applyFinalDeath — gross transfers + drain attribution (Phase B)", ()
       id: "spouse-fm",
       role: "spouse",
       relationship: "other",
-      firstName: "Spouse",
+      firstName: "Co-client",
       lastName: "Test",
       dateOfBirth: "1972-01-01",
     };
@@ -378,13 +378,13 @@ describe("applyFinalDeath — business-interest succession integration", () => {
       id: "spouse-fm",
       role: "spouse",
       relationship: "other",
-      firstName: "Spouse",
+      firstName: "Co-client",
       lastName: "Test",
       dateOfBirth: "1972-01-01",
     };
     const llcAccount: Account = {
       id: "biz-1",
-      name: "Spouse LLC",
+      name: "Co-client LLC",
       category: "business",
       subType: "llc",
       value: 10_000,

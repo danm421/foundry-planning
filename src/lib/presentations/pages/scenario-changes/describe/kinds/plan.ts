@@ -7,9 +7,9 @@ import { DESCRIBERS, simpleDescriber, type Describer } from "../registry";
 
 const ASSUMPTION_LINE: Record<string, (to: unknown) => string> = {
   retirementAge: (to) => `Client retires at ${to}`,
-  spouseRetirementAge: (to) => `Spouse retires at ${to}`,
+  spouseRetirementAge: (to) => `Co-client retires at ${to}`,
   lifeExpectancy: (to) => `Plan to client age ${to}`,
-  spouseLifeExpectancy: (to) => `Plan to spouse age ${to}`,
+  spouseLifeExpectancy: (to) => `Plan to Co-client age ${to}`,
 };
 
 const client: Describer = (c, ctx) => {

@@ -144,17 +144,17 @@ export function EstateBeneficiaries({
         </p>
       </div>
 
-      {/* ── Everything to the spouse first? ───────────────────────────────── */}
+      {/* ── Everything to the co-client first? ───────────────────────────────── */}
       {household.hasSpouse && (
         <StepCard>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <span className="flex items-center gap-1.5 text-[14px] text-ink">
               Does everything go to{" "}
-              {household.spouseName ?? "your spouse or partner"} first?
-              <FieldTooltip text="The usual arrangement: your spouse inherits everything, and the people below inherit only once you are both gone. Answer no if you want some of it to go elsewhere straight away." />
+              {household.spouseName ?? "your Co-client"} first?
+              <FieldTooltip text="The usual arrangement: your Co-client inherits everything, and the people below inherit only once you are both gone. Answer no if you want some of it to go elsewhere straight away." />
             </span>
             <YesNo
-              label={`Does everything go to ${household.spouseName ?? "your spouse or partner"} first?`}
+              label={`Does everything go to ${household.spouseName ?? "your Co-client"} first?`}
               value={inheritance.spouseFirst}
               onChange={(next) => patch({ spouseFirst: next })}
             />

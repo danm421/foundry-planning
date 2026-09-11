@@ -33,9 +33,9 @@ describe("estate-summary options + estimate", () => {
     );
   });
 
-  it("summarize returns 'Spouse dies first' for spouseFirst", () => {
+  it("summarize returns 'Co-client dies first' for spouseFirst", () => {
     expect(summarizeEstateSummaryOptions({ ordering: "spouseFirst" })).toBe(
-      "Spouse dies first"
+      "Co-client dies first"
     );
   });
 

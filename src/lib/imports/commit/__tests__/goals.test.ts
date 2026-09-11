@@ -82,6 +82,9 @@ function completeHomePurchase(overrides: Partial<HomePurchaseGoal> = {}): HomePu
     mortgageAmount: "560000",
     mortgageRate: "6.25",
     mortgageTermMonths: "360",
+    annualPropertyTax: "",
+    propertyTaxGrowthRate: "3",
+    propertyTaxGrowthSource: "custom",
     ...overrides,
   };
 }
@@ -568,6 +571,91 @@ describe("commitGoals — home purchase", () => {
     const txValues = insertValues(fake, "asset_transactions");
     expect(txValues.fundingAccountId).toBeNull();
     expect(result.warnings.join(" ")).toContain("no longer available");
+  });
+
+  it("commits a planned home purchase's property tax", async () => {
+    const fake = makeFakeTx();
+    const payload = payloadWithHomePurchase({
+      annualPropertyTax: "16500",
+      propertyTaxGrowthRate: "3", // PERCENT string, like growthRate above
+      propertyTaxGrowthSource: "custom",
+    });
+
+    const result = await commitGoals(fake.tx, payload, CTX);
+    expect(result.created).toBe(1);
+
+    expect(insertValues(fake, "asset_transactions")).toMatchObject({
+      annualPropertyTax: "16500",
+      propertyTaxGrowthRate: "0.03", // divided by 100 on the way in
+      propertyTaxGrowthSource: "custom",
+    });
+  });
+
+  // The fixture's `propertyTaxGrowthRate` stays "3" here on purpose: the rate
+  // and source must follow the AMOUNT, not merely the category. Gating them on
+  // the category alone wrote a phantom 0.0300 / 'custom' onto a row the advisor
+  // gave no amount for.
+  it("writes no property tax at all when the advisor left the amount blank", async () => {
+    const fake = makeFakeTx();
+    const payload = payloadWithHomePurchase({ annualPropertyTax: "" });
+    await commitGoals(fake.tx, payload, CTX);
+    expect(insertValues(fake, "asset_transactions")).toMatchObject({
+      annualPropertyTax: null,
+      propertyTaxGrowthRate: null,
+      propertyTaxGrowthSource: null,
+    });
+  });
+
+  // C13/C15 on this branch: an untouched pre-feature row must come back
+  // byte-identical. This path is the UPDATE branch (a re-commit of an already
+  // linked purchase), which is the one that can actually overwrite NULL columns
+  // on a row that predates the feature.
+  it("re-committing a purchase with no amount leaves the property-tax columns null", async () => {
+    const fake = makeFakeTx();
+    const payload = payloadWithHomePurchase({
+      annualPropertyTax: "",
+      match: { kind: "exact", existingId: "33333333-3333-4333-8333-333333333333" },
+    } as Partial<HomePurchaseGoal>);
+
+    const result = await commitGoals(fake.tx, payload, CTX);
+    expect(result.updated).toBe(1);
+
+    const updates = updateCalls(fake, "asset_transactions");
+    expect(updates).toHaveLength(1);
+    expect((updates[0] as { values: Record<string, unknown> }).values).toMatchObject({
+      annualPropertyTax: null,
+      propertyTaxGrowthRate: null,
+      propertyTaxGrowthSource: null,
+    });
+  });
+
+  // `client_imports.payloadJson` written BEFORE this feature shipped has no
+  // property-tax keys at all, and `normalizeImportPayload` backfills missing
+  // SECTIONS, not missing FIELDS — so the goal object really does arrive with
+  // `annualPropertyTax === undefined`, and `num(undefined)` threw
+  // "Cannot read properties of undefined (reading 'trim')", 500ing the commit.
+  // Passing "" would not reproduce it; the keys must genuinely be absent.
+  it("commits a pre-feature payload whose goal has no property-tax keys at all", async () => {
+    const fake = makeFakeTx();
+    const goal = completeHomePurchase();
+    delete (goal as Partial<HomePurchaseGoal>).annualPropertyTax;
+    delete (goal as Partial<HomePurchaseGoal>).propertyTaxGrowthRate;
+    delete (goal as Partial<HomePurchaseGoal>).propertyTaxGrowthSource;
+    expect("annualPropertyTax" in goal).toBe(false);
+
+    const payload: ImportPayload = {
+      ...emptyImportPayload(),
+      goals: { education: [], homePurchases: [goal], riskTolerance: blank<string>() },
+    };
+
+    const result = await commitGoals(fake.tx, payload, CTX);
+    expect(result.created).toBe(1);
+
+    expect(insertValues(fake, "asset_transactions")).toMatchObject({
+      annualPropertyTax: null,
+      propertyTaxGrowthRate: null,
+      propertyTaxGrowthSource: null,
+    });
   });
 });
 

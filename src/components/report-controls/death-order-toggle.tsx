@@ -1,5 +1,7 @@
 "use client";
 
+import { personLabel } from "@/lib/owner-labels";
+
 export interface DeathOrderToggleProps {
   value: "primaryFirst" | "spouseFirst";
   onChange: (next: "primaryFirst" | "spouseFirst") => void;
@@ -8,7 +10,7 @@ export interface DeathOrderToggleProps {
 
 export function DeathOrderToggle({ value, onChange, ownerNames }: DeathOrderToggleProps) {
   const primaryLabel = ownerNames.clientName;
-  const spouseLabel = ownerNames.spouseName ?? "Spouse";
+  const spouseLabel = personLabel("spouse", ownerNames);
 
   return (
     <div

@@ -168,7 +168,7 @@ function goalsLines(payload: IntakePayload, currentYear: number): string[] {
 
   const retirement = [
     goals.clientRetirementAge ? `Client retires at ${goals.clientRetirementAge}` : null,
-    goals.spouseRetirementAge ? `Spouse retires at ${goals.spouseRetirementAge}` : null,
+    goals.spouseRetirementAge ? `Co-client retires at ${goals.spouseRetirementAge}` : null,
     goals.annualRetirementExpenses
       ? `Target spending in retirement: ${usd(goals.annualRetirementExpenses)}/yr`
       : null,
@@ -229,10 +229,10 @@ function familyLines(payload: IntakePayload): string[] {
     );
   }
 
-  const spouse = fullName(family.spouse ?? undefined);
-  if (spouse) {
+  const coClientName = fullName(family.spouse ?? undefined);
+  if (coClientName) {
     const dob = fmtDob(family.spouse?.dateOfBirth);
-    out.push(`- ${detail(`Spouse: ${spouse}`, dob ? `b. ${dob}` : null)}`);
+    out.push(`- ${detail(`Co-client: ${coClientName}`, dob ? `b. ${dob}` : null)}`);
   }
 
   for (const child of family.children ?? []) {
@@ -326,7 +326,7 @@ function estateLines(payload: IntakePayload): string[] {
   ): string | null => {
     const c = contact?.[who];
     const parts = detail(c?.mobile?.trim() || null, c?.email?.trim() || null);
-    return parts ? `- ${name ?? (who === "primary" ? "Client" : "Spouse")}: ${parts}` : null;
+    return parts ? `- ${name ?? (who === "primary" ? "Client" : "Co-client")}: ${parts}` : null;
   };
 
   const household = estateHouseholdFromPayload(payload.family);

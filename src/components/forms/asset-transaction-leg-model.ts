@@ -42,6 +42,9 @@ export interface BuyLegDraft {
   mortgageAmount: string;
   mortgageRate: string;         // percent string
   mortgageTermMonths: string;   // "360"
+  annualPropertyTax: string;
+  propertyTaxGrowthRate: string;   // percent string, e.g. "3"
+  propertyTaxGrowthSource: "custom" | "inflation";
 }
 
 export type LegDraft = SellLegDraft | BuyLegDraft;
@@ -103,6 +106,7 @@ export function emptyBuyLeg(key: string): BuyLegDraft {
     assetCategory: "real_estate", assetSubType: SUB_TYPE_BY_CATEGORY["real_estate"][0],
     purchasePrice: "", growthRate: "", basis: "", fundingAccountId: "",
     showMortgage: false, mortgageAmount: "", mortgageRate: "", mortgageTermMonths: "360",
+    annualPropertyTax: "", propertyTaxGrowthRate: "3", propertyTaxGrowthSource: "custom",
   };
 }
 

@@ -74,7 +74,7 @@ export interface ThresholdItem {
 export const THRESHOLD_ITEMS: readonly ThresholdItem[] = [
   { id: "charitableLimit", label: "Qualified Charitable Contribution Limit" },
   { id: "rothIra", label: "Roth IRA Contribution" },
-  { id: "iraDeductCovered", label: "IRA Contribution Deductibility - Covered Spouse" },
+  { id: "iraDeductCovered", label: "IRA Contribution Deductibility - Covered by Workplace Plan" },
   { id: "iraDeductSpousal", label: "IRA Contribution Deductibility - Non-covered Spouse" },
   { id: "studentLoanInterest", label: "Student Loan Interest Deduction" },
   { id: "qbi", label: "TCJA QBI Deduction" },

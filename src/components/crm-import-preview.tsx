@@ -94,7 +94,7 @@ export function CrmImportPreview({ preview, choices, onChange }: CrmImportPrevie
                   Primary
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-ink-3">
-                  Spouse
+                  Co-client
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-ink-3">
                   Decision

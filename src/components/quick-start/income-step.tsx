@@ -7,6 +7,7 @@ import type { QsIncomeKind } from "@/lib/quick-start/types";
 import type { QsIncomeStepProps } from "./step-props";
 import { CollapsibleListEditor, type ListColumn } from "./collapsible-list-editor";
 import { Labeled, OwnerPills, sendJson, fmtMoney } from "./ui";
+import { individualOwnerLabel } from "@/lib/owner-labels";
 
 // Social Security is pre-seeded as pinned rows, so it is NOT an "Add income" option.
 const KIND_OPTIONS: { value: Exclude<QsIncomeKind, "social_security">; label: string }[] = [
@@ -50,11 +51,7 @@ export function IncomeStep({ ctx, bootstrap, registerSave, list }: QsIncomeStepP
     setRows((rs) => rs.map((r) => (r._id === id ? { ...r, ...patch } : r)));
 
   const ownerLabel = (r: IncomeRow) =>
-    r.owner === "spouse"
-      ? ctx.spouseFirstName ?? "Spouse"
-      : r.owner === "joint"
-        ? "Joint"
-        : ctx.clientFirstName;
+    individualOwnerLabel(r.owner, { clientName: ctx.clientFirstName, spouseName: ctx.spouseFirstName });
 
   // The chrome's Next button runs this; it reconciles the table to the DB.
   // DELETE sends no body — `sendJson(..., undefined)` stringifies to "undefined",

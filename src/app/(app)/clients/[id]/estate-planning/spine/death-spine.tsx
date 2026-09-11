@@ -92,7 +92,7 @@ export function DeathSpine({ data }: { data: SpineData }) {
       />
       <StageBand
         kind="inherit"
-        label="Inheritance to spouse"
+        label="Inheritance to Co-client"
         value={data.firstDeath.toSpouse}
         expansion={
           <TransferRows

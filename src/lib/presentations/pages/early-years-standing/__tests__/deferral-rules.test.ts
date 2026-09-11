@@ -155,9 +155,9 @@ describe("deferralAccounts", () => {
   });
 
   // F2 — `applySavingsRules` resolves a percent rule against `salaryByRuleId`,
-  // the ACCOUNT OWNER's salary slice. A spouse's "10%" is 10% of the spouse's
-  // pay, and the ladder has to move it on that base or it delivers a fraction
-  // of the rung it labels the bar with.
+  // the ACCOUNT OWNER's salary slice. A co-client at "10%" means 10% of that
+  // person's own pay, and the ladder has to move it on that base or it
+  // delivers a fraction of the rung it labels the bar with.
   describe("the salary base each account's percent is resolved against", () => {
     const twoEarners = () =>
       tree(
@@ -175,7 +175,7 @@ describe("deferralAccounts", () => {
         },
       );
 
-    it("is the owning spouse's own salary, not the household's", () => {
+    it("is the owning Co-client's own salary, not the household's", () => {
       const bySpouse = Object.fromEntries(
         deferralAccounts(twoEarners(), 2026).map((a) => [a.accountId, a.ownerSalary]),
       );

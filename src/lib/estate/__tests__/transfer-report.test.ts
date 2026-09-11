@@ -28,7 +28,7 @@ function transfer(partial: Partial<DeathTransfer>): DeathTransfer {
     via: "titling",
     recipientKind: "spouse",
     recipientId: null,
-    recipientLabel: "Spouse",
+    recipientLabel: "Co-client",
     amount: 1_000_000,
     basis: 500_000,
     resultingAccountId: null,
@@ -262,7 +262,7 @@ describe("buildEstateTransferReportData", () => {
     expect(liabAsset?.amount).toBe(-200_000);
   });
 
-  it("pins spouse at top regardless of total ordering", () => {
+  it("pins co-client at top regardless of total ordering", () => {
     const transfers = [
       transfer({
         recipientKind: "spouse",
@@ -526,7 +526,7 @@ describe("buildEstateTransferReportData", () => {
     expect(riley?.total).toBe(400_000);
   });
 
-  it("F10: aggregate totals exclude the surviving-spouse pass-through", () => {
+  it("F10: aggregate totals exclude the surviving spouse pass-through", () => {
     // First death: $1M passes to spouse (intermediate pass-through).
     // Second death: spouse routes the same $1M on to children ($600K + $400K).
     // Pre-fix, the spouse row inflates the total to $2M; post-fix it must be $1M.
@@ -973,7 +973,7 @@ describe("detectConflicts", () => {
     expect(out).toEqual([]);
   });
 
-  it("does NOT flag conflict when a will 'to spouse' bequest is honored by spouse titling", () => {
+  it("does NOT flag conflict when a will 'to co-client' bequest is honored by co-client titling", () => {
     // Mirrors the reported case: will leaves Home to the spouse, titling routes
     // Home to that same spouse. "spouse" kind must normalize to the spouse's
     // family-member identity so the two sides compare equal.

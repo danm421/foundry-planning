@@ -303,7 +303,7 @@ describe("diffWorkingCopy", () => {
     expect(changes[0].description).not.toContain("client");
   });
 
-  it("resolves spouse will grantor to the spouse's first name", () => {
+  it("resolves co-client will grantor to the co-client's first name", () => {
     const bequest = { id: "bq1", name: "Car", kind: "asset", assetMode: "all_assets", accountId: null, liabilityId: null, percentage: 100, condition: "always", sortOrder: 0, recipients: [] };
     const original = cd([], [], [{ id: "w2", grantor: "spouse", bequests: [], residuaryRecipients: [] }], BASE_FAMILY_MEMBERS);
     const working = cd([], [], [{ id: "w2", grantor: "spouse", bequests: [bequest], residuaryRecipients: [] }], BASE_FAMILY_MEMBERS);
@@ -313,7 +313,7 @@ describe("diffWorkingCopy", () => {
     expect(changes[0].description).not.toContain("spouse");
   });
 
-  it("falls back to 'Client'/'Spouse' when no matching family member exists", () => {
+  it("falls back to 'Client'/'Co-client' when no matching family member exists", () => {
     const bequest = { id: "bq1", name: "House", kind: "asset", assetMode: "all_assets", accountId: null, liabilityId: null, percentage: 100, condition: "always", sortOrder: 0, recipients: [] };
     const original = cd([], [], [{ id: "w1", grantor: "client", bequests: [], residuaryRecipients: [] }]);
     const working = cd([], [], [{ id: "w1", grantor: "client", bequests: [bequest], residuaryRecipients: [] }]);
@@ -349,7 +349,7 @@ describe("diffWorkingCopy", () => {
     expect(changes[0].description).toContain("Pat");
   });
 
-  it("emits an op:add change for a new spouse will when only the client had a will", () => {
+  it("emits an op:add change for a new co-client will when only the client had a will", () => {
     const recipient = { recipientKind: "family_member", recipientId: "fm-child", tier: "primary", percentage: 100, sortOrder: 0 };
     const original = cd(
       [],

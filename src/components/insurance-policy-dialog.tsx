@@ -21,6 +21,8 @@ import InsurancePolicyCashValueTab from "./insurance-policy-cash-value-tab";
 import DialogShell from "./dialog-shell";
 import TabAutoSaveIndicator from "./tab-auto-save-indicator";
 import { useTabAutoSave, type SaveResult } from "@/lib/use-tab-auto-save";
+import { personLabel } from "@/lib/owner-labels";
+import { describeApiError, type ApiErrorBody } from "@/lib/api-error-message";
 
 export type PostPayoutGrowthSource = "model_portfolio" | "inflation" | "custom";
 
@@ -118,7 +120,7 @@ export function formatOwnerLabel(
     const fm = familyMembers.find((f) => f.id === ref.id);
     if (!fm) return "Owner";
     if (fm.role === "client") return clientFirstName;
-    if (fm.role === "spouse") return spouseFirstName ?? "Spouse";
+    if (fm.role === "spouse") return personLabel("spouse", { clientName: clientFirstName, spouseName: spouseFirstName });
     return fm.firstName;
   }
   if (ref.kind === "entity") {
@@ -136,13 +138,49 @@ function makeDefaultPolicyName(
   return `${ownerLabel(ownerRef)} - ${POLICY_TYPE_LABELS[policyType]}`;
 }
 
+/** Wire field → the label the Details tab puts above it, so a rejected save
+ *  names the box to fix rather than the column it maps to. */
+const POLICY_FIELD_LABELS: Record<string, string> = {
+  name: "Name",
+  policyType: "Policy type",
+  insuredPerson: "Insured person",
+  ownerRef: "Owner",
+  faceValue: "Death benefit",
+  cashValue: "Current cash value",
+  costBasis: "Cost basis",
+  premiumAmount: "Annual premium",
+  premiumYears: "Premium payment years",
+  premiumPayer: "Paid by",
+  termIssueYear: "Term issue year",
+  termLengthYears: "Term length (years)",
+  endsAtInsuredRetirement: "Term ends at the insured's retirement",
+  activationYear: "Activates (policy purchased)",
+  activationYearRef: "Activates (policy purchased)",
+  postPayoutGrowthRate: "Growth rate",
+  postPayoutModelPortfolioId: "Growth rate",
+  cashValueSchedule: "Schedule",
+  cashValueGrowthMode: "Cash value growth",
+};
+
+/** Owner a brand-new policy starts on: the client's family-member row, or
+ *  joint when the household has none. `DEFAULT_STATE` can't carry this — the
+ *  family members arrive as props — and an unresolved ref is not a harmless
+ *  placeholder: an empty id matches no `<option>` (the Owner select renders
+ *  blank), reads as "not a household principal" (so the gift-only "Paid by"
+ *  field appears on a client-owned policy), and fails the create schema's uuid
+ *  check, which the advisor sees only as "Invalid body". */
+function defaultOwnerRef(familyMembers: InsurancePanelFamilyMember[]): OwnerRef {
+  const clientFmId = familyMembers.find((f) => f.role === "client")?.id;
+  return clientFmId ? { kind: "family", id: clientFmId } : { kind: "joint" };
+}
+
 type TabKey = "details" | "beneficiaries" | "schedule";
 
 const DEFAULT_STATE: PolicyFormState = {
   name: "",
   policyType: "term",
   insuredPerson: "client",
-  ownerRef: { kind: "family", id: "" }, // populated to the client FM id by the dialog before render
+  ownerRef: { kind: "joint" }, // create mode overrides via `defaultOwnerRef`
   faceValue: 0,
   cashValue: 0,
   costBasis: 0,
@@ -275,10 +313,12 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
 
   const seededState = useMemo<PolicyFormState | null>(() => {
     if (mode === "create") {
+      const ownerRef = defaultOwnerRef(props.familyMembers);
       return {
         ...DEFAULT_STATE,
+        ownerRef,
         name: makeDefaultPolicyName(
-          DEFAULT_STATE.ownerRef,
+          ownerRef,
           DEFAULT_STATE.policyType,
           (ref) =>
             formatOwnerLabel(
@@ -465,8 +505,17 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
       body: JSON.stringify(buildPayload(state)),
     });
     if (!response.ok) {
-      const body = (await response.json().catch(() => ({}))) as { error?: string };
-      return { ok: false, error: body.error ?? `HTTP ${response.status}` };
+      // The routes answer a schema rejection with `{ error: "Invalid body",
+      // issues: [...] }`. Reading `error` alone left the advisor staring at
+      // "Invalid body" with no idea which field was wrong.
+      const body = (await response.json().catch(() => ({}))) as ApiErrorBody;
+      return {
+        ok: false,
+        error: describeApiError(body, response.status, {
+          labels: POLICY_FIELD_LABELS,
+          fallback: "We couldn't save this policy.",
+        }),
+      };
     }
     const json = (await response.json().catch(() => ({}))) as { id?: string };
     return { ok: true, recordId: json.id };

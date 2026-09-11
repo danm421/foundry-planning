@@ -63,7 +63,7 @@ function describeWill(
   e: Record<string, unknown>,
   clientFirstName?: string | null,
 ): string | null {
-  if (e.grantor === "spouse") return "Spouse's will";
+  if (e.grantor === "spouse") return "Co-client's will";
   if (e.grantor === "client") {
     const who = clientFirstName?.trim();
     return who ? `${who}'s will` : "Client's will";

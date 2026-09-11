@@ -113,7 +113,7 @@ describe("PUT /api/portal/family/[id]", () => {
 });
 
 describe("DELETE /api/portal/family/[id]", () => {
-  it("404s on the spouse's seeded row instead of deleting it", async () => {
+  it("404s on the co-client's seeded row instead of deleting it", async () => {
     resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     requireEditEnabledMock.mockResolvedValue(undefined);
     selectChain.mockResolvedValue([{ clientId: "c1", firmId: "firm-1", id: "fm2", role: "spouse" }]);

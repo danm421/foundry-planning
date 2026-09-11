@@ -147,7 +147,7 @@ describe("buildIntakeDiff", () => {
     expect(diff.goals.clientRetirementAge).toEqual({ changed: true, old: 65, new: 60 });
   });
 
-  it("handles missing spouse gracefully", () => {
+  it("handles missing co-client gracefully", () => {
     const diff = buildIntakeDiff(null, minPayload);
     expect(diff.family.spouseName).toEqual({ changed: false, value: undefined });
   });

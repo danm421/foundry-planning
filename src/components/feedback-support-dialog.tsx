@@ -133,7 +133,8 @@ export default function FeedbackSupportDialog({ mode, open, onOpenChange }: Prop
     >
       {sent ? (
         <p className="py-6 text-center text-[14px] text-ink-2">
-          Thanks — we got your message and will follow up by email.
+          Thanks — we got your message. A confirmation is on its way to your
+          inbox, and we&rsquo;ll follow up there.
         </p>
       ) : (
         <div className="flex flex-col gap-4" onPaste={onPaste}>

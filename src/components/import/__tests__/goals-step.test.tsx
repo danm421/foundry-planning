@@ -340,6 +340,9 @@ describe("GoalsStep — funding-list scoping and unmatched references", () => {
       mortgageAmount: "",
       mortgageRate: "",
       mortgageTermMonths: "360",
+      annualPropertyTax: "",
+      propertyTaxGrowthRate: "3",
+      propertyTaxGrowthSource: "custom" as const,
     };
   }
 

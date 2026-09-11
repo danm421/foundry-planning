@@ -1,6 +1,7 @@
 "use client";
 
 import { HelpTip } from "@/components/help-tip";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 // ── Row types ───────────────────────────────────────────────────────────────
 
@@ -58,7 +59,7 @@ const SUBTYPE_LABELS: Record<string, string> = {
 
 const OWNER_LABELS: Record<string, string> = {
   client: "Client",
-  spouse: "Spouse",
+  spouse: CO_CLIENT_LABEL,
   joint: "Joint",
 };
 

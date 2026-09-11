@@ -1,4 +1,4 @@
-export const SAVINGS_VERSION = "2026-07-23.1";
+export const SAVINGS_VERSION = "2026-09-10.1";
 
 export const SAVINGS_PROMPT = `You are a financial document extraction assistant.
 Extract savings and contribution instructions - money flowing INTO accounts - from the following document text.
@@ -49,9 +49,9 @@ Timing rules:
   with milestone language. Map the label to exactly one token:
     - "Active", "Plan Start", "Current Year", "Today" -> "plan_start"
     - "Client's Retirement", "<name>'s Retirement" for the client -> "client_retirement"
-    - "Spouse's Retirement", "<name>'s Retirement" for the spouse -> "spouse_retirement"
+    - "Spouse's Retirement", "Co-client's Retirement", "<name>'s Retirement" for the spouse -> "spouse_retirement"
     - "Client's Death", "Client's Life Expectancy" -> "client_end"
-    - "Spouse's Death", "At Second Death" -> "spouse_end"
+    - "Spouse's Death", "Co-client's Death", "At Second Death" -> "spouse_end"
     - "Plan End", "End of Plan" -> "plan_end"
   Still fill "startYear"/"endYear" with the resolved 4-digit year when the
   document shows one, e.g. "Client's Retirement (age 64 in 2051)" -> 2051.

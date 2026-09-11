@@ -175,7 +175,7 @@ describe("checkFixtureCase - reasonContains", () => {
   it("passes when some decision's reason contains the substring", () => {
     const decisions: PlanningDecisions = {
       ...EMPTY,
-      assumptions: { spouseRetirementAge: d(60, "Spouse retires at 60 per the narrative.") },
+      assumptions: { spouseRetirementAge: d(60, "Co-client retires at 60 per the narrative.") },
     };
     expect(checkFixtureCase(decisions, { reasonContains: ["60"] })).toEqual([]);
   });
@@ -183,7 +183,7 @@ describe("checkFixtureCase - reasonContains", () => {
   it("fails when no reason anywhere contains the substring", () => {
     const decisions: PlanningDecisions = {
       ...EMPTY,
-      assumptions: { spouseRetirementAge: d(60, "Spouse retires early.") },
+      assumptions: { spouseRetirementAge: d(60, "Co-client retires early.") },
     };
     const failures = checkFixtureCase(decisions, { reasonContains: ["60"] });
     expect(failures).toHaveLength(1);

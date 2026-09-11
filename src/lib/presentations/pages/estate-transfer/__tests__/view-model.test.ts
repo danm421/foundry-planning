@@ -61,7 +61,7 @@ describe("buildEstateTransferDrillData", () => {
     expect(vi.mocked(buildYearlyEstateReport).mock.calls.at(-1)![0].ordering).toBe("primaryFirst");
   });
 
-  it("selects spouseFirst ordering when the spouse dies first", () => {
+  it("selects spouseFirst ordering when the Co-client dies first", () => {
     vi.mocked(buildYearlyEstateReport).mockReturnValue(mockReport());
     buildEstateTransferDrillData({
       ...base,

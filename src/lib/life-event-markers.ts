@@ -1,5 +1,6 @@
 import type { ClientInfo } from "@/engine/types";
 import { colors } from "@/brand";
+import { personLabel } from "@/lib/owner-labels";
 
 export interface LifeEvent {
   label: string;
@@ -30,7 +31,7 @@ export function buildLifeEventsByYear(client: ClientInfo): LifeEventsByYear {
 
   if (client.spouseDob) {
     const spouseBirth = parseInt(client.spouseDob.slice(0, 4), 10);
-    const spouseFirst = client.spouseName ?? "Spouse";
+    const spouseFirst = personLabel("spouse", { clientName: client.firstName, spouseName: client.spouseName ?? null });
     if (client.spouseRetirementAge != null) {
       push(spouseBirth + client.spouseRetirementAge, {
         label: `${spouseFirst} retires`,

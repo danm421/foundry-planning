@@ -1417,6 +1417,22 @@ export interface AssetTransaction {
   mortgageAmount?: number;
   mortgageRate?: number;
   mortgageTermMonths?: number;
+  /** Buy-only. Annual property tax on the asset this purchase creates, in
+   *  dollars NOMINAL AT `year` — the advisor is quoting a listing, not a
+   *  present value, and `purchasePrice` reads the same way.
+   *  `applyAssetPurchases` deflates it to plan-start dollars before stamping
+   *  it on the synthetic account, because projection.ts's shared injection
+   *  loop compounds from plan start. Only meaningful when `assetCategory` is
+   *  "real_estate"; the injection loop ignores every other category. */
+  annualPropertyTax?: number;
+  /** Resolved rate. When `propertyTaxGrowthSource` is "inflation" the loader
+   *  has already substituted the plan's inflation rate here. */
+  propertyTaxGrowthRate?: number;
+  /** Retained on the engine object (the Income / Expense / SavingsRule
+   *  pattern) so `reResolveInflationGrowth` can re-resolve in place under a
+   *  scenario-edited inflation rate. `Account` drops its equivalent and pays
+   *  for it with two id sets on ResolutionContext; this does not. */
+  propertyTaxGrowthSource?: "custom" | "inflation";
   // Resolved at API layer (same as Account.realization)
   realization?: Account["realization"];
   /** Sell-only. References the buy row whose synthetic asset is being sold.
@@ -1426,6 +1442,10 @@ export interface AssetTransaction {
   /** Sell-only. Fraction of the source's balance + basis to sell.
    *  null = full sale (today's behavior). 0 < x ≤ 1 = partial. */
   fractionSold?: number | null;
+  /** Display-only. Legs saved from one Add Asset Transactions dialog share this
+   *  id so the UI can present them as ONE technique. NOTHING in src/engine
+   *  reads it — the projection still treats each leg as its own buy or sell. */
+  bundleId?: string;
 }
 
 export interface Relocation {

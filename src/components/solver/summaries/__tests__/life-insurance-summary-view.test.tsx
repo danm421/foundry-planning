@@ -94,7 +94,7 @@ const SOLVED: LifeInsuranceSummaryPageData = {
     },
     {
       accountId: "acct-2",
-      name: "Spouse Term",
+      name: "Co-client Term",
       policyType: "term",
       ownerLabel: "Riley Avery",
       insuredLabel: "Riley Avery",

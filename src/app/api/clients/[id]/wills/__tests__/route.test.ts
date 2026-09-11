@@ -570,7 +570,7 @@ describe("POST /api/clients/[id]/wills — liability bequest validation", () => 
     expect(issueMessages.toLowerCase()).toMatch(/recipient/);
   });
 
-  it("rejects a liability bequest with spouse recipient (Zod-level)", async () => {
+  it("rejects a liability bequest with co-client recipient (Zod-level)", async () => {
     const { POST } = await import("../route");
     const res = await POST(
       new Request("http://x", {
@@ -746,7 +746,7 @@ describe("residuary recipients — GET / POST / PATCH", () => {
     ]);
   });
 
-  it("POST persists residuaryRecipients (spouse)", async () => {
+  it("POST persists residuaryRecipients (co-client)", async () => {
     const { POST } = await import("../route");
     const res = await POST(
       new Request("http://x", {

@@ -320,7 +320,7 @@ describe("buildEstateFlowSummary — second death sub-boxes", () => {
 });
 
 describe("buildEstateFlowSummary — liability netting", () => {
-  it("nets liability transfers into stage.estateValue and the spouse sub-box", () => {
+  it("nets liability transfers into stage.estateValue and the co-client sub-box", () => {
     // Cooper leaves Susan a $950k home and the $600k mortgage that rides with
     // it. The real engine reports assetEstateValue=$950k (positives only) and
     // sumLiabilityTransfers=−$600k, with RecipientGroup.total already net at
@@ -560,7 +560,7 @@ describe("buildEstateFlowSummary — survivorNetWorth", () => {
     });
   });
 
-  it("swaps to the client's net worth when the spouse dies first", () => {
+  it("swaps to the client's net worth when the co-client dies first", () => {
     const clientData = emptyClientData();
     clientData.familyMembers = [
       { id: "fm-client", role: "client", firstName: "Cooper" },
@@ -1076,7 +1076,7 @@ describe("buildEstateFlowSummary — heir composition rules 4 & 5: lifetime gift
 });
 
 describe("buildEstateFlowSummary — merge contract", () => {
-  it("merges a bequest and a trust remainder for the spouse into ONE heir box when the trust beneficiary is declared via householdRole", () => {
+  it("merges a bequest and a trust remainder for the co-client into ONE heir box when the trust beneficiary is declared via householdRole", () => {
     // The engine emits at-death residuary groups keyed by familyMemberId. A
     // trust remainder declared via householdRole='spouse' must resolve to the
     // matching familyMembers[] id so the two contributions land in the same
@@ -1468,7 +1468,7 @@ describe("buildEstateFlowSummary — single-filer + isEmpty", () => {
     expect(summary).toBeNull();
   });
 
-  it("collapses for a single-filer (no spouse, firstDeath null)", () => {
+  it("collapses for a single-filer (no co-client, firstDeath null)", () => {
     const secondDeath = deathSection({
       decedent: "client",
       decedentName: "Cooper",

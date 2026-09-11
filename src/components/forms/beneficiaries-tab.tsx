@@ -10,6 +10,7 @@ import type {
 import { redistributeTier, splitEvenly } from "./auto-split-percentages";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import type { BeneficiaryRef } from "@/engine/types";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 interface BeneficiariesTabProps {
   clientId: string;
@@ -263,7 +264,7 @@ function AccountBeneficiaryEditor({
                   </option>
                   {(household.spouse || rows.some((x) => x.householdRole === "spouse")) && (
                     <option value="hh:spouse">
-                      {household.spouse ? fullName(household.spouse) : "Spouse"} (spouse)
+                      {household.spouse ? fullName(household.spouse) : CO_CLIENT_LABEL} (co-client)
                     </option>
                   )}
                 </optgroup>

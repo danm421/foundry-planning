@@ -104,7 +104,18 @@ export default function BuyLegEditor({ leg, onChange, accounts, idPrefix = "", c
               // Nothing to apply in that case; the select's own next render
               // still reflects `leg.assetCategory` correctly.
               if (firstSubType === undefined) return;
-              onChange({ assetCategory: cat, assetSubType: firstSubType });
+              // Property tax is a real-estate-only concept. Leaving a stale
+              // value behind would keep charging a brokerage account nothing
+              // visible while the row still carried a number.
+              onChange({
+                assetCategory: cat,
+                assetSubType: firstSubType,
+                ...(cat !== "real_estate" && {
+                  annualPropertyTax: "",
+                  propertyTaxGrowthRate: "3",
+                  propertyTaxGrowthSource: "custom" as const,
+                }),
+              });
             }}
             className={selectClassName}
           >
@@ -198,6 +209,54 @@ export default function BuyLegEditor({ leg, onChange, accounts, idPrefix = "", c
           </select>
         </div>
       </div>
+
+      {leg.assetCategory === "real_estate" && (
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className={fieldLabelClassName} htmlFor={fieldId("annualPropertyTax")}>
+              Annual Property Tax
+            </label>
+            <CurrencyInput
+              id={fieldId("annualPropertyTax")}
+              value={leg.annualPropertyTax}
+              onChange={(raw) => onChange({ annualPropertyTax: raw })}
+              className={inputClassName.replace("px-3", "pr-3")}
+            />
+            <p className="mt-1 text-[11px] text-ink-3">
+              In purchase-year dollars — what the tax costs the year you buy.
+            </p>
+          </div>
+          <div>
+            <label className={fieldLabelClassName} htmlFor={fieldId("propertyTaxGrowthSource")}>
+              Property Tax Growth
+            </label>
+            <select
+              id={fieldId("propertyTaxGrowthSource")}
+              value={leg.propertyTaxGrowthSource}
+              onChange={(e) =>
+                onChange({ propertyTaxGrowthSource: e.target.value as "custom" | "inflation" })
+              }
+              className={selectClassName}
+            >
+              <option value="custom">Custom %</option>
+              <option value="inflation">Follow inflation</option>
+            </select>
+            {leg.propertyTaxGrowthSource === "custom" && (
+              <div className="mt-2">
+                <label className={fieldLabelClassName} htmlFor={fieldId("propertyTaxGrowthRate")}>
+                  Custom Rate (%)
+                </label>
+                <PercentInput
+                  id={fieldId("propertyTaxGrowthRate")}
+                  value={leg.propertyTaxGrowthRate}
+                  onChange={(raw) => onChange({ propertyTaxGrowthRate: raw })}
+                  className={inputClassName}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Collapsible Mortgage section */}
       <div>

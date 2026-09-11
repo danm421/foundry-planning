@@ -48,7 +48,7 @@ export async function PUT(
 
     const body = await request.json();
     if (body?.owner !== "client" && body?.owner !== "spouse") {
-      return NextResponse.json({ error: "owner must be 'client' or 'spouse'" }, { status: 400 });
+      return NextResponse.json({ error: "owner must be the client or the Co-client" }, { status: 400 });
     }
 
     const insert = medicareCoverageToInsert(body, id);

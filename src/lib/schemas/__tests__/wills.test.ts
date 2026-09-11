@@ -17,7 +17,7 @@ const spouseRecipient = {
 
 const validBequest = {
   kind: "asset" as const,
-  name: "Brokerage to spouse",
+  name: "Brokerage to Co-client",
   assetMode: "specific" as const,
   accountId: u("1"),
   percentage: 100,
@@ -43,7 +43,7 @@ const validLiabilityBequest = {
 };
 
 describe("willBequestSchema", () => {
-  it("accepts a well-formed specific bequest to spouse", () => {
+  it("accepts a well-formed specific bequest to co-client", () => {
     expect(willBequestSchema.safeParse(validBequest).success).toBe(true);
   });
 
@@ -70,7 +70,7 @@ describe("willBequestSchema", () => {
     expect(r.success).toBe(true);
   });
 
-  it("rejects recipient with recipientKind='spouse' AND non-null recipientId", () => {
+  it("rejects a co-client recipient with a non-null recipientId", () => {
     const r = willBequestSchema.safeParse({
       ...validBequest,
       recipients: [{ ...spouseRecipient, recipientId: u("2") }],
@@ -316,7 +316,7 @@ describe("willCreateSchema with residuary", () => {
     expect(result.success).toBe(false);
   });
 
-  it("rejects residuary recipient with spouse kind + non-null id", () => {
+  it("rejects residuary recipient with co-client kind + non-null id", () => {
     const result = willCreateSchema.safeParse({
       ...baseValidWill,
       residuaryRecipients: [
@@ -331,7 +331,7 @@ describe("willCreateSchema with residuary", () => {
     expect(result.success).toBe(false);
   });
 
-  it("rejects residuary with non-spouse kind + null id", () => {
+  it("rejects residuary with a non-co-client kind + null id", () => {
     const result = willCreateSchema.safeParse({
       ...baseValidWill,
       residuaryRecipients: [

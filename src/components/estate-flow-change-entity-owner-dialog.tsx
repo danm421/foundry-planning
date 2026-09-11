@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import DialogShell from "@/components/dialog-shell";
 import { fieldLabelClassName } from "@/components/forms/input-styles";
 import type { ClientData, EntitySummary } from "@/engine/types";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 type EntityOwner = NonNullable<EntitySummary["owners"]>[number];
 type DestId = "client" | "spouse" | "joint";
@@ -120,10 +121,10 @@ export default function EstateFlowChangeEntityOwnerDialog({
 
   const destinations: { id: DestId; label: string; show: boolean }[] = [
     { id: "client", label: clientName, show: true },
-    { id: "spouse", label: spouseName ?? "Spouse", show: spouseName != null },
+    { id: "spouse", label: spouseName ?? CO_CLIENT_LABEL, show: spouseName != null },
     {
       id: "joint",
-      label: `Joint (${clientName} + ${spouseName ?? "Spouse"})`,
+      label: `Joint (${clientName} + ${spouseName ?? CO_CLIENT_LABEL})`,
       show: canJoint,
     },
   ];
@@ -185,7 +186,7 @@ export default function EstateFlowChangeEntityOwnerDialog({
           <div className="flex flex-col gap-2">
             {[
               { id: clientFmId, label: clientName },
-              { id: spouseFmId, label: spouseName ?? "Spouse" },
+              { id: spouseFmId, label: spouseName ?? CO_CLIENT_LABEL },
             ].map(({ id, label }) => (
               <div key={id} className="flex items-center gap-3">
                 <label htmlFor={`ent-split-${id}`} className="w-32 shrink-0 text-[13px] text-ink-2">

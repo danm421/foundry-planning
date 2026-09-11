@@ -109,7 +109,7 @@ describe("loadReconciliationInput", () => {
     m.getTaxReturn.mockResolvedValueOnce({ ...row(), facts: { taxYear: "nope" } });
     const unreadable = await loadReconciliationInput("c1", "org_1", 2025);
     expect(unreadable).toMatchObject({ ok: false, code: "facts_unreadable" });
-    expect(unreadable.ok === false && unreadable.message).toBe("The 2025 return's facts couldn't be read. Open it on Tax Analysis to recover it.");
+    expect(unreadable.ok === false && unreadable.message).toBe("The 2025 return's facts couldn't be read. Open it on the Report view to recover it.");
 
     m.loadEffectiveTree.mockRejectedValueOnce(new ProjectionInputError("Client c1 has no base case scenario"));
     const noPlan = await loadReconciliationInput("c1", "org_1", 2025);
@@ -153,7 +153,7 @@ describe("loadReconciliationInput", () => {
 
     m.getTaxReturn.mockResolvedValueOnce({ ...row("failed"), facts: null });
     const failed = await loadReconciliationInput("c1", "org_1", 2025);
-    expect(failed.ok === false && failed.message).toBe("The 2025 return's facts couldn't be read. Open it on Tax Analysis to recover it.");
+    expect(failed.ok === false && failed.message).toBe("The 2025 return's facts couldn't be read. Open it on the Report view to recover it.");
   });
 
   it("maps a missing client to no_plan and lets any other tree-loader error through", async () => {

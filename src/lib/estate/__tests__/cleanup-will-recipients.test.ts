@@ -111,7 +111,7 @@ describe("cleanupWillRecipientReferences", () => {
     expect(h.tables[getTableName(willResiduaryRecipients)]).toHaveLength(1);
   });
 
-  it("never touches spouse rows (null recipient_id)", async () => {
+  it("never touches co-client rows (null recipient_id)", async () => {
     setTable(willResiduaryRecipients, [
       { id: "r1", recipient_kind: "spouse", recipient_id: null },
     ]);

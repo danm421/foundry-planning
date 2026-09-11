@@ -25,6 +25,7 @@ import {
   giftScenarioRemove,
 } from "@/lib/gifts/gift-write";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
+import { familyMemberRoleLabel } from "@/lib/owner-labels";
 
 export interface GiftDialogProps {
   clientId: string;
@@ -345,7 +346,7 @@ export default function GiftDialog(props: GiftDialogProps) {
               id: m.id,
               firstName: m.firstName,
               lastName: m.lastName,
-              roleLabel: m.role,
+              roleLabel: familyMemberRoleLabel(m.role),
             })),
             externals: props.externals.map((x) => ({ id: x.id, name: x.name, kindLabel: x.kind })),
           }}

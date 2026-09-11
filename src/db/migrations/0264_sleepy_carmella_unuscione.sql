@@ -1,0 +1,1 @@
+ALTER TABLE "asset_transactions" ADD COLUMN "bundle_id" uuid;

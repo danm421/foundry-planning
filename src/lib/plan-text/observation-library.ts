@@ -53,7 +53,7 @@ export const OBSERVATION_LIBRARY: ObservationLibraryEntry[] = [
   },
   {
     id: "spouse-retirement-timing",
-    label: "Spouse retirement timing",
+    label: "Co-client retirement timing",
     topic: "retirement",
     body: "{{spouse_first_name}} plans to retire at {{spouse_retirement_age}}.",
   },

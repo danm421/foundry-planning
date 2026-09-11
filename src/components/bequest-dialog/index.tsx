@@ -93,8 +93,8 @@ const emptyAssetDraft = (hasSpouse: boolean): AssetBequestDraft => ({
 
 const CONDITION_OPTIONS: ReadonlyArray<{ value: WillCondition; label: string }> = [
   { value: "always", label: "Always" },
-  { value: "if_spouse_survives", label: "If spouse survives" },
-  { value: "if_spouse_predeceased", label: "If spouse predeceases" },
+  { value: "if_spouse_survives", label: "If Co-client survives" },
+  { value: "if_spouse_predeceased", label: "If Co-client predeceases" },
 ];
 
 const RESIDUAL_VALUE = "__residual__";

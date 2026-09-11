@@ -172,7 +172,7 @@ describe("POST /api/clients/[id]/entities — distribution policy", () => {
   it("creates an irrevocable SLAT with fixed distribution", async () => {
     const res = await POST(
       makePostReq({
-        name: "SLAT for Spouse",
+        name: "SLAT for Co-client",
         entityType: "trust",
         trustSubType: "irrevocable",
         isIrrevocable: true,

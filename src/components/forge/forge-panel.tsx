@@ -20,6 +20,10 @@ import {
   deleteConversation,
 } from "./actions";
 import { NAVIGATE_ALLOWLIST_PREFIXES } from "@/domain/forge/navigate-allowlist";
+// The "[Attached fact finder]" block is prompt/tool vocabulary paired with
+// global-system-prompt.ts and the ingest_fact_finder schema, so it lives in the
+// domain layer rather than in this panel — see fact-finder-turn.ts.
+import { buildIngestTurnMessage } from "@/domain/forge/fact-finder-turn";
 import { ConversationList } from "./conversation-list";
 import {
   useForgeImport,
@@ -93,24 +97,6 @@ interface ForgePanelProps {
   scenarioNames: Record<string, string>;
   /** Test-only: render the panel open without the provider toggle. */
   forceOpenForTest?: boolean;
-}
-
-// Render the identity + duplicate matches as a compact block the model reads
-// to fill ingest_fact_finder's args.
-function buildIngestTurnMessage(res: FactFinderIdentifyResponse, prompt: string): string {
-  const id = res.identity!;
-  const lines: string[] = ["[Attached fact finder]"];
-  lines.push(`household: ${id.householdName}`);
-  if (id.primary) lines.push(`primary: ${id.primary.firstName} ${id.primary.lastName ?? ""} (${id.primary.dateOfBirth ?? "DOB unknown"})`);
-  if (id.spouse) lines.push(`spouse: ${id.spouse.firstName} ${id.spouse.lastName ?? ""} (${id.spouse.dateOfBirth ?? "DOB unknown"})`);
-  if (id.state) lines.push(`state: ${id.state}`);
-  if (id.filingStatus) lines.push(`filing: ${id.filingStatus}`);
-  lines.push(
-    res.duplicateCandidates.length === 0
-      ? "No existing household matched."
-      : `Possible existing matches: ${res.duplicateCandidates.map((c) => `${c.name} (clientId: ${c.clientId ?? "none"})`).join("; ")}`,
-  );
-  return `${prompt ? prompt + "\n\n" : ""}${lines.join("\n")}`;
 }
 
 export function ForgePanel({

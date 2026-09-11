@@ -151,6 +151,7 @@ export async function TechniquesContent({ clientId: id, scenarioParam }: Techniq
     accountId: tx.accountId ?? null,
     purchaseTransactionId: tx.purchaseTransactionId ?? null,
     businessAccountId: tx.businessAccountId ?? null,
+    bundleId: tx.bundleId ?? null,
     fractionSold: tx.fractionSold == null ? null : String(tx.fractionSold),
     overrideSaleValue: tx.overrideSaleValue == null ? null : String(tx.overrideSaleValue),
     overrideBasis: tx.overrideBasis == null ? null : String(tx.overrideBasis),
@@ -168,6 +169,9 @@ export async function TechniquesContent({ clientId: id, scenarioParam }: Techniq
     mortgageAmount: tx.mortgageAmount == null ? null : String(tx.mortgageAmount),
     mortgageRate: tx.mortgageRate == null ? null : String(tx.mortgageRate),
     mortgageTermMonths: tx.mortgageTermMonths ?? null,
+    annualPropertyTax: tx.annualPropertyTax == null ? null : String(tx.annualPropertyTax),
+    propertyTaxGrowthRate: tx.propertyTaxGrowthRate == null ? null : String(tx.propertyTaxGrowthRate),
+    propertyTaxGrowthSource: tx.propertyTaxGrowthSource ?? null,
   }));
 
   const relocationProps = relocationRows.map((r) => ({

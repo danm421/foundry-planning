@@ -18,6 +18,7 @@ import type { MapItem, MapPeople } from "@/lib/household-map/types";
 import type { MapGoal } from "@/lib/household-map/goals";
 import type { ClientData } from "@/engine/types";
 import { MAP_GOAL_KIND_HEX, MAP_GOAL_KIND_LABEL } from "./tokens";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import type {
   MapCashFlowBand,
   MapCashFlowPageData,
@@ -92,7 +93,7 @@ function personLine(people: MapPeople): string {
 function columnLabel(people: MapPeople, key: MapColumnBlock["key"]): string {
   const hasSpouse = people.spouse !== null;
   if (key === "client") return people.client.firstName || "Client";
-  if (key === "spouse") return people.spouse?.firstName || "Spouse";
+  if (key === "spouse") return people.spouse?.firstName || CO_CLIENT_LABEL;
   return hasSpouse ? "Jointly Held" : "Joint";
 }
 

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import DialogShell from "@/components/dialog-shell";
 import { RtqForm } from "@/components/risk/rtq-form";
 import { RTQ_V1, type RtqAnswers } from "@/lib/risk/rtq";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 interface RtqDialogProps {
   clientId: string;
@@ -12,7 +13,7 @@ interface RtqDialogProps {
 
 const SUBJECTS: Array<{ value: "primary" | "spouse"; label: string }> = [
   { value: "primary", label: "Primary" },
-  { value: "spouse", label: "Spouse" },
+  { value: "spouse", label: CO_CLIENT_LABEL },
 ];
 
 /**

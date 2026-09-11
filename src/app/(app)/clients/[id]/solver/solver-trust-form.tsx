@@ -213,7 +213,7 @@ function SolverTrustForm3aBody({
             className="mt-1 h-9 w-full rounded-md border border-hair-2 bg-card px-2.5 text-[14px] text-ink focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
           >
             <option value="client">Client</option>
-            <option value="spouse">Spouse</option>
+            <option value="spouse">Co-client</option>
           </select>
         </label>
       )}

@@ -64,4 +64,47 @@ describe("resolveHoldingsForCommit", () => {
     expect(getSecurityByTicker).not.toHaveBeenCalled();
     expect(map.size).toBe(0);
   });
+
+  // Task 7, IMPORTANT 2: a per-row commit from the chat surface passes
+  // `rowIds` so this Phase-A resolve pays for classification + a live quote
+  // fetch only for the row(s) actually being committed — without this, a
+  // 12-account statement committed one row at a time would pay the whole
+  // payload's ticker cost on every single row.
+  it("resolves tickers only for the rows listed in rowIds, when given", async () => {
+    const getSecurityByTicker = vi.fn().mockResolvedValue({ security: { id: "sec-1" }, weights: [] });
+    const classifySecurity = vi.fn();
+    const upsertClassifiedSecurity = vi.fn();
+    const fetchEodCloses = vi.fn().mockResolvedValue(new Map());
+
+    const payload = payloadWith([
+      { __rowId: "r1", name: "Wanted", match: { kind: "new" }, holdings: [{ ticker: "VTI", shares: 1 }] },
+      { __rowId: "r2", name: "Unwanted", match: { kind: "new" }, holdings: [{ ticker: "AAPL", shares: 1 }] },
+    ] as ImportPayload["accounts"]);
+
+    const map = await resolveHoldingsForCommit(
+      payload,
+      { getSecurityByTicker, classifySecurity, upsertClassifiedSecurity, fetchEodCloses },
+      ["r1"],
+    );
+    expect(getSecurityByTicker).toHaveBeenCalledTimes(1);
+    expect(getSecurityByTicker).toHaveBeenCalledWith("VTI");
+    expect(map.has("VTI")).toBe(true);
+    expect(map.has("AAPL")).toBe(false);
+  });
+
+  it("skips a row with no __rowId when rowIds is given, same as the committer's guard", async () => {
+    const getSecurityByTicker = vi.fn().mockResolvedValue({ security: { id: "sec-1" }, weights: [] });
+    const payload = payloadWith([
+      { name: "No Row Id", match: { kind: "new" }, holdings: [{ ticker: "VTI", shares: 1 }] },
+    ] as ImportPayload["accounts"]);
+
+    const map = await resolveHoldingsForCommit(
+      payload,
+      { getSecurityByTicker, classifySecurity: vi.fn(), upsertClassifiedSecurity: vi.fn(),
+        fetchEodCloses: vi.fn().mockResolvedValue(new Map()) },
+      ["r1"],
+    );
+    expect(getSecurityByTicker).not.toHaveBeenCalled();
+    expect(map.size).toBe(0);
+  });
 });

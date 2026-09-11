@@ -111,7 +111,7 @@ describe("ObservationsAuthoringPanel — observations", () => {
     await screen.findByText("On track to retire at x.");
     await userEvent.click(screen.getByRole("button", { name: /insert a fact/i }));
     const menu = screen.getByRole("menu");
-    expect(within(menu).queryByText(/Spouse retirement timing/)).toBeNull();
+    expect(within(menu).queryByText(/Co-client retirement timing/)).toBeNull();
     expect(within(menu).getByText(/^Retirement timing/)).toBeInTheDocument();
     unmount();
 

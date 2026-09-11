@@ -10,6 +10,7 @@ import type {
 import type { ClientData, ProjectionYear } from "@/engine/types";
 import { buildCashFlowChartSpec } from "../../charts/cashflow-chart-spec";
 import { filterYearsToRange } from "../../shared/year-filter";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import {
   liquidPortfolioActivity,
   liquidPortfolioGrowth,
@@ -143,7 +144,7 @@ function buildMarkers(
   if (ci.spouseDob) {
     principals.push({
       who: "spouse",
-      name: spouseName ?? ci.spouseName ?? "Spouse",
+      name: spouseName ?? ci.spouseName ?? CO_CLIENT_LABEL,
       yob: new Date(ci.spouseDob).getUTCFullYear(),
       retirementAge: ci.spouseRetirementAge ?? null,
       lifeExpectancyOrPlanEnd: ci.spouseLifeExpectancy ?? ci.planEndAge ?? null,
@@ -166,7 +167,7 @@ function buildMarkers(
       }
     }
   }
-  return collapseJointMarkers(markers, clientName, spouseName ?? ci.spouseName ?? "Spouse");
+  return collapseJointMarkers(markers, clientName, spouseName ?? ci.spouseName ?? CO_CLIENT_LABEL);
 }
 
 function collapseJointMarkers(

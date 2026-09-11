@@ -136,10 +136,10 @@ interface SalaryBases {
  * Mirrors `salaryByRuleId` in `src/engine/projection.ts` — the salary the
  * engine divides a percent-mode contribution into.
  *
- * It has to be the engine's base and not the household total. A spouse's "10%"
- * is 10% of the SPOUSE's pay, so a ladder that raised it as though it were a
- * share of household income would move the household by a fraction of the rung
- * it labels the bar with.
+ * It has to be the same base the engine uses, not the household total. A
+ * co-client at "10%" means 10% of that person's own pay, so a ladder that
+ * raised it as though it were a share of household income would move the
+ * household by a fraction of the rung it labels the bar with.
  *
  * One deliberate difference: the engine also runs each salary through
  * `itemProrationGate`, which drops a salary that has already stopped. This

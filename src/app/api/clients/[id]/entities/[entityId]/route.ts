@@ -360,7 +360,7 @@ export async function PUT(
       if (grantor !== "client" && grantor !== "spouse") {
         return NextResponse.json(
           {
-            error: `grantor ('client' or 'spouse') is required for ${updated.trustSubType === "crt" ? "CRTs" : "CLTs"}`,
+            error: `grantor (the client or the Co-client) is required for ${updated.trustSubType === "crt" ? "CRTs" : "CLTs"}`,
           },
           { status: 400 },
         );

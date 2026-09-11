@@ -8,6 +8,7 @@ import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { listClientImports } from "@/lib/imports/list";
 import { verifyClientAccess } from "@/lib/clients/authz";
+import { writeChatState } from "@/lib/statement-chat/state";
 
 export const dynamic = "force-dynamic";
 
@@ -68,10 +69,11 @@ export async function POST(request: NextRequest, { params }: Params) {
       );
     }
 
-    const { mode, scenarioId, notes } = body as {
+    const { mode, scenarioId, notes, surface } = body as {
       mode?: unknown;
       scenarioId?: unknown;
       notes?: unknown;
+      surface?: unknown;
     };
 
     if (typeof mode !== "string" || !(VALID_MODES as readonly string[]).includes(mode)) {
@@ -81,6 +83,19 @@ export async function POST(request: NextRequest, { params }: Params) {
       );
     }
     const importMode = mode as ImportMode;
+
+    // `surface` is not an `import_mode` value — it never touches the `mode`
+    // column, it only seeds `payloadJson.chat` so the drafts list and the
+    // review flow route this import to the chat surface instead of the
+    // wizard. Reject anything other than the one supported value rather
+    // than silently ignoring an unrecognized surface.
+    if (surface !== undefined && surface !== "chat") {
+      return NextResponse.json(
+        { error: "Invalid surface" },
+        { status: 400 },
+      );
+    }
+    const isChatSurface = surface === "chat";
 
     if (scenarioId !== undefined && scenarioId !== null && typeof scenarioId !== "string") {
       return NextResponse.json(
@@ -150,6 +165,10 @@ export async function POST(request: NextRequest, { params }: Params) {
         status: "draft",
         createdByUserId: userId,
         notes: typeof notes === "string" ? notes : null,
+        // Seed the chat slice through the one writer of that shape (Task 6)
+        // rather than hand-rolling the object literal here. Omitted for a
+        // non-chat import so `payloadJson` keeps its `'{}'` column default.
+        ...(isChatSurface ? { payloadJson: writeChatState({}, {}) } : {}),
       })
       .returning();
 

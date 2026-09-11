@@ -222,7 +222,7 @@ export default function SplitInterestFundingPicker({
               className="h-7 rounded-[var(--radius-sm)] bg-card-2 border border-hair px-2 text-[12px] disabled:opacity-40"
             >
               <option value="client">Client</option>
-              <option value="spouse">Spouse</option>
+              <option value="spouse">Co-client</option>
             </select>
             <input
               type="number"

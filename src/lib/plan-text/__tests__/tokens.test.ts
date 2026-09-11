@@ -254,3 +254,15 @@ describe("PLAN_TOKENS resolve safety", () => {
     }
   });
 });
+
+describe("token ids are stable", () => {
+  it("keeps the spouse_first_name and spouse_retirement_age ids, embedded in saved observation text", () => {
+    // The co-client rename (2026-09-10) changed these tokens' `label` only.
+    // The `id` is embedded verbatim in advisor-authored observation text
+    // already stored in prod (`{{spouse_first_name}}`, `{{spouse_retirement_age}}`);
+    // renaming it would silently break every saved template that uses it.
+    const ids = PLAN_TOKENS.map((t) => t.id);
+    expect(ids).toContain("spouse_first_name");
+    expect(ids).toContain("spouse_retirement_age");
+  });
+});

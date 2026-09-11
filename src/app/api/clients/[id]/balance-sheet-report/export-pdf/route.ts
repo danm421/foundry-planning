@@ -33,7 +33,7 @@ export const maxDuration = 60;
 const VIEW_LABELS: Record<OwnershipView, string> = {
   consolidated: "Consolidated",
   client: "Client only",
-  spouse: "Spouse only",
+  spouse: "Co-client only",
   joint: "Joint only",
   entities: "Trusts only",
 };

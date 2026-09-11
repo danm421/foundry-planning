@@ -54,7 +54,7 @@ describe("buildRetirementSummaryData", () => {
     expect(data.title).toBe("Retirement Summary");
   });
 
-  it("flags married when a spouse SS income exists / spouse present", () => {
+  it("flags married when a Co-client SS income exists / Co-client present", () => {
     const data = buildRetirementSummaryData(
       ctx({
         years: [makeYear(2031, { portfolioAssets: { liquidTotal: 1, cashTotal: 0, taxableTotal: 0, retirementTotal: 0, cash: {}, taxable: {}, retirement: {} } })] as never,

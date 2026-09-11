@@ -8,18 +8,18 @@ describe("applyRtqPatch", () => {
     expect(p.spouseToleranceScore).toBeUndefined();
   });
 
-  it("takes the lower of the pair when a spouse score exists", () => {
+  it("takes the lower of the pair when a co-client score exists", () => {
     const p = applyRtqPatch({ subject: "primary", score: 72, existingSpouseScore: 40 });
     expect(p.toleranceScore).toBe(40);
   });
 
-  it("takes the lower of the pair when the spouse is the one being scored", () => {
+  it("takes the lower of the pair when the co-client is the one being scored", () => {
     const p = applyRtqPatch({ subject: "spouse", score: 30, existingPrimaryScore: 80 });
     expect(p.spouseToleranceScore).toBe(30);
     expect(p.toleranceScore).toBe(30);
   });
 
-  it("keeps the primary when the spouse scores higher", () => {
+  it("keeps the primary when the co-client scores higher", () => {
     const p = applyRtqPatch({ subject: "spouse", score: 90, existingPrimaryScore: 55 });
     expect(p.spouseToleranceScore).toBe(90);
     expect(p.toleranceScore).toBe(55);

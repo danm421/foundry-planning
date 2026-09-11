@@ -2,17 +2,17 @@ import { describe, it, expect } from "vitest";
 import { formatHouseholdName } from "../household-name";
 
 describe("formatHouseholdName", () => {
-  it("returns the primary name alone when there is no spouse", () => {
+  it("returns the primary name alone when there is no Co-client", () => {
     expect(formatHouseholdName("Frank Doyle", null)).toBe("Frank Doyle");
     expect(formatHouseholdName("Frank Doyle", "")).toBe("Frank Doyle");
     expect(formatHouseholdName("Frank Doyle", "   ")).toBe("Frank Doyle");
   });
 
-  it("folds the shared surname when the spouse field is a bare first name", () => {
+  it("folds the shared surname when the Co-client field is a bare first name", () => {
     expect(formatHouseholdName("Frank Doyle", "Anita")).toBe("Frank & Anita Doyle");
   });
 
-  it("folds the shared surname when the spouse field repeats the surname", () => {
+  it("folds the shared surname when the Co-client field repeats the surname", () => {
     expect(formatHouseholdName("Frank Doyle", "Anita Doyle")).toBe("Frank & Anita Doyle");
     expect(formatHouseholdName("Cooper Sample", "Susan Sample")).toBe("Cooper & Susan Sample");
   });

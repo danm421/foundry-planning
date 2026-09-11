@@ -13,6 +13,7 @@ import { useMemo, useState } from "react";
 import type { AccountOwner } from "@/engine/ownership";
 import { TrashIcon } from "@/components/icons";
 import { fieldLabelClassName, selectClassName } from "./input-styles";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -529,7 +530,7 @@ export function OwnershipEditor({
         />
         {showSpousePresets && (
           <PresetButton
-            label={spouseFm?.firstName ?? "Spouse"}
+            label={spouseFm?.firstName ?? CO_CLIENT_LABEL}
             active={derivedMode === "spouse" && !forceCustom}
             onClick={handlePresetSpouse}
           />

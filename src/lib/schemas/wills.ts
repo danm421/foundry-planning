@@ -21,13 +21,13 @@ export const willBequestRecipientSchema = z
     if (isSpouse && r.recipientId !== null) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "recipientId must be null when recipientKind='spouse'",
+        message: "recipientId must be null when the recipient is the co-client",
       });
     }
     if (!isSpouse && r.recipientId === null) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "recipientId is required when recipientKind is not 'spouse'",
+        message: "recipientId is required unless the recipient is the co-client",
       });
     }
   });
@@ -139,13 +139,13 @@ export const willResiduaryRecipientSchema = z
     if (isSpouse && r.recipientId !== null) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "recipientId must be null when recipientKind='spouse'",
+        message: "recipientId must be null when the recipient is the co-client",
       });
     }
     if (!isSpouse && r.recipientId === null) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "recipientId is required when recipientKind is not 'spouse'",
+        message: "recipientId is required unless the recipient is the co-client",
       });
     }
   });

@@ -12,6 +12,7 @@ import type {
   ProfileIncomeRow,
   ProfilePersonCard,
 } from "./types";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 const INCOME_TYPE_LABELS: Record<Income["type"], string> = {
   salary: "Salary",
@@ -94,7 +95,7 @@ function buildPersons(
   const hasSpouse = Boolean(spouseName ?? ci.spouseName) && Boolean(ci.spouseDob);
   if (hasSpouse) {
     cards.push(personCard(
-      spouseName ?? ci.spouseName ?? "Spouse",
+      spouseName ?? ci.spouseName ?? CO_CLIENT_LABEL,
       ci.spouseDob ?? null,
       ageSpouse,
       ci.spouseRetirementAge ?? null,

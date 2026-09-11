@@ -153,7 +153,7 @@ describe("IncomeStep", () => {
     expect(onChange.mock.calls[0][0]?.[0]?.owner).toBe("joint");
   });
 
-  it("owner field lists the real client/spouse names when a spouse exists", () => {
+  it("owner field lists the real client/co-client names when a co-client exists", () => {
     const value: IncomeSlice = [
       { name: "Job", type: "salary", annualAmount: 100000, owner: "client" },
     ];
@@ -167,7 +167,7 @@ describe("IncomeStep", () => {
     expect(labels).toEqual(["Cooper", "Susan", "Joint"]);
   });
 
-  it("owner field offers only the client when there is no spouse", () => {
+  it("owner field offers only the client when there is no co-client", () => {
     const value: IncomeSlice = [
       { name: "Job", type: "salary", annualAmount: 100000, owner: "client" },
     ];
@@ -179,7 +179,7 @@ describe("IncomeStep", () => {
     expect(labels).toEqual(["Cooper"]);
   });
 
-  it("labels a collapsed row with the spouse's name when they own it", () => {
+  it("labels a collapsed row with the co-client's name when they own it", () => {
     const value: IncomeSlice = [
       { name: "Consulting", type: "business", annualAmount: 40000, owner: "spouse" },
     ];

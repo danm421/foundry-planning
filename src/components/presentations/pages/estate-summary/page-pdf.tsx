@@ -129,7 +129,7 @@ export function EstateSummaryPagePdf({ data, firmName, clientName, reportDate, p
                 </View>
               ))}
               <Text style={s.note}>
-                {"\"Today\" = household dies now (after both deaths). \"End of Life\" = each spouse's projected death year. Surviving-spouse pass-through is excluded; amounts are net of taxes & costs."}
+                {"\"Today\" = household dies now (after both deaths). \"End of Life\" = each person's projected death year. Surviving spouse pass-through is excluded; amounts are net of taxes & costs."}
               </Text>
             </View>
           </View>

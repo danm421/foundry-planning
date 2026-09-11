@@ -12,6 +12,7 @@ import {
   selectClassName,
 } from "@/components/forms/input-styles";
 import type { DivorceDraftSettings } from "@/lib/divorce/schemas";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 /** The spouse's post-split file can never be "married" — so both sides pick
  *  from the same narrowed pair the PATCH schema accepts. */
@@ -61,7 +62,7 @@ export function SettingsRail({
   const [abandonError, setAbandonError] = useState<string | null>(null);
 
   const primaryLabel = people.primaryName || "Primary";
-  const spouseLabel = people.spouseName || "Spouse";
+  const spouseLabel = people.spouseName || CO_CLIENT_LABEL;
 
   async function abandon() {
     setAbandoning(true);

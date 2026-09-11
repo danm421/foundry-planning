@@ -112,7 +112,7 @@ export default function PlanBasicsStep({ value, hasSpouse, onChange }: PlanBasic
               onSet={(v) => set("lifeExpectancy", v)} />
 
             {hasSpouse && (
-              <NumberField id="spouseRetirementAge" label="Spouse retirement age"
+              <NumberField id="spouseRetirementAge" label="Co-client retirement age"
                 // Absent (not just blank) on an import that predates this
                 // feature — fall back to an unchipped blank field rather
                 // than hiding it: blank is a valid state, absent is not.
@@ -120,7 +120,7 @@ export default function PlanBasicsStep({ value, hasSpouse, onChange }: PlanBasic
                 onSet={(v) => set("spouseRetirementAge", v)} />
             )}
             {hasSpouse && (
-              <NumberField id="spouseLifeExpectancy" label="Spouse life expectancy"
+              <NumberField id="spouseLifeExpectancy" label="Co-client life expectancy"
                 field={value.spouseLifeExpectancy ?? { value: null, provenance: "derived" }}
                 onSet={(v) => set("spouseLifeExpectancy", v)} />
             )}

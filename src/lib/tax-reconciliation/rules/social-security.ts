@@ -63,10 +63,10 @@ export const socialSecurityRules: Rule = (input) => {
         // real life and the plan has not been told. `apply.ts` sets the amount from the owner
         // choice, which is why each row carries its patch already built and no annualAmount.
         // The choice is between the OWNERS actually present, not the row count. Counting rows
-        // offered a "Spouse" radio to a household whose two claimable rows both belong to the
-        // client — and `apply.ts` filters by owner, so that radio selected nothing and the
+        // offered a "Co-client" radio to a household whose two claimable rows both belong to
+        // the client — and `apply.ts` filters by owner, so that radio selected nothing and the
         // click dead-ended in a 400. Two claim rows can only carry two distinct owners when
-        // both people are present, so `size >= 2` is exactly "client and spouse".
+        // both people are present, so `size >= 2` means the owner set is exactly client and spouse.
         const both = new Set(claimRows.map((r) => r.owner)).size >= 2;
         suggestions.push({ id: "income.socialSecurity", section: "income", kind: "update", status: "open",
           headline: "Social Security is on the return but not in the plan yet.",

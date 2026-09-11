@@ -56,6 +56,7 @@ import { ExportButton } from "@/components/exports/export-button";
 import { PortfolioBarsChart } from "@/components/charts/portfolio-bars-chart";
 import type { PortfolioBarsTimelineMarker } from "@/components/charts/portfolio-bars-chart";
 import { liquidPortfolioTotal } from "@/components/charts/portfolio-bars-data";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend, Filler);
 
@@ -768,6 +769,18 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       if (!expensesByType["real_estate_expense"]) expensesByType["real_estate_expense"] = [];
       expensesByType["real_estate_expense"].push(synthId);
     }
+    // A purchase's property tax lives on the synthetic account the engine
+    // creates for it (technique-acct-<txn.id>), which never appears in
+    // clientData.accounts — so it needs its own drill-list entry, mirroring
+    // the account loop above.
+    for (const txn of clientData.assetTransactions ?? []) {
+      if (txn.type !== "buy" || txn.assetCategory !== "real_estate") continue;
+      if ((txn.annualPropertyTax ?? 0) <= 0) continue;
+      const synthId = `synth-proptax-technique-acct-${txn.id}`;
+      expenseNames[synthId] = `Property Tax – ${txn.assetName ?? txn.name}`;
+      if (!expensesByType["real_estate_expense"]) expensesByType["real_estate_expense"] = [];
+      expensesByType["real_estate_expense"].push(synthId);
+    }
 
     // Medicare premiums (Part B + Part D + IRMAA + Medigap) are emitted by the
     // engine as `expenses.bySource.medicarePremiums` and folded into
@@ -1444,7 +1457,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       // Legacy clients (manual_amount) fall through to the per-source handler below.
       if (subLevel === "socialSecurity" && hasSocialSecurityDetail) {
         const clientName = clientData?.client.firstName ?? "Client";
-        const spouseName = clientData?.client.spouseName ?? "Spouse";
+        const spouseName = clientData?.client.spouseName ?? CO_CLIENT_LABEL;
         // Determine whether any year has a spouse detail block, so we can
         // decide whether to render the spouse columns at all.
         const hasSpouseDetail = visibleYears.some(

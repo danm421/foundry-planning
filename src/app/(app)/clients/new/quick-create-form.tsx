@@ -230,7 +230,7 @@ export default function QuickCreateForm() {
       });
       if (!sRes.ok) {
         const j = (await sRes.json().catch(() => ({}))) as { error?: string };
-        throw new Error(j.error ?? `Failed to create spouse contact (${sRes.status})`);
+        throw new Error(j.error ?? `Failed to create Co-client contact (${sRes.status})`);
       }
     }
 
@@ -428,13 +428,13 @@ export default function QuickCreateForm() {
                   onChange={(e) => setCreateSpouse(e.target.checked)}
                   className="h-4 w-4 rounded border-hair bg-card-2 text-accent focus:ring-accent"
                 />
-                <span className="text-[13px] font-medium text-ink-2">Add spouse</span>
+                <span className="text-[13px] font-medium text-ink-2">Add Co-client</span>
               </label>
               {createSpouse && (
                 <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
                     <label className={fieldLabelClassName} htmlFor="spouseFirstName">
-                      Spouse first name
+                      Co-client first name
                     </label>
                     <input
                       id="spouseFirstName"
@@ -445,7 +445,7 @@ export default function QuickCreateForm() {
                   </div>
                   <div>
                     <label className={fieldLabelClassName} htmlFor="spouseLastName">
-                      Spouse last name
+                      Co-client last name
                     </label>
                     <input
                       id="spouseLastName"
@@ -457,7 +457,7 @@ export default function QuickCreateForm() {
                   </div>
                   <div className="sm:col-span-2">
                     <label className={fieldLabelClassName} htmlFor="spouseDob">
-                      Spouse date of birth
+                      Co-client date of birth
                     </label>
                     <input
                       id="spouseDob"
@@ -522,10 +522,10 @@ export default function QuickCreateForm() {
   }
 
   const primary = preview?.contacts.find((c) => c.role === "primary");
-  const spouse = preview?.contacts.find((c) => c.role === "spouse");
+  const coClient = preview?.contacts.find((c) => c.role === "spouse");
   const householdLabel =
-    primary && spouse
-      ? `${primary.firstName} & ${spouse.firstName} ${primary.lastName}`
+    primary && coClient
+      ? `${primary.firstName} & ${coClient.firstName} ${primary.lastName}`
       : primary
         ? `${primary.firstName} ${primary.lastName}`
         : (preview?.name ?? "Selected household");
@@ -659,13 +659,13 @@ export default function QuickCreateForm() {
                     onChange={(e) => setShowSpouse(e.target.checked)}
                     className="h-4 w-4 rounded border-hair bg-card-2 text-accent focus:ring-accent"
                   />
-                  <span className="text-[13px] font-medium text-ink-2">Add spouse planning fields</span>
+                  <span className="text-[13px] font-medium text-ink-2">Add Co-client planning fields</span>
                 </label>
                 {showSpouse && (
                   <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
                       <label className={fieldLabelClassName} htmlFor="spouseRetirementAge">
-                        Spouse retirement age
+                        Co-client retirement age
                       </label>
                       <input
                         id="spouseRetirementAge"
@@ -679,7 +679,7 @@ export default function QuickCreateForm() {
                     </div>
                     <div>
                       <label className={fieldLabelClassName} htmlFor="spouseRetirementMonth">
-                        Spouse retirement month
+                        Co-client retirement month
                       </label>
                       <select
                         id="spouseRetirementMonth"
@@ -696,7 +696,7 @@ export default function QuickCreateForm() {
                     </div>
                     <div>
                       <label className={fieldLabelClassName} htmlFor="spouseLifeExpectancy">
-                        Spouse life expectancy
+                        Co-client life expectancy
                       </label>
                       <input
                         id="spouseLifeExpectancy"

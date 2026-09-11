@@ -14,7 +14,7 @@ describe("hasSpouseForEstate", () => {
     expect(hasSpouseForEstate("1951-05-01")).toBe(true);
   });
 
-  it("treats a household with no spouse DOB as single (no second death)", () => {
+  it("treats a household with no co-client DOB as single (no second death)", () => {
     expect(hasSpouseForEstate(null)).toBe(false);
     expect(hasSpouseForEstate(undefined)).toBe(false);
   });

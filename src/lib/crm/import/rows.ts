@@ -210,7 +210,7 @@ export function buildRows(
     } else if (SPOUSE_SATELLITE_FIELDS.some((f) => text(f) !== "")) {
       warnings.push({
         field: "spouseFirst",
-        message: "Spouse details were ignored — no spouse first name in this row.",
+        message: "Co-client details were ignored — no Co-client first name in this row.",
       });
     }
 

@@ -401,8 +401,8 @@ export function estateBeneficiaryOptions(
   if (family?.spouse != null && inheritance?.spouseFirst !== true) {
     out.push({
       ref: "spouse",
-      name: spouseName ?? "Your spouse or partner",
-      detail: "Spouse or partner",
+      name: spouseName ?? "Your Co-client",
+      detail: "Co-client",
       fromFamily: true,
       selected: isSelected("spouse"),
     });
@@ -507,9 +507,10 @@ export function inheritanceSummaryLine(
   family: Family,
   today?: Date,
 ): string | null {
+  const spouseName = childDisplayName(family?.spouse ?? undefined);
   const spouseFirst =
     inheritance?.spouseFirst === true
-      ? `Everything to ${childDisplayName(family?.spouse ?? undefined) ?? "your spouse"} first`
+      ? `Everything to ${spouseName ?? "your Co-client"} first`
       : null;
 
   const people = resolveEstateBeneficiaries(inheritance, family, today);
@@ -618,7 +619,7 @@ export interface EstateHousehold {
  * carries no family slice at all (see `snapshotClientToPayload`), and a section
  * that hid its spouse and children questions on that basis would silently
  * collect half an estate questionnaire. So absence means SHOW — only an
- * explicit "no spouse" / "no children" from the Family step hides anything.
+ * explicit no-spouse / no-children answer from the Family step hides anything.
  */
 export function estateHousehold(family: Family): EstateHousehold {
   const known = family !== undefined;

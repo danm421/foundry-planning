@@ -225,13 +225,13 @@ function previewBuildPlan(a: Record<string, unknown>): WritePreview {
 
   const details = [
     primaryName && `Primary: ${primaryName}${primaryDob ? ` (DOB ${primaryDob})` : ""}`,
-    spouseName && `Spouse: ${spouseName}${spouseDob ? ` (DOB ${spouseDob})` : ""}`,
+    spouseName && `Co-client: ${spouseName}${spouseDob ? ` (DOB ${spouseDob})` : ""}`,
     state && `State: ${state}`,
     filing && `Filing status: ${filing}`,
     ret != null && `Retirement age: ${ret}`,
     life != null && `Life expectancy: ${life}`,
-    spouseRet != null && `Spouse retirement age: ${spouseRet}`,
-    spouseLife != null && `Spouse life expectancy: ${spouseLife}`,
+    spouseRet != null && `Co-client retirement age: ${spouseRet}`,
+    spouseLife != null && `Co-client life expectancy: ${spouseLife}`,
   ].filter(Boolean) as string[];
 
   return {

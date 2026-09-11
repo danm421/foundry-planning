@@ -110,6 +110,15 @@ const getImportExtractLimiter = buildLimiter(5, "1 m", "rl:import:extract");
 const getImportViewLimiter = buildLimiter(60, "1 m", "rl:import:view");
 const getImportMatchLimiter = buildLimiter(10, "1 m", "rl:import:match");
 const getImportCommitLimiter = buildLimiter(20, "1 m", "rl:import:commit");
+// Statement-chat turns (Task 11). Deliberately a SEPARATE bucket from
+// `checkForgeRateLimit` ("rl:forge") even though both gate a tool-calling
+// conversation: that limiter is keyed by firm only, with no op suffix, so
+// calling it directly here would make an advisor's statement-chat turns draw
+// on the exact same per-firm budget as their Forge planning-assistant turns —
+// the two features starving each other despite the spec's "Forge keeps its
+// graph; this surface stays independent" split. Same 20/min/firm generosity
+// as Forge's own turns, its own bucket.
+const getImportTurnLimiter = buildLimiter(20, "1 m", "rl:import:turn");
 
 // Projection / Monte Carlo. Both endpoints run the engine end-to-end on
 // every request (loadEffectiveTree + runProjection / runMonteCarlo). 30/min
@@ -272,7 +281,7 @@ export async function checkPreviewPdfRateLimit(
   return safeLimit(limiter, key);
 }
 
-export type ImportRateLimitOp = "upload" | "extract" | "view" | "match" | "commit";
+export type ImportRateLimitOp = "upload" | "extract" | "view" | "match" | "commit" | "turn";
 
 /**
  * Multi-bucket rate-limit dispatcher for the import tool v2. The `op`
@@ -292,6 +301,7 @@ export async function checkImportRateLimit(
     view: getImportViewLimiter,
     match: getImportMatchLimiter,
     commit: getImportCommitLimiter,
+    turn: getImportTurnLimiter,
   } as const;
   const limiter = factories[op]();
   if (!limiter) return { allowed: false, reason: "unconfigured" };

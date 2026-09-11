@@ -22,6 +22,7 @@ import {
 } from "@/lib/intake/estate";
 import { RTQ_V1, scoreRtq } from "@/lib/risk/rtq";
 import { band } from "@/lib/risk/scoring";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 // RiskLevel lives in risk-levels, NOT risk/labels — that module holds
 // tolerance-source and binding-constraint labels, not level names.
 import type { RiskLevel } from "@/lib/risk-levels";
@@ -299,7 +300,7 @@ export function buildIntakeDiff(
   const principals = (
     [
       { name: fullName(sf?.primary) ?? "Client", detail: principalDetail(se?.contact?.primary) },
-      { name: fullName(sf?.spouse) ?? "Spouse", detail: principalDetail(se?.contact?.spouse) },
+      { name: fullName(sf?.spouse) ?? CO_CLIENT_LABEL, detail: principalDetail(se?.contact?.spouse) },
     ] as { name: string; detail: string }[]
   ).filter((p) => p.detail !== "");
 

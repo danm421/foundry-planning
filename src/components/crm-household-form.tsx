@@ -221,7 +221,7 @@ export function CrmHouseholdForm({ mode }: CrmHouseholdFormProps) {
           </div>
         </div>
 
-        {/* Spouse */}
+        {/* Co-client */}
         <div className="border-t border-hair pt-4">
           <label htmlFor="addSpouse" className="flex items-center gap-2 cursor-pointer">
             <input
@@ -231,13 +231,13 @@ export function CrmHouseholdForm({ mode }: CrmHouseholdFormProps) {
               onChange={(e) => setAddSpouse(e.target.checked)}
               className="h-4 w-4 rounded border-hair bg-card-2 text-accent focus:ring-accent"
             />
-            <span className="text-[13px] font-medium text-ink-2">Add spouse</span>
+            <span className="text-[13px] font-medium text-ink-2">Add Co-client</span>
           </label>
           {addSpouse && (
             <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className={fieldLabelClassName} htmlFor="spouseFirstName">
-                  Spouse first name
+                  Co-client first name
                 </label>
                 <input
                   id="spouseFirstName"
@@ -250,7 +250,7 @@ export function CrmHouseholdForm({ mode }: CrmHouseholdFormProps) {
               </div>
               <div>
                 <label className={fieldLabelClassName} htmlFor="spouseLastName">
-                  Spouse last name
+                  Co-client last name
                 </label>
                 <input
                   id="spouseLastName"
@@ -264,7 +264,7 @@ export function CrmHouseholdForm({ mode }: CrmHouseholdFormProps) {
               </div>
               <div className="sm:col-span-2">
                 <label className={fieldLabelClassName} htmlFor="spouseDob">
-                  Spouse date of birth <span className="text-ink-4">(optional)</span>
+                  Co-client date of birth <span className="text-ink-4">(optional)</span>
                 </label>
                 <input id="spouseDob" name="spouseDob" type="date" min="1910-01-01" className={inputClassName} />
               </div>

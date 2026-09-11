@@ -6,6 +6,7 @@ import type { Income, ClientInfo, PlanSettings, MedicareCoverage } from "@/engin
 import { fraForBirthDate } from "@/engine/socialSecurity/fra";
 import { computeOwnMonthlyBenefit } from "@/engine/socialSecurity/ownRetirement";
 import { resolveClaimAgeMonths } from "@/engine/socialSecurity/claimAge";
+import { personLabel } from "@/lib/owner-labels";
 import {
   estimatePiaFromSalary,
   ownerAnnualSalary,
@@ -50,9 +51,7 @@ export function SocialSecurityDialog({
   onClose,
   onSaved,
 }: SocialSecurityDialogProps) {
-  const firstName = owner === "spouse"
-    ? (clientInfo.spouseName ?? "Spouse")
-    : clientInfo.firstName;
+  const firstName = personLabel(owner, { clientName: clientInfo.firstName, spouseName: clientInfo.spouseName ?? null });
 
   const ownerDob = owner === "spouse" ? clientInfo.spouseDob : clientInfo.dateOfBirth;
   const ownerRetirementAge = owner === "spouse" ? clientInfo.spouseRetirementAge : clientInfo.retirementAge;

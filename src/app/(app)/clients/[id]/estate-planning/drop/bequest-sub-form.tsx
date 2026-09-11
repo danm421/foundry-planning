@@ -68,7 +68,7 @@ export function BequestSubForm(props: BequestSubFormProps) {
               checked={grantorMode === "spouse"}
               onChange={() => setGrantorMode("spouse")}
             />
-            Spouse&rsquo;s will
+            Co-client&rsquo;s will
           </label>
           <label className="flex items-center gap-2 text-xs">
             <input
@@ -102,7 +102,7 @@ export function BequestSubForm(props: BequestSubFormProps) {
             checked={!props.isJointOrFractional && condition === "if_spouse_survives"}
             onChange={() => setCondition("if_spouse_survives")}
           />
-          If spouse survives
+          If Co-client survives
         </label>
         <label className="flex items-center gap-2 text-xs">
           <input
@@ -113,7 +113,7 @@ export function BequestSubForm(props: BequestSubFormProps) {
             }
             onChange={() => setCondition("if_spouse_predeceased")}
           />
-          If spouse predeceased
+          If Co-client predeceased
         </label>
       </fieldset>
 

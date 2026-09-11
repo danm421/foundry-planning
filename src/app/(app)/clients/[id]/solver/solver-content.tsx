@@ -14,6 +14,7 @@ import {
   type EducationReturnStat,
 } from "@/lib/reports/education-mc-inputs";
 import { loadReportLayout } from "@/lib/solver/report-layout-store";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import { detectDefaultGrowthAtInflationFor } from "@/lib/investments/default-growth-at-inflation";
 import { LiveSolverWorkspace } from "./live-solver-workspace";
 
@@ -156,7 +157,7 @@ export async function SolverContent({ clientId, firmId, userId, source }: Props)
   // Fall back to generic labels when a name is missing.
   const baseClient = baseTree.client;
   const clientName = baseClient.firstName?.trim() || "Client";
-  const spouseName = baseClient.spouseName?.trim() || "Spouse";
+  const spouseName = baseClient.spouseName?.trim() || CO_CLIENT_LABEL;
 
   let educationReturnStats: Record<string, EducationReturnStat> = {};
   let educationSeed = FALLBACK_EDUCATION_SEED;

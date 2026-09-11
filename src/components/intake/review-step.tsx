@@ -140,7 +140,7 @@ export function ReviewStep({ value, sections, onEdit }: ReviewStepProps) {
           )}
           {spouse && (
             <Row
-              label="Spouse"
+              label="Co-client"
               value={[spouse.firstName, spouse.lastName].filter(Boolean).join(" ")}
             />
           )}
@@ -212,7 +212,7 @@ export function ReviewStep({ value, sections, onEdit }: ReviewStepProps) {
           ) : (
             <>
               <Row label="Client retirement age" value={goals?.clientRetirementAge} />
-              <Row label="Spouse retirement age" value={goals?.spouseRetirementAge} />
+              <Row label="Co-client retirement age" value={goals?.spouseRetirementAge} />
               <Row label="Annual retirement expenses" value={formatMoney(goals?.annualRetirementExpenses)} />
               {expenseGoals.map((g, i) => (
                 <Row

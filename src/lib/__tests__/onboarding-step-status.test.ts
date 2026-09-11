@@ -85,8 +85,8 @@ describe("deriveStepStatuses", () => {
     const statuses = deriveStepStatuses(tree, {});
     const household = statuses.find((s) => s.slug === "household")!;
     expect(household.kind).toBe("in_progress");
-    expect(household.gaps).toContain("Spouse first name");
-    expect(household.gaps).toContain("Spouse date of birth");
+    expect(household.gaps).toContain("Co-client first name");
+    expect(household.gaps).toContain("Co-client date of birth");
   });
 
   it("treats skipped steps as skipped", () => {

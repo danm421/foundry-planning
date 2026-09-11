@@ -221,4 +221,51 @@ describe("transfer/account describers", () => {
     expect(d).toContain("Buy"); expect(d).toContain("Rental Property"); expect(d).toContain("$600k");
     expect(d).toContain("Cash"); expect(d).toContain("$400k");
   });
+
+  // `bundleId` links the legs of one dialog save. It rides the scenario-change
+  // payload on purpose (promote needs it), but this row prints on the Scenario
+  // Changes table and in the Plan Story chapter — both client-facing — so the
+  // raw uuid must never reach either.
+  const BUNDLE_UUID = "7f3a91c2-0000-4000-8000-0000000000ab";
+  const NO_ACCOUNTS = () =>
+    buildResolveContext({
+      accountsById: {}, recipientsById: {}, entitiesById: {}, spouseName: null,
+      modelPortfoliosById: {}, baseAllocationsById: {},
+    });
+
+  it("asset_transaction edit hides the bundle id and describes the real field", () => {
+    const row = describeChange(
+      {
+        id: "c", scenarioId: "s", opType: "edit", targetKind: "asset_transaction",
+        targetId: "x", toggleGroupId: null, orderIndex: 0,
+        payload: {
+          name: { from: "Sell Oak", to: "Move house — Sell Oak" },
+          bundleId: { from: null, to: BUNDLE_UUID },
+        },
+      },
+      { targetNames: { "asset_transaction:x": "Move house — Sell Oak" }, resolve: NO_ACCOUNTS() },
+    );
+    const printed = [row.what, row.before, row.after, ...row.detail].join(" ");
+    expect(printed).not.toContain(BUNDLE_UUID);
+    expect(printed.toLowerCase()).not.toContain("bundle id");
+    // With the id stripped, `name` is the only changed field, so the row states
+    // it in the before/after columns instead of collapsing to "— → Updated".
+    expect(row.before).toBe("Sell Oak");
+    expect(row.after).toBe("Move house — Sell Oak");
+  });
+
+  it("asset_transaction edit of ONLY the bundle id prints no uuid anywhere", () => {
+    const row = describeChange(
+      {
+        id: "c", scenarioId: "s", opType: "edit", targetKind: "asset_transaction",
+        targetId: "x", toggleGroupId: null, orderIndex: 0,
+        payload: { bundleId: { from: null, to: BUNDLE_UUID } },
+      },
+      { targetNames: { "asset_transaction:x": "Sell Oak" }, resolve: NO_ACCOUNTS() },
+    );
+    const printed = [row.what, row.before, row.after, ...row.detail].join(" ");
+    expect(printed).not.toContain(BUNDLE_UUID);
+    expect(printed.toLowerCase()).not.toContain("bundle id");
+    expect(row.what).toBe("Sell Oak");
+  });
 });

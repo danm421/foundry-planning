@@ -180,7 +180,7 @@ interface AddAccountFormProps {
   rothIraAccounts?: BusinessOption[];
   familyMembers?: { id: string; role: "client" | "spouse" | "child" | "other"; firstName: string }[];
   categoryDefaults?: CategoryDefaults;
-  /** Real names used in the owner dropdown. Falls back to "Client"/"Spouse" if absent. */
+  /** Real names used in the owner dropdown. Falls back to "Client"/"Co-client" if absent. */
   ownerNames?: { clientName: string; spouseName: string | null };
   /** Salary incomes offered as a percent-of-salary rule's basis, on the
    *  create-mode Savings form and in the rule dialog edit mode opens. */

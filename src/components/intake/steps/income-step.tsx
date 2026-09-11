@@ -29,7 +29,7 @@ export interface IncomeStepProps {
   onChange: (next: IncomeSlice) => void;
   /** Display name for the primary client (falls back to "Client"). */
   clientName?: string;
-  /** Display name for the spouse (falls back to "Spouse"); omit when none. */
+  /** Display name for the co-client (falls back to "Co-client"); omit when none. */
   spouseName?: string;
   /** When false, only the client is offered as an owner. */
   hasSpouse?: boolean;

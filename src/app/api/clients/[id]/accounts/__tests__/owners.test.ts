@@ -171,7 +171,7 @@ d("Account owners[] API — POST and PUT", () => {
       await db.insert(crmHouseholdContacts).values({
         householdId: _crmHousehold.id,
         role: "spouse",
-        firstName: "Spouse",
+        firstName: "Co-client",
         lastName: "Test",
       });
     }
@@ -216,7 +216,7 @@ d("Account owners[] API — POST and PUT", () => {
         .insert(familyMembers)
         .values({
           clientId: client.id,
-          firstName: "Spouse",
+          firstName: "Co-client",
           lastName: "Test",
           role: "spouse" as const,
         })
@@ -368,7 +368,7 @@ d("Account owners[] API — POST and PUT", () => {
     expect(body.error).toMatch(/retirement.*single owner/i);
   });
 
-  it("5. POST without owners (legacy owner='joint' + spouse) → 201 + two 50/50 rows", async () => {
+  it("5. POST without owners (legacy owner='joint' + co-client) → 201 + two 50/50 rows", async () => {
     const { clientId } = await setupClient({ withSpouse: true });
 
     const res = await POST(

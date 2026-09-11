@@ -55,6 +55,8 @@ export interface AssetTransactionRow {
   purchaseTransactionId: string | null;
   /** Set when the sell sources a business account instead of a regular account. */
   businessAccountId: string | null;
+  /** Set when this record was saved as part of a multi-leg transaction. */
+  bundleId: string | null;
   fractionSold: string | null;
   overrideSaleValue: string | null;
   overrideBasis: string | null;
@@ -72,6 +74,9 @@ export interface AssetTransactionRow {
   mortgageAmount: string | null;
   mortgageRate: string | null;
   mortgageTermMonths: number | null;
+  annualPropertyTax: string | null;
+  propertyTaxGrowthRate: string | null;
+  propertyTaxGrowthSource: "custom" | "inflation" | null;
 }
 
 export interface AccountOption {
@@ -1242,6 +1247,21 @@ export default function TechniquesView({
           spouseFirstName={spouseFirstName}
           existingNames={assetTransactions.map((t) => t.name)}
           initialData={editingTransaction ?? undefined}
+          // Always bundle-aware when editing: a bundled leg resolves to its
+          // siblings, a solo record to a one-element array holding itself.
+          // Passing `undefined` for a solo record would let the dialog grow it
+          // into a second record with NO shared id minted — two legs that look
+          // bundled but carry bundle_id = NULL, which the Solver then renders
+          // as two unrelated technique rows.
+          bundleRecords={
+            editingTransaction
+              ? assetTransactions.filter((t) =>
+                  editingTransaction.bundleId
+                    ? t.bundleId === editingTransaction.bundleId
+                    : t.id === editingTransaction.id,
+                )
+              : undefined
+          }
           onClose={() => { setShowAddTransaction(false); setEditingTransaction(null); }}
           onSaved={() => { setShowAddTransaction(false); setEditingTransaction(null); router.refresh(); }}
         />

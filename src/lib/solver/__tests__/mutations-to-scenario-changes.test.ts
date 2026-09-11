@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { ClientData } from "@/engine/types";
 import { mutationsToScenarioChanges } from "../mutations-to-scenario-changes";
+import { SOLVER_MUTATION_SCHEMA } from "../mutation-schema";
 
 const CLIENT_ID = "00000000-0000-4000-8000-000000000001";
 
@@ -822,5 +823,57 @@ describe("mutationsToScenarioChanges — every emitted targetId is a uuid", () =
     for (const d of drafts) {
       expect(d.targetId).not.toBe(d.targetKind);
     }
+  });
+});
+
+describe("asset-transaction bundleId round trip", () => {
+  // `bundle_id` is a real uuid column, so the fixture must be a real uuid.
+  const BUNDLE_ID = "00000000-0000-4000-8000-0000000000b1";
+  const leg = {
+    id: "at-1", name: "Move house — Sell Oak", type: "sell" as const,
+    year: 2027, accountId: "acc-1", bundleId: BUNDLE_ID,
+  };
+
+  it("survives the mutation schema", () => {
+    const parsed = SOLVER_MUTATION_SCHEMA.parse({
+      kind: "asset-transaction-upsert", id: "at-1", value: leg,
+    });
+    expect(parsed).toMatchObject({ value: { bundleId: BUNDLE_ID } });
+  });
+
+  it("rejects a bundleId that is not a uuid", () => {
+    // The schema is `.passthrough()`, so without a declared `bundleId` any
+    // string rides through the solver, the scenario writer and the jsonb
+    // payload, and only fails at the promote insert as a raw Postgres error.
+    const result = SOLVER_MUTATION_SCHEMA.safeParse({
+      kind: "asset-transaction-upsert", id: "at-1", value: { ...leg, bundleId: "bun-1" },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("reaches the scenario-change payload on add", () => {
+    const source = { assetTransactions: [] } as unknown as ClientData;
+    const drafts = mutationsToScenarioChanges(source, "client-1", [
+      { kind: "asset-transaction-upsert", id: "at-1", value: leg },
+    ]);
+    const add = drafts.find((d) => d.targetKind === "asset_transaction");
+    expect(add?.opType).toBe("add");
+    expect((add?.payload as { bundleId?: string }).bundleId).toBe(BUNDLE_ID);
+  });
+
+  it("emits the bundleId as an edited field when a leg joins a bundle later", () => {
+    // The source differs in `year` as well as `bundleId`. With `bundleId` the
+    // ONLY difference, dropping it from the diff collapses the edit draft
+    // entirely and the RED halts on `opType` — the value assertion below would
+    // never run, so it would pin nothing.
+    const source = {
+      assetTransactions: [{ ...leg, bundleId: undefined, year: 2026 }],
+    } as unknown as ClientData;
+    const drafts = mutationsToScenarioChanges(source, "client-1", [
+      { kind: "asset-transaction-upsert", id: "at-1", value: leg },
+    ]);
+    const edit = drafts.find((d) => d.targetKind === "asset_transaction");
+    expect(edit?.opType).toBe("edit");
+    expect((edit?.payload as { bundleId?: { to: string } }).bundleId?.to).toBe(BUNDLE_ID);
   });
 });

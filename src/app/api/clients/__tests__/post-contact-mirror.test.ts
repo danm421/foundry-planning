@@ -38,7 +38,7 @@ describe("POST /api/clients — contact mirror", () => {
     await db.delete(crmHouseholds).where(eq(crmHouseholds.id, householdId));
   });
 
-  it("creates client and mirrors primary + spouse contact info to CRM", async () => {
+  it("creates client and mirrors primary + co-client contact info to CRM", async () => {
     const req = new Request("http://test", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

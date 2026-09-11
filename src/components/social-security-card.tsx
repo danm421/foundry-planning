@@ -6,6 +6,7 @@ import { SocialSecurityDialog } from "./social-security-dialog";
 import { fraForBirthDate } from "@/engine/socialSecurity/fra";
 import { computeOwnMonthlyBenefit } from "@/engine/socialSecurity/ownRetirement";
 import { resolveClaimAgeMonths } from "@/engine/socialSecurity/claimAge";
+import { personLabel } from "@/lib/owner-labels";
 
 export interface SocialSecurityCardProps {
   clientId: string;
@@ -73,7 +74,7 @@ export function SocialSecurityCard({ clientId, clientInfo, planSettings, incomes
 
   const rowContent = (owner: "client" | "spouse", row: ReturnType<typeof findRow>) => (
     <span className="text-sm">
-      <span className="font-medium text-gray-100">{owner === "client" ? clientInfo.firstName : (clientInfo.spouseName ?? "Spouse")}</span>
+      <span className="font-medium text-gray-100">{personLabel(owner, { clientName: clientInfo.firstName, spouseName: clientInfo.spouseName ?? null })}</span>
       <span className="text-gray-400 ml-2">{summaryLabel(row, clientInfo, owner)}</span>
     </span>
   );

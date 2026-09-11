@@ -31,7 +31,7 @@ export const assumptionRules: Rule = (input) => {
     // `agi + taxExemptInterest` is the CLIENT's own IRMAA MAGI whatever the filing status,
     // but it is the SPOUSE's only on a joint return: a married-separate return states one
     // spouse's income alone, and a single or head-of-household return may still sit beside
-    // a stale `spouseDob` in the plan. A null filing status falls through to "skip the spouse".
+    // a stale `spouseDob` in the plan. A null filing status skips the spouse entirely.
     const people: Array<{ owner: "client" | "spouse"; dob: string | null }> = [{ owner: "client", dob: plan.client.dateOfBirth }];
     if (facts.filingStatus === "married_joint") people.push({ owner: "spouse", dob: plan.client.spouseDob });
     for (const { owner, dob } of people) {
@@ -40,7 +40,7 @@ export const assumptionRules: Rule = (input) => {
       const row = plan.medicare.find((m) => m.owner === owner);
       const p = row?.priorYearMagi ?? null;
       const id = `medicare.priorYearMagi.${owner}`;
-      const who = owner === "client" ? "the client" : "the spouse";
+      const who = owner === "client" ? "the client" : "the Co-client";
       const fig = { returnFigure: { label: "MAGI for Medicare", amount: magi, display: money(magi), lineRefs: [ref("1040", "11", "AGI", facts.income.agi), ref("1040", "2a", "Tax-exempt interest", facts.income.taxExemptInterest)] }, planFigure: { label: `Plan prior-year MAGI (${who})`, amount: p, display: money(p), year: planYear } };
       if (p == null || differs(magi, p, ROW)) {
         suggestions.push({

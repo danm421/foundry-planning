@@ -18,7 +18,32 @@ import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 // Zod schemas
 // ---------------------------------------------------------------------------
 
-const postBodySchema = z
+/** Shared by both schemas' superRefine: the DB CHECK
+ *  (`asset_transactions_buy_only_property_tax_check`) rejects all three
+ *  property-tax fields on a sell, so this turns that into a 422 instead of a
+ *  raw Postgres error. */
+function checkNoPropertyTaxOnSale(
+  val: {
+    annualPropertyTax?: number | null;
+    propertyTaxGrowthRate?: number | null;
+    propertyTaxGrowthSource?: string | null;
+  },
+  ctx: z.RefinementCtx,
+) {
+  if (
+    val.annualPropertyTax != null ||
+    val.propertyTaxGrowthRate != null ||
+    val.propertyTaxGrowthSource != null
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Property tax applies to a purchase, not a sale",
+      path: ["annualPropertyTax"],
+    });
+  }
+}
+
+export const postBodySchema = z
   .object({
     name: z.string().min(1),
     type: z.enum(["buy", "sell"]),
@@ -76,11 +101,18 @@ const postBodySchema = z
     mortgageAmount: z.number().nullable().optional(),
     mortgageRate: z.number().nullable().optional(),
     mortgageTermMonths: z.number().int().nullable().optional(),
+    // Buy-only; the DB CHECK rejects them on a sell, so the superRefine below
+    // turns that into a 422 rather than a raw Postgres error.
+    annualPropertyTax: z.number().nonnegative().nullable().optional(),
+    propertyTaxGrowthRate: z.number().gt(-1).max(1).nullable().optional(),
+    propertyTaxGrowthSource: z.enum(["custom", "inflation"]).nullable().optional(),
     // Resell fields
     purchaseTransactionId: z.string().uuid().nullable().optional(),
     // Business-sale source. Mutually exclusive with accountId / purchaseTransactionId.
     businessAccountId: z.string().uuid().nullable().optional(),
     fractionSold: z.number().gt(0).lte(1).nullable().optional(),
+    // Shared by every leg saved from one dialog. Display-only grouping key.
+    bundleId: z.string().uuid().nullable().optional(),
   })
   .superRefine((val, ctx) => {
     if (val.type === "sell") {
@@ -103,6 +135,7 @@ const postBodySchema = z
             "A sell must have exactly one source: accountId, purchaseTransactionId, or businessAccountId.",
         });
       }
+      checkNoPropertyTaxOnSale(val, ctx);
     }
     if (val.type === "buy") {
       if (
@@ -123,7 +156,7 @@ const postBodySchema = z
 
 // PUT allows all fields to be optional (partial update), and type may or may
 // not be present. The superRefine only fires when type IS provided.
-const putBodySchema = z
+export const putBodySchema = z
   .object({
     transactionId: z.string().uuid(),
     name: z.string().min(1).optional(),
@@ -182,11 +215,18 @@ const putBodySchema = z
     mortgageAmount: z.number().nullable().optional(),
     mortgageRate: z.number().nullable().optional(),
     mortgageTermMonths: z.number().int().nullable().optional(),
+    // Buy-only; the DB CHECK rejects them on a sell, so the superRefine below
+    // turns that into a 422 rather than a raw Postgres error.
+    annualPropertyTax: z.number().nonnegative().nullable().optional(),
+    propertyTaxGrowthRate: z.number().gt(-1).max(1).nullable().optional(),
+    propertyTaxGrowthSource: z.enum(["custom", "inflation"]).nullable().optional(),
     // Resell fields
     purchaseTransactionId: z.string().uuid().nullable().optional(),
     // Business-sale source. Mutually exclusive with accountId / purchaseTransactionId.
     businessAccountId: z.string().uuid().nullable().optional(),
     fractionSold: z.number().gt(0).lte(1).nullable().optional(),
+    // Shared by every leg saved from one dialog. Display-only grouping key.
+    bundleId: z.string().uuid().nullable().optional(),
   })
   .superRefine((val, ctx) => {
     // Only enforce sell/buy source rules when type is explicitly supplied.
@@ -210,6 +250,7 @@ const putBodySchema = z
             "A sell must have exactly one source: accountId, purchaseTransactionId, or businessAccountId.",
         });
       }
+      checkNoPropertyTaxOnSale(val, ctx);
     }
     if (val.type === "buy") {
       if (
@@ -231,6 +272,33 @@ const putBodySchema = z
 export const dynamic = "force-dynamic";
 
 const toStr = (v: unknown) => (v != null ? String(v) : null);
+
+// The DB CHECK (`asset_transactions_buy_only_property_tax_check`) forbids all
+// three property-tax columns on a `sell` row. The PATCH superRefine only
+// inspects the incoming body, so flipping an existing buy to a sell without
+// resending these fields would otherwise leave stale values in place and let
+// the CHECK fail as a raw Postgres error instead of a clean response. Compute
+// against the RESULTING type (incoming `type`, falling back to the existing
+// row's) so any type change clears them.
+export function resolvePropertyTaxUpdateFields(
+  resolvedType: "buy" | "sell",
+  annualPropertyTax: number | null | undefined,
+  propertyTaxGrowthRate: number | null | undefined,
+  propertyTaxGrowthSource: "custom" | "inflation" | null | undefined,
+): {
+  annualPropertyTax?: string | null;
+  propertyTaxGrowthRate?: string | null;
+  propertyTaxGrowthSource?: "custom" | "inflation" | null;
+} {
+  if (resolvedType === "sell") {
+    return { annualPropertyTax: null, propertyTaxGrowthRate: null, propertyTaxGrowthSource: null };
+  }
+  return {
+    ...(annualPropertyTax !== undefined && { annualPropertyTax: toStr(annualPropertyTax) }),
+    ...(propertyTaxGrowthRate !== undefined && { propertyTaxGrowthRate: toStr(propertyTaxGrowthRate) }),
+    ...(propertyTaxGrowthSource !== undefined && { propertyTaxGrowthSource }),
+  };
+}
 
 async function getBaseCaseScenarioId(clientId: string): Promise<string | null> {
   const a = await verifyClientAccess(clientId);
@@ -322,10 +390,14 @@ export async function POST(
       mortgageAmount,
       mortgageRate,
       mortgageTermMonths,
+      annualPropertyTax,
+      propertyTaxGrowthRate,
+      propertyTaxGrowthSource,
       // Resell fields
       purchaseTransactionId,
       businessAccountId,
       fractionSold,
+      bundleId,
     } = parsed;
 
     const acctCheck = await assertAccountsInClient(id, [
@@ -423,11 +495,15 @@ export async function POST(
         mortgageAmount: toStr(mortgageAmount),
         mortgageRate: toStr(mortgageRate),
         mortgageTermMonths: mortgageTermMonths ?? null,
+        annualPropertyTax: toStr(annualPropertyTax),
+        propertyTaxGrowthRate: toStr(propertyTaxGrowthRate),
+        propertyTaxGrowthSource: propertyTaxGrowthSource ?? null,
         // Resell fields
         purchaseTransactionId: purchaseTransactionId ?? null,
         businessAccountId: businessAccountId ?? null,
         fractionSold:
           fractionSold != null ? String(fractionSold) : null,
+        bundleId: bundleId ?? null,
       })
       .returning();
 
@@ -505,10 +581,14 @@ export async function PUT(
       mortgageAmount,
       mortgageRate,
       mortgageTermMonths,
+      annualPropertyTax,
+      propertyTaxGrowthRate,
+      propertyTaxGrowthSource,
       // Resell fields
       purchaseTransactionId,
       businessAccountId,
       fractionSold,
+      bundleId,
     } = parsed;
 
     const acctCheck = await assertAccountsInClient(id, [
@@ -605,12 +685,22 @@ export async function PUT(
         basis: basis !== undefined ? toStr(basis) : undefined,
         mortgageAmount: mortgageAmount !== undefined ? toStr(mortgageAmount) : undefined,
         mortgageRate: mortgageRate !== undefined ? toStr(mortgageRate) : undefined,
+        // Buy-only; nulled outright when the RESULTING type is "sell" (see
+        // resolvePropertyTaxUpdateFields) so a type change can't leave stale
+        // values behind for the DB CHECK to reject.
+        ...resolvePropertyTaxUpdateFields(
+          type ?? existing.type,
+          annualPropertyTax,
+          propertyTaxGrowthRate,
+          propertyTaxGrowthSource,
+        ),
         // Resell fields
         ...(purchaseTransactionId !== undefined && { purchaseTransactionId }),
         ...(businessAccountId !== undefined && { businessAccountId }),
         ...(fractionSold !== undefined && {
           fractionSold: fractionSold !== null ? String(fractionSold) : null,
         }),
+        ...(bundleId !== undefined && { bundleId }),
         updatedAt: new Date(),
       })
       .where(and(eq(assetTransactions.id, transactionId), eq(assetTransactions.clientId, id)))

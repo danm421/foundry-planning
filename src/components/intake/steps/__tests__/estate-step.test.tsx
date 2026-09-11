@@ -194,7 +194,7 @@ describe("EstateStep — what Family already answered is read, not re-asked", ()
     expect(screen.getByText(QUESTION.executor)).toBeInTheDocument();
   });
 
-  it("hides the spouse's contact fields when Family says there is no spouse", () => {
+  it("hides the co-client's contact fields when Family says there is no co-client", () => {
     render(<Harness family={FAMILY_NO_KIDS} />);
     expect(screen.getAllByRole("textbox", { name: /^mobile$/i })).toHaveLength(1);
   });
@@ -361,7 +361,7 @@ describe("EstateStep — who inherits", () => {
     expect(next?.inheritance?.beneficiaries).toEqual([{ ref: "child:1" }]);
   });
 
-  it("drops the spouse from the list once everything goes to them first", () => {
+  it("drops the co-client from the list once everything goes to them first", () => {
     render(<Harness />);
     expect(row("Bre")).toBeInTheDocument();
     fireEvent.click(

@@ -13,6 +13,7 @@ import type { LifeInsuranceSummaryOptions, LiSolved } from "./options-schema";
 import { buildLifeInsuranceNarrative } from "./narrative";
 import { roundUpTo50k } from "@/lib/life-insurance/round";
 import { clipToNeedWindow } from "@/lib/life-insurance/need-window";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 export interface DecedentGap {
   decedentLabel: string;
@@ -170,7 +171,7 @@ export function buildLifeInsuranceSummaryData(
       : null;
   const spouseGap =
     solved != null && married && solved.mcSpouse != null
-      ? gapFromMc(ctx.spouseName ?? "Spouse", spouseCov.total, solved.mcSpouse, spouseCov.hasJoint)
+      ? gapFromMc(ctx.spouseName ?? CO_CLIENT_LABEL, spouseCov.total, solved.mcSpouse, spouseCov.hasJoint)
       : null;
 
   const deathYear = solved?.assumptions.deathYear ?? null;
@@ -192,7 +193,7 @@ export function buildLifeInsuranceSummaryData(
   const spouseRange =
     solved != null && deathYear != null && married && solved.mcSpouse != null
       ? buildRange({
-          decedentLabel: ctx.spouseName ?? "Spouse",
+          decedentLabel: ctx.spouseName ?? CO_CLIENT_LABEL,
           decedent: "spouse",
           deathYear,
           curveNeed: curveAt(deathYear)?.spouseNeed ?? null,

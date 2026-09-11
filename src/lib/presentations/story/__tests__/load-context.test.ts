@@ -488,7 +488,7 @@ describe("loadStoryContext", () => {
     }
   });
 
-  it("names a household with no spouse without a dangling 'and'", async () => {
+  it("names a household with no Co-client without a dangling 'and'", async () => {
     fx.client = { ...CLIENT, spouseName: undefined };
 
     const ctx = await loadStoryContext({

@@ -276,7 +276,7 @@ function ControlledPanel({
       liAssumptions={liAssumptions}
       liModelPortfolioLabel="Plan default rate"
       clientName="Pat"
-      spouseName="Spouse"
+      spouseName="Co-client"
       activeReport={activeReport}
       onReportChange={setActiveReport}
       source="base"
@@ -464,7 +464,7 @@ describe("SolverChartPanel", () => {
         liAssumptions={liAssumptions}
         liModelPortfolioLabel="Plan default rate"
         clientName="Pat"
-        spouseName="Spouse"
+        spouseName="Co-client"
         activeReport="portfolio"
         onReportChange={onReportChange}
         source="base"

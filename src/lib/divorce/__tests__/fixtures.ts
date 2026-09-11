@@ -218,7 +218,7 @@ export async function createMarriedFixture(
         householdId: hh.id,
         role: "spouse",
         firstName: "Jordan",
-        lastName: "Spouse",
+        lastName: "Co-client",
         dateOfBirth: "1977-03-22",
       });
     }
@@ -280,7 +280,7 @@ export async function createMarriedFixture(
           role: "spouse",
           relationship: "other",
           firstName: "Jordan",
-          lastName: "Spouse",
+          lastName: "Co-client",
           dateOfBirth: "1977-03-22",
         })
         .returning({ id: familyMembers.id });
@@ -403,7 +403,7 @@ export async function createMarriedFixture(
       .insert(accounts)
       .values({
         ...acctBase,
-        name: "Spouse 401(k)",
+        name: "Co-client 401(k)",
         category: "retirement",
         subType: "401k",
         value: "400000.00",
@@ -498,7 +498,7 @@ export async function createMarriedFixture(
       .values({
         ...acctBase,
         type: "salary",
-        name: "Spouse Salary",
+        name: "Co-client Salary",
         annualAmount: "120000.00",
         startYear: currentYear,
         endYear,

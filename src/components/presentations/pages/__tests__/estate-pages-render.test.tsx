@@ -58,7 +58,7 @@ const populatedChart: EstateFlowChartData = {
         { kind: "taxes", label: "Taxes & Expenses", total: -50_000, lines: [] },
         {
           kind: "inheritance_spouse",
-          label: "To Spouse",
+          label: "To Co-client",
           total: 950_000,
           lines: [],
           targetLabel: "Linda's Estate",

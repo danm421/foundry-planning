@@ -4,6 +4,7 @@ import type { ExtractedLifePolicy, LifePolicyType } from "@/lib/extraction/types
 import type { MatchAnnotation } from "@/lib/imports/types";
 import { candidatesForRow } from "@/lib/imports/candidates-for-row";
 import { CurrencyInput } from "@/components/currency-input";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import MatchColumn from "./match-column";
 import type { MatchCandidate } from "./match-link-picker";
 import SourceBadge from "./source-badge";
@@ -20,7 +21,7 @@ const POLICY_TYPE_OPTIONS: { value: LifePolicyType; label: string }[] = [
 
 const INSURED_OPTIONS = [
   { value: "client", label: "Client" },
-  { value: "spouse", label: "Spouse" },
+  { value: "spouse", label: CO_CLIENT_LABEL },
   { value: "joint", label: "Joint" },
 ] as const;
 

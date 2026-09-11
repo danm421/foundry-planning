@@ -109,7 +109,7 @@ describe("intakeNoteBody", () => {
   it("renders retirement ages, target spending, funded goals and radar topics", () => {
     const body = intakeNoteBody(payload(), ALL, { currentYear: 2026 })!;
     expect(body).toContain("Client retires at 65");
-    expect(body).toContain("Spouse retires at 63");
+    expect(body).toContain("Co-client retires at 63");
     expect(body).toContain("$120,000");
     // Funded goal: label, amount, span, and who it's for.
     expect(body).toContain("Lake cabin");
@@ -151,7 +151,7 @@ describe("intakeNoteBody", () => {
   it("separates every detail it appends to a name", () => {
     const body = intakeNoteBody(payload(), ALL, { currentYear: 2026 })!;
     expect(body).toContain("- Jane Doe · b. Apr 2, 1975 · Married");
-    expect(body).toContain("- Spouse: John Doe · b. Nov 30, 1977");
+    expect(body).toContain("- Co-client: John Doe · b. Nov 30, 1977");
     expect(body).toContain("- Child: Aiden Doe · b. Jun 1, 2010");
   });
 

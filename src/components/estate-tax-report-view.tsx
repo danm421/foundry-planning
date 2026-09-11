@@ -11,6 +11,7 @@ import { AsOfDropdown, type AsOfValue } from "./report-controls/as-of-dropdown";
 import { TimePeriodButtons } from "./report-controls/time-period-buttons";
 import type { OwnerDobs } from "./report-controls/age-helpers";
 import EstateTaxSkeleton from "@/app/(app)/clients/[id]/estate-planning/estate-tax/loading-skeleton";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 const fmt = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -169,11 +170,11 @@ export default function EstateTaxReportView({
     firstDecedent === "client"
       ? ownerNames.clientName
       : firstDecedent === "spouse"
-        ? ownerNames.spouseName ?? "Spouse"
+        ? ownerNames.spouseName ?? CO_CLIENT_LABEL
         : null;
   const survivorName =
     firstDecedent === "client"
-      ? ownerNames.spouseName ?? "Spouse"
+      ? ownerNames.spouseName ?? CO_CLIENT_LABEL
       : firstDecedent === "spouse"
         ? ownerNames.clientName
         : null;
@@ -238,7 +239,7 @@ export default function EstateTaxReportView({
                 }
                 onClick={() => setOrdering("spouseFirst")}
               >
-                {ownerNames.spouseName ?? "Spouse"} dies first
+                {ownerNames.spouseName ?? CO_CLIENT_LABEL} dies first
               </button>
             </div>
           )}
@@ -296,7 +297,7 @@ function ownerForName(
   result: EstateTaxResult,
   names: { clientName: string; spouseName: string | null },
 ): string {
-  return result.deceased === "client" ? names.clientName : names.spouseName ?? "Spouse";
+  return result.deceased === "client" ? names.clientName : names.spouseName ?? CO_CLIENT_LABEL;
 }
 
 function formatAmount(amount: number, opts: { negate?: boolean } = {}): string {

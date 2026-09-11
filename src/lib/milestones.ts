@@ -35,15 +35,15 @@ export const YEAR_REF_LABELS: Record<YearRef, string> = {
   plan_start: "Plan Start",
   plan_end: "Plan End",
   client_retirement: "Client Retirement",
-  spouse_retirement: "Spouse Retirement",
+  spouse_retirement: "Co-client Retirement",
   client_end: "Client End of Plan",
-  spouse_end: "Spouse End of Plan",
+  spouse_end: "Co-client End of Plan",
   client_ss_62: "Client Age 62",
   client_ss_fra: "Client FRA",
   client_ss_70: "Client Age 70",
-  spouse_ss_62: "Spouse Age 62",
-  spouse_ss_fra: "Spouse FRA",
-  spouse_ss_70: "Spouse Age 70",
+  spouse_ss_62: "Co-client Age 62",
+  spouse_ss_fra: "Co-client FRA",
+  spouse_ss_70: "Co-client Age 70",
 };
 
 /** Milestones resolved from client data — computed once per page load */
@@ -223,7 +223,7 @@ export function defaultExpenseRefs(_type: ExpenseType): { startYearRef: YearRef 
  * Which individual a savings rule belongs to, read off its DESTINATION account.
  *
  * A savings rule carries no owner column of its own — `accountId` is its only
- * link to a person — so the destination account is what "the spouse's 401(k)"
+ * link to a person — so the destination account is what "the Co-client's 401(k)"
  * means here. This is the same reduction the engine already applies to decide
  * a rule's owner: `projection.ts` grounds both `ownerSalary` (percent-of-salary
  * contributions and employer match) and the IRS contribution limit on

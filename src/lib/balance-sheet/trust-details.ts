@@ -1,5 +1,6 @@
 // src/lib/balance-sheet/trust-details.ts
 import type { ClientData, EntitySummary, TrustSubType } from "@/engine/types";
+import { individualOwnerLabel } from "@/lib/owner-labels";
 
 /** One resolved beneficiary line on the trust-details card. */
 export interface TrustBeneficiaryLine {
@@ -43,8 +44,12 @@ interface BeneficiaryRefLike {
 }
 
 function resolveName(ref: BeneficiaryRefLike, tree: ClientData, labels: HouseholdLabels): string {
-  if (ref.householdRole === "client") return labels.clientLabel;
-  if (ref.householdRole === "spouse") return labels.spouseLabel ?? "Spouse";
+  if (ref.householdRole) {
+    return individualOwnerLabel(ref.householdRole, {
+      clientName: labels.clientLabel,
+      spouseName: labels.spouseLabel,
+    });
+  }
   if (ref.familyMemberId) {
     const m = (tree.familyMembers ?? []).find((x) => x.id === ref.familyMemberId);
     return m ? `${m.firstName}${m.lastName ? " " + m.lastName : ""}` : "(unknown beneficiary)";
@@ -102,7 +107,9 @@ export function buildTrustDetails(tree: ClientData, labels: HouseholdLabels): Tr
       subTypeLabel: (e.trustSubType && SUB_TYPE_LABEL[e.trustSubType]) || null,
       trustee: e.trustee ?? null,
       grantor:
-        e.grantor === "client" ? labels.clientLabel : e.grantor === "spouse" ? (labels.spouseLabel ?? "Spouse") : null,
+        e.grantor
+          ? individualOwnerLabel(e.grantor, { clientName: labels.clientLabel, spouseName: labels.spouseLabel })
+          : null,
       powers: trustPowers(e),
       beneficiaries: trustBeneficiaries(e, tree, labels),
     }));

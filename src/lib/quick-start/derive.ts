@@ -20,6 +20,7 @@ import type {
   QsInsuranceDraft,
   QsAssumptionsDraft,
 } from "./types";
+import { individualOwnerLabel } from "@/lib/owner-labels";
 
 export interface QsContext {
   milestones: ClientMilestones;
@@ -66,9 +67,7 @@ export function buildQsContext(input: {
 }
 
 function ownerFirstName(owner: QsOwner, ctx: QsContext): string {
-  if (owner === "spouse") return ctx.spouseFirstName ?? "Spouse";
-  if (owner === "joint") return "Joint";
-  return ctx.clientFirstName;
+  return individualOwnerLabel(owner, { clientName: ctx.clientFirstName, spouseName: ctx.spouseFirstName });
 }
 
 /** Replicates the trivial private label helpers in income-expenses-view.tsx. */
@@ -361,7 +360,7 @@ export function insurancePayload(
   ctx: QsContext,
   ownerFamilyMemberId?: string | null,
 ) {
-  const first = draft.insured === "spouse" ? ctx.spouseFirstName ?? "Spouse" : ctx.clientFirstName;
+  const first = individualOwnerLabel(draft.insured, { clientName: ctx.clientFirstName, spouseName: ctx.spouseFirstName });
   const isTerm = draft.policyType === "term";
   return {
     name: `${first} - ${POLICY_LABEL[draft.policyType]} Life`,

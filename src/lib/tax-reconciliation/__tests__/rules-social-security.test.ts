@@ -57,7 +57,7 @@ describe("socialSecurityRules", () => {
   });
 
   it("offers no owner choice when two claimable rows belong to the SAME person", () => {
-    // Deriving the choice from the row COUNT put a "Spouse" radio on a household whose two
+    // Deriving the choice from the row COUNT put a "Co-client" radio on a household whose two
     // claimable benefits are both the client's. `apply.ts` filters the rows by owner, so that
     // radio selected nothing and the click dead-ended in "No Social Security row for that owner".
     // With no choice offered the claim writes both rows, splitting the household gross across them.

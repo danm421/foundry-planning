@@ -37,6 +37,7 @@ import Group from "@/components/income-expenses/group";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
 import { isRetirementLivingExpense } from "@/lib/solver/living-expense";
 import { toSalaryOptions } from "@/lib/savings/salary-options";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1663,7 +1664,7 @@ function ExpenseDialog({
                 className="ml-6 rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 w-48"
               >
                 <option value="client">Client</option>
-                {hasSpouse && <option value="spouse">Spouse</option>}
+                {hasSpouse && <option value="spouse">{CO_CLIENT_LABEL}</option>}
               </select>
             )}
           </div>

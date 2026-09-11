@@ -52,7 +52,12 @@ function isEducationAccount(a: { category: string; subType: string }): boolean {
 function toBuyLeg(goal: HomePurchaseGoal): BuyLegDraft {
   const { id, year: _year, ...rest } = goal;
   void _year;
-  return { ...rest, key: id, kind: "buy", assetCategory: "real_estate" };
+  return {
+    ...rest,
+    key: id,
+    kind: "buy",
+    assetCategory: "real_estate",
+  };
 }
 
 /**
@@ -97,6 +102,7 @@ function blankHomePurchase(id: string, currentYear: number): HomePurchaseGoal {
     assetSubType: "primary_residence", purchasePrice: "", growthRate: "", basis: "",
     fundingAccountId: "", showMortgage: false,
     mortgageAmount: "", mortgageRate: "", mortgageTermMonths: "360",
+    annualPropertyTax: "", propertyTaxGrowthRate: "3", propertyTaxGrowthSource: "custom",
   };
 }
 

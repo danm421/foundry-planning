@@ -18,6 +18,7 @@ import type { EntityFlowMode, GiftEventKind } from "@/engine/types";
 import type { ClientFormInitial } from "./forms/add-client-form";
 import type { ClientWithContacts } from "@/lib/clients/get-client-with-contacts";
 import { type TrustSubType } from "@/lib/entities/trust";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import type { AssetsTabAccount, AssetsTabLiability, AssetsTabIncome, AssetsTabExpense, AssetsTabFamilyMember, AssetsTabBusiness } from "./forms/assets-tab";
 import type { AccountOwner } from "@/engine/ownership";
 import { ageOnDate, birthYearFromDob, yearForAge } from "@/lib/age-year";
@@ -537,7 +538,7 @@ export default function FamilyView({
           <header className="mb-3 flex items-center justify-between">
             <div>
               <h2 className="text-xl font-bold text-gray-100">Household</h2>
-              <p className="text-xs text-gray-400">Client and spouse. Edit from the Clients list.</p>
+              <p className="text-xs text-gray-400">Client and Co-client. Edit from the Clients list.</p>
             </div>
             {canEdit && (
               <button
@@ -562,7 +563,7 @@ export default function FamilyView({
             {primary.spouseName ? (
               <PersonCard
                 name={`${primary.spouseName} ${primary.spouseLastName ?? primary.lastName}`.trim()}
-                badge="Spouse"
+                badge={CO_CLIENT_LABEL}
                 fields={[
                   ["Date of Birth", primary.spouseDob ? `${formatIsoDate(primary.spouseDob)} (age ${spouseAge})` : "—"],
                   ["Retirement", formatRetirement(primary.spouseRetirementAge, primary.spouseRetirementMonth, primary.spouseDob)],
@@ -571,7 +572,7 @@ export default function FamilyView({
               />
             ) : (
               <div className="flex items-center justify-center rounded-lg border border-dashed border-gray-800 bg-gray-900/40 p-6 text-sm text-gray-400">
-                No spouse on file
+                No Co-client on file
               </div>
             )}
           </div>

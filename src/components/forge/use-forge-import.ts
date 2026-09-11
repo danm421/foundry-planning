@@ -23,6 +23,12 @@ import type { AssembleState } from "@/lib/imports/assemble/types";
 // which was never true, and the drift it invited is exactly what made the Task
 // 17 PIA-clobber invisible.
 import { COMMIT_TABS } from "@/lib/imports/commit/types";
+// The identify response shape lives with the prompt block that consumes it
+// (`domain/forge/fact-finder-turn.ts`), and is re-exported here so callers keep
+// importing it from the hook that performs the call.
+import type { FactFinderIdentifyResponse } from "@/domain/forge/fact-finder-turn";
+
+export type { FactFinderIdentifyResponse };
 
 export type ForgeImportStatus =
   | "idle"
@@ -51,21 +57,6 @@ export interface PlanBuildResult {
   reviewPath: string;
   assemble: AssembleState;
   warnings: string[];
-}
-
-export interface FactFinderIdentifyResponse {
-  isHouseholdDoc: boolean;
-  identity?: {
-    householdName: string;
-    primary?: { firstName: string; lastName?: string; dateOfBirth?: string };
-    spouse?: { firstName: string; lastName?: string; dateOfBirth?: string };
-    dependents: { firstName: string; lastName?: string; dateOfBirth?: string }[];
-    state?: string;
-    filingStatus?: "single" | "married_joint" | "married_separate" | "head_of_household";
-    retirementAge?: number;
-    lifeExpectancy?: number;
-  };
-  duplicateCandidates: { householdId: string; clientId: string | null; name: string; status: string }[];
 }
 
 export interface UseForgeImportResult {

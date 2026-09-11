@@ -16,6 +16,7 @@ import type {
 } from "./family-view";
 import { redistributeTier, splitEvenly } from "./forms/auto-split-percentages";
 import type { SaveResult } from "@/lib/use-tab-auto-save";
+import { describeApiError, type ApiErrorBody } from "@/lib/api-error-message";
 
 /** Imperative handle the dialog uses to trigger a save on tab switch / submit. */
 export interface InsurancePolicyBeneficiariesAutoSaveHandle {
@@ -41,6 +42,16 @@ interface InsurancePolicyBeneficiariesTabProps {
    *  auto-save-on-tab-switch flow. */
   onAutoSaveStateChange?: (state: { isDirty: boolean; canSave: boolean }) => void;
 }
+
+/** Wire field → the column heading the editor shows. */
+const BENEFICIARY_FIELD_LABELS: Record<string, string> = {
+  tier: "Tier",
+  percentage: "Percent",
+  familyMemberId: "Beneficiary",
+  externalBeneficiaryId: "Beneficiary",
+  entityIdRef: "Beneficiary",
+  householdRole: "Beneficiary",
+};
 
 // DB rows ship `percentage` as a decimal string. `Designation` wants a number,
 // so we normalize here before handing to BeneficiaryEditor.
@@ -149,8 +160,14 @@ const AccountBeneficiaryEditor = forwardRef<
         body: JSON.stringify(body),
       });
       if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        const message = (j as { error?: string }).error ?? `HTTP ${res.status}`;
+        const j = (await res.json().catch(() => ({}))) as ApiErrorBody;
+        // The PUT body is an ARRAY, so a rejected row's path arrives as
+        // "2.percentage" — the leading index is the row number, which the
+        // label map can't carry. `describeApiError` still names the column.
+        const message = describeApiError(j, res.status, {
+          labels: BENEFICIARY_FIELD_LABELS,
+          fallback: "We couldn't save these beneficiaries.",
+        });
         setSaveError(message);
         return { ok: false, error: message };
       }
@@ -315,7 +332,7 @@ const AccountBeneficiaryEditor = forwardRef<
                 <optgroup label="Household">
                   <option value="hh:client">{clientFirstName} (client)</option>
                   {spouseFirstName && (
-                    <option value="hh:spouse">{spouseFirstName} (spouse)</option>
+                    <option value="hh:spouse">{spouseFirstName} (co-client)</option>
                   )}
                 </optgroup>
                 <optgroup label="Family">
