@@ -392,9 +392,11 @@ export async function applyEntityRemove(args: ApplyEntityRemoveArgs): Promise<vo
   // applyChanges). When the caller passes an open transaction, enroll in it
   // instead of opening a nested one.
   const runRemove = async (tx: Tx) => {
-    // Check for an existing `add` row — if present, the entity is
-    // scenario-only; deleting the add row (plus any piled-on edit) restores
-    // the base view without leaving a remove marker.
+    // Look for an existing `add` row on this target. For every kind EXCEPT
+    // `gift` an `add` means the entity is scenario-only, so deleting it (plus
+    // any piled-on edit) restores the base view with no remove marker left
+    // behind. A gift's `add` does NOT mean that — see the note below the
+    // query — so a gift always gets the remove marker.
     const existing = await tx
       .select()
       .from(scenarioChanges)
