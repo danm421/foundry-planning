@@ -142,6 +142,7 @@ const dialogProps = {
     { id: "cash", name: "Whatnot — Cash", category: "taxable", value: 0, subType: "checking", ownerFamilyMemberId: "m0", ownerEntityId: null },
   ] as unknown as AccountLite[],
   annualExclusionByYear: { 2026: 19_000 },
+  planStartYear: 2026,
   onClose: vi.fn(),
   onSavedGift: vi.fn(),
   onSavedSeries: vi.fn(),

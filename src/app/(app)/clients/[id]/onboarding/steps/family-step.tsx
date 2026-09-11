@@ -23,6 +23,7 @@ export default async function FamilyStep({ clientId, tree }: FamilyStepProps) {
       initialGifts={data.giftsList}
       initialGiftSeries={[]}
       annualExclusionByYear={{}}
+      planStartYear={tree.planSettings.planStartYear}
       scenarioId="base"
       initialFullAccounts={[]}
       initialFullLiabilities={[]}

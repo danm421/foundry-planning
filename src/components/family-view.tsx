@@ -255,6 +255,12 @@ interface FamilyViewProps {
   initialGifts: Gift[];
   initialGiftSeries: GiftSeriesLite[];
   annualExclusionByYear: Record<number, number>;
+  /** The plan's real first projection year (`plan_settings.plan_start_year`).
+   *  Not a calendar-year guess: it is the exact line the gift route draws
+   *  between a future transfer (which the engine replays) and a past-dated one
+   *  (which it does not, so the route writes the ownership straight to
+   *  `account_owners` instead). A scenario cannot do that second write. */
+  planStartYear: number;
   scenarioId: string;
   /** Optional: full asset data for the trust Assets tab */
   initialFullAccounts?: AssetsTabAccount[];
@@ -356,6 +362,7 @@ export default function FamilyView({
   initialGifts,
   initialGiftSeries,
   annualExclusionByYear,
+  planStartYear,
   scenarioId,
   initialFullAccounts,
   initialFullLiabilities,
@@ -861,6 +868,7 @@ export default function FamilyView({
         gifts={giftsState}
         series={giftSeriesState}
         annualExclusionByYear={annualExclusionByYear}
+        planStartYear={planStartYear}
         scenarioId={scenarioId}
         hasSpouse={primary.spouseName != null}
         onChangeGifts={setGiftsState}
@@ -948,6 +956,7 @@ export default function FamilyView({
               ? new Date(primary.dateOfBirth).getFullYear() + primary.lifeExpectancy
               : undefined
           }
+          planStartYear={planStartYear}
           onSaved={handleEntitySaved}
           onAutoSaved={handleEntitySaved}
           onRequestDelete={() => {
@@ -1071,6 +1080,12 @@ function GiftsSection(props: {
   gifts: Gift[];
   series: GiftSeriesLite[];
   annualExclusionByYear: Record<number, number>;
+  /** The plan's real first projection year (`plan_settings.plan_start_year`).
+   *  Not a calendar-year guess: it is the exact line the gift route draws
+   *  between a future transfer (which the engine replays) and a past-dated one
+   *  (which it does not, so the route writes the ownership straight to
+   *  `account_owners` instead). A scenario cannot do that second write. */
+  planStartYear: number;
   scenarioId: string;
   hasSpouse: boolean;
   // Setter form, not a plain array: a gift whose Frequency or Funding changed is
@@ -1160,6 +1175,7 @@ function GiftsSection(props: {
           entities={props.entities}
           accounts={props.accounts}
           annualExclusionByYear={props.annualExclusionByYear}
+          planStartYear={props.planStartYear}
           editingGift={editingGift}
           editingSeries={editingSeries}
           onClose={closeDialog}

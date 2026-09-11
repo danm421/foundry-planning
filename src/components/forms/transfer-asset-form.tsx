@@ -11,7 +11,10 @@ import {
 import type { ClientMilestones, YearRef } from "@/lib/milestones";
 import { RETIREMENT_SUBTYPES } from "@/lib/ownership";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
-import { giftScenarioAdd } from "@/lib/gifts/gift-write";
+import {
+  assertNotPastDatedAssetGift,
+  giftScenarioAdd,
+} from "@/lib/gifts/gift-write";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import {
   inputClassName,
@@ -48,11 +51,16 @@ interface Props {
   accounts: AccountOption[];
   milestones?: ClientMilestones;
   /**
-   * Kept for API compatibility with callers — no longer used internally now that
-   * the past-dated amount auto-fill branch has been removed (the route forces
-   * amount=null for asset transfers regardless).
+   * The plan's first projection year (`plan_settings.plan_start_year`).
+   *
+   * It is the line `POST /gifts` draws between a transfer the engine replays at
+   * projection time and a past-dated one, which the route instead writes
+   * straight into `account_owners`. A scenario cannot make that second write,
+   * so a past-dated transfer saved inside one changes nothing at all — this
+   * form refuses it instead. `null` when the caller genuinely does not know the
+   * year: the guard then stands down rather than refusing on a guess.
    */
-  projectionStartYear: number;
+  projectionStartYear: number | null;
   /** Current calendar year — passed as a prop so tests can control it. */
   currentYear: number;
   /** Most-recent discount per source, from `selectPriorDiscounts`. Seeds the
@@ -92,7 +100,6 @@ export default function TransferAssetForm({
   trustGrantor,
   accounts,
   milestones,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   projectionStartYear,
   currentYear,
   priorDiscounts,
@@ -205,6 +212,13 @@ export default function TransferAssetForm({
         eventKind: "outright",
         valuationDiscount: discountFraction,
       };
+
+      // A past-dated transfer inside a scenario is a silent no-op on every
+      // number — see `assertNotPastDatedAssetGift`. Refuse it by name.
+      assertNotPastDatedAssetGift(draft, {
+        scenarioActive: writer.scenarioActive,
+        planStartYear: projectionStartYear,
+      });
 
       const res = await writer.submit(giftScenarioAdd(draft), {
         url: `/api/clients/${clientId}/gifts`,

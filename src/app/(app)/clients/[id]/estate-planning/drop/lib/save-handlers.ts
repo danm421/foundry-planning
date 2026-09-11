@@ -32,7 +32,10 @@
  */
 
 import type { UseScenarioWriter } from "@/hooks/use-scenario-writer";
-import { giftScenarioAdd } from "@/lib/gifts/gift-write";
+import {
+  assertNotPastDatedAssetGift,
+  giftScenarioAdd,
+} from "@/lib/gifts/gift-write";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 
 export type Recipient =
@@ -60,7 +63,14 @@ export interface SaveGiftOneTimeArgs {
 }
 
 export async function saveGiftOneTime(
-  args: SaveGiftOneTimeArgs & { submit: UseScenarioWriter["submit"] },
+  args: SaveGiftOneTimeArgs & {
+    submit: UseScenarioWriter["submit"];
+    /** True when a scenario is active, and the plan's real first projection
+     *  year — together they decide whether a past-dated asset transfer has to
+     *  be refused. See `assertNotPastDatedAssetGift`. */
+    scenarioActive: boolean;
+    planStartYear: number | null;
+  },
 ): Promise<void> {
   const body: Record<string, unknown> = {
     year: args.year,
@@ -102,6 +112,14 @@ export async function saveGiftOneTime(
         crummey: args.useCrummeyPowers,
         eventKind: "outright",
       };
+
+  // A past-dated asset transfer moves ownership through `account_owners`,
+  // which only the base gift route writes — inside a scenario the same save
+  // changes nothing at all, so refuse it by name.
+  assertNotPastDatedAssetGift(draft, {
+    scenarioActive: args.scenarioActive,
+    planStartYear: args.planStartYear,
+  });
 
   // dispatchSave (dnd-context-provider.tsx) already refreshes once after this
   // handler resolves — it's the shared refresh for every drop action

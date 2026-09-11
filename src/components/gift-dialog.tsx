@@ -20,6 +20,7 @@ import {
 } from "@/lib/gifts/scenario-rows";
 import {
   assertDraftable,
+  assertNotPastDatedAssetGift,
   giftScenarioAdd,
   giftScenarioRemove,
 } from "@/lib/gifts/gift-write";
@@ -38,6 +39,9 @@ export interface GiftDialogProps {
   entities: Entity[];
   accounts: AccountLite[];
   annualExclusionByYear: Record<number, number>;
+  /** The plan's real first projection year. An asset gift dated before it is
+   *  refused in scenario mode — see `assertNotPastDatedAssetGift`. */
+  planStartYear: number;
   /** Existing one-time gift to edit, or existing series to edit, or null to add. */
   editingGift?: Gift | null;
   editingSeries?: GiftSeriesLite | null;
@@ -166,6 +170,13 @@ export default function GiftDialog(props: GiftDialogProps) {
       // a fabricated draft and quietly rewrite the gift.
       if (uneditableKind) assertDraftable(initialDraft, uneditableKind);
       if (!draft) throw new Error(blockedReason ?? "Please complete the gift before saving.");
+      // An asset transfer dated before the plan starts moves ownership through
+      // `account_owners`, which only the base gift route can write. In a
+      // scenario the same save changes nothing at all, so say so.
+      assertNotPastDatedAssetGift(draft, {
+        scenarioActive: writer.scenarioActive,
+        planStartYear: props.planStartYear,
+      });
       const inPlace = savesInPlace(draft);
       // The discount field is on screen exactly when the shared rule admits the
       // gift's shape, so when it does the draft is authoritative: an advisor who

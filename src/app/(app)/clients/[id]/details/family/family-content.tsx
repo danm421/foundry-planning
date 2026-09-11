@@ -336,6 +336,7 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
         initialGifts={giftsList}
         initialGiftSeries={giftSeriesList}
         annualExclusionByYear={annualExclusionByYear}
+        planStartYear={planStartYear}
         scenarioId={resolvedScenario.id}
         initialFullAccounts={fullAccounts}
         initialFullLiabilities={fullLiabilities}

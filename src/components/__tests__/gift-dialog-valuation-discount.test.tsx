@@ -62,6 +62,7 @@ const baseProps = {
     },
   ] as unknown as AccountLite[],
   annualExclusionByYear: { 2026: 19000 },
+  planStartYear: 2026,
   onClose: vi.fn(),
   onSavedGift: vi.fn(),
   onSavedSeries: vi.fn(),

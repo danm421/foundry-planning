@@ -75,6 +75,7 @@ const baseProps = {
     },
   ] as unknown as AccountLite[],
   annualExclusionByYear: { 2026: 19000 },
+  planStartYear: 2026,
   onClose: vi.fn(),
   onSavedGift: vi.fn(),
   onSavedSeries: vi.fn(),
@@ -478,6 +479,49 @@ describe("GiftDialog — gift writes follow the active scenario", () => {
     // …and the discount stays last, the JSON.stringify diff contract.
     const keys = Object.keys(body.entity);
     expect(keys[keys.length - 1]).toBe("valuationDiscount");
+  });
+
+  // ── past-dated asset transfers ───────────────────────────────────────────
+  it("refuses a past-dated asset gift inside a scenario instead of saving a no-op", async () => {
+    const fetchMock = vi
+      .spyOn(global, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+    // `planStartYear` is 2026, so 2019 is before the projection begins: the
+    // gift route would move the ownership in `account_owners`, and a scenario
+    // cannot — the overlay's event at a past year is simply ignored.
+    render(
+      <GiftDialog
+        {...baseProps}
+        editingGift={{ ...scenarioOnlyGift, year: 2019 } as Gift}
+      />,
+    );
+    fireEvent.click(screen.getByText("Save gift"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("gift-error")).toHaveTextContent(
+        /before the plan starts in 2026/i,
+      ),
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("saves the same past-dated asset gift on the base plan, where the ownership write works", async () => {
+    searchParams = new URLSearchParams("");
+    const fetchMock = vi
+      .spyOn(global, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({ id: "g-new" }), { status: 201 }));
+
+    render(
+      <GiftDialog
+        {...baseProps}
+        editingGift={{ ...scenarioOnlyGift, year: 2019 } as Gift}
+      />,
+    );
+    fireEvent.click(screen.getByText("Save gift"));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(String(fetchMock.mock.calls[0][0])).toContain("/api/clients/c1/gifts");
   });
 
   it("leaves a base-plan gift on the base gift route with no scenario active (behavior unchanged)", async () => {

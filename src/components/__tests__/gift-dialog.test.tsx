@@ -28,6 +28,7 @@ const baseProps = {
   entities: [{ id: "t1", name: "ILIT", entityType: "trust", isIrrevocable: true }] as unknown as Entity[],
   accounts: [{ id: "a1", name: "Brokerage", category: "taxable", value: 500_000, subType: "brokerage", ownerFamilyMemberId: "m0", ownerEntityId: null }] as unknown as AccountLite[],
   annualExclusionByYear: { 2026: 19000 },
+  planStartYear: 2026,
   onClose: vi.fn(),
   onSavedGift: vi.fn(),
   onSavedSeries: vi.fn(),

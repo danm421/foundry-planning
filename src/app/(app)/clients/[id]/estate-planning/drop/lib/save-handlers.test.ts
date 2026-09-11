@@ -36,6 +36,8 @@ describe("save-handlers", () => {
       amount: 18_000,
       useCrummeyPowers: true,
       submit,
+      scenarioActive: false,
+      planStartYear: 2026,
     });
 
     expect(submit).toHaveBeenCalledTimes(1);
@@ -93,6 +95,8 @@ describe("save-handlers", () => {
       percent: 0.6,
       useCrummeyPowers: false,
       submit,
+      scenarioActive: false,
+      planStartYear: 2026,
     });
 
     const [edit, fallback] = (submit as ReturnType<typeof vi.fn>).mock.calls[0];
@@ -125,6 +129,47 @@ describe("save-handlers", () => {
       },
       skipRefresh: true,
     });
+  });
+
+  it("saveGiftOneTime refuses a past-dated asset drop inside a scenario", async () => {
+    // In a scenario the ownership dual-write `POST /gifts` does for a
+    // pre-plan-start transfer never happens, so the save would land a row that
+    // moves no numbers at all. Refuse it instead — and write nothing.
+    const submit = mockSubmit(200);
+    await expect(
+      saveGiftOneTime({
+        clientId: "c1",
+        year: 2019,
+        grantor: "client",
+        sourceAccountId: "a1",
+        recipient: { kind: "entity", id: "ent-slat" },
+        amountKind: "percent",
+        percent: 0.4,
+        useCrummeyPowers: false,
+        submit,
+        scenarioActive: true,
+        planStartYear: 2026,
+      }),
+    ).rejects.toThrow(/before the plan starts in 2026/i);
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it("saveGiftOneTime still writes the same past-dated drop in base mode", async () => {
+    const submit = mockSubmit(200);
+    await saveGiftOneTime({
+      clientId: "c1",
+      year: 2019,
+      grantor: "client",
+      sourceAccountId: "a1",
+      recipient: { kind: "entity", id: "ent-slat" },
+      amountKind: "percent",
+      percent: 0.4,
+      useCrummeyPowers: false,
+      submit,
+      scenarioActive: false,
+      planStartYear: 2026,
+    });
+    expect(submit).toHaveBeenCalledTimes(1);
   });
 
   // A recurring series is NOT an overlay row. `gift_series` carries a real
@@ -255,6 +300,8 @@ describe("save-handlers", () => {
         percent: 0.6,
         useCrummeyPowers: false,
         submit,
+        scenarioActive: false,
+        planStartYear: 2026,
       }),
     ).rejects.toThrow(/400/);
   });

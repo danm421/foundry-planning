@@ -197,6 +197,7 @@ const FV_BASE_PROPS = {
   initialGifts: [GIFT],
   initialGiftSeries: [],
   annualExclusionByYear: { 2024: 18000 },
+  planStartYear: 2024,
   scenarioId: "default",
   contacts: null,
 };

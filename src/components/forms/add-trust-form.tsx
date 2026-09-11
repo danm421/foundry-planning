@@ -77,6 +77,11 @@ interface AddTrustFormProps {
   assetFamilyMembers?: AssetsTabFamilyMember[];
   /** Schedule modal props */
   planEndYear?: number;
+  /** The plan's real first projection year (`plan_settings.plan_start_year`),
+   *  handed to the asset-transfer modal. Absent when the caller doesn't have
+   *  it, in which case the past-dated guard stands down rather than refusing a
+   *  legal save on a guess. */
+  planStartYear?: number;
   primaryClientBirthYear?: number;
   initialFlowOverrides?: Array<{
     year: number;
@@ -154,6 +159,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
   entityIncome, entityExpense,
   assetFamilyMembers,
   planEndYear,
+  planStartYear,
   primaryClientBirthYear,
   initialFlowOverrides,
   onSaved, onClose, onSubmitStateChange,
@@ -1278,7 +1284,13 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
             trustGrantor={(grantor as "client" | "spouse") || "client"}
             accounts={toAssetAccountOptions(accounts ?? [], editing.id)}
             currentYear={new Date().getFullYear()}
-            projectionStartYear={new Date().getFullYear()}
+            // The plan's REAL first projection year, not today's date: it is
+            // the line `POST /gifts` draws between a transfer the engine will
+            // replay and a past-dated one it writes straight to
+            // `account_owners`. A scenario cannot make that second write, so
+            // the form refuses a past-dated transfer rather than accepting a
+            // save that moves no numbers.
+            projectionStartYear={planStartYear ?? null}
             priorDiscounts={transferPriorDiscounts}
             onClose={() => setOpenModal(null)}
             onSaved={() => {

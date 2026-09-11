@@ -307,6 +307,46 @@ describe("transfer forms — scenario-mode gift writes", () => {
     await waitFor(() => expect(refreshMock).toHaveBeenCalledTimes(1));
   });
 
+  // RULING 69. `POST /gifts` dual-writes `account_owners` when the transfer year
+  // is before the plan starts, because the engine never replays an event from
+  // before the projection begins. A scenario bypasses that route and the overlay
+  // only emits a GiftEvent at the past year, which the engine ignores — so the
+  // save succeeded and NOT ONE NUMBER MOVED. An advisor reads that as a dead
+  // Save button, then re-enters the gift.
+  it("refuses a past-dated asset transfer inside a scenario, by name", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderTransferAsset({ scenarioId: SCENARIO_ID, trustId: TRUST_ID });
+    fireEvent.change(screen.getByLabelText(/transfer year/i), {
+      target: { value: "2019" },
+    });
+    submitForm();
+
+    await waitFor(() =>
+      expect(screen.getByText(/before the plan starts in 2026/i)).toBeInTheDocument(),
+    );
+    // Refused before anything was written — no change row, no base write.
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("still saves the same past-dated transfer with no scenario active", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderTransferAsset({ scenarioId: null, trustId: TRUST_ID });
+    fireEvent.change(screen.getByLabelText(/transfer year/i), {
+      target: { value: "2019" },
+    });
+    submitForm();
+
+    // The base route CAN move the ownership, so nothing is refused there.
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(`/api/clients/${CLIENT_ID}/gifts`);
+    expect(JSON.parse(init.body as string).year).toBe(2019);
+  });
+
   it.each([
     ["cash", renderTransferCash, `/api/clients/${CLIENT_ID}/gifts`],
     ["asset", renderTransferAsset, `/api/clients/${CLIENT_ID}/gifts`],

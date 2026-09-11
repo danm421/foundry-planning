@@ -310,6 +310,8 @@ export function CanvasDndProvider({
             useCrummeyPowers: action.useCrummey,
             notes: action.notes,
             submit: writer.submit,
+            scenarioActive: writer.scenarioActive,
+            planStartYear: tree.planSettings?.planStartYear ?? null,
           });
           break;
         }
