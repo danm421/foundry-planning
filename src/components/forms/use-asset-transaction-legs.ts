@@ -140,7 +140,7 @@ export function legsFromInitialData(d: AssetTransactionInitialData): LegDraft[] 
     b.mortgageTermMonths = String(d.mortgageTermMonths ?? 360);
     b.annualPropertyTax = d.annualPropertyTax ?? "";
     b.propertyTaxGrowthRate = d.propertyTaxGrowthRate
-      ? String(Math.round(Number(d.propertyTaxGrowthRate) * 10000) / 100) : "3";
+      ? String(Math.round(Number(d.propertyTaxGrowthRate) * 10000) / 100) : "";
     b.propertyTaxGrowthSource = d.propertyTaxGrowthSource === "inflation" ? "inflation" : "custom";
     legs.push(b);
   }

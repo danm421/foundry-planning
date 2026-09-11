@@ -243,6 +243,9 @@ export default function BuyLegEditor({ leg, onChange, accounts, idPrefix = "", c
             </select>
             {leg.propertyTaxGrowthSource === "custom" && (
               <div className="mt-2">
+                <label className={fieldLabelClassName} htmlFor={fieldId("propertyTaxGrowthRate")}>
+                  Custom Rate (%)
+                </label>
                 <PercentInput
                   id={fieldId("propertyTaxGrowthRate")}
                   value={leg.propertyTaxGrowthRate}
