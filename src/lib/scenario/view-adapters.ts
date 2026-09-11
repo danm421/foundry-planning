@@ -311,9 +311,10 @@ export function liabilityEngineToView(liability: EngineLiability): LiabilityView
 // ── Entity ────────────────────────────────────────────────────────────────────
 
 /**
- * Engine fields only. Pages must merge in `name`, `value`, `owner`, `notes`
- * from a parallel base-row query (engine `EntitySummary` is intentionally
- * narrower than the DB row).
+ * Engine fields only. Pages must merge in `name`, `value` and `owner` from a
+ * parallel base-row query (engine `EntitySummary` is intentionally narrower
+ * than the DB row). `notes` now rides on `EntitySummary`, so it comes through
+ * here rather than from the base row.
  */
 export interface EntityViewEngineFields {
   id: string;
@@ -322,6 +323,7 @@ export interface EntityViewEngineFields {
   trustSubType: string | null;
   isIrrevocable: boolean | null;
   trustee: string | null;
+  notes: string | null;
   exemptionConsumed: string;
   grantor: "client" | "spouse" | null;
   entityType: string | null;
@@ -338,6 +340,7 @@ export function entityEngineToView(entity: EntitySummary): EntityViewEngineField
     trustSubType: entity.trustSubType ?? null,
     isIrrevocable: entity.isIrrevocable ?? null,
     trustee: entity.trustee ?? null,
+    notes: entity.notes ?? null,
     exemptionConsumed: String(entity.exemptionConsumed ?? 0),
     grantor: entity.grantor ?? null,
     entityType: entity.entityType ?? null,

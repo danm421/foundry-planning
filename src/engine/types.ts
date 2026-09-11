@@ -584,6 +584,9 @@ export interface EntitySummary {
   trustSubType?: TrustSubType;
   isIrrevocable?: boolean;
   trustee?: string;
+  /** Free-text advisor note. Display-only — no projection rule reads it.
+   *  Mirrors `entities.notes`, so it promotes with the entity. */
+  notes?: string | null;
   exemptionConsumed?: number;
   /** Single household grantor — "client" | "spouse". Undefined means the
    *  trust was funded by a third party (e.g., parent-funded trust for the

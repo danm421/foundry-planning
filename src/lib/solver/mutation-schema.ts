@@ -375,6 +375,34 @@ const ENTITY_VALUE = z
     trustEnds: z.enum(["client_death", "spouse_death", "survivorship"]).nullable().optional(),
     grantorStatusEndYear: z.number().int().optional(),
     splitInterest: SPLIT_INTEREST_SNAPSHOT.optional(),
+    // ── Fields the trust editor writes ───────────────────────────────────
+    // Spelled out so they are type-checked and cannot be silently dropped by
+    // a later `.strict()` — a Zod object that forgot a field has stripped a
+    // gift's valuation discount here before. Every enum below mirrors the
+    // engine union VERBATIM (src/engine/types.ts, EntitySummary); a narrower
+    // enum would reject a legitimate entity, and because each route body is
+    // `z.array(SOLVER_MUTATION_SCHEMA)` one rejected row 400s the WHOLE
+    // request across twelve routes.
+    trustee: z.string().nullable().optional(),
+    notes: z.string().nullable().optional(),
+    // engine: distributionMode?: "fixed" | "pct_liquid" | "pct_income" | null
+    // db:     entities.distribution_mode, same three values (schema.ts).
+    distributionMode: z.enum(["fixed", "pct_liquid", "pct_income"]).nullable().optional(),
+    // Numbers, not `z.coerce` — a stringified rate makes the engine
+    // concatenate (1 + "0.03" is "10.03"), which has shipped to prod here.
+    distributionAmount: z.number().nullable().optional(),
+    distributionPercent: z.number().nullable().optional(),
+    // engine: type EntityFlowMode = "annual" | "schedule"
+    // db:     pgEnum("entity_flow_mode", ["annual", "schedule"]).
+    flowMode: z.enum(["annual", "schedule"]).optional(),
+    // Element shapes stay `unknown`: BeneficiaryRef / RemainderBeneficiaryRef
+    // / EntityOwner each carry required fields a half-filled editor row may
+    // not have yet, so validating them would 400 the request. The guard here
+    // is "this is a list", plus the field being declared at all.
+    beneficiaries: z.array(z.unknown()).optional(),
+    incomeBeneficiaries: z.array(z.unknown()).optional(),
+    remainderBeneficiaries: z.array(z.unknown()).optional(),
+    owners: z.array(z.unknown()).optional(),
   })
   .passthrough();
 
