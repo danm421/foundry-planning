@@ -405,9 +405,19 @@ export function mergeRows(
   assertNotCommitted(keep, committedRowIds);
   assertNotCommitted(merge, committedRowIds);
   const merged = unionAccountFields(keep, merge);
-  // The kept row may have just absorbed the retired row's positions, whose
-  // ids were minted under a DIFFERENT account's scope. Re-stamping is
-  // idempotent for positions that were already the kept row's own.
+  // `merged.holdings` is still the SAME array (and same holding objects) as
+  // whichever of `keep`/`merge` donated it — `unionAccountFields` only
+  // spreads the row shallowly, never the arrays it carries. Clone before
+  // stamping so the mutation lands on `merged`'s own copy, not on a holding
+  // object also reachable from `payload.accounts` or (for the retired row)
+  // from the `excludedRows` snapshot below — both still need their PRE-merge
+  // data untouched.
+  merged.holdings = merged.holdings?.map((h) => ({ ...h }));
+  // Positions here may never have been stamped at all (a fixture, or a row
+  // this surface built by hand) — and a future tool that appends a position
+  // to an already-stamped account needs its new entry numbered too. This
+  // re-normalises the whole array so both cases end up correct; it is
+  // idempotent for positions that already had a correct id.
   stampAccountHoldingIds(merged);
   const nextAccounts = accounts
     .map((r, i) => (i === keepIdx ? merged : r))

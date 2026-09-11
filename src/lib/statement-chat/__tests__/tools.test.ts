@@ -323,7 +323,12 @@ describe("statement chat tools", () => {
     const survivor = mergeRows(withExtras, { keepRowId: "r1", mergeRowId: "r2" }, NONE_COMMITTED)
       .payload.accounts![0];
 
-    expect(survivor.holdings).toEqual(holdings);
+    // `mergeRows` clones before stamping (fix round 1), so `survivor.holdings`
+    // is no longer the SAME array as the `holdings` fixture above — this
+    // compares against a fresh copy with `__holdingId` added, not against
+    // itself. Before the clone, this assertion passed even when the stamp
+    // mutated the fixture in place, because `survivor.holdings` WAS `holdings`.
+    expect(survivor.holdings).toEqual([{ ...holdings[0], __holdingId: "t:VTI#0" }]);
     expect(survivor.owners).toEqual(owners);
     expect(survivor).toMatchObject({
       custodian: "Schwab",

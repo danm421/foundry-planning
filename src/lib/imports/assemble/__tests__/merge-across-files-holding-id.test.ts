@@ -56,4 +56,28 @@ describe("mergeAcrossFiles — __holdingId", () => {
     );
     expect(payload.accounts[0].holdings).toBeUndefined();
   });
+
+  // Documented at `merge-across-files.ts`: "Idempotent — re-stamping a
+  // payload that already carries ids produces the same ids." Nothing
+  // exercised that claim until now — `mergeRows` (Task 2, fix round 1)
+  // depends on it holding, since it re-stamps a row's WHOLE holdings array
+  // unconditionally rather than only the positions that just arrived.
+  it("stamping the same payload twice produces identical ids", () => {
+    const { payload: first } = mergeAcrossFiles(
+      oneFile([{ name: "Brokerage", accountNumberLast4: "1234", custodian: "Schwab", value: 200,
+        holdings: [holding("aapl"), holding(undefined, "Cash"), holding(undefined, "Cash")] }]),
+    );
+    const idsAfterFirstStamp = first.accounts[0].holdings?.map((h) => h.__holdingId);
+
+    const { payload: second } = mergeAcrossFiles(
+      oneFile([{ name: "Brokerage", accountNumberLast4: "1234", custodian: "Schwab", value: 200,
+        // Same positions, but already carrying the ids the first merge minted —
+        // simulating a re-run over a payload that has already been stamped.
+        holdings: first.accounts[0].holdings }]),
+    );
+    const idsAfterSecondStamp = second.accounts[0].holdings?.map((h) => h.__holdingId);
+
+    expect(idsAfterSecondStamp).toEqual(idsAfterFirstStamp);
+    expect(idsAfterFirstStamp).toEqual(["t:AAPL#0", "n:CASH#0", "n:CASH#1"]);
+  });
 });
