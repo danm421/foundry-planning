@@ -89,4 +89,24 @@ describe("toAssetTransactionSnapshot", () => {
     expect(snap.proceedsAccount).toBeNull();
     expect(snap.overrideSaleValue).toBeNull();
   });
+
+  it("converts a buy leg's property tax fields to numbers", async () => {
+    const snap = await toAssetTransactionSnapshot({
+      ...buyRow,
+      annualPropertyTax: "16500.00",
+      propertyTaxGrowthRate: "0.0300",
+      propertyTaxGrowthSource: "custom",
+    });
+
+    expect(snap.annualPropertyTax).toBe(16500);
+    expect(snap.propertyTaxGrowthRate).toBe(0.03);
+    expect(snap.propertyTaxGrowthSource).toBe("custom");
+  });
+
+  it("preserves nulls for a pre-feature row's property tax fields", async () => {
+    const snap = await toAssetTransactionSnapshot(buyRow);
+    expect(snap.annualPropertyTax).toBeNull();
+    expect(snap.propertyTaxGrowthRate).toBeNull();
+    expect(snap.propertyTaxGrowthSource).toBeNull();
+  });
 });
