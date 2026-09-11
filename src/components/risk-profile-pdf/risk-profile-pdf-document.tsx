@@ -142,7 +142,7 @@ function ComponentPanels({ row, flags }: { row: RiskDetailRow; flags: RiskListFl
             {flags.reviewDue && <Text style={styles.panelMeta}>Review due</Text>}
             {row.spouseToleranceScore !== null && (
               <Text style={styles.panelMeta}>
-                Spouse {row.spouseToleranceScore} — household tolerance uses the lower of the two
+                Co-client {row.spouseToleranceScore} — household tolerance uses the lower of the two
               </Text>
             )}
           </>

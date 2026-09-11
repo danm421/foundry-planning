@@ -3,11 +3,12 @@
  *
  * The second person in a household is a Co-client. The word survives only as a
  * tax or legal term of art (TERMS_OF_ART) or in a file that is factually about
- * the marital relationship (PERMANENT_ALLOWLIST).
+ * the marital relationship, machine-facing, or a scanner artifact — and then
+ * only with its reason written next to it (PERMANENT_ALLOWLIST).
  *
- * PENDING is a ratchet, not an allowlist: it lists files the sweep has not
- * reached yet, and it only ever shrinks. A file listed here that is already
- * clean also fails — that stops entries going stale and hiding a regression.
+ * The sweep is finished, so the PENDING ratchet that carried it is gone: this is
+ * now a plain gate. A new "Spouse" string fails the build unless it earns one of
+ * the two exits above, in a diff a reviewer can see.
  */
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
@@ -21,9 +22,18 @@ const SRC = join(process.cwd(), "src");
  *  over into their own IRA and use the Uniform Lifetime Table; a non-spouse beneficiary may not —
  *  the same doctrinal boundary "Spousal rollover" protects, on the other side of it). Scoped to
  *  the compound "non-spouse, non-charity" phrase, not bare "non-spouse", so it doesn't swallow
- *  unrelated "non-spouse recipients"-style copy elsewhere that isn't this IRS term. */
+ *  unrelated "non-spouse recipients"-style copy elsewhere that isn't this IRS term.
+ *  `legal\s+spouse` protects statutory copy that paraphrases a provision whose reach is the
+ *  taxpayer's LEGAL spouse and no one else — IRC §162(l)'s self-employed health insurance
+ *  deduction (tax-analysis/findings/business.ts). An unmarried co-client does not qualify, so
+ *  saying "co-client" there would ship factually wrong tax guidance. Scoped to the qualified
+ *  phrase so a bare "spouse" in ordinary advisor copy still trips the scanner.
+ *
+ *  Global on purpose: `violations()` only ever `.replace()`s with it (never `.test()`s, which
+ *  would be stateful on a /g/ regex), because it has to strip EVERY term of art from a hit
+ *  before judging the remainder. */
 const TERMS_OF_ART =
-  /(surviving\s+spouse|spousal|married\s+filing|qualifying\s+widow|marital\s+deduction|ex[-\s]spouse|former\s+spouse|deceased\s+spouse|non[-\s]spouse,?\s*non[-\s]charity)/i;
+  /(surviving\s+spouse|spousal|married\s+filing|qualifying\s+widow|marital\s+deduction|ex[-\s]spouse|former\s+spouse|deceased\s+spouse|legal\s+spouse|non[-\s]spouse,?\s*non[-\s]charity)/gi;
 
 /** Files that are legitimately about the marital relationship, forever. */
 const PERMANENT_ALLOWLIST = new Set<string>([
@@ -63,14 +73,12 @@ const PERMANENT_ALLOWLIST = new Set<string>([
   // `divisible-card.tsx` all dropped to zero remaining "Spouse" hits as a
   // result — all three REMOVED from this list entirely.
   //
-  // Five files that were here for `it()`-title prose alone were MOVED to
-  // PENDING (see below) instead of staying permanently allowlisted: a test
-  // title is developer-facing and arguably exempt on its own, but
-  // PERMANENT_ALLOWLIST retires an entire file forever — a genuinely
-  // user-visible "Spouse" added later to one of those files would never be
-  // caught. Task 11 inherits ~150 other unowned test-file entries already in
-  // PENDING; these 5 need the same one consistent policy, decided in the
-  // open, not a one-off exemption made inside a fix round.
+  // Five files that were here for `it()`-title prose alone were MOVED to the
+  // PENDING ratchet instead of staying permanently allowlisted, so that one
+  // consistent policy could be decided for them and their ~150 unowned
+  // test-file siblings rather than a one-off exemption made inside a fix round.
+  // Task 11 decided it: the scanner no longer reads test files at all (see
+  // TEST_FILE below), and PENDING is gone. Those five need no entry here.
   //
   // What's left here is only what's actually settled:
   "src/lib/divorce/__tests__/commit-divorce-plan.test.ts", // genuine ex-spouse/former-spouse hits (4), plus it() titles
@@ -130,6 +138,22 @@ const PERMANENT_ALLOWLIST = new Set<string>([
   "src/lib/imports/owner-match.ts", // 180 lines, 4 commits/90d. Only hit is a comment, `` `coarse: "spouse"` `` (:79), documenting the `OwnerResolutionSource` degrade case — machine-facing; the file has no `warnings`/`message` construction at all (grepped).
   "src/lib/imports/planner/__tests__/fixtures/manifest.ts", // 89 lines, 1 commit/90d. The `label` fields are "Human label[s] for the [`eval:planner`] eval output" (developer CLI tooling, never advisor/client-visible); the 2 `", spouse: "` hits are scanner quote-pairing artifacts spanning `ssBasisByOwner: { client: "...", spouse: "..." }` object literals, same class as `wages.ts` above.
   "src/lib/imports/planner/__tests__/golden-assertions.test.ts", // 273 lines, 1 commit/90d. The 2 real hits — `d(60, "Spouse retires at 60 per the narrative.")` and `d(60, "Spouse retires early.")` (:178, :186, unasserted test fixtures) — were renamed to "Co-client retires..." in this task. The 4 residual hits are a JSDoc union-type comment (`` `Record<"client"|"spouse", string>` ``) and 3 more `", spouse: "` quote-pairing artifacts on the same `ssBasisByOwner`/`ssRow` object-literal shape as `manifest.ts` above.
+
+  // ── Task 11 (2026-09-11): every source file left in PENDING once the ratchet
+  // stopped scanning tests. Each hit below was read in context; each is either
+  // machine-facing or a scanner artifact, EXCEPT thresholds.ts, whose residual
+  // hit is a genuine statutory term. The three files here that also had a real
+  // display hit had it FIXED in this task, not allowlisted — the reason says so.
+  "src/db/schema.ts", // Only hit is a column comment on `crm_household_contacts.role`, `` `role = 'spouse'` `` (:788) — the literal DB enum value. Bucket C: renaming the token would need a migration and would break every query that filters on it.
+  "src/engine/contribution-limits.ts", // Only hit is `"), spouse: basisFor("` (:133) — a naive quote-pairing artifact spanning the two separate string literals of `{ client: basisFor("client"), spouse: basisFor("spouse") }`, not a real "spouse" string. Same class as insurance-content.tsx above. Engine file: framework-free, so it could not import owner-labels.ts even if it did render copy — and it renders none.
+  "src/engine/family-cashflow.ts", // Only hit is a JSDoc code span documenting a type union, `` `deceased: "client" | "spouse"` `` (:106) — machine-facing enum documentation, same class as death-event/section-2035-lookback.ts above.
+  "src/engine/projection.ts", // Two hits, both code comments explaining engine branching — `'t ground the other spouse'` (:6430, the tail of a "doesn't ground the other spouse" sentence the apostrophe splits) and `"a spouse exists to die second"` (:9190). Developer-facing reasoning in a 9k-line framework-free engine file that emits no display copy.
+  "src/engine/trust-tax/route-dni.ts", // Only hit is a JSDoc code span documenting the beneficiary-key union, `` ("client" | "spouse") `` (:12) — machine-facing enum documentation, no display strings in the file.
+  "src/lib/inline-edit/scenario-fields.ts", // Only hit is the file-header comment "this person has no spouse LE on record" (:11), explaining why a life-expectancy field can be absent. A developer note; the file's own user-facing labels come from the field registry, not from here.
+  "src/lib/projection/resolve-entity.ts", // Only hit is a `console.warn` diagnostic, `[resolveExpenseFromRaw] ignoring endsAtMedicareEligibilityOwner="joint" — column is per-person; expected "client" or "spouse"` (:426) — a developer console message naming the two legal enum values, never rendered.
+  "src/lib/tax/thresholds.ts", // The real display hit — `iraDeductCovered`'s label "IRA Contribution Deductibility - Covered Spouse" (:77) — was wrong on the facts as well as the vocabulary (it is the ACTIVE-PARTICIPANT phase-out of IRC §219(g)(5), applies to the taxpayer, and fires for single filers) and was renamed to "Covered by Workplace Plan" in this task. The residual hit is :78, `iraDeductSpousal`'s "Non-covered Spouse" — genuine IRC §219(g)(7), the spousal-IRA rule, which requires a MARRIED couple filing jointly. Renaming it would misstate the law. THRESHOLD_ITEMS is a fixed 11-row table mirroring eMoney's report, not a growing copy catalogue, so a file entry is safe here in a way it would not be for tax-analysis/findings/*.
+  "src/components/portal/household-contact-dialog.tsx", // The real display hit — `ROLE_LABEL.spouse = "Spouse"` (:12), rendered as a chip on the CLIENT PORTAL by household-contact-cards.tsx:105 — was renamed to "Co-client" in this task. The residual hit is a JSDoc code span, `` `{ primary }` or `{ spouse }` `` (:45), documenting the PUT body's role key — the same DB enum as schema.ts above.
+  "src/components/forge/forge-panel.tsx", // Only hit is the fact-finder context block's key line, `` `spouse: ${id.spouse.firstName} ...` `` (:105) — a lowercase machine key, never read by a person: all three callers pass `skipUserBubble: true` and use-forge-stream.ts:372 suppresses the bubble, so the block reaches the model and nothing else. It mirrors `FactFinderIdentifyResponse.spouse` and the `spouseContact` / `role: "spouse"` arg vocabulary the model must emit into `ingest_fact_finder` — the same tool-schema vocabulary `src/domain/forge/tools/` is already allowlisted by prefix for. Renaming the key while the schema keeps `spouse` would add a mapping the model has to bridge, for no user-visible gain.
 ]);
 
 /** Directory prefixes that are also allowlisted (Bucket C: machine-facing enum documentation). */
@@ -138,197 +162,7 @@ const ALLOWLIST_PREFIXES = [
   "src/domain/forge/tools/",
 ];
 
-/**
- * Files the sweep has not reached yet. DELETE YOUR TASK'S FILES AS YOU GO.
- * Replace this array with the paths printed by the command in Step 2.
- */
-const PENDING = new Set<string>([
-
-  // ── Task 7 review fix (2026-09-10): returned to PENDING deliberately.
-  // Its only hit is an `it()` title naming the DB `role` column's literal enum
-  // values, `client` and `spouse`. Those are Bucket C — never renamed — and the
-  // fixture two lines below still writes `role: "spouse"`, so a title saying
-  // "Co-client" misdescribed the data under test. Reverted to the real enum,
-  // which the scanner cannot tell from display copy. Same policy question as
-  // the block below; Task 11 decides it for all of them at once.
-  "src/lib/presentations/pages/client-profile/__tests__/view-model.test.ts",
-
-  // ── Task 6 fix round 2 (2026-09-10): relocated from PERMANENT_ALLOWLIST.
-  // Each of these 5 files' only hit is `it()`-title prose describing
-  // spouse-side divorce mechanics (e.g. "moves the spouse 401(k) to S") — not
-  // display copy a person reads. That's arguably exempt on its own, but
-  // PERMANENT_ALLOWLIST retires the whole file forever, so a real
-  // user-visible "Spouse" string added to one of these later would never be
-  // caught. PENDING is the honest, reversible home until Task 11 decides one
-  // policy for this file and its ~150 unowned siblings already below. Do NOT
-  // rename these titles as part of that move — only the entry moved.
-  "src/components/divorce/__tests__/division-board.test.tsx",
-  "src/lib/divorce/__tests__/allocation-rules.test.ts",
-  "src/lib/divorce/__tests__/commit-preview.test.ts",
-  "src/lib/divorce/__tests__/divisible-objects.test.ts",
-  "src/lib/divorce/__tests__/side-totals.test.ts",
-
-  "src/components/__tests__/beneficiary-summary.test.tsx",
-  "src/components/__tests__/client-identity-menu.test.tsx",
-  "src/components/__tests__/gift-cumulative-table.test.tsx",
-  "src/components/__tests__/gift-dialog.test.tsx",
-  "src/components/__tests__/income-expenses-view-owner-years.test.tsx",
-  "src/components/__tests__/insurance-panel.test.tsx",
-  "src/components/balance-sheet-report/__tests__/balance-sheet-report.test.tsx",
-  "src/components/balance-sheet-report/__tests__/household-columns.test.ts",
-  "src/components/balance-sheet-report/__tests__/view-model.test.ts",
-  "src/components/forge/forge-panel.tsx",
-  "src/components/household-map/__tests__/goals-board.test.tsx",
-  "src/components/household-map/__tests__/household-map-view.test.tsx",
-  "src/components/household-map/__tests__/quick-edit-drawer.test.tsx",
-  "src/components/import/__tests__/review-step-accounts.test.tsx",
-  "src/components/portal/household-contact-dialog.tsx",
-  "src/components/risk-profile-pdf/__tests__/risk-profile-pdf-document.test.tsx",
-  "src/db/schema.ts",
-  "src/domain/forge/__tests__/row-lines.test.ts",
-  "src/engine/__tests__/_fixtures/estate.ts",
-  "src/engine/__tests__/capital-loss-carryforward.test.ts",
-  "src/engine/__tests__/contribution-limits.test.ts",
-  "src/engine/__tests__/death-event-locked-shares.integration.test.ts",
-  "src/engine/__tests__/death-event.test.ts",
-  "src/engine/__tests__/entity-cashflow.test.ts",
-  "src/engine/__tests__/estate-tax-integration.test.ts",
-  "src/engine/__tests__/fixtures/married-estate-fixture.ts",
-  "src/engine/__tests__/gift-exemption-warning.test.ts",
-  "src/engine/__tests__/gift-ledger.test.ts",
-  "src/engine/__tests__/income.test.ts",
-  "src/engine/__tests__/ira-basis.test.ts",
-  "src/engine/__tests__/ira-post-tax-basis-distribution.test.ts",
-  "src/engine/__tests__/life-insurance-expiry.test.ts",
-  "src/engine/__tests__/life-insurance-payout-visibility.test.ts",
-  "src/engine/__tests__/planSupplementalWithdrawal.test.ts",
-  "src/engine/__tests__/projection-roth-fill-bracket-depleted.test.ts",
-  "src/engine/__tests__/projection-roth-fill-bracket.test.ts",
-  "src/engine/__tests__/projection-roth-joint-convergence.test.ts",
-  "src/engine/__tests__/projection.entity-distribution.test.ts",
-  "src/engine/__tests__/projection.test.ts",
-  "src/engine/__tests__/retirement-proration.test.ts",
-  "src/engine/__tests__/roth-irmaa-cap-regression.test.ts",
-  "src/engine/__tests__/run-projection-with-events.test.ts",
-  "src/engine/__tests__/slat-40-year.integration.test.ts",
-  "src/engine/__tests__/step-up-cap-gains.test.ts",
-  "src/engine/__tests__/stress-disability.test.ts",
-  "src/engine/__tests__/surplus-spend.test.ts",
-  "src/engine/__tests__/threshold-golden-projection.test.ts",
-  "src/engine/__tests__/threshold-household.test.ts",
-  "src/engine/contribution-limits.ts",
-  "src/engine/death-event/__tests__/business-succession.test.ts",
-  "src/engine/death-event/__tests__/drain-attribution.test.ts",
-  "src/engine/death-event/__tests__/estate-tax.test.ts",
-  "src/engine/death-event/__tests__/final-death.test.ts",
-  "src/engine/death-event/__tests__/first-death.test.ts",
-  "src/engine/death-event/__tests__/grantor-succession.test.ts",
-  "src/engine/death-event/__tests__/inheritance-tax-md-dual.test.ts",
-  "src/engine/death-event/__tests__/ird-surviving-spouse.test.ts",
-  "src/engine/death-event/__tests__/ird-tax.test.ts",
-  "src/engine/death-event/__tests__/life-insurance-integration.test.ts",
-  "src/engine/death-event/__tests__/shared.test.ts",
-  "src/engine/death-event/__tests__/survivor-recipient-id.test.ts",
-  "src/engine/death-event/__tests__/will-residuary.test.ts",
-  "src/engine/family-cashflow.ts",
-  "src/engine/monteCarlo/__tests__/summarize.test.ts",
-  "src/engine/projection.ts",
-  "src/engine/scenario/__tests__/applyChanges.test.ts",
-  "src/engine/socialSecurity/__tests__/claimAge.test.ts",
-  "src/engine/socialSecurity/__tests__/orchestrator.test.ts",
-  "src/engine/socialSecurity/__tests__/spousal.test.ts",
-  "src/engine/trust-tax/__tests__/apply-trust-annual-pass.test.ts",
-  "src/engine/trust-tax/route-dni.ts",
-  "src/engine/what-if/__tests__/hypothetical-estate-tax.test.ts",
-  "src/lib/__tests__/client-search.test.ts",
-  "src/lib/__tests__/entity-owners-ops.test.ts",
-  "src/lib/__tests__/milestones.test.ts",
-  "src/lib/__tests__/onboarding-step-status.test.ts",
-  "src/lib/__tests__/owner-labels.test.ts",
-  "src/lib/__tests__/plan-horizon.test.ts",
-  "src/lib/account-groups/__tests__/mutations.test.ts",
-  "src/lib/balance-sheet/__tests__/attribute.test.ts",
-  "src/lib/clients/__tests__/mirror-contact-to-crm.test.ts",
-  "src/lib/clients/get-client-with-contacts.test.ts",
-  "src/lib/compute-cache/assemble-monte-carlo-result.test.ts",
-  "src/lib/crm/__tests__/contact-sections.test.ts",
-  "src/lib/crm/__tests__/contacts.test.ts",
-  "src/lib/crm/__tests__/household-name.test.ts",
-  "src/lib/crm/__tests__/households-create.test.ts",
-  "src/lib/crm/__tests__/households-family.test.ts",
-  "src/lib/crm/__tests__/import-e2e.test.ts",
-  "src/lib/crm/__tests__/selectors.test.ts",
-  "src/lib/crm/__tests__/sort.test.ts",
-  "src/lib/crm/__tests__/sync-household-name.test.ts",
-  "src/lib/crm/import/__tests__/rows.test.ts",
-  "src/lib/household-map/__tests__/build-boards.test.ts",
-  "src/lib/household-map/__tests__/columns.test.ts",
-  "src/lib/household-map/__tests__/goals.test.ts",
-  "src/lib/household-map/__tests__/life-expectancy-write.test.ts",
-  "src/lib/household-map/__tests__/social-security.test.ts",
-  "src/lib/imports/__tests__/commit-modules.test.ts",
-  "src/lib/imports/__tests__/import-milestones.test.ts",
-  "src/lib/imports/__tests__/living-slot.test.ts",
-  "src/lib/imports/__tests__/match.test.ts",
-  "src/lib/imports/__tests__/merge.test.ts",
-  "src/lib/imports/__tests__/owner-match.test.ts",
-  "src/lib/imports/__tests__/plan-builder-core.test.ts",
-  "src/lib/imports/__tests__/reconcile-compensation.test.ts",
-  "src/lib/imports/assemble/__tests__/gap-fill.test.ts",
-  "src/lib/imports/assemble/__tests__/income-timing.test.ts",
-  "src/lib/imports/assemble/__tests__/merge-across-files.test.ts",
-  "src/lib/imports/assemble/__tests__/plan-basics.test.ts",
-  "src/lib/imports/commit/__tests__/clients-identity.test.ts",
-  "src/lib/imports/commit/__tests__/plan-basics.test.ts",
-  "src/lib/imports/commit/__tests__/savings.test.ts",
-  "src/lib/imports/commit/__tests__/timing.test.ts",
-  "src/lib/imports/planner/__tests__/apply-decisions.test.ts",
-  "src/lib/inline-edit/__tests__/owner-presets.test.ts",
-  "src/lib/inline-edit/__tests__/scenario-fields.test.ts",
-  "src/lib/inline-edit/scenario-fields.ts",
-  "src/lib/insurance-policies/__tests__/disability-premium-expense.test.ts",
-  "src/lib/insurance-policies/__tests__/owner-ref.test.ts",
-  "src/lib/insurance-policies/__tests__/schedule-years.test.ts",
-  "src/lib/intake/__tests__/diff.test.ts",
-  "src/lib/life-insurance/__tests__/need-over-time.test.ts",
-  "src/lib/portal/__tests__/greeting-name.test.ts",
-  "src/lib/portal/__tests__/load-organizer-map.test.ts",
-  "src/lib/portal/__tests__/load-profile-data.test.ts",
-  "src/lib/portal/__tests__/portal-networth.test.ts",
-  "src/lib/projection-explain/__tests__/explain.test.ts",
-  "src/lib/projection-explain/__tests__/tax-detectors.test.ts",
-  "src/lib/projection-explain/__tests__/tax-diff.test.ts",
-  "src/lib/projection/resolve-entity.ts",
-  "src/lib/quick-start/__tests__/insurance-save.test.ts",
-  "src/lib/retirement/__tests__/derive-retirement-summary.test.ts",
-  "src/lib/savings/__tests__/salary-options.test.ts",
-  "src/lib/scenario/__tests__/scenario-changes-resolve.test.ts",
-  "src/lib/scenario/describe-change-target.test.ts",
-  "src/lib/schemas/__tests__/expenses.test.ts",
-  "src/lib/schemas/__tests__/incomes.test.ts",
-  "src/lib/schemas/__tests__/resources.test.ts",
-  "src/lib/solver/__tests__/apply-mutations-disability-premium.test.ts",
-  "src/lib/solver/__tests__/apply-mutations.test.ts",
-  "src/lib/solver/__tests__/cashflow-year-detail.test.ts",
-  "src/lib/solver/__tests__/mutations-to-scenario-changes.test.ts",
-  "src/lib/tax-analysis/findings/business.ts",
-  "src/lib/tax-analysis/findings/money-flags.ts",
-  "src/lib/tax-ledger/build-diagnostics.test.ts",
-  "src/lib/tax-reconciliation/__tests__/apply.test.ts",
-  "src/lib/tax-reconciliation/__tests__/rules-assumptions.test.ts",
-  "src/lib/tax-reconciliation/__tests__/rules-pensions.test.ts",
-  "src/lib/tax-reconciliation/__tests__/rules-social-security.test.ts",
-  "src/lib/tax-reconciliation/__tests__/rules-wages.test.ts",
-  "src/lib/tax/__tests__/bracket.test.ts",
-  "src/lib/tax/__tests__/derive-deductions.test.ts",
-  "src/lib/tax/__tests__/senior-deductions.test.ts",
-  "src/lib/tax/__tests__/thresholds.test.ts",
-  "src/lib/tax/state-income/__tests__/compute.test.ts",
-  "src/lib/tax/state-inheritance/__tests__/classify.test.ts",
-  "src/lib/tax/state-inheritance/__tests__/special-rules.test.ts",
-  "src/lib/tax/thresholds.ts",
-  "src/lib/timeline/__tests__/detectors/life.test.ts",
-]);/** A quoted string literal or a JSX text node — i.e. something a person reads.
+/** A quoted string literal or a JSX text node — i.e. something a person reads.
  *  Matches case-insensitively.
  */
 const DISPLAY = /("[^"\n]*\bspouse\b[^"\n]*")|('[^'\n]*\bspouse\b[^'\n]*')|(>[^<>{}\n]*\bspouse\b[^<>{}\n]*<)|(`[^`\n]*\bspouse\b[^`\n]*`)/gi;
@@ -341,7 +175,26 @@ function walk(dir: string): string[] {
   });
 }
 
+/**
+ * Test files are out of scope: nobody READS one. This rule is what emptied the
+ * 166-entry PENDING ratchet — 154 of those entries were test files whose only
+ * hits are fixture DATA names ("Spouse Cash", "Spouse SS", a fixture person
+ * called "Spouse") or `it()` titles naming the DB's literal `spouse` enum. And
+ * `lib/__tests__/owner-labels.test.ts` states the word in order to BAN it,
+ * exactly like this file does.
+ *
+ * Nothing is lost by skipping them. Display copy lives in source, so a new
+ * "Spouse" string trips its SOURCE file; a test can only assert a string the
+ * source already exposes, which means the source hit fires first.
+ *
+ * It has to be a regex, not an `ALLOWLIST_PREFIXES` entry: `startsWith` cannot
+ * express `*.test.ts`, and `src/lib/clients/get-client-with-contacts.test.ts`
+ * sits outside any `__tests__` directory.
+ */
+const TEST_FILE = /(__tests__|\.test\.tsx?$)/;
+
 function isAllowlisted(f: string): boolean {
+  if (TEST_FILE.test(f)) return true;
   if (PERMANENT_ALLOWLIST.has(f)) return true;
   if (ALLOWLIST_PREFIXES.some((prefix) => f.startsWith(prefix))) return true;
   return false;
@@ -353,8 +206,14 @@ function violations(file: string): string[] {
     .filter((m) => {
       const hit = m[0];
 
-      // Exclude if matches TERMS_OF_ART
-      if (TERMS_OF_ART.test(hit)) return false;
+      // Exclude the TERMS_OF_ART occurrences and re-test what is LEFT. Testing
+      // the whole hit instead (what this did until Task 11) let one term of art
+      // anywhere in a string suppress every other "Spouse" in that same string —
+      // e.g. medicare/detectors/survivor-tier-shock.ts said "When the first
+      // spouse passes ... jumping the surviving spouse to tier N", and the
+      // protected "surviving spouse" hid the unprotected "the first spouse"
+      // sitting two clauses away. Strip, then look again.
+      if (!/\bspouse\b/i.test(hit.replace(TERMS_OF_ART, " "))) return false;
 
       // Extract the content without delimiters
       const content = hit.slice(1, -1);
@@ -389,16 +248,11 @@ describe("co-client terminology", () => {
     .map((f) => relative(process.cwd(), f))
     .filter((f) => !isAllowlisted(f));
 
-  it("shows no file saying Spouse outside the pending ratchet", () => {
-    const offenders = files.filter((f) => !PENDING.has(f) && violations(f).length > 0);
+  it("shows no file saying Spouse", () => {
+    const offenders = files.filter((f) => violations(f).length > 0);
     expect(
       offenders.map((f) => `${f}: ${violations(f).join(" | ")}`),
       "New visible 'Spouse' copy. Use personLabel()/CO_CLIENT_LABEL from src/lib/owner-labels.ts.",
     ).toEqual([]);
-  });
-
-  it("holds no stale entry in the ratchet", () => {
-    const stale = [...PENDING].filter((f) => violations(f).length === 0);
-    expect(stale, "These files are clean — delete them from PENDING.").toEqual([]);
   });
 });

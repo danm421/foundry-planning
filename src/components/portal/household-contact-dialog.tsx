@@ -9,7 +9,7 @@ export type ContactRole = "primary" | "spouse";
 
 export const ROLE_LABEL: Record<ContactRole, string> = {
   primary: "Primary",
-  spouse: "Spouse",
+  spouse: "Co-client",
 };
 
 export type PortalContact = {
