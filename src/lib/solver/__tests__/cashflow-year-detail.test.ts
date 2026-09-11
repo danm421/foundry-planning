@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildCashFlowYearDetail } from "../cashflow-year-detail";
+import { buildCashFlowYearDetail, buildNameMaps } from "../cashflow-year-detail";
 import type { ClientData, ProjectionYear } from "@/engine";
 
 // Minimal ProjectionYear factory — only the fields the helper reads. Engine-
@@ -184,6 +184,28 @@ describe("buildCashFlowYearDetail", () => {
     ]);
     // No nameless balancing row: the enumerated items already tie to the total.
     expect(other.items.some((i) => i.label === "Other")).toBe(false);
+  });
+
+  it("names a purchased home's property tax under its synthetic technique-account id", () => {
+    // The engine creates the purchased asset's account as technique-acct-<txn.id>
+    // and emits its property-tax expense as synth-proptax-<that account id> — an
+    // id the account loop above can never see, because that synthetic account
+    // never appears in clientData.accounts.
+    const client = makeClientData();
+    client.assetTransactions = [{
+      id: "txn-buy-house",
+      name: "Buy New House",
+      type: "buy",
+      year: 2034,
+      assetName: "New House",
+      assetCategory: "real_estate",
+      annualPropertyTax: 12_000,
+    } as never];
+
+    const m = buildNameMaps(client);
+    expect(m.expenseNames["synth-proptax-technique-acct-txn-buy-house"]).toBe(
+      "Property Tax – New House",
+    );
   });
 
   it("builds an age label with the spouse age only when married", () => {
