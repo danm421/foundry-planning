@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { applyAssetSales, applyAssetPurchases, _resetSyntheticIdCounter } from "../asset-transactions";
+import {
+  applyAssetSales,
+  applyAssetPurchases,
+  _resetSyntheticIdCounter,
+  DEFAULT_PROPERTY_TAX_GROWTH,
+} from "../asset-transactions";
 import type { Account, Liability, AssetTransaction, AccountLedger } from "../types";
 import { LEGACY_FM_CLIENT } from "../ownership";
 
@@ -395,7 +400,7 @@ describe("applyAssetPurchases", () => {
 
     const result = applyAssetPurchases({
       purchases: [buy], accounts: [checkingAccount], liabilities: [],
-      accountBalances: balances, basisMap, accountLedgers: ledgers, year: 2028, defaultCheckingId: "checking-1",
+      accountBalances: balances, basisMap, accountLedgers: ledgers, year: 2028, planStartYear: 2026, defaultCheckingId: "checking-1",
     });
 
     expect(balances["checking-1"]).toBe(100000);
@@ -419,7 +424,7 @@ describe("applyAssetPurchases", () => {
 
     const result = applyAssetPurchases({
       purchases: [buy], accounts: [checkingAccount], liabilities: [],
-      accountBalances: balances, basisMap, accountLedgers: ledgers, year: 2028, defaultCheckingId: "checking-1",
+      accountBalances: balances, basisMap, accountLedgers: ledgers, year: 2028, planStartYear: 2026, defaultCheckingId: "checking-1",
     });
 
     expect(balances["checking-1"]).toBe(100000); // 200k - 100k equity
@@ -443,7 +448,7 @@ describe("applyAssetPurchases", () => {
 
     applyAssetPurchases({
       purchases: [buy], accounts: [checkingAccount], liabilities: [],
-      accountBalances: balances, basisMap, accountLedgers: ledgers, year: 2028, defaultCheckingId: "checking-1",
+      accountBalances: balances, basisMap, accountLedgers: ledgers, year: 2028, planStartYear: 2026, defaultCheckingId: "checking-1",
     });
 
     expect(balances["checking-1"]).toBe(50000);
@@ -479,6 +484,7 @@ describe("applyAssetPurchases — deterministic synthetic ids", () => {
       basisMap,
       accountLedgers,
       year: 2030,
+      planStartYear: 2026,
       defaultCheckingId: "checking",
     });
 
@@ -812,5 +818,91 @@ describe("applyAssetSales — §121 + partial sales", () => {
     expect(result.breakdown[0].homeSaleExclusionApplied).toBe(250_000);
     expect(result.breakdown[0].taxableCapitalGain).toBeCloseTo(50_000, 2);
     expect(result.capitalGains).toBeCloseTo(50_000, 2);
+  });
+});
+
+describe("applyAssetPurchases — property tax", () => {
+  beforeEach(() => _resetSyntheticIdCounter());
+
+  function buyHome(overrides: Partial<AssetTransaction> = {}): AssetTransaction {
+    return {
+      id: "buy-1",
+      name: "Buy New House",
+      type: "buy",
+      year: 2032,
+      assetName: "New House",
+      assetCategory: "real_estate",
+      assetSubType: "primary_residence",
+      purchasePrice: 1_500_000,
+      fundingAccountId: "checking-1",
+      ...overrides,
+    };
+  }
+
+  function run(purchase: AssetTransaction, planStartYear = 2026) {
+    return applyAssetPurchases({
+      purchases: [purchase],
+      accounts: [checkingAccount],
+      liabilities: [],
+      accountBalances: { "checking-1": 5_000_000 },
+      basisMap: { "checking-1": 5_000_000 },
+      accountLedgers: { "checking-1": makeLedger(5_000_000) },
+      year: 2032,
+      planStartYear,
+      defaultCheckingId: "checking-1",
+    });
+  }
+
+  it("leaves the new account untaxed when no property tax is given", () => {
+    const { newAccounts } = run(buyHome());
+    expect(newAccounts[0].annualPropertyTax).toBeUndefined();
+    expect(newAccounts[0].propertyTaxGrowthRate).toBeUndefined();
+  });
+
+  it("deflates the entered amount to plan-start dollars", () => {
+    // 6 years from plan start (2026) to the buy year (2032) at 3%.
+    const { newAccounts } = run(
+      buyHome({ annualPropertyTax: 16_500, propertyTaxGrowthRate: 0.03 }),
+    );
+    const expected = 16_500 / Math.pow(1.03, 6);
+    expect(newAccounts[0].annualPropertyTax).toBeCloseTo(expected, 6);
+    expect(newAccounts[0].propertyTaxGrowthRate).toBe(0.03);
+  });
+
+  it("round-trips: re-inflating to the buy year returns the entered amount", () => {
+    const { newAccounts } = run(
+      buyHome({ annualPropertyTax: 16_500, propertyTaxGrowthRate: 0.03 }),
+    );
+    // This is exactly what projection.ts's injection loop computes in 2032.
+    const charged =
+      newAccounts[0].annualPropertyTax! * Math.pow(1 + newAccounts[0].propertyTaxGrowthRate!, 2032 - 2026);
+    expect(charged).toBeCloseTo(16_500, 6);
+  });
+
+  it("falls back to the 3% default when no rate is given", () => {
+    const { newAccounts } = run(buyHome({ annualPropertyTax: 16_500 }));
+    expect(newAccounts[0].propertyTaxGrowthRate).toBe(DEFAULT_PROPERTY_TAX_GROWTH);
+    expect(newAccounts[0].annualPropertyTax).toBeCloseTo(16_500 / Math.pow(1.03, 6), 6);
+  });
+
+  it("does not deflate when the buy is in the plan's first year", () => {
+    const purchase = buyHome({ year: 2026, annualPropertyTax: 16_500, propertyTaxGrowthRate: 0.03 });
+    const { newAccounts } = applyAssetPurchases({
+      purchases: [purchase],
+      accounts: [checkingAccount],
+      liabilities: [],
+      accountBalances: { "checking-1": 5_000_000 },
+      basisMap: { "checking-1": 5_000_000 },
+      accountLedgers: { "checking-1": makeLedger(5_000_000) },
+      year: 2026,
+      planStartYear: 2026,
+      defaultCheckingId: "checking-1",
+    });
+    expect(newAccounts[0].annualPropertyTax).toBeCloseTo(16_500, 6);
+  });
+
+  it("ignores a zero or negative amount", () => {
+    const { newAccounts } = run(buyHome({ annualPropertyTax: 0 }));
+    expect(newAccounts[0].annualPropertyTax).toBeUndefined();
   });
 });

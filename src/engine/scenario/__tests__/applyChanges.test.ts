@@ -981,3 +981,89 @@ describe("applyScenarioChanges — reinvestment", () => {
     expect(effectiveTree.reinvestments).toEqual([]);
   });
 });
+
+describe("applyScenarioChanges — asset_transaction property tax", () => {
+  // A real-estate BUY leg carries `annualPropertyTax` (dollars/year) and
+  // `propertyTaxGrowthRate` (a DECIMAL — 0.03 is 3%). Both are
+  // `numeric(...)` columns, so the Details → Techniques form posts them as
+  // strings. If they reach the engine as strings, asset-transactions.ts
+  // stamps the string onto the synthetic account and projection.ts's
+  // `Math.pow(1 + rate, elapsed)` CONCATENATES: 1 + "0.03" === "10.03",
+  // i.e. a ~1003% growth rate. Observed in the browser as $16,648,946 of
+  // property tax three years past a purchase that should have been $18,030.
+  const buyLeg = (over: Record<string, unknown>) =>
+    ({
+      id: "at-buy",
+      name: "Buy Lake House",
+      type: "buy",
+      year: 2030,
+      assetName: "Lake House",
+      assetCategory: "real_estate",
+      purchasePrice: 750_000,
+      ...over,
+    }) as unknown as NonNullable<ClientData["assetTransactions"]>[number];
+
+  it("coerces a buy leg's property-tax numerics on add", () => {
+    const base = minimalClientData();
+    const change: ScenarioChange = {
+      id: "ch1",
+      scenarioId: "s1",
+      opType: "add",
+      targetKind: "asset_transaction",
+      targetId: "at-buy",
+      payload: buyLeg({
+        annualPropertyTax: "16500",
+        propertyTaxGrowthRate: "0.03",
+        propertyTaxGrowthSource: "custom",
+      }),
+      toggleGroupId: null,
+      orderIndex: 0,
+    };
+
+    const tx = applyScenarioChanges(base, [change], {}, [])
+      .effectiveTree.assetTransactions![0];
+
+    expect(typeof tx.annualPropertyTax).toBe("number");
+    expect(tx.annualPropertyTax).toBe(16_500);
+    expect(typeof tx.propertyTaxGrowthRate).toBe("number");
+    expect(tx.propertyTaxGrowthRate).toBe(0.03);
+    // The source is a string enum, NOT a numeric — it must pass through intact.
+    expect(tx.propertyTaxGrowthSource).toBe("custom");
+  });
+
+  it("coerces a buy leg's property-tax numerics on edit (Details → Techniques)", () => {
+    const base = minimalClientData();
+    base.assetTransactions = [
+      buyLeg({
+        annualPropertyTax: 16_500,
+        propertyTaxGrowthRate: 0.02,
+        propertyTaxGrowthSource: "custom",
+      }),
+    ];
+
+    const change: ScenarioChange = {
+      id: "ch1",
+      scenarioId: "s1",
+      opType: "edit",
+      targetKind: "asset_transaction",
+      targetId: "at-buy",
+      payload: {
+        annualPropertyTax: { from: 16_500, to: "18000" },
+        propertyTaxGrowthRate: { from: 0.02, to: "0.03" },
+      },
+      toggleGroupId: null,
+      orderIndex: 0,
+    };
+
+    const tx = applyScenarioChanges(base, [change], {}, [])
+      .effectiveTree.assetTransactions![0];
+
+    expect(typeof tx.annualPropertyTax).toBe("number");
+    expect(tx.annualPropertyTax).toBe(18_000);
+    expect(typeof tx.propertyTaxGrowthRate).toBe("number");
+    expect(tx.propertyTaxGrowthRate).toBe(0.03);
+    // Pin the actual failure mode: the projection compounds `1 + rate`, which
+    // concatenates to "10.03" when the rate leaks through as a string.
+    expect(1 + tx.propertyTaxGrowthRate!).toBe(1.03);
+  });
+});

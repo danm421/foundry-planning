@@ -74,6 +74,9 @@ export interface AssetTransactionRow {
   mortgageAmount: string | null;
   mortgageRate: string | null;
   mortgageTermMonths: number | null;
+  annualPropertyTax: string | null;
+  propertyTaxGrowthRate: string | null;
+  propertyTaxGrowthSource: "custom" | "inflation" | null;
 }
 
 export interface AccountOption {

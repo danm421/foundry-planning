@@ -82,6 +82,11 @@ export async function toAssetTransactionSnapshot(
       row.mortgageAmount === null ? null : Number(row.mortgageAmount),
     mortgageRate: row.mortgageRate === null ? null : Number(row.mortgageRate),
     mortgageTermMonths: row.mortgageTermMonths,
+    annualPropertyTax:
+      row.annualPropertyTax === null ? null : Number(row.annualPropertyTax),
+    propertyTaxGrowthRate:
+      row.propertyTaxGrowthRate === null ? null : Number(row.propertyTaxGrowthRate),
+    propertyTaxGrowthSource: row.propertyTaxGrowthSource,
     businessAccount,
   };
 }

@@ -5217,6 +5217,19 @@ export const assetTransactions = pgTable("asset_transactions", {
   mortgageAmount: decimal("mortgage_amount", { precision: 15, scale: 2 }),
   mortgageRate: decimal("mortgage_rate", { precision: 5, scale: 4 }),
   mortgageTermMonths: integer("mortgage_term_months"),
+  // Buy-only, real-estate-only. Annual property tax on the property this
+  // purchase creates, in dollars NOMINAL AT THE BUY YEAR — unlike
+  // `accounts.annual_property_tax`, which is in plan-start dollars. The engine
+  // deflates on the way in (see applyAssetPurchases) so the shared injection
+  // loop in projection.ts reproduces this figure in the purchase year.
+  // Nullable with NO default: a null leaves the bought property untaxed, which
+  // is what every row written before migration 0265 means.
+  annualPropertyTax: decimal("annual_property_tax", { precision: 15, scale: 2 }),
+  propertyTaxGrowthRate: decimal("property_tax_growth_rate", { precision: 5, scale: 4 }),
+  // "custom" uses propertyTaxGrowthRate as typed; "inflation" makes the loader
+  // substitute the plan's resolved inflation rate, and the rate column is then
+  // a display fallback only. Mirrors accounts.property_tax_growth_source.
+  propertyTaxGrowthSource: itemGrowthSourceEnum("property_tax_growth_source"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 },
@@ -5236,6 +5249,15 @@ export const assetTransactions = pgTable("asset_transactions", {
   check(
     "asset_transactions_buy_no_source_check",
     sql`${t.type} <> 'buy' OR (${t.purchaseTransactionId} IS NULL AND ${t.accountId} IS NULL AND ${t.businessAccountId} IS NULL AND ${t.fractionSold} IS NULL)`,
+  ),
+  // Property tax describes an asset a BUY creates. A sell has no such asset.
+  check(
+    "asset_transactions_buy_only_property_tax_check",
+    sql`${t.type} <> 'sell' OR (
+      ${t.annualPropertyTax} IS NULL AND
+      ${t.propertyTaxGrowthRate} IS NULL AND
+      ${t.propertyTaxGrowthSource} IS NULL
+    )`,
   ),
   // fraction_sold must be in (0, 1] when present.
   check(

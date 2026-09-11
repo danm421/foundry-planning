@@ -27,6 +27,8 @@ const NUMERIC_FIELDS = [
   "mortgageAmount",
   "mortgageRate",
   "mortgageTermMonths",
+  "annualPropertyTax",
+  "propertyTaxGrowthRate",
 ] as const;
 
 /** Convert the asset-transaction form `body` (string numerics, explicit
@@ -102,6 +104,9 @@ export function toAssetTransactionInitialData(
     mortgageAmount: numToString(at.mortgageAmount),
     mortgageRate: numToString(at.mortgageRate),
     mortgageTermMonths: at.mortgageTermMonths ?? null,
+    annualPropertyTax: numToString(at.annualPropertyTax),
+    propertyTaxGrowthRate: numToString(at.propertyTaxGrowthRate),
+    propertyTaxGrowthSource: at.propertyTaxGrowthSource ?? null,
     bundleId: at.bundleId ?? null,
   };
 }

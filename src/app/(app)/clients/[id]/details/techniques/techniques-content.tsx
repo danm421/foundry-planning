@@ -169,6 +169,9 @@ export async function TechniquesContent({ clientId: id, scenarioParam }: Techniq
     mortgageAmount: tx.mortgageAmount == null ? null : String(tx.mortgageAmount),
     mortgageRate: tx.mortgageRate == null ? null : String(tx.mortgageRate),
     mortgageTermMonths: tx.mortgageTermMonths ?? null,
+    annualPropertyTax: tx.annualPropertyTax == null ? null : String(tx.annualPropertyTax),
+    propertyTaxGrowthRate: tx.propertyTaxGrowthRate == null ? null : String(tx.propertyTaxGrowthRate),
+    propertyTaxGrowthSource: tx.propertyTaxGrowthSource ?? null,
   }));
 
   const relocationProps = relocationRows.map((r) => ({

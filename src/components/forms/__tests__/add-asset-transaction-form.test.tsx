@@ -499,3 +499,166 @@ describe("AddAssetTransactionForm — bundle edit mode", () => {
     );
   });
 });
+
+describe("AddAssetTransactionForm — buy-leg property tax", () => {
+  /** Render the dialog, add a buy leg, and open it in the editor column. */
+  function openBuyLeg(onSubmitDraft = vi.fn()) {
+    render(
+      <AddAssetTransactionForm
+        clientId="client-123"
+        accounts={ACCOUNTS}
+        liabilities={LIABILITIES}
+        onClose={() => {}}
+        onSaved={vi.fn()}
+        onSubmitDraft={onSubmitDraft}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Add buy/i }));
+    const buyColumn = screen.getByTestId("buy-column");
+    fireEvent.click(within(buyColumn).getByRole("button", { name: /^New purchase/i }));
+    return onSubmitDraft;
+  }
+
+  it("shows the property tax block for a real-estate buy", () => {
+    openBuyLeg();
+    // emptyBuyLeg defaults assetCategory to real_estate.
+    expect(screen.getByLabelText(/Annual Property Tax/i)).toBeInTheDocument();
+  });
+
+  it("hides the property tax block for a taxable buy", () => {
+    openBuyLeg();
+    fireEvent.change(screen.getByLabelText(/Asset Category/i), { target: { value: "taxable" } });
+    expect(screen.queryByLabelText(/Annual Property Tax/i)).not.toBeInTheDocument();
+  });
+
+  it("clears the property tax when the category leaves real estate", () => {
+    openBuyLeg();
+    fireEvent.change(screen.getByLabelText(/Annual Property Tax/i), { target: { value: "16500" } });
+    fireEvent.change(screen.getByLabelText(/Asset Category/i), { target: { value: "taxable" } });
+    fireEvent.change(screen.getByLabelText(/Asset Category/i), { target: { value: "real_estate" } });
+    expect(screen.getByLabelText(/Annual Property Tax/i)).toHaveValue("");
+  });
+
+  it("sends the amount as dollars and the growth as a decimal rate", async () => {
+    const drafts: unknown[] = [];
+    const onSubmitDraft = vi.fn((t) => drafts.push(t));
+    openBuyLeg(onSubmitDraft);
+
+    fireEvent.change(screen.getByLabelText(/Asset Name/i), { target: { value: "New House" } });
+    fireEvent.change(document.getElementById("purchasePrice") as HTMLInputElement, {
+      target: { value: "1500000" },
+    });
+    fireEvent.change(screen.getByLabelText(/Annual Property Tax/i), { target: { value: "16500" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Done$/i }));
+
+    fireEvent.change(screen.getByLabelText(/^Name/i), { target: { value: "Buy House" } });
+    fireEvent.change(screen.getByLabelText(/^Year/i), { target: { value: "2032" } });
+    fireEvent.submit(document.getElementById("asset-transaction-form")!);
+
+    await waitFor(() => expect(onSubmitDraft).toHaveBeenCalled());
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const buy = (drafts as any[]).find((d) => d.type === "buy");
+    // onSubmitDraft receives coerceAssetTransactionDraft's output (an
+    // AssetTransaction), which numifies string fields the same way it
+    // already does for the sibling purchasePrice field — see the "legacy
+    // swap" test above (`purchasePrice: 500000`, a number, from a
+    // string "500000" input).
+    expect(buy.annualPropertyTax).toBe(16500);
+    expect(buy.propertyTaxGrowthRate).toBe(0.03);   // "3" percent → decimal
+    expect(buy.propertyTaxGrowthSource).toBe("custom");
+  });
+
+  it("reaches the custom growth-rate input by its own label", () => {
+    openBuyLeg();
+    const rateInput = screen.getByLabelText(/Custom Rate/i) as HTMLInputElement;
+    expect(rateInput).toHaveValue("3");   // emptyBuyLeg's new-leg default
+    fireEvent.change(rateInput, { target: { value: "4.5" } });
+    expect(rateInput).toHaveValue("4.5");
+  });
+
+  it("does not invent a growth rate or source for an untouched existing buy with none stored", async () => {
+    // FINDING 1 coverage: an existing real-estate buy record whose property
+    // tax was never set (all three fields null in the DB) must round-trip
+    // through the editor untouched — saving it back must not stamp a rate or
+    // source that was never there.
+    const drafts: unknown[] = [];
+    const onSubmitDraft = vi.fn((t) => drafts.push(t));
+    render(
+      <AddAssetTransactionForm
+        clientId="client-123"
+        accounts={ACCOUNTS}
+        liabilities={LIABILITIES}
+        onClose={() => {}}
+        onSaved={() => {}}
+        onSubmitDraft={onSubmitDraft}
+        initialData={{
+          id: "rec-house-notax", name: "Existing House", type: "buy", year: 2028,
+          accountId: null, purchaseTransactionId: null, businessAccountId: null,
+          fractionSold: null, overrideSaleValue: null, overrideBasis: null,
+          transactionCostPct: null, transactionCostFlat: null, proceedsAccountId: null,
+          qualifiesForHomeSaleExclusion: null,
+          assetName: "Existing House", assetCategory: "real_estate", assetSubType: "primary_residence",
+          purchasePrice: "500000", growthRate: null, basis: null, fundingAccountId: null,
+          mortgageAmount: null, mortgageRate: null, mortgageTermMonths: null,
+          annualPropertyTax: null, propertyTaxGrowthRate: null, propertyTaxGrowthSource: null,
+        }}
+      />,
+    );
+
+    fireEvent.submit(document.getElementById("asset-transaction-form")!);
+
+    await waitFor(() => expect(onSubmitDraft).toHaveBeenCalled());
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const buy = (drafts as any[]).find((d) => d.assetName === "Existing House");
+    // coerceAssetTransactionDraft drops null/empty fields entirely, so an
+    // invented "0.03" or "custom" would show up as a present key — the
+    // absence of the key IS the assertion.
+    expect(buy.annualPropertyTax).toBeUndefined();
+    expect(buy.propertyTaxGrowthRate).toBeUndefined();
+    expect(buy.propertyTaxGrowthSource).toBeUndefined();
+  });
+
+  it("round-trips an existing custom rate through hydrate and save unchanged", async () => {
+    // FINDING 3 coverage: "3" (percent, shown) → "0.03" (decimal, stored) →
+    // "3" (percent, re-shown) closes the loop explicitly for the NEW field.
+    const drafts: unknown[] = [];
+    const onSubmitDraft = vi.fn((t) => drafts.push(t));
+    render(
+      <AddAssetTransactionForm
+        clientId="client-123"
+        accounts={ACCOUNTS}
+        liabilities={LIABILITIES}
+        onClose={() => {}}
+        onSaved={() => {}}
+        onSubmitDraft={onSubmitDraft}
+        initialData={{
+          id: "rec-house-tax", name: "Taxed House", type: "buy", year: 2028,
+          accountId: null, purchaseTransactionId: null, businessAccountId: null,
+          fractionSold: null, overrideSaleValue: null, overrideBasis: null,
+          transactionCostPct: null, transactionCostFlat: null, proceedsAccountId: null,
+          qualifiesForHomeSaleExclusion: null,
+          assetName: "Taxed House", assetCategory: "real_estate", assetSubType: "primary_residence",
+          purchasePrice: "500000", growthRate: null, basis: null, fundingAccountId: null,
+          mortgageAmount: null, mortgageRate: null, mortgageTermMonths: null,
+          annualPropertyTax: "12000", propertyTaxGrowthRate: "0.03", propertyTaxGrowthSource: "custom",
+        }}
+      />,
+    );
+
+    // Open the buy leg in the editor and confirm the DECIMAL "0.03" from
+    // storage hydrated to the PERCENT "3" shown to the advisor.
+    fireEvent.click(
+      within(screen.getByTestId("buy-column")).getByRole("button", { name: /^Taxed House/i }),
+    );
+    expect(screen.getByLabelText(/Custom Rate/i)).toHaveValue("3");
+    fireEvent.click(screen.getByRole("button", { name: /^Done$/i }));
+
+    // Save it back unchanged and confirm the PERCENT "3" round-trips back to
+    // the DECIMAL 0.03 the API/DB expects.
+    fireEvent.submit(document.getElementById("asset-transaction-form")!);
+    await waitFor(() => expect(onSubmitDraft).toHaveBeenCalled());
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const buy = (drafts as any[]).find((d) => d.assetName === "Taxed House");
+    expect(buy.propertyTaxGrowthRate).toBe(0.03);
+  });
+});

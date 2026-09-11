@@ -147,6 +147,13 @@ export interface HomePurchaseGoal {
   mortgageAmount: string;
   mortgageRate: string;
   mortgageTermMonths: string;
+  /** Plain dollar string ("16500"), like `purchasePrice` — `commitGoals` runs
+   *  it through `num`, not `pct`. */
+  annualPropertyTax: string;
+  /** Percent string ("3"), like `growthRate` and `mortgageRate` on this type;
+   *  `commitGoals` divides by 100 on the way to the decimal column. */
+  propertyTaxGrowthRate: string;
+  propertyTaxGrowthSource: "custom" | "inflation";
 }
 
 export interface AssembleGoals {
