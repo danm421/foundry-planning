@@ -965,6 +965,107 @@ describe("chat extract route gates", () => {
   });
 
   /**
+   * ── Fix wave 3, I-A: A DROPPED ROW STAYS DROPPED ───────────────────────
+   *
+   * `drop_row` moves the row into `chat.excludedRows` keyed by the id it had
+   * AT THAT MOMENT, and the route subtracts that id from every later merge.
+   * But the id is DERIVED: adding a newer statement for the same account
+   * moves it, and the stale entry then matched nothing — so the row the
+   * advisor explicitly removed came straight back onto the table, while the
+   * Excluded list still showed it as excluded. For the `merge_rows` half
+   * (`irreversible: true`, "Include anyway" disabled) that is one real
+   * account on screen twice, which is the double count this whole branch
+   * exists to close.
+   *
+   * Reproduced end to end against this route before the fix (the dropped
+   * "Dad's IRA" came back under `account:5521#<SEPT>:1`).
+   *
+   * Mutation this catches: not passing the advisor's exclusions through the
+   * rebase (`retiredRows`), so their ids are never carried forward.
+   */
+  it("keeps a dropped row dropped when a NEWER statement for it is added", async () => {
+    const JUNE_FILE = "9c3f1a02-4f7b-4c0e-9a11-2d5b8e7f6a31";
+    const SEPT_FILE = "0b7e4d19-8a2c-4f31-b6d0-1e9c3a5f2b84"; // sorts FIRST
+    const KEPT_ID = `account:7734#${JUNE_FILE}:0`;
+    const DROPPED_ID = `account:5521#${JUNE_FILE}:1`;
+
+    const juneAccounts = [
+      { name: "Roth IRA", custodian: "Fidelity", accountNumberLast4: "7734", owner: "client", value: 190_000, category: "retirement", statementDate: "2026-06-30" },
+      { name: "Dad's IRA", custodian: "Fidelity", accountNumberLast4: "5521", owner: "client", value: 44_000, category: "retirement", statementDate: "2026-06-30" },
+    ];
+    const standing = (rowId: string, source: (typeof juneAccounts)[number]) => ({
+      ...source,
+      __rowId: rowId,
+      __provenance: { sourceFileId: JUNE_FILE, section: "accounts" },
+    });
+
+    currentImportRow = {
+      id: "i1",
+      payloadJson: {
+        fileResults: {
+          [JUNE_FILE]: {
+            documentType: "account_statement",
+            fileName: "fidelity-june.pdf",
+            extracted: {
+              accounts: juneAccounts,
+              incomes: [], expenses: [], liabilities: [], entities: [], lifePolicies: [], wills: [], savings: [],
+            },
+            warnings: [],
+            promptVersion: "v",
+          },
+        },
+        // The advisor dropped "Dad's IRA": gone from the table, recorded in
+        // `excludedRows` under the id it had when June was the only file.
+        payload: { accounts: [standing(KEPT_ID, juneAccounts[0])] },
+        chat: {
+          surface: "chat",
+          transcript: [],
+          decisions: [],
+          excludedRows: [
+            { row: standing(DROPPED_ID, juneAccounts[1]), reason: "not the client's account" },
+          ],
+          committedRowIds: [],
+        },
+      },
+      extractHoldings: false,
+      status: "review",
+    } as never;
+    filesResult = [fileRow(JUNE_FILE, "fidelity-june.pdf"), fileRow(SEPT_FILE, "fidelity-sept.pdf")];
+    // The September statement lists BOTH accounts again — including the one
+    // the advisor dropped.
+    vi.mocked(extractDocument).mockResolvedValue({
+      documentType: "account_statement",
+      fileName: "fidelity-sept.pdf",
+      extracted: {
+        accounts: [
+          { name: "Roth IRA", custodian: "Fidelity", accountNumberLast4: "7734", owner: "client", value: 201_900, category: "retirement", statementDate: "2026-09-30" },
+          { name: "Dad's IRA", custodian: "Fidelity", accountNumberLast4: "5521", owner: "client", value: 45_100, category: "retirement", statementDate: "2026-09-30" },
+        ],
+        incomes: [], expenses: [], liabilities: [], entities: [], lifePolicies: [], wills: [], savings: [],
+      },
+      warnings: [],
+      promptVersion: "v",
+    } as never);
+
+    const events = await readSse(await POST(req(), params));
+    const persisted = (currentImportRow.payloadJson as ImportPayloadJson).payload?.accounts ?? [];
+    const done = events.at(-1) as {
+      rows: Array<{ name: string }>;
+      excluded: Array<{ row: { __rowId?: string } }>;
+    };
+
+    // The dropped account is NOT back — on screen or in the database.
+    expect(done.rows.map((r) => r.name)).toEqual(["Roth IRA"]);
+    expect(persisted.map((r) => r.name)).toEqual(["Roth IRA"]);
+    // ...and it is still recorded as excluded, under the id it was dropped
+    // with — identity assigned once, carried forward, never re-minted.
+    expect(done.excluded.map((x) => x.row.__rowId)).toEqual([DROPPED_ID]);
+    // The row that stayed keeps the advisor's id too (wave 2), so this test
+    // cannot pass by the ids simply not having moved.
+    expect(persisted[0].__rowId).toBe(KEPT_ID);
+  });
+
+  /**
    * Ruling 117, wired end to end. The measured failure was ON SCREEN: a June
    * statement at $100,000 and a September statement at $130,000 for a row the
    * advisor had never touched left $100,000 in the table — correct under I1 —

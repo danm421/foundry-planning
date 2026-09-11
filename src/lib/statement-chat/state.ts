@@ -1,4 +1,5 @@
-import type { ChatState, ChatTurn, ImportPayloadJson } from "@/lib/imports/types";
+import type { Annotated, ChatState, ChatTurn, ImportPayloadJson } from "@/lib/imports/types";
+import type { ExtractedAccount } from "@/lib/extraction/types";
 
 /**
  * `ChatTurn` and `ChatState` are declared in `@/lib/imports/types` (R55),
@@ -65,4 +66,31 @@ export function writeChatState(payloadJson: unknown, next: Partial<ChatState>): 
     ...before,
     chat: { ...prior, ...stripUndefined(next) },
   };
+}
+
+/**
+ * The rows the ADVISOR retired — `drop_row`, or the half an irreversible
+ * `merge_rows` folded away — out of the mixed `excludedRows` list.
+ *
+ * The discriminator is `decision`, set by Task 4's rollup detector and by
+ * nothing else (the field's own doc on `ChatState` records why it is optional
+ * and who sets it). The distinction matters because these two kinds of
+ * exclusion have opposite identity properties, which is exactly what fix
+ * wave 3 turns on:
+ *
+ *  - A ROLLUP exclusion is RE-DERIVED by `detectRollups` on every read, off
+ *    this run's own rows. Its persisted id is a leftover, its row is never in
+ *    `kept`, and handing it to the rebase could only ever let a printed total
+ *    contest a real row's re-attachment.
+ *  - An ADVISOR exclusion cannot be re-derived by anything — it is a
+ *    decision, not a detection — so it is persisted by id, and that id drifts
+ *    with the merge exactly like a standing row's. It is the one that has to
+ *    be carried forward.
+ *
+ * Lives here, next to `readChatState`, so the two routes that need it
+ * (`chat/extract` and `chat/finalize`) share one definition of which
+ * exclusions are the advisor's rather than each re-deciding.
+ */
+export function advisorRetiredRows(chat: ChatState): Annotated<ExtractedAccount>[] {
+  return chat.excludedRows.filter((x) => x.decision === undefined).map((x) => x.row);
 }

@@ -441,8 +441,18 @@ describe("narrate", () => {
         decisions: [],
         rows: [{ name: "Schwab Brokerage", value: 88_000 }] as never,
         dropped: [
-          { __rowId: "account:7734#f1:0", name: "Fidelity Roth IRA", committed: true },
-          { __rowId: "account:9999#f1:1", name: "Old 401(k)", committed: false },
+          {
+            __rowId: "account:7734#f1:0",
+            name: "Fidelity Roth IRA",
+            committed: true,
+            stillOnTable: [],
+          },
+          {
+            __rowId: "account:9999#f1:1",
+            name: "Old 401(k)",
+            committed: false,
+            stillOnTable: [],
+          },
         ],
       });
       expect(caveats).toEqual([
@@ -451,6 +461,93 @@ describe("narrate", () => {
           "been committed, and that plan account is unchanged.",
         '"Old 401(k)" is no longer among the accounts read from these statements, so it has been ' +
           "removed from the table along with any changes you made to it.",
+      ]);
+    });
+
+    /**
+     * Fix wave 3, I-B. The reassurance above is TRUE only while nothing on
+     * the table is that same account. When the rebase refused an ambiguous
+     * re-attachment, the fresh row for that account is still on screen,
+     * still carries `{ kind: "new" }`, and its Commit button has re-armed —
+     * so committing it INSERTs a SECOND plan account for one real account.
+     * Telling the advisor "that plan account is unchanged" at that moment is
+     * true of the old account and actively misleading about the live button
+     * beside it.
+     *
+     * Mutation this catches: printing the unconditional "that plan account
+     * is unchanged" clause for a drop that names rows still on the table.
+     */
+    it("warns that committing the row still on the table would create a SECOND plan account", () => {
+      const { caveats } = narrate({
+        fileCount: 2,
+        decisions: [],
+        rows: [{ name: "Roth IRA", value: 201_900 }] as never,
+        dropped: [
+          {
+            __rowId: "account:7734#f1:0",
+            name: "Roth IRA (client)",
+            committed: true,
+            stillOnTable: ["Roth IRA"],
+          },
+        ],
+      });
+      expect(caveats).toEqual([
+        '"Roth IRA (client)" is no longer among the accounts read from these statements, so it ' +
+          "has been removed from the table along with any changes you made to it. It had already " +
+          'been committed, and that plan account is unchanged — but "Roth IRA" is still on the ' +
+          "table for the same account, and committing it would add a SECOND plan account " +
+          "alongside it. Drop that row unless you mean to.",
+      ]);
+    });
+
+    /**
+     * The same warning has to survive the plural: an ambiguous re-attachment
+     * can leave more than one fresh row in the bucket.
+     */
+    it("names every row still on the table, and stays grammatical in the plural", () => {
+      const { caveats } = narrate({
+        fileCount: 2,
+        decisions: [],
+        rows: [] as never,
+        dropped: [
+          {
+            __rowId: "account:7734#f1:0",
+            name: "Roth IRA (client)",
+            committed: true,
+            stillOnTable: ["Roth IRA", "Roth IRA (rollover)"],
+          },
+        ],
+      });
+      expect(caveats[0]).toContain(
+        '"Roth IRA" and "Roth IRA (rollover)" are still on the table for the same account, and ' +
+          "committing them would add a SECOND plan account alongside it. Drop those rows unless " +
+          "you mean to.",
+      );
+    });
+
+    /**
+     * The warning is scoped to the case that can actually duplicate a plan
+     * account. An UNCOMMITTED row that was dropped has no plan account to be
+     * duplicated, so committing the row still on the table is the ordinary,
+     * correct outcome and needs no alarm.
+     */
+    it("does not warn about a second plan account for an UNCOMMITTED dropped row", () => {
+      const { caveats } = narrate({
+        fileCount: 2,
+        decisions: [],
+        rows: [{ name: "Roth IRA", value: 201_900 }] as never,
+        dropped: [
+          {
+            __rowId: "account:7734#f1:1",
+            name: "Roth IRA (spouse)",
+            committed: false,
+            stillOnTable: ["Roth IRA"],
+          },
+        ],
+      });
+      expect(caveats).toEqual([
+        '"Roth IRA (spouse)" is no longer among the accounts read from these statements, so it ' +
+          "has been removed from the table along with any changes you made to it.",
       ]);
     });
 

@@ -414,7 +414,12 @@ describe("rebaseOntoFreshMerge", () => {
     });
     // The row that genuinely had nowhere to go is REPORTED, not silent.
     expect(dropped).toEqual([
-      { __rowId: STRANDED_ID, name: "Fidelity — old rollover", committed: false },
+      {
+        __rowId: STRANDED_ID,
+        name: "Fidelity — old rollover",
+        committed: false,
+        stillOnTable: [],
+      },
     ]);
   });
 
@@ -464,8 +469,18 @@ describe("rebaseOntoFreshMerge", () => {
     expect(rows[0].name).toBe("Roth IRA");
     // Both losses are reported, in standing order.
     expect(dropped).toEqual([
-      { __rowId: `account:7734#${JUNE}:0`, name: "Roth IRA (client)", committed: false },
-      { __rowId: `account:7734#${JUNE}:1`, name: "Roth IRA (spouse)", committed: false },
+      {
+        __rowId: `account:7734#${JUNE}:0`,
+        name: "Roth IRA (client)",
+        committed: false,
+        stillOnTable: ["Roth IRA"],
+      },
+      {
+        __rowId: `account:7734#${JUNE}:1`,
+        name: "Roth IRA (spouse)",
+        committed: false,
+        stillOnTable: ["Roth IRA"],
+      },
     ]);
   });
 
@@ -517,7 +532,7 @@ describe("rebaseOntoFreshMerge", () => {
     // Requirement 4: no plausible counterpart, so the row is dropped — but
     // VISIBLY, and the fact that it had been committed travels with it.
     expect(dropped).toEqual([
-      { __rowId: STANDING_ID, name: "Fidelity Roth IRA", committed: true },
+      { __rowId: STANDING_ID, name: "Fidelity Roth IRA", committed: true, stillOnTable: [] },
     ]);
   });
 
@@ -553,13 +568,196 @@ describe("rebaseOntoFreshMerge", () => {
     ];
 
     const { rows, dropped } = rebaseOntoFreshMerge(fresh, standing, {
-      retiredRowIds: new Set([RETIRED_ID]),
+      retiredRows: [
+        sourced(RETIRED_ID, "Roth IRA", 201_900, SEPT, {
+          custodian: "Fidelity",
+          accountNumberLast4: "7734",
+        }),
+      ],
     });
 
     expect(rows.map((r) => r.__rowId)).toEqual([RETIRED_ID]);
     expect(rows[0].name).toBe("Roth IRA");
     expect(dropped).toEqual([
-      { __rowId: STANDING_ID, name: "Julia — Roth (rollover)", committed: false },
+      { __rowId: STANDING_ID, name: "Julia — Roth (rollover)", committed: false, stillOnTable: [] },
+    ]);
+  });
+
+  /**
+   * ── Fix wave 3, I-A: A RETIRED ROW'S ID IS A PERSISTED DECISION TOO ─────
+   *
+   * `drop_row` and the losing half of `merge_rows` move a row out of
+   * `payload.accounts` and into `chat.excludedRows`, keyed by the id it had
+   * AT THAT MOMENT. Uploading a newer statement for that same account moves
+   * the merged entry's id exactly as it moves a standing row's — but the
+   * retired row is not in `standing`, so nothing used to carry it forward.
+   * The fresh row then arrived under an id the caller's exclusion filter
+   * could not see and the dropped row came straight back on screen; for a
+   * `merge_rows` exclusion that is one real account on the table twice.
+   *
+   * One reconciliation, not three: a retired row is reconciled by the SAME
+   * pass, on the SAME fingerprint, and the identity carried forward is the
+   * PERSISTED one — so the caller's `chatExcludedIds.has(row.__rowId)`
+   * subtraction, `finalize`'s `missing` predicate and the Excluded list all
+   * keep working unchanged.
+   *
+   * Mutation this catches: collecting orphans from `standing` only. The
+   * fresh row keeps its own SEPTEMBER id, the caller's filter misses it, and
+   * the row the advisor explicitly dropped is back.
+   */
+  it("carries a RETIRED row's id forward so the caller's exclusion filter still catches it", () => {
+    const JUNE = "9c3f1a02-4f7b-4c0e-9a11-2d5b8e7f6a31";
+    const SEPT = "0b7e4d19-8a2c-4f31-b6d0-1e9c3a5f2b84"; // sorts FIRST
+    const RETIRED_ID = `account:5521#${JUNE}:1`;
+
+    const fresh = [
+      sourced(`account:7734#${SEPT}:0`, "Roth IRA", 201_900, SEPT, {
+        custodian: "Fidelity",
+        accountNumberLast4: "7734",
+      }),
+      sourced(`account:5521#${SEPT}:1`, "Dad's IRA", 45_100, SEPT, {
+        custodian: "Fidelity",
+        accountNumberLast4: "5521",
+      }),
+    ];
+    const standing = [
+      sourced(`account:7734#${JUNE}:0`, "Roth IRA", 190_000, JUNE, {
+        custodian: "Fidelity",
+        accountNumberLast4: "7734",
+      }),
+    ];
+    const retired = [
+      sourced(RETIRED_ID, "Dad's IRA", 44_000, JUNE, {
+        custodian: "Fidelity",
+        accountNumberLast4: "5521",
+      }),
+    ];
+
+    const { rows, dropped } = rebaseOntoFreshMerge(fresh, standing, { retiredRows: retired });
+
+    // The dropped account's fresh row answers to the id the EXCLUSION holds,
+    // so the caller's subtraction — one line of it, unchanged — removes it.
+    expect(rows.map((r) => r.__rowId)).toEqual([
+      `account:7734#${JUNE}:0`, // the standing row, re-attached as before
+      RETIRED_ID,
+    ]);
+    // A retired row is never reported as a drop: the advisor removed it on
+    // purpose and it is not on the table to disappear from.
+    expect(dropped).toEqual([]);
+  });
+
+  /**
+   * Fix wave 3, I-A, second half: an exclusion whose account really is gone
+   * from the new statements has no counterpart to carry onto, and must not
+   * be announced as a lost row.
+   *
+   * Mutation this catches: reporting retired orphans in `dropped` alongside
+   * standing ones — a caveat about a row the advisor themselves removed.
+   */
+  it("says nothing about a retired row the new statements no longer contain", () => {
+    const JUNE = "9c3f1a02-4f7b-4c0e-9a11-2d5b8e7f6a31";
+    const SEPT = "0b7e4d19-8a2c-4f31-b6d0-1e9c3a5f2b84";
+
+    const fresh = [
+      sourced(`account:7734#${SEPT}:0`, "Roth IRA", 201_900, SEPT, {
+        custodian: "Fidelity",
+        accountNumberLast4: "7734",
+      }),
+    ];
+    const retired = [
+      sourced(`account:5521#${JUNE}:1`, "Dad's IRA", 44_000, JUNE, {
+        custodian: "Fidelity",
+        accountNumberLast4: "5521",
+      }),
+    ];
+
+    const { rows, dropped } = rebaseOntoFreshMerge(fresh, [], { retiredRows: retired });
+
+    expect(rows.map((r) => r.__rowId)).toEqual([`account:7734#${SEPT}:0`]);
+    expect(dropped).toEqual([]);
+  });
+
+  /**
+   * Fix wave 3, I-B. When two standing rows compete for one fresh row the
+   * rebase refuses BOTH — that ruling is right, and picking one is the coin
+   * flip C-1 already cost. But the fresh row then keeps its own identity and
+   * its own `{ kind: "new" }` match, so the Commit button re-arms on a row
+   * whose account is ALREADY in the plan: committing it INSERTs a second
+   * plan account for one real account (measured, wave 4 Task 1).
+   *
+   * The rebase already knows which fresh rows those are — they are the
+   * refused candidates — so it says so, and the narrator turns "that plan
+   * account is unchanged" (true of the old account, and reassuring about
+   * exactly the wrong thing) into a warning naming the row to drop.
+   *
+   * Mutation this catches: returning `stillOnTable: []` for every drop. The
+   * advisor is told their committed row vanished and that nothing else
+   * changed, next to a live Commit button that would duplicate the account.
+   */
+  it("names the fresh rows still on the table when a COMMITTED row is dropped", () => {
+    const JUNE = "9c3f1a02-4f7b-4c0e-9a11-2d5b8e7f6a31";
+    const SEPT = "0b7e4d19-8a2c-4f31-b6d0-1e9c3a5f2b84";
+    const FRESH_ID = `account:7734#${SEPT}:0`;
+
+    const fresh = [
+      sourced(FRESH_ID, "Roth IRA", 201_900, SEPT, {
+        custodian: "Fidelity",
+        accountNumberLast4: "7734",
+      }),
+    ];
+    const standing = [
+      sourced(`account:7734#${JUNE}:0`, "Roth IRA (client)", 190_000, JUNE, {
+        custodian: "Fidelity",
+        accountNumberLast4: "7734",
+        match: { kind: "exact", existingId: "acct-1" },
+      }),
+      sourced(`account:7734#${JUNE}:1`, "Roth IRA (spouse)", 120_000, JUNE, {
+        custodian: "Fidelity",
+        accountNumberLast4: "7734",
+      }),
+    ];
+
+    const { rows, dropped } = rebaseOntoFreshMerge(fresh, standing);
+
+    // Unchanged: neither is carried, and the fresh row keeps its own id and
+    // its own `new` match — which is precisely why the advisor needs telling.
+    expect(rows[0].__rowId).toBe(FRESH_ID);
+    expect(rows[0].match).toBeUndefined();
+    expect(dropped).toEqual([
+      {
+        __rowId: `account:7734#${JUNE}:0`,
+        name: "Roth IRA (client)",
+        committed: true,
+        stillOnTable: ["Roth IRA"],
+      },
+      {
+        __rowId: `account:7734#${JUNE}:1`,
+        name: "Roth IRA (spouse)",
+        committed: false,
+        stillOnTable: ["Roth IRA"],
+      },
+    ]);
+  });
+
+  /**
+   * Fix wave 3, M-A. A standing row carrying no `__rowId` cannot be matched
+   * to anything and has always been skipped before the orphan pass — so it
+   * left the table without even the one sentence every other lost row now
+   * gets. `mergeAcrossFiles` always stamps an id, so this is the last
+   * remaining silent loss in a function whose new job is to have none.
+   *
+   * Mutation this catches: `continue`-ing past an id-less standing row
+   * without reporting it.
+   */
+  it("reports a standing row carrying no __rowId as dropped", () => {
+    const { rows, dropped } = rebaseOntoFreshMerge(
+      [row("account:1", "Joint Brokerage", 130_000)],
+      [{ name: "Hand-entered IRA", value: 42_000, match: { kind: "exact", existingId: "a1" } } as Row],
+    );
+
+    expect(rows.map((r) => r.name)).toEqual(["Joint Brokerage"]);
+    expect(dropped).toEqual([
+      { __rowId: undefined, name: "Hand-entered IRA", committed: true, stillOnTable: [] },
     ]);
   });
 });

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { readChatState, writeChatState } from "@/lib/statement-chat/state";
+import { advisorRetiredRows, readChatState, writeChatState } from "@/lib/statement-chat/state";
+import type { ChatState } from "@/lib/imports/types";
 
 describe("chat state", () => {
   it("returns an empty state for a payload that has never seen the chat surface", () => {
@@ -54,5 +55,53 @@ describe("chat state", () => {
     expect(readChatState(corrupted)).toEqual({
       surface: "chat", transcript: [], decisions: [], excludedRows: [], committedRowIds: [],
     });
+  });
+});
+
+/**
+ * Fix wave 3. `excludedRows` mixes two kinds of exclusion with OPPOSITE
+ * identity properties, and only one of them may be handed to the rebase:
+ *
+ *  - a ROLLUP exclusion is re-derived by `detectRollups` on every read and is
+ *    never in `kept`, so reconciling its stale id could only let a printed
+ *    total contest a real account's re-attachment and strand it;
+ *  - an ADVISOR exclusion cannot be re-derived by anything, so its id must be
+ *    carried forward or the row it names comes back on the next upload (I-A).
+ *
+ * Mutation this catches: dropping the `decision` filter, so every excluded
+ * row — rollups included — is fed into the reconciliation.
+ */
+describe("advisorRetiredRows", () => {
+  const row = (rowId: string, name: string) => ({ __rowId: rowId, name }) as never;
+
+  it("keeps the advisor's own exclusions and drops re-derived rollups", () => {
+    const chat = {
+      surface: "chat",
+      transcript: [],
+      decisions: [],
+      committedRowIds: [],
+      excludedRows: [
+        { row: row("account:7734#f1:0", "Dad's IRA"), reason: "not the client's" },
+        {
+          row: row("account:7735#f1:1", "Roth IRA (continued)"),
+          reason: 'merged into "Roth IRA"',
+          irreversible: true as const,
+        },
+        {
+          row: row("account:9999#f1:2", "Total Accounts"),
+          reason: "a total covering 2 accounts already listed",
+          decision: { kind: "rollup-excluded" } as never,
+        },
+      ],
+    } as ChatState;
+
+    expect(advisorRetiredRows(chat).map((r) => r.name)).toEqual([
+      "Dad's IRA",
+      "Roth IRA (continued)",
+    ]);
+  });
+
+  it("returns an empty list for a chat state with no exclusions", () => {
+    expect(advisorRetiredRows(readChatState({}))).toEqual([]);
   });
 });

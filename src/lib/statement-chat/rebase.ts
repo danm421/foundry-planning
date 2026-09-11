@@ -71,7 +71,13 @@ export interface RebaseRefusal {
  * never be wrong.
  */
 export interface RebaseDrop {
-  __rowId: string;
+  /**
+   * Absent for a standing row that carried no `__rowId` at all (fix wave 3,
+   * M-A). Such a row cannot be matched to anything in either direction, so
+   * it was skipped before the orphan pass and left the table in silence —
+   * the last remaining silent loss in a function whose job is to have none.
+   */
+  __rowId?: string;
   /** The STANDING row's name — the label the advisor has been looking at. */
   name: string;
   /**
@@ -80,6 +86,27 @@ export interface RebaseDrop {
    * saying so is the difference between a note and an alarm.
    */
   committed: boolean;
+  /**
+   * Names of the fresh rows STILL ON THE TABLE that this row's own
+   * fingerprint matched, and that the rebase nonetheless refused to identify
+   * it with — the ambiguous case, where two standing rows competed for one
+   * fresh row and neither could be carried (fix wave 3, I-B).
+   *
+   * Empty for the ordinary drop: the account simply is not in the new
+   * statements, so nothing on screen is it.
+   *
+   * NON-empty is the dangerous one, and only for a COMMITTED row. That fresh
+   * row kept its own identity and its own `{ kind: "new" }` match, so its
+   * Commit button re-armed and committing it INSERTs a SECOND plan account
+   * for an account the plan already has (measured, wave 4 Task 1). The
+   * narrator turns this into a warning instead of a reassurance.
+   *
+   * A candidate listed here can never have been carried by some OTHER
+   * orphan: carrying requires the fresh row to have exactly one claimant,
+   * and this row is one of its claimants — so the sole claimant would have
+   * to be this row, which would make it carried rather than dropped.
+   */
+  stillOnTable: string[];
 }
 
 /**
@@ -207,9 +234,16 @@ export function mergeAccountsByRowId(
 }
 
 /**
- * Pair each ORPHANED standing row — one whose `__rowId` has no counterpart in
- * the fresh set — with the fresh row that is genuinely the same account, and
- * return `freshRowId -> standingRowId`: the identity to carry forward.
+ * Pair each ORPHANED persisted row — one whose `__rowId` has no counterpart
+ * in the fresh set — with the fresh row that is genuinely the same account,
+ * and return `freshRowId -> persistedRowId`: the identity to carry forward.
+ *
+ * "Persisted" covers BOTH sets of ids the chat slice keeps: the standing rows
+ * (`payload.accounts`, which `committedRowIds` names) and the rows the
+ * advisor retired (`chat.excludedRows`). They are the same problem — an id
+ * minted by an earlier merge — so they get the same pass, and competing
+ * across both is what stops a standing row from quietly taking the fresh row
+ * that is really an exclusion (fix wave 3, I-A).
  *
  * WHY THIS EXISTS. `__rowId` is DERIVED, from the dedupe key plus the entry's
  * minimum member coordinate. Uploading a newer statement for an account
@@ -242,49 +276,57 @@ export function mergeAccountsByRowId(
  * coin flip C-1 already cost. Requiring both directions also makes the result
  * independent of the order the orphans are considered in.
  *
+ * A refused pair is not free, which is why `candidatesFor` comes back out:
+ * the fresh row keeps its own `{ kind: "new" }` match, so if the orphan had
+ * been committed its Commit button re-arms and committing it adds a SECOND
+ * plan account. The caller names those rows in the drop caveat (I-B).
+ *
  * UNIQUENESS — the trap. A carried-forward id cannot collide with an id
  * already in the fresh set:
  *  - an orphan's id is, by definition, absent from `freshByRowId`, so it
  *    cannot equal the id of any fresh row that keeps its own;
  *  - every fresh row is claimed at most once — `claimed` holds the ones an id
- *    match already took, and the 1:1 rule gives each remaining candidate a
- *    single claimant — so no fresh row is re-stamped twice;
- *  - two orphans cannot carry the same id: `orphans` is keyed BY id.
+ *    match already took (a standing row's, or a retired row's), and the 1:1
+ *    rule gives each remaining candidate a single claimant — so no fresh row
+ *    is re-stamped twice;
+ *  - two orphans cannot carry the same id: both orphan maps are keyed BY id,
+ *    and the union of two such maps collapses a shared key too.
  * Pinned by "never mints a duplicate __rowId when it carries an id forward".
  */
 function reattachOrphans(
   orphans: ReadonlyMap<string, AccountRow>,
   freshMerged: AccountRow[],
   claimed: ReadonlySet<string>,
-  retiredRowIds: ReadonlySet<string> | undefined,
-): Map<string, string> {
+): { carried: Map<string, string>; candidatesFor: Map<string, string[]> } {
   const candidatesFor = new Map<string, string[]>();
   const claimantCount = new Map<string, number>();
 
-  for (const [standingId, held] of orphans) {
-    const bucket = keyedRowIdBucket(standingId);
+  for (const [persistedId, held] of orphans) {
+    const bucket = keyedRowIdBucket(persistedId);
     if (bucket === null) continue;
     const candidates = freshMerged
       .filter((fresh) => {
         const freshId = fresh.__rowId;
-        if (!freshId || claimed.has(freshId) || retiredRowIds?.has(freshId)) return false;
+        if (!freshId || claimed.has(freshId)) return false;
         return keyedRowIdBucket(freshId) === bucket && sameInstitution(held, fresh);
       })
       .map((fresh) => fresh.__rowId as string);
     if (candidates.length === 0) continue;
-    candidatesFor.set(standingId, candidates);
+    candidatesFor.set(persistedId, candidates);
     for (const freshId of candidates) {
       claimantCount.set(freshId, (claimantCount.get(freshId) ?? 0) + 1);
     }
   }
 
   const carried = new Map<string, string>();
-  for (const [standingId, freshIds] of candidatesFor) {
+  for (const [persistedId, freshIds] of candidatesFor) {
     if (freshIds.length !== 1) continue;
     if (claimantCount.get(freshIds[0]) !== 1) continue;
-    carried.set(freshIds[0], standingId);
+    carried.set(freshIds[0], persistedId);
   }
-  return carried;
+  // `candidatesFor` travels back out so a REFUSED orphan can say which rows
+  // on the table its own fingerprint matched — see `RebaseDrop.stillOnTable`.
+  return { carried, candidatesFor };
 }
 
 /**
@@ -319,6 +361,17 @@ function reattachOrphans(
  * and the loop only ever emits fresh rows — but it comes out in `dropped` so
  * the advisor is told rather than left to notice.
  *
+ * Fix wave 3: this is the ONE reconciliation every consumer of a persisted
+ * id runs, rather than three that re-derive independently and disagree.
+ * `__rowId` is DERIVED from the input set, and a re-extraction changes the
+ * input set by definition — so any consumer that re-computes ids and then
+ * compares them against a decision the advisor made EARLIER is comparing two
+ * different namespaces. The table (`chat/extract`) was fixed in wave 2;
+ * `chat/finalize`'s close gate (C-A) and the chat-exclusion subtraction
+ * (I-A) were not, and both now come through here. `opts.retiredRows` is what
+ * lets the second one: an exclusion's id is carried forward exactly like a
+ * standing row's, so the caller's subtraction is unchanged.
+ *
  * For a row present in BOTH sets the standing row wins wholesale, so a
  * re-merge that would have moved that row's balance (a newer statement
  * superseding an older one for the same account) does not move it on screen.
@@ -347,14 +400,24 @@ export function rebaseOntoFreshMerge(
   standing: AccountRow[],
   opts?: {
     /**
-     * Fresh `__rowId`s the advisor has already retired in the chat
-     * (`chat.excludedRows`). They are still in every fresh merge — they are
-     * still in `fileResults` — and the caller subtracts them by id AFTER this
-     * returns. So they must never be re-attachment targets: a carried-forward
-     * id would no longer be the excluded one, that subtraction would miss,
-     * and a row the advisor explicitly dropped would come back on screen.
+     * The rows the advisor has already retired in the chat — `drop_row`, or
+     * the half an irreversible `merge_rows` folded away — exactly as
+     * persisted in `chat.excludedRows`, each carrying the `__rowId` it had
+     * AT THE MOMENT the advisor retired it.
+     *
+     * Fix wave 3, I-A: these are the OTHER ids the chat slice persists, and
+     * they drift for exactly the same reason a standing row's does. They are
+     * reconciled by the SAME pass here, so the caller's
+     * `chatExcludedIds.has(row.__rowId)` subtraction and `finalize`'s
+     * `missing` predicate keep working unchanged — the fresh row genuinely
+     * IS the excluded id once this returns.
+     *
+     * Pass ONLY the advisor's own exclusions (`advisorRetiredRows`), never a
+     * rollup exclusion: a rollup is re-derived by `detectRollups` on every
+     * read and is not in `freshMerged` at all, so reconciling it could only
+     * ever contest a real row's re-attachment.
      */
-    retiredRowIds?: ReadonlySet<string>;
+    retiredRows?: readonly AccountRow[];
   },
 ): {
   rows: AccountRow[];
@@ -362,7 +425,6 @@ export function rebaseOntoFreshMerge(
   refusals: RebaseRefusal[];
   dropped: RebaseDrop[];
 } {
-  const retiredRowIds = opts?.retiredRowIds;
   const freshByRowId = new Map(
     freshMerged.filter((r) => r.__rowId).map((r) => [r.__rowId as string, r]),
   );
@@ -393,12 +455,67 @@ export function rebaseOntoFreshMerge(
     refusals.push({ __rowId: id, name: held.name, freshName: fresh.name });
   }
 
-  const carried = reattachOrphans(orphans, freshMerged, claimed, retiredRowIds);
+  // ONE reconciliation, not three. `committedRowIds` rides on the standing
+  // rows above; `chat.excludedRows` is the other place the chat slice
+  // persists an id minted by an earlier merge, and it drifts identically
+  // (fix wave 3, I-A). Both are reconciled by the same pass, on the same
+  // fingerprint, under the same 1:1 rule — so a retired row and a standing
+  // row can never both claim one fresh row without the ambiguity being seen.
+  const retiredOrphans = new Map<string, AccountRow>();
+  for (const retired of opts?.retiredRows ?? []) {
+    const id = retired.__rowId;
+    if (!id) continue;
+    if (freshByRowId.has(id)) {
+      // The exclusion still names a row in THIS merge: nothing to carry, and
+      // the fresh row is spoken for. A standing orphan must never re-attach
+      // onto it — the carried id would no longer be the excluded one, the
+      // caller's subtraction would miss, and a row the advisor explicitly
+      // dropped would come back on screen.
+      claimed.add(id);
+      continue;
+    }
+    // jsonb carries whatever was written, so an id could in principle appear
+    // on both lists. The standing row is the one on screen; it wins.
+    if (orphans.has(id)) continue;
+    retiredOrphans.set(id, retired);
+  }
+
+  // Keyed by id in BOTH maps, so the union collapses a shared id the same
+  // way each half does and no id can be carried forward twice.
+  const { carried, candidatesFor } = reattachOrphans(
+    new Map([...orphans, ...retiredOrphans]),
+    freshMerged,
+    claimed,
+  );
   const carriedStandingIds = new Set(carried.values());
+  // Walked in STANDING order (not orphan order) so a row carrying no id is
+  // reported in its place on the table rather than in a trailing group of its
+  // own. A RETIRED orphan that could not be carried is deliberately not
+  // reported at all: the advisor removed it on purpose and it is not on the
+  // table to vanish from.
   const dropped: RebaseDrop[] = [];
-  for (const [id, held] of orphans) {
-    if (carriedStandingIds.has(id)) continue;
-    dropped.push({ __rowId: id, name: held.name, committed: held.match?.kind === "exact" });
+  const reported = new Set<string>();
+  for (const row of standing) {
+    // Same falsy test the orphan collection above uses, so an empty-string id
+    // is "no id" in both places rather than a row that is silently neither.
+    const id = row.__rowId || undefined;
+    // For an id, the row this function treats as standing for it is the LAST
+    // one written under it — matching `orphans` and `mergeAccountsByRowId`.
+    // An id-less row is never in `orphans` at all, and is the M-A case.
+    const held = id === undefined ? row : orphans.get(id);
+    if (!held) continue; // matched a fresh row by id, so it did not leave
+    if (id !== undefined) {
+      if (carriedStandingIds.has(id) || reported.has(id)) continue;
+      reported.add(id);
+    }
+    dropped.push({
+      __rowId: id,
+      name: held.name,
+      committed: held.match?.kind === "exact",
+      stillOnTable: (id === undefined ? [] : (candidatesFor.get(id) ?? []))
+        .map((freshId) => freshByRowId.get(freshId)?.name)
+        .filter((name): name is string => name !== undefined),
+    });
   }
 
   // Re-attachment is EXPRESSED as re-stamping the fresh row's slot with the

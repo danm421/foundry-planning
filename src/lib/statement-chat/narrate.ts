@@ -161,12 +161,35 @@ function rebaseRefusalCaveat(r: RebaseRefusal): string {
  * The `committed` clause exists because that case reads as alarming and is
  * not: the plan account the row created is a separate record and nothing here
  * touches it. Saying so turns "where did my account go" into a note.
+ *
+ * Fix wave 3, I-B: that reassurance is only TRUE while nothing on the table
+ * is the same account. When the rebase refused an ambiguous re-attachment,
+ * the fresh row for that account is still on screen carrying its own
+ * `{ kind: "new" }` match — so its Commit button has re-armed, and
+ * committing it INSERTs a SECOND plan account for an account the plan
+ * already has (measured, wave 4 Task 1). Telling the advisor "that plan
+ * account is unchanged" at that moment is true of the old record and
+ * actively misleading about the live button beside it, so the sentence
+ * carries on instead of stopping there, and names the row to drop.
+ *
+ * Scoped to `committed`, because that is the whole of the hazard: an
+ * UNCOMMITTED row that was dropped has no plan account to be duplicated, and
+ * committing the row still on the table is then the ordinary right outcome.
  */
 function rebaseDropCaveat(d: RebaseDrop): string {
-  return (
+  const head =
     `"${d.name}" is no longer among the accounts read from these statements, so it has been ` +
-    `removed from the table along with any changes you made to it.` +
-    (d.committed ? ` It had already been committed, and that plan account is unchanged.` : "")
+    `removed from the table along with any changes you made to it.`;
+  if (!d.committed) return head;
+  if (d.stillOnTable.length === 0) {
+    return `${head} It had already been committed, and that plan account is unchanged.`;
+  }
+  const many = d.stillOnTable.length > 1;
+  return (
+    `${head} It had already been committed, and that plan account is unchanged — but ` +
+    `${joinWithAnd(d.stillOnTable.map((name) => `"${name}"`))} ${many ? "are" : "is"} still on ` +
+    `the table for the same account, and committing ${many ? "them" : "it"} would add a SECOND ` +
+    `plan account alongside it. Drop ${many ? "those rows" : "that row"} unless you mean to.`
   );
 }
 

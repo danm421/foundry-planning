@@ -16,7 +16,7 @@ import { runImportExtraction, type ExtractionFileProgress } from "@/lib/imports/
 import { mergeAcrossFiles } from "@/lib/imports/assemble/merge-across-files";
 import { detectRollups } from "@/lib/statement-chat/rollups";
 import { narrate } from "@/lib/statement-chat/narrate";
-import { readChatState, writeChatState } from "@/lib/statement-chat/state";
+import { advisorRetiredRows, readChatState, writeChatState } from "@/lib/statement-chat/state";
 // Shared with chat/turn/route.ts (final review, I1) — one rebase
 // mechanism, not two similar ones.
 import { rebaseOntoFreshMerge } from "@/lib/statement-chat/rebase";
@@ -324,13 +324,19 @@ export async function POST(request: Request, { params }: Params) {
           refusals: allRefusals,
           dropped: allDropped,
         } = rebaseOntoFreshMerge(kept, priorAccounts, {
-          // Fix wave 2. The rebase now re-attaches a standing row whose id
-          // moved onto the fresh row that is the same account, carrying the
-          // standing id forward. A fresh row the advisor already retired must
-          // never be that target: the carried id would not be the excluded
-          // one, the subtraction two lines below would miss it, and the
-          // dropped row would come back on screen.
-          retiredRowIds: chatExcludedIds,
+          // Fix wave 2. The rebase re-attaches a standing row whose id moved
+          // onto the fresh row that is the same account, carrying the standing
+          // id forward.
+          //
+          // Fix wave 3 (I-A). The advisor's OWN exclusions are the other set
+          // of persisted ids, and they drift for the same reason — so they go
+          // through the same reconciliation. Their identity is carried forward
+          // too, which is what keeps the subtraction two lines below working:
+          // the fresh row for a dropped account genuinely IS the excluded id
+          // once this returns. Before this, a newer statement moved that id
+          // past the filter and the row the advisor dropped came back — for a
+          // `merge_rows` exclusion, one real account on the table twice.
+          retiredRows: advisorRetiredRows(standingChat),
         });
         const rebasedAccounts = rebasedAll.filter(
           (row) => !(row.__rowId && chatExcludedIds.has(row.__rowId)),
@@ -347,7 +353,9 @@ export async function POST(request: Request, { params }: Params) {
         // about a row that is not on screen.
         const rebaseRefusals = allRefusals.filter((r) => !chatExcludedIds.has(r.__rowId));
         // Fix wave 2, requirement 4. Same subtraction, same reason.
-        const rebaseDropped = allDropped.filter((d) => !chatExcludedIds.has(d.__rowId));
+        const rebaseDropped = allDropped.filter(
+          (d) => d.__rowId === undefined || !chatExcludedIds.has(d.__rowId),
+        );
         // The advisor's own exclusions are kept first and win on id — a
         // `merge_rows` entry carries `irreversible: true`, which this run's
         // freshly-detected rollup entry for the same row would not. Fresh
