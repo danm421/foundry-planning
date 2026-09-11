@@ -162,7 +162,7 @@ export function buildObservationsFacts(ctx: TokenContext, extras: ObservationsFa
   if (client.spouseName) {
     const spouseAge = firstYear.ages.spouse != null ? String(firstYear.ages.spouse) : "not computed";
     lines.push(
-      `Spouse: age ${spouseAge}, retirement age ${fig(values.spouse_retirement_age)} (token {{spouse_retirement_age}})`,
+      `Co-client: age ${spouseAge}, retirement age ${fig(values.spouse_retirement_age)} (token {{spouse_retirement_age}})`,
     );
   }
 

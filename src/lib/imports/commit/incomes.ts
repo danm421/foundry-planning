@@ -317,7 +317,7 @@ async function reconcileSocialSecurity(
         clientId: ctx.clientId,
         scenarioId: ctx.scenarioId,
         type: "social_security",
-        name: person === "spouse" ? "Spouse's Social Security" : "Social Security",
+        name: person === "spouse" ? "Co-client's Social Security" : "Social Security",
         annualAmount: String(t.amount),
         startYear: currentYear,
         endYear: currentYear + 30,

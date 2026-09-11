@@ -3,11 +3,12 @@
 import type { Annotated } from "@/lib/imports/types";
 import type { ExtractedSavings } from "@/lib/extraction/types";
 import { resolveAccountName } from "@/lib/imports/account-name-match";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import SourceBadge from "./source-badge";
 
 const OWNER_OPTIONS = [
   { value: "client", label: "Client" },
-  { value: "spouse", label: "Spouse" },
+  { value: "spouse", label: CO_CLIENT_LABEL },
   { value: "joint", label: "Joint" },
 ];
 

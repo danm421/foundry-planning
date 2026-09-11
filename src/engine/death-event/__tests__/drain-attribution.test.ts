@@ -58,7 +58,7 @@ describe("computeDrainAttributions — pro-rata fallback (no residuary)", () => 
       t({
         recipientKind: "spouse",
         recipientId: null,
-        recipientLabel: "Spouse",
+        recipientLabel: "Co-client",
         amount: 800_000,
       }),
       t({ recipientId: "fm-1", amount: 200_000 }),

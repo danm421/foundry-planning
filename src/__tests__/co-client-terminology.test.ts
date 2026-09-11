@@ -113,6 +113,23 @@ const PERMANENT_ALLOWLIST = new Set<string>([
   "src/components/tax-ledger/tax-ledger-year-picker.tsx", // The real display hit — the age-label fallback `spouseName?.trim() || "Spouse"` (:53, pre-edit) — was renamed to `CO_CLIENT_LABEL` in this task. The residual hit is a scanner artifact: the same backtick template literal also references the `spouseName` parameter and `ages.spouse` property by name, so the naive scanner still matches the line even though it no longer renders the word "Spouse".
   "src/lib/solver/cashflow-year-detail.ts", // Only hit is `` `Age ${year.ages.client} / ${year.ages.spouse}` `` (:114) — `year.ages.spouse` is a numeric age property access, same class as the two age-label files above.
   "src/lib/tax/state-inheritance/types.ts", // Only hit is a JSDoc comment describing PA's actual statutory Class A definition, `"PA Class A is \"spouse + minor child only\""` (:24) — a real, accurate tax-law description (analogous to "Married filing jointly"), not app terminology, and not display copy (this file has no runtime logic, only type declarations). The `"spouse-role"` classSource literal (:53) and the `"spouse"` union member (:93) are single-word Bucket C enum references the scanner already excludes.
+
+  // ── Task 10 (2026-09-10): import, CRM, Forge, engine and plan-text sweep.
+  // Each entry names its file's residual hit(s) with line numbers, plus size
+  // and 90-day commit count so a reviewer can judge the allowlist call.
+  "src/engine/death-event/first-death.ts", // 870 lines, 7 commits/90d. Only hit is a code comment, `` `all_assets → spouse` `` (:352), documenting the internal residuary-mutation mapping ("all_assets" residuary kind → owner "spouse") — machine-facing, not display copy. The file emits zero `recipientLabel` strings (grepped) — it has no display-string surface at all.
+  "src/engine/death-event/section-2035-lookback.ts", // 135 lines, 1 commit/90d. Only hit is a JSDoc code span, `` `"client" | "spouse"` `` (:63), documenting the `GiftEvent.grantor` type union — machine-facing type documentation, no display logic in the file.
+  "src/components/crm-import-preview.tsx", // 248 lines, 4 commits/90d. The one real display hit — the CSV-import preview table's "Spouse" column header (:97, invisible to the scanner pre-edit because the JSX text sat on its own line between `>` and `<` — blind spot (a)) — was renamed to "Co-client" in this task. The residual hit is a scanner artifact: `` `${row.spouse.firstName} ${row.spouse.lastName}` `` (:130) is a property access rendering the imported contact's real name, never the literal word "Spouse".
+  "src/lib/crm/import/columns.ts", // 158 lines, 2 commits/90d. The real display hit — `FIELD_LABELS` (:60-68), rendered verbatim in the CRM import column-mapping picker (`crm-import-mapping.tsx`, `crm-import-fixes.tsx`) — was renamed to "Co-client first/last/email/date of birth" in this task. The 11 residual hits are the lowercase `ALIASES` synonym lexicon ("spouse first", "spouse last name", etc., :97-100) that Product's own rule for this file requires to STAY: an advisor's existing "Spouse"-headed spreadsheet must keep mapping. Same class as `src/lib/extraction/prompts/savings.ts` above. New "co client ..." synonyms were added alongside, not in place of, the old ones.
+  "src/lib/extraction/identify-household.ts", // 133 lines, 2 commits/90d. Only hit is the JSON extraction-schema prompt string sent to the model, `` '{"isHouseholdDoc": ..., "spouse"?: {...}, ...}' `` (:41) — an API/prompt schema key (Bucket C, same protection as the extraction JSON schema generally), not display copy. Framework-free extraction-pipeline file with no UI.
+  "src/lib/extraction/__tests__/classify.test.ts", // 117 lines, 2 commits/90d. Both hits are fixture TEXT simulating a raw SOURCE DOCUMENT's own wording fed to `classifyDocument` ("Spouse Jane, date of birth 1970-01-01." at :77; "Spouse filing jointly" in a simulated Form 1040 excerpt at :103) — content from outside Foundry that a real fact-finder or tax return will say regardless of our vocabulary, the same reasoning that keeps `extraction/prompts/savings.ts` on this list.
+  "src/lib/extraction/__tests__/will-prompt.test.ts", // 74 lines, 0 commits/90d. Only hit is a schema-fixture value, `recipientNameHint: "spouse Jane Doe"` (:37) — simulates what an AI extractor would echo back from a will's own wording, not display copy; the file's own `.toContain("spouse")` assertion (:21) is the bare Bucket C enum word already excluded by the scanner.
+  "src/lib/imports/merge.ts", // 141 lines, 2 commits/90d. The real display hit — `` `Spouse conflict between files: ...` `` (:126, a warning surfaced during multi-file import merge) — was renamed to "Co-client conflict between files: ..." in this task. The 2 residual hits, `` `${family.spouse.firstName} ...}` `` and `` `${payload.spouse.firstName} ...}` `` (:122, :123), are property accesses rendering a real name, never the literal word.
+  "src/lib/imports/commit/accounts.ts", // 368 lines, 7 commits/90d. Only hit is a JSDoc comment, `` `owner: 'client'|'spouse'|'joint'` `` (:111), documenting the extracted owner enum — machine-facing. Verified the file's other advisor-facing warnings (529-beneficiary, holdings-guardrail notes) never mention spouse.
+  "src/lib/imports/commit/family-resolver.ts", // 141 lines, 3 commits/90d. Both hits are JSDoc comments documenting the same `client|spouse|joint` owner enum (:9-24, :45-46) — pure backend account/liability-owner resolution, no display strings anywhere in the file.
+  "src/lib/imports/owner-match.ts", // 180 lines, 4 commits/90d. Only hit is a comment, `` `coarse: "spouse"` `` (:79), documenting the `OwnerResolutionSource` degrade case — machine-facing; the file has no `warnings`/`message` construction at all (grepped).
+  "src/lib/imports/planner/__tests__/fixtures/manifest.ts", // 89 lines, 1 commit/90d. The `label` fields are "Human label[s] for the [`eval:planner`] eval output" (developer CLI tooling, never advisor/client-visible); the 2 `", spouse: "` hits are scanner quote-pairing artifacts spanning `ssBasisByOwner: { client: "...", spouse: "..." }` object literals, same class as `wages.ts` above.
+  "src/lib/imports/planner/__tests__/golden-assertions.test.ts", // 273 lines, 1 commit/90d. The 2 real hits — `d(60, "Spouse retires at 60 per the narrative.")` and `d(60, "Spouse retires early.")` (:178, :186, unasserted test fixtures) — were renamed to "Co-client retires..." in this task. The 4 residual hits are a JSDoc union-type comment (`` `Record<"client"|"spouse", string>` ``) and 3 more `", spouse: "` quote-pairing artifacts on the same `ssBasisByOwner`/`ssRow` object-literal shape as `manifest.ts` above.
 ]);
 
 /** Directory prefixes that are also allowlisted (Bucket C: machine-facing enum documentation). */
@@ -160,27 +177,15 @@ const PENDING = new Set<string>([
   "src/components/balance-sheet-report/__tests__/balance-sheet-report.test.tsx",
   "src/components/balance-sheet-report/__tests__/household-columns.test.ts",
   "src/components/balance-sheet-report/__tests__/view-model.test.ts",
-  "src/components/crm-household-form.tsx",
-  "src/components/crm-import-preview.tsx",
   "src/components/forge/forge-panel.tsx",
   "src/components/household-map/__tests__/goals-board.test.tsx",
   "src/components/household-map/__tests__/household-map-view.test.tsx",
   "src/components/household-map/__tests__/quick-edit-drawer.test.tsx",
-  "src/components/import/__tests__/assumed-chip.test.tsx",
-  "src/components/import/__tests__/plan-basics-step.test.tsx",
   "src/components/import/__tests__/review-step-accounts.test.tsx",
-  "src/components/import/plan-basics-step.tsx",
-  "src/components/import/review-step-family.tsx",
-  "src/components/import/review-step-incomes.tsx",
-  "src/components/import/review-step-insurance.tsx",
-  "src/components/import/review-step-savings.tsx",
-  "src/components/import/review-wizard.tsx",
   "src/components/portal/household-contact-dialog.tsx",
   "src/components/risk-profile-pdf/__tests__/risk-profile-pdf-document.test.tsx",
   "src/db/schema.ts",
-  "src/domain/forge/__tests__/preview.test.ts",
   "src/domain/forge/__tests__/row-lines.test.ts",
-  "src/domain/forge/preview.ts",
   "src/engine/__tests__/_fixtures/estate.ts",
   "src/engine/__tests__/capital-loss-carryforward.test.ts",
   "src/engine/__tests__/contribution-limits.test.ts",
@@ -222,16 +227,9 @@ const PENDING = new Set<string>([
   "src/engine/death-event/__tests__/ird-surviving-spouse.test.ts",
   "src/engine/death-event/__tests__/ird-tax.test.ts",
   "src/engine/death-event/__tests__/life-insurance-integration.test.ts",
-  "src/engine/death-event/__tests__/partition-mixed-account-integration.test.ts",
-  "src/engine/death-event/__tests__/section-2035-integration.test.ts",
   "src/engine/death-event/__tests__/shared.test.ts",
   "src/engine/death-event/__tests__/survivor-recipient-id.test.ts",
   "src/engine/death-event/__tests__/will-residuary.test.ts",
-  "src/engine/death-event/business-succession.ts",
-  "src/engine/death-event/first-death.ts",
-  "src/engine/death-event/inheritance-tax.ts",
-  "src/engine/death-event/section-2035-lookback.ts",
-  "src/engine/death-event/shared.ts",
   "src/engine/family-cashflow.ts",
   "src/engine/monteCarlo/__tests__/summarize.test.ts",
   "src/engine/projection.ts",
@@ -263,11 +261,6 @@ const PENDING = new Set<string>([
   "src/lib/crm/__tests__/sort.test.ts",
   "src/lib/crm/__tests__/sync-household-name.test.ts",
   "src/lib/crm/import/__tests__/rows.test.ts",
-  "src/lib/crm/import/columns.ts",
-  "src/lib/crm/import/rows.ts",
-  "src/lib/extraction/__tests__/classify.test.ts",
-  "src/lib/extraction/__tests__/will-prompt.test.ts",
-  "src/lib/extraction/identify-household.ts",
   "src/lib/household-map/__tests__/build-boards.test.ts",
   "src/lib/household-map/__tests__/columns.test.ts",
   "src/lib/household-map/__tests__/goals.test.ts",
@@ -285,21 +278,11 @@ const PENDING = new Set<string>([
   "src/lib/imports/assemble/__tests__/income-timing.test.ts",
   "src/lib/imports/assemble/__tests__/merge-across-files.test.ts",
   "src/lib/imports/assemble/__tests__/plan-basics.test.ts",
-  "src/lib/imports/assemble/gap-fill.ts",
-  "src/lib/imports/assemble/income-timing.ts",
-  "src/lib/imports/assemble/merge-across-files.ts",
   "src/lib/imports/commit/__tests__/clients-identity.test.ts",
   "src/lib/imports/commit/__tests__/plan-basics.test.ts",
   "src/lib/imports/commit/__tests__/savings.test.ts",
   "src/lib/imports/commit/__tests__/timing.test.ts",
-  "src/lib/imports/commit/accounts.ts",
-  "src/lib/imports/commit/family-resolver.ts",
-  "src/lib/imports/commit/incomes.ts",
-  "src/lib/imports/merge.ts",
-  "src/lib/imports/owner-match.ts",
   "src/lib/imports/planner/__tests__/apply-decisions.test.ts",
-  "src/lib/imports/planner/__tests__/fixtures/manifest.ts",
-  "src/lib/imports/planner/__tests__/golden-assertions.test.ts",
   "src/lib/inline-edit/__tests__/owner-presets.test.ts",
   "src/lib/inline-edit/__tests__/scenario-fields.test.ts",
   "src/lib/inline-edit/scenario-fields.ts",
@@ -308,9 +291,6 @@ const PENDING = new Set<string>([
   "src/lib/insurance-policies/__tests__/schedule-years.test.ts",
   "src/lib/intake/__tests__/diff.test.ts",
   "src/lib/life-insurance/__tests__/need-over-time.test.ts",
-  "src/lib/observations/draft.ts",
-  "src/lib/plan-text/observation-library.ts",
-  "src/lib/plan-text/tokens.ts",
   "src/lib/portal/__tests__/greeting-name.test.ts",
   "src/lib/portal/__tests__/load-organizer-map.test.ts",
   "src/lib/portal/__tests__/load-profile-data.test.ts",

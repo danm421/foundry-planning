@@ -65,7 +65,7 @@ describe("AssumedChip", () => {
           value: 2049,
           provenance: "derived",
           reason:
-            "Ends at the spouse's retirement. The document stated age 95, which appears to be a data-entry error.",
+            "Ends at the Co-client's retirement. The document stated age 95, which appears to be a data-entry error.",
         }}
       />,
     );

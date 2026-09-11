@@ -69,18 +69,18 @@ describe("PlanBasicsStep", () => {
     expect(screen.queryByLabelText(/annual social security benefit/i)).not.toBeInTheDocument();
   });
 
-  it("hides spouse fields for a single filer", () => {
+  it("hides Co-client fields for a single filer", () => {
     render(<PlanBasicsStep value={basics()} hasSpouse={false} onChange={vi.fn()} />);
-    expect(screen.queryByLabelText(/spouse retirement age/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/co-client retirement age/i)).not.toBeInTheDocument();
   });
 
-  it("shows spouse fields for a married household", () => {
+  it("shows Co-client fields for a married household", () => {
     const v = basics({
       spouseRetirementAge: { value: 65, provenance: "build_request" },
       spouseLifeExpectancy: { value: 92, provenance: "build_request" },
     });
     render(<PlanBasicsStep value={v} hasSpouse onChange={vi.fn()} />);
-    expect(screen.getByLabelText(/spouse retirement age/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/co-client retirement age/i)).toBeInTheDocument();
   });
 
   it("renders a blank field as empty rather than as zero", () => {
@@ -95,12 +95,12 @@ describe("PlanBasicsStep", () => {
     expect(screen.queryAllByTestId("assumed-chip").length).toBe(0);
   });
 
-  it("gives a married household with fully-absent planBasics an empty, editable spouse retirement age field", () => {
+  it("gives a married household with fully-absent planBasics an empty, editable Co-client retirement age field", () => {
     // emptyPlanBasics() leaves spouseRetirementAge/spouseLifeExpectancy
     // undefined (not blank) — a married household must still get an
     // editable field, not an absent one.
     render(<PlanBasicsStep value={emptyPlanBasics()} hasSpouse onChange={vi.fn()} />);
-    const input = screen.getByLabelText(/spouse retirement age/i) as HTMLInputElement;
+    const input = screen.getByLabelText(/co-client retirement age/i) as HTMLInputElement;
     expect(input.value).toBe("");
     fireEvent.change(input, { target: { value: "66" } });
   });

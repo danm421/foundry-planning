@@ -294,7 +294,7 @@ export function mergeAcrossFiles(
     const family = result.extracted.family;
     if (family) {
       payload.primary = mergeFamilyMember(payload.primary, family.primary, "Primary client", payload.warnings);
-      payload.spouse = mergeFamilyMember(payload.spouse, family.spouse, "Spouse", payload.warnings);
+      payload.spouse = mergeFamilyMember(payload.spouse, family.spouse, "Co-client", payload.warnings);
       for (const dep of family.dependents ?? []) {
         dependentRows.push({ content: dep, provenance: provenanceFor("family") });
       }

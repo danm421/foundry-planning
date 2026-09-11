@@ -112,7 +112,7 @@ function resolveFilingStatus(
     assumptions.push({
       field: "client.filingStatus",
       value,
-      reason: "No filing status found in source documents; defaulted to married filing jointly because a spouse is present.",
+      reason: "No filing status found in source documents; defaulted to married filing jointly because a Co-client is present.",
     });
     return value;
   }
@@ -121,7 +121,7 @@ function resolveFilingStatus(
   assumptions.push({
     field: "client.filingStatus",
     value,
-    reason: "No filing status found in source documents and no spouse present; defaulted to single.",
+    reason: "No filing status found in source documents and no Co-client present; defaulted to single.",
   });
   return value;
 }

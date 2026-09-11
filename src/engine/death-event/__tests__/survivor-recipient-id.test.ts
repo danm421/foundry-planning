@@ -64,7 +64,7 @@ function willToSpouse(grantor: "client" | "spouse", accountId: string): Will {
     bequests: [
       {
         id: "beq-1",
-        name: "Specific to spouse",
+        name: "Specific to Co-client",
         kind: "asset",
         assetMode: "specific",
         accountId,

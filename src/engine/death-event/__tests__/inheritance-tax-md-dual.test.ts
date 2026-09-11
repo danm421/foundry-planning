@@ -108,7 +108,7 @@ describe("MD dual estate + inheritance interaction — helper", () => {
           amount: 2_000_000,
           recipientKind: "spouse",
           recipientId: null,
-          recipientLabel: "Spouse",
+          recipientLabel: "Co-client",
         }),
       ],
       accounts: [],
