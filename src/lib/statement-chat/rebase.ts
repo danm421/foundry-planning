@@ -43,6 +43,70 @@ export interface RebaseOverride {
 }
 
 /**
+ * One standing row the rebase REFUSED to carry forward, because the fresh row
+ * now holding its `__rowId` is not plausibly the same account (final review
+ * #2, C-1). The advisor's work on that row is not applied — so they are told,
+ * rather than the swap happening behind their back.
+ */
+export interface RebaseRefusal {
+  __rowId: string;
+  /** The STANDING row's name — the label the advisor has been looking at. */
+  name: string;
+  /** The FRESH row that now holds that id. A different account. */
+  freshName: string;
+}
+
+/**
+ * Could these two rows, which share a `__rowId`, be the same account?
+ *
+ * WHY A GUARD AT ALL. `__rowId` is minted by `mergeAcrossFiles` from the
+ * dedupe key plus the entry's source coordinate. Uploading another statement
+ * re-runs that merge over a changed file set, and an id minted in the
+ * previous run is not, on its own, proof that the row answering to it now is
+ * the row that answered to it then. When it isn't, the join overwrote a real
+ * account with a different one's figures and emitted the displaced account as
+ * a second, uncommitted copy: one account silently gone, another duplicated.
+ *
+ * WHY `__provenance.sourceFileId` AND NOTHING ELSE. This was measured, not
+ * picked:
+ *
+ *  - `custodian`, `accountNumberLast4`, `name`, `value`, `basis`, `owner`,
+ *    `category`, `subType` are the EIGHT entries of `EDITABLE_ACCOUNT_FIELDS`
+ *    (`tools.ts`). An `edit_row` correction changes the STANDING row and
+ *    never the freshly-extracted one, so any of them in a fingerprint refuses
+ *    a legitimate join the moment the advisor corrects the field — silently
+ *    discarding the very correction the rebase exists to preserve. That trades
+ *    C-1 for a new defect in the same family.
+ *  - `accountNumberLast4` is worse than merely risky: for a keyed account row
+ *    the dedupe key IS the last-4, and the key is already a segment of the id
+ *    both sides matched on. So comparing it adds ZERO discrimination on the
+ *    fresh side while adding the full false-rejection risk on the standing
+ *    side.
+ *  - `__provenance` is not on `EDITABLE_ACCOUNT_FIELDS`, and `edit_row`'s
+ *    allowlist rejects it by name. `merge_rows` keeps the SURVIVOR's own
+ *    provenance (`unionAccountFields` skips every annotation key), so a merge
+ *    cannot move it either. Its `section` is a constant here and `pageRange`
+ *    is optional, so `sourceFileId` is the whole of the usable signal.
+ *
+ * WHAT IT COSTS. A merged entry's provenance tracks the entity's minimum
+ * coordinate, exactly as its `__rowId` now does — so for rows this merge
+ * produced the two agree by construction and this test cannot fire on a
+ * correct join. It fires on an id minted under a DIFFERENT derivation (an
+ * import still in review from before the coordinate ordinal landed) and on
+ * any future drift that decouples the two. Defence in depth, deliberately.
+ *
+ * A MISSING side is not evidence of anything, so it adopts — the direction
+ * that preserves the advisor's work, and the one every row in this module's
+ * older tests relies on.
+ */
+function plausiblySameAccount(standing: AccountRow, fresh: AccountRow): boolean {
+  const standingFile = standing.__provenance?.sourceFileId;
+  const freshFile = fresh.__provenance?.sourceFileId;
+  if (standingFile === undefined || freshFile === undefined) return true;
+  return standingFile === freshFile;
+}
+
+/**
  * Review round 1, Important 1 (and Ruling 83's own follow-up correction):
  * merge a set of mutated rows onto the FRESH read `by __rowId`, rather than
  * replacing the array wholesale with a snapshot computed from a STALE read.
@@ -125,6 +189,11 @@ export function mergeAccountsByRowId(
  * advisor's back is the worse of the two failures — the whole point of I1 is
  * that a correction must not evaporate.
  *
+ * Final review #2, C-1: a standing row only wins its counterpart's slot when
+ * the two are plausibly the same account (`plausiblySameAccount`). One that
+ * is refused comes out in `refusals` instead of being applied, so a recycled
+ * id can no longer overwrite a different account behind the advisor's back.
+ *
  * Ruling 117: that is still the behaviour, but it is NO LONGER SILENT. Every
  * row whose figure was held back comes out in `overrides`, so the narrator
  * can name both figures and the advisor can decide. This used to be written
@@ -138,15 +207,42 @@ export function mergeAccountsByRowId(
 export function rebaseOntoFreshMerge(
   freshMerged: AccountRow[],
   standing: AccountRow[],
-): { rows: AccountRow[]; overrides: RebaseOverride[] } {
-  const rows = mergeAccountsByRowId(freshMerged, [], standing);
+): { rows: AccountRow[]; overrides: RebaseOverride[]; refusals: RebaseRefusal[] } {
+  const freshByRowId = new Map(
+    freshMerged.filter((r) => r.__rowId).map((r) => [r.__rowId as string, r]),
+  );
 
-  // Computed HERE, against `standing` and `freshMerged` directly, rather than
+  // Ruling 146: the guard runs HERE, at the rebase boundary, and NOT inside
+  // `mergeAccountsByRowId`. That function is shared with the turn route,
+  // where both arrays come from the SAME extraction — no id can have been
+  // recycled there, `__rowId` is a valid identity, and that path has no
+  // defect to fix. It must not absorb this one's risk.
+  const refusals: RebaseRefusal[] = [];
+  for (const held of standing) {
+    const id = held.__rowId;
+    if (!id) continue;
+    const fresh = freshByRowId.get(id);
+    // No counterpart at all is not a refusal — the row simply is not in this
+    // extraction any more, which the docstring above already covers.
+    if (!fresh) continue;
+    if (plausiblySameAccount(held, fresh)) continue;
+    refusals.push({ __rowId: id, name: held.name, freshName: fresh.name });
+  }
+
+  // A refused row is withheld from the CHANGED set, so the fresh row keeps
+  // its own slot untouched. It is never appended alongside: putting it back
+  // would be the duplicate half of the same failure.
+  const refused = new Set(refusals.map((r) => r.__rowId));
+  const adopted = standing.filter((r) => !(r.__rowId && refused.has(r.__rowId)));
+  const rows = mergeAccountsByRowId(freshMerged, [], adopted);
+
+  // Computed HERE, against the ADOPTED standing rows and `freshMerged`
+  // directly, rather than
   // inside `mergeAccountsByRowId` — that function is the shared mechanism the
   // turn route also depends on, where "changed" means reference inequality
   // against a real start snapshot and carries no figure to report.
   const standingByRowId = new Map(
-    standing.filter((r) => r.__rowId).map((r) => [r.__rowId as string, r]),
+    adopted.filter((r) => r.__rowId).map((r) => [r.__rowId as string, r]),
   );
 
   const overrides: RebaseOverride[] = [];
@@ -179,5 +275,5 @@ export function rebaseOntoFreshMerge(
     });
   }
 
-  return { rows, overrides };
+  return { rows, overrides, refusals };
 }

@@ -9,6 +9,11 @@ function row(rowId: string, name: string, value: number | undefined): Row {
   return { __rowId: rowId, name, value } as Row;
 }
 
+/** A row carrying the `__provenance` the merge actually stamps on it. */
+function sourced(rowId: string, name: string, value: number, sourceFileId: string, rest: Partial<Row> = {}): Row {
+  return { __rowId: rowId, name, value, __provenance: { sourceFileId, section: "accounts" }, ...rest } as Row;
+}
+
 /**
  * Ruling 117. The advisor's standing row still WINS a re-extraction — that
  * behaviour is unchanged and deliberately so — but the override is no longer
@@ -117,6 +122,137 @@ describe("rebaseOntoFreshMerge", () => {
     ]);
   });
 
+  /**
+   * Final review #2, C-1 / Ruling 146 — the join guard, at the REBASE
+   * boundary.
+   *
+   * Uploading another statement re-runs the whole merge, and a bucket that
+   * holds two entries can hand a row id that used to name account P to
+   * account Q. The join was `__rowId` and nothing else, so the advisor's
+   * standing P row was adopted onto Q's slot: Q silently gone, P duplicated,
+   * $403,800 on screen against a truth of $289,900, and a caveat quoting a
+   * figure no statement reported about P.
+   *
+   * The fingerprint is `__provenance.sourceFileId` — see the docstring on
+   * `plausiblySameAccount` for why every OTHER candidate is either editable
+   * (so it would reject a legitimate join and silently discard the advisor's
+   * edit — the same family of defect) or already pinned by the id itself.
+   *
+   * Mutation this catches: deleting the guard. The rows come back as
+   * ["Fidelity Roth IRA", "Fidelity Roth IRA"], "Schwab Brokerage" vanishes,
+   * and `overrides` gains the fabricated $88,000 caveat.
+   */
+  it("refuses to adopt a standing row onto a fresh row from a different source file", () => {
+    const EXISTING = "9c3f1a02-4f7b-4c0e-9a11-2d5b8e7f6a31";
+    const ADDED = "0b7e4d19-8a2c-4f31-b6d0-1e9c3a5f2b84";
+
+    // What the fresh merge produced after the new upload renumbered the
+    // bucket: the newly-arrived Schwab account now holds `#0`.
+    const fresh = [
+      sourced("account:7734#0", "Schwab Brokerage", 88_000, ADDED, {
+        custodian: "Schwab", accountNumberLast4: "7734",
+      }),
+      sourced("account:7734#1", "Fidelity Roth IRA", 201_900, EXISTING, {
+        custodian: "Fidelity", accountNumberLast4: "7734",
+      }),
+    ];
+    // What the advisor has been working on: the Fidelity row, committed.
+    const standing = [
+      sourced("account:7734#0", "Fidelity Roth IRA", 201_900, EXISTING, {
+        custodian: "Fidelity",
+        accountNumberLast4: "7734",
+        match: { kind: "exact", existingId: "acct-1" },
+      }),
+    ];
+
+    const { rows, overrides, refusals } = rebaseOntoFreshMerge(fresh, standing);
+
+    // Both real accounts are on screen, once each, at their own figures.
+    expect(rows.map((r) => r.name)).toEqual(["Schwab Brokerage", "Fidelity Roth IRA"]);
+    expect(rows.reduce((sum, r) => sum + (r.value ?? 0), 0)).toBe(289_900);
+    // No caveat naming a figure against the wrong account.
+    expect(overrides).toEqual([]);
+    // The advisor is TOLD, rather than the swap happening silently.
+    expect(refusals).toEqual([
+      { __rowId: "account:7734#0", name: "Fidelity Roth IRA", freshName: "Schwab Brokerage" },
+    ]);
+  });
+
+  /**
+   * The measurement behind the fingerprint choice, pinned as a test.
+   *
+   * `custodian` and `accountNumberLast4` are both on `EDITABLE_ACCOUNT_FIELDS`
+   * (`tools.ts`), so an advisor correcting a misread institution or a misread
+   * masked number legitimately makes the standing row disagree with the fresh
+   * one on both. A fingerprint built from either would refuse THIS join and
+   * throw the correction away — trading C-1 for a new defect in the same
+   * family. `__provenance` is not on that list, and `edit_row` rejects it
+   * explicitly.
+   *
+   * Every editable field is mutated at once, deliberately: the guard must key
+   * off none of them.
+   *
+   * Mutation this catches: fingerprinting on `custodian` and/or
+   * `accountNumberLast4` — the edited row is refused and the advisor's
+   * corrections vanish from the table.
+   */
+  it("still adopts a standing row the advisor edited on EVERY editable field", () => {
+    const FILE = "9c3f1a02-4f7b-4c0e-9a11-2d5b8e7f6a31";
+    const fresh = [
+      sourced("account:7734#0", "Roth IRA", 190_000, FILE, {
+        custodian: "Fidelty Investments",
+        accountNumberLast4: "7734",
+        owner: "client",
+        category: "retirement",
+        subType: "roth_ira",
+        basis: 50_000,
+      }),
+    ];
+    const standing = [
+      sourced("account:7734#0", "Julia — Roth (rollover)", 201_900, FILE, {
+        custodian: "Charles Schwab",
+        accountNumberLast4: "0042",
+        owner: "spouse",
+        category: "taxable",
+        subType: "brokerage",
+        basis: 61_000,
+      }),
+    ];
+
+    const { rows, refusals } = rebaseOntoFreshMerge(fresh, standing);
+
+    expect(refusals).toEqual([]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      name: "Julia — Roth (rollover)",
+      value: 201_900,
+      custodian: "Charles Schwab",
+      accountNumberLast4: "0042",
+      owner: "spouse",
+    });
+  });
+
+  /**
+   * No evidence never blocks. A row with no `__provenance` on either side
+   * gives the guard nothing to compare, and the direction that costs money
+   * here is refusing a join the advisor's work depends on — so an absent
+   * fingerprint adopts, exactly as it did before the guard existed.
+   *
+   * Mutation this catches: comparing the two `sourceFileId`s without the
+   * missing-side clause, which turns every legacy row (and every row the
+   * merge's `concatSection` path emits) into a silent refusal.
+   */
+  it("adopts when either side carries no __provenance to compare", () => {
+    const FILE = "9c3f1a02-4f7b-4c0e-9a11-2d5b8e7f6a31";
+    const a = rebaseOntoFreshMerge([sourced("account:1", "IRA", 1, FILE)], [row("account:1", "IRA", 2)]);
+    expect(a.refusals).toEqual([]);
+    expect(a.rows.map((r) => r.value)).toEqual([2]);
+
+    const b = rebaseOntoFreshMerge([row("account:1", "IRA", 1)], [sourced("account:1", "IRA", 2, FILE)]);
+    expect(b.refusals).toEqual([]);
+    expect(b.rows.map((r) => r.value)).toEqual([2]);
+  });
+
   // A row with no `__rowId` cannot be matched to anything, in either
   // direction — it must not produce a phantom override.
   it("ignores rows carrying no __rowId", () => {
@@ -153,5 +289,32 @@ describe("mergeAccountsByRowId (unchanged by Ruling 117)", () => {
     const start = [row("account:1", "IRA", 100), row("account:2", "Dropped", 5)];
     const merged = mergeAccountsByRowId(start, start, [start[0]]);
     expect(merged.map((r) => r.name)).toEqual(["IRA"]);
+  });
+
+  /**
+   * Ruling 146. C-1's join guard belongs at the REBASE boundary, not here.
+   *
+   * Both of this function's arrays come from the SAME extraction on the turn
+   * path (`chat/turn/route.ts`), so no id can have been recycled and
+   * `__rowId` IS a valid identity there. Pushing the guard down into the
+   * shared mechanism would make the turn path — which has no defect — start
+   * refusing its own writes the moment a tool hands back a row whose
+   * provenance differs from the fresh read's.
+   *
+   * Mutation this catches: moving the `plausiblySameAccount` test out of
+   * `rebaseOntoFreshMerge` and into `mergeAccountsByRowId`. The edit below
+   * stops landing and `value` falls back to 100.
+   */
+  it("adopts a changed row regardless of provenance — the guard is NOT here", () => {
+    const fresh = [
+      { __rowId: "account:1", name: "IRA", value: 100, __provenance: { sourceFileId: "file-a", section: "accounts" } } as Row,
+    ];
+    const start = [
+      { __rowId: "account:1", name: "IRA", value: 100, __provenance: { sourceFileId: "file-b", section: "accounts" } } as Row,
+    ];
+    const changed = [
+      { __rowId: "account:1", name: "IRA", value: 999, __provenance: { sourceFileId: "file-b", section: "accounts" } } as Row,
+    ];
+    expect(mergeAccountsByRowId(fresh, start, changed).map((r) => r.value)).toEqual([999]);
   });
 });

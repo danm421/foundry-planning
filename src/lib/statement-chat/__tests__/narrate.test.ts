@@ -390,6 +390,37 @@ describe("narrate", () => {
       );
     });
 
+    /**
+     * Final review #2, C-1. When the rebase REFUSES to carry a standing row
+     * forward, nothing is overwritten — but nothing is applied either, and a
+     * silent non-application reads as a dead button. The caveat names both
+     * the label the advisor has been looking at and the account that now
+     * holds that row, and says what to do about it.
+     *
+     * Mutation this catches: dropping the `refusals` loop from `narrate`
+     * (the guard would then refuse silently, which is half the defect it
+     * exists to close).
+     */
+    it("names both accounts when the rebase refuses to carry a row forward", () => {
+      const { caveats } = narrate({
+        fileCount: 2,
+        decisions: [],
+        rows: [{ name: "Schwab Brokerage", value: 88_000 }] as never,
+        refusals: [
+          {
+            __rowId: "account:7734#0",
+            name: "Fidelity Roth IRA",
+            freshName: "Schwab Brokerage",
+          },
+        ],
+      });
+      expect(caveats).toEqual([
+        'Your changes to "Fidelity Roth IRA" were not carried onto the re-read statements: ' +
+          'after the new upload that row\'s place is held by a different account, ' +
+          '"Schwab Brokerage". Nothing was overwritten — re-apply the change on the row you want.',
+      ]);
+    });
+
     it("stays silent when there are no overrides", () => {
       const { caveats } = narrate({
         fileCount: 1,

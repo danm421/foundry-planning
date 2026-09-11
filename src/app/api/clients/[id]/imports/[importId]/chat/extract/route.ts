@@ -318,10 +318,11 @@ export async function POST(request: Request, { params }: Params) {
             .map((x) => x.row?.__rowId)
             .filter((rowId): rowId is string => typeof rowId === "string"),
         );
-        const { rows: rebasedAll, overrides: allOverrides } = rebaseOntoFreshMerge(
-          kept,
-          priorAccounts,
-        );
+        const {
+          rows: rebasedAll,
+          overrides: allOverrides,
+          refusals: allRefusals,
+        } = rebaseOntoFreshMerge(kept, priorAccounts);
         const rebasedAccounts = rebasedAll.filter(
           (row) => !(row.__rowId && chatExcludedIds.has(row.__rowId)),
         );
@@ -332,6 +333,10 @@ export async function POST(request: Request, { params }: Params) {
         // not on screen is the same failure as a caveat naming a figure that
         // is not on screen.
         const rebaseOverrides = allOverrides.filter((o) => !chatExcludedIds.has(o.__rowId));
+        // Final review #2, C-1. Same subtraction, same reason: a refusal
+        // about a row the advisor already dropped in the chat is a caveat
+        // about a row that is not on screen.
+        const rebaseRefusals = allRefusals.filter((r) => !chatExcludedIds.has(r.__rowId));
         // The advisor's own exclusions are kept first and win on id — a
         // `merge_rows` entry carries `irreversible: true`, which this run's
         // freshly-detected rollup entry for the same row would not. Fresh
@@ -351,6 +356,7 @@ export async function POST(request: Request, { params }: Params) {
           decisions,
           rows: rebasedAccounts,
           overrides: rebaseOverrides,
+          refusals: rebaseRefusals,
         });
 
         // Ruling 89 (Step 0) / Ruling 101 (fix round 2): persist

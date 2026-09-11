@@ -1,7 +1,7 @@
 import type { ExtractedAccount } from "@/lib/extraction/types";
 import type { Annotated } from "@/lib/imports/types";
 import type { MergeDecision } from "@/lib/imports/assemble/decisions";
-import type { RebaseOverride } from "./rebase";
+import type { RebaseOverride, RebaseRefusal } from "./rebase";
 
 /**
  * Deterministic narration of what a statement import found. Every sentence
@@ -132,6 +132,26 @@ function rebaseOverrideCaveat(o: RebaseOverride): string {
 }
 
 /**
+ * Final review #2, C-1. The rebase refused to carry a standing row forward
+ * because the row now holding its handle is a different account. Nothing was
+ * overwritten — which is the whole point — but the advisor's work on that row
+ * was not applied either, and a silent non-application is indistinguishable
+ * from a dead button.
+ *
+ * Both names are printed: the label the advisor has been looking at, and the
+ * account that now occupies that row. It closes with what to DO, the same
+ * shape `rebaseOverrideCaveat` uses, because re-applying the change on the
+ * right row is the only way forward.
+ */
+function rebaseRefusalCaveat(r: RebaseRefusal): string {
+  return (
+    `Your changes to "${r.name}" were not carried onto the re-read statements: after the new ` +
+    `upload that row's place is held by a different account, "${r.freshName}". Nothing was ` +
+    `overwritten — re-apply the change on the row you want.`
+  );
+}
+
+/**
  * True when this `value-conflict` decision is describing a merge result the
  * rebase then threw away — its headline figure (`kept`) is not on the table,
  * so `valueConflictCaveat` would print "is recorded at $130,000" directly
@@ -210,8 +230,14 @@ export function narrate(input: {
    * the caller would be threading a permanent `[]` through.
    */
   overrides?: RebaseOverride[];
+  /**
+   * Standing rows the rebase REFUSED to carry forward (final review #2,
+   * C-1). Optional and defaulted for the same reason as `overrides`: only a
+   * re-extraction can produce any.
+   */
+  refusals?: RebaseRefusal[];
 }): Narration {
-  const { fileCount, decisions, rows, overrides = [] } = input;
+  const { fileCount, decisions, rows, overrides = [], refusals = [] } = input;
 
   const sentences: string[] = [
     `Read ${fileCount} ${plural(fileCount, "statement", "statements")} covering ${rows.length} ${plural(rows.length, "account", "accounts")}.`,
@@ -244,6 +270,7 @@ export function narrate(input: {
   }
 
   for (const o of overrides) caveats.push(rebaseOverrideCaveat(o));
+  for (const r of refusals) caveats.push(rebaseRefusalCaveat(r));
 
   const retirementCaveat = retirementBasisCaveat(rows);
   if (retirementCaveat) caveats.push(retirementCaveat);
