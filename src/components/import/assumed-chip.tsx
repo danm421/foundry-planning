@@ -10,6 +10,20 @@ export interface ChipAssumption extends AssembleAssumption {
 interface AssumedChipProps {
   /** The assumption for this field, or undefined/null when the value was extracted (renders nothing). */
   assumption?: ChipAssumption;
+  /**
+   * Whether the pill carries its `FieldTooltip`. Defaults to `true`, which is
+   * every existing call-site's behaviour unchanged.
+   *
+   * Pass `false` where the chip renders INSIDE another interactive control:
+   * the tooltip is a `<button>`, and a button inside a button is nested
+   * interactive content (WCAG 4.1.2) whose inner click also bubbles to the
+   * outer one. The statement-chat Owner cell is that case — making it
+   * click-to-edit wraps its whole display in a button — and it shows the
+   * reason in its own editor instead. Suppressing the tooltip, NOT the pill:
+   * the pill is the at-a-glance "this value is a guess" signal, which an
+   * editable cell needs more, not less.
+   */
+  withTooltip?: boolean;
 }
 
 /**
@@ -22,7 +36,7 @@ interface AssumedChipProps {
  * visually distinct (crit, not warn) treatment: it needs more advisor
  * scrutiny than an ordinary derived default.
  */
-export default function AssumedChip({ assumption }: AssumedChipProps) {
+export default function AssumedChip({ assumption, withTooltip = true }: AssumedChipProps) {
   if (!assumption) return null;
 
   const isEstimated = assumption.provenance === "estimated";
@@ -41,7 +55,7 @@ export default function AssumedChip({ assumption }: AssumedChipProps) {
       className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 text-xs font-medium ${toneClasses}`}
     >
       {label}
-      <FieldTooltip text={tooltipText} />
+      {withTooltip ? <FieldTooltip text={tooltipText} /> : null}
     </span>
   );
 }

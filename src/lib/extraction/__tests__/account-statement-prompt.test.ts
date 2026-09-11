@@ -29,7 +29,7 @@ describe("ACCOUNT_STATEMENT_PROMPT", () => {
     expect(ACCOUNT_STATEMENT_PROMPT).toContain("annuity");
     expect(ACCOUNT_STATEMENT_PROMPT).toContain("lifePolicies");
     expect(ACCOUNT_STATEMENT_PROMPT).toContain("cashValue");
-    expect(ACCOUNT_STATEMENT_VERSION).toBe("2026-08-24.1-529-beneficiary");
+    expect(ACCOUNT_STATEMENT_VERSION).toBe("2026-09-09.1-statement-date");
   });
 
   it("instructs a short account-TYPE name with no custodian, not the registration header", () => {
@@ -169,6 +169,29 @@ describe("account-statement prompt — education_savings", () => {
 
   it("forbids inventing the second person when only one is printed", () => {
     expect(prompt).toMatch(/do not guess the second name/i);
+  });
+});
+
+describe("account statement prompt — statement date", () => {
+  it("asks for the period-end / as-of date in ISO form", () => {
+    const prompt = buildAccountStatementPrompt(false);
+    expect(prompt).toContain("statementDate");
+    expect(prompt).toMatch(/YYYY-MM-DD/);
+    expect(prompt.toLowerCase()).toMatch(/period end|as of|as-of/);
+  });
+
+  it("tells the model to omit the date rather than guess", () => {
+    const prompt = buildAccountStatementPrompt(false);
+    // Anchored on statementDate specifically — a bare "do not guess"/"never
+    // guess" match would also be satisfied by unrelated pre-existing rules
+    // (e.g. the custodian rule's "never guess or infer one"), which would
+    // pass without this task's instruction ever having been written.
+    expect(prompt).toMatch(/OMIT "statementDate" entirely/);
+    expect(prompt.toLowerCase()).toMatch(/never guess it/);
+  });
+
+  it("carries a version that postdates the date change", () => {
+    expect(ACCOUNT_STATEMENT_VERSION).toContain("statement-date");
   });
 });
 

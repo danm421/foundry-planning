@@ -17,7 +17,7 @@ interface ModePickerClientProps {
   defaultScenarioId: string | null;
 }
 
-type Mode = "onboarding" | "updating";
+type Mode = "onboarding" | "updating" | "chat";
 
 export default function ModePickerClient({
   clientId,
@@ -43,14 +43,21 @@ export default function ModePickerClient({
       return;
     }
 
+    // The chat card is not a new `import_mode` enum value (no migration for
+    // this plan) — it maps onto the two modes the DB already knows, picking
+    // "updating" only if a scenario happens to already be selected.
+    const apiMode: "onboarding" | "updating" =
+      mode === "chat" ? (scenarioId ? "updating" : "onboarding") : mode;
+
     setIsSubmitting(true);
     try {
       const res = await fetch(`/api/clients/${clientId}/imports`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          mode,
-          scenarioId: mode === "updating" ? scenarioId : null,
+          mode: apiMode,
+          scenarioId: apiMode === "updating" ? scenarioId : null,
+          ...(mode === "chat" ? { surface: "chat" } : {}),
         }),
       });
       if (!res.ok) {
@@ -61,7 +68,9 @@ export default function ModePickerClient({
         import: { id: string };
       };
       router.push(
-        `/clients/${clientId}/details/import/${imp.id}`,
+        mode === "chat"
+          ? `/clients/${clientId}/details/import/${imp.id}/chat`
+          : `/clients/${clientId}/details/import/${imp.id}`,
       );
     } catch (err) {
       setIsSubmitting(false);
@@ -107,6 +116,13 @@ export default function ModePickerClient({
                 disabledReason={
                   updatingDisabled ? "No scenarios exist for this client yet." : undefined
                 }
+              />
+              <ModeOption
+                value="chat"
+                checked={mode === "chat"}
+                onChange={() => setMode("chat")}
+                title="Statement chat"
+                description="Drop account statements and review them as one table. Ask follow-up questions before committing."
               />
             </fieldset>
 
