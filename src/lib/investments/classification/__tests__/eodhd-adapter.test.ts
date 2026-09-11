@@ -139,3 +139,114 @@ describe("category-first + sentinel guard", () => {
     expect(deriveAssetClassBlend(input)).toEqual([{ slug: "commodities", weight: 1 }]);
   });
 });
+
+// ── Mutual-fund payload shape ────────────────────────────────────────────────
+// EODHD returns a COMPLETELY different shape for `MutualFund_Data` than for
+// `ETF_Data`: every field we read is renamed or re-nested. Verbatim excerpt of
+// the live SWPPX.US response (2026-09-10), trimmed to the fields we map.
+const MF_FIXTURE = {
+  General: {
+    Name: "Schwab S&P 500 Index Fund", Type: "FUND", Code: "SWPPX",
+    Category: null,                 // ← the ETF field is ALWAYS null on a fund
+    Fund_Category: "Large Blend",   // ← the category actually lives here
+  },
+  MutualFund_Data: {
+    Fund_Category: "Large Blend",
+    // Index-keyed array, `Type` names the bucket, `Net_%` not `Net_Assets_%`.
+    Asset_Allocation: {
+      "0": { Type: "Cash",           "Net_%": "0.34719" },
+      "1": { Type: "Not Classified", "Net_%": "0.0" },
+      "2": { Type: "Non US Stock",   "Net_%": "0.49740" },
+      "3": { Type: "Other",          "Net_%": "0.00000" },
+      "4": { Type: "US Stock",       "Net_%": "99.15541" },
+      "5": { Type: "Bond",           "Net_%": "0.00000" },
+    },
+    // American spelling, index-keyed, `Size` names the tier, and the tiers
+    // differ: Giant/Large where the ETF shape says Mega/Big. Row 0 is an
+    // absolute dollar average, NOT a percentage — it must not be read as one.
+    Market_Capitalization: {
+      "0": { Size: "AverageMarketCap", "Portfolio_%": 496152.8348 },
+      "1": { Size: "Giant",  "Portfolio_%": 44.94899 },
+      "2": { Size: "Large",  "Portfolio_%": 34.88219 },
+      "3": { Size: "Medium", "Portfolio_%": 18.73538 },
+      "4": { Size: "Small",  "Portfolio_%": 1.08626 },
+      "5": { Size: "Micro",  "Portfolio_%": 0 },
+    },
+    // Grouped by continent, then index-keyed; `Stocks_%` not `Equity_%`.
+    World_Regions: {
+      Americas: {
+        "0": { Name: "North America", "Stocks_%": 99.501 },
+        "1": { Name: "Latin America", "Stocks_%": 0.065 },
+      },
+      "Greater Asia": {
+        "0": { Name: "Japan", "Stocks_%": 0 },
+        "3": { Name: "Asia Emerging", "Stocks_%": 0.093 },
+      },
+      "Greater Europe": {
+        "0": { Name: "United Kingdom", "Stocks_%": 0.03222 },
+        "2": { Name: "Europe Emerging", "Stocks_%": 0 },
+      },
+    },
+    // Grouped by super-sector, then index-keyed; `Amount_%` not `Equity_%`.
+    Sector_Weights: {
+      Cyclical: {
+        "0": { Name: "Basic Materials", "Amount_%": 1.61913 },
+        "3": { Name: "Real Estate", "Amount_%": 1.88518 },
+      },
+      Defensive: { "1": { Name: "Healthcare", "Amount_%": 9.09901 } },
+    },
+  },
+};
+
+describe("mapEodhdToInput — mutual fund payload shape", () => {
+  it("reads the category from General.Fund_Category when General.Category is null", () => {
+    // Regression: reading only General.Category made EVERY fund uncategorised.
+    const input = mapEodhdToInput("SWPPX", MF_FIXTURE);
+    expect(input.securityType).toBe("mutual_fund");
+    // "Large Blend" is a Tier-3 category → falls through to the allocation.
+    expect(input.definitiveSlug).toBeUndefined();
+  });
+
+  it("maps the index-keyed Asset_Allocation via its Type field", () => {
+    const input = mapEodhdToInput("SWPPX", MF_FIXTURE);
+    expect(input.assetAllocation).toEqual({
+      stockUS: 99.15541, stockNonUS: 0.4974, bond: 0, cash: 0.34719, other: 0,
+    });
+  });
+
+  it("maps Market_Capitalization tiers, ignoring the AverageMarketCap dollar row", () => {
+    const input = mapEodhdToInput("SWPPX", MF_FIXTURE);
+    expect(input.marketCapTiers).toEqual({
+      mega: 44.94899, big: 34.88219, medium: 18.73538, small: 1.08626, micro: 0,
+    });
+  });
+
+  it("flattens the grouped World_Regions and Sector_Weights", () => {
+    const input = mapEodhdToInput("SWPPX", MF_FIXTURE);
+    expect(input.realEstatePctOfEquity).toBeCloseTo(1.88518, 4);
+    // Non-US equity = 0.065 + 0.093 + 0.03222 + 0 ≈ 0.19; emerging = 0.065 + 0.093.
+    expect(input.emergingPctOfNonUS).toBeGreaterThan(70);
+    expect(input.emergingPctOfNonUS).toBeLessThanOrEqual(100);
+  });
+
+  it("derives a real US-equity blend, NOT 100% inflation", () => {
+    // The bug this guards: an unreadable payload mapped to all-zeros and
+    // derived as a confident `inflation 100%` row, persisted as
+    // classifier_source='eodhd' and served forever as a cache hit.
+    const blend = deriveAssetClassBlend(mapEodhdToInput("SWPPX", MF_FIXTURE));
+    const bySlug = Object.fromEntries(blend.map((w) => [w.slug, w.weight]));
+    expect(bySlug.inflation ?? 0).toBeLessThan(0.05);
+    expect((bySlug.us_large_cap ?? 0) + (bySlug.us_mid_cap ?? 0) + (bySlug.us_small_cap ?? 0)).toBeGreaterThan(0.9);
+  });
+
+  it("still reads a definitive fund category from MutualFund_Data.Fund_Category", () => {
+    // VFIDX is one of the 22 prod rows this bug recorded as `inflation 100%`.
+    // Generic bond families intentionally proxy to the intermediate-bond slug
+    // (rules.ts:82) — the point here is that the category is READ at all.
+    const input = mapEodhdToInput("VFIDX", {
+      General: { Name: "Vanguard Intermediate-Term Investment Grade", Type: "FUND", Category: null },
+      MutualFund_Data: { Fund_Category: "Corporate Bond" },
+    });
+    expect(input.definitiveSlug).toBe("ten_year_treasury");
+  });
+});

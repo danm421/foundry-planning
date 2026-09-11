@@ -65,4 +65,15 @@ export interface SecurityClassifier {
   classify(identifier: string): Promise<ClassifiedSecurity | null>;
 }
 
-export const CLASSIFIER_VERSION = 1;
+/** Bump whenever a classifier change should re-derive securities already in the
+ *  table. v2 (2026-09-10): the adapter could not read EODHD's mutual-fund
+ *  payload shape, so every fund mapped to all-zeros and derived as a confident
+ *  `inflation 100%` row — 2,054 of the 2,074 funds on prod. */
+export const CLASSIFIER_VERSION = 2;
+
+/** A cached securities row is only a usable cache hit while the classifier that
+ *  wrote it is current. Re-classification is lazy — a ticker pays for it the
+ *  next time it is touched, not in a bulk sweep. */
+export function isStaleClassification(sec: { classifierVersion: number | null }): boolean {
+  return (sec.classifierVersion ?? 0) < CLASSIFIER_VERSION;
+}
