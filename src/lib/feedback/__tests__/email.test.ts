@@ -10,7 +10,11 @@ vi.mock("resend", () => ({
   }),
 }));
 
-import { buildFeedbackEmail, sendFeedbackEmail } from "../email";
+import {
+  buildFeedbackAcknowledgementEmail,
+  buildFeedbackEmail,
+  sendFeedbackEmail,
+} from "../email";
 
 const base = {
   submission: {
@@ -89,9 +93,10 @@ describe("sendFeedbackEmail", () => {
       ...base,
       attachments: [{ filename: "shot.png", content: Buffer.from([1, 2, 3]) }],
     });
-    expect(mockSend).toHaveBeenCalledTimes(1);
-    const arg = mockSend.mock.calls[0][0];
-    expect(arg.to).toBe("support@foundryplanning.com");
+    const arg = mockSend.mock.calls.find(
+      (c) => c[0].to === "support@foundryplanning.com",
+    )?.[0];
+    expect(arg).toBeDefined();
     expect(arg.replyTo).toBe("dana@firm.com");
     expect(arg.attachments).toHaveLength(1);
   });
@@ -131,5 +136,90 @@ describe("sendFeedbackEmail", () => {
     expect(mockRecordAudit.mock.calls[0][0]).toMatchObject({
       action: "support.message_sent",
     });
+  });
+});
+
+describe("buildFeedbackAcknowledgementEmail", () => {
+  it("thanks the submitter and quotes their message back", () => {
+    const { subject, html } = buildFeedbackAcknowledgementEmail(
+      base.submission,
+      base.context,
+    );
+    expect(subject).toBe("We got your bug report");
+    expect(html).toContain("Estate flow chart renders blank on second death.");
+    expect(html).toContain("Hi Dana,");
+  });
+
+  it("names a product request rather than calling it a bug", () => {
+    const { subject } = buildFeedbackAcknowledgementEmail(
+      { mode: "feedback", type: "feature", message: "Add a Roth ladder view" },
+      base.context,
+    );
+    expect(subject).toBe("We got your product request");
+  });
+
+  it("echoes the support subject line so the reply threads sensibly", () => {
+    const { subject } = buildFeedbackAcknowledgementEmail(
+      { mode: "support", subject: "Cannot export PDF", message: "spins" },
+      base.context,
+    );
+    expect(subject).toBe("We got your message: Cannot export PDF");
+  });
+
+  it("escapes HTML in the quoted message", () => {
+    const { html } = buildFeedbackAcknowledgementEmail(
+      { mode: "support", subject: "x", message: "<img src=x onerror=alert(1)>" },
+      base.context,
+    );
+    expect(html).not.toContain("<img src=x");
+    expect(html).toContain("&lt;img");
+  });
+});
+
+describe("sendFeedbackEmail — submitter acknowledgement", () => {
+  it("also sends a confirmation to the person who submitted", async () => {
+    process.env.RESEND_API_KEY = "re_test";
+    process.env.SUPPORT_EMAIL = "support@foundryplanning.com";
+    await sendFeedbackEmail({ ...base, attachments: [] });
+
+    expect(mockSend).toHaveBeenCalledTimes(2);
+    const ack = mockSend.mock.calls.find(
+      (c) => c[0].to === "dana@firm.com",
+    )?.[0];
+    expect(ack).toBeDefined();
+    expect(ack.subject).toBe("We got your bug report");
+    expect(ack.replyTo).toBe("support@foundryplanning.com");
+    // The advisor's own screenshots must not be mailed back to them.
+    expect(ack.attachments).toBeUndefined();
+  });
+
+  it("still reports success when the acknowledgement send fails", async () => {
+    process.env.RESEND_API_KEY = "re_test";
+    mockSend.mockImplementation((arg: { to: string }) =>
+      arg.to === "dana@firm.com"
+        ? Promise.reject(new Error("recipient bounced"))
+        : Promise.resolve({ data: { id: "re_1" }, error: null }),
+    );
+    await expect(
+      sendFeedbackEmail({ ...base, attachments: [] }),
+    ).resolves.toBeUndefined();
+    expect(mockSend).toHaveBeenCalledTimes(2);
+  });
+
+  it("skips the acknowledgement when the submitter's address is unknown", async () => {
+    process.env.RESEND_API_KEY = "re_test";
+    await sendFeedbackEmail({
+      submission: base.submission,
+      context: { ...base.context, advisorEmail: "unknown@unknown" },
+      attachments: [],
+    });
+    expect(mockSend).toHaveBeenCalledTimes(1);
+    expect(mockSend.mock.calls[0][0].to).not.toBe("unknown@unknown");
+  });
+
+  it("sends no acknowledgement when Resend is not configured", async () => {
+    delete process.env.RESEND_API_KEY;
+    await sendFeedbackEmail({ ...base, attachments: [] });
+    expect(mockSend).not.toHaveBeenCalled();
   });
 });
