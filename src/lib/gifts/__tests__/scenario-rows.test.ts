@@ -8,6 +8,8 @@ import {
   giftDraftToRow,
   giftDraftToSeriesRow,
   overlayScenarioGiftRows,
+  profileGiftRowToDraft,
+  profileGiftSeriesRowToDraft,
 } from "@/lib/gifts/scenario-rows";
 
 // The exact payload the solver's "save as scenario" writes for a SLAT — the
@@ -163,6 +165,89 @@ describe("gift draft → row", () => {
       inflationAdjust: true, useCrummeyPowers: true,
       recipientExternalBeneficiaryId: "ext1", recipientEntityId: null,
     });
+  });
+});
+
+// The read side of the same round trip. The gift dialog used to hand-roll this
+// mapping and lost two fields to it: `eventKind` (a CLT's remainder-interest
+// gift silently became an outright gift) and the very existence of
+// business-interest / liability rows (read as `{kind: "cash-once", amount: 0}`).
+describe("profile row → draft", () => {
+  const assetRow: Gift = {
+    id: "g1",
+    year: 2029,
+    amount: null,
+    grantor: "client",
+    recipientEntityId: "ent-1",
+    recipientFamilyMemberId: null,
+    recipientExternalBeneficiaryId: null,
+    accountId: "acc-1",
+    percent: 0.15,
+    valuationDiscount: 0.3,
+    useCrummeyPowers: false,
+    eventKind: "outright",
+    businessEntityId: null,
+    liabilityId: null,
+    notes: null,
+  };
+
+  it("returns null for a business-interest gift instead of inventing a cash gift", () => {
+    expect(
+      profileGiftRowToDraft({
+        ...assetRow,
+        accountId: null,
+        businessEntityId: "biz-1",
+      }),
+    ).toBeNull();
+  });
+
+  it("returns null for the auto-bundled liability transfer", () => {
+    expect(
+      profileGiftRowToDraft({ ...assetRow, accountId: null, liabilityId: "liab-1" }),
+    ).toBeNull();
+  });
+
+  it("carries a non-outright event kind", () => {
+    const draft = profileGiftRowToDraft({
+      ...assetRow,
+      eventKind: "clt_remainder_interest",
+    });
+    expect(draft).toMatchObject({ kind: "asset-once", eventKind: "clt_remainder_interest" });
+  });
+
+  it("round-trips an asset gift back to the same row", () => {
+    const draft = profileGiftRowToDraft(assetRow)!;
+    // `notes` is not part of the draft, so the rebuilt row nulls it, and the
+    // two columns whose only legal value here is null are simply absent from
+    // an overlay row (a draft can never BE a business or liability gift).
+    // Every other column comes back identical.
+    const { businessEntityId: _b, liabilityId: _l, ...expected } = assetRow;
+    void _b;
+    void _l;
+    expect(giftDraftToRow(draft)).toEqual({ ...expected, notes: null });
+  });
+
+  it("keeps `valuationDiscount` last — the JSON.stringify diff contract", () => {
+    const keys = Object.keys(profileGiftRowToDraft(assetRow)!);
+    expect(keys[keys.length - 1]).toBe("valuationDiscount");
+  });
+
+  it("round-trips a series row", () => {
+    const seriesRow: GiftSeriesLite = {
+      id: "gs1",
+      grantor: "spouse",
+      recipientEntityId: "ent-1",
+      recipientFamilyMemberId: null,
+      recipientExternalBeneficiaryId: null,
+      startYear: 2027,
+      endYear: 2031,
+      annualAmount: 19_000,
+      amountMode: "fixed",
+      inflationAdjust: true,
+      valuationDiscount: 0.2,
+      useCrummeyPowers: true,
+    };
+    expect(giftDraftToSeriesRow(profileGiftSeriesRowToDraft(seriesRow))).toEqual(seriesRow);
   });
 });
 

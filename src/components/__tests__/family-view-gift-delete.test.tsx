@@ -228,19 +228,25 @@ describe("FamilyView — deleting a gift follows the active scenario", () => {
     await waitFor(() => expect(screen.queryByText("$19,000/yr")).toBeNull());
   });
 
-  it("deletes a gift series as a scenario `remove` change when a scenario is active", async () => {
+  it("deletes a gift series through the series route, NOT as a `remove` change, when a scenario is active", async () => {
     searchParams = new URLSearchParams("scenario=scn-1");
     const [, deleteSeriesBtn] = await renderPage();
     await act(async () => { fireEvent.click(deleteSeriesBtn); });
     await waitFor(() => expect(writeCalls()).toHaveLength(1));
 
     const [call] = writeCalls();
-    expect(call.url).toBe(`/api/clients/${CLIENT_ID}/scenarios/scn-1/changes`);
-    expect(call.method).toBe("POST");
-    // Same targetKind as a one-time gift: a series edited or created in a
-    // scenario lives as a `gift` change too, so its delete has to target the
-    // same rows.
-    expect(call.body).toEqual({ op: "remove", targetKind: "gift", targetId: "gs1" });
-    for (const c of writeCalls()) expect(c.url).not.toContain("/gifts/series/gs1");
+    // `gift_series` is PARTITIONED, not overlaid: the row carries a real
+    // `scenario_id` and this list only ever shows the active scenario's
+    // series, so the direct DELETE already IS the scenario-correct delete.
+    // A `remove` change left the row alive — back on reload, and copied into
+    // the base plan by `copyGiftSeriesToBase` when the scenario is promoted,
+    // resurrecting a series the advisor deleted.
+    expect(call.url).toBe(
+      `/api/clients/${CLIENT_ID}/gifts/series/gs1?scenario=${RESOLVED_SCENARIO_ID}`,
+    );
+    expect(call.method).toBe("DELETE");
+    for (const c of writeCalls()) expect(c.url).not.toContain("/scenarios/");
+
+    await waitFor(() => expect(screen.queryByText("$19,000/yr")).toBeNull());
   });
 });

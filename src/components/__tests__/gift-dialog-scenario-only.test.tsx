@@ -24,6 +24,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import GiftDialog from "@/components/gift-dialog";
 import type {
   Gift,
+  GiftSeriesLite,
   FamilyMember,
   ExternalBeneficiary,
   Entity,
@@ -114,6 +115,53 @@ const baseGift: Gift = {
   notes: null,
 } as unknown as Gift;
 
+/** A gift of 15% of a family LLC. No `accountId`, a `businessEntityId`, and a
+ *  `percent` — a shape `EstateFlowGift` has no arm for. */
+const businessGift: Gift = {
+  id: "1b9b1d6e-2c0e-4a4e-9f51-0a2f3e4d5c60",
+  year: 2026,
+  amount: null,
+  grantor: "client",
+  recipientEntityId: BASE_TRUST_ID,
+  recipientFamilyMemberId: null,
+  recipientExternalBeneficiaryId: null,
+  accountId: null,
+  percent: 0.15,
+  valuationDiscount: null,
+  useCrummeyPowers: false,
+  eventKind: "outright",
+  businessEntityId: "biz-1",
+  liabilityId: null,
+  notes: null,
+};
+
+/** A charitable lead trust's remainder-interest gift. Ordinary in every way
+ *  except `event_kind`, which drives its transfer-tax treatment. Built off the
+ *  asset gift so it carries a discount too — that proves `eventKind` is placed
+ *  BEFORE `valuationDiscount`, which the JSON.stringify diff needs last. */
+const cltRemainderGift: Gift = {
+  ...scenarioOnlyGift,
+  id: "5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b",
+  eventKind: "clt_remainder_interest",
+};
+
+/** A recurring series living in the active scenario's `gift_series` partition. */
+const BASE_SERIES_ID = "3a7c0b3e-8f2a-4a58-9f0e-1d2a3b4c5d6e";
+const baseSeries: GiftSeriesLite = {
+  id: BASE_SERIES_ID,
+  grantor: "client",
+  recipientEntityId: BASE_TRUST_ID,
+  recipientFamilyMemberId: null,
+  recipientExternalBeneficiaryId: null,
+  startYear: 2026,
+  endYear: 2030,
+  annualAmount: 19000,
+  amountMode: "fixed" as const,
+  inflationAdjust: false,
+  valuationDiscount: null,
+  useCrummeyPowers: false,
+};
+
 describe("GiftDialog — gift writes follow the active scenario", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -184,35 +232,77 @@ describe("GiftDialog — gift writes follow the active scenario", () => {
     }
   });
 
-  it("a shape change inside a scenario re-uses the gift's id and deletes nothing from the base plan", async () => {
+  it("one-time → recurring inside a scenario writes a real series row and strips the gift with a `remove` change", async () => {
     const fetchMock = vi
       .spyOn(global, "fetch")
-      .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+      .mockResolvedValue(new Response(JSON.stringify({ id: "gs-new" }), { status: 201 }));
     const onRemovedGift = vi.fn();
 
     render(
       <GiftDialog {...baseProps} editingGift={baseGift} onRemovedGift={onRemovedGift} />,
     );
-    // One-time → Recurring moves the gift between two base tables, so in BASE
-    // mode it is re-created and the original deleted. The scenario `add` keeps
-    // the draft's id and strips the original wherever it lives, so the base
-    // DELETE must not fire — it would erase the gift from the base plan.
+    // One-time → Recurring moves the gift between two tables that are
+    // scenario-scoped in DIFFERENT ways, so the two halves land differently:
+    //
+    //  1. `gift_series` is partitioned, so the replacement is a REAL row in
+    //     this scenario's partition — not a change row, which the series GET
+    //     could not see and the promote could not carry.
+    //  2. `gifts` is overlaid, so the original must be stripped with a
+    //     `remove` change. A base DELETE would erase it from the base plan;
+    //     doing nothing (the old behaviour) left the one-time gift beside its
+    //     own recurring replacement — counted twice.
     fireEvent.click(screen.getByText("Recurring"));
     fireEvent.click(screen.getByText("Save gift"));
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    await waitFor(() => expect(fetchMock.mock.calls).toHaveLength(2));
 
     await waitFor(() => expect(onRemovedGift).toHaveBeenCalledWith(BASE_GIFT_ID));
 
-    expect(fetchMock.mock.calls).toHaveLength(1);
-    const [url, init] = fetchMock.mock.calls[0];
-    expect(String(url)).toBe("/api/clients/c1/scenarios/s1/changes");
-    const body = JSON.parse((init as RequestInit).body as string);
-    expect(body.op).toBe("add");
-    expect(body.entity.kind).toBe("series");
-    expect(body.entity.id).toBe(BASE_GIFT_ID);
+    const [seriesUrl, seriesInit] = fetchMock.mock.calls[0];
+    expect(String(seriesUrl)).toBe("/api/clients/c1/gifts/series?scenario=s1");
+    expect((seriesInit as RequestInit).method).toBe("POST");
+
+    const [removeUrl, removeInit] = fetchMock.mock.calls[1];
+    expect(String(removeUrl)).toBe("/api/clients/c1/scenarios/s1/changes");
+    expect(JSON.parse((removeInit as RequestInit).body as string)).toEqual({
+      op: "remove",
+      targetKind: "gift",
+      targetId: BASE_GIFT_ID,
+    });
+
+    // The base `gifts` row itself is never DELETEd from inside a scenario.
     for (const call of fetchMock.mock.calls) {
       expect((call[1] as RequestInit | undefined)?.method).not.toBe("DELETE");
     }
+  });
+
+  it("recurring → one-time inside a scenario deletes the series row it replaced", async () => {
+    const fetchMock = vi
+      .spyOn(global, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    const onRemovedSeries = vi.fn();
+
+    render(
+      <GiftDialog
+        {...baseProps}
+        editingSeries={baseSeries}
+        onRemovedSeries={onRemovedSeries}
+      />,
+    );
+    // The other direction. The stale row is a real `gift_series` row in this
+    // scenario's partition, so it has to be DELETEd — skipping it (the old
+    // behaviour) orphaned the series beside its own one-time replacement, and
+    // promoting the scenario copied the orphan into the base plan.
+    fireEvent.click(screen.getByText("One-time"));
+    fireEvent.click(screen.getByText("Save gift"));
+    await waitFor(() => expect(fetchMock.mock.calls).toHaveLength(2));
+
+    const [addUrl] = fetchMock.mock.calls[0];
+    expect(String(addUrl)).toBe("/api/clients/c1/scenarios/s1/changes");
+
+    const [delUrl, delInit] = fetchMock.mock.calls[1];
+    expect(String(delUrl)).toBe(`/api/clients/c1/gifts/series/${BASE_SERIES_ID}?scenario=s1`);
+    expect((delInit as RequestInit).method).toBe("DELETE");
+    await waitFor(() => expect(onRemovedSeries).toHaveBeenCalledWith(BASE_SERIES_ID));
   });
 
   it("a shape change with no scenario active still creates the replacement then deletes the original", async () => {
@@ -317,6 +407,77 @@ describe("GiftDialog — gift writes follow the active scenario", () => {
       amount: 50000,
       recipient: { kind: "entity", id: SCENARIO_TRUST_ID },
     });
+  });
+
+  // ── gifts the draft cannot represent ─────────────────────────────────────
+  //
+  // `giftRowToDraft` returns null for a business-interest gift and for the
+  // auto-bundled liability transfer. The dialog used to hand-roll its own
+  // row→draft mapper, which could not see either column and produced
+  // `{kind: "cash-once", amount: 0}` — and in a scenario the whole draft
+  // REPLACES the gift, so a 15%-of-an-LLC transfer became a $0 cash gift that
+  // then failed the `gifts_event_kind` check constraint on promote.
+  it("refuses to save a business-interest gift instead of rewriting it as a $0 cash gift", async () => {
+    const fetchMock = vi
+      .spyOn(global, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+    render(<GiftDialog {...baseProps} editingGift={businessGift} />);
+
+    // The form never mounts — there is nothing truthful to seed it with.
+    expect(screen.getByTestId("gift-uneditable")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Save gift"));
+    await waitFor(() =>
+      expect(screen.getByTestId("gift-error")).toHaveTextContent(
+        /gift of a business interest/i,
+      ),
+    );
+    // Loudly, and with NOTHING written — not a change row, not a base PATCH.
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses a business-interest gift in base mode too (the PATCH it used to send 400s)", async () => {
+    searchParams = new URLSearchParams("");
+    const fetchMock = vi
+      .spyOn(global, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+    render(<GiftDialog {...baseProps} editingGift={businessGift} />);
+    fireEvent.click(screen.getByText("Save gift"));
+    await waitFor(() => expect(screen.getByTestId("gift-error")).toBeInTheDocument());
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("names the auto-bundled liability transfer rather than the business interest", async () => {
+    render(
+      <GiftDialog
+        {...baseProps}
+        editingGift={{ ...businessGift, businessEntityId: null, liabilityId: "l1" } as Gift}
+      />,
+    );
+    expect(screen.getByTestId("gift-uneditable")).toHaveTextContent(
+      /bundled liability transfer/i,
+    );
+  });
+
+  // ── eventKind round trip ─────────────────────────────────────────────────
+  it("keeps a CLT remainder-interest gift's eventKind through a scenario edit", async () => {
+    const fetchMock = vi
+      .spyOn(global, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+    render(<GiftDialog {...baseProps} editingGift={cltRemainderGift} />);
+    fireEvent.click(screen.getByText("Save gift"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    // Dropping it makes the overlay (and then the promoted base row) read
+    // `outright` — a different transfer-tax treatment, silently.
+    expect(body.entity.eventKind).toBe("clt_remainder_interest");
+    // …and the discount stays last, the JSON.stringify diff contract.
+    const keys = Object.keys(body.entity);
+    expect(keys[keys.length - 1]).toBe("valuationDiscount");
   });
 
   it("leaves a base-plan gift on the base gift route with no scenario active (behavior unchanged)", async () => {

@@ -63,9 +63,7 @@ import TransferAssetForm, { type AccountOption } from "../transfer-asset-form";
 import TransferSeriesForm from "../transfer-series-form";
 import {
   giftRowToDraft,
-  giftSeriesRowToDraft,
   type GiftRow,
-  type GiftSeriesDbRow,
 } from "@/lib/estate/estate-flow-gifts";
 
 // ---------------------------------------------------------------------------
@@ -232,22 +230,6 @@ describe("transfer forms — scenario-mode gift writes", () => {
         // key-order test below for the discount-present case)
       },
     ],
-    [
-      "series",
-      renderTransferSeries,
-      {
-        kind: "series",
-        id: expect.any(String),
-        startYear: 2026,
-        endYear: 2036, // default is currentYear(2026) + 10
-        annualAmount: 18000,
-        amountMode: "fixed", // measured ruling — DB/zod/route all default to "fixed"
-        inflationAdjust: false,
-        grantor: "client",
-        recipient: { kind: "entity", id: TRUST_ID },
-        crummey: false,
-      },
-    ],
   ];
 
   it.each(SCENARIO_WRITE_CASES)(
@@ -275,6 +257,55 @@ describe("transfer forms — scenario-mode gift writes", () => {
       await waitFor(() => expect(refreshMock).toHaveBeenCalledTimes(1));
     },
   );
+
+  // The series form is the exception, and it is NOT an oversight above.
+  // `gift_series` carries a real `scenario_id` — it is partitioned, not
+  // overlaid — so the series route IS the scenario-correct write. Recording a
+  // `gift` change instead made the saved series vanish from the panel that
+  // fetches it (GET /gifts/series filters the table by scenario_id and applies
+  // no overlay) and made the whole scenario un-promotable
+  // (`translateGiftDraftForPromote` throws for a series, inside the promote
+  // transaction).
+  it("series transfer writes a real gift_series row in the active scenario's partition, never a change row", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderTransferSeries({ scenarioId: SCENARIO_ID, trustId: TRUST_ID });
+    submitForm();
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(fetchMock.mock.calls).toHaveLength(1);
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(
+      `/api/clients/${CLIENT_ID}/gifts/series?scenario=${SCENARIO_ID}`,
+    );
+    expect(init.method).toBe("POST");
+
+    // The REST body, byte-for-byte what the base-mode POST always sent — the
+    // route, not an overlay, is what stores this row.
+    const body = JSON.parse(init.body as string);
+    expect(body).toEqual({
+      grantor: "client",
+      recipientEntityId: TRUST_ID,
+      startYear: 2026,
+      startYearRef: null,
+      endYear: 2036,
+      endYearRef: null,
+      annualAmount: 18000,
+      inflationAdjust: false,
+      useCrummeyPowers: false,
+      notes: "Source: Operating Checking",
+    });
+    expect(body).not.toHaveProperty("op");
+    expect(body).not.toHaveProperty("entity");
+
+    // Not one request to the changes writer.
+    for (const call of fetchMock.mock.calls) {
+      expect(String(call[0])).not.toContain("/scenarios/");
+    }
+    await waitFor(() => expect(refreshMock).toHaveBeenCalledTimes(1));
+  });
 
   it.each([
     ["cash", renderTransferCash, `/api/clients/${CLIENT_ID}/gifts`],
@@ -391,27 +422,7 @@ describe("transfer forms — gift draft key order matches the canonical mappers"
     expect(keysOf(entity)).toEqual(keysOf(giftRowToDraft(row)));
   });
 
-  it("series transfer's draft matches giftSeriesRowToDraft's key order", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
-    vi.stubGlobal("fetch", fetchMock);
-
-    renderTransferSeries({ scenarioId: SCENARIO_ID });
-    submitForm();
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    const entity = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string).entity;
-
-    const row: GiftSeriesDbRow = {
-      id: "series-id",
-      grantor: "client",
-      recipientEntityId: TRUST_ID,
-      startYear: 2026,
-      endYear: 2036,
-      annualAmount: "18000",
-      amountMode: "fixed",
-      inflationAdjust: false,
-      useCrummeyPowers: false,
-      valuationDiscount: null,
-    };
-    expect(keysOf(entity)).toEqual(keysOf(giftSeriesRowToDraft(row)));
-  });
+  // The series form has no key-order case: it builds no draft at all any more.
+  // A recurring series is written straight to `gift_series` in both modes, so
+  // there is no JSON.stringify-compared payload to keep in order.
 });

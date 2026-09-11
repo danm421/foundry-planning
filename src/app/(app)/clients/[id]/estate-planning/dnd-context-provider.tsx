@@ -18,6 +18,7 @@ import { resolveAnnualExclusion } from "@/lib/gifts/resolve-annual-exclusion";
 import { useToast } from "@/components/toast";
 import { useClientAccess } from "@/components/client-access-provider";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
+import { useScenarioState } from "@/hooks/use-scenario-state";
 import { DropPopup, type DropAction, type DropPopupProps } from "./drop/drop-popup";
 import {
   saveGiftOneTime,
@@ -177,6 +178,10 @@ export function CanvasDndProvider({
   const router = useRouter();
   const { showToast } = useToast();
   const writer = useScenarioWriter(clientId);
+  // The active scenario's id, for the one write on this board that is
+  // scenario-PARTITIONED rather than overlaid: a recurring gift series goes
+  // straight into `gift_series`, and only the URL says which partition.
+  const { scenarioId } = useScenarioState(clientId);
 
   // `useSensor` must run unconditionally (hook rules); we gate what's handed to
   // `useSensors` instead. Under a view-only share, no sensors are registered, so
@@ -320,7 +325,10 @@ export function CanvasDndProvider({
             annualAmount: action.annualAmount,
             inflationAdjust: action.inflationAdjust,
             useCrummeyPowers: action.useCrummey,
-            submit: writer.submit,
+            // A series is written to `gift_series` directly in both modes — it
+            // is scenario-PARTITIONED, not overlaid (see saveGiftRecurring).
+            submitDirect: writer.submitDirect,
+            scenarioId,
           });
           break;
         }

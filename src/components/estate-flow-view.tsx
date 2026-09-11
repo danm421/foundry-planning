@@ -89,9 +89,35 @@ function scenarioChangeBody(edit: ScenarioEdit): Record<string, unknown> {
 // ── Gift persistence ─────────────────────────────────────────────────────────
 
 /**
- * Persist a single GiftChange, following the active scenario. `submit` decides
- * where it lands: in a scenario it becomes a `gift` overlay row; in the base
- * case it falls through to the legacy gift routes described below.
+ * How a recurring series reaches storage, handed to `persistGiftChange`.
+ *
+ * `gift_series` is scenario-PARTITIONED, not overlaid: the row carries a real
+ * `scenario_id`, the series GET filters on it, and promotion copies the whole
+ * partition into base. So a series is NEVER a `scenario_changes` row — it goes
+ * to the series route in BOTH modes, carrying the scenario whose partition it
+ * belongs in. `scenarioId: null` means the base case.
+ *
+ * It is a parameter rather than something read off the writer because the two
+ * callers target two different scenarios: Save writes into the one named in the
+ * URL, Save-as-new into the scenario it has just created.
+ */
+interface SeriesRouteTarget {
+  scenarioId: string | null;
+  request: UseScenarioWriter["submitDirect"];
+}
+
+function seriesUrl(base: string, target: SeriesRouteTarget): string {
+  return target.scenarioId
+    ? `${base}?scenario=${encodeURIComponent(target.scenarioId)}`
+    : base;
+}
+
+/**
+ * Persist a single GiftChange, following the active scenario. For a one-time
+ * gift `submit` decides where it lands: in a scenario it becomes a `gift`
+ * overlay row; in the base case it falls through to the legacy gift routes
+ * described below. A series always goes through `series` — see
+ * `SeriesRouteTarget`.
  *
  * Gifts have no `edit` op — a save (new gift OR edit of an existing one) is
  * always an `add` carrying the full draft, re-using the gift's id so the base
@@ -112,14 +138,15 @@ async function persistGiftChange(
   clientId: string,
   change: GiftChange,
   submit: UseScenarioWriter["submit"],
+  series: SeriesRouteTarget,
 ): Promise<Response> {
   const { op, gift } = change;
 
   // ── series ────────────────────────────────────────────────────────────────
   if (gift.kind === "series") {
     if (op === "remove") {
-      return submit(giftScenarioRemove(gift.id), {
-        url: `/api/clients/${clientId}/gifts/series/${gift.id}`,
+      return series.request({
+        url: seriesUrl(`/api/clients/${clientId}/gifts/series/${gift.id}`, series),
         method: "DELETE",
       });
     }
@@ -137,11 +164,13 @@ async function persistGiftChange(
       valuationDiscount: gift.valuationDiscount ?? null,
       notes: null,
     };
-    return submit(giftScenarioAdd(gift), {
-      url:
+    return series.request({
+      url: seriesUrl(
         op === "add"
           ? `/api/clients/${clientId}/gifts/series`
           : `/api/clients/${clientId}/gifts/series/${gift.id}`,
+        series,
+      ),
       method: op === "add" ? "POST" : "PATCH",
       body,
     });
@@ -340,7 +369,7 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [isDirty]);
 
-  const { submit } = writer;
+  const { submit, submitDirect } = writer;
   const handleSaveInPlace = useCallback(async () => {
     if (!canEdit) return;
     if (pendingChanges.length === 0 && giftChanges.length === 0) return;
@@ -428,7 +457,10 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
       // `add`s (their client UUIDs are still absent from `initialGifts`).
       for (const change of giftChanges) {
         needsExplicitRefresh = true;
-        const res = await persistGiftChange(props.clientId, change, submit);
+        const res = await persistGiftChange(props.clientId, change, submit, {
+          scenarioId: isNamedScenario ? props.scenarioId : null,
+          request: submitDirect,
+        });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
           const apiMsg =
@@ -455,7 +487,7 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
     } finally {
       setIsSaving(false);
     }
-  }, [canEdit, pendingChanges, giftChanges, isNamedScenario, isWizard, submit, props.clientId, router]);
+  }, [canEdit, pendingChanges, giftChanges, isNamedScenario, isWizard, submit, submitDirect, props.clientId, props.scenarioId, router]);
 
   const handleSaveAsNew = useCallback(async () => {
     if (!canEdit) return;
@@ -547,7 +579,13 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
       };
 
       for (const change of giftChanges) {
-        const res = await persistGiftChange(props.clientId, change, submitToNewScenario);
+        // The series half does NOT go through `submitToNewScenario`: it is a
+        // real `gift_series` row, so it is POSTed to the new scenario's own
+        // partition instead of becoming a change row.
+        const res = await persistGiftChange(props.clientId, change, submitToNewScenario, {
+          scenarioId: newScenarioId,
+          request: submitDirect,
+        });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
           const apiMsg =
@@ -570,7 +608,7 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
     } finally {
       setIsSaving(false);
     }
-  }, [canEdit, pendingChanges, giftChanges, props.clientId, props.scenarioId, isNamedScenario, router, pathname]);
+  }, [canEdit, pendingChanges, giftChanges, submitDirect, props.clientId, props.scenarioId, isNamedScenario, router, pathname]);
 
   return (
     <div className="flex flex-col gap-4 p-4">

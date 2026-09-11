@@ -17,6 +17,13 @@ function mockSubmit(status: number, body = "{}"): UseScenarioWriter["submit"] {
   return vi.fn().mockResolvedValue(new Response(body, { status }));
 }
 
+function mockSubmitDirect(
+  status: number,
+  body = "{}",
+): UseScenarioWriter["submitDirect"] {
+  return vi.fn().mockResolvedValue(new Response(body, { status }));
+}
+
 describe("save-handlers", () => {
   it("saveGiftOneTime writes a cash-once scenario add, with the base fallback unchanged", async () => {
     const submit = mockSubmit(200);
@@ -120,8 +127,25 @@ describe("save-handlers", () => {
     });
   });
 
-  it("saveGiftRecurring writes a series scenario add, with the base fallback unchanged", async () => {
-    const submit = mockSubmit(200);
+  // A recurring series is NOT an overlay row. `gift_series` carries a real
+  // `scenario_id`, so the series route IS the scenario-correct write and the
+  // scenario rides on the URL. A `scenario_changes` row here was invisible to
+  // the list that reads the table and aborted the scenario's promote.
+  const RECURRING_BODY = {
+    grantor: "client",
+    recipientEntityId: "ent-slat",
+    startYear: 2026,
+    startYearRef: null,
+    endYear: 2030,
+    endYearRef: null,
+    annualAmount: 18_000,
+    inflationAdjust: true,
+    useCrummeyPowers: true,
+    notes: null,
+  };
+
+  it("saveGiftRecurring posts straight to the active scenario's gift_series partition", async () => {
+    const submitDirect = mockSubmitDirect(200);
     await saveGiftRecurring({
       clientId: "c1",
       grantor: "client",
@@ -131,40 +155,43 @@ describe("save-handlers", () => {
       annualAmount: 18_000,
       inflationAdjust: true,
       useCrummeyPowers: true,
-      submit,
+      submitDirect,
+      scenarioId: "scn-1",
     });
 
-    expect(submit).toHaveBeenCalledTimes(1);
-    const [edit, fallback] = (submit as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(edit).toMatchObject({ op: "add", targetKind: "gift" });
-    expect((edit.entity as { kind: string }).kind).toBe("series");
-    expect(edit.entity).toMatchObject({
+    expect(submitDirect).toHaveBeenCalledTimes(1);
+    const [request] = (submitDirect as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(request).toEqual({
+      url: "/api/clients/c1/gifts/series?scenario=scn-1",
+      method: "POST",
+      body: RECURRING_BODY,
+      skipRefresh: true,
+    });
+    // No draft, no change row: the request carries the REST body only.
+    expect(request.body).not.toHaveProperty("op");
+    expect(request.body).not.toHaveProperty("entity");
+  });
+
+  it("saveGiftRecurring posts to the plain base route with no scenario active", async () => {
+    const submitDirect = mockSubmitDirect(200);
+    await saveGiftRecurring({
+      clientId: "c1",
+      grantor: "client",
+      recipient: { kind: "entity", id: "ent-slat" },
       startYear: 2026,
       endYear: 2030,
       annualAmount: 18_000,
-      amountMode: "fixed",
       inflationAdjust: true,
-      grantor: "client",
-      recipient: { kind: "entity", id: "ent-slat" },
-      crummey: true,
+      useCrummeyPowers: true,
+      submitDirect,
+      scenarioId: null,
     });
-    // FIX ROUND 1 / Finding 2: full fallback via `toEqual`, same reasoning
-    // as the one-time-gift tests above.
-    expect(fallback).toEqual({
+
+    const [request] = (submitDirect as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(request).toEqual({
       url: "/api/clients/c1/gifts/series",
       method: "POST",
-      body: {
-        grantor: "client",
-        recipientEntityId: "ent-slat",
-        startYear: 2026,
-        startYearRef: null,
-        endYear: 2030,
-        endYearRef: null,
-        annualAmount: 18_000,
-        inflationAdjust: true,
-        useCrummeyPowers: true,
-        notes: null,
-      },
+      body: RECURRING_BODY,
       skipRefresh: true,
     });
   });
@@ -234,7 +261,7 @@ describe("save-handlers", () => {
 
   // Same contract on the other gift handler — RULING 41 requires both.
   it("saveGiftRecurring throws on non-2xx", async () => {
-    const submit = mockSubmit(400, "Bad");
+    const submitDirect = mockSubmitDirect(400, "Bad");
     await expect(
       saveGiftRecurring({
         clientId: "c1",
@@ -245,7 +272,8 @@ describe("save-handlers", () => {
         annualAmount: 18_000,
         inflationAdjust: false,
         useCrummeyPowers: true,
-        submit,
+        submitDirect,
+        scenarioId: null,
       }),
     ).rejects.toThrow(/400/);
   });

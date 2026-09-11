@@ -20,8 +20,14 @@ import { giftDraftToRow } from "@/lib/gifts/scenario-rows";
  * TargetKind and the executor picks one table per kind, so a series draft has
  * nowhere to go: inserting it into `gifts` dies on the NOT NULL `year` column
  * with an opaque DB error, and skipping it would lose an advisor's gift in
- * silence. Series gifts DO reach here — transfer-series-form.tsx writes one as
- * a `gift` change — so this is a live path, not a defensive branch.
+ * silence.
+ *
+ * No CURRENT writer can reach this branch: `gift_series` is scenario-
+ * partitioned, so every surface writes a series straight to the series route in
+ * both modes and none of them records it as a `gift` change. The throw stays as
+ * a guard for LEGACY rows — a scenario written before that rule was applied can
+ * still hold a series draft, and it must fail by name rather than by Postgres
+ * error.
  */
 export function translateGiftDraftForPromote(
   raw: Record<string, unknown>,

@@ -137,7 +137,12 @@ export interface SaveGiftRecurringArgs {
 }
 
 export async function saveGiftRecurring(
-  args: SaveGiftRecurringArgs & { submit: UseScenarioWriter["submit"] },
+  args: SaveGiftRecurringArgs & {
+    submitDirect: UseScenarioWriter["submitDirect"];
+    /** The scenario whose `gift_series` partition this row belongs in; null =
+     *  base case. See the note on the request below. */
+    scenarioId: string | null;
+  },
 ): Promise<void> {
   if (args.recipient.kind !== "entity") {
     throw new Error("Recurring gifts require an entity recipient (irrevocable trust)");
@@ -155,28 +160,20 @@ export async function saveGiftRecurring(
     notes: args.notes ?? null,
   };
 
-  // Key order matches transfer-series-form.tsx / giftSeriesRowToDraft — the
-  // unsaved-changes diff compares gifts with JSON.stringify, which is
-  // key-order-sensitive (estate-flow-gift-diff.ts). amountMode is always
-  // "fixed": SaveGiftRecurringArgs has no amountMode input and the route
-  // defaults it the same way (gifts/series/route.ts:199).
-  const draft: EstateFlowGift = {
-    kind: "series",
-    id: crypto.randomUUID(),
-    startYear: args.startYear,
-    endYear: args.endYear,
-    annualAmount: args.annualAmount,
-    amountMode: "fixed",
-    inflationAdjust: args.inflationAdjust,
-    grantor: args.grantor,
-    recipient: args.recipient,
-    crummey: args.useCrummeyPowers,
-  };
-
+  // A recurring series is NEVER a `scenario_changes` row. `gift_series` carries
+  // a real `scenario_id`: the series GET filters on it and promotion copies the
+  // partition into base, so its own route IS the scenario-correct write and a
+  // change row would be invisible to every list that reads the table. The
+  // scenario goes on the URL — without it the row silently lands in base even
+  // while a scenario is selected.
+  //
   // See the matching comment in saveGiftOneTime — dispatchSave owns the
   // single post-save refresh for every drop action.
-  const res = await args.submit(giftScenarioAdd(draft), {
-    url: `/api/clients/${args.clientId}/gifts/series`,
+  const url = `/api/clients/${args.clientId}/gifts/series`;
+  const res = await args.submitDirect({
+    url: args.scenarioId
+      ? `${url}?scenario=${encodeURIComponent(args.scenarioId)}`
+      : url,
     method: "POST",
     body,
     skipRefresh: true,

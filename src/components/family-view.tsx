@@ -121,6 +121,14 @@ export type Gift = {
    *  the mappers always populate it, because the column is NOT NULL and a
    *  promoted gift that omits it silently becomes an ordinary outright gift. */
   eventKind?: GiftEventKind;
+  /** Set when the gift transfers a share of a BUSINESS interest rather than an
+   *  account. Carried so the gift dialog can recognise the row: a business gift
+   *  has no `EstateFlowGift` shape at all, and without this column the dialog
+   *  read it as a $0 cash gift. Optional for the same reason `eventKind` is. */
+  businessEntityId?: string | null;
+  /** Set on the auto-bundled liability-transfer child of an asset gift. Same
+   *  reason as `businessEntityId` — not draft-representable. */
+  liabilityId?: string | null;
   notes: string | null;
 };
 
@@ -1093,10 +1101,15 @@ function GiftsSection(props: {
     id ? props.accounts.find((a) => a.id === id)?.name ?? "asset" : "asset";
 
   // Inside a scenario the delete is a `remove` change, matching where the save
-  // landed: a gift added in this scenario collapses away with its `add` row
-  // (`applyEntityRemove`), and a base-plan gift is stripped from the overlay
-  // without the base table being touched. A gift that exists only as an `add`
-  // has no base row for the gift route to delete at all — that call 404s.
+  // landed: the base `gifts` row is stripped from this scenario's overlay while
+  // the base plan keeps it, and a gift that exists only as an `add` has no base
+  // row for the gift route to delete at all — that call 404s.
+  //
+  // The `remove` row STAYS for a gift added in this scenario; it does not
+  // collapse away with the `add`. Gifts have no `edit` op, so an `add` on a
+  // base gift's own id is how an edit is recorded — collapsing it would
+  // resurrect the un-edited base gift while the page showed it gone
+  // (changes-writer.ts, and commit 1611a6853 which made gifts the exception).
   async function deleteGift(id: string) {
     const res = await writer.submit(giftScenarioRemove(id), {
       url: `/api/clients/${props.clientId}/gifts/${id}`,
@@ -1104,8 +1117,13 @@ function GiftsSection(props: {
     });
     if (res.ok) props.onChangeGifts(props.gifts.filter((x) => x.id !== id));
   }
+  // A series deletes the SAME way in both modes. `gift_series` carries a real
+  // `scenario_id` — this list only ever shows the active scenario's series — so
+  // the direct DELETE already IS the scenario-correct delete. A `remove` change
+  // would leave the row alive: back on reload, copied into the base plan by
+  // `copyGiftSeriesToBase` on promote, and gone only from the projection.
   async function deleteSeries(id: string) {
-    const res = await writer.submit(giftScenarioRemove(id), {
+    const res = await writer.submitDirect({
       url: `/api/clients/${props.clientId}/gifts/series/${id}?scenario=${props.scenarioId}`,
       method: "DELETE",
     });

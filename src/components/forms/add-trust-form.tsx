@@ -360,11 +360,19 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
     let alive = true;
     setTransferFetchError(null);
     Promise.all([
-      // Both lists are scenario-scoped. Neither table carries a scenario_id —
-      // a gift saved inside a scenario lives in `scenario_changes` — so each
-      // route overlays those changes when it is handed the active scenario.
+      // Both lists are scenario-scoped, but by two different mechanisms, and
+      // both need the param.
+      //
+      // `gifts` has NO scenario_id: a gift saved inside a scenario lives in
+      // `scenario_changes`, so GET /gifts overlays those changes onto the base
+      // rows when it is handed the active scenario.
+      //
+      // `gift_series` DOES carry a real scenario_id — one row per scenario, no
+      // overlay — so GET /gifts/series simply filters on it, and a series is
+      // written straight to its own route in both modes.
+      //
       // Without the param this panel showed the base plan's gifts beside the
-      // scenario's series.
+      // base plan's series.
       fetchJson<GiftRow[]>(
         scenarioId
           ? `/api/clients/${clientId}/gifts?scenario=${encodeURIComponent(scenarioId)}`

@@ -5,8 +5,6 @@ import MilestoneYearPicker from "@/components/milestone-year-picker";
 import { CurrencyInput } from "@/components/currency-input";
 import type { ClientMilestones, YearRef } from "@/lib/milestones";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
-import { giftScenarioAdd } from "@/lib/gifts/gift-write";
-import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import {
   inputClassName,
   selectClassName,
@@ -116,24 +114,12 @@ export default function TransferSeriesForm({
         ? `/api/clients/${clientId}/gifts/series?scenario=${encodeURIComponent(scenarioId)}`
         : `/api/clients/${clientId}/gifts/series`;
 
-      // Key order matches `giftSeriesRowToDraft` exactly — the unsaved-changes
-      // diff compares gifts with JSON.stringify, which is key-order-sensitive
-      // (estate-flow-gift-diff.ts). `amountMode` is always "fixed" here — this
-      // form has no annual-exclusion input, matching the DB/zod/route default.
-      const draft: EstateFlowGift = {
-        kind: "series",
-        id: crypto.randomUUID(),
-        startYear,
-        endYear,
-        annualAmount: Number(annualAmount),
-        amountMode: "fixed",
-        inflationAdjust,
-        grantor,
-        recipient: { kind: "entity", id: trustId },
-        crummey: useCrummeyPowers,
-      };
-
-      const res = await writer.submit(giftScenarioAdd(draft), {
+      // A recurring series is NEVER a `scenario_changes` row. `gift_series`
+      // carries a real `scenario_id`, the GET that fills this panel filters on
+      // it, and promotion copies the partition into base — so this route IS the
+      // scenario-correct write, and a change row would vanish from the list it
+      // was just saved into and abort the scenario's promote.
+      const res = await writer.submitDirect({
         url: seriesUrl,
         method: "POST",
         body,

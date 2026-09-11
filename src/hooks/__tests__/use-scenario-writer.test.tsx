@@ -342,6 +342,49 @@ describe("useScenarioWriter — batched edits", () => {
   });
 });
 
+describe("useScenarioWriter — submitDirect", () => {
+  // For tables that are scenario-PARTITIONED rather than overlaid
+  // (`gift_series` today). The row carries its own `scenario_id`, so the
+  // per-entity route already IS the scenario-correct write — a change row would
+  // be invisible to the GET that filters the table, and un-promotable.
+  it("issues the request even with a scenario active, and never touches /changes", async () => {
+    setUrl(`scenario=${SCENARIO_ID}`);
+    const { result } = renderHook(() => useScenarioWriter(CLIENT_ID));
+
+    const res = await result.current.submitDirect({
+      url: `/api/clients/${CLIENT_ID}/gifts/series?scenario=${SCENARIO_ID}`,
+      method: "POST",
+      body: { annualAmount: 19000 },
+    });
+
+    expect(res.ok).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe(`/api/clients/${CLIENT_ID}/gifts/series?scenario=${SCENARIO_ID}`);
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({ annualAmount: 19000 });
+    expect(String(url)).not.toContain("/changes");
+    expect(refreshSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("behaves exactly like base-mode submit — no body, no refresh under skipRefresh", async () => {
+    setUrl(`scenario=${SCENARIO_ID}`);
+    const { result } = renderHook(() => useScenarioWriter(CLIENT_ID));
+
+    await result.current.submitDirect({
+      url: `/api/clients/${CLIENT_ID}/gifts/series/gs-1`,
+      method: "DELETE",
+      skipRefresh: true,
+    });
+
+    const [, init] = fetchSpy.mock.calls[0];
+    expect(init.method).toBe("DELETE");
+    expect(init.body).toBeUndefined();
+    expect(init.headers).toBeUndefined();
+    expect(refreshSpy).not.toHaveBeenCalled();
+  });
+});
+
 describe("useScenarioWriter — scenarioActive flag", () => {
   it("is false when no scenario param set", () => {
     setUrl("");
