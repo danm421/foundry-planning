@@ -72,7 +72,8 @@ function buyLegToBody(leg: BuyLegDraft, year: number): Record<string, unknown> {
     propertyTaxGrowthRate:
       leg.assetCategory === "real_estate" ? optDec(leg.propertyTaxGrowthRate) : null,
     propertyTaxGrowthSource:
-      leg.assetCategory === "real_estate" ? leg.propertyTaxGrowthSource : null,
+      leg.assetCategory === "real_estate" && optStr(leg.annualPropertyTax) != null
+        ? leg.propertyTaxGrowthSource : null,
   };
 }
 

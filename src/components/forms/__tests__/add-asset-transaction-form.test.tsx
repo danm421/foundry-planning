@@ -615,6 +615,7 @@ describe("AddAssetTransactionForm — buy-leg property tax", () => {
     // absence of the key IS the assertion.
     expect(buy.annualPropertyTax).toBeUndefined();
     expect(buy.propertyTaxGrowthRate).toBeUndefined();
+    expect(buy.propertyTaxGrowthSource).toBeUndefined();
   });
 
   it("round-trips an existing custom rate through hydrate and save unchanged", async () => {
