@@ -7,7 +7,7 @@ import type {
   DeathSectionData,
   EstateTransferReportData,
 } from "@/lib/estate/transfer-report";
-import type { LineDiff } from "@/lib/estate/diff-estate-tax";
+import { diffAmountsByKey, type LineDiff } from "@/lib/estate/diff-estate-tax";
 
 export interface DeathSectionDiff {
   assetEstateValue: number;
@@ -28,20 +28,7 @@ function diffTotalsByKey(
 ): Map<string, LineDiff> {
   const l = new Map(left.map((x) => [x.key, x.total]));
   const r = new Map(right.map((x) => [x.key, x.total]));
-  const out = new Map<string, LineDiff>();
-  for (const key of new Set([...l.keys(), ...r.keys()])) {
-    const lv = l.get(key);
-    const rv = r.get(key);
-    if (lv === undefined) {
-      out.set(key, { key, status: "added", delta: rv ?? 0 });
-    } else if (rv === undefined) {
-      out.set(key, { key, status: "removed", delta: -lv });
-    } else {
-      const delta = rv - lv;
-      out.set(key, { key, status: delta === 0 ? "same" : "changed", delta });
-    }
-  }
-  return out;
+  return diffAmountsByKey(l, r);
 }
 
 function diffSection(

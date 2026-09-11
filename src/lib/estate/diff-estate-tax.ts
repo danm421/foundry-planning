@@ -53,17 +53,20 @@ function amountsByKey(lines: GrossEstateLine[]): Map<string, number> {
   return out;
 }
 
-export function diffEstateTax(
-  left: EstateTaxResult,
-  right: EstateTaxResult,
-): EstateTaxDiff {
-  const l = amountsByKey(left.grossEstateLines);
-  const r = amountsByKey(right.grossEstateLines);
-
+/**
+ * Shared key-union diff: every key in either map yields a `LineDiff`, delta
+ * always `right - left`. The single copy of this algorithm — every report
+ * comparison that reduces to `Map<string, number>` on each side calls this
+ * instead of re-implementing the added/removed/changed/same branching.
+ */
+export function diffAmountsByKey(
+  left: Map<string, number>,
+  right: Map<string, number>,
+): Map<string, LineDiff> {
   const lines = new Map<string, LineDiff>();
-  for (const key of new Set([...l.keys(), ...r.keys()])) {
-    const lv = l.get(key);
-    const rv = r.get(key);
+  for (const key of new Set([...left.keys(), ...right.keys()])) {
+    const lv = left.get(key);
+    const rv = right.get(key);
     if (lv === undefined) {
       lines.set(key, { key, status: "added", delta: rv ?? 0 });
     } else if (rv === undefined) {
@@ -73,6 +76,17 @@ export function diffEstateTax(
       lines.set(key, { key, status: delta === 0 ? "same" : "changed", delta });
     }
   }
+  return lines;
+}
+
+export function diffEstateTax(
+  left: EstateTaxResult,
+  right: EstateTaxResult,
+): EstateTaxDiff {
+  const lines = diffAmountsByKey(
+    amountsByKey(left.grossEstateLines),
+    amountsByKey(right.grossEstateLines),
+  );
 
   return {
     totals: {
