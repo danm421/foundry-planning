@@ -126,10 +126,41 @@ describe("ChatSurface — the holdings toggle", () => {
       ([, init]) => (init as RequestInit | undefined)?.method === "PATCH",
     );
     expect(patch).toBeDefined();
+    // The [importId] route, not the collection route — a regression that
+    // PATCHed /api/clients/c1/imports instead would still satisfy a
+    // method-only assertion.
+    expect(patch![0]).toBe("/api/clients/c1/imports/i1");
     expect(JSON.parse(String((patch![1] as RequestInit).body))).toEqual({
       extractHoldings: false,
     });
     expect(toggle).not.toBeChecked();
+  });
+
+  // `fetch` RESOLVES normally on a 4xx/5xx — it never rejects, so a
+  // `.catch`-only handler never sees an HTTP error. Left uncaught, the
+  // checkbox would keep showing the optimistic value while the database
+  // (what chat/extract/route.ts:148 actually reads) kept the old one — an
+  // advisor sees "Extract holdings: on" and still gets zero positions back.
+  it("reverts the toggle and shows an error when the PATCH fails", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: "boom" }), { status: 500 }),
+    ); // PATCH extractHoldings — fails
+
+    render(
+      <ChatSurface
+        clientId="c1"
+        importId="i1"
+        initialFiles={initialFiles}
+        initialExtractHoldings
+      />,
+    );
+    const toggle = await screen.findByRole("checkbox", { name: /extract holdings/i });
+    expect(toggle).toBeChecked();
+
+    await userEvent.click(toggle);
+
+    expect(await screen.findByText(/couldn.t save/i)).toBeInTheDocument();
+    expect(toggle).toBeChecked();
   });
 });
 

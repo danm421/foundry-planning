@@ -66,6 +66,7 @@ export function ChatSurface({
   const [uploadedCount, setUploadedCount] = useState(initialFiles.length);
   const [status, setStatus] = useState<Status>("idle");
   const [extractHoldings, setExtractHoldings] = useState(initialExtractHoldings ?? false);
+  const [holdingsError, setHoldingsError] = useState<string | null>(null);
   const [fileEvents, setFileEvents] = useState<Array<Extract<ChatExtractEvent, { type: "file" }>>>(
     [],
   );
@@ -111,17 +112,35 @@ export function ChatSurface({
 
   const toggleHoldings = useCallback(
     (next: boolean) => {
-      // Optimistic, like UploadZone's own document-type PATCH: the advisor
-      // sees the switch move, and the value that matters is read server-side
-      // at the next extraction, not now.
+      // Optimistic, like UploadZone's own document-type PATCH — but unlike
+      // that one, silently keeping the optimistic value on failure is
+      // exactly the defect this feature exists to fix: chat/extract/
+      // route.ts:148 reads the DATABASE column, not this state, so a
+      // failed write must revert the checkbox and say so rather than let
+      // the advisor believe "on" got saved when it didn't.
+      const previous = extractHoldings;
       setExtractHoldings(next);
+      setHoldingsError(null);
       fetch(`/api/clients/${clientId}/imports/${importId}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ extractHoldings: next }),
-      }).catch((err) => console.error("Failed to update holdings extraction:", err));
+      })
+        .then((res) => {
+          // fetch resolves normally on a 4xx/5xx — it never rejects — so
+          // an HTTP error has to be checked here, not just in .catch below.
+          if (!res.ok) {
+            setExtractHoldings(previous);
+            setHoldingsError("Couldn't save — try again.");
+          }
+        })
+        .catch((err) => {
+          console.error("Failed to update holdings extraction:", err);
+          setExtractHoldings(previous);
+          setHoldingsError("Couldn't save — try again.");
+        });
     },
-    [clientId, importId],
+    [clientId, importId, extractHoldings],
   );
 
   const runExtraction = useCallback(async () => {
@@ -220,16 +239,19 @@ export function ChatSurface({
                 : `${uploadedCount} ${uploadedCount === 1 ? "file" : "files"} ready.`}
             </p>
             <div className="flex items-center gap-4">
-              <label className="flex items-center gap-2 text-sm text-ink-3">
-                <input
-                  type="checkbox"
-                  checked={extractHoldings}
-                  onChange={(e) => toggleHoldings(e.target.checked)}
-                  disabled={isStreaming || turnStatus === "sending"}
-                  className="h-4 w-4 rounded border-hair accent-accent"
-                />
-                Extract holdings
-              </label>
+              <div className="flex flex-col gap-1">
+                <label className="flex items-center gap-2 text-sm text-ink-3">
+                  <input
+                    type="checkbox"
+                    checked={extractHoldings}
+                    onChange={(e) => toggleHoldings(e.target.checked)}
+                    disabled={isStreaming || turnStatus === "sending"}
+                    className="h-4 w-4 rounded border-hair accent-accent"
+                  />
+                  Extract holdings
+                </label>
+                {holdingsError && <p className="text-sm text-crit">{holdingsError}</p>}
+              </div>
               <button
                 type="button"
                 onClick={runExtraction}
