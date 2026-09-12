@@ -2,6 +2,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 export interface YearOption {
   year: number;
@@ -50,7 +51,7 @@ export default function TaxLedgerYearPicker({
   function ageLabel(ages: { client: number; spouse?: number }) {
     const c = `${clientName?.trim() || "Client"} ${ages.client}`;
     if (ages.spouse == null) return c;
-    return `${c} · ${spouseName?.trim() || "Spouse"} ${ages.spouse}`;
+    return `${c} · ${spouseName?.trim() || CO_CLIENT_LABEL} ${ages.spouse}`;
   }
 
   const selected = years.find((y) => y.year === selectedYear) ?? null;

@@ -61,7 +61,7 @@ function resolveBusinessRecipient(input: {
   ): ResolvedRecipient => {
     if (kind === "spouse") {
       return { recipientKind: "spouse", recipientId: survivorFmId,
-        recipientLabel: "Spouse", via: "will", fraction, successorFmId: survivorFmId };
+        recipientLabel: "Co-client", via: "will", fraction, successorFmId: survivorFmId };
     }
     if (kind === "family_member") {
       const fm = familyMembers.find((f) => f.id === id);
@@ -118,7 +118,7 @@ function resolveBusinessRecipient(input: {
   // 3. Fallback: spouse → children → other heirs.
   if (survivorFmId != null) {
     return [{ recipientKind: "spouse", recipientId: survivorFmId,
-      recipientLabel: "Spouse", via: "fallback_spouse", fraction: 1,
+      recipientLabel: "Co-client", via: "fallback_spouse", fraction: 1,
       successorFmId: survivorFmId }];
   }
   const children = familyMembers.filter(

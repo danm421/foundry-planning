@@ -26,8 +26,8 @@ describe("BequestSubForm", () => {
     );
 
     const always = screen.getByLabelText(/always/i);
-    const ifSurvives = screen.getByLabelText(/if spouse survives/i);
-    const ifPredeceased = screen.getByLabelText(/if spouse predeceased/i);
+    const ifSurvives = screen.getByLabelText(/if co-client survives/i);
+    const ifPredeceased = screen.getByLabelText(/if co-client predeceased/i);
 
     expect(always).toBeDisabled();
     expect(ifSurvives).toBeDisabled();

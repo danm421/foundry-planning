@@ -125,7 +125,7 @@ export function mergeExtractionResults(
         const existingName = `${payload.spouse.firstName} ${payload.spouse.lastName ?? ""}`.trim();
         if (incomingName.toLowerCase() !== existingName.toLowerCase()) {
           payload.warnings.push(
-            `Spouse conflict between files: "${existingName}" vs "${incomingName}". Keeping the first.`,
+            `Co-client conflict between files: "${existingName}" vs "${incomingName}". Keeping the first.`,
           );
         }
       }

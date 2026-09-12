@@ -1566,7 +1566,7 @@ d("POST /api/clients/[id]/gifts — T16 past-dated dual-write", () => {
     expect(body.error).toMatch(/household.*remaining share/i);
   });
 
-  it("11. Mid-stream household scaling — proportional preservation (client 60%, spouse 40%, transfer 50%)", async () => {
+  it("11. Mid-stream household scaling — proportional preservation (client 60%, co-client 40%, transfer 50%)", async () => {
     const { clientId, scenarioId, clientFmId, spouseFmId, entityId } =
       await setupClientWithPlanSettings(2026);
     const { db } = dbMod;

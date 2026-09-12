@@ -57,7 +57,7 @@ export function applyIncomeTimingDefaults(payload: ImportPayload): {
       IMPLAUSIBLE_EARNING_STOPS.has(row.endYearRef) &&
       defaults.endYearRef
     ) {
-      const who = owner === "spouse" ? "the spouse" : "the client";
+      const who = owner === "spouse" ? "the Co-client" : "the client";
       normalized.push({
         incomeName: row.name,
         statedRef: row.endYearRef,

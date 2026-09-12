@@ -15,6 +15,10 @@
 //      `targetId|entity|desiredFields`). The route's writers store a
 //      scenario_change row instead of mutating base data.
 //
+// `submitDirect` is the third path, for tables that are scenario-PARTITIONED
+// rather than overlaid (`gift_series` today): the per-entity route is the
+// scenario-correct write in BOTH modes, so there is no change row at all.
+//
 // `submit` takes ONE edit or an ORDERED BATCH. A batch exists because a
 // scenario_change row targets exactly one `targetKind`, so a single logical
 // change that spans two kinds — the Goals board's life expectancy, which moves
@@ -49,6 +53,18 @@ export interface BaseFallback {
   method: "POST" | "PATCH" | "PUT" | "DELETE";
   /** Optional. JSON-stringified into the request when present. */
   body?: unknown;
+  /**
+   * Opt out of the post-write `router.refresh()`. Default (absent/false) is to
+   * refresh, which is what every caller that saves ONE thing wants.
+   *
+   * Set it on a caller that issues SEVERAL submits for a SINGLE save — the
+   * trust dialog's split-interest funding picks are N gift writes behind one
+   * Save button. Without this each one bills a full server re-render, and on
+   * this page a refresh also re-runs the dialog's own gift/series/ledger
+   * fetches. The save's first submit (the entity write) leaves this unset, so
+   * exactly one refresh still happens per save.
+   */
+  skipRefresh?: boolean;
 }
 
 export interface UseScenarioWriter {
@@ -61,6 +77,21 @@ export interface UseScenarioWriter {
     edit: ScenarioEdit | ScenarioEdit[],
     baseFallback: BaseFallback,
   ) => Promise<Response>;
+  /**
+   * Issue the per-entity request in BOTH modes, with no `scenario_changes` row.
+   *
+   * For the tables that are scenario-PARTITIONED rather than overlaid.
+   * `gift_series` is the one today: the row carries a real `scenario_id`, its
+   * GET filters on that column, and promotion copies the whole partition into
+   * base (`promote-direct-tables.ts`). So its own route already IS the
+   * scenario-correct write, and a change row would be invisible to the list
+   * that fetches it and impossible to promote. Callers pass `?scenario=<sid>`
+   * on the URL themselves — only they know which partition the row belongs in.
+   *
+   * Identical to what `submit` does in base mode, refresh included, so a
+   * surface that moves onto it keeps its base-mode behaviour unchanged.
+   */
+  submitDirect: (request: BaseFallback) => Promise<Response>;
   /** True when `?scenario=<sid>` is set, i.e. submits go through the unified route. */
   scenarioActive: boolean;
 }
@@ -69,6 +100,20 @@ export function useScenarioWriter(clientId: string): UseScenarioWriter {
   const { scenarioId } = useScenarioState(clientId);
   const router = useRouter();
 
+  const submitDirect = useCallback(
+    async (request: BaseFallback): Promise<Response> => {
+      const init: RequestInit = { method: request.method };
+      if (request.body !== undefined) {
+        init.headers = { "Content-Type": "application/json" };
+        init.body = JSON.stringify(request.body);
+      }
+      const res = await fetch(request.url, init);
+      if (res.ok && !request.skipRefresh) router.refresh();
+      return res;
+    },
+    [router],
+  );
+
   const submit = useCallback(
     async (
       edit: ScenarioEdit | ScenarioEdit[],
@@ -76,16 +121,7 @@ export function useScenarioWriter(clientId: string): UseScenarioWriter {
     ): Promise<Response> => {
       // Base mode: pass through to the per-entity legacy route. ONE call even
       // for a batch — see the header note on `baseFallback`.
-      if (!scenarioId) {
-        const init: RequestInit = { method: baseFallback.method };
-        if (baseFallback.body !== undefined) {
-          init.headers = { "Content-Type": "application/json" };
-          init.body = JSON.stringify(baseFallback.body);
-        }
-        const res = await fetch(baseFallback.url, init);
-        if (res.ok) router.refresh();
-        return res;
-      }
+      if (!scenarioId) return submitDirect(baseFallback);
 
       // Scenario mode: one POST per edit, in order, stopping at the first
       // failure. Refreshing per-edit instead would re-render the page against a
@@ -111,14 +147,14 @@ export function useScenarioWriter(clientId: string): UseScenarioWriter {
         if (!res.ok) return res;
         last = res;
       }
-      if (last) router.refresh();
+      if (last && !baseFallback.skipRefresh) router.refresh();
       // Only reachable for an empty batch, which no caller passes. "Nothing to
       // write" is a success, and answering with an ok Response keeps every
       // caller's `res.ok` read honest without widening the return to nullable.
       return last ?? new Response(null, { status: 204 });
     },
-    [scenarioId, clientId, router],
+    [scenarioId, clientId, router, submitDirect],
   );
 
-  return { submit, scenarioActive: scenarioId != null };
+  return { submit, submitDirect, scenarioActive: scenarioId != null };
 }

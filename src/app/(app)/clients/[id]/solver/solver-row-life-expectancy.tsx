@@ -13,6 +13,7 @@ import { SolverFieldStepper } from "./solver-field-stepper";
 import { LABEL_ROW } from "./solver-lever-label-row";
 import { SolverYearEdit } from "./solver-year-edit";
 import { birthYearFromDob, yearForAge } from "@/lib/age-year";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 interface Props {
   baseClient: ClientData["client"];
@@ -62,8 +63,8 @@ export function SolverRowLifeExpectancy({
         {showSpouse ? (
           <Editable
             id="le-spouse"
-            label={`${workingClient.spouseName ?? "Spouse"}'s Life Expectancy`}
-            displayLabel={workingClient.spouseName ?? "Spouse"}
+            label={`${workingClient.spouseName ?? CO_CLIENT_LABEL}'s Life Expectancy`}
+            displayLabel={workingClient.spouseName ?? CO_CLIENT_LABEL}
             value={workingClient.spouseLifeExpectancy ?? 93}
             base={baseClient.spouseLifeExpectancy ?? 93}
             min={spouseMinLE}

@@ -13,7 +13,7 @@ import type { ClientData } from "@/engine/types";
  */
 function householdData(): ClientData {
   return {
-    client: { firstName: "Client", lastName: "Sample", spouseName: "Spouse Sample" },
+    client: { firstName: "Client", lastName: "Sample", spouseName: "Robin Sample" },
     accounts: [
       {
         id: "acc-1",
@@ -26,7 +26,7 @@ function householdData(): ClientData {
     ],
     familyMembers: [
       { id: "fm-client", role: "client", relationship: "child", firstName: "Client", lastName: "Sample" },
-      { id: "fm-spouse", role: "spouse", relationship: "child", firstName: "Spouse", lastName: "Sample" },
+      { id: "fm-spouse", role: "spouse", relationship: "child", firstName: "Robin", lastName: "Sample" },
       { id: "fm-kid1", role: "child", relationship: "child", firstName: "Child", lastName: "Sample" },
       { id: "fm-kid2", role: "child", relationship: "child", firstName: "Second Child", lastName: "Sample" },
     ],
@@ -53,5 +53,30 @@ describe("EstateFlowChangeDistributionDialog — Split among children", () => {
 
     // Two children → two rows, not four (client + spouse must be excluded).
     expect(screen.getAllByLabelText("primary beneficiary")).toHaveLength(2);
+  });
+});
+
+describe("EstateFlowChangeDistributionDialog — household beneficiary options", () => {
+  it("renders the co-client option with the lowercase parenthetical tag, beside the client tag", () => {
+    render(
+      <EstateFlowChangeDistributionDialog
+        accountId="acc-1"
+        clientData={householdData()}
+        onApplyBeneficiaries={vi.fn()}
+        onApplyWill={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    // The fixture starts with no beneficiary rows; add one to render the
+    // "Household" optgroup (both household members' real names, tagged).
+    fireEvent.click(screen.getByRole("button", { name: /add primary/i }));
+
+    expect(
+      screen.getByRole("option", { name: "Client Sample (client)" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "Robin Sample (co-client)" }),
+    ).toBeInTheDocument();
   });
 });

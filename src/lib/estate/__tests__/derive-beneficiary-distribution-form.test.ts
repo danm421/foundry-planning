@@ -129,9 +129,9 @@ describe("deriveBeneficiaryDistributionForm", () => {
     ]);
   });
 
-  it("excludes spouse recipients", () => {
+  it("excludes co-client recipients", () => {
     const result = deriveBeneficiaryDistributionForm(
-      [rt({ key: "spouse|s1", recipientKind: "spouse", recipientLabel: "Spouse", total: 9000 })],
+      [rt({ key: "spouse|s1", recipientKind: "spouse", recipientLabel: "Co-client", total: 9000 })],
       tree({}),
     );
     expect(result).toEqual([]);

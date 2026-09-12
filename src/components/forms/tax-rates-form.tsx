@@ -15,6 +15,7 @@ import {
 import type { FilingStatus } from "@/lib/tax/types";
 import { USPS_STATE_NAMES, USPS_STATE_CODES, type USPSStateCode } from "@/lib/usps-states";
 import { useClientAccess } from "@/components/client-access-provider";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 interface TaxRatesFormProps {
   clientId: string;
@@ -431,9 +432,9 @@ export default function TaxRatesForm({
               </Row>
               {hasSpouse && (
                 <Row
-                  label={`Workplace plan — ${spouseFirstName ?? "Spouse"}`}
+                  label={`Workplace plan — ${spouseFirstName ?? CO_CLIENT_LABEL}`}
                   htmlFor="spouseCoveredByWorkplacePlan"
-                  help="Same override, applied to the spouse's workplace-plan coverage."
+                  help="Same override, applied to the Co-client's workplace-plan coverage."
                 >
                   <select
                     id="spouseCoveredByWorkplacePlan"
@@ -586,7 +587,7 @@ export default function TaxRatesForm({
 
             <Card
               title="Prior lifetime gifts"
-              help="Post-1976 cumulative taxable gifts before plan start. Pull from the most recent Form 709's 'prior periods' line. Joint pre-plan gifts are pre-attributed (a $200K joint gift = $100K on each spouse)."
+              help="Post-1976 cumulative taxable gifts before plan start. Pull from the most recent Form 709's 'prior periods' line. Joint pre-plan gifts are pre-attributed (a $200K joint gift = $100K to each)."
             >
               <Row
                 label={clientFirstName ?? "Client"}
@@ -601,9 +602,9 @@ export default function TaxRatesForm({
               </Row>
               {hasSpouse && (
                 <Row
-                  label={spouseFirstName ?? "Spouse"}
+                  label={spouseFirstName ?? CO_CLIENT_LABEL}
                   htmlFor="priorTaxableGiftsSpouse"
-                  help={`Cumulative post-1976 taxable gifts ${spouseFirstName ?? "the spouse"} made before the plan starts. Reduces the federal exemption available at death.`}
+                  help={`Cumulative post-1976 taxable gifts ${spouseFirstName ?? "the Co-client"} made before the plan starts. Reduces the federal exemption available at death.`}
                 >
                   <CurrencyInput
                     id="priorTaxableGiftsSpouse"

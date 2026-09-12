@@ -37,6 +37,10 @@ export interface EntityDialogProps {
   assetFamilyMembers?: AssetsTabFamilyMember[];
   /** Schedule modal context — derived from client plan settings + primary client DOB */
   planEndYear?: number;
+  /** The plan's real first projection year. Passed down to the transfer forms,
+   *  which refuse a past-dated asset transfer inside a scenario — the overlay
+   *  cannot represent a change of ownership that has already happened. */
+  planStartYear?: number;
   primaryClientBirthYear?: number;
 }
 
@@ -112,6 +116,7 @@ export default function EntityDialog({
   businesses,
   assetFamilyMembers,
   planEndYear,
+  planStartYear,
   primaryClientBirthYear,
 }: EntityDialogProps) {
   const searchParams = useSearchParams();
@@ -291,6 +296,7 @@ export default function EntityDialog({
         entityExpense={entityExpense}
         assetFamilyMembers={assetFamilyMembers}
         planEndYear={planEndYear}
+        planStartYear={planStartYear}
         primaryClientBirthYear={primaryClientBirthYear}
         initialFlowOverrides={initialFlowOverrides}
         onSaved={onSaved}

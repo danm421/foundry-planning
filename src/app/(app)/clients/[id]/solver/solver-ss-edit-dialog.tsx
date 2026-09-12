@@ -18,6 +18,7 @@ import type {
   SsBenefitMode,
   SsClaimAgeMode,
 } from "@/lib/solver/types";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 interface Props {
   open: boolean;
@@ -37,7 +38,7 @@ export function SolverSsEditDialog({
   workingRow,
 }: Props) {
   const firstName =
-    person === "spouse" ? (client.spouseName ?? "Spouse") : client.firstName;
+    person === "spouse" ? (client.spouseName ?? CO_CLIENT_LABEL) : client.firstName;
   const ownerDob = person === "spouse" ? client.spouseDob : client.dateOfBirth;
   const ownerRetirementAge =
     person === "spouse" ? client.spouseRetirementAge : client.retirementAge;

@@ -3,6 +3,7 @@
 
 import type { ClientData, ProjectionYear } from "@/engine/types";
 import type { TableMarker } from "../types";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 export function buildMarkers(
   clientData: ClientData,
@@ -35,7 +36,7 @@ export function buildMarkers(
   if (ci.spouseDob) {
     principals.push({
       who: "spouse",
-      name: spouseName ?? ci.spouseName ?? "Spouse",
+      name: spouseName ?? ci.spouseName ?? CO_CLIENT_LABEL,
       yob: new Date(ci.spouseDob).getUTCFullYear(),
       retirementAge: ci.spouseRetirementAge ?? null,
       lifeExpectancyOrPlanEnd: ci.spouseLifeExpectancy ?? ci.planEndAge ?? null,
@@ -71,7 +72,7 @@ export function buildMarkers(
   return collapseJointMarkers(
     markers,
     clientName,
-    spouseName ?? ci.spouseName ?? "Spouse",
+    spouseName ?? ci.spouseName ?? CO_CLIENT_LABEL,
   );
 }
 

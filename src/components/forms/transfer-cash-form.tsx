@@ -4,6 +4,9 @@ import { useState } from "react";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
 import { CurrencyInput } from "@/components/currency-input";
 import type { ClientMilestones, YearRef } from "@/lib/milestones";
+import { useScenarioWriter } from "@/hooks/use-scenario-writer";
+import { giftScenarioAdd } from "@/lib/gifts/gift-write";
+import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import {
   inputClassName,
   selectClassName,
@@ -48,6 +51,8 @@ export default function TransferCashForm({
   onClose,
   onSaved,
 }: Props) {
+  const writer = useScenarioWriter(clientId);
+
   const defaultSourceId =
     accounts.find((a) => a.isDefaultChecking)?.id ?? accounts[0]?.id ?? "";
 
@@ -96,10 +101,24 @@ export default function TransferCashForm({
         // NO accountId, liabilityId, percent, sourceAccountId
       };
 
-      const res = await fetch(`/api/clients/${clientId}/gifts`, {
+      // Key order matches `giftRowToDraft`'s cash-once branch exactly — the
+      // unsaved-changes diff compares gifts with JSON.stringify, which is
+      // key-order-sensitive (estate-flow-gift-diff.ts).
+      const draft: EstateFlowGift = {
+        kind: "cash-once",
+        id: crypto.randomUUID(),
+        year,
+        amount: amountNum,
+        grantor,
+        recipient: { kind: "entity", id: trustId },
+        crummey: useCrummeyPowers,
+        eventKind: "outright",
+      };
+
+      const res = await writer.submit(giftScenarioAdd(draft), {
+        url: `/api/clients/${clientId}/gifts`,
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body,
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
@@ -170,7 +189,7 @@ export default function TransferCashForm({
               onChange={() => setGrantor("spouse")}
               className="accent-accent"
             />
-            Spouse
+            Co-client
           </label>
         </div>
       </div>

@@ -1,4 +1,5 @@
 import { compactCurrency } from "@/lib/presentations/format";
+import { ENUM_LABELS } from "./labels";
 
 export function nameFor(
   c: { targetKind: string; targetId: string },
@@ -66,4 +67,37 @@ export function fmtValue(v: unknown): string {
   }
   if (typeof v === "object") return "—";
   return String(v);
+}
+
+/**
+ * Payload fields that store the individual-person enum (`client` / `spouse` /
+ * `joint`) rather than a name or an id.
+ *
+ * Matched on the WHOLE field name, the way `domain/forge/row-lines.ts` scopes
+ * its own owner map, so `ownerEntityId` / `ownerAccountId` — ids, not enums —
+ * keep falling through to fmtValue and print as themselves.
+ */
+const PERSON_ENUM_FIELDS = new Set(["owner", "grantor"]);
+
+/**
+ * fmtValue, plus the humanisations that need to know WHICH field they are
+ * formatting.
+ *
+ * fmtValue's last line is `String(v)`, so a string payload value prints
+ * verbatim — and the stored token for the household's second person is the one
+ * word this app never shows an advisor or a client. An owner or grantor edit is
+ * a field-level diff, so it takes the generic edit path, which put that token
+ * straight into a before/after cell on the Scenario Changes deck: a CLIENT
+ * DELIVERABLE, the same exit the `owners`-array bug above escaped through.
+ *
+ * Driven by the field, never by pattern-matching the value, and only for a
+ * token the label table actually holds — an unrecognised one still falls
+ * through rather than being guessed at.
+ */
+export function fmtFieldValue(field: string, v: unknown): string {
+  if (PERSON_ENUM_FIELDS.has(field) && typeof v === "string") {
+    const labelled = ENUM_LABELS.grantor[v];
+    if (labelled) return labelled;
+  }
+  return fmtValue(v);
 }

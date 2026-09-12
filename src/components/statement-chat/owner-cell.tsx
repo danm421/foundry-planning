@@ -1,6 +1,7 @@
 "use client";
 
 import AssumedChip, { type ChipAssumption } from "@/components/import/assumed-chip";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 export interface OwnerCellProps {
   /** Resolved owner display name(s), when ownership matching has already run. */
@@ -21,7 +22,7 @@ export const OWNER_HINT_REASON =
 
 const ROLE_LABELS: Record<"client" | "spouse" | "joint", string> = {
   client: "Client",
-  spouse: "Spouse",
+  spouse: CO_CLIENT_LABEL,
   joint: "Joint",
 };
 
@@ -40,7 +41,7 @@ const ROLE_LABELS: Record<"client" | "spouse" | "joint", string> = {
  * The old order tested `hint` before `role`, so a printed name — essentially
  * always present — hid the role entirely. That was merely misleading while the
  * cell was read-only; it became a broken control the moment the cell was
- * editable, because picking "Spouse" changed nothing on screen and the
+ * editable, because picking "Co-client" changed nothing on screen and the
  * dropdown read as dead.
  *
  * The "Assumed" pill stays even after an explicit pick, and stays next to the

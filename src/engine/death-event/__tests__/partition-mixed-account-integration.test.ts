@@ -17,7 +17,7 @@ const spouseFm: FamilyMember = {
   id: LEGACY_FM_SPOUSE,
   role: "spouse",
   relationship: "other",
-  firstName: "Spouse",
+  firstName: "Co-client",
   lastName: "Test",
   dateOfBirth: "1972-01-01",
 };

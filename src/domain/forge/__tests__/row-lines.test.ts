@@ -153,7 +153,7 @@ describe("newRowLines — expense and income", () => {
       }),
     ).toEqual([
       "Type: Social security",
-      "Owner: Spouse",
+      "Owner: Co-client",
       "Annual amount: $0",
       "Years: 2035–2060",
       "Growth: Tracks inflation",

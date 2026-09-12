@@ -36,6 +36,7 @@ import {
 } from "@/components/forms/input-styles";
 import { resolveCoverage, resolveCoveredEarnings } from "@/engine/disability-benefits";
 import type { ClientInfo, DisabilityPolicy } from "@/engine/types";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 /**
  * The policy as a FLAT bag of scalars — the shape the wire uses and the shape
@@ -451,7 +452,7 @@ export default function DisabilityPolicyDialog(props: DisabilityPolicyDialogProp
   }
 
   const spouseOptionLabel =
-    props.spouseFirstName ?? (form.insured === "spouse" ? "Spouse (not on file)" : null);
+    props.spouseFirstName ?? (form.insured === "spouse" ? `${CO_CLIENT_LABEL} (not on file)` : null);
   const insuredOptions = [
     { value: "client", label: props.clientFirstName },
     ...(spouseOptionLabel === null ? [] : [{ value: "spouse", label: spouseOptionLabel }]),

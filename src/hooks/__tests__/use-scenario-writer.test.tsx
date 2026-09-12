@@ -104,6 +104,53 @@ describe("useScenarioWriter — base mode", () => {
   });
 });
 
+describe("useScenarioWriter — skipRefresh", () => {
+  // A caller that fans ONE save out into several submits (the trust dialog's
+  // split-interest funding picks) must not bill a server re-render per write.
+  it("base mode: writes as usual but does NOT refresh", async () => {
+    setUrl("");
+    const { result } = renderHook(() => useScenarioWriter(CLIENT_ID));
+
+    const res = await result.current.submit(
+      { op: "remove", targetKind: "gift", targetId: "gift-1" },
+      { url: `/api/clients/${CLIENT_ID}/gifts/gift-1`, method: "DELETE", skipRefresh: true },
+    );
+
+    expect(res.ok).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls[0][0]).toBe(`/api/clients/${CLIENT_ID}/gifts/gift-1`);
+    expect(refreshSpy).not.toHaveBeenCalled();
+  });
+
+  it("scenario mode: writes the change row but does NOT refresh", async () => {
+    setUrl(`scenario=${SCENARIO_ID}`);
+    const { result } = renderHook(() => useScenarioWriter(CLIENT_ID));
+
+    await result.current.submit(
+      { op: "remove", targetKind: "gift", targetId: "gift-1" },
+      { url: `/api/clients/${CLIENT_ID}/gifts/gift-1`, method: "DELETE", skipRefresh: true },
+    );
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls[0][0]).toBe(
+      `/api/clients/${CLIENT_ID}/scenarios/${SCENARIO_ID}/changes`,
+    );
+    expect(refreshSpy).not.toHaveBeenCalled();
+  });
+
+  it("omitting it keeps today's behavior — every other caller still refreshes", async () => {
+    setUrl("");
+    const { result } = renderHook(() => useScenarioWriter(CLIENT_ID));
+
+    await result.current.submit(
+      { op: "remove", targetKind: "gift", targetId: "gift-1" },
+      { url: `/api/clients/${CLIENT_ID}/gifts/gift-1`, method: "DELETE" },
+    );
+
+    expect(refreshSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("useScenarioWriter — scenario mode", () => {
   it("edit → POSTs unified route with op=edit + targetKind + targetId + desiredFields", async () => {
     setUrl(`scenario=${SCENARIO_ID}`);
@@ -292,6 +339,49 @@ describe("useScenarioWriter — batched edits", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(fetchSpy.mock.calls[0][0]).toBe(`/api/clients/${CLIENT_ID}`);
     expect(refreshSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("useScenarioWriter — submitDirect", () => {
+  // For tables that are scenario-PARTITIONED rather than overlaid
+  // (`gift_series` today). The row carries its own `scenario_id`, so the
+  // per-entity route already IS the scenario-correct write — a change row would
+  // be invisible to the GET that filters the table, and un-promotable.
+  it("issues the request even with a scenario active, and never touches /changes", async () => {
+    setUrl(`scenario=${SCENARIO_ID}`);
+    const { result } = renderHook(() => useScenarioWriter(CLIENT_ID));
+
+    const res = await result.current.submitDirect({
+      url: `/api/clients/${CLIENT_ID}/gifts/series?scenario=${SCENARIO_ID}`,
+      method: "POST",
+      body: { annualAmount: 19000 },
+    });
+
+    expect(res.ok).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe(`/api/clients/${CLIENT_ID}/gifts/series?scenario=${SCENARIO_ID}`);
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({ annualAmount: 19000 });
+    expect(String(url)).not.toContain("/changes");
+    expect(refreshSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("behaves exactly like base-mode submit — no body, no refresh under skipRefresh", async () => {
+    setUrl(`scenario=${SCENARIO_ID}`);
+    const { result } = renderHook(() => useScenarioWriter(CLIENT_ID));
+
+    await result.current.submitDirect({
+      url: `/api/clients/${CLIENT_ID}/gifts/series/gs-1`,
+      method: "DELETE",
+      skipRefresh: true,
+    });
+
+    const [, init] = fetchSpy.mock.calls[0];
+    expect(init.method).toBe("DELETE");
+    expect(init.body).toBeUndefined();
+    expect(init.headers).toBeUndefined();
+    expect(refreshSpy).not.toHaveBeenCalled();
   });
 });
 

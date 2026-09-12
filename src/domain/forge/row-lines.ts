@@ -15,6 +15,7 @@ import {
   formatAccountCategory,
   formatAccountSubType,
 } from "@/lib/accounts/category-labels";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 export type RowKind = "account" | "expense" | "income" | "liability";
 
@@ -82,6 +83,17 @@ const MONEY = new Set([
 
 /** Fractions (0.03 = 3%) — the tool descriptions document these as "e.g. 0.03". */
 const RATE = new Set(["growthRate", "interestRate", "propertyTaxGrowthRate"]);
+
+/** The owner enum needs its own map, not the generic capitaliser: that one
+ *  simply upper-cases the stored token, which turned the second person into the
+ *  one word this app never shows an advisor or client. The approval card has no
+ *  household names to work with (it is a pure formatter), so that person falls
+ *  back to CO_CLIENT_LABEL rather than a real name. */
+const OWNER_LABELS: Record<string, string> = {
+  client: "Client",
+  spouse: CO_CLIENT_LABEL,
+  joint: "Joint",
+};
 
 const ENUM_LABELS: Record<string, string> = {
   jtwros: "Joint (JTWROS)",
@@ -176,6 +188,7 @@ export function formatFieldValue(field: string, v: unknown): string {
   if (field === "category" && typeof v === "string") return formatAccountCategory(v);
   if (field === "subType" && typeof v === "string") return formatAccountSubType(v);
   if (field === "accountNumberLast4") return `…${String(v)}`;
+  if (field === "owner" && typeof v === "string" && OWNER_LABELS[v]) return OWNER_LABELS[v];
   // A raw id on the card tells the advisor nothing; the label alone says what changed.
   if (field.endsWith("Id") && typeof v === "string") return "(changed)";
   if (typeof v === "string" && /^[a-z0-9]+(_[a-z0-9]+)*$/.test(v)) return humanizeEnum(v);

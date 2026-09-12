@@ -41,7 +41,7 @@ vi.mock("@/lib/audit/snapshots/account", () => ({
 // Shared state for controlling DB responses per test
 // ---------------------------------------------------------------------------
 type DbState = {
-  client: null | { id: string; firmId: string; firstName?: string };
+  client: null | { id: string; firmId: string; firstName?: string; crmHouseholdId?: string | null };
   account: null | {
     id: string;
     clientId: string;
@@ -56,6 +56,16 @@ type DbState = {
   accountOwnerRows: Array<{ familyMemberId: string | null; entityId: string | null }>;
   // Principal FM rows for the client
   familyMemberRows: Array<{ id: string; role: string }>;
+  // The route queries `crmHouseholdContacts` twice, sequentially — primary
+  // role first, spouse role second — never concurrently. This mock can't
+  // evaluate the real `.where()` condition (see `makeResult` below, which
+  // discards it), so it distinguishes the two calls by ORDER instead: the
+  // 1st call to this table returns `primaryCrmContactRows`, the 2nd returns
+  // `spouseCrmContactRows`. `crmContactCallCount` tracks that and is reset
+  // per test in `beforeEach`.
+  primaryCrmContactRows: Array<{ firstName: string }>;
+  spouseCrmContactRows: Array<{ firstName: string }>;
+  crmContactCallCount: number;
   insertedCount: number;
 };
 
@@ -64,6 +74,9 @@ const dbState: DbState = {
   account: null,
   accountOwnerRows: [],
   familyMemberRows: [],
+  primaryCrmContactRows: [],
+  spouseCrmContactRows: [],
+  crmContactCallCount: 0,
   insertedCount: 0,
 };
 
@@ -84,6 +97,12 @@ vi.mock("@/db", async () => {
     if (t === schema.accounts || n === "accounts") return dbState.account ? [dbState.account] : [];
     if (t === schema.accountOwners || n === "account_owners") return dbState.accountOwnerRows;
     if (t === schema.familyMembers || n === "family_members") return dbState.familyMemberRows;
+    if (t === schema.crmHouseholdContacts || n === "crm_household_contacts") {
+      dbState.crmContactCallCount += 1;
+      return dbState.crmContactCallCount === 1
+        ? dbState.primaryCrmContactRows
+        : dbState.spouseCrmContactRows;
+    }
     return [];
   };
 
@@ -178,6 +197,9 @@ beforeEach(() => {
   dbState.account = null;
   dbState.accountOwnerRows = [];
   dbState.familyMemberRows = [];
+  dbState.primaryCrmContactRows = [];
+  dbState.spouseCrmContactRows = [];
+  dbState.crmContactCallCount = 0;
   dbState.insertedCount = 0;
 
   mockInsert.mockImplementation(() => ({
@@ -327,5 +349,72 @@ describe("POST /api/clients/[id]/accounts/[accountId]/split", () => {
     // Sum must equal original exactly — no ±$0.01 drift
     expect(clientVal + spouseVal).toBeCloseTo(99.99, 10);
     expect(clientBas + spouseBas).toBeCloseTo(99.99, 10);
+  });
+
+  it("names both split accounts after their real CRM first names when both contacts are on file", async () => {
+    seedJoint();
+    dbState.client!.crmHouseholdId = "hh_a";
+    dbState.primaryCrmContactRows = [{ firstName: "Patricia" }];
+    dbState.spouseCrmContactRows = [{ firstName: "Sam" }];
+
+    const capturedNames: string[] = [];
+    mockInsert.mockImplementation(() => ({
+      values: vi.fn((vals: { name?: string }) => {
+        if (vals.name !== undefined) capturedNames.push(vals.name);
+        return {
+          returning: vi.fn(() => {
+            const id = `acc_new_${dbState.insertedCount++}`;
+            return Promise.resolve([{ id }]);
+          }),
+        };
+      }),
+    }));
+
+    const req = buildReq({ clientShare: 0.6 });
+    const res = await POST(req as never, {
+      params: Promise.resolve({ id: "cli_a", accountId: "acc_joint" }),
+    });
+
+    expect(res.status).toBe(200);
+    // Proves the role filter picks the right row for EACH side — a mock that
+    // returned the same row for both queries (the original asymmetry bug's
+    // blind spot) would fail this exact assertion.
+    expect(capturedNames).toEqual([
+      "Joint Brokerage (Patricia share)",
+      "Joint Brokerage (Sam share)",
+    ]);
+  });
+
+  it("falls back to the Co-client label for the co-client account when that CRM contact is missing", async () => {
+    seedJoint();
+    dbState.client!.crmHouseholdId = "hh_a";
+    dbState.primaryCrmContactRows = [{ firstName: "Patricia" }];
+    dbState.spouseCrmContactRows = []; // no co-client-role contact row for this household
+
+    const capturedNames: string[] = [];
+    mockInsert.mockImplementation(() => ({
+      values: vi.fn((vals: { name?: string }) => {
+        if (vals.name !== undefined) capturedNames.push(vals.name);
+        return {
+          returning: vi.fn(() => {
+            const id = `acc_new_${dbState.insertedCount++}`;
+            return Promise.resolve([{ id }]);
+          }),
+        };
+      }),
+    }));
+
+    const req = buildReq({ clientShare: 0.5 });
+    const res = await POST(req as never, {
+      params: Promise.resolve({ id: "cli_a", accountId: "acc_joint" }),
+    });
+
+    expect(res.status).toBe(200);
+    // Client side still gets its real name; co-client side falls back to the
+    // label, not the other way around and not both falling back together.
+    expect(capturedNames).toEqual([
+      "Joint Brokerage (Patricia share)",
+      "Joint Brokerage (Co-client share)",
+    ]);
   });
 });

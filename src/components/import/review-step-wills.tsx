@@ -12,6 +12,7 @@ import WillBequestMapper, {
   type RecipientOption,
   type WizardBequest,
 } from "./will-bequest-mapper";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 /**
  * Wizard-internal will shape. Replaces the extracted bequests array
@@ -98,7 +99,7 @@ export default function ReviewStepWills({
         const resolvedCount = will.bequests.filter(isBequestResolved).length;
         const total = will.bequests.length;
         const allResolved = resolvedCount === total;
-        const grantorLabel = will.grantor === "client" ? "Client" : "Spouse";
+        const grantorLabel = will.grantor === "client" ? "Client" : CO_CLIENT_LABEL;
 
         return (
           <section

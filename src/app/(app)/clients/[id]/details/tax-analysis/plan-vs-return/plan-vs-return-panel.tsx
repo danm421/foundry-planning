@@ -7,11 +7,6 @@ import { OverviewStrip } from "./overview-strip";
 import { SuggestionSection } from "./suggestion-section";
 import { FOCUS_RING, SuggestionCard, figureClass, rowLink, type CardBusy } from "./suggestion-card";
 
-interface Summary {
-  taxYear: number;
-  status: "extracting" | "needs_review" | "ready" | "failed";
-}
-
 type Load =
   | { state: "idle" | "loading" }
   | { state: "ready"; bundle: Reconciliation }
@@ -54,17 +49,24 @@ const NOTICE_CLASS: Record<Notice["tone"], string> = {
   error: "border-crit/40 bg-crit/10 text-crit",
 };
 
-export function PlanVsReturnContent({
+/** The Plan vs. Return view of the Tax Analysis section. The year and its
+ *  review status are owned by TaxAnalysisContent — one year selector serves
+ *  both views, so this panel never fetches or renders a year list of its own. */
+export function PlanVsReturnPanel({
   clientId,
-  initialYear,
+  year,
+  status,
   scenarioIgnored,
+  onGoToReport,
 }: {
   clientId: string;
-  initialYear?: number;
+  year: number;
+  status: "extracting" | "needs_review" | "ready" | "failed";
   scenarioIgnored: boolean;
+  /** Switches the section back to the Report view — the only place a
+   *  not-yet-confirmed year can be reviewed. */
+  onGoToReport: () => void;
 }) {
-  const [years, setYears] = useState<Summary[] | null>(null);
-  const [year, setYear] = useState<number | null>(null);
   const [load, setLoad] = useState<Load>({ state: "idle" });
   const [notice, setNotice] = useState<Notice | null>(null);
   const [busy, setBusy] = useState<Busy>(null);
@@ -85,32 +87,6 @@ export function PlanVsReturnContent({
   // for. Only the newest request may paint.
   const loadSeq = useRef(0);
   const base = `/api/clients/${clientId}/tax-returns`;
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch(base, { cache: "no-store" })
-      .then(async (res) => {
-        if (!res.ok) throw new Error("The tax returns on file couldn't be loaded.");
-        const body = (await res.json()) as { returns: Summary[] };
-        if (cancelled) return;
-        setYears(body.returns);
-        const pick = body.returns.find((r) => r.taxYear === initialYear) ?? body.returns[0];
-        if (pick) setYear(pick.taxYear);
-      })
-      .catch((e) => {
-        if (!cancelled) {
-          setLoad({
-            state: "error",
-            message: e instanceof Error ? e.message : "The tax returns on file couldn't be loaded.",
-          });
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [base, initialYear]);
-
-  const current = years?.find((r) => r.taxYear === year) ?? null;
 
   const loadBundle = useCallback(
     async (y: number) => {
@@ -138,13 +114,13 @@ export function PlanVsReturnContent({
   );
 
   useEffect(() => {
-    if (year == null || current?.status !== "ready") return;
+    if (status !== "ready") return;
     setNotice(null);
     void loadBundle(year);
-  }, [year, current?.status, loadBundle]);
+  }, [year, status, loadBundle]);
 
   async function apply(s: Suggestion, amount?: number, owner?: OwnerChoice) {
-    if (year == null || writing.current) return;
+    if (writing.current) return;
     writing.current = true;
     // Same sequence the loads use: if the advisor switches year mid-write, the
     // newer bundle wins and this response must not paint over it.
@@ -201,7 +177,7 @@ export function PlanVsReturnContent({
   }
 
   async function dismiss(id: string, mode: "dismiss" | "restore") {
-    if (year == null || writing.current) return;
+    if (writing.current) return;
     writing.current = true;
     const seq = loadSeq.current;
     const superseded = () => seq !== loadSeq.current;
@@ -250,65 +226,22 @@ export function PlanVsReturnContent({
   }, [notice]);
 
   const bundle = load.state === "ready" ? load.bundle : null;
-  const ready = current?.status === "ready";
+  const ready = status === "ready";
   const dismissalsOff = (bundle?.dismissalsUnavailable ?? false) || dismissalsBlocked;
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-1">
-        <h2 className="text-lg font-semibold text-ink">Plan vs. Return</h2>
-        {year != null && (
-          <p className="text-sm text-ink-3">
-            What the {year} return says the plan should look like.
-          </p>
-        )}
+        <h2 className="text-lg font-semibold text-ink">{year} Plan vs. Return</h2>
+        <p className="text-sm text-ink-3">
+          What the {year} return says the plan should look like.
+        </p>
         {scenarioIgnored && (
           <p className="text-xs text-ink-3">
-            This screen compares the base case; the selected scenario is not applied here.
+            This view compares the base case; the selected scenario is not applied here.
           </p>
         )}
       </header>
-
-      {years === null && load.state !== "error" && (
-        <p className="text-sm text-ink-3">Loading tax returns…</p>
-      )}
-
-      {years?.length === 0 && (
-        <div className="rounded-lg border border-dashed border-hair bg-card p-12 text-center">
-          <p className="text-ink-2">No tax return on file yet.</p>
-          <p className="mx-auto mt-2 max-w-md text-sm text-ink-3">
-            Once a filed return is on file, this screen compares it against the base-case plan and
-            offers one-click fixes for anything that has drifted.
-          </p>
-          <Link
-            href={`/clients/${clientId}/details/tax-analysis`}
-            className={`btn-ghost mt-4 inline-flex px-3 py-1.5 text-sm ${FOCUS_RING}`}
-          >
-            Upload a return on Tax Analysis
-          </Link>
-        </div>
-      )}
-
-      {years && years.length > 0 && (
-        <div role="tablist" aria-label="Tax years" className="flex gap-1 border-b border-hair">
-          {years.map((r) => (
-            <button
-              key={r.taxYear}
-              type="button"
-              role="tab"
-              aria-selected={r.taxYear === year}
-              className={`tabular px-3 py-2 text-sm ${FOCUS_RING} ${
-                r.taxYear === year
-                  ? "border-b-2 border-accent font-medium text-ink"
-                  : "text-ink-3 hover:text-ink-2"
-              }`}
-              onClick={() => setYear(r.taxYear)}
-            >
-              {r.taxYear}
-            </button>
-          ))}
-        </div>
-      )}
 
       {/* Always mounted: a live region added at the same moment as its text is
           not reliably announced. */}
@@ -335,19 +268,20 @@ export function PlanVsReturnContent({
         )}
       </div>
 
-      {current && !ready && (
+      {!ready && (
         <div className="rounded-lg border border-hair bg-card p-8 text-center">
-          <p className="text-ink-2">Finish reviewing the {current.taxYear} return first.</p>
+          <p className="text-ink-2">Finish reviewing the {year} return first.</p>
           <p className="mx-auto mt-2 max-w-md text-sm text-ink-3">
             A comparison is only as good as the figures behind it, so the return has to be confirmed
             before the plan is measured against it.
           </p>
-          <Link
-            href={`/clients/${clientId}/details/tax-analysis`}
+          <button
+            type="button"
             className={`btn-ghost mt-4 inline-flex px-3 py-1.5 text-sm ${FOCUS_RING}`}
+            onClick={onGoToReport}
           >
-            Go to Tax Analysis
-          </Link>
+            Review the return
+          </button>
         </div>
       )}
 

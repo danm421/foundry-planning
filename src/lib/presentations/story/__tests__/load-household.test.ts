@@ -59,13 +59,13 @@ beforeEach(() => {
 });
 
 describe("composeStoryHousehold", () => {
-  it("names both spouses, and frames the household by the surname", () => {
+  it("names the client and Co-client, and frames the household by the surname", () => {
     expect(
       composeStoryHousehold({ firstName: "Alan", lastName: "Bradshaw", spouseName: "Teresa" }),
     ).toEqual({ firstNames: "Alan and Teresa", householdName: "the Bradshaw household" });
   });
 
-  it("leaves no dangling 'and' for a household with no spouse", () => {
+  it("leaves no dangling 'and' for a household with no Co-client", () => {
     expect(composeStoryHousehold({ firstName: "Alan", lastName: "Bradshaw" })).toEqual({
       firstNames: "Alan",
       householdName: "the Bradshaw household",
@@ -100,7 +100,7 @@ describe("loadStoryHousehold", () => {
     });
   });
 
-  it("ignores a contact that is neither the primary nor the spouse", async () => {
+  it("ignores a contact that is neither the primary nor the Co-client", async () => {
     fx.contactRows = [
       { role: "child", firstName: "Dana", lastName: "Sample" },
       { role: "primary", firstName: "Cooper", lastName: "Sample" },

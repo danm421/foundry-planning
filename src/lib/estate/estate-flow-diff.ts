@@ -1,5 +1,6 @@
 import type { BeneficiaryRef, ClientData, WillBequest } from "@/engine/types";
 import type { ScenarioEdit } from "@/hooks/use-scenario-writer";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -177,7 +178,7 @@ export function diffWorkingCopy(
   const clientName =
     members.find((m) => m.role === "client")?.firstName ?? "Client";
   const spouseName =
-    members.find((m) => m.role === "spouse")?.firstName ?? "Spouse";
+    members.find((m) => m.role === "spouse")?.firstName ?? CO_CLIENT_LABEL;
 
   const origWill = new Map((original.wills ?? []).map((w) => [w.id, w]));
   for (const w of working.wills ?? []) {

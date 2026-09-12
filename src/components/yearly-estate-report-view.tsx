@@ -17,6 +17,7 @@ import { buildEstateTransferReportData } from "@/lib/estate/transfer-report";
 import type { OwnerDobs } from "./report-controls/age-helpers";
 import { buildLifeEventsByYear } from "@/lib/life-event-markers";
 import EstateTransferSkeleton from "@/app/(app)/clients/[id]/estate-planning/estate-transfer/loading-skeleton";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 interface Props {
   clientId: string;
@@ -153,7 +154,7 @@ export default function YearlyEstateReportView({
               }
               onClick={() => setOrdering("spouseFirst")}
             >
-              {ownerNames.spouseName ?? "Spouse"} dies first
+              {ownerNames.spouseName ?? CO_CLIENT_LABEL} dies first
             </button>
           </div>
         </div>

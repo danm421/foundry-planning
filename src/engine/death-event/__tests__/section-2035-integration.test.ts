@@ -37,7 +37,7 @@ const PRINCIPAL_FMS: FamilyMember[] = [
     id: LEGACY_FM_SPOUSE,
     role: "spouse",
     relationship: "other",
-    firstName: "Spouse",
+    firstName: "Co-client",
     lastName: null,
     dateOfBirth: "1967-01-01",
   },

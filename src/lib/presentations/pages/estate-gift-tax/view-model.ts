@@ -8,6 +8,7 @@ import { buildMarkers } from "../../shared/markers";
 import {
   ESTATE_DISCLAIMER, estateCallout, parseBirthYear, type EstateDrillInput,
 } from "../estate-shared";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 export function buildGiftTaxDrillData(input: EstateDrillInput): DrillPageData {
   const { projection, clientData, options, scenarioLabel, clientName, spouseName } = input;
@@ -19,7 +20,7 @@ export function buildGiftTaxDrillData(input: EstateDrillInput): DrillPageData {
 
   const hasSpouse = spouseName != null && ledgerRows.some((g) => g.perGrantor.spouse != null);
   const clientLabel = clientName;
-  const spouseLabel = spouseName ?? "Spouse";
+  const spouseLabel = spouseName ?? CO_CLIENT_LABEL;
 
   const columns: DrillColumn[] = [
     { key: "fullValueTransferred", header: "Full Value\nTransferred", width: 52 },

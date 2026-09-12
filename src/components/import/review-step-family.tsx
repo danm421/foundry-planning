@@ -172,21 +172,21 @@ export default function ReviewStepFamily({
       <section>
         <div className="mb-2 flex items-center justify-between">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-ink-3">
-            Spouse
+            Co-client
           </h3>
           {spouse ? (
             <button
               onClick={() => onSpouseChange(undefined)}
               className="text-xs text-gray-400 underline hover:text-red-400"
             >
-              Remove spouse
+              Remove Co-client
             </button>
           ) : (
             <button
               onClick={() => onSpouseChange({ firstName: "" })}
               className="text-xs text-accent underline hover:text-accent-ink"
             >
-              + Add spouse
+              + Add Co-client
             </button>
           )}
         </div>
@@ -223,7 +223,7 @@ export default function ReviewStepFamily({
             </div>
           </div>
         ) : (
-          <p className="text-xs text-ink-4">No spouse on this household.</p>
+          <p className="text-xs text-ink-4">No Co-client on this household.</p>
         )}
       </section>
 

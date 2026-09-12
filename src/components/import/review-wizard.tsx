@@ -29,6 +29,7 @@ import { requiredCommitTabs, type CategoryPresence } from "@/lib/imports/require
 import type { GrowthContext } from "@/lib/investments/growth-context";
 import type { ClientMilestones } from "@/lib/milestones";
 import { type RiskLevel } from "@/lib/risk-levels";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import type { AssetOption, RecipientOption } from "./will-bequest-mapper";
 import { seedWizardBequest } from "./will-bequest-mapper";
 import ReviewStepAccounts from "./review-step-accounts";
@@ -187,8 +188,9 @@ export default function ReviewWizard({
   // deriveGoals to run) has no `goals` key at all.
   const [goals, setGoals] = useState<AssembleGoals>(() => payload.goals ?? emptyGoals());
 
-  // Established convention on this branch: a household "has a spouse" when
-  // the wizard was handed a spouse first name, rather than a separate signal.
+  // Established convention on this branch: a household counts as having a
+  // Co-client when the wizard was handed a spouse first name, rather than a
+  // separate signal.
   const hasSpouse = Boolean(spouseFirstName);
 
   // Wills get their own wizard-internal shape because each bequest
@@ -268,7 +270,7 @@ export default function ReviewWizard({
   }, [fetchCanonical]);
 
   const recipientOptions: RecipientOption[] = useMemo(() => {
-    const opts: RecipientOption[] = [{ kind: "spouse", id: null, label: "Spouse" }];
+    const opts: RecipientOption[] = [{ kind: "spouse", id: null, label: CO_CLIENT_LABEL }];
     for (const fm of canonical.familyMembers) {
       const last = fm.lastName ? ` ${fm.lastName}` : "";
       opts.push({

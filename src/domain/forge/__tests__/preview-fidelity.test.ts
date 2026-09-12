@@ -220,6 +220,13 @@ describe("promote_to_base card enrichment", () => {
     updates: [{ kind: "expense" as const, id: "exp-1", set: {} }],
     singletonUpdates: [],
     removes: [{ kind: "liability" as const, id: "liab-1", cascade: false }],
+    // A recurring series is a `gift` change that does NOT land in `inserts`;
+    // without its own preview line the confirmation would say "no field-level
+    // changes" for a promote that writes one.
+    giftSeries: {
+      upserts: [{ id: "gs-1", draft: { kind: "series" } as never }],
+      removes: [],
+    },
   };
 
   let spyLoadEffectiveTree: ReturnType<typeof vi.spyOn>;
@@ -253,6 +260,7 @@ describe("promote_to_base card enrichment", () => {
     expect(details.some((l) => l.includes("ADD") && l.includes("income"))).toBe(true);
     expect(details.some((l) => l.includes("EDIT") && l.includes("expense") && l.includes("exp-1"))).toBe(true);
     expect(details.some((l) => l.includes("REMOVE") && l.includes("liability") && l.includes("liab-1"))).toBe(true);
+    expect(details.some((l) => l.includes("ADD") && /series/i.test(l))).toBe(true);
 
     // Auto-snapshot line
     expect(details.some((l) => /auto-snapshot|snapshotted/i.test(l))).toBe(true);

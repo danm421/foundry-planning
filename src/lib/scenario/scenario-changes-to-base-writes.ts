@@ -6,6 +6,10 @@
 // dangled on a removed account) are taken from the engine's own
 // applyScenarioChanges warnings, so we reuse the engine's cascade rules rather
 // than re-deriving them here.
+//
+// One kind does not map to a single base table: a `gift` change can describe a
+// one-time gift (`gifts`) or a recurring series (`gift_series`). The series
+// half is separated out here — see `plan.giftSeries` and `GiftSeriesWrites`.
 import type { ClientData } from "@/engine/types";
 import {
   applyScenarioChanges,
@@ -19,6 +23,8 @@ import type {
   TargetKind,
 } from "@/engine/scenario/types";
 import type { BaseWritePlan } from "./promote-to-base-types";
+import { isEstateFlowGiftDraft } from "./apply-gift-overlays";
+import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 
 /** CascadeWarning.kind → the TargetKind whose base row must be deleted. The two
  *  reassign/unreference cascades change a reference rather than delete a row, so
@@ -42,6 +48,19 @@ const CASCADE_KIND_TO_TARGET: Record<CascadeWarning["kind"], TargetKind | null> 
   equity_destination_cleared: null,
 };
 
+/** The `EstateFlowGift` behind a `gift` add when — and only when — it is a
+ *  recurring series; null for every other kind and for one-time gift drafts
+ *  (which keep landing in `plan.inserts` untouched). Uses the overlay's own
+ *  predicate so the classifier and the projection cannot disagree about what a
+ *  draft is. */
+function seriesDraft(
+  targetKind: string,
+  payload: unknown,
+): EstateFlowGift | null {
+  if (targetKind !== "gift" || !isEstateFlowGiftDraft(payload)) return null;
+  return payload.kind === "series" ? payload : null;
+}
+
 export function scenarioChangesToBaseWrites(
   baseTree: ClientData,
   changes: ScenarioChange[],
@@ -53,6 +72,7 @@ export function scenarioChangesToBaseWrites(
     updates: [],
     singletonUpdates: [],
     removes: [],
+    giftSeries: { upserts: [], removes: [] },
   };
 
   // 1. Filter changes by effective toggle state (same rule the engine uses).
@@ -64,6 +84,16 @@ export function scenarioChangesToBaseWrites(
   // 2. Map each active change.
   for (const c of active) {
     if (c.opType === "add") {
+      const series = seriesDraft(c.targetKind, c.payload);
+      if (series) {
+        // A series the advisor toggled OFF contributes nothing to the
+        // scenario's numbers (`applyGiftsToClientData` skips `enabled: false`),
+        // and promote's contract is "base equals what this scenario shows" —
+        // for `gift_series`, absence IS off, so the partition row goes.
+        if (series.enabled === false) plan.giftSeries.removes.push(c.targetId);
+        else plan.giftSeries.upserts.push({ id: c.targetId, draft: series });
+        continue;
+      }
       plan.inserts.push({
         kind: c.targetKind,
         targetId: c.targetId,
@@ -71,6 +101,11 @@ export function scenarioChangesToBaseWrites(
       });
     } else if (c.opType === "remove") {
       plan.removes.push({ kind: c.targetKind, id: c.targetId, cascade: false });
+      // The change cannot say which of the two gift tables the id lives in, and
+      // it does not need to: deleting a series id from `gifts` (or a one-time
+      // gift id from `gift_series`) matches nothing and costs one no-op
+      // statement, where a DB lookup would cost a round trip AND a decision.
+      if (c.targetKind === "gift") plan.giftSeries.removes.push(c.targetId);
     } else {
       // edit: payload is { field: { from, to } } — keep only `to`.
       const diff = (c.payload ?? {}) as Record<string, { from: unknown; to: unknown }>;

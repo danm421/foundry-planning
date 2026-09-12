@@ -17,7 +17,7 @@ const objects: DivisibleObject[] = [
     ownerSide: "primary", entityOwnedById: null, childIds: [],
   },
   {
-    kind: "income", id: "inc-spouse", label: "Spouse Salary", subtype: "wages",
+    kind: "income", id: "inc-spouse", label: "Co-client Salary", subtype: "wages",
     value: 0, basis: 0, rothValue: 0, annualAmount: 50_000,
     ownerSide: "spouse", entityOwnedById: null, childIds: [],
   },

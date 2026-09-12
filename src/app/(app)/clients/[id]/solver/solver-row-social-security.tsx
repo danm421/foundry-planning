@@ -15,6 +15,7 @@ import { SolverBaseHint } from "./solver-base-hint";
 import { SolverFieldActions } from "./solver-field-actions";
 import { SolverSsEditDialog } from "./solver-ss-edit-dialog";
 import { SolverSolveIcon } from "./solver-solve-icon";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 type ActiveSolve = {
   target: SolveLeverKey;
@@ -78,7 +79,7 @@ export function SolverRowSocialSecurity({
         ) : null}
         {baseSpouseSs ? (
           <EditableSummary
-            label={`${workingClient.spouseName ?? "Spouse"}'s SS`}
+            label={`${workingClient.spouseName ?? CO_CLIENT_LABEL}'s SS`}
             row={workingSpouseSs ?? baseSpouseSs}
             client={workingClient}
             baseRow={baseSpouseSs}

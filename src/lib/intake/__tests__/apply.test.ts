@@ -845,14 +845,14 @@ describe("applyIntake (household name sync — merge path renames the primary)",
 const SFIRM = "test-firm-apply-intake-hh-add-spouse-2026";
 const SADVISOR = "user_test_apply_hh_add_spouse";
 
-describe("applyIntake (household name sync — merge path adds a spouse)", () => {
+describe("applyIntake (household name sync — merge path adds a co-client)", () => {
   let householdId: string | undefined;
   let clientId: string | undefined;
   let formId: string | undefined;
 
   afterAll(() => cleanup({ formId, clientId, householdId }));
 
-  it("expands the household name when intake adds a spouse", async () => {
+  it("expands the household name when intake adds a co-client", async () => {
     ({ householdId, clientId } = await seedJohnSmithHousehold(SFIRM, SADVISOR));
 
     // Intake adds a spouse, Jane Smith, that wasn't there before.
@@ -1397,7 +1397,7 @@ describe("applyIntake — estate", () => {
     expect(primary.postalCode).toBe("48226");
   });
 
-  it("puts the shared address on the primary only, never on the spouse", async () => {
+  it("puts the shared address on the primary only, never on the co-client", async () => {
     // One address typed by a couple is not evidence that a spouse's separately
     // recorded address is stale.
     const { householdId, clientId } = await seedJohnSmithHousehold(FIRM_E, ADVISOR_E);
@@ -1473,7 +1473,7 @@ describe("applyIntake — estate", () => {
     expect(primary.addressLine1).toBeNull();
   });
 
-  it("cannot conjure a nameless spouse contact from a details-only patch", async () => {
+  it("cannot conjure a nameless co-client contact from a details-only patch", async () => {
     // The upsert inserts only when a patch carries a first name. An estate-only
     // form has none, so a household with no spouse row keeps having none rather
     // than gaining a blank-named contact.

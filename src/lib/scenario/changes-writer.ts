@@ -4,13 +4,15 @@
 // edit (e.g., "set income.annualAmount to 275000 in scenario X") and emits the
 // right scenario_changes row(s): upsert with field-level diff for `edit`,
 // delete-when-revert-to-base, and add/remove handling that collapses inverse
-// pairs (remove-of-an-add becomes a no-op delete, not a remove row).
+// pairs (remove-of-an-add becomes a no-op delete, not a remove row) — except
+// for `gift`, which has no `edit` op and so always keeps the remove marker.
+// See `applyEntityRemove`.
 //
 // The Postgres trigger from Plan 2 Task 1 forbids any non-base writes to
 // scenario-bearing tables, so this writer is the *only* sanctioned path for
 // non-base mutations.
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { scenarioChanges, scenarios } from "@/db/schema";
 import {
@@ -366,6 +368,9 @@ export interface ApplyEntityRemoveArgs {
  * If the entity was added in this scenario (an `add` row exists), deletes the
  * `add` row (and any `edit` row piled on top) — collapsing the inverse pair.
  * Otherwise upserts a `remove` row.
+ *
+ * GIFTS ARE THE EXCEPTION, and they always get the remove marker — see the
+ * comment on `hasAdd` below.
  */
 export async function applyEntityRemove(args: ApplyEntityRemoveArgs): Promise<void> {
   const { scenarioId, firmId, targetKind, targetId } = args;
@@ -387,9 +392,11 @@ export async function applyEntityRemove(args: ApplyEntityRemoveArgs): Promise<vo
   // applyChanges). When the caller passes an open transaction, enroll in it
   // instead of opening a nested one.
   const runRemove = async (tx: Tx) => {
-    // Check for an existing `add` row — if present, the entity is
-    // scenario-only; deleting the add row (plus any piled-on edit) restores
-    // the base view without leaving a remove marker.
+    // Look for an existing `add` row on this target. For every kind EXCEPT
+    // `gift` an `add` means the entity is scenario-only, so deleting it (plus
+    // any piled-on edit) restores the base view with no remove marker left
+    // behind. A gift's `add` does NOT mean that — see the note below the
+    // query — so a gift always gets the remove marker.
     const existing = await tx
       .select()
       .from(scenarioChanges)
@@ -401,8 +408,18 @@ export async function applyEntityRemove(args: ApplyEntityRemoveArgs): Promise<vo
         ),
       );
 
+    // An `add` row means "scenario-only" for every kind EXCEPT `gift`. Gifts
+    // have no `edit` op: the overlay strips every targeted id and
+    // re-materialises only `add` payloads (apply-gift-overlays.ts), so a save
+    // — of a new gift OR of a base-plan one — is always an `add` carrying the
+    // full draft (lib/gifts/gift-write.ts). Editing a base gift in a scenario
+    // therefore leaves an `add` row on a base gift's id, and collapsing that
+    // add on delete would resurrect the base row un-edited while the UI showed
+    // the gift gone. Every other kind reaches `applyEntityEdit`, which writes
+    // an `edit` row for a base entity and only merges into an `add` when one
+    // already exists — so for them `hasAdd` really does mean scenario-only.
     const hasAdd = existing.some((r) => r.opType === "add");
-    if (hasAdd) {
+    if (hasAdd && targetKind !== "gift") {
       // Drop both add and any edit row for this target.
       await tx
         .delete(scenarioChanges)
@@ -416,8 +433,15 @@ export async function applyEntityRemove(args: ApplyEntityRemoveArgs): Promise<vo
       return;
     }
 
-    // Base entity: write a remove row (and clear any piled-on edit, since
-    // editing a removed row would be meaningless).
+    // Base entity — or ANY gift. Write a remove row, and clear the rows the
+    // remove supersedes: any piled-on `edit` (editing a removed row would be
+    // meaningless) and, for a gift, the `add` that the overlay would otherwise
+    // re-materialise straight back on top of the strip. Deleting the add and
+    // writing the marker is the ONE combination that leaves a gift gone in both
+    // cases — a gift born in this scenario (nothing to strip, the marker is a
+    // harmless no-op) and a base gift edited here first. Same rule the solver
+    // already encodes: mutations-to-scenario-changes.ts:596-606, "Remove always
+    // emits, even for a base asset/series id absent from source.gifts."
     await tx
       .delete(scenarioChanges)
       .where(
@@ -425,7 +449,9 @@ export async function applyEntityRemove(args: ApplyEntityRemoveArgs): Promise<vo
           eq(scenarioChanges.scenarioId, scenarioId),
           eq(scenarioChanges.targetKind, targetKind),
           eq(scenarioChanges.targetId, targetId),
-          eq(scenarioChanges.opType, "edit"),
+          targetKind === "gift"
+            ? inArray(scenarioChanges.opType, ["edit", "add"])
+            : eq(scenarioChanges.opType, "edit"),
         ),
       );
 

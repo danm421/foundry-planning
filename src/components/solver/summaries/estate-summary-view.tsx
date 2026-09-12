@@ -144,7 +144,7 @@ const DEATH_NOTE =
   "Gross is each decedent's Form 706 chargeable estate (e.g. ~50% of jointly-titled assets at the first death) — a different basis than the headline Gross Estate, so these need not sum to it.";
 
 const HEIR_NOTE =
-  "“Today” = household dies now (after both deaths). “End of Life” = each spouse's projected death year. Surviving-spouse pass-through is excluded; amounts are net of taxes & costs.";
+  "“Today” = household dies now (after both deaths). “End of Life” = each person's projected death year. Surviving spouse pass-through is excluded; amounts are net of taxes & costs.";
 
 // ── View ────────────────────────────────────────────────────────────────────────
 export function EstateSummaryView({ data }: { data: EstateSummaryPageData }) {

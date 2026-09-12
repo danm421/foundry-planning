@@ -367,7 +367,7 @@ describe("Legacy to heirs — after tax, not the gross portfolio", () => {
 
   const estateCtx = {
     clientName: "John Smith",
-    spouseName: "Spouse Test",
+    spouseName: "Jane Smith",
     bundlesByRef: { base: estateBundle("taxable"), "scenario:s1": estateBundle("preTax") },
   } as unknown as BuildDataContext;
 
@@ -390,7 +390,7 @@ describe("Legacy to heirs — after tax, not the gross portfolio", () => {
   it("equals the estate report's own toHeirs on both sides", () => {
     const d = buildRetirementComparisonData(estateCtx, opts);
     const legacy = d.kpis.find((k) => k.label === "Legacy to heirs")!;
-    const ownerNames = { clientName: "John Smith", spouseName: "Spouse Test" };
+    const ownerNames = { clientName: "John Smith", spouseName: "Jane Smith" };
     const expected = (kind: "taxable" | "preTax") => {
       const b = estateBundle(kind) as unknown as {
         clientData: ClientData;

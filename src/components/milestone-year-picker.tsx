@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { availableRefs, resolveMilestone, YEAR_REF_LABELS } from "@/lib/milestones";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 interface MilestoneYearPickerProps {
   /** HTML name attribute for the year input (used by FormData) */
@@ -65,7 +66,7 @@ function buildLabels(
   spouseFirstName?: string
 ): Record<YearRef, string> {
   const clientName = clientFirstName?.trim() || "Client";
-  const spouseName = spouseFirstName?.trim() || "Spouse";
+  const spouseName = spouseFirstName?.trim() || CO_CLIENT_LABEL;
   return {
     ...YEAR_REF_LABELS,
     plan_start: "First Year",

@@ -21,6 +21,15 @@ import type {
   GiftSeriesLite,
 } from "@/components/family-view";
 
+// GiftDialog writes through `useScenarioWriter`, which reads `?scenario=` from
+// the URL. No scenario param here, so every save below stays in BASE mode and
+// pins the legacy gift routes exactly as before.
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(""),
+  usePathname: () => "/clients/c1/details/family",
+}));
+
 const baseProps = {
   clientId: "c1",
   scenarioId: "s1",
@@ -53,6 +62,7 @@ const baseProps = {
     },
   ] as unknown as AccountLite[],
   annualExclusionByYear: { 2026: 19000 },
+  planStartYear: 2026,
   onClose: vi.fn(),
   onSavedGift: vi.fn(),
   onSavedSeries: vi.fn(),

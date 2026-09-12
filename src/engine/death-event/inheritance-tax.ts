@@ -85,7 +85,7 @@ function resolveRecipientMeta(
   }
   if (t.recipientKind === "spouse") {
     return {
-      label: t.recipientLabel ?? "Spouse",
+      label: t.recipientLabel ?? "Co-client",
       relationship: "spouse",
       isMinorChild: false, age: null, domesticPartner: false,
       isCharity: false, isExternalIndividual: false,

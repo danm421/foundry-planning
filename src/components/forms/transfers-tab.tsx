@@ -113,7 +113,7 @@ function ExemptionPanel({ exemption }: { exemption: ExemptionDisplay }) {
       )}
       {exemption.spouse && (
         <ExemptionBar
-          label="Spouse"
+          label="Co-client"
           used={exemption.spouse.used}
           total={exemption.spouse.total}
         />
@@ -412,6 +412,7 @@ export default function TransfersTab({
   const [menuOpen, setMenuOpen] = useState(false);
 
   const isEmpty = events.length === 0 && series.length === 0;
+  const coClientConsumed = totalConsumedByThisTrust.spouse;
 
   return (
     <div className="flex flex-col gap-4">
@@ -445,8 +446,8 @@ export default function TransfersTab({
         <div className="text-[12px] text-ink-4 border-t border-hair pt-2">
           Total exemption consumed by this trust:{" "}
           {formatCompact(totalConsumedByThisTrust.client)} (client)
-          {totalConsumedByThisTrust.spouse > 0 &&
-            ` · ${formatCompact(totalConsumedByThisTrust.spouse)} (spouse)`}
+          {coClientConsumed > 0 &&
+            ` · ${formatCompact(coClientConsumed)} (co-client)`}
         </div>
       )}
     </div>

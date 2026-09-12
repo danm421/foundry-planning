@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
+import { giftScenarioRemove } from "@/lib/gifts/gift-write";
 import { useClientAccess } from "./client-access-provider";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
 import AddClientDialog from "./add-client-dialog";
@@ -13,10 +14,11 @@ import GiftDialog from "@/components/gift-dialog";
 import AddAccountDialog from "./add-account-dialog";
 import FamilyMemberDialog from "./family-member-dialog";
 import type { AccountFormInitial } from "./forms/add-account-form";
-import type { EntityFlowMode } from "@/engine/types";
+import type { EntityFlowMode, GiftEventKind } from "@/engine/types";
 import type { ClientFormInitial } from "./forms/add-client-form";
 import type { ClientWithContacts } from "@/lib/clients/get-client-with-contacts";
 import { type TrustSubType } from "@/lib/entities/trust";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import type { AssetsTabAccount, AssetsTabLiability, AssetsTabIncome, AssetsTabExpense, AssetsTabFamilyMember, AssetsTabBusiness } from "./forms/assets-tab";
 import type { AccountOwner } from "@/engine/ownership";
 import { ageOnDate, birthYearFromDob, yearForAge } from "@/lib/age-year";
@@ -115,6 +117,19 @@ export type Gift = {
    *  preserves it. */
   valuationDiscount: number | null;
   useCrummeyPowers: boolean;
+  /** Non-outright gift kind — today only `clt_remainder_interest`. Optional so
+   *  the many places that build a plain outright `Gift` literal keep compiling;
+   *  the mappers always populate it, because the column is NOT NULL and a
+   *  promoted gift that omits it silently becomes an ordinary outright gift. */
+  eventKind?: GiftEventKind;
+  /** Set when the gift transfers a share of a BUSINESS interest rather than an
+   *  account. Carried so the gift dialog can recognise the row: a business gift
+   *  has no `EstateFlowGift` shape at all, and without this column the dialog
+   *  read it as a $0 cash gift. Optional for the same reason `eventKind` is. */
+  businessEntityId?: string | null;
+  /** Set on the auto-bundled liability-transfer child of an asset gift. Same
+   *  reason as `businessEntityId` — not draft-representable. */
+  liabilityId?: string | null;
   notes: string | null;
 };
 
@@ -241,6 +256,12 @@ interface FamilyViewProps {
   initialGifts: Gift[];
   initialGiftSeries: GiftSeriesLite[];
   annualExclusionByYear: Record<number, number>;
+  /** The plan's real first projection year (`plan_settings.plan_start_year`).
+   *  Not a calendar-year guess: it is the exact line the gift route draws
+   *  between a future transfer (which the engine replays) and a past-dated one
+   *  (which it does not, so the route writes the ownership straight to
+   *  `account_owners` instead). A scenario cannot do that second write. */
+  planStartYear: number;
   scenarioId: string;
   /** Optional: full asset data for the trust Assets tab */
   initialFullAccounts?: AssetsTabAccount[];
@@ -342,6 +363,7 @@ export default function FamilyView({
   initialGifts,
   initialGiftSeries,
   annualExclusionByYear,
+  planStartYear,
   scenarioId,
   initialFullAccounts,
   initialFullLiabilities,
@@ -516,7 +538,7 @@ export default function FamilyView({
           <header className="mb-3 flex items-center justify-between">
             <div>
               <h2 className="text-xl font-bold text-gray-100">Household</h2>
-              <p className="text-xs text-gray-400">Client and spouse. Edit from the Clients list.</p>
+              <p className="text-xs text-gray-400">Client and Co-client. Edit from the Clients list.</p>
             </div>
             {canEdit && (
               <button
@@ -541,7 +563,7 @@ export default function FamilyView({
             {primary.spouseName ? (
               <PersonCard
                 name={`${primary.spouseName} ${primary.spouseLastName ?? primary.lastName}`.trim()}
-                badge="Spouse"
+                badge={CO_CLIENT_LABEL}
                 fields={[
                   ["Date of Birth", primary.spouseDob ? `${formatIsoDate(primary.spouseDob)} (age ${spouseAge})` : "—"],
                   ["Retirement", formatRetirement(primary.spouseRetirementAge, primary.spouseRetirementMonth, primary.spouseDob)],
@@ -550,7 +572,7 @@ export default function FamilyView({
               />
             ) : (
               <div className="flex items-center justify-center rounded-lg border border-dashed border-gray-800 bg-gray-900/40 p-6 text-sm text-gray-400">
-                No spouse on file
+                No Co-client on file
               </div>
             )}
           </div>
@@ -847,6 +869,7 @@ export default function FamilyView({
         gifts={giftsState}
         series={giftSeriesState}
         annualExclusionByYear={annualExclusionByYear}
+        planStartYear={planStartYear}
         scenarioId={scenarioId}
         hasSpouse={primary.spouseName != null}
         onChangeGifts={setGiftsState}
@@ -934,6 +957,7 @@ export default function FamilyView({
               ? new Date(primary.dateOfBirth).getFullYear() + primary.lifeExpectancy
               : undefined
           }
+          planStartYear={planStartYear}
           onSaved={handleEntitySaved}
           onAutoSaved={handleEntitySaved}
           onRequestDelete={() => {
@@ -1057,6 +1081,12 @@ function GiftsSection(props: {
   gifts: Gift[];
   series: GiftSeriesLite[];
   annualExclusionByYear: Record<number, number>;
+  /** The plan's real first projection year (`plan_settings.plan_start_year`).
+   *  Not a calendar-year guess: it is the exact line the gift route draws
+   *  between a future transfer (which the engine replays) and a past-dated one
+   *  (which it does not, so the route writes the ownership straight to
+   *  `account_owners` instead). A scenario cannot do that second write. */
+  planStartYear: number;
   scenarioId: string;
   hasSpouse: boolean;
   // Setter form, not a plain array: a gift whose Frequency or Funding changed is
@@ -1066,6 +1096,7 @@ function GiftsSection(props: {
   onChangeSeries: Dispatch<SetStateAction<GiftSeriesLite[]>>;
   canEdit: boolean;
 }) {
+  const writer = useScenarioWriter(props.clientId);
   const [adding, setAdding] = useState(false);
   const [editingGift, setEditingGift] = useState<Gift | null>(null);
   const [editingSeries, setEditingSeries] = useState<GiftSeriesLite | null>(null);
@@ -1085,15 +1116,33 @@ function GiftsSection(props: {
   const accountName = (id: string | null) =>
     id ? props.accounts.find((a) => a.id === id)?.name ?? "asset" : "asset";
 
+  // Inside a scenario the delete is a `remove` change, matching where the save
+  // landed: the base `gifts` row is stripped from this scenario's overlay while
+  // the base plan keeps it, and a gift that exists only as an `add` has no base
+  // row for the gift route to delete at all — that call 404s.
+  //
+  // The `remove` row STAYS for a gift added in this scenario; it does not
+  // collapse away with the `add`. Gifts have no `edit` op, so an `add` on a
+  // base gift's own id is how an edit is recorded — collapsing it would
+  // resurrect the un-edited base gift while the page showed it gone
+  // (changes-writer.ts, and commit 1611a6853 which made gifts the exception).
   async function deleteGift(id: string) {
-    const res = await fetch(`/api/clients/${props.clientId}/gifts/${id}`, { method: "DELETE" });
+    const res = await writer.submit(giftScenarioRemove(id), {
+      url: `/api/clients/${props.clientId}/gifts/${id}`,
+      method: "DELETE",
+    });
     if (res.ok) props.onChangeGifts(props.gifts.filter((x) => x.id !== id));
   }
+  // A series deletes the SAME way in both modes. `gift_series` carries a real
+  // `scenario_id` — this list only ever shows the active scenario's series — so
+  // the direct DELETE already IS the scenario-correct delete. A `remove` change
+  // would leave the row alive: back on reload, copied into the base plan by
+  // `copyGiftSeriesToBase` on promote, and gone only from the projection.
   async function deleteSeries(id: string) {
-    const res = await fetch(
-      `/api/clients/${props.clientId}/gifts/series/${id}?scenario=${props.scenarioId}`,
-      { method: "DELETE" },
-    );
+    const res = await writer.submitDirect({
+      url: `/api/clients/${props.clientId}/gifts/series/${id}?scenario=${props.scenarioId}`,
+      method: "DELETE",
+    });
     if (res.ok) props.onChangeSeries(props.series.filter((x) => x.id !== id));
   }
 
@@ -1127,6 +1176,7 @@ function GiftsSection(props: {
           entities={props.entities}
           accounts={props.accounts}
           annualExclusionByYear={props.annualExclusionByYear}
+          planStartYear={props.planStartYear}
           editingGift={editingGift}
           editingSeries={editingSeries}
           onClose={closeDialog}

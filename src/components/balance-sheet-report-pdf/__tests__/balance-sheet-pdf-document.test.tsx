@@ -52,7 +52,7 @@ function multiOwnerViewModel(): BalanceSheetViewModel {
         yoy: null,
         rows: [
           mkAsset({ rowKey: "acct1#client", accountId: "acct1", value: 600_000, ownerLabel: "Client" }),
-          mkAsset({ rowKey: "acct1#spouse", accountId: "acct1", value: 400_000, ownerLabel: "Spouse" }),
+          mkAsset({ rowKey: "acct1#spouse", accountId: "acct1", value: 400_000, ownerLabel: "Co-client" }),
         ],
       },
     ],

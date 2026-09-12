@@ -114,7 +114,7 @@ describe("BeneficiariesTab", () => {
         ok: true,
         json: async () => [
           { id: "fm-client", firstName: "Pat", lastName: "Client", relationship: "child", role: "client" },
-          { id: "fm-spouse", firstName: "Sam", lastName: "Spouse", relationship: "child", role: "spouse" },
+          { id: "fm-spouse", firstName: "Sam", lastName: "Reyes", relationship: "child", role: "spouse" },
           { id: "fm-kid", firstName: "Kid", lastName: "Smith", relationship: "child", role: "child" },
         ],
       })
@@ -126,10 +126,10 @@ describe("BeneficiariesTab", () => {
 
     // Principals are not duplicated as "(child)" kin in the Family group...
     expect(screen.queryByRole("option", { name: /Pat Client \(child\)/ })).toBeNull();
-    expect(screen.queryByRole("option", { name: /Sam Spouse \(child\)/ })).toBeNull();
+    expect(screen.queryByRole("option", { name: /Sam Reyes \(child\)/ })).toBeNull();
     // ...but DO appear by real name in the Household group.
     expect(screen.getAllByRole("option", { name: /Pat Client \(client\)/ }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole("option", { name: /Sam Spouse \(spouse\)/ }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("option", { name: /Sam Reyes \(co-client\)/ }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("option", { name: /Kid Smith/ }).length).toBeGreaterThan(0);
 
     // Household is listed first: its options precede the family kin options.

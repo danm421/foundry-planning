@@ -85,8 +85,10 @@ function buildOverview(ps: PlanSettings, years: BuildAssumptionsInput["years"]):
   ];
   if (first && last) {
     horizon.push({ label: "Client age", value: `${first.ages.client} → ${last.ages.client}` });
-    if (first.ages.spouse != null && last.ages.spouse != null) {
-      horizon.push({ label: "Spouse age", value: `${first.ages.spouse} → ${last.ages.spouse}` });
+    const coClientAgeStart = first.ages.spouse;
+    const coClientAgeEnd = last.ages.spouse;
+    if (coClientAgeStart != null && coClientAgeEnd != null) {
+      horizon.push({ label: "Co-client age", value: `${coClientAgeStart} → ${coClientAgeEnd}` });
     }
   }
   sections.push({ heading: "Plan Horizon", rows: horizon });
@@ -112,7 +114,7 @@ function buildOverview(ps: PlanSettings, years: BuildAssumptionsInput["years"]):
   if (ps.pvDiscountRate) estate.push({ label: "PV discount rate", value: formatPct(ps.pvDiscountRate) });
   if (ps.lifetimeExemptionCap != null) estate.push({ label: "Exemption cap", value: exactCurrency(ps.lifetimeExemptionCap) });
   if (ps.priorTaxableGifts?.client) estate.push({ label: "Prior gifts (client)", value: exactCurrency(ps.priorTaxableGifts.client) });
-  if (ps.priorTaxableGifts?.spouse) estate.push({ label: "Prior gifts (spouse)", value: exactCurrency(ps.priorTaxableGifts.spouse) });
+  if (ps.priorTaxableGifts?.spouse) estate.push({ label: "Prior gifts (co-client)", value: exactCurrency(ps.priorTaxableGifts.spouse) });
   if (estate.length > 0) sections.push({ heading: "Estate Tax", rows: estate });
 
   // Inflation

@@ -32,6 +32,7 @@ import type { StateInheritanceTaxResult } from "@/lib/tax/state-inheritance";
 import type { ProjectionResult } from "@/engine";
 import { treeAsOfYear, type BalanceMode } from "../../lib/tree-as-of-year";
 import { resolveRecipientLabel } from "@/lib/estate/recipient-label";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import type { AsOfValue } from "@/components/report-controls/as-of-dropdown";
 import {
   deriveBeneficiaryDetail,
@@ -503,10 +504,10 @@ export function deriveSpineData(args: {
 
     const firstDeceasedName =
       firstDeceasedFm?.firstName ??
-      (firstDeceasedRole === "client" ? client.firstName : client.spouseName ?? "Spouse");
+      (firstDeceasedRole === "client" ? client.firstName : client.spouseName ?? CO_CLIENT_LABEL);
     const finalDeceasedName =
       finalDeceasedFm?.firstName ??
-      (finalDeceasedRole === "client" ? client.firstName : client.spouseName ?? "Spouse");
+      (finalDeceasedRole === "client" ? client.firstName : client.spouseName ?? CO_CLIENT_LABEL);
 
     // Net worth at the anchor year (planStartYear by default; the canvas
     // overrides this when the as-of dropdown picks a future year). Computed
@@ -618,7 +619,7 @@ export function deriveSpineData(args: {
 
     const spouseFm = (tree.familyMembers ?? []).find((fm) => fm.role === "spouse");
     const spouseDisplayName =
-      spouseFm?.firstName ?? client.spouseName ?? "Spouse";
+      spouseFm?.firstName ?? client.spouseName ?? CO_CLIENT_LABEL;
 
     return {
       kind: "two-grantor",
@@ -666,7 +667,7 @@ export function deriveSpineData(args: {
     const deathYear = event?.year ?? finalDeathYear;
 
     // Find the surviving grantor's name
-    // If there's no spouse, it's always the client.
+    // If there is no spouse, the survivor is always the client.
     // If there is a spouse but only one event, the living grantor is whoever
     // identifyFinalDeceased points to.
     let survivorName: string;
@@ -684,7 +685,7 @@ export function deriveSpineData(args: {
 
       if (clientDead && !spouseDead) {
         // Client pre-deceased the plan start; survivor is the spouse
-        survivorName = client.spouseName ?? "Spouse";
+        survivorName = client.spouseName ?? CO_CLIENT_LABEL;
       } else if (spouseDead && !clientDead) {
         // Spouse pre-deceased the plan start; survivor is the client
         survivorName = client.firstName;
@@ -698,7 +699,7 @@ export function deriveSpineData(args: {
         survivorName =
           finalDeceasedRole === "client"
             ? client.firstName
-            : client.spouseName ?? "Spouse";
+            : client.spouseName ?? CO_CLIENT_LABEL;
       }
     }
 

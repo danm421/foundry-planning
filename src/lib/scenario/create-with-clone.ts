@@ -17,16 +17,25 @@
 // Cascade behavior on rollback: if the transaction fails partway through the
 // clone, the scenarios row + its scenario_changes / scenario_toggle_groups
 // rows are all rolled back together (Postgres tx). No half-cloned scenarios.
+//
+// One thing cloned here is NOT a delta: `gift_series`. See
+// `cloneGiftSeriesIntoScenario` below for why it is seeded even for "empty".
 
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import {
   accountFlowOverrides,
   entityFlowOverrides,
+  giftSeries,
   scenarioChanges,
   scenarioToggleGroups,
   scenarios,
 } from "@/db/schema";
+
+/** Loosely-typed tx handle. Derived from `db.transaction` rather than restated,
+ *  because Drizzle does not export its tx callback param as a named type at our
+ *  version. */
+type ScenarioTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 export type CreateWithCloneSource =
   | { kind: "empty" }
@@ -41,6 +50,70 @@ export interface CreateWithCloneArgs {
 
 export interface CreateWithCloneResult {
   scenario: typeof scenarios.$inferSelect;
+}
+
+/**
+ * Seed a newly-created scenario's `gift_series` partition from another
+ * scenario's.
+ *
+ * Why this is not optional, and why it is exported: `gift_series` is the only
+ * piece of the client's *plan* that is scenario-partitioned rather than
+ * client-scoped — `load-client-data.ts` reads it filtered by scenarioId, while
+ * accounts, incomes and one-time gifts are read unfiltered and so appear in a
+ * new scenario for free. A scenario whose partition is never seeded therefore
+ * projects as though the client's recurring gifting stopped, and promoting it
+ * makes that permanent: `copyGiftSeriesToBase` clears base's rows and copies
+ * the promoted scenario's (empty) set, destroying the base plan's series.
+ *
+ * Every producer of a `scenarios` row must call this — the solver's
+ * "Save as scenario" route builds its scenario without the helper below and
+ * imports this directly.
+ *
+ * Rows are re-scoped, not rebuilt: `id`/`createdAt`/`updatedAt` are dropped so
+ * the column defaults apply (a fresh PK, avoiding a collision with the source
+ * row), and everything else carries over by spread. A hand-written column list
+ * would silently drop any column added later.
+ */
+export async function cloneGiftSeriesIntoScenario(
+  tx: ScenarioTx,
+  args: { clientId: string; fromScenarioId: string; toScenarioId: string },
+): Promise<void> {
+  const rows = await tx
+    .select()
+    .from(giftSeries)
+    .where(
+      and(
+        eq(giftSeries.clientId, args.clientId),
+        eq(giftSeries.scenarioId, args.fromScenarioId),
+      ),
+    );
+  if (rows.length === 0) return;
+
+  await tx.insert(giftSeries).values(
+    rows.map((row) => {
+      // Same strip-and-re-scope as promote's `reScope`; the `void`s are how
+      // this config silences unused rest-siblings.
+      const { id: _id, createdAt: _c, updatedAt: _u, ...rest } = row;
+      void _id;
+      void _c;
+      void _u;
+      return { ...rest, scenarioId: args.toScenarioId };
+    }),
+  );
+}
+
+/** The client's base-case scenario id, or null if it somehow has none.
+ *  Exported for the solver's "Save as scenario" route, which builds its
+ *  scenarios row itself and still owes the seed above. */
+export async function findBaseScenarioId(
+  tx: ScenarioTx,
+  clientId: string,
+): Promise<string | null> {
+  const [baseRow] = await tx
+    .select({ id: scenarios.id })
+    .from(scenarios)
+    .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true)));
+  return baseRow?.id ?? null;
 }
 
 /**
@@ -69,22 +142,24 @@ export async function createScenarioWithClone(
       .returning();
 
     if (source.kind === "empty") {
+      // "Start empty" means no CHANGES, not a client with no plan — so the
+      // recurring-gift partition is still seeded, from base. Without this the
+      // dialog's DEFAULT option silently drops the client's recurring gifts.
+      const baseId = await findBaseScenarioId(tx, clientId);
+      if (baseId) {
+        await cloneGiftSeriesIntoScenario(tx, {
+          clientId,
+          fromScenarioId: baseId,
+          toScenarioId: created.id,
+        });
+      }
       return { scenario: created };
     }
 
     // Resolve the source scenario id.
     let sourceId: string | null = null;
     if (source.kind === "base") {
-      const [baseRow] = await tx
-        .select({ id: scenarios.id })
-        .from(scenarios)
-        .where(
-          and(
-            eq(scenarios.clientId, clientId),
-            eq(scenarios.isBaseCase, true),
-          ),
-        );
-      sourceId = baseRow?.id ?? null;
+      sourceId = await findBaseScenarioId(tx, clientId);
     } else {
       // Caller is expected to have already verified the sourceId belongs to
       // this client + firm. We re-check the clientId match defensively to
@@ -196,6 +271,12 @@ export async function createScenarioWithClone(
         })),
       );
     }
+
+    await cloneGiftSeriesIntoScenario(tx, {
+      clientId,
+      fromScenarioId: sourceId,
+      toScenarioId: created.id,
+    });
 
     return { scenario: created };
   });

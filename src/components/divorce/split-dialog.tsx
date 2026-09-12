@@ -5,6 +5,7 @@ import DialogShell from "@/components/dialog-shell";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
 import { fieldLabelClassName, inputBaseClassName } from "@/components/forms/input-styles";
 import { splitAmounts } from "@/lib/divorce/split-math";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import type { DivisibleObject } from "@/lib/divorce/allocation-rules";
 
 const currency = new Intl.NumberFormat("en-US", {
@@ -43,7 +44,7 @@ export function SplitDialog({
   if (!obj) return null;
 
   const primaryName = people.primaryName || "Primary";
-  const spouseName = people.spouseName || "Spouse";
+  const spouseName = people.spouseName || CO_CLIENT_LABEL;
   const shares = splitAmounts(obj.value, obj.basis, obj.rothValue, pct);
 
   return (

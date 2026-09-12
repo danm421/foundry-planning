@@ -186,7 +186,7 @@ export function safeHarbor(ctx: FindingContext): Finding | null {
       category: "withholding",
       headline: `${fmtUsd(owed)} due at filing, though the safe harbor was met`,
       whatTheReturnShows: `Payments of ${fmtUsd(payments)} cleared the ${fmtUsd(required)} safe harbor, so no underpayment penalty arises — but ${fmtUsd(owed)} was still due at filing (line 37).`,
-      whyItMatters: `There is no penalty here, so this is a cash-flow and expectations item rather than a tax one. A recurring four-figure April bill usually means withholding is calibrated to one income source while a second — a spouse's wages, self-employment, investment income — carries no withholding at all.`,
+      whyItMatters: `There is no penalty here, so this is a cash-flow and expectations item rather than a tax one. A recurring four-figure April bill usually means withholding is calibrated to one income source while a second — a co-client's wages, self-employment, investment income — carries no withholding at all.`,
       whatToConsider: `If the April bill is unwelcome, a W-4 extra-withholding amount spreads it across the year. If it is deliberate, nothing needs to change: money held until April rather than withheld in January is, at worst, neutral once the harbor is met.`,
       lineRefs: [...lineRefs, { form: "Form 1040", line: "line 37", label: "Amount you owe", amount: f.payments.amountOwed }],
       estimatedImpact: null, // no penalty was incurred — the balance is not a cost

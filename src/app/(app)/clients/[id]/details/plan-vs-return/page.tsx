@@ -1,33 +1,19 @@
-import { notFound } from "next/navigation";
-import { requireOrgId } from "@/lib/db-helpers";
-import { findClientInFirm } from "@/lib/db-scoping";
-import { parseYear } from "@/lib/tax-returns/assemble-analysis";
-import { PlanVsReturnContent } from "./plan-vs-return-content";
+import { redirect } from "next/navigation";
 
 interface PageProps {
   params: Promise<{ id: string }>;
   searchParams: Promise<{ year?: string; scenario?: string }>;
 }
 
-export default async function PlanVsReturnPage({ params, searchParams }: PageProps) {
-  const firmId = await requireOrgId();
+/** Plan vs. Return is a view inside the Tax Analysis section now. This forwards
+ *  the links and bookmarks that still point at the old standalone screen,
+ *  carrying `?year=` and `?scenario=` through untouched — the section parses
+ *  both the same way this page used to. */
+export default async function PlanVsReturnRedirect({ params, searchParams }: PageProps) {
   const { id } = await params;
   const sp = await searchParams;
-  if (!(await findClientInFirm(id, firmId))) notFound();
-
-  // `?year=` arrives absent, empty, or junk. `Number("")` is 0 — an integer —
-  // so an empty param would pin the page to year zero and silently show
-  // nothing. parseYear rejects all three and the page falls back to the newest
-  // return on file.
-  const year = parseYear(sp.year ?? "");
-
-  // Base case only (spec decision 2): the scenario param the sidebar preserves
-  // is acknowledged with a note, never applied — hence no DetailsPageShell here.
-  return (
-    <PlanVsReturnContent
-      clientId={id}
-      initialYear={year ?? undefined}
-      scenarioIgnored={!!sp.scenario}
-    />
-  );
+  const q = new URLSearchParams({ view: "plan-vs-return" });
+  if (sp.year) q.set("year", sp.year);
+  if (sp.scenario) q.set("scenario", sp.scenario);
+  redirect(`/clients/${id}/details/tax-analysis?${q}`);
 }

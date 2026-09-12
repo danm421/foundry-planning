@@ -109,6 +109,7 @@ function baseProps() {
     initialGifts: [],
     initialGiftSeries: [],
     annualExclusionByYear: {},
+    planStartYear: 2026,
     scenarioId: "default",
     contacts: null,
   };

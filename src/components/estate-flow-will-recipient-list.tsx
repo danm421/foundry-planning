@@ -169,7 +169,7 @@ export default function WillRecipientList({
               <option value="">— select recipient —</option>
               {spouseName && (
                 <optgroup label="Household">
-                  <option value="spouse">{spouseName} (spouse)</option>
+                  <option value="spouse">{spouseName} (co-client)</option>
                 </optgroup>
               )}
               {familyMembers.length > 0 && (

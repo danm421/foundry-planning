@@ -168,7 +168,7 @@ d("Liability owners[] API — POST and PUT", () => {
       await db.insert(crmHouseholdContacts).values({
         householdId: _crmHousehold.id,
         role: "spouse",
-        firstName: "Spouse",
+        firstName: "Co-client",
         lastName: "Test",
       });
     }
@@ -212,7 +212,7 @@ d("Liability owners[] API — POST and PUT", () => {
         .insert(familyMembers)
         .values({
           clientId: client.id,
-          firstName: "Spouse",
+          firstName: "Co-client",
           lastName: "Test",
           role: "spouse" as const,
         })

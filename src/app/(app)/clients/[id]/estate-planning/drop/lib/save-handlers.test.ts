@@ -5,6 +5,7 @@ import {
   saveBequest,
   saveRetitle,
 } from "./save-handlers";
+import type { UseScenarioWriter } from "@/hooks/use-scenario-writer";
 
 const fetchMock = vi.fn();
 beforeEach(() => {
@@ -12,30 +13,184 @@ beforeEach(() => {
   globalThis.fetch = fetchMock as unknown as typeof fetch;
 });
 
+function mockSubmit(status: number, body = "{}"): UseScenarioWriter["submit"] {
+  return vi.fn().mockResolvedValue(new Response(body, { status }));
+}
+
+function mockSubmitDirect(
+  status: number,
+  body = "{}",
+): UseScenarioWriter["submitDirect"] {
+  return vi.fn().mockResolvedValue(new Response(body, { status }));
+}
+
 describe("save-handlers", () => {
-  it("saveGiftOneTime POSTs to /api/clients/[id]/gifts with the right body", async () => {
-    fetchMock.mockResolvedValue(new Response("{}", { status: 200 }));
+  it("saveGiftOneTime writes a cash-once scenario add, with the base fallback unchanged", async () => {
+    const submit = mockSubmit(200);
     await saveGiftOneTime({
       clientId: "c1",
-      year: 2026,
+      year: 2027,
+      grantor: "client",
+      recipient: { kind: "entity", id: "ent-slat" },
+      amountKind: "dollar",
+      amount: 18_000,
+      useCrummeyPowers: true,
+      submit,
+      scenarioActive: false,
+      planStartYear: 2026,
+    });
+
+    expect(submit).toHaveBeenCalledTimes(1);
+    const [edit, fallback] = (submit as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(edit).toMatchObject({ op: "add", targetKind: "gift" });
+    expect((edit.entity as { kind: string }).kind).toBe("cash-once");
+    expect(edit.entity).toMatchObject({
+      year: 2027,
+      amount: 18_000,
+      grantor: "client",
+      recipient: { kind: "entity", id: "ent-slat" },
+      crummey: true,
+      eventKind: "outright",
+    });
+    // FIX ROUND 1 / Finding 2: the base fallback must stay byte-identical to
+    // the old POST. `toEqual` on the WHOLE object — not `toMatchObject`,
+    // which ignores keys it isn't told to check — so a field silently
+    // dropped from `body` (notes, yearRef, ...) fails this test. This is
+    // RULING 50's entire safety net: the scenario-side draft is allowed to
+    // drop notes/yearRef, but the base path must not.
+    expect(fallback).toEqual({
+      url: "/api/clients/c1/gifts",
+      method: "POST",
+      body: {
+        year: 2027,
+        yearRef: null,
+        grantor: "client",
+        accountId: null,
+        recipientEntityId: "ent-slat",
+        recipientFamilyMemberId: null,
+        recipientExternalBeneficiaryId: null,
+        useCrummeyPowers: true,
+        notes: null,
+        amount: 18_000,
+      },
+      // FIX ROUND 1 / Finding 1: dispatchSave already refreshes once after
+      // the handler resolves; submit() would refresh again on success
+      // without this, doubling the server round trip per drop.
+      skipRefresh: true,
+    });
+  });
+
+  it("saveGiftOneTime writes an asset-once scenario add when a source account is present", async () => {
+    // RULING 51: saveGiftOneTime serves both cash and asset gifts. A drop from a
+    // non-cash account carries sourceAccountId + amountKind:'percent' and must
+    // build kind:'asset-once' (accountId + percent), mirroring giftRowToDraft.
+    const submit = mockSubmit(200);
+    await saveGiftOneTime({
+      clientId: "c1",
+      year: 2031,
       grantor: "client",
       sourceAccountId: "a1",
       recipient: { kind: "entity", id: "ent-slat" },
       amountKind: "percent",
       percent: 0.6,
       useCrummeyPowers: false,
+      submit,
+      scenarioActive: false,
+      planStartYear: 2026,
     });
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/clients/c1/gifts",
-      expect.objectContaining({
-        method: "POST",
-        body: expect.stringContaining('"recipientEntityId":"ent-slat"'),
-      }),
-    );
+
+    const [edit, fallback] = (submit as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(edit).toMatchObject({ op: "add", targetKind: "gift" });
+    expect((edit.entity as { kind: string }).kind).toBe("asset-once");
+    expect(edit.entity).toMatchObject({
+      year: 2031,
+      accountId: "a1",
+      percent: 0.6,
+      grantor: "client",
+      recipient: { kind: "entity", id: "ent-slat" },
+      eventKind: "outright",
+    });
+    // FIX ROUND 1 / Findings 2 & 4: full fallback (url + method + body), not
+    // just `body`, and `toEqual` rather than `toMatchObject`.
+    expect(fallback).toEqual({
+      url: "/api/clients/c1/gifts",
+      method: "POST",
+      body: {
+        year: 2031,
+        yearRef: null,
+        grantor: "client",
+        accountId: "a1",
+        recipientEntityId: "ent-slat",
+        recipientFamilyMemberId: null,
+        recipientExternalBeneficiaryId: null,
+        useCrummeyPowers: false,
+        notes: null,
+        percent: 0.6,
+      },
+      skipRefresh: true,
+    });
   });
 
-  it("saveGiftRecurring POSTs to /api/clients/[id]/gifts/series", async () => {
-    fetchMock.mockResolvedValue(new Response("{}", { status: 200 }));
+  it("saveGiftOneTime refuses a past-dated asset drop inside a scenario", async () => {
+    // In a scenario the ownership dual-write `POST /gifts` does for a
+    // pre-plan-start transfer never happens, so the save would land a row that
+    // moves no numbers at all. Refuse it instead — and write nothing.
+    const submit = mockSubmit(200);
+    await expect(
+      saveGiftOneTime({
+        clientId: "c1",
+        year: 2019,
+        grantor: "client",
+        sourceAccountId: "a1",
+        recipient: { kind: "entity", id: "ent-slat" },
+        amountKind: "percent",
+        percent: 0.4,
+        useCrummeyPowers: false,
+        submit,
+        scenarioActive: true,
+        planStartYear: 2026,
+      }),
+    ).rejects.toThrow(/before the plan starts in 2026/i);
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it("saveGiftOneTime still writes the same past-dated drop in base mode", async () => {
+    const submit = mockSubmit(200);
+    await saveGiftOneTime({
+      clientId: "c1",
+      year: 2019,
+      grantor: "client",
+      sourceAccountId: "a1",
+      recipient: { kind: "entity", id: "ent-slat" },
+      amountKind: "percent",
+      percent: 0.4,
+      useCrummeyPowers: false,
+      submit,
+      scenarioActive: false,
+      planStartYear: 2026,
+    });
+    expect(submit).toHaveBeenCalledTimes(1);
+  });
+
+  // A recurring series is NOT an overlay row. `gift_series` carries a real
+  // `scenario_id`, so the series route IS the scenario-correct write and the
+  // scenario rides on the URL. A `scenario_changes` row here was invisible to
+  // the list that reads the table and aborted the scenario's promote.
+  const RECURRING_BODY = {
+    grantor: "client",
+    recipientEntityId: "ent-slat",
+    startYear: 2026,
+    startYearRef: null,
+    endYear: 2030,
+    endYearRef: null,
+    annualAmount: 18_000,
+    inflationAdjust: true,
+    useCrummeyPowers: true,
+    notes: null,
+  };
+
+  it("saveGiftRecurring posts straight to the active scenario's gift_series partition", async () => {
+    const submitDirect = mockSubmitDirect(200);
     await saveGiftRecurring({
       clientId: "c1",
       grantor: "client",
@@ -43,13 +198,47 @@ describe("save-handlers", () => {
       startYear: 2026,
       endYear: 2030,
       annualAmount: 18_000,
-      inflationAdjust: false,
+      inflationAdjust: true,
       useCrummeyPowers: true,
+      submitDirect,
+      scenarioId: "scn-1",
     });
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/clients/c1/gifts/series",
-      expect.objectContaining({ method: "POST" }),
-    );
+
+    expect(submitDirect).toHaveBeenCalledTimes(1);
+    const [request] = (submitDirect as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(request).toEqual({
+      url: "/api/clients/c1/gifts/series?scenario=scn-1",
+      method: "POST",
+      body: RECURRING_BODY,
+      skipRefresh: true,
+    });
+    // No draft, no change row: the request carries the REST body only.
+    expect(request.body).not.toHaveProperty("op");
+    expect(request.body).not.toHaveProperty("entity");
+  });
+
+  it("saveGiftRecurring posts to the plain base route with no scenario active", async () => {
+    const submitDirect = mockSubmitDirect(200);
+    await saveGiftRecurring({
+      clientId: "c1",
+      grantor: "client",
+      recipient: { kind: "entity", id: "ent-slat" },
+      startYear: 2026,
+      endYear: 2030,
+      annualAmount: 18_000,
+      inflationAdjust: true,
+      useCrummeyPowers: true,
+      submitDirect,
+      scenarioId: null,
+    });
+
+    const [request] = (submitDirect as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(request).toEqual({
+      url: "/api/clients/c1/gifts/series",
+      method: "POST",
+      body: RECURRING_BODY,
+      skipRefresh: true,
+    });
   });
 
   it("saveBequest mirrors when grantor is 'both'", async () => {
@@ -95,8 +284,12 @@ describe("save-handlers", () => {
     ]);
   });
 
+  // RULING 48: this test is the throw-on-failure contract's ONLY guard.
+  // `submit` resolves (never rejects) even on a non-ok Response, exactly like
+  // the real useScenarioWriter — so saveGiftOneTime must inspect res.ok itself
+  // and throw in the same "{status} {body text}" shape postJson used to.
   it("throws on non-2xx", async () => {
-    fetchMock.mockResolvedValue(new Response("Bad", { status: 400 }));
+    const submit = mockSubmit(400, "Bad");
     await expect(
       saveGiftOneTime({
         clientId: "c1",
@@ -106,6 +299,28 @@ describe("save-handlers", () => {
         amountKind: "percent",
         percent: 0.6,
         useCrummeyPowers: false,
+        submit,
+        scenarioActive: false,
+        planStartYear: 2026,
+      }),
+    ).rejects.toThrow(/400/);
+  });
+
+  // Same contract on the other gift handler — RULING 41 requires both.
+  it("saveGiftRecurring throws on non-2xx", async () => {
+    const submitDirect = mockSubmitDirect(400, "Bad");
+    await expect(
+      saveGiftRecurring({
+        clientId: "c1",
+        grantor: "client",
+        recipient: { kind: "entity", id: "ent-slat" },
+        startYear: 2026,
+        endYear: 2030,
+        annualAmount: 18_000,
+        inflationAdjust: false,
+        useCrummeyPowers: true,
+        submitDirect,
+        scenarioId: null,
       }),
     ).rejects.toThrow(/400/);
   });

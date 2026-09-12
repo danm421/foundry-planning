@@ -56,8 +56,8 @@ export interface AssetOption {
 
 const CONDITION_OPTIONS: { value: WillCondition; label: string }[] = [
   { value: "always", label: "Always" },
-  { value: "if_spouse_survives", label: "Only if spouse survives" },
-  { value: "if_spouse_predeceased", label: "Only if spouse predeceased" },
+  { value: "if_spouse_survives", label: "Only if Co-client survives" },
+  { value: "if_spouse_predeceased", label: "Only if Co-client predeceased" },
 ];
 
 interface WillBequestMapperProps {

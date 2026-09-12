@@ -56,6 +56,7 @@ import { ExportButton } from "@/components/exports/export-button";
 import { PortfolioBarsChart } from "@/components/charts/portfolio-bars-chart";
 import type { PortfolioBarsTimelineMarker } from "@/components/charts/portfolio-bars-chart";
 import { liquidPortfolioTotal } from "@/components/charts/portfolio-bars-data";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend, Filler);
 
@@ -1456,7 +1457,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       // Legacy clients (manual_amount) fall through to the per-source handler below.
       if (subLevel === "socialSecurity" && hasSocialSecurityDetail) {
         const clientName = clientData?.client.firstName ?? "Client";
-        const spouseName = clientData?.client.spouseName ?? "Spouse";
+        const spouseName = clientData?.client.spouseName ?? CO_CLIENT_LABEL;
         // Determine whether any year has a spouse detail block, so we can
         // decide whether to render the spouse columns at all.
         const hasSpouseDetail = visibleYears.some(

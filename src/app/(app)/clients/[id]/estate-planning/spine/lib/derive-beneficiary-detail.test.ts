@@ -136,14 +136,14 @@ describe("deriveBeneficiaryDetail — direct receipts", () => {
       resultingAccountId: null,
       recipientKind: "spouse",
       recipientId: null,
-      recipientLabel: "Spouse",
+      recipientLabel: "Co-client",
       amount: 500_000,
     });
 
     const spouseRecipient = {
       kind: "spouse" as const,
       id: null,
-      name: "Spouse",
+      name: "Co-client",
       relationship: null,
     };
 

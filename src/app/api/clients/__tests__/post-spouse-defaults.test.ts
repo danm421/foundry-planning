@@ -21,7 +21,7 @@ const FIRM = "test-firm-spouse-defaults";
 // life expectancy, so the POST body omits them. When the CRM household has a
 // spouse contact, the handler must still default them to 65 / 95 so the
 // Household card never renders a blank "—" for the spouse.
-describe("POST /api/clients — spouse planning defaults", () => {
+describe("POST /api/clients — co-client planning defaults", () => {
   let spouseHouseholdId: string;
   let soloHouseholdId: string;
   const createdClientIds: string[] = [];
@@ -29,7 +29,7 @@ describe("POST /api/clients — spouse planning defaults", () => {
   beforeAll(async () => {
     const [spouseHh] = await db
       .insert(crmHouseholds)
-      .values({ firmId: FIRM, advisorId: "u", name: "Spouse HH", status: "active" })
+      .values({ firmId: FIRM, advisorId: "u", name: "Co-client HH", status: "active" })
       .returning();
     spouseHouseholdId = spouseHh.id;
     await db.insert(crmHouseholdContacts).values([
@@ -55,7 +55,7 @@ describe("POST /api/clients — spouse planning defaults", () => {
     await db.delete(crmHouseholds).where(eq(crmHouseholds.id, soloHouseholdId));
   });
 
-  it("defaults spouse retirement age to 65 and life expectancy to 95 when omitted (AI import)", async () => {
+  it("defaults co-client retirement age to 65 and life expectancy to 95 when omitted (AI import)", async () => {
     const req = new Request("http://test", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -78,7 +78,7 @@ describe("POST /api/clients — spouse planning defaults", () => {
     expect(row?.spouseLifeExpectancy).toBe(95);
   });
 
-  it("leaves spouse fields null when the household has no spouse", async () => {
+  it("leaves co-client fields null when the household has no co-client", async () => {
     const req = new Request("http://test", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

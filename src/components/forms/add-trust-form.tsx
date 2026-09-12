@@ -30,6 +30,18 @@ import {
   selectPriorDiscounts,
   type PriorDiscountCandidate,
 } from "@/lib/gifts/select-prior-discounts";
+import {
+  giftScenarioAdd,
+  giftScenarioRemove,
+  assertDraftable,
+  assertNotPastDatedAssetGift,
+} from "@/lib/gifts/gift-write";
+import {
+  giftRowToDraft,
+  type EstateFlowGift,
+  type GiftRow as GiftDbRow,
+} from "@/lib/estate/estate-flow-gifts";
+import type { GiftEventKind } from "@/engine/types";
 import DialogShell from "../dialog-shell";
 import CltDetailsSection from "./clt-details-section";
 import CrtDetailsSection from "./crt-details-section";
@@ -37,6 +49,7 @@ import { FieldTooltip } from "./field-tooltip";
 import type { TrustSplitInterestInput } from "@/lib/schemas/trust-split-interest";
 import {
   diffSplitInterestFundingPicks,
+  type GiftOp,
   type SplitInterestFundingPick,
 } from "@/lib/forms/split-interest-funding-diff";
 import type { SplitInterestFundingPickerAccount } from "./split-interest-funding-picker";
@@ -65,6 +78,11 @@ interface AddTrustFormProps {
   assetFamilyMembers?: AssetsTabFamilyMember[];
   /** Schedule modal props */
   planEndYear?: number;
+  /** The plan's real first projection year (`plan_settings.plan_start_year`),
+   *  handed to the asset-transfer modal. Absent when the caller doesn't have
+   *  it, in which case the past-dated guard stands down rather than refusing a
+   *  legal save on a guess. */
+  planStartYear?: number;
   primaryClientBirthYear?: number;
   initialFlowOverrides?: Array<{
     year: number;
@@ -142,6 +160,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
   entityIncome, entityExpense,
   assetFamilyMembers,
   planEndYear,
+  planStartYear,
   primaryClientBirthYear,
   initialFlowOverrides,
   onSaved, onClose, onSubmitStateChange,
@@ -313,6 +332,12 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
   // ── Transfers tab state ────────────────────────────────────────────────────
   const [openModal, setOpenModal] = useState<"asset" | "cash" | "series" | null>(null);
   const [transferEvents, setTransferEvents] = useState<TransferEvent[]>([]);
+  // The raw rows behind `transferEvents`. A funding-pick edit produces a PARTIAL
+  // patch, and a scenario save is an `add` carrying the WHOLE gift, so the patch
+  // has to be merged onto the gift it edits — which needs the row, not the
+  // display shape. In scenario mode these are the OVERLAID rows, so the merge
+  // starts from the scenario's current state rather than the base plan's.
+  const [fetchedGifts, setFetchedGifts] = useState<GiftRow[]>([]);
   const [transferSeries, setTransferSeries] = useState<TransferSeries[]>([]);
   const [transferFetchError, setTransferFetchError] = useState<string | null>(null);
   const [transferPriorDiscounts, setTransferPriorDiscounts] = useState<Record<string, number>>({});
@@ -342,9 +367,24 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
     let alive = true;
     setTransferFetchError(null);
     Promise.all([
-      // One-time gifts are client-global (no scenario_id); series are
-      // scenario-scoped, so the series list must match the active scenario.
-      fetchJson<GiftRow[]>(`/api/clients/${clientId}/gifts`),
+      // Both lists are scenario-scoped, but by two different mechanisms, and
+      // both need the param.
+      //
+      // `gifts` has NO scenario_id: a gift saved inside a scenario lives in
+      // `scenario_changes`, so GET /gifts overlays those changes onto the base
+      // rows when it is handed the active scenario.
+      //
+      // `gift_series` DOES carry a real scenario_id — one row per scenario, no
+      // overlay — so GET /gifts/series simply filters on it, and a series is
+      // written straight to its own route in both modes.
+      //
+      // Without the param this panel showed the base plan's gifts beside the
+      // base plan's series.
+      fetchJson<GiftRow[]>(
+        scenarioId
+          ? `/api/clients/${clientId}/gifts?scenario=${encodeURIComponent(scenarioId)}`
+          : `/api/clients/${clientId}/gifts`,
+      ),
       needsTransfersPanel
         ? fetchJson<GiftSeriesRow[]>(
             scenarioId
@@ -354,6 +394,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
         : Promise.resolve<GiftSeriesRow[] | null>(null),
     ]).then(([allGifts, allSeries]) => {
       if (!alive) return;
+      setFetchedGifts(allGifts);
       setTransferEvents(toTransferEvents(allGifts, editing.id, accounts ?? [], liabilities ?? []));
       // null = not fetched on this tab; leave whatever the Transfers tab loaded.
       if (allSeries) setTransferSeries(toTransferSeries(allSeries, editing.id));
@@ -708,30 +749,88 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
           year: splitInterest.inceptionYear,
           defaultAssetGrantor: grantor === "" ? "client" : grantor,
         });
+        // Each op follows the active scenario: base mode performs the same
+        // gift request it always did, scenario mode writes a `gift` change row
+        // instead. `submit` RESOLVES with the failing Response rather than
+        // throwing, so every arm still has to check `.ok` and return the same
+        // `{ ok: false, error }` the dialog renders.
+        //
+        // Every arm passes `skipRefresh` because these are N writes behind ONE
+        // Save button: the entity write above already refreshed, and a refresh
+        // per gift op would re-run this dialog's gift/series/ledger fetches N
+        // times (the same cost the Assets-tab note at the fetch effect avoids).
+
+        // `assertNotPastDatedAssetGift` below is the same save-boundary refusal
+        // the gift dialog and the two transfer forms apply: an asset transfer
+        // dated before the plan starts moves ownership through `account_owners`,
+        // which only the base gift route writes, so inside a scenario the save
+        // would move no number at all. Every funding-pick gift is dated
+        // `splitInterest.inceptionYear`, a free year input, so a past-dated one
+        // is expressible here.
+        //
+        // INERT TODAY, exactly like the scenario fork it sits beside: the gate
+        // above returns for `scenarioActive && isSplitInterest`, and this loop
+        // runs only when `isSplitInterest`, so `scenarioActive` is provably
+        // false by the time we get here and the guard stands down on its first
+        // line. It is here so that lifting that gate does not re-open the hole
+        // silently. When it does fire, the throw lands in this function's own
+        // try/catch and comes back as `{ ok: false, error }` — the contract
+        // every other failure in this loop keeps.
         for (const op of ops) {
           if (op.type === "create") {
-            const giftRes = await fetch(`/api/clients/${clientId}/gifts`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(op.body),
-            });
+            const draft = fundingPickCreateDraft(op.body, crypto.randomUUID());
+            assertNotPastDatedAssetGift(draft, { scenarioActive, planStartYear });
+            const giftRes = await scenarioWriter.submit(
+              giftScenarioAdd(draft),
+              {
+                url: `/api/clients/${clientId}/gifts`,
+                method: "POST",
+                body: op.body,
+                skipRefresh: true,
+              },
+            );
             if (!giftRes.ok) {
               const j = (await giftRes.json().catch(() => ({}))) as { error?: string };
               return { ok: false, error: j.error ?? `Failed to create gift (HTTP ${giftRes.status})` };
             }
           } else if (op.type === "update") {
-            const giftRes = await fetch(`/api/clients/${clientId}/gifts/${op.giftId}`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(op.body),
-            });
+            const url = `/api/clients/${clientId}/gifts/${op.giftId}`;
+            let giftRes: Response;
+            if (scenarioActive) {
+              // The differ emits a PARTIAL patch and a scenario save replaces
+              // the whole gift, so the patch is merged onto the row it edits.
+              // Base mode skips the merge on purpose: gifts with no draft form
+              // (business-interest, liability) still PATCH fine against the
+              // base route, and building a draft for them would throw.
+              const current = fetchedGifts.find((g) => g.id === op.giftId);
+              if (!current) {
+                return { ok: false, error: "Couldn't find the gift this funding change edits. Reopen the trust and try again." };
+              }
+              const draft = assertDraftable(
+                fundingPickUpdateDraft(current, op.body),
+                "gift",
+              );
+              assertNotPastDatedAssetGift(draft, { scenarioActive, planStartYear });
+              giftRes = await scenarioWriter.submit(
+                giftScenarioAdd(draft),
+                { url, method: "PATCH", body: op.body, skipRefresh: true },
+              );
+            } else {
+              giftRes = await fetch(url, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(op.body),
+              });
+            }
             if (!giftRes.ok) {
               const j = (await giftRes.json().catch(() => ({}))) as { error?: string };
               return { ok: false, error: j.error ?? `Failed to update gift (HTTP ${giftRes.status})` };
             }
           } else {
-            const giftRes = await fetch(`/api/clients/${clientId}/gifts/${op.giftId}`, {
+            const giftRes = await scenarioWriter.submit(giftScenarioRemove(op.giftId), {
+              url: `/api/clients/${clientId}/gifts/${op.giftId}`,
               method: "DELETE",
+              skipRefresh: true,
             });
             if (!giftRes.ok) {
               const j = (await giftRes.json().catch(() => ({}))) as { error?: string };
@@ -781,12 +880,12 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
     }
   }, [
     canSave, trustSubType, distributionMode, incomeRows, splitInterest, splitInterestFundingPicks,
-    effectiveEntityId, editing, clientId, currentSerialized,
+    effectiveEntityId, editing, clientId, currentSerialized, fetchedGifts,
     name, notes, editingIncludeInPortfolio, sprinkleProvisions, crummeyPowers,
     isGrantor, grantorStatusEndYear,
     isIrrevocable, grantor, trustee, trustEnds, showDistributionAndIncome,
     distributionAmount, distributionPercent, remainderRows,
-    originalSplitInterestFundingPicks, onAutoSaved,
+    originalSplitInterestFundingPicks, onAutoSaved, planStartYear,
   ]);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -852,7 +951,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
             <select id="trust-grantor" value={grantor} onChange={(e) => setGrantor(e.target.value as "client" | "spouse" | "")} className={selectClassName}>
               <option value="">Third party (none)</option>
               <option value="client">Client</option>
-              <option value="spouse">Spouse</option>
+              <option value="spouse">Co-client</option>
             </select>
           </div>
           <div>
@@ -1112,11 +1211,29 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
               // Tracked in future-work/estate.md.
               onDelete={async (item) => {
                 const isSeries = "annualAmount" in item;
-                const url = isSeries
-                  ? `/api/clients/${clientId}/gifts/series/${item.id}`
-                  : `/api/clients/${clientId}/gifts/${item.id}`;
                 try {
-                  const res = await fetch(url, { method: "DELETE" });
+                  // The two row kinds this list mixes are scenario-scoped in
+                  // DIFFERENT ways, so they delete differently.
+                  //
+                  // A gift_series row carries a real `scenario_id` — its own row
+                  // per scenario, not an overlay — and this list only ever shows
+                  // the active scenario's series, so the direct DELETE already
+                  // IS the scenario-correct delete. A `gift` change row would
+                  // leave that row alive: back on reload, copied into base on
+                  // promote, and gone from the projection, which honors overlays.
+                  //
+                  // A one-time gift has no scenario_id — every scenario reads the
+                  // one base row through an overlay — so a delete inside a
+                  // scenario has to record a `remove` change instead.
+                  const res = isSeries
+                    ? await fetch(
+                        `/api/clients/${clientId}/gifts/series/${item.id}`,
+                        { method: "DELETE" },
+                      )
+                    : await scenarioWriter.submit(giftScenarioRemove(item.id), {
+                        url: `/api/clients/${clientId}/gifts/${item.id}`,
+                        method: "DELETE",
+                      });
                   if (!res.ok) {
                     const j = await res.json().catch(() => ({}));
                     throw new Error((j as { error?: string }).error ?? `HTTP ${res.status}`);
@@ -1192,7 +1309,13 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
             trustGrantor={(grantor as "client" | "spouse") || "client"}
             accounts={toAssetAccountOptions(accounts ?? [], editing.id)}
             currentYear={new Date().getFullYear()}
-            projectionStartYear={new Date().getFullYear()}
+            // The plan's REAL first projection year, not today's date: it is
+            // the line `POST /gifts` draws between a transfer the engine will
+            // replay and a past-dated one it writes straight to
+            // `account_owners`. A scenario cannot make that second write, so
+            // the form refuses a past-dated transfer rather than accepting a
+            // save that moves no numbers.
+            projectionStartYear={planStartYear ?? null}
             priorDiscounts={transferPriorDiscounts}
             onClose={() => setOpenModal(null)}
             onSaved={() => {
@@ -1306,25 +1429,19 @@ function Switch({
   );
 }
 
-// ── Raw API row shapes (minimal — only the fields we read) ───────────────────
+// ── Raw API row shapes ───────────────────────────────────────────────────────
 
-interface GiftRow {
-  id: string;
-  year: number;
-  amount: string | null;
-  grantor: "client" | "spouse" | "joint";
-  recipientEntityId: string | null;
-  accountId: string | null;
-  liabilityId: string | null;
-  businessEntityId: string | null;
-  percent: string | null;
+/** A `gifts` row as `GET /api/clients/[id]/gifts` returns it, plus the two
+ *  columns this form displays that the shared row type doesn't carry.
+ *  `eventKind` is re-declared optional: a scenario-added gift is adapted from a
+ *  draft, and the adapter emits no `eventKind` column. */
+interface GiftRow extends Omit<GiftDbRow, "eventKind"> {
+  eventKind?: GiftEventKind;
   parentGiftId: string | null;
-  useCrummeyPowers: boolean;
-  /** Numeric column — a decimal string, e.g. "0.3000". */
-  valuationDiscount: string | null;
   notes: string | null;
 }
 
+/** Minimal — only the `gift_series` columns this form reads. */
 interface GiftSeriesRow {
   id: string;
   grantor: "client" | "spouse" | "joint";
@@ -1459,6 +1576,69 @@ export function toDiscountCandidates(all: GiftRow[]): PriorDiscountCandidate[] {
       (g.businessEntityId != null ? `entity:${g.businessEntityId}` : null);
     if (key == null) return [];
     return [{ key, year: g.year, discount: Number(g.valuationDiscount ?? 0) }];
+  });
+}
+
+// ── Funding-pick → scenario draft ────────────────────────────────────────────
+//
+// A scenario gift save is always `{ op: "add", entity: <full draft> }` — there
+// is no `edit` op, so the payload has to describe the whole gift. The funding
+// differ speaks REST instead: a create body, or a partial patch. These two
+// mappers turn each into the draft the scenario writer wants, without ever
+// casting a REST body into a DB-row shape.
+
+/** New funding-pick gift → draft. Mirrors `giftCreateSchema`'s defaults, which
+ *  is what the base POST would have applied to the same body.
+ *
+ *  KEY ORDER IS PART OF THE CONTRACT — see `estate-flow-gift-diff.ts`. The
+ *  unsaved-changes diff compares gifts with `JSON.stringify`, so a hand-built
+ *  draft has to emit keys in the exact order `giftRowToDraft` does or an
+ *  untouched gift reads as edited. `valuationDiscount` would be last; a new
+ *  funding pick never carries one. */
+export function fundingPickCreateDraft(
+  body: Extract<GiftOp, { type: "create" }>["body"],
+  id: string,
+): EstateFlowGift {
+  const recipient = { kind: "entity" as const, id: body.recipientEntityId };
+  return "accountId" in body
+    ? {
+        kind: "asset-once",
+        id,
+        year: body.year,
+        accountId: body.accountId,
+        percent: body.percent,
+        grantor: body.grantor,
+        recipient,
+        eventKind: "outright",
+      }
+    : {
+        kind: "cash-once",
+        id,
+        year: body.year,
+        amount: body.amount,
+        grantor: body.grantor,
+        recipient,
+        crummey: false,
+        eventKind: "outright",
+      };
+}
+
+/** Edited funding-pick gift → draft, by merging the differ's PARTIAL patch onto
+ *  the row it edits. Returns null for the gift kinds a draft cannot represent
+ *  (business-interest, liability transfer) — the caller must fail loudly rather
+ *  than fall back to a base write. */
+export function fundingPickUpdateDraft(
+  row: GiftRow,
+  patch: Extract<GiftOp, { type: "update" }>["body"],
+): EstateFlowGift | null {
+  return giftRowToDraft({
+    ...row,
+    amount: patch.amount != null ? String(patch.amount) : row.amount,
+    grantor: patch.grantor ?? row.grantor,
+    percent: patch.percent != null ? String(patch.percent) : row.percent,
+    // Only a scenario-added row arrives without one; "outright" is the column's
+    // DB default, so that is what the missing value stood for.
+    eventKind: row.eventKind ?? "outright",
   });
 }
 

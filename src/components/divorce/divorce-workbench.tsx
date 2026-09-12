@@ -12,6 +12,7 @@ import { computeSideTotals } from "@/lib/divorce/side-totals";
 import type { WorkbenchPayload } from "@/lib/divorce/divorce-plans";
 import type { DivorceDraftSettings } from "@/lib/divorce/schemas";
 import type { CommitResult } from "@/lib/divorce/commit-divorce-plan";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import { SettingsRail } from "./settings-rail";
 import { AllocationBoard } from "./division-board";
 import { CommitPreviewDialog, type CleanupSelection } from "./commit-preview-dialog";
@@ -335,7 +336,7 @@ function CommitSuccess({
   people: { primaryName: string; spouseName: string };
 }) {
   const primaryName = people.primaryName.trim() || "the primary";
-  const spouseName = people.spouseName.trim() || "the spouse";
+  const spouseName = people.spouseName.trim() || CO_CLIENT_LABEL;
 
   return (
     <div className="flex flex-1 items-center justify-center pt-4">

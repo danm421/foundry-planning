@@ -67,7 +67,7 @@ describe("buildOwnershipColumn", () => {
     expect(client!.subtotal).toBe(100_000);
   });
 
-  it("splits a 60/40 account into Client and Spouse groups at fractional value", () => {
+  it("splits a 60/40 account into Client and Co-client groups at fractional value", () => {
     const cd = data({
       accounts: [
         {
@@ -430,7 +430,7 @@ describe("buildOwnershipColumn", () => {
         },
         {
           id: "acc-s",
-          name: "Spouse IRA",
+          name: "Co-client IRA",
           category: "retirement",
           subType: "ira",
           value: 200_000,

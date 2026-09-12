@@ -7,6 +7,7 @@ import type { ClientData, ClientInfo, Income } from "@/engine/types";
 import { computeOwnMonthlyBenefit } from "@/engine/socialSecurity/ownRetirement";
 import { resolveClaimAgeMonths } from "@/engine/socialSecurity/claimAge";
 import { birthYear } from "./aggregate";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 export interface SsLadderRow { age: number; monthly: number; selected: boolean; }
 
@@ -75,7 +76,7 @@ export function buildSocialSecurity(
   clientData: ClientData,
   nowYear: number,
   clientName = "Client",
-  spouseName = "Spouse",
+  spouseName = CO_CLIENT_LABEL,
 ): SsBreakdown {
   const client = clientData.client;
   const incomes = clientData.incomes.filter((i) => i.type === "social_security");

@@ -33,7 +33,7 @@ function baseInput(over: { spouseName?: string | null; giftLedger?: GiftLedgerYe
 }
 
 describe("buildGiftTaxDrillData", () => {
-  it("maps gift columns with per-spouse groups and total pinned, no chart", () => {
+  it("maps gift columns with per-Co-client groups and total pinned, no chart", () => {
     const d = buildGiftTaxDrillData(baseInput());
     expect(d.title).toBe("Gift Tax");
     expect(d.chartSpec).toBeUndefined();
@@ -47,14 +47,14 @@ describe("buildGiftTaxDrillData", () => {
     expect(last.strong).toBe(true);
   });
 
-  it("uses real first names in the per-spouse headers", () => {
+  it("uses real first names in the per-Co-client headers", () => {
     const d = buildGiftTaxDrillData(baseInput());
     const headers = d.table.columns.map((c) => c.header);
     expect(headers.some((h) => h.includes("Cooper"))).toBe(true);
     expect(headers.some((h) => h.includes("Susan"))).toBe(true);
   });
 
-  it("omits the spouse column group when there is no spouse", () => {
+  it("omits the Co-client column group when there is no Co-client", () => {
     const noSpouseLedger: GiftLedgerYear[] = [
       { year: 2026, giftsGiven: 50_000, fullValueTransferred: 50_000, taxableGiftsGiven: 50_000,
         perGrantor: { client: grantor() }, totalGiftTax: 0 },

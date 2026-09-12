@@ -31,7 +31,7 @@ describe("EstateFlowRemainderDialog", () => {
     );
     expect(screen.getByText(/Pat Doe.*will/i)).toBeInTheDocument();
     expect(screen.queryByText(/Sam/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/if spouse predeceased/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/if co-client predeceased/i)).not.toBeInTheDocument();
   });
 
   it("shows two will sections and the contingent tier when married", () => {
@@ -46,7 +46,7 @@ describe("EstateFlowRemainderDialog", () => {
     );
     expect(screen.getByText(/Pat Doe.*will/i)).toBeInTheDocument();
     expect(screen.getByText(/Sam Doe.*will/i)).toBeInTheDocument();
-    expect(screen.getAllByText(/if spouse predeceased/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/if co-client predeceased/i).length).toBeGreaterThan(0);
   });
 
   it("emits a Will[] via onApplyWill with tier stamping and offset sortOrder", async () => {

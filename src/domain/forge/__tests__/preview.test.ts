@@ -111,11 +111,11 @@ describe("describeProposedWrite (async wrapper without ctx)", () => {
     expect(details).toMatch(/married_joint/);
     expect(details).toMatch(/65/);
     expect(details).toMatch(/95/);
-    expect(details).toMatch(/Spouse retirement age: 63/);
-    expect(details).toMatch(/Spouse life expectancy: 90/);
+    expect(details).toMatch(/Co-client retirement age: 63/);
+    expect(details).toMatch(/Co-client life expectancy: 90/);
   });
 
-  it("previews build_plan (GLOBAL mode, spouse contact but no spouse horizon args) without a spouse-horizon line — the card must not claim a value the build won't write", async () => {
+  it("previews build_plan (GLOBAL mode, co-client contact but no co-client horizon args) without a co-client-horizon line — the card must not claim a value the build won't write", async () => {
     const out = await describeProposedWrite({
       name: "build_plan",
       args: {
@@ -134,11 +134,11 @@ describe("describeProposedWrite (async wrapper without ctx)", () => {
     });
     expect(out.name).toBe("build_plan");
     const details = out.details!.join(" ");
-    expect(details).not.toMatch(/Spouse retirement age/);
-    expect(details).not.toMatch(/Spouse life expectancy/);
+    expect(details).not.toMatch(/Co-client retirement age/);
+    expect(details).not.toMatch(/Co-client life expectancy/);
   });
 
-  it("previews build_plan (GLOBAL mode, new prospect, no spouse) without a spouse line", async () => {
+  it("previews build_plan (GLOBAL mode, new prospect, no co-client) without a co-client line", async () => {
     const out = await describeProposedWrite({
       name: "build_plan",
       args: {
@@ -153,7 +153,7 @@ describe("describeProposedWrite (async wrapper without ctx)", () => {
     });
     expect(out.name).toBe("build_plan");
     expect(out.summary).toMatch(/Solo Household/);
-    expect(out.details!.join(" ")).not.toMatch(/Spouse/);
+    expect(out.details!.join(" ")).not.toMatch(/Co-client/);
   });
 
   it("previews build_plan (CLIENT mode, no args) without rendering undefined", async () => {

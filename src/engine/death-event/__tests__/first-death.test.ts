@@ -22,7 +22,7 @@ const spouseFm: FamilyMember = {
   id: LEGACY_FM_SPOUSE,
   role: "spouse",
   relationship: "other",
-  firstName: "Spouse",
+  firstName: "Co-client",
   lastName: "Test",
   dateOfBirth: "1972-01-01",
 };
@@ -151,7 +151,7 @@ describe("applyFirstDeath — gross transfers + drain attribution (Phase B)", ()
       bequests: [
         {
           id: "b1",
-          name: "Half to spouse",
+          name: "Half to Co-client",
           kind: "asset",
           assetMode: "all_assets",
           accountId: null,

@@ -27,6 +27,10 @@ import { authErrorResponse, requireActiveSubscriptionForFirm } from "@/lib/authz
 import { requireOrgId } from "@/lib/db-helpers";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import {
+  cloneGiftSeriesIntoScenario,
+  findBaseScenarioId,
+} from "@/lib/scenario/create-with-clone";
 import { loadScenarioChanges, loadScenarioToggleGroups } from "@/lib/scenario/changes";
 import {
   applyEntityAdd,
@@ -98,6 +102,20 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
           monteCarloSeed: seed ?? null,
         })
         .returning();
+
+      // Seed the new scenario's recurring-gift partition from the scenario the
+      // solver was run against. `gift_series` is scenario-partitioned, so
+      // without this the saved scenario projects with the client's recurring
+      // gifts missing — and promoting it would delete them from the base plan.
+      const seriesSourceId =
+        source === "base" ? await findBaseScenarioId(tx, clientId) : source;
+      if (seriesSourceId) {
+        await cloneGiftSeriesIntoScenario(tx, {
+          clientId,
+          fromScenarioId: seriesSourceId,
+          toScenarioId: row.id,
+        });
+      }
 
       // Auto-create one toggle-group ("technique") per revocable-trust funding
       // set so the N retitled-account changes collapse into a single card in the

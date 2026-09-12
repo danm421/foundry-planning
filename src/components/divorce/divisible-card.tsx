@@ -8,6 +8,7 @@ import {
   type DivorceDisposition,
 } from "@/lib/divorce/allocation-rules";
 import { splitAmounts } from "@/lib/divorce/split-math";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import type { OnAllocate } from "./divorce-workbench";
 
 const currency = new Intl.NumberFormat("en-US", {
@@ -48,7 +49,7 @@ function ownerLabel(
     case "primary":
       return people.primaryName || "Primary";
     case "spouse":
-      return people.spouseName || "Spouse";
+      return people.spouseName || CO_CLIENT_LABEL;
     case "joint":
       return "Joint";
     case "entity":
@@ -140,7 +141,7 @@ export function DivisibleCard({
 
   const subtypeLabel = humanize(obj.subtype);
   const showBasis = isSplittable(obj);
-  const spouseName = people.spouseName || "spouse";
+  const spouseName = people.spouseName || CO_CLIENT_LABEL;
 
   function toggleMenu() {
     if (menuOpen) {
@@ -179,7 +180,7 @@ export function DivisibleCard({
       case "primary":
         return `To ${people.primaryName || "primary"}`;
       case "spouse":
-        return `To ${people.spouseName || "spouse"}`;
+        return `To ${people.spouseName || CO_CLIENT_LABEL}`;
       case "split":
         return "Split…";
       case "duplicate":

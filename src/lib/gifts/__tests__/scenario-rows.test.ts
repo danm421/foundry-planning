@@ -8,7 +8,9 @@ import {
   giftDraftToRow,
   giftDraftToSeriesRow,
   overlayScenarioGiftRows,
-} from "../family-scenario-rows";
+  profileGiftRowToDraft,
+  profileGiftSeriesRowToDraft,
+} from "@/lib/gifts/scenario-rows";
 
 // The exact payload the solver's "save as scenario" writes for a SLAT — the
 // case that used to render "No trusts yet" on the Profile page.
@@ -87,8 +89,21 @@ describe("gift draft → row", () => {
       recipientEntityId: "slat-1", recipientFamilyMemberId: null,
       recipientExternalBeneficiaryId: null,
       accountId: "acct-1", percent: 0.15, valuationDiscount: null,
-      useCrummeyPowers: false, notes: null,
+      useCrummeyPowers: false, notes: null, eventKind: "outright",
     });
+  });
+
+  it("carries a non-outright event kind rather than defaulting it away", () => {
+    // `gifts.event_kind` is NOT NULL DEFAULT 'outright', so a dropped value does
+    // not read as missing — it silently turns a charitable lead trust's
+    // remainder-interest gift into an ordinary outright one.
+    expect(
+      giftDraftToRow({
+        kind: "cash-once", id: "g1", year: 2026, amount: 250_000,
+        grantor: "client", recipient: { kind: "entity", id: "clt-1" }, crummey: false,
+        eventKind: "clt_remainder_interest",
+      }),
+    ).toMatchObject({ eventKind: "clt_remainder_interest" });
   });
 
   it("carries a valuation discount through the overlay, on both gift kinds", () => {
@@ -150,6 +165,89 @@ describe("gift draft → row", () => {
       inflationAdjust: true, useCrummeyPowers: true,
       recipientExternalBeneficiaryId: "ext1", recipientEntityId: null,
     });
+  });
+});
+
+// The read side of the same round trip. The gift dialog used to hand-roll this
+// mapping and lost two fields to it: `eventKind` (a CLT's remainder-interest
+// gift silently became an outright gift) and the very existence of
+// business-interest / liability rows (read as `{kind: "cash-once", amount: 0}`).
+describe("profile row → draft", () => {
+  const assetRow: Gift = {
+    id: "g1",
+    year: 2029,
+    amount: null,
+    grantor: "client",
+    recipientEntityId: "ent-1",
+    recipientFamilyMemberId: null,
+    recipientExternalBeneficiaryId: null,
+    accountId: "acc-1",
+    percent: 0.15,
+    valuationDiscount: 0.3,
+    useCrummeyPowers: false,
+    eventKind: "outright",
+    businessEntityId: null,
+    liabilityId: null,
+    notes: null,
+  };
+
+  it("returns null for a business-interest gift instead of inventing a cash gift", () => {
+    expect(
+      profileGiftRowToDraft({
+        ...assetRow,
+        accountId: null,
+        businessEntityId: "biz-1",
+      }),
+    ).toBeNull();
+  });
+
+  it("returns null for the auto-bundled liability transfer", () => {
+    expect(
+      profileGiftRowToDraft({ ...assetRow, accountId: null, liabilityId: "liab-1" }),
+    ).toBeNull();
+  });
+
+  it("carries a non-outright event kind", () => {
+    const draft = profileGiftRowToDraft({
+      ...assetRow,
+      eventKind: "clt_remainder_interest",
+    });
+    expect(draft).toMatchObject({ kind: "asset-once", eventKind: "clt_remainder_interest" });
+  });
+
+  it("round-trips an asset gift back to the same row", () => {
+    const draft = profileGiftRowToDraft(assetRow)!;
+    // `notes` is not part of the draft, so the rebuilt row nulls it, and the
+    // two columns whose only legal value here is null are simply absent from
+    // an overlay row (a draft can never BE a business or liability gift).
+    // Every other column comes back identical.
+    const { businessEntityId: _b, liabilityId: _l, ...expected } = assetRow;
+    void _b;
+    void _l;
+    expect(giftDraftToRow(draft)).toEqual({ ...expected, notes: null });
+  });
+
+  it("keeps `valuationDiscount` last — the JSON.stringify diff contract", () => {
+    const keys = Object.keys(profileGiftRowToDraft(assetRow)!);
+    expect(keys[keys.length - 1]).toBe("valuationDiscount");
+  });
+
+  it("round-trips a series row", () => {
+    const seriesRow: GiftSeriesLite = {
+      id: "gs1",
+      grantor: "spouse",
+      recipientEntityId: "ent-1",
+      recipientFamilyMemberId: null,
+      recipientExternalBeneficiaryId: null,
+      startYear: 2027,
+      endYear: 2031,
+      annualAmount: 19_000,
+      amountMode: "fixed",
+      inflationAdjust: true,
+      valuationDiscount: 0.2,
+      useCrummeyPowers: true,
+    };
+    expect(giftDraftToSeriesRow(profileGiftSeriesRowToDraft(seriesRow))).toEqual(seriesRow);
   });
 });
 
@@ -245,7 +343,7 @@ describe("effective-tree entities → Profile trust rows", () => {
   it("surfaces trusts that exist only as scenario changes", () => {
     const { effectiveTree } = applyScenarioChanges(
       baseTree,
-      [entityAdd("slat-1", "SLAT for Client"), entityAdd("slat-2", "SLAT for Spouse")],
+      [entityAdd("slat-1", "SLAT for Client"), entityAdd("slat-2", "SLAT for Co-client")],
       {},
       [],
     );
@@ -253,7 +351,7 @@ describe("effective-tree entities → Profile trust rows", () => {
       .map((e) => entitySummaryToRow(e))
       .sort((a, b) => a.name.localeCompare(b.name));
     expect(rows.map((r) => r.name)).toEqual([
-      "Family Trust", "SLAT for Client", "SLAT for Spouse",
+      "Family Trust", "SLAT for Client", "SLAT for Co-client",
     ]);
     expect(rows[1]).toMatchObject({ trustSubType: "idgt", isIrrevocable: true, notes: null });
   });

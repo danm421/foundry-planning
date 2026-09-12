@@ -13,6 +13,7 @@ import { USPS_STATE_NAMES, type USPSStateCode } from "@/lib/usps-states";
 import { AsOfDropdown, type AsOfValue } from "./report-controls/as-of-dropdown";
 import { TimePeriodButtons } from "./report-controls/time-period-buttons";
 import type { OwnerDobs } from "./report-controls/age-helpers";
+import { personLabel } from "@/lib/owner-labels";
 import EstateTaxSkeleton from "@/app/(app)/clients/[id]/estate-planning/estate-tax/loading-skeleton";
 
 const fmt = new Intl.NumberFormat("en-US", {
@@ -150,11 +151,11 @@ export default function StateDeathTaxReportView({
     firstDecedent === "client"
       ? ownerNames.clientName
       : firstDecedent === "spouse"
-        ? ownerNames.spouseName ?? "Spouse"
+        ? personLabel("spouse", ownerNames)
         : null;
   const survivorName =
     firstDecedent === "client"
-      ? ownerNames.spouseName ?? "Spouse"
+      ? personLabel("spouse", ownerNames)
       : firstDecedent === "spouse"
         ? ownerNames.clientName
         : null;
@@ -212,7 +213,7 @@ export default function StateDeathTaxReportView({
                   : "rounded px-3 py-1 text-gray-300 hover:text-gray-200"}
                 onClick={() => setOrdering("spouseFirst")}
               >
-                {ownerNames.spouseName ?? "Spouse"} dies first
+                {personLabel("spouse", ownerNames)} dies first
               </button>
             </div>
           )}
@@ -266,7 +267,7 @@ function ownerForName(
   r: EstateTaxResult,
   names: { clientName: string; spouseName: string | null },
 ): string {
-  return r.deceased === "client" ? names.clientName : names.spouseName ?? "Spouse";
+  return r.deceased === "client" ? names.clientName : personLabel("spouse", names);
 }
 
 function formatAmount(amount: number, opts: { negate?: boolean } = {}): string {

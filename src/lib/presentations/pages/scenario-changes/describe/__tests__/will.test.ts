@@ -30,7 +30,7 @@ describe("will describer", () => {
     expect(joined).not.toContain("[object Object]");
     expect(joined).toContain("Roth 401(k)");
     expect(joined).toContain("Jane Cooper");
-    expect(joined).toContain("if spouse predeceased");
+    expect(joined).toContain("if Co-client predeceased");
     expect(row.detail.some((l) => /added/i.test(l))).toBe(true); // b2 is new
   });
 });

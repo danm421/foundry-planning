@@ -68,7 +68,7 @@ export function MedicareTab({
         )}
         {hasAnySpouseYear && (
           <p className="text-[11px] text-ink-3">
-            You can set up Medicare for the client, spouse, or both.
+            You can set up Medicare for the client, co-client, or both.
           </p>
         )}
       </div>

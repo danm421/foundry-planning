@@ -903,7 +903,7 @@ describe("commitAccounts", () => {
       ...emptyPayload(),
       accounts: [
         {
-          name: "Spouse Rollover IRA",
+          name: "Co-client Rollover IRA",
           category: "retirement",
           subType: "roth_ira",
           owner: "spouse",
@@ -930,7 +930,7 @@ describe("commitAccounts", () => {
       ...emptyPayload(),
       accounts: [
         {
-          name: "Spouse Roth",
+          name: "Co-client Roth",
           category: "retirement",
           subType: "roth_ira",
           owner: "spouse",

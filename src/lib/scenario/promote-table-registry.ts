@@ -43,7 +43,9 @@ import {
   writeRothConversionChildren,
   writeReinvestmentChildren,
   writeWillChildren,
+  writeGiftChildren,
 } from "./promote-child-writers";
+import { translateGiftDraftForPromote } from "./promote-gift-translate";
 
 /** Loosely-typed tx handle (Drizzle's tx callback param is not exported as a
  *  named type at our version). The executor passes the real tx through. */
@@ -52,9 +54,10 @@ export type PromoteTx = Parameters<
 >[0];
 
 /** Context threaded into child writers/updaters. `idRemap` maps synthetic add
- *  ids → DB-generated uuids; the executor inserts accounts and then incomes
- *  first, so any same-batch account or income reference is already remapped by
- *  the time a dependent kind's writer runs. */
+ *  ids → DB-generated uuids; the executor inserts kinds in FK order (recipients
+ *  and family members, then accounts, then incomes and liabilities — see
+ *  `INSERT_RANK` in execute-base-write-plan.ts), so any same-batch reference to
+ *  one of those is already remapped by the time a dependent kind's writer runs. */
 export interface ChildWriterCtx {
   clientId: string;
   baseScenarioId: string;
@@ -70,8 +73,25 @@ export type ChildWriter = (
   ctx: ChildWriterCtx,
 ) => Promise<void>;
 
+/** Reshapes an add payload into the parent table's column shape BEFORE
+ *  `coerceForTable` drops every key that isn't a column name. Only needed where
+ *  a scenario change stores an editor DRAFT rather than a row — today `gift`
+ *  alone. Absent everywhere else, which is what keeps the executor's behaviour
+ *  for the other kinds unchanged. */
+export type PayloadTranslator = (
+  raw: Record<string, unknown>,
+) => Record<string, unknown>;
+
 export interface RegistryEntry {
   table: PgTable;
+  translate?: PayloadTranslator;
+  /** Write the add under the id the change names instead of letting the DB mint
+   *  a fresh one, UPDATING that row when it already exists. Only for kinds whose
+   *  `add` doubles as an edit of an existing base row — today `gift` alone,
+   *  which has no `edit` op, so a save of a base-plan gift arrives as an `add`
+   *  on that gift's own id. Every other kind's add is genuinely new and its
+   *  targetId is a synthetic uuid, so they must keep the generated id. */
+  preserveId?: boolean;
   childWriter?: ChildWriter;
   /** Rewrites child rows after an EDIT to the parent. Receives the edit's
    *  `set` (the diff's `to` values) instead of an add payload; the executor
@@ -116,7 +136,15 @@ export const PROMOTE_TABLE_REGISTRY: Partial<Record<TargetKind, RegistryEntry>> 
   client_tax_adjustment: { table: clientTaxAdjustments },
   family_member: { table: familyMembers },
   external_beneficiary: { table: externalBeneficiaries },
-  gift: { table: gifts },
+  gift: {
+    table: gifts,
+    translate: translateGiftDraftForPromote,
+    preserveId: true,
+    // An asset gift on an account with a linked liability carries a bundled
+    // liability-transfer child row, exactly as the gift route creates one.
+    // Without it the mortgage stops following the property at promote.
+    childWriter: writeGiftChildren,
+  },
   will: { table: wills, childWriter: writeWillChildren },
   entity: { table: entities },
   relocation: { table: relocations },

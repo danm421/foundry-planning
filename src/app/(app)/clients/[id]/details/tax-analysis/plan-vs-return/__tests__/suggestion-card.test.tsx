@@ -183,7 +183,7 @@ describe("SuggestionCard", () => {
       action: { ...base.action!, ownerChoices: ["client", "spouse"] },
     };
     render(<SuggestionCard {...props({ suggestion: withOwner, onApply })} />);
-    await userEvent.click(screen.getByRole("radio", { name: /spouse/i }));
+    await userEvent.click(screen.getByRole("radio", { name: /co-client/i }));
     await userEvent.click(screen.getByRole("button", { name: /set salary/i }));
     expect(onApply).toHaveBeenCalledWith(165000, "spouse");
   });
@@ -203,7 +203,7 @@ describe("SuggestionCard", () => {
       action: { ...base.action!, ownerChoices: ["client", "spouse"] },
     };
     render(<SuggestionCard {...props({ suggestion: withOwner, busy: "apply" })} />);
-    expect(screen.getByRole("radio", { name: /spouse/i })).toBeDisabled();
+    expect(screen.getByRole("radio", { name: /co-client/i })).toBeDisabled();
   });
 
   it("R61: an outage disables BOTH writes to the dismissals store", () => {

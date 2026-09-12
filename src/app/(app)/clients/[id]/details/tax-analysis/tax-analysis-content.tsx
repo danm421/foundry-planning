@@ -9,6 +9,7 @@ import type { SecondRead } from "@/lib/tax-returns/second-read/types";
 import { FactsReviewForm } from "./facts-review-form";
 import { TaxReportView } from "./tax-report-view";
 import { DocumentsStrip } from "./documents-strip";
+import { PlanVsReturnPanel } from "./plan-vs-return/plan-vs-return-panel";
 
 /** Both `message` (documents endpoints) and `error` (year endpoints) show up
  *  across these routes' failure bodies; a response can also fail to parse as
@@ -55,9 +56,30 @@ export interface YearDetail {
   secondReadStale?: boolean;
 }
 
-export function TaxAnalysisContent({ clientId }: { clientId: string }) {
+/** The two views of a tax year. Both hang off the one year selector below —
+ *  picking 2025 for the report keeps 2025 when the advisor compares it. */
+export type TaxAnalysisView = "report" | "plan-vs-return";
+
+const VIEW_TABS: { id: TaxAnalysisView; label: string }[] = [
+  { id: "report", label: "Report" },
+  { id: "plan-vs-return", label: "Plan vs. Return" },
+];
+
+export function TaxAnalysisContent({
+  clientId,
+  initialView = "report",
+  initialYear,
+  scenarioIgnored = false,
+}: {
+  clientId: string;
+  initialView?: TaxAnalysisView;
+  /** From `?year=`. Ignored when the client has no return for it. */
+  initialYear?: number;
+  scenarioIgnored?: boolean;
+}) {
   const [summaries, setSummaries] = useState<Summary[] | null>(null);
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
+  const [view, setView] = useState<TaxAnalysisView>(initialView);
   const [detail, setDetail] = useState<YearDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -97,10 +119,11 @@ export function TaxAnalysisContent({ clientId }: { clientId: string }) {
   useEffect(() => {
     loadList()
       .then((list) => {
-        if (list.length > 0) setSelectedYear(list[0].taxYear);
+        const pick = list.find((r) => r.taxYear === initialYear) ?? list[0];
+        if (pick) setSelectedYear(pick.taxYear);
       })
       .catch((e) => setError(e instanceof Error ? e.message : "Load failed"));
-  }, [loadList]);
+  }, [loadList, initialYear]);
 
   useEffect(() => {
     if (selectedYear != null) void loadDetail(selectedYear);
@@ -114,6 +137,7 @@ export function TaxAnalysisContent({ clientId }: { clientId: string }) {
   const selectYearAfterMutation = useCallback(
     async (y: number) => {
       await loadList();
+      setView("report");
       if (selectedYear === y) {
         void loadDetail(y);
       } else {
@@ -296,6 +320,8 @@ export function TaxAnalysisContent({ clientId }: { clientId: string }) {
     }
   }
 
+  const selectedSummary = summaries?.find((r) => r.taxYear === selectedYear) ?? null;
+
   if (summaries === null && !error) {
     return <div className="p-8 text-ink-3">Loading tax returns…</div>;
   }
@@ -377,70 +403,105 @@ export function TaxAnalysisContent({ clientId }: { clientId: string }) {
             </button>
           </div>
 
-          {detail && !detailLoading && (
-            <DocumentsStrip
-              documents={detail.documents ?? []}
-              unavailable={detail.documentsUnavailable ?? false}
-              busy={uploading}
-              onAdd={(file, role) => void addDocument(file, role)}
-              onRemove={(id) => void removeDocument(id)}
-            />
-          )}
-
-          {detailLoading && <div className="p-8 text-ink-3">Loading {selectedYear}…</div>}
-
-          {!detailLoading && detail?.factsParseError && !detail.facts && (
-            <div className="flex flex-col items-start gap-3 rounded-lg border border-crit bg-crit/10 p-6">
-              <h2 className="text-sm font-semibold text-crit">
-                This year&apos;s data couldn&apos;t be read
-              </h2>
-              <p className="max-w-md text-sm text-ink-2">
-                The saved data for {detail.taxYear} is corrupted and can&apos;t be displayed.
-                Delete this year and re-upload the return to fix it.
-              </p>
+          <div role="tablist" aria-label="Tax analysis view" className="flex items-center gap-1">
+            {VIEW_TABS.map((t) => (
               <button
+                key={t.id}
                 type="button"
-                className="rounded border border-crit bg-crit/10 px-4 py-2 text-sm font-medium text-crit transition-colors hover:bg-crit/20"
-                onClick={() => void deleteCorruptYear(detail.taxYear)}
+                role="tab"
+                aria-selected={view === t.id}
+                className={`rounded-md px-3 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 ${
+                  view === t.id
+                    ? "bg-card-2 font-medium text-ink"
+                    : "text-ink-3 hover:text-ink-2"
+                }`}
+                onClick={() => setView(t.id)}
               >
-                Delete &amp; re-upload
+                {t.label}
               </button>
-            </div>
-          )}
+            ))}
+          </div>
 
-          {!detailLoading && detail?.status === "needs_review" && detail.facts && (
-            <FactsReviewForm
-              key={detail.taxYear}
+          {view === "plan-vs-return" && selectedYear != null && (
+            <PlanVsReturnPanel
               clientId={clientId}
-              detail={detail}
-              onSaved={() => {
-                void loadList();
-                void loadDetail(detail.taxYear);
-              }}
+              year={selectedYear}
+              status={selectedSummary?.status ?? "needs_review"}
+              scenarioIgnored={scenarioIgnored}
+              onGoToReport={() => setView("report")}
             />
           )}
 
-          {!detailLoading && detail?.status === "ready" && detail.analysis && (
-            <TaxReportView
-              clientId={clientId}
-              detail={detail}
-              secondReadBusy={secondReadBusy}
-              secondReadError={secondReadError}
-              onRunSecondRead={() => void runSecondRead()}
-              onDismissSecondReadItem={(itemId) => void dismissSecondReadItem(itemId)}
-              onEditFacts={async () => {
-                // C1: reopen the year (ready → needs_review) via the Task 12
-                // PUT endpoint, then re-fetch so the FactsReviewForm branch
-                // above picks it up and the tab's "· review" marker updates.
-                await fetch(`/api/clients/${clientId}/tax-returns/${detail.taxYear}`, {
-                  method: "PUT",
-                  headers: { "content-type": "application/json" },
-                  body: JSON.stringify({ facts: detail.facts, reopen: true }),
-                });
-                void loadList();
-                void loadDetail(detail.taxYear);
-              }}
-            />
+          {view === "report" && (
+            <>
+              {detail && !detailLoading && (
+                <DocumentsStrip
+                  documents={detail.documents ?? []}
+                  unavailable={detail.documentsUnavailable ?? false}
+                  busy={uploading}
+                  onAdd={(file, role) => void addDocument(file, role)}
+                  onRemove={(id) => void removeDocument(id)}
+                />
+              )}
+
+              {detailLoading && (
+                <div className="p-8 text-ink-3">Loading {selectedYear}…</div>
+              )}
+
+              {!detailLoading && detail?.factsParseError && !detail.facts && (
+                <div className="flex flex-col items-start gap-3 rounded-lg border border-crit bg-crit/10 p-6">
+                  <h2 className="text-sm font-semibold text-crit">
+                    This year&apos;s data couldn&apos;t be read
+                  </h2>
+                  <p className="max-w-md text-sm text-ink-2">
+                    The saved data for {detail.taxYear} is corrupted and can&apos;t be displayed.
+                    Delete this year and re-upload the return to fix it.
+                  </p>
+                  <button
+                    type="button"
+                    className="rounded border border-crit bg-crit/10 px-4 py-2 text-sm font-medium text-crit transition-colors hover:bg-crit/20"
+                    onClick={() => void deleteCorruptYear(detail.taxYear)}
+                  >
+                    Delete &amp; re-upload
+                  </button>
+                </div>
+              )}
+
+              {!detailLoading && detail?.status === "needs_review" && detail.facts && (
+                <FactsReviewForm
+                  key={detail.taxYear}
+                  clientId={clientId}
+                  detail={detail}
+                  onSaved={() => {
+                    void loadList();
+                    void loadDetail(detail.taxYear);
+                  }}
+                />
+              )}
+
+              {!detailLoading && detail?.status === "ready" && detail.analysis && (
+                <TaxReportView
+                  clientId={clientId}
+                  detail={detail}
+                  secondReadBusy={secondReadBusy}
+                  secondReadError={secondReadError}
+                  onRunSecondRead={() => void runSecondRead()}
+                  onDismissSecondReadItem={(itemId) => void dismissSecondReadItem(itemId)}
+                  onEditFacts={async () => {
+                    // C1: reopen the year (ready → needs_review) via the Task 12
+                    // PUT endpoint, then re-fetch so the FactsReviewForm branch
+                    // above picks it up and the tab's "· review" marker updates.
+                    await fetch(`/api/clients/${clientId}/tax-returns/${detail.taxYear}`, {
+                      method: "PUT",
+                      headers: { "content-type": "application/json" },
+                      body: JSON.stringify({ facts: detail.facts, reopen: true }),
+                    });
+                    void loadList();
+                    void loadDetail(detail.taxYear);
+                  }}
+                />
+              )}
+            </>
           )}
         </>
       )}

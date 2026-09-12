@@ -52,7 +52,7 @@ export const TONE_CLASS: Record<Suggestion["delta"]["tone"], string> = {
 
 const OWNER_LABEL: Record<OwnerChoice, string> = {
   client: "Client",
-  spouse: "Spouse",
+  spouse: "Co-client",
   split: "Split evenly",
 };
 

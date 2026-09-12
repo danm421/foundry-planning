@@ -5,6 +5,16 @@
  * route contracts and surfaces a thrown Error on non-2xx so callers can
  * show toast errors with the failing status code.
  *
+ * The two gift handlers (`saveGiftOneTime`, `saveGiftRecurring`) additionally
+ * take a `submit` — `UseScenarioWriter["submit"]`, injected by the "use
+ * client" caller (`dnd-context-provider.tsx`) since this module is plain and
+ * cannot call the hook itself. `submit` resolves with a `Response` and NEVER
+ * rejects, unlike the `fetch`-based helpers below, so both gift handlers
+ * check `res.ok` and throw in the same "{status} {body text}" shape
+ * `sendJson` always has, preserving the throw-on-failure contract this
+ * header documents. `saveBequest` and `saveRetitle` write no gifts and are
+ * unaffected — they still go straight through `postJson`/`sendJson`.
+ *
  * Wire contracts (verified against route handlers):
  * - POST /api/clients/[id]/gifts                     — see giftCreateSchema
  * - POST /api/clients/[id]/gifts/series              — see giftSeriesSchema
@@ -20,6 +30,13 @@
  *                                                       Owner percents are fractional
  *                                                       (sum to 1, not 100).
  */
+
+import type { UseScenarioWriter } from "@/hooks/use-scenario-writer";
+import {
+  assertNotPastDatedAssetGift,
+  giftScenarioAdd,
+} from "@/lib/gifts/gift-write";
+import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 
 export type Recipient =
   | { kind: "entity"; id: string }
@@ -45,7 +62,16 @@ export interface SaveGiftOneTimeArgs {
   notes?: string | null;
 }
 
-export async function saveGiftOneTime(args: SaveGiftOneTimeArgs): Promise<void> {
+export async function saveGiftOneTime(
+  args: SaveGiftOneTimeArgs & {
+    submit: UseScenarioWriter["submit"];
+    /** True when a scenario is active, and the plan's real first projection
+     *  year — together they decide whether a past-dated asset transfer has to
+     *  be refused. See `assertNotPastDatedAssetGift`. */
+    scenarioActive: boolean;
+    planStartYear: number | null;
+  },
+): Promise<void> {
   const body: Record<string, unknown> = {
     year: args.year,
     yearRef: args.yearRef ?? null,
@@ -62,7 +88,54 @@ export async function saveGiftOneTime(args: SaveGiftOneTimeArgs): Promise<void> 
   if (args.amountKind === "percent") body.percent = args.percent;
   else body.amount = args.amount;
 
-  await postJson(`/api/clients/${args.clientId}/gifts`, body);
+  // A drop from a non-cash account carries sourceAccountId and is an asset
+  // gift; a cash drop omits it. Branch on that, not on amountKind — mirrors
+  // giftRowToDraft's accountId check (estate-flow-gifts.ts:145).
+  const draft: EstateFlowGift = args.sourceAccountId
+    ? {
+        kind: "asset-once",
+        id: crypto.randomUUID(),
+        year: args.year,
+        accountId: args.sourceAccountId,
+        percent: args.percent ?? 0,
+        grantor: args.grantor,
+        recipient: args.recipient,
+        eventKind: "outright",
+      }
+    : {
+        kind: "cash-once",
+        id: crypto.randomUUID(),
+        year: args.year,
+        amount: args.amount ?? 0,
+        grantor: args.grantor,
+        recipient: args.recipient,
+        crummey: args.useCrummeyPowers,
+        eventKind: "outright",
+      };
+
+  // A past-dated asset transfer moves ownership through `account_owners`,
+  // which only the base gift route writes — inside a scenario the same save
+  // changes nothing at all, so refuse it by name.
+  assertNotPastDatedAssetGift(draft, {
+    scenarioActive: args.scenarioActive,
+    planStartYear: args.planStartYear,
+  });
+
+  // dispatchSave (dnd-context-provider.tsx) already refreshes once after this
+  // handler resolves — it's the shared refresh for every drop action
+  // (bequest, retitle, gift). submit() would ALSO refresh on success, so
+  // skipRefresh here keeps the drop at the one refresh it billed before this
+  // handler started going through the scenario writer.
+  const res = await args.submit(giftScenarioAdd(draft), {
+    url: `/api/clients/${args.clientId}/gifts`,
+    method: "POST",
+    body,
+    skipRefresh: true,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`${res.status} ${text}`);
+  }
 }
 
 // ── Gift (recurring series) ──────────────────────────────────────────────────
@@ -81,7 +154,14 @@ export interface SaveGiftRecurringArgs {
   notes?: string | null;
 }
 
-export async function saveGiftRecurring(args: SaveGiftRecurringArgs): Promise<void> {
+export async function saveGiftRecurring(
+  args: SaveGiftRecurringArgs & {
+    submitDirect: UseScenarioWriter["submitDirect"];
+    /** The scenario whose `gift_series` partition this row belongs in; null =
+     *  base case. See the note on the request below. */
+    scenarioId: string | null;
+  },
+): Promise<void> {
   if (args.recipient.kind !== "entity") {
     throw new Error("Recurring gifts require an entity recipient (irrevocable trust)");
   }
@@ -97,7 +177,29 @@ export async function saveGiftRecurring(args: SaveGiftRecurringArgs): Promise<vo
     useCrummeyPowers: args.useCrummeyPowers,
     notes: args.notes ?? null,
   };
-  await postJson(`/api/clients/${args.clientId}/gifts/series`, body);
+
+  // A recurring series is NEVER a `scenario_changes` row. `gift_series` carries
+  // a real `scenario_id`: the series GET filters on it and promotion copies the
+  // partition into base, so its own route IS the scenario-correct write and a
+  // change row would be invisible to every list that reads the table. The
+  // scenario goes on the URL — without it the row silently lands in base even
+  // while a scenario is selected.
+  //
+  // See the matching comment in saveGiftOneTime — dispatchSave owns the
+  // single post-save refresh for every drop action.
+  const url = `/api/clients/${args.clientId}/gifts/series`;
+  const res = await args.submitDirect({
+    url: args.scenarioId
+      ? `${url}?scenario=${encodeURIComponent(args.scenarioId)}`
+      : url,
+    method: "POST",
+    body,
+    skipRefresh: true,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`${res.status} ${text}`);
+  }
 }
 
 // ── Bequest (one will per grantor) ───────────────────────────────────────────

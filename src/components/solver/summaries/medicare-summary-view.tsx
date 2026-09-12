@@ -15,6 +15,7 @@ import type { MedicareSummaryPageData } from "@/lib/presentations/pages/medicare
 import { fmtUsd, fmtPct } from "@/lib/presentations/pages/medicare-summary/aggregate";
 import type { MedicareYearBar, MedicareComposition } from "@/lib/presentations/pages/medicare-summary/aggregate";
 import { chartChrome, dataPalette, statusColors, useThemeName } from "@/lib/chart-colors";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import {
   SummaryLayout,
   SummarySection,
@@ -297,7 +298,7 @@ export function MedicareSummaryView({
               ...(enrollment.spouse
                 ? [
                     {
-                      member: "Spouse",
+                      member: CO_CLIENT_LABEL,
                       year: String(enrollment.spouse.year),
                       age: String(enrollment.spouse.age),
                     },

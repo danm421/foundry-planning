@@ -9,6 +9,7 @@ import {
 } from "@/components/forms/add-tax-adjustment-form";
 import type { ClientMilestones } from "@/lib/milestones";
 import { useClientAccess } from "@/components/client-access-provider";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 const fmt = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 
@@ -25,7 +26,7 @@ const TAX_TYPE_LABELS: Record<string, string> = {
 
 const OWNER_LABELS: Record<string, string> = {
   client: "Client",
-  spouse: "Spouse",
+  spouse: CO_CLIENT_LABEL,
   joint: "Joint",
 };
 

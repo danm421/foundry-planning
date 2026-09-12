@@ -78,7 +78,7 @@ describe("YearlyEstateCharts", () => {
     expect(container.querySelector("canvas")).toBeNull();
   });
 
-  it("renders only the 'where' chart if there are no non-spouse recipients", () => {
+  it("renders only the 'where' chart if there are no non-co-client recipients", () => {
     const { container } = render(
       <YearlyEstateCharts
         rows={rows}

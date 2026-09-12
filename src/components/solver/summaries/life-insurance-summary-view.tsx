@@ -18,6 +18,7 @@ import type { LifeInsuranceSummaryPageData, DecedentGap, DecedentRange, LiChart 
 import { fmtUsd, POLICY_TYPE_LABEL, termExpiryLabel } from "@/lib/presentations/pages/life-insurance-summary/aggregate";
 import { formatCurrency } from "@/components/monte-carlo/lib/format";
 import { chartChrome, dataPalette, statusColors, useThemeName } from "@/lib/chart-colors";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import {
   SummaryLayout,
   SummarySection,
@@ -206,7 +207,7 @@ function LiNeedChart({ chart, married }: { chart: LiChart; married: boolean }) {
 
     if (married && chart.rows.some((r) => r.spouseNeed != null)) {
       datasets.push({
-        label: "Spouse need",
+        label: `${CO_CLIENT_LABEL} need`,
         data: chart.rows.map((r) => r.spouseNeed ?? 0),
         borderColor: palette.teal,
         backgroundColor: `${palette.teal}22`,
@@ -231,7 +232,7 @@ function LiNeedChart({ chart, married }: { chart: LiChart; married: boolean }) {
 
     if (married && chart.spouseCoverageLine != null) {
       datasets.push({
-        label: "Spouse coverage",
+        label: `${CO_CLIENT_LABEL} coverage`,
         data: chart.rows.map(() => chart.spouseCoverageLine!),
         borderColor: status.good,
         borderWidth: 1.5,

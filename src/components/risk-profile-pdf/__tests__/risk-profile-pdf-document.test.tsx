@@ -91,10 +91,10 @@ describe("RiskProfilePdfDocument", () => {
     expect(tree).toContain("Ethos Financial Group");
     expect(tree).toContain("Moderately Conservative");
     expect(tree).toContain("Capacity is the binding constraint");
-    // Tolerance component: score, source, confirmation date, spouse rider.
+    // Tolerance component: score, source, confirmation date, co-client rider.
     expect(tree).toContain("Client RTQ");
     expect(tree).toContain("2026-03-04");
-    expect(tree).toContain("Spouse 62");
+    expect(tree).toContain("Co-client 62");
     // Environment carries its sign and the advisor's own words.
     expect(tree).toContain(">-5</TEXT>");
     expect(tree).toContain("Concentrated employer stock outside the plan");

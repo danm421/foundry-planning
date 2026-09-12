@@ -159,12 +159,131 @@ describe("scenarioChangesToBaseWrites", () => {
   });
 });
 
+describe("scenarioChangesToBaseWrites — the gift_series section", () => {
+  // A solver-style recurring series. `gift_series` is scenario-PARTITIONED and
+  // is not a TargetKind, so a series-shaped `gift` add cannot go to the
+  // one-table-per-kind executor at all: it is folded into the promoted
+  // scenario's own partition before that partition is copied into base.
+  const seriesDraft = (over: Record<string, unknown> = {}) => ({
+    id: "gs1",
+    kind: "series",
+    startYear: 2027,
+    endYear: 2031,
+    annualAmount: 19_000,
+    amountMode: "fixed",
+    inflationAdjust: false,
+    grantor: "client",
+    recipient: { kind: "entity", id: "trust-1" },
+    crummey: true,
+    ...over,
+  });
+
+  const seriesAdd = (payload: Record<string, unknown>): ScenarioChange => ({
+    ...baseChange,
+    id: "ch-series",
+    opType: "add",
+    targetKind: "gift",
+    targetId: String(payload.id),
+    payload,
+  });
+
+  it("routes a series-shaped gift add to the gift_series section, not plan.inserts", () => {
+    const payload = seriesDraft();
+    const plan = scenarioChangesToBaseWrites(
+      minimalClientData(),
+      [seriesAdd(payload)],
+      [],
+      {},
+    );
+    // Inserting it into `gifts` dies on the NOT NULL `year` column, and the
+    // translator throws by name before it gets that far — either way the whole
+    // promote rolls back, so it must not reach plan.inserts at all.
+    expect(plan.inserts).toHaveLength(0);
+    expect(plan.giftSeries.upserts).toEqual([{ id: "gs1", draft: payload }]);
+    expect(plan.giftSeries.removes).toEqual([]);
+  });
+
+  it("still routes a one-time gift add into plan.inserts", () => {
+    // The unchanged half, asserted rather than assumed: only `kind: "series"`
+    // leaves the insert path.
+    const cash = {
+      id: "g1",
+      kind: "cash-once",
+      year: 2030,
+      amount: 50_000,
+      grantor: "client",
+      recipient: { kind: "entity", id: "trust-1" },
+      crummey: false,
+    };
+    const asset = {
+      id: "g2",
+      kind: "asset-once",
+      year: 2031,
+      accountId: "a1",
+      percent: 0.25,
+      grantor: "client",
+      recipient: { kind: "entity", id: "trust-1" },
+    };
+    const plan = scenarioChangesToBaseWrites(
+      minimalClientData(),
+      [seriesAdd(cash), { ...seriesAdd(asset), id: "ch-asset" }],
+      [],
+      {},
+    );
+    expect(plan.inserts).toEqual([
+      { kind: "gift", targetId: "g1", raw: cash },
+      { kind: "gift", targetId: "g2", raw: asset },
+    ]);
+    expect(plan.giftSeries.upserts).toEqual([]);
+  });
+
+  it("adds a gift remove to BOTH plan.removes and the gift_series removes", () => {
+    // The change cannot say which table the id lives in, and no DB lookup is
+    // needed to find out: deleting a series id from `gifts` (or a one-time gift
+    // id from `gift_series`) matches nothing and is a harmless no-op. Without
+    // the second half, deleting a solver series hid it from the editor and the
+    // projection while `copyGiftSeriesToBase` resurrected the partition row
+    // into base on promote.
+    const changes: ScenarioChange[] = [
+      {
+        ...baseChange,
+        id: "ch-rm",
+        opType: "remove",
+        targetKind: "gift",
+        targetId: "gs1",
+        payload: null,
+      },
+    ];
+    const plan = scenarioChangesToBaseWrites(minimalClientData(), changes, [], {});
+    expect(plan.removes).toContainEqual({ kind: "gift", id: "gs1", cascade: false });
+    expect(plan.giftSeries.removes).toEqual(["gs1"]);
+    expect(plan.giftSeries.upserts).toEqual([]);
+  });
+
+  it("treats a series add toggled OFF as a REMOVE of the partition row", () => {
+    // The solver's "off" toggle emits the whole draft with `enabled: false`,
+    // and `applyGiftsToClientData` skips those — so the scenario's numbers
+    // carry nothing for it. Promote's contract is "base equals what this
+    // scenario shows", so base must not carry it either.
+    const plan = scenarioChangesToBaseWrites(
+      minimalClientData(),
+      [seriesAdd(seriesDraft({ enabled: false }))],
+      [],
+      {},
+    );
+    expect(plan.giftSeries.removes).toEqual(["gs1"]);
+    expect(plan.giftSeries.upserts).toEqual([]);
+    expect(plan.inserts).toHaveLength(0);
+  });
+});
+
 describe("collectExternalDedicatedAccountIds", () => {
   const plan = (over: Partial<BaseWritePlan>): BaseWritePlan => ({
     inserts: [],
     updates: [],
     singletonUpdates: [],
     removes: [],
+    giftSeries: { upserts: [], removes: [] },
     ...over,
   });
 
@@ -216,6 +335,7 @@ describe("collectExternalSalaryIncomeIds", () => {
     updates: [],
     singletonUpdates: [],
     removes: [],
+    giftSeries: { upserts: [], removes: [] },
     ...over,
   });
 

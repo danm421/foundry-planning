@@ -28,7 +28,7 @@ import OpenItemsPanel from "@/components/open-items/open-items-panel";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { loadActiveGiftChanges } from "@/lib/scenario/changes";
 import { buildFamilyPrimary } from "./family-primary";
-import { entitySummaryToRow, overlayScenarioGiftRows } from "./family-scenario-rows";
+import { entitySummaryToRow, overlayScenarioGiftRows } from "@/lib/gifts/scenario-rows";
 import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
 import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
 
@@ -271,6 +271,14 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
       valuationDiscount:
         g.valuationDiscount != null ? parseFloat(g.valuationDiscount as string) : null,
       useCrummeyPowers: g.useCrummeyPowers,
+      // The three columns the gift dialog needs to seed an edit truthfully.
+      // `eventKind` keeps a CLT's remainder-interest gift from being rewritten
+      // as an ordinary outright gift; the other two mark the rows that have no
+      // draft shape at all, so the dialog refuses them instead of re-saving
+      // them as a $0 cash gift.
+      eventKind: g.eventKind,
+      businessEntityId: g.businessEntityId ?? null,
+      liabilityId: g.liabilityId ?? null,
       notes: g.notes ?? null,
     }));
 
@@ -328,6 +336,7 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
         initialGifts={giftsList}
         initialGiftSeries={giftSeriesList}
         annualExclusionByYear={annualExclusionByYear}
+        planStartYear={planStartYear}
         scenarioId={resolvedScenario.id}
         initialFullAccounts={fullAccounts}
         initialFullLiabilities={fullLiabilities}

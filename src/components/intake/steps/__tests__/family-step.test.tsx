@@ -207,11 +207,11 @@ describe("FamilyStep", () => {
     expect(dobs[dobs.length - 1].value).toBe("2013-07-04");
   });
 
-  it("toggling Add Spouse calls onChange with a spouse entry", () => {
+  it("toggling Add Co-client calls onChange with a co-client entry", () => {
     const onChange = vi.fn();
     render(<FamilyStep {...makeProps({ onChange })} />);
 
-    const addSpouseBtn = screen.getByRole("button", { name: /add spouse/i });
+    const addSpouseBtn = screen.getByRole("button", { name: /add co-client/i });
     fireEvent.click(addSpouseBtn);
 
     // onChange should have been called with a spouse object initialised
@@ -221,19 +221,19 @@ describe("FamilyStep", () => {
     expect(next?.spouse?.firstName).toBe("");
   });
 
-  it("when value includes a spouse, spouse fields are visible", () => {
+  it("when value includes a co-client, co-client fields are visible", () => {
     const valueWithSpouse: FamilySlice = {
       ...baseValue,
       spouse: { firstName: "John", lastName: "Doe", dateOfBirth: "1973-09-10", maritalStatus: "married" },
     };
     render(<FamilyStep value={valueWithSpouse} onChange={vi.fn()} />);
 
-    // Both primary and spouse first name inputs visible
+    // Both primary and co-client first name inputs visible
     const firstNameInputs = screen.getAllByRole("textbox", { name: /first name/i });
     expect(firstNameInputs.length).toBeGreaterThanOrEqual(2);
   });
 
-  it("editing spouse first name calls onChange with updated spouse.firstName", () => {
+  it("editing co-client first name calls onChange with the updated first name", () => {
     const onChange = vi.fn();
     const valueWithSpouse: FamilySlice = {
       ...baseValue,

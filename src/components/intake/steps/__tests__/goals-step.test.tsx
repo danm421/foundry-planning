@@ -39,8 +39,8 @@ describe("GoalsStep", () => {
   it("renders the retirement-age spinbuttons and the money expenses field", () => {
     render(<GoalsStep {...makeProps()} />);
 
-    expect(screen.getByRole("spinbutton", { name: /client.*retirement age/i })).toBeInTheDocument();
-    expect(screen.getByRole("spinbutton", { name: /spouse.*retirement age/i })).toBeInTheDocument();
+    expect(screen.getByRole("spinbutton", { name: /^client.*retirement age/i })).toBeInTheDocument();
+    expect(screen.getByRole("spinbutton", { name: /co-client.*retirement age/i })).toBeInTheDocument();
     // annual expenses is now a formatted money field (text input)
     expect(screen.getByRole("textbox", { name: /annual retirement expenses/i })).toBeInTheDocument();
   });
@@ -53,8 +53,8 @@ describe("GoalsStep", () => {
     };
     render(<GoalsStep {...makeProps({ value })} />);
 
-    expect((screen.getByRole("spinbutton", { name: /client.*retirement age/i }) as HTMLInputElement).value).toBe("65");
-    expect((screen.getByRole("spinbutton", { name: /spouse.*retirement age/i }) as HTMLInputElement).value).toBe("63");
+    expect((screen.getByRole("spinbutton", { name: /^client.*retirement age/i }) as HTMLInputElement).value).toBe("65");
+    expect((screen.getByRole("spinbutton", { name: /co-client.*retirement age/i }) as HTMLInputElement).value).toBe("63");
     // expenses formats with separators: 80000 → "80,000"
     expect((screen.getByRole("textbox", { name: /annual retirement expenses/i }) as HTMLInputElement).value).toBe("80,000");
   });
@@ -63,7 +63,7 @@ describe("GoalsStep", () => {
     const onChange = vi.fn();
     render(<GoalsStep {...makeProps({ onChange })} />);
 
-    fireEvent.change(screen.getByRole("spinbutton", { name: /client.*retirement age/i }), {
+    fireEvent.change(screen.getByRole("spinbutton", { name: /^client.*retirement age/i }), {
       target: { value: "67" },
     });
 
@@ -75,7 +75,7 @@ describe("GoalsStep", () => {
     const onChange = vi.fn();
     render(<GoalsStep {...makeProps({ onChange })} />);
 
-    fireEvent.change(screen.getByRole("spinbutton", { name: /spouse.*retirement age/i }), {
+    fireEvent.change(screen.getByRole("spinbutton", { name: /co-client.*retirement age/i }), {
       target: { value: "62" },
     });
 
@@ -100,7 +100,7 @@ describe("GoalsStep", () => {
     const value: GoalsSlice = { clientRetirementAge: 65 };
     render(<GoalsStep {...makeProps({ value, onChange })} />);
 
-    fireEvent.change(screen.getByRole("spinbutton", { name: /client.*retirement age/i }), {
+    fireEvent.change(screen.getByRole("spinbutton", { name: /^client.*retirement age/i }), {
       target: { value: "" },
     });
 

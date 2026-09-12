@@ -10,6 +10,12 @@ import {
 } from "@/lib/gifts/apply-valuation-discount";
 import type { ClientMilestones, YearRef } from "@/lib/milestones";
 import { RETIREMENT_SUBTYPES } from "@/lib/ownership";
+import { useScenarioWriter } from "@/hooks/use-scenario-writer";
+import {
+  assertNotPastDatedAssetGift,
+  giftScenarioAdd,
+} from "@/lib/gifts/gift-write";
+import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import {
   inputClassName,
   selectClassName,
@@ -45,11 +51,16 @@ interface Props {
   accounts: AccountOption[];
   milestones?: ClientMilestones;
   /**
-   * Kept for API compatibility with callers — no longer used internally now that
-   * the past-dated amount auto-fill branch has been removed (the route forces
-   * amount=null for asset transfers regardless).
+   * The plan's first projection year (`plan_settings.plan_start_year`).
+   *
+   * It is the line `POST /gifts` draws between a transfer the engine replays at
+   * projection time and a past-dated one, which the route instead writes
+   * straight into `account_owners`. A scenario cannot make that second write,
+   * so a past-dated transfer saved inside one changes nothing at all — this
+   * form refuses it instead. `null` when the caller genuinely does not know the
+   * year: the guard then stands down rather than refusing on a guess.
    */
-  projectionStartYear: number;
+  projectionStartYear: number | null;
   /** Current calendar year — passed as a prop so tests can control it. */
   currentYear: number;
   /** Most-recent discount per source, from `selectPriorDiscounts`. Seeds the
@@ -89,13 +100,14 @@ export default function TransferAssetForm({
   trustGrantor,
   accounts,
   milestones,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   projectionStartYear,
   currentYear,
   priorDiscounts,
   onClose,
   onSaved,
 }: Props) {
+  const writer = useScenarioWriter(clientId);
+
   const eligibleAccounts = useMemo(
     () =>
       accounts.filter(
@@ -184,10 +196,34 @@ export default function TransferAssetForm({
         body.valuationDiscount = discountFraction;
       }
 
-      const res = await fetch(`/api/clients/${clientId}/gifts`, {
+      // Key order matches `giftRowToDraft`'s asset-once branch exactly — the
+      // unsaved-changes diff compares gifts with JSON.stringify, which is
+      // key-order-sensitive (estate-flow-gift-diff.ts). `amountOverride` is
+      // omitted entirely (this form has no manual-valuation field, and the
+      // draft's type is `number | undefined`, not nullable).
+      const draft: EstateFlowGift = {
+        kind: "asset-once",
+        id: crypto.randomUUID(),
+        year,
+        accountId: account.id,
+        percent: Number(percent) / 100,
+        grantor,
+        recipient: { kind: "entity", id: trustId },
+        eventKind: "outright",
+        valuationDiscount: discountFraction,
+      };
+
+      // A past-dated transfer inside a scenario is a silent no-op on every
+      // number — see `assertNotPastDatedAssetGift`. Refuse it by name.
+      assertNotPastDatedAssetGift(draft, {
+        scenarioActive: writer.scenarioActive,
+        planStartYear: projectionStartYear,
+      });
+
+      const res = await writer.submit(giftScenarioAdd(draft), {
+        url: `/api/clients/${clientId}/gifts`,
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body,
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
@@ -318,7 +354,7 @@ export default function TransferAssetForm({
               onChange={() => setGrantor("spouse")}
               className="accent-accent"
             />
-            Spouse
+            Co-client
           </label>
         </div>
       </div>

@@ -321,7 +321,7 @@ describe("deriveSpineData", () => {
     expect(pairTotal).toBeLessThan(firstDeathGross * 0.5);
   });
 
-  it("returns 'single-grantor' when only one grantor is in the plan (no spouse)", () => {
+  it("returns 'single-grantor' when only one grantor is in the plan (no co-client)", () => {
     const tree = singleGrantorFixture();
     const withResult = runProjectionWithEvents(tree);
     const data = deriveSpineData({ tree, withResult, asOf: "split" });

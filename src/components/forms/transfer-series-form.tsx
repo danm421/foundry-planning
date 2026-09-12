@@ -4,6 +4,7 @@ import { useState } from "react";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
 import { CurrencyInput } from "@/components/currency-input";
 import type { ClientMilestones, YearRef } from "@/lib/milestones";
+import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import {
   inputClassName,
   selectClassName,
@@ -49,6 +50,8 @@ export default function TransferSeriesForm({
   onClose,
   onSaved,
 }: Props) {
+  const writer = useScenarioWriter(clientId);
+
   const fallbackMilestones: ClientMilestones = milestones ?? {
     planStart: currentYear,
     planEnd: currentYear + 50,
@@ -110,10 +113,16 @@ export default function TransferSeriesForm({
       const seriesUrl = scenarioId
         ? `/api/clients/${clientId}/gifts/series?scenario=${encodeURIComponent(scenarioId)}`
         : `/api/clients/${clientId}/gifts/series`;
-      const res = await fetch(seriesUrl, {
+
+      // A recurring series is NEVER a `scenario_changes` row. `gift_series`
+      // carries a real `scenario_id`, the GET that fills this panel filters on
+      // it, and promotion copies the partition into base — so this route IS the
+      // scenario-correct write, and a change row would vanish from the list it
+      // was just saved into and abort the scenario's promote.
+      const res = await writer.submitDirect({
+        url: seriesUrl,
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body,
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
@@ -206,7 +215,7 @@ export default function TransferSeriesForm({
               onChange={() => setGrantor("spouse")}
               className="accent-accent"
             />
-            Spouse
+            Co-client
           </label>
         </div>
       </div>

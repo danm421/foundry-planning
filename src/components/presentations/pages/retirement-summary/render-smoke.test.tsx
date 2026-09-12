@@ -187,7 +187,10 @@ const FULL: RetirementSummaryPageData = {
     { label: "Roth withdrawals", value: 50_000 },
     { label: "Unfunded", value: 400_000, unfunded: true },
   ],
-  socialSecurity: { client: ssClient("Rachel Sheskier"), spouse: ssClient("Daniel Sheskier") },
+  socialSecurity: {
+    client: ssClient("Rachel Sheskier"),
+    spouse: ssClient("Daniel Sheskier"),
+  },
   living: { today: 100_000, retirement: 194_000 },
   otherExpenses: { insurance: 14_000, realEstate: 22_000, liabilities: 31_000, other: 0 },
   incomeEmptyCopy: "No income streams continue past retirement.",

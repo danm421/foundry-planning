@@ -3,7 +3,10 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import BeneficiaryRowList, { BeneficiaryRow } from "../beneficiary-row-list";
 
-const householdProps = { client: { firstName: "John" }, spouse: { firstName: "Jane" } };
+const householdProps = {
+  client: { firstName: "John" },
+  spouse: { firstName: "Jane" },
+};
 const members = [{ id: "m1", firstName: "Kid", lastName: "One", relationship: "child" as const, dateOfBirth: null, notes: null }];
 const externals = [{ id: "e1", name: "Charity", kind: "charity" as const, notes: null }];
 const entities: { id: string; name: string }[] = [{ id: "ent1", name: "Other Trust" }];

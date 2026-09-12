@@ -13,6 +13,7 @@ import {
 import { buildSocialSecurity, type SsBreakdown, type SsClient } from "./social-security";
 import { lifetimeFunding, type FundingBreakdown } from "@/lib/retirement/retirement-funding";
 import { buildRetirementNarrative } from "./narrative";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 /** One segment of the lifetime funding bar, in display order — the single
  *  source of truth for both the dominant-source narrative signal and the page's
@@ -114,7 +115,7 @@ export function buildRetirementSummaryData(
   const fundingSources: FundingSource[] = printsAsZero(funding.shortfall)
     ? sources
     : [...sources, { label: "Unfunded", value: funding.shortfall, unfunded: true }];
-  const socialSecurity = buildSocialSecurity(clientData, nowYear, ctx.clientName, ctx.spouseName ?? "Spouse");
+  const socialSecurity = buildSocialSecurity(clientData, nowYear, ctx.clientName, ctx.spouseName ?? CO_CLIENT_LABEL);
   const living = livingExpensesTodayVsRetirement(years, clientData, retYear);
   const otherExpenses = otherRetirementExpenses(years, retYear);
   const income = incomeInRetirement(years, clientData, retYear);

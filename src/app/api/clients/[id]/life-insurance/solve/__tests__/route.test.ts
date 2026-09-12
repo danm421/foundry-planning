@@ -127,7 +127,7 @@ beforeEach(() => {
 });
 
 describe("POST /api/clients/[id]/life-insurance/solve", () => {
-  it("returns 200 with client + spouse cases for a married plan", async () => {
+  it("returns 200 with client + co-client cases for a married plan", async () => {
     const res = await POST(makeRequest(VALID_BODY), ctx as never);
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -149,7 +149,7 @@ describe("POST /api/clients/[id]/life-insurance/solve", () => {
     expect(typeof body.client.existingCoverageTotal).toBe("number");
   });
 
-  it("returns spouse: null for a single filer", async () => {
+  it("returns a null co-client case for a single filer", async () => {
     vi.mocked(loadEffectiveTree).mockResolvedValue({
       effectiveTree: mockTree("single"),
       warnings: [],
@@ -162,7 +162,7 @@ describe("POST /api/clients/[id]/life-insurance/solve", () => {
     expect(solveLifeInsuranceNeed).toHaveBeenCalledTimes(1);
   });
 
-  it("returns spouse: null for a married filer with no spouseDob (F5: avoids the spouse-solve crash)", async () => {
+  it("returns a null co-client case for a married filer with no co-client DOB (F5: avoids the co-client-solve crash)", async () => {
     vi.mocked(loadEffectiveTree).mockResolvedValue({
       effectiveTree: mockTree("married_joint", null),
       warnings: [],

@@ -171,7 +171,7 @@ describe("accounts table — the Owner cell holds no nested button", () => {
  * visible: `OwnerCell` tested `names`, then `hint`, then `role`, so whenever
  * the statement printed a registration name — essentially always — the hint
  * branch won and the picked role was NEVER rendered. The advisor picks
- * "Spouse", the cell keeps showing the printed name plus "Assumed", and the
+ * "Co-client", the cell keeps showing the printed name plus "Assumed", and the
  * control reads as dead. This repo has logged that exact failure mode before.
  *
  * The deeper problem the dropdown only exposed: the cell was headlining a
@@ -199,10 +199,10 @@ describe("accounts table — the Owner cell shows the value that commits", () =>
 
     // Catches the defect exactly: with hint-before-role precedence the role
     // word is absent from the cell altogether.
-    expect(within(cell).getByText("Spouse")).toBeInTheDocument();
+    expect(within(cell).getByText("Co-client")).toBeInTheDocument();
     // PRIMACY, not just presence — the committed value reads first. Catches a
     // "fix" that appends the role after the name instead of leading with it.
-    expect(cell.textContent?.startsWith("Spouse")).toBe(true);
+    expect(cell.textContent?.startsWith("Co-client")).toBe(true);
 
     // The evidence survives as context, still marked unconfirmed, still
     // wearing the pill (Ruling 137) — catches a fix by deletion.

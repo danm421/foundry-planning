@@ -33,6 +33,7 @@ import {
 import type { ClientInfo, DisabilityPolicy } from "@/engine/types";
 import { WORKPLACE_DEFAULTS } from "@/lib/schemas/disability-policies";
 import { benefitPeriodText } from "@/lib/insurance-policies/disability-labels";
+import { personLabel } from "@/lib/owner-labels";
 
 export interface DisabilityPanelProps {
   clientId: string;
@@ -227,7 +228,10 @@ export default function DisabilityPanel(props: DisabilityPanelProps) {
   }
 
   const insuredLabel = (insured: "client" | "spouse") =>
-    insured === "spouse" ? (props.spouseFirstName ?? "Spouse") : props.clientFirstName;
+    personLabel(insured, {
+      clientName: props.clientFirstName,
+      spouseName: props.spouseFirstName,
+    });
 
   return (
     <div className="flex flex-col gap-4">

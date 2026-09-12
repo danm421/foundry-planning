@@ -42,7 +42,13 @@ export const survivorTierShock: MedicareDetector = ({ years }) => {
     id: "survivor-shock",
     severity: "alert",
     title: `Survivor IRMAA jump — tier ${priorMfjTier} → tier ${survivorTier} in ${survivorYear.year}`,
-    body: `When the first spouse passes, filing status shifts to single. By ${survivorYear.year} the IRMAA lookback uses single brackets, jumping the surviving spouse to tier ${survivorTier}. Cumulative IRMAA surcharge through end of plan: ~$${Math.round(totalSurcharge).toLocaleString()}.`,
+    // "the first death" is this app's settled wording for the event — the
+    // estate spine says "From first death" / "To heirs at first death", and
+    // this same finding's deck copy (presentations/pages/medicare-summary/
+    // narrative.ts:27) already opened "At the first death". "the surviving
+    // spouse" two clauses later is the IRMAA/filing-status term of art and must
+    // stay — see TERMS_OF_ART in co-client-terminology.test.ts.
+    body: `At the first death, filing status shifts to single. By ${survivorYear.year} the IRMAA lookback uses single brackets, jumping the surviving spouse to tier ${survivorTier}. Cumulative IRMAA surcharge through end of plan: ~$${Math.round(totalSurcharge).toLocaleString()}.`,
     impactedYears: remainingYears.map(y => y.year),
     totalSurchargeOverWindow: totalSurcharge,
   };

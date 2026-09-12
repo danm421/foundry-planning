@@ -11,7 +11,12 @@
 import type { EntitySummary } from "@/engine/types";
 import type { ScenarioChange } from "@/engine/scenario/types";
 import { partitionGiftChanges } from "@/lib/scenario/apply-gift-overlays";
-import type { EstateFlowGift, GiftRecipientRef } from "@/lib/estate/estate-flow-gifts";
+import {
+  giftRowToDraft,
+  giftSeriesRowToDraft,
+  type EstateFlowGift,
+  type GiftRecipientRef,
+} from "@/lib/estate/estate-flow-gifts";
 import type { Entity, Gift, GiftSeriesLite, NamePctRow } from "@/components/family-view";
 
 /** The three `entities`-row columns the engine's `EntitySummary` doesn't carry.
@@ -73,6 +78,13 @@ export function giftDraftToRow(g: EstateFlowGift): Gift | null {
     year: g.year,
     grantor: g.grantor,
     ...recipientColumns(g.recipient),
+    // `event_kind` is NOT NULL DEFAULT 'outright', so an omitted value does not
+    // stay absent — it becomes "outright". A charitable lead trust's
+    // remainder-interest gift carries `clt_remainder_interest`
+    // (solver/split-interest-levers.ts), and dropping it would silently convert
+    // it into an ordinary outright gift. Explicit default for the hand-built
+    // drafts that never set it.
+    eventKind: g.eventKind ?? "outright",
     valuationDiscount: g.valuationDiscount ?? null,
     notes: null,
   };
@@ -110,6 +122,64 @@ export function giftDraftToSeriesRow(g: EstateFlowGift): GiftSeriesLite | null {
     valuationDiscount: g.valuationDiscount ?? null,
     useCrummeyPowers: g.crummey,
   };
+}
+
+/**
+ * Profile-list gift row → editing draft. The exact inverse of `giftDraftToRow`,
+ * and the ONLY row→draft rule the gift dialog uses.
+ *
+ * It delegates to `giftRowToDraft` rather than re-deriving the draft, because
+ * that mapper owns two rules a hand-rolled copy kept losing:
+ *   - it returns `null` for a business-interest gift and for the auto-bundled
+ *     liability transfer, neither of which has an `EstateFlowGift` shape; and
+ *   - it carries `eventKind`, so a charitable lead trust's remainder-interest
+ *     gift survives an edit instead of becoming an ordinary outright gift.
+ * Both matter most inside a scenario, where the whole draft REPLACES the gift.
+ *
+ * The two row shapes differ only in numeric encoding — Postgres hands `decimal`
+ * columns back as strings, this page holds numbers — so the conversion below is
+ * written out field by field rather than cast.
+ */
+export function profileGiftRowToDraft(g: Gift): EstateFlowGift | null {
+  return giftRowToDraft({
+    id: g.id,
+    year: g.year,
+    amount: g.amount != null ? String(g.amount) : null,
+    grantor: g.grantor,
+    recipientEntityId: g.recipientEntityId,
+    recipientFamilyMemberId: g.recipientFamilyMemberId,
+    recipientExternalBeneficiaryId: g.recipientExternalBeneficiaryId,
+    accountId: g.accountId,
+    liabilityId: g.liabilityId ?? null,
+    businessEntityId: g.businessEntityId ?? null,
+    percent: g.percent != null ? String(g.percent) : null,
+    useCrummeyPowers: g.useCrummeyPowers,
+    // The column is NOT NULL with a DB default, so an older list row that never
+    // read it is an outright gift.
+    eventKind: g.eventKind ?? "outright",
+    valuationDiscount:
+      g.valuationDiscount != null ? String(g.valuationDiscount) : null,
+  });
+}
+
+/** Profile-list series row → editing draft. See `profileGiftRowToDraft`; a
+ *  series has no unrepresentable shape, so this one never returns null. */
+export function profileGiftSeriesRowToDraft(s: GiftSeriesLite): EstateFlowGift {
+  return giftSeriesRowToDraft({
+    id: s.id,
+    grantor: s.grantor,
+    recipientEntityId: s.recipientEntityId,
+    recipientFamilyMemberId: s.recipientFamilyMemberId,
+    recipientExternalBeneficiaryId: s.recipientExternalBeneficiaryId,
+    startYear: s.startYear,
+    endYear: s.endYear,
+    annualAmount: String(s.annualAmount),
+    amountMode: s.amountMode,
+    inflationAdjust: s.inflationAdjust,
+    useCrummeyPowers: s.useCrummeyPowers,
+    valuationDiscount:
+      s.valuationDiscount != null ? String(s.valuationDiscount) : null,
+  });
 }
 
 /**

@@ -12,6 +12,7 @@ import PersonNode from "./person-node";
 import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
 import { moneyLabel } from "@/lib/household-map/format";
 import type { BoardCallbacks, HouseholdMapProps, MapItem } from "@/lib/household-map/types";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 /** account/liability/policy → the Net Worth detail page; income/savings/expense
  *  → Inflows & Outflows. Flow-kind items only ever land here via the tray (an
@@ -51,7 +52,7 @@ export default function NetWorthBoard({
   // Local to this board — no other Household Map board needs these labels.
   function labelFor(col: "client" | "joint" | "spouse"): string {
     if (col === "client") return people.client.firstName || "Client";
-    if (col === "spouse") return people.spouse?.firstName || "Spouse";
+    if (col === "spouse") return people.spouse?.firstName || CO_CLIENT_LABEL;
     return hasSpouse ? "Jointly Held" : "Joint";
   }
 

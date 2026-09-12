@@ -125,7 +125,7 @@ describe("PUT /api/portal/household", () => {
     ["a blank first name", { primary: { firstName: "   " } }],
     ["a null first name", { primary: { firstName: null } }],
     ["a null last name", { primary: { lastName: null } }],
-    ["a null spouse first name", { spouse: { firstName: null } }],
+    ["a null co-client first name", { spouse: { firstName: null } }],
   ])("400s on %s, without writing", async (_label, body) => {
     resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     requireEditEnabledMock.mockResolvedValue(undefined);

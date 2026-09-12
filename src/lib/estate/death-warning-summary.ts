@@ -153,7 +153,7 @@ export function summarizeDeathWarnings(
     notes.push({
       key: "spouse_life_expectancy_defaulted",
       message:
-        "No spouse life expectancy entered — the projection assumed age 95, which sets the spouse's death year. Enter a life expectancy to refine the estate timeline.",
+        "No Co-client life expectancy entered — the projection assumed age 95, which sets the Co-client's death year. Enter a life expectancy to refine the estate timeline.",
       items: [],
     });
   }

@@ -178,9 +178,9 @@ describe("AddRothConversionForm — IRMAA cap", () => {
 describe("AddRothConversionForm — source owner filtering", () => {
   const OWNED_ACCOUNTS = [
     { id: "roth-client", name: "Client Roth", category: "retirement", subType: "roth_ira", ownerFamilyMemberId: "fm-client" },
-    { id: "roth-spouse", name: "Spouse Roth", category: "retirement", subType: "roth_ira", ownerFamilyMemberId: "fm-spouse" },
+    { id: "roth-spouse", name: "Co-client Roth", category: "retirement", subType: "roth_ira", ownerFamilyMemberId: "fm-spouse" },
     { id: "trad-client", name: "Client Trad IRA", category: "retirement", subType: "traditional_ira", ownerFamilyMemberId: "fm-client" },
-    { id: "trad-spouse", name: "Spouse Trad IRA", category: "retirement", subType: "traditional_ira", ownerFamilyMemberId: "fm-spouse" },
+    { id: "trad-spouse", name: "Co-client Trad IRA", category: "retirement", subType: "traditional_ira", ownerFamilyMemberId: "fm-spouse" },
   ];
 
   it("only offers source accounts owned by the destination Roth's owner", () => {
@@ -194,7 +194,7 @@ describe("AddRothConversionForm — source owner filtering", () => {
     );
     // Destination defaults to the first Roth (client-owned).
     expect(screen.getByText("Client Trad IRA")).toBeInTheDocument();
-    expect(screen.queryByText("Spouse Trad IRA")).not.toBeInTheDocument();
+    expect(screen.queryByText("Co-client Trad IRA")).not.toBeInTheDocument();
   });
 
   it("re-filters and prunes selected sources when the destination owner changes", () => {
@@ -217,7 +217,7 @@ describe("AddRothConversionForm — source owner filtering", () => {
 
     // Client source is pruned; spouse source is now the only option.
     expect(screen.queryByText("1.")).not.toBeInTheDocument();
-    expect(screen.getByText("Spouse Trad IRA")).toBeInTheDocument();
+    expect(screen.getByText("Co-client Trad IRA")).toBeInTheDocument();
     expect(screen.queryByText("Client Trad IRA")).not.toBeInTheDocument();
   });
 });
@@ -337,7 +337,7 @@ describe("AddRothConversionForm — draft mode", () => {
 describe("AddRothConversionForm — inline Roth IRA creation", () => {
   const NO_ROTH = [
     { id: "trad-client", name: "Client Trad IRA", category: "retirement", subType: "traditional_ira", ownerFamilyMemberId: "fm-client" },
-    { id: "trad-spouse", name: "Spouse Trad IRA", category: "retirement", subType: "traditional_ira", ownerFamilyMemberId: "fm-spouse" },
+    { id: "trad-spouse", name: "Co-client Trad IRA", category: "retirement", subType: "traditional_ira", ownerFamilyMemberId: "fm-spouse" },
   ];
   // MC asset mixes: the chosen model portfolio's, and the retirement category
   // default's. onCreate must report the mix matching the selected growth source.
@@ -474,6 +474,6 @@ describe("AddRothConversionForm — inline Roth IRA creation", () => {
     // Owner defaults to the first (John / fm-client).
     fireEvent.click(screen.getByRole("button", { name: "Create Roth IRA" }));
     expect(screen.getByText("Client Trad IRA")).toBeInTheDocument();
-    expect(screen.queryByText("Spouse Trad IRA")).not.toBeInTheDocument();
+    expect(screen.queryByText("Co-client Trad IRA")).not.toBeInTheDocument();
   });
 });

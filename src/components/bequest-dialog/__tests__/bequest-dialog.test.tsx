@@ -226,7 +226,7 @@ describe("BequestDialog", () => {
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
   });
 
-  it("defaults the first recipient to spouse on Add when household has a spouse", async () => {
+  it("defaults the first recipient to the co-client on Add when household has a co-client", async () => {
     const onSave = vi.fn();
     const user = userEvent.setup();
     render(
@@ -254,7 +254,7 @@ describe("BequestDialog", () => {
     );
   });
 
-  it("hides the Condition section when no spouse is on file", () => {
+  it("hides the Condition section when no co-client is on file", () => {
     render(
       <BequestDialog
         open

@@ -24,7 +24,7 @@ import { RiskPdfButton } from "@/components/risk/risk-pdf-button";
 
 const SUBJECT_LABELS: Record<"primary" | "spouse", string> = {
   primary: "Primary",
-  spouse: "Spouse",
+  spouse: "Co-client",
 };
 
 const DASH = <span className="text-ink-3">—</span>;
@@ -103,7 +103,7 @@ export async function RiskDetailContent({
               </p>
               {row.spouseToleranceScore !== null && (
                 <p className="text-xs text-ink-3">
-                  Spouse <span className="tabular text-ink-2">{row.spouseToleranceScore}</span> —
+                  Co-client <span className="tabular text-ink-2">{row.spouseToleranceScore}</span> —
                   household tolerance uses the lower of the two
                 </p>
               )}

@@ -484,7 +484,7 @@ export function applyTitling(
           // Carries survivor's FM id so the resolver finds the right person
           // (otherwise spouseFirst ordering mislabels the surviving client).
           recipientId: survivorFmId,
-          recipientLabel: "Spouse",
+          recipientLabel: "Co-client",
         },
       },
     ],
@@ -626,7 +626,7 @@ export function applyBeneficiaryDesignations(
         ownerMutation = { owners: [{ kind: "family_member", familyMemberId: survivorFmId, percent: 1 }] };
         recipientKind = "spouse";
         recipientId = survivorFmId;
-        recipientLabel = "Spouse";
+        recipientLabel = "Co-client";
       } else {
         ownerMutation = { owners: [{ kind: "family_member", familyMemberId: b.familyMemberId, percent: 1 }] };
         recipientKind = "family_member";
@@ -664,7 +664,7 @@ export function applyBeneficiaryDesignations(
       recipientKind = inheritedBySurvivingSpouse ? "spouse" : "family_member";
       recipientId = roleFm?.id ?? null;
       recipientLabel =
-        inheritedBySurvivingSpouse || b.householdRole === "spouse" ? "Spouse" : "Client";
+        inheritedBySurvivingSpouse || b.householdRole === "spouse" ? "Co-client" : "Client";
     } else if (b.entityIdRef) {
       ownerMutation = { owners: [{ kind: "entity", entityId: b.entityIdRef, percent: 1 }] };
       recipientKind = "entity";
@@ -850,7 +850,7 @@ function resolveRecipientLabelAndMutation(
       removed: false,
       recipientKind: "spouse",
       recipientId: survivorFmId,
-      recipientLabel: "Spouse",
+      recipientLabel: "Co-client",
     };
   }
   if (r.recipientKind === "family_member") {
@@ -864,7 +864,7 @@ function resolveRecipientLabelAndMutation(
         removed: false,
         recipientKind: "spouse",
         recipientId: survivorFmId,
-        recipientLabel: "Spouse",
+        recipientLabel: "Co-client",
       };
     }
     const fam = familyMembers.find((f) => f.id === r.recipientId);
@@ -1270,7 +1270,7 @@ function defaultOrderDebtRecipients(
   share: number;
 }> {
   if (survivorFmId != null) {
-    return [{ kind: "spouse", id: survivorFmId, label: "Spouse", share: 1 }];
+    return [{ kind: "spouse", id: survivorFmId, label: "Co-client", share: 1 }];
   }
   const children = familyMembers.filter(
     (f) => f.relationship === "child" && f.role !== "client" && f.role !== "spouse",
@@ -1647,7 +1647,7 @@ export function applyFallback(
           via: "fallback_spouse",
           recipientKind: "spouse",
           recipientId: survivorFmId,
-          recipientLabel: "Spouse",
+          recipientLabel: "Co-client",
         },
       }],
       scaledLiability,

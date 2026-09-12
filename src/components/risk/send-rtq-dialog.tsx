@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import DialogShell from "@/components/dialog-shell";
 import { inputClassName, fieldLabelClassName } from "@/components/forms/input-styles";
 import type { RtqContact } from "@/lib/risk/queries";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 interface SendRtqDialogProps {
   clientId: string;
@@ -157,7 +158,7 @@ export function SendRtqDialog({ clientId, hasSpouse, contacts }: SendRtqDialogPr
                       onChange={() => selectSubject("spouse")}
                       className="accent-accent"
                     />
-                    <span className="text-[13px] text-ink">Spouse</span>
+                    <span className="text-[13px] text-ink">{CO_CLIENT_LABEL}</span>
                   </label>
                 )}
               </div>

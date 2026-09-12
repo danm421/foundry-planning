@@ -11,6 +11,7 @@ import { LongevityChart } from "./longevity-chart";
 import { YearlyBreakdown } from "./yearly-breakdown";
 import type { MonteCarloSummary, MonteCarloResult } from "@/engine";
 import type { CachedMonteCarloResult } from "@/lib/compute-cache/monte-carlo";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 interface MonteCarloReportViewProps {
   summary: MonteCarloSummary | null;
@@ -46,7 +47,7 @@ export function MonteCarloReportView({
     if (meta.spouseRetirementAge != null && meta.spouseRetirementAge !== meta.retirementAge) {
       markers.push({
         age: meta.spouseRetirementAge,
-        label: `Spouse ${meta.spouseRetirementAge}`,
+        label: `${CO_CLIENT_LABEL} ${meta.spouseRetirementAge}`,
         color: brandColors.cat.life,
       });
     }

@@ -162,10 +162,10 @@ export function GoalsStep({ value, onChange, beneficiaries = [] }: GoalsStepProp
               />
             </div>
 
-            {/* Spouse retirement age */}
+            {/* Co-client retirement age */}
             <div>
               <label htmlFor="goals-spouseRetirementAge" className={labelCls}>
-                Spouse retirement age
+                Co-client retirement age
                 <span className="ml-1 font-normal normal-case text-ink-4">(optional)</span>
               </label>
               <input
@@ -177,7 +177,7 @@ export function GoalsStep({ value, onChange, beneficiaries = [] }: GoalsStepProp
                 value={goals.spouseRetirementAge ?? ""}
                 onChange={(e) => setField("spouseRetirementAge", e.target.value)}
                 placeholder="e.g. 63"
-                aria-label="Spouse retirement age"
+                aria-label="Co-client retirement age"
               />
             </div>
 

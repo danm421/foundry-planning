@@ -135,7 +135,7 @@ describe("resolveRecipientLabel", () => {
     expect(out.name).toBe("Charity Foo");
   });
 
-  it("resolves spouse recipients to the spouse's actual name from familyMembers", () => {
+  it("resolves co-client recipients to the co-client's actual name from familyMembers", () => {
     const data = tree([
       {
         id: "fm-client",
@@ -158,7 +158,7 @@ describe("resolveRecipientLabel", () => {
       transfer({
         recipientKind: "spouse",
         recipientId: null,
-        recipientLabel: "Spouse",
+        recipientLabel: "Co-client",
       }),
       data,
     );
@@ -166,16 +166,16 @@ describe("resolveRecipientLabel", () => {
     expect(out.kind).toBe("spouse");
   });
 
-  it("falls back to 'Spouse' literal when no spouse-role family member exists", () => {
+  it("falls back to the recipientLabel literal when no co-client family member exists", () => {
     const out = resolveRecipientLabel(
       transfer({
         recipientKind: "spouse",
         recipientId: null,
-        recipientLabel: "Spouse",
+        recipientLabel: "Co-client",
       }),
       tree(),
     );
-    expect(out.name).toBe("Spouse");
+    expect(out.name).toBe("Co-client");
   });
 
   it("uses recipientLabel verbatim for system_default", () => {
@@ -203,18 +203,18 @@ describe("resolveRecipientLabel", () => {
     expect(out.name).toBe("Frozen Label");
   });
 
-  describe("F2 — spouse recipientId is honored over role-based lookup", () => {
+  describe("F2 — co-client recipientId is honored over role-based lookup", () => {
     const couple: FamilyMember[] = [
       { id: "fm-client", role: "client", relationship: "other", firstName: "Pat", lastName: null, dateOfBirth: "1970-01-01" },
       { id: "fm-spouse", role: "spouse", relationship: "other", firstName: "Sam", lastName: null, dateOfBirth: "1972-01-01" },
     ];
 
-    it("primaryFirst: recipientId=fm-spouse resolves to the spouse's name", () => {
+    it("primaryFirst: recipientId pointing at the co-client's FM resolves to the co-client's name", () => {
       const out = resolveRecipientLabel(
         transfer({
           recipientKind: "spouse",
           recipientId: "fm-spouse",
-          recipientLabel: "Spouse",
+          recipientLabel: "Co-client",
           deceased: "client",
         }),
         tree(couple),
@@ -230,7 +230,7 @@ describe("resolveRecipientLabel", () => {
         transfer({
           recipientKind: "spouse",
           recipientId: "fm-client",
-          recipientLabel: "Spouse",
+          recipientLabel: "Co-client",
           deceased: "spouse",
         }),
         tree(couple),
@@ -244,7 +244,7 @@ describe("resolveRecipientLabel", () => {
         transfer({
           recipientKind: "spouse",
           recipientId: "fm-stale",
-          recipientLabel: "Spouse",
+          recipientLabel: "Co-client",
         }),
         tree(couple),
       );

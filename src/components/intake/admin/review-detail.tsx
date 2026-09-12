@@ -248,8 +248,8 @@ export default function ReviewDetail({
           <FieldRow label="Client name" diff={diff.family.primaryName} />
           <FieldRow label="Date of birth" diff={diff.family.primaryDob} />
           <FieldRow label="Marital status" diff={diff.family.primaryMarital} />
-          <FieldRow label="Spouse name" diff={diff.family.spouseName} />
-          <FieldRow label="Spouse DOB" diff={diff.family.spouseDob} />
+          <FieldRow label="Co-client name" diff={diff.family.spouseName} />
+          <FieldRow label="Co-client DOB" diff={diff.family.spouseDob} />
           <FieldRow label="State" diff={diff.family.stateOfResidence} />
           <FieldRow label="Children" diff={diff.family.childrenCount as FieldDiff<string | number | undefined>} />
         </div>
@@ -260,7 +260,7 @@ export default function ReviewDetail({
         <h3 className={`${labelCls} mb-3`}>Goals</h3>
         <div className="space-y-1">
           <FieldRow label="Client retirement age" diff={diff.goals.clientRetirementAge as FieldDiff<string | number | undefined>} />
-          <FieldRow label="Spouse retirement age" diff={diff.goals.spouseRetirementAge as FieldDiff<string | number | undefined>} />
+          <FieldRow label="Co-client retirement age" diff={diff.goals.spouseRetirementAge as FieldDiff<string | number | undefined>} />
           <FieldRow
             label="Annual retirement expenses"
             diff={diff.goals.annualRetirementExpenses as FieldDiff<string | number | undefined>}

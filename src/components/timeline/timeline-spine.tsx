@@ -150,8 +150,9 @@ export default function TimelineSpine({
       </div>
 
       {yearPlan.map(({ py, events, alternateOffset }, rowIndex) => {
-        const ageLabel = py.ages.spouse != null
-          ? `Ages ${py.ages.client} / ${py.ages.spouse}`
+        const coClientAge = py.ages.spouse;
+        const ageLabel = coClientAge != null
+          ? `Ages ${py.ages.client} / ${coClientAge}`
           : `Age ${py.ages.client}`;
         return (
           <TimelineYearSegment

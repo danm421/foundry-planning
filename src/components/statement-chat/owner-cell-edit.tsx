@@ -3,13 +3,14 @@
 import { selectClassName } from "@/components/forms/input-styles";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
 import { OWNER_HINT_REASON } from "./owner-cell";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 /** The coarse ownership enum `ExtractedAccount.owner` carries. */
 export type OwnerRole = "client" | "spouse" | "joint";
 
 const OWNER_OPTIONS: { value: OwnerRole; label: string }[] = [
   { value: "client", label: "Client" },
-  { value: "spouse", label: "Spouse" },
+  { value: "spouse", label: CO_CLIENT_LABEL },
   { value: "joint", label: "Joint" },
 ];
 
@@ -22,7 +23,7 @@ export interface OwnerCellEditProps {
 }
 
 /**
- * The Owner cell's edit view. `owner` is a `client | spouse | joint` enum the
+ * The Owner cell's edit view. `owner` is the `OwnerRole` enum the
  * EXTRACTOR guesses at a household role no statement prints, and Task 12
  * measured it flipping between two imports of the same files. It is no longer
  * a dedupe key — but it is still decisive at COMMIT: the statement-chat path
