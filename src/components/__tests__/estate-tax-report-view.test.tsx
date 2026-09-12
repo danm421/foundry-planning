@@ -14,6 +14,8 @@ vi.mock("@/engine/projection", () => ({
 
 import { runProjection, runProjectionWithEvents } from "@/engine/projection";
 import EstateTaxReportView from "@/components/estate-tax-report-view";
+import type { EstateColumnReady } from "@/components/estate-compare-shell";
+import type { AsOfValue } from "@/components/report-controls/as-of-dropdown";
 import type {
   EstateTaxResult,
   GrossEstateLine,
@@ -522,3 +524,194 @@ describe("EstateTaxReportView", () => {
 // State estate tax breakdown tests previously lived here; they were moved to
 // the new State Death Tax tab in Task 7 (Estate Tax tab is now federal-only).
 // See `state-death-tax-report-view.test.tsx` for state-specific UI coverage.
+
+// ── Compare mode (Task 7) ───────────────────────────────────────────────────
+
+/** The compare props the shell supplies; everything else overrides the fixture. */
+interface CompareProps {
+  scenarioRef?: string;
+  asOf?: AsOfValue;
+  ordering?: "primaryFirst" | "spouseFirst";
+  onReady?: (r: EstateColumnReady<EstateTaxResult>) => void;
+  baseline?: EstateTaxResult | null;
+}
+
+const COMPARE_YEAR = 2026;
+
+/**
+ * Arms the projection mock with a married 2026 fixture and builds the element.
+ * Compare props go to the component; every other key overrides the FIRST
+ * decedent's `EstateTaxResult` — the result the column reports and diffs.
+ */
+function compareElement(props: CompareProps & Partial<EstateTaxResult> = {}) {
+  const { scenarioRef, asOf, ordering, onReady, baseline, ...taxOverrides } =
+    props;
+  setProjectionFixture([
+    makeProjectionYear(
+      makeHypothetical(COMPARE_YEAR, true, {
+        primary: { first: taxOverrides, final: {} },
+        spouse: { first: {}, final: {} },
+      }),
+    ),
+  ]);
+  return (
+    <EstateTaxReportView
+      clientId="client-1"
+      isMarried={true}
+      ownerNames={OWNERS}
+      ownerDobs={DOBS}
+      retirementYear={RETIREMENT_YEAR}
+      scenarioRef={scenarioRef}
+      asOf={asOf}
+      ordering={ordering}
+      onReady={onReady}
+      baseline={baseline}
+    />
+  );
+}
+
+function renderWithFixture(props: CompareProps & Partial<EstateTaxResult> = {}) {
+  return render(compareElement(props));
+}
+renderWithFixture.element = compareElement;
+
+describe("compare mode", () => {
+  it("suppresses its own control row when the shell supplies asOf", async () => {
+    renderWithFixture({ asOf: "today", ordering: "primaryFirst" });
+    await waitFor(() =>
+      expect(screen.getAllByText(/Gross Estate/).length).toBeGreaterThan(0),
+    );
+    expect(
+      screen.queryByRole("group", { name: /death order/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/as of/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps rendering its own control row when used standalone", async () => {
+    renderWithFixture({});
+    await waitFor(() =>
+      expect(screen.getAllByText(/Gross Estate/).length).toBeGreaterThan(0),
+    );
+    expect(screen.getByLabelText(/as of/i)).toBeInTheDocument();
+  });
+
+  it("renders no delta chips without a baseline", async () => {
+    renderWithFixture({ asOf: "today" });
+    await waitFor(() =>
+      expect(screen.getAllByText(/Gross Estate/).length).toBeGreaterThan(0),
+    );
+    expect(screen.queryAllByTestId("estate-delta-chip")).toHaveLength(0);
+  });
+
+  it("renders a delta on the gross estate subtotal when given a baseline", async () => {
+    const baseline = makeEstateTaxResult({ grossEstate: 8_200_000 });
+    renderWithFixture({ asOf: "today", baseline, grossEstate: 6_300_000 });
+    const chip = await screen.findByTestId("estate-delta-gross-estate");
+    expect(chip).toHaveTextContent("$1.9M");
+    expect(chip).toHaveTextContent("▾");
+  });
+
+  it("keeps the default testid on every other subtotal chip", async () => {
+    const baseline = makeEstateTaxResult({
+      grossEstate: 8_200_000,
+      taxableEstate: 8_000_000,
+    });
+    renderWithFixture({
+      asOf: "today",
+      baseline,
+      grossEstate: 6_300_000,
+      taxableEstate: 6_000_000,
+    });
+    await screen.findByTestId("estate-delta-gross-estate");
+    expect(
+      screen.queryAllByTestId("estate-delta-chip").length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("marks a line the baseline did not have as added", async () => {
+    const baseline = makeEstateTaxResult({ grossEstateLines: [] });
+    renderWithFixture({
+      asOf: "today",
+      baseline,
+      grossEstateLines: [
+        {
+          label: "Dynasty Trust",
+          accountId: "acct-9",
+          liabilityId: null,
+          percentage: 1,
+          amount: 1_900_000,
+          isProbate: false,
+        },
+      ],
+    });
+    expect(await screen.findByText("added")).toBeInTheDocument();
+  });
+
+  it("keeps a row the baseline had and this scenario does not, marked removed", async () => {
+    const baseline = makeEstateTaxResult({
+      grossEstateLines: [
+        {
+          label: "Family Business",
+          accountId: "acct-biz",
+          liabilityId: null,
+          percentage: 1,
+          amount: 4_000_000,
+          isProbate: false,
+        },
+      ],
+    });
+    renderWithFixture({ asOf: "today", baseline, grossEstateLines: [] });
+    expect(await screen.findByText("removed")).toBeInTheDocument();
+    expect(screen.getByText("Family Business")).toBeInTheDocument();
+  });
+
+  it("uses the death order the shell supplies", async () => {
+    renderWithFixture({ asOf: "today", ordering: "spouseFirst" });
+    expect(await screen.findByText(/Linda — First to die/)).toBeInTheDocument();
+  });
+
+  it("reports its projection metadata and result upward on load", async () => {
+    const onReady = vi.fn();
+    renderWithFixture({ asOf: "today", onReady });
+    await waitFor(() => expect(onReady).toHaveBeenCalled());
+    const arg = onReady.mock.calls[0][0];
+    expect(arg.meta.todayYear).toBe(2026);
+    expect(arg.data).not.toBeNull();
+  });
+
+  it("keeps its failure inside its own column", async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({ error: "boom" }),
+    }) as unknown as typeof fetch;
+    renderWithFixture({ asOf: "today" });
+    expect(
+      await screen.findByText(/failed to load projection/i),
+    ).toBeInTheDocument();
+  });
+
+  it("fetches the scenario ref it was given, not the URL param", async () => {
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValue({ ok: true, json: async () => ({}) });
+    global.fetch = fetchSpy as unknown as typeof fetch;
+    renderWithFixture({ asOf: "today", scenarioRef: "s-right" });
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+    expect(String(fetchSpy.mock.calls[0][0])).toContain("scenario=s-right");
+  });
+
+  it("does not refetch when an unrelated URL param changes", async () => {
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValue({ ok: true, json: async () => ({}) });
+    global.fetch = fetchSpy as unknown as typeof fetch;
+    const { rerender } = renderWithFixture({
+      asOf: "today",
+      scenarioRef: "s-prop",
+    });
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    rerender(renderWithFixture.element({ asOf: 2045, scenarioRef: "s-prop" }));
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+  });
+});
