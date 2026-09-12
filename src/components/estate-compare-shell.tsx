@@ -401,16 +401,29 @@ export function EstateCompareShell<TData>({
         )}
       </div>
 
-      {rightRef !== null ? (
-        <div className="grid gap-x-8 gap-y-6 md:grid-cols-2">
-          <div className="min-w-0">{left}</div>
+      {/*
+        ONE layout, two widths — never two branches. React reconciles by
+        position and element type, so a solo branch that put `left` in a
+        different wrapper would unmount the whole left column the moment a
+        comparison starts: its state would reset and its load effect would
+        refetch a scenario already on screen. The left wrapper stays the same
+        element in both modes; only the container's width class and the right
+        column's presence change.
+      */}
+      <div
+        className={
+          rightRef !== null
+            ? "grid gap-x-8 gap-y-6 md:grid-cols-2"
+            : "md:w-1/2"
+        }
+      >
+        <div className="min-w-0">{left}</div>
+        {rightRef !== null && (
           <div className="min-w-0 md:border-l md:border-hair md:pl-8">
             {renderColumn("right", rightRef)}
           </div>
-        </div>
-      ) : (
-        <div className="md:w-1/2">{left}</div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

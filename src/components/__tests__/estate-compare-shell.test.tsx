@@ -120,8 +120,29 @@ function PendingAwareColumn({
   );
 }
 
+/** Records one call per MOUNT, so a remount is visible as a second call. */
+const mountSpy = vi.fn();
+function MountCountingColumn({
+  side,
+  scenarioRef,
+  onReady,
+}: {
+  side: string;
+  scenarioRef: string;
+  onReady: (r: { meta: typeof META; data: string | null }) => void;
+}) {
+  useEffect(() => {
+    mountSpy(side);
+  }, [side]);
+  useEffect(() => {
+    onReady({ meta: META, data: `data-for-${scenarioRef}` });
+  }, [onReady, scenarioRef]);
+  return <div data-testid={`col-${side}`} data-ref={scenarioRef} />;
+}
+
 beforeEach(() => {
   push.mockClear();
+  mountSpy.mockClear();
   search = "";
 });
 
@@ -276,5 +297,37 @@ describe("EstateCompareShell", () => {
     rerender(tree());
     expect(screen.getByTestId("col-left")).toHaveAttribute("data-ref", "s-loading");
     expect(screen.getByTestId("col-right")).toHaveAttribute("data-baseline", "");
+  });
+
+  // React reconciles by position and element type. If the solo layout puts the
+  // left column's <section> at a slot the compare layout fills with a <div>,
+  // starting a comparison unmounts the whole left column and mounts a fresh
+  // one — its state resets and its load effect re-runs, so the advisor pays a
+  // second fetch of a scenario that was already on screen. That is the exact
+  // waste the views' ref-keyed load effect exists to prevent.
+  it("keeps the left column mounted when a comparison starts", () => {
+    search = "scenario=s-prop";
+    const tree = () => (
+      <EstateCompareShell<string>
+        clientId="c1"
+        scenarios={SCENARIOS}
+        isMarried
+        ownerNames={{ clientName: "Robert", spouseName: "Anita" }}
+        ownerDobs={{ clientDob: "1960-01-01", spouseDob: "1962-01-01" }}
+        retirementYear={2030}
+      >
+        {(args) => <MountCountingColumn {...args} />}
+      </EstateCompareShell>
+    );
+    const { rerender } = render(tree());
+    expect(screen.queryByTestId("col-right")).not.toBeInTheDocument();
+    expect(mountSpy.mock.calls.filter(([s]) => s === "left")).toHaveLength(1);
+
+    search = "scenario=s-prop&compare=base";
+    rerender(tree());
+    // The right column really did arrive — without this the assertion below
+    // would pass on a shell that never entered compare mode at all.
+    expect(screen.getByTestId("col-right")).toBeInTheDocument();
+    expect(mountSpy.mock.calls.filter(([s]) => s === "left")).toHaveLength(1);
   });
 });

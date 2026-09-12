@@ -12,6 +12,16 @@ vi.mock("@/engine/projection", () => ({
   runProjectionWithEvents: vi.fn(),
 }));
 
+// A REAL `URLSearchParams`, rebuilt on every call — which is what the router
+// does in the browser. Without this mock `useSearchParams()` returns null in
+// jsdom, the object never changes identity, and a load effect keyed on it
+// looks stable when it is not. See `does not refetch when an unrelated URL
+// param changes`.
+let search = "";
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(search),
+}));
+
 import { runProjection, runProjectionWithEvents } from "@/engine/projection";
 import EstateTaxReportView from "@/components/estate-tax-report-view";
 import type { EstateColumnReady } from "@/components/estate-compare-shell";
@@ -198,6 +208,7 @@ function setProjectionFixture(years: ProjectionYear[]) {
 }
 
 beforeEach(() => {
+  search = "";
   vi.mocked(runProjection).mockReset();
   vi.mocked(runProjectionWithEvents).mockReset();
   // Mock fetch to return any JSON — content is irrelevant since the engine is
@@ -679,6 +690,24 @@ describe("compare mode", () => {
     expect(arg.data).not.toBeNull();
   });
 
+  // The shell re-renders every column whenever anything in the control row
+  // moves. A column that rebuilt its `meta` or its reported `data` inline
+  // would report a fresh object each time, the shell would store it, and that
+  // store would re-render the column — a loop with no exit.
+  it("reports once, not again on every re-render", async () => {
+    const onReady = vi.fn();
+    const { rerender } = renderWithFixture({ asOf: "today", onReady });
+    await waitFor(() => expect(onReady).toHaveBeenCalled());
+    const afterLoad = onReady.mock.calls.length;
+
+    // Nothing about this column moved — only its parent re-rendered.
+    rerender(renderWithFixture.element({ asOf: "today", onReady }));
+    await waitFor(() =>
+      expect(screen.getAllByText(/Gross Estate/).length).toBeGreaterThan(0),
+    );
+    expect(onReady).toHaveBeenCalledTimes(afterLoad);
+  });
+
   it("keeps its failure inside its own column", async () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: false,
@@ -701,17 +730,32 @@ describe("compare mode", () => {
     expect(String(fetchSpy.mock.calls[0][0])).toContain("scenario=s-right");
   });
 
+  // The guard for the load effect's dependency array. `?compare=` is written
+  // by the shell with `router.push`, which hands every subscriber a FRESH
+  // `URLSearchParams` — so an effect keyed on that object refetches BOTH
+  // columns against a 30/min/firm rate limit every time the advisor starts or
+  // stops a comparison. Keyed on the resolved ref instead, only a scenario
+  // change refetches.
   it("does not refetch when an unrelated URL param changes", async () => {
     const fetchSpy = vi
       .fn()
       .mockResolvedValue({ ok: true, json: async () => ({}) });
     global.fetch = fetchSpy as unknown as typeof fetch;
-    const { rerender } = renderWithFixture({
-      asOf: "today",
-      scenarioRef: "s-prop",
-    });
+    // No `scenarioRef` prop: the view must read the left ref off the URL, so
+    // the searchParams object is genuinely in play.
+    search = "scenario=s-prop";
+    const { rerender } = renderWithFixture({ asOf: "today" });
     await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
-    rerender(renderWithFixture.element({ asOf: 2045, scenarioRef: "s-prop" }));
-    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    expect(String(fetchSpy.mock.calls[0][0])).toContain("scenario=s-prop");
+
+    // Starting a comparison: same left scenario, new param, new params object.
+    search = "scenario=s-prop&compare=s-right";
+    rerender(renderWithFixture.element({ asOf: "today" }));
+    // Let the re-render settle before counting, so a refetch has every chance
+    // to happen rather than the assertion racing it.
+    await waitFor(() =>
+      expect(screen.getAllByText(/Gross Estate/).length).toBeGreaterThan(0),
+    );
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });

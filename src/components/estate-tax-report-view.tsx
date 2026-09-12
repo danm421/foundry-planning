@@ -10,10 +10,8 @@ import type {
 import { AsOfDropdown, type AsOfValue } from "./report-controls/as-of-dropdown";
 import { TimePeriodButtons } from "./report-controls/time-period-buttons";
 import type { OwnerDobs } from "./report-controls/age-helpers";
-import type {
-  EstateColumnMeta,
-  EstateColumnReady,
-} from "./estate-compare-shell";
+import type { EstateColumnReady } from "./estate-compare-shell";
+import { useEstateColumnReady } from "@/hooks/use-estate-column-ready";
 import { EstateDeltaChip, EstateRowMarker } from "./estate-delta-chip";
 import {
   diffEstateTax,
@@ -174,22 +172,7 @@ export default function EstateTaxReportView({
   // between renders — the shell compares `data` by identity.
   const reportedTax = isSplit ? splitFirst : activeOrdering?.firstDeath ?? null;
 
-  const meta = useMemo<EstateColumnMeta>(
-    () => ({
-      years: projectionYears.map((y) => y.year),
-      todayYear: projectionYears[0]?.year ?? 0,
-      firstDeathYear: projection?.firstDeathEvent?.year ?? null,
-      secondDeathYear: projection?.secondDeathEvent?.year ?? null,
-    }),
-    [projectionYears, projection],
-  );
-
-  useEffect(() => {
-    // A projection with no years has no `todayYear` to report, and the shell
-    // would build its control row around the 0 placeholder.
-    if (!onReady || projectionYears.length === 0) return;
-    onReady({ meta, data: reportedTax });
-  }, [onReady, projectionYears, meta, reportedTax]);
+  useEstateColumnReady(projection, reportedTax, onReady);
 
   if (loadError) {
     return (
