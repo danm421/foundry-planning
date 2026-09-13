@@ -32,6 +32,23 @@ const AMBIGUOUS_ROW_SOURCES: Partial<
 };
 
 /**
+ * True when a row will be SKIPPED rather than written, because the matcher
+ * could not decide between it and an existing record.
+ *
+ * The single home for the `fuzzy` → not-written rule that every commit module
+ * in `AMBIGUOUS_ROW_SOURCES` applies. Exported so a REVIEW surface can withhold
+ * its Commit button instead of POSTing a row that writes nothing and then
+ * reporting it as committed — the rule and the warning about the rule now read
+ * the same test.
+ *
+ * Type-only imports keep this module free of any runtime dependency, so a
+ * "use client" component can import it.
+ */
+export function isAmbiguousMatch(row: MatchedRow): boolean {
+  return row.match?.kind === "fuzzy";
+}
+
+/**
  * Append ONE advisor-facing warning per tab for the rows that tab's commit
  * module left unwritten because the matcher couldn't decide between the
  * incoming row and an existing one (`match.kind === "fuzzy"`).
@@ -55,7 +72,7 @@ export function noteAmbiguousSkips(
   const source = AMBIGUOUS_ROW_SOURCES[tab];
   if (!source) return result;
 
-  const count = source.rows(payload).filter((r) => r.match?.kind === "fuzzy").length;
+  const count = source.rows(payload).filter(isAmbiguousMatch).length;
   if (count === 0) return result;
 
   const subject =

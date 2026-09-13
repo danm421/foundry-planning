@@ -31,13 +31,14 @@ const CTX = {
 };
 
 describe("accounts table", () => {
-  it("renders the eight spec columns in order", () => {
+  it("renders the nine spec columns in order", () => {
     render(<AccountsTable rows={rows} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} onEditHolding={vi.fn()} onDropHolding={vi.fn()} />);
     // Leading "" is the Task 5 disclosure column's header cell — AccountsTable
     // always supplies `expand` to EntityTable now, so every row gets one,
-    // trailing "" is still the Commit column's.
+    // trailing "" is still the Commit column's. Match sits AFTER Holdings so
+    // the cell indices the tests below pin (Owner at 5) keep holding.
     expect(screen.getAllByRole("columnheader").map((h) => h.textContent)).toEqual([
-      "", "Name", "Value", "Basis", "Last 4", "Owner", "Custodian", "Account type", "Holdings", "",
+      "", "Name", "Value", "Basis", "Last 4", "Owner", "Custodian", "Account type", "Holdings", "Match", "",
     ]);
   });
 
@@ -259,5 +260,163 @@ describe("accounts table — the Owner cell shows the value that commits", () =>
     const cell = ownerCellOf(screen.getByRole("row", { name: /Schwab Roth IRA/ }));
     expect(within(cell).getByText("Joint")).toBeInTheDocument();
     expect(within(cell).queryByText("Client")).toBeNull();
+  });
+});
+
+/**
+ * Item 1 of Dan's punch list: match an extracted account to one the plan
+ * already has, with a manual override and a way out when nothing matched.
+ *
+ * The stakes are asymmetric and run in both directions, which is what the
+ * tests below are shaped around. An `exact` UPDATES an existing account in
+ * place — value, basis, custodian, category — so a wrong one overwrites the
+ * wrong account. A `new` INSERTs, so a missed match puts a second copy of an
+ * account the client already has into the plan and double-counts it.
+ */
+const MATCH_CANDIDATES = [
+  {
+    id: "acct-1",
+    name: "Schwab Brokerage",
+    category: "taxable" as const,
+    accountNumberLast4: "0990",
+    custodian: "Charles Schwab",
+    value: 8_600,
+  },
+  {
+    id: "acct-2",
+    name: "Schwab Roth",
+    category: "retirement" as const,
+    accountNumberLast4: "1168",
+    custodian: "Charles Schwab",
+    value: 22_800,
+  },
+];
+
+/** `rows` above is `as never`, which cannot be spread. Same data, usable shape. */
+const base = rows as unknown as Record<string, unknown>[];
+
+const table = (over: Record<string, unknown> = {}) => (
+  <AccountsTable
+    rows={rows}
+    excluded={[]}
+    committedRowIds={[]}
+    onCommitRows={vi.fn()}
+    onEditCell={vi.fn()}
+    onEditHolding={vi.fn()}
+    onDropHolding={vi.fn()}
+    matchCandidates={MATCH_CANDIDATES}
+    {...over}
+  />
+);
+
+describe("accounts table — the Match column", () => {
+  it("names the existing account an exact match will overwrite", () => {
+    const matched = [{ ...base[0], match: { kind: "exact", existingId: "acct-1" } }, rows[1]] as never;
+    render(table({ rows: matched }));
+    const row = screen.getByRole("row", { name: /Schwab Taxable 0707/ });
+    expect(within(row).getByText(/Matched/)).toBeInTheDocument();
+    // The NAME, not just the badge: "✓ Matched" alone does not tell an advisor
+    // which of four Schwab accounts is about to be rewritten.
+    expect(within(row).getByText("Schwab Brokerage")).toBeInTheDocument();
+  });
+
+  it("reads as New when nothing on the plan matches", () => {
+    render(table());
+    const row = screen.getByRole("row", { name: /Schwab Taxable 0707/ });
+    expect(within(row).getByText(/New/)).toBeInTheDocument();
+  });
+
+  // The override. Both writes matter: `match` is what the commit reads, and
+  // `matchLocked` is what stops the next annotation pass re-deriving over the
+  // advisor's ruling and silently re-suggesting what they just rejected.
+  it("records a picked match as a locked human ruling", async () => {
+    const onEditCell = vi.fn();
+    render(table({ onEditCell }));
+    const row = screen.getByRole("row", { name: /Schwab Taxable 0707/ });
+    await userEvent.click(within(row).getByRole("button", { name: /New/ }));
+    await userEvent.click(await screen.findByRole("button", { name: /Schwab Roth/ }));
+    expect(onEditCell).toHaveBeenCalledWith("r1", "match", { kind: "exact", existingId: "acct-2" });
+    expect(onEditCell).toHaveBeenCalledWith("r1", "matchLocked", true);
+  });
+
+  it("records a deliberate create-as-new the same way", async () => {
+    const onEditCell = vi.fn();
+    const fuzzy = [{ ...base[0], match: { kind: "fuzzy", candidates: [{ id: "acct-1", score: 0.6 }] } }, rows[1]] as never;
+    render(table({ rows: fuzzy, onEditCell }));
+    const row = screen.getByRole("row", { name: /Schwab Taxable 0707/ });
+    await userEvent.click(within(row).getByRole("button", { name: /Ambiguous/ }));
+    await userEvent.click(await screen.findByRole("button", { name: /Create as new/ }));
+    expect(onEditCell).toHaveBeenCalledWith("r1", "match", { kind: "new" });
+    expect(onEditCell).toHaveBeenCalledWith("r1", "matchLocked", true);
+  });
+
+  // One existing account, at most one imported row. Two rows matched to the
+  // same account means two UPDATEs against it — last-wins, and the other
+  // row's figures vanish with no warning.
+  it("withholds an account another row is already matched to", async () => {
+    const openPickerOn = async (rowSet: unknown) => {
+      const { unmount } = render(table({ rows: rowSet }));
+      const row = screen.getByRole("row", { name: /Schwab Taxable 0707/ });
+      await userEvent.click(within(row).getByRole("button", { name: /New/ }));
+      const names = within(await screen.findByRole("listbox"))
+        .getAllByRole("option")
+        .map((o) => o.textContent ?? "");
+      unmount();
+      return names;
+    };
+
+    // Control first — an option list that is empty for the WRONG reason would
+    // make the assertion below pass without the filter doing anything. Both
+    // accounts are on offer when nobody has claimed either.
+    expect(await openPickerOn(rows)).toHaveLength(2);
+
+    const claimed = [rows[0], { ...base[1], match: { kind: "exact", existingId: "acct-2" } }] as never;
+    const offered = await openPickerOn(claimed);
+    expect(offered).toHaveLength(1);
+    expect(offered[0]).toContain("Schwab Brokerage");
+  });
+
+  it("offers no picker on a committed row", () => {
+    render(table({ committedRowIds: ["r1"] }));
+    const row = screen.getByRole("row", { name: /Schwab Taxable 0707/ });
+    expect(within(row).queryByRole("button", { name: /New/ })).toBeNull();
+    expect(within(row).getByText(/New/)).toBeInTheDocument();
+  });
+});
+
+/**
+ * The hole this closes: `commitAccounts` SKIPS a `fuzzy` row. Before this,
+ * its Commit button POSTed, the route returned 200, the row wrote NOTHING,
+ * and the button then read "Committed" — a success reported for work that
+ * never happened.
+ */
+describe("accounts table — an unresolved match blocks Commit", () => {
+  const fuzzyRows = [
+    { ...base[0], match: { kind: "fuzzy", candidates: [{ id: "acct-1", score: 0.62 }] } },
+    rows[1],
+  ] as never;
+
+  it("disables Commit on an ambiguous row and says why", () => {
+    render(table({ rows: fuzzyRows }));
+    const row = screen.getByRole("row", { name: /Schwab Taxable 0707/ });
+    expect(within(row).getByRole("button", { name: /^Commit$/ })).toBeDisabled();
+    expect(within(row).getByText(/Pick a match first/i)).toBeInTheDocument();
+  });
+
+  it("never POSTs an ambiguous row", async () => {
+    const onCommitRows = vi.fn();
+    render(table({ rows: fuzzyRows, onCommitRows }));
+    const row = screen.getByRole("row", { name: /Schwab Taxable 0707/ });
+    await userEvent.click(within(row).getByRole("button", { name: /^Commit$/ }));
+    expect(onCommitRows).not.toHaveBeenCalled();
+  });
+
+  // The other rows must stay committable — one unresolved row cannot hold the
+  // whole statement hostage.
+  it("leaves a resolvable row alone", () => {
+    render(table({ rows: fuzzyRows }));
+    const roth = screen.getByRole("row", { name: /Schwab Roth IRA/ });
+    expect(within(roth).getByRole("button", { name: /^Commit$/ })).toBeEnabled();
+    expect(within(roth).queryByText(/Pick a match first/i)).toBeNull();
   });
 });

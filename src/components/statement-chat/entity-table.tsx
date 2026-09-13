@@ -39,8 +39,16 @@ export interface ColumnSpec<Row> {
   /** Drives default formatting; ignored when `render` is given. */
   kind: ColumnKind;
   align?: "left" | "right";
-  /** Optional override for the default `kind`-driven display. */
-  render?: (row: Row) => ReactNode;
+  /**
+   * Optional override for the default `kind`-driven display.
+   *
+   * `meta.isCommitted` is handed down for the same reason `expand`'s is: a
+   * cell that renders its OWN control (rather than going through `edit`) has
+   * to withhold it once the row is committed, and re-deriving that from a
+   * copy of `committedRowIds` in the caller's closure is a second source of
+   * truth that can drift from this component's.
+   */
+  render?: (row: Row, meta: { isCommitted: boolean }) => ReactNode;
   /** Present only on columns the advisor can edit inline. */
   edit?: (row: Row, onChange: (value: unknown) => void) => ReactNode;
   /**
@@ -86,6 +94,18 @@ export interface EntityTableProps<Row extends EntityRow> {
   /** Disables every row's Commit button regardless of its own committed/
    *  pending state (Ruling 95, Task 11b fix round 1). */
   disableCommit?: boolean;
+  /**
+   * Why THIS row cannot be committed yet, or null when it can. A row this
+   * returns a reason for gets a disabled Commit button with the reason beside
+   * it.
+   *
+   * Needed because every commit module silently SKIPS a row it cannot resolve
+   * (an ambiguous account match, say): the POST succeeds, the row writes
+   * nothing, and the button reports success for work that never happened. A
+   * live button that does nothing is the worse half of that — so the state is
+   * made visible and the click is withheld until the advisor resolves it.
+   */
+  commitBlockedReason?: (row: Row) => string | null;
   /**
    * Optional child content for a row. A row this returns a non-null node for
    * gets a leading disclosure button; open, the node renders in its own
@@ -198,6 +218,7 @@ export default function EntityTable<Row extends EntityRow>({
   onEditCell,
   onRestore,
   disableCommit,
+  commitBlockedReason,
   expand,
   expandLabel,
 }: EntityTableProps<Row>) {
@@ -245,7 +266,11 @@ export default function EntityTable<Row extends EntityRow>({
   const label = (row: Row): ReactNode => {
     const first = columns[0];
     if (!first) return null;
-    return first.render ? first.render(row) : formatValue(first.kind, rowValue(row, first.key));
+    return first.render
+      ? first.render(row, {
+          isCommitted: row.__rowId != null && committedRowIds.includes(row.__rowId),
+        })
+      : formatValue(first.kind, rowValue(row, first.key));
   };
 
   return (
@@ -280,6 +305,7 @@ export default function EntityTable<Row extends EntityRow>({
             const isCommitted = rowId != null && committedRowIds.includes(rowId);
             const isPending = rowId != null && pending.has(rowId);
             const child = expand?.(row, { isCommitted });
+            const blockedReason = isCommitted ? null : (commitBlockedReason?.(row) ?? null);
             const isExpanded = rowId != null && expanded.has(rowId);
 
             return (
@@ -326,7 +352,9 @@ export default function EntityTable<Row extends EntityRow>({
                         setEditing(null);
                       });
                     } else {
-                      const display = col.render ? col.render(row) : formatValue(col.kind, rowValue(row, col.key));
+                      const display = col.render
+                        ? col.render(row, { isCommitted })
+                        : formatValue(col.kind, rowValue(row, col.key));
                       content = canEdit ? (
                         <button
                           type="button"
@@ -353,7 +381,7 @@ export default function EntityTable<Row extends EntityRow>({
                     <button
                       type="button"
                       onClick={() => commit(rowId)}
-                      disabled={isCommitted || isPending || disableCommit}
+                      disabled={isCommitted || isPending || disableCommit || !!blockedReason}
                       // `.btn-ghost`'s hover contract (border + text to accent,
                       // 6% accent wash) plus `.btn-primary`'s 1px lift, so the
                       // control announces itself on hover instead of sitting
@@ -366,6 +394,11 @@ export default function EntityTable<Row extends EntityRow>({
                     >
                       {isCommitted ? "Committed" : isPending ? "Committing…" : "Commit"}
                     </button>
+                    {blockedReason && (
+                      <div className="mt-1 text-xs font-normal normal-case text-ink-3">
+                        {blockedReason}
+                      </div>
+                    )}
                     {commitError && commitError.rowId === rowId && (
                       <div className="mt-1 text-xs text-crit">{commitError.message}</div>
                     )}

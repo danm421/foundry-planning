@@ -106,7 +106,7 @@ export function ChatSurface({
     handleDropHolding,
     handleRestore,
     handleFinalize,
-  } = useChatCommit(clientId, importId, reviewContext.familyMembers);
+  } = useChatCommit(clientId, importId, reviewContext.familyMembers, reviewContext.accounts);
 
   // Sends a turn and adopts what comes back (Task 11b, Steps 2/3). On the
   // FIRST turn that has anything to adopt (`result` was still null — a
@@ -426,6 +426,10 @@ export function ChatSurface({
                       family: reviewContext.familyMembers,
                       entities: reviewContext.entities,
                     }}
+                    // The SAME list the hook annotates against, so the badge
+                    // the matcher produced and the options the picker offers
+                    // can never disagree about what exists.
+                    matchCandidates={reviewContext.accounts}
                   />
                 </CardBody>
               </Card>

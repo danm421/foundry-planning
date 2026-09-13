@@ -286,3 +286,103 @@ describe("useChatCommit — editing and dropping one position (Task 6)", () => {
     expect(holdings[0].__dropped).toBe(true);
   });
 });
+
+/**
+ * The chat surface has no server matching pass — `chat/extract/route.ts`
+ * writes rows with no `match` at all — so every account it committed was an
+ * INSERT. Re-uploading this quarter's statement for a household set up months
+ * ago therefore added a SECOND copy of every account. This effect is what
+ * closes that.
+ */
+describe("useChatCommit — matching extracted accounts against the plan", () => {
+  const CANDIDATES = [
+    {
+      id: "acct-1",
+      name: "Schwab Brokerage",
+      category: "taxable" as const,
+      accountNumberLast4: "0990",
+      custodian: "Charles Schwab",
+      value: 8_600,
+    },
+  ];
+
+  /** `rows` below is cast `as never` for the hook, which cannot be spread. */
+  const baseRow: Record<string, unknown> = {
+    __rowId: "r1",
+    name: "Schwab Brokerage",
+    category: "taxable",
+    accountNumberLast4: "0990",
+    custodian: "Charles Schwab",
+    value: 8_618,
+  };
+
+  const extracted = {
+    summary: "x",
+    caveats: [],
+    excluded: [],
+    rows: [baseRow] as never,
+  };
+
+  it("stamps an extracted row against an account the plan already has", () => {
+    const { result } = renderHook(() => useChatCommit("c1", "i1", [], CANDIDATES));
+    act(() => result.current.applyExtractionResult(extracted));
+    expect(result.current.result?.rows[0].match).toEqual({ kind: "exact", existingId: "acct-1" });
+  });
+
+  it("leaves rows unannotated when the plan has no accounts", () => {
+    const { result } = renderHook(() => useChatCommit("c1", "i1", [], []));
+    act(() => result.current.applyExtractionResult(extracted));
+    expect(result.current.result?.rows[0].match).toBeUndefined();
+  });
+
+  // The loop guard, at the level it actually matters. A `fuzzy` row stays
+  // re-annotatable by design, so if the pass handed back a fresh array every
+  // time, this effect would set state, the state change would re-run the
+  // effect, and the review table would spin forever. Re-rendering the hook is
+  // what re-runs it.
+  it("settles instead of re-annotating itself forever", () => {
+    const fuzzyMaker = {
+      ...extracted,
+      rows: [{ ...baseRow, accountNumberLast4: undefined, value: 8_600 }] as never,
+    };
+    const { result, rerender } = renderHook(() => useChatCommit("c1", "i1", [], CANDIDATES));
+    act(() => result.current.applyExtractionResult(fuzzyMaker));
+    const after = result.current.result;
+    expect(after?.rows[0].match?.kind).toBe("fuzzy");
+
+    act(() => rerender());
+    act(() => rerender());
+    // Same object, not merely an equal one — the identity IS the bail-out.
+    expect(result.current.result).toBe(after);
+  });
+
+  // The override writes `match` and `matchLocked` as TWO sequential
+  // `onEditCell` calls. `updateResult` mirrors into `resultRef` synchronously,
+  // so the second call reads the first's result rather than a pre-batch
+  // snapshot — if it didn't, one of the two fields would be dropped and the
+  // ruling would be half-recorded.
+  it("keeps both halves of a human ruling written back to back", () => {
+    const { result } = renderHook(() => useChatCommit("c1", "i1", [], CANDIDATES));
+    act(() => result.current.applyExtractionResult(extracted));
+    act(() => {
+      result.current.handleEditCell("r1", "match", { kind: "new" });
+      result.current.handleEditCell("r1", "matchLocked", true);
+    });
+    const row = result.current.result?.rows[0];
+    expect(row?.match).toEqual({ kind: "new" });
+    expect(row?.matchLocked).toBe(true);
+  });
+
+  // An advisor's explicit ruling has to survive the next pass, or the match
+  // they just rejected is silently re-suggested.
+  it("does not re-derive over a locked human ruling", () => {
+    const { result } = renderHook(() => useChatCommit("c1", "i1", [], CANDIDATES));
+    act(() =>
+      result.current.applyExtractionResult({
+        ...extracted,
+        rows: [{ ...baseRow, match: { kind: "new" }, matchLocked: true }] as never,
+      }),
+    );
+    expect(result.current.result?.rows[0].match).toEqual({ kind: "new" });
+  });
+});

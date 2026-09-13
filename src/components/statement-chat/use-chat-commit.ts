@@ -4,6 +4,8 @@ import type { ExtractedAccount, ExtractedHolding } from "@/lib/extraction/types"
 import type { Annotated } from "@/lib/imports/types";
 import { readChatState, writeChatState, type ChatTurn } from "@/lib/statement-chat/state";
 import { resolveOwnersFromHint, type OwnerMatchFamilyMember } from "@/lib/imports/owner-match";
+import { reannotateAccountRows } from "@/lib/imports/annotate-accounts";
+import type { AccountCandidate } from "@/lib/imports/match-keys/account";
 import { is529Account } from "@/lib/accounts/is-529";
 
 type Row = Annotated<ExtractedAccount>;
@@ -107,6 +109,7 @@ export function useChatCommit(
   clientId: string,
   importId: string,
   family: OwnerMatchFamilyMember[] = [],
+  candidates: AccountCandidate[] = [],
 ) {
   const [result, setResult] = useState<ChatCommitResult | null>(null);
   const [committedRowIds, setCommittedRowIds] = useState<string[]>([]);
@@ -197,6 +200,35 @@ export function useChatCommit(
       return changed ? { ...prev, rows } : prev;
     });
   }, [family, result, updateResult]);
+
+  /**
+   * Match each extracted account against the accounts already on the plan.
+   *
+   * The wizard gets this from a server pass (`runMatchingPass`); the chat
+   * surface never had one — `chat/extract/route.ts` writes rows with no `match`
+   * at all — so every account it committed was an INSERT. Re-uploading this
+   * quarter's statement for a household set up months ago therefore added a
+   * SECOND copy of every account, double-counting net worth and every
+   * projection under it.
+   *
+   * Run here rather than server-side because the scoring is pure and the
+   * candidate list is already in the browser: the page loads it once and hands
+   * it to this surface. See `annotate-accounts.ts` for why that half was lifted
+   * out of `match.ts`.
+   *
+   * `reannotateAccountRows` owns both hazards — it refuses to overwrite a row
+   * an advisor (or a completed commit) has ruled on, and it returns the
+   * IDENTICAL array when nothing moved, which is what stops this effect from
+   * re-triggering itself through `result`.
+   */
+  useEffect(() => {
+    if (candidates.length === 0) return;
+    updateResult((prev) => {
+      if (!prev) return prev;
+      const rows = reannotateAccountRows(prev.rows, candidates, family);
+      return rows === prev.rows ? prev : { ...prev, rows };
+    });
+  }, [candidates, family, result, updateResult]);
 
   // Hydrated HERE rather than handed down as a server prop (prior Ruling 91):
   // a prop would be a third source of truth that goes stale the instant a

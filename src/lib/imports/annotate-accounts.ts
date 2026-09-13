@@ -41,13 +41,22 @@ import type { Annotated, MatchAnnotation } from "./types";
  * list because `annotateExpenses` reads the set directly (its slot pool is not
  * in `candidates` at all in onboarding mode) — filtering alone would return the
  * post-claim answer and the expenses half would never degrade.
+ *
+ * `preClaimed` seeds the set with records already spoken for by rows this call
+ * is NOT annotating — `reannotateAccountRows` below re-derives only the
+ * undecided rows, and the decided ones' links have to stay reserved. Seeding
+ * rather than pre-filtering `candidates` is deliberate: the duplicate probe
+ * above reads the SET, so a pre-filtered list would hide the collision and the
+ * duplicate row would degrade to `new` — an INSERT, the double-count this whole
+ * function exists to prevent.
  */
 export function claimOnce<T, C extends { id: string }>(
   rows: T[],
   candidates: C[],
   annotate: (row: T, available: C[], claimed: ReadonlySet<string>) => MatchAnnotation,
+  preClaimed: Iterable<string> = [],
 ): Array<T & { match: MatchAnnotation }> {
-  const claimed = new Set<string>();
+  const claimed = new Set<string>(preClaimed);
   return rows.map((row) => {
     const available = candidates.filter((c) => !claimed.has(c.id));
     const match = annotate(row, available, claimed);
@@ -127,9 +136,13 @@ export function annotateAccountRows<T extends ExtractedAccount>(
   rows: T[],
   candidates: AccountCandidate[],
   family: OwnerMatchFamilyMember[],
+  preClaimed: Iterable<string> = [],
 ): Array<T & { match: MatchAnnotation }> {
-  return claimOnce(rows, candidates, (row, available) =>
-    matchAccount(row, available, resolveOwnerIdsForMatching(row, family)),
+  return claimOnce(
+    rows,
+    candidates,
+    (row, available) => matchAccount(row, available, resolveOwnerIdsForMatching(row, family)),
+    preClaimed,
   );
 }
 
@@ -147,4 +160,71 @@ export function annotateAccountRows<T extends ExtractedAccount>(
 export function isReannotatable<T>(row: Annotated<T>): boolean {
   if (row.matchLocked) return false;
   return row.match == null || row.match.kind === "new" || row.match.kind === "fuzzy";
+}
+
+/**
+ * Whether two annotations say the same thing.
+ *
+ * Not a general deep-equal — it exists so `reannotateAccountRows` can hand back
+ * the SAME row object when a re-run changed nothing. Without that, a `fuzzy`
+ * row (which stays re-annotatable forever, by design) would get a fresh object
+ * on every pass, the effect that calls this would set state, the state change
+ * would re-run the effect, and the review table would spin.
+ */
+function sameMatch(a: MatchAnnotation | undefined, b: MatchAnnotation | undefined): boolean {
+  if (a == null || b == null) return a === b;
+  if (a.kind !== b.kind) return false;
+  if (a.kind === "exact") return a.existingId === (b as { existingId: string }).existingId;
+  if (a.kind === "fuzzy") {
+    const other = (b as { candidates: Array<{ id: string; score: number }> }).candidates;
+    return (
+      a.candidates.length === other.length &&
+      a.candidates.every((c, i) => c.id === other[i].id && c.score === other[i].score)
+    );
+  }
+  return true;
+}
+
+/**
+ * Re-derive `match` for the rows nobody has ruled on, leaving the rest alone.
+ *
+ * The chat review table has no server matching pass — `chat/extract/route.ts`
+ * never annotates — so the browser runs one over the candidates the page
+ * loaded. It runs repeatedly (every extraction, every turn, every edit), which
+ * is what makes the two guards below load-bearing rather than decorative:
+ *
+ * - Rows failing `isReannotatable` are passed through UNTOUCHED, and any
+ *   existing account they are matched to is handed to `annotateAccountRows` as
+ *   already-claimed. Skipping them without reserving their links would let an
+ *   undecided row claim an account a committed row is already writing to — two
+ *   UPDATEs against one record, last-wins.
+ * - A row whose re-derived match is identical to the one it already has keeps
+ *   its original object, and an unchanged set returns the SAME array. The
+ *   caller's `rows === prev.rows` check is then enough to bail out of the state
+ *   update entirely.
+ */
+export function reannotateAccountRows<T extends ExtractedAccount>(
+  rows: Array<Annotated<T>>,
+  candidates: AccountCandidate[],
+  family: OwnerMatchFamilyMember[],
+): Array<Annotated<T>> {
+  const open: Array<Annotated<T>> = [];
+  const preClaimed: string[] = [];
+  for (const row of rows) {
+    if (isReannotatable(row)) open.push(row);
+    else if (row.match?.kind === "exact") preClaimed.push(row.match.existingId);
+  }
+  if (open.length === 0) return rows;
+
+  const annotated = annotateAccountRows(open, candidates, family, preClaimed);
+  const freshFor = new Map(open.map((row, i) => [row, annotated[i]] as const));
+
+  let changed = false;
+  const result = rows.map((row) => {
+    const fresh = freshFor.get(row);
+    if (!fresh || sameMatch(row.match, fresh.match)) return row;
+    changed = true;
+    return fresh;
+  });
+  return changed ? result : rows;
 }
