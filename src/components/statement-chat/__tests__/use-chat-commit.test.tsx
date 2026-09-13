@@ -373,6 +373,35 @@ describe("useChatCommit — matching extracted accounts against the plan", () =>
     expect(row?.matchLocked).toBe(true);
   });
 
+  // The production sequence the guard above never reaches: the server NEVER
+  // emits `matchLocked`, so a re-extraction re-emits the row bare. If the
+  // carry-forward drops the lock, the annotation pass re-derives straight over
+  // the advisor's "create as new" and the row reverts to Ambiguous — the
+  // ruling is gone and its Commit is blocked again.
+  it("carries an advisor's create-as-new across a re-extraction", () => {
+    const fuzzyRow = { ...baseRow, accountNumberLast4: undefined, value: 8_600 };
+    const reExtracted = { ...extracted, rows: [fuzzyRow] as never };
+    const { result } = renderHook(() => useChatCommit("c1", "i1", [], CANDIDATES));
+    act(() => result.current.applyExtractionResult(reExtracted));
+    expect(result.current.result?.rows[0].match?.kind).toBe("fuzzy");
+
+    act(() => {
+      result.current.handleEditCell("r1", "match", { kind: "new" });
+      result.current.handleEditCell("r1", "matchLocked", true);
+    });
+    expect(result.current.result?.rows[0].match).toEqual({ kind: "new" });
+
+    // The REAL sequence: `runExtraction` calls `resetForNewExtraction()` before
+    // the request goes out, so `result` is already null when the stream's
+    // "done" lands. A carry-forward that reads only `prev` is unreachable here
+    // — which is why this models the reset rather than two bare applies.
+    act(() => result.current.resetForNewExtraction());
+    act(() => result.current.applyExtractionResult(reExtracted));
+    const row = result.current.result?.rows[0];
+    expect(row?.matchLocked).toBe(true);
+    expect(row?.match).toEqual({ kind: "new" });
+  });
+
   // An advisor's explicit ruling has to survive the next pass, or the match
   // they just rejected is silently re-suggested.
   it("does not re-derive over a locked human ruling", () => {

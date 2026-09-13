@@ -278,10 +278,23 @@ export function useChatCommit(
     };
   }, [clientId, importId, updateResult]);
 
+  /**
+   * The rows as they stood when the current extraction run started.
+   *
+   * `resetForNewExtraction` nulls `result` BEFORE the request goes out, so by
+   * the time the stream's "done" lands `applyExtractionResult`'s `prev` is
+   * always null on a re-extraction and nothing can be carried forward from it.
+   * Holding them here is what spans that gap. `__rowId` survives a
+   * re-extraction (`rebase.ts` carries a standing row's id onto its fresh
+   * counterpart), so it is still a valid key on the other side.
+   */
+  const preResetRowsRef = useRef<Row[]>([]);
+
   // Called at the start of a (re-)extraction run, so a stale table and a
   // stale finalize state from a previous run don't linger under a fresh
   // streaming pass.
   const resetForNewExtraction = useCallback(() => {
+    preResetRowsRef.current = resultRef.current?.rows ?? [];
     updateResult(() => null);
     setFinalizeStatus("idle");
     setFinalizeError(null);
@@ -301,11 +314,24 @@ export function useChatCommit(
   const applyExtractionResult = useCallback(
     (ev: ChatCommitResult) => {
       updateResult((prev) => {
-        const priorByRowId = new Map((prev?.rows ?? []).map((r) => [r.__rowId, r]));
+        // `prev` is null on every re-extraction (see `preResetRowsRef`), so
+        // the pre-reset snapshot is the real source here, not a fallback.
+        const priorRows = prev?.rows ?? preResetRowsRef.current;
+        const priorByRowId = new Map(priorRows.map((r) => [r.__rowId, r]));
         return {
           ...ev,
           rows: ev.rows.map((row) => {
             const prior = row.__rowId ? priorByRowId.get(row.__rowId) : undefined;
+            // A locked row carries BOTH halves of the ruling. The server never
+            // emits `matchLocked` — `chat/extract/route.ts` re-emits every row
+            // bare — so dropping it here hands the annotation pass a row it
+            // considers re-annotatable, and an advisor's deliberate "create as
+            // new" is re-derived straight back to `fuzzy`: the ruling gone and
+            // the row's Commit blocked again. Checked before the `exact` clause
+            // because a locked ruling may be either kind.
+            if (prior?.matchLocked) {
+              return { ...row, match: prior.match, matchLocked: true };
+            }
             return prior?.match?.kind === "exact" ? { ...row, match: prior.match } : row;
           }),
         };
