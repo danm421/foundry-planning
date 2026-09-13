@@ -289,9 +289,27 @@ const NOTE_RECEIVABLE_VALUE = z
     // projection.ts:2747-2749 multiplies note cash/interest/gain by this
     // value directly) — mirrors the entity-flow-override-upsert
     // distributionPercent bound.
-    owners: z.array(
-      z.object({ kind: z.string(), percent: z.number().gte(0).lte(1) }).passthrough(),
-    ),
+    //
+    // `.min(1)` + the sum refinement mirror the canonical writer exactly:
+    // schemas/note-receivable.ts:61 is `z.array(ownerSchema).min(1)` and
+    // notes-receivable/route.ts:145-151 rejects `Math.abs(sum - 1) > 0.0001`.
+    // Both checks belong HERE rather than only in the save route, because
+    // projection.ts:2747-2749 multiplies the note's cash, interest AND
+    // long-term gain by owner.percent, and the solver's recompute path parses
+    // this schema without ever reaching that route — a route-only check would
+    // leave the advisor staring at halved note income until they hit Save. Two
+    // writers to one table, one validating and one not, is the shape that
+    // produces silently wrong money.
+    owners: z
+      .array(
+        z.object({ kind: z.string(), percent: z.number().gte(0).lte(1) }).passthrough(),
+      )
+      .min(1)
+      .refine(
+        (owners) =>
+          Math.abs(owners.reduce((sum, o) => sum + o.percent, 0) - 1) <= 0.0001,
+        { message: "Owner percents must sum to 1 (100%)" },
+      ),
   })
   .passthrough();
 

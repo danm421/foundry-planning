@@ -86,8 +86,53 @@ type SaveTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 type NoteMutation = Extract<SolverMutation, { kind: "note-receivable-upsert" }>;
 
+/** Which `notes_receivable` row a note mutation writes, and whether that row
+ *  already exists. `rowId` is usually the mutation's own id; it differs only on
+ *  the POST fork described in `planNoteWrites`. */
+interface NoteWrite {
+  rowId: string;
+  exists: boolean;
+}
+
 const isNoteMutation = (m: SolverMutation): m is NoteMutation =>
   m.kind === "note-receivable-upsert";
+
+/**
+ * The note mutations of a save, collapsed to the LAST one per note id.
+ *
+ * The solver's mutation list is a keyed map flattened to an array, not an
+ * ordered append log — `apply-mutations.ts` filters `notesReceivable` by id
+ * before pushing, so a later mutation for the same note REPLACES an earlier
+ * one. Writing the raw list instead would insert the same primary key twice on
+ * an upsert+upsert pair (500ing the whole save) and would persist a note the
+ * advisor removed on an upsert+delete pair.
+ *
+ * `entity-flow-override-upsert` needs no equivalent: its writer collects a Set
+ * of entity ids and sources every row from the working tree, which is already
+ * the collapsed result.
+ */
+function lastNoteMutationPerId(
+  mutations: readonly SolverMutation[],
+): NoteMutation[] {
+  const byId = new Map<string, NoteMutation>();
+  for (const m of mutations) {
+    if (isNoteMutation(m)) byId.set(m.id, m);
+  }
+  return [...byId.values()];
+}
+
+/** The 400 both verbs return for a note that cannot be expressed as a change to
+ *  this scenario. Shared so the two call sites cannot drift apart. */
+function unownedNoteResponse(noteIds: string[]) {
+  return NextResponse.json(
+    {
+      error:
+        "Cannot change a note receivable that belongs to the base plan or another scenario",
+      noteIds,
+    },
+    { status: 400 },
+  );
+}
 
 /**
  * Write the working tree's complete flow grid for every entity an
@@ -177,9 +222,9 @@ function noteOwnerColumns(o: AccountOwner) {
  * scenario-owned toggle group is the shape the sale-to-trust route and
  * `resolveToggleGatedNotesOnBase` (promote) both already assume.
  *
- * Only the note ids in `ownedIds` — rows already gated by one of this
- * scenario's groups — are edited or deleted in place. Callers reject everything
- * else before opening the transaction; see `classifyExistingNotes`.
+ * `writes` says which row id each mutation targets and whether it already
+ * exists; `planNoteWrites` builds it before the transaction opens and rejects
+ * the cases a scenario cannot express.
  *
  * `startYearRef` is never written: it is a Postgres enum column and the wire
  * schema does not validate the field, so a `.passthrough()` producer must not
@@ -191,17 +236,21 @@ async function persistNoteReceivables(
     clientId: string;
     scenarioId: string;
     baseScenarioId: string;
-    ownedIds: ReadonlySet<string>;
+    writes: ReadonlyMap<string, NoteWrite>;
     groupOrderStart: number;
   },
   mutations: readonly NoteMutation[],
 ): Promise<void> {
   let orderIndex = args.groupOrderStart;
   for (const m of mutations) {
-    const owned = args.ownedIds.has(m.id);
+    // planNoteWrites seeds an entry for every id it was handed.
+    const { rowId, exists } = args.writes.get(m.id)!;
     if (m.value === null) {
-      if (owned) {
-        await tx.delete(notesReceivable).where(eq(notesReceivable.id, m.id));
+      // Nothing to delete when the row does not exist here — on the POST fork
+      // that means the original belongs to another scenario and is already
+      // invisible in this one.
+      if (exists) {
+        await tx.delete(notesReceivable).where(eq(notesReceivable.id, rowId));
       }
       continue;
     }
@@ -222,18 +271,18 @@ async function persistNoteReceivables(
       linkedTrustEntityId: v.linkedTrustEntityId ?? null,
     };
 
-    if (owned) {
+    if (exists) {
       await tx
         .update(notesReceivable)
         .set({ ...columns, updatedAt: new Date() })
-        .where(eq(notesReceivable.id, m.id));
+        .where(eq(notesReceivable.id, rowId));
       // Children are replaced wholesale, matching the canonical note PATCH.
       await tx
         .delete(noteReceivableOwners)
-        .where(eq(noteReceivableOwners.noteReceivableId, m.id));
+        .where(eq(noteReceivableOwners.noteReceivableId, rowId));
       await tx
         .delete(noteExtraPayments)
-        .where(eq(noteExtraPayments.noteReceivableId, m.id));
+        .where(eq(noteExtraPayments.noteReceivableId, rowId));
     } else {
       const toggleGroupId = crypto.randomUUID();
       await tx.insert(scenarioToggleGroups).values({
@@ -244,7 +293,7 @@ async function persistNoteReceivables(
         orderIndex: orderIndex++,
       });
       await tx.insert(notesReceivable).values({
-        id: m.id,
+        id: rowId,
         clientId: args.clientId,
         scenarioId: args.baseScenarioId,
         toggleGroupId,
@@ -252,19 +301,20 @@ async function persistNoteReceivables(
       });
     }
 
-    if (v.owners.length > 0) {
-      await tx.insert(noteReceivableOwners).values(
-        v.owners.map((o) => ({
-          noteReceivableId: m.id,
-          ...noteOwnerColumns(o),
-          percent: String(o.percent),
-        })),
-      );
-    }
+    // `owners` is non-empty and sums to 1 by schema (NOTE_RECEIVABLE_VALUE),
+    // so this is an unconditional write — an empty array can no longer reach
+    // here and silently strip an existing note's owners.
+    await tx.insert(noteReceivableOwners).values(
+      v.owners.map((o) => ({
+        noteReceivableId: rowId,
+        ...noteOwnerColumns(o),
+        percent: String(o.percent),
+      })),
+    );
     if (v.extraPayments.length > 0) {
       await tx.insert(noteExtraPayments).values(
         v.extraPayments.map((e) => ({
-          noteReceivableId: m.id,
+          noteReceivableId: rowId,
           year: e.year,
           type: e.type,
           amount: String(e.amount),
@@ -275,21 +325,42 @@ async function persistNoteReceivables(
 }
 
 /**
- * Split the note ids these mutations name into the ones the target scenario
- * already owns (gated by one of `ownedGroupIds`, so safe to edit in place) and
- * the ones it doesn't — the base plan's own notes, or another scenario's.
+ * Decide what to do with every note id these mutations name, BEFORE opening the
+ * transaction, so an unrepresentable one 400s instead of half-writing.
  *
- * Editing or removing a foreign one would rewrite the shared base row and
- * change every scenario that shows it, so the route refuses instead. A scenario
- * cannot express "this base note looks different in me": the only per-scenario
- * lever on a note is its toggle group, which hides the row outright.
+ * Keyed on the EXISTING row's `toggleGroupId`:
+ *  - **no row yet** → insert under the mutation's own id.
+ *  - **gated by a group this scenario owns** → update in place. This is what
+ *    makes a PUT re-save idempotent rather than duplicating the note.
+ *  - **`toggleGroupId IS NULL`** → REJECT. An ungated note is the base plan's
+ *    and is visible in every scenario; rewriting it here would change all of
+ *    them, and a scenario has no way to say "this base note looks different in
+ *    me" — its only per-scenario lever is the toggle group, which hides the row
+ *    outright.
+ *  - **gated by ANOTHER scenario's group** → `opts.forkForeignGated` decides.
+ *    POST forks: it writes a FRESH row id under the new scenario's own group
+ *    and leaves the original alone. That is what makes a second "Save as
+ *    scenario" from the same solver state work instead of 400ing — a normal
+ *    flow, since the in-memory mutation list still names the note the first
+ *    save created. The original stays invisible in the new scenario:
+ *    `loadScenarioToggleGroups` loads only that scenario's own groups, so
+ *    `resolveEffectiveToggleState` never produces a key for a foreign group id
+ *    and the note filter's `effective[gid] === true` is false.
+ *    PUT rejects instead — a note gated by another scenario cannot be in this
+ *    scenario's effective tree, so a mutation naming one came from a stale
+ *    client.
  */
-async function classifyExistingNotes(
+async function planNoteWrites(
   clientId: string,
   noteIds: readonly string[],
   ownedGroupIds: ReadonlySet<string>,
-): Promise<{ ownedIds: Set<string>; foreignIds: string[] }> {
-  if (noteIds.length === 0) return { ownedIds: new Set(), foreignIds: [] };
+  opts: { forkForeignGated: boolean },
+): Promise<{ writes: Map<string, NoteWrite>; rejectedIds: string[] }> {
+  const writes = new Map<string, NoteWrite>(
+    noteIds.map((id) => [id, { rowId: id, exists: false }]),
+  );
+  if (noteIds.length === 0) return { writes, rejectedIds: [] };
+
   const rows = await db
     .select({
       id: notesReceivable.id,
@@ -302,16 +373,18 @@ async function classifyExistingNotes(
         inArray(notesReceivable.id, [...noteIds]),
       ),
     );
-  const ownedIds = new Set<string>();
-  const foreignIds: string[] = [];
+
+  const rejectedIds: string[] = [];
   for (const r of rows) {
     if (r.toggleGroupId != null && ownedGroupIds.has(r.toggleGroupId)) {
-      ownedIds.add(r.id);
+      writes.set(r.id, { rowId: r.id, exists: true });
+    } else if (r.toggleGroupId != null && opts.forkForeignGated) {
+      writes.set(r.id, { rowId: crypto.randomUUID(), exists: false });
     } else {
-      foreignIds.push(r.id);
+      rejectedIds.push(r.id);
     }
   }
-  return { ownedIds, foreignIds };
+  return { writes, rejectedIds };
 }
 
 export async function POST(req: NextRequest, ctx: RouteCtx) {
@@ -343,25 +416,17 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     // so the drafts above never carry them.
     const workingTree = applyMutations(effectiveTree, mutations as SolverMutation[]);
 
-    const noteMutations = (mutations as SolverMutation[]).filter(isNoteMutation);
-    // A brand-new scenario owns no toggle groups yet, so every note row that
-    // already exists is foreign to it by definition.
-    const { ownedIds: ownedNoteIds, foreignIds: foreignNoteIds } =
-      await classifyExistingNotes(
-        clientId,
-        noteMutations.map((m) => m.id),
-        new Set(),
-      );
-    if (foreignNoteIds.length > 0) {
-      return NextResponse.json(
-        {
-          error:
-            "Cannot change a note receivable that belongs to the base plan or another scenario",
-          noteIds: foreignNoteIds,
-        },
-        { status: 400 },
-      );
-    }
+    const noteMutations = lastNoteMutationPerId(mutations as SolverMutation[]);
+    // A brand-new scenario owns no toggle groups yet, so every pre-existing row
+    // is un-owned — but a GATED one forks rather than 400s, which is what lets
+    // the advisor hit "Save as scenario" twice from the same solver state.
+    const { writes: noteWrites, rejectedIds } = await planNoteWrites(
+      clientId,
+      noteMutations.map((m) => m.id),
+      new Set(),
+      { forkForeignGated: true },
+    );
+    if (rejectedIds.length > 0) return unownedNoteResponse(rejectedIds);
 
     const fundingGroups = revocableTrustFundingGroups(drafts);
 
@@ -456,7 +521,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
             clientId,
             scenarioId: row.id,
             baseScenarioId,
-            ownedIds: ownedNoteIds,
+            writes: noteWrites,
             groupOrderStart: newGroupRows.length,
           },
           noteMutations,
@@ -596,23 +661,16 @@ export async function PUT(req: NextRequest, ctx: RouteCtx) {
       existingGroups.length,
     );
 
-    const noteMutations = (mutations as SolverMutation[]).filter(isNoteMutation);
-    const { ownedIds: ownedNoteIds, foreignIds: foreignNoteIds } =
-      await classifyExistingNotes(
-        clientId,
-        noteMutations.map((m) => m.id),
-        new Set(existingGroups.map((g) => g.id)),
-      );
-    if (foreignNoteIds.length > 0) {
-      return NextResponse.json(
-        {
-          error:
-            "Cannot change a note receivable that belongs to the base plan or another scenario",
-          noteIds: foreignNoteIds,
-        },
-        { status: 400 },
-      );
-    }
+    const noteMutations = lastNoteMutationPerId(mutations as SolverMutation[]);
+    // No fork here: this scenario already exists, so a note gated by a DIFFERENT
+    // scenario cannot be in its effective tree and naming one is a stale client.
+    const { writes: noteWrites, rejectedIds } = await planNoteWrites(
+      clientId,
+      noteMutations.map((m) => m.id),
+      new Set(existingGroups.map((g) => g.id)),
+      { forkForeignGated: false },
+    );
+    if (rejectedIds.length > 0) return unownedNoteResponse(rejectedIds);
 
     await db.transaction(async (tx) => {
       if (newGroupRows.length > 0) {
@@ -684,7 +742,7 @@ export async function PUT(req: NextRequest, ctx: RouteCtx) {
             clientId,
             scenarioId,
             baseScenarioId,
-            ownedIds: ownedNoteIds,
+            writes: noteWrites,
             groupOrderStart: existingGroups.length + newGroupRows.length,
           },
           noteMutations,

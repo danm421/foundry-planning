@@ -918,3 +918,221 @@ describe("PUT save-scenario — scenario-partitioned tables", () => {
     expect(deletes.filter((d) => d.table === "notes_receivable")).toHaveLength(0);
   });
 });
+
+// ── Duplicate note mutations in one save ────────────────────────────────────
+//
+// The solver's mutation list is a keyed map flattened to an array, so it can
+// legitimately carry two mutations for the same note id. apply-mutations.ts
+// filters by id before pushing; the writer has to collapse the same way or an
+// upsert+upsert pair inserts the same primary key twice and an upsert+delete
+// pair persists a note the advisor removed.
+
+const noteDeletes = () => deletes.filter((d) => d.table === "notes_receivable");
+const noteUpdates = () => updates.filter((u) => u.table === "notes_receivable");
+
+describe("save-scenario — duplicate note mutations collapse to the last", () => {
+  it("POST writes one row carrying the LAST value when a note is upserted twice", async () => {
+    const res = await POST(
+      makeRequest({
+        source: SCENARIO_ID,
+        name: "IDGT sale",
+        mutations: [
+          { kind: "note-receivable-upsert", id: NOTE_ID, value: saleNote() },
+          {
+            kind: "note-receivable-upsert",
+            id: NOTE_ID,
+            value: { ...saleNote(), faceValue: 700_000 },
+          },
+        ],
+      }),
+      ctx as never,
+    );
+
+    expect(res.status).toBe(200);
+    // Two inserts would both carry `id: NOTE_ID` and violate the PK, 500ing
+    // the entire save.
+    const notes = insertedNotes as Record<string, unknown>[];
+    expect(notes).toHaveLength(1);
+    expect(notes[0].faceValue).toBe("700000");
+    expect(insertedGroups).toHaveLength(1);
+    // Children are written once, for the surviving mutation only.
+    expect(insertedNoteOwners).toHaveLength(1);
+    expect(insertedNoteExtras).toHaveLength(1);
+  });
+
+  it("POST writes nothing when an upsert is followed by a delete of the same note", async () => {
+    const res = await POST(
+      makeRequest({
+        source: SCENARIO_ID,
+        name: "IDGT sale, undone",
+        mutations: [
+          { kind: "note-receivable-upsert", id: NOTE_ID, value: saleNote() },
+          { kind: "note-receivable-upsert", id: NOTE_ID, value: null },
+        ],
+      }),
+      ctx as never,
+    );
+
+    expect(res.status).toBe(200);
+    // The delete is last, so the note never existed in this scenario. Nothing
+    // to insert and nothing to delete — the row was never created.
+    expect(insertedNotes).toHaveLength(0);
+    expect(insertedGroups).toHaveLength(0);
+    expect(noteDeletes()).toHaveLength(0);
+  });
+
+  it("PUT deletes the owned note when an upsert is followed by a delete", async () => {
+    vi.mocked(loadScenarioToggleGroups).mockResolvedValue([
+      { id: "grp-1", scenarioId: SCENARIO_ID, name: "IDGT installment note", defaultOn: true, requiresGroupId: null, orderIndex: 0 },
+    ] as never);
+    existingNoteRows = [{ id: NOTE_ID, toggleGroupId: "grp-1" }];
+
+    const res = await PUT(
+      makeUpdateRequest({
+        scenarioId: SCENARIO_ID,
+        mutations: [
+          {
+            kind: "note-receivable-upsert",
+            id: NOTE_ID,
+            value: { ...saleNote(), faceValue: 700_000 },
+          },
+          { kind: "note-receivable-upsert", id: NOTE_ID, value: null },
+        ],
+      }),
+      ctx as never,
+    );
+
+    expect(res.status).toBe(200);
+    // Without the collapse the upsert would run first and the delete second —
+    // or worse, the delete would be skipped entirely. Only the delete may land.
+    expect(noteDeletes()).toHaveLength(1);
+    expect(paramsOf(noteDeletes()[0].where)).toEqual([NOTE_ID]);
+    expect(noteUpdates()).toHaveLength(0);
+    expect(insertedNoteOwners).toHaveLength(0);
+  });
+
+  it("PUT keeps the last value when a note is upserted twice", async () => {
+    vi.mocked(loadScenarioToggleGroups).mockResolvedValue([
+      { id: "grp-1", scenarioId: SCENARIO_ID, name: "IDGT installment note", defaultOn: true, requiresGroupId: null, orderIndex: 0 },
+    ] as never);
+    existingNoteRows = [{ id: NOTE_ID, toggleGroupId: "grp-1" }];
+
+    await PUT(
+      makeUpdateRequest({
+        scenarioId: SCENARIO_ID,
+        mutations: [
+          { kind: "note-receivable-upsert", id: NOTE_ID, value: saleNote() },
+          {
+            kind: "note-receivable-upsert",
+            id: NOTE_ID,
+            value: { ...saleNote(), faceValue: 700_000 },
+          },
+        ],
+      }),
+      ctx as never,
+    );
+
+    expect(noteUpdates()).toHaveLength(1);
+    expect(noteUpdates()[0].values).toMatchObject({ faceValue: "700000" });
+  });
+});
+
+// ── Saving the same solver state as a scenario twice ────────────────────────
+
+describe("POST save-scenario — a note another scenario already gates", () => {
+  it("forks a fresh row under the new scenario instead of 400ing", async () => {
+    // "Save as scenario" #1 created this row and gated it with ITS toggle
+    // group. The solver's in-memory mutation list still names the same note id,
+    // so "Save as scenario" a second time must work — it is a normal flow.
+    existingNoteRows = [{ id: NOTE_ID, toggleGroupId: "grp-from-scenario-1" }];
+
+    const res = await POST(
+      makeRequest({
+        source: SCENARIO_ID,
+        name: "IDGT sale, take two",
+        mutations: [
+          { kind: "note-receivable-upsert", id: NOTE_ID, value: saleNote() },
+        ],
+      }),
+      ctx as never,
+    );
+
+    expect(res.status).toBe(200);
+    const notes = insertedNotes as Record<string, unknown>[];
+    expect(notes).toHaveLength(1);
+    // A FRESH row id — reusing NOTE_ID would collide with the existing PK.
+    expect(notes[0].id).not.toBe(NOTE_ID);
+    expect(notes[0].id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
+
+    // Gated by the NEW scenario's own group, so the fork shows here.
+    const groups = insertedGroups as Record<string, unknown>[];
+    expect(groups).toHaveLength(1);
+    expect(groups[0].scenarioId).toBe("new-scenario-id");
+    expect(notes[0].toggleGroupId).toBe(groups[0].id);
+
+    // The original is left completely alone — it is still scenario 1's, and it
+    // is invisible here because its group is not one of this scenario's.
+    expect(noteUpdates()).toHaveLength(0);
+    expect(noteDeletes()).toHaveLength(0);
+
+    // Children hang off the fork, not the original.
+    expect(insertedNoteOwners).toEqual([
+      {
+        noteReceivableId: notes[0].id,
+        familyMemberId: FAMILY_MEMBER_ID,
+        entityId: null,
+        externalBeneficiaryId: null,
+        percent: "1",
+      },
+    ]);
+    expect((insertedNoteExtras as Record<string, unknown>[])[0].noteReceivableId)
+      .toBe(notes[0].id);
+  });
+
+  it("still refuses an UNGATED note — that one really is the base plan's", async () => {
+    // toggleGroupId null means the note is visible in every scenario. Rewriting
+    // it from inside one would change all of them.
+    existingNoteRows = [{ id: NOTE_ID, toggleGroupId: null }];
+
+    const res = await POST(
+      makeRequest({
+        source: SCENARIO_ID,
+        name: "IDGT sale",
+        mutations: [
+          { kind: "note-receivable-upsert", id: NOTE_ID, value: saleNote() },
+        ],
+      }),
+      ctx as never,
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ noteIds: [NOTE_ID] });
+    expect(insertedScenarios).toHaveLength(0);
+    expect(insertedNotes).toHaveLength(0);
+  });
+
+  it("400s an owners array that does not sum to 1, before any write", async () => {
+    // The wire schema rejects it (NOTE_RECEIVABLE_VALUE.owners), so the route
+    // never reaches the point where `owners: []` could strip an existing note's
+    // owner rows.
+    const res = await POST(
+      makeRequest({
+        source: SCENARIO_ID,
+        name: "IDGT sale",
+        mutations: [
+          {
+            kind: "note-receivable-upsert",
+            id: NOTE_ID,
+            value: { ...saleNote(), owners: [] },
+          },
+        ],
+      }),
+      ctx as never,
+    );
+
+    expect(res.status).toBe(400);
+    expect(insertedScenarios).toHaveLength(0);
+  });
+});

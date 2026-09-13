@@ -94,22 +94,102 @@ describe("note-receivable-upsert — wire schema", () => {
     // this value directly — an advisor typing "50" meaning 50% must not
     // parse clean, mirroring the [0,1] bound already proven on
     // entity-flow-override-upsert's distributionPercent.
-    expect(SOLVER_MUTATION_SCHEMA.safeParse({
+    //
+    // Asserted on the ISSUE, not just on `success`: a whole-number 50 also
+    // breaks the sum refinement below, so a bare `success === false` would no
+    // longer prove the per-owner BOUND is what rejected it.
+    const tooBig = SOLVER_MUTATION_SCHEMA.safeParse({
       kind: "note-receivable-upsert",
       id: note.id,
       value: {
         ...note,
         owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 50 }],
       },
-    }).success).toBe(false);
+    });
+    expect(tooBig.success).toBe(false);
+    expect(
+      !tooBig.success &&
+        tooBig.error.issues.some(
+          (i) => i.code === "too_big" && i.path.join(".") === "value.owners.0.percent",
+        ),
+    ).toBe(true);
+
+    // 0.5 is a legal per-owner share — two of them, because one alone now
+    // fails the sum rule rather than the bound.
     expect(SOLVER_MUTATION_SCHEMA.safeParse({
       kind: "note-receivable-upsert",
       id: note.id,
       value: {
         ...note,
-        owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 0.5 }],
+        owners: [
+          { kind: "family_member", familyMemberId: "fm-client", percent: 0.5 },
+          { kind: "family_member", familyMemberId: "fm-spouse", percent: 0.5 },
+        ],
       },
     }).success).toBe(true);
+  });
+
+  it("rejects an empty owners array — the note would be owed to nobody", () => {
+    // `if (v.owners.length > 0)` in the save route means an empty array writes
+    // no note_receivable_owners rows, and on the update path the children are
+    // deleted first — so a re-save with `owners: []` WIPES an existing note's
+    // owners and its whole cash flow is attributed to nobody. The canonical
+    // writer has always rejected this (schemas/note-receivable.ts:61,
+    // `z.array(ownerSchema).min(1)`); the solver wire schema now matches.
+    const r = SOLVER_MUTATION_SCHEMA.safeParse({
+      kind: "note-receivable-upsert",
+      id: note.id,
+      value: { ...note, owners: [] },
+    });
+    expect(r.success).toBe(false);
+    expect(
+      !r.success &&
+        r.error.issues.some(
+          (i) => i.code === "too_small" && i.path.join(".") === "value.owners",
+        ),
+    ).toBe(true);
+  });
+
+  it("rejects owners that do not sum to 1, within canonical's 0.0001 tolerance", () => {
+    // Mirrors notes-receivable/route.ts:145-151 exactly:
+    // `Math.abs(ownerSum - 1) > 0.0001` rejects. A half-owned note halves the
+    // note's cash, interest and long-term gain (projection.ts:2747-2749), and
+    // the solver's RECOMPUTE path parses this schema without reaching that
+    // route — so the check has to live here, not only at the save.
+    const withOwners = (owners: unknown) =>
+      SOLVER_MUTATION_SCHEMA.safeParse({
+        kind: "note-receivable-upsert",
+        id: note.id,
+        value: { ...note, owners },
+      });
+
+    const half = withOwners([
+      { kind: "family_member", familyMemberId: "fm-client", percent: 0.5 },
+    ]);
+    expect(half.success).toBe(false);
+    // The ONLY issue is the sum: 0.5 is inside [0,1] and the array is non-empty,
+    // so neither sibling rule can be what rejected it.
+    expect(
+      !half.success &&
+        half.error.issues.every(
+          (i) => i.code === "custom" && i.path.join(".") === "value.owners",
+        ),
+    ).toBe(true);
+
+    // Just inside the tolerance passes; just outside does not.
+    expect(withOwners([
+      { kind: "family_member", familyMemberId: "fm-client", percent: 0.99995 },
+    ]).success).toBe(true);
+    expect(withOwners([
+      { kind: "family_member", familyMemberId: "fm-client", percent: 0.9998 },
+    ]).success).toBe(false);
+
+    // Three-way split: floating-point thirds must not trip the tolerance.
+    expect(withOwners([
+      { kind: "family_member", familyMemberId: "fm-client", percent: 1 / 3 },
+      { kind: "family_member", familyMemberId: "fm-spouse", percent: 1 / 3 },
+      { kind: "entity", entityId: "ent-trust", percent: 1 / 3 },
+    ]).success).toBe(true);
   });
 
   it("defaults extraPayments to [] when the payload omits it", () => {
