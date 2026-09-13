@@ -1,4 +1,6 @@
 import type { DeathSectionData } from "@/lib/estate/transfer-report";
+import type { DeathSectionDiff } from "@/lib/estate/diff-transfer-report";
+import { EstateDeltaChip } from "./estate-delta-chip";
 import { EstateTransferRecipientCard } from "./estate-transfer-recipient-card";
 import { EstateTransferReductionsCard } from "./estate-transfer-reductions-card";
 import { EstateTransferConflictsCallout } from "./estate-transfer-conflicts-callout";
@@ -13,9 +15,13 @@ const fmt = new Intl.NumberFormat("en-US", {
 export function EstateTransferDeathSection({
   heading,
   section,
+  diff = null,
 }: {
   heading: string;
   section: DeathSectionData;
+  /** Compare mode: this death's change against the other column. Absent
+   *  outside compare mode, and the section then renders exactly as before. */
+  diff?: DeathSectionDiff | null;
 }) {
   const estateValue =
     section.assetEstateValue + section.reconciliation.sumLiabilityTransfers;
@@ -57,7 +63,23 @@ export function EstateTransferDeathSection({
         {section.reconciliation.reconciles ? (
           <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-t border-gray-800/60 pt-2 text-[11px] text-gray-500">
             <span>
-              <span className="text-emerald-400">✓</span> Reconciled · {fmt.format(section.assetEstateValue)} flows to recipients
+              <span className="text-emerald-400">✓</span> Reconciled ·{" "}
+              {fmt.format(section.assetEstateValue)}
+              {/*
+                Beside the ASSET figure, because that is what
+                `diff.assetEstateValue` measures — the header's "Estate at
+                death" nets debt assumed, which this diff does not carry. More
+                reaching recipients is the good news, so this chip points UP.
+              */}
+              {diff && (
+                <span className="ml-1.5 align-middle">
+                  <EstateDeltaChip
+                    delta={diff.assetEstateValue}
+                    goodDirection="up"
+                  />
+                </span>
+              )}{" "}
+              flows to recipients
               {debtAssumed !== 0 && (
                 <> · {fmt.format(Math.abs(debtAssumed))} debt assumed</>
               )}
