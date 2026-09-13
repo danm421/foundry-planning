@@ -18,6 +18,7 @@ import type {
   EntitySummary,
   Relocation,
 } from "@/engine/types";
+import type { NoteReceivable } from "@/engine/notes-receivable/types";
 import type { ProjectionResult } from "@/engine";
 import type { IncomeTaxType } from "@/engine/tax-adjustments";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
@@ -120,6 +121,10 @@ export type SolverMutation =
         distributionPercent: number | null;
       } | null;
     }
+  /** A promissory note from an intra-family sale to a trust (an IDGT
+   *  installment sale), edited from the trust editor's Notes & sales tab.
+   *  `null` removes the row. */
+  | { kind: "note-receivable-upsert"; id: string; value: NoteReceivable | null }
   | { kind: "stress-inflation"; rate: number }
   | { kind: "stress-ss-haircut"; pct: number; startYear: number }
   | { kind: "stress-disability"; person: SolverPerson; startYear: number; endYear: number | null }
@@ -182,6 +187,7 @@ export type SolverMutationKey =
   | `external-beneficiary-upsert:${string}`
   | `entity-upsert:${string}`
   | `entity-flow-override-upsert:${string}:${number}`
+  | `note-receivable-upsert:${string}`
   | "stress-inflation"
   | "stress-ss-haircut"
   | "stress-disability"
@@ -284,6 +290,8 @@ export function mutationKey(m: SolverMutation): SolverMutationKey {
       return `entity-upsert:${m.id}`;
     case "entity-flow-override-upsert":
       return `entity-flow-override-upsert:${m.entityId}:${m.year}`;
+    case "note-receivable-upsert":
+      return `note-receivable-upsert:${m.id}`;
     case "stress-inflation":
       return "stress-inflation";
     case "stress-ss-haircut":

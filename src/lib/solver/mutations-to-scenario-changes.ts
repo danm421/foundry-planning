@@ -647,6 +647,11 @@ export function mutationsToScenarioChanges(
       // write a row no loader reads.
       case "entity-flow-override-upsert":
         break;
+      // notes_receivable is scenario-partitioned (scenario_id NOT NULL) and
+      // toggle-gated. The save-scenario route writes the row and its toggle
+      // group — see Task 5.
+      case "note-receivable-upsert":
+        break;
       // ── Stress-test overrides → plan_settings (mirror apply-mutations.ts) ──
       // Without these a saved "Bear case" scenario silently drops its stressors
       // (and the stored MC seed reproduces an UNstressed, higher PoS on reload).

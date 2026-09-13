@@ -386,6 +386,12 @@ export function applyMutations(
         result.entityFlowOverrides = list;
         break;
       }
+      case "note-receivable-upsert": {
+        const list = (result.notesReceivable ?? []).filter((n) => n.id !== m.id);
+        if (m.value !== null) list.push(m.value);
+        result.notesReceivable = list;
+        break;
+      }
       case "stress-inflation": {
         // Living expenses only — the engine pins their growth at this rate.
         // Deliberately does NOT touch planSettings.inflationRate: tax indexing,

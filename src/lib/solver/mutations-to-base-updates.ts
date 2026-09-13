@@ -53,6 +53,11 @@ const NON_BASE_SAVABLE = new Set<SolverMutation["kind"]>([
   "liability-upsert",
   // Scenario-partitioned table with no base-write path here.
   "entity-flow-override-upsert",
+  // Same story: notes_receivable is another scenario-partitioned table (its
+  // own scenario_id column) with no base-write path in the switch below.
+  // Reporting savable would make Save-to-base drop the note AND clear it
+  // from the working set. It round-trips via save-as-scenario (Task 5).
+  "note-receivable-upsert",
   // Debt paydown writes a liability's extraPayments — a child table with no
   // base-write path here (see promote-table-registry: extra_payment is a
   // nested-only kind). It round-trips via save-as-scenario instead.

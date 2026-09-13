@@ -222,6 +222,47 @@ const LIABILITY_VALUE = z
   })
   .passthrough();
 
+// Mirrors `NoteReceivable` in src/engine/notes-receivable/types.ts — the
+// lender-side counterpart to LIABILITY_VALUE, backing the trust editor's
+// Notes & sales tab (an IDGT installment sale). `owners` and `extraPayments`
+// are required on the engine type but have NO column on `notes_receivable`:
+// the loader (lib/loaders/notes-receivable.ts) joins them in from
+// note_receivable_owners / note_extra_payments, and the real sale-to-trust
+// route (app/api/.../sale-to-trust/route.ts) never writes a note_extra_payments
+// row at all. Optional here for the same reason LIABILITY_VALUE's
+// extraPayments is — a payload that omits a derived, not-directly-stored
+// field is legitimate. Element shape left `unknown` (Task 2's convention for
+// list fields whose shape is out of scope of this mutation).
+const NOTE_RECEIVABLE_VALUE = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    faceValue: z.number().positive().max(100_000_000),
+    basis: MONEY,
+    asOfBalance: z.number().nonnegative().nullable().optional(),
+    balanceAsOfMonth: z.number().int().min(1).max(12).nullable().optional(),
+    balanceAsOfYear: YEAR.nullable().optional(),
+    // Not RATE (-1 to 2) — a note's rate can't be negative. Matches the
+    // canonical create/update schema (schemas/note-receivable.ts), which
+    // bounds this `gte(0)` with no upper cap; RATE's -1 floor would silently
+    // accept a negative rate the canonical validator rejects.
+    interestRate: z.number().gte(0),
+    // Must match notePaymentTypeEnum in db/schema.ts EXACTLY — confirmed
+    // ["amortizing", "interest_only_balloon"]. A narrower/wrong enum here
+    // (the brief guessed ["interest_only", "amortizing", "balloon"]) rejects
+    // every real note.
+    paymentType: z.enum(["amortizing", "interest_only_balloon"]),
+    monthlyPayment: MONEY.nullable().optional(),
+    startYear: YEAR,
+    startMonth: z.number().int().min(1).max(12),
+    termMonths: z.number().int().min(1),
+    linkedTrustEntityId: z.string().nullable().optional(),
+    toggleGroupId: z.string().nullable().optional(),
+    extraPayments: z.array(z.unknown()).optional(),
+    owners: z.array(z.unknown()).optional(),
+  })
+  .passthrough();
+
 const INCOME_VALUE = z
   .object({
     id: z.string().min(1),
@@ -661,6 +702,11 @@ export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
         distributionPercent: z.number().min(0).max(1).nullable().optional(),
       })
       .nullable(),
+  }),
+  z.object({
+    kind: z.literal("note-receivable-upsert"),
+    id: z.string().min(1),
+    value: NOTE_RECEIVABLE_VALUE.nullable(),
   }),
   z.object({
     kind: z.literal("stress-inflation"),
