@@ -76,6 +76,81 @@ describe("note-receivable-upsert — wire schema", () => {
       value: { ...note, paymentType: "interest_only" },
     }).success).toBe(false);
   });
+
+  it("rejects a payload omitting owners — an omitted owner is a note nobody owns", () => {
+    // note.owners is required on the engine type AND on this wire schema:
+    // projection.ts:2745 iterates `note.owners` with no `?? []` guard, and
+    // applyMutations does a whole-row replace, so an omitted owners array
+    // would TypeError the next recompute rather than degrade gracefully.
+    const { owners: _owners, ...rest } = note;
+    expect(SOLVER_MUTATION_SCHEMA.safeParse({
+      kind: "note-receivable-upsert", id: note.id, value: rest,
+    }).success).toBe(false);
+  });
+
+  it("rejects an owners percent typed as a whole-number percent, accepts the decimal fraction", () => {
+    // note_receivable_owners.percent is decimal(6,4) and
+    // projection.ts:2747-2749 multiplies the note's cash/interest/gain by
+    // this value directly — an advisor typing "50" meaning 50% must not
+    // parse clean, mirroring the [0,1] bound already proven on
+    // entity-flow-override-upsert's distributionPercent.
+    expect(SOLVER_MUTATION_SCHEMA.safeParse({
+      kind: "note-receivable-upsert",
+      id: note.id,
+      value: {
+        ...note,
+        owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 50 }],
+      },
+    }).success).toBe(false);
+    expect(SOLVER_MUTATION_SCHEMA.safeParse({
+      kind: "note-receivable-upsert",
+      id: note.id,
+      value: {
+        ...note,
+        owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 0.5 }],
+      },
+    }).success).toBe(true);
+  });
+
+  it("defaults extraPayments to [] when the payload omits it", () => {
+    // Unlike owners, an omitted extraPayments IS a legitimate default — a
+    // note-terms edit that never touches payments must not 400 — but the
+    // parsed row must still carry a real array: note-schedules.ts:62 is a
+    // bare `note.extraPayments.map(...)`, reached unconditionally for every
+    // note (projection.ts:966), so `.optional()` alone (leaving the key
+    // absent) would TypeError the next recompute just as badly as omitting
+    // owners does.
+    const { extraPayments: _extraPayments, ...rest } = note;
+    const r = SOLVER_MUTATION_SCHEMA.safeParse({
+      kind: "note-receivable-upsert", id: note.id, value: rest,
+    });
+    expect(r.success).toBe(true);
+    const v = r.success && r.data.kind === "note-receivable-upsert" ? r.data.value : null;
+    expect(v?.extraPayments).toEqual([]);
+  });
+
+  it("rejects an extraPayments element with an invalid type token", () => {
+    // note_extra_payments.type is extraPaymentTypeEnum — ["per_payment",
+    // "lump_sum"] (db/schema.ts:557), the SAME enum the liability's
+    // extra_payments table uses. Verified rather than assumed: both
+    // `extraPayments` (liability) and `note_extra_payments` declare
+    // `type: extraPaymentTypeEnum("type")`.
+    expect(SOLVER_MUTATION_SCHEMA.safeParse({
+      kind: "note-receivable-upsert",
+      id: note.id,
+      value: { ...note, extraPayments: [{ year: 2028, type: "balloon", amount: 5_000 }] },
+    }).success).toBe(false);
+  });
+
+  it("rejects an empty-string linkedTrustEntityId", () => {
+    // A uuid FK column (db/schema.ts:3351) — "" is neither null nor a uuid
+    // and would fail Task 5's insert.
+    expect(SOLVER_MUTATION_SCHEMA.safeParse({
+      kind: "note-receivable-upsert",
+      id: note.id,
+      value: { ...note, linkedTrustEntityId: "" },
+    }).success).toBe(false);
+  });
 });
 
 describe("note-receivable-upsert — mutation key", () => {

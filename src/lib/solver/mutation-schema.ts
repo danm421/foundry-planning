@@ -225,14 +225,11 @@ const LIABILITY_VALUE = z
 // Mirrors `NoteReceivable` in src/engine/notes-receivable/types.ts — the
 // lender-side counterpart to LIABILITY_VALUE, backing the trust editor's
 // Notes & sales tab (an IDGT installment sale). `owners` and `extraPayments`
-// are required on the engine type but have NO column on `notes_receivable`:
-// the loader (lib/loaders/notes-receivable.ts) joins them in from
-// note_receivable_owners / note_extra_payments, and the real sale-to-trust
-// route (app/api/.../sale-to-trust/route.ts) never writes a note_extra_payments
-// row at all. Optional here for the same reason LIABILITY_VALUE's
-// extraPayments is — a payload that omits a derived, not-directly-stored
-// field is legitimate. Element shape left `unknown` (Task 2's convention for
-// list fields whose shape is out of scope of this mutation).
+// are required on the engine type AND are genuinely stored, in child tables
+// (note_receivable_owners, note_extra_payments) written by the real
+// note CRUD routes (app/api/clients/[id]/notes-receivable/route.ts and
+// [noteId]/route.ts) — the sale-to-trust route is the one route that
+// doesn't write extraPayments, which is not representative.
 const NOTE_RECEIVABLE_VALUE = z
   .object({
     id: z.string().min(1),
@@ -256,10 +253,45 @@ const NOTE_RECEIVABLE_VALUE = z
     startYear: YEAR,
     startMonth: z.number().int().min(1).max(12),
     termMonths: z.number().int().min(1),
-    linkedTrustEntityId: z.string().nullable().optional(),
-    toggleGroupId: z.string().nullable().optional(),
-    extraPayments: z.array(z.unknown()).optional(),
-    owners: z.array(z.unknown()).optional(),
+    // uuid FK columns (db/schema.ts:3334, 3351) — `.min(1)` keeps "" (neither
+    // null nor a uuid) from parsing clean and 500ing Task 5's insert.
+    linkedTrustEntityId: z.string().min(1).nullable().optional(),
+    toggleGroupId: z.string().min(1).nullable().optional(),
+    // note_extra_payments.type is extraPaymentTypeEnum — ["per_payment",
+    // "lump_sum"] (db/schema.ts:557) — the SAME enum LIABILITY_VALUE's
+    // extraPayments uses (verified, not assumed: both tables declare
+    // `type: extraPaymentTypeEnum("type")`). `.default([])`, not
+    // `.optional()`: note-schedules.ts:62 is a bare
+    // `note.extraPayments.map(...)`, reached unconditionally for every note
+    // in the tree (projection.ts:966), so an omitted key must still parse to
+    // a real array or the next recompute TypeErrors. Omission on the wire
+    // stays legal — a note-terms edit that never touches payments is
+    // legitimate — but the parsed row can never lose the array.
+    extraPayments: z
+      .array(
+        z
+          .object({
+            year: YEAR,
+            type: z.enum(["per_payment", "lump_sum"]),
+            amount: MONEY,
+          })
+          .passthrough(),
+      )
+      .default([]),
+    // REQUIRED, unlike extraPayments: projection.ts:2745 is
+    // `for (const owner of note.owners)` with no `?? []` guard, and
+    // applyMutations does a whole-row replace — an omitted owners array
+    // would TypeError the next recompute, and `.default([])` would be worse
+    // than that: an empty owners array attributes the note's entire cash
+    // flow to nobody, so it silently vanishes from the plan. A 400 here is
+    // better than a number that quietly disappears. Percent bounded [0,1]
+    // (note_receivable_owners.percent is decimal(6,4), and
+    // projection.ts:2747-2749 multiplies note cash/interest/gain by this
+    // value directly) — mirrors the entity-flow-override-upsert
+    // distributionPercent bound.
+    owners: z.array(
+      z.object({ kind: z.string(), percent: z.number().gte(0).lte(1) }).passthrough(),
+    ),
   })
   .passthrough();
 
