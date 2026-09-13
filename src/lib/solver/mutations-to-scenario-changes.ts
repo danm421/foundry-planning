@@ -640,6 +640,13 @@ export function mutationsToScenarioChanges(
         );
         break;
       }
+      // entity_flow_overrides is scenario-PARTITIONED (its own scenario_id
+      // column), not modelled as scenario_changes. The save-scenario route
+      // clones the source partition and applies these on top — see
+      // cloneEntityFlowOverridesIntoScenario. Emitting a change here would
+      // write a row no loader reads.
+      case "entity-flow-override-upsert":
+        break;
       // ── Stress-test overrides → plan_settings (mirror apply-mutations.ts) ──
       // Without these a saved "Bear case" scenario silently drops its stressors
       // (and the stored MC seed reproduces an UNstressed, higher PoS on reload).

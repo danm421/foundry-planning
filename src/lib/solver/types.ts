@@ -107,6 +107,19 @@ export type SolverMutation =
   | { kind: "gift-upsert";                 id: string; value: EstateFlowGift | null }
   | { kind: "external-beneficiary-upsert"; id: string; value: ExternalBeneficiary | null }
   | { kind: "entity-upsert";               id: string; value: EntitySummary | null }
+  /** A trust's per-year income/expense/distribution figures from the Flows
+   *  tab. Keyed on (entityId, year) to match entity_flow_overrides' unique
+   *  index. `null` clears the year back to base+growth. */
+  | {
+      kind: "entity-flow-override-upsert";
+      entityId: string;
+      year: number;
+      value: {
+        incomeAmount: number | null;
+        expenseAmount: number | null;
+        distributionPercent: number | null;
+      } | null;
+    }
   | { kind: "stress-inflation"; rate: number }
   | { kind: "stress-ss-haircut"; pct: number; startYear: number }
   | { kind: "stress-disability"; person: SolverPerson; startYear: number; endYear: number | null }
@@ -168,6 +181,7 @@ export type SolverMutationKey =
   | `gift-upsert:${string}`
   | `external-beneficiary-upsert:${string}`
   | `entity-upsert:${string}`
+  | `entity-flow-override-upsert:${string}:${number}`
   | "stress-inflation"
   | "stress-ss-haircut"
   | "stress-disability"
@@ -268,6 +282,8 @@ export function mutationKey(m: SolverMutation): SolverMutationKey {
       return `external-beneficiary-upsert:${m.id}`;
     case "entity-upsert":
       return `entity-upsert:${m.id}`;
+    case "entity-flow-override-upsert":
+      return `entity-flow-override-upsert:${m.entityId}:${m.year}`;
     case "stress-inflation":
       return "stress-inflation";
     case "stress-ss-haircut":

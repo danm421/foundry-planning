@@ -376,6 +376,16 @@ export function applyMutations(
         }
         break;
       }
+      case "entity-flow-override-upsert": {
+        const list = (result.entityFlowOverrides ?? []).filter(
+          (o) => !(o.entityId === m.entityId && o.year === m.year),
+        );
+        if (m.value !== null) {
+          list.push({ entityId: m.entityId, year: m.year, ...m.value });
+        }
+        result.entityFlowOverrides = list;
+        break;
+      }
       case "stress-inflation": {
         // Living expenses only — the engine pins their growth at this rate.
         // Deliberately does NOT touch planSettings.inflationRate: tax indexing,

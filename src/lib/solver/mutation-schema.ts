@@ -648,6 +648,18 @@ export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
     value: ENTITY_VALUE.nullable(),
   }),
   z.object({
+    kind: z.literal("entity-flow-override-upsert"),
+    entityId: z.string().min(1),
+    year: YEAR,
+    value: z
+      .object({
+        incomeAmount: z.number().nullable(),
+        expenseAmount: z.number().nullable(),
+        distributionPercent: z.number().nullable(),
+      })
+      .nullable(),
+  }),
+  z.object({
     kind: z.literal("stress-inflation"),
     rate: RATE,
   }),
