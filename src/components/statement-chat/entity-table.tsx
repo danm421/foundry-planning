@@ -262,7 +262,7 @@ export default function EntityTable<Row extends EntityRow>({
       <table className="w-full text-left text-sm">
         <thead>
           <tr className="border-b border-hair text-xs uppercase tracking-wide text-ink-3">
-            {expand && <th className="w-8 px-3 py-2" />}
+            {expand && <th className="w-10 py-2 pl-3 pr-1" />}
             {columns.map((col) => (
               <th
                 key={col.key}
@@ -286,14 +286,21 @@ export default function EntityTable<Row extends EntityRow>({
               <Fragment key={rowId ?? i}>
                 <tr className="border-b border-hair last:border-0">
                   {expand && (
-                    <td className="px-3 py-2 align-top">
+                    <td className="py-2 pl-3 pr-1 align-top">
                       {child && rowId && (
+                        // A bare chevron in tertiary ink read as decoration —
+                        // advisors missed that a row HAD positions to open. The
+                        // affordance is the hairline box, not a heavier stroke:
+                        // it borrows `.btn-ghost`'s hover (border and fill move
+                        // to accent) so it reads as the control it is, while the
+                        // icon itself stays the design system's 1.5-weight
+                        // outline. `bg-card-2` is what makes it visible at rest.
                         <button
                           type="button"
                           onClick={() => toggleExpanded(rowId)}
                           aria-expanded={isExpanded}
                           aria-label={expandLabel?.(row) ?? "Show details"}
-                          className="text-ink-3 transition-colors hover:text-accent-ink"
+                          className="flex h-6 w-6 cursor-pointer items-center justify-center rounded border border-hair bg-card-2 text-ink-2 transition-colors hover:border-accent hover:bg-accent-wash hover:text-accent"
                         >
                           <ChevronIcon open={isExpanded} />
                         </button>
@@ -347,7 +354,15 @@ export default function EntityTable<Row extends EntityRow>({
                       type="button"
                       onClick={() => commit(rowId)}
                       disabled={isCommitted || isPending || disableCommit}
-                      className="rounded border border-hair px-2 py-1 text-xs text-accent transition-colors hover:border-hair-2 disabled:cursor-default disabled:text-ink-4 disabled:opacity-60"
+                      // `.btn-ghost`'s hover contract (border + text to accent,
+                      // 6% accent wash) plus `.btn-primary`'s 1px lift, so the
+                      // control announces itself on hover instead of sitting
+                      // there as a hairline rectangle. Every hover rule is
+                      // `enabled:`-scoped — CSS :hover still matches a disabled
+                      // button, so an already-Committed row would otherwise
+                      // light up and lift for a click that does nothing. The
+                      // lift is `motion-safe:` per the design system's motion rule.
+                      className="rounded border border-hair px-2.5 py-1 text-xs font-medium text-accent transition-[color,background-color,border-color,transform] duration-150 enabled:cursor-pointer enabled:hover:border-accent enabled:hover:bg-accent-wash enabled:hover:text-accent-ink motion-safe:enabled:hover:-translate-y-px disabled:cursor-default disabled:text-ink-4 disabled:opacity-60"
                     >
                       {isCommitted ? "Committed" : isPending ? "Committing…" : "Commit"}
                     </button>

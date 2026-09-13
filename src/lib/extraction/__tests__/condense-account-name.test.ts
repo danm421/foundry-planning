@@ -73,22 +73,22 @@ describe("composeAccountName", () => {
 
   it("appends the masked last 4 when the document showed one", () => {
     expect(composeAccountName("Fidelity Rollover IRA", "Fidelity", "1234")).toBe(
-      "Rollover IRA ••••1234",
+      "Rollover IRA x1234",
     );
   });
 
   it("does not double-mask an already-masked last4 field", () => {
     expect(composeAccountName("Rollover IRA", null, "****1234")).toBe(
-      "Rollover IRA ••••1234",
+      "Rollover IRA x1234",
     );
     expect(composeAccountName("Rollover IRA", null, "XXXX-1234")).toBe(
-      "Rollover IRA ••••1234",
+      "Rollover IRA x1234",
     );
   });
 
   it("does not print the digits twice when the name already ends in them", () => {
     expect(composeAccountName("Rollover IRA 1234", null, "1234")).toBe(
-      "Rollover IRA ••••1234",
+      "Rollover IRA x1234",
     );
   });
 
@@ -97,16 +97,16 @@ describe("composeAccountName", () => {
   // condenseAccountName's 3+-character mask rule never strips.
   it("does not print the digits twice behind a single-character mask", () => {
     expect(composeAccountName("Inh. IRA x7254", null, "7254")).toBe(
-      "Inh. IRA ••••7254",
+      "Inh. IRA x7254",
     );
     expect(composeAccountName("Taxable Account x0028", null, "0028")).toBe(
-      "Taxable Account ••••0028",
+      "Taxable Account x0028",
     );
     expect(composeAccountName("Brokerage #4772", null, "4772")).toBe(
-      "Brokerage ••••4772",
+      "Brokerage x4772",
     );
     expect(composeAccountName("Joint Brokerage *8899", null, "8899")).toBe(
-      "Joint Brokerage ••••8899",
+      "Joint Brokerage x8899",
     );
   });
 
@@ -114,7 +114,7 @@ describe("composeAccountName", () => {
     // "17254" is not the account number — slicing its tail off would rename
     // the account to something the document never said.
     expect(composeAccountName("Portfolio 17254", null, "7254")).toBe(
-      "Portfolio 17254 ••••7254",
+      "Portfolio 17254 x7254",
     );
   });
 
@@ -125,12 +125,12 @@ describe("composeAccountName", () => {
 
   it("keeps meaningful short numbers that are not the last4", () => {
     expect(composeAccountName("Vanguard 529 Plan", "Vanguard", "8899")).toBe(
-      "529 Plan ••••8899",
+      "529 Plan x8899",
     );
   });
 
   it("falls back to the mask alone when nothing else survives", () => {
-    expect(composeAccountName("XXXX-1234", null, "1234")).toBe("••••1234");
+    expect(composeAccountName("XXXX-1234", null, "1234")).toBe("x1234");
   });
 
   it("is a no-op beyond condensing when custodian and last4 are absent", () => {
@@ -142,12 +142,12 @@ describe("composeAccountName", () => {
       "John A Smith and Jane B Smith JTWROS Rollover Individual Retirement Arrangement";
     const result = composeAccountName(long, null, "1234");
     expect(result.length).toBeLessThanOrEqual(60);
-    expect(result.endsWith("••••1234")).toBe(true);
+    expect(result.endsWith("x1234")).toBe(true);
   });
 
   it("is idempotent", () => {
     const once = composeAccountName("Fidelity Rollover IRA XXXX-1234", "Fidelity", "1234");
-    expect(once).toBe("Rollover IRA ••••1234");
+    expect(once).toBe("Rollover IRA x1234");
     expect(composeAccountName(once, "Fidelity", "1234")).toBe(once);
   });
 

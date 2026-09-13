@@ -338,21 +338,23 @@ export interface MergeRowsArgs {
 }
 
 /**
- * The four internal annotations `Annotated<T>` adds — the ONLY keys a merge
- * must not blend between two rows. `match` and `reconciliation` describe the
- * surviving row's OWN commit/reconciliation status and must never silently
+ * The internal annotations `Annotated<T>` adds — the ONLY keys a merge must not
+ * blend between two rows. `match`/`matchLocked` and `reconciliation` describe
+ * the surviving row's OWN commit/reconciliation status and must never silently
  * inherit another row's; `__rowId` is the row's identity; `__provenance` gets
  * its own explicit rule in `unionAccountFields` below.
  *
  * Typed as `Record<keyof Annotated<object>, true>` rather than a hand-copied
  * array (the same construction `ACCOUNT_CATEGORY_SET` uses above): TypeScript
  * requires EVERY annotation key be present and rejects any key that isn't, so
- * adding a fifth annotation to `Annotated` is a compile error here rather
- * than a field that starts silently leaking across a merge.
+ * adding another annotation to `Annotated` is a compile error here rather
+ * than a field that starts silently leaking across a merge. `matchLocked`
+ * arrived exactly that way.
  */
 const ROW_ANNOTATION_KEYS: Record<keyof Annotated<object>, true> = {
   __provenance: true,
   match: true,
+  matchLocked: true,
   reconciliation: true,
   __rowId: true,
 };

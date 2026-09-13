@@ -1,11 +1,23 @@
 import { createElement } from "react";
 import type { ExtractedAccount } from "@/lib/extraction/types";
 import type { Annotated } from "@/lib/imports/types";
-import { formatAccountCategory, formatAccountSubType } from "@/lib/accounts/category-labels";
+import type { AccountOwner } from "@/engine/ownership";
+import {
+  formatAccountCategory,
+  formatAccountSubType,
+} from "@/lib/accounts/category-labels";
+import { is529Account } from "@/lib/accounts/is-529";
+import type { OwnerMatchFamilyMember } from "@/lib/imports/owner-match";
+import {
+  resolveOwnerDisplay,
+  type OwnerEntityOption,
+} from "@/lib/statement-chat/owner-options";
 import type { ColumnSpec } from "./entity-table";
 import OwnerCell from "./owner-cell";
-import OwnerCellEdit, { type OwnerRole } from "./owner-cell-edit";
-import AccountTypeCellEdit, { type AccountTypePatch } from "./account-type-cell";
+import OwnerCellEdit from "./owner-cell-edit";
+import AccountTypeCellEdit, {
+  type AccountTypePatch,
+} from "./account-type-cell";
 import { HoldingsCell } from "./holdings-cell";
 
 /**
@@ -22,19 +34,6 @@ import { HoldingsCell } from "./holdings-cell";
 type Row = Annotated<ExtractedAccount>;
 
 /**
- * A resolved owner entry carries a display `name` once ownership matching
- * has run — `AccountOwner` (the persisted shape) does not declare that
- * field today, so this reads it defensively rather than assuming the shape.
- */
-function resolvedOwnerNames(owners: Row["owners"]): string[] | undefined {
-  if (!owners || owners.length === 0) return undefined;
-  const names = owners
-    .map((o) => (o && typeof o === "object" && "name" in o ? (o as { name?: unknown }).name : undefined))
-    .filter((n): n is string => typeof n === "string" && n.length > 0);
-  return names.length > 0 ? names : undefined;
-}
-
-/**
  * Display label for the collapsed Account-type cell. Uses the canonical
  * `formatAccountCategory`/`formatAccountSubType` formatters (Task 10 review,
  * Important 9) rather than re-deriving labels by scanning the dropdown
@@ -43,74 +42,115 @@ function resolvedOwnerNames(owners: Row["owners"]): string[] | undefined {
  * `src/lib/accounts/category-labels.ts` was built to prevent.
  */
 export function accountTypeLabel(row: Row): string {
-  const category = row.category ? formatAccountCategory(row.category) : undefined;
+  const category = row.category
+    ? formatAccountCategory(row.category)
+    : undefined;
   const subType = row.subType ? formatAccountSubType(row.subType) : undefined;
   if (category && subType) return `${category} · ${subType}`;
   return category ?? subType ?? "—";
 }
 
-/** The eight-column spec (Name · Value · Basis · Last 4 · Owner · Custodian
- *  · Account type · Holdings); the first seven are unchanged from the
- *  original single-file task. */
-export const ACCOUNT_COLUMNS: ColumnSpec<Row>[] = [
-  { key: "name", header: "Name", kind: "string" },
-  { key: "value", header: "Value", kind: "money" },
-  { key: "basis", header: "Basis", kind: "money" },
-  {
-    key: "accountNumberLast4",
-    header: "Last 4",
-    kind: "string",
-    // IDs are mono per the design system, independent of alignment.
-    render: (row) => (row.accountNumberLast4 ? createElement("span", { className: "tabular" }, row.accountNumberLast4) : "—"),
-  },
-  {
-    key: "owner",
-    header: "Owner",
-    kind: "string",
-    render: (row) =>
-      createElement(OwnerCell, {
-        names: resolvedOwnerNames(row.owners),
-        hint: row.ownerNameHint,
-        role: row.owner,
-      }),
-    // ONE real field, so the plain single-value path — no `fields: [...]`
-    // fan-out (that exists for the multi-field Account-type editor, and
-    // here it would only write the same key twice). `owner` is already on
-    // `EDITABLE_ACCOUNT_FIELDS`, so `useChatCommit`'s existing
-    // `handleEditCell` -> `flushRowsToServer` carries the write; no new
-    // route and no schema change (Task 12, requirement B).
-    edit: (row, onChange) =>
-      createElement(OwnerCellEdit, {
-        owner: row.owner,
-        hint: row.ownerNameHint,
-        onDone: (owner: OwnerRole) => onChange(owner),
-      }),
-  },
-  { key: "custodian", header: "Custodian", kind: "string" },
-  {
-    key: "accountType",
-    header: "Account type",
-    kind: "string",
-    render: accountTypeLabel,
-    // `key` is a synthetic UI grouping, not a real payload field — `fields`
-    // names the two real ones this editor writes together (Task 10 review,
-    // Important 3). `EntityTable` fans `onChange`'s patch out into one
-    // `onEditCell` call per field instead of writing a junk "accountType" key.
-    fields: ["category", "subType"],
-    edit: (row, onChange) =>
-      createElement(AccountTypeCellEdit, {
-        category: row.category,
-        subType: row.subType,
-        onDone: (patch: AccountTypePatch) => onChange(patch),
-      }),
-  },
-  {
-    key: "holdings",
-    header: "Holdings",
-    // `money` would right-align it, but the cell renders its own two-line
-    // stack — `number` gets the right alignment without claiming the value
-    // is a single figure.
-    kind: "number",
-    render: (row) => createElement(HoldingsCell, { row }),
-  },
-];
+/**
+ * What the column spec needs to know about the plan the import commits into.
+ * Empty is legal and degrades honestly — the Owner cell falls back to the
+ * printed registration name, exactly as it behaved before the roster existed.
+ */
+export interface AccountColumnsContext {
+  family: OwnerMatchFamilyMember[];
+  entities: OwnerEntityOption[];
+}
+
+export const EMPTY_ACCOUNT_COLUMNS_CONTEXT: AccountColumnsContext = {
+  family: [],
+  entities: [],
+};
+
+/**
+ * The eight-column spec (Name · Value · Basis · Last 4 · Owner · Custodian
+ * · Account type · Holdings).
+ *
+ * A factory rather than a constant since the Owner column has to resolve ids
+ * against THIS client's roster. Everything else is context-free and unchanged.
+ */
+export function accountColumns(ctx: AccountColumnsContext): ColumnSpec<Row>[] {
+  return [
+    { key: "name", header: "Name", kind: "string" },
+    { key: "value", header: "Value", kind: "money" },
+    { key: "basis", header: "Basis", kind: "money" },
+    {
+      key: "accountNumberLast4",
+      header: "Last 4",
+      kind: "string",
+      // IDs are mono per the design system, independent of alignment.
+      render: (row) =>
+        row.accountNumberLast4
+          ? createElement(
+              "span",
+              { className: "tabular" },
+              row.accountNumberLast4,
+            )
+          : "—",
+    },
+    {
+      key: "owner",
+      header: "Owner",
+      kind: "string",
+      render: (row) => {
+        const { names, assumed } = resolveOwnerDisplay(
+          row,
+          ctx.family,
+          ctx.entities,
+        );
+        return createElement(OwnerCell, {
+          names,
+          assumed,
+          hint: row.ownerNameHint,
+          role: row.owner,
+        });
+      },
+      // `fields: ["owners"]` — the column is headed "Owner" but the field it
+      // WRITES is `owners[]`, the real ownership rows `commit/accounts.ts`
+      // persists verbatim. The coarse `owner` enum is deliberately not written:
+      // it stays the extractor's record of what the statement said, and it is
+      // still the fallback if this set fails tenant validation at commit.
+      fields: ["owners"],
+      edit: (row, onChange) =>
+        createElement(OwnerCellEdit, {
+          owners: row.owners,
+          hint: row.ownerNameHint,
+          subType: row.subType,
+          is529: is529Account(row),
+          family: ctx.family,
+          entities: ctx.entities,
+          onDone: (owners: AccountOwner[]) => onChange({ owners }),
+        }),
+    },
+    { key: "custodian", header: "Custodian", kind: "string" },
+    {
+      key: "accountType",
+      header: "Account type",
+      kind: "string",
+      render: accountTypeLabel,
+      // `key` is a synthetic UI grouping, not a real payload field — `fields`
+      // names the two real ones this editor writes together (Task 10 review,
+      // Important 3). `EntityTable` fans `onChange`'s patch out into one
+      // `onEditCell` call per field instead of writing a junk "accountType" key.
+      fields: ["category", "subType"],
+      edit: (row, onChange) =>
+        createElement(AccountTypeCellEdit, {
+          category: row.category,
+          subType: row.subType,
+          onDone: (patch: AccountTypePatch) => onChange(patch),
+        }),
+    },
+    {
+      key: "holdings",
+      header: "Holdings",
+      // `money` would right-align it, but the cell renders its own two-line
+      // stack — `number` gets the right alignment without claiming the value
+      // is a single figure.
+      kind: "number",
+      render: (row) => createElement(HoldingsCell, { row }),
+    },
+  ];
+}

@@ -6,7 +6,11 @@ import { livingHoldings } from "@/lib/imports/living-rows";
 import { rollupExclusionReason } from "@/lib/statement-chat/rollups";
 import EntityTable from "./entity-table";
 import type { ExcludedRow } from "./excluded-rows";
-import { ACCOUNT_COLUMNS } from "./accounts-columns";
+import {
+  accountColumns,
+  EMPTY_ACCOUNT_COLUMNS_CONTEXT,
+  type AccountColumnsContext,
+} from "./accounts-columns";
 import { HoldingsTable } from "./holdings-table";
 
 type Row = Annotated<ExtractedAccount>;
@@ -25,6 +29,12 @@ export interface AccountsTableProps {
    *  while a chat turn is sending, so a commit can never interleave with
    *  the turn's own flush-then-adopt round trip. */
   disableCommit?: boolean;
+  /**
+   * The plan's roster, for the Owner column. Optional so a test (and the
+   * brief's own unchangeable ones) can construct this table without it; the
+   * Owner cell then falls back to the printed registration name.
+   */
+  columnsContext?: AccountColumnsContext;
 }
 
 /**
@@ -56,11 +66,12 @@ export default function AccountsTable({
   excluded,
   onEditHolding,
   onDropHolding,
+  columnsContext = EMPTY_ACCOUNT_COLUMNS_CONTEXT,
   ...props
 }: AccountsTableProps) {
   return (
     <EntityTable
-      columns={ACCOUNT_COLUMNS}
+      columns={accountColumns(columnsContext)}
       excluded={withReason(excluded)}
       expand={(row, { isCommitted }) =>
         livingHoldings(row).length > 0 && row.__rowId ? (

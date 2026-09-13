@@ -8,6 +8,10 @@ import AccountsTable from "@/components/statement-chat/accounts-table";
 import { ChatTranscript } from "@/components/statement-chat/chat-transcript";
 import { ChatComposer } from "@/components/statement-chat/chat-composer";
 import { useChatCommit, type ChatCommitResult } from "@/components/statement-chat/use-chat-commit";
+import {
+  EMPTY_CHAT_REVIEW_CONTEXT,
+  type ChatReviewContext,
+} from "@/lib/statement-chat/review-context";
 import { useChatTurn } from "@/components/statement-chat/use-chat-turn";
 
 type ChatExtractEvent =
@@ -55,6 +59,14 @@ interface ChatSurfaceProps {
   importId: string;
   initialFiles: InitialUploadedFile[];
   initialExtractHoldings?: boolean;
+  /**
+   * The plan this import commits into — household roster, entities, and the
+   * accounts already on it. Loaded once by the page (a server component) and
+   * handed down, rather than fetched here: the roster drives the Owner
+   * dropdown and the accounts drive account matching, and both are needed
+   * before the first row renders.
+   */
+  reviewContext?: ChatReviewContext;
 }
 
 export function ChatSurface({
@@ -62,6 +74,7 @@ export function ChatSurface({
   importId,
   initialFiles,
   initialExtractHoldings,
+  reviewContext = EMPTY_CHAT_REVIEW_CONTEXT,
 }: ChatSurfaceProps) {
   const [uploadedCount, setUploadedCount] = useState(initialFiles.length);
   const [status, setStatus] = useState<Status>("idle");
@@ -93,7 +106,7 @@ export function ChatSurface({
     handleDropHolding,
     handleRestore,
     handleFinalize,
-  } = useChatCommit(clientId, importId);
+  } = useChatCommit(clientId, importId, reviewContext.familyMembers);
 
   // Sends a turn and adopts what comes back (Task 11b, Steps 2/3). On the
   // FIRST turn that has anything to adopt (`result` was still null — a
@@ -409,6 +422,10 @@ export function ChatSurface({
                     // would lock in pre-turn values and desync the screen from
                     // the client's plan.
                     disableCommit={turnStatus === "sending"}
+                    columnsContext={{
+                      family: reviewContext.familyMembers,
+                      entities: reviewContext.entities,
+                    }}
                   />
                 </CardBody>
               </Card>

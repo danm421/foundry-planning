@@ -3,6 +3,8 @@ import type { ExcludedRow } from "@/components/statement-chat/excluded-rows";
 import type { ExtractedAccount, ExtractedHolding } from "@/lib/extraction/types";
 import type { Annotated } from "@/lib/imports/types";
 import { readChatState, writeChatState, type ChatTurn } from "@/lib/statement-chat/state";
+import { resolveOwnersFromHint, type OwnerMatchFamilyMember } from "@/lib/imports/owner-match";
+import { is529Account } from "@/lib/accounts/is-529";
 
 type Row = Annotated<ExtractedAccount>;
 
@@ -101,7 +103,11 @@ function enqueue<T>(queueRef: { current: Promise<void> }, fn: () => T | Promise<
  * `runExtraction`'s SSE plumbing stays there; this is the review-and-commit
  * half.
  */
-export function useChatCommit(clientId: string, importId: string) {
+export function useChatCommit(
+  clientId: string,
+  importId: string,
+  family: OwnerMatchFamilyMember[] = [],
+) {
   const [result, setResult] = useState<ChatCommitResult | null>(null);
   const [committedRowIds, setCommittedRowIds] = useState<string[]>([]);
   // The persisted conversation (Task 11b, C2) — hydrated by the SAME mount
@@ -152,6 +158,46 @@ export function useChatCommit(clientId: string, importId: string) {
   // The rows were always in this same response and were simply ignored, so a
   // resumed draft rendered a transcript and a composer above an empty space —
   // which the browser pass recorded as reading like "did this lose my work?".
+  /**
+   * Resolve the statement's printed registration line against the household
+   * roster and record the answer as real ownership.
+   *
+   * The wizard has always done this (`review-step-accounts.tsx` seeds from
+   * `matchOwnersFromHint` once the roster loads); the chat surface never did,
+   * so a statement headed "MICHAEL V SHARESKY" sat there as an unmatched
+   * string while the plan had a Michael Sharesky on it the whole time.
+   *
+   * Only a `"hint"` resolution is written — the registration line actually
+   * named somebody on this roster. The other two sources are NOT recorded:
+   * `"coarse"` is the extractor's own client/spouse/joint guess and `"default"`
+   * is the parser's "somebody has to own it" fallback, and writing either as a
+   * fact would erase the difference between a match and a shrug. Those rows
+   * still SHOW resolved names — `resolveOwnerDisplay` runs the same parser at
+   * render time — but they keep the "Assumed" chip, because nobody has
+   * confirmed them.
+   *
+   * A 529 is skipped: it takes a beneficiary and a grantor, never `owners[]`.
+   *
+   * Returning `prev` unchanged when nothing resolved is what keeps this from
+   * looping — `updateResult` hands the identical object back to `setResult`,
+   * which React bails out of.
+   */
+  useEffect(() => {
+    if (family.length === 0) return;
+    updateResult((prev) => {
+      if (!prev) return prev;
+      let changed = false;
+      const rows = prev.rows.map((row) => {
+        if ((row.owners && row.owners.length > 0) || is529Account(row)) return row;
+        const { owners, source } = resolveOwnersFromHint(row.ownerNameHint, row.owner, family);
+        if (source !== "hint" || owners.length === 0) return row;
+        changed = true;
+        return { ...row, owners };
+      });
+      return changed ? { ...prev, rows } : prev;
+    });
+  }, [family, result, updateResult]);
+
   // Hydrated HERE rather than handed down as a server prop (prior Ruling 91):
   // a prop would be a third source of truth that goes stale the instant a
   // turn lands.

@@ -8,12 +8,27 @@ const rows = [
   { __rowId: "r1", name: "Schwab Taxable 0707", value: 8_618.6, basis: 3_919.45,
     accountNumberLast4: "0990", custodian: "Charles Schwab",
     category: "taxable", subType: "brokerage",
-    owners: [{ name: "Michael V Sharesky" }] },
+    owners: [{ kind: "family_member", familyMemberId: "fm-1", percent: 1 }] },
   { __rowId: "r2", name: "Schwab Roth IRA", value: 22_873.46, basis: 10_010.17,
     accountNumberLast4: "1168", custodian: "Charles Schwab",
     category: "retirement", subType: "roth_ira",
     ownerNameHint: "MICHAEL V SHARESKY ROTH IRA" },
 ] as never;
+
+/**
+ * The plan these statements are being imported INTO. Passed only to the tests
+ * that are about resolving owners; the rest deliberately render without it, so
+ * they keep exercising the "roster cannot answer" path — printed registration
+ * name, marked unconfirmed — which is still a real state (no family members on
+ * the plan yet, or a registration line naming nobody on it).
+ */
+const CTX = {
+  family: [
+    { id: "fm-1", role: "client" as const, firstName: "Michael", lastName: "Sharesky" },
+    { id: "fm-2", role: "spouse" as const, firstName: "Julia", lastName: "Sharesky" },
+  ],
+  entities: [],
+};
 
 describe("accounts table", () => {
   it("renders the eight spec columns in order", () => {
@@ -34,10 +49,25 @@ describe("accounts table", () => {
     expect(onCommitRows).toHaveBeenCalledWith(["r2"]);
   });
 
-  it("renders a resolved owner name when matching succeeded", () => {
-    render(<AccountsTable rows={rows} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} onEditHolding={vi.fn()} onDropHolding={vi.fn()} />);
+  // `owners[]` is a RECORDED fact — the advisor picked, or the registration
+  // line matched — so it resolves to the real name and carries no "Assumed"
+  // chip. That absence is the whole signal: it is what tells the advisor this
+  // row's owner has been settled and the guessed ones have not.
+  it("renders a recorded owner as a real name, unmarked", () => {
+    render(<AccountsTable columnsContext={CTX} rows={rows} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} onEditHolding={vi.fn()} onDropHolding={vi.fn()} />);
     const taxable = screen.getByRole("row", { name: /Schwab Taxable 0707/ });
-    expect(within(taxable).getByText("Michael V Sharesky")).toBeInTheDocument();
+    expect(within(taxable).getByText("Michael Sharesky")).toBeInTheDocument();
+    expect(within(taxable).queryByTestId("assumed-chip")).toBeNull();
+  });
+
+  // The other half: a row with no recorded owner still gets a real name when
+  // the statement's registration line names somebody on the plan — and keeps
+  // the chip, because nobody has confirmed it.
+  it("resolves an unrecorded registration line to a name, marked as a guess", () => {
+    render(<AccountsTable columnsContext={CTX} rows={rows} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} onEditHolding={vi.fn()} onDropHolding={vi.fn()} />);
+    const roth = screen.getByRole("row", { name: /Schwab Roth IRA/ });
+    expect(within(roth).getByText("Michael Sharesky")).toBeInTheDocument();
+    expect(within(roth).getByTestId("assumed-chip")).toBeInTheDocument();
   });
 
   it("falls back to the registration hint, marked as unconfirmed", () => {
@@ -91,18 +121,20 @@ describe("accounts table — the Owner cell is editable", () => {
     expect(within(roth).getByText(/MICHAEL V SHARESKY ROTH IRA/)).toBeInTheDocument();
   });
 
-  it("writes exactly one field, once, when an owner is picked", async () => {
+  it("writes real ownership, once, when an owner is picked", async () => {
     const onEditCell = vi.fn();
-    render(<AccountsTable rows={rows} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={onEditCell} onEditHolding={vi.fn()} onDropHolding={vi.fn()} />);
+    render(<AccountsTable columnsContext={CTX} rows={rows} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={onEditCell} onEditHolding={vi.fn()} onDropHolding={vi.fn()} />);
     const roth = screen.getByRole("row", { name: /Schwab Roth IRA/ });
     await userEvent.click(within(roth).getByRole("button", { name: /MICHAEL V SHARESKY ROTH IRA/ }));
-    await userEvent.selectOptions(within(roth).getByLabelText("Owner"), "spouse");
+    await userEvent.selectOptions(within(roth).getByLabelText("Owner"), "fm:fm-2");
 
-    // One field, one call — `owner` is a single value, so this must NOT go
-    // through the multi-field `fields: [...]` fan-out the Account-type
-    // editor needs.
+    // One field, one call. The column is headed "Owner" but the field it writes
+    // is `owners[]` — the shape `commit/accounts.ts` persists verbatim — not
+    // the coarse enum, which cannot name a child or a trust.
     expect(onEditCell).toHaveBeenCalledTimes(1);
-    expect(onEditCell).toHaveBeenCalledWith("r2", "owner", "spouse");
+    expect(onEditCell).toHaveBeenCalledWith("r2", "owners", [
+      { kind: "family_member", familyMemberId: "fm-2", percent: 1 },
+    ]);
   });
 
   // `entity-table.tsx` computes `canEdit = !!col.edit && !!rowId &&
@@ -159,10 +191,10 @@ describe("accounts table — the Owner cell holds no nested button", () => {
   });
 
   it("makes the assumed reason reachable in the editor instead", async () => {
-    render(<AccountsTable rows={rows} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} onEditHolding={vi.fn()} onDropHolding={vi.fn()} />);
+    render(<AccountsTable columnsContext={CTX} rows={rows} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} onEditHolding={vi.fn()} onDropHolding={vi.fn()} />);
     const roth = screen.getByRole("row", { name: /Schwab Roth IRA/ });
     await userEvent.click(within(roth).getByRole("button", { name: /MICHAEL V SHARESKY ROTH IRA/ }));
-    expect(within(roth).getByText(/not yet matched to a family member/i)).toBeInTheDocument();
+    expect(within(roth).getByText(/not confirmed/i)).toBeInTheDocument();
   });
 });
 
