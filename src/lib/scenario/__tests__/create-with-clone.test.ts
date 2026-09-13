@@ -21,7 +21,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
-import { giftSeries, scenarios } from "@/db/schema";
+import { entityFlowOverrides, giftSeries, scenarios } from "@/db/schema";
 
 const CLIENT_ID = "11111111-1111-4111-8111-111111111111";
 const BASE_ID = "22222222-2222-4222-8222-222222222222";
@@ -68,7 +68,8 @@ vi.mock("@/db", () => ({
   },
 }));
 
-const { createScenarioWithClone } = await import("../create-with-clone");
+const { createScenarioWithClone, cloneEntityFlowOverridesIntoScenario } =
+  await import("../create-with-clone");
 
 /** A captured WHERE as readable SQL + params. Comparing drizzle SQL objects
  *  with toEqual prints thousands of lines of column metadata on failure and
@@ -173,5 +174,109 @@ describe("createScenarioWithClone — gift_series", () => {
     // pins nothing: it must LOOK (the read happens) and then NOT write.
     expect(seriesSelect()).toBeDefined();
     expect(seriesInserts()).toHaveLength(0);
+  });
+});
+
+// ── entity_flow_overrides ───────────────────────────────────────────────────
+//
+// The same partition hazard as gift_series, one table over: a trust's per-year
+// flow grid is scoped by scenarioId, so a scenario created from another one
+// must copy it or the trust projects on base+growth instead of the advisor's
+// numbers. The block used to be inline in createScenarioWithClone; it is now an
+// exported helper because the solver's "Save as scenario" route builds its
+// scenarios row itself and owes the same seed.
+
+const ENTITY_ID = "66666666-6666-4666-8666-666666666666";
+
+const overrideRow = () => ({
+  id: "77777777-7777-4777-8777-777777777777",
+  entityId: ENTITY_ID,
+  scenarioId: SOURCE_ID,
+  year: 2030,
+  incomeAmount: "120000.00",
+  expenseAmount: "45000.00",
+  distributionPercent: "0.0450",
+  createdAt: new Date("2026-01-01T00:00:00Z"),
+  updatedAt: new Date("2026-01-02T00:00:00Z"),
+});
+
+const overrideInserts = () =>
+  ops.filter((o) => o.op === "insert" && o.table === entityFlowOverrides);
+const overrideSelect = () =>
+  ops.find((o) => o.op === "select" && o.table === entityFlowOverrides);
+
+describe("cloneEntityFlowOverridesIntoScenario", () => {
+  it("reads the source partition and re-scopes every row to the target", async () => {
+    rowsByTable.set(entityFlowOverrides, [overrideRow()]);
+
+    await cloneEntityFlowOverridesIntoScenario(tx as never, {
+      fromScenarioId: SOURCE_ID,
+      toScenarioId: NEW_ID,
+    });
+
+    const read = overrideSelect();
+    expect(read, "no entity_flow_overrides was read at all").toBeDefined();
+    expect(paramsOf(read!.where)).toEqual([SOURCE_ID]);
+
+    const inserts = overrideInserts();
+    expect(inserts).toHaveLength(1);
+    const [cloned] = inserts[0].values as Record<string, unknown>[];
+    expect(cloned).toEqual({
+      entityId: ENTITY_ID,
+      scenarioId: NEW_ID,
+      year: 2030,
+      incomeAmount: "120000.00",
+      expenseAmount: "45000.00",
+      distributionPercent: "0.0450",
+    });
+  });
+
+  it("looks but writes nothing when the source partition is empty", async () => {
+    rowsByTable.set(entityFlowOverrides, []);
+
+    await cloneEntityFlowOverridesIntoScenario(tx as never, {
+      fromScenarioId: SOURCE_ID,
+      toScenarioId: NEW_ID,
+    });
+
+    // Both halves, or the test is green with a no-op helper too.
+    expect(overrideSelect()).toBeDefined();
+    expect(overrideInserts()).toHaveLength(0);
+  });
+});
+
+// Control, not a RED: these two passed before the extraction and must keep
+// passing after it. Lifting the inline block out of createScenarioWithClone is
+// a pure refactor, so the duplicate path's observable writes cannot move.
+describe("createScenarioWithClone — entity_flow_overrides (extraction control)", () => {
+  it("still seeds a duplicated scenario from THAT scenario's partition", async () => {
+    rowsByTable.set(scenarios, [{ id: SOURCE_ID }]);
+    rowsByTable.set(entityFlowOverrides, [overrideRow()]);
+
+    await createScenarioWithClone({
+      clientId: CLIENT_ID,
+      name: "Copy of Roth",
+      source: { kind: "scenario", sourceId: SOURCE_ID },
+    });
+
+    expect(paramsOf(overrideSelect()!.where)).toEqual([SOURCE_ID]);
+    const [cloned] = overrideInserts()[0].values as Record<string, unknown>[];
+    expect(cloned.scenarioId).toBe(NEW_ID);
+    expect(cloned.entityId).toBe(ENTITY_ID);
+  });
+
+  it("still writes no override rows for a 'start empty' scenario", async () => {
+    rowsByTable.set(entityFlowOverrides, [overrideRow()]);
+
+    await createScenarioWithClone({
+      clientId: CLIENT_ID,
+      name: "Empty",
+      source: { kind: "empty" },
+    });
+
+    // The empty branch returns before the clone block — base-plan overrides
+    // carry scenario_id IS NULL, so there is nothing there to copy anyway.
+    expect(overrideSelect()).toBeUndefined();
+    expect(overrideInserts()).toHaveLength(0);
   });
 });
