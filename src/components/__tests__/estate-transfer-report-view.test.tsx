@@ -5,7 +5,7 @@
 // compare behaviour, not about transfer math (which transfer-report's own
 // tests already cover).
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 
 // A REAL `URLSearchParams`, rebuilt on every call — which is what the router
 // does in the browser. A stub that hands back the same object forever makes a
@@ -61,11 +61,18 @@ function report(
   } as EstateTransferReportData;
 }
 
-/** A reconciling death section whose only moving part is its asset value. */
-function deathSection(assetEstateValue: number): DeathSectionData {
+/** A reconciling death section whose only moving part is its asset value.
+ *  `sumLiabilityTransfers` is an opt-in, because the header's "Estate at death"
+ *  nets it and the diff does not — a fixture that leaves it at 0 cannot tell
+ *  the chosen chip placement from the rejected one. */
+function deathSection(
+  assetEstateValue: number,
+  opts: { sumLiabilityTransfers?: number; decedentName?: string } = {},
+): DeathSectionData {
+  const sumLiabilityTransfers = opts.sumLiabilityTransfers ?? 0;
   return {
     decedent: "client",
-    decedentName: "Robert",
+    decedentName: opts.decedentName ?? "Robert",
     year: 2060,
     taxableEstate: assetEstateValue,
     grossEstate: assetEstateValue,
@@ -77,8 +84,8 @@ function deathSection(assetEstateValue: number): DeathSectionData {
     grossEstateDollarsByAccount: {},
     grossEstateDollarsByLiability: {},
     reconciliation: {
-      sumLiabilityTransfers: 0,
-      sumRecipients: assetEstateValue,
+      sumLiabilityTransfers,
+      sumRecipients: assetEstateValue + sumLiabilityTransfers,
       sumReductions: 0,
       unattributed: 0,
       reconciles: true,
@@ -171,6 +178,24 @@ describe("Transfer Detail compare mode", () => {
     expect(await screen.findByText("added")).toBeInTheDocument();
   });
 
+  it("keeps a recipient the compared scenario drops, as a $0 row marked removed", async () => {
+    const baseline = report([
+      total("family_member|h1", "Emma", 3_000_000),
+      total("trust|t1", "Dynasty Trust", 1_900_000),
+    ]);
+    vi.mocked(buildEstateTransferReportData).mockReturnValue(
+      report([total("family_member|h1", "Emma", 3_000_000)]),
+    );
+    renderView({ asOf: "today", baseline });
+    // Without a ghost row the trust just vanishes from the table, and "who
+    // stops inheriting" is the most consequential thing a scenario can change.
+    const row = (await screen.findByText("Dynasty Trust")).closest("tr")!;
+    expect(within(row).getByText("removed")).toBeInTheDocument();
+    const chip = within(row).getByTestId("estate-delta-chip");
+    expect(chip).toHaveTextContent("$1.9M");
+    expect(chip).toHaveAttribute("data-tone", "bad");
+  });
+
   // The second surface the deltas land on. Same direction as the recipient
   // table — more assets reaching heirs is the good news on this report.
   it("shows a rise in a death section's transfers as good news", async () => {
@@ -182,6 +207,71 @@ describe("Transfer Detail compare mode", () => {
     renderView({ asOf: "today", baseline });
     const chip = await screen.findByTestId("estate-delta-chip");
     expect(chip).toHaveTextContent("$1.2M");
+    expect(chip).toHaveAttribute("data-tone", "good");
+  });
+
+  // Item 4a: with liabilities held at 0 the asset figure and the header figure
+  // are numerically identical, so the fixture above cannot distinguish the
+  // chosen placement from the rejected one. This one can.
+  it("puts the section chip on the asset figure, not the debt-netted header", async () => {
+    const baseline = {
+      ...report([]),
+      firstDeath: deathSection(5_000_000, { sumLiabilityTransfers: -1_000_000 }),
+    };
+    vi.mocked(buildEstateTransferReportData).mockReturnValue({
+      ...report([]),
+      firstDeath: deathSection(6_200_000, { sumLiabilityTransfers: -3_000_000 }),
+    });
+    renderView({ asOf: "today", baseline });
+    // The two candidate figures really do diverge in this fixture: assets
+    // $6,200,000 (delta +$1.2M, good) vs header $3,200,000 (delta -$800K, bad).
+    const reconciled = await screen.findByText(/Reconciled · \$6,200,000/);
+    // The header really does carry the other figure, so this fixture can tell
+    // the two placements apart.
+    expect(screen.getByText("$3,200,000")).toBeInTheDocument();
+    // Scoped to the reconciliation line: this pins WHERE the chip sits as well
+    // as what it reads. Moving it up to the header fails here even unchanged.
+    const chip = within(reconciled).getByTestId("estate-delta-chip");
+    expect(chip).toHaveTextContent("$1.2M");
+    expect(chip).toHaveAttribute("data-tone", "good");
+    expect(screen.getAllByTestId("estate-delta-chip")).toHaveLength(1);
+  });
+
+  // A taxable estate is a tax BASE — lower is better for the client, so this
+  // is the one chip on this report that points DOWN.
+  it("shows a falling taxable estate as good news on the Form 706 line", async () => {
+    const baseline = { ...report([]), firstDeath: deathSection(5_000_000) };
+    vi.mocked(buildEstateTransferReportData).mockReturnValue({
+      ...report([]),
+      firstDeath: deathSection(3_800_000),
+    });
+    renderView({ asOf: "today", baseline });
+    expect(
+      await screen.findByText("Taxable estate (Form 706)"),
+    ).toBeInTheDocument();
+    const chip = screen.getByTestId("estate-delta-taxable-estate");
+    expect(chip).toHaveTextContent("$1.2M");
+    expect(chip).toHaveTextContent("\u25be");
+    expect(chip).toHaveAttribute("data-tone", "good");
+  });
+
+  // Item 4b: this view is the one place on the branch where BOTH deaths carry
+  // deltas (Ruling 11 relaxed), and nothing else exercises the second one.
+  it("carries a delta on the second death section too", async () => {
+    const baseline = {
+      ...report([]),
+      secondDeath: deathSection(2_000_000, { decedentName: "Anita" }),
+    };
+    vi.mocked(buildEstateTransferReportData).mockReturnValue({
+      ...report([]),
+      secondDeath: deathSection(3_500_000, { decedentName: "Anita" }),
+    });
+    renderView({ asOf: "today", baseline });
+    expect(
+      await screen.findByText(/Anita — Second to die/),
+    ).toBeInTheDocument();
+    const chip = screen.getByTestId("estate-delta-chip");
+    expect(chip).toHaveTextContent("$1.5M");
     expect(chip).toHaveAttribute("data-tone", "good");
   });
 

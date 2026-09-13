@@ -57,6 +57,7 @@ export function EstateTransferDeathSection({
         <EstateTransferReductionsCard
           reductions={section.reductions}
           taxableEstate={section.taxableEstate}
+          taxableEstateDelta={diff?.taxableEstate}
         />
         <EstateTransferConflictsCallout conflicts={section.conflicts} />
 
@@ -72,7 +73,10 @@ export function EstateTransferDeathSection({
                 reaching recipients is the good news, so this chip points UP.
               */}
               {diff && (
-                <span className="ml-1.5 align-middle">
+                // `empty:hidden` drops the margin when the chip renders
+                // nothing — below its $1 noise floor it returns null, which
+                // would otherwise leave a live 6px gap mid-sentence.
+                <span className="ml-1.5 align-middle empty:hidden">
                   <EstateDeltaChip
                     delta={diff.assetEstateValue}
                     goodDirection="up"

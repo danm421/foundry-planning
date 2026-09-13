@@ -172,6 +172,19 @@ export default function EstateTransferReportView({
   const diff =
     baseline && reportData ? diffTransferReport(baseline, reportData) : null;
 
+  // A recipient the other column has and this one does not still gets a row, at
+  // $0 — otherwise "the trust stops inheriting" reads as a recipient who was
+  // never there, and `removed` is unreachable in this view. Built here from the
+  // baseline the view already holds, so the table's prop contract is unchanged.
+  const recipientTotals = [
+    ...(reportData?.aggregateRecipientTotals ?? []),
+    ...(baseline?.aggregateRecipientTotals ?? [])
+      .filter(
+        (t) => diff?.aggregateRecipientTotals.get(t.key)?.status === "removed",
+      )
+      .map((t) => ({ ...t, fromFirstDeath: 0, fromSecondDeath: 0, total: 0 })),
+  ];
+
   return (
     <div className="space-y-4 pt-4">
       {showOwnControls && (
@@ -236,9 +249,9 @@ export default function EstateTransferReportView({
           diff={diff?.secondDeath}
         />
       )}
-      {reportData && reportData.aggregateRecipientTotals.length > 0 && (
+      {recipientTotals.length > 0 && (
         <EstateTransferRecipientTotals
-          totals={reportData.aggregateRecipientTotals}
+          totals={recipientTotals}
           diff={diff?.aggregateRecipientTotals}
         />
       )}

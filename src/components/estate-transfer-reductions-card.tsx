@@ -1,4 +1,5 @@
 import type { ReductionsLine } from "@/lib/estate/transfer-report";
+import { EstateDeltaChip } from "./estate-delta-chip";
 
 const fmt = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -10,12 +11,17 @@ const fmt = new Intl.NumberFormat("en-US", {
 export function EstateTransferReductionsCard({
   reductions,
   taxableEstate,
+  taxableEstateDelta,
 }: {
   reductions: ReductionsLine[];
   /** Form 706 taxable estate — gross estate net of marital, charitable,
    *  and admin-expense deductions. Anchors the tax track. Optional — pass
    *  when displaying the tax context. */
   taxableEstate?: number;
+  /** Compare mode: this death's change in taxable estate against the other
+   *  column. Absent outside compare mode, and the card then renders exactly
+   *  as before. */
+  taxableEstateDelta?: number;
 }) {
   if (reductions.length === 0 && taxableEstate == null) {
     return null;
@@ -38,7 +44,19 @@ export function EstateTransferReductionsCard({
             title="Form 706 taxable estate — gross estate minus marital, charitable, and admin-expense deductions. This is the amount actually subject to federal estate tax."
           >
             <span>Taxable estate (Form 706)</span>
-            <span className="tabular-nums">{fmt.format(taxableEstate)}</span>
+            <span className="flex items-baseline gap-2">
+              {taxableEstateDelta != null && (
+                // A taxable estate is a tax BASE, not a transfer: a smaller one
+                // is the good news for the client. This is the one chip on the
+                // Transfer report that points DOWN.
+                <EstateDeltaChip
+                  delta={taxableEstateDelta}
+                  goodDirection="down"
+                  testId="estate-delta-taxable-estate"
+                />
+              )}
+              <span className="tabular-nums">{fmt.format(taxableEstate)}</span>
+            </span>
           </div>
         )}
         {reductions.map((r) => (
