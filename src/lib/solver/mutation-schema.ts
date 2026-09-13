@@ -653,9 +653,12 @@ export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
     year: YEAR,
     value: z
       .object({
-        incomeAmount: z.number().nullable(),
-        expenseAmount: z.number().nullable(),
-        distributionPercent: z.number().nullable(),
+        incomeAmount: z.number().nullable().optional(),
+        expenseAmount: z.number().nullable().optional(),
+        // Bounded [0, 1] to match the canonical wire validator for this same
+        // table (flow-overrides.ts) and the decimal(5,4) column — an
+        // advisor typing "50" meaning 50% must not parse clean into 5000%.
+        distributionPercent: z.number().min(0).max(1).nullable().optional(),
       })
       .nullable(),
   }),

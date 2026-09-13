@@ -40,6 +40,29 @@ describe("entity-flow-override-upsert — wire schema", () => {
       ...row, year: 2030.5, value: null,
     }).success).toBe(false);
   });
+
+  it("rejects a distributionPercent typed as a whole-number percent, accepts the decimal fraction", () => {
+    // The column is decimal(5,4) (max magnitude 9.9999) and the canonical
+    // wire validator for this same table (flow-overrides.ts) bounds this to
+    // [0, 1]. An advisor typing "50" meaning 50% must not parse clean — it
+    // would land in the working tree as 5000% and overflow the column the
+    // moment save-scenario persists it.
+    expect(SOLVER_MUTATION_SCHEMA.safeParse({
+      ...row, value: { incomeAmount: null, expenseAmount: null, distributionPercent: 50 },
+    }).success).toBe(false);
+    expect(SOLVER_MUTATION_SCHEMA.safeParse({
+      ...row, value: { incomeAmount: null, expenseAmount: null, distributionPercent: 0.5 },
+    }).success).toBe(true);
+  });
+
+  it("accepts a payload carrying only the key the advisor typed", () => {
+    // Every solver route body is `z.array(SOLVER_MUTATION_SCHEMA)`, so a
+    // grid cell posted with only the field it edited must not 400 the whole
+    // request just because the other two keys are absent (not merely null).
+    expect(SOLVER_MUTATION_SCHEMA.safeParse({
+      ...row, value: { incomeAmount: 50_000 },
+    }).success).toBe(true);
+  });
 });
 
 describe("entity-flow-override-upsert — mutation key", () => {
@@ -53,11 +76,15 @@ describe("entity-flow-override-upsert — mutation key", () => {
 describe("applyMutations — entity-flow-override-upsert", () => {
   it("adds an override for a year the tree lacks", () => {
     const out = applyMutations(tree([]), [
-      { ...row, value: { incomeAmount: 50_000, expenseAmount: null, distributionPercent: null } },
+      { ...row, value: { incomeAmount: 50_000, expenseAmount: null, distributionPercent: 0.5 } },
     ]);
     expect(out.entityFlowOverrides).toHaveLength(1);
     expect(out.entityFlowOverrides?.[0].incomeAmount).toBe(50_000);
     expect(typeof out.entityFlowOverrides?.[0].incomeAmount).toBe("number");
+    // distributionPercent has the tightest DB precision (decimal(5,4)) of the
+    // three cells — a string here concatenates in the engine (1 + "0.03" is
+    // "10.03"), a class of bug that has shipped to prod in this repo.
+    expect(typeof out.entityFlowOverrides?.[0].distributionPercent).toBe("number");
   });
 
   it("replaces the override for the same (entity, year)", () => {
