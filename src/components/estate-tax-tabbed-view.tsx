@@ -44,39 +44,40 @@ export default function EstateTaxTabbedView({
         onTabChange={(id) => setActiveTab(id as TabId)}
       />
       <div className="px-[var(--pad-card)] pb-4">
-        {activeTab === "estate" ? (
-          <EstateCompareShell<EstateTaxResult>
-            clientId={clientId}
-            scenarios={scenarios}
-            isMarried={isMarried}
-            ownerNames={ownerNames}
-            ownerDobs={ownerDobs}
-            retirementYear={retirementYear}
-          >
-            {({ scenarioRef, asOf, ordering, onReady, baseline }) => (
-              <EstateTaxReportView
-                clientId={clientId}
-                isMarried={isMarried}
-                ownerNames={ownerNames}
-                ownerDobs={ownerDobs}
-                retirementYear={retirementYear}
-                scenarioRef={scenarioRef}
-                asOf={asOf}
-                ordering={ordering}
-                onReady={onReady}
-                baseline={baseline}
-              />
-            )}
-          </EstateCompareShell>
-        ) : (
-          <StateDeathTaxReportView
-            clientId={clientId}
-            isMarried={isMarried}
-            ownerNames={ownerNames}
-            ownerDobs={ownerDobs}
-            retirementYear={retirementYear}
-          />
-        )}
+        {/*
+          ONE shell for both tabs. Both report views take the identical column
+          contract and report the same first-death `EstateTaxResult`, so the
+          scenario pickers, the shared As-of row and the compare selection
+          survive a tab switch instead of resetting to Today on every visit.
+        */}
+        <EstateCompareShell<EstateTaxResult>
+          clientId={clientId}
+          scenarios={scenarios}
+          isMarried={isMarried}
+          ownerNames={ownerNames}
+          ownerDobs={ownerDobs}
+          retirementYear={retirementYear}
+        >
+          {({ scenarioRef, asOf, ordering, onReady, baseline }) => {
+            const columnProps = {
+              clientId,
+              isMarried,
+              ownerNames,
+              ownerDobs,
+              retirementYear,
+              scenarioRef,
+              asOf,
+              ordering,
+              onReady,
+              baseline,
+            };
+            return activeTab === "estate" ? (
+              <EstateTaxReportView {...columnProps} />
+            ) : (
+              <StateDeathTaxReportView {...columnProps} />
+            );
+          }}
+        </EstateCompareShell>
       </div>
     </div>
   );

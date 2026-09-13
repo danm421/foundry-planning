@@ -13,6 +13,11 @@ import { USPS_STATE_NAMES, type USPSStateCode } from "@/lib/usps-states";
 import { AsOfDropdown, type AsOfValue } from "./report-controls/as-of-dropdown";
 import { TimePeriodButtons } from "./report-controls/time-period-buttons";
 import type { OwnerDobs } from "./report-controls/age-helpers";
+import type { EstateColumnReady } from "./estate-compare-shell";
+import { useEstateColumnReady } from "@/hooks/use-estate-column-ready";
+import { EstateDeltaChip } from "./estate-delta-chip";
+import { diffStateEstateTax } from "@/lib/estate/diff-estate-tax";
+import { BASE_REF, readCompareSelection } from "@/lib/estate/compare-ref";
 import { personLabel } from "@/lib/owner-labels";
 import EstateTaxSkeleton from "@/app/(app)/clients/[id]/estate-planning/estate-tax/loading-skeleton";
 
@@ -23,15 +28,27 @@ const fmt = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0,
 });
 
+type Ordering = "primaryFirst" | "spouseFirst";
+
 interface Props {
   clientId: string;
   isMarried: boolean;
   ownerNames: { clientName: string; spouseName: string | null };
   ownerDobs: OwnerDobs;
   retirementYear: number;
-}
 
-type Ordering = "primaryFirst" | "spouseFirst";
+  // ── Compare mode (EstateCompareShell) ──
+  // All optional: with none supplied the view behaves exactly as it did before
+  // the shell existed. Supplying `asOf` is what hands the controls to the shell.
+  /** Overrides `?scenario=`; the right column needs its own ref. */
+  scenarioRef?: string;
+  asOf?: AsOfValue;
+  ordering?: Ordering;
+  /** Reports this column's projection metadata and first-death result upward. */
+  onReady?: (ready: EstateColumnReady<EstateTaxResult>) => void;
+  /** The other column's first-death result; its presence switches on deltas. */
+  baseline?: EstateTaxResult | null;
+}
 
 export default function StateDeathTaxReportView({
   clientId,
@@ -39,22 +56,38 @@ export default function StateDeathTaxReportView({
   ownerNames,
   ownerDobs,
   retirementYear,
+  scenarioRef,
+  asOf,
+  ordering: orderingProp,
+  onReady,
+  baseline = null,
 }: Props) {
   const searchParams = useSearchParams();
   const [projection, setProjection] = useState<ProjectionResult | null>(null);
-  const [selectedAsOf, setSelectedAsOf] = useState<AsOfValue>("today");
-  const [ordering, setOrdering] = useState<Ordering>("primaryFirst");
+  const [ownAsOf, setOwnAsOf] = useState<AsOfValue>("today");
+  const [ownOrdering, setOwnOrdering] = useState<Ordering>("primaryFirst");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  const selectedAsOf = asOf ?? ownAsOf;
+  const ordering = orderingProp ?? ownOrdering;
+  /** The shell renders one control row for both columns; a column renders none. */
+  const showOwnControls = asOf === undefined;
+
+  // The shell supplies its column's ref; standalone, the URL's left ref is read
+  // by the same helper the shell uses, so "what an absent `?scenario=` means"
+  // has exactly one definition.
+  const resolvedScenarioRef =
+    scenarioRef ?? readCompareSelection(searchParams).left;
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
-        const scenarioParam = searchParams?.get("scenario");
-        const url = scenarioParam
-          ? `/api/clients/${clientId}/projection-data?scenario=${encodeURIComponent(scenarioParam)}`
-          : `/api/clients/${clientId}/projection-data`;
+        const url =
+          resolvedScenarioRef === BASE_REF
+            ? `/api/clients/${clientId}/projection-data`
+            : `/api/clients/${clientId}/projection-data?scenario=${encodeURIComponent(resolvedScenarioRef)}`;
         const res = await fetch(url);
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -73,7 +106,10 @@ export default function StateDeathTaxReportView({
     }
     load();
     return () => { cancelled = true; };
-  }, [clientId, searchParams]);
+    // Keyed on the resolved ref, never on `searchParams`: that object is fresh
+    // whenever ANY param changes, so toggling `?compare=` would refetch both
+    // columns against a 30/min/firm rate limit.
+  }, [clientId, resolvedScenarioRef]);
 
   const projectionYears = useMemo(() => projection?.years ?? [], [projection]);
   const todayYear = projectionYears[0]?.year;
@@ -98,6 +134,25 @@ export default function StateDeathTaxReportView({
       ? projection?.todayHypotheticalEstateTax ?? null
       : selectedProjectionYear?.hypotheticalEstateTax ?? null;
 
+  // Split death: render decedents at their actual projected death years.
+  const isSplit = selectedAsOf === "split";
+  const splitFirst = isSplit ? projection?.firstDeathEvent ?? null : null;
+  const splitSecond = isSplit ? projection?.secondDeathEvent ?? null : null;
+
+  const activeOrdering: HypotheticalEstateTaxOrdering | null =
+    !isSplit && hypothetical
+      ? ordering === "spouseFirst" && hypothetical.spouseFirst
+        ? hypothetical.spouseFirst
+        : hypothetical.primaryFirst
+      : null;
+
+  // The one result the two columns align on: the first death's breakdown.
+  // Every reference here points into `projection`, so the identity is stable
+  // between renders — the shell compares `data` by identity.
+  const reportedTax = isSplit ? splitFirst : activeOrdering?.firstDeath ?? null;
+
+  useEstateColumnReady(projection, reportedTax, onReady);
+
   if (loadError) {
     return (
       <div className="rounded border border-red-700 bg-red-900/20 p-4 text-red-200">
@@ -116,8 +171,6 @@ export default function StateDeathTaxReportView({
     );
   }
 
-  const isSplit = selectedAsOf === "split";
-
   if (!isSplit && !hypothetical) {
     return (
       <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
@@ -126,9 +179,6 @@ export default function StateDeathTaxReportView({
     );
   }
 
-  const splitFirst = isSplit ? projection?.firstDeathEvent ?? null : null;
-  const splitSecond = isSplit ? projection?.secondDeathEvent ?? null : null;
-
   const milestones = [
     { year: retirementYear, label: "Retirement" },
     ...(firstDeathYear != null ? [{ year: firstDeathYear, label: "First Death" }] : []),
@@ -136,13 +186,6 @@ export default function StateDeathTaxReportView({
   ];
 
   const dropdownYears = projectionYears.map((y) => y.year);
-
-  const activeOrdering: HypotheticalEstateTaxOrdering | null =
-    !isSplit && hypothetical
-      ? ordering === "spouseFirst" && hypothetical.spouseFirst
-        ? hypothetical.spouseFirst
-        : hypothetical.primaryFirst
-      : null;
 
   const firstDecedent = isSplit
     ? splitFirst?.deceased ?? null
@@ -171,54 +214,56 @@ export default function StateDeathTaxReportView({
 
   return (
     <div className="space-y-4 pt-4 text-gray-100">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <TimePeriodButtons
-          selected={selectedAsOf}
-          onChange={setSelectedAsOf}
-          todayYear={todayYear}
-          retirementYear={retirementYear}
-          firstDeathYear={firstDeathYear}
-          lastDeathYear={lastDeathYear}
-          showSplit={isMarried && firstDeathYear != null && secondDeathYear != null}
-        />
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 text-xs uppercase tracking-wide text-gray-300">
-            As of
-            <AsOfDropdown
-              years={dropdownYears}
-              todayYear={todayYear}
-              selected={selectedAsOf}
-              onChange={setSelectedAsOf}
-              dobs={ownerDobs}
-              milestones={milestones}
-              allowSplit={isMarried && firstDeathYear != null && secondDeathYear != null}
-              yearPrefix="Both die in"
-            />
-          </label>
-          {isMarried && !isSplit && (
-            <div className="inline-flex rounded border border-gray-700 bg-gray-900 p-0.5 text-sm">
-              <button
-                type="button"
-                className={ordering === "primaryFirst"
-                  ? "rounded bg-gray-700 px-3 py-1 text-gray-100"
-                  : "rounded px-3 py-1 text-gray-300 hover:text-gray-200"}
-                onClick={() => setOrdering("primaryFirst")}
-              >
-                {ownerNames.clientName} dies first
-              </button>
-              <button
-                type="button"
-                className={ordering === "spouseFirst"
-                  ? "rounded bg-gray-700 px-3 py-1 text-gray-100"
-                  : "rounded px-3 py-1 text-gray-300 hover:text-gray-200"}
-                onClick={() => setOrdering("spouseFirst")}
-              >
-                {personLabel("spouse", ownerNames)} dies first
-              </button>
-            </div>
-          )}
+      {showOwnControls && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <TimePeriodButtons
+            selected={selectedAsOf}
+            onChange={setOwnAsOf}
+            todayYear={todayYear}
+            retirementYear={retirementYear}
+            firstDeathYear={firstDeathYear}
+            lastDeathYear={lastDeathYear}
+            showSplit={isMarried && firstDeathYear != null && secondDeathYear != null}
+          />
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 text-xs uppercase tracking-wide text-gray-300">
+              As of
+              <AsOfDropdown
+                years={dropdownYears}
+                todayYear={todayYear}
+                selected={selectedAsOf}
+                onChange={setOwnAsOf}
+                dobs={ownerDobs}
+                milestones={milestones}
+                allowSplit={isMarried && firstDeathYear != null && secondDeathYear != null}
+                yearPrefix="Both die in"
+              />
+            </label>
+            {isMarried && !isSplit && (
+              <div className="inline-flex rounded border border-gray-700 bg-gray-900 p-0.5 text-sm">
+                <button
+                  type="button"
+                  className={ordering === "primaryFirst"
+                    ? "rounded bg-gray-700 px-3 py-1 text-gray-100"
+                    : "rounded px-3 py-1 text-gray-300 hover:text-gray-200"}
+                  onClick={() => setOwnOrdering("primaryFirst")}
+                >
+                  {ownerNames.clientName} dies first
+                </button>
+                <button
+                  type="button"
+                  className={ordering === "spouseFirst"
+                    ? "rounded bg-gray-700 px-3 py-1 text-gray-100"
+                    : "rounded px-3 py-1 text-gray-300 hover:text-gray-200"}
+                  onClick={() => setOwnOrdering("spouseFirst")}
+                >
+                  {personLabel("spouse", ownerNames)} dies first
+                </button>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {!anyStateDeathTax ? (
         <NoStateDeathTaxLegend residenceState={residenceState} />
@@ -228,6 +273,7 @@ export default function StateDeathTaxReportView({
             <DecedentSection
               heading={`${ownerForName(splitFirst, ownerNames)} — First to die · ${splitFirst.year}`}
               tax={splitFirst}
+              baseline={baseline}
             />
           )}
           {splitSecond && (
@@ -246,6 +292,7 @@ export default function StateDeathTaxReportView({
             <DecedentSection
               heading={`${firstDecedentName} — ${isMarried ? "First to die" : `Hypothetical death in ${resolvedYear}`}`}
               tax={activeOrdering.firstDeath}
+              baseline={baseline}
             />
             {isMarried && activeOrdering.finalDeath && survivorName && (
               <DecedentSection
@@ -279,6 +326,10 @@ function LineRow({
   label,
   amount,
   hint,
+  delta,
+  // Every figure on this report is a tax base or a tax, where a fall is the
+  // good news — except the exemption, which says so at its call site.
+  deltaGoodDirection = "down",
   muted = false,
   showAsDeduction = false,
   hideIfZero = false,
@@ -286,6 +337,9 @@ function LineRow({
   label: string;
   amount: number;
   hint?: string;
+  /** Compare mode: this row's change against the other column. */
+  delta?: number | null;
+  deltaGoodDirection?: "up" | "down";
   muted?: boolean;
   showAsDeduction?: boolean;
   hideIfZero?: boolean;
@@ -303,16 +357,29 @@ function LineRow({
         {label}
         {hint && <span className="ml-2 text-xs text-gray-500">{hint}</span>}
       </span>
-      <span className={"shrink-0 tabular-nums " + (negative ? "text-rose-300/90" : muted ? "text-gray-500" : "text-gray-200")}>
-        {value}
+      <span className="flex shrink-0 items-baseline gap-2">
+        {delta != null && (
+          <EstateDeltaChip delta={delta} goodDirection={deltaGoodDirection} />
+        )}
+        <span className={"tabular-nums " + (negative ? "text-rose-300/90" : muted ? "text-gray-500" : "text-gray-200")}>
+          {value}
+        </span>
       </span>
     </div>
   );
 }
 
 function Section({
-  title, subtotal, subtotalLabel, children,
-}: { title: string; subtotal: number; subtotalLabel: string; children: React.ReactNode }) {
+  title, subtotal, subtotalLabel, delta, deltaTestId, children,
+}: {
+  title: string;
+  subtotal: number;
+  subtotalLabel: string;
+  /** Compare mode: this subtotal's change against the other column. */
+  delta?: number | null;
+  deltaTestId?: string;
+  children: React.ReactNode;
+}) {
   const accent = subtotal > 0 ? "text-rose-200" : "text-emerald-200";
   return (
     <div className="px-5 py-3">
@@ -320,7 +387,13 @@ function Section({
       <div>{children}</div>
       <div className="mt-1.5 flex items-baseline justify-between gap-4 border-t border-gray-800/80 pt-1.5">
         <span className={"text-sm font-medium " + accent}>{subtotalLabel}</span>
-        <span className={"text-base font-semibold tabular-nums " + accent}>{formatAmount(subtotal)}</span>
+        <span className="flex shrink-0 items-baseline gap-2">
+          {delta != null && (
+            // Every subtotal here is a death tax, so a fall is the good news.
+            <EstateDeltaChip delta={delta} goodDirection="down" testId={deltaTestId} />
+          )}
+          <span className={"text-base font-semibold tabular-nums " + accent}>{formatAmount(subtotal)}</span>
+        </span>
       </div>
     </div>
   );
@@ -341,21 +414,52 @@ function fmtBound(n: number): string {
   return n.toLocaleString();
 }
 
-function StateEstateTaxSection({ detail }: { detail: StateEstateTaxResult }) {
+/** Compare mode: this decedent's state figures against the other column's. */
+type StateDiff = ReturnType<typeof diffStateEstateTax>;
+
+function StateEstateTaxSection({
+  detail,
+  diff = null,
+}: {
+  detail: StateEstateTaxResult;
+  diff?: StateDiff | null;
+}) {
+  const subtotalDelta = diff?.stateEstateTax;
+  const subtotalTestId = "estate-delta-state-estate-tax";
   if (detail.fallbackUsed) {
     return (
-      <Section title="State Estate Tax (Custom Override)" subtotal={detail.stateEstateTax} subtotalLabel="State Estate Tax">
+      <Section
+        title="State Estate Tax (Custom Override)"
+        subtotal={detail.stateEstateTax}
+        subtotalLabel="State Estate Tax"
+        delta={subtotalDelta}
+        deltaTestId={subtotalTestId}
+      >
         <LineRow label={`Taxable Estate × ${(detail.fallbackRate * 100).toFixed(2)}%`} amount={detail.stateEstateTax} />
       </Section>
     );
   }
   return (
-    <Section title={`State Estate Tax (${stateFullName(detail.state)})`} subtotal={detail.stateEstateTax} subtotalLabel="State Estate Tax">
+    <Section
+      title={`State Estate Tax (${stateFullName(detail.state)})`}
+      subtotal={detail.stateEstateTax}
+      subtotalLabel="State Estate Tax"
+      delta={subtotalDelta}
+      deltaTestId={subtotalTestId}
+    >
       <LineRow label="Taxable Estate" amount={detail.baseForTax - detail.giftAddback} />
       {detail.giftAddback > 0 && <LineRow label="State gift addback" amount={detail.giftAddback} />}
-      <LineRow label="Base for State Tax" amount={detail.baseForTax} />
-      <LineRow label={`Exemption (${detail.exemptionYear})`} amount={detail.exemption} showAsDeduction />
-      <LineRow label="Amount Over Exemption" amount={detail.amountOverExemption} />
+      <LineRow label="Base for State Tax" amount={detail.baseForTax} delta={diff?.baseForTax} />
+      <LineRow
+        label={`Exemption (${detail.exemptionYear})`}
+        amount={detail.exemption}
+        delta={diff?.exemption}
+        // A bigger exemption shelters more of the estate — the one figure on
+        // this report where a RISE is the good news.
+        deltaGoodDirection="up"
+        showAsDeduction
+      />
+      <LineRow label="Amount Over Exemption" amount={detail.amountOverExemption} delta={diff?.amountOverExemption} />
       {detail.bracketLines.map((b, i) => (
         <LineRow
           key={i}
@@ -429,12 +533,24 @@ function GrandTotalsCard({ first, second }: { first: EstateTaxResult; second: Es
   );
 }
 
-function DecedentSection({ heading, tax }: { heading: string; tax: EstateTaxResult }) {
+function DecedentSection({
+  heading,
+  tax,
+  baseline = null,
+}: {
+  heading: string;
+  tax: EstateTaxResult;
+  /** The other column's result for this same death; null outside compare mode. */
+  baseline?: EstateTaxResult | null;
+}) {
   const stateDetail = tax.stateEstateTaxDetail;
   const sti = tax.stateInheritanceTax && !tax.stateInheritanceTax.inactive
     ? tax.stateInheritanceTax
     : null;
   const showEstate = stateDetail.stateEstateTax > 0 || stateDetail.fallbackUsed || stateDetail.state != null;
+  const diff = baseline
+    ? diffStateEstateTax(baseline.stateEstateTaxDetail, stateDetail)
+    : null;
 
   if (!showEstate && !sti) return null;
 
@@ -444,7 +560,7 @@ function DecedentSection({ heading, tax }: { heading: string; tax: EstateTaxResu
         <h2 className="text-base font-semibold text-gray-50">{heading}</h2>
       </header>
       <div className="divide-y divide-gray-800/70">
-        {showEstate && <StateEstateTaxSection detail={stateDetail} />}
+        {showEstate && <StateEstateTaxSection detail={stateDetail} diff={diff} />}
         {sti && (
           <div className="px-5 py-3">
             <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-gray-200">
