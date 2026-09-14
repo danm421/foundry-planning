@@ -5,14 +5,14 @@ const UUID = "11111111-1111-4111-8111-111111111111";
 const UUID2 = "22222222-2222-4222-8222-222222222222";
 
 describe("accountCreateSchema parity with inline route coercion", () => {
-  const base = { name: "Brokerage", category: "investment" };
+  const base = { name: "Brokerage", category: "taxable" };
 
   it("accepts minimal required set and defaults loose fields (route insert block)", () => {
     const r = accountCreateSchema.safeParse(base);
     expect(r.success).toBe(true);
     if (r.success) {
       expect(r.data.name).toBe("Brokerage");
-      expect(r.data.category).toBe("investment");
+      expect(r.data.category).toBe("taxable");
       expect(r.data.subType).toBe("other");
       expect(r.data.value).toBe("0");
       expect(r.data.basis).toBe("0");
@@ -102,7 +102,7 @@ describe("accountCreateSchema parity with inline route coercion", () => {
   });
 
   it("missing name → REJECT", () => {
-    expect(accountCreateSchema.safeParse({ category: "investment" }).success).toBe(false);
+    expect(accountCreateSchema.safeParse({ category: "taxable" }).success).toBe(false);
   });
 
   it("empty name → REJECT", () => {
@@ -197,8 +197,8 @@ describe("accountCreateSchema parity with inline route coercion", () => {
     expect(r.success).toBe(false);
   });
 
-  it("non-business (investment) with no business fields → ACCEPT (superRefine does not run)", () => {
-    const r = accountCreateSchema.safeParse({ name: "Brokerage", category: "investment" });
+  it("non-business (taxable) with no business fields → ACCEPT (superRefine does not run)", () => {
+    const r = accountCreateSchema.safeParse({ name: "Brokerage", category: "taxable" });
     expect(r.success).toBe(true);
   });
 
