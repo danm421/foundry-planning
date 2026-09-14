@@ -10,6 +10,9 @@ import { applyMutations } from "@/lib/solver/apply-mutations";
 import { isBaseSavableMutation } from "@/lib/solver/mutations-to-base-updates";
 import { mutationsToScenarioChanges } from "@/lib/solver/mutations-to-scenario-changes";
 import { mutationKey } from "@/lib/solver/types";
+import type { SolverMutation, SolverScenarioChangeDraft } from "@/lib/solver/types";
+import { applyScenarioChanges } from "@/engine/scenario/applyChanges";
+import type { ScenarioChange, TargetKind } from "@/engine/scenario/types";
 import type { ClientData, Liability } from "@/engine/types";
 
 const mortgage: Liability = {
@@ -169,5 +172,106 @@ describe("mutationsToScenarioChanges — liability-upsert", () => {
       { kind: "liability-upsert", id: mortgage.id, value: null },
     ]);
     expect(drafts.find((d) => d.targetKind === "liability")?.opType).toBe("remove");
+  });
+});
+
+// ── I5: the round trip the spec names ───────────────────────────────────────
+//
+// Spec §Testing: "Apply → `mutationsToScenarioChanges` → `applyChanges` →
+// assert the tree matches what `applyMutations` produced. THIS IS THE TEST THAT
+// CATCHES A FIELD THE ZOD SCHEMA FORGOT." Stopping at "the right change-row
+// shape came out" leaves the replay leg — where a dropped field shows up as a
+// number that silently reverts on reload — untested.
+//
+// One refinement on the spec's wording: comparing the reload to the PREVIEW
+// alone cannot catch a forgotten Zod field, because both legs start from the
+// same parsed mutation and lose it identically. So every scope below compares
+// the reloaded row to the value the ADVISOR TYPED as well — the only reference
+// the wire has not already been through.
+
+describe("liability-upsert — the save → reload round trip", () => {
+  /** The wire leg. Parsing FIRST is what makes this catch a field the Zod
+   *  schema forgot: a `z.object` silently strips what it does not declare, and
+   *  the route parses before anything else touches the mutation. */
+  function onWire(m: SolverMutation): SolverMutation {
+    const r = SOLVER_MUTATION_SCHEMA.safeParse(m);
+    if (!r.success) throw new Error(`wire rejected the mutation: ${r.error.message}`);
+    return r.data as SolverMutation;
+  }
+
+  /** The reload leg: drafts → ScenarioChange rows → replay onto the base tree. */
+  function replay(base: ClientData, drafts: SolverScenarioChangeDraft[]): ClientData {
+    const changes: ScenarioChange[] = drafts.map((d, i) => ({
+      id: `c${i}`,
+      scenarioId: "s1",
+      opType: d.opType,
+      targetKind: d.targetKind as TargetKind,
+      targetId: d.targetId,
+      payload: d.payload,
+      toggleGroupId: null,
+      orderIndex: d.orderIndex,
+    }));
+    // No toggle overrides and no toggle groups — every change is ungrouped.
+    return applyScenarioChanges(structuredClone(base), changes, {}, []).effectiveTree;
+  }
+
+  it("an EDIT retitling a mortgage into a trust replays to the same tree the preview showed", () => {
+    const base = tree([mortgage]);
+    const retitled: Liability = {
+      ...mortgage,
+      balance: 240_000,
+      owners: [{ kind: "entity", entityId: "trust-1", percent: 1 }],
+    };
+    const muts = [onWire({ kind: "liability-upsert", id: mortgage.id, value: retitled })];
+
+    const preview = applyMutations(base, muts);
+    const reloaded = replay(base, mutationsToScenarioChanges(base, "client-1", muts));
+
+    const previewRow = preview.liabilities.find((l) => l.id === "liab-1")!;
+    const reloadedRow = reloaded.liabilities.find((l) => l.id === "liab-1")!;
+    // Positive first: the preview really did move, so an equality against an
+    // untouched base tree could not pass.
+    expect(previewRow.owners).toEqual([{ kind: "entity", entityId: "trust-1", percent: 1 }]);
+    expect(reloadedRow.owners).toEqual(previewRow.owners);
+    // Against the advisor's own value, not just against the preview: a field the
+    // schema forgot is stripped on BOTH legs, so preview-vs-reload agrees while
+    // the number the advisor typed is gone.
+    expect(reloadedRow).toEqual(retitled);
+    expect(previewRow).toEqual(retitled);
+    // A numeric field that survives as a STRING makes the engine concatenate.
+    // `"240000" == 240000` is true, so a loose check would pass on one.
+    expect(typeof reloadedRow.balance).toBe("number");
+    expect(typeof reloadedRow.interestRate).toBe("number");
+    expect(typeof reloadedRow.monthlyPayment).toBe("number");
+  });
+
+  it("an ADD of a trust-held mortgage replays with every field the schema carries", () => {
+    const base = tree([]);
+    const trustMortgage: Liability = {
+      ...mortgage,
+      id: "liab-new",
+      owners: [{ kind: "entity", entityId: "trust-1", percent: 1 }],
+      extraPayments: [
+        { id: "xp-1", liabilityId: "liab-new", year: 2030, type: "lump_sum", amount: 25_000 },
+      ],
+    };
+    const muts = [onWire({ kind: "liability-upsert", id: trustMortgage.id, value: trustMortgage })];
+
+    const preview = applyMutations(base, muts);
+    const reloaded = replay(base, mutationsToScenarioChanges(base, "client-1", muts));
+
+    expect(preview.liabilities.map((l) => l.id)).toEqual(["liab-new"]);
+    expect(reloaded.liabilities.map((l) => l.id)).toEqual(["liab-new"]);
+    expect(reloaded.liabilities[0]).toEqual(preview.liabilities[0]);
+    expect(reloaded.liabilities[0]).toEqual(trustMortgage);
+  });
+
+  it("a REMOVE replays to a tree with the mortgage gone, matching the preview", () => {
+    const base = tree([mortgage]);
+    const muts = [onWire({ kind: "liability-upsert", id: mortgage.id, value: null })];
+    const preview = applyMutations(base, muts);
+    const reloaded = replay(base, mutationsToScenarioChanges(base, "client-1", muts));
+    expect(preview.liabilities).toEqual([]);
+    expect(reloaded.liabilities).toEqual([]);
   });
 });

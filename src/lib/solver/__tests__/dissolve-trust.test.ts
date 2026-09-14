@@ -22,8 +22,15 @@ import {
 } from "@/lib/solver/mutations-to-base-updates";
 import { mutationsToScenarioChanges } from "@/lib/solver/mutations-to-scenario-changes";
 import { mutationKey } from "@/lib/solver/types";
+import type { SolverMutation, SolverScenarioChangeDraft } from "@/lib/solver/types";
 import { buildCltRemainderGiftMutation } from "@/lib/solver/split-interest-levers";
-import { applyWillSpecificBequests } from "@/engine/death-event/shared";
+import {
+  applyBeneficiaryDesignations,
+  applyWillResiduary,
+  applyWillSpecificBequests,
+} from "@/engine/death-event/shared";
+import { applyScenarioChanges } from "@/engine/scenario/applyChanges";
+import type { ScenarioChange, TargetKind } from "@/engine/scenario/types";
 import { runProjection } from "@/engine/projection";
 import {
   entityCheckingId,
@@ -1007,5 +1014,191 @@ describe("buildDissolveTrustMutations — the removal is base-savable all or not
       expect(parsed.success).toBe(true);
       expect(parsed.success && parsed.data).toHaveProperty("dissolvedEntityId", "ent-ilit");
     }
+  });
+});
+
+// ── I5 / I7: the round trip, and the PROJECTION behind the tree ─────────────
+//
+// Spec §Testing asks for two things this file stopped short of:
+//
+//   • "Apply → `mutationsToScenarioChanges` → `applyChanges` → assert the tree
+//     matches what `applyMutations` produced." The scopes above stop at the
+//     change-row shape, which cannot see a field lost on the replay leg.
+//   • "Each of those four asserts against the PROJECTION, not just the tree."
+//     Only the bequest-drop case ran a real engine pass.
+//
+// Two of the four reference classes have a projection consumer and are covered
+// here with a control each. The other two do NOT, and pretending otherwise
+// would be the vacuous assertion the spec's own rationale warns against:
+// `remainderBeneficiaries` is documented data-only, and an `entityId` entry on
+// `incomeBeneficiaries` is ignored by EVERY consumer — `routeDni` says so in a
+// comment (trust-tax/route-dni.ts:36), while `deriveBeneficiaryKind`
+// (projection.ts:705-719) and both `householdSharePct` reductions
+// (trust-tax/index.ts:87, projection.ts:3389) filter on householdRole /
+// familyMemberId / externalBeneficiaryId only. The applied-tree assertion is
+// the right level for those, and is what the scopes above already do.
+
+/** The reload leg: drafts → ScenarioChange rows → replay onto the base tree. */
+function replayDrafts(base: ClientData, drafts: SolverScenarioChangeDraft[]): ClientData {
+  const changes: ScenarioChange[] = drafts.map((d, i) => ({
+    id: `c${i}`,
+    scenarioId: "s1",
+    opType: d.opType,
+    targetKind: d.targetKind as TargetKind,
+    targetId: d.targetId,
+    payload: d.payload,
+    toggleGroupId: null,
+    orderIndex: d.orderIndex,
+  }));
+  return applyScenarioChanges(structuredClone(base), changes, {}, []).effectiveTree;
+}
+
+describe("buildDissolveTrustMutations — will-upsert survives save → reload", () => {
+  const willWithTrust: Will = {
+    id: "will-1",
+    grantor: "client",
+    bequests: [
+      {
+        id: "bq-1", name: "To the ILIT", kind: "asset", assetMode: "specific",
+        accountId: "acct-1", entityId: null, liabilityId: null, percentage: 100,
+        condition: "always", sortOrder: 0,
+        recipients: [
+          { recipientKind: "entity", recipientId: "ent-ilit", percentage: 60, sortOrder: 0 },
+          { recipientKind: "family_member", recipientId: "fm-spouse", percentage: 40, sortOrder: 1 },
+        ],
+      },
+    ],
+    residuaryRecipients: [
+      { recipientKind: "entity", recipientId: "ent-ilit", percentage: 60, sortOrder: 0 },
+      { recipientKind: "family_member", recipientId: "fm-spouse", percentage: 40, sortOrder: 1 },
+    ],
+  };
+
+  it("replays to the same will the live preview showed, with numeric shares intact", () => {
+    const base = tree({ accounts: [trustAccount], wills: [willWithTrust] });
+    // Through the WIRE first: a z.object strips what it does not declare, and
+    // the route parses before anything else touches the mutation.
+    const muts = buildDissolveTrustMutations(base, ilit).map((m) => {
+      const r = SOLVER_MUTATION_SCHEMA.safeParse(m);
+      if (!r.success) throw new Error(`wire rejected ${m.kind}: ${r.error.message}`);
+      return r.data as SolverMutation;
+    });
+
+    const preview = applyMutations(base, muts);
+    const reloaded = replayDrafts(base, mutationsToScenarioChanges(base, "client-1", muts));
+
+    const previewWill = preview.wills![0];
+    const reloadedWill = reloaded.wills![0];
+
+    // Positive first: the preview really did strip the trust, so an equality
+    // against an untouched base tree could not pass.
+    expect(previewWill.bequests[0].recipients.map((r) => r.recipientId)).toEqual(["fm-spouse"]);
+    expect(previewWill.residuaryRecipients!.map((r) => r.recipientId)).toEqual(["fm-spouse"]);
+
+    expect(reloadedWill.bequests).toEqual(previewWill.bequests);
+    expect(reloadedWill.residuaryRecipients).toEqual(previewWill.residuaryRecipients);
+    // A share that reloads as a STRING makes the engine concatenate; `"40" == 40`
+    // is true, so the assertion has to be on `typeof`.
+    expect(typeof reloadedWill.residuaryRecipients![0].percentage).toBe("number");
+    expect(reloadedWill.residuaryRecipients![0].percentage).toBe(40);
+    expect(typeof reloadedWill.bequests[0].recipients[0].percentage).toBe("number");
+  });
+
+  it("replays the entity DELETE too, so the reloaded tree holds no trust", () => {
+    const base = tree({ accounts: [trustAccount], wills: [willWithTrust] });
+    const muts = buildDissolveTrustMutations(base, ilit);
+    const reloaded = replayDrafts(base, mutationsToScenarioChanges(base, "client-1", muts));
+    expect(reloaded.entities ?? []).toEqual([]);
+    expect(reloaded.accounts.find((a) => a.id === "acct-1")!.owners).toEqual([
+      { kind: "family_member", familyMemberId: "fm-client", percent: 1 },
+    ]);
+  });
+});
+
+describe("buildDissolveTrustMutations — the PROJECTION, not just the tree", () => {
+  const fms = () =>
+    [
+      { id: "fm-client", role: "client", firstName: "Dan", lastName: "S", dateOfBirth: "1970-01-01" },
+      { id: "fm-spouse", role: "spouse", firstName: "Amy", lastName: "S", dateOfBirth: "1972-01-01" },
+    ] as unknown as FamilyMember[];
+
+  it("a policy naming the trust stops paying its death benefit to a dead entity", () => {
+    const policy = {
+      id: "acct-pol", name: "Term policy", category: "life_insurance", subType: "term",
+      value: 1_000_000, basis: 0, growthRate: 0, rmdEnabled: false, titlingType: "jtwros",
+      owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+      beneficiaries: [
+        { id: "b1", tier: "primary", percentage: 100, entityIdRef: "ent-ilit", sortOrder: 0 },
+      ],
+    } as unknown as Account;
+    const t = tree({ accounts: [policy] });
+
+    // CONTROL — the designation left dangling. The engine claims the WHOLE
+    // policy and retitles it to an entity that no longer exists: the death
+    // benefit leaves the household and lands nowhere.
+    const dangling = applyMutations(t, [{ kind: "entity-upsert", id: "ent-ilit", value: null }]);
+    const before = applyBeneficiaryDesignations(
+      accountById(dangling, "acct-pol"), 1, fms(), [], dangling.entities ?? [], undefined,
+    );
+    expect(before.fractionClaimed).toBe(1);
+    expect(before.resultingAccounts[0].owners).toEqual([
+      { kind: "entity", entityId: "ent-ilit", percent: 1 },
+    ]);
+    expect((dangling.entities ?? []).some((e) => e.id === "ent-ilit")).toBe(false);
+
+    // The lever: nothing is claimed by designation, so the policy falls through
+    // to the will / fallback cascade and stays in the household's hands.
+    const out = applyMutations(t, buildDissolveTrustMutations(t, ilit));
+    const after = applyBeneficiaryDesignations(
+      accountById(out, "acct-pol"), 1, fms(), [], out.entities ?? [], undefined,
+    );
+    expect(after.fractionClaimed).toBe(0);
+    expect(after.resultingAccounts).toEqual([]);
+  });
+
+  it("a residuary clause naming the trust stops routing the estate to a dead entity", () => {
+    const willWithTrust: Will = {
+      id: "will-1",
+      grantor: "client",
+      bequests: [],
+      residuaryRecipients: [
+        { recipientKind: "entity", recipientId: "ent-ilit", percentage: 60, sortOrder: 0 },
+        { recipientKind: "family_member", recipientId: "fm-spouse", percentage: 40, sortOrder: 1 },
+      ],
+    };
+    const estate = {
+      id: "acct-estate", name: "Residuary brokerage", category: "taxable", subType: "brokerage",
+      value: 1_000_000, basis: 1_000_000, growthRate: 0, rmdEnabled: false, titlingType: "jtwros",
+      owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+    } as unknown as Account;
+    const t = tree({ accounts: [estate], wills: [willWithTrust] });
+
+    const run = (will: Will, entities: EntitySummary[]) =>
+      applyWillResiduary(estate, 1, will, "primary", "spouse", "fm-spouse", fms(), [], entities, undefined);
+
+    // CONTROL — the clause left dangling. The engine claims the whole estate
+    // and hands 60% of it to an entity that no longer exists.
+    const before = run(willWithTrust, []);
+    expect(before.fractionClaimed).toBeCloseTo(1, 10);
+    const toDeadTrust = before.resultingAccounts.find((a) =>
+      a.owners.some((o) => o.kind === "entity" && o.entityId === "ent-ilit"),
+    );
+    expect(toDeadTrust?.value).toBeCloseTo(600_000, 6);
+
+    // After the lever only the co-client's 40% clause survives, so 40% is
+    // claimed and the remaining 60% falls through to the fallback cascade
+    // rather than vanishing into a deleted trust.
+    const out = applyMutations(t, buildDissolveTrustMutations(t, ilit));
+    const after = run(out.wills![0], out.entities ?? []);
+    expect(after.fractionClaimed).toBeCloseTo(0.4, 10);
+    expect(after.resultingAccounts).toHaveLength(1);
+    expect(after.resultingAccounts[0].owners).toEqual([
+      { kind: "family_member", familyMemberId: "fm-spouse", percent: 1 },
+    ]);
+    expect(
+      after.resultingAccounts.some((a) =>
+        a.owners.some((o) => o.kind === "entity" && o.entityId === "ent-ilit"),
+      ),
+    ).toBe(false);
   });
 });
