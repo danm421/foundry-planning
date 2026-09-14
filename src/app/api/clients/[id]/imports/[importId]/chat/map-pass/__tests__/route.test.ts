@@ -34,6 +34,7 @@ vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 // --- Work-seam mocks -------------------------------------------------------
 vi.mock("@/lib/imports/blob", () => ({ downloadImportFile: vi.fn() }));
 vi.mock("@/lib/extraction/pdf-parser", () => ({ extractPdfPages: vi.fn() }));
+vi.mock("@/lib/extraction/vision-ocr", () => ({ visionOcrPdf: vi.fn() }));
 vi.mock("@/lib/statement-chat/map-entity-pass", () => ({ runMapEntityPass: vi.fn() }));
 
 // --- Predicate-evaluating drizzle + @/db mocks -----------------------------
@@ -157,6 +158,7 @@ import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { downloadImportFile } from "@/lib/imports/blob";
 import { extractPdfPages } from "@/lib/extraction/pdf-parser";
+import { visionOcrPdf } from "@/lib/extraction/vision-ocr";
 import { runMapEntityPass } from "@/lib/statement-chat/map-entity-pass";
 import type { CandidateRow } from "@/lib/entity-extraction/types";
 
@@ -523,5 +525,69 @@ describe("map-pass route — PATCH", () => {
   it("takes the rate limiter at the cheap 'match' op, not 'extract'", async () => {
     await PATCH(req({ entityId: "entities", rowId: "r2", createdId: "ent_99" }, "PATCH"), params);
     expect(checkImportRateLimit).toHaveBeenCalledWith("org_1", "match");
+  });
+});
+
+/**
+ * A genuine carrier policy is a SCAN: `unpdf` returns one entry per page and
+ * every one of them is empty. The route's only ingest guard was
+ * `pages.length === 0`, which such a document does not trip — a real 53-page
+ * policy came back as 53 blank pages, so the route spent a billable Azure call
+ * on nothing and answered 200 with an empty table and no explanation.
+ * Phase 1 (`extract.ts`) has had a vision-OCR fallback for exactly this.
+ */
+describe("map-pass route — a PDF with no text layer", () => {
+  const blankPages = ["", "   ", "\n\n"];
+
+  it("falls back to vision OCR and reads the document it recovered", async () => {
+    vi.mocked(extractPdfPages).mockResolvedValue(blankPages);
+    vi.mocked(visionOcrPdf).mockResolvedValue({
+      text: "UNIVERSAL LIFE\n\nFace Amount $1,000,000",
+      segments: ["UNIVERSAL LIFE", "Face Amount $1,000,000"],
+      pageCount: 3,
+      pagesProcessed: 3,
+      truncated: false,
+    } as never);
+
+    const res = await POST(req({ fileId: "f1" }), params);
+
+    expect(res.status).toBe(200);
+    expect(visionOcrPdf).toHaveBeenCalledTimes(1);
+    // the recovered text is what the pass reads — not the blank text layer
+    expect(vi.mocked(runMapEntityPass).mock.calls[0][0].pages).toEqual([
+      "UNIVERSAL LIFE",
+      "Face Amount $1,000,000",
+    ]);
+  });
+
+  it("422s instead of answering 200 with an empty table when OCR recovers nothing", async () => {
+    vi.mocked(extractPdfPages).mockResolvedValue(blankPages);
+    vi.mocked(visionOcrPdf).mockResolvedValue({
+      text: "",
+      segments: [],
+      pageCount: 3,
+      pagesProcessed: 3,
+      truncated: false,
+    } as never);
+
+    const res = await POST(req({ fileId: "f1" }), params);
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({
+      error: expect.stringContaining("no readable text"),
+    });
+    expect(runMapEntityPass).not.toHaveBeenCalled();
+  });
+
+  it("does NOT spend an OCR call when the text layer already has text", async () => {
+    // Positive control for the two above: without this, moving the fallback
+    // ahead of the text-layer read would keep both of them green.
+    vi.mocked(extractPdfPages).mockResolvedValue(["real page text"]);
+
+    const res = await POST(req({ fileId: "f1" }), params);
+
+    expect(res.status).toBe(200);
+    expect(visionOcrPdf).not.toHaveBeenCalled();
+    expect(vi.mocked(runMapEntityPass).mock.calls[0][0].pages).toEqual(["real page text"]);
   });
 });

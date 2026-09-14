@@ -13,6 +13,7 @@ import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { downloadImportFile } from "@/lib/imports/blob";
 import { extractPdfPages } from "@/lib/extraction/pdf-parser";
+import { visionOcrPdf } from "@/lib/extraction/vision-ocr";
 import { runMapEntityPass } from "@/lib/statement-chat/map-entity-pass";
 import { linkCreated } from "@/lib/imports/types";
 import type { CandidateRow } from "@/lib/entity-extraction/types";
@@ -208,10 +209,29 @@ export async function POST(request: Request, { params }: Params) {
     });
   }
 
-  const pages = await extractPdfPages(buffer);
+  let pages = await extractPdfPages(buffer);
+
+  // A genuine carrier policy is a SCAN. `unpdf` answers a scanned PDF with one
+  // entry per page and every one of them EMPTY — a real 53-page life policy
+  // came back as 53 blank strings. `pages.length === 0` does not catch that, so
+  // the route used to read nothing, answer 200, and show the advisor an empty
+  // table with no explanation after a minute of waiting. Phase 1's `extract.ts`
+  // has recovered these documents by vision OCR all along; this is the same
+  // fallback, on the same terms.
+  // `pages.length > 0` matters: `extractPdfPages` answers [] when it could not
+  // parse the PDF at all (empty buffer, parse error, timeout), and OCR is not
+  // owed a billable call on a document that is not readable in the first place.
+  // A SCAN is the different case — it parses fine and yields N blank pages.
+  if (pages.length > 0 && pages.every((page) => page.trim().length === 0)) {
+    const maxPages = Number(process.env.EXTRACTION_OCR_MAX_PAGES ?? "30") || 30;
+    const ocr = await visionOcrPdf(buffer, { maxPages, model: "mini" });
+    pages = ocr.segments;
+  }
+
   if (pages.length === 0) {
-    // An empty page array would otherwise spend a multi-second billable Azure
-    // call reading nothing, and hand the advisor an empty table with no reason.
+    // Either an empty document, or one whose text neither the text layer nor
+    // OCR could recover. Say so rather than spending a multi-second billable
+    // Azure call reading nothing and handing back a table with no reason.
     return jsonResponse(422, {
       error: `${file.originalFilename} produced no readable text.`,
     });
