@@ -254,6 +254,11 @@ export type AuditAction =
   // (Task 11) — the transcript append and any tool-driven row edit both land
   // in the same `payloadJson` write this audits.
   | "import.chat.turn"
+  // One map-driven entity pass over ONE uploaded file (Task 14a) — several
+  // billable Azure reads whose extracted rows land in the import's
+  // `payloadJson`. Distinct from "import.extraction.*", which is the wizard's
+  // accounts extractor and reads a different set of concepts.
+  | "import.map_pass.completed"
   // Rebalance — reading holdings off a statement for an outside portfolio.
   // Nothing is persisted, so this audit row is the only record the read happened.
   | "rebalance.holdings.extracted"
