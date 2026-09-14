@@ -5,6 +5,8 @@ import { Card, CardBody, CardHeader } from "@/components/card";
 import UploadZone, { type InitialUploadedFile } from "@/components/import/upload-zone";
 import { StepLine } from "@/components/statement-chat/step-line";
 import AccountsTable from "@/components/statement-chat/accounts-table";
+import EntityTables from "@/components/statement-chat/entity-tables";
+import { useMapRows } from "@/components/statement-chat/use-map-rows";
 import { ChatTranscript } from "@/components/statement-chat/chat-transcript";
 import { ChatComposer } from "@/components/statement-chat/chat-composer";
 import { useChatCommit, type ChatCommitResult } from "@/components/statement-chat/use-chat-commit";
@@ -77,6 +79,13 @@ export function ChatSurface({
   reviewContext = EMPTY_CHAT_REVIEW_CONTEXT,
 }: ChatSurfaceProps) {
   const [uploadedCount, setUploadedCount] = useState(initialFiles.length);
+  // The map pass is per FILE (one POST each), so the surface has to carry the
+  // ids, not just the count. `UploadZone`'s `onRemoved` carries no id, so a
+  // removed file's id stays in this list — the pass 404s on it and records a
+  // warning naming it, rather than silently dropping every other file.
+  const [fileIds, setFileIds] = useState<string[]>(() =>
+    initialFiles.map((f) => f.serverFileId),
+  );
   const [status, setStatus] = useState<Status>("idle");
   const [extractHoldings, setExtractHoldings] = useState(initialExtractHoldings ?? false);
   const [holdingsError, setHoldingsError] = useState<string | null>(null);
@@ -107,6 +116,20 @@ export function ChatSurface({
     handleRestore,
     handleFinalize,
   } = useChatCommit(clientId, importId, reviewContext.familyMembers, reviewContext.accounts);
+
+  // The map-driven half (Task 14b): policies and anything else the Details
+  // field map marks as document evidence. Kept in its OWN hook rather than
+  // folded into `useChatCommit` — these rows live under `chat.entityRows` and
+  // commit one at a time to each entity's own route, which shares nothing with
+  // the accounts tab's bulk commit route.
+  const {
+    rows: mapRows,
+    warnings: mapWarnings,
+    committedRowIds: mapCommittedRowIds,
+    runPass: runMapPass,
+    commitRows: commitMapRows,
+    editCell: editMapCell,
+  } = useMapRows({ clientId, importId });
 
   // Sends a turn and adopts what comes back (Task 11b, Steps 2/3). On the
   // FIRST turn that has anything to adopt (`result` was still null — a
@@ -220,15 +243,20 @@ export function ChatSurface({
         buffer = next.value;
       }
       setStatus((s) => (s === "streaming" ? "done" : s));
+      // ONLY once the stream is closed. The pass reads and rewrites the SAME
+      // `client_imports.payloadJson` the extraction is still writing while it
+      // streams, so starting earlier would race the extraction's own write.
+      await runMapPass(fileIds);
     } catch (err) {
       if (ac.signal.aborted) return;
       setStatus("error");
       setErrorMessage(err instanceof Error ? err.message : "The connection dropped.");
     }
-  }, [clientId, importId, resetForNewExtraction, applyExtractionResult]);
+  }, [clientId, importId, resetForNewExtraction, applyExtractionResult, runMapPass, fileIds]);
 
   const isStreaming = status === "streaming";
   const hasFailure = fileEvents.some((e) => e.error);
+  const hasMapRows = Object.values(mapRows).some((list) => list.length > 0);
 
   return (
     <div className="flex flex-col gap-6">
@@ -244,7 +272,12 @@ export function ChatSurface({
             importId={importId}
             initialFiles={initialFiles}
             disabled={isStreaming}
-            onUploaded={() => setUploadedCount((c) => c + 1)}
+            onUploaded={(info) => {
+              setUploadedCount((c) => c + 1);
+              setFileIds((prev) =>
+                prev.includes(info.serverFileId) ? prev : [...prev, info.serverFileId],
+              );
+            }}
             onRemoved={() => setUploadedCount((c) => Math.max(0, c - 1))}
           />
           <div className="flex items-center justify-between gap-3">
@@ -472,6 +505,58 @@ export function ChatSurface({
             </>
           )}
         </>
+      )}
+
+      {/*
+        The map pass's own warnings, in the same idiom the extraction's own
+        `hasFailure` copy uses. Its OWN gate, not the table's: a pass where
+        every file failed produces no rows at all, and a failed read the
+        advisor never sees is indistinguishable from a document that simply
+        had no policies in it. Headed, unlike the caveats card, because it
+        does not sit directly under the thing it is about.
+      */}
+      {mapWarnings.length > 0 && (
+        <Card>
+          <CardHeader>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-2">
+              Reading policies and other details
+            </h2>
+          </CardHeader>
+          <CardBody className="flex flex-col gap-1.5">
+            {mapWarnings.map((w, i) => (
+              <p key={i} className="text-sm text-ink-3">
+                {w}
+              </p>
+            ))}
+          </CardBody>
+        </Card>
+      )}
+
+      {/*
+        Deliberately OUTSIDE the `result &&` gate above, not nested under the
+        Accounts card. A life insurance statement is the document this feature
+        exists for and it yields zero ACCOUNTS — `result.rows` empty, the
+        accounts branch rendering its "No accounts found" empty state — so a
+        policies table gated on that would be invisible for exactly the import
+        it was built to review. Gated on having rows instead: an empty card on
+        every import is noise.
+      */}
+      {hasMapRows && (
+        <Card>
+          <CardHeader>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-2">
+              Policies and other details
+            </h2>
+          </CardHeader>
+          <CardBody>
+            <EntityTables
+              rows={mapRows}
+              committedRowIds={mapCommittedRowIds}
+              onCommitRows={commitMapRows}
+              onEditCell={editMapCell}
+            />
+          </CardBody>
+        </Card>
       )}
     </div>
   );

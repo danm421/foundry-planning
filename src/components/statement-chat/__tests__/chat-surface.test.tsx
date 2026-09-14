@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import { render, screen, fireEvent, within, act, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ChatSurface } from "../chat-surface";
 
@@ -1345,5 +1345,188 @@ describe("ChatSurface — a flush failure tells the advisor their question was n
     // Re-enabled, and the question wasn't lost.
     expect(sendButton()).toBeEnabled();
     expect(textbox).toHaveValue("what's the total?");
+  });
+});
+
+/**
+ * Task 14b Step 3 — the map-driven review tables.
+ *
+ * Fifteen tasks built the extraction, the matching, the request builder, the
+ * tables and the commit function, and nothing called any of it. These tests
+ * are the ones that go red if the surface stops calling it again.
+ */
+describe("ChatSurface — the map-driven review tables (Task 14b)", () => {
+  const twoFiles = [
+    { serverFileId: "f1", name: "life.pdf", documentType: "auto" },
+    { serverFileId: "f2", name: "ltd.pdf", documentType: "auto" },
+  ];
+  const MAP_PASS = "/api/clients/c1/imports/i1/chat/map-pass";
+
+  function policyRow(rowId: string, name: string) {
+    return {
+      entityId: "disability_policy",
+      rowId,
+      values: [
+        { key: "name", value: name, snippet: "x", confidence: 0.9 },
+        { key: "insured", value: "Client", snippet: "x", confidence: 0.9 },
+      ],
+      missingRequired: [],
+      rowConfidence: 0.9,
+    };
+  }
+
+  /** An extraction stream that finds NO accounts — the shape a genuine life
+   *  insurance statement takes, and the one that proves the policies table is
+   *  not hidden behind the accounts table's own render gate. */
+  const doneWithNoAccounts = `data: ${JSON.stringify({
+    type: "done",
+    summary: "Read 2 statements covering 0 accounts.",
+    caveats: [],
+    rows: [],
+    excluded: [],
+  })}\n\n`;
+
+  function mapPassCalls() {
+    return vi
+      .mocked(fetch)
+      .mock.calls.filter(([url, init]) =>
+        String(url) === MAP_PASS && (init as RequestInit | undefined)?.method === "POST",
+      );
+  }
+
+  it("runs the pass once per uploaded file after the stream, and renders the rows below the accounts", async () => {
+    vi.mocked(fetch).mockImplementation((url, init) => {
+      if (String(url).endsWith("/chat/extract")) {
+        return Promise.resolve(makeFramedResponse([doneWithNoAccounts]));
+      }
+      if (String(url) === MAP_PASS) {
+        const fileId = JSON.parse(String((init as RequestInit).body)).fileId as string;
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              rows: { disability_policy: [policyRow(`${fileId}:disability_policy:0`, `Policy ${fileId}`)] },
+              warnings: [],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }));
+    });
+
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={twoFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+
+    expect(await screen.findByRole("table", { name: /disability policy/i })).toBeInTheDocument();
+    // One POST per file, each naming its own file — not one call for the import.
+    expect(mapPassCalls().map(([, init]) => JSON.parse(String((init as RequestInit).body)).fileId)).toEqual([
+      "f1",
+      "f2",
+    ]);
+    // Both files' rows, merged — not just the last one's.
+    expect(screen.getByText("Policy f1")).toBeInTheDocument();
+    expect(screen.getByText("Policy f2")).toBeInTheDocument();
+    // And it renders even though this statement produced no ACCOUNTS at all.
+    expect(screen.getByText("No accounts found in these statements.")).toBeInTheDocument();
+  });
+
+  it("does not run the pass while the extraction stream is still open", async () => {
+    const encoder = new TextEncoder();
+    let controller!: ReadableStreamDefaultController<Uint8Array>;
+    const stream = new ReadableStream<Uint8Array>({
+      start(c) {
+        controller = c;
+      },
+    });
+
+    vi.mocked(fetch).mockImplementation((url) => {
+      if (String(url).endsWith("/chat/extract")) {
+        return Promise.resolve(
+          new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } }),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ rows: {}, warnings: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    });
+
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={twoFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+
+    // The stream is open and has already delivered a per-file event: the
+    // surface is mid-extraction, and a pass launched here would read a
+    // payloadJson the extraction is still writing.
+    await act(async () => {
+      controller.enqueue(
+        encoder.encode(
+          `data: ${JSON.stringify({ type: "file", fileName: "life.pdf", accountCount: 0 })}\n\n`,
+        ),
+      );
+    });
+    // Two matches: UploadZone's own file row, plus the Progress step line the
+    // event just added — i.e. the stream is live and being consumed.
+    await waitFor(() => expect(screen.getAllByText("life.pdf")).toHaveLength(2));
+    expect(screen.getByRole("button", { name: /reading statements/i })).toBeInTheDocument();
+    expect(mapPassCalls()).toHaveLength(0);
+
+    await act(async () => {
+      controller.enqueue(encoder.encode(doneWithNoAccounts));
+      controller.close();
+    });
+    await waitFor(() => expect(mapPassCalls()).toHaveLength(2));
+  });
+
+  it("renders no policies card when the pass found nothing", async () => {
+    vi.mocked(fetch).mockImplementation((url) => {
+      if (String(url).endsWith("/chat/extract")) {
+        return Promise.resolve(makeFramedResponse([doneWithNoAccounts]));
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ rows: {}, warnings: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    });
+
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={twoFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+
+    await waitFor(() => expect(mapPassCalls()).toHaveLength(2));
+    // An empty card on every import is noise. Matched on the heading EXACTLY:
+    // the warnings card's own header also contains that phrase, so a loose
+    // regex here would pass for the wrong reason the moment a warning lands.
+    expect(
+      screen.queryByRole("heading", { name: "Policies and other details" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  it("surfaces the pass's warnings where the advisor can see them", async () => {
+    vi.mocked(fetch).mockImplementation((url) => {
+      if (String(url).endsWith("/chat/extract")) {
+        return Promise.resolve(makeFramedResponse([doneWithNoAccounts]));
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ error: "life.pdf produced no readable text." }), {
+          status: 422,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    });
+
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={twoFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+
+    // A pass that produced no rows still has to say why, or a failed read is
+    // indistinguishable from a document with no policies in it.
+    // Named by the file it belongs to — both uploads failed, and "one of your
+    // statements failed" with no file name is not something an advisor can act
+    // on.
+    expect(await screen.findByText(/^f1: life\.pdf produced no readable text\.$/)).toBeInTheDocument();
+    expect(await screen.findByText(/^f2: life\.pdf produced no readable text\.$/)).toBeInTheDocument();
   });
 });

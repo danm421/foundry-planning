@@ -131,3 +131,97 @@ describe("commitMapRow", () => {
     if (!result.ok) expect(result.error).toMatch(/offline/);
   });
 });
+
+/**
+ * Task 14b Step 1 — the created record's id.
+ *
+ * A committed row has to be stamped `match = { kind: "exact", existingId }`
+ * or a second click posts a SECOND policy. The stamp needs the id the create
+ * route just wrote, and the two routes that actually take document evidence
+ * disagree about where they put it: `/insurance-policies` returns `{ id }`
+ * (route.ts:230) and `/disability-policies` returns `{ policy: { … } }`
+ * (route.ts:105).
+ */
+describe("commitMapRow — the created record's id", () => {
+  it("reads a top-level string id", async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: "pol_1" }),
+    } as Response);
+    const result = await commitMapRow({
+      clientId: "c1",
+      entity: life,
+      row: row({ name: "Term 20", faceValue: 1 }),
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.createdId).toBe("pol_1");
+      // A read id is NOT a "could not be marked" case.
+      expect(result.warnings.join(" ")).not.toMatch(/could not be marked/i);
+    }
+  });
+
+  it("reads the id out of a single-key wrapper like { policy: { id } }", async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: async () => ({ policy: { id: "dis_1", name: "Group LTD" } }),
+    } as Response);
+    const result = await commitMapRow({
+      clientId: "c1",
+      entity: life,
+      row: row({ name: "Term 20", faceValue: 1 }),
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.createdId).toBe("dis_1");
+  });
+
+  it("succeeds with createdId null and WARNS when the body carries no id", async () => {
+    vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => ({}) } as Response);
+    const result = await commitMapRow({
+      clientId: "c1",
+      entity: life,
+      row: row({ name: "Term 20", faceValue: 1 }),
+    });
+    // The write LANDED. Reporting a successful write as a failure would send
+    // the advisor back to click Commit again — the duplicate this whole
+    // mechanism exists to prevent.
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.createdId).toBeNull();
+      expect(result.warnings.join(" ")).toMatch(/could not be marked/i);
+      expect(result.warnings.join(" ")).toMatch(/duplicate/i);
+    }
+  });
+
+  it("does not guess an id out of a multi-key body", async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: async () => ({ policy: { id: "dis_1" }, meta: { ok: true } }),
+    } as Response);
+    const result = await commitMapRow({
+      clientId: "c1",
+      entity: life,
+      row: row({ name: "Term 20", faceValue: 1 }),
+    });
+    expect(result.ok).toBe(true);
+    // Two top-level values: which one is the record is a GUESS, and a wrong
+    // id stamps the row against a record that was never created.
+    if (result.ok) expect(result.createdId).toBeNull();
+  });
+
+  it("treats an unparseable success body as no id rather than a failure", async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: async () => {
+        throw new Error("Unexpected end of JSON input");
+      },
+    } as unknown as Response);
+    const result = await commitMapRow({
+      clientId: "c1",
+      entity: life,
+      row: row({ name: "Term 20", faceValue: 1 }),
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.createdId).toBeNull();
+  });
+});
