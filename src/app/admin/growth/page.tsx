@@ -19,8 +19,13 @@ export default async function GrowthPage() {
     notFound();
   }
 
-  // Every builder is pure and takes the same snapshot, so the page cannot
-  // disagree with the digest that runs off the same call.
+  // Every builder is pure and takes the same snapshot, so a number here and
+  // the same number in the digest cannot drift.
+  //
+  // One deliberate gap: the digest ALSO renders buildAccountRows — every live
+  // trial, not just the ones inside TRIAL_ENDING_DAYS — while "Needs you"
+  // below still shows the attention rows only. Folding that roster onto this
+  // page is open work, not an oversight.
   const input = await loadGrowthInput();
 
   return (

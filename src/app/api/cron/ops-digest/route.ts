@@ -9,11 +9,14 @@
 // EDT for the ~8 months the US is on daylight time — the same fixed-UTC
 // tradeoff notification-digest documents.
 //
-// ZERO attention rows means NO email. A daily "nothing happened" message is
-// how a sender gets filtered.
+// NOTHING to report means NO email — no attention rows AND no live trial or
+// recent cancellation. A daily "nothing happened" message is how a sender gets
+// filtered. Note the standing trials roster keeps the mail flowing while any
+// trial is running, which is the point: a trial is money in play every day.
 import { type NextRequest, NextResponse } from "next/server";
 import { loadGrowthInput } from "@/lib/ops/growth/load";
 import { buildAttention } from "@/lib/ops/growth/attention";
+import { buildAccountRows } from "@/lib/ops/growth/accounts";
 import { buildDigest } from "@/lib/ops/growth/digest";
 import { sendOpsDigest } from "@/lib/ops/growth/email";
 
@@ -35,10 +38,15 @@ export async function GET(req: NextRequest): Promise<Response> {
   );
   const input = await loadGrowthInput();
   const rows = buildAttention(input);
-  const mail = buildDigest(rows, `${base}/admin/growth`);
+  const accounts = buildAccountRows(input);
+  const mail = buildDigest(rows, accounts, `${base}/admin/growth`);
 
-  if (!mail) return NextResponse.json({ rows: 0, sent: false, reason: "quiet" });
+  // Both counts are reported as measured in both branches — a hard-coded 0 on
+  // the quiet path would hide the case where buildDigest declined rows it was
+  // actually handed.
+  const counted = { rows: rows.length, accounts: accounts.length };
+  if (!mail) return NextResponse.json({ ...counted, sent: false, reason: "quiet" });
 
   const { delivered } = await sendOpsDigest(mail);
-  return NextResponse.json({ rows: rows.length, sent: delivered });
+  return NextResponse.json({ ...counted, sent: delivered });
 }
