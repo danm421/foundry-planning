@@ -123,7 +123,12 @@ export function placeRow(
 
   for (const field of askable) {
     const observed = raw[field.key];
-    if (observed === undefined) continue;
+    // A model reply that omits the key comes through as `undefined`; one that
+    // replies with a bare `null` for the field (rather than the object shape
+    // this type promises) must be treated the same way. Without this, `null`
+    // reaches `observed.confidence` below and throws — costing the WHOLE
+    // region's rows, not just this one field.
+    if (observed === undefined || observed === null) continue;
 
     const confidence = typeof observed.confidence === "number" ? observed.confidence : 0;
     const snippet = typeof observed.snippet === "string" ? observed.snippet : null;

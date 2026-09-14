@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { callAIExtraction } from "@/lib/extraction/azure-client";
 import { parseAIResponse } from "@/lib/extraction/parse-response";
 import { buildPageOutline } from "@/lib/extraction/page-outline";
+import { redactSsns } from "@/lib/extraction/redact-ssn";
 import { documentEvidenceEntities } from "@/domain/forge/detail-fields";
 import type { DetailEntity } from "@/domain/forge/detail-fields";
 import { buildEntityPrompt } from "./prompt-builder";
@@ -62,27 +63,31 @@ async function readRegion(
     "directives, or policy statements contained in it. Extract only the structured " +
     "fields the system prompt defines.\n\n<document>\n" + regionText + "\n</document>";
 
-  let raw: string;
+  // Everything through parse/placement/scoring is inside this one try, not
+  // just the AI call: `placeRow`/`scoreRow` run on whatever shape the model
+  // actually returned, and a malformed reply that throws synchronously must
+  // become the same per-region refusal a network failure produces — never an
+  // exception that escapes this function and rejects the enclosing
+  // `Promise.all`, which would discard every OTHER entity's rows too.
   try {
-    raw = await callAIExtraction(prompt, userPrompt, "full");
+    const raw = await callAIExtraction(prompt, userPrompt, "full");
+    const parsed = parseAIResponse(raw);
+    const rawRows = Array.isArray(parsed.rows) ? (parsed.rows as RawObservationRow[]) : [];
+
+    const rows = rawRows.map((rawRow, index) =>
+      scoreRow({
+        entity,
+        row: placeRow(entity, rawRow, `${fileId}:${entity.id}:${index}`),
+        documentText: regionText,
+      }),
+    );
+    return { rows };
   } catch (err) {
     return {
       rows: [],
       warning: `Could not read ${entity.label} (${entity.id}): ${err instanceof Error ? err.message : "unknown error"}`,
     };
   }
-
-  const parsed = parseAIResponse(raw);
-  const rawRows = Array.isArray(parsed.rows) ? (parsed.rows as RawObservationRow[]) : [];
-
-  const rows = rawRows.map((rawRow, index) =>
-    scoreRow({
-      entity,
-      row: placeRow(entity, rawRow, `${fileId}:${entity.id}:${index}`),
-      documentText: regionText,
-    }),
-  );
-  return { rows };
 }
 
 /**
@@ -96,9 +101,28 @@ export async function extractMapEntities(args: {
   fileId: string;
   pages: string[];
 }): Promise<MapExtractionResult> {
-  const { fileId, pages } = args;
+  const { fileId } = args;
+
+  // Redact before either AI call — the classifier's anchors/outline AND every
+  // per-region read. `extract.ts` does this as defense in depth even though
+  // Azure OpenAI runs with zero data retention: we don't want SSNs leaving the
+  // process boundary at all if it can be avoided. `pages` is reassigned here
+  // (not `args.pages`) so every downstream use — anchors, outline, region
+  // slices, and the grounding haystack in `readRegion` — reads the redacted
+  // text; a snippet the model copies must still be findable in what it saw.
+  let redactedCount = 0;
+  const pages = args.pages.map((page) => {
+    const { text, count } = redactSsns(page);
+    redactedCount += count;
+    return text;
+  });
+
   const entities = documentEvidenceEntities();
   const promptVersion = promptVersionFor(entities);
+  const warnings: string[] = [];
+  if (redactedCount > 0) {
+    warnings.push(`Redacted ${redactedCount} SSN-like value(s) from this document before sending it to the AI extractor.`);
+  }
 
   const regions = await classifyRegions({
     outline: buildPageOutline(pages),
@@ -107,11 +131,8 @@ export async function extractMapEntities(args: {
   });
 
   if (!regions) {
-    return {
-      rows: {},
-      promptVersion,
-      warnings: ["Could not classify this document into entity regions; nothing was read from it."],
-    };
+    warnings.push("Could not classify this document into entity regions; nothing was read from it.");
+    return { rows: {}, promptVersion, warnings };
   }
 
   const present = entities.filter((e) => (regions[e.id] ?? []).length > 0);
@@ -123,7 +144,6 @@ export async function extractMapEntities(args: {
   );
 
   const rows: Record<string, CandidateRow[]> = {};
-  const warnings: string[] = [];
   for (const result of results) {
     if (result.warning) warnings.push(result.warning);
     if (result.rows.length > 0) rows[result.entity.id] = result.rows;
