@@ -15,7 +15,7 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { DETAIL_ENTITIES, TAB_ROUTES, documentEvidenceEntities } from "../index";
+import { DETAIL_ENTITIES, TAB_ROUTES, documentEvidenceEntities, findEntity } from "../index";
 import { YEAR_REFS } from "@/lib/milestones";
 import type { DetailEntity } from "../types";
 import * as schema from "@/db/schema";
@@ -272,6 +272,34 @@ describe("document-evidence marking", () => {
         Object.prototype.hasOwnProperty.call(own as object, path.on),
         `${entity.id}.scopePath.on names "${path.on}", which is not a column on ${entity.table}`,
       ).toBe(true);
+    }
+  });
+});
+
+describe("the two Phase 2 entities", () => {
+  it("marks exactly life insurance and disability as document evidence", () => {
+    expect(documentEvidenceEntities().map((e) => e.id).sort()).toEqual([
+      "disability_policy",
+      "life_insurance_policy",
+    ]);
+  });
+
+  it("life insurance has no identity key — matchLifePolicy owns that job", () => {
+    expect(findEntity("life_insurance_policy")!.identity).toBeUndefined();
+  });
+
+  it("disability identifies a row by name, insured and carrier", () => {
+    expect(findEntity("disability_policy")!.identity).toEqual(["name", "insured", "carrier"]);
+  });
+
+  it("the death benefit carries the wordings a policy actually prints", () => {
+    const face = findEntity("life_insurance_policy")!.fields.find((f) => f.key === "faceValue")!;
+    expect(face.aliases).toContain("Face Amount");
+  });
+
+  it("both entities tell the classifier what their document looks like", () => {
+    for (const entity of documentEvidenceEntities()) {
+      expect(entity.documentHints?.length, `${entity.id} has no document hints`).toBeGreaterThan(0);
     }
   });
 });
