@@ -380,6 +380,69 @@ describe("ChatSurface — wiring the table in (Task 10b)", () => {
     // the button stays clickable and the server's 409 does the talking.
     expect(screen.getByRole("button", { name: /finish import/i })).toBeEnabled();
   });
+
+  /**
+   * Final review, deferred #17 promoted to MUST-FIX (Ruling 38). The finalize
+   * route counts ACCOUNT rows only, so an advisor could close an import with
+   * uncommitted policies — and combined with I5 that DISCARDED them, with no
+   * warning and no way back short of re-uploading. `finalize/route.ts` is
+   * deliberately untouched: the minimum honest fix is saying so on screen.
+   */
+  /** A resumed draft: accounts already on the payload (so the Finish import
+   *  card renders via mount hydration), plus whatever map rows the last visit
+   *  stored. No extraction is run — which is exactly the state Ruling 38 is
+   *  about, since `runPass` would clear the stored rows. */
+  function renderResumedDraft(mapRows: Record<string, unknown[]>) {
+    vi.mocked(fetch).mockReset();
+    vi.mocked(fetch).mockResolvedValue(
+      importGetResponse({
+        payload: {
+          accounts: [
+            { name: "IRA", custodian: "Schwab", category: "taxable", subType: "brokerage", value: 100, __rowId: "r1" },
+          ],
+        },
+      }),
+    );
+    return render(
+      <ChatSurface
+        clientId="c1"
+        importId="i1"
+        initialFiles={initialFiles}
+        initialMapRows={mapRows as never}
+      />,
+    );
+  }
+
+  function storedPolicy(extra: Record<string, unknown> = {}) {
+    return {
+      entityId: "disability_policy",
+      rowId: "f1:disability_policy:0",
+      values: [{ key: "name", value: "Group LTD", snippet: "x", confidence: 0.9 }],
+      missingRequired: [],
+      rowConfidence: 0.9,
+      ...extra,
+    };
+  }
+
+  it("warns beside Finish import when map rows are still uncommitted", async () => {
+    renderResumedDraft({ disability_policy: [storedPolicy()] });
+
+    expect(await screen.findByRole("button", { name: /finish import/i })).toBeInTheDocument();
+    expect(
+      screen.getByText(/1 row in .Policies and other details. below has not been committed/i),
+    ).toBeInTheDocument();
+  });
+
+  it("says nothing beside Finish import when every map row is already committed", async () => {
+    // The negative half: without it a hardcoded warning passes the test above.
+    // `useMapRows` seeds the lock from the stamp the commit's PATCH wrote.
+    renderResumedDraft({
+      disability_policy: [storedPolicy({ match: { kind: "exact", existingId: "dis_9" } })],
+    });
+
+    expect(await screen.findByRole("button", { name: /finish import/i })).toBeInTheDocument();
+    expect(screen.queryByText(/not been committed/i)).not.toBeInTheDocument();
+  });
 });
 
 describe("ChatSurface — committedRowIds mount hydration (round 1 review, Important 3)", () => {

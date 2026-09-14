@@ -273,6 +273,14 @@ export function ChatSurface({
   // the `payloadJson` read-modify-write race the sequential loop exists to
   // close, reopened from the other end.
   const mapPassRunning = mapStatus === "running";
+  // Deferred #17, promoted to MUST-FIX (Ruling 38). `chat/finalize` counts
+  // ACCOUNT rows only, so its 409 says nothing about policies — an advisor can
+  // close an import with uncommitted map rows and never hear about it. The
+  // route is deliberately NOT changed (that would reshape finalize's
+  // semantics); the honest minimum is telling them here, where the button is.
+  const uncommittedMapRows = Object.values(mapRows)
+    .flat()
+    .filter((row) => !mapCommittedRowIds.includes(row.rowId)).length;
 
   return (
     <div className="flex flex-col gap-6">
@@ -503,6 +511,15 @@ export function ChatSurface({
                     </p>
                     {finalizeStatus === "error" && finalizeError && (
                       <p className="mt-1 text-sm text-crit">{finalizeError}</p>
+                    )}
+                    {finalizeStatus !== "done" && uncommittedMapRows > 0 && (
+                      <p className="mt-1 text-sm text-warn">
+                        {uncommittedMapRows === 1
+                          ? "1 row in “Policies and other details” below has not been committed"
+                          : `${uncommittedMapRows} rows in “Policies and other details” below have not been committed`}
+                        {" "}— closing the import leaves{" "}
+                        {uncommittedMapRows === 1 ? "it" : "them"} out of the plan.
+                      </p>
                     )}
                   </div>
                   {finalizeStatus !== "done" && (
