@@ -183,4 +183,38 @@ describe("extractMapEntities", () => {
     expect(classifierArgs).toContain(REDACTED_SSN_PLACEHOLDER);
     expect(result.warnings.join(" ")).toMatch(/redacted 1 ssn-like value/i);
   });
+
+  /**
+   * Final review, C3. The test above uses EMPTY ranges on purpose, so only the
+   * classifier is ever called — it therefore asserts nothing about the
+   * PER-REGION reads, which are two of the three call sites the redaction
+   * constraint covers (the third, the grounding haystack, is the same string:
+   * `readRegion` passes `regionText` as `documentText`).
+   *
+   * The surviving mutation this pins: change `sliceRegion(pages, …)` to
+   * `sliceRegion(args.pages, …)` at `orchestrator.ts:142`. The implementation
+   * is correct today — `pages` is the redacted rebinding — but before this test
+   * every suite on the branch stayed green under that one-word change while
+   * every per-region extraction shipped an un-redacted SSN to Azure.
+   */
+  it("redacts the SSN in the PER-REGION extraction call, not only the classifier's", async () => {
+    const pagesWithSsn = [...PAGES];
+    pagesWithSsn[1] = pagesWithSsn[1] + "\nSSN: 123-45-6789";
+    // A NON-empty range covering the page the SSN is on, so call[1] IS the
+    // region read of that page. An empty range here would test nothing.
+    respond(
+      { life_insurance_policy: [[2, 2]], disability_policy: [] },
+      { rows: [{ name: { value: "Term Life", snippet: "Policy Summary", confidence: 0.9 } }] },
+    );
+
+    await extractMapEntities({ fileId: "f1", pages: pagesWithSsn });
+
+    expect(mocked).toHaveBeenCalledTimes(2);
+    const regionArgs = mocked.mock.calls[1].join(" ");
+    // Both halves matter. `not.toContain` alone would pass if the region text
+    // were empty; `toContain` alone would pass if BOTH the placeholder and the
+    // raw value were sent.
+    expect(regionArgs).not.toContain("123-45-6789");
+    expect(regionArgs).toContain(REDACTED_SSN_PLACEHOLDER);
+  });
 });
