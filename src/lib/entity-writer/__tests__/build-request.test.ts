@@ -1,6 +1,6 @@
 // src/lib/entity-writer/__tests__/build-request.test.ts
 import { describe, it, expect } from "vitest";
-import { findEntity } from "@/domain/forge/detail-fields";
+import { findEntity, findEntity as find } from "@/domain/forge/detail-fields";
 import { buildWriteRequest } from "../build-request";
 import type { CandidateRow } from "@/lib/entity-extraction/types";
 
@@ -122,5 +122,44 @@ describe("buildWriteRequest", () => {
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/no create route/i);
+  });
+});
+
+describe("buildWriteRequest on a set-replacing entity", () => {
+  const beneficiaryEntity = {
+    ...find("life_insurance_policy_beneficiary")!,
+    identity: ["recipientId"] as const,
+    routes: { update: "/insurance-policies/p1/beneficiaries" },
+    // The real entity's fields (tier, percentage, familyMemberId, ...) don't
+    // include recipientId/percent; override so the shared payload-building
+    // step (which drops any row value not in `fields`) doesn't strip the
+    // values this test's row and existingSet use.
+    fields: [
+      { key: "recipientId", label: "Recipient", kind: "string" as const },
+      { key: "percent", label: "Percent", kind: "percent" as const },
+    ],
+  };
+
+  it("supersedes the matching row in place instead of duplicating it", () => {
+    const result = buildWriteRequest({
+      entity: beneficiaryEntity,
+      row: {
+        entityId: beneficiaryEntity.id,
+        rowId: "r1",
+        values: [
+          { key: "recipientId", value: "b", snippet: "x", confidence: 0.9 },
+          { key: "percent", value: 50, snippet: "x", confidence: 0.9 },
+        ],
+        missingRequired: [],
+        rowConfidence: 0.9,
+      },
+      existingSet: [{ recipientId: "a", percent: 100 }, { recipientId: "b", percent: 0 }],
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.body).toHaveLength(2);
+      expect(result.body).toContainEqual({ recipientId: "a", percent: 100 });
+      expect(result.body).toContainEqual({ recipientId: "b", percent: 50 });
+    }
   });
 });

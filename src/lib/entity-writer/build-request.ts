@@ -1,6 +1,7 @@
 // src/lib/entity-writer/build-request.ts
 import type { DetailEntity } from "@/domain/forge/detail-fields";
 import type { CandidateRow } from "@/lib/entity-extraction/types";
+import { mergeIntoSet } from "./set-merge";
 
 export type WriteRequest =
   | { ok: true; method: "POST" | "PATCH" | "PUT"; path: string; body: unknown; warnings: string[] }
@@ -76,7 +77,12 @@ export function buildWriteRequest(args: {
         error: `${entity.id} replaces the whole set on write, so the current rows must be supplied before it can be written. Writing without them would delete every existing row.`,
       };
     }
-    return { ok: true, method: "PUT", path, body: [...existingSet, payload], warnings };
+    const { rows } = mergeIntoSet({
+      entity,
+      existing: existingSet as Record<string, unknown>[],
+      incoming: payload,
+    });
+    return { ok: true, method: "PUT", path, body: rows, warnings };
   }
 
   const path = entity.routes.create;
