@@ -259,6 +259,11 @@ export type AuditAction =
   // `payloadJson`. Distinct from "import.extraction.*", which is the wizard's
   // accounts extractor and reads a different set of concepts.
   | "import.map_pass.completed"
+  // One extracted map row stamped as committed — the link from the row to the
+  // record the advisor's accept just created. The record that closes the
+  // "Apply again made a second policy" hole, so it is also the row a dispute
+  // over a duplicate has to be reconstructed from.
+  | "import.map_pass.row_linked"
   // Rebalance — reading holdings off a statement for an outside portfolio.
   // Nothing is persisted, so this audit row is the only record the read happened.
   | "rebalance.holdings.extracted"

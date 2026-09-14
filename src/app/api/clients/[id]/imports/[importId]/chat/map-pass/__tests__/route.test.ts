@@ -145,7 +145,14 @@ import { POST, PATCH } from "../route";
 import { auth } from "@clerk/nextjs/server";
 import { requireOrgId } from "@/lib/db-helpers";
 import { requireActiveSubscription, ForbiddenError } from "@/lib/authz";
-import { requireImportAccess, NotFoundError } from "@/lib/imports/authz";
+import {
+  requireImportAccess,
+  NotFoundError,
+  // Aliased: `@/lib/authz` exports a DIFFERENT class of the same name,
+  // imported above. Conflating the two is the trap this route's gate chain
+  // is written around, so the test file must not conflate them either.
+  ForbiddenError as ImportForbiddenError,
+} from "@/lib/imports/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { downloadImportFile } from "@/lib/imports/blob";
@@ -298,6 +305,20 @@ describe("map-pass route — gate chain", () => {
     expect(runMapEntityPass).not.toHaveBeenCalled();
   });
 
+  // The OTHER leg of the same catch — an import that exists in this firm but
+  // was created by a different advisor. Deleting this leg does not fail any
+  // other test in this file: the throw just escapes as a 500, which is a
+  // leaked stack instead of a refusal.
+  it("403s an import owned by another user (@/lib/imports/authz's ForbiddenError)", async () => {
+    vi.mocked(requireImportAccess).mockRejectedValueOnce(
+      new ImportForbiddenError("Import not owned by current user"),
+    );
+    const res = await POST(req({ fileId: "f1" }), params);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "Forbidden" });
+    expect(runMapEntityPass).not.toHaveBeenCalled();
+  });
+
   it("403s ai_import_not_entitled and audits the denial", async () => {
     vi.mocked(auth).mockResolvedValue({
       userId: "user_1",
@@ -435,6 +456,28 @@ describe("map-pass route — PATCH", () => {
     );
     expect(updateCalls[0].matched).toBe(0);
     expect(res.status).toBe(404);
+  });
+
+  it("audits the stamp AFTER the write lands, naming the row and the record", async () => {
+    await PATCH(req({ entityId: "entities", rowId: "r2", createdId: "ent_99" }, "PATCH"), params);
+    expect(recordAudit).toHaveBeenCalledWith({
+      action: "import.map_pass.row_linked",
+      resourceType: "client_import",
+      resourceId: "i1",
+      clientId: "c1",
+      firmId: "org_1",
+      metadata: { entityId: "entities", rowId: "r2", createdId: "ent_99" },
+    });
+  });
+
+  it("does not audit a stamp whose write matched no row", async () => {
+    importTable = [{ id: "i1", client_id: "c1", org_id: "org_OTHER", discarded_at: null }];
+    const res = await PATCH(
+      req({ entityId: "entities", rowId: "r2", createdId: "ent_99" }, "PATCH"),
+      params,
+    );
+    expect(res.status).toBe(404);
+    expect(recordAudit).not.toHaveBeenCalled();
   });
 
   it("404s an unknown rowId and writes nothing", async () => {

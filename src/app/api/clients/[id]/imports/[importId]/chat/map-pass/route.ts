@@ -308,5 +308,21 @@ export async function PATCH(request: Request, { params }: Params) {
     return jsonResponse(404, { error: "Import not found" });
   }
 
+  // After the write, never before — an audit row for a write that did not
+  // land is worse than none. Every sibling write of this same column records
+  // one (`chat/finalize/route.ts` → "import.chat.finalized",
+  // `chat/turn/route.ts` → "import.chat.turn"), and this event in particular
+  // is the one a dispute needs to reconstruct: it is the record that THIS row
+  // created THAT entity, which is the whole incident `linkCreated` exists to
+  // close ("Apply again" posting a second policy).
+  await recordAudit({
+    action: "import.map_pass.row_linked",
+    resourceType: "client_import",
+    resourceId: importId,
+    clientId,
+    firmId,
+    metadata: { entityId, rowId, createdId },
+  });
+
   return jsonResponse(200, { ok: true });
 }
