@@ -23,7 +23,7 @@ import { TECHNIQUE_OBSERVATION_ENTITIES } from "./techniques-observations";
 import { WILLS_ENTITIES } from "./wills";
 import { ASSUMPTIONS_ENTITIES } from "./assumptions";
 
-export type { DetailEntity, DetailField, DetailsTab } from "./types";
+export type { DetailEntity, DetailField, DetailsTab, FieldKind } from "./types";
 
 /**
  * Tab id → its path segment under `/clients/[id]/details/`, so Forge can deep
