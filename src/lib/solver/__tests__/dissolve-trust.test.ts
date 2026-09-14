@@ -1115,6 +1115,40 @@ describe("buildDissolveTrustMutations — will-upsert survives save → reload",
   });
 });
 
+describe("buildDissolveTrustMutations — the returned flows survive save → reload", () => {
+  it("clears ownerEntityId through a JSONB round trip, so the income comes home on reload too", () => {
+    const base = tree({
+      accounts: [trustAccount],
+      incomes: [
+        { id: "inc-trust", type: "trust", name: "IDGT distribution", annualAmount: 60_000,
+          startYear: 2026, endYear: 2060, growthRate: 0, owner: "client",
+          ownerEntityId: "ent-ilit" },
+      ],
+      expenses: [
+        { id: "exp-trust", type: "other", name: "Trustee fee", annualAmount: 12_000,
+          startYear: 2026, endYear: 2060, growthRate: 0, ownerEntityId: "ent-ilit" },
+      ],
+    });
+    const muts = buildDissolveTrustMutations(base, ilit);
+    const drafts = mutationsToScenarioChanges(base, "client-1", muts);
+
+    // The `to` of a CLEARED field is `undefined`, and `jsonb` cannot store that:
+    // `JSON.stringify` drops the key entirely. Round-tripping the payload here is
+    // what proves the reload still reads "no owner" rather than "unchanged".
+    const stored = drafts.map((d) => ({ ...d, payload: JSON.parse(JSON.stringify(d.payload)) }));
+    const reloaded = replayDrafts(base, stored);
+
+    const inc = reloaded.incomes.find((i) => i.id === "inc-trust")!;
+    const exp = reloaded.expenses.find((e) => e.id === "exp-trust")!;
+    expect(inc.ownerEntityId).toBeUndefined();
+    expect(exp.ownerEntityId).toBeUndefined();
+    // …and the projection agrees: the household receives it.
+    expect(runProjection(reloaded)[0].income.bySource["inc-trust"]).toBe(60_000);
+    expect(runProjection(reloaded)[0].expenses.bySource["exp-trust"]).toBe(12_000);
+    expect(typeof inc.annualAmount).toBe("number");
+  });
+});
+
 describe("buildDissolveTrustMutations — the PROJECTION, not just the tree", () => {
   const fms = () =>
     [
