@@ -7,6 +7,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ClientData, EntitySummary } from "@/engine/types";
 import type { SolverMutation } from "@/lib/solver/types";
+import { partitionBaseSavableMutations } from "@/lib/solver/mutations-to-base-updates";
 import { SolverTrustEditor } from "../solver-trust-editor";
 
 vi.mock("next/navigation", () => ({
@@ -502,6 +503,55 @@ describe("SolverTrustEditor — Notes & sales tab", () => {
     expect(acct?.value?.owners).toEqual([
       { kind: "entity", entityId: "e-ilit", percent: 1 },
     ]);
+  });
+
+  // ── ⚠️(d): the producer side of the Save-to-base pairing ────────────────────
+  //
+  // `submitSaleToTrust` emits TWO mutations for this one action — the source
+  // account's owner flip into the trust, and the note the family now holds — and
+  // ties them together with the note's `sourceAccountId`. That one field is what
+  // stops Save to base from posting the flip ALONE and permanently retitling the
+  // asset into the trust on the client's REAL record with nothing owed for it.
+  //
+  // The consumer side is pinned in mutations-to-base-updates.test.ts and
+  // live-solver-workspace.test.tsx, but both hand-seed the payload — so without
+  // this scope, dropping or renaming `sourceAccountId` here, or emitting the
+  // paired `account-upsert` under a different id, leaves every one of those
+  // tests green while production half-saves the sale again.
+  it("ties the note to the account it sold, so Save to base cannot take the asset without the note", async () => {
+    const { onChange } = renderEditor();
+    await userEvent.click(screen.getByRole("button", { name: "Notes & sales" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Sell an asset to the trust" }),
+    );
+
+    // The control RENDERS before anything is asserted about what it emits.
+    const assetSelect = screen.getByLabelText("Asset to sell");
+    expect(assetSelect).toBeInTheDocument();
+    await userEvent.selectOptions(assetSelect, "a-brokerage");
+    await userEvent.click(screen.getByRole("button", { name: "Sell to trust" }));
+
+    await waitFor(() => {
+      expect(lastOf(onChange, "note-receivable-upsert")).toBeDefined();
+    });
+    const note = lastOf(onChange, "note-receivable-upsert")!;
+    const acct = lastOf(onChange, "account-upsert")!;
+    expect(acct).toBeDefined();
+
+    // Read the pairing off the EMITTED mutations, never off a literal: the fact
+    // under test is that the producer ties its own two halves together, not that
+    // it happened to pick any particular account id.
+    expect(note.sourceAccountId).toBeTruthy();
+    expect(note.sourceAccountId).toBe(acct.id);
+
+    // …and that this is the pairing the Save-to-base split actually reads. Running
+    // the REAL emitted pair through the REAL partition pins the dependency rather
+    // than a field name: if the producer stops declaring its source account, the
+    // owner flip lands back in `savable` and goes to the client's real record on
+    // its own.
+    const { savable, heldSaleAccountIds } = partitionBaseSavableMutations([acct, note]);
+    expect(savable).toEqual([]);
+    expect(heldSaleAccountIds).toEqual([acct.id]);
   });
 
   it("refuses the sale for a trust the plan has never seen, rather than linking to an id with no row", async () => {
