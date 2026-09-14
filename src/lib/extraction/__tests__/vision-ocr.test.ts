@@ -69,6 +69,32 @@ describe("visionOcrPdf", () => {
     expect(renderPageAsImage).toHaveBeenCalledTimes(5);
   });
 
+  it("returns the transcripts unjoined as `segments`, in order", async () => {
+    // The map-entity pass needs an ORDERED ARRAY to target regions over; it
+    // cannot use `text`, because re-splitting a joined blob on "\n\n" would
+    // also split inside a transcript.
+    getDocumentProxy.mockResolvedValue({ numPages: 5 });
+    callAIVisionTranscription
+      .mockResolvedValueOnce("BATCH-A")   // pages 1-4
+      .mockResolvedValueOnce("BATCH-B");  // page 5
+
+    const res = await visionOcrPdf(Buffer.from("pdf"), { maxPages: 30, model: "mini", batchSize: 4 });
+
+    expect(res.segments).toEqual(["BATCH-A", "BATCH-B"]);
+    expect(res.segments.join("\n\n")).toBe(res.text);
+  });
+
+  it("drops an empty transcript from `segments` rather than passing a blank chunk on", async () => {
+    getDocumentProxy.mockResolvedValue({ numPages: 5 });
+    callAIVisionTranscription
+      .mockResolvedValueOnce("BATCH-A")
+      .mockResolvedValueOnce("   ");
+
+    const res = await visionOcrPdf(Buffer.from("pdf"), { maxPages: 30, model: "mini", batchSize: 4 });
+
+    expect(res.segments).toEqual(["BATCH-A"]);
+  });
+
   it("caps at maxPages and reports truncated", async () => {
     getDocumentProxy.mockResolvedValue({ numPages: 10 });
     callAIVisionTranscription.mockResolvedValue("X");

@@ -9,6 +9,17 @@ const JPEG_QUALITY = 70;
 
 export interface VisionOcrResult {
   text: string;
+  /**
+   * The same transcripts `text` is joined from, unjoined — one entry per
+   * TRANSCRIBED BATCH (up to `batchSize` rendered pages each), not per page.
+   *
+   * Callers that need an ordered array of text chunks rather than one blob —
+   * the map-entity pass, whose region classifier targets ranges over whatever
+   * array it is given — use these. Because the classifier builds its outline
+   * from the same array it later slices, the coarser granularity stays
+   * internally consistent: a "page" range simply addresses a batch.
+   */
+  segments: string[];
   pageCount: number;
   pagesProcessed: number;
   truncated: boolean;
@@ -112,8 +123,17 @@ export async function visionOcrPdf(
   }
   await Promise.all(inFlight.values());
 
+  // `transcripts` is index-assigned per batch; every slot is filled by the time
+  // the in-flight window drains, but normalise anyway so a caller never sees a
+  // hole as `undefined`.
+  const segments = Array.from(
+    { length: batchIndex },
+    (_, i) => transcripts[i] ?? "",
+  ).filter((segment) => segment.trim().length > 0);
+
   return {
     text: transcripts.join("\n\n"),
+    segments,
     pageCount,
     pagesProcessed: pagesToRender,
     truncated: pageCount > opts.maxPages,

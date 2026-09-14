@@ -1,30 +1,24 @@
 "use client";
 
 import { Fragment, useState, type ReactNode } from "react";
+import type { FieldKind } from "@/domain/forge/detail-fields";
 import ExcludedRows, { type ExcludedRow } from "./excluded-rows";
 
 /**
- * Mirrors `FieldKind` in `src/domain/forge/detail-fields/types.ts` — NOT
- * imported from there (controller amendment, Task 10): that directory is
- * currently uncommitted in a tree shared with other sessions. This is a
- * deliberate 9-member SUBSET of the real 13-member union (C3); Phase 2's
- * swap therefore only ever WIDENS it. `formatValue`'s `default` branch below
- * is what stays safe on that day — it must never become an exhaustive
- * switch with no fallback.
+ * The map's own `FieldKind` (`src/domain/forge/detail-fields/types.ts`), widened
+ * by `"price"` — a per-unit quote the map has no notion of, added by the
+ * holdings wave for bond/fund/money-market quotes. Imported rather than
+ * mirrored (Task 12) now that the map is committed (`ba2e21b2f`) — that only
+ * ever WIDENS the 9-member subset Phase 1 declared here by hand, so it can
+ * never silently drop a kind `formatValue` relies on. `formatValue`'s
+ * `default` branch below is what stays safe when a kind neither switch names
+ * arrives — it must never become an exhaustive switch with no fallback.
  *
  * `"rate"` is a decimal fraction (0.03 = 3%); `"percent"` is a whole number
  * (3 = 3%). Collapsing the two would silently be 100x wrong for one of them.
  */
 export type ColumnKind =
-  | "string"
-  | "money"
-  | "number"
-  | "percent"
-  | "rate"
-  | "year"
-  | "date"
-  | "boolean"
-  | "enum"
+  | FieldKind
   /** A per-unit quote, which whole dollars destroy: a bond prices per $100
    *  par (99.875 -> "$100"), a money market sits at $1.00, and a sub-dollar
    *  position rounds to "$0" beside a real market value. Separate from
@@ -83,6 +77,13 @@ export interface EntityTableProps<Row extends EntityRow> {
   onCommitRows: (rowIds: string[]) => Promise<void>;
   onEditCell: (rowId: string, field: string, value: unknown) => void;
   /**
+   * Accessible name for the `<table>` element. Optional because Phase 1's
+   * single-table pages never needed one; Phase 2 renders several tables on
+   * one page, so each needs a name a screen reader (and this task's own
+   * `getByRole("table", { name })`) can tell apart.
+   */
+  ariaLabel?: string;
+  /**
    * Lifts an excluded row into the working set WITHOUT committing it
    * (Task 10 review, CRITICAL). Optional because the brief's unchangeable
    * tests construct `<AccountsTable>` without it — when absent, the
@@ -123,6 +124,18 @@ export interface EntityTableProps<Row extends EntityRow> {
   expand?: (row: Row, meta: { isCommitted: boolean }) => ReactNode;
   /** Accessible name for the disclosure button. Defaults to "Show details". */
   expandLabel?: (row: Row) => string;
+  /**
+   * The two things `commitBlockedReason` cannot express, because neither one
+   * blocks the commit: a sub-threshold-confidence marker, and Add-vs-Update
+   * wording driven by the row's match kind. Returning `{}` (or omitting the
+   * prop) renders nothing extra — Phase 1's `accounts-table.tsx` never
+   * passes this and is unaffected.
+   */
+  // "Add" only, never "Update": Ruling 34 removed the update caption when the
+  // writer turned out to POST a create for every non-array entity, so a row
+  // captioned "Update" was the one it would have DUPLICATED. Keeping the word
+  // representable here is what lets it come back by accident.
+  rowNotice?: (row: Row) => { needsReview?: boolean; action?: "Add" };
 }
 
 const RIGHT_ALIGN_KINDS: ReadonlySet<ColumnKind> = new Set([
@@ -221,6 +234,8 @@ export default function EntityTable<Row extends EntityRow>({
   commitBlockedReason,
   expand,
   expandLabel,
+  ariaLabel,
+  rowNotice,
 }: EntityTableProps<Row>) {
   const [editing, setEditing] = useState<{ rowId: string; key: string } | null>(null);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
@@ -284,7 +299,7 @@ export default function EntityTable<Row extends EntityRow>({
         if (e.key === "Escape" && editing) setEditing(null);
       }}
     >
-      <table className="w-full text-left text-sm">
+      <table className="w-full text-left text-sm" aria-label={ariaLabel}>
         <thead>
           <tr className="border-b border-hair text-xs uppercase tracking-wide text-ink-3">
             {expand && <th className="w-10 py-2 pl-3 pr-1" />}
@@ -306,6 +321,11 @@ export default function EntityTable<Row extends EntityRow>({
             const isPending = rowId != null && pending.has(rowId);
             const child = expand?.(row, { isCommitted });
             const blockedReason = isCommitted ? null : (commitBlockedReason?.(row) ?? null);
+            // Neither field here blocks the commit — a row can need review AND
+            // still be committable — so this is computed independently of
+            // `blockedReason`, and withheld once committed for the same reason
+            // `blockedReason` is: the decision it informs is already made.
+            const notice = isCommitted ? undefined : rowNotice?.(row);
             const isExpanded = rowId != null && expanded.has(rowId);
 
             return (
@@ -378,6 +398,29 @@ export default function EntityTable<Row extends EntityRow>({
                     );
                   })}
                   <td className="px-3 py-2 text-right">
+                    {(notice?.needsReview || notice?.action) && (
+                      <div className="mb-1 flex items-center justify-end gap-1.5">
+                        {notice.needsReview && (
+                          // Color is never the only signal (ui-ux-pro-max
+                          // `color-not-only`) — the label carries the meaning,
+                          // the warn tone is the accent. Same pill shape as
+                          // `AssumedChip`, so a "this needs a look" marker
+                          // reads consistently wherever it shows up.
+                          <span
+                            data-testid="needs-review"
+                            title="Confidence is below the review threshold — check this value before committing."
+                            className="inline-flex items-center gap-1 rounded border border-warn/30 bg-warn/15 px-2 py-0.5 text-xs font-medium text-warn"
+                          >
+                            Needs review
+                          </span>
+                        )}
+                        {notice.action && (
+                          <span className="text-xs font-normal text-ink-3">
+                            {notice.action}
+                          </span>
+                        )}
+                      </div>
+                    )}
                     <button
                       type="button"
                       onClick={() => commit(rowId)}

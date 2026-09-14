@@ -632,6 +632,7 @@ describe("scanned-PDF vision OCR fallback", () => {
         mockedPdf.mockResolvedValueOnce(""); // no text layer
         mockedVision.mockResolvedValueOnce({
             text: "Account Statement\nSchwab Brokerage\nMarket Value: $150,000",
+            segments: ["Account Statement\nSchwab Brokerage\nMarket Value: $150,000"],
             pageCount: 3,
             pagesProcessed: 3,
             truncated: false,
@@ -654,6 +655,7 @@ describe("scanned-PDF vision OCR fallback", () => {
         mockedPdf.mockResolvedValueOnce("");
         mockedVision.mockResolvedValueOnce({
             text: "Account Statement\nSchwab Brokerage\nMarket Value: $150,000",
+            segments: ["Account Statement\nSchwab Brokerage\nMarket Value: $150,000"],
             pageCount: 58,
             pagesProcessed: 30,
             truncated: true,
@@ -695,6 +697,7 @@ describe("scanned-PDF vision OCR fallback", () => {
         mockedPdf.mockResolvedValueOnce("");
         mockedVision.mockResolvedValueOnce({
             text: "  ",
+            segments: [],
             pageCount: 2,
             pagesProcessed: 2,
             truncated: false,
