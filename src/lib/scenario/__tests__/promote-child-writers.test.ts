@@ -1,6 +1,13 @@
 // src/lib/scenario/__tests__/promote-child-writers.test.ts
 import { describe, it, expect } from "vitest";
-import { expenseDedicatedAccounts, savingsRuleSalaryIncomes } from "@/db/schema";
+import {
+  expenseDedicatedAccounts,
+  extraPayments,
+  liabilityOwners,
+  savingsRuleSalaryIncomes,
+  willBequests,
+  willResiduaryRecipients,
+} from "@/db/schema";
 import {
   writeAccountChildren,
   writeLiabilityChildren,
@@ -13,6 +20,8 @@ import {
   writeRothConversionChildren,
   writeReinvestmentChildren,
   writeWillChildren,
+  updateWillChildren,
+  updateLiabilityChildren,
 } from "../promote-child-writers";
 
 // Minimal fake tx that records insert + delete operations.
@@ -21,9 +30,16 @@ function makeTx(returnedId?: string) {
   const deleted: { table: unknown }[] = [];
   const tx = {
     insert: (table: unknown) => ({
-      values: async (values: unknown) => {
+      // A thenable that also exposes `.returning()`, because the will writer
+      // mixes both patterns: `await .values()` for recipients, `.returning()`
+      // for a bequest whose generated id its recipients need.
+      values: (values: unknown) => {
         inserted.push({ table, values });
-        return [{ id: returnedId ?? "child-id" }];
+        const result = Promise.resolve([{ id: returnedId ?? "child-id" }]);
+        (result as unknown as Record<string, unknown>).returning = async () => [
+          { id: returnedId ?? "child-id" },
+        ];
+        return result;
       },
     }),
     delete: (table: unknown) => ({
@@ -598,5 +614,110 @@ describe("writeWillChildren", () => {
     };
     await writeWillChildren(tx as never, "w2", {});
     expect(inserted).toHaveLength(0);
+  });
+});
+
+// ── updateWillChildren / updateLiabilityChildren ───────────────────────────
+//
+// `coerceForTable` filters an EDIT's `set` down to real table columns, so an
+// array field with no updater simply vanishes and the UPDATE degrades to a
+// silent `updatedAt` no-op. Promoting a trust dissolve then leaves the base will
+// still paying to the trust the same promote deleted — and
+// `will_bequest_recipients.recipientId` carries NO foreign key, so nothing ever
+// cleans the orphan up.
+
+describe("updateWillChildren", () => {
+  it("no-ops when neither array is in the edit set", async () => {
+    const { tx, inserted, deleted } = makeTx();
+    await updateWillChildren(tx as never, "will-1", { grantor: "spouse" });
+    expect(inserted).toHaveLength(0);
+    expect(deleted).toHaveLength(0);
+  });
+
+  it("rewrites bequests (delete-then-reinsert) with their recipients", async () => {
+    const { tx, inserted, deleted } = makeTx("bq-db-id");
+    const set = {
+      bequests: [
+        {
+          name: "To Amy", kind: "asset", assetMode: "specific", accountId: "a1",
+          entityId: null, liabilityId: null, percentage: 100, condition: "always",
+          sortOrder: 0,
+          recipients: [
+            { recipientKind: "family_member", recipientId: "fm-spouse", percentage: 100, sortOrder: 0 },
+          ],
+        },
+      ],
+    };
+    await updateWillChildren(tx as never, "will-1", set);
+    expect(deleted.map((d) => d.table)).toEqual([willBequests]);
+    expect(inserted.map((i) => i.table)).toHaveLength(2);
+    expect(inserted[0].values as Record<string, unknown>).toMatchObject({ willId: "will-1" });
+    expect(inserted[1].values as Record<string, unknown>).toMatchObject({
+      bequestId: "bq-db-id",
+      recipientId: "fm-spouse",
+    });
+  });
+
+  it("clears every bequest when the dissolve emptied the array", async () => {
+    const { tx, inserted, deleted } = makeTx();
+    await updateWillChildren(tx as never, "will-1", { bequests: [] });
+    expect(deleted.map((d) => d.table)).toEqual([willBequests]);
+    expect(inserted).toHaveLength(0);
+  });
+
+  it("rewrites residuary recipients independently of bequests", async () => {
+    const { tx, inserted, deleted } = makeTx();
+    const set = {
+      residuaryRecipients: [
+        { recipientKind: "family_member", recipientId: "fm-spouse", percentage: 40, sortOrder: 0 },
+      ],
+    };
+    await updateWillChildren(tx as never, "will-1", set);
+    expect(deleted.map((d) => d.table)).toEqual([willResiduaryRecipients]);
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0].values as Record<string, unknown>).toMatchObject({
+      willId: "will-1",
+      recipientId: "fm-spouse",
+      // A string percentage makes the engine concatenate rather than add; the
+      // column is numeric, so coerceForTable stringifies it exactly once.
+      percentage: "40",
+    });
+  });
+});
+
+describe("updateLiabilityChildren", () => {
+  it("no-ops when neither array is in the edit set", async () => {
+    const { tx, inserted, deleted } = makeTx();
+    await updateLiabilityChildren(tx as never, "liab-1", { balance: 90000 });
+    expect(inserted).toHaveLength(0);
+    expect(deleted).toHaveLength(0);
+  });
+
+  it("rewrites owners after a retitle out of a trust", async () => {
+    const { tx, inserted, deleted } = makeTx();
+    const set = {
+      owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+    };
+    await updateLiabilityChildren(tx as never, "liab-1", set);
+    expect(deleted.map((d) => d.table)).toEqual([liabilityOwners]);
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0].values as Record<string, unknown>).toMatchObject({
+      liabilityId: "liab-1",
+      familyMemberId: "fm-client",
+      entityId: null,
+      percent: "1",
+    });
+  });
+
+  it("rewrites extra payments independently of owners", async () => {
+    const { tx, inserted, deleted } = makeTx();
+    const set = { extraPayments: [{ year: 2030, type: "lump_sum", amount: 5000 }] };
+    await updateLiabilityChildren(tx as never, "liab-1", set);
+    expect(deleted.map((d) => d.table)).toEqual([extraPayments]);
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0].values as Record<string, unknown>).toMatchObject({
+      liabilityId: "liab-1",
+      year: 2030,
+    });
   });
 });

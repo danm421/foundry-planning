@@ -66,21 +66,63 @@ export async function writeLiabilityChildren(
   parentId: string,
   raw: Record<string, unknown>,
 ): Promise<void> {
-  const owners = (raw.owners as Array<Record<string, unknown>> | undefined) ?? [];
-  for (const o of owners) {
+  await insertLiabilityOwnerRows(tx, parentId, raw.owners);
+  await insertExtraPaymentRows(tx, parentId, raw.extraPayments);
+}
+
+/**
+ * Rewrites liability owners and extra payments after a liability EDIT.
+ *
+ * `coerceForTable` filters the edit's `set` down to real table columns, so
+ * without this an edited `owners` array simply vanishes and the UPDATE degrades
+ * to a silent `updatedAt` no-op — a liability retitled into or out of a trust
+ * would promote with its OLD `liability_owners` rows intact. `liability-upsert`
+ * is a new solver writer, and the dissolve lever uses it.
+ *
+ * Each array is independent: absence means "leave the base rows alone", present
+ * means delete-then-reinsert, exactly as `updateExpenseChildren` does.
+ */
+export async function updateLiabilityChildren(
+  tx: PromoteTx,
+  parentId: string,
+  set: Record<string, unknown>,
+): Promise<void> {
+  if ("owners" in set) {
+    await tx.delete(liabilityOwners).where(eq(liabilityOwners.liabilityId, parentId));
+    await insertLiabilityOwnerRows(tx, parentId, set.owners);
+  }
+  if ("extraPayments" in set) {
+    await tx.delete(extraPayments).where(eq(extraPayments.liabilityId, parentId));
+    await insertExtraPaymentRows(tx, parentId, set.extraPayments);
+  }
+}
+
+/** liabilityOwners has no externalBeneficiaryId column (only family_member /
+ *  entity), unlike accountOwners. */
+async function insertLiabilityOwnerRows(
+  tx: PromoteTx,
+  liabilityId: string,
+  raw: unknown,
+): Promise<void> {
+  for (const o of (raw as Array<Record<string, unknown>> | undefined) ?? []) {
     const values = coerceForTable(liabilityOwners, {
-      liabilityId: parentId,
+      liabilityId,
       familyMemberId: o.kind === "family_member" ? (o.familyMemberId ?? null) : null,
       entityId: o.kind === "entity" ? (o.entityId ?? null) : null,
       percent: o.percent,
     });
     await tx.insert(liabilityOwners).values(values as never);
   }
+}
 
-  const payments = (raw.extraPayments as Array<Record<string, unknown>> | undefined) ?? [];
-  for (const p of payments) {
+async function insertExtraPaymentRows(
+  tx: PromoteTx,
+  liabilityId: string,
+  raw: unknown,
+): Promise<void> {
+  for (const p of (raw as Array<Record<string, unknown>> | undefined) ?? []) {
     const values = coerceForTable(extraPayments, {
-      liabilityId: parentId,
+      liabilityId,
       year: p.year,
       type: p.type,
       amount: p.amount,
@@ -320,10 +362,49 @@ export async function writeWillChildren(
   parentId: string,
   raw: Record<string, unknown>,
 ): Promise<void> {
-  const bequests = (raw.bequests as Array<Record<string, unknown>> | undefined) ?? [];
-  for (const b of bequests) {
+  await insertWillBequestRows(tx, parentId, raw.bequests);
+  await insertWillResiduaryRows(tx, parentId, raw.residuaryRecipients);
+}
+
+/**
+ * Rewrites will bequests and residuary recipients after a will EDIT.
+ *
+ * `coerceForTable` filters the edit's `set` down to real table columns, so
+ * without this `bequests` / `residuaryRecipients` vanish and the UPDATE degrades
+ * to a silent `updatedAt` no-op. Promoting a trust dissolve then leaves the base
+ * will still paying to the trust the same promote just deleted — and
+ * `will_bequest_recipients.recipientId` carries NO foreign key, so nothing
+ * cleans the orphan up.
+ *
+ * Each array is independent: absence means "leave the base rows alone", present
+ * means delete-then-reinsert. `will_bequest_recipients` cascades from
+ * `will_bequests`, so deleting the bequests takes their recipients with them.
+ */
+export async function updateWillChildren(
+  tx: PromoteTx,
+  parentId: string,
+  set: Record<string, unknown>,
+): Promise<void> {
+  if ("bequests" in set) {
+    await tx.delete(willBequests).where(eq(willBequests.willId, parentId));
+    await insertWillBequestRows(tx, parentId, set.bequests);
+  }
+  if ("residuaryRecipients" in set) {
+    await tx
+      .delete(willResiduaryRecipients)
+      .where(eq(willResiduaryRecipients.willId, parentId));
+    await insertWillResiduaryRows(tx, parentId, set.residuaryRecipients);
+  }
+}
+
+async function insertWillBequestRows(
+  tx: PromoteTx,
+  willId: string,
+  raw: unknown,
+): Promise<void> {
+  for (const b of (raw as Array<Record<string, unknown>> | undefined) ?? []) {
     const bequestValues = coerceForTable(willBequests, {
-      willId: parentId,
+      willId,
       name: b.name,
       kind: b.kind,
       assetMode: b.assetMode ?? null,
@@ -339,8 +420,7 @@ export async function writeWillChildren(
       .values(bequestValues as never)
       .returning();
 
-    const recipients = (b.recipients as Array<Record<string, unknown>> | undefined) ?? [];
-    for (const r of recipients) {
+    for (const r of (b.recipients as Array<Record<string, unknown>> | undefined) ?? []) {
       const recipientValues = coerceForTable(willBequestRecipients, {
         bequestId: inserted.id,
         recipientKind: r.recipientKind,
@@ -351,12 +431,16 @@ export async function writeWillChildren(
       await tx.insert(willBequestRecipients).values(recipientValues as never);
     }
   }
+}
 
-  const residuaryRecipients =
-    (raw.residuaryRecipients as Array<Record<string, unknown>> | undefined) ?? [];
-  for (const r of residuaryRecipients) {
+async function insertWillResiduaryRows(
+  tx: PromoteTx,
+  willId: string,
+  raw: unknown,
+): Promise<void> {
+  for (const r of (raw as Array<Record<string, unknown>> | undefined) ?? []) {
     const values = coerceForTable(willResiduaryRecipients, {
-      willId: parentId,
+      willId,
       recipientKind: r.recipientKind,
       recipientId: r.recipientId ?? null,
       tier: r.tier ?? "primary",

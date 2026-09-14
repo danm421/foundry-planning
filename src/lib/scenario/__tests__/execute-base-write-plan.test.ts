@@ -12,6 +12,9 @@ import {
   savingsRules,
   savingsRuleSalaryIncomes,
   clientTaxAdjustments,
+  liabilityOwners,
+  willBequests,
+  willBequestRecipients,
 } from "@/db/schema";
 import { executeBaseWritePlan } from "../execute-base-write-plan";
 import type { BaseWritePlan } from "../promote-to-base-types";
@@ -477,6 +480,59 @@ describe("executeBaseWritePlan", () => {
       accountId: "acct-9",
       sortOrder: 0,
     });
+  });
+
+  // The promote half of a trust dissolve. Without a `will` childUpdater the
+  // edit's `bequests` array is stripped by `coerceForTable` and the UPDATE
+  // degrades to `updatedAt` — the base will keeps paying to the trust the same
+  // promote deleted, and `will_bequest_recipients.recipientId` has no FK to
+  // clean the orphan up.
+  it("rewrites will bequests via the will childUpdater on a matched update", async () => {
+    const plan: BaseWritePlan = {
+      ...emptyPlan(),
+      updates: [
+        {
+          kind: "will",
+          id: "will-1",
+          set: {
+            bequests: [
+              {
+                name: "To Amy", kind: "asset", assetMode: "specific", accountId: "a1",
+                entityId: null, liabilityId: null, percentage: 100,
+                condition: "always", sortOrder: 0,
+                recipients: [
+                  { recipientKind: "family_member", recipientId: "fm-spouse", percentage: 100, sortOrder: 0 },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    };
+    const { tx, ops } = makeTx([{ id: "will-1" }]);
+    await executeBaseWritePlan(tx as never, plan, { clientId: "c1", baseScenarioId: "base1" });
+    expect(ops.find((o) => o.op === "delete" && o.table === willBequests)).toBeTruthy();
+    const ins = ops.find((o) => o.op === "insert" && o.table === willBequests);
+    expect(ins!.arg as Record<string, unknown>).toMatchObject({ willId: "will-1", name: "To Amy" });
+    expect(ops.find((o) => o.op === "insert" && o.table === willBequestRecipients)).toBeTruthy();
+  });
+
+  it("rewrites liability owners via the liability childUpdater on a matched update", async () => {
+    const plan: BaseWritePlan = {
+      ...emptyPlan(),
+      updates: [
+        {
+          kind: "liability",
+          id: "liab-1",
+          set: { owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }] },
+        },
+      ],
+    };
+    const { tx, ops } = makeTx([{ id: "liab-1" }]);
+    await executeBaseWritePlan(tx as never, plan, { clientId: "c1", baseScenarioId: "base1" });
+    expect(ops.find((o) => o.op === "delete" && o.table === liabilityOwners)).toBeTruthy();
+    expect((ops.find((o) => o.op === "insert" && o.table === liabilityOwners)!.arg) as Record<string, unknown>)
+      .toMatchObject({ liabilityId: "liab-1", familyMemberId: "fm-client", entityId: null });
   });
 
   it("skips the childUpdater when the update matched no base row", async () => {
