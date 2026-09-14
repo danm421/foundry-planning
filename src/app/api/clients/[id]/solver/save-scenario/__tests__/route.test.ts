@@ -1155,6 +1155,9 @@ describe("POST save-scenario — a note another scenario already gates", () => {
 const NOTE_ID_2 = "77777777-7777-4777-8777-777777777777";
 const SALE_ACCOUNT_1 = "88888888-8888-4888-8888-888888888888";
 const SALE_ACCOUNT_2 = "99999999-9999-4999-8999-999999999999";
+/** An account changed by some OTHER lever in the same save. Its only job is to
+ *  sit among the account drafts so a sale's note cannot be paired by position. */
+const UNRELATED_ACCOUNT = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
 const saleAccount = (id: string, name: string) => ({
   id,
@@ -1248,6 +1251,11 @@ describe("save-scenario — a sale to trust saves as one toggleable unit", () =>
     expect(groups[0].name).toBe("Sell Brokerage to trust");
     expect(groups[0].defaultOn).toBe(true);
     expect(groups[0].id).toBe(change.toggleGroupId);
+
+    // `sourceAccountId` is solver-wire routing, not a note column. The note
+    // INSERT builds an explicit column list, so it cannot reach the table —
+    // this ratchets that, the way the sibling `startYearRef` guard above does.
+    expect(note).not.toHaveProperty("sourceAccountId");
   });
 
   it("PUT puts the owner flip and its note under the SAME non-null toggle group", async () => {
@@ -1291,15 +1299,30 @@ describe("save-scenario — a sale to trust saves as one toggleable unit", () =>
     // apart — an advisor selling two assets to one IDGT is ordinary.
     const a1 = saleAccount(SALE_ACCOUNT_1, "Brokerage");
     const a2 = saleAccount(SALE_ACCOUNT_2, "Rental");
-    treeWithAccounts([a1, a2]);
+    const other = saleAccount(UNRELATED_ACCOUNT, "Savings");
+    treeWithAccounts([a1, a2, other]);
 
+    // ORDER IS THE POINT. The account mutations are declared [A2, unrelated,
+    // A1] while the notes are declared [note→A1, note→A2], so declaration
+    // order and POSITION disagree in both directions:
+    //   i-th note ↔ i-th account draft     → note1↔A2, note2↔unrelated  ✗
+    //   i-th note ↔ i-th from the end      → note1↔A1, note2↔unrelated  ✗
+    // Only reading the declared `sourceAccountId` pairs them correctly. With
+    // the two lists in step, a positional implementation that never reads the
+    // field passes this scope — which is how the committed version of this
+    // test pinned "one group per sale" without pinning "the pairing is
+    // DECLARED". Production diverges the same way: the solver's working set is
+    // a keyed Map flattened in insertion order, so an unrelated earlier lever's
+    // account-upsert sits ahead of a sale's note.
     const res = await POST(
       makeRequest({
         source: "base",
         name: "Two IDGT sales",
         mutations: [
-          { kind: "account-upsert", id: SALE_ACCOUNT_1, value: soldToTrust(a1) },
           { kind: "account-upsert", id: SALE_ACCOUNT_2, value: soldToTrust(a2) },
+          // Not a sale — some other lever revalued it in the same save.
+          { kind: "account-upsert", id: UNRELATED_ACCOUNT, value: { ...other, value: 61_000 } },
+          { kind: "account-upsert", id: SALE_ACCOUNT_1, value: soldToTrust(a1) },
           {
             kind: "note-receivable-upsert",
             id: NOTE_ID,
@@ -1333,6 +1356,13 @@ describe("save-scenario — a sale to trust saves as one toggleable unit", () =>
     // ...and the two sales stay independently toggleable.
     expect(change1.toggleGroupId).not.toBe(change2.toggleGroupId);
 
+    // The unrelated account is swept into NEITHER sale's card.
+    const unrelated = accountChangeFor(UNRELATED_ACCOUNT) as {
+      toggleGroupId: string | null;
+    };
+    expect(unrelated).toBeDefined();
+    expect(unrelated.toggleGroupId).toBeNull();
+
     const groups = insertedGroups as Record<string, unknown>[];
     expect(groups).toHaveLength(2);
     expect(groups.map((g) => g.name).sort()).toEqual([
@@ -1346,14 +1376,29 @@ describe("save-scenario — a sale to trust saves as one toggleable unit", () =>
   it("PUT gives TWO sales to the SAME trust two different groups", async () => {
     const a1 = saleAccount(SALE_ACCOUNT_1, "Brokerage");
     const a2 = saleAccount(SALE_ACCOUNT_2, "Rental");
-    treeWithAccounts([a1, a2]);
+    const other = saleAccount(UNRELATED_ACCOUNT, "Savings");
+    treeWithAccounts([a1, a2, other]);
 
+    // ORDER IS THE POINT. The account mutations are declared [A2, unrelated,
+    // A1] while the notes are declared [note→A1, note→A2], so declaration
+    // order and POSITION disagree in both directions:
+    //   i-th note ↔ i-th account draft     → note1↔A2, note2↔unrelated  ✗
+    //   i-th note ↔ i-th from the end      → note1↔A1, note2↔unrelated  ✗
+    // Only reading the declared `sourceAccountId` pairs them correctly. With
+    // the two lists in step, a positional implementation that never reads the
+    // field passes this scope — which is how the committed version of this
+    // test pinned "one group per sale" without pinning "the pairing is
+    // DECLARED". Production diverges the same way: the solver's working set is
+    // a keyed Map flattened in insertion order, so an unrelated earlier lever's
+    // account-upsert sits ahead of a sale's note.
     const res = await PUT(
       makeUpdateRequest({
         scenarioId: SCENARIO_ID,
         mutations: [
-          { kind: "account-upsert", id: SALE_ACCOUNT_1, value: soldToTrust(a1) },
           { kind: "account-upsert", id: SALE_ACCOUNT_2, value: soldToTrust(a2) },
+          // Not a sale — some other lever revalued it in the same save.
+          { kind: "account-upsert", id: UNRELATED_ACCOUNT, value: { ...other, value: 61_000 } },
+          { kind: "account-upsert", id: SALE_ACCOUNT_1, value: soldToTrust(a1) },
           {
             kind: "note-receivable-upsert",
             id: NOTE_ID,
@@ -1384,6 +1429,9 @@ describe("save-scenario — a sale to trust saves as one toggleable unit", () =>
     expect(edit1!.toggleGroupId).toBe(note1.toggleGroupId);
     expect(edit2!.toggleGroupId).toBe(note2.toggleGroupId);
     expect(edit1!.toggleGroupId).not.toBe(edit2!.toggleGroupId);
+    // The unrelated account is swept into NEITHER sale's card.
+    expect(editCallFor(UNRELATED_ACCOUNT)).toBeDefined();
+    expect(editCallFor(UNRELATED_ACCOUNT)?.toggleGroupId ?? null).toBeNull();
     expect(insertedGroups).toHaveLength(2);
   });
 
