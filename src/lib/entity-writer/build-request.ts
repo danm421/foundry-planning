@@ -71,7 +71,7 @@ export function buildWriteRequest(args: {
   if (shape === "array") {
     const path = entity.routes.update ?? entity.routes.create;
     if (!path) return { ok: false, error: `${entity.id} has no route to write to.` };
-    if (!existingSet || !Array.isArray(existingSet)) {
+    if (!Array.isArray(existingSet)) {
       return {
         ok: false,
         error: `${entity.id} replaces the whole set on write, so the current rows must be supplied before it can be written. Writing without them would delete every existing row.`,

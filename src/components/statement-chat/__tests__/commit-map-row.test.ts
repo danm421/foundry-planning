@@ -43,6 +43,7 @@ describe("commitMapRow", () => {
       row: row({ name: "Term 20" }, { missingRequired: ["faceValue"] }),
     });
     expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/faceValue/);
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -90,7 +91,10 @@ describe("commitMapRow", () => {
       existingSet: [{ recipientId: "a" }],
     });
     expect(result.ok).toBe(true);
-    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body));
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toBe("/api/clients/c1/insurance-policies/p1/beneficiaries");
+    expect(init?.method).toBe("PUT");
+    const body = JSON.parse(String(init?.body));
     expect(body).toHaveLength(2);
     expect(body).toContainEqual({ recipientId: "a" });
   });
@@ -109,7 +113,10 @@ describe("commitMapRow", () => {
       existingSet: [{ recipientId: "a" }],
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toMatch(/policyId/);
+    if (!result.ok) {
+      expect(result.error).toContain(entity.id);
+      expect(result.error).toContain("[policyId]");
+    }
     expect(fetch).not.toHaveBeenCalled();
   });
 
