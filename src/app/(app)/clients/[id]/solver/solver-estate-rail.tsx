@@ -18,7 +18,7 @@ export type EstatePane =
   | { kind: "overview" }
   | { kind: "gifts" }
   | { kind: "trust"; id: string | null; confirmingRemoval?: boolean }
-  | { kind: "charity"; id: string | null };
+  | { kind: "charity"; id: string | null; confirmingRemoval?: boolean };
 
 export interface RailTrust {
   id: string;

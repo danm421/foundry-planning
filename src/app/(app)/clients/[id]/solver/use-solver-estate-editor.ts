@@ -14,6 +14,7 @@ import {
   buildDissolveTrustMutations,
   buildRevertFundingMutation,
 } from "@/lib/solver/trust-levers";
+import { buildRemoveCharityMutations } from "@/lib/solver/charity-levers";
 import type { SolverTrustDraft } from "./solver-trust-form";
 import { currentTrustEntities, currentCharities } from "@/lib/solver/estate-current";
 import type { EstatePane, RailCharity, RailTrust } from "./solver-estate-rail";
@@ -245,8 +246,16 @@ export function useSolverEstateEditor({
     });
   }
 
+  /**
+   * Remove a charity and every reference to it. The bare delete this used to
+   * emit left `BeneficiaryRef.externalBeneficiaryId` dangling, and the two
+   * halves of the product then disagreed about where the asset went at death:
+   * the live death event still paid the designation out of the household
+   * (`death-event/shared.ts:639-643`), while a reloaded scenario dropped the ref
+   * (`cascadeResolution.ts:305-372`) and fell back to the estate.
+   */
   function removeCharity(id: string) {
-    onChange({ kind: "external-beneficiary-upsert", id, value: null });
+    for (const m of buildRemoveCharityMutations(clientData, id)) onChange(m);
     setSelection({ kind: "overview" });
   }
 

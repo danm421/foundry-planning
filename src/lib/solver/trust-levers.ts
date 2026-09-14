@@ -281,37 +281,91 @@ export function buildDissolveTrustMutations(
   }
 
   // 5. Gifts aimed at the trust, a CLT's remainder-interest gift included.
-  //    `tree.gifts` holds CASH gifts only — the loader filters asset, liability
-  //    and business rows out of it, and a series never appears there at all —
-  //    so the gift EVENTS carry the rest, each naming the row that produced it.
-  //    Synthesized premium gifts name a policy rather than a gift row and are
-  //    correctly skipped: they are re-derived from the policy on every apply.
+  muts.push(...buildGiftClearMutations(tree, { kind: "entity", id: entity.id }));
+
+  // 6. Wills — bequest and residuary recipients naming the trust.
+  muts.push(...buildWillReferenceClearMutations(tree, { kind: "entity", id: entity.id }));
+
+  // 7. The entity itself — always last.
+  muts.push({ kind: "entity-upsert", id: entity.id, value: null });
+  return muts;
+}
+
+// ── Reference sweeps shared by the dissolve and charity-removal levers ──────
+//
+// A trust and an external beneficiary are pointed at from the same places, and
+// each sweep's rule is subtle enough that two copies of it would drift. They
+// differ only in WHICH id column names them, which is what `ReferenceTarget`
+// carries.
+
+/** Whom a reference sweep is removing. `entity` is a modeled trust / business;
+ *  `external_beneficiary` is a charity or other outside recipient. The literals
+ *  double as `WillBequestRecipient.recipientKind` values. */
+export type ReferenceTarget =
+  | { kind: "entity"; id: string }
+  | { kind: "external_beneficiary"; id: string };
+
+/** True when a gift row or gift event names the target. The two recipient
+ *  columns are mutually exclusive, so testing only the target's own column is
+ *  exactly right. */
+function giftNamesTarget(
+  g: { recipientEntityId?: string; recipientExternalBeneficiaryId?: string },
+  target: ReferenceTarget,
+): boolean {
+  return target.kind === "entity"
+    ? g.recipientEntityId === target.id
+    : g.recipientExternalBeneficiaryId === target.id;
+}
+
+/**
+ * Clear every planned gift aimed at the target.
+ *
+ * `tree.gifts` holds CASH gifts only — the loader filters asset, liability and
+ * business rows out of it, and a series never appears there at all — so the gift
+ * EVENTS carry the rest, each naming the row that produced it. Synthesized
+ * premium gifts name a policy rather than a gift row and are correctly skipped:
+ * they are re-derived from the policy on every apply.
+ */
+export function buildGiftClearMutations(
+  tree: ClientData,
+  target: ReferenceTarget,
+): SolverMutation[] {
   const giftIds = new Set<string>();
   for (const g of tree.gifts ?? []) {
-    if (g.recipientEntityId === entity.id) giftIds.add(g.id);
+    if (giftNamesTarget(g, target)) giftIds.add(g.id);
   }
   for (const e of tree.giftEvents ?? []) {
-    if (e.recipientEntityId !== entity.id) continue;
+    if (!giftNamesTarget(e, target)) continue;
     const sourceId = sourceGiftIdOf(e);
     if (sourceId) giftIds.add(sourceId);
   }
-  for (const id of giftIds) muts.push({ kind: "gift-upsert", id, value: null });
+  return [...giftIds].map((id) => ({ kind: "gift-upsert", id, value: null }));
+}
 
-  // 6. Wills — bequest recipients and residuary recipients are separate arrays.
-  //    A bequest left with NO recipients is dropped, not kept. It is not inert:
-  //    `specifics` is filtered by account id alone (death-event/shared.ts:916-921),
-  //    and an emptied clause still contributes its `percentage` to `rawTotal`
-  //    (:942-945), so it can tip the will into over-allocation and pro-rate a
-  //    SURVIVING sibling bequest down (:947-951) — two 60% clauses on one
-  //    account scale to 50% each, and the spouse loses ten points of it.
-  //    `cascadeResolution.ts:243-247` drops such a row unconditionally on a
-  //    saved-scenario reload too, so keeping it would also make the live preview
-  //    and the saved scenario disagree.
-  const namesTrust = (r: { recipientKind: string; recipientId: string | null }) =>
-    r.recipientKind === "entity" && r.recipientId === entity.id;
+/**
+ * Clear every will bequest recipient and residuary recipient naming the target.
+ * Bequest recipients and residuary recipients are separate arrays.
+ *
+ * A bequest left with NO recipients is dropped, not kept. It is not inert:
+ * `specifics` is filtered by account id alone (death-event/shared.ts:916-921),
+ * and an emptied clause still contributes its `percentage` to `rawTotal`
+ * (:942-945), so it can tip the will into over-allocation and pro-rate a
+ * SURVIVING sibling bequest down (:947-951) — two 60% clauses on one account
+ * scale to 50% each, and the spouse loses ten points of it.
+ * `cascadeResolution.ts:243-247` (entity) and `:339-364` (external beneficiary)
+ * drop such a row unconditionally on a saved-scenario reload too, so keeping it
+ * would also make the live preview and the saved scenario disagree.
+ */
+export function buildWillReferenceClearMutations(
+  tree: ClientData,
+  target: ReferenceTarget,
+): SolverMutation[] {
+  const muts: SolverMutation[] = [];
+  const namesTarget = (r: { recipientKind: string; recipientId: string | null }) =>
+    r.recipientKind === target.kind && r.recipientId === target.id;
   for (const w of tree.wills ?? []) {
-    const residuary = (w.residuaryRecipients ?? []).filter((r) => !namesTrust(r));
-    const touchesBequest = w.bequests.some((b) => b.recipients.some(namesTrust));
+    const residuary = (w.residuaryRecipients ?? []).filter((r) => !namesTarget(r));
+    const touchesBequest = w.bequests.some((b) => b.recipients.some(namesTarget));
     if (!touchesBequest && residuary.length === (w.residuaryRecipients ?? []).length) continue;
     muts.push({
       kind: "will-upsert",
@@ -319,7 +373,7 @@ export function buildDissolveTrustMutations(
       value: {
         ...w,
         bequests: w.bequests
-          .map((b) => ({ ...b, recipients: b.recipients.filter((r) => !namesTrust(r)) }))
+          .map((b) => ({ ...b, recipients: b.recipients.filter((r) => !namesTarget(r)) }))
           .filter((b) => b.recipients.length > 0),
         // Written only when the will already had the key: adding an empty array
         // where there was `undefined` would diff as a field change on save.
@@ -327,9 +381,6 @@ export function buildDissolveTrustMutations(
       },
     });
   }
-
-  // 7. The entity itself — always last.
-  muts.push({ kind: "entity-upsert", id: entity.id, value: null });
   return muts;
 }
 

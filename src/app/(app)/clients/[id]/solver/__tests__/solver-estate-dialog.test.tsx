@@ -379,9 +379,13 @@ describe("Estate planning dialog — charity editor", () => {
     });
   });
 
-  it("removes a charity", async () => {
+  it("removes a charity, once the confirmation is accepted", async () => {
+    // Removal now rewrites beneficiary designations, wills and gifts, so it
+    // asks first — see "removing a charity" below for the sweep itself.
     const { onChange } = renderDialog();
     await userEvent.click(railButton(/Red Cross/));
+    await userEvent.click(screen.getByRole("button", { name: "Remove charity" }));
+    expect(onChange).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: "Remove charity" }));
     expect(onChange).toHaveBeenCalledWith({
       kind: "external-beneficiary-upsert",
@@ -531,6 +535,68 @@ describe("Estate planning dialog — the removal confirmation agrees with the le
     // Backing out still works.
     await userEvent.click(screen.getByRole("button", { name: "Keep trust" }));
     expect(screen.getByLabelText("Trustee")).toBeInTheDocument();
+  });
+});
+
+// ── Removing a charity ───────────────────────────────────────────────────────
+//
+// Charity removal used to emit ONE mutation and leave every reference dangling,
+// so the live preview paid a policy out to a charity the plan no longer held
+// while a reloaded scenario fell back to the estate. The scopes below pin the
+// full sweep and the confirmation that names it.
+
+describe("Estate planning dialog — removing a charity", () => {
+  /** A policy naming the base-plan charity as sole primary beneficiary. */
+  const charityPolicy = {
+    ...policy,
+    id: "a-charity-policy",
+    beneficiaries: [
+      { id: "b-c", tier: "primary", percentage: 100, externalBeneficiaryId: "x-red-cross", sortOrder: 0 },
+    ],
+  } as unknown as Account;
+
+  async function openCharityRemoveConfirm() {
+    await userEvent.click(railButton(/Red Cross/));
+    await userEvent.click(screen.getByRole("button", { name: "Remove charity" }));
+    return screen.getByRole("dialog", { name: /estate planning/i });
+  }
+
+  it("asks before removing, and names the designation it is about to clear", async () => {
+    renderDialog({ clientData: tree({ accounts: [brokerage, charityPolicy] }) });
+    const dialog = await openCharityRemoveConfirm();
+    expect(dialog).toHaveTextContent(/Remove Red Cross\?/i);
+    expect(dialog).toHaveTextContent(/beneficiary of 1 policy/i);
+  });
+
+  it("emits the whole sweep on confirm — the delete is the LAST of several", async () => {
+    const { onChange } = renderDialog({
+      clientData: tree({ accounts: [brokerage, charityPolicy] }),
+    });
+    await openCharityRemoveConfirm();
+    await userEvent.click(screen.getByRole("button", { name: "Remove charity" }));
+
+    const emitted = onChange.mock.calls.map(([m]) => m);
+    // Positive first: the designation clear really is emitted.
+    const cleared = emitted.find(
+      (m): m is Extract<SolverMutation, { kind: "account-upsert" }> =>
+        m.kind === "account-upsert" && m.id === "a-charity-policy",
+    );
+    expect(cleared?.value?.beneficiaries).toEqual([]);
+    expect(emitted[emitted.length - 1]).toEqual({
+      kind: "external-beneficiary-upsert",
+      id: "x-red-cross",
+      value: null,
+    });
+  });
+
+  it("backs out without emitting anything", async () => {
+    const { onChange } = renderDialog({
+      clientData: tree({ accounts: [brokerage, charityPolicy] }),
+    });
+    await openCharityRemoveConfirm();
+    await userEvent.click(screen.getByRole("button", { name: "Keep charity" }));
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Charity name")).toBeInTheDocument();
   });
 });
 

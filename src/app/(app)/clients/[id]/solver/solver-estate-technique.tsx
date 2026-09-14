@@ -9,6 +9,7 @@ import EstateFlowAddGiftDialog from "@/components/estate-flow-add-gift-dialog";
 import { SolverTrustForm } from "./solver-trust-form";
 import { SolverTrustEditor } from "./solver-trust-editor";
 import { SolverCharityEditor } from "./solver-charity-editor";
+import { SolverCharityRemoveConfirm } from "./solver-charity-remove-confirm";
 import { SolverEstateRail } from "./solver-estate-rail";
 import { SolverEstateOverview } from "./solver-estate-overview";
 import { SolverTrustRemoveConfirm } from "./solver-trust-remove-confirm";
@@ -109,6 +110,17 @@ function EstateDetailPane({
     if (sel.id !== null && !charity) {
       return <EmptyPane message="This charity is no longer in the scenario." />;
     }
+    if (sel.confirmingRemoval && charity) {
+      return (
+        <SolverCharityRemoveConfirm
+          charityName={charity.name}
+          charityId={charity.id}
+          clientData={editor.clientData}
+          onCancel={() => editor.setSelection({ kind: "charity", id: charity.id })}
+          onConfirm={() => editor.removeCharity(charity.id)}
+        />
+      );
+    }
     return (
       <div className="flex h-full flex-col">
         <PaneHeading title={charity ? charity.name : "New charity"} />
@@ -117,7 +129,9 @@ function EstateDetailPane({
             charity={charity}
             onUpdate={editor.updateCharity}
             onAdd={editor.addCharity}
-            onRemove={editor.removeCharity}
+            onRemove={(id) =>
+              editor.setSelection({ kind: "charity", id, confirmingRemoval: true })
+            }
             onCancelAdd={() => editor.setSelection({ kind: "overview" })}
           />
         </div>
