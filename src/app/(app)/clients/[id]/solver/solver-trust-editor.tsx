@@ -163,8 +163,13 @@ function TrustEditorBody({
       />
 
       <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
+        {/* Every body below stays mounted behind Tailwind's `hidden`, so the
+            grids and forms keep their local state across tab switches.
+            `data-tab-panel` is how a test names them: jsdom applies no
+            stylesheet, so `toBeVisible()` cannot see the class and a broken
+            `setTab` would otherwise pass every scope in the suite. */}
         {/* ── Details ───────────────────────────────────────────────────── */}
-        <div className={tab !== "details" ? "hidden" : "space-y-4"}>
+        <div data-tab-panel="details" className={tab !== "details" ? "hidden" : "space-y-4"}>
           <div>
             <label className={fieldLabelClassName} htmlFor="solver-trust-name">
               Name
@@ -407,7 +412,7 @@ function TrustEditorBody({
         </div>
 
         {/* ── Assets ────────────────────────────────────────────────────── */}
-        <div className={tab !== "assets" ? "hidden" : "space-y-3"}>
+        <div data-tab-panel="assets" className={tab !== "assets" ? "hidden" : "space-y-3"}>
           {edits.assetError && (
             <p
               role="alert"
@@ -447,7 +452,7 @@ function TrustEditorBody({
         </div>
 
         {/* ── Transfers ─────────────────────────────────────────────────── */}
-        <div className={tab !== "transfers" ? "hidden" : "space-y-3"}>
+        <div data-tab-panel="transfers" className={tab !== "transfers" ? "hidden" : "space-y-3"}>
           <p className="text-[12px] text-ink-3">
             Gifts to this trust, as the plan currently models them. Add or change
             one from the Gifts list.
@@ -475,7 +480,7 @@ function TrustEditorBody({
         </div>
 
         {/* ── Flows ─────────────────────────────────────────────────────── */}
-        <div className={tab !== "flows" ? "hidden" : "space-y-3"}>
+        <div data-tab-panel="flows" className={tab !== "flows" ? "hidden" : "space-y-3"}>
           <FlowsTab
             clientId={clientId}
             entityId={entity.id}
@@ -514,7 +519,7 @@ function TrustEditorBody({
 
         {/* ── Notes & sales ─────────────────────────────────────────────── */}
         {showsNotesAndSales && (
-          <div className={tab !== "notes-sales" ? "hidden" : "space-y-4"}>
+          <div data-tab-panel="notes-sales" className={tab !== "notes-sales" ? "hidden" : "space-y-4"}>
             {isPersisted ? (
               <>
                 <SellToTrustDialog
@@ -560,7 +565,7 @@ function TrustEditorBody({
         )}
 
         {/* ── Notes ─────────────────────────────────────────────────────── */}
-        <div className={tab !== "notes" ? "hidden" : ""}>
+        <div data-tab-panel="notes" className={tab !== "notes" ? "hidden" : ""}>
           <label className={fieldLabelClassName} htmlFor="solver-trust-notes">
             Notes
           </label>

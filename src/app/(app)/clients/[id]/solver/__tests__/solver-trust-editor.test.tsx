@@ -166,6 +166,61 @@ function allOf<K extends SolverMutation["kind"]>(
     .filter((m): m is Extract<SolverMutation, { kind: K }> => m.kind === kind);
 }
 
+// ── Tab visibility ───────────────────────────────────────────────────────────
+//
+// Every tab body is always in the DOM behind Tailwind's `hidden`, and jsdom
+// applies no stylesheet — so `toBeVisible()` is blind here and a broken
+// `setTab` passed every other scope in this file. The browser pass that would
+// have caught it was skipped on the owner's instruction and is not coming back.
+//
+// jsdom cannot apply the class, but it can read it. The invariant asserted is
+// the whole of what the class does: EXACTLY ONE body lacks `hidden`, and it is
+// the one whose tab is selected. That fails on a `setTab` that ignores its
+// argument, on one that sets the wrong id, and on a body whose className
+// forgets to branch at all.
+
+describe("SolverTrustEditor — tab visibility", () => {
+  /** The wrapper divs, keyed by the tab they belong to. */
+  const panels = () =>
+    Array.from(document.querySelectorAll<HTMLElement>("[data-tab-panel]")).map((el) => ({
+      tab: el.dataset.tabPanel!,
+      hidden: el.className.split(/\s+/).includes("hidden"),
+    }));
+
+  const TABS: Array<[string, string]> = [
+    ["Details", "details"],
+    ["Assets", "assets"],
+    ["Transfers", "transfers"],
+    ["Flows", "flows"],
+    ["Notes & sales", "notes-sales"],
+    ["Notes", "notes"],
+  ];
+
+  it("renders one wrapper per tab, so the assertions below are not vacuous", () => {
+    renderEditor();
+    expect(panels().map((p) => p.tab)).toEqual(TABS.map(([, id]) => id));
+  });
+
+  it.each(TABS)("shows only the %s body when its tab is clicked", async (label, id) => {
+    renderEditor();
+    await userEvent.click(screen.getByRole("button", { name: label }));
+    const shown = panels().filter((p) => !p.hidden);
+    expect(shown.map((p) => p.tab)).toEqual([id]);
+  });
+
+  it("starts on Details with every other body hidden", () => {
+    renderEditor();
+    expect(panels().filter((p) => !p.hidden).map((p) => p.tab)).toEqual(["details"]);
+  });
+
+  it("drops the Notes & sales wrapper entirely for a trust that cannot hold a note", () => {
+    renderEditor({ entity: nonGrantorTrust });
+    expect(panels().map((p) => p.tab)).not.toContain("notes-sales");
+    // …and the remaining five still obey the invariant.
+    expect(panels().filter((p) => !p.hidden)).toHaveLength(1);
+  });
+});
+
 // ── Details tab ───────────────────────────────────────────────────────────────
 
 describe("SolverTrustEditor — Details tab", () => {
