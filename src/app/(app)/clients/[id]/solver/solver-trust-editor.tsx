@@ -416,10 +416,12 @@ function TrustEditorBody({
               {edits.assetError}
             </p>
           )}
-          <p className="text-[12px] text-ink-3">
-            Businesses are assigned to a trust on the Estate Planning page, where
-            the transfer is recorded as a taxable gift.
-          </p>
+          {view.businesses.length > 0 && (
+            <p className="text-[12px] text-ink-3">
+              Businesses are assigned to a trust on the Estate Planning page,
+              where the transfer and any taxable gift are recorded.
+            </p>
+          )}
           <AssetsTab
             entityId={entity.id}
             accounts={view.accounts}

@@ -338,6 +338,16 @@ describe("SolverTrustEditor — Assets tab", () => {
     expect(
       screen.getByText(/assigned to a trust on the Estate Planning page/i),
     ).toBeInTheDocument();
+    // Minor 1: the old sentence promised a gift row for every assignment, but
+    // a revocable trust, a child-owned business, or a non-client/spouse
+    // grantor produces none (assets/route.ts:210, :229-231, :154-159). The
+    // softened sentence must not repeat that promise.
+    expect(
+      screen.getByText(/the transfer and any taxable gift are recorded/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/the transfer is recorded as a taxable gift/i),
+    ).toBeNull();
 
     await userEvent.click(screen.getByRole("button", { name: "+ Add asset" }));
     // The picker really opened — it still offers an account. Asserting only the
@@ -345,6 +355,18 @@ describe("SolverTrustEditor — Assets tab", () => {
     expect(screen.getByLabelText("Select Joint Brokerage")).toBeInTheDocument();
     expect(screen.queryByText("Business Entities")).toBeNull();
     expect(screen.queryByLabelText("Select Smith Holdings LLC")).toBeNull();
+  });
+
+  it("says nothing about business assignment when the plan holds no businesses", async () => {
+    // Paired with the test above, which proves the copy IS present when a
+    // business exists. An absence-only assertion would pass on a
+    // queryByText that could never match anything.
+    renderEditor({ clientData: tree({ entities: [ilit] }) });
+    await userEvent.click(screen.getByRole("button", { name: "Assets" }));
+
+    expect(
+      screen.queryByText(/assigned to a trust on the Estate Planning page/i),
+    ).toBeNull();
   });
 });
 
