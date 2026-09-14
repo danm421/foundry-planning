@@ -86,6 +86,23 @@ describe("buildWriteRequest", () => {
     if (!result.ok) expect(result.error).toMatch(/replaces the whole set/i);
   });
 
+  it("refuses a bare-array entity when the existing set is not an array", () => {
+    const entity = {
+      ...life,
+      payloadShape: "array" as const,
+      fields: [{ key: "beneficiary", label: "Beneficiary", kind: "string" as const }],
+    };
+    const result = buildWriteRequest({
+      entity,
+      row: row({ beneficiary: "Jane" }),
+      // Simulates a JSON payload that came back shaped as an object rather
+      // than the array this entity requires — must refuse, not throw.
+      existingSet: {} as unknown as unknown[],
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/replaces the whole set/i);
+  });
+
   it("PUTs the merged set for a bare-array entity when the existing set is supplied", () => {
     const entity = {
       ...life,
