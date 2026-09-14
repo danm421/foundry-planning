@@ -443,6 +443,64 @@ describe("ChatSurface — wiring the table in (Task 10b)", () => {
     expect(await screen.findByRole("button", { name: /finish import/i })).toBeInTheDocument();
     expect(screen.queryByText(/not been committed/i)).not.toBeInTheDocument();
   });
+
+  /**
+   * Re-review gap: the test above rehydrates its row via `initialMapRows`,
+   * which `useMapRows`'s committed-row seed locks anyway — so it passes even
+   * if `uncommittedMapRows` counted every uncommitted row, exact match
+   * included. This row is instead produced by a PASS IN THIS SESSION
+   * (`runPass` clears that seed at the start of every pass), the actual path
+   * a false, permanent warning was reachable from: `entity-tables.tsx`
+   * refuses to let an `exact` match commit at all, so `committedRowIds` can
+   * never catch up to it.
+   */
+  it("says nothing beside Finish import for an in-session row that already exists (match.kind exact)", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeFramedResponse([oneRowDoneFrame()]));
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          rows: {
+            disability_policy: [
+              storedPolicy({ match: { kind: "exact", existingId: "dis_9" } }),
+            ],
+          },
+          warnings: [],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={initialFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+
+    expect(await screen.findByRole("button", { name: /finish import/i })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("Group LTD")).toBeInTheDocument());
+    expect(screen.queryByText(/not been committed/i)).not.toBeInTheDocument();
+  });
+
+  // The positive half in the same in-session path: a genuinely uncommitted
+  // `new` row must still be counted and still produce the warning.
+  it("still warns beside Finish import for an in-session row that is genuinely new", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeFramedResponse([oneRowDoneFrame()]));
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          rows: { disability_policy: [storedPolicy({ match: { kind: "new" } })] },
+          warnings: [],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={initialFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+
+    expect(await screen.findByRole("button", { name: /finish import/i })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("Group LTD")).toBeInTheDocument());
+    expect(
+      screen.getByText(/1 row in .Policies and other details. below has not been committed/i),
+    ).toBeInTheDocument();
+  });
 });
 
 describe("ChatSurface — committedRowIds mount hydration (round 1 review, Important 3)", () => {

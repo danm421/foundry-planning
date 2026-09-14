@@ -286,7 +286,7 @@ export function ChatSurface({
   // semantics); the honest minimum is telling them here, where the button is.
   const uncommittedMapRows = Object.values(mapRows)
     .flat()
-    .filter((row) => !mapCommittedRowIds.includes(row.rowId)).length;
+    .filter((row) => row.match?.kind !== "exact" && !mapCommittedRowIds.includes(row.rowId)).length;
 
   return (
     <div className="flex flex-col gap-6">
