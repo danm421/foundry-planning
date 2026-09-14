@@ -49,6 +49,23 @@ export interface FlowScheduleGridOverride {
   distributionPercent: number | null;
 }
 
+/** One whole-grid save, as `handleSave` assembles it. */
+export interface ScheduleSaveInput {
+  /**
+   * Every year that has at least one figure, as a FULL row carrying all three.
+   * Never a per-cell diff: a flow-override write is a whole-row replace, so a
+   * row that names only the cell that changed wipes that year's other two.
+   */
+  overrides: FlowScheduleGridOverride[];
+  /**
+   * Every year the grid covers. A year listed here with no `overrides` row was
+   * CLEARED. The HTTP route infers that from the omission because it replaces
+   * the whole grid in one request; a caller that writes one row per year has to
+   * be told, or a year the advisor cleared quietly survives.
+   */
+  years: number[];
+}
+
 export interface FlowScheduleGridProps {
   clientId: string;
   target: ScheduleTarget;
@@ -68,6 +85,15 @@ export interface FlowScheduleGridProps {
   initialOverrides: FlowScheduleGridOverride[];
   /** Lifts save + saving state to the parent so the dialog footer can render the button. */
   onSaveBindingChange?: (binding: ScheduleSaveBinding | null) => void;
+  /**
+   * Persists the whole grid. Defaults to PUTting the flow-overrides route,
+   * which is what the Estate Planning details page wants. The solver passes its
+   * own, emitting entity-flow-override-upsert mutations against the working
+   * tree instead — in the solver there is no scenario to PUT to until the
+   * scenario is saved. Reject to have the grid report the failure exactly as it
+   * reports a failed PUT: `{ ok: false, error }` plus the inline error line.
+   */
+  saveOverrides?: (input: ScheduleSaveInput) => Promise<void>;
 }
 
 const isBusinessType = (t: EntityType) => t !== "trust" && t !== "foundation";
@@ -114,6 +140,24 @@ function buildSaveUrl(clientId: string, target: ScheduleTarget, scenarioId: stri
       ? `/api/clients/${clientId}/entities/${target.entityId}/flow-overrides`
       : `/api/clients/${clientId}/accounts/${target.accountId}/flow-overrides`;
   return scenarioId ? `${path}?scenarioId=${scenarioId}` : path;
+}
+
+/** Today's behaviour: PUT the whole grid to the flow-overrides route. */
+async function putFlowOverrides(
+  clientId: string,
+  target: ScheduleTarget,
+  scenarioId: string | null,
+  input: ScheduleSaveInput,
+): Promise<void> {
+  const res = await fetch(buildSaveUrl(clientId, target, scenarioId), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ overrides: input.overrides }),
+  });
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}));
+    throw new Error((j as { error?: string }).error ?? "Failed to save");
+  }
 }
 
 export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
@@ -233,15 +277,16 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
       }
     }
     try {
-      const url = buildSaveUrl(props.clientId, props.target, props.scenarioId);
-      const res = await fetch(url, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ overrides }),
-      });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        throw new Error((j as { error?: string }).error ?? "Failed to save");
+      const input: ScheduleSaveInput = { overrides, years };
+      if (props.saveOverrides) {
+        await props.saveOverrides(input);
+      } else {
+        await putFlowOverrides(
+          props.clientId,
+          props.target,
+          props.scenarioId,
+          input,
+        );
       }
       setSavedAt(new Date());
       setSavedSnapshot({ income, expense, dist });

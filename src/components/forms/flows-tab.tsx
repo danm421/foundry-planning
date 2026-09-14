@@ -8,9 +8,15 @@ import { CurrencyInput } from "../currency-input";
 import { PercentInput } from "../percent-input";
 import { inputClassName, fieldLabelClassName } from "./input-styles";
 import { isTodaysDollars } from "@/lib/todays-dollars";
-import FlowScheduleGrid, { type ScheduleSaveBinding } from "./flow-schedule-grid";
+import FlowScheduleGrid, {
+  type ScheduleSaveBinding,
+  type ScheduleSaveInput,
+} from "./flow-schedule-grid";
 
-export type { ScheduleSaveBinding };
+export type { ScheduleSaveBinding, ScheduleSaveInput };
+
+/** The scenario writer every editable field on this tab goes through. */
+export type WriterShape = ReturnType<typeof useScenarioWriter>;
 
 type EntityType =
   | "trust"
@@ -56,6 +62,23 @@ export interface FlowsTabProps {
   }>;
   /** Bubbles the custom-schedule save handler up to the dialog footer. */
   onScheduleSaveBindingChange?: (binding: ScheduleSaveBinding | null) => void;
+  /**
+   * Overrides the scenario writer this tab's entity edits go through. The
+   * solver passes one that records the edit against its working tree instead of
+   * writing to the network.
+   */
+  writer?: WriterShape;
+  /**
+   * Skips the ensure-cash self-heal POST. The solver's entity may not be
+   * persisted yet, so the route would 404 on an id the DB has never seen.
+   */
+  skipEnsureCash?: boolean;
+  /**
+   * Overrides how the per-year schedule grid persists. Forwarded straight to
+   * `FlowScheduleGrid` — the grid does not use the writer above, so this is the
+   * only seam that reaches a flow-override write.
+   */
+  saveOverrides?: (input: ScheduleSaveInput) => Promise<void>;
 }
 
 const isBusinessType = (t: EntityType) => t !== "trust" && t !== "foundation";
@@ -64,7 +87,10 @@ const formatCurrency = (n: number) =>
   `$${Math.round(n).toLocaleString("en-US")}`;
 
 export default function FlowsTab(props: FlowsTabProps) {
-  const writer = useScenarioWriter(props.clientId);
+  // The hook runs unconditionally — a `props.writer ?? useScenarioWriter(...)`
+  // would make the call order depend on the prop and break the rules of hooks.
+  const internalWriter = useScenarioWriter(props.clientId);
+  const writer = props.writer ?? internalWriter;
   const { scenarioId } = useScenarioState(props.clientId);
   const [mode, setMode] = useState<EntityFlowMode>(props.flowMode);
   const [modeError, setModeError] = useState<string | null>(null);
@@ -74,11 +100,12 @@ export default function FlowsTab(props: FlowsTabProps) {
   // Fire-and-forget — backfill script is the source of truth, so silent
   // failure here is acceptable.
   useEffect(() => {
+    if (props.skipEnsureCash) return;
     fetch(
       `/api/clients/${props.clientId}/entities/${props.entityId}/ensure-cash`,
       { method: "POST" },
     ).catch(() => {});
-  }, [props.clientId, props.entityId]);
+  }, [props.clientId, props.entityId, props.skipEnsureCash]);
 
   async function handleModeChange(next: EntityFlowMode) {
     if (next === mode) return;
@@ -191,6 +218,7 @@ export default function FlowsTab(props: FlowsTabProps) {
           }
           initialOverrides={props.initialFlowOverrides}
           onSaveBindingChange={props.onScheduleSaveBindingChange}
+          saveOverrides={props.saveOverrides}
         />
       ) : (
         <>
@@ -206,8 +234,6 @@ export default function FlowsTab(props: FlowsTabProps) {
 }
 
 // ── Income/Expense card ──────────────────────────────────────────────────────
-
-type WriterShape = ReturnType<typeof useScenarioWriter>;
 
 function FlowCard({
   kind,

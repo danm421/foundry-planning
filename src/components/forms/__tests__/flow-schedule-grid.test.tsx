@@ -3,6 +3,7 @@ import { act, render, screen, fireEvent, waitFor } from "@testing-library/react"
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import FlowScheduleGrid, {
   type ScheduleSaveBinding,
+  type ScheduleSaveInput,
   type ScheduleTarget,
 } from "../flow-schedule-grid";
 
@@ -12,9 +13,7 @@ import FlowScheduleGrid, {
  * binding the grid registers with its parent.
  */
 function renderWithSave(
-  overrideProps: Partial<Omit<typeof baseProps, "target">> & {
-    target?: ScheduleTarget;
-  } = {},
+  overrideProps: Partial<React.ComponentProps<typeof FlowScheduleGrid>> = {},
 ) {
   const ref: { current: ScheduleSaveBinding | null } = { current: null };
   render(
@@ -29,9 +28,11 @@ function renderWithSave(
   return {
     async save() {
       if (!ref.current) throw new Error("save binding was never registered");
+      let result: Awaited<ReturnType<ScheduleSaveBinding["save"]>> | undefined;
       await act(async () => {
-        await ref.current!.save();
+        result = await ref.current!.save();
       });
+      return result!;
     },
   };
 }
@@ -231,5 +232,77 @@ describe("FlowScheduleGrid", () => {
       .getAllByRole("textbox")
       .map((el) => (el as HTMLInputElement).placeholder);
     expect(placeholders).toContain("$100,000");
+  });
+
+  // ── saveOverrides seam ─────────────────────────────────────────────────────
+
+  it("hands an injected saveOverrides the full merged rows and never PUTs", async () => {
+    const saveOverrides = vi.fn<(input: ScheduleSaveInput) => Promise<void>>(
+      async () => {},
+    );
+    const { save } = renderWithSave({ saveOverrides });
+    const inputs = screen.getAllByRole("textbox");
+    // 2026 income and 2026 distribution %, so the row carries two of three.
+    fireEvent.change(inputs[incomeInputForYearIndex(0)], {
+      target: { value: "250000" },
+    });
+    fireEvent.change(inputs[incomeInputForYearIndex(0) + 2], {
+      target: { value: "50" },
+    });
+    expect(await save()).toEqual({ ok: true });
+
+    expect(saveOverrides).toHaveBeenCalledTimes(1);
+    // Whole merged row, all three keys — a per-cell diff would wipe the others.
+    expect(saveOverrides.mock.calls[0][0].overrides).toEqual([
+      {
+        year: 2026,
+        incomeAmount: 250000,
+        expenseAmount: null,
+        distributionPercent: 0.5,
+      },
+    ]);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("tells an injected saveOverrides every year the grid covers, so a cleared year is visible", async () => {
+    const saveOverrides = vi.fn<(input: ScheduleSaveInput) => Promise<void>>(
+      async () => {},
+    );
+    const { save } = renderWithSave({
+      saveOverrides,
+      initialOverrides: [
+        {
+          year: 2027,
+          incomeAmount: 90_000,
+          expenseAmount: null,
+          distributionPercent: null,
+        },
+      ],
+    });
+    // Clear 2027 — over HTTP its absence means "cleared", and a per-year writer
+    // has to be able to work that out too.
+    const inputs = screen.getAllByRole("textbox");
+    fireEvent.change(inputs[incomeInputForYearIndex(1)], {
+      target: { value: "" },
+    });
+    await save();
+
+    const input = saveOverrides.mock.calls[0][0];
+    expect(input.overrides).toEqual([]);
+    expect(input.years).toEqual([2026, 2027, 2028]);
+  });
+
+  it("reports a rejected injected saveOverrides the way it reports a failed PUT", async () => {
+    const saveOverrides = vi
+      .fn<(input: ScheduleSaveInput) => Promise<void>>()
+      .mockRejectedValue(new Error("entity is not in the working tree"));
+    const { save } = renderWithSave({ saveOverrides });
+    expect(await save()).toEqual({
+      ok: false,
+      error: "entity is not in the working tree",
+    });
+    expect(
+      screen.getByText("entity is not in the working tree"),
+    ).toBeInTheDocument();
   });
 });

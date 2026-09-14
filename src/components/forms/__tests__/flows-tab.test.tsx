@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import FlowsTab from "../flows-tab";
+import FlowsTab, { type ScheduleSaveBinding, type ScheduleSaveInput } from "../flows-tab";
 
 const submitMock = vi.fn();
+let fetchMock: ReturnType<typeof vi.fn>;
 
 vi.mock("@/hooks/use-scenario-writer", () => ({
   useScenarioWriter: () => ({
@@ -25,6 +26,8 @@ beforeEach(() => {
     ok: true,
     json: async () => ({}),
   });
+  fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+  global.fetch = fetchMock as unknown as typeof fetch;
 });
 
 const baseProps = {
@@ -132,5 +135,74 @@ describe("FlowsTab", () => {
       url: "/api/clients/client-1/entities/ent-1",
       method: "PUT",
     });
+  });
+
+  // ── Solver seams ───────────────────────────────────────────────────────────
+
+  it("routes entity edits through an injected writer instead of the hook's", async () => {
+    const injected = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+    render(
+      <FlowsTab
+        {...baseProps}
+        writer={{ submit: injected, submitDirect: vi.fn(), scenarioActive: false }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /custom schedule/i }));
+    await waitFor(() => expect(injected).toHaveBeenCalledTimes(1));
+    expect(injected.mock.calls[0][0]).toMatchObject({
+      op: "edit",
+      targetKind: "entity",
+      targetId: "ent-1",
+      desiredFields: { flowMode: "schedule" },
+    });
+    expect(submitMock).not.toHaveBeenCalled();
+  });
+
+  it("fires the ensure-cash self-heal POST by default", async () => {
+    render(<FlowsTab {...baseProps} />);
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/clients/client-1/entities/ent-1/ensure-cash",
+        { method: "POST" },
+      ),
+    );
+  });
+
+  it("skipEnsureCash suppresses the ensure-cash POST", () => {
+    render(<FlowsTab {...baseProps} skipEnsureCash />);
+    // Positive render assertion first: a blank tab would pass vacuously.
+    expect(screen.getByRole("button", { name: /add income/i })).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("forwards saveOverrides to the per-year schedule grid", async () => {
+    const saveOverrides = vi.fn<(input: ScheduleSaveInput) => Promise<void>>(
+      async () => {},
+    );
+    const binding: { current: ScheduleSaveBinding | null } = { current: null };
+    render(
+      <FlowsTab
+        {...baseProps}
+        flowMode="schedule"
+        skipEnsureCash
+        saveOverrides={saveOverrides}
+        onScheduleSaveBindingChange={(b) => {
+          binding.current = b;
+        }}
+      />,
+    );
+    expect(screen.getByText(/quick fill/i)).toBeInTheDocument();
+    if (!binding.current) throw new Error("grid never registered a save binding");
+    await act(async () => {
+      await binding.current!.save();
+    });
+
+    expect(saveOverrides).toHaveBeenCalledTimes(1);
+    expect(saveOverrides.mock.calls[0][0].years).toEqual([
+      2026, 2027, 2028, 2029, 2030, 2031, 2032, 2033, 2034, 2035, 2036, 2037,
+      2038, 2039, 2040, 2041, 2042, 2043, 2044, 2045, 2046, 2047, 2048, 2049,
+      2050,
+    ]);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
