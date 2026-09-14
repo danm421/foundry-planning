@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import type { EntitySummary } from "@/engine/types";
 import type { SolverMutation } from "@/lib/solver/types";
+import { CO_CLIENT_LABEL, type IndividualOwner } from "@/lib/owner-labels";
 
 interface Props {
   open: boolean;
@@ -77,6 +79,22 @@ export function SaveAsScenarioDialog({ open, mutations, onClose, onSubmit }: Pro
 /** Enough of a uuid to tell two rows apart without filling the line. */
 const short = (id: string) => `${id.slice(0, 8)}…`;
 
+/** The stored enum is `client`/`spouse`/`joint`; the advisor never sees those
+ *  words anywhere else in the app. `joint` is carried for the wider grantor
+ *  enum the gift mutations use — a will's own grantor is only the first two. */
+const GRANTOR_LABEL: Record<IndividualOwner, string> = {
+  client: "Client",
+  spouse: CO_CLIENT_LABEL,
+  joint: "Joint",
+};
+
+/** `entityType` is a seven-member union. A foundation is neither a trust nor a
+ *  business, so it gets its own word rather than falling into the else. */
+function entityKindLabel(entityType: EntitySummary["entityType"]): string {
+  if (entityType === "foundation") return "Foundation";
+  return entityType === "trust" || entityType == null ? "Trust" : "Business";
+}
+
 function describeMutation(m: SolverMutation): string {
   switch (m.kind) {
     case "retirement-age":
@@ -105,7 +123,7 @@ function describeMutation(m: SolverMutation): string {
     // Without these the change list shows the advisor the raw mutation kind.
     case "entity-upsert":
       if (!m.value) return `Removed a trust or business (${short(m.id)})`;
-      return `${m.value.entityType === "trust" || m.value.entityType == null ? "Trust" : "Business"}: ${m.value.name ?? short(m.id)}`;
+      return `${entityKindLabel(m.value.entityType)}: ${m.value.name ?? short(m.id)}`;
     case "account-upsert":
       return m.value ? `Account: ${m.value.name}` : `Removed an account (${short(m.id)})`;
     case "liability-upsert":
@@ -127,7 +145,9 @@ function describeMutation(m: SolverMutation): string {
         ? `Promissory note: ${m.value.name}`
         : `Removed a promissory note (${short(m.id)})`;
     case "will-upsert":
-      return m.value ? `Will (${m.value.grantor})` : `Removed a will (${short(m.id)})`;
+      return m.value
+        ? `Will (${GRANTOR_LABEL[m.value.grantor]})`
+        : `Removed a will (${short(m.id)})`;
     case "gift-upsert":
       if (!m.value) return `Removed a planned gift (${short(m.id)})`;
       return m.value.kind === "series"

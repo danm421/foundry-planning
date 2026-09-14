@@ -399,8 +399,9 @@ function TrustEditorBody({
 
           {(form.trustSubType === "clt" || form.trustSubType === "crt") && (
             <p className="text-[12px] text-ink-3">
-              Payout terms, §7520 rate and measuring lives were set when this trust
-              was funded. To change them, remove the trust and add it again.
+              Payout terms, the §7520 rate and measuring lives are not editable in
+              the solver yet. Open this trust on the Estate Planning page to
+              change them.
             </p>
           )}
         </div>
@@ -415,6 +416,10 @@ function TrustEditorBody({
               {edits.assetError}
             </p>
           )}
+          <p className="text-[12px] text-ink-3">
+            Businesses are assigned to a trust on the Estate Planning page, where
+            the transfer is recorded as a taxable gift.
+          </p>
           <AssetsTab
             entityId={entity.id}
             accounts={view.accounts}
@@ -424,7 +429,16 @@ function TrustEditorBody({
             familyMembers={view.familyMembers}
             entities={view.entityOptions}
             businesses={view.businesses}
-            entityIsIrrevocable={edits.isIrrevocable}
+            // Assigning a business moves its value out of the taxable estate,
+            // and the §709 gift row that pays for it is written by the details
+            // page's route — which the solver has no equivalent of, because
+            // `gift-upsert` carries an `EstateFlowGift` and a business-interest
+            // gift is not representable in that type. So the trust's existing
+            // businesses stay visible, valued and removable, but nothing here
+            // can assign a new one. `entityIsIrrevocable` is deliberately not
+            // passed: it exists only to gate the picker's discount field, which
+            // is now unreachable anyway.
+            hideBusinessAssignment
             entityLabel="trust"
             onChange={edits.applyAssetOp}
           />

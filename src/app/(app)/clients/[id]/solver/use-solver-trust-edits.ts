@@ -13,7 +13,7 @@ import type {
   Expense,
   Income,
 } from "@/engine/types";
-import type { AccountOwner, EntityOwner } from "@/engine/ownership";
+import type { AccountOwner } from "@/engine/ownership";
 import type { NoteReceivable } from "@/engine/notes-receivable/types";
 import type { SolverMutation } from "@/lib/solver/types";
 import type { ScenarioEdit } from "@/hooks/use-scenario-writer";
@@ -21,6 +21,7 @@ import { deriveIsIrrevocable, type TrustSubType } from "@/lib/entities/trust";
 import type { BeneficiaryRow } from "@/components/forms/beneficiary-row-list";
 import type { TrustEnds } from "@/components/forms/trust-ends-select";
 import { applyAssetTabOp, type AssetTabOp } from "@/components/forms/asset-tab-ops";
+import { applyEntityOwnersOp } from "@/lib/entity-owners-ops";
 import type { ScheduleSaveInput, WriterShape } from "@/components/forms/flows-tab";
 import type { SaleToTrustInput } from "@/components/forms/sell-to-trust-dialog";
 import { toAssetsTabFamilyMembers } from "./solver-entity-adapters";
@@ -205,15 +206,6 @@ function toEntitySummary(base: EntitySummary, f: TrustFormState): EntitySummary 
   };
 }
 
-/** `EntityOwner` is `AccountOwner` minus the external-beneficiary and
- *  gifted-away arms. Narrowing (rather than casting) is what guarantees every
- *  surviving row carries the numeric `percent` the engine multiplies by. */
-function toEntityOwners(rows: AccountOwner[]): EntityOwner[] {
-  return rows.filter(
-    (o): o is EntityOwner => o.kind === "family_member" || o.kind === "entity",
-  );
-}
-
 const accepted = () => new Response(null, { status: 204 });
 
 const num = (v: unknown, fallback: number): number => {
@@ -274,39 +266,48 @@ export function useSolverTrustEdits(
       familyMembers: toAssetsTabFamilyMembers(tree),
     };
 
-    // `applyAssetTabOp` refuses `assetType: "entity"` because the details page
-    // routes business assignment through an API that also writes a §709 gift
-    // row. The owner arithmetic is identical either way, so the op is replayed
-    // as an account op rather than keeping a second copy of the redistribution
-    // rules that would drift from it.
-    const ownerOp: AssetTabOp =
-      op.type === "remove"
-        ? { type: "remove", assetType: "account", assetId: op.assetId }
-        : { type: op.type, assetType: "account", assetId: op.assetId, percent: op.percent };
-
-    // I5 precedent: applyAssetTabOp throws on invariant violations, not just on
-    // the entity arm. An uncaught throw in a React handler takes the editor down.
-    const nextOwners = (current: AccountOwner[]): AccountOwner[] | null => {
+    // I5 precedent: both owner helpers throw on invariant violations, and an
+    // uncaught throw in a React event handler takes the whole editor down. Every
+    // call goes through here so the advisor reads the message instead.
+    const guard = <T,>(run: () => T): T | null => {
       try {
-        return applyAssetTabOp(current, ownerOp, ctx);
+        return run();
       } catch (e) {
         setAssetError(e instanceof Error ? e.message : "Cannot apply this change.");
         return null;
       }
     };
+    // Only reached after the entity arm below has returned, so `op` is always an
+    // account or liability op here — the one `applyAssetTabOp` accepts.
+    const nextOwners = (current: AccountOwner[]) =>
+      guard(() => applyAssetTabOp(current, op, ctx));
     const missing = () =>
       setAssetError("That asset is no longer in the plan — reopen the trust and try again.");
 
     if (op.assetType === "entity") {
       const business = (tree.entities ?? []).find((e) => e.id === op.assetId);
       if (!business) return missing();
-      const owners = nextOwners(business.owners ?? []);
+      // `applyAssetTabOp` refuses this arm, and replaying it as an account op is
+      // NOT the same arithmetic: `applyEntityOwnersOp` caps an add at the family
+      // share actually on the cap table (a business's owner rows may legally sum
+      // to less than 1), and its `remove` takes the household roster as the
+      // fallback that absorbs the freed share when no family row is left. This
+      // is the same helper the details page's assets route calls, so the two
+      // screens redistribute ownership identically.
+      const owners = guard(
+        () =>
+          applyEntityOwnersOp(
+            business.owners ?? [],
+            // `AssetTabOp.percent` is 0-100; `EntityOwnersOp.percent` is the 0-1
+            // fraction — the same conversion the route does.
+            op.type === "remove"
+              ? { type: "remove", trustId: entity.id }
+              : { type: op.type, trustId: entity.id, percent: op.percent / 100 },
+            { familyMembers: ctx.familyMembers },
+          ).newOwners,
+      );
       if (!owners) return;
-      onChange({
-        kind: "entity-upsert",
-        id: business.id,
-        value: { ...business, owners: toEntityOwners(owners) },
-      });
+      onChange({ kind: "entity-upsert", id: business.id, value: { ...business, owners } });
       return;
     }
     if (op.assetType === "account") {

@@ -227,6 +227,28 @@ describe("SolverTrustEditor — Details tab", () => {
   });
 });
 
+// ── Details tab: split-interest placeholder ───────────────────────────────────
+
+describe("SolverTrustEditor — CLT/CRT terms", () => {
+  it("points at the Estate Planning page instead of telling the advisor to delete the trust", () => {
+    renderEditor({
+      entity: {
+        ...ilit,
+        id: "e-clt",
+        name: "Smith CLAT",
+        trustSubType: "clt",
+      },
+    });
+    expect(
+      screen.getByText(/not editable in the solver yet/i),
+    ).toBeInTheDocument();
+    // The details page renders CltDetailsSection for an EXISTING trust
+    // (add-trust-form.tsx, the `trustSubType === "clt"` block), so "remove the
+    // trust and add it again" was false advice about a real trust.
+    expect(screen.queryByText(/remove the trust and add it again/i)).toBeNull();
+  });
+});
+
 // ── Notes tab ─────────────────────────────────────────────────────────────────
 
 describe("SolverTrustEditor — Notes tab", () => {
@@ -296,13 +318,33 @@ describe("SolverTrustEditor — Assets tab", () => {
     const last = lastOf(onChange, "entity-upsert");
     expect(last?.id).toBe("e-llc");
     const owners = last?.value?.owners ?? [];
-    expect(owners.length).toBeGreaterThan(0);
-    // The trust's row is gone and every surviving row carries a real number —
-    // an owner missing `percent` yields NaN taxable income in the engine.
-    expect(owners.some((o) => o.kind === "entity" && o.entityId === "e-ilit")).toBe(
-      false,
-    );
+    // `typeof` alone cannot catch the failure D5 exists to prevent: NaN IS a
+    // number, and NaN taxable income is exactly the hazard (projection.ts does
+    // `netIncome * owner.percent` with no `?? 0`). So assert the VALUE too.
+    // Never `==` — `"0.4" == 0.4` is true and would pass on a string.
     for (const o of owners) expect(typeof o.percent).toBe("number");
+    // The fixture's cap table is trust 60% / fm-client 40%; releasing the
+    // trust's 60% grows the only family row to 100%.
+    expect(owners).toEqual([
+      { kind: "family_member", familyMemberId: "fm-client", percent: 1 },
+    ]);
+  });
+
+  it("offers no business in the picker, and says where business assignment happens", async () => {
+    renderEditor();
+    await userEvent.click(screen.getByRole("button", { name: "Assets" }));
+
+    // The explanation is on the tab itself, not hidden behind the picker.
+    expect(
+      screen.getByText(/assigned to a trust on the Estate Planning page/i),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "+ Add asset" }));
+    // The picker really opened — it still offers an account. Asserting only the
+    // absences would pass on a modal that never rendered.
+    expect(screen.getByLabelText("Select Joint Brokerage")).toBeInTheDocument();
+    expect(screen.queryByText("Business Entities")).toBeNull();
+    expect(screen.queryByLabelText("Select Smith Holdings LLC")).toBeNull();
   });
 });
 

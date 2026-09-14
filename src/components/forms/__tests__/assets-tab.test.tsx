@@ -267,6 +267,92 @@ describe("AssetsTab", () => {
     expect(screen.getByText("$680,000")).toBeInTheDocument();
   });
 
+  // ── Business assignment seam (C1) ──────────────────────────────────────────
+  //
+  // Assigning a business to a trust moves value out of the taxable estate, and
+  // only the details page's API route writes the §709 gift row that pays for
+  // it. `hideBusinessAssignment` lets a caller with no route behind it (the
+  // solver) keep the trust's existing businesses visible, valued and removable
+  // while taking the ADD affordance away. The default must stay byte-identical
+  // for the details page.
+
+  const pickerBusinesses: AssetsTabBusiness[] = [
+    {
+      id: "biz-1",
+      name: "Test Bus",
+      value: 280_000,
+      owners: [{ kind: "entity", entityId: TRUST_ID, percent: 1.0 }],
+    },
+    {
+      id: "biz-2",
+      name: "Sibling LLC",
+      value: 100_000,
+      // Not yet owned by this trust — so the picker can offer it.
+      owners: [{ kind: "family_member", familyMemberId: "fm-c", percent: 1.0 }],
+    },
+  ];
+
+  it("by default still offers a business in the picker and still shows the valuation-discount field", () => {
+    render(
+      <AssetsTab
+        entityId={TRUST_ID}
+        accounts={accounts}
+        liabilities={liabilities}
+        incomes={[]}
+        expenses={[]}
+        familyMembers={familyMembers}
+        entities={entities}
+        businesses={pickerBusinesses}
+        entityIsIrrevocable
+        onChange={vi.fn()}
+      />
+    );
+    const add = screen.getByRole("button", { name: /\+ Add asset/i });
+    expect(add).toBeInTheDocument();
+    fireEvent.click(add);
+
+    expect(screen.getByText("Business Entities")).toBeInTheDocument();
+    const pick = screen.getByLabelText("Select Sibling LLC");
+    expect(pick).toBeInTheDocument();
+    fireEvent.click(pick);
+
+    expect(screen.getByLabelText(/Valuation discount/i)).toBeInTheDocument();
+  });
+
+  it("with hideBusinessAssignment, the picker offers no business at all — but the trust's own businesses still render, still count, and stay removable", () => {
+    const onChange = vi.fn();
+    render(
+      <AssetsTab
+        entityId={TRUST_ID}
+        accounts={accounts}
+        liabilities={liabilities}
+        incomes={[]}
+        expenses={[]}
+        familyMembers={familyMembers}
+        entities={entities}
+        businesses={pickerBusinesses}
+        entityIsIrrevocable
+        hideBusinessAssignment
+        onChange={onChange}
+      />
+    );
+    // Owned business still on screen, and still folded into Net trust value:
+    //   250k + 200k − 120k mortgage + 280k business = 610k.
+    expect(screen.getByText("Test Bus")).toBeInTheDocument();
+    expect(screen.getByText("$610,000")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /\+ Add asset/i }));
+    // The picker really rendered — it still offers an account — but it has no
+    // business half. Asserting only the absences would pass on an empty modal.
+    const pickAccount = screen.getByLabelText("Select Personal Checking");
+    expect(pickAccount).toBeInTheDocument();
+    expect(screen.queryByText("Business Entities")).toBeNull();
+    expect(screen.queryByLabelText("Select Sibling LLC")).toBeNull();
+    // …and with no business selectable, the discount field is unreachable.
+    fireEvent.click(pickAccount);
+    expect(screen.queryByLabelText(/Valuation discount/i)).toBeNull();
+  });
+
   it("shows empty state when no trust-owned items", () => {
     const unownedAccounts: AssetsTabAccount[] = [
       {
