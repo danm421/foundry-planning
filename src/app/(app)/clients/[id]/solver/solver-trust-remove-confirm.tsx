@@ -92,6 +92,8 @@ function trustRemovalSummary(tree: ClientData, entity: EntitySummary): RemovalSu
   let policiesCleared = 0;
   let designationsCleared = 0;
   let liabilities = 0;
+  let incomesReturned = 0;
+  let expensesReturned = 0;
   let businessesMoved = 0;
   let entityRefsCleared = 0;
   let gifts = 0;
@@ -116,6 +118,16 @@ function trustRemovalSummary(tree: ClientData, entity: EntitySummary): RemovalSu
       }
       case "liability-upsert":
         liabilities += 1;
+        break;
+      // Spec §4 step 5. A trust income or expense really does come back to the
+      // household's cash flow, so it is a money line, not a tidy-up — and the
+      // `moves` test below has to see it, or a dissolve that returns ONLY flows
+      // would drop the "returns to <person>" sentence.
+      case "income-upsert":
+        incomesReturned += 1;
+        break;
+      case "expense-upsert":
+        expensesReturned += 1;
         break;
       case "gift-upsert":
         gifts += 1;
@@ -158,6 +170,10 @@ function trustRemovalSummary(tree: ClientData, entity: EntitySummary): RemovalSu
       ` account to ${heir.name}.`, ` accounts to ${heir.name}.`),
     fact("liabilities", "Moves ", liabilities,
       ` liability back to ${heir.name}.`, ` liabilities back to ${heir.name}.`),
+    fact("incomes", "Returns ", incomesReturned,
+      ` income to ${heir.name}.`, ` incomes to ${heir.name}.`),
+    fact("expenses", "Moves ", expensesReturned,
+      ` expense back to ${heir.name}.`, ` expenses back to ${heir.name}.`),
     fact("businesses", "Transfers ownership of ", businessesMoved,
       ` business to ${heir.name}.`, ` businesses to ${heir.name}.`),
     // Then what is cleared.
@@ -174,7 +190,8 @@ function trustRemovalSummary(tree: ClientData, entity: EntitySummary): RemovalSu
       " other entity.", " other entities."),
   ].filter((f) => f.count > 0);
 
-  const moves = accountsReturned + liabilities + businessesMoved > 0;
+  const moves =
+    accountsReturned + liabilities + businessesMoved + incomesReturned + expensesReturned > 0;
   return { facts, fallbackNote: moves ? heir.fallback : null };
 }
 

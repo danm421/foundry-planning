@@ -3,9 +3,12 @@ import type {
   BeneficiaryRef,
   ClientData,
   EntitySummary,
+  Expense,
   GiftEvent,
+  Income,
 } from "@/engine/types";
 import type { AccountOwner, EntityOwner } from "@/engine/ownership";
+import { entityCheckingId } from "@/lib/entities/entity-checking";
 import type { TrustSubType } from "@/lib/entities/trust";
 import { defaultIsGrantorFor } from "@/lib/trust-defaults";
 import type { SolverMutation } from "./types";
@@ -167,7 +170,49 @@ export function buildDissolveTrustMutations(
     muts.push({ kind: "account-upsert", id: a.id, value: next });
   }
 
-  // 2. Liabilities the trust carries.
+  // 2. Entity-scoped incomes and expenses — spec §4 step 5. A flow left
+  //    carrying `ownerEntityId = <this trust>` does not come home, it VANISHES:
+  //    household income requires `ownerEntityId == null` (projection.ts:1308),
+  //    grantor income looks the entity up in `entityMap` and it is gone (:1322),
+  //    household expenses require the same null (:1340), and the cash routes to
+  //    `entityCheckingByEntityId[deadId]` -> undefined with no throw (:781-786).
+  //
+  //    A `cashAccountId` naming an account this dissolve DELETES is cleared at
+  //    the same time. `resolveCashAccount` lets an explicit override win over the
+  //    household fallback, so a stale pointer credits an account that no longer
+  //    exists and the money disappears just the same. The synthesized cash bucket
+  //    is deleted by `applyMutations`' entity-delete arm whether or not the loop
+  //    above emitted a delete for it, so it is seeded here unconditionally.
+  //    Accounts the dissolve merely RETITLES survive and keep their pointer.
+  const deletedAccountIds = new Set<string>([entityCheckingId(entity.id)]);
+  for (const m of muts) {
+    if (m.kind === "account-upsert" && m.value === null) deletedAccountIds.add(m.id);
+  }
+  const rehome = <T extends Income | Expense>(row: T): T => {
+    const next: T = { ...row };
+    delete next.ownerEntityId;
+    if (next.cashAccountId && deletedAccountIds.has(next.cashAccountId)) {
+      delete next.cashAccountId;
+    }
+    return next;
+  };
+  for (const inc of tree.incomes ?? []) {
+    if (inc.ownerEntityId !== entity.id) continue;
+    // `owner` is the household attribution the row needs once it is no longer
+    // the trust's: the same person the assets return to.
+    muts.push({
+      kind: "income-upsert",
+      id: inc.id,
+      value: { ...rehome(inc), owner: entity.grantor ?? "client" },
+    });
+  }
+  for (const exp of tree.expenses ?? []) {
+    if (exp.ownerEntityId !== entity.id) continue;
+    // Expense carries no `owner` field — clearing ownerEntityId is the whole move.
+    muts.push({ kind: "expense-upsert", id: exp.id, value: rehome(exp) });
+  }
+
+  // 3. Liabilities the trust carries.
   for (const l of tree.liabilities ?? []) {
     if (!heldByTrust(l.owners)) continue;
     muts.push({
@@ -177,7 +222,7 @@ export function buildDissolveTrustMutations(
     });
   }
 
-  // 3. Other entities — a business the trust holds, and any trust naming this
+  // 4. Other entities — a business the trust holds, and any trust naming this
   //    one as a beneficiary. One merged upsert per entity (see rule 1).
   for (const e of tree.entities ?? []) {
     if (e.id === entity.id) continue;
@@ -210,7 +255,7 @@ export function buildDissolveTrustMutations(
     if (changed) muts.push({ kind: "entity-upsert", id: e.id, value: next });
   }
 
-  // 4. Gifts aimed at the trust, a CLT's remainder-interest gift included.
+  // 5. Gifts aimed at the trust, a CLT's remainder-interest gift included.
   //    `tree.gifts` holds CASH gifts only — the loader filters asset, liability
   //    and business rows out of it, and a series never appears there at all —
   //    so the gift EVENTS carry the rest, each naming the row that produced it.
@@ -227,7 +272,7 @@ export function buildDissolveTrustMutations(
   }
   for (const id of giftIds) muts.push({ kind: "gift-upsert", id, value: null });
 
-  // 5. Wills — bequest recipients and residuary recipients are separate arrays.
+  // 6. Wills — bequest recipients and residuary recipients are separate arrays.
   //    A bequest left with NO recipients is dropped, not kept. It is not inert:
   //    `specifics` is filtered by account id alone (death-event/shared.ts:916-921),
   //    and an emptied clause still contributes its `percentage` to `rawTotal`
@@ -258,7 +303,7 @@ export function buildDissolveTrustMutations(
     });
   }
 
-  // 6. The entity itself — always last.
+  // 7. The entity itself — always last.
   muts.push({ kind: "entity-upsert", id: entity.id, value: null });
   return muts;
 }

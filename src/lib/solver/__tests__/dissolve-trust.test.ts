@@ -21,6 +21,11 @@ import { mutationsToScenarioChanges } from "@/lib/solver/mutations-to-scenario-c
 import { mutationKey } from "@/lib/solver/types";
 import { buildCltRemainderGiftMutation } from "@/lib/solver/split-interest-levers";
 import { applyWillSpecificBequests } from "@/engine/death-event/shared";
+import { runProjection } from "@/engine/projection";
+import {
+  entityCheckingId,
+  makeEntityCheckingAccount,
+} from "@/lib/entities/entity-checking";
 import type { Account, FamilyMember } from "@/engine/types";
 import type { ClientData, EntitySummary, Will } from "@/engine/types";
 
@@ -149,6 +154,117 @@ describe("buildDissolveTrustMutations — returning assets", () => {
   it("throws rather than guessing when the household has no client family member", () => {
     const t = tree({ accounts: [trustAccount], familyMembers: [] });
     expect(() => buildDissolveTrustMutations(t, ilit)).toThrow(/no client family member/);
+  });
+});
+
+// ── Spec §4 step 5: entity-scoped incomes and expenses ───────────────────────
+//
+// An Income/Expense still carrying `ownerEntityId = <dissolved trust>` does not
+// come home — it VANISHES. It is excluded from household income
+// (projection.ts:1308 requires ownerEntityId == null), from grantor income
+// (:1322 looks the entity up in entityMap and it is gone), and from household
+// expenses (:1340); its cash routes to entityCheckingByEntityId[deadId] →
+// undefined with no throw (:781-786). So these cases assert against the
+// PROJECTION, with a pre-dissolve control proving the assertion is not vacuous.
+
+describe("buildDissolveTrustMutations — entity-scoped flows come home", () => {
+  const trustIncome = {
+    id: "inc-trust",
+    type: "trust",
+    name: "IDGT distribution",
+    annualAmount: 60_000,
+    startYear: 2026,
+    endYear: 2060,
+    growthRate: 0,
+    owner: "client",
+    ownerEntityId: "ent-ilit",
+  };
+  const trustExpense = {
+    id: "exp-trust",
+    type: "other",
+    name: "Trustee fee",
+    annualAmount: 12_000,
+    startYear: 2026,
+    endYear: 2060,
+    growthRate: 0,
+    ownerEntityId: "ent-ilit",
+  };
+
+  it("returns a trust-owned income to the household, in the PROJECTION not just the tree", () => {
+    const t = tree({ accounts: [trustAccount], incomes: [trustIncome] });
+    // Control: while the trust lives, this is entity income and contributes
+    // nothing to the household total. Without it the assertion below could pass
+    // on a row that was always there.
+    expect(runProjection(t)[0].income.bySource["inc-trust"]).toBeUndefined();
+
+    const out = applyMutations(t, buildDissolveTrustMutations(t, ilit));
+    const after = out.incomes.find((i) => i.id === "inc-trust")!;
+    expect(after.ownerEntityId).toBeUndefined();
+    expect(after.owner).toBe("client");
+    // A string here makes the engine concatenate rather than add.
+    expect(typeof after.annualAmount).toBe("number");
+    expect(runProjection(out)[0].income.bySource["inc-trust"]).toBe(60_000);
+  });
+
+  it("returns a trust-owned expense to the household, in the PROJECTION not just the tree", () => {
+    const t = tree({ accounts: [trustAccount], expenses: [trustExpense] });
+    expect(runProjection(t)[0].expenses.bySource["exp-trust"]).toBeUndefined();
+
+    const out = applyMutations(t, buildDissolveTrustMutations(t, ilit));
+    const after = out.expenses.find((e) => e.id === "exp-trust")!;
+    expect(after.ownerEntityId).toBeUndefined();
+    expect(typeof after.annualAmount).toBe("number");
+    expect(runProjection(out)[0].expenses.bySource["exp-trust"]).toBe(12_000);
+  });
+
+  it("returns the flow to the co-client when the trust names the spouse as grantor", () => {
+    const spousal: EntitySummary = { ...ilit, grantor: "spouse" };
+    const t = tree({ entities: [spousal], incomes: [trustIncome] });
+    const out = applyMutations(t, buildDissolveTrustMutations(t, spousal));
+    expect(out.incomes.find((i) => i.id === "inc-trust")!.owner).toBe("spouse");
+  });
+
+  it("clears a cashAccountId pointing at the trust's cash bucket, which the dissolve deletes", () => {
+    const bucket = makeEntityCheckingAccount("ent-ilit", "Smith Family ILIT");
+    const t = tree({
+      accounts: [bucket],
+      incomes: [{ ...trustIncome, cashAccountId: bucket.id }],
+      expenses: [{ ...trustExpense, cashAccountId: bucket.id }],
+    });
+    const out = applyMutations(t, buildDissolveTrustMutations(t, ilit));
+    // Positive first: the bucket really is gone, so a stale pointer would be
+    // a deposit into an account that does not exist.
+    expect(out.accounts.some((a) => a.id === entityCheckingId("ent-ilit"))).toBe(false);
+    expect(out.incomes.find((i) => i.id === "inc-trust")!.cashAccountId).toBeUndefined();
+    expect(out.expenses.find((e) => e.id === "exp-trust")!.cashAccountId).toBeUndefined();
+  });
+
+  it("keeps a cashAccountId naming an account that SURVIVES the dissolve", () => {
+    const t = tree({
+      accounts: [trustAccount],
+      incomes: [{ ...trustIncome, cashAccountId: "acct-1" }],
+    });
+    const out = applyMutations(t, buildDissolveTrustMutations(t, ilit));
+    expect(out.incomes.find((i) => i.id === "inc-trust")!.cashAccountId).toBe("acct-1");
+  });
+
+  it("leaves household flows and other entities' flows alone", () => {
+    const other = { ...trustIncome, id: "inc-other", ownerEntityId: "ent-other" };
+    const household = { ...trustIncome, id: "inc-hh", ownerEntityId: undefined };
+    const t = tree({ incomes: [other, household] });
+    const keys = buildDissolveTrustMutations(t, ilit).map(mutationKey);
+    expect(keys).not.toContain("income-upsert:inc-other");
+    expect(keys).not.toContain("income-upsert:inc-hh");
+  });
+
+  it("emits the flow upserts BEFORE the entity delete", () => {
+    const t = tree({ incomes: [trustIncome], expenses: [trustExpense] });
+    const muts = buildDissolveTrustMutations(t, ilit);
+    const keys = muts.map(mutationKey);
+    expect(keys.indexOf("income-upsert:inc-trust")).toBeGreaterThan(-1);
+    expect(keys.indexOf("expense-upsert:exp-trust")).toBeGreaterThan(-1);
+    expect(keys.indexOf("income-upsert:inc-trust")).toBeLessThan(keys.length - 1);
+    expect(keys.indexOf("expense-upsert:exp-trust")).toBeLessThan(keys.length - 1);
   });
 });
 

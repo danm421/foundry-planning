@@ -455,6 +455,44 @@ describe("Estate planning dialog — the removal confirmation agrees with the le
     ]);
   });
 
+  it("names the trust income and expense the removal returns to the household", async () => {
+    // Spec §4 step 5. Left unimplemented these rows did not come home, they
+    // vanished from the projection — so the confirmation naming them is the
+    // advisor's only sight of a move that really happens.
+    const working = tree({
+      incomes: [
+        {
+          id: "i-trust",
+          type: "trust",
+          name: "IDGT distribution",
+          annualAmount: 60_000,
+          startYear: 2026,
+          endYear: 2028,
+          growthRate: 0,
+          owner: "client",
+          ownerEntityId: "e-idgt",
+        },
+      ],
+      expenses: [
+        {
+          id: "x-trust",
+          type: "other",
+          name: "Trustee fee",
+          annualAmount: 12_000,
+          startYear: 2026,
+          endYear: 2028,
+          growthRate: 0,
+          ownerEntityId: "e-idgt",
+        },
+      ],
+    } as unknown as Partial<ClientData>);
+    renderDialog({ clientData: working });
+    const dialog = await openRemoveConfirm(/2019 IDGT/);
+    expect(dialog).toHaveTextContent(/Returns 1 income to Sam Smith/i);
+    expect(dialog).toHaveTextContent(/Moves 1 expense back to Sam Smith/i);
+    expect(dialog).not.toHaveTextContent(/Nothing else in the plan refers to this trust/i);
+  });
+
   it("shows NO returns line for an account that only names the trust", async () => {
     renderDialog({ clientData: tree({ accounts: [policy, brokerage, conduitIra] }) });
     const dialog = await openRemoveConfirm(/2019 IDGT/);

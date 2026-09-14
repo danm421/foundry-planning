@@ -21,7 +21,9 @@ function clientData(over: Partial<ClientData> = {}): ClientData {
     entities: [],
     externalBeneficiaries: [],
     incomes: [],
-    expenses: {},
+    // `Expense[]`, not `{}` — the dissolve lever walks this array (spec §4
+    // step 5), and an object fixture throws where real data never could.
+    expenses: [],
     savingsRules: [],
     liabilities: [],
     gifts: [],
