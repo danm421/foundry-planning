@@ -1,4 +1,4 @@
-import type { ExtractedExpense } from "@/lib/extraction/types";
+import type { ExtractedExpense, ExtractedHolding } from "@/lib/extraction/types";
 
 import type { Annotated, ImportPayload } from "./types";
 
@@ -111,4 +111,61 @@ export function sumExtractedLiving(
  */
 export function livingTotalSupersedesRows(payload: ImportPayload): boolean {
   return payload.planBasics?.currentLivingSpending.value != null;
+}
+
+/**
+ * THE tombstone test, and the only place `__dropped` is ever read.
+ *
+ * Only `=== true` is a tombstone: a persisted `__dropped: false` (which a
+ * restore would write) is a living position, not an ambiguous one. The three
+ * functions below are the only callers, so that rule is stated once.
+ */
+export function isDroppedHolding(h: ExtractedHolding): boolean {
+  return h.__dropped === true;
+}
+
+/**
+ * THE rule for "this position counts".
+ *
+ * Defined exactly once, here, for the same reason `isSummedLivingRow` above
+ * is: it is consumed from BOTH sides of the fold — the commit writer decides
+ * what reaches `account_holdings`, the reconciliation decides whether the
+ * account's value is derivable, and the review table decides what number the
+ * advisor is shown. A second, drifting copy is how the screen ends up
+ * promising a total the commit does not write.
+ */
+export function livingHoldings(row: { holdings?: ExtractedHolding[] }): ExtractedHolding[] {
+  return (row.holdings ?? []).filter((h) => !isDroppedHolding(h));
+}
+
+/**
+ * The complement of `livingHoldings` — the positions the advisor dropped.
+ *
+ * Lives HERE, next to its complement, for the reason the plan's global
+ * constraint gives: `__dropped` is interpreted in exactly one module. A
+ * caller that needs the tombstones (the rebase, to subtract the advisor's own
+ * drops from the fresh side before comparing position sets) would otherwise
+ * write the predicate inline, and the two would be free to drift apart —
+ * which is the failure the single definition exists to prevent, not a style
+ * nit.
+ */
+export function tombstonedHoldings(row: { holdings?: ExtractedHolding[] }): ExtractedHolding[] {
+  return (row.holdings ?? []).filter(isDroppedHolding);
+}
+
+/**
+ * Did the reviewed payload say ANYTHING about this account's positions?
+ *
+ * The third member of the family, and the one a caller is most likely to
+ * re-derive by hand. An empty or absent array means the import never spoke to
+ * this account's positions (a CSV of balances, a statement with no position
+ * table) and its existing holdings must be left alone. A populated array the
+ * advisor emptied by dropping every row IS a statement — an explicit one — and
+ * the commit clears the account's holdings on the strength of it.
+ *
+ * Note it deliberately does NOT interpret `__dropped`: that stays the job of
+ * the two predicates above. It asks only whether there is a collection here.
+ */
+export function holdingsWereReviewed(row: { holdings?: ExtractedHolding[] }): boolean {
+  return (row.holdings?.length ?? 0) > 0;
 }

@@ -110,7 +110,7 @@ async function membershipsByUser(firmIds: string[]): Promise<Map<string, string[
 export async function loadGrowthInput(now: Date = new Date()): Promise<GrowthInput> {
   const since = new Date(now.getTime() - ACTIVITY_WINDOW_DAYS * 86_400_000);
 
-  const [firmRows, subRows, itemRows, activityRows, clientCounts] = await Promise.all([
+  const [firmRows, subRows, itemRows, activityRows, byFirm, byAdvisor] = await Promise.all([
     db.select().from(firms),
     // One row per firm. The partial unique index guarantees at most one LIVE
     // row per firm, but canceled/incomplete rows accumulate beside it and a
@@ -148,6 +148,14 @@ export async function loadGrowthInput(now: Date = new Date()): Promise<GrowthInp
       .select({ firmId: clients.firmId, n: sql<number>`count(*)::int` })
       .from(clients)
       .groupBy(clients.firmId),
+    // Per ADVISOR, not per firm — the active-people table asks how many
+    // households the person doing the work is responsible for. `advisor_id`
+    // holds a Clerk `user_...` id and is populated on every row; the sibling
+    // `clerk_user_id` is the CLIENT's portal login, and is not this.
+    db
+      .select({ advisorId: clients.advisorId, n: sql<number>`count(*)::int` })
+      .from(clients)
+      .groupBy(clients.advisorId),
   ]);
 
   const firmIds = firmRows.map((f) => f.firmId);
@@ -203,7 +211,8 @@ export async function loadGrowthInput(now: Date = new Date()): Promise<GrowthInp
     })),
     activity: activityRows,
     users,
-    clientCountByFirm: Object.fromEntries(clientCounts.map((c) => [c.firmId, c.n])),
+    clientCountByFirm: Object.fromEntries(byFirm.map((c) => [c.firmId, c.n])),
+    clientCountByAdvisor: Object.fromEntries(byAdvisor.map((c) => [c.advisorId, c.n])),
     now,
   };
 }

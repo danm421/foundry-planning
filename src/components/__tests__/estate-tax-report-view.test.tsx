@@ -12,8 +12,21 @@ vi.mock("@/engine/projection", () => ({
   runProjectionWithEvents: vi.fn(),
 }));
 
+// A REAL `URLSearchParams`, rebuilt on every call — which is what the router
+// does in the browser. Without this mock `useSearchParams()` returns null in
+// jsdom, the object never changes identity, and a load effect keyed on it
+// looks stable when it is not. See `does not refetch when an unrelated URL
+// param changes`.
+let search = "";
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(search),
+}));
+
 import { runProjection, runProjectionWithEvents } from "@/engine/projection";
 import EstateTaxReportView from "@/components/estate-tax-report-view";
+import type { EstateColumnReady } from "@/components/estate-compare-shell";
+import type { AsOfValue } from "@/components/report-controls/as-of-dropdown";
+import type { EstateTaxColumnData } from "@/lib/estate/diff-estate-tax";
 import type {
   EstateTaxResult,
   GrossEstateLine,
@@ -196,6 +209,7 @@ function setProjectionFixture(years: ProjectionYear[]) {
 }
 
 beforeEach(() => {
+  search = "";
   vi.mocked(runProjection).mockReset();
   vi.mocked(runProjectionWithEvents).mockReset();
   // Mock fetch to return any JSON — content is irrelevant since the engine is
@@ -522,3 +536,400 @@ describe("EstateTaxReportView", () => {
 // State estate tax breakdown tests previously lived here; they were moved to
 // the new State Death Tax tab in Task 7 (Estate Tax tab is now federal-only).
 // See `state-death-tax-report-view.test.tsx` for state-specific UI coverage.
+
+// ── Compare mode (Task 7) ───────────────────────────────────────────────────
+
+/** The compare props the shell supplies; everything else overrides the fixture. */
+interface CompareProps {
+  scenarioRef?: string;
+  asOf?: AsOfValue;
+  ordering?: "primaryFirst" | "spouseFirst";
+  onReady?: (r: EstateColumnReady<EstateTaxColumnData>) => void;
+  baseline?: EstateTaxColumnData | null;
+  /** Overrides the SECOND decedent's result. The first is overridden inline. */
+  final?: Partial<EstateTaxResult>;
+}
+
+/**
+ * The baseline shape the shell now hands a column: BOTH deaths plus the
+ * engine's household totals, so the second-death card and the grand total can
+ * carry deltas too. Built through `makeOrdering` so `totals` stays coherent
+ * with the two results rather than being hand-typed per test.
+ */
+function baselineOf(
+  first: Partial<EstateTaxResult>,
+  final: Partial<EstateTaxResult> | null = null,
+  totals?: Partial<HypotheticalEstateTaxOrdering["totals"]>,
+): EstateTaxColumnData {
+  const o = makeOrdering("client", first, final, totals);
+  return {
+    firstDeath: o.firstDeath,
+    finalDeath: o.finalDeath ?? null,
+    totals: o.totals,
+  };
+}
+
+const COMPARE_YEAR = 2026;
+
+/**
+ * Arms the projection mock with a married 2026 fixture and builds the element.
+ * Compare props go to the component; every other key overrides the FIRST
+ * decedent's `EstateTaxResult` — the result the column reports and diffs.
+ */
+function compareElement(props: CompareProps & Partial<EstateTaxResult> = {}) {
+  const {
+    scenarioRef,
+    asOf,
+    ordering,
+    onReady,
+    baseline,
+    final = {},
+    ...taxOverrides
+  } = props;
+  setProjectionFixture([
+    makeProjectionYear(
+      makeHypothetical(COMPARE_YEAR, true, {
+        primary: { first: taxOverrides, final },
+        spouse: { first: {}, final: {} },
+      }),
+    ),
+  ]);
+  return (
+    <EstateTaxReportView
+      clientId="client-1"
+      isMarried={true}
+      ownerNames={OWNERS}
+      ownerDobs={DOBS}
+      retirementYear={RETIREMENT_YEAR}
+      scenarioRef={scenarioRef}
+      asOf={asOf}
+      ordering={ordering}
+      onReady={onReady}
+      baseline={baseline}
+    />
+  );
+}
+
+function renderWithFixture(props: CompareProps & Partial<EstateTaxResult> = {}) {
+  return render(compareElement(props));
+}
+renderWithFixture.element = compareElement;
+
+describe("compare mode", () => {
+  it("suppresses its own control row when the shell supplies asOf", async () => {
+    renderWithFixture({ asOf: "today", ordering: "primaryFirst" });
+    await waitFor(() =>
+      expect(screen.getAllByText(/Gross Estate/).length).toBeGreaterThan(0),
+    );
+    expect(
+      screen.queryByRole("group", { name: /death order/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/as of/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps rendering its own control row when used standalone", async () => {
+    renderWithFixture({});
+    await waitFor(() =>
+      expect(screen.getAllByText(/Gross Estate/).length).toBeGreaterThan(0),
+    );
+    expect(screen.getByLabelText(/as of/i)).toBeInTheDocument();
+  });
+
+  it("renders no delta chips without a baseline", async () => {
+    renderWithFixture({ asOf: "today" });
+    await waitFor(() =>
+      expect(screen.getAllByText(/Gross Estate/).length).toBeGreaterThan(0),
+    );
+    expect(screen.queryAllByTestId("estate-delta-chip")).toHaveLength(0);
+  });
+
+  it("renders a delta on the gross estate subtotal when given a baseline", async () => {
+    const baseline = baselineOf({ grossEstate: 8_200_000 });
+    renderWithFixture({ asOf: "today", baseline, grossEstate: 6_300_000 });
+    const chip = await screen.findByTestId("estate-delta-gross-estate");
+    expect(chip).toHaveTextContent("$1.9M");
+    expect(chip).toHaveTextContent("▾");
+  });
+
+  it("keeps the default testid on every other subtotal chip", async () => {
+    const baseline = baselineOf({
+      grossEstate: 8_200_000,
+      taxableEstate: 8_000_000,
+    });
+    renderWithFixture({
+      asOf: "today",
+      baseline,
+      grossEstate: 6_300_000,
+      taxableEstate: 6_000_000,
+    });
+    await screen.findByTestId("estate-delta-gross-estate");
+    expect(
+      screen.queryAllByTestId("estate-delta-chip").length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("marks a line the baseline did not have as added", async () => {
+    const baseline = baselineOf({ grossEstateLines: [] });
+    renderWithFixture({
+      asOf: "today",
+      baseline,
+      grossEstateLines: [
+        {
+          label: "Dynasty Trust",
+          accountId: "acct-9",
+          liabilityId: null,
+          percentage: 1,
+          amount: 1_900_000,
+          isProbate: false,
+        },
+      ],
+    });
+    expect(await screen.findByText("added")).toBeInTheDocument();
+  });
+
+  it("keeps a row the baseline had and this scenario does not, marked removed", async () => {
+    const baseline = baselineOf({
+      grossEstateLines: [
+        {
+          label: "Family Business",
+          accountId: "acct-biz",
+          liabilityId: null,
+          percentage: 1,
+          amount: 4_000_000,
+          isProbate: false,
+        },
+      ],
+    });
+    renderWithFixture({ asOf: "today", baseline, grossEstateLines: [] });
+    expect(await screen.findByText("removed")).toBeInTheDocument();
+    expect(screen.getByText("Family Business")).toBeInTheDocument();
+  });
+
+  // Ruling 11 shipped `baseline` as the FIRST death alone, so the second-death
+  // card and the grand total — the two figures an advisor actually shows a
+  // client — rendered chip-free. Both fixtures below are built so the FIRST
+  // death is identical on both sides: its own chips fall under the noise floor
+  // and disappear, leaving exactly one chip to address.
+  it("carries a delta on the second decedent's card too", async () => {
+    const baseline = baselineOf({}, { grossEstate: 5_000_000 });
+    renderWithFixture({
+      asOf: "today",
+      baseline,
+      final: { grossEstate: 3_000_000 },
+    });
+    const chip = await screen.findByTestId("estate-delta-gross-estate");
+    expect(chip).toHaveTextContent("$2M");
+    expect(chip).toHaveTextContent("▾");
+    // The second-to-die card is the one carrying it.
+    const second = screen.getByText(/Linda — Second to die/).closest("section")!;
+    expect(within(second).getByTestId("estate-delta-gross-estate")).toBe(chip);
+  });
+
+  it("carries a delta on the household grand total", async () => {
+    // Probate is in the grand total but NOT in either card's displayed
+    // "Total Taxes & Expenses", so both per-death deltas here are ZERO. A
+    // grand-total delta summed from the cards would read $0; the real answer
+    // is $135K.
+    const baseline = baselineOf({ probateCost: 100_000 }, { probateCost: 50_000 });
+    renderWithFixture({
+      asOf: "today",
+      baseline,
+      probateCost: 10_000,
+      final: { probateCost: 5_000 },
+    });
+    const chip = await screen.findByTestId("estate-delta-grand-total");
+    expect(chip).toHaveTextContent("$135K");
+    expect(chip).toHaveTextContent("▾");
+    expect(chip).toHaveAttribute("data-tone", "good");
+    // Non-vacuity: summing the per-death cards would have given nothing.
+    expect(screen.queryAllByTestId("estate-delta-chip")).toHaveLength(0);
+  });
+
+  it("uses the death order the shell supplies", async () => {
+    renderWithFixture({ asOf: "today", ordering: "spouseFirst" });
+    expect(await screen.findByText(/Linda — First to die/)).toBeInTheDocument();
+  });
+
+  it("reports its projection metadata and result upward on load", async () => {
+    const onReady = vi.fn();
+    renderWithFixture({ asOf: "today", onReady });
+    await waitFor(() => expect(onReady).toHaveBeenCalled());
+    const arg = onReady.mock.calls[0][0];
+    expect(arg.meta.todayYear).toBe(2026);
+    expect(arg.data).not.toBeNull();
+    // The column reports BOTH deaths, not just the first: the second-death
+    // card and the grand total are differenced off this same object.
+    expect(arg.data.finalDeath).not.toBeNull();
+    expect(arg.data.totals).not.toBeNull();
+  });
+
+  // The shell re-renders every column whenever anything in the control row
+  // moves. A column that rebuilt its `meta` or its reported `data` inline
+  // would report a fresh object each time, the shell would store it, and that
+  // store would re-render the column — a loop with no exit.
+  it("reports once, not again on every re-render", async () => {
+    const onReady = vi.fn();
+    const { rerender } = renderWithFixture({ asOf: "today", onReady });
+    await waitFor(() => expect(onReady).toHaveBeenCalled());
+    const afterLoad = onReady.mock.calls.length;
+
+    // Nothing about this column moved — only its parent re-rendered.
+    rerender(renderWithFixture.element({ asOf: "today", onReady }));
+    await waitFor(() =>
+      expect(screen.getAllByText(/Gross Estate/).length).toBeGreaterThan(0),
+    );
+    expect(onReady).toHaveBeenCalledTimes(afterLoad);
+  });
+
+  // ── Split death: the two columns can describe DIFFERENT decedents ─────────
+  //
+  // Outside split the shell's shared ordering pins both columns to the same
+  // person. In split each column emits `projection.firstDeathEvent` — whoever
+  // dies first in THAT column's own projection — so a scenario that moves a
+  // death year flips who the first card describes.
+  function renderSplit(opts: {
+    first: EstateTaxResult;
+    second: EstateTaxResult;
+    baseline?: EstateTaxColumnData | null;
+  }) {
+    vi.mocked(runProjectionWithEvents).mockReturnValue({
+      years: [{ year: COMPARE_YEAR } as unknown as ProjectionYear],
+      firstDeathEvent: opts.first,
+      secondDeathEvent: opts.second,
+      todayHypotheticalEstateTax: undefined,
+      giftLedger: [],
+    } as unknown as ReturnType<typeof runProjectionWithEvents>);
+    return render(
+      <EstateTaxReportView
+        clientId="client-1"
+        isMarried={true}
+        ownerNames={OWNERS}
+        ownerDobs={DOBS}
+        retirementYear={RETIREMENT_YEAR}
+        asOf="split"
+        baseline={opts.baseline ?? null}
+      />,
+    );
+  }
+
+  it("prints no section deltas when split pairs two different decedents", async () => {
+    renderSplit({
+      // This column: Linda dies first. The compared column: Tom did.
+      first: makeEstateTaxResult({
+        deceased: "spouse",
+        grossEstate: 6_000_000,
+        federalEstateTax: 100_000,
+      }),
+      second: makeEstateTaxResult({
+        deceased: "client",
+        deathOrder: 2,
+        grossEstate: 2_000_000,
+        federalEstateTax: 50_000,
+      }),
+      baseline: {
+        firstDeath: makeEstateTaxResult({
+          deceased: "client",
+          grossEstate: 9_000_000,
+          federalEstateTax: 300_000,
+        }),
+        finalDeath: makeEstateTaxResult({
+          deceased: "spouse",
+          deathOrder: 2,
+          grossEstate: 1_000_000,
+          federalEstateTax: 100_000,
+        }),
+        totals: null,
+      },
+    });
+
+    // The grand total is deliberately still compared: it sums BOTH spouses on
+    // each side, so it describes the same household whichever order they die
+    // in. Its presence also proves this fixture reached compare mode at all.
+    const grand = await screen.findByTestId("estate-delta-grand-total");
+    expect(grand).toHaveTextContent("$250K");
+
+    // Per-decedent figures are the ones that would be differencing two people.
+    expect(screen.queryAllByTestId("estate-delta-gross-estate")).toHaveLength(0);
+    expect(screen.queryAllByTestId("estate-delta-chip")).toHaveLength(0);
+    // And no account keyed into one estate but not the other.
+    expect(screen.queryAllByTestId("estate-row-marker")).toHaveLength(0);
+  });
+
+  it("still prints split deltas when both columns describe the same decedents", async () => {
+    renderSplit({
+      first: makeEstateTaxResult({ deceased: "client", grossEstate: 6_000_000 }),
+      second: makeEstateTaxResult({
+        deceased: "spouse",
+        deathOrder: 2,
+        grossEstate: 2_000_000,
+      }),
+      baseline: {
+        firstDeath: makeEstateTaxResult({
+          deceased: "client",
+          grossEstate: 9_000_000,
+        }),
+        finalDeath: makeEstateTaxResult({
+          deceased: "spouse",
+          deathOrder: 2,
+          grossEstate: 1_000_000,
+        }),
+        totals: null,
+      },
+    });
+    const chips = await screen.findAllByTestId("estate-delta-gross-estate");
+    expect(chips).toHaveLength(2);
+    expect(chips[0]).toHaveTextContent("$3M");
+    expect(chips[1]).toHaveTextContent("$1M");
+  });
+
+  it("keeps its failure inside its own column", async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({ error: "boom" }),
+    }) as unknown as typeof fetch;
+    renderWithFixture({ asOf: "today" });
+    expect(
+      await screen.findByText(/failed to load projection/i),
+    ).toBeInTheDocument();
+  });
+
+  it("fetches the scenario ref it was given, not the URL param", async () => {
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValue({ ok: true, json: async () => ({}) });
+    global.fetch = fetchSpy as unknown as typeof fetch;
+    renderWithFixture({ asOf: "today", scenarioRef: "s-right" });
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+    expect(String(fetchSpy.mock.calls[0][0])).toContain("scenario=s-right");
+  });
+
+  // The guard for the load effect's dependency array. `?compare=` is written
+  // by the shell with `router.push`, which hands every subscriber a FRESH
+  // `URLSearchParams` — so an effect keyed on that object refetches BOTH
+  // columns against a 30/min/firm rate limit every time the advisor starts or
+  // stops a comparison. Keyed on the resolved ref instead, only a scenario
+  // change refetches.
+  it("does not refetch when an unrelated URL param changes", async () => {
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValue({ ok: true, json: async () => ({}) });
+    global.fetch = fetchSpy as unknown as typeof fetch;
+    // No `scenarioRef` prop: the view must read the left ref off the URL, so
+    // the searchParams object is genuinely in play.
+    search = "scenario=s-prop";
+    const { rerender } = renderWithFixture({ asOf: "today" });
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    expect(String(fetchSpy.mock.calls[0][0])).toContain("scenario=s-prop");
+
+    // Starting a comparison: same left scenario, new param, new params object.
+    search = "scenario=s-prop&compare=s-right";
+    rerender(renderWithFixture.element({ asOf: "today" }));
+    // Let the re-render settle before counting, so a refetch has every chance
+    // to happen rather than the assertion racing it.
+    await waitFor(() =>
+      expect(screen.getAllByText(/Gross Estate/).length).toBeGreaterThan(0),
+    );
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+});

@@ -760,6 +760,417 @@ describe("rebaseOntoFreshMerge", () => {
       { __rowId: undefined, name: "Hand-entered IRA", committed: true, stillOnTable: [] },
     ]);
   });
+
+  /**
+   * Task 9. Ruling 117 already covers a whole-account FIGURE the rebase held
+   * back; this is the same silence one level down. A newer statement can
+   * change the POSITIONS under an account whose balance did not move at all
+   * (a fund swap, a new purchase folded into the same total) and the advisor
+   * was never told the standing positions are stale.
+   */
+  it("reports when a fresh row's positions differ from the standing row's, and keeps the standing ones", () => {
+    const standing = [
+      {
+        __rowId: "account:1234#0",
+        name: "Schwab",
+        value: 100,
+        holdings: [{ __holdingId: "t:AAPL#0", ticker: "AAPL", marketValue: 100 }],
+      } as Row,
+    ];
+    const fresh = [
+      {
+        __rowId: "account:1234#0",
+        name: "Schwab",
+        value: 100,
+        holdings: [
+          { __holdingId: "t:AAPL#0", ticker: "AAPL", marketValue: 100 },
+          { __holdingId: "t:VTI#0", ticker: "VTI", marketValue: 400 },
+        ],
+      } as Row,
+    ];
+
+    const { rows, holdingsOverrides } = rebaseOntoFreshMerge(fresh, standing);
+
+    // The standing row still wins — that is what makes an edit survive.
+    expect(rows[0].holdings).toHaveLength(1);
+    expect(holdingsOverrides).toEqual([
+      { __rowId: "account:1234#0", name: "Schwab", standingCount: 1, freshCount: 2, standingSum: 100, freshSum: 500 },
+    ]);
+  });
+
+  it("reports nothing when the position sets match", () => {
+    const one = () => [
+      {
+        __rowId: "account:1234#0",
+        name: "Schwab",
+        holdings: [{ __holdingId: "t:AAPL#0", ticker: "AAPL", marketValue: 100 }],
+      } as Row,
+    ];
+    expect(rebaseOntoFreshMerge(one(), one()).holdingsOverrides).toEqual([]);
+  });
+
+  it("reports nothing for a row that has no positions on either side", () => {
+    const one = () => [{ __rowId: "account:1234#0", name: "Checking" } as Row];
+    expect(rebaseOntoFreshMerge(one(), one()).holdingsOverrides).toEqual([]);
+  });
+
+  /**
+   * R42 (fix round 1, C2 + Minor 3). `if (standingLiving.length > 0 ||
+   * freshLiving.length > 0)` used to guard the whole comparison; it was
+   * dead — two empty key arrays already compare equal, so replacing the
+   * guard with `if (true)` left every test green. The sibling "no positions
+   * on either side" test above is the ONLY case that guard could ever
+   * touch, and it can't fail either way. The boundary the guard's removal
+   * actually has to keep working is one side non-empty and the other
+   * empty — untested before this round.
+   */
+  it("reports an override when the standing row has positions and the fresh row has none", () => {
+    const standing = [
+      {
+        __rowId: "account:1234#0",
+        name: "Schwab",
+        holdings: [
+          { __holdingId: "t:AAPL#0", ticker: "AAPL", marketValue: 100 },
+          { __holdingId: "t:VTI#0", ticker: "VTI", marketValue: 400 },
+        ],
+      } as Row,
+    ];
+    const fresh = [{ __rowId: "account:1234#0", name: "Schwab" } as Row];
+
+    const { holdingsOverrides } = rebaseOntoFreshMerge(fresh, standing);
+
+    expect(holdingsOverrides).toEqual([
+      { __rowId: "account:1234#0", name: "Schwab", standingCount: 2, freshCount: 0, standingSum: 500, freshSum: 0 },
+    ]);
+  });
+
+  it("reports an override when the fresh row has positions and the standing row has none", () => {
+    const standing = [{ __rowId: "account:1234#0", name: "Schwab" } as Row];
+    const fresh = [
+      {
+        __rowId: "account:1234#0",
+        name: "Schwab",
+        holdings: [{ __holdingId: "t:AAPL#0", ticker: "AAPL", marketValue: 100 }],
+      } as Row,
+    ];
+
+    const { holdingsOverrides } = rebaseOntoFreshMerge(fresh, standing);
+
+    expect(holdingsOverrides).toEqual([
+      { __rowId: "account:1234#0", name: "Schwab", standingCount: 0, freshCount: 1, standingSum: 0, freshSum: 100 },
+    ]);
+  });
+
+  /**
+   * R35. The brief placed this comparison inside the id-match loop (the one
+   * that walks `standing` against `freshByRowId`, above), guarded by
+   * `plausiblySameAccount`. A RE-ATTACHED row never reaches that loop's
+   * comparison at all: its standing id has no counterpart in `freshByRowId`,
+   * so it is collected into `orphans` and `continue`s past the point the
+   * brief's snippet occupied. Re-attachment — a newer statement moving the
+   * merge's minimum coordinate and so the id — is this task's own worked
+   * example, so the holdings comparison has to run in the loop that walks
+   * `base`/`adopted` AFTER re-attachment, where `id` is once again the
+   * STANDING id (re-stamped onto the fresh row's slot).
+   *
+   * Mutation this catches: putting the comparison back in the id-match loop.
+   * This fixture's standing row is an orphan there and the comparison would
+   * never run, so `holdingsOverrides` would come back empty.
+   */
+  it("reports a holdings override for a standing row whose id moved when a newer statement merged in", () => {
+    const JUNE = "9c3f1a02-4f7b-4c0e-9a11-2d5b8e7f6a31";
+    const SEPT = "0b7e4d19-8a2c-4f31-b6d0-1e9c3a5f2b84"; // sorts FIRST
+    const STANDING_ID = `account:7734#${JUNE}:0`;
+    const FRESH_ID = `account:7734#${SEPT}:0`;
+
+    const fresh = [
+      sourced(FRESH_ID, "Roth IRA", 201_900, SEPT, {
+        custodian: "Fidelity",
+        accountNumberLast4: "7734",
+        holdings: [
+          { __holdingId: "t:AAPL#0", ticker: "AAPL", marketValue: 100_000 },
+          { __holdingId: "t:VTI#0", ticker: "VTI", marketValue: 101_900 },
+        ],
+      }),
+    ];
+    const standing = [
+      sourced(STANDING_ID, "Julia — Roth (rollover)", 190_000, JUNE, {
+        custodian: "Fidelity",
+        accountNumberLast4: "7734",
+        match: { kind: "exact", existingId: "acct-1" },
+        holdings: [{ __holdingId: "t:AAPL#0", ticker: "AAPL", marketValue: 190_000 }],
+      }),
+    ];
+
+    const { rows, holdingsOverrides } = rebaseOntoFreshMerge(fresh, standing);
+
+    // Re-attachment itself is pinned by the sibling test above; this asserts
+    // the holdings override rides along with it, under the STANDING id.
+    expect(rows[0].__rowId).toBe(STANDING_ID);
+    expect(holdingsOverrides).toEqual([
+      {
+        __rowId: STANDING_ID,
+        name: "Julia — Roth (rollover)",
+        standingCount: 1,
+        freshCount: 2,
+        standingSum: 190_000,
+        freshSum: 201_900,
+      },
+    ]);
+  });
+
+  /**
+   * R36. The brief's identity comparison keyed a `Set` on `__holdingId`
+   * alone — but the field is OPTIONAL (`ExtractedHolding.__holdingId`), and
+   * every extraction from before this branch carries none. Every id-less
+   * position then collapses into the SAME `undefined` Set entry, so a
+   * one-position standing row and a five-position fresh row both reduce to
+   * `Set([undefined])` and compare as identical — the override this task
+   * exists to add would never fire on today's payloads.
+   *
+   * Mutation this catches: keying the comparison on `__holdingId` alone
+   * (via a `Set`) instead of falling back to `ticker`/`name`. Both sides of
+   * this fixture carry no `__holdingId` at all.
+   */
+  it("reports a holdings override when neither side's positions carry a __holdingId", () => {
+    const standing = [
+      {
+        __rowId: "account:1234#0",
+        name: "Schwab",
+        value: 100,
+        holdings: [{ ticker: "AAPL", marketValue: 100 }],
+      } as Row,
+    ];
+    const fresh = [
+      {
+        __rowId: "account:1234#0",
+        name: "Schwab",
+        value: 100,
+        holdings: [
+          { ticker: "AAPL", marketValue: 100 },
+          { ticker: "VTI", marketValue: 400 },
+        ],
+      } as Row,
+    ];
+
+    const { holdingsOverrides } = rebaseOntoFreshMerge(fresh, standing);
+
+    expect(holdingsOverrides).toEqual([
+      { __rowId: "account:1234#0", name: "Schwab", standingCount: 1, freshCount: 2, standingSum: 100, freshSum: 500 },
+    ]);
+  });
+
+  /**
+   * R39 (fix round 1, I2). The per-holding `??` fallback compares two
+   * DIFFERENT key shapes: `stampHoldingIds` always stamps the fresh side
+   * (`mergeAcrossFiles` runs it last), so the fallback only ever engages on
+   * the standing side. A standing row that predates `__holdingId` — or was
+   * persisted before the last merge ran — compares its bare ticker ("AAPL")
+   * against the fresh side's stamped id ("t:AAPL#0"), which can never
+   * match, even though it is the SAME position on both sides. That used to
+   * fire a false override with identical counts and identical sums.
+   *
+   * The fix (R39) is a per-comparison, not per-holding, choice: use
+   * `__holdingId` only when EVERY holding on BOTH sides already has one,
+   * else `holdingKey` (ticker/name) on BOTH sides — never one of each.
+   *
+   * Mutation this catches: keying `__holdingId ?? h.ticker ?? h.name`
+   * per holding (the current shipped shape) instead of choosing the key
+   * once per comparison.
+   */
+  it("reports no override when the standing side predates __holdingId stamping but the position is unchanged", () => {
+    const standing = [
+      {
+        __rowId: "account:1234#0",
+        name: "Schwab",
+        holdings: [{ ticker: "AAPL", marketValue: 100 }], // legacy: no __holdingId
+      } as Row,
+    ];
+    const fresh = [
+      {
+        __rowId: "account:1234#0",
+        name: "Schwab",
+        // Always stamped — this is the ONLY shape `mergeAcrossFiles` produces.
+        holdings: [{ __holdingId: "t:AAPL#0", ticker: "AAPL", marketValue: 100 }],
+      } as Row,
+    ];
+
+    const { holdingsOverrides } = rebaseOntoFreshMerge(fresh, standing);
+
+    expect(holdingsOverrides).toEqual([]);
+  });
+
+  /**
+   * R41 (fix round 1, I1). Only the standing side can carry a tombstone
+   * (`base` comes from `mergeAcrossFiles`, which never sets `__dropped`), so
+   * comparing `livingHoldings(fresh)` directly against `livingHoldings(held)`
+   * makes the advisor's OWN drop look like the newer statement adding a
+   * position back. The fix subtracts the standing row's tombstoned keys
+   * from the fresh side before comparing.
+   *
+   * Mutation this catches: comparing `livingHoldings(fresh)` without
+   * subtracting the standing side's tombstoned keys first.
+   */
+  it("reports no override when a position the advisor dropped is still on the newer statement", () => {
+    const standing = [
+      {
+        __rowId: "account:1234#0",
+        name: "Schwab",
+        holdings: [
+          { __holdingId: "t:AAPL#0", ticker: "AAPL", marketValue: 100 },
+          { __holdingId: "t:VTI#0", ticker: "VTI", marketValue: 400, __dropped: true },
+        ],
+      } as Row,
+    ];
+    const fresh = [
+      {
+        __rowId: "account:1234#0",
+        name: "Schwab",
+        // The newer statement still reports VTI — the advisor's drop is a
+        // chat-local edit, not something the statement itself reflects.
+        holdings: [
+          { __holdingId: "t:AAPL#0", ticker: "AAPL", marketValue: 100 },
+          { __holdingId: "t:VTI#0", ticker: "VTI", marketValue: 400 },
+        ],
+      } as Row,
+    ];
+
+    const { holdingsOverrides } = rebaseOntoFreshMerge(fresh, standing);
+
+    expect(holdingsOverrides).toEqual([]);
+  });
+
+  /**
+   * The spec's headline "Survival" test: *"an edited share count survives
+   * re-running extraction with a second file attached. This is the test that
+   * would have caught the old replace-outright behaviour."*
+   *
+   * The suite had the STRUCTURAL half of this (`rows[0].holdings` keeps its
+   * length) but nothing asserted a FIELD, so the one thing the advisor
+   * actually cares about was unpinned. Survival is currently structural —
+   * `mergeAccountsByRowId` takes the standing row wholesale — and that is
+   * exactly the line a plausible-looking "improvement" would touch: overlay
+   * the fresh figures onto the standing positions by `__holdingId`, now that
+   * the ids match across both sides, and the array length never moves while
+   * the advisor's corrected 150 is silently replaced by the statement's 100.
+   *
+   * Mutation this catches: merging fresh holding FIELDS onto the standing
+   * positions instead of keeping the standing position whole.
+   */
+  it("keeps the advisor's edited share count when a newer statement reports the original", () => {
+    const standing = [
+      {
+        __rowId: "account:1234#0",
+        name: "Schwab",
+        value: 100,
+        // The advisor corrected 100 -> 150 in review.
+        holdings: [{ __holdingId: "t:AAPL#0", ticker: "AAPL", shares: 150, price: 10, marketValue: 1500 }],
+      } as Row,
+    ];
+    const fresh = [
+      {
+        __rowId: "account:1234#0",
+        name: "Schwab",
+        value: 100,
+        // Re-extraction reads the statement's own figure again.
+        holdings: [{ __holdingId: "t:AAPL#0", ticker: "AAPL", shares: 100, price: 10, marketValue: 1000 }],
+      } as Row,
+    ];
+
+    const { rows } = rebaseOntoFreshMerge(fresh, standing);
+
+    expect(rows[0].holdings).toHaveLength(1);
+    expect(rows[0].holdings![0].shares).toBe(150);
+    // `typeof`, not just the value: `"150" == 150` is true, and a share count
+    // stored as a string is the repo's own concatenation defect.
+    expect(typeof rows[0].holdings![0].shares).toBe("number");
+    // The derived figure travels with it — a surviving `shares` beside a
+    // replaced `marketValue` would be a half-survival that still reconciles
+    // against the wrong number.
+    expect(rows[0].holdings![0].marketValue).toBe(1500);
+  });
+
+  it("raises an override for a genuinely new position, and reports what the statement lists", () => {
+    const standing = [
+      {
+        __rowId: "account:1234#0",
+        name: "Schwab",
+        holdings: [
+          { __holdingId: "t:AAPL#0", ticker: "AAPL", marketValue: 100 },
+          { __holdingId: "t:VTI#0", ticker: "VTI", marketValue: 400, __dropped: true },
+        ],
+      } as Row,
+    ];
+    const fresh = [
+      {
+        __rowId: "account:1234#0",
+        name: "Schwab",
+        holdings: [
+          { __holdingId: "t:AAPL#0", ticker: "AAPL", marketValue: 100 },
+          { __holdingId: "t:VTI#0", ticker: "VTI", marketValue: 400 },
+          { __holdingId: "t:BND#0", ticker: "BND", marketValue: 250 },
+        ],
+      } as Row,
+    ];
+
+    const { holdingsOverrides } = rebaseOntoFreshMerge(fresh, standing);
+
+    // The COMPARISON excludes the dropped VTI — that is what stops the
+    // advisor's own drop reading as the newer statement adding a position
+    // back, and it is why an override is raised at all here (the genuinely
+    // new BND). But freshCount/freshSum REPORT the statement, because
+    // `narrate` renders them as a claim about the document: it lists three
+    // positions totalling $750, and saying "2 positions ($350)" would be
+    // false about a document the advisor can go and read.
+    expect(holdingsOverrides).toEqual([
+      { __rowId: "account:1234#0", name: "Schwab", standingCount: 1, freshCount: 3, standingSum: 100, freshSum: 750 },
+    ]);
+  });
+
+  /**
+   * R37, second occurrence (Task 8's fix round took the same ruling for the
+   * degraded prompt summary). Every existing fixture on this branch sets
+   * `marketValue` explicitly, so a regression back to a bare
+   * `h.marketValue ?? 0` leaves every test green while a shares+price-only
+   * statement — which the extraction prompt explicitly allows — silently
+   * reports "$0" for a real position.
+   *
+   * Mutation this catches: summing `h.marketValue ?? 0` instead of
+   * `holdingMarketValue(h)`.
+   */
+  it("derives a position's value from shares and price when the statement gave those instead", () => {
+    const standing = [
+      {
+        __rowId: "account:1234#0",
+        name: "Schwab",
+        holdings: [{ __holdingId: "t:AAPL#0", ticker: "AAPL", marketValue: 100 }],
+      } as Row,
+    ];
+    const fresh = [
+      {
+        __rowId: "account:1234#0",
+        name: "Schwab",
+        holdings: [
+          { __holdingId: "t:AAPL#0", ticker: "AAPL", marketValue: 100 },
+          // No marketValue at all — 1,000 shares @ $200 = $200,000.
+          { __holdingId: "t:VTI#0", ticker: "VTI", shares: 1000, price: 200 },
+        ],
+      } as Row,
+    ];
+
+    const { holdingsOverrides } = rebaseOntoFreshMerge(fresh, standing);
+
+    expect(holdingsOverrides).toEqual([
+      {
+        __rowId: "account:1234#0",
+        name: "Schwab",
+        standingCount: 1,
+        freshCount: 2,
+        standingSum: 100,
+        freshSum: 200_100,
+      },
+    ]);
+  });
 });
 
 /**

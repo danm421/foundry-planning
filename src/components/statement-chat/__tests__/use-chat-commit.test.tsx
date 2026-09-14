@@ -230,3 +230,188 @@ describe("useChatCommit — the fresh-read merge must not discard a local edit (
     expect(r1Entry?.match).toEqual({ kind: "exact", existingId: "acct-1" });
   });
 });
+
+describe("useChatCommit — editing and dropping one position (Task 6)", () => {
+  it("edits one position by (rowId, holdingId) and leaves its siblings alone", () => {
+    const { result } = renderHook(() => useChatCommit("c1", "i1"));
+    act(() =>
+      result.current.applyExtractionResult({
+        summary: "",
+        caveats: [],
+        excluded: [],
+        rows: [
+          {
+            __rowId: "r1",
+            name: "Brokerage",
+            value: 300,
+            holdings: [
+              { __holdingId: "t:AAPL#0", ticker: "AAPL", shares: 10 },
+              { __holdingId: "t:VTI#0", ticker: "VTI", shares: 20 },
+            ],
+          } as never,
+        ],
+      }),
+    );
+
+    act(() => result.current.handleEditHolding("r1", "t:AAPL#0", "shares", 12));
+
+    const holdings = result.current.result!.rows[0].holdings!;
+    expect(holdings[0].shares).toBe(12);
+    expect(holdings[1].shares).toBe(20);
+    expect(typeof holdings[0].shares).toBe("number");
+  });
+
+  it("tombstones a dropped position rather than removing it from the array", () => {
+    const { result } = renderHook(() => useChatCommit("c1", "i1"));
+    act(() =>
+      result.current.applyExtractionResult({
+        summary: "",
+        caveats: [],
+        excluded: [],
+        rows: [
+          {
+            __rowId: "r1",
+            name: "Brokerage",
+            holdings: [{ __holdingId: "t:AAPL#0", ticker: "AAPL" }],
+          } as never,
+        ],
+      }),
+    );
+
+    act(() => result.current.handleDropHolding("r1", "t:AAPL#0"));
+
+    // Still present, so the next extraction cannot resurrect it.
+    const holdings = result.current.result!.rows[0].holdings!;
+    expect(holdings).toHaveLength(1);
+    expect(holdings[0].__dropped).toBe(true);
+  });
+});
+
+/**
+ * The chat surface has no server matching pass — `chat/extract/route.ts`
+ * writes rows with no `match` at all — so every account it committed was an
+ * INSERT. Re-uploading this quarter's statement for a household set up months
+ * ago therefore added a SECOND copy of every account. This effect is what
+ * closes that.
+ */
+describe("useChatCommit — matching extracted accounts against the plan", () => {
+  const CANDIDATES = [
+    {
+      id: "acct-1",
+      name: "Schwab Brokerage",
+      category: "taxable" as const,
+      accountNumberLast4: "0990",
+      custodian: "Charles Schwab",
+      value: 8_600,
+    },
+  ];
+
+  /** `rows` below is cast `as never` for the hook, which cannot be spread. */
+  const baseRow: Record<string, unknown> = {
+    __rowId: "r1",
+    name: "Schwab Brokerage",
+    category: "taxable",
+    accountNumberLast4: "0990",
+    custodian: "Charles Schwab",
+    value: 8_618,
+  };
+
+  const extracted = {
+    summary: "x",
+    caveats: [],
+    excluded: [],
+    rows: [baseRow] as never,
+  };
+
+  it("stamps an extracted row against an account the plan already has", () => {
+    const { result } = renderHook(() => useChatCommit("c1", "i1", [], CANDIDATES));
+    act(() => result.current.applyExtractionResult(extracted));
+    expect(result.current.result?.rows[0].match).toEqual({ kind: "exact", existingId: "acct-1" });
+  });
+
+  it("leaves rows unannotated when the plan has no accounts", () => {
+    const { result } = renderHook(() => useChatCommit("c1", "i1", [], []));
+    act(() => result.current.applyExtractionResult(extracted));
+    expect(result.current.result?.rows[0].match).toBeUndefined();
+  });
+
+  // The loop guard, at the level it actually matters. A `fuzzy` row stays
+  // re-annotatable by design, so if the pass handed back a fresh array every
+  // time, this effect would set state, the state change would re-run the
+  // effect, and the review table would spin forever. Re-rendering the hook is
+  // what re-runs it.
+  it("settles instead of re-annotating itself forever", () => {
+    const fuzzyMaker = {
+      ...extracted,
+      rows: [{ ...baseRow, accountNumberLast4: undefined, value: 8_600 }] as never,
+    };
+    const { result, rerender } = renderHook(() => useChatCommit("c1", "i1", [], CANDIDATES));
+    act(() => result.current.applyExtractionResult(fuzzyMaker));
+    const after = result.current.result;
+    expect(after?.rows[0].match?.kind).toBe("fuzzy");
+
+    act(() => rerender());
+    act(() => rerender());
+    // Same object, not merely an equal one — the identity IS the bail-out.
+    expect(result.current.result).toBe(after);
+  });
+
+  // The override writes `match` and `matchLocked` as TWO sequential
+  // `onEditCell` calls. `updateResult` mirrors into `resultRef` synchronously,
+  // so the second call reads the first's result rather than a pre-batch
+  // snapshot — if it didn't, one of the two fields would be dropped and the
+  // ruling would be half-recorded.
+  it("keeps both halves of a human ruling written back to back", () => {
+    const { result } = renderHook(() => useChatCommit("c1", "i1", [], CANDIDATES));
+    act(() => result.current.applyExtractionResult(extracted));
+    act(() => {
+      result.current.handleEditCell("r1", "match", { kind: "new" });
+      result.current.handleEditCell("r1", "matchLocked", true);
+    });
+    const row = result.current.result?.rows[0];
+    expect(row?.match).toEqual({ kind: "new" });
+    expect(row?.matchLocked).toBe(true);
+  });
+
+  // The production sequence the guard above never reaches: the server NEVER
+  // emits `matchLocked`, so a re-extraction re-emits the row bare. If the
+  // carry-forward drops the lock, the annotation pass re-derives straight over
+  // the advisor's "create as new" and the row reverts to Ambiguous — the
+  // ruling is gone and its Commit is blocked again.
+  it("carries an advisor's create-as-new across a re-extraction", () => {
+    const fuzzyRow = { ...baseRow, accountNumberLast4: undefined, value: 8_600 };
+    const reExtracted = { ...extracted, rows: [fuzzyRow] as never };
+    const { result } = renderHook(() => useChatCommit("c1", "i1", [], CANDIDATES));
+    act(() => result.current.applyExtractionResult(reExtracted));
+    expect(result.current.result?.rows[0].match?.kind).toBe("fuzzy");
+
+    act(() => {
+      result.current.handleEditCell("r1", "match", { kind: "new" });
+      result.current.handleEditCell("r1", "matchLocked", true);
+    });
+    expect(result.current.result?.rows[0].match).toEqual({ kind: "new" });
+
+    // The REAL sequence: `runExtraction` calls `resetForNewExtraction()` before
+    // the request goes out, so `result` is already null when the stream's
+    // "done" lands. A carry-forward that reads only `prev` is unreachable here
+    // — which is why this models the reset rather than two bare applies.
+    act(() => result.current.resetForNewExtraction());
+    act(() => result.current.applyExtractionResult(reExtracted));
+    const row = result.current.result?.rows[0];
+    expect(row?.matchLocked).toBe(true);
+    expect(row?.match).toEqual({ kind: "new" });
+  });
+
+  // An advisor's explicit ruling has to survive the next pass, or the match
+  // they just rejected is silently re-suggested.
+  it("does not re-derive over a locked human ruling", () => {
+    const { result } = renderHook(() => useChatCommit("c1", "i1", [], CANDIDATES));
+    act(() =>
+      result.current.applyExtractionResult({
+        ...extracted,
+        rows: [{ ...baseRow, match: { kind: "new" }, matchLocked: true }] as never,
+      }),
+    );
+    expect(result.current.result?.rows[0].match).toEqual({ kind: "new" });
+  });
+});

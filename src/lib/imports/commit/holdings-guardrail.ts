@@ -3,6 +3,7 @@ import {
   materiallyUndershoots,
 } from "@/lib/extraction/normalize-holdings";
 import type { ExtractedHolding } from "@/lib/extraction/types";
+import { livingHoldings } from "@/lib/imports/living-rows";
 import { exactCurrency } from "@/lib/presentations/format";
 
 export interface HoldingsGuardrailResult {
@@ -22,7 +23,7 @@ export function accountHoldingsGuardrail(row: {
   value?: number;
   holdings?: ExtractedHolding[];
 }): HoldingsGuardrailResult {
-  const holdings = row.holdings ?? [];
+  const holdings = livingHoldings(row);
   if (holdings.length === 0 || row.value == null) {
     return { deriveFromHoldings: true, note: null };
   }

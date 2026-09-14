@@ -1195,6 +1195,125 @@ describe("chat extract route gates", () => {
     expect(done.caveats.some((c) => c.includes("is recorded at $130,000"))).toBe(false);
   });
 
+  /**
+   * Item 8 (Task 9 fix round 1, I6). There was NO test that the route
+   * threads `holdingsOverrides` into `narrate` at all — the field is
+   * OPTIONAL on `narrate`'s input, so deleting the pass-through at
+   * route.ts:387 still type-checks and every test in rebase.test.ts /
+   * narrate.test.ts / this file stays green. Modeled on the Ruling 117
+   * balance-override test above; also includes a row the advisor already
+   * dropped in the chat, so the `chatExcludedIds` subtraction at
+   * route.ts:355 (a holdings override about a row that is not on screen
+   * must not appear either) is pinned in the same test.
+   *
+   * Mutation this catches: dropping `holdingsOverrides: rebaseHoldingsOverrides`
+   * from the `narrate(...)` call, or dropping the `chatExcludedIds` filter
+   * that builds `rebaseHoldingsOverrides` from `allHoldingsOverrides`.
+   */
+  it("threads a holdings override into the SSE done event, excluding a row the advisor dropped", async () => {
+    const JUNE_FILE = "9c3f1a02-4f7b-4c0e-9a11-2d5b8e7f6a31";
+    const SEPT_FILE = "0b7e4d19-8a2c-4f31-b6d0-1e9c3a5f2b84"; // sorts FIRST
+    const KEPT_ID = `account:7734#${JUNE_FILE}:0`;
+    const DROPPED_ID = `account:5521#${JUNE_FILE}:1`;
+
+    const juneAccounts = [
+      {
+        name: "Roth IRA", custodian: "Fidelity", accountNumberLast4: "7734", owner: "client",
+        value: 190_000, category: "retirement", statementDate: "2026-06-30",
+        holdings: [{ __holdingId: "t:AAPL#0", ticker: "AAPL", marketValue: 190_000 }],
+      },
+      {
+        name: "Dad's IRA", custodian: "Fidelity", accountNumberLast4: "5521", owner: "client",
+        value: 44_000, category: "retirement", statementDate: "2026-06-30",
+        holdings: [{ __holdingId: "t:BND#0", ticker: "BND", marketValue: 44_000 }],
+      },
+    ];
+    const standing = (rowId: string, source: (typeof juneAccounts)[number]) => ({
+      ...source,
+      __rowId: rowId,
+      __provenance: { sourceFileId: JUNE_FILE, section: "accounts" },
+    });
+
+    currentImportRow = {
+      id: "i1",
+      payloadJson: {
+        fileResults: {
+          [JUNE_FILE]: {
+            documentType: "account_statement",
+            fileName: "fidelity-june.pdf",
+            extracted: {
+              accounts: juneAccounts,
+              incomes: [], expenses: [], liabilities: [], entities: [], lifePolicies: [], wills: [], savings: [],
+            },
+            warnings: [],
+            promptVersion: "v",
+          },
+        },
+        // Both rows are still in `payload.accounts` — the table snapshot as
+        // of the START of this request (read at gate time) — while "Dad's
+        // IRA" is ALREADY recorded as excluded below. `chat/turn/route.ts`
+        // writes both in the SAME update, so in ordinary operation they
+        // never drift apart; this fixture deliberately exercises the
+        // defensive case (a concurrent write landing between the two reads)
+        // that the route's own `chatExcludedIds` subtraction exists to
+        // cover — the subtraction, not the ordinary "already removed" path,
+        // is what this test pins.
+        payload: { accounts: [standing(KEPT_ID, juneAccounts[0]), standing(DROPPED_ID, juneAccounts[1])] },
+        chat: {
+          surface: "chat",
+          transcript: [],
+          decisions: [],
+          // The advisor already dropped "Dad's IRA" — its own newer-
+          // statement holdings mismatch must not reach the caveats either.
+          excludedRows: [
+            { row: standing(DROPPED_ID, juneAccounts[1]), reason: "not the client's account" },
+          ],
+          committedRowIds: [],
+        },
+      },
+      extractHoldings: true,
+      status: "review",
+    } as never;
+    filesResult = [fileRow(JUNE_FILE, "fidelity-june.pdf"), fileRow(SEPT_FILE, "fidelity-sept.pdf")];
+    // September reports BOTH accounts again, each with an extra position —
+    // same balance, so no balance override fires; only the holdings differ.
+    vi.mocked(extractDocument).mockResolvedValue({
+      documentType: "account_statement",
+      fileName: "fidelity-sept.pdf",
+      extracted: {
+        accounts: [
+          {
+            name: "Roth IRA", custodian: "Fidelity", accountNumberLast4: "7734", owner: "client",
+            value: 190_000, category: "retirement", statementDate: "2026-09-30",
+            holdings: [
+              { ticker: "AAPL", marketValue: 190_000 },
+              { ticker: "VTI", marketValue: 20_000 },
+            ],
+          },
+          {
+            name: "Dad's IRA", custodian: "Fidelity", accountNumberLast4: "5521", owner: "client",
+            value: 44_000, category: "retirement", statementDate: "2026-09-30",
+            holdings: [
+              { ticker: "BND", marketValue: 44_000 },
+              { ticker: "CASH", marketValue: 5_000 },
+            ],
+          },
+        ],
+        incomes: [], expenses: [], liabilities: [], entities: [], lifePolicies: [], wills: [], savings: [],
+      },
+      warnings: [],
+      promptVersion: "v",
+    } as never);
+
+    const events = await readSse(await POST(req(), params));
+    const done = events.at(-1) as { rows: Array<{ name: string }>; caveats: string[] };
+
+    // The kept account's holdings override reaches the advisor...
+    expect(done.caveats.some((c) => c.includes("Roth IRA") && c.includes("2 positions"))).toBe(true);
+    // ...but the dropped account's does not — it is not on screen.
+    expect(done.caveats.some((c) => c.includes("Dad's IRA"))).toBe(false);
+  });
+
   // IMPORTANT 4 (fix round 1): proves the ROUTE actually threads its own
   // request's abort signal into runImportExtraction — run-extraction.test.ts
   // proves the check itself works, but nothing short of this proves the

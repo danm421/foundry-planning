@@ -49,6 +49,9 @@ import {
   editRow,
   mergeRows,
   dropRow,
+  editHolding,
+  dropHolding,
+  readHoldings,
   explain,
   rereadDocument,
   EDITABLE_ACCOUNT_FIELDS,
@@ -218,6 +221,51 @@ describe("statement chat tools", () => {
     expect(next.payload.accounts![0].basis).toBe(5_000);
   });
 
+  /**
+   * `unionAccountFields` backfills only where the base has nothing, so when
+   * BOTH rows carry positions the merged row keeps `keep`'s and `merge`'s are
+   * gone — and the retired row is `irreversible: true`, so there is no way
+   * back to them. On the 4-account statement this feature was built for that
+   * is ~93 positions vanishing behind a summary reading only
+   * `Merged "X" into "Y".`, with the merged row reconciling perfectly.
+   *
+   * Inert until this branch (chat imports never extracted holdings), which is
+   * why nothing caught it before.
+   *
+   * Mutation this catches: dropping the positions note from the summary.
+   */
+  it("merge_rows says when the retired row's positions were not carried over", () => {
+    const withHoldings = {
+      accounts: [
+        {
+          __rowId: "r1", name: "Taxable Brokerage", value: 10_000,
+          holdings: [{ __holdingId: "t:AAPL#0", ticker: "AAPL", marketValue: 100 }],
+        },
+        {
+          __rowId: "r2", name: "Brokerage", value: 10_000,
+          holdings: [
+            { __holdingId: "t:VTI#0", ticker: "VTI", marketValue: 200 },
+            { __holdingId: "t:BND#0", ticker: "BND", marketValue: 300 },
+          ],
+        },
+      ],
+    } as unknown as PersistedImportPayload;
+
+    const next = mergeRows(withHoldings, { keepRowId: "r1", mergeRowId: "r2" }, NONE_COMMITTED);
+
+    // The behaviour is unchanged — keep's positions win. What changes is that
+    // the advisor is told the other two are gone.
+    expect(next.payload.accounts![0].holdings).toHaveLength(1);
+    expect(next.summary).toContain("2 positions");
+    expect(next.summary).toContain("were not carried over");
+  });
+
+  it("merge_rows stays silent about positions when there were none to lose", () => {
+    const next = mergeRows(payload(), { keepRowId: "r1", mergeRowId: "r2" }, NONE_COMMITTED);
+    expect(next.summary).not.toMatch(/position/i);
+    expect(next.summary).toMatch(/^Merged ".*" into ".*"\.$/);
+  });
+
   it("merge_rows rejects merging a row into itself", () => {
     expect(() => mergeRows(payload(), { keepRowId: "r1", mergeRowId: "r1" }, NONE_COMMITTED))
       .toThrow(/itself/i);
@@ -323,7 +371,12 @@ describe("statement chat tools", () => {
     const survivor = mergeRows(withExtras, { keepRowId: "r1", mergeRowId: "r2" }, NONE_COMMITTED)
       .payload.accounts![0];
 
-    expect(survivor.holdings).toEqual(holdings);
+    // `mergeRows` clones before stamping (fix round 1), so `survivor.holdings`
+    // is no longer the SAME array as the `holdings` fixture above — this
+    // compares against a fresh copy with `__holdingId` added, not against
+    // itself. Before the clone, this assertion passed even when the stamp
+    // mutated the fixture in place, because `survivor.holdings` WAS `holdings`.
+    expect(survivor.holdings).toEqual([{ ...holdings[0], __holdingId: "t:VTI#0" }]);
     expect(survivor.owners).toEqual(owners);
     expect(survivor).toMatchObject({
       custodian: "Schwab",
@@ -347,8 +400,40 @@ describe("statement chat tools", () => {
     const survivor = mergeRows(bothHaveHoldings, { keepRowId: "r1", mergeRowId: "r2" }, NONE_COMMITTED)
       .payload.accounts![0];
 
-    expect(survivor.holdings).toEqual([{ ticker: "KEEP", shares: 1 }]);
+    // `mergeRows` now re-stamps `__holdingId` on every holding of the
+    // merged row (Task 2), including ones the kept row already had — hence
+    // `KEEP` picks up an id here even though it never crossed accounts.
+    expect(survivor.holdings).toEqual([{ ticker: "KEEP", shares: 1, __holdingId: "t:KEEP#0" }]);
     expect(survivor.statementDate).toBe("2026-06-30");
+  });
+
+  // `__holdingId` is unique only WITHIN an account. `merge_rows` is the one
+  // operation that moves a whole `holdings` array between accounts
+  // (`unionAccountFields` backfills it wholesale when the kept row has
+  // none), so it is the one place two accounts' id scopes can meet. This
+  // pins that `mergeRows` re-stamps the merged row rather than leaving ids
+  // minted under the retired row's scope (or, as here, never minted at all).
+  //
+  // Deviation from the task brief's literal fixture: the brief pre-set
+  // `__holdingId: "t:AAPL#0"` on the donor holding, which made the
+  // assertion pass even with the re-stamp call removed — `unionAccountFields`
+  // backfills the holdings array by reference, and recomputing the SAME
+  // key+occurrence over the SAME single-item array reproduces the SAME id
+  // either way, so that fixture doesn't distinguish "re-stamped" from
+  // "never touched". Verified by temporarily deleting the
+  // `stampAccountHoldingIds(merged)` call and re-running: the brief's
+  // fixture still passed. Leaving the donor holding UNSTAMPED (no
+  // `__holdingId`) is what makes the assertion depend on the fix: it fails
+  // (`undefined`) without the call and passes (`"t:AAPL#0"`) with it.
+  it("re-stamps holding ids when merge_rows folds one account's positions into another", () => {
+    const payload = { accounts: [
+      { __rowId: "r1", name: "Schwab", custodian: "Schwab", accountNumberLast4: "1234" },
+      { __rowId: "r2", name: "Schwab", custodian: "Schwab", accountNumberLast4: "1234",
+        holdings: [{ ticker: "AAPL" }] },
+    ] } as unknown as PersistedImportPayload;
+    const res = mergeRows(payload, { keepRowId: "r1", mergeRowId: "r2" }, NONE_COMMITTED);
+    const kept = res.payload.accounts!.find((a) => a.__rowId === "r1");
+    expect(kept?.holdings?.[0].__holdingId).toBe("t:AAPL#0");
   });
 
   // Mutation this catches: the FOURTH excluded shape (C3) regressing to a
@@ -916,5 +1001,291 @@ describe("statement chat tools", () => {
     // with the importId condition, not merely "some query ran".
     expect(eqCalls).toContainEqual([clientImportFiles.importId, "i1"]);
     expect(eqCalls).toContainEqual([clientImportFiles.id, "f1"]);
+  });
+
+  // Task 7: the two holdings tools, mirroring editRow/dropRow but scoped to
+  // one position inside a row rather than the row itself. Local fixture —
+  // the outer `payload()` has no `holdings`, and widening it would touch
+  // every existing account-row test above.
+  describe("editHolding", () => {
+    const payload = () =>
+      ({
+        accounts: [
+          {
+            __rowId: "r1",
+            name: "Brokerage",
+            holdings: [{ __holdingId: "t:AAPL#0", ticker: "AAPL", shares: 10 }],
+          },
+        ],
+      }) as unknown as PersistedImportPayload;
+
+    it("writes one field on one position", () => {
+      const res = editHolding(
+        payload(),
+        { rowId: "r1", holdingId: "t:AAPL#0", field: "shares", value: 12 },
+        NONE_COMMITTED,
+      );
+      expect(res.payload.accounts![0].holdings![0].shares).toBe(12);
+    });
+
+    /**
+     * A tombstoned position is still IN the array — that is what stops the
+     * next extraction resurrecting it — so it was findable, and both mutators
+     * reported a confident `Set shares to 12 on ABBV` for a write no surface
+     * shows and no commit writes. The repo's rule is that a post-write
+     * confirmation must be grounded.
+     *
+     * Mutation this catches: dropping the `__dropped` check in
+     * `findHoldingIndex`.
+     */
+    it("refuses to edit a position that was already dropped", () => {
+      const withDropped = () =>
+        ({
+          accounts: [
+            {
+              __rowId: "r1",
+              name: "Brokerage",
+              holdings: [{ __holdingId: "t:AAPL#0", ticker: "AAPL", shares: 10, __dropped: true }],
+            },
+          ],
+        }) as unknown as PersistedImportPayload;
+      expect(() =>
+        editHolding(
+          withDropped(),
+          { rowId: "r1", holdingId: "t:AAPL#0", field: "shares", value: 12 },
+          NONE_COMMITTED,
+        ),
+      ).toThrow(/was dropped/i);
+      expect(() =>
+        dropHolding(withDropped(), { rowId: "r1", holdingId: "t:AAPL#0" }, NONE_COMMITTED),
+      ).toThrow(/was dropped/i);
+    });
+
+    it("refuses a field outside the holdings allowlist", () => {
+      expect(() =>
+        editHolding(
+          payload(),
+          { rowId: "r1", holdingId: "t:AAPL#0", field: "__dropped", value: true },
+          NONE_COMMITTED,
+        ),
+      ).toThrow(/not editable/i);
+    });
+
+    it("refuses a string for a numeric field", () => {
+      expect(() =>
+        editHolding(
+          payload(),
+          { rowId: "r1", holdingId: "t:AAPL#0", field: "shares", value: "12" },
+          NONE_COMMITTED,
+        ),
+      ).toThrow(/must be/i);
+    });
+
+    it("names the valid holding ids when it cannot find one", () => {
+      expect(() =>
+        editHolding(
+          payload(),
+          { rowId: "r1", holdingId: "t:NOPE#0", field: "shares", value: 1 },
+          NONE_COMMITTED,
+        ),
+      ).toThrow(/t:AAPL#0/);
+    });
+
+    it("refuses to touch a position on a committed row", () => {
+      expect(() =>
+        editHolding(
+          payload(),
+          { rowId: "r1", holdingId: "t:AAPL#0", field: "shares", value: 12 },
+          new Set(["r1"]),
+        ),
+      ).toThrow(/committed/i);
+    });
+
+    // Fix round 1, Important 2: this branch already shipped the exact defect
+    // class once — a prior task stamped shared holding objects IN PLACE.
+    // Every other test here calls a fresh `payload()`, so a mutate-in-place
+    // `editHolding` would pass all of them; this is the one test that holds
+    // the ORIGINAL object across the call and looks at it afterward.
+    it("does not mutate the original payload object", () => {
+      const original = payload();
+      editHolding(
+        original,
+        { rowId: "r1", holdingId: "t:AAPL#0", field: "shares", value: 12 },
+        NONE_COMMITTED,
+      );
+      expect(original.accounts![0].holdings![0].shares).toBe(10);
+    });
+
+    // Capped, so a pathological import can't flood the turn's context with a
+    // list longer than the conversation — mirrors the account-level
+    // `findRowIndex` cap test, but drives `findHoldingIndex` specifically:
+    // the two helpers share the `MAX_LISTED_IDS` constant but each build
+    // their own truncated, "and N more"-suffixed message.
+    it("caps the listed holding ids and says how many more there are", () => {
+      const manyHoldings = {
+        accounts: [
+          {
+            __rowId: "r1",
+            name: "Brokerage",
+            holdings: Array.from({ length: 25 }, (_, i) => ({ __holdingId: `h-${i}`, ticker: `T${i}` })),
+          },
+        ],
+      } as unknown as PersistedImportPayload;
+      expect(() =>
+        editHolding(
+          manyHoldings,
+          { rowId: "r1", holdingId: "nope", field: "shares", value: 1 },
+          NONE_COMMITTED,
+        ),
+      ).toThrow(/and 5 more/);
+    });
+  });
+
+  describe("dropHolding", () => {
+    it("tombstones rather than removes", () => {
+      const res = dropHolding(
+        {
+          accounts: [
+            { __rowId: "r1", name: "B", holdings: [{ __holdingId: "t:AAPL#0", ticker: "AAPL" }] },
+          ],
+        } as unknown as PersistedImportPayload,
+        { rowId: "r1", holdingId: "t:AAPL#0" },
+        NONE_COMMITTED,
+      );
+      expect(res.payload.accounts![0].holdings).toHaveLength(1);
+      expect(res.payload.accounts![0].holdings![0].__dropped).toBe(true);
+    });
+
+    it("refuses a position on a committed row", () => {
+      expect(() =>
+        dropHolding(
+          {
+            accounts: [
+              { __rowId: "r1", name: "B", holdings: [{ __holdingId: "t:AAPL#0", ticker: "AAPL" }] },
+            ],
+          } as unknown as PersistedImportPayload,
+          { rowId: "r1", holdingId: "t:AAPL#0" },
+          new Set(["r1"]),
+        ),
+      ).toThrow(/committed/i);
+    });
+
+    // Fix round 1, Important 2: same defect class as `editHolding`'s
+    // immutability test — the ORIGINAL object must still show no tombstone
+    // after the call.
+    it("does not mutate the original payload object", () => {
+      const original = {
+        accounts: [
+          { __rowId: "r1", name: "B", holdings: [{ __holdingId: "t:AAPL#0", ticker: "AAPL" }] },
+        ],
+      } as unknown as PersistedImportPayload;
+      dropHolding(original, { rowId: "r1", holdingId: "t:AAPL#0" }, NONE_COMMITTED);
+      expect(original.accounts![0].holdings![0].__dropped).toBeUndefined();
+    });
+  });
+
+  // Task 8 fix round 1, Important 4: `readHoldings` had NO tests at all —
+  // swapping `livingHoldings(row)` for `row.holdings` in it, deleting the
+  // R29 "not correctable" guard, or dropping the MAX_HOLDINGS_PER_READ cap
+  // would all leave the whole suite green. Each test below is written to
+  // catch exactly one of those regressions.
+  describe("readHoldings", () => {
+    const rowWithHoldings = (): PersistedImportPayload =>
+      ({
+        accounts: [
+          {
+            __rowId: "r1",
+            name: "Brokerage",
+            holdings: [
+              {
+                __holdingId: "t:AAPL#0",
+                ticker: "AAPL",
+                shares: 10,
+                price: 100,
+                marketValue: 1_000,
+                costBasis: 900,
+              },
+              {
+                __holdingId: "t:MSFT#0",
+                ticker: "MSFT",
+                shares: 5,
+                price: 200,
+                marketValue: 1_000,
+                costBasis: 900,
+                __dropped: true,
+              },
+            ],
+          },
+        ],
+      }) as unknown as PersistedImportPayload;
+
+    // `livingHoldings` (`@/lib/imports/living-rows`) is THE filter that
+    // decides what counts — this fixture mixes a living and a dropped
+    // position specifically so reading `row.holdings` raw instead would
+    // still pass every OTHER test here (none of them mix the two).
+    it("lists only living positions, never a dropped one", () => {
+      const res = readHoldings(rowWithHoldings(), { rowId: "r1" });
+      expect(res.summary).toContain("t:AAPL#0");
+      expect(res.summary).not.toContain("t:MSFT#0");
+    });
+
+    it("says a row has no positions rather than listing nothing silently", () => {
+      const res = readHoldings(
+        { accounts: [{ __rowId: "r1", name: "Cash", holdings: [] }] } as unknown as PersistedImportPayload,
+        { rowId: "r1" },
+      );
+      expect(res.summary).toMatch(/no positions/i);
+    });
+
+    // R29: deletable without breaking any other test here — nothing else in
+    // this describe block constructs a holding with no `__holdingId`.
+    it('never prints "undefined" as a holding id, and marks the position not correctable', () => {
+      const res = readHoldings(
+        {
+          accounts: [{ __rowId: "r1", name: "Legacy", holdings: [{ ticker: "OLD", shares: 3 }] }],
+        } as unknown as PersistedImportPayload,
+        { rowId: "r1" },
+      );
+      expect(res.summary).not.toMatch(/undefined/);
+      expect(res.summary).toMatch(/not correctable/i);
+    });
+
+    // Read-only, so unlike editHolding/dropHolding it takes no
+    // `committedRowIds` argument at all — it stays available on a
+    // committed row the same way `explain`/`reread_document` do. (Those
+    // two tools throw `/committed/i` when given `new Set(["r1"])` as a
+    // third argument; `readHoldings` has no third argument to refuse
+    // with, so the honest pin is that a call against row r1 — the SAME
+    // row id other describe blocks in this file mark committed — always
+    // succeeds.)
+    it("has no committed-row guard — it works regardless of commit status", () => {
+      const res = readHoldings(rowWithHoldings(), { rowId: "r1" });
+      expect(res.summary).toContain("AAPL");
+    });
+
+    // R32: unlike the prompt's own inline block (capped by
+    // `HOLDINGS_PROMPT_BUDGET_CHARS`, rebuilt fresh and discarded every
+    // turn), this summary is PERSISTED into the transcript and REPLAYED on
+    // every later turn — so it needs its own, separate cap.
+    it("caps the listed positions and says how many more there are", () => {
+      const manyHoldings = {
+        accounts: [
+          {
+            __rowId: "r1",
+            name: "Brokerage",
+            holdings: Array.from({ length: 105 }, (_, i) => ({
+              __holdingId: `t:T${i}#0`,
+              ticker: `T${i}`,
+              shares: 1,
+              price: 1,
+            })),
+          },
+        ],
+      } as unknown as PersistedImportPayload;
+      const res = readHoldings(manyHoldings, { rowId: "r1" });
+      expect(res.summary).toContain("t:T0#0");
+      expect(res.summary).not.toContain("t:T100#0");
+      expect(res.summary).toMatch(/and 5 more/);
+    });
   });
 });

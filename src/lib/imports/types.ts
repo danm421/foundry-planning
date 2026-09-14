@@ -31,6 +31,17 @@ export type MatchKind = MatchAnnotation["kind"];
 export type Annotated<T> = T & {
   __provenance?: Provenance;
   match?: MatchAnnotation;
+  /**
+   * Set when a HUMAN ruled on `match` — picked an existing record in the link
+   * picker, or chose "create as new". It freezes the annotation: the matcher
+   * re-derives `match` every time the statement-chat table re-annotates, and
+   * without this an advisor's deliberate "this is a new account" would be
+   * silently re-suggested as a match on the next pass. An `exact` needs no flag
+   * to be safe (`isReannotatable` already refuses to overwrite one, since it is
+   * also what a completed commit's `linkCreated` writes); this exists for the
+   * decisions that LOOK like a default.
+   */
+  matchLocked?: boolean;
   /** Set when reconciliation judged this row a duplicate measurement of another
    *  row's earnings. The row is KEPT and shown; commitIncomes skips it. */
   reconciliation?: { supersededBy: string; reason: string };

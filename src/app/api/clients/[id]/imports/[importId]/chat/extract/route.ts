@@ -321,6 +321,7 @@ export async function POST(request: Request, { params }: Params) {
         const {
           rows: rebasedAll,
           overrides: allOverrides,
+          holdingsOverrides: allHoldingsOverrides,
           refusals: allRefusals,
           dropped: allDropped,
         } = rebaseOntoFreshMerge(kept, priorAccounts, {
@@ -348,6 +349,12 @@ export async function POST(request: Request, { params }: Params) {
         // not on screen is the same failure as a caveat naming a figure that
         // is not on screen.
         const rebaseOverrides = allOverrides.filter((o) => !chatExcludedIds.has(o.__rowId));
+        // Task 9 / Ruling 117, one level down. Same subtraction, same reason:
+        // a holdings override about a row the advisor already dropped in the
+        // chat is a caveat about a row that is not on screen.
+        const rebaseHoldingsOverrides = allHoldingsOverrides.filter(
+          (o) => !chatExcludedIds.has(o.__rowId),
+        );
         // Final review #2, C-1. Same subtraction, same reason: a refusal
         // about a row the advisor already dropped in the chat is a caveat
         // about a row that is not on screen.
@@ -377,6 +384,7 @@ export async function POST(request: Request, { params }: Params) {
           overrides: rebaseOverrides,
           refusals: rebaseRefusals,
           dropped: rebaseDropped,
+          holdingsOverrides: rebaseHoldingsOverrides,
         });
 
         // Ruling 89 (Step 0) / Ruling 101 (fix round 2): persist

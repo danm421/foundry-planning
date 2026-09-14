@@ -1,7 +1,10 @@
 import { keyedRowIdBucket } from "@/lib/imports/assemble/merge-across-files";
 import { custodianMatches, normalizeCustodian } from "@/lib/imports/normalize-custodian";
+import { livingHoldings, tombstonedHoldings } from "@/lib/imports/living-rows";
+import { holdingMarketValue } from "@/lib/extraction/normalize-holdings";
+import { holdingKey } from "@/lib/extraction/holdings-completion";
 import type { Annotated } from "@/lib/imports/types";
-import type { ExtractedAccount } from "@/lib/extraction/types";
+import type { ExtractedAccount, ExtractedHolding } from "@/lib/extraction/types";
 
 /**
  * Rebasing account rows onto a freshly-read set.
@@ -42,6 +45,40 @@ export interface RebaseOverride {
   standingValue: number | undefined;
   /** The figure the new statement reported and the rebase discarded. */
   freshValue: number | undefined;
+}
+
+/**
+ * One row whose fresh POSITIONS differ from the standing ones — the same
+ * silence Ruling 117 closed for a whole-account figure, one level down. A
+ * re-extraction can change what is UNDER an account (a fund swap, a new
+ * purchase) even when the account's own balance does not move, and the
+ * standing positions winning wholesale (same rule as `RebaseOverride`) used
+ * to make that invisible.
+ *
+ * Counts and sums travel for both sides, same shape as `RebaseOverride`, so
+ * the narrator can say what changed without the advisor opening the
+ * statement to find out.
+ *
+ * ⚠️ The two sides are NOT symmetric, despite the matching names. The
+ * `standing*` pair are comparison operands — the living positions the advisor
+ * reviewed. The `fresh*` pair are NOT: they describe the DOCUMENT, i.e. every
+ * living position the newer statement lists, including ones the advisor had
+ * already dropped. The comparison that decides whether this override exists
+ * at all subtracts those tombstones first; the reported figures deliberately
+ * do not, because `narrate` renders them as a claim about a statement the
+ * advisor can open and count ("The newer statement lists N positions …").
+ * Reporting the subtracted set there stated a number the document contradicts.
+ */
+export interface RebaseHoldingsOverride {
+  __rowId: string;
+  name: string;
+  /** Living positions the advisor reviewed — a comparison operand. */
+  standingCount: number;
+  /** Positions the newer statement LISTS — not a comparison operand. */
+  freshCount: number;
+  standingSum: number;
+  /** Value of the positions the newer statement LISTS. */
+  freshSum: number;
 }
 
 /**
@@ -394,6 +431,10 @@ function reattachOrphans(
  * what committed, with nothing on the page saying a newer figure existed.
  * Worse, the caveat printed directly above that row named $130,000, because
  * the route narrated the FRESH decisions against the REBASED rows.
+ *
+ * The same silent hold-back happens one level down, in `holdingsOverrides`:
+ * a newer statement's POSITIONS under an account already on the table are
+ * held back too, even when the account's own balance did not change at all.
  */
 export function rebaseOntoFreshMerge(
   freshMerged: AccountRow[],
@@ -422,6 +463,7 @@ export function rebaseOntoFreshMerge(
 ): {
   rows: AccountRow[];
   overrides: RebaseOverride[];
+  holdingsOverrides: RebaseHoldingsOverride[];
   refusals: RebaseRefusal[];
   dropped: RebaseDrop[];
 } {
@@ -544,11 +586,90 @@ export function rebaseOntoFreshMerge(
   );
 
   const overrides: RebaseOverride[] = [];
+  const holdingsOverrides: RebaseHoldingsOverride[] = [];
   for (const fresh of base) {
     const id = fresh.__rowId;
     if (!id) continue;
     const held = standingByRowId.get(id);
     if (!held) continue;
+
+    // Ruling 117, one level down. The standing row winning wholesale is what
+    // makes a holdings EDIT survive a re-extraction — and the same rule means
+    // a NEWER statement's positions never reach an account already on the
+    // table. Silently, until here. Who wins does not change; the advisor
+    // being told does.
+    //
+    // R41 (fix round 1, I1): tombstones live ONLY on the standing side
+    // (`base` comes from `mergeAcrossFiles`, which never sets `__dropped`),
+    // so a position the advisor already dropped in the chat has to be
+    // subtracted from the FRESH side before comparing — otherwise the
+    // fresh side still carries it and the advisor's OWN edit reads as the
+    // newer statement adding a position back. That is the tombstone's
+    // documented purpose (`extraction/types.ts`: "stays in the array so the
+    // next extraction cannot resurrect it") — resurrecting it into THIS
+    // caveat is the same failure. The subtraction governs the COMPARISON
+    // only; the reported counts and sums come off `freshLivingAll` (see the
+    // override push below).
+    const standingLiving = livingHoldings(held);
+    const tombstoned = tombstonedHoldings(held);
+    const freshLivingAll = livingHoldings(fresh);
+
+    // R39 (fix round 1, I2): identity for "same position set" is chosen ONCE
+    // PER COMPARISON, not per holding. `__holdingId` is the edit-stable
+    // handle `stampHoldingIds` mints for every position `mergeAcrossFiles`
+    // produces — the fresh side always has it — but a standing row that
+    // predates this branch (or was persisted before the last merge ran) may
+    // carry none. Falling back to `holdingKey` per HOLDING compares two
+    // different identities across the two sides: the same real position
+    // gets a bare "AAPL" on one side and "t:AAPL#0" on the other, which can
+    // never match — a false override on a position set that did not change.
+    // Keying BOTH sides on `holdingKey` unconditionally is also wrong:
+    // ticker/name are on `EDITABLE_HOLDING_FIELDS`, so an advisor correcting
+    // a misread ticker would make the sides disagree and blame the newer
+    // statement (see `sameInstitution`'s docstring for the account-level
+    // version of this same rule). So: `__holdingId` only when EVERY holding
+    // on BOTH sides already carries one — the only shape the route
+    // produces — else `holdingKey` on both. The mixed shape then cannot
+    // arise.
+    const bothFullyStamped =
+      standingLiving.every((h) => h.__holdingId !== undefined) &&
+      freshLivingAll.every((h) => h.__holdingId !== undefined);
+    const identity = (h: ExtractedHolding): string =>
+      bothFullyStamped ? (h.__holdingId as string) : holdingKey(h);
+
+    const tombstonedKeys = new Set(tombstoned.map(identity));
+    const freshLiving = freshLivingAll.filter((h) => !tombstonedKeys.has(identity(h)));
+
+    const a = standingLiving.map(identity).sort();
+    const b = freshLiving.map(identity).sort();
+    const same = a.length === b.length && a.every((k, i) => k === b[i]);
+    if (!same) {
+      holdingsOverrides.push({
+        __rowId: id,
+        name: held.name,
+        standingCount: standingLiving.length,
+        // `freshLivingAll`, NOT the subtracted `freshLiving`. The subtraction
+        // above exists to stop the advisor's own drop reading as the newer
+        // statement ADDING a position back — that is a question about whether
+        // the position SETS differ, so it belongs to the comparison and only
+        // to the comparison. These two fields are rendered by `narrate` as a
+        // claim about the document ("The newer statement lists N positions for
+        // X ($Y)"), so reporting the subtracted set states something false:
+        // a statement listing AAPL, VTI and BND, with VTI dropped by the
+        // advisor, would be narrated as listing 2 positions worth $350 when it
+        // lists 3 worth $750. Compare on the subtracted set, report on the set
+        // the statement actually carries.
+        freshCount: freshLivingAll.length,
+        // `holdingMarketValue`, not a bare `marketValue ?? 0`: it is the
+        // repo's one definition of a position's value and DERIVES
+        // shares * price when the statement gave those instead — the
+        // extraction prompt explicitly allows that shape, and these sums
+        // are advisor-facing money.
+        standingSum: standingLiving.reduce((s, h) => s + holdingMarketValue(h), 0),
+        freshSum: freshLivingAll.reduce((s, h) => s + holdingMarketValue(h), 0),
+      });
+    }
+
     // BY VALUE, not by reference. `standing` is parsed back out of jsonb on
     // every request, so it never shares an object with `freshMerged` — a
     // reference test would report every single row as an override.
@@ -573,5 +694,5 @@ export function rebaseOntoFreshMerge(
     });
   }
 
-  return { rows, overrides, refusals, dropped };
+  return { rows, overrides, holdingsOverrides, refusals, dropped };
 }

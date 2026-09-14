@@ -3,13 +3,21 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { runProjectionWithEvents, type ProjectionResult } from "@/engine/projection";
-import type {
-  EstateTaxResult,
-  HypotheticalEstateTaxOrdering,
-} from "@/engine/types";
+import type { EstateTaxResult } from "@/engine/types";
 import { AsOfDropdown, type AsOfValue } from "./report-controls/as-of-dropdown";
 import { TimePeriodButtons } from "./report-controls/time-period-buttons";
 import type { OwnerDobs } from "./report-controls/age-helpers";
+import type { EstateColumnReady } from "./estate-compare-shell";
+import { useEstateColumnReady } from "@/hooks/use-estate-column-ready";
+import { useEstateTaxColumnData } from "@/hooks/use-estate-tax-column-data";
+import { EstateDeltaChip, EstateRowMarker } from "./estate-delta-chip";
+import {
+  diffEstateTax,
+  grossEstateLineKeys,
+  type EstateTaxColumnData,
+  type LineStatus,
+} from "@/lib/estate/diff-estate-tax";
+import { BASE_REF, readCompareSelection } from "@/lib/estate/compare-ref";
 import EstateTaxSkeleton from "@/app/(app)/clients/[id]/estate-planning/estate-tax/loading-skeleton";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
@@ -24,15 +32,27 @@ const pct = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 2,
 });
 
+type Ordering = "primaryFirst" | "spouseFirst";
+
 interface EstateTaxReportViewProps {
   clientId: string;
   isMarried: boolean;
   ownerNames: { clientName: string; spouseName: string | null };
   ownerDobs: OwnerDobs;
   retirementYear: number;
-}
 
-type Ordering = "primaryFirst" | "spouseFirst";
+  // ── Compare mode (EstateCompareShell) ──
+  // All optional: with none supplied the view behaves exactly as it did before
+  // the shell existed. Supplying `asOf` is what hands the controls to the shell.
+  /** Overrides `?scenario=`; the right column needs its own ref. */
+  scenarioRef?: string;
+  asOf?: AsOfValue;
+  ordering?: Ordering;
+  /** Reports this column's projection metadata and report data upward. */
+  onReady?: (ready: EstateColumnReady<EstateTaxColumnData>) => void;
+  /** The other column's report data; its presence switches on deltas. */
+  baseline?: EstateTaxColumnData | null;
+}
 
 export default function EstateTaxReportView({
   clientId,
@@ -40,22 +60,38 @@ export default function EstateTaxReportView({
   ownerNames,
   ownerDobs,
   retirementYear,
+  scenarioRef,
+  asOf,
+  ordering: orderingProp,
+  onReady,
+  baseline = null,
 }: EstateTaxReportViewProps) {
   const searchParams = useSearchParams();
   const [projection, setProjection] = useState<ProjectionResult | null>(null);
-  const [selectedAsOf, setSelectedAsOf] = useState<AsOfValue>("today");
-  const [ordering, setOrdering] = useState<Ordering>("primaryFirst");
+  const [ownAsOf, setOwnAsOf] = useState<AsOfValue>("today");
+  const [ownOrdering, setOwnOrdering] = useState<Ordering>("primaryFirst");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  const selectedAsOf = asOf ?? ownAsOf;
+  const ordering = orderingProp ?? ownOrdering;
+  /** The shell renders one control row for both columns; a column renders none. */
+  const showOwnControls = asOf === undefined;
+
+  // The shell supplies its column's ref; standalone, the URL's left ref is read
+  // by the same helper the shell uses, so "what an absent `?scenario=` means"
+  // has exactly one definition.
+  const resolvedScenarioRef =
+    scenarioRef ?? readCompareSelection(searchParams).left;
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
-        const scenarioParam = searchParams?.get("scenario");
-        const url = scenarioParam
-          ? `/api/clients/${clientId}/projection-data?scenario=${encodeURIComponent(scenarioParam)}`
-          : `/api/clients/${clientId}/projection-data`;
+        const url =
+          resolvedScenarioRef === BASE_REF
+            ? `/api/clients/${clientId}/projection-data`
+            : `/api/clients/${clientId}/projection-data?scenario=${encodeURIComponent(resolvedScenarioRef)}`;
         const res = await fetch(url);
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as {
@@ -80,7 +116,10 @@ export default function EstateTaxReportView({
     return () => {
       cancelled = true;
     };
-  }, [clientId, searchParams]);
+    // Keyed on the resolved ref, never on `searchParams`: that object is fresh
+    // whenever ANY param changes, so toggling `?compare=` would refetch both
+    // columns against a 30/min/firm rate limit.
+  }, [clientId, resolvedScenarioRef]);
 
   const projectionYears = useMemo(() => projection?.years ?? [], [projection]);
   const todayYear = projectionYears[0]?.year;
@@ -114,6 +153,28 @@ export default function EstateTaxReportView({
       ? projection?.todayHypotheticalEstateTax ?? null
       : selectedProjectionYear?.hypotheticalEstateTax ?? null;
 
+  // Split death: render decedents at their actual projected death years.
+  const isSplit = selectedAsOf === "split";
+  const splitFirst = isSplit ? projection?.firstDeathEvent ?? null : null;
+  const splitSecond = isSplit ? projection?.secondDeathEvent ?? null : null;
+
+  // ── Active orderings ──
+  const activeOrdering =
+    !isSplit && hypothetical
+      ? ordering === "spouseFirst" && hypothetical.spouseFirst
+        ? hypothetical.spouseFirst
+        : hypothetical.primaryFirst
+      : null;
+
+  const columnData = useEstateTaxColumnData(
+    isSplit,
+    splitFirst,
+    splitSecond,
+    activeOrdering,
+  );
+
+  useEstateColumnReady(projection, columnData, onReady);
+
   if (loadError) {
     return (
       <div className="rounded border border-red-700 bg-red-900/20 p-4 text-red-200">
@@ -134,11 +195,6 @@ export default function EstateTaxReportView({
     );
   }
 
-  // Split death: render decedents at their actual projected death years.
-  const isSplit = selectedAsOf === "split";
-  const splitFirst = isSplit ? projection?.firstDeathEvent ?? null : null;
-  const splitSecond = isSplit ? projection?.secondDeathEvent ?? null : null;
-
   if (!isSplit && !hypothetical) {
     return (
       <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
@@ -154,14 +210,6 @@ export default function EstateTaxReportView({
   ];
 
   const dropdownYears = projectionYears.map((y) => y.year);
-
-  // ── Active orderings ──
-  const activeOrdering =
-    !isSplit && hypothetical
-      ? ordering === "spouseFirst" && hypothetical.spouseFirst
-        ? hypothetical.spouseFirst
-        : hypothetical.primaryFirst
-      : null;
 
   const firstDecedent = isSplit
     ? splitFirst?.deceased ?? null
@@ -193,58 +241,60 @@ export default function EstateTaxReportView({
 
   return (
     <div className="space-y-4 pt-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <TimePeriodButtons
-          selected={selectedAsOf}
-          onChange={setSelectedAsOf}
-          todayYear={todayYear}
-          retirementYear={retirementYear}
-          firstDeathYear={firstDeathYear}
-          lastDeathYear={lastDeathYear}
-          showSplit={isMarried && firstDeathYear != null && secondDeathYear != null}
-        />
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 text-xs uppercase tracking-wide text-gray-300">
-            As of
-            <AsOfDropdown
-              years={dropdownYears}
-              todayYear={todayYear}
-              selected={selectedAsOf}
-              onChange={setSelectedAsOf}
-              dobs={ownerDobs}
-              milestones={milestones}
-              allowSplit={isMarried && firstDeathYear != null && secondDeathYear != null}
-              yearPrefix="Both die in"
-            />
-          </label>
-          {isMarried && !isSplit && (
-            <div className="inline-flex rounded border border-gray-700 bg-gray-900 p-0.5 text-sm">
-              <button
-                type="button"
-                className={
-                  ordering === "primaryFirst"
-                    ? "rounded bg-gray-700 px-3 py-1 text-gray-100"
-                    : "rounded px-3 py-1 text-gray-300 hover:text-gray-200"
-                }
-                onClick={() => setOrdering("primaryFirst")}
-              >
-                {ownerNames.clientName} dies first
-              </button>
-              <button
-                type="button"
-                className={
-                  ordering === "spouseFirst"
-                    ? "rounded bg-gray-700 px-3 py-1 text-gray-100"
-                    : "rounded px-3 py-1 text-gray-300 hover:text-gray-200"
-                }
-                onClick={() => setOrdering("spouseFirst")}
-              >
-                {ownerNames.spouseName ?? CO_CLIENT_LABEL} dies first
-              </button>
-            </div>
-          )}
+      {showOwnControls && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <TimePeriodButtons
+            selected={selectedAsOf}
+            onChange={setOwnAsOf}
+            todayYear={todayYear}
+            retirementYear={retirementYear}
+            firstDeathYear={firstDeathYear}
+            lastDeathYear={lastDeathYear}
+            showSplit={isMarried && firstDeathYear != null && secondDeathYear != null}
+          />
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 text-xs uppercase tracking-wide text-gray-300">
+              As of
+              <AsOfDropdown
+                years={dropdownYears}
+                todayYear={todayYear}
+                selected={selectedAsOf}
+                onChange={setOwnAsOf}
+                dobs={ownerDobs}
+                milestones={milestones}
+                allowSplit={isMarried && firstDeathYear != null && secondDeathYear != null}
+                yearPrefix="Both die in"
+              />
+            </label>
+            {isMarried && !isSplit && (
+              <div className="inline-flex rounded border border-gray-700 bg-gray-900 p-0.5 text-sm">
+                <button
+                  type="button"
+                  className={
+                    ordering === "primaryFirst"
+                      ? "rounded bg-gray-700 px-3 py-1 text-gray-100"
+                      : "rounded px-3 py-1 text-gray-300 hover:text-gray-200"
+                  }
+                  onClick={() => setOwnOrdering("primaryFirst")}
+                >
+                  {ownerNames.clientName} dies first
+                </button>
+                <button
+                  type="button"
+                  className={
+                    ordering === "spouseFirst"
+                      ? "rounded bg-gray-700 px-3 py-1 text-gray-100"
+                      : "rounded px-3 py-1 text-gray-300 hover:text-gray-200"
+                  }
+                  onClick={() => setOwnOrdering("spouseFirst")}
+                >
+                  {ownerNames.spouseName ?? CO_CLIENT_LABEL} dies first
+                </button>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       <p className="text-xs text-gray-400">{headerNote}</p>
 
@@ -254,6 +304,7 @@ export default function EstateTaxReportView({
             <DecedentBreakdown
               heading={`${ownerForName(splitFirst, ownerNames)} — First to die · ${splitFirst.year}`}
               tax={splitFirst}
+              baseline={baseline?.firstDeath ?? null}
               showDsueGenerated={isMarried}
             />
           )}
@@ -261,11 +312,16 @@ export default function EstateTaxReportView({
             <DecedentBreakdown
               heading={`${ownerForName(splitSecond, ownerNames)} — Second to die · ${splitSecond.year}`}
               tax={splitSecond}
+              baseline={baseline?.finalDeath ?? null}
               showDsueGenerated={false}
             />
           )}
-          {splitFirst && splitSecond && (
-            <SplitTotals first={splitFirst} second={splitSecond} />
+          {splitFirst && splitSecond && columnData && (
+            <GrandTotals
+              heading="Grand totals — Split death"
+              data={columnData}
+              baseline={baseline}
+            />
           )}
         </>
       ) : (
@@ -274,17 +330,19 @@ export default function EstateTaxReportView({
             <DecedentBreakdown
               heading={`${firstDecedentName} — ${isMarried ? "First to die" : `Hypothetical death in ${resolvedYear}`}`}
               tax={activeOrdering.firstDeath}
+              baseline={baseline?.firstDeath ?? null}
               showDsueGenerated={isMarried}
             />
             {isMarried && activeOrdering.finalDeath && survivorName && (
               <DecedentBreakdown
                 heading={`${survivorName} — Second to die`}
                 tax={activeOrdering.finalDeath}
+                baseline={baseline?.finalDeath ?? null}
                 showDsueGenerated={false}
               />
             )}
-            {isMarried && activeOrdering.finalDeath && (
-              <GrandTotals ordering={activeOrdering} />
+            {isMarried && activeOrdering.finalDeath && columnData && (
+              <GrandTotals heading="Grand totals" data={columnData} baseline={baseline} />
             )}
           </>
         )
@@ -310,6 +368,7 @@ function LineRow({
   amount,
   hint,
   badge,
+  status,
   muted = false,
   showAsDeduction = false,
   hideIfZero = false,
@@ -318,6 +377,8 @@ function LineRow({
   amount: number;
   hint?: string;
   badge?: string;
+  /** Compare mode: marks a row only one of the two scenarios has. */
+  status?: LineStatus;
   muted?: boolean;
   showAsDeduction?: boolean;
   hideIfZero?: boolean;
@@ -344,6 +405,12 @@ function LineRow({
           </span>
         )}
         {hint && <span className="ml-2 text-xs text-gray-500">{hint}</span>}
+        {/* `empty:hidden` drops the gap on rows the marker renders nothing for. */}
+        {status && (
+          <span className="ml-2 empty:hidden">
+            <EstateRowMarker status={status} />
+          </span>
+        )}
       </span>
       <span
         className={
@@ -364,12 +431,17 @@ function Section({
   subtotal,
   subtotalLabel,
   subtotalAccent = "primary",
+  delta,
+  deltaTestId,
   children,
 }: {
   title: string;
   subtotal: number;
   subtotalLabel: string;
   subtotalAccent?: SubtotalAccent;
+  /** Compare mode: this subtotal's change against the other column. */
+  delta?: number | null;
+  deltaTestId?: string;
   children: React.ReactNode;
 }) {
   const accentClass =
@@ -388,12 +460,23 @@ function Section({
         <span className={"text-sm font-medium " + accentClass}>
           {subtotalLabel}
         </span>
-        <span
-          className={
-            "text-base font-semibold tabular-nums " + accentClass
-          }
-        >
-          {formatAmount(subtotal)}
+        <span className="flex shrink-0 items-baseline gap-2">
+          {delta != null && (
+            // Every subtotal here is a death tax or the base one is charged
+            // on, so a fall is the good news in all of them.
+            <EstateDeltaChip
+              delta={delta}
+              goodDirection="down"
+              testId={deltaTestId}
+            />
+          )}
+          <span
+            className={
+              "text-base font-semibold tabular-nums " + accentClass
+            }
+          >
+            {formatAmount(subtotal)}
+          </span>
         </span>
       </div>
     </div>
@@ -403,36 +486,54 @@ function Section({
 function DecedentBreakdown({
   heading,
   tax,
+  baseline = null,
   showDsueGenerated,
 }: {
   heading: string;
   tax: EstateTaxResult;
+  /** The other column's result for this same death; null outside compare mode. */
+  baseline?: EstateTaxResult | null;
   showDsueGenerated: boolean;
 }) {
-  const irdTotal = (tax.drainAttributions ?? [])
-    .filter((a) => a.drainKind === "ird_tax")
-    .reduce((s, a) => s + a.amount, 0);
-
-  const stateInheritanceTax =
-    tax.stateInheritanceTax && !tax.stateInheritanceTax.inactive
-      ? tax.stateInheritanceTax.totalTax
-      : 0;
-
-  // Engine's totalTaxesAndExpenses is federal + state estate + admin. Add
-  // state inheritance tax (informational on the engine; surfaced here so the
-  // Estate Tax tab includes all state death taxes) and IRD income tax (drains
-  // heirs, not the estate, so the engine keeps it separate).
-  const totalTaxesAndExpenses =
-    tax.totalTaxesAndExpenses + stateInheritanceTax + irdTotal;
+  const irdTotal = irdTaxOf(tax);
+  const stateInheritanceTax = inheritanceTaxOf(tax);
+  const totalTaxesAndExpenses = displayedTotalTaxesAndExpenses(tax);
   const headlineColor =
     totalTaxesAndExpenses > 0 ? "text-rose-200" : "text-emerald-200";
+
+  // In SPLIT death each column emits whoever dies first in ITS OWN projection,
+  // so a scenario that moves a death year can pair this card's decedent against
+  // the other column's OTHER spouse. Differencing two different people prints a
+  // $-figure that is not a change in anything, and keys every account in one
+  // estate `removed` and every account in the other `added`. Outside split both
+  // columns are pinned to the same decedent by the shell's shared ordering, so
+  // this can never suppress a chip that is legitimately shown today.
+  const comparable =
+    baseline && baseline.deceased === tax.deceased ? baseline : null;
+
+  const diff = comparable ? diffEstateTax(comparable, tax) : null;
+  const lineKeys = grossEstateLineKeys(tax.grossEstateLines);
+  // An asset the other scenario holds and this one does not still gets a row,
+  // at $0 — otherwise "gifted the business out of the estate" reads as a line
+  // that was never there, and `removed` is unreachable in this view.
+  const removedLines = comparable
+    ? grossEstateLineKeys(comparable.grossEstateLines)
+        .map((key, i) => ({ key, label: comparable.grossEstateLines[i].label }))
+        .filter(({ key }) => diff?.lines.get(key)?.status === "removed")
+    : [];
+  // The engine's `totalTaxesAndExpenses` omits state inheritance and IRD tax,
+  // which this card adds in — so this delta is computed the same way the
+  // figure beside it is, never read off `diff.totals`.
+  const totalDelta = comparable
+    ? totalTaxesAndExpenses - displayedTotalTaxesAndExpenses(comparable)
+    : null;
 
   const showTentativeBase = tax.adjustedTaxableGifts > 0;
   const unifiedCreditHint = `(${fmt.format(tax.beaAtDeathYear)} Basic Exclusion + ${fmt.format(tax.dsueReceived)} DSUE)`;
 
   return (
     <section className="overflow-hidden rounded-xl border border-gray-800 bg-gray-900/40">
-      <header className="border-b border-gray-800 px-5 py-3 md:max-w-[50%]">
+      <header className="border-b border-gray-800 px-5 py-3">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <h2 className="text-base font-semibold text-gray-50">{heading}</h2>
           <div className="flex items-baseline gap-2">
@@ -457,21 +558,27 @@ function DecedentBreakdown({
         </div>
       )}
 
-      <div className="divide-y divide-gray-800/70 md:max-w-[50%]">
+      <div className="divide-y divide-gray-800/70">
         {/* Gross Estate */}
         <Section
           title="Gross Estate"
           subtotal={tax.grossEstate}
           subtotalLabel="Gross Estate"
+          delta={diff?.totals.grossEstate}
+          deltaTestId="estate-delta-gross-estate"
         >
           {tax.grossEstateLines.map((line, idx) => (
             <LineRow
-              key={`${line.accountId ?? line.liabilityId ?? line.entityId ?? "line"}-${idx}`}
+              key={lineKeys[idx]}
               label={line.label}
               hint={line.percentage !== 1 ? pct.format(line.percentage) : undefined}
               badge={line.revocableTrustName ?? (line.isProbate ? "Probate" : undefined)}
+              status={diff?.lines.get(lineKeys[idx])?.status}
               amount={line.amount}
             />
+          ))}
+          {removedLines.map(({ key, label }) => (
+            <LineRow key={key} label={label} status="removed" amount={0} muted />
           ))}
           {tax.probateEstate > 0 && (
             <LineRow
@@ -487,6 +594,7 @@ function DecedentBreakdown({
           title="Taxable Estate"
           subtotal={tax.taxableEstate}
           subtotalLabel="Taxable Estate"
+          delta={diff?.totals.taxableEstate}
         >
           <LineRow label="Gross Estate" amount={tax.grossEstate} />
           <LineRow
@@ -521,6 +629,7 @@ function DecedentBreakdown({
             title="Tentative Tax Base"
             subtotal={tax.tentativeTaxBase}
             subtotalLabel="Tentative Tax Base"
+            delta={diff?.totals.tentativeTaxBase}
           >
             <LineRow label="Taxable Estate" amount={tax.taxableEstate} />
             <LineRow
@@ -536,6 +645,7 @@ function DecedentBreakdown({
           subtotal={tax.federalEstateTax}
           subtotalLabel="Estate Tax"
           subtotalAccent="tax"
+          delta={diff?.totals.federalEstateTax}
         >
           <LineRow label="Tentative Tax" amount={tax.tentativeTax} />
           <LineRow
@@ -558,6 +668,7 @@ function DecedentBreakdown({
           subtotal={totalTaxesAndExpenses}
           subtotalLabel="Total Taxes & Expenses"
           subtotalAccent="tax"
+          delta={totalDelta}
         >
           <LineRow label="Federal Estate Tax" amount={tax.federalEstateTax} />
           <LineRow
@@ -586,7 +697,7 @@ function DecedentBreakdown({
       </div>
 
       {showDsueGenerated && tax.dsueGenerated > 0 && (
-        <div className="border-t border-indigo-900/40 bg-indigo-950/20 px-5 py-2 md:max-w-[50%]">
+        <div className="border-t border-indigo-900/40 bg-indigo-950/20 px-5 py-2">
           <div className="flex items-baseline justify-between gap-4">
             <span className="text-xs uppercase tracking-wider text-indigo-300">
               DSUE generated · ported to survivor
@@ -610,6 +721,7 @@ function TotalsCard({
   admin,
   ird,
   total,
+  delta = null,
 }: {
   heading: string;
   federal: number;
@@ -619,6 +731,8 @@ function TotalsCard({
   admin: number;
   ird: number;
   total: number;
+  /** Compare mode: this grand total's change against the other column. */
+  delta?: number | null;
 }) {
   const accent = total > 0 ? "text-rose-200" : "text-emerald-200";
   return (
@@ -631,7 +745,7 @@ function TotalsCard({
           <h2 className="text-base font-semibold text-gray-50">{heading}</h2>
         </div>
       </header>
-      <div className="px-5 py-3 md:max-w-[50%]">
+      <div className="px-5 py-3">
         <LineRow label="Total federal estate tax" amount={federal} />
         <LineRow label="Total state estate tax" amount={stateEstate} hideIfZero />
         <LineRow
@@ -647,13 +761,22 @@ function TotalsCard({
           hideIfZero
         />
       </div>
-      <div className="border-t border-indigo-900/40 bg-indigo-950/30 px-5 py-3 md:max-w-[50%]">
+      <div className="border-t border-indigo-900/40 bg-indigo-950/30 px-5 py-3">
         <div className="flex items-baseline justify-between gap-4">
           <span className="text-sm font-semibold uppercase tracking-[0.16em] text-gray-100">
             Grand total · taxes &amp; expenses
           </span>
-          <span className={"text-xl font-semibold tabular-nums " + accent}>
-            {fmt.format(total)}
+          <span className="flex shrink-0 items-baseline gap-2">
+            {delta != null && (
+              <EstateDeltaChip
+                delta={delta}
+                goodDirection="down"
+                testId="estate-delta-grand-total"
+              />
+            )}
+            <span className={"text-xl font-semibold tabular-nums " + accent}>
+              {fmt.format(total)}
+            </span>
           </span>
         </div>
       </div>
@@ -673,50 +796,77 @@ function irdTaxOf(r: EstateTaxResult): number {
     .reduce((s, a) => s + a.amount, 0);
 }
 
-function GrandTotals({ ordering }: { ordering: HypotheticalEstateTaxOrdering }) {
-  const federal = ordering.totals.federal;
-  const stateEstate = ordering.totals.state;
-  const stateInheritance =
-    inheritanceTaxOf(ordering.firstDeath)
-    + (ordering.finalDeath ? inheritanceTaxOf(ordering.finalDeath) : 0);
-  const probate =
-    ordering.firstDeath.probateCost
-    + (ordering.finalDeath ? ordering.finalDeath.probateCost : 0);
-  const admin = ordering.totals.admin;
-  const ird =
-    irdTaxOf(ordering.firstDeath)
-    + (ordering.finalDeath ? irdTaxOf(ordering.finalDeath) : 0);
+/**
+ * What this tab SHOWS as one decedent's total. The engine's
+ * `totalTaxesAndExpenses` is federal + state estate + admin; this adds state
+ * inheritance tax (informational on the engine, but it is a state death tax)
+ * and IRD income tax (which drains heirs, not the estate).
+ */
+function displayedTotalTaxesAndExpenses(r: EstateTaxResult): number {
+  return r.totalTaxesAndExpenses + inheritanceTaxOf(r) + irdTaxOf(r);
+}
+
+/**
+ * The six figures the grand-total card shows, for one column.
+ *
+ * `totals` present = the ordering path: federal, state and admin are the
+ * ENGINE's household totals, never re-summed here. `totals` null = split
+ * death, where the two death events are independent and every figure is the
+ * sum of the two. Both branches are the arithmetic this card has always used.
+ */
+function grandTotalPartsOf(d: EstateTaxColumnData) {
+  const { firstDeath: first, finalDeath: second, totals } = d;
+  return {
+    federal: totals
+      ? totals.federal
+      : first.federalEstateTax + (second?.federalEstateTax ?? 0),
+    stateEstate: totals
+      ? totals.state
+      : first.stateEstateTax + (second?.stateEstateTax ?? 0),
+    stateInheritance:
+      inheritanceTaxOf(first) + (second ? inheritanceTaxOf(second) : 0),
+    probate: first.probateCost + (second?.probateCost ?? 0),
+    admin: totals
+      ? totals.admin
+      : first.estateAdminExpenses + (second?.estateAdminExpenses ?? 0),
+    ird: irdTaxOf(first) + (second ? irdTaxOf(second) : 0),
+  };
+}
+
+/**
+ * The card's bottom line, for either column.
+ *
+ * NEVER derive the grand-total delta by summing the two per-death card deltas:
+ * the engine's `totalTaxesAndExpenses` omits state inheritance and IRD tax,
+ * and this total additionally adds probate that a per-death card's displayed
+ * total does not. Compute the grand total on both sides and subtract.
+ */
+function sumGrandTotal(p: ReturnType<typeof grandTotalPartsOf>): number {
   return (
-    <TotalsCard
-      heading="Grand totals"
-      federal={federal}
-      stateEstate={stateEstate}
-      stateInheritance={stateInheritance}
-      probate={probate}
-      admin={admin}
-      ird={ird}
-      total={federal + stateEstate + stateInheritance + probate + admin + ird}
-    />
+    p.federal + p.stateEstate + p.stateInheritance + p.probate + p.admin + p.ird
   );
 }
 
-function SplitTotals({ first, second }: { first: EstateTaxResult; second: EstateTaxResult }) {
-  const federal = first.federalEstateTax + second.federalEstateTax;
-  const stateEstate = first.stateEstateTax + second.stateEstateTax;
-  const stateInheritance = inheritanceTaxOf(first) + inheritanceTaxOf(second);
-  const probate = first.probateCost + second.probateCost;
-  const admin = first.estateAdminExpenses + second.estateAdminExpenses;
-  const ird = irdTaxOf(first) + irdTaxOf(second);
+function GrandTotals({
+  heading,
+  data,
+  baseline = null,
+}: {
+  heading: string;
+  data: EstateTaxColumnData;
+  /** The other column's report data; null outside compare mode. */
+  baseline?: EstateTaxColumnData | null;
+}) {
+  const parts = grandTotalPartsOf(data);
+  const total = sumGrandTotal(parts);
   return (
     <TotalsCard
-      heading="Grand totals — Split death"
-      federal={federal}
-      stateEstate={stateEstate}
-      stateInheritance={stateInheritance}
-      probate={probate}
-      admin={admin}
-      ird={ird}
-      total={federal + stateEstate + stateInheritance + probate + admin + ird}
+      heading={heading}
+      {...parts}
+      total={total}
+      delta={
+        baseline ? total - sumGrandTotal(grandTotalPartsOf(baseline)) : null
+      }
     />
   );
 }

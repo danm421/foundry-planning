@@ -2,17 +2,27 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { clientImportFiles } from "@/db/schema";
 import { downloadImportFile } from "@/lib/imports/blob";
+import { stampAccountHoldingIds } from "@/lib/imports/assemble/merge-across-files";
 import { extractDocument } from "@/lib/extraction/extract";
+import {
+  EDITABLE_HOLDING_FIELDS,
+  isEditableHoldingField,
+  isValidHoldingValue,
+  holdingFieldDomainDescription,
+} from "@/lib/statement-chat/holding-fields";
+import { isDroppedHolding, livingHoldings } from "@/lib/imports/living-rows";
 import type { Annotated, ChatState, PersistedImportPayload } from "@/lib/imports/types";
 import type {
   AccountCategory,
   AccountSubType,
   ExtractedAccount,
+  ExtractedHolding,
   ExtractionResult,
 } from "@/lib/extraction/types";
 
 /**
- * The five statement-chat tools (Task 11). Each one is a function over
+ * The seven statement-chat tools (Task 11, plus `edit_holding`/`drop_holding`
+ * from Task 7). Each one is a function over
  * `(payload, args, ...)` returning a `ToolResult` — the next payload plus a
  * one-line summary for the transcript, and (for `drop_row`/`merge_rows`
  * only) the `excludedRows` delta Ruling 49 allows.
@@ -28,8 +38,23 @@ import type {
 type AccountRow = Annotated<ExtractedAccount>;
 
 /**
+ * The holdings allowlist and its validators live in `holding-fields.ts`,
+ * not here: that module has no runtime imports, so `holdings-table.tsx`
+ * (a `"use client"` component) can import it directly without pulling this
+ * file's `{ db } from "@/db"` into the browser bundle. Re-exported here so
+ * any server-side reference keeps resolving from `tools.ts` — one
+ * definition, two safe import paths.
+ */
+export {
+  EDITABLE_HOLDING_FIELDS,
+  isEditableHoldingField,
+  isValidHoldingValue,
+  type EditableHoldingField,
+} from "@/lib/statement-chat/holding-fields";
+
+/**
  * Ruling 50: `edit_row` uses an ALLOWLIST, never a denylist. These are
- * Task 10's seven columns (`ACCOUNT_COLUMNS` in
+ * Task 10's account columns (`ACCOUNT_COLUMNS` in
  * `src/components/statement-chat/accounts-columns.ts` — Account type expands
  * to its two real fields, `category`/`subType`) — named here as ONE constant
  * so a future column spec (Phase 2, per Dan's Task 10 amendment) can supply
@@ -178,10 +203,14 @@ function accountsOf(payload: PersistedImportPayload): AccountRow[] {
   return payload.accounts ?? [];
 }
 
-/** How many row ids an unknown-row error lists before it summarises the
- *  rest. Long enough to cover any realistic statement import, short enough
- *  that a pathological one can't flood the turn's context. */
-const MAX_LISTED_ROW_IDS = 20;
+/** How many ids an unknown-row (`findRowIndex`) or unknown-holding
+ *  (`findHoldingIndex`) error lists before it summarises the rest. Long
+ *  enough to cover any realistic statement import, short enough that a
+ *  pathological one can't flood the turn's context — holdings are the more
+ *  numerous of the two lists (the production failure behind this whole plan
+ *  was ~63 positions in one account), so both share this one cap rather than
+ *  holdings getting an uncapped join. */
+const MAX_LISTED_IDS = 20;
 
 /**
  * Final review, I5: the error LISTS the valid row ids.
@@ -202,17 +231,15 @@ function findRowIndex(accounts: AccountRow[], rowId: string): number {
   if (known.length === 0) {
     throw new Error(`Unknown row id "${rowId}". This import has no rows to work on.`);
   }
-  const listed = known.slice(0, MAX_LISTED_ROW_IDS).join(", ");
+  const listed = known.slice(0, MAX_LISTED_IDS).join(", ");
   const more =
-    known.length > MAX_LISTED_ROW_IDS
-      ? `, and ${known.length - MAX_LISTED_ROW_IDS} more`
-      : "";
+    known.length > MAX_LISTED_IDS ? `, and ${known.length - MAX_LISTED_IDS} more` : "";
   throw new Error(`Unknown row id "${rowId}". The rows in this import are: ${listed}${more}.`);
 }
 
 /**
  * The set of `__rowId`s already committed into the client's plan
- * (`chat.committedRowIds`). Required — never optional — on all three
+ * (`chat.committedRowIds`). Required — never optional — on all five
  * MUTATING tools, so tsc proves every call site supplies it rather than
  * leaving a guard someone can forget to pass (the same reasoning
  * `SourceRow.sourceName` is required for in `merge-across-files.ts`).
@@ -311,21 +338,23 @@ export interface MergeRowsArgs {
 }
 
 /**
- * The four internal annotations `Annotated<T>` adds — the ONLY keys a merge
- * must not blend between two rows. `match` and `reconciliation` describe the
- * surviving row's OWN commit/reconciliation status and must never silently
+ * The internal annotations `Annotated<T>` adds — the ONLY keys a merge must not
+ * blend between two rows. `match`/`matchLocked` and `reconciliation` describe
+ * the surviving row's OWN commit/reconciliation status and must never silently
  * inherit another row's; `__rowId` is the row's identity; `__provenance` gets
  * its own explicit rule in `unionAccountFields` below.
  *
  * Typed as `Record<keyof Annotated<object>, true>` rather than a hand-copied
  * array (the same construction `ACCOUNT_CATEGORY_SET` uses above): TypeScript
  * requires EVERY annotation key be present and rejects any key that isn't, so
- * adding a fifth annotation to `Annotated` is a compile error here rather
- * than a field that starts silently leaking across a merge.
+ * adding another annotation to `Annotated` is a compile error here rather
+ * than a field that starts silently leaking across a merge. `matchLocked`
+ * arrived exactly that way.
  */
 const ROW_ANNOTATION_KEYS: Record<keyof Annotated<object>, true> = {
   __provenance: true,
   match: true,
+  matchLocked: true,
   reconciliation: true,
   __rowId: true,
 };
@@ -404,12 +433,44 @@ export function mergeRows(
   assertNotCommitted(keep, committedRowIds);
   assertNotCommitted(merge, committedRowIds);
   const merged = unionAccountFields(keep, merge);
+  // `merged.holdings` is still the SAME array (and same holding objects) as
+  // whichever of `keep`/`merge` donated it — `unionAccountFields` only
+  // spreads the row shallowly, never the arrays it carries. Clone before
+  // stamping so the mutation lands on `merged`'s own copy, not on a holding
+  // object also reachable from `payload.accounts` or (for the retired row)
+  // from the `excludedRows` snapshot below — both still need their PRE-merge
+  // data untouched.
+  merged.holdings = merged.holdings?.map((h) => ({ ...h }));
+  // Positions here may never have been stamped at all (a fixture, or a row
+  // this surface built by hand) — and a future tool that appends a position
+  // to an already-stamped account needs its new entry numbered too. This
+  // re-normalises the whole array so both cases end up correct; it is
+  // idempotent for positions that already had a correct id.
+  stampAccountHoldingIds(merged);
   const nextAccounts = accounts
     .map((r, i) => (i === keepIdx ? merged : r))
     .filter((_, i) => i !== mergeIdx);
+  // `unionAccountFields` backfills only where the base has nothing, so when
+  // BOTH rows carry positions the merged row keeps `keep`'s and `merge`'s are
+  // gone — and the retired row is `irreversible: true`, so there is no way
+  // back to them. That was inert while chat imports never extracted holdings;
+  // it is not any more. Silence here is the same failure the holdings caveat
+  // exists to prevent, so the summary says it outright.
+  // `keep.holdings != null` reads as a null check but is really asking "did
+  // keep's array WIN the union?" — `unionAccountFields` backfills only where
+  // the base has nothing. If that backfill rule ever changes, this is the
+  // predicate that silently stops matching.
+  const discardedPositions = keep.holdings != null ? livingHoldings(merge).length : 0;
+  const noun = discardedPositions === 1 ? "position" : "positions";
+  const was = discardedPositions === 1 ? "was" : "were";
+  const positionsNote =
+    discardedPositions === 0
+      ? ""
+      : ` The ${discardedPositions} ${noun} on "${merge.name}" ${was} not carried over` +
+        ` — "${keep.name}"'s ${livingHoldings(keep).length} were kept.`;
   return {
     payload: { ...payload, accounts: nextAccounts },
-    summary: `Merged "${merge.name}" into "${keep.name}".`,
+    summary: `Merged "${merge.name}" into "${keep.name}".${positionsNote}`,
     // `irreversible: true` (Ruling 96): the retired row's own fields were
     // folded into `keep` above — restoring it would re-add the pre-merge
     // row alongside the merged one and double-count the account. The
@@ -456,6 +517,213 @@ export function dropRow(
     summary: `Dropped "${dropped.name}" — ${args.reason}.`,
     excludedRows: [{ row: dropped, reason: args.reason }],
   };
+}
+
+// ---------------------------------------------------------------------------
+// edit_holding / drop_holding
+// ---------------------------------------------------------------------------
+
+export interface EditHoldingArgs {
+  rowId: string;
+  holdingId: string;
+  field: string;
+  value: unknown;
+}
+
+export interface DropHoldingArgs {
+  rowId: string;
+  holdingId: string;
+}
+
+/**
+ * Locate one position, or throw naming the ids that DO exist — `findRowIndex`
+ * does the same for rows (I5), because a model told only "not found" retries
+ * with another guess and burns the turn's tool budget. Shares
+ * `MAX_LISTED_IDS` with `findRowIndex` rather than a second, uncapped list:
+ * holdings are the more numerous of the two (a real import had ~63 positions
+ * on one account), so this is the list most likely to need the cap.
+ */
+function findHoldingIndex(row: AccountRow, holdingId: string): number {
+  const holdings = row.holdings ?? [];
+  const idx = holdings.findIndex((h) => h.__holdingId === holdingId);
+  if (idx !== -1) {
+    // A tombstoned position is still IN the array (that is what stops the
+    // next extraction resurrecting it), so it is findable — but no surface
+    // shows it and no commit writes it. Returning its index let both
+    // mutators report a confident `Set shares to 150 on ABBV` for a write
+    // with no effect, which is a post-write confirmation that is not
+    // grounded. The model gets told what actually happened instead.
+    if (isDroppedHolding(holdings[idx])) {
+      throw new Error(
+        `Holding "${holdingId}" on row ${row.__rowId} was dropped from this import, so it cannot be edited or dropped again.`,
+      );
+    }
+    return idx;
+  }
+
+  const known = holdings.map((h) => h.__holdingId).filter((id): id is string => Boolean(id));
+  if (known.length === 0) {
+    throw new Error(`No holding "${holdingId}" on row ${row.__rowId}. That row has no holdings.`);
+  }
+  const listed = known.slice(0, MAX_LISTED_IDS).join(", ");
+  const more = known.length > MAX_LISTED_IDS ? `, and ${known.length - MAX_LISTED_IDS} more` : "";
+  throw new Error(
+    `No holding "${holdingId}" on row ${row.__rowId}. Valid holding ids: ${listed}${more}.`,
+  );
+}
+
+/**
+ * Writes ONE field on ONE position inside ONE row. Mirrors `editRow`:
+ * `field` must be on the `EDITABLE_HOLDING_FIELDS` allowlist (`holding-
+ * fields.ts`) and `value` must additionally pass that field's own domain
+ * check — a numeric field that accepted a string would be stored as one and
+ * later concatenated (the defect this whole plan traces back to).
+ */
+export function editHolding(
+  payload: PersistedImportPayload,
+  args: EditHoldingArgs,
+  committedRowIds: CommittedRowIds,
+): ToolResult {
+  const accounts = accountsOf(payload);
+  const rowIdx = findRowIndex(accounts, args.rowId);
+  assertNotCommitted(accounts[rowIdx], committedRowIds);
+  if (!isEditableHoldingField(args.field)) {
+    throw new Error(
+      `Field "${args.field}" is not editable on a holding. Editable fields: ${EDITABLE_HOLDING_FIELDS.join(", ")}.`,
+    );
+  }
+  if (!isValidHoldingValue(args.field, args.value)) {
+    throw new Error(
+      `Value for "${args.field}" must be ${holdingFieldDomainDescription(args.field)}.`,
+    );
+  }
+  const row = accounts[rowIdx];
+  const hIdx = findHoldingIndex(row, args.holdingId);
+  const holdings = [...(row.holdings ?? [])];
+  holdings[hIdx] = { ...holdings[hIdx], [args.field]: args.value };
+  const nextAccounts = [...accounts];
+  nextAccounts[rowIdx] = { ...row, holdings };
+  return {
+    payload: { ...payload, accounts: nextAccounts },
+    summary: `Set ${args.field} to ${describeValue(args.value)} on ${
+      holdings[hIdx].ticker ?? holdings[hIdx].name ?? args.holdingId
+    } in "${row.name}".`,
+  };
+}
+
+/**
+ * Tombstones ONE position — sets `__dropped: true` and leaves it in the
+ * array (never removes it), so `livingHoldings` (the ONE reader of that
+ * flag) excludes it from anything that counts while the row keeps its
+ * original position count. Unlike `dropRow`, this returns no `excludedRows`:
+ * that delta exists for the row-level excluded list the advisor sees
+ * separately, and a dropped position isn't a row.
+ */
+export function dropHolding(
+  payload: PersistedImportPayload,
+  args: DropHoldingArgs,
+  committedRowIds: CommittedRowIds,
+): ToolResult {
+  const accounts = accountsOf(payload);
+  const rowIdx = findRowIndex(accounts, args.rowId);
+  assertNotCommitted(accounts[rowIdx], committedRowIds);
+  const row = accounts[rowIdx];
+  const hIdx = findHoldingIndex(row, args.holdingId);
+  const holdings = [...(row.holdings ?? [])];
+  const dropped = holdings[hIdx];
+  holdings[hIdx] = { ...dropped, __dropped: true };
+  const nextAccounts = [...accounts];
+  nextAccounts[rowIdx] = { ...row, holdings };
+  return {
+    payload: { ...payload, accounts: nextAccounts },
+    summary: `Dropped ${dropped.ticker ?? dropped.name ?? args.holdingId} from "${row.name}". It will not be saved with the account.`,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// read_holdings
+// ---------------------------------------------------------------------------
+
+export interface ReadHoldingsArgs {
+  rowId: string;
+}
+
+/**
+ * Fix round 1, R32: how many positions `readHoldings` lists before
+ * truncating with a truthful "…and N more" suffix.
+ *
+ * This is NOT the same budget as `HOLDINGS_PROMPT_BUDGET_CHARS`
+ * (`turn.ts`), and capping one does not cap the other. That block is
+ * rebuilt fresh every turn and thrown away with the rest of the system
+ * prompt — it never accumulates. This tool's `summary`, by contrast, is
+ * pushed onto `turnEntries`, PERSISTED to the chat transcript, and REPLAYED
+ * by `transcriptToMessages` (`turn.ts`) on every LATER turn — and a turn can
+ * call this tool up to `MAX_TOOL_CALLS_PER_TURN` times. An uncapped join
+ * here doesn't cost one turn's budget, it costs every turn's budget from
+ * here on, growing without bound. 100 is far past any realistic account's
+ * holding count (the production failure behind this whole plan was ~63
+ * positions in one account), so the cap should never bite in practice — it
+ * exists for the account that would otherwise never stop growing the
+ * transcript.
+ */
+const MAX_HOLDINGS_PER_READ = 100;
+
+/**
+ * Fix round 1, R31: the ONE way to render a position — used by both the
+ * prompt's inline listing (`describeHoldings` in `turn.ts`) and this tool's
+ * own result, so the two views of "positions in an account" can't drift the
+ * way they did at birth: three differences (`price=`, the `JSON.stringify`,
+ * the indent prefix) in the copy carrying the R29 guard below, the one thing
+ * that must not drift. Lives here, not in `turn.ts`, because the import
+ * direction only runs one way — `turn.ts` already imports seven symbols from
+ * this file (`editRow`, `mergeRows`, …), and this file must never import
+ * from `turn.ts`.
+ *
+ * `indent` is supplied by the caller, not baked in: the prompt's inline
+ * block nests one line per position under its account heading (`"  - "`),
+ * this tool's flat list does not.
+ *
+ * R29: `__holdingId` is optional on `ExtractedHolding` — a payload persisted
+ * before this branch carries positions with none. Printing
+ * `${h.__holdingId}:` unconditionally renders the literal string "undefined"
+ * as an id, and a model reading that as a real handle would call
+ * `edit_holding`/`drop_holding` with it — both throw (neither tool has a
+ * holding whose id IS "undefined"), burning one of the four tool calls a
+ * turn allows on a position that genuinely cannot be corrected through this
+ * surface: both tools match on `__holdingId` alone.
+ */
+export function formatHoldingLine(h: ExtractedHolding, indent = ""): string {
+  const label = JSON.stringify(h.ticker ?? h.name ?? "?");
+  const figures =
+    `shares=${h.shares ?? "?"} price=${h.price ?? "?"} ` +
+    `value=${h.marketValue ?? "?"} basis=${h.costBasis ?? "?"}`;
+  return h.__holdingId
+    ? `${indent}${h.__holdingId}: ${label} ${figures}`
+    : `${indent}${label} ${figures} (no id — not correctable here)`;
+}
+
+/**
+ * Read-only: returns one account's positions as prose. Writes nothing, so —
+ * like `explain` and `reread_document` — it is available on a committed row
+ * (it takes no `committedRowIds` at all, unlike `editHolding`/`dropHolding`),
+ * and (Important 1's reference-identity contract) always returns the SAME
+ * `payload` it was handed rather than a copy, so `runTurn` never mistakes a
+ * read for a mutation.
+ */
+export function readHoldings(payload: PersistedImportPayload, args: ReadHoldingsArgs): ToolResult {
+  const accounts = accountsOf(payload);
+  const row = accounts[findRowIndex(accounts, args.rowId)];
+  const living = livingHoldings(row);
+  if (living.length === 0) {
+    return { payload, summary: `"${row.name}" has no positions.` };
+  }
+  const shown = living.slice(0, MAX_HOLDINGS_PER_READ);
+  const lines = shown.map((h) => formatHoldingLine(h)).join("\n");
+  const more =
+    living.length > MAX_HOLDINGS_PER_READ
+      ? `\n…and ${living.length - MAX_HOLDINGS_PER_READ} more.`
+      : "";
+  return { payload, summary: `Positions in "${row.name}":\n${lines}${more}` };
 }
 
 // ---------------------------------------------------------------------------

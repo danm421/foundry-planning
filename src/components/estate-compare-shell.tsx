@@ -1,0 +1,466 @@
+"use client";
+
+// Side-by-side scenario compare for the three estate reports (Estate Tax,
+// State Death Tax, Transfer Detail). The shell owns the URL contract, the
+// scenario pickers, ONE shared As-of / death-order control row, and the column
+// layout. Each column's report view arrives as a render prop.
+//
+// The shared as-of is stored SEMANTICALLY (`CompareAsOf`), never as a bare
+// year. Both controls hand back the year they happen to display, and that year
+// is always the LEFT column's: storing it would pin both columns to the left
+// column's death year, so a scenario that moves a death year would print the
+// wrong year on the right. Every number a control reports is therefore mapped
+// back to the milestone it came from before it is stored, and each column
+// resolves that milestone against its OWN projection years.
+
+import { useCallback, useState, type ReactElement, type ReactNode } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import {
+  BASE_REF,
+  readCompareSelection,
+  refLabel,
+  resolveCompareAsOf,
+  type ColumnYears,
+  type CompareAsOf,
+} from "@/lib/estate/compare-ref";
+import {
+  ScenarioPickerDropdown,
+  type ScenarioOption,
+} from "./scenario/scenario-picker-dropdown";
+import { AsOfDropdown, type AsOfValue } from "./report-controls/as-of-dropdown";
+import { TimePeriodButtons } from "./report-controls/time-period-buttons";
+import { DeathOrderToggle } from "./report-controls/death-order-toggle";
+import type { OwnerDobs } from "./report-controls/age-helpers";
+
+type Ordering = "primaryFirst" | "spouseFirst";
+
+export interface EstateColumnMeta {
+  years: number[];
+  todayYear: number;
+  firstDeathYear: number | null;
+  secondDeathYear: number | null;
+}
+
+export interface EstateColumnReady<TData> {
+  meta: EstateColumnMeta;
+  data: TData | null;
+}
+
+export interface EstateCompareColumnArgs<TData> {
+  side: "left" | "right";
+  scenarioRef: string;
+  /** Already resolved against THIS column's own projection years. */
+  asOf: AsOfValue;
+  ordering: Ordering;
+  /**
+   * Report this column's projection metadata and report data upward.
+   *
+   * `meta` may be rebuilt every render — the shell compares it by content.
+   * `data` is compared by IDENTITY, so a view MUST hold `data` in state or a
+   * memo rather than rebuilding it inline each render. A freshly-built `data`
+   * listed in the reporting effect's dependencies re-reports forever and
+   * loops the browser.
+   */
+  onReady: (ready: EstateColumnReady<TData>) => void;
+  /** The left column's data. Always null on the left; null on the right until the left loads. */
+  baseline: TData | null;
+}
+
+const TODAY: CompareAsOf = { kind: "today" };
+
+const SNAPSHOT_NOTICE = "Snapshots can't be compared on this report yet.";
+const DELETED_NOTICE = "That scenario no longer exists.";
+
+/** Matches `AsOfDropdown`'s own control styling so the bar reads as one row. */
+const PICKER_CLASS =
+  "rounded border border-hair bg-paper px-3 py-1.5 text-sm text-ink focus:border-accent focus:outline-none";
+const BAR_BUTTON_CLASS =
+  "ml-auto rounded border border-hair-2 px-2.5 py-1 text-xs font-medium text-ink-2 transition-colors hover:border-accent hover:text-accent";
+
+function columnYears(meta: EstateColumnMeta, retirementYear: number): ColumnYears {
+  return {
+    todayYear: meta.todayYear,
+    retirementYear,
+    firstDeathYear: meta.firstDeathYear,
+    secondDeathYear: meta.secondDeathYear,
+  };
+}
+
+/**
+ * Map a control's reported value back to the advisor's semantic choice. A bare
+ * year that matches one of the left column's milestone years IS that milestone
+ * — both the dropdown's milestone options and the pill row's Retirement /
+ * First Death / Last Death buttons carry the year as their value. Degenerate
+ * ties (a retirement year that is also a death year) take the first match.
+ */
+function toCompareAsOf(value: AsOfValue, years: ColumnYears | null): CompareAsOf {
+  if (value === "today") return TODAY;
+  if (value === "split") return { kind: "split" };
+  if (years) {
+    if (value === years.retirementYear) {
+      return { kind: "milestone", milestone: "retirement" };
+    }
+    if (value === years.firstDeathYear) {
+      return { kind: "milestone", milestone: "firstDeath" };
+    }
+    if (value === years.secondDeathYear) {
+      return { kind: "milestone", milestone: "lastDeath" };
+    }
+  }
+  return { kind: "year", year: value };
+}
+
+/** One column's latest reading, tagged with the ref it describes. */
+interface ColumnReport<TData> extends EstateColumnReady<TData> {
+  ref: string;
+}
+
+/**
+ * A column re-reports whenever it re-renders. Storing a fresh object identity
+ * for an unchanged reading would re-render the column, which would report
+ * again — so keep the previous object whenever nothing actually moved.
+ */
+function nextReport<TData>(
+  prev: ColumnReport<TData> | null,
+  ref: string,
+  ready: EstateColumnReady<TData>,
+): ColumnReport<TData> {
+  if (
+    prev !== null &&
+    prev.ref === ref &&
+    sameMeta(prev.meta, ready.meta) &&
+    Object.is(prev.data, ready.data)
+  ) {
+    return prev;
+  }
+  return { ref, ...ready };
+}
+
+function sameMeta(a: EstateColumnMeta | null, b: EstateColumnMeta): boolean {
+  return (
+    a !== null &&
+    a.todayYear === b.todayYear &&
+    a.firstDeathYear === b.firstDeathYear &&
+    a.secondDeathYear === b.secondDeathYear &&
+    a.years.length === b.years.length &&
+    a.years.every((year, i) => year === b.years[i])
+  );
+}
+
+/** The ONE spelling of each milestone in this bar. The header used to print a
+ *  bare year while the pill row beside it printed a name, and a second table
+ *  here would have printed "Last death" next to the pills' "Last Death" —
+ *  two labels for one thing, side by side, which is the very defect the base
+ *  case's label was just fixed for. */
+const MILESTONE_LABELS = {
+  retirement: "Retirement",
+  firstDeath: "First Death",
+  lastDeath: "Last Death",
+} as const;
+
+/**
+ * What a column header calls its as-of. Every milestone RESOLVES to a bare
+ * year, and each column resolves it against its own projection — so the name
+ * has to come from the shared SELECTION and the number from the column, or the
+ * header reads "2070" where it means "Last death · 2070". A `{kind:"year"}`
+ * selection keeps the bare year: that is exactly what the advisor picked.
+ */
+function columnAsOfLabel(
+  selection: CompareAsOf,
+  asOf: AsOfValue,
+  meta: EstateColumnMeta | null,
+): string {
+  if (asOf === "split") return "Split death";
+  if (asOf === "today") return meta ? `Today · ${meta.todayYear}` : "Today";
+  if (selection.kind === "milestone") {
+    return `${MILESTONE_LABELS[selection.milestone]} · ${asOf}`;
+  }
+  return String(asOf);
+}
+
+export function EstateCompareShell<TData>({
+  scenarios,
+  isMarried,
+  ownerNames,
+  ownerDobs,
+  retirementYear,
+  initialAsOf,
+  soloFullWidth = false,
+  children,
+}: {
+  /** Part of the column contract: the views fetch with it. The shell itself
+   *  routes off `usePathname()`, so it never reads this. */
+  clientId: string;
+  scenarios: ScenarioOption[];
+  isMarried: boolean;
+  ownerNames: { clientName: string; spouseName: string | null };
+  ownerDobs: OwnerDobs;
+  retirementYear: number;
+  /** Test seam and deep-link hook; defaults to `{ kind: "today" }`. */
+  initialAsOf?: CompareAsOf;
+  /** Take the whole row when solo instead of the spec's half-width
+   *  affordance — the empty right half is what tells an advisor a comparison
+   *  exists, so half width stays the default. A report whose NARROWEST table
+   *  exceeds half a 1440px viewport opts out; State Death Tax measured 672px
+   *  needed against the 597px it was given. Compare mode is unaffected: two
+   *  columns is what the advisor asked for. Both class names stay LITERAL
+   *  inside this file, or Tailwind's JIT never emits `md:w-1/2`. */
+  soloFullWidth?: boolean;
+  children: (args: EstateCompareColumnArgs<TData>) => ReactNode;
+}): ReactElement {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const [sharedAsOf, setSharedAsOf] = useState<CompareAsOf>(initialAsOf ?? TODAY);
+  const [ordering, setOrdering] = useState<Ordering>("primaryFirst");
+  const [leftState, setLeftState] = useState<ColumnReport<TData> | null>(null);
+  const [rightState, setRightState] = useState<ColumnReport<TData> | null>(null);
+
+  const selection = readCompareSelection(searchParams);
+
+  // A ref shared before the scenario was deleted must never reach a column —
+  // it would fetch a dead id. `refLabel`'s "Unknown scenario" is display copy,
+  // not a validity check.
+  const rightExists =
+    selection.right !== null &&
+    (selection.right === BASE_REF ||
+      scenarios.some((s) => s.id === selection.right));
+  const rightRef = rightExists ? selection.right : null;
+
+  // Identity changes only when the column's ref does — and that already
+  // re-runs the child's effect, since its `scenarioRef` prop changed too. It
+  // never changes render-to-render, which is what would loop.
+  const onLeftReady = useCallback(
+    (ready: EstateColumnReady<TData>) => {
+      setLeftState((prev) => nextReport(prev, selection.left, ready));
+    },
+    [selection.left],
+  );
+  const onRightReady = useCallback(
+    (ready: EstateColumnReady<TData>) => {
+      setRightState((prev) =>
+        rightRef === null
+          ? prev
+          : // Deltas read the LEFT column's data as the baseline, so the right
+            // column's data has no consumer. Dropping it means a right-hand
+            // view that rebuilds `data` inline cannot force a state update.
+            nextReport(prev, rightRef, { meta: ready.meta, data: null }),
+      );
+    },
+    [rightRef],
+  );
+
+  // A reading describing ref X must never be read while the selection names
+  // ref Y. The shell survives a `?scenario=`/`?compare=` change, so without
+  // this the right column would keep showing deltas against the PREVIOUS left
+  // scenario for the whole of the new one's fetch, and a column header would
+  // print the old scenario's year beside the new scenario's name.
+  const leftReport = leftState?.ref === selection.left ? leftState : null;
+  const rightReport = rightState?.ref === rightRef ? rightState : null;
+  const leftMeta = leftReport?.meta ?? null;
+  const rightMeta = rightReport?.meta ?? null;
+  const notice = selection.unsupportedRight
+    ? SNAPSHOT_NOTICE
+    : selection.right !== null && !rightExists
+      ? DELETED_NOTICE
+      : null;
+
+  const leftYears = leftMeta ? columnYears(leftMeta, retirementYear) : null;
+  const resolvedFor = (meta: EstateColumnMeta | null): AsOfValue =>
+    meta ? resolveCompareAsOf(sharedAsOf, columnYears(meta, retirementYear)) : "today";
+  // Both controls compare their pills/options by year, so they need the left
+  // column's resolved year to highlight the active one.
+  const controlAsOf = resolvedFor(leftMeta);
+
+  // The ONLY place a control's value becomes shared state — both controls go
+  // through the same remap, so neither can smuggle in a bare year.
+  const chooseAsOf = (value: AsOfValue) =>
+    setSharedAsOf(toCompareAsOf(value, leftYears));
+
+  const canSplit =
+    isMarried &&
+    leftMeta?.firstDeathYear != null &&
+    leftMeta.secondDeathYear != null;
+
+  const milestones = leftMeta
+    ? [
+        { year: retirementYear, label: MILESTONE_LABELS.retirement },
+        ...(leftMeta.firstDeathYear != null
+          ? [{ year: leftMeta.firstDeathYear, label: MILESTONE_LABELS.firstDeath }]
+          : []),
+        ...(leftMeta.secondDeathYear != null
+          ? [{ year: leftMeta.secondDeathYear, label: MILESTONE_LABELS.lastDeath }]
+          : []),
+      ]
+    : [];
+
+  function writeParam(key: string, value: string | null) {
+    const next = new URLSearchParams(searchParams?.toString() ?? "");
+    if (value === null) next.delete(key);
+    else next.set(key, value);
+    const query = next.toString();
+    router.push(query ? `${pathname}?${query}` : pathname);
+  }
+
+  const firstCompareRef =
+    [BASE_REF, ...scenarios.filter((s) => !s.isBaseCase).map((s) => s.id)].find(
+      (ref) => ref !== selection.left,
+    ) ?? null;
+
+  function renderColumn(side: "left" | "right", scenarioRef: string): ReactNode {
+    const meta = side === "left" ? leftMeta : rightMeta;
+    const asOf = resolvedFor(meta);
+    return (
+      <section className="min-w-0 space-y-3">
+        {rightRef !== null && (
+          <header className="flex items-baseline justify-between gap-3 border-b border-hair pb-2">
+            <h2 className="truncate text-[13px] font-medium text-ink">
+              {refLabel(scenarioRef, scenarios)}
+            </h2>
+            <span className="tabular shrink-0 text-[11px] text-ink-3">
+              {columnAsOfLabel(sharedAsOf, asOf, meta)}
+            </span>
+          </header>
+        )}
+        {children({
+          side,
+          scenarioRef,
+          asOf,
+          ordering,
+          onReady: side === "left" ? onLeftReady : onRightReady,
+          // Deltas read right − left, so the left column never gets a baseline.
+          baseline: side === "left" ? null : (leftReport?.data ?? null),
+        })}
+      </section>
+    );
+  }
+
+  const left = renderColumn("left", selection.left);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3 rounded border border-hair bg-card px-3 py-2">
+        {rightRef !== null ? (
+          <>
+            <span className="chip">Comparing</span>
+            <ScenarioPickerDropdown
+              value={selection.left}
+              onChange={(next) => writeParam("scenario", next)}
+              scenarios={scenarios}
+              snapshots={[]}
+              ariaLabel="Left scenario"
+              className={PICKER_CLASS}
+            />
+            <span className="text-[11px] uppercase tracking-[0.08em] text-ink-3">vs</span>
+            <ScenarioPickerDropdown
+              value={rightRef}
+              onChange={(next) => writeParam("compare", next)}
+              scenarios={scenarios}
+              snapshots={[]}
+              ariaLabel="Right scenario"
+              className={PICKER_CLASS}
+            />
+            <button
+              type="button"
+              onClick={() => writeParam("compare", null)}
+              className={BAR_BUTTON_CLASS}
+            >
+              Stop comparing
+            </button>
+          </>
+        ) : (
+          <>
+            <span className="chip">Scenario</span>
+            <span className="text-[13px] text-ink">
+              {refLabel(selection.left, scenarios)}
+            </span>
+            {firstCompareRef !== null && (
+              <button
+                type="button"
+                onClick={() => writeParam("compare", firstCompareRef)}
+                className={BAR_BUTTON_CLASS}
+              >
+                Compare
+              </button>
+            )}
+          </>
+        )}
+      </div>
+
+      {notice !== null && (
+        <p className="rounded border border-hair bg-card px-3 py-2 text-[13px] text-ink-2">
+          {notice}
+        </p>
+      )}
+
+      {/* Reserved before the left column reports, so the page does not jump. */}
+      <div className="flex min-h-9 flex-wrap items-center justify-between gap-3">
+        {leftMeta && (
+          <>
+            <TimePeriodButtons
+              selected={controlAsOf}
+              onChange={chooseAsOf}
+              todayYear={leftMeta.todayYear}
+              retirementYear={retirementYear}
+              firstDeathYear={leftMeta.firstDeathYear ?? undefined}
+              lastDeathYear={
+                leftMeta.secondDeathYear ?? leftMeta.firstDeathYear ?? undefined
+              }
+              showSplit={canSplit}
+            />
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2 text-xs uppercase tracking-wide text-ink-3">
+                As of
+                <AsOfDropdown
+                  years={leftMeta.years}
+                  todayYear={leftMeta.todayYear}
+                  selected={controlAsOf}
+                  onChange={chooseAsOf}
+                  dobs={ownerDobs}
+                  milestones={milestones}
+                  allowSplit={canSplit}
+                  yearPrefix="Both die in"
+                />
+              </label>
+              {isMarried && sharedAsOf.kind !== "split" && (
+                <DeathOrderToggle
+                  value={ordering}
+                  onChange={setOrdering}
+                  ownerNames={ownerNames}
+                />
+              )}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/*
+        ONE layout, two widths — never two branches. React reconciles by
+        position and element type, so a solo branch that put `left` in a
+        different wrapper would unmount the whole left column the moment a
+        comparison starts: its state would reset and its load effect would
+        refetch a scenario already on screen. The left wrapper stays the same
+        element in both modes; only the container's width class and the right
+        column's presence change.
+      */}
+      <div
+        data-testid="estate-compare-columns"
+        className={
+          rightRef !== null
+            ? "grid gap-x-8 gap-y-6 md:grid-cols-2"
+            : soloFullWidth
+              ? "w-full"
+              : "md:w-1/2"
+        }
+      >
+        <div className="min-w-0">{left}</div>
+        {rightRef !== null && (
+          <div className="min-w-0 md:border-l md:border-hair md:pl-8">
+            {renderColumn("right", rightRef)}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

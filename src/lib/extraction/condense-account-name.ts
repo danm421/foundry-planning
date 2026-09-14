@@ -1,11 +1,20 @@
 const MAX_LENGTH = 60;
 
 /**
- * Mask fronting the last-4 suffix, e.g. "Rollover IRA ••••1234". Must stay a
- * character `condenseAccountName` already strips, or `composeAccountName` stops
- * being idempotent.
+ * Mask fronting the last-4 suffix, e.g. "Rollover IRA x1234".
+ *
+ * A single "x", not a run of bullets: that is how custodians and planning
+ * software actually label an account on the page an advisor is reading from
+ * ("Inh. IRA x7254"), so the name on screen matches the name on the statement.
+ *
+ * `condenseAccountName` does NOT strip a single-character mask — its own rule
+ * needs three or more, so "401k"/"529" survive — but `composeAccountName`'s
+ * dedupe below handles a one-or-more mask explicitly, which is what keeps
+ * composing an already-composed name idempotent. Widening this back to a
+ * multi-character mask is safe; narrowing `composeAccountName`'s `[x*.•]+` to
+ * `{2,}` is not.
  */
-const LAST4_MASK = "••••";
+const LAST4_MASK = "x";
 
 /**
  * Deterministic backstop for the account-statement prompt's "short name" rule.
@@ -111,7 +120,7 @@ function normalizeLast4(raw: string | null | undefined): string {
 /**
  * The account display name as extraction should emit it: the account type,
  * without the custodian, followed by the masked last 4 when the document showed
- * one — "Rollover IRA ••••1234".
+ * one — "Rollover IRA x1234".
  *
  * Pure and idempotent: `condenseAccountName` strips the mask this appends, so
  * re-running over an already-composed name reproduces it. Total length stays
@@ -136,7 +145,7 @@ export function composeAccountName(
   // reports label accounts with a SINGLE "x" ("Inh. IRA x7254", "Taxable
   // Account x0028"), a form `condenseAccountName` also leaves alone because its
   // own mask rule needs three. Missing it printed the number twice —
-  // "Inh. IRA x7254 ••••7254".
+  // "Inh. IRA x7254 x7254".
   //
   // The digits must open at a separator, a mask, or the string start — hence
   // the leading alternation rather than `\b`, which would also match INSIDE a

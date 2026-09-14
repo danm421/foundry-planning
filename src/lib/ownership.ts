@@ -14,6 +14,7 @@ import {
   planSettings,
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
+import { RETIREMENT_SUBTYPES } from "@/lib/accounts/retirement-subtypes";
 
 // ── Transaction type ──────────────────────────────────────────────────────────
 
@@ -116,12 +117,9 @@ export async function validateOwnersTenant(
 
 // ── Accounts-only helpers ─────────────────────────────────────────────────────
 
-export const RETIREMENT_SUBTYPES = [
-  "traditional_ira",
-  "roth_ira",
-  "401k",
-  "403b",
-] as const;
+// Re-exported, not redefined: an ownership PICKER in the browser needs the same
+// list, and this module imports `@/db`. See `accounts/retirement-subtypes.ts`.
+export { RETIREMENT_SUBTYPES };
 
 /**
  * Validates retirement single-owner and default-checking no-mix rules.

@@ -29,7 +29,8 @@ export type AttentionRow = {
   at: string;
 };
 
-const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
+/** Shared with digest.ts so the two never disagree about a plural. */
+export const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 
 export function buildAttention(input: GrowthInput): AttentionRow[] {
   const { firms, subs, activity, users, now } = input;

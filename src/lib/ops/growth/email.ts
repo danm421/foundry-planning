@@ -11,6 +11,8 @@ const DEFAULT_TO = "dan@foundryplanning.com";
 export async function sendOpsDigest(args: {
   subject: string;
   text: string;
+  /** Optional twin of `text`. Sent alongside it, never instead of it. */
+  html?: string;
 }): Promise<{ delivered: boolean }> {
   const apiKey = process.env.RESEND_API_KEY;
   const to = process.env.OPS_DIGEST_TO || DEFAULT_TO;
@@ -29,7 +31,13 @@ export async function sendOpsDigest(args: {
     const resend = new Resend(apiKey);
     // resend.emails.send() resolves { data: null, error } for every non-2xx
     // response rather than throwing — the `error` check is the real net.
-    const { error } = await resend.emails.send({ from, to, subject: args.subject, text: args.text });
+    const { error } = await resend.emails.send({
+      from,
+      to,
+      subject: args.subject,
+      text: args.text,
+      ...(args.html ? { html: args.html } : {}),
+    });
     if (error) {
       console.error("[ops-digest] Resend rejected the send:", error.message ?? error);
       return { delivered: false };

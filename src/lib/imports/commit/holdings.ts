@@ -9,6 +9,7 @@ import {
 import { fetchEodCloses as defaultFetchCloses, eodhdSymbol } from "@/lib/investments/quote";
 import { normalizeExtractedHolding } from "@/lib/extraction/normalize-holdings";
 import type { ExtractedHolding } from "@/lib/extraction/types";
+import { livingHoldings } from "@/lib/imports/living-rows";
 import type { ImportPayload } from "@/lib/imports/types";
 import type { ResolvedHoldingsMap, Tx } from "./types";
 
@@ -56,7 +57,7 @@ export async function resolveHoldingsForCommit(
 
   const tickers = new Set<string>();
   for (const acct of committableAccounts(payload, rowIds)) {
-    for (const h of acct.holdings ?? []) {
+    for (const h of livingHoldings(acct)) {
       const t = h.ticker?.trim().toUpperCase();
       if (t) tickers.add(t);
     }
@@ -116,9 +117,24 @@ export async function writeAccountHoldings(
   replace: boolean,
   sink?: string[],
 ): Promise<void> {
-  if (!holdings.length) return;
+  // The delete comes FIRST, and is not gated on there being rows to write.
+  // `replace` means the reviewed payload is authoritative for this account's
+  // positions; an authoritative payload that lists none — every position
+  // dropped in review — is an instruction to clear them, not a reason to skip
+  // the write entirely. Ordering this after the empty check silently kept the
+  // old positions behind an advisor's explicit removal.
   if (replace) {
     await tx.delete(accountHoldings).where(eq(accountHoldings.accountId, accountId));
+  }
+  if (!holdings.length) {
+    // A delete with nothing to insert is still a write, so the account joins
+    // the post-commit asset-mix resync like any other. Belt-and-braces: the
+    // only path that reaches here also sets `deriveFromHoldings = false` in
+    // the same transaction, and `syncAccountFromHoldings` returns early on
+    // that — so this is insurance against a future caller, not load-bearing
+    // today.
+    if (replace) sink?.push(accountId);
+    return;
   }
   let sortOrder = 0;
   const rows = holdings.map((raw) => {

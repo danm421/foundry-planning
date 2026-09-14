@@ -7,7 +7,7 @@ const day = (n: number) => new Date(NOW.getTime() + n * 86_400_000);
 
 const EMPTY: GrowthInput = {
   firms: [], subs: [], items: [], activity: [], users: [],
-  clientCountByFirm: {}, now: NOW,
+  clientCountByFirm: {}, clientCountByAdvisor: {}, now: NOW,
 };
 
 const user = (over: Partial<GrowthInput["users"][number]> = {}) => ({

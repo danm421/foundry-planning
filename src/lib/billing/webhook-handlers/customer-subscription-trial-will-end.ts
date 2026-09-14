@@ -8,6 +8,11 @@ import { resolveBillingContact } from "@/lib/billing/billing-contact";
  * trial_will_end — Stripe fires this 3 days before trial conversion.
  * We queue a notification email (email-stub for now) and record the event
  * in audit. No subscription state change.
+ *
+ * The email says one of two opposite things, so `canceled` has to be read off
+ * the live subscription rather than assumed: a trial with a cancellation
+ * already scheduled will NOT convert, and telling that advisor their plan
+ * renews automatically is backwards.
  */
 export async function handleTrialWillEnd(event: Stripe.Event): Promise<void> {
   const stripe = getStripe();
@@ -18,6 +23,15 @@ export async function handleTrialWillEnd(event: Stripe.Event): Promise<void> {
   if (!firmId) {
     throw new Error(`subscription ${sub.id} missing metadata.firm_id`);
   }
+
+  // All three of Stripe's cancellation markers, because this account schedules
+  // cancellations with `cancel_at` (a date) — which leaves cancel_at_period_end
+  // false on a subscription that has genuinely been cancelled. Same reasoning
+  // as lib/billing/trial-feedback.ts.
+  const canceled =
+    sub.cancel_at_period_end === true ||
+    sub.canceled_at != null ||
+    sub.cancel_at != null;
 
   const contact = await resolveBillingContact(firmId);
   const ownerEmail = contact?.email ?? undefined;
@@ -31,6 +45,7 @@ export async function handleTrialWillEnd(event: Stripe.Event): Promise<void> {
         trialEnd: sub.trial_end
           ? new Date(sub.trial_end * 1000).toISOString()
           : null,
+        canceled,
       },
     });
   }
@@ -46,6 +61,7 @@ export async function handleTrialWillEnd(event: Stripe.Event): Promise<void> {
       trial_end: sub.trial_end
         ? new Date(sub.trial_end * 1000).toISOString()
         : null,
+      canceled,
     },
   });
 }

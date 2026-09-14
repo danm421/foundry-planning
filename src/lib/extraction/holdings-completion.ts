@@ -25,11 +25,18 @@ export interface CompletionDeps {
   ) => Promise<AIExtractionResult>;
 }
 
-// Internal dedupe key. Two untickered positions with byte-identical
-// descriptions collapse to the same `n:` key — a deliberate trade-off:
-// silently dropping a rare duplicate-looking row is safer than double-counting
-// (the persisting gap still fires the unreconciled warning).
-function holdingKey(h: ExtractedHolding): string {
+/**
+ * Identity of one position: its ticker, or its normalized description when
+ * untickered. Two untickered positions with byte-identical descriptions
+ * collapse to the same key — a deliberate trade-off (see the dedupe note on
+ * the continuation loop below).
+ *
+ * Exported because `mergeAcrossFiles` mints `__holdingId` from it. The
+ * continuation loop and the review table MUST agree about whether two rows
+ * are the same position; two independent notions of that is how a recovered
+ * position ends up with a second id.
+ */
+export function holdingKey(h: ExtractedHolding): string {
   const t = h.ticker?.trim().toUpperCase();
   if (t) return `t:${t}`;
   return `n:${(h.name ?? "").trim().toUpperCase().replace(/\s+/g, " ")}`;

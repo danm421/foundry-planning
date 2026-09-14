@@ -6,6 +6,7 @@ import { clientImports, clientImportFiles, clients } from "@/db/schema";
 import { getOrgId } from "@/lib/db-helpers";
 import DetailsPageShell from "@/components/details-page-shell";
 import { ChatSurface } from "@/components/statement-chat/chat-surface";
+import { loadChatReviewContext } from "@/lib/statement-chat/review-context";
 
 interface PageProps {
   params: Promise<{ id: string; importId: string }>;
@@ -36,7 +37,12 @@ export default async function StatementChatPage({ params, searchParams }: PagePr
   if (!client) redirect("/clients");
 
   const [imp] = await db
-    .select({ id: clientImports.id, status: clientImports.status })
+    .select({
+      id: clientImports.id,
+      status: clientImports.status,
+      extractHoldings: clientImports.extractHoldings,
+      scenarioId: clientImports.scenarioId,
+    })
     .from(clientImports)
     .where(
       and(
@@ -52,6 +58,12 @@ export default async function StatementChatPage({ params, searchParams }: PagePr
   if (imp.status === "discarded") {
     redirect(`/clients/${clientId}/details/import`);
   }
+
+  // The plan this import commits into: who is on the roster (the Owner
+  // dropdown), and which accounts already exist (matching). Scoped to the same
+  // scenario the commit route resolves, so the candidates offered are the rows
+  // the commit can actually update.
+  const reviewContext = await loadChatReviewContext(clientId, imp.scenarioId);
 
   const files = await db
     .select()
@@ -84,6 +96,8 @@ export default async function StatementChatPage({ params, searchParams }: PagePr
             name: f.originalFilename,
             documentType: f.documentType,
           }))}
+          initialExtractHoldings={imp.extractHoldings === true}
+          reviewContext={reviewContext}
         />
       </div>
     </DetailsPageShell>

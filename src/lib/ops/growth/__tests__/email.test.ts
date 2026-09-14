@@ -87,6 +87,26 @@ describe("sendOpsDigest", () => {
     );
   });
 
+  it("sends the HTML twin alongside the text when the digest has one", async () => {
+    process.env.RESEND_API_KEY = "re_test_key";
+    send.mockResolvedValue({ data: { id: "email_123" }, error: null });
+
+    await sendOpsDigest({ ...ARGS, html: "<table></table>" });
+
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({ text: ARGS.text, html: "<table></table>" }),
+    );
+  });
+
+  it("omits html entirely when the digest has none — Resend rejects an empty one", async () => {
+    process.env.RESEND_API_KEY = "re_test_key";
+    send.mockResolvedValue({ data: { id: "email_123" }, error: null });
+
+    await sendOpsDigest(ARGS);
+
+    expect(send.mock.calls[0][0]).not.toHaveProperty("html");
+  });
+
   it("uses OPS_DIGEST_TO / OPS_DIGEST_FROM overrides when set", async () => {
     process.env.RESEND_API_KEY = "re_test_key";
     process.env.OPS_DIGEST_TO = "ops@example.com";

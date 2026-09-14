@@ -8,6 +8,10 @@ import AccountsTable from "@/components/statement-chat/accounts-table";
 import { ChatTranscript } from "@/components/statement-chat/chat-transcript";
 import { ChatComposer } from "@/components/statement-chat/chat-composer";
 import { useChatCommit, type ChatCommitResult } from "@/components/statement-chat/use-chat-commit";
+import {
+  EMPTY_CHAT_REVIEW_CONTEXT,
+  type ChatReviewContext,
+} from "@/lib/statement-chat/review-context";
 import { useChatTurn } from "@/components/statement-chat/use-chat-turn";
 
 type ChatExtractEvent =
@@ -54,11 +58,28 @@ interface ChatSurfaceProps {
   clientId: string;
   importId: string;
   initialFiles: InitialUploadedFile[];
+  initialExtractHoldings?: boolean;
+  /**
+   * The plan this import commits into — household roster, entities, and the
+   * accounts already on it. Loaded once by the page (a server component) and
+   * handed down, rather than fetched here: the roster drives the Owner
+   * dropdown and the accounts drive account matching, and both are needed
+   * before the first row renders.
+   */
+  reviewContext?: ChatReviewContext;
 }
 
-export function ChatSurface({ clientId, importId, initialFiles }: ChatSurfaceProps) {
+export function ChatSurface({
+  clientId,
+  importId,
+  initialFiles,
+  initialExtractHoldings,
+  reviewContext = EMPTY_CHAT_REVIEW_CONTEXT,
+}: ChatSurfaceProps) {
   const [uploadedCount, setUploadedCount] = useState(initialFiles.length);
   const [status, setStatus] = useState<Status>("idle");
+  const [extractHoldings, setExtractHoldings] = useState(initialExtractHoldings ?? false);
+  const [holdingsError, setHoldingsError] = useState<string | null>(null);
   const [fileEvents, setFileEvents] = useState<Array<Extract<ChatExtractEvent, { type: "file" }>>>(
     [],
   );
@@ -81,9 +102,11 @@ export function ChatSurface({ clientId, importId, initialFiles }: ChatSurfacePro
     adoptTurnPayload,
     handleCommitRows,
     handleEditCell,
+    handleEditHolding,
+    handleDropHolding,
     handleRestore,
     handleFinalize,
-  } = useChatCommit(clientId, importId);
+  } = useChatCommit(clientId, importId, reviewContext.familyMembers, reviewContext.accounts);
 
   // Sends a turn and adopts what comes back (Task 11b, Steps 2/3). On the
   // FIRST turn that has anything to adopt (`result` was still null — a
@@ -101,6 +124,39 @@ export function ChatSurface({ clientId, importId, initialFiles }: ChatSurfacePro
     adoptTurnPayload,
     onAdopted: () => setStatus((s) => (s === "idle" ? "done" : s)),
   });
+
+  const toggleHoldings = useCallback(
+    (next: boolean) => {
+      // Optimistic, like UploadZone's own document-type PATCH — but unlike
+      // that one, silently keeping the optimistic value on failure is
+      // exactly the defect this feature exists to fix: chat/extract/
+      // route.ts:148 reads the DATABASE column, not this state, so a
+      // failed write must revert the checkbox and say so rather than let
+      // the advisor believe "on" got saved when it didn't.
+      const previous = extractHoldings;
+      setExtractHoldings(next);
+      setHoldingsError(null);
+      fetch(`/api/clients/${clientId}/imports/${importId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ extractHoldings: next }),
+      })
+        .then((res) => {
+          // fetch resolves normally on a 4xx/5xx — it never rejects — so
+          // an HTTP error has to be checked here, not just in .catch below.
+          if (!res.ok) {
+            setExtractHoldings(previous);
+            setHoldingsError("Couldn't save — try again.");
+          }
+        })
+        .catch((err) => {
+          console.error("Failed to update holdings extraction:", err);
+          setExtractHoldings(previous);
+          setHoldingsError("Couldn't save — try again.");
+        });
+    },
+    [clientId, importId, extractHoldings],
+  );
 
   const runExtraction = useCallback(async () => {
     abortRef.current?.abort();
@@ -197,22 +253,37 @@ export function ChatSurface({ clientId, importId, initialFiles }: ChatSurfacePro
                 ? "Upload one or more account statements to get started."
                 : `${uploadedCount} ${uploadedCount === 1 ? "file" : "files"} ready.`}
             </p>
-            <button
-              type="button"
-              onClick={runExtraction}
-              // Ruling 98: also disabled while a turn is sending — a turn
-              // that resolves DURING a fresh extraction must never be the
-              // thing that re-enables this button (Ruling 63's second
-              // clause, from the other direction).
-              disabled={uploadedCount === 0 || isStreaming || turnStatus === "sending"}
-              className="rounded bg-accent px-5 py-2 text-sm font-medium text-accent-on hover:bg-accent/90 disabled:opacity-50"
-            >
-              {isStreaming
-                ? "Reading statements…"
-                : status === "done" || status === "error"
-                  ? "Re-run extraction"
-                  : "Extract statements"}
-            </button>
+            <div className="flex items-center gap-4">
+              <div className="flex flex-col gap-1">
+                <label className="flex items-center gap-2 text-sm text-ink-3">
+                  <input
+                    type="checkbox"
+                    checked={extractHoldings}
+                    onChange={(e) => toggleHoldings(e.target.checked)}
+                    disabled={isStreaming || turnStatus === "sending"}
+                    className="h-4 w-4 rounded border-hair accent-accent"
+                  />
+                  Extract holdings
+                </label>
+                {holdingsError && <p className="text-sm text-crit">{holdingsError}</p>}
+              </div>
+              <button
+                type="button"
+                onClick={runExtraction}
+                // Ruling 98: also disabled while a turn is sending — a turn
+                // that resolves DURING a fresh extraction must never be the
+                // thing that re-enables this button (Ruling 63's second
+                // clause, from the other direction).
+                disabled={uploadedCount === 0 || isStreaming || turnStatus === "sending"}
+                className="rounded bg-accent px-5 py-2 text-sm font-medium text-accent-on hover:bg-accent/90 disabled:opacity-50"
+              >
+                {isStreaming
+                  ? "Reading statements…"
+                  : status === "done" || status === "error"
+                    ? "Re-run extraction"
+                    : "Extract statements"}
+              </button>
+            </div>
           </div>
         </CardBody>
       </Card>
@@ -341,6 +412,8 @@ export function ChatSurface({ clientId, importId, initialFiles }: ChatSurfacePro
                     committedRowIds={committedRowIds}
                     onCommitRows={handleCommitRows}
                     onEditCell={handleEditCell}
+                    onEditHolding={handleEditHolding}
+                    onDropHolding={handleDropHolding}
                     onRestore={handleRestore}
                     // Ruling 95 / Finding 4: while a turn is sending, nothing
                     // may enqueue onto the same commit queue `flushRowsToServer`
@@ -349,6 +422,14 @@ export function ChatSurface({ clientId, importId, initialFiles }: ChatSurfacePro
                     // would lock in pre-turn values and desync the screen from
                     // the client's plan.
                     disableCommit={turnStatus === "sending"}
+                    columnsContext={{
+                      family: reviewContext.familyMembers,
+                      entities: reviewContext.entities,
+                    }}
+                    // The SAME list the hook annotates against, so the badge
+                    // the matcher produced and the options the picker offers
+                    // can never disagree about what exists.
+                    matchCandidates={reviewContext.accounts}
                   />
                 </CardBody>
               </Card>

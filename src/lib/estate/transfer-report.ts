@@ -134,6 +134,16 @@ export interface DeathSectionData {
   };
 }
 
+/**
+ * The "Estate at death" headline: the asset leg PLUS the debt that rides
+ * through the death event. Distinct from `assetEstateValue` alone — the two
+ * diverge whenever a scenario changes that debt, which is why a comparison
+ * chip beside the headline must not be fed the asset number.
+ */
+export function estateAtDeathOf(section: DeathSectionData): number {
+  return section.assetEstateValue + section.reconciliation.sumLiabilityTransfers;
+}
+
 export interface RecipientGroup {
   key: string;
   recipientKind: DeathTransfer["recipientKind"];

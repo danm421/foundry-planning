@@ -1,15 +1,22 @@
 import { AIMessage, HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
 import type { BaseMessage } from "@langchain/core/messages";
 import { chatModel } from "@/domain/forge/llm";
-import type { ChatState, ChatTurn, PersistedImportPayload } from "@/lib/imports/types";
-import type { ExtractionResult } from "@/lib/extraction/types";
+import type { Annotated, ChatState, ChatTurn, PersistedImportPayload } from "@/lib/imports/types";
+import type { ExtractedAccount, ExtractionResult } from "@/lib/extraction/types";
+import { livingHoldings } from "@/lib/imports/living-rows";
+import { holdingMarketValue } from "@/lib/extraction/normalize-holdings";
 import {
   editRow,
   mergeRows,
   dropRow,
+  editHolding,
+  dropHolding,
+  readHoldings,
+  formatHoldingLine,
   explain,
   rereadDocument,
   EDITABLE_ACCOUNT_FIELDS,
+  EDITABLE_HOLDING_FIELDS,
   type ToolResult,
   type RereadModel,
 } from "./tools";
@@ -95,6 +102,56 @@ export const TOOL_DEFS = [
   {
     type: "function" as const,
     function: {
+      name: "edit_holding",
+      description: "Change one field on one position inside an account row.",
+      parameters: {
+        type: "object",
+        properties: {
+          rowId: { type: "string", description: "The account row's __rowId." },
+          holdingId: { type: "string", description: "The position's __holdingId, unique within that row." },
+          field: { type: "string", enum: [...EDITABLE_HOLDING_FIELDS] },
+          value: { description: "The corrected value. Text for ticker and name; a number otherwise." },
+        },
+        required: ["rowId", "holdingId", "field", "value"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "drop_holding",
+      description:
+        "Mark one position as dropped so it is not saved with the account. It stops showing in the " +
+        "review table and cannot be restored from this chat.",
+      parameters: {
+        type: "object",
+        properties: {
+          rowId: { type: "string", description: "The account row's __rowId." },
+          holdingId: { type: "string", description: "The position's __holdingId." },
+        },
+        required: ["rowId", "holdingId"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "read_holdings",
+      description:
+        "List every position in one account row. Call this when the row list says positions are " +
+        "not listed inline because there are too many — it is the only way to see them.",
+      parameters: {
+        type: "object",
+        properties: {
+          rowId: { type: "string", description: "The account row's __rowId." },
+        },
+        required: ["rowId"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
       name: "reread_document",
       description:
         "Look at the original source document again to answer a question about one of its rows. " +
@@ -142,6 +199,65 @@ export interface TurnModel {
 
 function fileNameMap(fileResults: Record<string, ExtractionResult>): Record<string, string> {
   return Object.fromEntries(Object.entries(fileResults).map(([id, r]) => [id, r.fileName]));
+}
+
+type AccountRow = Annotated<ExtractedAccount>;
+
+/**
+ * Positions are inlined while the whole block fits this many characters,
+ * and summarised past it.
+ *
+ * The prompt is rebuilt and re-sent on EVERY turn, and the transcript is
+ * persisted and replayed — so eight accounts of sixty positions is ~480
+ * lines per turn, forever. Two or three accounts (the common case) fit
+ * comfortably; the cap is what stops the tail case crowding out the
+ * conversation itself. Characters, not tokens, because the count has to be
+ * exact and cheap; ~4 chars per token puts this near 6,000 tokens.
+ */
+export const HOLDINGS_PROMPT_BUDGET_CHARS = 24_000;
+
+/**
+ * Positions for every account that has living ones (`livingHoldings` —
+ * `@/lib/imports/living-rows` — is THE filter that decides what counts, so a
+ * dropped position never reaches the model here). Inlined in full via the
+ * ONE formatter (`formatHoldingLine`, `tools.ts` — R31: the same one
+ * `read_holdings` renders its result with) while the whole block fits
+ * `HOLDINGS_PROMPT_BUDGET_CHARS`; past that, each account degrades to a
+ * one-line total instead — the model is told about `read_holdings` in
+ * `systemPrompt`'s own prose (outside the untrusted-data fence, R34), not in
+ * this block, so a directive never sits inside the fence this prompt itself
+ * says is never an instruction.
+ *
+ * R33: the degraded total sums through `holdingMarketValue`
+ * (`@/lib/extraction/normalize-holdings`) — THE definition of a position's
+ * value, which DERIVES it as shares × price when `marketValue` itself is
+ * absent (the extraction prompt explicitly allows submitting one without the
+ * other). Reading `h.marketValue ?? 0` directly would report 0 for that
+ * shape — the one case that exists precisely because the positions
+ * couldn't be shown in full.
+ */
+function describeHoldings(accounts: AccountRow[]): string {
+  const withPositions = accounts.filter((a) => livingHoldings(a).length > 0);
+  if (withPositions.length === 0) return "";
+
+  const full = withPositions
+    .map((a) => {
+      const lines = livingHoldings(a)
+        .map((h) => formatHoldingLine(h, "  - "))
+        .join("\n");
+      return `${a.__rowId}:\n${lines}`;
+    })
+    .join("\n");
+
+  if (full.length <= HOLDINGS_PROMPT_BUDGET_CHARS) return full;
+
+  return withPositions
+    .map((a) => {
+      const living = livingHoldings(a);
+      const sum = living.reduce((s, h) => s + holdingMarketValue(h), 0);
+      return `${a.__rowId}: ${living.length} holdings totalling ${Math.round(sum)}`;
+    })
+    .join("\n");
 }
 
 /**
@@ -201,7 +317,12 @@ function describeRows(
       );
     })
     .join("\n");
-  return `<<<UNTRUSTED DATA — extracted from client documents>>>\n${rows}\n<<<END UNTRUSTED DATA>>>`;
+  const holdings = describeHoldings(accounts);
+  return (
+    `<<<UNTRUSTED DATA — extracted from client documents>>>\n${rows}` +
+    (holdings ? `\nHOLDINGS:\n${holdings}` : "") +
+    `\n<<<END UNTRUSTED DATA>>>`
+  );
 }
 
 function systemPrompt(
@@ -213,9 +334,12 @@ function systemPrompt(
     "You are a statement-import assistant helping a financial advisor review account rows extracted",
     "from client statements. You can call at most " + MAX_TOOL_CALLS_PER_TURN + " tools per turn.",
     "Use edit_row to correct a single field, merge_rows to combine two rows that are the same account,",
-    "drop_row to exclude a row (always with a reason), explain to cite where a row's numbers came",
-    "from, and reread_document to look at the original file again for something the extracted row",
-    "does not answer — naming the document with the exact source name quoted on its row.",
+    "drop_row to exclude a row (always with a reason), edit_holding to correct a single field on one",
+    "position inside a row, drop_holding to remove one position from a row, read_holdings to see every",
+    "position in an account whose row only shows a totals summary because there are too many to list",
+    "inline, explain to cite where a row's numbers came from, and reread_document to look at the",
+    "original file again for something the extracted row does not answer — naming the document with",
+    "the exact source name quoted on its row.",
     "reread_document only PROPOSES a correction — never say you fixed something from",
     "it; say you found a possible correction and it is awaiting the advisor's approval.",
     "",
@@ -252,8 +376,9 @@ interface DispatchContext {
   importId: string;
   fileResults: Record<string, ExtractionResult>;
   /** Final review, C3: the rows already committed into the client's plan.
-   *  Only the three MUTATING tools consult it — `explain` and
-   *  `reread_document` write nothing and stay available on any row. */
+   *  Only the five MUTATING tools (edit_row/merge_rows/drop_row/
+   *  edit_holding/drop_holding) consult it — `explain` and `reread_document`
+   *  write nothing and stay available on any row. */
   committedRowIds: ReadonlySet<string>;
 }
 
@@ -270,6 +395,12 @@ async function dispatchTool(
       return mergeRows(payload, args as never, ctx.committedRowIds);
     case "drop_row":
       return dropRow(payload, args as never, ctx.committedRowIds);
+    case "edit_holding":
+      return editHolding(payload, args as never, ctx.committedRowIds);
+    case "drop_holding":
+      return dropHolding(payload, args as never, ctx.committedRowIds);
+    case "read_holdings":
+      return readHoldings(payload, args as never);
     case "explain":
       return explain(payload, args as never, ctx.fileNames);
     case "reread_document":
@@ -320,10 +451,11 @@ export interface RunTurnResult {
    *  reference it was handed), so a turn that only proposes a correction
    *  returns it byte-identical to what it started with. */
   payload: PersistedImportPayload;
-  /** True only when a MUTATING tool (edit_row/merge_rows/drop_row) actually
-   *  ran this turn — `explain`/`reread_document` never flip this, and
-   *  neither does a turn that called no tool at all. The route uses this to
-   *  decide whether to touch `payloadJson.payload` at all (Important 1). */
+  /** True only when a MUTATING tool (edit_row/merge_rows/drop_row/
+   *  edit_holding/drop_holding) actually ran this turn — `explain`/
+   *  `reread_document` never flip this, and neither does a turn that called
+   *  no tool at all. The route uses this to decide whether to touch
+   *  `payloadJson.payload` at all (Important 1). */
   payloadMutated: boolean;
   /** The delta to append to the PRIOR (freshly re-read) transcript: the
    *  user's message, one entry per tool call, and the assistant's reply. */

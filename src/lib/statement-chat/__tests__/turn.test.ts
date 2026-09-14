@@ -54,6 +54,128 @@ function infiniteToolCaller(): { model: TurnModel; invoke: ReturnType<typeof vi.
   return { model: { bindTools: () => ({ invoke }) }, invoke };
 }
 
+/**
+ * Task 8 / R28: `systemPrompt`/`TOOL_DEFS`'s companion `systemPromptForTest`
+ * the brief calls for does not exist, and `systemPrompt` stays
+ * module-private (the brief's name for it is wrong — nothing exports it).
+ * Rather than widen turn.ts's exports for a test, this wraps the one path
+ * every other test in this file already uses to read the REAL prompt: run a
+ * turn with a model that calls no tool, then read the system message the
+ * mocked `bindTools().invoke` actually received. That is deliberate — the
+ * scar comment on the schema test below exists because a prior version of
+ * this suite asserted on a module-private constant instead of what reached
+ * the model, and a tool stayed dead in production with the whole suite
+ * green.
+ */
+async function systemPromptForTest(payload: PersistedImportPayload): Promise<string> {
+  const model = modelReturning(new AIMessage("ok"));
+  await runTurn({ chat: emptyChat(), importId: "i1", payload, fileResults, message: "hi", model });
+  const invoke = (model.bindTools([]) as { invoke: ReturnType<typeof vi.fn> }).invoke;
+  return String((invoke.mock.calls[0][0] as Array<{ content: unknown }>)[0].content);
+}
+
+/**
+ * R11: named by the brief but never defined there. Builds `accounts` rows
+ * each with `holdingsPerAccount` positions, all living (`__dropped` unset).
+ * The first account's first holding is always ticker AAPL with shares=10,
+ * matching the literal strings the Step 1 assertions name — every other
+ * holding gets a distinct ticker so `JSON.stringify`d labels don't collide.
+ * Budget arithmetic this relies on: (2, 3) = 6 lines, comfortably under
+ * `HOLDINGS_PROMPT_BUDGET_CHARS` (24,000); (20, 200) = 4,000 lines at ~70
+ * chars each, comfortably over it.
+ */
+function payloadWithHoldings(accounts: number, holdingsPerAccount: number): PersistedImportPayload {
+  return {
+    accounts: Array.from({ length: accounts }, (_, ai) => ({
+      __rowId: `r${ai}`,
+      name: `Account ${ai}`,
+      value: 100_000,
+      holdings: Array.from({ length: holdingsPerAccount }, (_, hi) => {
+        const isFirst = ai === 0 && hi === 0;
+        const ticker = isFirst ? "AAPL" : `T${ai}_${hi}`;
+        return {
+          __holdingId: `t:${ticker}#0`,
+          ticker,
+          shares: isFirst ? 10 : 5,
+          price: 100,
+          marketValue: 500,
+          costBasis: 450,
+        };
+      }),
+    })),
+  } as unknown as PersistedImportPayload;
+}
+
+/**
+ * R33: the same shape as `payloadWithHoldings`, except every position gives
+ * ONLY shares + price — no `marketValue` at all, which the extraction prompt
+ * explicitly allows ("include price and/or marketValue if shown"). Exists to
+ * prove the degraded summary derives a real total via `holdingMarketValue`
+ * (shares × price) instead of the `h.marketValue ?? 0` it used to read,
+ * which would report 0 for every account shaped like this — the one branch
+ * that exists precisely because the positions couldn't be shown in full.
+ * Every position is $10 × 100 shares = $1,000, so `holdingsPerAccount`
+ * positions total `holdingsPerAccount * 1_000`.
+ */
+function payloadWithSharesPriceOnlyHoldings(
+  accounts: number,
+  holdingsPerAccount: number,
+): PersistedImportPayload {
+  return {
+    accounts: Array.from({ length: accounts }, (_, ai) => ({
+      __rowId: `r${ai}`,
+      name: `Account ${ai}`,
+      value: 100_000,
+      holdings: Array.from({ length: holdingsPerAccount }, (_, hi) => ({
+        __holdingId: `t:T${ai}_${hi}#0`,
+        ticker: `T${ai}_${hi}`,
+        shares: 10,
+        price: 100,
+        // Deliberately no marketValue/costBasis — must be DERIVED.
+      })),
+    })),
+  } as unknown as PersistedImportPayload;
+}
+
+/**
+ * R11: one account with two positions — a living AAPL holding and a
+ * `__dropped: true` MSFT holding. `livingHoldings` is the one filter that
+ * decides what counts (`@/lib/imports/living-rows`); this fixture exists to
+ * prove `describeHoldings` goes through it rather than reading
+ * `row.holdings` raw, which would leak the dropped MSFT position into the
+ * prompt.
+ */
+function payloadWithDroppedHolding(): PersistedImportPayload {
+  return {
+    accounts: [
+      {
+        __rowId: "r0",
+        name: "Account 0",
+        value: 10_000,
+        holdings: [
+          {
+            __holdingId: "t:AAPL#0",
+            ticker: "AAPL",
+            shares: 10,
+            price: 100,
+            marketValue: 1_000,
+            costBasis: 900,
+          },
+          {
+            __holdingId: "t:MSFT#0",
+            ticker: "MSFT",
+            shares: 5,
+            price: 200,
+            marketValue: 1_000,
+            costBasis: 900,
+            __dropped: true,
+          },
+        ],
+      },
+    ],
+  } as unknown as PersistedImportPayload;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -434,9 +556,92 @@ describe("runTurn", () => {
       "edit_row",
       "merge_rows",
       "drop_row",
+      "edit_holding",
+      "drop_holding",
+      "read_holdings",
       "reread_document",
       "explain",
     ]);
+  });
+
+  // Task 7: edit_holding/drop_holding get the model the same two powers the
+  // advisor already has on the review table. The schema half (what
+  // bindTools is handed) is already pinned by the test above — this pins
+  // that TOOL_DEFS carries both names AND that a real edit_holding tool call
+  // actually reaches the payload, not just that the def exists.
+  it("dispatches edit_holding to the payload", async () => {
+    expect(TOOL_DEFS.map((d) => d.function.name)).toEqual(
+      expect.arrayContaining(["edit_holding", "drop_holding"]),
+    );
+    const holdingsPayload = {
+      accounts: [
+        {
+          __rowId: "r1",
+          name: "Brokerage",
+          holdings: [{ __holdingId: "t:AAPL#0", ticker: "AAPL", shares: 10 }],
+        },
+      ],
+    } as unknown as PersistedImportPayload;
+    const model = modelReturning(
+      new AIMessage({
+        content: "",
+        tool_calls: [
+          {
+            id: "call_1",
+            name: "edit_holding",
+            args: { rowId: "r1", holdingId: "t:AAPL#0", field: "shares", value: 12 },
+          },
+        ],
+      }),
+      new AIMessage("Updated the share count."),
+    );
+    const result = await runTurn({
+      chat: emptyChat(),
+      importId: "i1",
+      payload: holdingsPayload,
+      fileResults,
+      message: "fix the AAPL share count to 12",
+      model,
+    });
+    expect(result.payload.accounts![0].holdings![0].shares).toBe(12);
+  });
+
+  // Task 8: `read_holdings` is read-only — like `explain`/`reread_document`,
+  // it must never flip `payloadMutated`. The brief's contract (turn.ts:425)
+  // is reference identity: `readHoldings` has to return the SAME payload
+  // object it was handed, not an equal-by-value copy, or a turn that only
+  // READ positions would falsely tell the route to persist a "mutated"
+  // payload. Mutation this catches: `readHoldings` spreading `{ ...payload }`
+  // instead of returning `payload` itself.
+  it("dispatches read_holdings without mutating the payload", async () => {
+    const holdingsPayload = {
+      accounts: [
+        {
+          __rowId: "r1",
+          name: "Brokerage",
+          holdings: [{ __holdingId: "t:AAPL#0", ticker: "AAPL", shares: 10 }],
+        },
+      ],
+    } as unknown as PersistedImportPayload;
+    const model = modelReturning(
+      new AIMessage({
+        content: "",
+        tool_calls: [{ id: "call_1", name: "read_holdings", args: { rowId: "r1" } }],
+      }),
+      new AIMessage("Here they are."),
+    );
+    const result = await runTurn({
+      chat: emptyChat(),
+      importId: "i1",
+      payload: holdingsPayload,
+      fileResults,
+      message: "what's in the brokerage account?",
+      model,
+    });
+    expect(result.payload).toBe(holdingsPayload);
+    expect(result.payloadMutated).toBe(false);
+    expect(result.turnEntries[1]).toMatchObject({ role: "tool", tool: "read_holdings" });
+    expect((result.turnEntries[1] as { summary: string }).summary).toContain("AAPL");
   });
 
   // M1: an account NAME is model-extracted text from a client's document,
@@ -462,5 +667,101 @@ describe("runTurn", () => {
       (invoke.mock.calls[0][0] as Array<{ content: unknown }>)[0].content,
     );
     expect(systemContent).toContain('"Joint \\"Rainy Day\\" Fund"');
+  });
+});
+
+describe("describeRows — positions", () => {
+  it("inlines every position when they fit the budget", async () => {
+    const prompt = await systemPromptForTest(payloadWithHoldings(2, 3));
+    expect(prompt).toContain("t:AAPL#0");
+    expect(prompt).toContain("shares=10");
+  });
+
+  // Fix round 1, Important 5 (R34): this used to also assert
+  // `.toContain("read_holdings")` as proof the model is told the tool
+  // exists. That mention now lives in `systemPrompt`'s own prose — outside
+  // the untrusted-data fence, unconditionally (see the fence test below) —
+  // so it is true of EVERY prompt and would pass even if the degraded
+  // summary itself said nothing. What actually distinguishes "degraded"
+  // from "not" is the per-account summary LINE, so that's what this checks:
+  // every position in `payloadWithHoldings` carries `marketValue: 500`, so
+  // 200 holdings on account r0 sum to exactly 100,000.
+  it("degrades to a per-account summary when they do not fit the budget", async () => {
+    const prompt = await systemPromptForTest(payloadWithHoldings(20, 200));
+    expect(prompt).not.toContain("t:AAPL#0");
+    expect(prompt).toMatch(/r0: 200 holdings totalling 100000/);
+  });
+
+  // R33: `payloadWithSharesPriceOnlyHoldings` sets shares + price but NEVER
+  // `marketValue` — the shape the extraction prompt explicitly allows.
+  // `h.marketValue ?? 0` would report 0 for every such account; the real
+  // total (via `holdingMarketValue`, THE definition of a position's value)
+  // is shares × price = 10 × 100 = 1,000 per position, so 200 positions on
+  // account r0 total exactly 200,000 — never 0.
+  it("derives the degraded summary's total from shares×price when marketValue is absent (R33)", async () => {
+    const prompt = await systemPromptForTest(payloadWithSharesPriceOnlyHoldings(20, 200));
+    expect(prompt).toMatch(/r0: 200 holdings totalling 200000/);
+    expect(prompt).not.toMatch(/totalling 0\b/);
+  });
+
+  it("never inlines a dropped position, but does inline the living one alongside it", async () => {
+    const prompt = await systemPromptForTest(payloadWithDroppedHolding());
+    expect(prompt).not.toContain("t:MSFT#0");
+    // Positive companion: without this, the assertion above would pass just
+    // as well if `describeHoldings` returned "" for every payload.
+    expect(prompt).toContain("t:AAPL#0");
+  });
+
+  // Fix round 1, Important 5 (R34): `.toContain("<<<UNTRUSTED DATA")` could
+  // never fail — it was already satisfied by the pre-existing row list, so
+  // it passed whether the holdings block landed inside the fence, outside
+  // it, or inside a SECOND fence of its own. This is a prompt-injection
+  // boundary (Important 3), so the real claim — "one fence, and the
+  // holdings block is inside it" — has to be checked positionally: the
+  // HOLDINGS: block's index must fall strictly between the real open and
+  // close fence markers, and the real open marker (the FULL string, with
+  // its "— extracted from client documents" suffix — the short form
+  // "<<<UNTRUSTED DATA>>>" also appears once in the prose explaining the
+  // fence to the model, so counting THAT substring can never prove
+  // uniqueness) must occur exactly once in the system prompt.
+  it("fences the positions block inside the SAME single fence as the row list, never a second one", async () => {
+    const prompt = await systemPromptForTest(payloadWithHoldings(1, 2));
+    const OPEN = "<<<UNTRUSTED DATA — extracted from client documents>>>";
+    const CLOSE = "<<<END UNTRUSTED DATA>>>";
+    const openIdx = prompt.indexOf(OPEN);
+    const holdingsIdx = prompt.indexOf("HOLDINGS:");
+    const closeIdx = prompt.indexOf(CLOSE, openIdx + OPEN.length);
+
+    expect(openIdx).toBeGreaterThanOrEqual(0);
+    expect(closeIdx).toBeGreaterThan(openIdx);
+    expect(holdingsIdx).toBeGreaterThan(openIdx);
+    expect(holdingsIdx).toBeLessThan(closeIdx);
+    // Exactly one real open fence — a second HOLDINGS-only fence would add a
+    // second occurrence of this exact string.
+    expect(prompt.indexOf(OPEN, openIdx + 1)).toBe(-1);
+  });
+
+  // R29: `__holdingId` is optional on `ExtractedHolding` — a payload
+  // persisted before this branch carries positions with none. Printing
+  // `${h.__holdingId}:` unconditionally renders the literal string
+  // "undefined" as an id, and a model reading that as a real handle would
+  // call edit_holding/drop_holding with it — both throw, since neither tool
+  // has a holding whose id IS "undefined", burning one of the four tool
+  // calls this turn allows on a position that was never correctable through
+  // this surface to begin with (both tools match on __holdingId).
+  it('never prints "undefined" as a holding id, and marks that position not correctable', async () => {
+    const payloadMissingId: PersistedImportPayload = {
+      accounts: [
+        {
+          __rowId: "r0",
+          name: "Legacy Account",
+          value: 5_000,
+          holdings: [{ ticker: "OLD", shares: 3 }],
+        },
+      ],
+    } as unknown as PersistedImportPayload;
+    const prompt = await systemPromptForTest(payloadMissingId);
+    expect(prompt).not.toMatch(/undefined/);
+    expect(prompt).toMatch(/not correctable/i);
   });
 });

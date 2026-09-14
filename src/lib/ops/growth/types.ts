@@ -64,6 +64,8 @@ export type GrowthInput = {
   activity: ActivityInput[];
   users: ClerkUserInput[];
   clientCountByFirm: Record<string, number>;
+  /** Clerk user id → households they are the advisor on, across every firm. */
+  clientCountByAdvisor: Record<string, number>;
   now: Date;
 };
 
@@ -103,9 +105,31 @@ export function daysBetween(from: Date, to: Date): number {
  * attention.ts's QUIET_DAYS answer different questions and are free to diverge.
  */
 export function activeActorIds(activity: ActivityInput[], since: Date): Set<string> {
-  return new Set(
-    activity
-      .filter((a) => a.action !== BLOCKED_ACTION && a.createdAt >= since)
-      .map((a) => a.actorId),
-  );
+  return new Set(workDoneSince(activity, since).map((a) => a.actorId));
+}
+
+/**
+ * The same filter, keeping the ROWS rather than collapsing them to actor ids.
+ *
+ * active-people.ts needs what is behind each id — which days, how many actions,
+ * which firm — so it cannot use the Set. Both live on this one predicate, so a
+ * person can never be "active" on one surface and idle on another.
+ */
+/**
+ * How one Clerk account is named wherever a person is shown — their name, else
+ * the address we would write to, else the raw id.
+ *
+ * Never blank on purpose: an empty cell in a roster reads as a broken template
+ * rather than as an account Clerk holds no name for. Lived privately in
+ * funnel.ts until active-people.ts needed the same ladder; accounts.ts keeps
+ * its own `fullName` because that table wants a NULL it can fall back from,
+ * having a separate email column of its own.
+ */
+export function displayName(u: ClerkUserInput): string {
+  const full = [u.firstName, u.lastName].filter(Boolean).join(" ").trim();
+  return full || u.email || u.userId;
+}
+
+export function workDoneSince(activity: ActivityInput[], since: Date): ActivityInput[] {
+  return activity.filter((a) => a.action !== BLOCKED_ACTION && a.createdAt >= since);
 }

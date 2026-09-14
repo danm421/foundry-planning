@@ -162,6 +162,10 @@ export async function POST(request: NextRequest, { params }: Params) {
         orgId: firmId,
         scenarioId: typeof scenarioId === "string" ? scenarioId : null,
         mode: importMode,
+        // Statement Chat reviews positions, so it reads them. The wizard
+        // keeps the column default and its own checkbox — this is the chat
+        // surface's default, not a new global one.
+        ...(isChatSurface ? { extractHoldings: true } : {}),
         status: "draft",
         createdByUserId: userId,
         notes: typeof notes === "string" ? notes : null,

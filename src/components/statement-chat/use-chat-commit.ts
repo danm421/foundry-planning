@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ExcludedRow } from "@/components/statement-chat/excluded-rows";
-import type { ExtractedAccount } from "@/lib/extraction/types";
+import type { ExtractedAccount, ExtractedHolding } from "@/lib/extraction/types";
 import type { Annotated } from "@/lib/imports/types";
 import { readChatState, writeChatState, type ChatTurn } from "@/lib/statement-chat/state";
+import { resolveOwnersFromHint, type OwnerMatchFamilyMember } from "@/lib/imports/owner-match";
+import { reannotateAccountRows } from "@/lib/imports/annotate-accounts";
+import type { AccountCandidate } from "@/lib/imports/match-keys/account";
+import { is529Account } from "@/lib/accounts/is-529";
 
 type Row = Annotated<ExtractedAccount>;
 
@@ -101,7 +105,12 @@ function enqueue<T>(queueRef: { current: Promise<void> }, fn: () => T | Promise<
  * `runExtraction`'s SSE plumbing stays there; this is the review-and-commit
  * half.
  */
-export function useChatCommit(clientId: string, importId: string) {
+export function useChatCommit(
+  clientId: string,
+  importId: string,
+  family: OwnerMatchFamilyMember[] = [],
+  candidates: AccountCandidate[] = [],
+) {
   const [result, setResult] = useState<ChatCommitResult | null>(null);
   const [committedRowIds, setCommittedRowIds] = useState<string[]>([]);
   // The persisted conversation (Task 11b, C2) — hydrated by the SAME mount
@@ -152,6 +161,75 @@ export function useChatCommit(clientId: string, importId: string) {
   // The rows were always in this same response and were simply ignored, so a
   // resumed draft rendered a transcript and a composer above an empty space —
   // which the browser pass recorded as reading like "did this lose my work?".
+  /**
+   * Resolve the statement's printed registration line against the household
+   * roster and record the answer as real ownership.
+   *
+   * The wizard has always done this (`review-step-accounts.tsx` seeds from
+   * `matchOwnersFromHint` once the roster loads); the chat surface never did,
+   * so a statement headed "MICHAEL V SHARESKY" sat there as an unmatched
+   * string while the plan had a Michael Sharesky on it the whole time.
+   *
+   * Only a `"hint"` resolution is written — the registration line actually
+   * named somebody on this roster. The other two sources are NOT recorded:
+   * `"coarse"` is the extractor's own client/spouse/joint guess and `"default"`
+   * is the parser's "somebody has to own it" fallback, and writing either as a
+   * fact would erase the difference between a match and a shrug. Those rows
+   * still SHOW resolved names — `resolveOwnerDisplay` runs the same parser at
+   * render time — but they keep the "Assumed" chip, because nobody has
+   * confirmed them.
+   *
+   * A 529 is skipped: it takes a beneficiary and a grantor, never `owners[]`.
+   *
+   * Returning `prev` unchanged when nothing resolved is what keeps this from
+   * looping — `updateResult` hands the identical object back to `setResult`,
+   * which React bails out of.
+   */
+  useEffect(() => {
+    if (family.length === 0) return;
+    updateResult((prev) => {
+      if (!prev) return prev;
+      let changed = false;
+      const rows = prev.rows.map((row) => {
+        if ((row.owners && row.owners.length > 0) || is529Account(row)) return row;
+        const { owners, source } = resolveOwnersFromHint(row.ownerNameHint, row.owner, family);
+        if (source !== "hint" || owners.length === 0) return row;
+        changed = true;
+        return { ...row, owners };
+      });
+      return changed ? { ...prev, rows } : prev;
+    });
+  }, [family, result, updateResult]);
+
+  /**
+   * Match each extracted account against the accounts already on the plan.
+   *
+   * The wizard gets this from a server pass (`runMatchingPass`); the chat
+   * surface never had one — `chat/extract/route.ts` writes rows with no `match`
+   * at all — so every account it committed was an INSERT. Re-uploading this
+   * quarter's statement for a household set up months ago therefore added a
+   * SECOND copy of every account, double-counting net worth and every
+   * projection under it.
+   *
+   * Run here rather than server-side because the scoring is pure and the
+   * candidate list is already in the browser: the page loads it once and hands
+   * it to this surface. See `annotate-accounts.ts` for why that half was lifted
+   * out of `match.ts`.
+   *
+   * `reannotateAccountRows` owns both hazards — it refuses to overwrite a row
+   * an advisor (or a completed commit) has ruled on, and it returns the
+   * IDENTICAL array when nothing moved, which is what stops this effect from
+   * re-triggering itself through `result`.
+   */
+  useEffect(() => {
+    if (candidates.length === 0) return;
+    updateResult((prev) => {
+      if (!prev) return prev;
+      const rows = reannotateAccountRows(prev.rows, candidates, family);
+      return rows === prev.rows ? prev : { ...prev, rows };
+    });
+  }, [candidates, family, result, updateResult]);
+
   // Hydrated HERE rather than handed down as a server prop (prior Ruling 91):
   // a prop would be a third source of truth that goes stale the instant a
   // turn lands.
@@ -200,10 +278,23 @@ export function useChatCommit(clientId: string, importId: string) {
     };
   }, [clientId, importId, updateResult]);
 
+  /**
+   * The rows as they stood when the current extraction run started.
+   *
+   * `resetForNewExtraction` nulls `result` BEFORE the request goes out, so by
+   * the time the stream's "done" lands `applyExtractionResult`'s `prev` is
+   * always null on a re-extraction and nothing can be carried forward from it.
+   * Holding them here is what spans that gap. `__rowId` survives a
+   * re-extraction (`rebase.ts` carries a standing row's id onto its fresh
+   * counterpart), so it is still a valid key on the other side.
+   */
+  const preResetRowsRef = useRef<Row[]>([]);
+
   // Called at the start of a (re-)extraction run, so a stale table and a
   // stale finalize state from a previous run don't linger under a fresh
   // streaming pass.
   const resetForNewExtraction = useCallback(() => {
+    preResetRowsRef.current = resultRef.current?.rows ?? [];
     updateResult(() => null);
     setFinalizeStatus("idle");
     setFinalizeError(null);
@@ -223,11 +314,24 @@ export function useChatCommit(clientId: string, importId: string) {
   const applyExtractionResult = useCallback(
     (ev: ChatCommitResult) => {
       updateResult((prev) => {
-        const priorByRowId = new Map((prev?.rows ?? []).map((r) => [r.__rowId, r]));
+        // `prev` is null on every re-extraction (see `preResetRowsRef`), so
+        // the pre-reset snapshot is the real source here, not a fallback.
+        const priorRows = prev?.rows ?? preResetRowsRef.current;
+        const priorByRowId = new Map(priorRows.map((r) => [r.__rowId, r]));
         return {
           ...ev,
           rows: ev.rows.map((row) => {
             const prior = row.__rowId ? priorByRowId.get(row.__rowId) : undefined;
+            // A locked row carries BOTH halves of the ruling. The server never
+            // emits `matchLocked` — `chat/extract/route.ts` re-emits every row
+            // bare — so dropping it here hands the annotation pass a row it
+            // considers re-annotatable, and an advisor's deliberate "create as
+            // new" is re-derived straight back to `fuzzy`: the ruling gone and
+            // the row's Commit blocked again. Checked before the `exact` clause
+            // because a locked ruling may be either kind.
+            if (prior?.matchLocked) {
+              return { ...row, match: prior.match, matchLocked: true };
+            }
             return prior?.match?.kind === "exact" ? { ...row, match: prior.match } : row;
           }),
         };
@@ -352,6 +456,55 @@ export function useChatCommit(clientId: string, importId: string) {
       });
     },
     [updateResult],
+  );
+
+  /**
+   * R22: the shared body of `handleEditHolding`/`handleDropHolding` below —
+   * both are "find the row, find the position within it, merge a partial
+   * patch onto it" and previously differed only in the shape of that patch.
+   * Kept INTERNAL (not returned from the hook): the two named handlers are
+   * the public surface both `holdings-table.tsx` and its tests call, and
+   * Task 7's server-side handler needs the same merge, not this hook's own
+   * `updateResult` plumbing.
+   *
+   * Patch one position, addressed by its account AND its own id — a
+   * `__holdingId` is unique only within its account (Task 2).
+   */
+  const patchHolding = useCallback(
+    (rowId: string, holdingId: string, patch: Partial<ExtractedHolding>) => {
+      updateResult((prev) =>
+        prev && {
+          ...prev,
+          rows: prev.rows.map((row) =>
+            row.__rowId !== rowId
+              ? row
+              : {
+                  ...row,
+                  holdings: (row.holdings ?? []).map((h) =>
+                    h.__holdingId === holdingId ? { ...h, ...patch } : h,
+                  ),
+                },
+          ),
+        },
+      );
+    },
+    [updateResult],
+  );
+
+  const handleEditHolding = useCallback(
+    (rowId: string, holdingId: string, field: string, value: unknown) => {
+      patchHolding(rowId, holdingId, { [field]: value } as Partial<ExtractedHolding>);
+    },
+    [patchHolding],
+  );
+
+  /** Tombstone, never a splice: the position is still in `fileResults` and a
+   *  re-extraction would put a removed one straight back. */
+  const handleDropHolding = useCallback(
+    (rowId: string, holdingId: string) => {
+      patchHolding(rowId, holdingId, { __dropped: true });
+    },
+    [patchHolding],
   );
 
   // `onRestore` — lifts an excluded (rollup-detected) row into the working
@@ -529,6 +682,8 @@ export function useChatCommit(clientId: string, importId: string) {
     adoptTurnPayload,
     handleCommitRows,
     handleEditCell,
+    handleEditHolding,
+    handleDropHolding,
     handleRestore,
     handleFinalize,
   };

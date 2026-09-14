@@ -15,7 +15,7 @@ import {
 } from "@/db/schema";
 import type { YearRef } from "@/lib/milestones";
 
-import { matchAccount, type AccountCandidate } from "./match-keys/account";
+import type { AccountCandidate } from "./match-keys/account";
 import { matchEntity, type EntityCandidate } from "./match-keys/entity";
 import { matchExpense, type ExpenseCandidate } from "./match-keys/expense";
 import {
@@ -34,8 +34,12 @@ import {
   type LivingSlot,
 } from "./match-keys/living-slot";
 import { matchWill, type WillCandidate } from "./match-keys/will";
-import { resolveOwnersFromHint, type OwnerMatchFamilyMember } from "./owner-match";
-import type { ImportPayload, MatchAnnotation } from "./types";
+import type { OwnerMatchFamilyMember } from "./owner-match";
+import {
+  annotateAccountRows,
+  claimOnce,
+} from "./annotate-accounts";
+import type { ImportPayload } from "./types";
 
 export interface MatchCandidates {
   accounts: AccountCandidate[];
@@ -71,109 +75,6 @@ export function emptyCandidates(): MatchCandidates {
 }
 
 /**
- * Resolve an extracted account's owners to family_member ids for *matching*,
- * reusing the same registration-hint parser the commit step uses so the two
- * agree on who owns what.
- *
- * ONLY a `"hint"` resolution is forwarded — one where the statement's verbatim
- * registration line actually named somebody on the roster. The other two
- * sources are guesses, and a guess is worse than silence here because
- * `ownerAgreement` has no "maybe": it scores 1.0 or 0.0, never the neutral 0.5
- * it reserves for genuinely unknown ownership.
- *
- * - `"default"` is the parser's trailing "somebody has to own it, so use the
- *   client" fallback. Correct when WRITING an account, a fabrication when
- *   matching one: it zeroes the owner term against every spouse-owned
- *   candidate, pushing a genuine renamed-account match under SCORE_FLOOR and
- *   out of the picker entirely.
- * - `"coarse"` is the model's inferred client/spouse/joint enum.
- *   `prompts/account-statement.ts` tells the extractor to fill it by inferring
- *   "from account title or registration", so it is present on essentially every
- *   row and asserted with the same confidence whether the registration was
- *   unambiguous or absent. Scoring it as evidence was the more damaging half:
- *   W_OWNER (0.25) + W_CATEGORY (0.20) is exactly SCORE_FLOOR (0.45) under a
- *   `>=` test, so a correctly-guessed owner plus an agreeing category cleared
- *   the floor with ZERO name overlap — making name, the point of this ladder,
- *   decorative on the dominant production path.
- *
- * The cost is real and accepted: an account registered to a trust, or to anyone
- * else off the roster, no longer earns owner credit from the coarse enum, so a
- * renamed one can fall under the floor and be offered as `new`. That was the
- * behaviour before this branch too, so it forgoes a gain rather than causing a
- * regression — and the wrongly-surfaced direction is the more expensive error,
- * since a `fuzzy` row is skipped at commit while a bad merge overwrites.
- */
-function resolveOwnerIds(
-  row: { ownerNameHint?: string; owner?: "client" | "spouse" | "joint" },
-  family: OwnerMatchFamilyMember[],
-): string[] {
-  if (family.length === 0) return [];
-  const { owners, source } = resolveOwnersFromHint(row.ownerNameHint, row.owner, family);
-  if (source !== "hint") return [];
-  // Narrowing only — this parser never emits entity or external-beneficiary
-  // owners, but AccountOwner is a union and the ids have to be extracted.
-  return owners.flatMap((o) => (o.kind === "family_member" ? [o.familyMemberId] : []));
-}
-
-/**
- * Annotate `rows` such that no existing record is claimed twice.
- *
- * Each row is matched against only the candidates not yet claimed by an
- * earlier row, so a second row that would have hit the same record degrades
- * rather than hitting it too. Without this the commit step issues two UPDATEs
- * against one record — last-wins — and the other imported row disappears with
- * no warning. Only `exact` claims: `fuzzy` is a ranked suggestion the advisor
- * still has to confirm, so it reserves nothing.
- *
- * A blocked row must not degrade all the way to `new`. `new` is an INSERT at
- * commit, and the merge step folds every uploaded file's rows into one payload
- * with no cross-file dedupe (see `merge.ts`), so one account appearing in two
- * overlapping statements would silently become two accounts — double-counting
- * net worth and every projection downstream. Two extractions of the same
- * living-expense total would likewise double-count cash flow. So when the
- * normal pass yields `new`, we ask what the row would have matched in an
- * unclaimed world; if that is an `exact` on an id someone else already took,
- * the row is a duplicate, not a new record, and becomes `fuzzy`. Every commit
- * module skips `fuzzy`, so the row writes nothing, renders as "Ambiguous" in
- * the review step, and counts in `result.skipped` — the pre-branch outcome,
- * surfaced instead of silent. A row that scores nothing against the FULL
- * candidate set is genuinely new and stays `new`.
- *
- * The probe passes an empty `claimed` rather than only an unfiltered candidate
- * list because `annotateExpenses` reads the set directly (its slot pool is not
- * in `candidates` at all in onboarding mode) — filtering alone would return the
- * post-claim answer and the expenses half would never degrade.
- */
-function claimOnce<T, C extends { id: string }>(
-  rows: T[],
-  candidates: C[],
-  annotate: (row: T, available: C[], claimed: ReadonlySet<string>) => MatchAnnotation,
-): Array<T & { match: MatchAnnotation }> {
-  const claimed = new Set<string>();
-  return rows.map((row) => {
-    const available = candidates.filter((c) => !claimed.has(c.id));
-    const match = annotate(row, available, claimed);
-    if (match.kind === "exact") {
-      claimed.add(match.existingId);
-      return { ...row, match };
-    }
-    if (match.kind === "new" && claimed.size > 0) {
-      const unclaimed = annotate(row, candidates, new Set<string>());
-      if (unclaimed.kind === "exact" && claimed.has(unclaimed.existingId)) {
-        // Empty `candidates` deliberately: the picker builds its option list
-        // from the component's own `candidates` prop via `candidatesForRow`,
-        // not from this annotation, so carrying the blocked id here would gain
-        // the advisor nothing and would only invite them to re-select the
-        // record another row already claimed — recreating the double-UPDATE
-        // claimOnce exists to prevent.
-        return { ...row, match: { kind: "fuzzy", candidates: [] } };
-      }
-    }
-    return { ...row, match };
-  });
-}
-
-/**
  * Pure annotation pass: walks each entity-array in the payload and
  * stamps `match` based on the supplied candidate set. The orchestrator
  * (`runMatchingPass`) builds the candidate set from the DB; tests can
@@ -188,9 +89,7 @@ export function annotatePayload(
 ): ImportPayload {
   return {
     ...payload,
-    accounts: claimOnce(payload.accounts, candidates.accounts, (row, available) =>
-      matchAccount(row, available, resolveOwnerIds(row, candidates.family)),
-    ),
+    accounts: annotateAccountRows(payload.accounts, candidates.accounts, candidates.family),
     incomes: claimOnce(payload.incomes, candidates.incomes, matchIncome),
     expenses: annotateExpenses(payload, candidates),
     liabilities: claimOnce(payload.liabilities, candidates.liabilities, matchLiability),

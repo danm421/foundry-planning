@@ -193,4 +193,51 @@ describe("entity table (generic)", () => {
       expect(screen.getByRole("button", { name: /^commit$/i })).not.toBeDisabled();
     });
   });
+
+  describe("disclosure (Task 5 — the child table expander)", () => {
+    it("reveals a row's child content behind a disclosure button, and hides it again", async () => {
+      render(
+        <EntityTable
+          rows={[{ __rowId: "r1", name: "Brokerage" }]}
+          columns={[{ key: "name", header: "Name", kind: "string" }]}
+          excluded={[]}
+          committedRowIds={[]}
+          onCommitRows={vi.fn()}
+          onEditCell={vi.fn()}
+          expand={(row) => <p>child of {row.name}</p>}
+          expandLabel={(row) => `Show positions for ${row.name}`}
+        />,
+      );
+
+      expect(screen.queryByText("child of Brokerage")).not.toBeInTheDocument();
+      const button = screen.getByRole("button", { name: "Show positions for Brokerage" });
+      expect(button).toHaveAttribute("aria-expanded", "false");
+
+      await userEvent.click(button);
+      expect(screen.getByText("child of Brokerage")).toBeInTheDocument();
+      expect(button).toHaveAttribute("aria-expanded", "true");
+
+      await userEvent.click(button);
+      expect(screen.queryByText("child of Brokerage")).not.toBeInTheDocument();
+    });
+
+    it("renders no disclosure cell at all when expand returns nothing for a row", () => {
+      render(
+        <EntityTable
+          rows={[{ __rowId: "r1", name: "Checking" }]}
+          columns={[{ key: "name", header: "Name", kind: "string" }]}
+          excluded={[]}
+          committedRowIds={[]}
+          onCommitRows={vi.fn()}
+          onEditCell={vi.fn()}
+          expand={() => null}
+        />,
+      );
+      // No `expandLabel` is given, so a wrongly-rendered button would carry
+      // the DEFAULT accessible name "Show details" — assert against that,
+      // not against `/show positions/i` (which nothing in this render, right
+      // or wrong, would ever match).
+      expect(screen.queryByRole("button", { name: /show details/i })).not.toBeInTheDocument();
+    });
+  });
 });
