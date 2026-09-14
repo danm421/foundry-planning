@@ -26,7 +26,14 @@ export interface EntityTablesProps {
   rows: Record<string, CandidateRow[]>;
   committedRowIds: string[];
   onCommitRows: (rowIds: string[]) => Promise<void>;
-  onEditCell: (rowId: string, field: string, value: unknown) => void;
+  /**
+   * Optional (Task 14b fix round 1, Finding 3). `columnsForEntity`
+   * (`map-columns.ts`) builds no `edit` callback, so `entity-table.tsx`'s own
+   * `canEdit` is always false and this can never fire for a map-driven table.
+   * Kept in the signature for the tests that already pass one, and for a
+   * future task that adds real cell editors.
+   */
+  onEditCell?: (rowId: string, field: string, value: unknown) => void;
 }
 
 function toView(row: CandidateRow): CandidateRowView {
@@ -89,7 +96,10 @@ export default function EntityTables({
               excluded={[]}
               committedRowIds={committedRowIds}
               onCommitRows={onCommitRows}
-              onEditCell={onEditCell}
+              // Never invoked — see the prop's own comment. `entity-table.tsx`
+              // requires the prop, so an unreachable no-op stands in for it
+              // rather than widening that component's contract too.
+              onEditCell={onEditCell ?? (() => {})}
               expand={(view) => renderOverflow(overflow, view)}
               expandLabel={() =>
                 `Show ${overflow.length} more field${overflow.length === 1 ? "" : "s"}`

@@ -1394,7 +1394,7 @@ describe("ChatSurface — the map-driven review tables (Task 14b)", () => {
       );
   }
 
-  it("runs the pass once per uploaded file after the stream, and renders the rows below the accounts", async () => {
+  it("runs the pass once per uploaded file after the stream, and renders its rows even with no accounts", async () => {
     vi.mocked(fetch).mockImplementation((url, init) => {
       if (String(url).endsWith("/chat/extract")) {
         return Promise.resolve(makeFramedResponse([doneWithNoAccounts]));
@@ -1428,6 +1428,49 @@ describe("ChatSurface — the map-driven review tables (Task 14b)", () => {
     expect(screen.getByText("Policy f2")).toBeInTheDocument();
     // And it renders even though this statement produced no ACCOUNTS at all.
     expect(screen.getByText("No accounts found in these statements.")).toBeInTheDocument();
+  });
+
+  // Finding 5: the test above asserts the table renders, NOT where. This one
+  // asserts the order the brief asked for — the policies card below the
+  // accounts table — which is the half a co-presence assertion cannot see.
+  it("renders the policies card below the accounts table when the statement has both", async () => {
+    vi.mocked(fetch).mockImplementation((url) => {
+      if (String(url).endsWith("/chat/extract")) {
+        return Promise.resolve(
+          makeFramedResponse([
+            `data: ${JSON.stringify({
+              type: "done",
+              summary: "Read 2 statements.",
+              caveats: [],
+              rows: [{ name: "IRA", custodian: "Schwab", value: 100, __rowId: "r1" }],
+              excluded: [],
+            })}\n\n`,
+          ]),
+        );
+      }
+      if (String(url) === MAP_PASS) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              rows: { disability_policy: [policyRow("f1:disability_policy:0", "Group LTD")] },
+              warnings: [],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }));
+    });
+
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={twoFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+
+    await screen.findByRole("heading", { name: "Policies and other details" });
+    const headings = screen.getAllByRole("heading").map((h) => h.textContent);
+    expect(headings.indexOf("Accounts")).toBeGreaterThanOrEqual(0);
+    expect(headings.indexOf("Accounts")).toBeLessThan(
+      headings.indexOf("Policies and other details"),
+    );
   });
 
   it("does not run the pass while the extraction stream is still open", async () => {
@@ -1477,6 +1520,62 @@ describe("ChatSurface — the map-driven review tables (Task 14b)", () => {
       controller.close();
     });
     await waitFor(() => expect(mapPassCalls()).toHaveLength(2));
+  });
+
+  /**
+   * Fix round 1, Finding 2. The stream's own `status` flips to "done" before
+   * the pass starts, so without a second gate the Extract button re-enables and
+   * reads "Re-run extraction" while the pass is still POSTing — and with no
+   * indicator the advisor has no way to know. A second click starts a SECOND
+   * pass on the same import: exactly the `payloadJson` read-modify-write race
+   * the sequential loop exists to close, plus duplicate rowIds in the table.
+   */
+  it("keeps the extract button disabled and shows progress while the pass is still running", async () => {
+    const release: Array<(r: Response) => void> = [];
+    vi.mocked(fetch).mockImplementation((url) => {
+      if (String(url).endsWith("/chat/extract")) {
+        return Promise.resolve(makeFramedResponse([doneWithNoAccounts]));
+      }
+      if (String(url) === MAP_PASS) {
+        return new Promise<Response>((resolve) => release.push(resolve));
+      }
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }));
+    });
+
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={twoFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+
+    // The stream has closed and the pass has started.
+    await waitFor(() => expect(mapPassCalls()).toHaveLength(1));
+    const button = screen.getByRole("button", { name: /reading policies/i });
+    expect(button).toBeDisabled();
+    expect(screen.getByText(/reading policies and other details…/i)).toBeInTheDocument();
+
+    await act(async () => {
+      release[0](
+        new Response(JSON.stringify({ rows: {}, warnings: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    });
+    await waitFor(() => expect(mapPassCalls()).toHaveLength(2));
+    // Still disabled for the SECOND file — the window is the whole pass, not
+    // one request of it.
+    expect(screen.getByRole("button", { name: /reading policies/i })).toBeDisabled();
+
+    await act(async () => {
+      release[1](
+        new Response(JSON.stringify({ rows: {}, warnings: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /re-run extraction/i })).toBeEnabled(),
+    );
+    expect(screen.queryByText(/reading policies and other details…/i)).not.toBeInTheDocument();
   });
 
   it("renders no policies card when the pass found nothing", async () => {

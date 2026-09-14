@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { findEntity } from "@/domain/forge/detail-fields";
-import type { CandidateRow, Observation } from "@/lib/entity-extraction/types";
+import type { CandidateRow } from "@/lib/entity-extraction/types";
 import { commitMapRow } from "./commit-map-row";
 
 export type MapRowsStatus = "idle" | "running" | "done";
@@ -10,48 +10,19 @@ export type MapRowsStatus = "idle" | "running" | "done";
 /** The map-pass route's own shape: one entry per entity that produced rows. */
 export type RowsByEntity = Record<string, CandidateRow[]>;
 
-function isBlank(value: unknown): boolean {
-  return value === undefined || value === null || value === "";
-}
-
-/**
- * Re-derive `missingRequired` after an advisor edit, by the SAME rule
- * `placeRow` applies at extraction time: a required field counts as filled
- * only by a value that is present and carries no `issue`.
- *
- * Not optional bookkeeping. `buildWriteRequest` refuses on `missingRequired`
- * verbatim and `EntityTables` blocks the Commit button on it, so a list that
- * never changed would leave a row the advisor has just fixed permanently
- * un-committable — and a required field they blanked out silently writable.
- */
-function withRecomputedMissing(row: CandidateRow): CandidateRow {
-  const entity = findEntity(row.entityId);
-  // An entity the map does not know cannot be re-derived; leave the extractor's
-  // own answer alone rather than replace it with a guess.
-  if (!entity) return row;
-  const clean = new Set(
-    row.values.filter((v) => !v.issue && !isBlank(v.value)).map((v) => v.key),
-  );
-  return {
-    ...row,
-    missingRequired: entity.fields
-      .filter((f) => f.appliesTo !== "update" && f.writable !== false)
-      .filter((f) => f.required && !clean.has(f.key))
-      .map((f) => f.key),
-  };
-}
-
 /**
  * The map-driven review rows for one import: run the extraction pass over the
  * uploaded files, commit an accepted row to its entity's own route, and stamp
  * the extracted row so a second click cannot write a second record.
  *
- * SCOPE LIMIT — uncommitted edits do NOT persist. `editCell` changes local
- * state only; a reload loses it. Phase 1's accounts table is different (it
- * rides along in `flushRowsToServer`'s `payload.accounts` write), so the
- * difference is deliberate and recorded here rather than left to be discovered:
- * these rows live under `chat.entityRows`, which only the server's own pass and
- * its stamp PATCH write today.
+ * SCOPE LIMIT — these rows are READ-ONLY on the review surface. There is no
+ * inline editing in this phase: `columnsForEntity` (`map-columns.ts`) builds no
+ * `edit` callback, so `entity-table.tsx`'s own `canEdit` is always false. A row
+ * blocked by a missing required field is therefore completed on the Details tab
+ * rather than here. This is deliberate, not an oversight — a generic scalar
+ * editor could not fix `life_insurance_policy`'s required `ownerRef` anyway
+ * (it is `kind: "object"`), which is the field most likely to come back missing
+ * from a real statement.
  */
 export function useMapRows({ clientId, importId }: { clientId: string; importId: string }) {
   const [rows, setRows] = useState<RowsByEntity>({});
@@ -85,6 +56,11 @@ export function useMapRows({ clientId, importId }: { clientId: string; importId:
       setStatus("running");
       setRows({});
       setWarnings([]);
+      // MUST be reset with the rows. A rowId is `${fileId}:${entity}:${index}`
+      // (`orchestrator.ts:80`) — POSITIONAL — so a re-read that puts a
+      // different policy at index 0 would inherit the previous pass's lock and
+      // render "Committed" with nothing written behind it.
+      setCommittedRowIds([]);
 
       for (const fileId of fileIds) {
         try {
@@ -134,6 +110,9 @@ export function useMapRows({ clientId, importId }: { clientId: string; importId:
    */
   const commitRows = useCallback(
     async (rowIds: string[]) => {
+      // Collected, not thrown on the spot: a failed row must not stop the rest
+      // of the batch. They are raised together once every row has been tried.
+      const failures: string[] = [];
       const byRowId = new Map<string, CandidateRow>();
       for (const list of Object.values(rows)) for (const r of list) byRowId.set(r.rowId, r);
 
@@ -145,13 +124,18 @@ export function useMapRows({ clientId, importId }: { clientId: string; importId:
         if (!entity) {
           // Silently skipping is the false-success shape: the row would read
           // "Committed" having written nothing at all.
-          addWarning(`${row.entityId} is not in the Details field map, so this row cannot be written.`);
+          failures.push(`${row.entityId} is not in the Details field map, so this row cannot be written.`);
           continue;
         }
 
         const outcome = await commitMapRow({ clientId, entity, row });
         if (!outcome.ok) {
-          addWarning(`${entity.label}: ${outcome.error}`);
+          // A row-level failure, so it is raised rather than filed as a
+          // warning: `entity-table.tsx` renders a rejected `onCommitRows`
+          // under the row's own Commit button, where the advisor is looking.
+          // A message in the warnings card above a long table reads as a dead
+          // button. The warnings card stays for PASS-level problems only.
+          failures.push(`${entity.label}: ${outcome.error}`);
           continue;
         }
         for (const warning of outcome.warnings) addWarning(warning);
@@ -194,38 +178,11 @@ export function useMapRows({ clientId, importId }: { clientId: string; importId:
         // otherwise is what invites the second click that duplicates it.
         setCommittedRowIds((prev) => (prev.includes(rowId) ? prev : [...prev, rowId]));
       }
+
+      if (failures.length > 0) throw new Error(failures.join(" "));
     },
     [clientId, mapPassUrl, rows, addWarning],
   );
 
-  /** Local only — see the hook's own doc comment for why nothing persists. */
-  const editCell = useCallback((rowId: string, field: string, value: unknown) => {
-    setRows((prev) => {
-      const next: RowsByEntity = {};
-      for (const [entityId, list] of Object.entries(prev)) {
-        next[entityId] = list.map((row) => {
-          if (row.rowId !== rowId) return row;
-          const existing = row.values.find((v) => v.key === field);
-          // An advisor-entered value is not the model's read, so it carries no
-          // `issue`: a stale coercion flag would block the write forever
-          // (`buildWriteRequest` refuses on any flagged value).
-          const edited: Observation = {
-            key: field,
-            value,
-            snippet: existing?.snippet ?? null,
-            confidence: existing?.confidence ?? 1,
-          };
-          return withRecomputedMissing({
-            ...row,
-            values: existing
-              ? row.values.map((v) => (v.key === field ? edited : v))
-              : [...row.values, edited],
-          });
-        });
-      }
-      return next;
-    });
-  }, []);
-
-  return { rows, warnings, status, committedRowIds, runPass, commitRows, editCell };
+  return { rows, warnings, status, committedRowIds, runPass, commitRows };
 }

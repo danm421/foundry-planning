@@ -125,10 +125,10 @@ export function ChatSurface({
   const {
     rows: mapRows,
     warnings: mapWarnings,
+    status: mapStatus,
     committedRowIds: mapCommittedRowIds,
     runPass: runMapPass,
     commitRows: commitMapRows,
-    editCell: editMapCell,
   } = useMapRows({ clientId, importId });
 
   // Sends a turn and adopts what comes back (Task 11b, Steps 2/3). On the
@@ -257,6 +257,13 @@ export function ChatSurface({
   const isStreaming = status === "streaming";
   const hasFailure = fileEvents.some((e) => e.error);
   const hasMapRows = Object.values(mapRows).some((list) => list.length > 0);
+  // The stream's own `status` is already "done" by the time the pass runs (it
+  // has to be — the pass must not start until the stream closes), so the pass
+  // needs its OWN in-flight gate. Without it the Extract button re-enables
+  // mid-pass and a second click starts a concurrent pass on the same import:
+  // the `payloadJson` read-modify-write race the sequential loop exists to
+  // close, reopened from the other end.
+  const mapPassRunning = mapStatus === "running";
 
   return (
     <div className="flex flex-col gap-6">
@@ -307,21 +314,25 @@ export function ChatSurface({
                 // that resolves DURING a fresh extraction must never be the
                 // thing that re-enables this button (Ruling 63's second
                 // clause, from the other direction).
-                disabled={uploadedCount === 0 || isStreaming || turnStatus === "sending"}
+                disabled={
+                  uploadedCount === 0 || isStreaming || mapPassRunning || turnStatus === "sending"
+                }
                 className="rounded bg-accent px-5 py-2 text-sm font-medium text-accent-on hover:bg-accent/90 disabled:opacity-50"
               >
                 {isStreaming
                   ? "Reading statements…"
-                  : status === "done" || status === "error"
-                    ? "Re-run extraction"
-                    : "Extract statements"}
+                  : mapPassRunning
+                    ? "Reading policies…"
+                    : status === "done" || status === "error"
+                      ? "Re-run extraction"
+                      : "Extract statements"}
               </button>
             </div>
           </div>
         </CardBody>
       </Card>
 
-      {(isStreaming || fileEvents.length > 0) && (
+      {(isStreaming || mapPassRunning || fileEvents.length > 0) && (
         <Card>
           <CardHeader>
             <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-2">Progress</h2>
@@ -338,6 +349,9 @@ export function ChatSurface({
             ))}
             {isStreaming && fileEvents.length === 0 && (
               <p className="py-1.5 text-sm text-ink-3">Reading statements…</p>
+            )}
+            {mapPassRunning && (
+              <p className="py-1.5 text-sm text-ink-3">Reading policies and other details…</p>
             )}
           </CardBody>
         </Card>
@@ -553,7 +567,6 @@ export function ChatSurface({
               rows={mapRows}
               committedRowIds={mapCommittedRowIds}
               onCommitRows={commitMapRows}
-              onEditCell={editMapCell}
             />
           </CardBody>
         </Card>

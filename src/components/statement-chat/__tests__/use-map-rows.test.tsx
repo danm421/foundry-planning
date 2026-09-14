@@ -244,13 +244,17 @@ describe("useMapRows — commitRows", () => {
       );
     });
 
+    // Rejects so `entity-table.tsx` can render the message under the row's own
+    // Commit button — a failure filed only in the warnings card above a long
+    // table reads as a dead button (fix round 1, Finding 4).
     await act(async () => {
-      await result.current.commitRows([d1.rowId, d2.rowId]);
+      await expect(result.current.commitRows([d1.rowId, d2.rowId])).rejects.toThrow(
+        /insured is required/,
+      );
     });
 
     // The false-success case this branch has graded Critical twice.
     expect(result.current.committedRowIds).toEqual([d2.rowId]);
-    expect(result.current.warnings.join(" ")).toContain("insured is required");
     // A failed row must not stop the batch.
     const patches = callsTo(MAP_PASS, "PATCH");
     expect(patches).toHaveLength(1);
@@ -276,66 +280,50 @@ describe("useMapRows — commitRows", () => {
     expect(result.current.warnings.join(" ")).toMatch(/Import not found/);
   });
 
+  /**
+   * Fix round 1, Finding 1 (CRITICAL). A rowId is `${fileId}:${entity}:${index}`
+   * (`orchestrator.ts:80`) — POSITIONAL. Re-running the pass re-reads the same
+   * file and a DIFFERENT policy can land at index 0, so a `committedRowIds`
+   * that survives the re-run locks a row that was never written: it renders
+   * "Committed" with nothing behind it. Reachable with two clicks, no reload.
+   */
+  it("clears committedRowIds when the pass re-runs, so a positional rowId cannot inherit a lock", async () => {
+    const { result } = await withOneRow();
+    vi.mocked(fetch).mockImplementation((url) =>
+      Promise.resolve(
+        String(url) === "/api/clients/c1/disability-policies"
+          ? jsonResponse({ policy: { id: "dis_9" } }, 201)
+          : jsonResponse({ ok: true }),
+      ),
+    );
+    await act(async () => {
+      await result.current.commitRows([d1.rowId]);
+    });
+    expect(result.current.committedRowIds).toEqual([d1.rowId]);
+
+    // The SAME file re-read, and a different policy now sits at index 0 —
+    // same rowId, different record, nothing committed for it.
+    const rerun = row(d1.rowId, { name: "A DIFFERENT policy", insured: "Spouse" });
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({ rows: { disability_policy: [rerun] }, warnings: [] }),
+    );
+    await act(async () => {
+      await result.current.runPass(["f1"]);
+    });
+
+    expect(result.current.committedRowIds).toEqual([]);
+  });
+
   it("refuses a row whose entity is not in the field map instead of silently skipping it", async () => {
     const stray = { ...d1, entityId: "not_an_entity", rowId: "f1:not_an_entity:0" };
     const { result } = await withOneRow({ not_an_entity: [stray] });
     vi.mocked(fetch).mockResolvedValue(jsonResponse({ ok: true }));
 
     await act(async () => {
-      await result.current.commitRows([stray.rowId]);
+      await expect(result.current.commitRows([stray.rowId])).rejects.toThrow(/not_an_entity/);
     });
 
     expect(fetch).not.toHaveBeenCalled();
     expect(result.current.committedRowIds).toEqual([]);
-    expect(result.current.warnings.join(" ")).toContain("not_an_entity");
-  });
-});
-
-describe("useMapRows — editCell", () => {
-  async function loaded(rows: Record<string, CandidateRow[]>) {
-    vi.mocked(fetch).mockResolvedValue(jsonResponse({ rows, warnings: [] }));
-    const hook = renderHook(() => useMapRows({ clientId: "c1", importId: "i1" }));
-    await act(async () => {
-      await hook.result.current.runPass(["f1"]);
-    });
-    return hook;
-  }
-
-  it("changes the named row's field and leaves every other row untouched", async () => {
-    const { result } = await loaded({ disability_policy: [d1, d2] });
-
-    act(() => {
-      result.current.editCell(d1.rowId, "name", "Group LTD (corrected)");
-    });
-
-    const [first, second] = result.current.rows.disability_policy;
-    expect(first.values.find((v) => v.key === "name")?.value).toBe("Group LTD (corrected)");
-    expect(second.values.find((v) => v.key === "name")?.value).toBe("Individual LTD");
-  });
-
-  it("clears the required field from missingRequired once the advisor fills it in", async () => {
-    const blocked = row("f1:disability_policy:9", { name: "Group LTD" }, {
-      missingRequired: ["insured"],
-    });
-    const { result } = await loaded({ disability_policy: [blocked] });
-
-    act(() => {
-      result.current.editCell(blocked.rowId, "insured", "Client");
-    });
-
-    // `buildWriteRequest` refuses on `missingRequired` verbatim and
-    // `EntityTables` blocks Commit on it — a list that never updates leaves the
-    // row permanently un-committable no matter what the advisor types.
-    expect(result.current.rows.disability_policy[0].missingRequired).toEqual([]);
-  });
-
-  it("puts a required field BACK on missingRequired when the advisor blanks it", async () => {
-    const { result } = await loaded({ disability_policy: [d1] });
-
-    act(() => {
-      result.current.editCell(d1.rowId, "insured", "");
-    });
-
-    expect(result.current.rows.disability_policy[0].missingRequired).toEqual(["insured"]);
   });
 });
