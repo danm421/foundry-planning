@@ -975,11 +975,16 @@ export function LiveSolverWorkspace({
       baseSavable.heldDissolveEntityIds.length > 0
         ? "\n\nRemoving a trust can't be saved to base facts, so it stays pending — the retitled accounts, the returned income and expense, the will and the gifts are all kept together. Save as a scenario to keep the removal."
         : "";
+    const charityHeldBack =
+      baseSavable.heldRemovedCharityIds.length > 0
+        ? "\n\nRemoving a charity can't be saved to base facts, so it stays pending — the cleared beneficiary designations, will and gifts are kept with it. Save as a scenario to keep the removal."
+        : "";
     if (
       !confirm(
         "Save these changes to base facts? This will update the client's real data and cannot be undone." +
           saleHeldBack +
-          removalHeldBack,
+          removalHeldBack +
+          charityHeldBack,
       )
     )
       return;
@@ -1799,6 +1804,7 @@ export function LiveSolverWorkspace({
           canSaveToBase={baseSavable.savable.length > 0}
           holdsSaleToTrust={baseSavable.heldSaleAccountIds.length > 0}
           holdsTrustRemoval={baseSavable.heldDissolveEntityIds.length > 0}
+          holdsCharityRemoval={baseSavable.heldRemovedCharityIds.length > 0}
           canUpdateScenario={isScenarioSource}
           scenarioName={scenarioName}
           solveActive={activeSolve !== null}

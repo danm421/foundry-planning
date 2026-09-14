@@ -779,7 +779,7 @@ describe("buildDissolveTrustMutations — the trust's default checking account",
       kind: "account-upsert",
       id: entityCheckingId("ent-ilit"),
       value: null,
-      dissolvedEntityId: "ent-ilit",
+      removedRefId: "ent-ilit",
     });
     expect(
       applyMutations(t, muts).accounts.find((a) => a.id === entityCheckingId("ent-ilit")),
@@ -797,7 +797,7 @@ describe("buildDissolveTrustMutations — the trust's default checking account",
       kind: "account-upsert",
       id: "acct-trust-cash",
       value: null,
-      dissolvedEntityId: "ent-ilit",
+      removedRefId: "ent-ilit",
     });
     const after = accountById(applyMutations(t, muts), "acct-trust-cash");
     expect(after.owners).toEqual([
@@ -990,7 +990,7 @@ describe("buildDissolveTrustMutations — the removal is base-savable all or not
     // Positive first: there really are mutations of these kinds to declare.
     expect(declarable).toHaveLength(3);
     for (const m of declarable) {
-      expect(m).toHaveProperty("dissolvedEntityId", "ent-ilit");
+      expect(m).toHaveProperty("removedRefId", "ent-ilit");
     }
   });
 
@@ -1012,7 +1012,7 @@ describe("buildDissolveTrustMutations — the removal is base-savable all or not
       }
       const parsed = SOLVER_MUTATION_SCHEMA.safeParse(m);
       expect(parsed.success).toBe(true);
-      expect(parsed.success && parsed.data).toHaveProperty("dissolvedEntityId", "ent-ilit");
+      expect(parsed.success && parsed.data).toHaveProperty("removedRefId", "ent-ilit");
     }
   });
 });

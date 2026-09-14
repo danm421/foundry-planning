@@ -100,7 +100,7 @@ export function buildRetitleFundingMutation(account: Account, entityId: string):
 /**
  * Restore a funded account to its original owners (trust delete / unfund).
  *
- * `dissolvedEntityId` is carried because `removeTrust` swaps this mutation in
+ * `removedRefId` is carried because `removeTrust` swaps this mutation in
  * PLACE OF the lever's retitle for an account funded in this session. Dropping
  * the declaration there would make exactly that account base-savable on its own
  * — half a trust removal written to the client's real record, which is the
@@ -108,9 +108,9 @@ export function buildRetitleFundingMutation(account: Account, entityId: string):
  */
 export function buildRevertFundingMutation(
   original: Account,
-  dissolvedEntityId?: string,
+  removedRefId?: string,
 ): SolverMutation {
-  return { kind: "account-upsert", id: original.id, value: original, dissolvedEntityId };
+  return { kind: "account-upsert", id: original.id, value: original, removedRefId };
 }
 
 /** Accounts eligible to retitle into an IDGT/irrevocable trust: household-owned,
@@ -186,7 +186,7 @@ export function buildDissolveTrustMutations(
     // hub sitting at $0 is ordinary. `owners` cannot tell the two apart — both
     // are 100% entity-owned — so the id does, which is the one fact that differs.
     if (owned && a.isDefaultChecking && (a.value ?? 0) === 0 && isSyntheticEntityChecking(a.id)) {
-      muts.push({ kind: "account-upsert", id: a.id, value: null, dissolvedEntityId: entity.id });
+      muts.push({ kind: "account-upsert", id: a.id, value: null, removedRefId: entity.id });
       continue;
     }
     const next: Account = { ...a };
@@ -203,7 +203,7 @@ export function buildDissolveTrustMutations(
       }
     }
     if (namesTrust) next.beneficiaries = bens.filter((b) => b.entityIdRef !== entity.id);
-    muts.push({ kind: "account-upsert", id: a.id, value: next, dissolvedEntityId: entity.id });
+    muts.push({ kind: "account-upsert", id: a.id, value: next, removedRefId: entity.id });
   }
 
   // 2. Entity-scoped incomes and expenses — spec §4 step 5. A flow left
@@ -240,7 +240,7 @@ export function buildDissolveTrustMutations(
       kind: "income-upsert",
       id: inc.id,
       value: { ...rehome(inc), owner: entity.grantor ?? "client" },
-      dissolvedEntityId: entity.id,
+      removedRefId: entity.id,
     });
   }
   for (const exp of tree.expenses ?? []) {
@@ -250,7 +250,7 @@ export function buildDissolveTrustMutations(
       kind: "expense-upsert",
       id: exp.id,
       value: rehome(exp),
-      dissolvedEntityId: entity.id,
+      removedRefId: entity.id,
     });
   }
 

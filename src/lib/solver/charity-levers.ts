@@ -51,12 +51,20 @@ export function buildRemoveCharityMutations(
 ): SolverMutation[] {
   const muts: SolverMutation[] = [];
 
-  // 1. Account beneficiary designations.
+  // 1. Account beneficiary designations. `removedRefId` DECLARES which removal
+  //    this edit belongs to: `account-upsert` is base-savable by kind while the
+  //    charity delete never is, so without it Save-to-base wipes designations on
+  //    the client's REAL record while the charity is still in the plan.
   for (const a of tree.accounts) {
     const bens = a.beneficiaries ?? [];
     const kept = bens.filter((b) => b.externalBeneficiaryId !== beneficiaryId);
     if (kept.length === bens.length) continue;
-    muts.push({ kind: "account-upsert", id: a.id, value: { ...a, beneficiaries: kept } });
+    muts.push({
+      kind: "account-upsert",
+      id: a.id,
+      value: { ...a, beneficiaries: kept },
+      removedRefId: beneficiaryId,
+    });
   }
 
   // 2. An entity's three beneficiary lists. One merged upsert per entity: the

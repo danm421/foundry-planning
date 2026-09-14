@@ -720,13 +720,13 @@ export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
     kind: z.literal("account-upsert"),
     id: z.string().min(1),
     value: ACCOUNT_VALUE.nullable(),
-    // The trust whose dissolve produced this mutation. Declared here, not on the
-    // VALUE, because it is solver-wire routing rather than part of the row:
-    // `partitionBaseSavableMutations` reads it to hold the whole removal
-    // together. A z.object STRIPS keys it does not declare, so omitting this
-    // line silently drops the pairing on the wire and Save-to-base writes half a
-    // trust removal to the client's real record.
-    dissolvedEntityId: z.string().min(1).optional(),
+    // The trust or charity whose removal produced this mutation. Declared here,
+    // not on the VALUE, because it is solver-wire routing rather than part of
+    // the row: `partitionBaseSavableMutations` reads it to hold the whole
+    // removal together. A z.object STRIPS keys it does not declare, so omitting
+    // this line silently drops the pairing on the wire and Save-to-base writes
+    // half a removal to the client's real record.
+    removedRefId: z.string().min(1).optional(),
   }),
   z.object({
     kind: z.literal("liability-upsert"),
@@ -737,25 +737,25 @@ export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
     kind: z.literal("income-upsert"),
     id: z.string().min(1),
     value: INCOME_VALUE.nullable(),
-    // The trust whose dissolve produced this mutation. Declared here, not on the
-    // VALUE, because it is solver-wire routing rather than part of the row:
-    // `partitionBaseSavableMutations` reads it to hold the whole removal
-    // together. A z.object STRIPS keys it does not declare, so omitting this
-    // line silently drops the pairing on the wire and Save-to-base writes half a
-    // trust removal to the client's real record.
-    dissolvedEntityId: z.string().min(1).optional(),
+    // The trust or charity whose removal produced this mutation. Declared here,
+    // not on the VALUE, because it is solver-wire routing rather than part of
+    // the row: `partitionBaseSavableMutations` reads it to hold the whole
+    // removal together. A z.object STRIPS keys it does not declare, so omitting
+    // this line silently drops the pairing on the wire and Save-to-base writes
+    // half a removal to the client's real record.
+    removedRefId: z.string().min(1).optional(),
   }),
   z.object({
     kind: z.literal("expense-upsert"),
     id: z.string().min(1),
     value: EXPENSE_VALUE.nullable(),
-    // The trust whose dissolve produced this mutation. Declared here, not on the
-    // VALUE, because it is solver-wire routing rather than part of the row:
-    // `partitionBaseSavableMutations` reads it to hold the whole removal
-    // together. A z.object STRIPS keys it does not declare, so omitting this
-    // line silently drops the pairing on the wire and Save-to-base writes half a
-    // trust removal to the client's real record.
-    dissolvedEntityId: z.string().min(1).optional(),
+    // The trust or charity whose removal produced this mutation. Declared here,
+    // not on the VALUE, because it is solver-wire routing rather than part of
+    // the row: `partitionBaseSavableMutations` reads it to hold the whole
+    // removal together. A z.object STRIPS keys it does not declare, so omitting
+    // this line silently drops the pairing on the wire and Save-to-base writes
+    // half a removal to the client's real record.
+    removedRefId: z.string().min(1).optional(),
   }),
   z.object({
     kind: z.literal("savings-rule-upsert"),

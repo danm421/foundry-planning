@@ -18,6 +18,9 @@ interface Props {
    *  removal written to the client's real record leaves the trust standing with
    *  its assets already handed back. */
   holdsTrustRemoval?: boolean;
+  /** And for a pending charity removal: the cleared beneficiary designations are
+   *  base-savable, the charity delete is not. */
+  holdsCharityRemoval?: boolean;
   /** True when the solver source is an existing scenario (not base). Surfaces
    *  the "Update scenario" button and relabels the new-scenario action. */
   canUpdateScenario?: boolean;
@@ -40,6 +43,7 @@ export function SolverActionBar({
   canSaveToBase,
   holdsSaleToTrust,
   holdsTrustRemoval,
+  holdsCharityRemoval,
   canUpdateScenario,
   scenarioName,
   solveActive,
@@ -57,6 +61,7 @@ export function SolverActionBar({
   const heldClasses = [
     holdsSaleToTrust ? "a sale to a trust" : null,
     holdsTrustRemoval ? "removing a trust" : null,
+    holdsCharityRemoval ? "removing a charity" : null,
   ].filter((c): c is string => c !== null);
   const heldSubject =
     heldClasses.length > 0

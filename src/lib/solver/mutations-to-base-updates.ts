@@ -106,6 +106,11 @@ export interface BaseSavablePartition {
    *  means the advisor must be told, or "Save to base facts" writes half a trust
    *  removal to the client's real record. */
   heldDissolveEntityIds: string[];
+  /** Ids of the charities whose REMOVAL is being left pending. Same hazard, same
+   *  pairing: a cleared beneficiary designation is base-savable on its own while
+   *  the charity delete never is. Reported separately so the advisor is told
+   *  WHICH removal stayed behind. */
+  heldRemovedCharityIds: string[];
 }
 
 /**
@@ -136,9 +141,15 @@ export interface BaseSavablePartition {
  * `liability-upsert` and `gift-upsert` are not. Split, the real record keeps the
  * trust's accounts titled to the grantor while the trust still exists, the will
  * still names it, and the gifts to it are still there — and the applied half is
- * already gone from the working set. So the whole removal is held together, again
- * on a DECLARED pairing (`dissolvedEntityId`) and never on an inferred one: a
- * retitle out of a trust is byte-identical to any other owner change.
+ * already gone from the working set.
+ *
+ * A CHARITY removal is the same again: `buildRemoveCharityMutations` clears
+ * beneficiary designations with `account-upsert` while the
+ * `external-beneficiary-upsert: null` that removes the charity is never savable.
+ *
+ * So the whole removal is held together, again on a DECLARED pairing
+ * (`removedRefId`) and never on an inferred one: a retitle out of a trust, and a
+ * cleared designation, are byte-identical to any other edit of the same shape.
  */
 export function partitionBaseSavableMutations(
   mutations: readonly SolverMutation[],
@@ -152,42 +163,50 @@ export function partitionBaseSavableMutations(
     if (m.sourceAccountId) pairedAccountIds.add(m.sourceAccountId);
   }
 
-  // Trusts this working set is REMOVING. `entity-upsert` is never base-savable,
-  // so a present delete is always a held delete — but the membership test still
-  // matters: a declared retitle whose entity delete is absent (already saved, or
-  // the removal undone) must not be held hostage to a phantom.
+  // Trusts and charities this working set is REMOVING. Neither delete kind is
+  // ever base-savable, so a present delete is always a held delete — but the
+  // membership test still matters: a declared edit whose delete is absent
+  // (already saved, or the removal undone) must not be held hostage to a phantom.
   const dissolvedEntityIds = new Set<string>();
+  const removedCharityIds = new Set<string>();
   for (const m of mutations) {
-    if (m.kind !== "entity-upsert" || m.value !== null) continue;
-    if (isBaseSavableMutation(m)) continue;
-    dissolvedEntityIds.add(m.id);
+    if (m.kind !== "entity-upsert" && m.kind !== "external-beneficiary-upsert") continue;
+    if (m.value !== null || isBaseSavableMutation(m)) continue;
+    (m.kind === "entity-upsert" ? dissolvedEntityIds : removedCharityIds).add(m.id);
   }
 
   const savable: SolverMutation[] = [];
   const held: SolverMutation[] = [];
   const heldSaleAccountIds: string[] = [];
   const heldDissolveEntityIds: string[] = [];
+  const heldRemovedCharityIds: string[] = [];
+  const note = (list: string[], id: string) => {
+    if (!list.includes(id)) list.push(id);
+  };
   for (const m of mutations) {
     const heldBySale = m.kind === "account-upsert" && pairedAccountIds.has(m.id);
     if (heldBySale) heldSaleAccountIds.push(m.id);
-    const declared = declaredDissolveTarget(m);
-    const heldByDissolve = declared != null && dissolvedEntityIds.has(declared);
-    if (heldByDissolve && !heldDissolveEntityIds.includes(declared)) {
-      heldDissolveEntityIds.push(declared);
-    }
-    const heldByPair = heldBySale || heldByDissolve;
+
+    const ref = declaredRemovalTarget(m);
+    const heldByTrustRemoval = ref != null && dissolvedEntityIds.has(ref);
+    const heldByCharityRemoval = ref != null && removedCharityIds.has(ref);
+    if (heldByTrustRemoval) note(heldDissolveEntityIds, ref);
+    if (heldByCharityRemoval) note(heldRemovedCharityIds, ref);
+
+    const heldByPair = heldBySale || heldByTrustRemoval || heldByCharityRemoval;
     (isBaseSavableMutation(m) && !heldByPair ? savable : held).push(m);
   }
-  return { savable, held, heldSaleAccountIds, heldDissolveEntityIds };
+  return { savable, held, heldSaleAccountIds, heldDissolveEntityIds, heldRemovedCharityIds };
 }
 
-/** The trust whose dissolve declared this mutation, or null. Only three kinds
- *  carry the field; the `in` check is what keeps the union narrowing honest. */
-function declaredDissolveTarget(m: SolverMutation): string | null {
+/** The trust or charity whose removal declared this mutation, or null. Only the
+ *  three base-savable kinds a removal emits carry the field; the narrowing is
+ *  what keeps the union honest. */
+function declaredRemovalTarget(m: SolverMutation): string | null {
   if (m.kind !== "account-upsert" && m.kind !== "income-upsert" && m.kind !== "expense-upsert") {
     return null;
   }
-  return m.dissolvedEntityId ?? null;
+  return m.removedRefId ?? null;
 }
 
 export interface BaseUpdates {

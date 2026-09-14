@@ -20,6 +20,8 @@ import { describe, it, expect } from "vitest";
 import { buildRemoveCharityMutations } from "@/lib/solver/charity-levers";
 import { applyMutations } from "@/lib/solver/apply-mutations";
 import { mutationKey } from "@/lib/solver/types";
+import { partitionBaseSavableMutations } from "@/lib/solver/mutations-to-base-updates";
+import { SOLVER_MUTATION_SCHEMA } from "@/lib/solver/mutation-schema";
 import { applyBeneficiaryDesignations } from "@/engine/death-event/shared";
 import { resolveCascades } from "@/engine/scenario/cascadeResolution";
 import type {
@@ -83,6 +85,9 @@ const policy = {
   basis: 0,
   growthRate: 0,
   rmdEnabled: false,
+  // Required by ACCOUNT_VALUE on the wire; engine-inert for a solo-owned
+  // account, but a fixture without it is not a representable account.
+  titlingType: "jtwros",
   owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
   beneficiaries: [
     { id: "b1", tier: "primary", percentage: 100, externalBeneficiaryId: "eb-red-cross", sortOrder: 0 },
@@ -335,6 +340,32 @@ describe("buildRemoveCharityMutations — planned gifts", () => {
       ],
     });
     expect(buildRemoveCharityMutations(t, charity.id).some((m) => m.kind === "gift-upsert")).toBe(false);
+  });
+});
+
+describe("buildRemoveCharityMutations — the removal is base-savable all or nothing", () => {
+  it("declares the charity on the designation clears, so Save-to-base cannot take them alone", () => {
+    const t = tree({ accounts: [policy] });
+    const muts = buildRemoveCharityMutations(t, charity.id);
+    const accountEdits = muts.filter((m) => m.kind === "account-upsert");
+    // Positive first: there really is a base-savable mutation to declare.
+    expect(accountEdits).toHaveLength(1);
+    expect(accountEdits[0]).toHaveProperty("removedRefId", charity.id);
+
+    const { savable, held, heldRemovedCharityIds } = partitionBaseSavableMutations(muts);
+    expect(savable).toEqual([]);
+    expect(held).toHaveLength(muts.length);
+    expect(heldRemovedCharityIds).toEqual([charity.id]);
+  });
+
+  it("keeps the declaration on the wire — a z.object strips what it does not declare", () => {
+    const t = tree({ accounts: [policy] });
+    for (const m of buildRemoveCharityMutations(t, charity.id)) {
+      if (m.kind !== "account-upsert") continue;
+      const parsed = SOLVER_MUTATION_SCHEMA.safeParse(m);
+      expect(parsed.success).toBe(true);
+      expect(parsed.success && parsed.data).toHaveProperty("removedRefId", charity.id);
+    }
   });
 });
 

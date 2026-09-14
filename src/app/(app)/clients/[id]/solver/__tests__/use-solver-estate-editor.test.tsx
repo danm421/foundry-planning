@@ -160,7 +160,7 @@ describe("useSolverEstateEditor — removeTrust", () => {
 
   it("declares the dissolve on the exact-restore, so Save-to-base cannot take it alone", () => {
     // The restore is swapped in PLACE OF the lever's retitle. Dropping the
-    // `dissolvedEntityId` declaration there would make this one account
+    // `removedRefId` declaration there would make this one account
     // base-savable on its own — half a trust removal on the real record.
     const working = clientData({
       entities: [ilit],
@@ -179,7 +179,7 @@ describe("useSolverEstateEditor — removeTrust", () => {
 
     const emitted = onChange.mock.calls.map(([m]) => m as SolverMutation);
     expect(accountUpserts(onChange).find((m) => m.id === "acct-funded")).toHaveProperty(
-      "dissolvedEntityId",
+      "removedRefId",
       "ent-ilit",
     );
     expect(partitionBaseSavableMutations(emitted).savable).toEqual([]);
@@ -250,7 +250,7 @@ describe("useSolverEstateEditor — removeTrust", () => {
           owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
         }),
         // The dissolve pairing, so Save-to-base cannot take this half alone.
-        dissolvedEntityId: "ent-ilit",
+        removedRefId: "ent-ilit",
       },
       { kind: "entity-upsert", id: "ent-ilit", value: null },
     ]);

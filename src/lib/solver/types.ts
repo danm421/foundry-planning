@@ -104,18 +104,22 @@ export type SolverMutation =
       id: string;
       value: Account | null;
       /**
-       * The trust whose DISSOLVE produced this mutation, when it came from
-       * `buildDissolveTrustMutations`. DECLARED, not inferred: a retitle out of
-       * a trust is byte-identical to any other owner change, and a returned
-       * income is byte-identical to any other income edit — nothing in the
-       * payload says which advisor action it belongs to.
+       * The trust or charity whose REMOVAL produced this mutation — the entity a
+       * dissolve deletes (`buildDissolveTrustMutations`) or the external
+       * beneficiary a charity removal deletes (`buildRemoveCharityMutations`).
+       *
+       * DECLARED, not inferred: a retitle out of a trust is byte-identical to
+       * any other owner change, a cleared beneficiary designation to any other,
+       * and a returned income to any other income edit. Nothing in the payload
+       * says which advisor action it belongs to.
        *
        * `partitionBaseSavableMutations` reads it to hold this mutation back
-       * whenever the paired `entity-upsert: null` is held, which it always is.
-       * Without it Save-to-base posts the retitles and holds the rest, and the
-       * client's REAL record ends up with the trust's accounts titled to the
-       * grantor while the trust still exists, the will still names it, and the
-       * gifts to it remain.
+       * whenever the paired delete is held — and both deletes always are.
+       * Without it Save-to-base posts the savable half and holds the rest: the
+       * client's REAL record ends up with a dissolved trust's accounts titled to
+       * the grantor while the trust still exists and the will still names it, or
+       * with a charity's beneficiary designations wiped while the charity is
+       * still in the plan.
        *
        * Solver-wire only — never written to any column. Optional so an in-flight
        * client payload still saves, and so these kinds stay base-savable on
@@ -123,7 +127,7 @@ export type SolverMutation =
        * listing the KIND as non-savable would kill base saves across the
        * product.
        */
-      dissolvedEntityId?: string;
+      removedRefId?: string;
     }
   /** A liability retitled into or out of a trust from the estate dialog's
    *  Assets tab. `null` removes the row. */
@@ -132,15 +136,15 @@ export type SolverMutation =
       kind: "income-upsert";
       id: string;
       value: Income | null;
-      /** See `dissolvedEntityId` on `account-upsert`. */
-      dissolvedEntityId?: string;
+      /** See `removedRefId` on `account-upsert`. */
+      removedRefId?: string;
     }
   | {
       kind: "expense-upsert";
       id: string;
       value: Expense | null;
-      /** See `dissolvedEntityId` on `account-upsert`. */
-      dissolvedEntityId?: string;
+      /** See `removedRefId` on `account-upsert`. */
+      removedRefId?: string;
     }
   | { kind: "savings-rule-upsert"; id: string; value: SavingsRule | null }
   | { kind: "gift-upsert";                 id: string; value: EstateFlowGift | null }

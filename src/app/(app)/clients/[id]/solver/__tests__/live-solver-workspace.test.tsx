@@ -596,7 +596,7 @@ describe("LiveSolverWorkspace — save to base facts", () => {
   // and the gifts are not. Posting only the savable half leaves the client's
   // REAL record with the trust's accounts titled to the grantor while the trust
   // still exists and the will still names it. The pairing is DECLARED by
-  // `dissolvedEntityId`.
+  // `removedRefId`.
   const DISSOLVED_ENTITY_ID = "trust-1";
   const RETITLED_ACCOUNT = {
     ...SALE_ACCOUNT,
@@ -624,13 +624,13 @@ describe("LiveSolverWorkspace — save to base facts", () => {
         kind: "account-upsert",
         id: RETITLED_ACCOUNT.id,
         value: RETITLED_ACCOUNT,
-        dissolvedEntityId: DISSOLVED_ENTITY_ID,
+        removedRefId: DISSOLVED_ENTITY_ID,
       },
       {
         kind: "income-upsert",
         id: RETURNED_INCOME.id,
         value: RETURNED_INCOME,
-        dissolvedEntityId: DISSOLVED_ENTITY_ID,
+        removedRefId: DISSOLVED_ENTITY_ID,
       },
       { kind: "entity-upsert", id: DISSOLVED_ENTITY_ID, value: null },
     ]);
@@ -678,7 +678,7 @@ describe("LiveSolverWorkspace — save to base facts", () => {
         kind: "account-upsert",
         id: RETITLED_ACCOUNT.id,
         value: RETITLED_ACCOUNT,
-        dissolvedEntityId: DISSOLVED_ENTITY_ID,
+        removedRefId: DISSOLVED_ENTITY_ID,
       },
       { kind: "entity-upsert", id: DISSOLVED_ENTITY_ID, value: null },
     ]);
@@ -706,7 +706,7 @@ describe("LiveSolverWorkspace — save to base facts", () => {
         kind: "account-upsert",
         id: RETITLED_ACCOUNT.id,
         value: RETITLED_ACCOUNT,
-        dissolvedEntityId: DISSOLVED_ENTITY_ID,
+        removedRefId: DISSOLVED_ENTITY_ID,
       },
       { kind: "entity-upsert", id: DISSOLVED_ENTITY_ID, value: null },
     ]);
@@ -719,6 +719,39 @@ describe("LiveSolverWorkspace — save to base facts", () => {
       screen.getAllByRole("button", { name: /Save to base facts/i })[0].getAttribute("title") ?? "";
     expect(title).toMatch(/sale to a trust/i);
     expect(title).toMatch(/removing a trust/i);
+  });
+
+  // Charity removal is the same pairing again: the cleared beneficiary
+  // designations are base-savable by kind while the charity delete never is.
+  it("withholds a charity removal's designation clears, and names it", async () => {
+    const confirmMessages: string[] = [];
+    vi.stubGlobal("confirm", (msg?: string) => {
+      confirmMessages.push(String(msg ?? ""));
+      return true;
+    });
+    mockSaveToBaseOk();
+    const CHARITY_ID = "eb-red-cross";
+    const CLEARED = { ...UNRELATED_ACCOUNT, id: "policy-acct", name: "Term Life", beneficiaries: [] };
+    seedDraft([
+      { kind: "account-upsert", id: UNRELATED_ACCOUNT.id, value: UNRELATED_ACCOUNT },
+      { kind: "account-upsert", id: CLEARED.id, value: CLEARED, removedRefId: CHARITY_ID },
+      { kind: "external-beneficiary-upsert", id: CHARITY_ID, value: null },
+    ]);
+
+    render(<LiveSolverWorkspace {...baseProps} />);
+    const saveToBaseBtn = screen.getAllByRole("button", { name: /Save to base facts/i })[0];
+    await waitFor(() => expect(saveToBaseBtn).not.toBeDisabled());
+    fireEvent.click(saveToBaseBtn);
+    await waitFor(() => expect(routerRefresh).toHaveBeenCalledTimes(1));
+
+    const call = fetchMock.mock.calls.find(
+      (c) => typeof c[0] === "string" && (c[0] as string).includes("/save-to-base"),
+    );
+    const posted: string[] = JSON.parse(call![1].body as string).mutations.map(
+      (m: { kind: string; id?: string }) => `${m.kind}:${m.id ?? ""}`,
+    );
+    expect(posted).toEqual([`account-upsert:${UNRELATED_ACCOUNT.id}`]);
+    expect(confirmMessages.join("\n")).toMatch(/removing a charity/i);
   });
 
   it("still saves a plain account edit to base — the pairing fix must not disable the kind", async () => {

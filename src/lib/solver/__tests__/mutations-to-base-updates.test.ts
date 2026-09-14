@@ -528,7 +528,7 @@ describe("partitionBaseSavableMutations — a sale to a trust is one indivisible
 // grantor while the trust itself still exists, the will still names it, and the
 // gifts to it are still there. The advisor unwinds that by hand.
 //
-// The pairing is DECLARED by `dissolvedEntityId`, never inferred: a retitle out
+// The pairing is DECLARED by `removedRefId`, never inferred: a retitle out
 // of a trust is byte-identical to a retitle for any other reason, and the kind
 // itself must stay base-savable — `account-upsert` is the solver's most common
 // mutation.
@@ -545,21 +545,21 @@ describe("partitionBaseSavableMutations — a trust removal is one indivisible u
     kind: "account-upsert",
     id: "trust-acct",
     value: RETITLED,
-    dissolvedEntityId: ENTITY_ID,
+    removedRefId: ENTITY_ID,
   };
   const returnedIncome: SolverMutation = {
     kind: "income-upsert",
     id: "inc-trust",
     value: { id: "inc-trust", type: "trust", name: "Trust income", annualAmount: 60_000,
       startYear: 2026, endYear: 2040, growthRate: 0, owner: "client" } as Income,
-    dissolvedEntityId: ENTITY_ID,
+    removedRefId: ENTITY_ID,
   };
   const returnedExpense: SolverMutation = {
     kind: "expense-upsert",
     id: "exp-trust",
     value: { id: "exp-trust", type: "other", name: "Trustee fee", annualAmount: 12_000,
       startYear: 2026, endYear: 2040, growthRate: 0 } as Expense,
-    dissolvedEntityId: ENTITY_ID,
+    removedRefId: ENTITY_ID,
   };
   const entityDelete: SolverMutation = { kind: "entity-upsert", id: ENTITY_ID, value: null };
   const plainAccountEdit: SolverMutation = { kind: "account-upsert", id: "plain-acct", value: PLAIN };
@@ -626,7 +626,65 @@ describe("partitionBaseSavableMutations — a trust removal is one indivisible u
   // product. Without this, that fix passes the rest of this scope.
   it("leaves the three kinds base-savable on their own — the fix is the pairing", () => {
     expect(isBaseSavableMutation(plainAccountEdit)).toBe(true);
-    expect(isBaseSavableMutation({ ...returnedIncome, dissolvedEntityId: undefined })).toBe(true);
-    expect(isBaseSavableMutation({ ...returnedExpense, dissolvedEntityId: undefined })).toBe(true);
+    expect(isBaseSavableMutation({ ...returnedIncome, removedRefId: undefined })).toBe(true);
+    expect(isBaseSavableMutation({ ...returnedExpense, removedRefId: undefined })).toBe(true);
+  });
+});
+
+// A charity removal is the same shape again: `buildRemoveCharityMutations`
+// clears beneficiary designations with `account-upsert` (base-savable by kind)
+// while the `external-beneficiary-upsert: null` that removes the charity is not.
+// Split, the client's REAL record loses the designations while the charity is
+// still in the plan — and the applied half is already gone from the working set.
+describe("partitionBaseSavableMutations — a charity removal is one indivisible unit", () => {
+  const CHARITY_ID = "eb-red-cross";
+  const CLEARED: Account = { ...ACCT, id: "policy-acct", name: "Term Life", beneficiaries: [] };
+  const PLAIN: Account = { ...ACCT, id: "plain-acct", name: "Joint Brokerage" };
+
+  const designationClear: SolverMutation = {
+    kind: "account-upsert",
+    id: "policy-acct",
+    value: CLEARED,
+    removedRefId: CHARITY_ID,
+  };
+  const charityDelete: SolverMutation = {
+    kind: "external-beneficiary-upsert",
+    id: CHARITY_ID,
+    value: null,
+  };
+  const plainAccountEdit: SolverMutation = { kind: "account-upsert", id: "plain-acct", value: PLAIN };
+
+  const keys = (ms: SolverMutation[]) => ms.map((m) => `${m.kind}:${"id" in m ? m.id : ""}`);
+
+  it("holds the designation clear with the charity delete, and still posts an unrelated edit", () => {
+    const { savable, held, heldRemovedCharityIds } = partitionBaseSavableMutations([
+      plainAccountEdit,
+      designationClear,
+      charityDelete,
+    ]);
+    expect(keys(savable)).toEqual(["account-upsert:plain-acct"]);
+    expect(keys(held)).toEqual([
+      "account-upsert:policy-acct",
+      "external-beneficiary-upsert:eb-red-cross",
+    ]);
+    expect(heldRemovedCharityIds).toEqual([CHARITY_ID]);
+  });
+
+  it("holds nothing when the paired charity delete is not in this working set", () => {
+    const { savable, heldRemovedCharityIds } = partitionBaseSavableMutations([designationClear]);
+    expect(keys(savable)).toEqual(["account-upsert:policy-acct"]);
+    expect(heldRemovedCharityIds).toEqual([]);
+  });
+
+  it("keeps the trust and charity holds on separate lines, so the advisor is told which", () => {
+    const retitle: SolverMutation = {
+      kind: "account-upsert", id: "trust-acct", value: { ...ACCT, id: "trust-acct" },
+      removedRefId: "trust-9",
+    };
+    const entityDelete: SolverMutation = { kind: "entity-upsert", id: "trust-9", value: null };
+    const p = partitionBaseSavableMutations([retitle, entityDelete, designationClear, charityDelete]);
+    expect(p.savable).toEqual([]);
+    expect(p.heldDissolveEntityIds).toEqual(["trust-9"]);
+    expect(p.heldRemovedCharityIds).toEqual([CHARITY_ID]);
   });
 });
