@@ -6,6 +6,13 @@ interface Props {
    *  upserts (roth / asset-transaction / reinvestment) aren't base-writable, so
    *  gating on this prevents a save that silently writes nothing. */
   canSaveToBase: boolean;
+  /** True when a pending sale to a trust is being withheld from Save to base.
+   *  A sale's two halves — the retitled asset and the promissory note — are one
+   *  money event and can never be split, and the note's table is scenario-only.
+   *  When this is the ONLY pending change the button is disabled and the title
+   *  below explains it; when other savable edits exist the button stays enabled
+   *  and the save confirmation says the sale stays pending. */
+  holdsSaleToTrust?: boolean;
   /** True when the solver source is an existing scenario (not base). Surfaces
    *  the "Update scenario" button and relabels the new-scenario action. */
   canUpdateScenario?: boolean;
@@ -26,6 +33,7 @@ interface Props {
 export function SolverActionBar({
   hasMutations,
   canSaveToBase,
+  holdsSaleToTrust,
   canUpdateScenario,
   scenarioName,
   solveActive,
@@ -57,7 +65,9 @@ export function SolverActionBar({
           disabled={solveActive || savingToBase || !canSaveToBase}
           title={
             hasMutations && !canSaveToBase
-              ? "Roth conversions, asset sales, and reinvestments can't be saved to base facts — save as a scenario instead"
+              ? holdsSaleToTrust
+                ? "A sale to a trust can't be saved to base facts — save as a scenario instead"
+                : "Roth conversions, asset sales, and reinvestments can't be saved to base facts — save as a scenario instead"
               : undefined
           }
           className="h-8 px-3 text-[13px] font-medium whitespace-nowrap rounded-md border border-hair-2 text-ink-2 bg-card hover:bg-card-hover hover:text-ink disabled:opacity-40 disabled:hover:bg-card disabled:cursor-not-allowed transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 inline-flex items-center gap-2"

@@ -31,8 +31,9 @@ import type { SolverMutation, SolverPerson } from "./types";
 export type ColumnPatch = Record<string, string | number | boolean | null>;
 
 /** Mutation kinds this helper cannot persist to base facts (see file header).
- *  Used to gate the Save-to-base button and to avoid clearing these from the
- *  working set on a successful save (so they remain savable as a scenario). */
+ *  Read through `partitionBaseSavableMutations`, which gates the Save-to-base
+ *  button and decides what is kept in the working set on a successful save (so
+ *  these remain savable as a scenario). */
 const NON_BASE_SAVABLE = new Set<SolverMutation["kind"]>([
   "income-self-employment",
   "roth-conversion-upsert",
@@ -88,6 +89,63 @@ const NON_BASE_SAVABLE = new Set<SolverMutation["kind"]>([
 
 export function isBaseSavableMutation(m: SolverMutation): boolean {
   return !NON_BASE_SAVABLE.has(m.kind);
+}
+
+/** The Save-to-base split of one working set. */
+export interface BaseSavablePartition {
+  /** Sent to the save-to-base route, and cleared from the working set after. */
+  savable: SolverMutation[];
+  /** Kept in the working set so the advisor can still save them as a scenario. */
+  held: SolverMutation[];
+  /** Ids of the account edits held back by a paired note rather than by their
+   *  own kind — i.e. the sales this save is leaving pending. Non-empty means
+   *  the advisor must be told, or the flip "silently doesn't save". */
+  heldSaleAccountIds: string[];
+}
+
+/**
+ * Split a working set into what Save-to-base may write and what must stay behind.
+ *
+ * Per-kind savability (`isBaseSavableMutation`) is not enough, because a sale to a
+ * trust is ONE advisor action emitted as TWO mutations: the source account's owner
+ * flip into the trust (`account-upsert`, base-savable — the route really does
+ * re-materialize `account_owners`) and the promissory note the family now holds
+ * (`note-receivable-upsert`, never base-savable — `notes_receivable` is
+ * scenario-partitioned). Classified one at a time, Save-to-base posts the flip and
+ * drops the note: the asset is permanently retitled into the trust on the client's
+ * REAL record with nothing owed for it, value leaves the taxable estate for free,
+ * and the note left in the working set makes the sale look like it is still pending.
+ *
+ * So the account half is held whenever its note is held. The pairing is DECLARED by
+ * the note's `sourceAccountId` (set by `submitSaleToTrust` to the same account id
+ * the paired `account-upsert` carries), never inferred from `owners` shapes — a
+ * sale's retitle and a plain revocable-trust funding retitle produce a byte-
+ * identical `owners` array.
+ *
+ * The unit that cannot be half-saved is the SALE, not the kind: `account-upsert` is
+ * the solver's most common mutation and stays base-savable on its own.
+ */
+export function partitionBaseSavableMutations(
+  mutations: readonly SolverMutation[],
+): BaseSavablePartition {
+  // Accounts whose sale note is being held back. A note that IS base-savable
+  // (no kind is today, but the set is data) holds nothing — it saves alongside.
+  const pairedAccountIds = new Set<string>();
+  for (const m of mutations) {
+    if (m.kind !== "note-receivable-upsert") continue;
+    if (isBaseSavableMutation(m)) continue;
+    if (m.sourceAccountId) pairedAccountIds.add(m.sourceAccountId);
+  }
+
+  const savable: SolverMutation[] = [];
+  const held: SolverMutation[] = [];
+  const heldSaleAccountIds: string[] = [];
+  for (const m of mutations) {
+    const heldByPair = m.kind === "account-upsert" && pairedAccountIds.has(m.id);
+    if (heldByPair) heldSaleAccountIds.push(m.id);
+    (isBaseSavableMutation(m) && !heldByPair ? savable : held).push(m);
+  }
+  return { savable, held, heldSaleAccountIds };
 }
 
 export interface BaseUpdates {
