@@ -130,7 +130,25 @@ export type SolverMutation =
   /** A promissory note from an intra-family sale to a trust (an IDGT
    *  installment sale), edited from the trust editor's Notes & sales tab.
    *  `null` removes the row. */
-  | { kind: "note-receivable-upsert"; id: string; value: NoteReceivable | null }
+  | {
+      kind: "note-receivable-upsert";
+      id: string;
+      value: NoteReceivable | null;
+      /**
+       * The account this note was created by selling, when the note came from
+       * the trust dialog's sale-to-trust action. DECLARED, not inferred: the
+       * save route pairs the note with that account's owner-flip change so the
+       * two halves of one sale share a toggle group. Inferring the pairing from
+       * `linkedTrustEntityId` + the account's new owners mis-pairs two sales to
+       * the same trust and cannot tell a sale's retitle from a plain revocable-
+       * trust funding retitle, which produces a byte-identical `owners` shape.
+       *
+       * Solver-wire only — it is never written to `notes_receivable`. Optional
+       * so an in-flight client payload still saves (the note then gets its own
+       * toggle group, as every note did before).
+       */
+      sourceAccountId?: string;
+    }
   | { kind: "stress-inflation"; rate: number }
   | { kind: "stress-ss-haircut"; pct: number; startYear: number }
   | { kind: "stress-disability"; person: SolverPerson; startYear: number; endYear: number | null }

@@ -33,10 +33,15 @@ import {
 import {
   revocableTrustFundingGroups,
   resolveFundingGroupRows,
+  type FundingGroupRow,
 } from "@/lib/solver/revocable-trust-funding-group";
 import { applyMutations } from "@/lib/solver/apply-mutations";
 import { mutationsToScenarioChanges } from "@/lib/solver/mutations-to-scenario-changes";
-import type { SolverMutation, SolverSaveResponse } from "@/lib/solver/types";
+import type {
+  SolverMutation,
+  SolverSaveResponse,
+  SolverScenarioChangeDraft,
+} from "@/lib/solver/types";
 import { SOLVER_MUTATION_SCHEMA } from "@/lib/solver/mutation-schema";
 import { authErrorResponse, requireActiveSubscriptionForFirm } from "@/lib/authz";
 import { requireOrgId } from "@/lib/db-helpers";
@@ -92,6 +97,12 @@ type NoteMutation = Extract<SolverMutation, { kind: "note-receivable-upsert" }>;
 interface NoteWrite {
   rowId: string;
   exists: boolean;
+  /** The toggle group the existing row is already gated by — non-null exactly
+   *  when `exists` is true, because `planNoteWrites` only marks a row existing
+   *  when a group THIS scenario owns gates it. A sale's re-save reuses it so
+   *  the owner flip and the note stay under one group instead of drifting
+   *  apart on every update. */
+  toggleGroupId: string | null;
 }
 
 const isNoteMutation = (m: SolverMutation): m is NoteMutation =>
@@ -237,6 +248,12 @@ async function persistNoteReceivables(
     scenarioId: string;
     baseScenarioId: string;
     writes: ReadonlyMap<string, NoteWrite>;
+    /** Group id per note id for notes already paired with a sale's owner flip
+     *  by `resolveToggleGroups` — that group's row is inserted there, before
+     *  the change rows are tagged, so this function must not mint a second
+     *  one. A note absent from the map still gets its own, as every note did
+     *  before sales were paired. */
+    groupIdByNote: ReadonlyMap<string, string>;
     groupOrderStart: number;
   },
   mutations: readonly NoteMutation[],
@@ -284,14 +301,17 @@ async function persistNoteReceivables(
         .delete(noteExtraPayments)
         .where(eq(noteExtraPayments.noteReceivableId, rowId));
     } else {
-      const toggleGroupId = crypto.randomUUID();
-      await tx.insert(scenarioToggleGroups).values({
-        id: toggleGroupId,
-        scenarioId: args.scenarioId,
-        name: v.name,
-        defaultOn: true,
-        orderIndex: orderIndex++,
-      });
+      const paired = args.groupIdByNote.get(m.id);
+      const toggleGroupId = paired ?? crypto.randomUUID();
+      if (paired == null) {
+        await tx.insert(scenarioToggleGroups).values({
+          id: toggleGroupId,
+          scenarioId: args.scenarioId,
+          name: v.name,
+          defaultOn: true,
+          orderIndex: orderIndex++,
+        });
+      }
       await tx.insert(notesReceivable).values({
         id: rowId,
         clientId: args.clientId,
@@ -357,7 +377,7 @@ async function planNoteWrites(
   opts: { forkForeignGated: boolean },
 ): Promise<{ writes: Map<string, NoteWrite>; rejectedIds: string[] }> {
   const writes = new Map<string, NoteWrite>(
-    noteIds.map((id) => [id, { rowId: id, exists: false }]),
+    noteIds.map((id) => [id, { rowId: id, exists: false, toggleGroupId: null }]),
   );
   if (noteIds.length === 0) return { writes, rejectedIds: [] };
 
@@ -377,14 +397,128 @@ async function planNoteWrites(
   const rejectedIds: string[] = [];
   for (const r of rows) {
     if (r.toggleGroupId != null && ownedGroupIds.has(r.toggleGroupId)) {
-      writes.set(r.id, { rowId: r.id, exists: true });
+      writes.set(r.id, {
+        rowId: r.id,
+        exists: true,
+        toggleGroupId: r.toggleGroupId,
+      });
     } else if (r.toggleGroupId != null && opts.forkForeignGated) {
-      writes.set(r.id, { rowId: crypto.randomUUID(), exists: false });
+      // A fork must NOT carry the original's group: that group belongs to
+      // another scenario, so `loadScenarioToggleGroups` never returns it here
+      // and the forked note would be invisible in the scenario that just
+      // created it.
+      writes.set(r.id, {
+        rowId: crypto.randomUUID(),
+        exists: false,
+        toggleGroupId: null,
+      });
     } else {
       rejectedIds.push(r.id);
     }
   }
   return { writes, rejectedIds };
+}
+
+/**
+ * Every toggle group this save creates, and which change rows and notes carry
+ * which id. TWO sources feed ONE map, resolved together BEFORE the change rows
+ * are tagged:
+ *
+ *  1. revocable-trust FUNDING sets — N retitled accounts collapsed into one
+ *     "technique" card. Cosmetic: the projection is identical either way.
+ *  2. sales to trust — the source account's owner flip and its promissory note,
+ *     which MUST share a group. Either half alone is a wrong number: with the
+ *     note toggled off the asset sits in the trust and nothing is owed for it,
+ *     so value leaves the taxable estate for free; with the flip toggled off
+ *     the family keeps the asset AND collects the note payments, and the
+ *     projection drains the linked trust's cash to pay them. The live
+ *     sale-to-trust route shares one freshly minted group across both writes
+ *     for exactly this reason.
+ *
+ * Resolving them together is the whole point. `persistNoteReceivables` runs
+ * AFTER the change rows are inserted, so a group it minted for itself could
+ * never reach the account half — that is how the two halves became
+ * independently toggleable.
+ *
+ * The pairing is DECLARED by the mutation (`sourceAccountId`), never inferred:
+ * a note whose `linkedTrustEntityId` is T cannot be matched to "the account
+ * whose owners became [{entity: T, 100%}]" without mis-pairing two sales to the
+ * same trust, and a plain revocable-trust funding retitle produces a
+ * byte-identical `owners` shape.
+ *
+ * Sale entries are written to the map LAST so a sale wins a target a funding
+ * group also claims: the funding group is cosmetic, the sale pairing moves
+ * money.
+ */
+function resolveToggleGroups(args: {
+  scenarioId: string;
+  drafts: readonly SolverScenarioChangeDraft[];
+  noteMutations: readonly NoteMutation[];
+  noteWrites: ReadonlyMap<string, NoteWrite>;
+  /** The scenario's current groups — find-or-create by name keeps a funding
+   *  re-save idempotent. POST passes [] (the scenario is one statement old). */
+  existingGroups: readonly { id: string; name: string }[];
+  workingTree: ClientData;
+  startOrderIndex: number;
+}): {
+  groupIdByTarget: Map<string, string>;
+  groupIdByNote: Map<string, string>;
+  newGroupRows: FundingGroupRow[];
+  /** The first `orderIndex` no row above has taken — where a note with no
+   *  pairing numbers the group it mints for itself, so the two group sources
+   *  cannot collide. */
+  nextOrderIndex: number;
+} {
+  const { groupIdByTarget, newGroupRows } = resolveFundingGroupRows(
+    revocableTrustFundingGroups([...args.drafts]),
+    args.existingGroups,
+    args.scenarioId,
+    args.startOrderIndex,
+  );
+
+  const accountTargets = new Set(
+    args.drafts.flatMap((d) => (d.targetKind === "account" ? [d.targetId] : [])),
+  );
+  const groupIdByNote = new Map<string, string>();
+  const claimed = new Set<string>();
+  for (const m of args.noteMutations) {
+    const accountId = m.sourceAccountId;
+    // Nothing to pair: a removed note, a note that is not a sale, or a sale
+    // whose owner flip produced no draft (a PUT re-save where the scenario
+    // already holds the flip, so there is no diff). Each falls back to the
+    // note minting its own group, which is what happened before.
+    if (m.value === null || accountId == null) continue;
+    if (!accountTargets.has(accountId) || claimed.has(accountId)) continue;
+    // A re-save: the note row already exists under a group this scenario owns
+    // (planNoteWrites rejects any other kind), so reuse it instead of minting a
+    // second group for the same sale. Keyed on the note ROW, not on the group's
+    // name, so two sales of two same-named accounts stay separate.
+    const existingId = args.noteWrites.get(m.id)?.toggleGroupId ?? null;
+    const id = existingId ?? crypto.randomUUID();
+    if (existingId == null) {
+      const name =
+        args.workingTree.accounts.find((a) => a.id === accountId)?.name ?? "asset";
+      newGroupRows.push({
+        id,
+        scenarioId: args.scenarioId,
+        name: `Sell ${name} to trust`,
+        defaultOn: true,
+        // Numbered after every funding row already in the array, so orderIndex
+        // stays unique across both sources.
+        orderIndex: args.startOrderIndex + newGroupRows.length,
+      });
+    }
+    claimed.add(accountId);
+    groupIdByTarget.set(accountId, id);
+    groupIdByNote.set(m.id, id);
+  }
+
+  return {
+    groupIdByTarget,
+    groupIdByNote,
+    newGroupRows,
+    nextOrderIndex: args.startOrderIndex + newGroupRows.length,
+  };
 }
 
 export async function POST(req: NextRequest, ctx: RouteCtx) {
@@ -428,8 +562,6 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     );
     if (rejectedIds.length > 0) return unownedNoteResponse(rejectedIds);
 
-    const fundingGroups = revocableTrustFundingGroups(drafts);
-
     const newScenarioId = await db.transaction(async (tx) => {
       const [row] = await tx
         .insert(scenarios)
@@ -470,16 +602,25 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         workingTree,
       );
 
-      // Auto-create one toggle-group ("technique") per revocable-trust funding
-      // set so the N retitled-account changes collapse into a single card in the
-      // changes panel. defaultOn: true keeps the projection identical. A fresh
-      // scenario has no existing groups, so this always creates.
-      const { groupIdByTarget, newGroupRows } = resolveFundingGroupRows(
-        fundingGroups,
-        [],
-        row.id,
-        0,
-      );
+      // Every toggle group this save needs, resolved BEFORE the change rows
+      // below are tagged: one per revocable-trust funding set (N retitled
+      // accounts collapse into a single card) and one per sale to trust (the
+      // owner flip and its note flip together). A fresh scenario has no
+      // existing groups, so every one of them is created here.
+      const {
+        groupIdByTarget,
+        groupIdByNote,
+        newGroupRows,
+        nextOrderIndex,
+      } = resolveToggleGroups({
+        scenarioId: row.id,
+        drafts,
+        noteMutations,
+        noteWrites,
+        existingGroups: [],
+        workingTree,
+        startOrderIndex: 0,
+      });
       if (newGroupRows.length > 0) {
         // .returning() result is intentionally unused (ids are client-generated);
         // kept for parity with the scenarioChanges insert below.
@@ -522,7 +663,8 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
             scenarioId: row.id,
             baseScenarioId,
             writes: noteWrites,
-            groupOrderStart: newGroupRows.length,
+            groupIdByNote,
+            groupOrderStart: nextOrderIndex,
           },
           noteMutations,
         );
@@ -649,21 +791,13 @@ export async function PUT(req: NextRequest, ctx: RouteCtx) {
       );
     }
 
-    // Find-or-create a toggle group per revocable-trust funding set so a re-save
-    // collapses the retitled-account edits into one technique card (idempotent:
-    // reuse a same-name group rather than duplicating it).
-    const fundingGroups = revocableTrustFundingGroups(drafts);
     const existingGroups = await loadScenarioToggleGroups(scenarioId);
-    const { groupIdByTarget, newGroupRows } = resolveFundingGroupRows(
-      fundingGroups,
-      existingGroups,
-      scenarioId,
-      existingGroups.length,
-    );
 
     const noteMutations = lastNoteMutationPerId(mutations as SolverMutation[]);
     // No fork here: this scenario already exists, so a note gated by a DIFFERENT
     // scenario cannot be in its effective tree and naming one is a stale client.
+    // Runs BEFORE the groups are resolved because a sale's re-save reuses the
+    // group its existing note row already carries.
     const { writes: noteWrites, rejectedIds } = await planNoteWrites(
       clientId,
       noteMutations.map((m) => m.id),
@@ -671,6 +805,25 @@ export async function PUT(req: NextRequest, ctx: RouteCtx) {
       { forkForeignGated: false },
     );
     if (rejectedIds.length > 0) return unownedNoteResponse(rejectedIds);
+
+    // Find-or-create a toggle group per revocable-trust funding set so a re-save
+    // collapses the retitled-account edits into one technique card (idempotent:
+    // reuse a same-name group rather than duplicating it), plus one per sale to
+    // trust so its owner flip and its note flip as one unit.
+    const {
+      groupIdByTarget,
+      groupIdByNote,
+      newGroupRows,
+      nextOrderIndex,
+    } = resolveToggleGroups({
+      scenarioId,
+      drafts,
+      noteMutations,
+      noteWrites,
+      existingGroups,
+      workingTree,
+      startOrderIndex: existingGroups.length,
+    });
 
     await db.transaction(async (tx) => {
       if (newGroupRows.length > 0) {
@@ -743,7 +896,8 @@ export async function PUT(req: NextRequest, ctx: RouteCtx) {
             scenarioId,
             baseScenarioId,
             writes: noteWrites,
-            groupOrderStart: existingGroups.length + newGroupRows.length,
+            groupIdByNote,
+            groupOrderStart: nextOrderIndex,
           },
           noteMutations,
         );

@@ -1136,3 +1136,294 @@ describe("POST save-scenario — a note another scenario already gates", () => {
     expect(insertedScenarios).toHaveLength(0);
   });
 });
+
+// ── A sale to trust is ONE toggleable unit ──────────────────────────────────
+//
+// `submitSaleToTrust` emits TWO mutations for one advisor action: the source
+// account's owners flip to the trust, and a promissory note is created. Landing
+// them under different toggle groups lets the advisor flip half a sale:
+//   - note off   → the asset sits in the trust and nothing is owed for it;
+//   - flip off   → the family keeps the asset AND collects the note payments,
+//                  and the projection drains the linked trust's cash to pay them.
+// The live sale-to-trust route already shares one freshly minted group across
+// both writes (sale-to-trust/route.ts:12-17, :199, :235). The solver must match.
+//
+// Both assertions below check NON-NULL on each half before comparing them:
+// `expect(a).toBe(b)` passes when both are null, which is exactly the pre-fix
+// state of the account half.
+
+const NOTE_ID_2 = "77777777-7777-4777-8777-777777777777";
+const SALE_ACCOUNT_1 = "88888888-8888-4888-8888-888888888888";
+const SALE_ACCOUNT_2 = "99999999-9999-4999-8999-999999999999";
+
+const saleAccount = (id: string, name: string) => ({
+  id,
+  name,
+  category: "taxable" as const,
+  subType: "brokerage",
+  value: 500_000,
+  basis: 200_000,
+  growthRate: 0.05,
+  rmdEnabled: false,
+  titlingType: "jtwros" as const,
+  revocableTrustName: null,
+  owners: [
+    { kind: "family_member" as const, familyMemberId: FAMILY_MEMBER_ID, percent: 1 },
+  ],
+});
+
+/** The account half of a sale: owners become the trust, 100%. */
+const soldToTrust = (a: ReturnType<typeof saleAccount>) => ({
+  ...a,
+  owners: [{ kind: "entity" as const, entityId: ENTITY_ID, percent: 1 }],
+});
+
+function treeWithAccounts(accounts: unknown[]) {
+  vi.mocked(loadEffectiveTree).mockResolvedValue({
+    effectiveTree: {
+      ...minimalTree(),
+      accounts,
+      rothConversions: [],
+      assetTransactions: [],
+      reinvestments: [],
+      gifts: [],
+      externalBeneficiaries: [],
+      entities: [],
+    },
+    warnings: [],
+  } as never);
+}
+
+const accountChangeFor = (targetId: string) =>
+  (insertedChanges as Record<string, unknown>[]).find(
+    (c) => c.targetKind === "account" && c.targetId === targetId,
+  );
+
+const noteRowById = (id: string) =>
+  (insertedNotes as Record<string, unknown>[]).find((n) => n.id === id);
+
+const editCallFor = (targetId: string) =>
+  vi
+    .mocked(applyEntityEdit)
+    .mock.calls.map((c) => c[0])
+    .find((c) => c.targetId === targetId);
+
+describe("save-scenario — a sale to trust saves as one toggleable unit", () => {
+  it("POST puts the owner flip and its note under the SAME non-null toggle group", async () => {
+    const acct = saleAccount(SALE_ACCOUNT_1, "Brokerage");
+    treeWithAccounts([acct]);
+
+    const res = await POST(
+      makeRequest({
+        source: "base",
+        name: "IDGT sale",
+        mutations: [
+          { kind: "account-upsert", id: SALE_ACCOUNT_1, value: soldToTrust(acct) },
+          {
+            kind: "note-receivable-upsert",
+            id: NOTE_ID,
+            value: saleNote(),
+            sourceAccountId: SALE_ACCOUNT_1,
+          },
+        ],
+      }),
+      ctx as never,
+    );
+
+    expect(res.status).toBe(200);
+
+    const change = accountChangeFor(SALE_ACCOUNT_1) as { toggleGroupId: string | null };
+    const note = noteRowById(NOTE_ID) as { toggleGroupId: string | null };
+    expect(change).toBeDefined();
+    expect(note).toBeDefined();
+    // Non-null on BOTH halves first — a bare toBe() is green when both are null.
+    expect(change.toggleGroupId).not.toBeNull();
+    expect(note.toggleGroupId).not.toBeNull();
+    expect(change.toggleGroupId).toBe(note.toggleGroupId);
+
+    // Exactly one group, named for the advisor's action the way the live route
+    // names it.
+    const groups = insertedGroups as Record<string, unknown>[];
+    expect(groups).toHaveLength(1);
+    expect(groups[0].name).toBe("Sell Brokerage to trust");
+    expect(groups[0].defaultOn).toBe(true);
+    expect(groups[0].id).toBe(change.toggleGroupId);
+  });
+
+  it("PUT puts the owner flip and its note under the SAME non-null toggle group", async () => {
+    const acct = saleAccount(SALE_ACCOUNT_1, "Brokerage");
+    treeWithAccounts([acct]);
+
+    const res = await PUT(
+      makeUpdateRequest({
+        scenarioId: SCENARIO_ID,
+        mutations: [
+          { kind: "account-upsert", id: SALE_ACCOUNT_1, value: soldToTrust(acct) },
+          {
+            kind: "note-receivable-upsert",
+            id: NOTE_ID,
+            value: saleNote(),
+            sourceAccountId: SALE_ACCOUNT_1,
+          },
+        ],
+      }),
+      ctx as never,
+    );
+
+    expect(res.status).toBe(200);
+
+    const edit = editCallFor(SALE_ACCOUNT_1);
+    const note = noteRowById(NOTE_ID) as { toggleGroupId: string | null };
+    expect(edit).toBeDefined();
+    expect(note).toBeDefined();
+    expect(edit!.toggleGroupId ?? null).not.toBeNull();
+    expect(note.toggleGroupId).not.toBeNull();
+    expect(edit!.toggleGroupId).toBe(note.toggleGroupId);
+
+    const groups = insertedGroups as Record<string, unknown>[];
+    expect(groups).toHaveLength(1);
+    expect(groups[0].name).toBe("Sell Brokerage to trust");
+  });
+
+  it("POST gives TWO sales to the SAME trust two different groups", async () => {
+    // The discriminating scope. A heuristic that pairs a note to whichever
+    // account now has owners [{entity: T, 100%}] cannot tell these two sales
+    // apart — an advisor selling two assets to one IDGT is ordinary.
+    const a1 = saleAccount(SALE_ACCOUNT_1, "Brokerage");
+    const a2 = saleAccount(SALE_ACCOUNT_2, "Rental");
+    treeWithAccounts([a1, a2]);
+
+    const res = await POST(
+      makeRequest({
+        source: "base",
+        name: "Two IDGT sales",
+        mutations: [
+          { kind: "account-upsert", id: SALE_ACCOUNT_1, value: soldToTrust(a1) },
+          { kind: "account-upsert", id: SALE_ACCOUNT_2, value: soldToTrust(a2) },
+          {
+            kind: "note-receivable-upsert",
+            id: NOTE_ID,
+            value: saleNote(),
+            sourceAccountId: SALE_ACCOUNT_1,
+          },
+          {
+            kind: "note-receivable-upsert",
+            id: NOTE_ID_2,
+            value: { ...saleNote(), id: NOTE_ID_2, name: "Note from Rental sale" },
+            sourceAccountId: SALE_ACCOUNT_2,
+          },
+        ],
+      }),
+      ctx as never,
+    );
+
+    expect(res.status).toBe(200);
+
+    const change1 = accountChangeFor(SALE_ACCOUNT_1) as { toggleGroupId: string | null };
+    const change2 = accountChangeFor(SALE_ACCOUNT_2) as { toggleGroupId: string | null };
+    const note1 = noteRowById(NOTE_ID) as { toggleGroupId: string | null };
+    const note2 = noteRowById(NOTE_ID_2) as { toggleGroupId: string | null };
+    for (const half of [change1, change2, note1, note2]) {
+      expect(half).toBeDefined();
+      expect(half.toggleGroupId).not.toBeNull();
+    }
+    // Each sale pairs with ITS OWN note...
+    expect(change1.toggleGroupId).toBe(note1.toggleGroupId);
+    expect(change2.toggleGroupId).toBe(note2.toggleGroupId);
+    // ...and the two sales stay independently toggleable.
+    expect(change1.toggleGroupId).not.toBe(change2.toggleGroupId);
+
+    const groups = insertedGroups as Record<string, unknown>[];
+    expect(groups).toHaveLength(2);
+    expect(groups.map((g) => g.name).sort()).toEqual([
+      "Sell Brokerage to trust",
+      "Sell Rental to trust",
+    ]);
+    // orderIndex stays unique across every group source in the save.
+    expect(groups.map((g) => g.orderIndex).sort()).toEqual([0, 1]);
+  });
+
+  it("PUT gives TWO sales to the SAME trust two different groups", async () => {
+    const a1 = saleAccount(SALE_ACCOUNT_1, "Brokerage");
+    const a2 = saleAccount(SALE_ACCOUNT_2, "Rental");
+    treeWithAccounts([a1, a2]);
+
+    const res = await PUT(
+      makeUpdateRequest({
+        scenarioId: SCENARIO_ID,
+        mutations: [
+          { kind: "account-upsert", id: SALE_ACCOUNT_1, value: soldToTrust(a1) },
+          { kind: "account-upsert", id: SALE_ACCOUNT_2, value: soldToTrust(a2) },
+          {
+            kind: "note-receivable-upsert",
+            id: NOTE_ID,
+            value: saleNote(),
+            sourceAccountId: SALE_ACCOUNT_1,
+          },
+          {
+            kind: "note-receivable-upsert",
+            id: NOTE_ID_2,
+            value: { ...saleNote(), id: NOTE_ID_2, name: "Note from Rental sale" },
+            sourceAccountId: SALE_ACCOUNT_2,
+          },
+        ],
+      }),
+      ctx as never,
+    );
+
+    expect(res.status).toBe(200);
+
+    const edit1 = editCallFor(SALE_ACCOUNT_1);
+    const edit2 = editCallFor(SALE_ACCOUNT_2);
+    const note1 = noteRowById(NOTE_ID) as { toggleGroupId: string | null };
+    const note2 = noteRowById(NOTE_ID_2) as { toggleGroupId: string | null };
+    expect(edit1?.toggleGroupId ?? null).not.toBeNull();
+    expect(edit2?.toggleGroupId ?? null).not.toBeNull();
+    expect(note1.toggleGroupId).not.toBeNull();
+    expect(note2.toggleGroupId).not.toBeNull();
+    expect(edit1!.toggleGroupId).toBe(note1.toggleGroupId);
+    expect(edit2!.toggleGroupId).toBe(note2.toggleGroupId);
+    expect(edit1!.toggleGroupId).not.toBe(edit2!.toggleGroupId);
+    expect(insertedGroups).toHaveLength(2);
+  });
+
+  it("PUT re-save reuses the sale's existing group instead of minting a second one", async () => {
+    // The scenario already holds this sale from an earlier save: the note row
+    // exists and is gated by a group this scenario owns. A re-save must tag the
+    // account edit with THAT group, not a fresh one — otherwise the two halves
+    // drift apart again on every update.
+    const acct = saleAccount(SALE_ACCOUNT_1, "Brokerage");
+    treeWithAccounts([acct]);
+    vi.mocked(loadScenarioToggleGroups).mockResolvedValue([
+      {
+        id: "sale-gid",
+        scenarioId: SCENARIO_ID,
+        name: "Sell Brokerage to trust",
+        defaultOn: true,
+        requiresGroupId: null,
+        orderIndex: 0,
+      },
+    ] as never);
+    existingNoteRows = [{ id: NOTE_ID, toggleGroupId: "sale-gid" }];
+
+    const res = await PUT(
+      makeUpdateRequest({
+        scenarioId: SCENARIO_ID,
+        mutations: [
+          { kind: "account-upsert", id: SALE_ACCOUNT_1, value: soldToTrust(acct) },
+          {
+            kind: "note-receivable-upsert",
+            id: NOTE_ID,
+            value: saleNote(),
+            sourceAccountId: SALE_ACCOUNT_1,
+          },
+        ],
+      }),
+      ctx as never,
+    );
+
+    expect(res.status).toBe(200);
+    expect(insertedGroups).toHaveLength(0);
+    expect(editCallFor(SALE_ACCOUNT_1)?.toggleGroupId).toBe("sale-gid");
+  });
+});

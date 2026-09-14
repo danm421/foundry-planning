@@ -484,7 +484,16 @@ export function useSolverTrustEdits(
       id: account.id,
       value: { ...account, owners: [{ kind: "entity", entityId: trustId, percent: 1 }] },
     });
-    onChange({ kind: "note-receivable-upsert", id: note.id, value: note });
+    // `sourceAccountId` pairs the two halves of this one action: the save
+    // route puts the owner flip above and this note under a single toggle
+    // group, so the advisor cannot flip half a sale (asset in the trust with
+    // nothing owed for it, or the family keeping the asset AND the payments).
+    onChange({
+      kind: "note-receivable-upsert",
+      id: note.id,
+      value: note,
+      sourceAccountId: account.id,
+    });
   }, [clientData.accounts, entity.id, onChange]);
 
   const subType = form.trustSubType === "" ? undefined : form.trustSubType;

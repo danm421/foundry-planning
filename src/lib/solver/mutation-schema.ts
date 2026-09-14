@@ -780,6 +780,12 @@ export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
     kind: z.literal("note-receivable-upsert"),
     id: z.string().min(1),
     value: NOTE_RECEIVABLE_VALUE.nullable(),
+    // The account a sale-to-trust sold. Declared here and not on
+    // NOTE_RECEIVABLE_VALUE because it is solver-wire routing, not part of the
+    // note: the save route uses it to put the sale's owner-flip change and this
+    // note under one toggle group. A z.object STRIPS keys it does not declare,
+    // so omitting this line silently drops the pairing on the wire.
+    sourceAccountId: z.string().min(1).optional(),
   }),
   z.object({
     kind: z.literal("stress-inflation"),
