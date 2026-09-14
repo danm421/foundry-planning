@@ -74,6 +74,9 @@ export function SaveAsScenarioDialog({ open, mutations, onClose, onSubmit }: Pro
   );
 }
 
+/** Enough of a uuid to tell two rows apart without filling the line. */
+const short = (id: string) => `${id.slice(0, 8)}…`;
+
 function describeMutation(m: SolverMutation): string {
   switch (m.kind) {
     case "retirement-age":
@@ -85,19 +88,51 @@ function describeMutation(m: SolverMutation): string {
     case "living-expense-amount":
       return `Retirement living expense → $${m.amount.toLocaleString()}/yr`;
     case "expense-annual-amount":
-      return `Expense (${m.expenseId.slice(0, 8)}…) → $${m.annualAmount.toLocaleString()}`;
+      return `Expense (${short(m.expenseId)}) → $${m.annualAmount.toLocaleString()}`;
     case "expense-absorbs-remaining":
       return m.value
         ? "Current living expenses spend whatever's left"
         : "Current living expenses use a fixed amount";
     case "income-annual-amount":
-      return `Income (${m.incomeId.slice(0, 8)}…) → $${m.annualAmount.toLocaleString()}`;
+      return `Income (${short(m.incomeId)}) → $${m.annualAmount.toLocaleString()}`;
     case "ss-claim-age":
       return `SS claim age (${m.person}) → ${m.age}`;
     case "savings-contribution":
-      return `Savings contribution (${m.accountId.slice(0, 8)}…) → $${m.annualAmount.toLocaleString()}`;
+      return `Savings contribution (${short(m.accountId)}) → $${m.annualAmount.toLocaleString()}`;
     case "life-expectancy":
       return `Life expectancy (${m.person}) → ${m.age}`;
+    // ── Estate / trust editor ────────────────────────────────────────────────
+    // Without these the change list shows the advisor the raw mutation kind.
+    case "entity-upsert":
+      if (!m.value) return `Removed a trust or business (${short(m.id)})`;
+      return `${m.value.entityType === "trust" || m.value.entityType == null ? "Trust" : "Business"}: ${m.value.name ?? short(m.id)}`;
+    case "account-upsert":
+      return m.value ? `Account: ${m.value.name}` : `Removed an account (${short(m.id)})`;
+    case "liability-upsert":
+      return m.value ? `Liability: ${m.value.name}` : `Removed a liability (${short(m.id)})`;
+    case "income-upsert":
+      return m.value
+        ? `Income: ${m.value.name} → $${Math.round(m.value.annualAmount).toLocaleString()}/yr`
+        : `Removed an income (${short(m.id)})`;
+    case "expense-upsert":
+      return m.value
+        ? `Expense: ${m.value.name} → $${Math.round(m.value.annualAmount).toLocaleString()}/yr`
+        : `Removed an expense (${short(m.id)})`;
+    case "entity-flow-override-upsert":
+      return m.value
+        ? `Trust flows for ${m.year}`
+        : `Cleared trust flows for ${m.year}`;
+    case "note-receivable-upsert":
+      return m.value
+        ? `Promissory note: ${m.value.name}`
+        : `Removed a promissory note (${short(m.id)})`;
+    case "will-upsert":
+      return m.value ? `Will (${m.value.grantor})` : `Removed a will (${short(m.id)})`;
+    case "gift-upsert":
+      if (!m.value) return `Removed a planned gift (${short(m.id)})`;
+      return m.value.kind === "series"
+        ? `Planned gift series ${m.value.startYear}–${m.value.endYear}`
+        : `Planned gift in ${m.value.year}`;
     case "surplus-allocation":
       return `Surplus: spend ${Math.round(m.spendPct * 100)}% of cash flow`;
     default:
