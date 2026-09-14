@@ -77,4 +77,29 @@ describe("classifyRegions", () => {
     mocked.mockResolvedValue(JSON.stringify({ life_insurance_policy: many }));
     expect(await classifyRegions({ outline: "o", anchors: "a", entities })).toBeNull();
   });
+
+  it("returns null when the AI reply is the bare JSON literal null, rather than throwing", async () => {
+    // "null" is valid JSON, so parseAIResponse's JSON.parse fallback succeeds
+    // and hands back the value `null` — not `{}`. Object.hasOwnProperty.call
+    // on a null receiver throws a TypeError; that must not escape classifyRegions.
+    mocked.mockResolvedValue("null");
+    await expect(
+      classifyRegions({ outline: "o", anchors: "a", entities }),
+    ).resolves.toBeNull();
+  });
+
+  it("returns null on a non-JSON garbled response", async () => {
+    mocked.mockResolvedValue("not json at all");
+    expect(await classifyRegions({ outline: "o", anchors: "a", entities })).toBeNull();
+  });
+
+  it("returns null when the AI reply is a top-level JSON array", async () => {
+    mocked.mockResolvedValue(JSON.stringify([[1, 2]]));
+    expect(await classifyRegions({ outline: "o", anchors: "a", entities })).toBeNull();
+  });
+
+  it("returns null on a non-integer page number", async () => {
+    mocked.mockResolvedValue(JSON.stringify({ life_insurance_policy: [[1.5, 3]] }));
+    expect(await classifyRegions({ outline: "o", anchors: "a", entities })).toBeNull();
+  });
 });

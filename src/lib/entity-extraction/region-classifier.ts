@@ -52,9 +52,10 @@ export function buildRegionClassifierPrompt(entities: DetailEntity[]): string {
 
 /**
  * Ask which entities appear on which pages. Returns null on any failure — a
- * thrown AI call, an unparseable response, a schema violation, or a response
- * naming none of the offered entities — so the caller falls back rather than
- * treating a vacuous all-empty classification as a real answer.
+ * thrown AI call, an unparseable or non-object response, a schema violation,
+ * or a response naming none of the offered entities — so the caller falls
+ * back rather than treating a vacuous all-empty classification as a real
+ * answer.
  */
 export async function classifyRegions(args: {
   outline: string;
@@ -76,7 +77,19 @@ export async function classifyRegions(args: {
     return null;
   }
 
-  const parsed = parseAIResponse(raw);
+  // parseAIResponse is typed as returning Record<string, unknown>, but its
+  // first branch is a bare JSON.parse: a reply of the literal token "null"
+  // (or a top-level array/number/string) is valid JSON and comes back as
+  // that value, not `{}`. Treat that as unknown until it is checked below —
+  // Object.hasOwnProperty.call throws on a null/undefined receiver, and that
+  // throw must not escape as an unhandled rejection past this function's
+  // documented "null on any parse failure" contract.
+  const parsed: unknown = parseAIResponse(raw);
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    console.warn("[region-classifier] response was not a JSON object");
+    return null;
+  }
+
   const hasAnyKnownKey = entities.some((e) =>
     Object.prototype.hasOwnProperty.call(parsed, e.id),
   );
