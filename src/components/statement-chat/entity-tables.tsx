@@ -1,7 +1,7 @@
 "use client";
 
 import { findEntity, type DetailsTab } from "@/domain/forge/detail-fields";
-import { REVIEW_THRESHOLD } from "@/lib/entity-extraction";
+import { REVIEW_THRESHOLD } from "@/lib/entity-extraction/confidence";
 import type { CandidateRow } from "@/lib/entity-extraction/types";
 import { buildWriteRequest } from "@/lib/entity-writer";
 import { isAmbiguousMatch } from "@/lib/imports/commit/ambiguous-rows";
