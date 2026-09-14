@@ -3,6 +3,7 @@ import { buildDigest } from "../digest";
 import type { AttentionRow } from "../attention";
 import type { AccountRow } from "../accounts";
 import type { ActivePersonRow } from "../active-people";
+import { MAX_PEOPLE_ROWS } from "../digest";
 
 const URL = "https://app.foundryplanning.com/admin/growth";
 
@@ -205,5 +206,53 @@ describe("buildDigest — the most active people table", () => {
     const html = digest({ accounts: [account()], people: [person({ name: "<b>Ada</b>" })] })!.html;
     expect(html).toContain("&lt;b&gt;Ada&lt;/b&gt;");
     expect(html).not.toContain("<b>Ada</b>");
+  });
+});
+
+describe("buildDigest — the active-people cap", () => {
+  const many = (n: number) =>
+    Array.from({ length: n }, (_, i) =>
+      person({ name: `Person ${String(i).padStart(2, "0")}`, daysActive: 7, actions: 100 - i }),
+    );
+
+  it("renders every row when the list is at the cap", () => {
+    const d = digest({ accounts: [account()], people: many(MAX_PEOPLE_ROWS) })!;
+    expect(d.text).toContain(`Person ${String(MAX_PEOPLE_ROWS - 1).padStart(2, "0")}`);
+    expect(d.text).not.toContain("more, on the dashboard");
+  });
+
+  it("renders only the cap and says how many were left off", () => {
+    const d = digest({ accounts: [account()], people: many(MAX_PEOPLE_ROWS + 6) })!;
+    expect(d.text).toContain("Person 00");
+    expect(d.text).toContain(`Person ${String(MAX_PEOPLE_ROWS - 1).padStart(2, "0")}`);
+    expect(d.text).not.toContain(`Person ${String(MAX_PEOPLE_ROWS).padStart(2, "0")}`);
+    expect(d.text).toContain("and 6 more, on the dashboard");
+    // "more" is invariant — plural() would have written "6 mores".
+    expect(d.text).not.toContain("mores");
+  });
+
+  it("keeps the busiest people — the cap takes the head, not a slice of the tail", () => {
+    const d = digest({ accounts: [account()], people: many(MAX_PEOPLE_ROWS + 3) })!;
+    const first = d.text.indexOf("Person 00");
+    const last = d.text.indexOf(`Person ${String(MAX_PEOPLE_ROWS - 1).padStart(2, "0")}`);
+    expect(first).toBeGreaterThan(-1);
+    expect(last).toBeGreaterThan(first);
+  });
+
+  it("says it in the HTML body too, linking the dashboard", () => {
+    const html = digest({ accounts: [account()], people: many(MAX_PEOPLE_ROWS + 2) })!.html;
+    expect(html).toContain("and 2 more →");
+    expect(html).not.toContain("mores");
+    expect(html).toContain(`href="${URL}"`);
+  });
+
+  it("uses the singular for exactly one person over the cap", () => {
+    const d = digest({ accounts: [account()], people: many(MAX_PEOPLE_ROWS + 1) })!;
+    expect(d.text).toContain("and 1 more, on the dashboard");
+  });
+
+  it("still does not count the people toward the subject, capped or not", () => {
+    const d = digest({ accounts: [account()], people: many(MAX_PEOPLE_ROWS + 20) })!;
+    expect(d.subject).toBe("Foundry: 1 thing needs you");
   });
 });

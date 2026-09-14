@@ -40,6 +40,14 @@ const HEADINGS: Record<(typeof ORDER)[number], string> = {
 const TABLE_TITLE = "Trials and cancellations";
 const PEOPLE_TITLE = "Most active people";
 
+/**
+ * How many people the mail lists before it stops and points at the dashboard,
+ * the way notifications/digest.ts caps a per-advisor batch. The rows arrive
+ * busiest-first, so the cap keeps the head — the people worth reading about —
+ * and the count of who was left off keeps the omission honest.
+ */
+export const MAX_PEOPLE_ROWS = 10;
+
 const inOrder = (r: AttentionRow) => (ORDER as readonly string[]).includes(r.kind);
 
 /** null = not trialing. Negative means Stripe has not ended it yet. */
@@ -136,34 +144,55 @@ function signInLabel(iso: string | null): string {
 /** "5 of 7" — the bare number would not say what the denominator is. */
 const daysLabel = (r: ActivePersonRow) => `${r.daysActive} of ${ACTIVE_WINDOW_DAYS}`;
 
-function peopleHtml(people: ActivePersonRow[]): string {
-  return tableHtml(
-    PEOPLE_TITLE,
-    // The window is interpolated, never typed twice: a change to
-    // ACTIVE_WINDOW_DAYS must move this header and `daysLabel` together.
-    ["Firm", "Name", "Clients", "Days active", "Last sign-in", `Actions (${ACTIVE_WINDOW_DAYS}d)`],
-    people.map((r) => [
-      escapeHtml(r.firm),
-      escapeHtml(r.name),
-      String(r.clients),
-      daysLabel(r),
-      signInLabel(r.lastSignInAt),
-      String(r.actions),
-    ]),
+function peopleHtml(people: ActivePersonRow[], dashboardUrl: string): string {
+  const shown = people.slice(0, MAX_PEOPLE_ROWS);
+  const over = people.length - shown.length;
+  const more =
+    over > 0
+      ? `<p style="font-size:12px;color:${EMAIL.muted};margin:-20px 0 28px">` +
+        `<a href="${escapeHtml(dashboardUrl)}" style="color:${EMAIL.link}">` +
+        `and ${over} more →</a></p>`
+      : "";
+  return (
+    tableHtml(
+      PEOPLE_TITLE,
+      // The window is interpolated, never typed twice: a change to
+      // ACTIVE_WINDOW_DAYS must move this header and `daysLabel` together.
+      [
+        "Firm",
+        "Name",
+        "Clients",
+        "Days active",
+        "Last sign-in",
+        `Actions (${ACTIVE_WINDOW_DAYS}d)`,
+      ],
+      shown.map((r) => [
+        escapeHtml(r.firm),
+        escapeHtml(r.name),
+        String(r.clients),
+        daysLabel(r),
+        signInLabel(r.lastSignInAt),
+        String(r.actions),
+      ]),
+    ) + more
   );
 }
 
 function peopleText(people: ActivePersonRow[]): string {
-  return tableText(
-    PEOPLE_TITLE,
-    people.map((r) => [
-      r.firm,
-      r.name,
-      plural(r.clients, "client"),
-      `active ${daysLabel(r)} days`,
-      `last sign-in ${signInLabel(r.lastSignInAt)}`,
-      plural(r.actions, "action"),
-    ]),
+  const shown = people.slice(0, MAX_PEOPLE_ROWS);
+  const over = people.length - shown.length;
+  return (
+    tableText(
+      PEOPLE_TITLE,
+      shown.map((r) => [
+        r.firm,
+        r.name,
+        plural(r.clients, "client"),
+        `active ${daysLabel(r)} days`,
+        `last sign-in ${signInLabel(r.lastSignInAt)}`,
+        plural(r.actions, "action"),
+      ]),
+    ) + (over > 0 ? `\n  …and ${over} more, on the dashboard` : "")
   );
 }
 
@@ -217,7 +246,7 @@ export function buildDigest(input: {
     `<div style="${EMAIL_FONT};max-width:720px;margin:0 auto;padding:24px;color:${EMAIL.ink}">`,
     `<h1 style="font-size:16px;font-weight:600;margin:0 0 20px">${escapeHtml(subject)}</h1>`,
     ...(table ? [accountsHtml(accounts)] : []),
-    ...(who ? [peopleHtml(people)] : []),
+    ...(who ? [peopleHtml(people, dashboardUrl)] : []),
     ...sections.map(
       (s) =>
         `<h2 style="${H2}">${s.heading}</h2>` +
