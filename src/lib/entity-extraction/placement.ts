@@ -1,4 +1,5 @@
 // src/lib/entity-extraction/placement.ts
+import { askableFields } from "@/domain/forge/detail-fields";
 import type { DetailEntity, DetailField } from "@/domain/forge/detail-fields";
 import type { CandidateRow, Observation, RawObservationRow, ValueIssue } from "./types";
 
@@ -118,7 +119,7 @@ export function placeRow(
   raw: RawObservationRow,
   rowId: string,
 ): CandidateRow {
-  const askable = entity.fields.filter((f) => f.appliesTo !== "update" && f.writable !== false);
+  const askable = askableFields(entity);
   const values: Observation[] = [];
 
   for (const field of askable) {

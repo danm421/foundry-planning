@@ -1,4 +1,5 @@
 import { createElement, Fragment, type ReactNode } from "react";
+import { askableFields } from "@/domain/forge/detail-fields";
 import type { DetailEntity, DetailField } from "@/domain/forge/detail-fields";
 import type { ValueIssue } from "@/lib/entity-extraction/types";
 import { formatValue, type ColumnKind, type ColumnSpec } from "./entity-table";
@@ -41,7 +42,7 @@ function toColumnKind(kind: DetailField["kind"]): ColumnKind {
  * fields are askable, or their order.
  */
 function askableOrdered(entity: DetailEntity): readonly DetailField[] {
-  const askable = entity.fields.filter((f) => f.appliesTo !== "update" && f.writable !== false);
+  const askable = askableFields(entity);
   return [...askable.filter((f) => f.required), ...askable.filter((f) => !f.required)];
 }
 

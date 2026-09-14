@@ -1,15 +1,7 @@
 // src/lib/entity-extraction/prompt-builder.ts
 import { createHash } from "node:crypto";
+import { askableFields } from "@/domain/forge/detail-fields";
 import type { DetailEntity, DetailField } from "@/domain/forge/detail-fields";
-
-/**
- * Fields the create path will not accept. Asking for them is worse than not
- * asking: an `appliesTo: "update"` key is stripped by the create schema
- * silently, so the advisor is shown a value that never lands.
- */
-function askableFields(entity: DetailEntity): DetailField[] {
-  return entity.fields.filter((f) => f.appliesTo !== "update" && f.writable !== false);
-}
 
 function describeField(f: DetailField): string {
   const parts: string[] = [`- ${f.key} — ${f.label}`];

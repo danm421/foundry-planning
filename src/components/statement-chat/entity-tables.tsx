@@ -2,7 +2,7 @@
 
 import { findEntity, type DetailsTab } from "@/domain/forge/detail-fields";
 import { REVIEW_THRESHOLD } from "@/lib/entity-extraction/confidence";
-import type { CandidateRow } from "@/lib/entity-extraction/types";
+import type { CandidateRow, RowsByEntity } from "@/lib/entity-extraction/types";
 import { buildWriteRequest } from "@/lib/entity-writer";
 import { isAmbiguousMatch } from "@/lib/imports/commit/ambiguous-rows";
 import EntityTable from "./entity-table";
@@ -25,7 +25,7 @@ function tabRank(tab: DetailsTab): number {
 }
 
 export interface EntityTablesProps {
-  rows: Record<string, CandidateRow[]>;
+  rows: RowsByEntity;
   committedRowIds: string[];
   onCommitRows: (rowIds: string[]) => Promise<void>;
   /**

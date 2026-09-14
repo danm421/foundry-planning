@@ -2,13 +2,14 @@
 
 import { useCallback, useState } from "react";
 import { findEntity } from "@/domain/forge/detail-fields";
-import type { CandidateRow } from "@/lib/entity-extraction/types";
+import type { CandidateRow, RowsByEntity } from "@/lib/entity-extraction/types";
 import { commitMapRow } from "./commit-map-row";
 
 export type MapRowsStatus = "idle" | "running" | "done";
 
-/** The map-pass route's own shape: one entry per entity that produced rows. */
-export type RowsByEntity = Record<string, CandidateRow[]>;
+// Re-exported so the existing `import { useMapRows, type RowsByEntity }`
+// call sites keep working; the declaration lives beside `CandidateRow`.
+export type { RowsByEntity };
 
 /**
  * The map-driven review rows for one import: run the extraction pass over the
@@ -195,6 +196,12 @@ export function useMapRows({
         // `null` means the response did not identify the record — `commitMapRow`
         // has already warned about it, and no stamp is better than a wrong one.
         if (outcome.createdId !== null) {
+          // A refused stamp and a thrown stamp are the SAME fact to the
+          // advisor — the record was written, the bookkeeping was not — so
+          // each arm only works out the reason and the one sentence is
+          // written once. Two copies is how the wording drifts between the
+          // two ways this call can fail.
+          let stampFailure: string | null = null;
           try {
             const res = await fetch(mapPassUrl, {
               method: "PATCH",
@@ -207,16 +214,15 @@ export function useMapRows({
             });
             if (!res.ok) {
               const body = (await res.json().catch(() => ({}))) as { error?: string };
-              addWarning(
-                `${entity.label} was written, but marking the row as committed failed ` +
-                  `(${body.error ?? `HTTP ${res.status}`}). Committing it again would create a duplicate.`,
-              );
+              stampFailure = body.error ?? `HTTP ${res.status}`;
             }
           } catch (err) {
+            stampFailure = err instanceof Error ? err.message : "network error";
+          }
+          if (stampFailure !== null) {
             addWarning(
               `${entity.label} was written, but marking the row as committed failed ` +
-                `(${err instanceof Error ? err.message : "network error"}). ` +
-                `Committing it again would create a duplicate.`,
+                `(${stampFailure}). Committing it again would create a duplicate.`,
             );
           }
         }

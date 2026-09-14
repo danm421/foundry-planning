@@ -6,7 +6,7 @@ import { clientImports, clientImportFiles, clients } from "@/db/schema";
 import { getOrgId } from "@/lib/db-helpers";
 import DetailsPageShell from "@/components/details-page-shell";
 import { ChatSurface } from "@/components/statement-chat/chat-surface";
-import type { RowsByEntity } from "@/components/statement-chat/use-map-rows";
+import type { RowsByEntity } from "@/lib/entity-extraction/types";
 import { loadChatReviewContext } from "@/lib/statement-chat/review-context";
 
 interface PageProps {

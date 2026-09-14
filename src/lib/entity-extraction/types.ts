@@ -31,3 +31,14 @@ export interface CandidateRow {
   /** Lowest confidence across required and identity fields. */
   rowConfidence: number;
 }
+
+/**
+ * Extracted rows keyed by entity id — one entry per entity that produced any.
+ *
+ * This is the wire shape of `/chat/map-pass` and the persisted shape of
+ * `ChatState.entityRows`, so it is declared here beside `CandidateRow` rather
+ * than in any one consumer: it crosses the server pass, the route, the page
+ * and the browser hook, and a copy in a `"use client"` module would make a
+ * server component import a type from a client file to describe its own data.
+ */
+export type RowsByEntity = Record<string, CandidateRow[]>;

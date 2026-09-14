@@ -10,11 +10,10 @@ import { extractMapEntities } from "@/lib/entity-extraction";
 // both from the barrel would let one mock silently stub out the matching this
 // function exists to do, and every row would come back undefined-matched.
 import { matchByIdentity } from "@/lib/entity-extraction/matcher";
-import type { CandidateRow } from "@/lib/entity-extraction/types";
+import type { RowsByEntity } from "@/lib/entity-extraction/types";
 import { NotFoundError } from "@/lib/imports/authz";
 import { loadExistingRows } from "./existing-rows";
 
-type RowsByEntity = Record<string, CandidateRow[]>;
 
 /**
  * Annotate each candidate row with `exact` / `fuzzy` / `new` against the

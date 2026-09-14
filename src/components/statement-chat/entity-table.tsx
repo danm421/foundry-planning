@@ -131,7 +131,11 @@ export interface EntityTableProps<Row extends EntityRow> {
    * prop) renders nothing extra — Phase 1's `accounts-table.tsx` never
    * passes this and is unaffected.
    */
-  rowNotice?: (row: Row) => { needsReview?: boolean; action?: "Add" | "Update" };
+  // "Add" only, never "Update": Ruling 34 removed the update caption when the
+  // writer turned out to POST a create for every non-array entity, so a row
+  // captioned "Update" was the one it would have DUPLICATED. Keeping the word
+  // representable here is what lets it come back by accident.
+  rowNotice?: (row: Row) => { needsReview?: boolean; action?: "Add" };
 }
 
 const RIGHT_ALIGN_KINDS: ReadonlySet<ColumnKind> = new Set([

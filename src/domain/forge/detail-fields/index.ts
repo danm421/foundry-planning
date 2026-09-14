@@ -80,3 +80,19 @@ export function missingForgeTool(): DetailEntity[] {
 export function documentEvidenceEntities(): DetailEntity[] {
   return DETAIL_ENTITIES.filter((e) => e.documentEvidence === true);
 }
+
+/**
+ * Fields the create path will accept. Asking for anything else is worse than
+ * not asking: an `appliesTo: "update"` key is stripped by the create schema
+ * silently, so the advisor is shown a value that never lands.
+ *
+ * Lives here, beside the map it reads, because four consumers must agree by
+ * construction — the prompt asks the model for exactly this set, `placeRow`
+ * computes `missingRequired` from exactly this set, the review table renders
+ * exactly this set, and `buildWriteRequest` drops anything outside it. Four
+ * private copies of the predicate is how the prompt comes to ask for a field
+ * the writer silently discards.
+ */
+export function askableFields(entity: DetailEntity): DetailField[] {
+  return entity.fields.filter((f) => f.appliesTo !== "update" && f.writable !== false);
+}
