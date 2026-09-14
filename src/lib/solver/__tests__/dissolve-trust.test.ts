@@ -719,13 +719,20 @@ describe("buildDissolveTrustMutations — gifts aimed at the trust", () => {
 // ── The trust's own cash bucket ─────────────────────────────────────────────
 
 describe("buildDissolveTrustMutations — the trust's default checking account", () => {
-  // A REAL id, not the deterministic `entity-checking-<id>` one: applyMutations
-  // strips the synthesized bucket by that id on the entity delete anyway
-  // (apply-mutations.ts:374), so a synthetic-id fixture could not tell the
-  // lever's own decision from that sweep. The API path creates a real
-  // `<entity> — Cash` row per base scenario, and only a real row can hold money.
-  const bucket = (value: number) => ({
-    id: "acct-trust-cash",
+  // Two shapes of trust-owned default checking exist and they are NOT
+  // interchangeable:
+  //   • the SYNTHESIZED bucket, id `entity-checking-<entityId>`, minted by
+  //     `makeEntityCheckingAccount` because the engine needs somewhere to route
+  //     an entity's cash. Nobody funded it; nothing is lost by dropping it.
+  //   • any real account the household RETITLED into the trust. The add-trust
+  //     form offers every household-owned non-insurance account
+  //     (`isRetitleFundingEligible`), the household's own cash hub included —
+  //     and a hub sitting at $0 is ordinary. Deleting that on dissolve destroys
+  //     an account the advisor expects back.
+  // The lever cannot tell them apart from `owners` (both are 100% entity-owned),
+  // so it tells them apart by ID, which is the one fact that differs.
+  const bucket = (value: number, id = "acct-trust-cash") => ({
+    id,
     name: "Smith Family ILIT — Cash",
     category: "cash",
     subType: "checking",
@@ -736,19 +743,57 @@ describe("buildDissolveTrustMutations — the trust's default checking account",
     isDefaultChecking: true,
     owners: [{ kind: "entity", entityId: "ent-ilit", percent: 1 }],
   });
+  /** A household hub the dissolve does not touch, so the returning account has
+   *  no reason to keep the flag. */
+  const householdHub = {
+    id: "acct-hh-cash",
+    name: "Joint Checking",
+    category: "cash",
+    subType: "checking",
+    value: 25_000,
+    basis: 25_000,
+    growthRate: 0,
+    rmdEnabled: false,
+    isDefaultChecking: true,
+    owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+  };
 
-  it("drops an empty one rather than handing the household a junk account", () => {
-    const t = tree({ accounts: [bucket(0)] });
+  it("drops the SYNTHESIZED empty bucket rather than handing the household a junk account", () => {
+    const t = tree({ accounts: [bucket(0, entityCheckingId("ent-ilit")), householdHub] });
     const muts = buildDissolveTrustMutations(t, ilit);
-    expect(muts).toContainEqual({ kind: "account-upsert", id: "acct-trust-cash", value: null });
-    expect(applyMutations(t, muts).accounts.find((a) => a.id === "acct-trust-cash")).toBeUndefined();
+    expect(muts).toContainEqual({
+      kind: "account-upsert",
+      id: entityCheckingId("ent-ilit"),
+      value: null,
+    });
+    expect(
+      applyMutations(t, muts).accounts.find((a) => a.id === entityCheckingId("ent-ilit")),
+    ).toBeUndefined();
+  });
+
+  it("returns a REAL empty account the household funded in, instead of deleting it", () => {
+    // The household's own $0 cash hub, retitled into the trust. Deleted, every
+    // household income and expense then resolves `defaultChecking?.id` to
+    // undefined (projection.ts:780-786) and deposits nowhere — and the account
+    // row the advisor funded in is simply gone.
+    const t = tree({ accounts: [bucket(0), householdHub] });
+    const muts = buildDissolveTrustMutations(t, ilit);
+    expect(muts).not.toContainEqual({
+      kind: "account-upsert",
+      id: "acct-trust-cash",
+      value: null,
+    });
+    const after = accountById(applyMutations(t, muts), "acct-trust-cash");
+    expect(after.owners).toEqual([
+      { kind: "family_member", familyMemberId: "fm-client", percent: 1 },
+    ]);
   });
 
   it("returns one that holds money, but clears isDefaultChecking so it cannot hijack household cash", () => {
     // projection.ts:683-685 resolves the household's cash hub with a `.find()`
     // over isDefaultChecking — a second flagged household account can capture
     // every household cash flow.
-    const t = tree({ accounts: [bucket(45_000)] });
+    const t = tree({ accounts: [bucket(45_000), householdHub] });
     const out = applyMutations(t, buildDissolveTrustMutations(t, ilit));
     const after = accountById(out, "acct-trust-cash");
     expect(after.value).toBe(45_000);
@@ -756,6 +801,23 @@ describe("buildDissolveTrustMutations — the trust's default checking account",
     expect(after.owners).toEqual([
       { kind: "family_member", familyMemberId: "fm-client", percent: 1 },
     ]);
+  });
+
+  it("keeps isDefaultChecking when clearing it would leave the household with NO cash hub", () => {
+    // There is no second hub to hijack — the returning account IS the only one.
+    // Cleared here, `resolveCashAccount(undefined)` returns undefined for every
+    // household flow and the money lands nowhere.
+    const t = tree({ accounts: [bucket(45_000)] });
+    const out = applyMutations(t, buildDissolveTrustMutations(t, ilit));
+    expect(accountById(out, "acct-trust-cash").isDefaultChecking).toBe(true);
+  });
+
+  it("hands the flag back to at most ONE returning account", () => {
+    const second = { ...bucket(10_000, "acct-trust-cash-2"), name: "ILIT Cash II" };
+    const t = tree({ accounts: [bucket(45_000), second] });
+    const out = applyMutations(t, buildDissolveTrustMutations(t, ilit));
+    const flagged = out.accounts.filter((a) => a.isDefaultChecking);
+    expect(flagged).toHaveLength(1);
   });
 });
 

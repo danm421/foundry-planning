@@ -8,7 +8,10 @@ import type {
   Income,
 } from "@/engine/types";
 import type { AccountOwner, EntityOwner } from "@/engine/ownership";
-import { entityCheckingId } from "@/lib/entities/entity-checking";
+import {
+  entityCheckingId,
+  isSyntheticEntityChecking,
+} from "@/lib/entities/entity-checking";
 import type { TrustSubType } from "@/lib/entities/trust";
 import { defaultIsGrantorFor } from "@/lib/trust-defaults";
 import type { SolverMutation } from "./types";
@@ -143,6 +146,18 @@ export function buildDissolveTrustMutations(
   const heldByTrust = (owners: readonly (AccountOwner | EntityOwner)[] | undefined) =>
     (owners ?? []).some((o) => isTrustSlice(o, entity.id));
 
+  // Does the household keep a cash hub of its own through this dissolve? The
+  // engine picks it with `.find(a => a.isDefaultChecking && !isFullyEntityOwned(a))`
+  // (projection.ts:683-684), so every entity-owned account is invisible to it —
+  // which means an account the loop below is about to return can be the only
+  // candidate there will ever be. Mirrored inline rather than importing the
+  // engine predicate: lib/solver imports engine TYPES only.
+  let householdKeepsAHub = tree.accounts.some(
+    (a) =>
+      a.isDefaultChecking === true &&
+      !(a.owners.length > 0 && a.owners.every((o) => o.kind === "entity")),
+  );
+
   // 1. Accounts — retitle, clear a beneficiary designation naming the trust, or
   //    both, in one mutation.
   for (const a of tree.accounts) {
@@ -151,20 +166,30 @@ export function buildDissolveTrustMutations(
     const namesTrust = bens.some((b) => b.entityIdRef === entity.id);
     if (!owned && !namesTrust) continue;
 
-    // The trust's default-checking account is its cash hub. An empty one is
-    // dropped rather than handed to the household as a junk row. One that holds
-    // money comes home with the flag CLEARED: the engine resolves the
-    // household's cash hub with a `.find()` over isDefaultChecking
-    // (projection.ts:683-685), so a second flagged household account would
-    // capture every household cash flow.
-    if (owned && a.isDefaultChecking && (a.value ?? 0) === 0) {
+    // The trust's default-checking account is its cash hub. An empty SYNTHESIZED
+    // one is dropped rather than handed to the household as a junk row — nobody
+    // funded it, `makeEntityCheckingAccount` minted it so the engine had
+    // somewhere to route the entity's cash. A real account is never dropped: the
+    // add-trust form offers every household-owned non-insurance account
+    // (`isRetitleFundingEligible`), the household's own cash hub included, and a
+    // hub sitting at $0 is ordinary. `owners` cannot tell the two apart — both
+    // are 100% entity-owned — so the id does, which is the one fact that differs.
+    if (owned && a.isDefaultChecking && (a.value ?? 0) === 0 && isSyntheticEntityChecking(a.id)) {
       muts.push({ kind: "account-upsert", id: a.id, value: null });
       continue;
     }
     const next: Account = { ...a };
     if (owned) {
       next.owners = returnOwnersToHeir(a.owners, entity.id, heirId);
-      if (a.isDefaultChecking) next.isDefaultChecking = false;
+      // A returning hub gives up the flag, because a second flagged household
+      // account would capture every household cash flow ahead of the real one
+      // (projection.ts:683-685) — unless there IS no real one, in which case
+      // clearing it leaves `resolveCashAccount(undefined)` undefined and every
+      // household flow deposits nowhere. At most one account gets it back.
+      if (a.isDefaultChecking) {
+        next.isDefaultChecking = !householdKeepsAHub;
+        householdKeepsAHub = true;
+      }
     }
     if (namesTrust) next.beneficiaries = bens.filter((b) => b.entityIdRef !== entity.id);
     muts.push({ kind: "account-upsert", id: a.id, value: next });
