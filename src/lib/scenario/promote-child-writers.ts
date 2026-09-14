@@ -97,8 +97,35 @@ export async function updateLiabilityChildren(
   }
 }
 
-/** liabilityOwners has no externalBeneficiaryId column (only family_member /
- *  entity), unlike accountOwners. */
+/**
+ * `liability_owners` has only family_member_id and entity_id — no
+ * externalBeneficiaryId column, unlike `account_owners` — and a CHECK requiring
+ * exactly one of them to be set.
+ *
+ * So an `external_beneficiary` or `gifted_away` owner lands BOTH columns NULL
+ * and Postgres aborts the whole promote transaction with a constraint name
+ * instead of a message. That shape is reachable: the dissolve lever's
+ * `returnOwnersToHeir` deliberately preserves non-trust ownership slices,
+ * including a `gifted_away` one, and `liability-upsert` is a new solver writer.
+ *
+ * Throwing names the owner kind the way `noteOwnerColumns` does for the note
+ * tables. Representing these owners properly needs a migration; until then a
+ * legible failure beats a constraint violation.
+ */
+function liabilityOwnerColumns(o: Record<string, unknown>) {
+  switch (o.kind) {
+    case "family_member":
+      return { familyMemberId: (o.familyMemberId ?? null) as string | null, entityId: null };
+    case "entity":
+      return { familyMemberId: null, entityId: (o.entityId ?? null) as string | null };
+    default:
+      throw new Error(
+        `liability owner kind "${String(o.kind)}" has no liability_owners column — ` +
+          `only family_member and entity can be promoted`,
+      );
+  }
+}
+
 async function insertLiabilityOwnerRows(
   tx: PromoteTx,
   liabilityId: string,
@@ -107,8 +134,7 @@ async function insertLiabilityOwnerRows(
   for (const o of (raw as Array<Record<string, unknown>> | undefined) ?? []) {
     const values = coerceForTable(liabilityOwners, {
       liabilityId,
-      familyMemberId: o.kind === "family_member" ? (o.familyMemberId ?? null) : null,
-      entityId: o.kind === "entity" ? (o.entityId ?? null) : null,
+      ...liabilityOwnerColumns(o),
       percent: o.percent,
     });
     await tx.insert(liabilityOwners).values(values as never);

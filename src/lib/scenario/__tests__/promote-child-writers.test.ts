@@ -156,6 +156,41 @@ describe("writeLiabilityChildren", () => {
     await writeLiabilityChildren(tx as never, "liab4", {});
     expect(inserted).toHaveLength(0);
   });
+
+  // I8: `liability_owners` has a CHECK requiring exactly one of
+  // (family_member_id, entity_id). An `external_beneficiary` or `gifted_away`
+  // owner lands BOTH null, and Postgres then aborts the whole promote
+  // transaction with a constraint name instead of a message. The dissolve
+  // lever's `returnOwnersToHeir` deliberately preserves non-trust slices,
+  // including a `gifted_away` one, and this branch adds the first solver writer
+  // of liability owners — so the shape is reachable.
+  it.each(["external_beneficiary", "gifted_away"] as const)(
+    "throws a named error for a %s owner instead of aborting the promote on a CHECK",
+    async (kind) => {
+      const { tx, inserted } = makeTx();
+      const raw = {
+        owners: [
+          { kind: "family_member", familyMemberId: "fm2", percent: 0.5 },
+          { kind, externalBeneficiaryId: "eb1", recipient: { kind: "family_member", id: "fm9" }, percent: 0.5 },
+        ],
+      };
+      await expect(
+        writeLiabilityChildren(tx as never, "liab-x", raw),
+      ).rejects.toThrow(new RegExp(`${kind}.*liability_owners`));
+      // The good row may already be in; what matters is that the failure is
+      // legible rather than a constraint name from Postgres.
+      expect(inserted.length).toBeLessThanOrEqual(1);
+    },
+  );
+
+  it("throws for an unmappable owner on an EDIT too, not just an add", async () => {
+    const { tx } = makeTx();
+    await expect(
+      updateLiabilityChildren(tx as never, "liab-x", {
+        owners: [{ kind: "gifted_away", recipient: { kind: "entity", id: "e1" }, percent: 1 }],
+      }),
+    ).rejects.toThrow(/gifted_away.*liability_owners/);
+  });
 });
 
 // ── writeIncomeChildren ────────────────────────────────────────────────────
