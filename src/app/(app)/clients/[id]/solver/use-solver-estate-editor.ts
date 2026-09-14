@@ -137,6 +137,12 @@ export function useSolverEstateEditor({
       // Restoring them beats the lever's "return it to the grantor" rule, which
       // would hand a 50/50 joint account entirely to one spouse. Swapped in
       // place so the lever's ordering — entity delete last — is preserved.
+      //
+      // Deliberate change from the previous body, which reverted EVERY
+      // `fundedOriginals` entry unconditionally: a revert now fires only for an
+      // account the lever still sees as this trust's. An account funded here and
+      // since retitled somewhere else is left alone rather than clobbered back
+      // to its pre-funding owners.
       const original = m.kind === "account-upsert" ? originals.get(m.id) : undefined;
       onChange(original ? buildRevertFundingMutation(original) : m);
     }

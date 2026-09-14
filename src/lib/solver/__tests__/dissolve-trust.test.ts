@@ -20,6 +20,8 @@ import { isBaseSavableMutation } from "@/lib/solver/mutations-to-base-updates";
 import { mutationsToScenarioChanges } from "@/lib/solver/mutations-to-scenario-changes";
 import { mutationKey } from "@/lib/solver/types";
 import { buildCltRemainderGiftMutation } from "@/lib/solver/split-interest-levers";
+import { applyWillSpecificBequests } from "@/engine/death-event/shared";
+import type { Account, FamilyMember } from "@/engine/types";
 import type { ClientData, EntitySummary, Will } from "@/engine/types";
 
 const ilit: EntitySummary = {
@@ -353,7 +355,53 @@ describe("buildDissolveTrustMutations — dangling references", () => {
     const out = applyMutations(t, buildDissolveTrustMutations(t, ilit));
     const ids = out.wills?.[0].bequests[0].recipients.map((r) => r.recipientId) ?? [];
     expect(ids).not.toContain("ent-ilit");
-    expect(ids).toContain("fm-spouse");
+    expect(ids).toEqual(["fm-spouse"]);
+  });
+
+  it("drops a bequest the trust was the ONLY recipient of, so a sibling clause is not pro-rated down", () => {
+    // An emptied clause is NOT inert. `specifics` is filtered by account id
+    // alone (death-event/shared.ts:916-921) and its `percentage` still lands in
+    // `rawTotal` (:942-945), so two 60% clauses on one account over-allocate and
+    // BOTH scale to 50% (:947-951) — the spouse silently loses ten points of the
+    // account. `cascadeResolution.ts:243-247` drops such a row on a saved-
+    // scenario reload too, so keeping it would also split preview from save.
+    const toTrust = {
+      id: "bq-trust", name: "To the ILIT", kind: "asset", assetMode: "specific",
+      accountId: "acct-1", entityId: null, liabilityId: null, percentage: 60,
+      condition: "always", sortOrder: 0,
+      recipients: [{ recipientKind: "entity", recipientId: "ent-ilit", percentage: 100, sortOrder: 0 }],
+    };
+    const toSpouse = {
+      id: "bq-spouse", name: "To Amy", kind: "asset", assetMode: "specific",
+      accountId: "acct-1", entityId: null, liabilityId: null, percentage: 60,
+      condition: "always", sortOrder: 1,
+      recipients: [{ recipientKind: "family_member", recipientId: "fm-spouse", percentage: 100, sortOrder: 0 }],
+    };
+    const t = tree({
+      accounts: [trustAccount],
+      wills: [{ id: "will-1", grantor: "client", bequests: [toTrust, toSpouse] }],
+    });
+    const after = applyMutations(t, buildDissolveTrustMutations(t, ilit)).wills![0];
+    expect(after.bequests.map((b) => b.id)).toEqual(["bq-spouse"]);
+
+    // Run the engine's own specific-bequest pass over both shapes. The control
+    // (the emptied clause kept) is what proves this is not a vacuous assertion:
+    // it really does move 10% of the account and raise a bogus warning.
+    const source = t.accounts[0] as Account;
+    const fms = t.familyMembers as FamilyMember[];
+    const run = (will: typeof after) =>
+      applyWillSpecificBequests(source, 1, will, 1, "spouse", "fm-spouse", fms, [], [], undefined);
+
+    const dropped = run(after);
+    expect(dropped.fractionClaimed).toBeCloseTo(0.6, 10);
+    expect(dropped.warnings).toEqual([]);
+
+    const kept = run({
+      ...after,
+      bequests: [{ ...toTrust, recipients: [] }, after.bequests[0]] as typeof after.bequests,
+    });
+    expect(kept.fractionClaimed).toBeCloseTo(0.5, 10);
+    expect(kept.warnings).toContain("over_allocation_in_will:acct-1");
   });
 
   it("clears a will residuary recipient naming the trust", () => {
@@ -395,12 +443,19 @@ describe("buildDissolveTrustMutations — dangling references", () => {
     const crt: EntitySummary = {
       id: "ent-crt", name: "Smith CRT", entityType: "trust", trustSubType: "crt",
       isGrantor: false, includeInPortfolio: false,
-      remainderBeneficiaries: [{ entityIdRef: "ent-ilit", percentage: 100, distributionForm: "outright" }],
+      remainderBeneficiaries: [
+        { entityIdRef: "ent-ilit", percentage: 60, distributionForm: "outright" },
+        { familyMemberId: "fm-spouse", percentage: 40, distributionForm: "outright" },
+      ],
     };
     const t = tree({ entities: [ilit, crt] });
     const out = applyMutations(t, buildDissolveTrustMutations(t, ilit));
     const after = out.entities?.find((e) => e.id === "ent-crt");
     expect((after?.remainderBeneficiaries ?? []).map((r) => r.entityIdRef)).not.toContain("ent-ilit");
+    // Positive assertion: the sibling must SURVIVE, or dropping the whole array
+    // would satisfy the `not.toContain` above vacuously.
+    expect(after?.remainderBeneficiaries).toHaveLength(1);
+    expect(after?.remainderBeneficiaries?.[0].familyMemberId).toBe("fm-spouse");
   });
 
   it("clears another trust's income beneficiary naming this trust", () => {
@@ -423,12 +478,17 @@ describe("buildDissolveTrustMutations — dangling references", () => {
     const crt: EntitySummary = {
       id: "ent-crt", name: "Smith CRT", entityType: "trust", trustSubType: "crt",
       isGrantor: false, includeInPortfolio: false,
-      beneficiaries: [{ id: "eb1", tier: "primary", percentage: 100, entityIdRef: "ent-ilit", sortOrder: 0 }],
+      beneficiaries: [
+        { id: "eb1", tier: "primary", percentage: 100, entityIdRef: "ent-ilit", sortOrder: 0 },
+        { id: "eb2", tier: "contingent", percentage: 100, familyMemberId: "fm-spouse", sortOrder: 1 },
+      ],
     };
     const t = tree({ entities: [ilit, crt] });
     const out = applyMutations(t, buildDissolveTrustMutations(t, ilit));
     const after = out.entities?.find((e) => e.id === "ent-crt");
     expect((after?.beneficiaries ?? []).map((b) => b.entityIdRef)).not.toContain("ent-ilit");
+    // Positive assertion — see the remainder case above.
+    expect((after?.beneficiaries ?? []).map((b) => b.id)).toEqual(["eb2"]);
   });
 });
 

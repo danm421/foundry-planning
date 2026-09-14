@@ -228,10 +228,15 @@ export function buildDissolveTrustMutations(
   for (const id of giftIds) muts.push({ kind: "gift-upsert", id, value: null });
 
   // 5. Wills — bequest recipients and residuary recipients are separate arrays.
-  //    A bequest left with no recipients is KEPT: the engine already treats a
-  //    clause with no effective allocation as not-fired and lets the asset flow
-  //    on to the residuary (death-event/shared.ts:974-981), so dropping the row
-  //    would throw away the advisor's clause for no gain.
+  //    A bequest left with NO recipients is dropped, not kept. It is not inert:
+  //    `specifics` is filtered by account id alone (death-event/shared.ts:916-921),
+  //    and an emptied clause still contributes its `percentage` to `rawTotal`
+  //    (:942-945), so it can tip the will into over-allocation and pro-rate a
+  //    SURVIVING sibling bequest down (:947-951) — two 60% clauses on one
+  //    account scale to 50% each, and the spouse loses ten points of it.
+  //    `cascadeResolution.ts:243-247` drops such a row unconditionally on a
+  //    saved-scenario reload too, so keeping it would also make the live preview
+  //    and the saved scenario disagree.
   const namesTrust = (r: { recipientKind: string; recipientId: string | null }) =>
     r.recipientKind === "entity" && r.recipientId === entity.id;
   for (const w of tree.wills ?? []) {
@@ -243,10 +248,9 @@ export function buildDissolveTrustMutations(
       id: w.id,
       value: {
         ...w,
-        bequests: w.bequests.map((b) => ({
-          ...b,
-          recipients: b.recipients.filter((r) => !namesTrust(r)),
-        })),
+        bequests: w.bequests
+          .map((b) => ({ ...b, recipients: b.recipients.filter((r) => !namesTrust(r)) }))
+          .filter((b) => b.recipients.length > 0),
         // Written only when the will already had the key: adding an empty array
         // where there was `undefined` would diff as a field change on save.
         ...(w.residuaryRecipients ? { residuaryRecipients: residuary } : {}),
