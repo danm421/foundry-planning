@@ -6,6 +6,7 @@ import type { SolverMutation } from "@/lib/solver/types";
 import type { SolverTrustDraft } from "../solver-trust-form";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { useSolverEstateEditor } from "../use-solver-estate-editor";
+import { partitionBaseSavableMutations } from "@/lib/solver/mutations-to-base-updates";
 
 const planSettings = {
   planStartYear: 2026,
@@ -157,6 +158,33 @@ describe("useSolverEstateEditor — removeTrust", () => {
     ]);
   });
 
+  it("declares the dissolve on the exact-restore, so Save-to-base cannot take it alone", () => {
+    // The restore is swapped in PLACE OF the lever's retitle. Dropping the
+    // `dissolvedEntityId` declaration there would make this one account
+    // base-savable on its own — half a trust removal on the real record.
+    const working = clientData({
+      entities: [ilit],
+      accounts: [inTrust(fundedOriginal)],
+      familyMembers,
+    } as unknown as Partial<ClientData>);
+    const { view, onChange } = setup({ working });
+
+    act(() =>
+      view.result.current.addTrust([], {
+        entity: ilit,
+        fundedOriginals: [fundedOriginal],
+      } as SolverTrustDraft),
+    );
+    act(() => view.result.current.removeTrust(ilit));
+
+    const emitted = onChange.mock.calls.map(([m]) => m as SolverMutation);
+    expect(accountUpserts(onChange).find((m) => m.id === "acct-funded")).toHaveProperty(
+      "dissolvedEntityId",
+      "ent-ilit",
+    );
+    expect(partitionBaseSavableMutations(emitted).savable).toEqual([]);
+  });
+
   it("falls back to the lever's retitle for a trust-owned account this session did NOT fund", () => {
     const baseHeld = inTrust({ ...fundedOriginal, id: "acct-base", name: "Trust brokerage" });
     const working = clientData({
@@ -221,6 +249,8 @@ describe("useSolverEstateEditor — removeTrust", () => {
         value: expect.objectContaining({
           owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
         }),
+        // The dissolve pairing, so Save-to-base cannot take this half alone.
+        dissolvedEntityId: "ent-ilit",
       },
       { kind: "entity-upsert", id: "ent-ilit", value: null },
     ]);

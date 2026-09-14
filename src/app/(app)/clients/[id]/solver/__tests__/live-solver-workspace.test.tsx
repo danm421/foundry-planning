@@ -589,6 +589,138 @@ describe("LiveSolverWorkspace — save to base facts", () => {
     expect(saveToBaseBtn.getAttribute("title") ?? "").toMatch(/sale to a trust/i);
   });
 
+  // ── I1: Save to base must not write HALF a trust REMOVAL either ────────────
+  //
+  // A dissolve emits a mix: the retitles and the returned income/expense are
+  // base-savable by kind, while the entity delete, the will edit, the liability
+  // and the gifts are not. Posting only the savable half leaves the client's
+  // REAL record with the trust's accounts titled to the grantor while the trust
+  // still exists and the will still names it. The pairing is DECLARED by
+  // `dissolvedEntityId`.
+  const DISSOLVED_ENTITY_ID = "trust-1";
+  const RETITLED_ACCOUNT = {
+    ...SALE_ACCOUNT,
+    id: "trust-acct",
+    name: "IDGT Brokerage",
+    category: "taxable",
+    subType: "brokerage",
+    owners: [{ kind: "family_member", familyMemberId: "fm-1", percent: 1 }],
+  };
+  const RETURNED_INCOME = {
+    id: "inc-trust",
+    type: "trust",
+    name: "IDGT distribution",
+    annualAmount: 60_000,
+    startYear: 2027,
+    endYear: 2040,
+    growthRate: 0,
+    owner: "client",
+  };
+
+  function seedDissolve() {
+    seedDraft([
+      { kind: "account-upsert", id: UNRELATED_ACCOUNT.id, value: UNRELATED_ACCOUNT },
+      {
+        kind: "account-upsert",
+        id: RETITLED_ACCOUNT.id,
+        value: RETITLED_ACCOUNT,
+        dissolvedEntityId: DISSOLVED_ENTITY_ID,
+      },
+      {
+        kind: "income-upsert",
+        id: RETURNED_INCOME.id,
+        value: RETURNED_INCOME,
+        dissolvedEntityId: DISSOLVED_ENTITY_ID,
+      },
+      { kind: "entity-upsert", id: DISSOLVED_ENTITY_ID, value: null },
+    ]);
+  }
+
+  it("withholds EVERY half of a trust removal while still saving an unrelated edit", async () => {
+    const confirmMessages: string[] = [];
+    vi.stubGlobal("confirm", (msg?: string) => {
+      confirmMessages.push(String(msg ?? ""));
+      return true;
+    });
+    mockSaveToBaseOk();
+    seedDissolve();
+
+    render(<LiveSolverWorkspace {...baseProps} />);
+
+    const saveToBaseBtn = screen.getAllByRole("button", { name: /Save to base facts/i })[0];
+    await waitFor(() => expect(saveToBaseBtn).not.toBeDisabled());
+    fireEvent.click(saveToBaseBtn);
+    await waitFor(() => expect(routerRefresh).toHaveBeenCalledTimes(1));
+
+    const call = fetchMock.mock.calls.find(
+      (c) => typeof c[0] === "string" && (c[0] as string).includes("/save-to-base"),
+    );
+    const body = JSON.parse(call![1].body as string);
+    const posted: string[] = body.mutations.map(
+      (m: { kind: string; id?: string }) => `${m.kind}:${m.id ?? ""}`,
+    );
+
+    // POSITIVE first: the absences below would all pass on an empty body.
+    expect(posted).toContain(`account-upsert:${UNRELATED_ACCOUNT.id}`);
+    expect(posted).not.toContain(`account-upsert:${RETITLED_ACCOUNT.id}`);
+    expect(posted).not.toContain(`income-upsert:${RETURNED_INCOME.id}`);
+    expect(posted).not.toContain(`entity-upsert:${DISSOLVED_ENTITY_ID}`);
+
+    // The advisor is told, on the blocking confirm, before the write.
+    expect(confirmMessages.join("\n")).toMatch(/removing a trust/i);
+  });
+
+  it("disables Save to base facts when a trust removal is the only pending change", async () => {
+    vi.stubGlobal("confirm", () => true);
+    mockSaveToBaseOk();
+    seedDraft([
+      {
+        kind: "account-upsert",
+        id: RETITLED_ACCOUNT.id,
+        value: RETITLED_ACCOUNT,
+        dissolvedEntityId: DISSOLVED_ENTITY_ID,
+      },
+      { kind: "entity-upsert", id: DISSOLVED_ENTITY_ID, value: null },
+    ]);
+
+    render(<LiveSolverWorkspace {...baseProps} />);
+
+    // Positive render assertion FIRST: prove the draft restored, or "disabled"
+    // below would pass on an empty working set and prove nothing.
+    const saveAsScenarioBtn = screen.getAllByRole("button", { name: /Save as (scenario|new)/i })[0];
+    await waitFor(() => expect(saveAsScenarioBtn).not.toBeDisabled());
+
+    const saveToBaseBtn = screen.getAllByRole("button", { name: /Save to base facts/i })[0];
+    expect(saveToBaseBtn).toBeDisabled();
+    expect(saveToBaseBtn.getAttribute("title") ?? "").toMatch(/removing a trust/i);
+  });
+
+  // ⚠️(d) Minor #3: a MIXED hold used to name only the sale and drop the rest.
+  it("names BOTH held classes when a sale and a trust removal are pending together", async () => {
+    vi.stubGlobal("confirm", () => true);
+    mockSaveToBaseOk();
+    seedDraft([
+      { kind: "account-upsert", id: SALE_ACCOUNT.id, value: SOLD_ACCOUNT },
+      { kind: "note-receivable-upsert", id: SALE_NOTE.id, value: SALE_NOTE, sourceAccountId: SALE_ACCOUNT.id },
+      {
+        kind: "account-upsert",
+        id: RETITLED_ACCOUNT.id,
+        value: RETITLED_ACCOUNT,
+        dissolvedEntityId: DISSOLVED_ENTITY_ID,
+      },
+      { kind: "entity-upsert", id: DISSOLVED_ENTITY_ID, value: null },
+    ]);
+
+    render(<LiveSolverWorkspace {...baseProps} />);
+    const saveAsScenarioBtn = screen.getAllByRole("button", { name: /Save as (scenario|new)/i })[0];
+    await waitFor(() => expect(saveAsScenarioBtn).not.toBeDisabled());
+
+    const title =
+      screen.getAllByRole("button", { name: /Save to base facts/i })[0].getAttribute("title") ?? "";
+    expect(title).toMatch(/sale to a trust/i);
+    expect(title).toMatch(/removing a trust/i);
+  });
+
   it("still saves a plain account edit to base — the pairing fix must not disable the kind", async () => {
     vi.stubGlobal("confirm", () => true);
     mockSaveToBaseOk();

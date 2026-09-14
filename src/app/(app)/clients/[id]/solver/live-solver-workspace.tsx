@@ -967,10 +967,19 @@ export function LiveSolverWorkspace({
       baseSavable.heldSaleAccountIds.length > 0
         ? "\n\nA sale to a trust can't be saved to base facts, so it stays pending — both the retitled asset and the promissory note are kept. Save as a scenario to keep the sale."
         : "";
+    // Same shape for a trust removal: its retitles and returned flows are
+    // base-savable by kind, the trust delete, the will edit and the gifts are
+    // not. Writing only the savable half leaves the client's real record with a
+    // trust that still exists and assets already handed back.
+    const removalHeldBack =
+      baseSavable.heldDissolveEntityIds.length > 0
+        ? "\n\nRemoving a trust can't be saved to base facts, so it stays pending — the retitled accounts, the returned income and expense, the will and the gifts are all kept together. Save as a scenario to keep the removal."
+        : "";
     if (
       !confirm(
         "Save these changes to base facts? This will update the client's real data and cannot be undone." +
-          saleHeldBack,
+          saleHeldBack +
+          removalHeldBack,
       )
     )
       return;
@@ -1789,6 +1798,7 @@ export function LiveSolverWorkspace({
           hasMutations={mutations.length > 0}
           canSaveToBase={baseSavable.savable.length > 0}
           holdsSaleToTrust={baseSavable.heldSaleAccountIds.length > 0}
+          holdsTrustRemoval={baseSavable.heldDissolveEntityIds.length > 0}
           canUpdateScenario={isScenarioSource}
           scenarioName={scenarioName}
           solveActive={activeSolve !== null}

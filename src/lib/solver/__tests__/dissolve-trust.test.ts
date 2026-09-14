@@ -16,7 +16,10 @@ import { describe, it, expect } from "vitest";
 import { buildDissolveTrustMutations } from "@/lib/solver/trust-levers";
 import { applyMutations } from "@/lib/solver/apply-mutations";
 import { SOLVER_MUTATION_SCHEMA } from "@/lib/solver/mutation-schema";
-import { isBaseSavableMutation } from "@/lib/solver/mutations-to-base-updates";
+import {
+  isBaseSavableMutation,
+  partitionBaseSavableMutations,
+} from "@/lib/solver/mutations-to-base-updates";
 import { mutationsToScenarioChanges } from "@/lib/solver/mutations-to-scenario-changes";
 import { mutationKey } from "@/lib/solver/types";
 import { buildCltRemainderGiftMutation } from "@/lib/solver/split-interest-levers";
@@ -78,6 +81,10 @@ const trustAccount = {
   basis: 400_000,
   growthRate: 0.05,
   rmdEnabled: false,
+  // Required by ACCOUNT_VALUE on the wire. Engine-inert for an entity-owned
+  // account (it only tells jtwros from community_property on a SPOUSAL co-titled
+  // one), but a fixture without it is not a representable account.
+  titlingType: "jtwros",
   owners: [{ kind: "entity", entityId: "ent-ilit", percent: 1 }],
 };
 
@@ -765,6 +772,7 @@ describe("buildDissolveTrustMutations — the trust's default checking account",
       kind: "account-upsert",
       id: entityCheckingId("ent-ilit"),
       value: null,
+      dissolvedEntityId: "ent-ilit",
     });
     expect(
       applyMutations(t, muts).accounts.find((a) => a.id === entityCheckingId("ent-ilit")),
@@ -782,6 +790,7 @@ describe("buildDissolveTrustMutations — the trust's default checking account",
       kind: "account-upsert",
       id: "acct-trust-cash",
       value: null,
+      dissolvedEntityId: "ent-ilit",
     });
     const after = accountById(applyMutations(t, muts), "acct-trust-cash");
     expect(after.owners).toEqual([
@@ -933,5 +942,70 @@ describe("mutationsToScenarioChanges — will-upsert", () => {
       { kind: "will-upsert", id: will.id, value: null },
     ]);
     expect(drafts.find((d) => d.targetKind === "will")?.opType).toBe("remove");
+  });
+});
+
+// ── Save to base facts cannot take half a trust removal ─────────────────────
+//
+// A dissolve emits a MIX of base-savable and not. Classified one at a time,
+// Save-to-base posts the retitles and holds the rest, leaving the client's REAL
+// record with the trust's accounts titled to the grantor while the trust still
+// exists, the will still names it, and the gifts to it are still there. The
+// pairing is DECLARED on each base-savable output and read by
+// `partitionBaseSavableMutations`.
+
+describe("buildDissolveTrustMutations — the removal is base-savable all or nothing", () => {
+  const fullDissolve = () =>
+    tree({
+      accounts: [trustAccount],
+      incomes: [
+        { id: "inc-trust", type: "trust", name: "Trust income", annualAmount: 60_000,
+          startYear: 2026, endYear: 2060, growthRate: 0, owner: "client",
+          ownerEntityId: "ent-ilit" },
+      ],
+      expenses: [
+        { id: "exp-trust", type: "other", name: "Trustee fee", annualAmount: 12_000,
+          startYear: 2026, endYear: 2060, growthRate: 0, ownerEntityId: "ent-ilit" },
+      ],
+      liabilities: [
+        { id: "liab-1", name: "Trust mortgage", balance: 100_000, interestRate: 0.05,
+          monthlyPayment: 800, startYear: 2020, startMonth: 1, termMonths: 240,
+          extraPayments: [], owners: [{ kind: "entity", entityId: "ent-ilit", percent: 1 }] },
+      ],
+    });
+
+  it("declares the entity on every base-savable mutation it emits", () => {
+    const t = fullDissolve();
+    const muts = buildDissolveTrustMutations(t, ilit);
+    const declarable = muts.filter(
+      (m) => m.kind === "account-upsert" || m.kind === "income-upsert" || m.kind === "expense-upsert",
+    );
+    // Positive first: there really are mutations of these kinds to declare.
+    expect(declarable).toHaveLength(3);
+    for (const m of declarable) {
+      expect(m).toHaveProperty("dissolvedEntityId", "ent-ilit");
+    }
+  });
+
+  it("leaves NOTHING savable to base facts — the removal cannot be half-written", () => {
+    const t = fullDissolve();
+    const { savable, held, heldDissolveEntityIds } = partitionBaseSavableMutations(
+      buildDissolveTrustMutations(t, ilit),
+    );
+    expect(savable).toEqual([]);
+    expect(held.length).toBeGreaterThan(3);
+    expect(heldDissolveEntityIds).toEqual(["ent-ilit"]);
+  });
+
+  it("keeps the declaration on the wire — a z.object strips what it does not declare", () => {
+    const t = fullDissolve();
+    for (const m of buildDissolveTrustMutations(t, ilit)) {
+      if (m.kind !== "account-upsert" && m.kind !== "income-upsert" && m.kind !== "expense-upsert") {
+        continue;
+      }
+      const parsed = SOLVER_MUTATION_SCHEMA.safeParse(m);
+      expect(parsed.success).toBe(true);
+      expect(parsed.success && parsed.data).toHaveProperty("dissolvedEntityId", "ent-ilit");
+    }
   });
 });

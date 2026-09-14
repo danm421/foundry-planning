@@ -99,12 +99,49 @@ export type SolverMutation =
   /** Extra principal thrown at one loan. Identity is the liability — a loan
    *  carries at most one paydown. `null` clears it. */
   | { kind: "debt-paydown"; liabilityId: string; value: DebtPaydownRow | null }
-  | { kind: "account-upsert"; id: string; value: Account | null }
+  | {
+      kind: "account-upsert";
+      id: string;
+      value: Account | null;
+      /**
+       * The trust whose DISSOLVE produced this mutation, when it came from
+       * `buildDissolveTrustMutations`. DECLARED, not inferred: a retitle out of
+       * a trust is byte-identical to any other owner change, and a returned
+       * income is byte-identical to any other income edit — nothing in the
+       * payload says which advisor action it belongs to.
+       *
+       * `partitionBaseSavableMutations` reads it to hold this mutation back
+       * whenever the paired `entity-upsert: null` is held, which it always is.
+       * Without it Save-to-base posts the retitles and holds the rest, and the
+       * client's REAL record ends up with the trust's accounts titled to the
+       * grantor while the trust still exists, the will still names it, and the
+       * gifts to it remain.
+       *
+       * Solver-wire only — never written to any column. Optional so an in-flight
+       * client payload still saves, and so these kinds stay base-savable on
+       * their own: `account-upsert` is the solver's most common mutation and
+       * listing the KIND as non-savable would kill base saves across the
+       * product.
+       */
+      dissolvedEntityId?: string;
+    }
   /** A liability retitled into or out of a trust from the estate dialog's
    *  Assets tab. `null` removes the row. */
   | { kind: "liability-upsert"; id: string; value: Liability | null }
-  | { kind: "income-upsert"; id: string; value: Income | null }
-  | { kind: "expense-upsert"; id: string; value: Expense | null }
+  | {
+      kind: "income-upsert";
+      id: string;
+      value: Income | null;
+      /** See `dissolvedEntityId` on `account-upsert`. */
+      dissolvedEntityId?: string;
+    }
+  | {
+      kind: "expense-upsert";
+      id: string;
+      value: Expense | null;
+      /** See `dissolvedEntityId` on `account-upsert`. */
+      dissolvedEntityId?: string;
+    }
   | { kind: "savings-rule-upsert"; id: string; value: SavingsRule | null }
   | { kind: "gift-upsert";                 id: string; value: EstateFlowGift | null }
   | { kind: "external-beneficiary-upsert"; id: string; value: ExternalBeneficiary | null }

@@ -97,9 +97,20 @@ export function buildRetitleFundingMutation(account: Account, entityId: string):
   };
 }
 
-/** Restore a funded account to its original owners (trust delete / unfund). */
-export function buildRevertFundingMutation(original: Account): SolverMutation {
-  return { kind: "account-upsert", id: original.id, value: original };
+/**
+ * Restore a funded account to its original owners (trust delete / unfund).
+ *
+ * `dissolvedEntityId` is carried because `removeTrust` swaps this mutation in
+ * PLACE OF the lever's retitle for an account funded in this session. Dropping
+ * the declaration there would make exactly that account base-savable on its own
+ * — half a trust removal written to the client's real record, which is the
+ * failure the declared pairing exists to stop.
+ */
+export function buildRevertFundingMutation(
+  original: Account,
+  dissolvedEntityId?: string,
+): SolverMutation {
+  return { kind: "account-upsert", id: original.id, value: original, dissolvedEntityId };
 }
 
 /** Accounts eligible to retitle into an IDGT/irrevocable trust: household-owned,
@@ -175,7 +186,7 @@ export function buildDissolveTrustMutations(
     // hub sitting at $0 is ordinary. `owners` cannot tell the two apart — both
     // are 100% entity-owned — so the id does, which is the one fact that differs.
     if (owned && a.isDefaultChecking && (a.value ?? 0) === 0 && isSyntheticEntityChecking(a.id)) {
-      muts.push({ kind: "account-upsert", id: a.id, value: null });
+      muts.push({ kind: "account-upsert", id: a.id, value: null, dissolvedEntityId: entity.id });
       continue;
     }
     const next: Account = { ...a };
@@ -192,7 +203,7 @@ export function buildDissolveTrustMutations(
       }
     }
     if (namesTrust) next.beneficiaries = bens.filter((b) => b.entityIdRef !== entity.id);
-    muts.push({ kind: "account-upsert", id: a.id, value: next });
+    muts.push({ kind: "account-upsert", id: a.id, value: next, dissolvedEntityId: entity.id });
   }
 
   // 2. Entity-scoped incomes and expenses — spec §4 step 5. A flow left
@@ -229,12 +240,18 @@ export function buildDissolveTrustMutations(
       kind: "income-upsert",
       id: inc.id,
       value: { ...rehome(inc), owner: entity.grantor ?? "client" },
+      dissolvedEntityId: entity.id,
     });
   }
   for (const exp of tree.expenses ?? []) {
     if (exp.ownerEntityId !== entity.id) continue;
     // Expense carries no `owner` field — clearing ownerEntityId is the whole move.
-    muts.push({ kind: "expense-upsert", id: exp.id, value: rehome(exp) });
+    muts.push({
+      kind: "expense-upsert",
+      id: exp.id,
+      value: rehome(exp),
+      dissolvedEntityId: entity.id,
+    });
   }
 
   // 3. Liabilities the trust carries.

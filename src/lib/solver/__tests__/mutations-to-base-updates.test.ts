@@ -4,7 +4,15 @@ import {
   isBaseSavableMutation,
   partitionBaseSavableMutations,
 } from "../mutations-to-base-updates";
-import type { ClientData, Account, SavingsRule, NoteReceivable } from "@/engine/types";
+import type {
+  ClientData,
+  Account,
+  EntitySummary,
+  Expense,
+  Income,
+  SavingsRule,
+  NoteReceivable,
+} from "@/engine/types";
 import type { SolverMutation } from "../types";
 
 const ACCT: Account = {
@@ -507,5 +515,118 @@ describe("partitionBaseSavableMutations — a sale to a trust is one indivisible
     expect(keys(savable)).toEqual(["account-upsert:plain-acct"]);
     expect(keys(held)).toEqual(["note-receivable-upsert:note-1"]);
     expect(heldSaleAccountIds).toEqual([]);
+  });
+});
+
+// ── A trust removal is one indivisible unit too ──────────────────────────────
+//
+// A dissolve emits a MIX: `account-upsert` retitles and `income-upsert` /
+// `expense-upsert` returns are all base-savable on their own, while
+// `entity-upsert: null`, `will-upsert`, `liability-upsert` and `gift-upsert` are
+// not. Classified one at a time, Save-to-base posts the retitles and holds the
+// rest: the client's REAL record ends up with the trust's accounts titled to the
+// grantor while the trust itself still exists, the will still names it, and the
+// gifts to it are still there. The advisor unwinds that by hand.
+//
+// The pairing is DECLARED by `dissolvedEntityId`, never inferred: a retitle out
+// of a trust is byte-identical to a retitle for any other reason, and the kind
+// itself must stay base-savable — `account-upsert` is the solver's most common
+// mutation.
+describe("partitionBaseSavableMutations — a trust removal is one indivisible unit", () => {
+  const ENTITY_ID = "trust-9";
+  const RETITLED: Account = {
+    ...ACCT,
+    id: "trust-acct",
+    owners: [{ kind: "family_member", familyMemberId: "fm-1", percent: 1 }],
+  };
+  const PLAIN: Account = { ...ACCT, id: "plain-acct", name: "Joint Brokerage" };
+
+  const retitle: SolverMutation = {
+    kind: "account-upsert",
+    id: "trust-acct",
+    value: RETITLED,
+    dissolvedEntityId: ENTITY_ID,
+  };
+  const returnedIncome: SolverMutation = {
+    kind: "income-upsert",
+    id: "inc-trust",
+    value: { id: "inc-trust", type: "trust", name: "Trust income", annualAmount: 60_000,
+      startYear: 2026, endYear: 2040, growthRate: 0, owner: "client" } as Income,
+    dissolvedEntityId: ENTITY_ID,
+  };
+  const returnedExpense: SolverMutation = {
+    kind: "expense-upsert",
+    id: "exp-trust",
+    value: { id: "exp-trust", type: "other", name: "Trustee fee", annualAmount: 12_000,
+      startYear: 2026, endYear: 2040, growthRate: 0 } as Expense,
+    dissolvedEntityId: ENTITY_ID,
+  };
+  const entityDelete: SolverMutation = { kind: "entity-upsert", id: ENTITY_ID, value: null };
+  const plainAccountEdit: SolverMutation = { kind: "account-upsert", id: "plain-acct", value: PLAIN };
+
+  const keys = (ms: SolverMutation[]) => ms.map((m) => `${m.kind}:${"id" in m ? m.id : ""}`);
+
+  it("holds every half of the removal, and still posts an unrelated edit", () => {
+    const { savable, held } = partitionBaseSavableMutations([
+      plainAccountEdit,
+      retitle,
+      returnedIncome,
+      returnedExpense,
+      entityDelete,
+    ]);
+    // POSITIVE first: the absences below would both pass on an empty `savable`.
+    expect(keys(savable)).toEqual(["account-upsert:plain-acct"]);
+    expect(keys(held)).toEqual([
+      "account-upsert:trust-acct",
+      "income-upsert:inc-trust",
+      "expense-upsert:exp-trust",
+      "entity-upsert:trust-9",
+    ]);
+  });
+
+  it("reports nothing savable when a trust removal is the only pending change", () => {
+    const { savable } = partitionBaseSavableMutations([retitle, returnedIncome, entityDelete]);
+    expect(savable).toEqual([]);
+  });
+
+  it("names the entity it held, so the advisor can be told", () => {
+    expect(
+      partitionBaseSavableMutations([plainAccountEdit, retitle, entityDelete])
+        .heldDissolveEntityIds,
+    ).toEqual([ENTITY_ID]);
+    expect(partitionBaseSavableMutations([plainAccountEdit]).heldDissolveEntityIds).toEqual([]);
+  });
+
+  // The account half may already have been saved on an earlier click, or the
+  // advisor may have undone the removal. Holding a phantom would block the save.
+  it("holds nothing when the paired entity delete is not in this working set", () => {
+    const { savable, held, heldDissolveEntityIds } = partitionBaseSavableMutations([
+      plainAccountEdit,
+      retitle,
+    ]);
+    expect(keys(savable)).toEqual(["account-upsert:plain-acct", "account-upsert:trust-acct"]);
+    expect(held).toEqual([]);
+    expect(heldDissolveEntityIds).toEqual([]);
+  });
+
+  // An entity EDIT is not a removal; it must not hold a declared retitle back.
+  it("holds nothing when the entity-upsert is an edit rather than a delete", () => {
+    const edit: SolverMutation = {
+      kind: "entity-upsert",
+      id: ENTITY_ID,
+      value: { id: ENTITY_ID, name: "Renamed", entityType: "trust" } as EntitySummary,
+    };
+    const { savable, heldDissolveEntityIds } = partitionBaseSavableMutations([retitle, edit]);
+    expect(keys(savable)).toEqual(["account-upsert:trust-acct"]);
+    expect(heldDissolveEntityIds).toEqual([]);
+  });
+
+  // The regression guard for Ruling F2's forbidden fix: adding "account-upsert"
+  // (or income/expense) to NON_BASE_SAVABLE would break base saves across the
+  // product. Without this, that fix passes the rest of this scope.
+  it("leaves the three kinds base-savable on their own — the fix is the pairing", () => {
+    expect(isBaseSavableMutation(plainAccountEdit)).toBe(true);
+    expect(isBaseSavableMutation({ ...returnedIncome, dissolvedEntityId: undefined })).toBe(true);
+    expect(isBaseSavableMutation({ ...returnedExpense, dissolvedEntityId: undefined })).toBe(true);
   });
 });

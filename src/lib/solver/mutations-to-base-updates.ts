@@ -101,6 +101,11 @@ export interface BaseSavablePartition {
    *  own kind — i.e. the sales this save is leaving pending. Non-empty means
    *  the advisor must be told, or the flip "silently doesn't save". */
   heldSaleAccountIds: string[];
+  /** Ids of the trusts whose REMOVAL is being left pending — the second class
+   *  of mutation held by its pairing rather than by its own kind. Non-empty
+   *  means the advisor must be told, or "Save to base facts" writes half a trust
+   *  removal to the client's real record. */
+  heldDissolveEntityIds: string[];
 }
 
 /**
@@ -124,6 +129,16 @@ export interface BaseSavablePartition {
  *
  * The unit that cannot be half-saved is the SALE, not the kind: `account-upsert` is
  * the solver's most common mutation and stays base-savable on its own.
+ *
+ * A trust REMOVAL is the same shape and the same hazard. `buildDissolveTrustMutations`
+ * emits a mix: the `account-upsert` retitles and the `income-upsert` / `expense-upsert`
+ * returns are base-savable, while `entity-upsert: null`, `will-upsert`,
+ * `liability-upsert` and `gift-upsert` are not. Split, the real record keeps the
+ * trust's accounts titled to the grantor while the trust still exists, the will
+ * still names it, and the gifts to it are still there — and the applied half is
+ * already gone from the working set. So the whole removal is held together, again
+ * on a DECLARED pairing (`dissolvedEntityId`) and never on an inferred one: a
+ * retitle out of a trust is byte-identical to any other owner change.
  */
 export function partitionBaseSavableMutations(
   mutations: readonly SolverMutation[],
@@ -137,15 +152,42 @@ export function partitionBaseSavableMutations(
     if (m.sourceAccountId) pairedAccountIds.add(m.sourceAccountId);
   }
 
+  // Trusts this working set is REMOVING. `entity-upsert` is never base-savable,
+  // so a present delete is always a held delete — but the membership test still
+  // matters: a declared retitle whose entity delete is absent (already saved, or
+  // the removal undone) must not be held hostage to a phantom.
+  const dissolvedEntityIds = new Set<string>();
+  for (const m of mutations) {
+    if (m.kind !== "entity-upsert" || m.value !== null) continue;
+    if (isBaseSavableMutation(m)) continue;
+    dissolvedEntityIds.add(m.id);
+  }
+
   const savable: SolverMutation[] = [];
   const held: SolverMutation[] = [];
   const heldSaleAccountIds: string[] = [];
+  const heldDissolveEntityIds: string[] = [];
   for (const m of mutations) {
-    const heldByPair = m.kind === "account-upsert" && pairedAccountIds.has(m.id);
-    if (heldByPair) heldSaleAccountIds.push(m.id);
+    const heldBySale = m.kind === "account-upsert" && pairedAccountIds.has(m.id);
+    if (heldBySale) heldSaleAccountIds.push(m.id);
+    const declared = declaredDissolveTarget(m);
+    const heldByDissolve = declared != null && dissolvedEntityIds.has(declared);
+    if (heldByDissolve && !heldDissolveEntityIds.includes(declared)) {
+      heldDissolveEntityIds.push(declared);
+    }
+    const heldByPair = heldBySale || heldByDissolve;
     (isBaseSavableMutation(m) && !heldByPair ? savable : held).push(m);
   }
-  return { savable, held, heldSaleAccountIds };
+  return { savable, held, heldSaleAccountIds, heldDissolveEntityIds };
+}
+
+/** The trust whose dissolve declared this mutation, or null. Only three kinds
+ *  carry the field; the `in` check is what keeps the union narrowing honest. */
+function declaredDissolveTarget(m: SolverMutation): string | null {
+  if (m.kind !== "account-upsert" && m.kind !== "income-upsert" && m.kind !== "expense-upsert") {
+    return null;
+  }
+  return m.dissolvedEntityId ?? null;
 }
 
 export interface BaseUpdates {

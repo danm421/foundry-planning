@@ -144,8 +144,11 @@ export function useSolverEstateEditor({
       // A revert fires only for an account the lever still sees as this trust's.
       // One funded here and since retitled elsewhere is left alone rather than
       // clobbered back to its pre-funding owners.
+      // The revert carries the same `dissolvedEntityId` declaration the lever's
+      // retitle did. Without it exactly this account reports base-savable on its
+      // own and Save-to-base writes half a trust removal to the real record.
       const original = m.kind === "account-upsert" ? originals.get(m.id) : undefined;
-      onChange(original ? buildRevertFundingMutation(original) : m);
+      onChange(original ? buildRevertFundingMutation(original, entity.id) : m);
     }
     setTrusts((ts) => ts.filter((t) => t.entity.id !== trust.id));
     setSelection({ kind: "overview" });
