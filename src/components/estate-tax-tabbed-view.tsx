@@ -7,7 +7,7 @@ import StateDeathTaxReportView from "./state-death-tax-report-view";
 import { EstateCompareShell } from "./estate-compare-shell";
 import type { ScenarioOption } from "./scenario/scenario-picker-dropdown";
 import type { OwnerDobs } from "./report-controls/age-helpers";
-import type { EstateTaxResult } from "@/engine/types";
+import type { EstateTaxColumnData } from "@/lib/estate/diff-estate-tax";
 
 type TabId = "estate" | "state";
 
@@ -46,17 +46,23 @@ export default function EstateTaxTabbedView({
       <div className="px-[var(--pad-card)] pb-4">
         {/*
           ONE shell for both tabs. Both report views take the identical column
-          contract and report the same first-death `EstateTaxResult`, so the
+          contract and report the same `EstateTaxColumnData`, so the
           scenario pickers, the shared As-of row and the compare selection
           survive a tab switch instead of resetting to Today on every visit.
+
+          State Death Tax opts OUT of the half-width solo affordance: its PA
+          inheritance table needs 672px and half a 1440px viewport gives it
+          597px, so the "Tax" column of a tax report lands off screen while the
+          right half of the page sits empty.
         */}
-        <EstateCompareShell<EstateTaxResult>
+        <EstateCompareShell<EstateTaxColumnData>
           clientId={clientId}
           scenarios={scenarios}
           isMarried={isMarried}
           ownerNames={ownerNames}
           ownerDobs={ownerDobs}
           retirementYear={retirementYear}
+          soloFullWidth={activeTab === "state"}
         >
           {({ scenarioRef, asOf, ordering, onReady, baseline }) => {
             const columnProps = {

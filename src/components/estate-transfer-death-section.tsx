@@ -1,4 +1,7 @@
-import type { DeathSectionData } from "@/lib/estate/transfer-report";
+import {
+  estateAtDeathOf,
+  type DeathSectionData,
+} from "@/lib/estate/transfer-report";
 import type { DeathSectionDiff } from "@/lib/estate/diff-transfer-report";
 import { EstateDeltaChip } from "./estate-delta-chip";
 import { EstateTransferRecipientCard } from "./estate-transfer-recipient-card";
@@ -23,8 +26,7 @@ export function EstateTransferDeathSection({
    *  outside compare mode, and the section then renders exactly as before. */
   diff?: DeathSectionDiff | null;
 }) {
-  const estateValue =
-    section.assetEstateValue + section.reconciliation.sumLiabilityTransfers;
+  const estateValue = estateAtDeathOf(section);
   const debtAssumed = section.reconciliation.sumLiabilityTransfers;
   const reductionsTotal = section.reconciliation.sumReductions;
 
@@ -41,6 +43,16 @@ export function EstateTransferDeathSection({
           <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-gray-500">
             Estate at death
           </span>
+          {/* The headline figure an advisor reads off this card. Its own
+              quantity, not the asset leg: the reconciliation line below keeps
+              its own chip, because the sentence around it names the assets. */}
+          {diff && (
+            <EstateDeltaChip
+              delta={diff.estateAtDeath}
+              goodDirection="up"
+              testId="estate-delta-estate-at-death"
+            />
+          )}
           <span className="text-xl font-semibold tabular-nums text-gray-50">
             {fmt.format(estateValue)}
           </span>

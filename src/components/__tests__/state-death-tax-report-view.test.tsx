@@ -20,6 +20,7 @@ import StateDeathTaxReportView from "../state-death-tax-report-view";
 import type { EstateTaxResult } from "@/engine/types";
 import type { StateEstateTaxResult } from "@/lib/tax/state-estate/types";
 import type { StateInheritanceTaxResult } from "@/lib/tax/state-inheritance/types";
+import type { EstateTaxColumnData } from "@/lib/estate/diff-estate-tax";
 
 const baseEstate: Partial<EstateTaxResult> = {
   year: 2050,
@@ -414,28 +415,58 @@ function nyDeath(detailOverrides: Partial<StateEstateTaxResult> = {}): EstateTax
  * todayHypotheticalEstateTax }`, with `hypotheticalEstateTax` carrying a
  * `primaryFirst` ORDERING (not a bare result). Returns the spy so a test can
  * count calls.
+ *
+ * Pass `final` for a TWO-death fixture: without it there is no second death,
+ * so neither the second-death section nor the grand-total card renders — and
+ * those are exactly the two surfaces the wider baseline gave deltas to.
  */
-function armCompareFetch(first: EstateTaxResult) {
+function armCompareFetch(first: EstateTaxResult, final: EstateTaxResult | null = null) {
+  const state = first.stateEstateTax + (final?.stateEstateTax ?? 0);
   const hypothetical = {
     year: 2026,
     primaryFirst: {
       firstDecedent: "client" as const,
       firstDeath: first,
+      finalDeath: final ?? undefined,
       firstDeathTransfers: [],
-      totals: {
-        federal: 0,
-        state: first.stateEstateTax,
-        admin: 0,
-        total: first.stateEstateTax,
-      },
+      finalDeathTransfers: final ? [] : undefined,
+      totals: { federal: 0, state, admin: 0, total: state },
     },
   };
   return mockProjection({
     years: [{ year: 2026, hypotheticalEstateTax: hypothetical }],
     firstDeathEvent: first,
-    secondDeathEvent: undefined,
+    secondDeathEvent: final ?? undefined,
     todayHypotheticalEstateTax: hypothetical,
   });
+}
+
+/** The SECOND decedent, so the two deaths are distinguishable by `deceased`. */
+function nySecondDeath(
+  detailOverrides: Partial<StateEstateTaxResult> = {},
+): EstateTaxResult {
+  return {
+    ...nyDeath(detailOverrides),
+    deathOrder: 2,
+    deceased: "spouse",
+  };
+}
+
+/** The baseline shape the shell now hands a column: BOTH deaths. */
+function baselineOf(
+  firstDeath: EstateTaxResult,
+  finalDeath: EstateTaxResult | null = null,
+): EstateTaxColumnData {
+  return {
+    firstDeath,
+    finalDeath,
+    totals: {
+      federal: 0,
+      state: firstDeath.stateEstateTax + (finalDeath?.stateEstateTax ?? 0),
+      admin: 0,
+      total: firstDeath.stateEstateTax + (finalDeath?.stateEstateTax ?? 0),
+    },
+  };
 }
 
 function compareElement(props: Record<string, unknown> = {}) {
@@ -502,7 +533,7 @@ describe("State Death Tax compare mode", () => {
   });
 
   it("renders a falling state estate tax as good news", async () => {
-    const baseline = nyDeath({ stateEstateTax: 400_000 });
+    const baseline = baselineOf(nyDeath({ stateEstateTax: 400_000 }));
     armCompareFetch(nyDeath({ stateEstateTax: 100_000 }));
     renderCompare({ asOf: "today", baseline });
     const chip = await screen.findByTestId("estate-delta-state-estate-tax");
@@ -513,7 +544,7 @@ describe("State Death Tax compare mode", () => {
   // Guards the assertion above it: `renders no delta chips without a baseline`
   // only pins something because the OTHER chips keep the default testid.
   it("renders a rising exemption as good news, under the default testid", async () => {
-    const baseline = nyDeath({ exemption: 7_160_000 });
+    const baseline = baselineOf(nyDeath({ exemption: 7_160_000 }));
     armCompareFetch(nyDeath({ exemption: 8_000_000 }));
     renderCompare({ asOf: "today", baseline });
     await rendered();
@@ -525,12 +556,104 @@ describe("State Death Tax compare mode", () => {
 
   it("reports its metadata and result upward on load", async () => {
     const onReady = vi.fn();
-    armCompareFetch(nyDeath({ stateEstateTax: 100_000 }));
+    armCompareFetch(
+      nyDeath({ stateEstateTax: 100_000 }),
+      nySecondDeath({ stateEstateTax: 200_000 }),
+    );
     renderCompare({ asOf: "today", onReady });
     await waitFor(() => expect(onReady).toHaveBeenCalled());
     const arg = onReady.mock.calls[0][0];
     expect(arg.meta.todayYear).toBe(2026);
     expect(arg.data).not.toBeNull();
+    // The column reports BOTH deaths, not just the first: the second-death
+    // section and the grand total are differenced off this same object.
+    expect(arg.data.finalDeath).not.toBeNull();
+    expect(arg.data.totals).not.toBeNull();
+  });
+
+  // Ruling 11 shipped `baseline` as the FIRST death alone, so the second-death
+  // section and the grand total rendered chip-free. Both fixtures below make
+  // the first death IDENTICAL on both sides, so its own chips fall under the
+  // noise floor and there is exactly one chip of each id to address.
+  it("carries a delta on the second decedent's section too", async () => {
+    const baseline = baselineOf(
+      nyDeath({ stateEstateTax: 100_000 }),
+      nySecondDeath({ stateEstateTax: 500_000 }),
+    );
+    armCompareFetch(
+      nyDeath({ stateEstateTax: 100_000 }),
+      nySecondDeath({ stateEstateTax: 200_000 }),
+    );
+    renderCompare({ asOf: "today", baseline });
+    const chip = await screen.findByTestId("estate-delta-state-estate-tax");
+    expect(chip).toHaveTextContent("$300K");
+    expect(chip).toHaveAttribute("data-tone", "good");
+  });
+
+  it("carries a delta on the household grand total", async () => {
+    const baseline = baselineOf(
+      nyDeath({ stateEstateTax: 250_000 }),
+      nySecondDeath({ stateEstateTax: 300_000 }),
+    );
+    armCompareFetch(
+      nyDeath({ stateEstateTax: 100_000 }),
+      nySecondDeath({ stateEstateTax: 200_000 }),
+    );
+    renderCompare({ asOf: "today", baseline });
+    // 300_000 now versus 550_000 before.
+    const chip = await screen.findByTestId("estate-delta-grand-total");
+    expect(chip).toHaveTextContent("$250K");
+    expect(chip).toHaveAttribute("data-tone", "good");
+  });
+
+  // ── Split death: the two columns can describe DIFFERENT decedents ─────────
+  //
+  // Outside split the shell's shared ordering pins both columns to the same
+  // person. In split each column emits whoever dies first in ITS OWN
+  // projection, so a scenario that moves a death year flips who the first
+  // section describes.
+  it("prints no section deltas when split pairs two different decedents", async () => {
+    // This column: Sam dies first. The compared column: Alex did.
+    armCompareFetch(
+      nySecondDeath({ stateEstateTax: 100_000 }),
+      { ...nyDeath({ stateEstateTax: 200_000 }), deathOrder: 2 },
+    );
+    renderCompare({
+      asOf: "split",
+      baseline: baselineOf(
+        nyDeath({ stateEstateTax: 500_000 }),
+        nySecondDeath({ stateEstateTax: 700_000 }),
+      ),
+    });
+
+    // The grand total sums BOTH spouses on each side, so it describes the same
+    // household whichever order they die in — and its presence proves this
+    // fixture really reached compare mode.
+    const grand = await screen.findByTestId("estate-delta-grand-total");
+    expect(grand).toHaveTextContent("$900K");
+
+    expect(
+      screen.queryAllByTestId("estate-delta-state-estate-tax"),
+    ).toHaveLength(0);
+    expect(screen.queryAllByTestId("estate-delta-chip")).toHaveLength(0);
+  });
+
+  it("still prints split deltas when both columns describe the same decedents", async () => {
+    armCompareFetch(
+      nyDeath({ stateEstateTax: 100_000 }),
+      nySecondDeath({ stateEstateTax: 200_000 }),
+    );
+    renderCompare({
+      asOf: "split",
+      baseline: baselineOf(
+        nyDeath({ stateEstateTax: 500_000 }),
+        nySecondDeath({ stateEstateTax: 700_000 }),
+      ),
+    });
+    const chips = await screen.findAllByTestId("estate-delta-state-estate-tax");
+    expect(chips).toHaveLength(2);
+    expect(chips[0]).toHaveTextContent("$400K");
+    expect(chips[1]).toHaveTextContent("$500K");
   });
 
   it("fetches the scenario ref it was given, not the URL param", async () => {

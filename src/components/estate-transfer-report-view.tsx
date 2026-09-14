@@ -227,7 +227,12 @@ export default function EstateTransferReportView({
         <p className="text-xs text-gray-400">{reportData.asOfLabel}</p>
       )}
 
-      {reportData?.isEmpty && (
+      {/* `isEmpty` describes THIS column's own report. In compare mode the
+          table below is built from the derived collection, which can still
+          carry ghost rows for recipients the OTHER column has — so the gate
+          has to test the derived collection too, or the banner prints directly
+          above a populated table. */}
+      {reportData?.isEmpty && recipientTotals.length === 0 && (
         <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
           No transfers to display for this selection.
         </div>

@@ -194,6 +194,17 @@ describe("Transfer Detail compare mode", () => {
     const chip = within(row).getByTestId("estate-delta-chip");
     expect(chip).toHaveTextContent("$1.9M");
     expect(chip).toHaveAttribute("data-tone", "bad");
+
+    // A ghost is muted, so it does not read at the same weight as a living
+    // heir. E9 established a live `removed` recipient is unreachable on dev
+    // data, so this unit test IS the gate for it.
+    within(row)
+      .getAllByRole("cell")
+      .forEach((c) => expect(c).toHaveClass("text-ink-3"));
+    // Non-vacuity: without this the test passes on a table that mutes EVERY
+    // row. Emma is still inheriting.
+    const live = screen.getByText("Emma").closest("tr")!;
+    expect(within(live).getAllByRole("cell")[0]).not.toHaveClass("text-ink-3");
   });
 
   // The second surface the deltas land on. Same direction as the recipient
@@ -237,6 +248,28 @@ describe("Transfer Detail compare mode", () => {
     expect(screen.getAllByTestId("estate-delta-chip")).toHaveLength(1);
   });
 
+  // The headline figure an advisor actually reads sits ~650px above the
+  // reconciliation footnote that used to carry the only section chip. This
+  // fixture is deliberately the one above: the header's quantity moves
+  // -$800K/bad while the asset leg moves +$1.2M/good, so a chip wired to the
+  // asset number cannot pass here.
+  it("puts a chip on the header's own quantity, debt included", async () => {
+    const baseline = {
+      ...report([]),
+      firstDeath: deathSection(5_000_000, { sumLiabilityTransfers: -1_000_000 }),
+    };
+    vi.mocked(buildEstateTransferReportData).mockReturnValue({
+      ...report([]),
+      firstDeath: deathSection(6_200_000, { sumLiabilityTransfers: -3_000_000 }),
+    });
+    renderView({ asOf: "today", baseline });
+    // Header: $4,000,000 → $3,200,000.
+    const chip = await screen.findByTestId("estate-delta-estate-at-death");
+    expect(chip).toHaveTextContent("$800K");
+    expect(chip).toHaveTextContent("\u25be");
+    expect(chip).toHaveAttribute("data-tone", "bad");
+  });
+
   // A taxable estate is a tax BASE — lower is better for the client, so this
   // is the one chip on this report that points DOWN.
   it("shows a falling taxable estate as good news on the Form 706 line", async () => {
@@ -273,6 +306,35 @@ describe("Transfer Detail compare mode", () => {
     const chip = screen.getByTestId("estate-delta-chip");
     expect(chip).toHaveTextContent("$1.5M");
     expect(chip).toHaveAttribute("data-tone", "good");
+  });
+
+  // The branch's own logged scar: converting every READER to a filtered
+  // accessor leaves the GATE testing the raw collection. The recipient table
+  // became compare-aware; the banner twenty lines above it did not.
+  it("hides the empty-state banner while ghost rows are still on screen", async () => {
+    const baseline = report([total("trust|t1", "Dynasty Trust", 1_900_000)]);
+    vi.mocked(buildEstateTransferReportData).mockReturnValue({
+      ...report([]),
+      isEmpty: true,
+    });
+    renderView({ asOf: "today", baseline });
+    // The trust is on screen as a $0 ghost...
+    expect(await screen.findByText("Dynasty Trust")).toBeInTheDocument();
+    // ...so "nothing to display" would be printing directly above it.
+    expect(
+      screen.queryByText(/No transfers to display for this selection/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("still shows the empty-state banner when there is genuinely nothing", async () => {
+    vi.mocked(buildEstateTransferReportData).mockReturnValue({
+      ...report([]),
+      isEmpty: true,
+    });
+    renderView({ asOf: "today", baseline: report([]) });
+    expect(
+      await screen.findByText(/No transfers to display for this selection/i),
+    ).toBeInTheDocument();
   });
 
   it("reports its report data upward on load", async () => {

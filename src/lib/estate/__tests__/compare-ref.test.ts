@@ -107,11 +107,12 @@ describe("resolveCompareAsOf", () => {
 });
 
 describe("refLabel", () => {
-  it("names the base case from the scenario list", () => {
-    expect(refLabel(BASE_REF, SCENARIOS)).toBe("Base Facts");
-  });
-
-  it("falls back to a generic label when no base case is present", () => {
+  // The app-wide convention: several surfaces label the base with this literal
+  // rather than its stored name, which is why the base case is not renamable.
+  // Preferring the stored name here printed "Base case" in the picker beside
+  // "Base Case" in the column header — two labels for one thing, side by side.
+  it("always names the base case by the app-wide literal, stored name or not", () => {
+    expect(refLabel(BASE_REF, SCENARIOS)).toBe("Base case");
     expect(refLabel(BASE_REF, [])).toBe("Base case");
   });
 

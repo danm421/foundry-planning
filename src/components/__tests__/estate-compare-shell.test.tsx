@@ -12,6 +12,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 import { EstateCompareShell } from "@/components/estate-compare-shell";
+import type { CompareAsOf } from "@/lib/estate/compare-ref";
 import type { ScenarioOption } from "@/components/scenario/scenario-picker-dropdown";
 
 const SCENARIOS: ScenarioOption[] = [
@@ -55,7 +56,9 @@ function StubColumn({
   );
 }
 
-function renderShell() {
+type ShellProps = { soloFullWidth?: boolean; initialAsOf?: CompareAsOf };
+
+function renderShell(props: ShellProps = {}) {
   return render(
     <EstateCompareShell<string>
       clientId="c1"
@@ -64,6 +67,7 @@ function renderShell() {
       ownerNames={{ clientName: "Robert", spouseName: "Anita" }}
       ownerDobs={{ clientDob: "1960-01-01", spouseDob: "1962-01-01" }}
       retirementYear={2030}
+      {...props}
     >
       {(args) => <StubColumn {...args} />}
     </EstateCompareShell>,
@@ -71,7 +75,7 @@ function renderShell() {
 }
 
 /** Both columns mounted, with Last Death landing on DIFFERENT years per side. */
-function renderDivergingShell() {
+function renderDivergingShell(props: ShellProps = {}) {
   return render(
     <EstateCompareShell<string>
       clientId="c1"
@@ -80,6 +84,7 @@ function renderDivergingShell() {
       ownerNames={{ clientName: "Robert", spouseName: "Anita" }}
       ownerDobs={{ clientDob: "1960-01-01", spouseDob: "1962-01-01" }}
       retirementYear={2030}
+      {...props}
     >
       {(args) => (
         <StubColumn
@@ -153,9 +158,33 @@ describe("EstateCompareShell", () => {
     expect(screen.queryByTestId("col-right")).not.toBeInTheDocument();
   });
 
+  // Spec decision 1 makes the empty right half the affordance that tells an
+  // advisor a comparison exists, so half width stays the DEFAULT. One report
+  // (State Death Tax, whose narrowest table measured 672px against the 597px
+  // half a 1440px viewport gives it) opts out; the idiom itself stands.
+  it("gives a solo column half the row by default", () => {
+    renderShell();
+    expect(screen.getByTestId("estate-compare-columns")).toHaveClass("md:w-1/2");
+  });
+
+  it("lets a report opt out and take the whole row when solo", () => {
+    renderShell({ soloFullWidth: true });
+    const columns = screen.getByTestId("estate-compare-columns");
+    expect(columns).toHaveClass("w-full");
+    expect(columns).not.toHaveClass("md:w-1/2");
+  });
+
+  it("ignores the solo width in compare mode — two columns either way", () => {
+    search = "compare=s-prop";
+    renderShell({ soloFullWidth: true });
+    const columns = screen.getByTestId("estate-compare-columns");
+    expect(columns).toHaveClass("md:grid-cols-2");
+    expect(columns).not.toHaveClass("w-full");
+  });
+
   it("offers a control to start comparing when solo", () => {
     renderShell();
-    expect(screen.getByRole("button", { name: /compare to/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^compare$/i })).toBeInTheDocument();
   });
 
   it("renders both columns when ?compare= is set", () => {
@@ -228,6 +257,28 @@ describe("EstateCompareShell", () => {
     expect(await screen.findByTestId("col-right")).toHaveAttribute("data-asof", "2059");
   });
 
+  // Each column resolves the milestone to its OWN year, so the header has to
+  // name the milestone from the shared selection and take the number from the
+  // column. Printing `String(asOf)` reads "2061" where it means the last death.
+  it("names the milestone beside each column's own year", async () => {
+    search = "scenario=s-prop&compare=base";
+    renderDivergingShell({
+      initialAsOf: { kind: "milestone", milestone: "lastDeath" },
+    });
+    // Title Case matches the pill row and the As-of options in the same bar.
+    expect(await screen.findByText("Last Death · 2061")).toBeInTheDocument();
+    expect(screen.getByText("Last Death · 2059")).toBeInTheDocument();
+  });
+
+  // Non-vacuity: without this the test above passes on a header that prefixes
+  // EVERYTHING. A year the advisor typed is just a year.
+  it("leaves a hand-picked year bare", async () => {
+    search = "scenario=s-prop&compare=base";
+    renderShell({ initialAsOf: { kind: "year", year: 2042 } });
+    expect(await screen.findAllByText("2042")).toHaveLength(2);
+    expect(screen.queryByText(/· 2042/)).not.toBeInTheDocument();
+  });
+
   // The pill reports the LEFT column's year (2061). Storing that bare year
   // would pin both columns to 2061; only storing the milestone lets the right
   // column resolve its own 2059.
@@ -252,7 +303,7 @@ describe("EstateCompareShell", () => {
   it("preserves other params when comparing starts, and clears only compare on dismiss", () => {
     search = "scenario=s-prop&tab=detail";
     const solo = renderShell();
-    fireEvent.click(screen.getByRole("button", { name: /compare to/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^compare$/i }));
     const started = String(push.mock.calls[0][0]);
     expect(started).toContain("scenario=s-prop");
     expect(started).toContain("tab=detail");

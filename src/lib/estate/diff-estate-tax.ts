@@ -3,8 +3,29 @@
 // Every delta is `right - left`. A plan that cuts the tax bill therefore
 // produces a NEGATIVE delta; deciding whether negative is good news is the
 // renderer's job, not this module's.
-import type { EstateTaxResult, GrossEstateLine } from "@/engine/types";
+import type {
+  EstateTaxResult,
+  GrossEstateLine,
+  HypotheticalEstateTaxOrdering,
+} from "@/engine/types";
 import type { StateEstateTaxResult } from "@/lib/tax/state-estate/types";
+
+/**
+ * What one tax-report column reports upward. Wider than a single
+ * `EstateTaxResult` so the SECOND death and the household grand total can
+ * carry deltas too: Ruling 11 published the narrow shape, and the browser pass
+ * then found the Grand Total — the figure an advisor actually shows a client —
+ * rendering chip-free.
+ */
+export interface EstateTaxColumnData {
+  firstDeath: EstateTaxResult;
+  finalDeath: EstateTaxResult | null;
+  /**
+   * Engine-computed household totals. Null in SPLIT death, where the two death
+   * events are independent and the totals card sums them itself.
+   */
+  totals: HypotheticalEstateTaxOrdering["totals"] | null;
+}
 
 export type LineStatus = "same" | "changed" | "added" | "removed";
 

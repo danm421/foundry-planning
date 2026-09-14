@@ -15,8 +15,12 @@ import { TimePeriodButtons } from "./report-controls/time-period-buttons";
 import type { OwnerDobs } from "./report-controls/age-helpers";
 import type { EstateColumnReady } from "./estate-compare-shell";
 import { useEstateColumnReady } from "@/hooks/use-estate-column-ready";
+import { useEstateTaxColumnData } from "@/hooks/use-estate-tax-column-data";
 import { EstateDeltaChip } from "./estate-delta-chip";
-import { diffStateEstateTax } from "@/lib/estate/diff-estate-tax";
+import {
+  diffStateEstateTax,
+  type EstateTaxColumnData,
+} from "@/lib/estate/diff-estate-tax";
 import { BASE_REF, readCompareSelection } from "@/lib/estate/compare-ref";
 import { personLabel } from "@/lib/owner-labels";
 import EstateTaxSkeleton from "@/app/(app)/clients/[id]/estate-planning/estate-tax/loading-skeleton";
@@ -44,10 +48,10 @@ interface Props {
   scenarioRef?: string;
   asOf?: AsOfValue;
   ordering?: Ordering;
-  /** Reports this column's projection metadata and first-death result upward. */
-  onReady?: (ready: EstateColumnReady<EstateTaxResult>) => void;
-  /** The other column's first-death result; its presence switches on deltas. */
-  baseline?: EstateTaxResult | null;
+  /** Reports this column's projection metadata and report data upward. */
+  onReady?: (ready: EstateColumnReady<EstateTaxColumnData>) => void;
+  /** The other column's report data; its presence switches on deltas. */
+  baseline?: EstateTaxColumnData | null;
 }
 
 export default function StateDeathTaxReportView({
@@ -146,12 +150,14 @@ export default function StateDeathTaxReportView({
         : hypothetical.primaryFirst
       : null;
 
-  // The one result the two columns align on: the first death's breakdown.
-  // Every reference here points into `projection`, so the identity is stable
-  // between renders — the shell compares `data` by identity.
-  const reportedTax = isSplit ? splitFirst : activeOrdering?.firstDeath ?? null;
+  const columnData = useEstateTaxColumnData(
+    isSplit,
+    splitFirst,
+    splitSecond,
+    activeOrdering,
+  );
 
-  useEstateColumnReady(projection, reportedTax, onReady);
+  useEstateColumnReady(projection, columnData, onReady);
 
   if (loadError) {
     return (
@@ -273,17 +279,22 @@ export default function StateDeathTaxReportView({
             <DecedentSection
               heading={`${ownerForName(splitFirst, ownerNames)} — First to die · ${splitFirst.year}`}
               tax={splitFirst}
-              baseline={baseline}
+              baseline={baseline?.firstDeath ?? null}
             />
           )}
           {splitSecond && (
             <DecedentSection
               heading={`${ownerForName(splitSecond, ownerNames)} — Second to die · ${splitSecond.year}`}
               tax={splitSecond}
+              baseline={baseline?.finalDeath ?? null}
             />
           )}
           {splitFirst && splitSecond && (
-            <GrandTotalsCard first={splitFirst} second={splitSecond} />
+            <GrandTotalsCard
+              first={splitFirst}
+              second={splitSecond}
+              baseline={baseline}
+            />
           )}
         </>
       ) : (
@@ -292,16 +303,21 @@ export default function StateDeathTaxReportView({
             <DecedentSection
               heading={`${firstDecedentName} — ${isMarried ? "First to die" : `Hypothetical death in ${resolvedYear}`}`}
               tax={activeOrdering.firstDeath}
-              baseline={baseline}
+              baseline={baseline?.firstDeath ?? null}
             />
             {isMarried && activeOrdering.finalDeath && survivorName && (
               <DecedentSection
                 heading={`${survivorName} — Second to die`}
                 tax={activeOrdering.finalDeath}
+                baseline={baseline?.finalDeath ?? null}
               />
             )}
             {isMarried && activeOrdering.firstDeath && activeOrdering.finalDeath && (
-              <GrandTotalsCard first={activeOrdering.firstDeath} second={activeOrdering.finalDeath} />
+              <GrandTotalsCard
+                first={activeOrdering.firstDeath}
+                second={activeOrdering.finalDeath}
+                baseline={baseline}
+              />
             )}
           </>
         )
@@ -485,6 +501,11 @@ function deathTotal(r: EstateTaxResult): number {
     : 0);
 }
 
+/** One column's household state death tax: both deaths, or the one there is. */
+function householdStateTotal(d: EstateTaxColumnData): number {
+  return deathTotal(d.firstDeath) + (d.finalDeath ? deathTotal(d.finalDeath) : 0);
+}
+
 function hasAnyStateDeathTax(r: EstateTaxResult): boolean {
   const d = r.stateEstateTaxDetail;
   if (d.fallbackUsed || d.state != null || d.stateEstateTax > 0) return true;
@@ -507,9 +528,21 @@ function NoStateDeathTaxLegend({ residenceState }: { residenceState: USPSStateCo
   );
 }
 
-function GrandTotalsCard({ first, second }: { first: EstateTaxResult; second: EstateTaxResult }) {
+function GrandTotalsCard({
+  first,
+  second,
+  baseline = null,
+}: {
+  first: EstateTaxResult;
+  second: EstateTaxResult;
+  /** The other column's report data; null outside compare mode. */
+  baseline?: EstateTaxColumnData | null;
+}) {
   const total = deathTotal(first) + deathTotal(second);
   const accent = total > 0 ? "text-rose-200" : "text-emerald-200";
+  // Computed on both sides the same way the figure beside it is — never by
+  // summing the two per-death deltas, which measure a different quantity.
+  const delta = baseline ? total - householdStateTotal(baseline) : null;
   return (
     <section className="overflow-hidden rounded-xl border border-indigo-900/50 bg-indigo-950/15">
       <header className="border-b border-indigo-900/40 px-5 py-3">
@@ -524,8 +557,17 @@ function GrandTotalsCard({ first, second }: { first: EstateTaxResult; second: Es
           <span className="text-sm font-semibold uppercase tracking-[0.16em] text-gray-100">
             Total state death taxes
           </span>
-          <span className={"text-xl font-semibold tabular-nums " + accent}>
-            {fmt.format(total)}
+          <span className="flex shrink-0 items-baseline gap-2">
+            {delta != null && (
+              <EstateDeltaChip
+                delta={delta}
+                goodDirection="down"
+                testId="estate-delta-grand-total"
+              />
+            )}
+            <span className={"text-xl font-semibold tabular-nums " + accent}>
+              {fmt.format(total)}
+            </span>
           </span>
         </div>
       </div>
@@ -548,9 +590,15 @@ function DecedentSection({
     ? tax.stateInheritanceTax
     : null;
   const showEstate = stateDetail.stateEstateTax > 0 || stateDetail.fallbackUsed || stateDetail.state != null;
-  const diff = baseline
-    ? diffStateEstateTax(baseline.stateEstateTaxDetail, stateDetail)
-    : null;
+  // In SPLIT death each column emits whoever dies first in ITS OWN projection,
+  // so a scenario that moves a death year can pair this section's decedent
+  // against the other column's OTHER spouse — a $-figure that is not a change
+  // in anything. Outside split both columns are pinned to the same decedent by
+  // the shell's shared ordering, so this can never suppress a legitimate chip.
+  const diff =
+    baseline && baseline.deceased === tax.deceased
+      ? diffStateEstateTax(baseline.stateEstateTaxDetail, stateDetail)
+      : null;
 
   if (!showEstate && !sti) return null;
 

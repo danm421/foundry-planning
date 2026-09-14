@@ -44,9 +44,13 @@ export function readCompareSelection(
 }
 
 export function refLabel(ref: string, scenarios: ScenarioOption[]): string {
-  if (ref === BASE_REF) {
-    return scenarios.find((s) => s.isBaseCase)?.name ?? "Base case";
-  }
+  // App-wide convention, not a shortcut: several surfaces (this compare
+  // picker, the presentation launcher, `loadProjectionForRef`) label the base
+  // with the literal "Base case" rather than its stored name, which is why the
+  // base case is deliberately not renamable — see `scenario-chip-row.tsx`.
+  // Preferring the stored name here is what put "Base case" in the picker
+  // beside "Base Case" in the column header, two labels for one thing.
+  if (ref === BASE_REF) return "Base case";
   return scenarios.find((s) => s.id === ref)?.name ?? "Unknown scenario";
 }
 

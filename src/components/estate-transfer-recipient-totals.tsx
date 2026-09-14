@@ -42,9 +42,18 @@ export function EstateTransferRecipientTotals({
           <tbody className="divide-y divide-indigo-900/20">
             {totals.map((t) => {
               const line = diff?.get(t.key);
+              // A ghost row is an heir the OTHER scenario has and this one
+              // does not — it is here at $0 so the drop is visible, not to be
+              // read at the same weight as a living heir. Muting by token swap
+              // is how the sibling Estate Tax report does it. The marker and
+              // the chip stay at full strength deliberately: they are what
+              // explain why the row is there at all.
+              const dropped = line?.status === "removed";
+              const cellTone = dropped ? "text-ink-3" : "text-ink-2";
+              const totalTone = dropped ? "text-ink-3" : "text-ink";
               return (
                 <tr key={t.key} className="hover:[&>td]:shadow-[inset_0_1px_0_var(--color-ink),inset_0_-1px_0_var(--color-ink)]">
-                  <td className="py-1 text-ink-2">
+                  <td className={"py-1 " + cellTone}>
                     {t.recipientLabel}
                     {/* `empty:hidden` drops the gap on rows the marker renders nothing for. */}
                     {line && (
@@ -53,13 +62,13 @@ export function EstateTransferRecipientTotals({
                       </span>
                     )}
                   </td>
-                  <td className="py-1 text-right tabular-nums text-ink-2">
+                  <td className={"py-1 text-right tabular-nums " + cellTone}>
                     {fmt.format(t.fromFirstDeath)}
                   </td>
-                  <td className="py-1 text-right tabular-nums text-ink-2">
+                  <td className={"py-1 text-right tabular-nums " + cellTone}>
                     {fmt.format(t.fromSecondDeath)}
                   </td>
-                  <td className="py-1 text-right tabular-nums font-semibold text-ink">
+                  <td className={"py-1 text-right tabular-nums font-semibold " + totalTone}>
                     <span className="flex items-baseline justify-end gap-2">
                       {line && (
                         // More money reaching an heir is the GOOD news here —

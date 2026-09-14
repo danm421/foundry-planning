@@ -3,13 +3,18 @@
 // buildEstateTransferReportData, so no key synthesis is needed here.
 //
 // Every delta is `right - left`, matching diff-estate-tax.
-import type {
-  DeathSectionData,
-  EstateTransferReportData,
+import {
+  estateAtDeathOf,
+  type DeathSectionData,
+  type EstateTransferReportData,
 } from "@/lib/estate/transfer-report";
 import { diffAmountsByKey, type LineDiff } from "@/lib/estate/diff-estate-tax";
 
 export interface DeathSectionDiff {
+  /** The header's "Estate at death": assets PLUS the debt assumed. Distinct
+   *  from `assetEstateValue`, which is the asset leg alone — the two diverge
+   *  whenever a scenario changes the debt that rides through the death event. */
+  estateAtDeath: number;
   assetEstateValue: number;
   taxableEstate: number;
   grossEstate: number;
@@ -39,6 +44,8 @@ function diffSection(
   const lv = left?.assetEstateValue ?? 0;
   const rv = right?.assetEstateValue ?? 0;
   return {
+    estateAtDeath:
+      (right ? estateAtDeathOf(right) : 0) - (left ? estateAtDeathOf(left) : 0),
     assetEstateValue: rv - lv,
     taxableEstate: (right?.taxableEstate ?? 0) - (left?.taxableEstate ?? 0),
     grossEstate: (right?.grossEstate ?? 0) - (left?.grossEstate ?? 0),

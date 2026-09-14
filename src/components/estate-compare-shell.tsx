@@ -147,9 +147,34 @@ function sameMeta(a: EstateColumnMeta | null, b: EstateColumnMeta): boolean {
   );
 }
 
-function columnAsOfLabel(asOf: AsOfValue, meta: EstateColumnMeta | null): string {
+/** The ONE spelling of each milestone in this bar. The header used to print a
+ *  bare year while the pill row beside it printed a name, and a second table
+ *  here would have printed "Last death" next to the pills' "Last Death" —
+ *  two labels for one thing, side by side, which is the very defect the base
+ *  case's label was just fixed for. */
+const MILESTONE_LABELS = {
+  retirement: "Retirement",
+  firstDeath: "First Death",
+  lastDeath: "Last Death",
+} as const;
+
+/**
+ * What a column header calls its as-of. Every milestone RESOLVES to a bare
+ * year, and each column resolves it against its own projection — so the name
+ * has to come from the shared SELECTION and the number from the column, or the
+ * header reads "2070" where it means "Last death · 2070". A `{kind:"year"}`
+ * selection keeps the bare year: that is exactly what the advisor picked.
+ */
+function columnAsOfLabel(
+  selection: CompareAsOf,
+  asOf: AsOfValue,
+  meta: EstateColumnMeta | null,
+): string {
   if (asOf === "split") return "Split death";
   if (asOf === "today") return meta ? `Today · ${meta.todayYear}` : "Today";
+  if (selection.kind === "milestone") {
+    return `${MILESTONE_LABELS[selection.milestone]} · ${asOf}`;
+  }
   return String(asOf);
 }
 
@@ -160,6 +185,7 @@ export function EstateCompareShell<TData>({
   ownerDobs,
   retirementYear,
   initialAsOf,
+  soloFullWidth = false,
   children,
 }: {
   /** Part of the column contract: the views fetch with it. The shell itself
@@ -172,6 +198,14 @@ export function EstateCompareShell<TData>({
   retirementYear: number;
   /** Test seam and deep-link hook; defaults to `{ kind: "today" }`. */
   initialAsOf?: CompareAsOf;
+  /** Take the whole row when solo instead of the spec's half-width
+   *  affordance — the empty right half is what tells an advisor a comparison
+   *  exists, so half width stays the default. A report whose NARROWEST table
+   *  exceeds half a 1440px viewport opts out; State Death Tax measured 672px
+   *  needed against the 597px it was given. Compare mode is unaffected: two
+   *  columns is what the advisor asked for. Both class names stay LITERAL
+   *  inside this file, or Tailwind's JIT never emits `md:w-1/2`. */
+  soloFullWidth?: boolean;
   children: (args: EstateCompareColumnArgs<TData>) => ReactNode;
 }): ReactElement {
   const router = useRouter();
@@ -251,12 +285,12 @@ export function EstateCompareShell<TData>({
 
   const milestones = leftMeta
     ? [
-        { year: retirementYear, label: "Retirement" },
+        { year: retirementYear, label: MILESTONE_LABELS.retirement },
         ...(leftMeta.firstDeathYear != null
-          ? [{ year: leftMeta.firstDeathYear, label: "First Death" }]
+          ? [{ year: leftMeta.firstDeathYear, label: MILESTONE_LABELS.firstDeath }]
           : []),
         ...(leftMeta.secondDeathYear != null
-          ? [{ year: leftMeta.secondDeathYear, label: "Last Death" }]
+          ? [{ year: leftMeta.secondDeathYear, label: MILESTONE_LABELS.lastDeath }]
           : []),
       ]
     : [];
@@ -285,7 +319,7 @@ export function EstateCompareShell<TData>({
               {refLabel(scenarioRef, scenarios)}
             </h2>
             <span className="tabular shrink-0 text-[11px] text-ink-3">
-              {columnAsOfLabel(asOf, meta)}
+              {columnAsOfLabel(sharedAsOf, asOf, meta)}
             </span>
           </header>
         )}
@@ -347,7 +381,7 @@ export function EstateCompareShell<TData>({
                 onClick={() => writeParam("compare", firstCompareRef)}
                 className={BAR_BUTTON_CLASS}
               >
-                Compare to…
+                Compare
               </button>
             )}
           </>
@@ -411,10 +445,13 @@ export function EstateCompareShell<TData>({
         column's presence change.
       */}
       <div
+        data-testid="estate-compare-columns"
         className={
           rightRef !== null
             ? "grid gap-x-8 gap-y-6 md:grid-cols-2"
-            : "md:w-1/2"
+            : soloFullWidth
+              ? "w-full"
+              : "md:w-1/2"
         }
       >
         <div className="min-w-0">{left}</div>

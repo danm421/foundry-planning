@@ -21,6 +21,16 @@ function section(over: Partial<DeathSectionData> = {}): DeathSectionData {
     taxableEstate: 0,
     grossEstate: 0,
     recipients: [],
+    // Required on the type and read by the diff — the header's "Estate at
+    // death" nets debt assumed onto the asset leg. Omitting it made every
+    // fixture here a lie the cast hid.
+    reconciliation: {
+      sumLiabilityTransfers: 0,
+      sumRecipients: 0,
+      sumReductions: 0,
+      unattributed: 0,
+      reconciles: true,
+    },
     ...over,
   } as DeathSectionData;
 }
@@ -49,6 +59,42 @@ describe("diffTransferReport", () => {
     );
     expect(d.firstDeath?.assetEstateValue).toBe(-2_000_000);
     expect(d.firstDeath?.taxableEstate).toBe(-2_000_000);
+  });
+
+  // The header's "Estate at death" is assets PLUS the debt assumed, so it is
+  // its own quantity — the two diverge whenever a scenario changes the debt
+  // riding through the death event, and only one of them belongs beside the
+  // headline figure.
+  it("diffs the header's estate-at-death separately from the asset leg", () => {
+    const d = diffTransferReport(
+      report({
+        firstDeath: section({
+          assetEstateValue: 5_000_000,
+          reconciliation: {
+            sumLiabilityTransfers: -1_000_000,
+            sumRecipients: 4_000_000,
+            sumReductions: 0,
+            unattributed: 0,
+            reconciles: true,
+          },
+        }),
+      }),
+      report({
+        firstDeath: section({
+          assetEstateValue: 6_200_000,
+          reconciliation: {
+            sumLiabilityTransfers: -3_000_000,
+            sumRecipients: 3_200_000,
+            sumReductions: 0,
+            unattributed: 0,
+            reconciles: true,
+          },
+        }),
+      }),
+    );
+    // Assets rose $1.2M; the header fell $800K. Opposite signs, same fixture.
+    expect(d.firstDeath?.assetEstateValue).toBe(1_200_000);
+    expect(d.firstDeath?.estateAtDeath).toBe(-800_000);
   });
 
   it("treats a section the right side gained as a diff against zero", () => {
