@@ -16,7 +16,7 @@ import { extractPdfPages } from "@/lib/extraction/pdf-parser";
 import { visionOcrPdf } from "@/lib/extraction/vision-ocr";
 import { runMapEntityPass } from "@/lib/statement-chat/map-entity-pass";
 import { linkCreated } from "@/lib/imports/types";
-import type { CandidateRow } from "@/lib/entity-extraction/types";
+import type { CandidateRow, RowsByEntity } from "@/lib/entity-extraction/types";
 
 // The pass makes several Azure calls per document, so this matches the sibling
 // chat/extract route's directives. Unlike that route this one is plain JSON,
@@ -210,6 +210,9 @@ export async function POST(request: Request, { params }: Params) {
   }
 
   let pages = await extractPdfPages(buffer);
+  // Disclosures owed to the advisor about HOW the text was read, kept separate
+  // from the pass's own warnings and prepended to them in the response.
+  const readWarnings: string[] = [];
 
   // A genuine carrier policy is a SCAN. `unpdf` answers a scanned PDF with one
   // entry per page and every one of them EMPTY — a real 53-page life policy
@@ -226,6 +229,19 @@ export async function POST(request: Request, { params }: Params) {
     const maxPages = Number(process.env.EXTRACTION_OCR_MAX_PAGES ?? "30") || 30;
     const ocr = await visionOcrPdf(buffer, { maxPages, model: "mini" });
     pages = ocr.segments;
+    // `extract.ts` has disclosed both of these on the Phase 1 path since OCR
+    // existed, and OCR is the only reason this route can read a carrier policy
+    // at all. Dropping them means a 53-page scan capped at 30 reads to the
+    // advisor as a COMPLETE extraction — the same "silent successful read"
+    // shape the 422 below exists to prevent, one step further in.
+    readWarnings.push(
+      "This document had no text layer (scanned/image PDF); its text was recovered via image OCR — please verify the extracted figures.",
+    );
+    if (ocr.truncated) {
+      readWarnings.push(
+        `Only the first ${ocr.pagesProcessed} of ${ocr.pageCount} pages were read; data on later pages was skipped.`,
+      );
+    }
   }
 
   if (pages.length === 0) {
@@ -261,7 +277,10 @@ export async function POST(request: Request, { params }: Params) {
     metadata: { importId, entityCount: entityIds.length, rowCount },
   });
 
-  return jsonResponse(200, { rows: result.rows, warnings: result.warnings });
+  return jsonResponse(200, {
+    rows: result.rows,
+    warnings: [...readWarnings, ...result.warnings],
+  });
 }
 
 /**
@@ -294,7 +313,7 @@ export async function PATCH(request: Request, { params }: Params) {
 
   const payload = (imp.payloadJson ?? {}) as Record<string, unknown>;
   const chat = (payload.chat ?? {}) as Record<string, unknown>;
-  const entityRows = (chat.entityRows ?? {}) as Record<string, CandidateRow[]>;
+  const entityRows = (chat.entityRows ?? {}) as RowsByEntity;
   const row = (entityRows[entityId] ?? []).find((candidate) => candidate.rowId === rowId);
   if (!row) {
     return jsonResponse(404, { error: "Row not found" });

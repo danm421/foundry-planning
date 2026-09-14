@@ -217,4 +217,43 @@ describe("extractMapEntities", () => {
     expect(regionArgs).not.toContain("123-45-6789");
     expect(regionArgs).toContain(REDACTED_SSN_PLACEHOLDER);
   });
+
+  /**
+   * "The classifier named a range" and "that range holds text" are different
+   * facts. `sliceRegion` drops out-of-bounds pages, so an invented range
+   * slices to "" — and reading it buys a full billable Azure call to be told
+   * what the empty slice already said.
+   *
+   * Not hypothetical on the OCR path: `pages` there is one entry per rendered
+   * BATCH (<=4 pages), while the scan's own text still prints "Page 41 of 53"
+   * into the anchors, so a range stated against the printed page count runs
+   * off the end of a 14-element array.
+   */
+  it("does not spend an extraction call on a region that slices to nothing", async () => {
+    // Page 99 does not exist in a 3-page document.
+    respond({ life_insurance_policy: [[99, 99]], disability_policy: [] });
+
+    const result = await extractMapEntities({ fileId: "f1", pages: PAGES });
+
+    // ONLY the classifier ran. A second call here is the billable waste.
+    expect(mocked).toHaveBeenCalledTimes(1);
+    expect(result.rows).toEqual({});
+    expect(result.warnings).toContainEqual(expect.stringContaining("no readable text"));
+  });
+
+  it("still reads the entities whose ranges DO hold text", async () => {
+    // Positive control: without this, skipping every region would pass the
+    // test above. One entity overshoots, the other is real — the real one
+    // must still be read, and its call must be the only extraction.
+    respond(
+      { life_insurance_policy: [[99, 99]], disability_policy: [[3, 3]] },
+      { rows: [{ carrier: { value: "Unum", snippet: "Carrier: Unum", confidence: 0.9 } }] },
+    );
+
+    const result = await extractMapEntities({ fileId: "f1", pages: PAGES });
+
+    expect(mocked).toHaveBeenCalledTimes(2);
+    expect(result.rows.disability_policy).toHaveLength(1);
+    expect(result.rows.life_insurance_policy).toBeUndefined();
+  });
 });

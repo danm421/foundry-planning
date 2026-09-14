@@ -10,10 +10,10 @@ import { buildEntityPrompt } from "./prompt-builder";
 import { classifyRegions } from "./region-classifier";
 import { placeRow } from "./placement";
 import { scoreRow } from "./confidence";
-import type { CandidateRow, RawObservationRow } from "./types";
+import type { CandidateRow, RawObservationRow, RowsByEntity } from "./types";
 
 export interface MapExtractionResult {
-  rows: Record<string, CandidateRow[]>;
+  rows: RowsByEntity;
   /**
    * Extraction cache key component. Changes whenever the map changes.
    *
@@ -146,15 +146,36 @@ export async function extractMapEntities(args: {
     return { rows: {}, promptVersion, warnings };
   }
 
+  // "The classifier named a range" is not the same fact as "that range holds
+  // text". `sliceRegion` drops out-of-bounds pages, so a range the model
+  // invented slices to "" — and reading it would spend a full billable Azure
+  // call on an empty <document> to be told what we already know. The overshoot
+  // is likelier than it looks on the OCR path: `pages` there is one entry per
+  // rendered BATCH, while the scan's own text still prints "Page 7 of 53" into
+  // the anchors, so a range stated against the printed count runs off the end
+  // of the array. Refusing loudly also turns that into something the advisor
+  // can see, rather than an entity that silently returns nothing.
   const present = entities.filter((e) => (regions[e.id] ?? []).length > 0);
+  const targets: Array<{ entity: DetailEntity; regionText: string }> = [];
+  for (const entity of present) {
+    const regionText = sliceRegion(pages, regions[entity.id]);
+    if (regionText.trim().length === 0) {
+      warnings.push(
+        `${entity.label} was located on pages that hold no readable text; nothing was read for it.`,
+      );
+      continue;
+    }
+    targets.push({ entity, regionText });
+  }
+
   const results = await Promise.all(
-    present.map(async (entity) => ({
+    targets.map(async ({ entity, regionText }) => ({
       entity,
-      ...(await readRegion(entity, sliceRegion(pages, regions[entity.id]), fileId)),
+      ...(await readRegion(entity, regionText, fileId)),
     })),
   );
 
-  const rows: Record<string, CandidateRow[]> = {};
+  const rows: RowsByEntity = {};
   for (const result of results) {
     if (result.warning) warnings.push(result.warning);
     if (result.rows.length > 0) rows[result.entity.id] = result.rows;

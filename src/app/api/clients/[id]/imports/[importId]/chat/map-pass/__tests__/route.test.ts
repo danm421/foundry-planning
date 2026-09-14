@@ -590,4 +590,81 @@ describe("map-pass route — a PDF with no text layer", () => {
     expect(visionOcrPdf).not.toHaveBeenCalled();
     expect(vi.mocked(runMapEntityPass).mock.calls[0][0].pages).toEqual(["real page text"]);
   });
+
+  it("tells the advisor the text came from OCR", async () => {
+    vi.mocked(extractPdfPages).mockResolvedValue(blankPages);
+    vi.mocked(visionOcrPdf).mockResolvedValue({
+      text: "UNIVERSAL LIFE",
+      segments: ["UNIVERSAL LIFE"],
+      pageCount: 3,
+      pagesProcessed: 3,
+      truncated: false,
+    } as never);
+
+    const res = await POST(req({ fileId: "f1" }), params);
+    const body = (await res.json()) as { warnings: string[] };
+
+    expect(body.warnings).toContainEqual(expect.stringContaining("recovered via image OCR"));
+  });
+
+  it("tells the advisor which pages were NOT read when OCR truncated the document", async () => {
+    // The case this actually protects: a genuine 53-page carrier policy is
+    // capped at EXTRACTION_OCR_MAX_PAGES (30). Without the warning the advisor
+    // sees a table built from the first 30 pages and no sign the rest exists,
+    // which reads as a complete extraction of the whole policy.
+    vi.mocked(extractPdfPages).mockResolvedValue(blankPages);
+    vi.mocked(visionOcrPdf).mockResolvedValue({
+      text: "PASSPORT TERM 30",
+      segments: ["PASSPORT TERM 30"],
+      pageCount: 53,
+      pagesProcessed: 30,
+      truncated: true,
+    } as never);
+
+    const res = await POST(req({ fileId: "f1" }), params);
+    const body = (await res.json()) as { warnings: string[] };
+
+    expect(body.warnings).toContainEqual("Only the first 30 of 53 pages were read; data on later pages was skipped.");
+  });
+
+  it("does NOT claim truncation when the whole document was read", async () => {
+    // Positive control for the test above — a hardcoded truncation warning
+    // would pass it and would lie on every complete document.
+    vi.mocked(extractPdfPages).mockResolvedValue(blankPages);
+    vi.mocked(visionOcrPdf).mockResolvedValue({
+      text: "PASSPORT TERM 30",
+      segments: ["PASSPORT TERM 30"],
+      pageCount: 12,
+      pagesProcessed: 12,
+      truncated: false,
+    } as never);
+
+    const res = await POST(req({ fileId: "f1" }), params);
+    const body = (await res.json()) as { warnings: string[] };
+
+    expect(body.warnings).not.toContainEqual(expect.stringContaining("pages were read"));
+  });
+
+  it("keeps the pass's own warnings alongside the read warnings", async () => {
+    // The route prepends its disclosures; it must not REPLACE what the pass
+    // reports (the SSN-redaction notice reaches the advisor this way).
+    vi.mocked(extractPdfPages).mockResolvedValue(blankPages);
+    vi.mocked(visionOcrPdf).mockResolvedValue({
+      text: "UNIVERSAL LIFE",
+      segments: ["UNIVERSAL LIFE"],
+      pageCount: 3,
+      pagesProcessed: 3,
+      truncated: false,
+    } as never);
+    vi.mocked(runMapEntityPass).mockResolvedValue({
+      rows: {},
+      warnings: ["Redacted 8 SSN-like value(s) from this document before sending it to the AI extractor."],
+    } as never);
+
+    const res = await POST(req({ fileId: "f1" }), params);
+    const body = (await res.json()) as { warnings: string[] };
+
+    expect(body.warnings).toContainEqual(expect.stringContaining("recovered via image OCR"));
+    expect(body.warnings).toContainEqual(expect.stringContaining("Redacted 8 SSN-like value(s)"));
+  });
 });
