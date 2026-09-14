@@ -3,8 +3,20 @@ import type { DetailEntity } from "@/domain/forge/detail-fields";
 import type { CandidateRow } from "@/lib/entity-extraction/types";
 import { mergeIntoSet } from "./set-merge";
 
+/**
+ * `"PATCH"` is deliberately NOT a member (final review C1, Ruling 34).
+ *
+ * It was declared, and no code path here could ever produce it — this module
+ * returns `POST routes.create` for every object-shaped entity and
+ * `PUT routes.update` for a set-replacing one. A review table read the empty
+ * promise back out and rendered "Update" for an `exact` match, whose Commit
+ * then INSERTED a second record. The update leg is real work (each entity's
+ * update route has its own partial-update semantics and nothing in this plan
+ * designed them), so the surface refuses an `exact` match instead; adding
+ * `"PATCH"` back belongs with the code that actually builds one.
+ */
 export type WriteRequest =
-  | { ok: true; method: "POST" | "PATCH" | "PUT"; path: string; body: unknown; warnings: string[] }
+  | { ok: true; method: "POST" | "PUT"; path: string; body: unknown; warnings: string[] }
   | { ok: false; error: string };
 
 /**

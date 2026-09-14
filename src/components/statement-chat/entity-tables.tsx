@@ -6,6 +6,7 @@ import type { CandidateRow } from "@/lib/entity-extraction/types";
 import { isAmbiguousMatch } from "@/lib/imports/commit/ambiguous-rows";
 import EntityTable from "./entity-table";
 import { columnsForEntity, overflowFields, renderOverflow, type CandidateRowView } from "./map-columns";
+import { issueReason } from "./value-issue";
 
 /**
  * Details-sidebar order. A tab this list omits sorts LAST, never first (Task
@@ -38,7 +39,16 @@ export interface EntityTablesProps {
 
 function toView(row: CandidateRow): CandidateRowView {
   const view: CandidateRowView = { __rowId: row.rowId };
-  for (const value of row.values) view[value.key] = value.value;
+  for (const value of row.values) {
+    view[value.key] = value.value;
+    // I6 (Ruling 35): the reason travels WITH the value. Dropping it here is
+    // what let an off-enum "Universal Life" render as ordinary text in the
+    // Policy type column, against the spec's own "a value that cannot be
+    // placed, validated or written is visible with its reason attached".
+    if (value.issue) {
+      view.__issues = { ...view.__issues, [value.key]: value.issue };
+    }
+  }
   return view;
 }
 
@@ -48,14 +58,18 @@ function toView(row: CandidateRow): CandidateRowView {
  *
  * Two "why can't I commit this row?" mechanisms on one table would fight each
  * other, so this reuses `entity-table.tsx`'s existing `commitBlockedReason`
- * for everything that actually blocks a commit — a missing required field,
- * and an unresolved `fuzzy` match (Task 12 review, Critical 1: the SAME rule
- * `isAmbiguousMatch` enforces at commit time, reused rather than re-derived
- * so a review table can never tell an advisor "this can commit" when the
- * commit module would silently skip it) — and only adds `rowNotice` for the
- * two things that don't block anything: a sub-threshold confidence marker,
- * and Add-vs-Update wording, which only a resolved `exact` match earns (Task
- * 12 ruling 7 / review Critical 1).
+ * for everything that actually blocks a commit, and only adds `rowNotice` for
+ * the things that block nothing: a sub-threshold confidence marker, and the
+ * word "Add".
+ *
+ * ONE RULE, stated once: this table may never say "committable" where the
+ * writer would refuse, or "will update" where the writer would create. The
+ * four legs of `commitBlockedReason` below are the four ways
+ * `buildWriteRequest` (`src/lib/entity-writer/build-request.ts`) can decline —
+ * an `exact` match with no update leg (Ruling 34), an unresolved `fuzzy` match
+ * (the SAME `isAmbiguousMatch` every commit module enforces, reused rather
+ * than re-derived), a missing required field, and any flagged value
+ * (Ruling 35). Add a refusal there and it belongs here too.
  */
 export default function EntityTables({
   rows,
@@ -107,19 +121,49 @@ export default function EntityTables({
               commitBlockedReason={(view) => {
                 const source = byRowId.get(view.__rowId);
                 if (!source) return null;
+                // Name every field the way the advisor sees it on screen. A
+                // payload key means nothing to the person reading this.
+                const labelFor = (key: string) =>
+                  entity.fields.find((f) => f.key === key)?.label ?? key;
+                // C1 (final review, Ruling 34). An `exact` match names a
+                // record that ALREADY exists, and `buildWriteRequest` has no
+                // update leg — every non-array entity returns
+                // `POST routes.create`. So the one row this table used to
+                // promise an "Update" for was the one it DUPLICATED, and the
+                // stamp then pointed at the duplicate. Refuse honestly and
+                // name the screen that can finish it, the same posture the
+                // `fuzzy` leg already takes.
+                if (source.match?.kind === "exact") {
+                  return `This ${entity.label.toLowerCase()} already exists — update it on the Details tab`;
+                }
                 // The exact rule every commit module in
                 // `AMBIGUOUS_ROW_SOURCES` enforces: an unresolved `fuzzy`
                 // match is a candidate LIST with no chosen record, so the row
                 // would POST, write nothing, and still read "Committed"
                 // (Task 12 review, Critical 1).
                 if (isAmbiguousMatch(source)) return "Pick a match first";
-                if (source.missingRequired.length === 0) return null;
-                // Name the missing fields the way the advisor sees them on
-                // screen. A payload key means nothing to the person reading this.
-                const missing = source.missingRequired.map(
-                  (key) => entity.fields.find((f) => f.key === key)?.label ?? key,
-                );
-                return `Missing ${missing.join(", ")}`;
+                if (source.missingRequired.length > 0) {
+                  return `Missing ${source.missingRequired.map(labelFor).join(", ")}`;
+                }
+                // C2 (final review, Ruling 35). `build-request.ts:42-50`
+                // refuses the WHOLE write when ANY value carries ANY issue,
+                // optional fields included — and `confidence.ts:46-48` stamps
+                // `ungrounded` on every snippet-less value, so one optional
+                // `cashValue` with no snippet was enough. Without this the
+                // button stayed enabled and threw the writer's refusal
+                // underneath it, on a table with no cell editing to clear the
+                // flag with: the row was dead until the whole extraction was
+                // re-run. Same class as the Task 12 Critical the `fuzzy` leg
+                // closed — the table must never say "committable" where the
+                // writer would refuse.
+                const flagged = source.values.filter((v) => v.issue);
+                if (flagged.length > 0) {
+                  const named = flagged.map(
+                    (v) => `${labelFor(v.key)} (${issueReason(v.issue!)})`,
+                  );
+                  return `Check ${named.join(", ")}`;
+                }
+                return null;
               }}
               rowNotice={(view) => {
                 const source = byRowId.get(view.__rowId);
@@ -128,12 +172,13 @@ export default function EntityTables({
                   // Low confidence MARKS the row. It never pre-selects discard —
                   // hiding a value is the failure mode Phase 1 already rejected.
                   needsReview: source.rowConfidence < REVIEW_THRESHOLD,
-                  // Only an EXACT match has a chosen record to update — a
-                  // `fuzzy` one is a candidate list nobody picked from, so it
-                  // reads "Add" like a brand-new row rather than promising an
-                  // update to a record no one resolved (Task 12 review,
-                  // Critical 1).
-                  action: source.match?.kind === "exact" ? "Update" : "Add",
+                  // "Update" is GONE (Ruling 34). It described a leg
+                  // `buildWriteRequest` does not have, and an `exact` match is
+                  // now blocked above with its own reason — so the only state
+                  // left for an action word to describe is a row that will be
+                  // added. An exact match gets no word at all rather than a
+                  // contradictory "Add" beside "this already exists".
+                  action: source.match?.kind === "exact" ? undefined : "Add",
                 };
               }}
             />

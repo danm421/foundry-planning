@@ -70,10 +70,83 @@ describe("EntityTables", () => {
     expect(within(target).getByRole("button", { name: /commit/i })).not.toBeDisabled();
   });
 
-  it("says a matched row will update rather than create", () => {
+  /**
+   * Final review C1 / Ruling 34. This row used to render the word "Update"
+   * with an ENABLED Commit button, and `buildWriteRequest` has no update leg
+   * at all — every non-array entity returns `POST routes.create`. So the one
+   * row the table promised to update was the one it DUPLICATED. The update
+   * leg is not built here (each entity's update route has its own partial
+   * semantics); the honest answer is to refuse and name where to finish.
+   */
+  it("blocks commit on an exact match and never promises an update", () => {
     const matched = { life_insurance_policy: [row("life_insurance_policy", "l1", { name: "Term Life 20", faceValue: 1 }, { match: { kind: "exact", existingId: "p1" } })] };
     render(<EntityTables {...props} rows={matched} />);
-    expect(within(screen.getByRole("row", { name: /Term Life 20/ })).getByText(/update/i)).toBeInTheDocument();
+    const target = screen.getByRole("row", { name: /Term Life 20/ });
+    expect(within(target).getByRole("button", { name: /commit/i })).toBeDisabled();
+    expect(within(target).getByText(/already exists — update it on the Details tab/i)).toBeInTheDocument();
+    // The action word itself, which is its own text node. A row that still
+    // said "Update" would be promising the leg that does not exist.
+    expect(within(target).queryByText("Update")).not.toBeInTheDocument();
+  });
+
+  /**
+   * Final review C2 / Ruling 35. `confidence.ts` stamps `ungrounded` on EVERY
+   * snippet-less value, optional ones included; `build-request.ts` refuses the
+   * whole write if any value carries any issue. The table blocked on `fuzzy`
+   * and `missingRequired` only — so one snippet-less OPTIONAL value rendered
+   * unmarked with Commit live, and clicking it threw the writer's refusal
+   * under the button on a table with no cell editing to clear it with.
+   */
+  it("blocks commit on a value carrying an issue and names the field and the reason", () => {
+    const flagged = {
+      life_insurance_policy: [
+        {
+          ...row("life_insurance_policy", "l1", { name: "Term Life 20", faceValue: 500000 }),
+          values: [
+            { key: "name", value: "Term Life 20", snippet: "x", confidence: 0.9 },
+            { key: "faceValue", value: 500000, snippet: "x", confidence: 0.9 },
+            // The exact shape `confidence.test.ts` treats as ordinary: an
+            // OPTIONAL value the model gave no snippet for.
+            { key: "cashValue", value: 12345, snippet: null, confidence: 0.9, issue: "ungrounded" as const },
+          ],
+        },
+      ],
+    };
+    render(<EntityTables {...props} rows={flagged} />);
+    const target = screen.getByRole("row", { name: /Term Life 20/ });
+    expect(within(target).getByRole("button", { name: /commit/i })).toBeDisabled();
+    // The on-screen label, not the payload key — "cashValue" means nothing to
+    // the person reading it.
+    expect(within(target).getByText(/Check Current cash value \(not found in the document\)/i)).toBeInTheDocument();
+  });
+
+  /**
+   * Final review I6 / Ruling 35, the display half. `toView` copied
+   * `value.value` and threw `value.issue` away, so an off-enum
+   * "Universal Life" rendered as ordinary text in the Policy type column with
+   * nothing marking it — against the spec's own "nothing is silently dropped;
+   * a value that cannot be placed is visible WITH ITS REASON attached".
+   */
+  it("shows a flagged value's reason in the value's own cell rather than dropping it", () => {
+    const flagged = {
+      life_insurance_policy: [
+        {
+          ...row("life_insurance_policy", "l1", { name: "Term Life 20" }),
+          values: [
+            { key: "name", value: "Term Life 20", snippet: "x", confidence: 0.9 },
+            { key: "policyType", value: "Universal Life", snippet: "x", confidence: 0.9, issue: "enum" as const },
+          ],
+        },
+      ],
+    };
+    render(<EntityTables {...props} rows={flagged} />);
+    const target = screen.getByRole("row", { name: /Term Life 20/ });
+    const marks = within(target).getAllByTestId("value-issue");
+    expect(marks).toHaveLength(1);
+    expect(marks[0]).toHaveTextContent(/not a known option/i);
+    // In the CELL, beside the value it belongs to — and the value itself is
+    // still shown, never replaced by its reason.
+    expect(marks[0].closest("td")).toHaveTextContent("Universal Life");
   });
 
   // Negative cases (Task 12 review, Important 5): the two positive tests

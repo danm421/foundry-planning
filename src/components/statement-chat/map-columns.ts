@@ -1,8 +1,19 @@
 import { createElement, Fragment, type ReactNode } from "react";
 import type { DetailEntity, DetailField } from "@/domain/forge/detail-fields";
+import type { ValueIssue } from "@/lib/entity-extraction/types";
 import { formatValue, type ColumnKind, type ColumnSpec } from "./entity-table";
+import { issueReason } from "./value-issue";
 
-export type CandidateRowView = Record<string, unknown> & { __rowId: string };
+export type CandidateRowView = Record<string, unknown> & {
+  __rowId: string;
+  /**
+   * Why a value on this row cannot be trusted, keyed by field (final review
+   * I6). `toView` (`entity-tables.tsx`) used to copy only `value.value` and
+   * drop `value.issue`, so an off-enum "Universal Life" rendered as ordinary
+   * text with nothing marking it.
+   */
+  __issues?: Record<string, ValueIssue>;
+};
 
 /** A 22-field entity would render an unreadable wall. The rest expand per row. */
 export const MAX_COLUMNS = 8;
@@ -71,6 +82,31 @@ function cellText(kind: DetailField["kind"], value: unknown): string {
 }
 
 /**
+ * The cell's contents: the value, plus its reason when the value is flagged
+ * (final review I6).
+ *
+ * The value is still SHOWN — never replaced by its reason. An advisor who can
+ * see what was read next to why it is suspect can judge it; one shown only a
+ * refusal cannot. The reason is a real text label rather than a colour alone
+ * (design system `color-not-only`), and the warn tone is the accent on it.
+ */
+function cellContent(field: DetailField, row: CandidateRowView): ReactNode {
+  const text = cellText(field.kind, row[field.key]);
+  const issue = row.__issues?.[field.key];
+  if (!issue) return text;
+  return createElement(
+    Fragment,
+    null,
+    text,
+    createElement(
+      "span",
+      { "data-testid": "value-issue", className: "ml-1.5 text-xs font-medium text-warn" },
+      `(${issueReason(issue)})`,
+    ),
+  );
+}
+
+/**
  * Build the review table's columns for one entity, straight from the map.
  *
  * Fields the create path refuses are never offered — showing an advisor a
@@ -88,7 +124,7 @@ export function columnsForEntity(entity: DetailEntity): ColumnSpec<CandidateRowV
       key: field.key,
       header: field.label,
       kind: toColumnKind(field.kind),
-      render: (row: CandidateRowView) => cellText(field.kind, row[field.key]),
+      render: (row: CandidateRowView) => cellContent(field, row),
     }));
 }
 
@@ -117,7 +153,7 @@ export function renderOverflow(fields: readonly DetailField[], row: CandidateRow
         Fragment,
         { key: field.key },
         createElement("dt", { className: "text-ink-3" }, field.label),
-        createElement("dd", { className: "text-ink" }, cellText(field.kind, row[field.key])),
+        createElement("dd", { className: "text-ink" }, cellContent(field, row)),
       ),
     ),
   );
