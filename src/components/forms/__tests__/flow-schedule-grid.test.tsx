@@ -292,6 +292,37 @@ describe("FlowScheduleGrid", () => {
     expect(input.years).toEqual([2026, 2027, 2028]);
   });
 
+  it("reports a stored override year outside the plan span, which the default PUT would delete", async () => {
+    const saveOverrides = vi.fn<(input: ScheduleSaveInput) => Promise<void>>(
+      async () => {},
+    );
+    const { save } = renderWithSave({
+      saveOverrides,
+      // 2025 predates planStartYear (2026) — a leftover from before the plan
+      // was re-based. The whole-grid PUT deletes every row for the entity, so
+      // it goes; an injected save has to be able to reach the same end state.
+      initialOverrides: [
+        {
+          year: 2025,
+          incomeAmount: 42_000,
+          expenseAmount: null,
+          distributionPercent: null,
+        },
+      ],
+    });
+    // The grid still renders only the plan span — widening the seam must not
+    // put an un-editable 2025 row on screen.
+    expect(screen.queryByText(/2025/)).not.toBeInTheDocument();
+    expect(screen.getByText(/2026/)).toBeInTheDocument();
+
+    await save();
+
+    const input = saveOverrides.mock.calls[0][0];
+    expect(input.years).toEqual([2025, 2026, 2027, 2028]);
+    // 2025 renders nowhere, so it can never carry a figure into `overrides`.
+    expect(input.overrides).toEqual([]);
+  });
+
   it("reports a rejected injected saveOverrides the way it reports a failed PUT", async () => {
     const saveOverrides = vi
       .fn<(input: ScheduleSaveInput) => Promise<void>>()

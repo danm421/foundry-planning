@@ -58,10 +58,25 @@ export interface ScheduleSaveInput {
    */
   overrides: FlowScheduleGridOverride[];
   /**
-   * Every year the grid covers. A year listed here with no `overrides` row was
-   * CLEARED. The HTTP route infers that from the omission because it replaces
-   * the whole grid in one request; a caller that writes one row per year has to
-   * be told, or a year the advisor cleared quietly survives.
+   * Every year this save accounts for: the plan span the grid renders, plus any
+   * year in `initialOverrides` falling outside it. Those out-of-span years
+   * render nowhere and so can never carry a figure into `overrides` — but the
+   * default whole-grid PUT deletes them all the same, so an injected save has
+   * to be able to reach the same end state.
+   *
+   * A year listed here with no `overrides` row has **no figures** once this
+   * save lands. That is all it means. It does NOT say the advisor cleared it: a
+   * year that was never set looks identical, and nothing in this grid can tell
+   * the two apart. So a consumer that writes one row per year must diff against
+   * its own prior state and clear only the years it actually holds — treating
+   * every figureless year as a clear turns one edit into a no-op write per year
+   * of the plan.
+   *
+   * The HTTP route needs none of this: it replaces every row for the entity in
+   * one request, so omission alone means gone.
+   *
+   * This can only speak for what the grid was given. A year the caller holds but
+   * did not pass in `initialOverrides` appears nowhere here.
    */
   years: number[];
 }
@@ -192,6 +207,19 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
     return out;
   }, [props.initialOverrides]);
 
+  // The years the SEAM reports — never the ones the table renders. A stored
+  // override can sit outside the plan span (a plan re-based to a later start
+  // year leaves one behind); it gets no row, so it can never reach `overrides`,
+  // yet the default PUT deletes it along with everything else. Reporting it
+  // keeps an injected save able to do the same.
+  const coveredYears = useMemo(() => {
+    const outOfSpan = props.initialOverrides
+      .map((o) => o.year)
+      .filter((y) => y < props.planStartYear || y > props.planEndYear);
+    if (outOfSpan.length === 0) return years;
+    return [...new Set([...years, ...outOfSpan])].sort((a, b) => a - b);
+  }, [years, props.initialOverrides, props.planStartYear, props.planEndYear]);
+
   const [income, setIncome] = useState<Record<number, Cell>>(initialIncome);
   const [expense, setExpense] = useState<Record<number, Cell>>(initialExpense);
   const [dist, setDist] = useState<Record<number, Cell>>(initialDist);
@@ -277,7 +305,7 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
       }
     }
     try {
-      const input: ScheduleSaveInput = { overrides, years };
+      const input: ScheduleSaveInput = { overrides, years: coveredYears };
       if (props.saveOverrides) {
         await props.saveOverrides(input);
       } else {
