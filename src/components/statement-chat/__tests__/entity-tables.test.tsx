@@ -211,7 +211,8 @@ describe("EntityTables", () => {
    * its rules, so this can never drift from what the commit would actually do.
    */
   it("blocks commit on a row the route's own create schema would refuse", () => {
-    const { termIssueYear: _omitted, ...noIssueYear } = VALID_LIFE;
+    const noIssueYear: Record<string, unknown> = { ...VALID_LIFE };
+    delete noIssueYear.termIssueYear;
     const incomplete = { life_insurance_policy: [row("life_insurance_policy", "l1", noIssueYear)] };
     render(<EntityTables {...props} rows={incomplete} />);
     const target = screen.getByRole("row", { name: /Term Life 20/ });

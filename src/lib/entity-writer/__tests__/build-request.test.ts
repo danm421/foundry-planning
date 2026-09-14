@@ -181,7 +181,8 @@ describe("buildWriteRequest against the route's own create schema", () => {
   it("refuses a term policy with no term issue year, in the schema's own words", () => {
     // I4 Scenario A, the common case: all five map-`required` fields present,
     // `missingRequired` empty — and `validateTermFields` 400s at the route.
-    const { termIssueYear: _omitted, ...noIssueYear } = VALID_TERM_POLICY;
+    const noIssueYear: Record<string, unknown> = { ...VALID_TERM_POLICY };
+    delete noIssueYear.termIssueYear;
     const result = buildWriteRequest({ entity: life, row: row(noIssueYear) });
     expect(result.ok).toBe(false);
     if (!result.ok) {
