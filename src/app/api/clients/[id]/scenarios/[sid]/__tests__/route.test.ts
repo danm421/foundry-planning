@@ -281,6 +281,79 @@ d("scenario [sid] route (PATCH / POST duplicate / DELETE)", () => {
     );
   });
 
+  // ── C2: a scenario delete must not un-gate its note into the REAL plan ──────
+  //
+  // A solver sale-to-trust writes its promissory note on the client's BASE
+  // partition, gated by a toggle group the new scenario owns — the shape
+  // `resolveToggleGatedNotesOnBase` assumes on promote. `scenario_toggle_groups`
+  // cascades on scenario delete and `notes_receivable.toggle_group_id` is
+  // ON DELETE SET NULL, so the note survived with a NULL gate — and an ungated
+  // note on the base partition is "the base plan's, always visible" by the
+  // loader's own rule. Deleting a what-if wrote a promissory note into the
+  // client's real plan, permanently, and the branch's net-worth fix now sums
+  // effective-tree notes into the displayed in-estate total.
+  it("DELETE removes the notes its toggle groups gated, and leaves ungated ones alone", async () => {
+    vi.mocked(helpers.requireOrgId).mockResolvedValue(COOPER_FIRM_ID);
+
+    const { db } = dbMod;
+    const { scenarios, scenarioToggleGroups, notesReceivable } = schema;
+    const { eq, inArray } = drizzleOrm;
+
+    const note = (over: Record<string, unknown>) => ({
+      clientId: COOPER_CLIENT_ID,
+      // The BASE partition — this is the whole point. A gated note does not
+      // live under the scenario that gates it.
+      scenarioId: COOPER_BASE_SCENARIO_ID,
+      name: `c2-note-${randomUUID().slice(0, 8)}`,
+      faceValue: "1000000",
+      basis: "1000000",
+      interestRate: "0.04",
+      paymentType: "amortizing" as const,
+      startYear: 2027,
+      startMonth: 1,
+      termMonths: 120,
+      ...over,
+    });
+
+    const [group] = await db
+      .insert(scenarioToggleGroups)
+      .values({ scenarioId, name: "Sale to trust", defaultOn: true, orderIndex: 0 })
+      .returning();
+    const [gated] = await db
+      .insert(notesReceivable)
+      .values(note({ toggleGroupId: group.id }))
+      .returning();
+    // Control: a user-entered note on the same partition, gated by nothing. It
+    // must survive, or "delete every base note" would pass this scope.
+    const [ungated] = await db
+      .insert(notesReceivable)
+      .values(note({ toggleGroupId: null }))
+      .returning();
+
+    try {
+      const req = makeReq("http://test.local/scenarios/sid", { method: "DELETE" });
+      const res = await route.DELETE(req, {
+        params: Promise.resolve({ id: COOPER_CLIENT_ID, sid: scenarioId }),
+      });
+      expect(res.status).toBe(200);
+      createdScenarioIds.length = 0;
+
+      const rows = await db
+        .select()
+        .from(notesReceivable)
+        .where(inArray(notesReceivable.id, [gated.id, ungated.id]));
+      expect(rows.map((r) => r.id)).toEqual([ungated.id]);
+
+      const remaining = await db
+        .select()
+        .from(scenarios)
+        .where(eq(scenarios.id, scenarioId));
+      expect(remaining).toHaveLength(0);
+    } finally {
+      await db.delete(notesReceivable).where(inArray(notesReceivable.id, [gated.id, ungated.id]));
+    }
+  });
+
   it("DELETE refuses to delete the base case (returns 400)", async () => {
     vi.mocked(helpers.requireOrgId).mockResolvedValue(COOPER_FIRM_ID);
 

@@ -122,6 +122,23 @@ interface AssetsTabProps {
   /** Is this entity irrevocable? Forwarded to the picker, where it gates the
    *  valuation-discount field — see `entityIsIrrevocable` there. Defaults off. */
   entityIsIrrevocable?: boolean;
+  /**
+   * Take the business ADD affordance away: the picker is handed no businesses,
+   * so it offers none, and its valuation-discount field — which appears only
+   * once a business is picked — becomes unreachable.
+   *
+   * Everything else about businesses stays: the ones this entity already owns
+   * still render, still count toward the value shown in the summary row, and
+   * stay removable. Removal is safe to leave on, because releasing a share back
+   * to the family never creates a gift row — the original gift is the record.
+   *
+   * Defaults to false so the Estate Planning details page is unchanged. Pass it
+   * from a caller that has no API route behind the add: assigning a business to
+   * an irrevocable trust is a §709 gift, and only that route writes the gift row
+   * (and records the valuation discount) that pays for it. Without it the value
+   * leaves the taxable estate for free.
+   */
+  hideBusinessAssignment?: boolean;
   onChange: (op: AssetTabOp) => void;
   /** Singular noun for user-facing copy (e.g. "trust", "business"). Defaults to "trust". */
   entityLabel?: string;
@@ -243,6 +260,7 @@ export default function AssetsTab({
   businesses,
   priorDiscounts,
   entityIsIrrevocable,
+  hideBusinessAssignment = false,
   onChange,
   entityLabel = "trust",
 }: AssetsTabProps) {
@@ -431,7 +449,10 @@ export default function AssetsTab({
           entityId={entityId}
           accounts={accounts}
           liabilities={liabilities}
-          businesses={businesses}
+          // Only the picker's half is suppressed. `ownedBusinesses` above keeps
+          // the full list, so the summary row's value stays right and the rows
+          // stay removable.
+          businesses={hideBusinessAssignment ? undefined : businesses}
           priorDiscounts={priorDiscounts}
           entityIsIrrevocable={entityIsIrrevocable}
           entityLabel={entityLabel}

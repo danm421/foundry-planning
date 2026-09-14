@@ -14,7 +14,7 @@ import type { DefaultGrowthAtInflation } from "@/lib/investments/default-growth-
 import { DefaultGrowthBanner } from "@/components/default-growth-banner";
 import { parseProjectionResponse } from "@/lib/solver/projection-wire";
 import { mutationKey, type SolverMutation, type SolverMutationKey } from "@/lib/solver/types";
-import { isBaseSavableMutation } from "@/lib/solver/mutations-to-base-updates";
+import { partitionBaseSavableMutations } from "@/lib/solver/mutations-to-base-updates";
 import type { SolveLeverKey, SolveProgressEvent, SolveResultEvent } from "@/lib/solver/solve-types";
 import { buildLeverMutation } from "@/lib/solver/lever-search-config";
 import { livingExpenseSolveMutations } from "@/lib/solver/living-expense";
@@ -259,6 +259,11 @@ export function LiveSolverWorkspace({
     () => new Map(),
   );
   const mutations = useMemo(() => Array.from(mutationMap.values()), [mutationMap]);
+  // ONE Save-to-base split, read by all three call sites below: the POST body,
+  // the post-save retain, and the button's enabled state. They used to call the
+  // per-kind predicate independently, which is how a sale's owner flip could be
+  // posted to the client's real record AND kept on screen as pending.
+  const baseSavable = useMemo(() => partitionBaseSavableMutations(mutations), [mutations]);
 
   const [activeTab, setActiveTab] = useState<InputTab>("retirement");
 
@@ -954,9 +959,32 @@ export function LiveSolverWorkspace({
 
   async function handleSaveToBase() {
     if (!canEdit) return;
+    // A sale to a trust cannot go to base facts, and its two halves — the
+    // retitled asset and the promissory note — can never be split. Say so on the
+    // blocking confirm rather than in a tooltip: this is the enabled-button case,
+    // where the save proceeds and writes less than the advisor asked for.
+    const saleHeldBack =
+      baseSavable.heldSaleAccountIds.length > 0
+        ? "\n\nA sale to a trust can't be saved to base facts, so it stays pending — both the retitled asset and the promissory note are kept. Save as a scenario to keep the sale."
+        : "";
+    // Same shape for a trust removal: its retitles and returned flows are
+    // base-savable by kind, the trust delete, the will edit and the gifts are
+    // not. Writing only the savable half leaves the client's real record with a
+    // trust that still exists and assets already handed back.
+    const removalHeldBack =
+      baseSavable.heldDissolveEntityIds.length > 0
+        ? "\n\nRemoving a trust can't be saved to base facts, so it stays pending — the retitled accounts, the returned income and expense, the will and the gifts are all kept together. Save as a scenario to keep the removal."
+        : "";
+    const charityHeldBack =
+      baseSavable.heldRemovedCharityIds.length > 0
+        ? "\n\nRemoving a charity can't be saved to base facts, so it stays pending — the cleared beneficiary designations, will and gifts are kept with it. Save as a scenario to keep the removal."
+        : "";
     if (
       !confirm(
-        "Save these changes to base facts? This will update the client's real data and cannot be undone.",
+        "Save these changes to base facts? This will update the client's real data and cannot be undone." +
+          saleHeldBack +
+          removalHeldBack +
+          charityHeldBack,
       )
     )
       return;
@@ -964,25 +992,31 @@ export function LiveSolverWorkspace({
     setSaveToBaseError(null);
     try {
       // Only send levers the base-facts writer can persist. Technique/stress
-      // mutations (entity/gift/relocation/beneficiary/roth/stress/…) are
-      // retained in the working set below and saved as a scenario instead.
+      // mutations (entity/gift/relocation/beneficiary/roth/stress/…) and the
+      // held half of a sale to a trust are retained in the working set below
+      // and saved as a scenario instead.
+      const { savable } = baseSavable;
       const res = await fetch(`/api/clients/${clientId}/solver/save-to-base`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           source: initialSource,
-          mutations: mutations.filter(isBaseSavableMutation),
+          mutations: savable,
         }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
       }
-      // Keep any non-base-savable mutations (techniques) so they aren't lost —
-      // the user can still save them as a scenario. Savable ones are now in base.
+      // Clear exactly what was POSTED — no more, no less. Re-deriving the split
+      // here instead is what let the two sides drift, so a mutation could be both
+      // posted and kept (or neither). Reading the same `savable` array also keeps
+      // an edit made while the request was in flight: it was not saved, so it
+      // stays.
+      const savedKeys = new Set<SolverMutationKey>(savable.map(mutationKey));
       setMutationMap((prev) => {
         const next = new Map<SolverMutationKey, SolverMutation>();
-        for (const [k, m] of prev) if (!isBaseSavableMutation(m)) next.set(k, m);
+        for (const [k, m] of prev) if (!savedKeys.has(k)) next.set(k, m);
         return next;
       });
       setSolvedPoS(null);
@@ -1767,7 +1801,10 @@ export function LiveSolverWorkspace({
       <ClientHeaderActions>
         <SolverActionBar
           hasMutations={mutations.length > 0}
-          canSaveToBase={mutations.some(isBaseSavableMutation)}
+          canSaveToBase={baseSavable.savable.length > 0}
+          holdsSaleToTrust={baseSavable.heldSaleAccountIds.length > 0}
+          holdsTrustRemoval={baseSavable.heldDissolveEntityIds.length > 0}
+          holdsCharityRemoval={baseSavable.heldRemovedCharityIds.length > 0}
           canUpdateScenario={isScenarioSource}
           scenarioName={scenarioName}
           solveActive={activeSolve !== null}

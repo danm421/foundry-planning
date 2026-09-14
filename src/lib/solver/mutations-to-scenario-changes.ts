@@ -484,6 +484,16 @@ export function mutationsToScenarioChanges(
         );
         break;
       }
+      case "liability-upsert": {
+        pushTechniqueUpsert(
+          nonClientDrafts,
+          "liability",
+          source.liabilities.find((l) => l.id === m.id) as Record<string, unknown> | undefined,
+          m.id,
+          m.value as Record<string, unknown> | null,
+        );
+        break;
+      }
       case "income-upsert": {
         pushTechniqueUpsert(
           nonClientDrafts,
@@ -630,6 +640,30 @@ export function mutationsToScenarioChanges(
         );
         break;
       }
+      case "will-upsert": {
+        pushTechniqueUpsert(
+          nonClientDrafts,
+          "will",
+          (source.wills ?? []).find((w) => w.id === m.id) as
+            | Record<string, unknown>
+            | undefined,
+          m.id,
+          m.value as Record<string, unknown> | null,
+        );
+        break;
+      }
+      // entity_flow_overrides is scenario-PARTITIONED (its own scenario_id
+      // column), not modelled as scenario_changes. The save-scenario route
+      // clones the source partition and applies these on top — see
+      // cloneEntityFlowOverridesIntoScenario. Emitting a change here would
+      // write a row no loader reads.
+      case "entity-flow-override-upsert":
+        break;
+      // notes_receivable is scenario-partitioned (scenario_id NOT NULL) and
+      // toggle-gated. The save-scenario route writes the row and its toggle
+      // group — see Task 5.
+      case "note-receivable-upsert":
+        break;
       // ── Stress-test overrides → plan_settings (mirror apply-mutations.ts) ──
       // Without these a saved "Bear case" scenario silently drops its stressors
       // (and the stored MC seed reproduces an UNstressed, higher PoS on reload).
@@ -828,7 +862,7 @@ function diffTechniqueFields(
 
 function pushTechniqueUpsert(
   drafts: SolverScenarioChangeDraft[],
-  targetKind: "account" | "savings_rule" | "roth_conversion" | "asset_transaction" | "reinvestment" | "income" | "expense" | "gift" | "external_beneficiary" | "entity" | "relocation",
+  targetKind: "account" | "liability" | "savings_rule" | "roth_conversion" | "asset_transaction" | "reinvestment" | "income" | "expense" | "gift" | "external_beneficiary" | "entity" | "relocation" | "will",
   existing: Record<string, unknown> | undefined,
   id: string,
   value: Record<string, unknown> | null,

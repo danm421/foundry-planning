@@ -20,14 +20,69 @@ import {
   fieldLabelClassName,
 } from "./input-styles";
 
+type NotePaymentType = "amortizing" | "interest_only_balloon";
+
+/**
+ * One sale to the trust, as the dialog's fields describe it. Deliberately just
+ * the sale's terms: `clientId` and `scenarioId` stay out because the scenario
+ * is exactly what an injected `submit` does not have, and any caller already
+ * knows its own client.
+ */
+export interface SaleToTrustInput {
+  accountId: string;
+  /**
+   * The trust that receives the asset. Carried as its own field — never folded
+   * into an opaque body blob — because it is a live hazard for any caller that
+   * persists this itself: the route writes it to
+   * `notes_receivable.linked_trust_entity_id`, a real foreign key to
+   * `entities.id`. A trust that exists only as a pending change has no row in
+   * `entities` yet, so a note linked to it violates the FK and fails the whole
+   * save.
+   */
+  trustEntityId: string;
+  noteInterestRate: number;
+  noteTermMonths: number;
+  noteStartYear: number;
+  notePaymentType: NotePaymentType;
+}
+
 interface Props {
   clientId: string;
   scenarioId: string | null;
   trust: Entity;
   accounts: AssetsTabAccount[];
+  /**
+   * Persists the sale. Defaults to POSTing the sale-to-trust route, which is
+   * what the Estate Planning details page wants. The solver passes its own,
+   * emitting a note-receivable-upsert against the working tree instead — in the
+   * solver there is no scenario to POST to until the scenario is saved, so an
+   * injected submit also stands in for the active-scenario requirement below.
+   * Reject to surface the failure on the dialog's error line.
+   */
+  submit?: (input: SaleToTrustInput) => Promise<void>;
 }
 
 const RETIREMENT_SET = new Set<string>(RETIREMENT_SUBTYPES);
+
+/** Today's behaviour: POST the sale to the scenario's sale-to-trust route. */
+async function postSaleToTrust(
+  clientId: string,
+  scenarioId: string,
+  input: SaleToTrustInput,
+): Promise<void> {
+  const res = await fetch(
+    `/api/clients/${clientId}/scenarios/${scenarioId}/sale-to-trust`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
+  if (!res.ok) {
+    const j = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(j.error ?? `HTTP ${res.status}`);
+  }
+}
 
 /**
  * Eligible-source filter: family-member-owned (no entity owners), not the
@@ -47,6 +102,7 @@ export default function SellToTrustDialog({
   scenarioId,
   trust,
   accounts,
+  submit,
 }: Props) {
   const [open, setOpen] = useState(false);
   const eligible = useMemo(() => accounts.filter(isEligibleSource), [accounts]);
@@ -55,14 +111,24 @@ export default function SellToTrustDialog({
   const [interestPct, setInterestPct] = useState("4.0");
   const [termMonths, setTermMonths] = useState("120");
   const [startYear, setStartYear] = useState(String(new Date().getFullYear()));
-  const [paymentType, setPaymentType] = useState<
-    "amortizing" | "interest_only_balloon"
-  >("interest_only_balloon");
+  const [paymentType, setPaymentType] = useState<NotePaymentType>(
+    "interest_only_balloon",
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Who persists the sale. An injected submit replaces the POST *and* stands in
+  // for the active scenario the POST would need. Null = neither is available,
+  // which is the one case the dialog refuses.
+  const persist =
+    submit ??
+    (scenarioId
+      ? (input: SaleToTrustInput) =>
+          postSaleToTrust(clientId, scenarioId, input)
+      : null);
+
   const canSubmit =
-    !!scenarioId &&
+    !!persist &&
     !!accountId &&
     Number(interestPct) > 0 &&
     Number(termMonths) > 0 &&
@@ -77,34 +143,23 @@ export default function SellToTrustDialog({
     setError(null);
   }
 
-  async function submit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!scenarioId) {
+    if (!persist) {
       setError("Sales to trust require an active scenario. Open this trust from a scenario view.");
       return;
     }
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(
-        `/api/clients/${clientId}/scenarios/${scenarioId}/sale-to-trust`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            accountId,
-            trustEntityId: trust.id,
-            noteInterestRate: Number(interestPct) / 100,
-            noteTermMonths: Number(termMonths),
-            noteStartYear: Number(startYear),
-            notePaymentType: paymentType,
-          }),
-        },
-      );
-      if (!res.ok) {
-        const j = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(j.error ?? `HTTP ${res.status}`);
-      }
+      await persist({
+        accountId,
+        trustEntityId: trust.id,
+        noteInterestRate: Number(interestPct) / 100,
+        noteTermMonths: Number(termMonths),
+        noteStartYear: Number(startYear),
+        notePaymentType: paymentType,
+      });
       reset();
       setOpen(false);
       // Caller (page-level data) refreshes via router events triggered by the
@@ -146,7 +201,7 @@ export default function SellToTrustDialog({
         >
           <form
             id="sell-to-trust-form"
-            onSubmit={submit}
+            onSubmit={handleSubmit}
             className="flex flex-col gap-4"
           >
             <p className="text-[12px] text-ink-3">
@@ -229,9 +284,7 @@ export default function SellToTrustDialog({
                   id="sell-payment-type"
                   value={paymentType}
                   onChange={(e) =>
-                    setPaymentType(
-                      e.target.value as "amortizing" | "interest_only_balloon",
-                    )
+                    setPaymentType(e.target.value as NotePaymentType)
                   }
                   className={selectClassName}
                 >

@@ -6,15 +6,14 @@ import type { SolverMutation } from "@/lib/solver/types";
 import { priorDiscountsBySource, type EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import DialogShell from "@/components/dialog-shell";
 import EstateFlowAddGiftDialog from "@/components/estate-flow-add-gift-dialog";
-import { SolverSection } from "./solver-section";
 import { SolverTrustForm } from "./solver-trust-form";
-import {
-  EstateRevocableTrustList,
-  EstateGiftsList,
-  EstateGiftsToggleList,
-  EstateTrustsList,
-  EstateCharitiesList,
-} from "./solver-tab-estate-planning";
+import { SolverTrustEditor } from "./solver-trust-editor";
+import { SolverCharityEditor } from "./solver-charity-editor";
+import { SolverCharityRemoveConfirm } from "./solver-charity-remove-confirm";
+import { SolverEstateRail } from "./solver-estate-rail";
+import { SolverEstateOverview } from "./solver-estate-overview";
+import { SolverTrustRemoveConfirm } from "./solver-trust-remove-confirm";
+import { EstateGiftsList, EstateGiftsToggleList } from "./solver-tab-estate-planning";
 import {
   useSolverEstateEditor,
   type EstateEditor,
@@ -22,6 +21,7 @@ import {
 } from "./use-solver-estate-editor";
 
 interface Props {
+  clientId: string;
   baseClientData: ClientData;
   /** The working/proposed tree. */
   clientData: ClientData;
@@ -58,93 +58,149 @@ function summaryText(s: EstateSummary): string {
   return parts.join(" · ");
 }
 
-/** Dashed "+ label" affordance shared by the estate sub-sections. */
-function addButton(label: string, onClick: () => void) {
+function PaneHeading({ title }: { title: string }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="rounded-md border border-dashed border-hair-2 px-2.5 py-1 text-[11px] font-medium text-ink-3 normal-case tracking-normal hover:border-accent/60 hover:text-ink"
-    >
-      + {label}
-    </button>
+    <h3 className="border-b border-hair px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-3">
+      {title}
+    </h3>
   );
 }
 
-/** The estate editor body — the four sub-sections + inline trust form. The gift
- *  dialog is rendered by the parent as a sibling of DialogShell (not here) so it
- *  stacks above the modal. */
-function EstateEditorBody({ editor }: { editor: EstateEditor }) {
-  return (
-    <div className="-mx-6">
-      <SolverSection title="Revocable Living Trust">
-        <EstateRevocableTrustList
-          enabled={editor.enabled}
-          trustName={editor.trustName}
-          eligible={editor.eligible}
-          taggedIds={editor.taggedIds}
-          onToggleEnabled={editor.toggleEnabled}
-          onChangeName={editor.changeName}
-          onToggleAccount={editor.toggleAccount}
-          onSelectAll={editor.selectAll}
-        />
-      </SolverSection>
+function EmptyPane({ message }: { message: string }) {
+  return <p className="px-5 py-8 text-center text-[13px] text-ink-4">{message}</p>;
+}
 
-      <SolverSection
-        title="Planned Gifts"
-        action={addButton("Add gift", () => {
-          editor.setEditing(null);
-          editor.setAdding(true);
-        })}
-      >
-        <EstateGiftsList
-          gifts={editor.gifts}
-          baseGiftIds={editor.baseGiftIds}
-          onToggle={editor.toggleGift}
-          onEdit={editor.setEditing}
-          onRemove={editor.deleteGift}
-        />
-      </SolverSection>
+/**
+ * The detail side of the dialog. One thing at a time: the trust editor seeds its
+ * fields from the entity at mount and its inputs carry hard-coded ids, so two
+ * editors on screen at once would collide.
+ */
+function EstateDetailPane({
+  clientId,
+  editor,
+  onChange,
+}: {
+  clientId: string;
+  editor: EstateEditor;
+  onChange: (m: SolverMutation) => void;
+}) {
+  const sel = editor.selection;
 
-      <SolverSection
-        title="Trusts"
-        action={!editor.addingTrust ? addButton("Add trust", () => editor.setAddingTrust(true)) : undefined}
-      >
-        <EstateTrustsList
-          currentTrusts={editor.currentTrusts}
-          addedTrusts={editor.trusts}
-          onRemove={editor.removeTrust}
-        />
-      </SolverSection>
+  if (sel.kind === "overview") return <SolverEstateOverview editor={editor} />;
 
-      <SolverSection title="Charities">
-        <EstateCharitiesList
-          currentCharities={editor.baseCharities}
-          addedCharities={editor.addedCharities}
-          charityName={editor.charityName}
-          charityType={editor.charityType}
-          onChangeName={editor.setCharityName}
-          onChangeType={editor.setCharityType}
-          onAdd={editor.addCharity}
-        />
-      </SolverSection>
+  if (sel.kind === "gifts") {
+    return (
+      <div className="flex h-full flex-col">
+        <PaneHeading title="Planned gifts" />
+        <div className="flex-1 overflow-y-auto px-5 py-4">
+          <EstateGiftsList
+            gifts={editor.gifts}
+            baseGiftIds={editor.baseGiftIds}
+            onToggle={editor.toggleGift}
+            onEdit={editor.setEditing}
+            onRemove={editor.deleteGift}
+          />
+        </div>
+      </div>
+    );
+  }
 
-      {editor.addingTrust && (
-        <div className="border-t border-hair px-5 py-4">
+  if (sel.kind === "charity") {
+    const charity = editor.railCharities.find((c) => c.id === sel.id) ?? null;
+    if (sel.id !== null && !charity) {
+      return <EmptyPane message="This charity is no longer in the scenario." />;
+    }
+    if (sel.confirmingRemoval && charity) {
+      return (
+        <SolverCharityRemoveConfirm
+          charityName={charity.name}
+          charityId={charity.id}
+          clientData={editor.clientData}
+          onCancel={() => editor.setSelection({ kind: "charity", id: charity.id })}
+          onConfirm={() => editor.removeCharity(charity.id)}
+        />
+      );
+    }
+    return (
+      <div className="flex h-full flex-col">
+        <PaneHeading title={charity ? charity.name : "New charity"} />
+        <div className="min-h-0 flex-1">
+          <SolverCharityEditor
+            charity={charity}
+            onUpdate={editor.updateCharity}
+            onAdd={editor.addCharity}
+            onRemove={(id) =>
+              editor.setSelection({ kind: "charity", id, confirmingRemoval: true })
+            }
+            onCancelAdd={() => editor.setSelection({ kind: "overview" })}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // ── Trusts ────────────────────────────────────────────────────────────────
+  if (sel.id === null) {
+    return (
+      <div className="flex h-full flex-col">
+        <PaneHeading title="New trust" />
+        <div className="flex-1 overflow-y-auto px-5 py-4">
           <SolverTrustForm
             clientData={editor.clientData}
             isMarried={editor.isMarried}
             onCreateCharity={editor.createCharity}
             onApply={editor.addTrust}
-            onClose={() => editor.setAddingTrust(false)}
+            onClose={() => editor.setSelection({ kind: "overview" })}
           />
         </div>
-      )}
+      </div>
+    );
+  }
+
+  const trustId = sel.id;
+  const row = editor.railTrusts.find((t) => t.id === trustId);
+  const entity = (editor.clientData.entities ?? []).find((e) => e.id === trustId);
+  if (!row || !entity) {
+    return <EmptyPane message="This trust is no longer in the scenario." />;
+  }
+
+  if (sel.confirmingRemoval) {
+    return (
+      <SolverTrustRemoveConfirm
+        trustName={row.name}
+        entity={entity}
+        clientData={editor.clientData}
+        onCancel={() => editor.setSelection({ kind: "trust", id: trustId })}
+        onConfirm={() => editor.removeTrust(entity)}
+      />
+    );
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      <PaneHeading title={row.name} />
+      <div className="min-h-0 flex-1">
+        <SolverTrustEditor
+          clientId={clientId}
+          entity={entity}
+          clientData={editor.clientData}
+          // "This trust has a real `entities` row" — decided by membership in
+          // the BASE tree, never the working one, which holds solver-added
+          // trusts too. A note carries an FK to `entities.id`, so a trust the
+          // database has never seen would 500 the save.
+          isPersisted={row.isBase}
+          onChange={onChange}
+          onRemove={() =>
+            editor.setSelection({ kind: "trust", id: trustId, confirmingRemoval: true })
+          }
+        />
+      </div>
     </div>
   );
 }
 
 export function SolverEstateTechnique({
+  clientId,
   baseClientData,
   clientData,
   baseGifts,
@@ -201,12 +257,36 @@ export function SolverEstateTechnique({
         open={open}
         onOpenChange={setOpen}
         title="Estate planning"
-        size="lg"
+        // Wider than the old stacked dialog on purpose: the rail takes ~13rem,
+        // and the Estate Planning page sizes these same trust controls at `lg`
+        // with no rail beside them. Keeping `lg` here would hand the editor a
+        // narrower canvas than the page it is at parity with.
+        size="xl"
         fixedHeight
         bodyTopFlush
         secondaryAction={{ label: "Done", onClick: () => setOpen(false) }}
       >
-        <EstateEditorBody editor={editor} />
+        {/* Full-bleed: the negative margins cancel the shell's body padding and
+            the height grows by exactly the bottom padding it cancelled, so the
+            rail runs edge to edge without the body itself scrolling. */}
+        <div className="-mx-6 -mb-6 flex h-[calc(100%+1.5rem)] min-h-0">
+          <SolverEstateRail
+            trusts={editor.railTrusts}
+            charities={editor.railCharities}
+            // Every planned gift, not just the enabled ones — the
+            // destination lists all of them.
+            giftCount={editor.gifts.length}
+            selection={editor.selection}
+            onSelect={editor.setSelection}
+            onAddGift={() => {
+              editor.setEditing(null);
+              editor.setAdding(true);
+            }}
+          />
+          <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+            <EstateDetailPane clientId={clientId} editor={editor} onChange={onChange} />
+          </div>
+        </div>
       </DialogShell>
 
       {/* Sibling of DialogShell: the gift dialog is itself a DialogShell, so

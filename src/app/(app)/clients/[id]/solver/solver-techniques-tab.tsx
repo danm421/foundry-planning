@@ -593,6 +593,7 @@ export function SolverTechniquesTab({
         })}
         {baseClientData ? (
           <SolverEstateTechnique
+            clientId={clientId}
             baseClientData={baseClientData}
             clientData={workingTree}
             baseGifts={baseGifts ?? []}

@@ -1274,6 +1274,7 @@ export const loadClientDataWithContext = cache(
           : undefined,
       isIrrevocable: e.isIrrevocable ?? undefined,
       trustee: e.trustee ?? undefined,
+      notes: e.notes ?? undefined,
       exemptionConsumed: exemptionByEntity.get(e.id) ?? 0,
       grantor: e.grantor ?? undefined,
       distributionMode: e.distributionMode ?? undefined,

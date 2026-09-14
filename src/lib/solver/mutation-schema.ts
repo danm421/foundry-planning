@@ -163,6 +163,156 @@ const ACCOUNT_VALUE = z
   })
   .passthrough();
 
+// Mirrors `Liability` in src/engine/types.ts. Only the fields the engine's
+// amortization schedule cannot run without are required; the rest are optional,
+// and `.passthrough()` carries the view-only columns (source, refs) through
+// untouched, exactly as ACCOUNT_VALUE does.
+const LIABILITY_VALUE = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    // NOT `MONEY` — its `.min(0)` would reject a legitimate row. An overpaid
+    // credit card reports a credit balance, and Plaid writes
+    // `balances.current` through unclamped (plaid/liabilities-refresh.ts:46).
+    // Every solver route wraps this in `z.array(SOLVER_MUTATION_SCHEMA)`, so
+    // one rejected element 400s the whole request and the solver stops
+    // recomputing entirely. Matches the base liability POST path, which has
+    // no lower bound (schemas/liabilities.ts:93) — the upper sanity cap stays.
+    balance: z.number().max(100_000_000),
+    interestRate: RATE,
+    monthlyPayment: MONEY,
+    startYear: YEAR,
+    startMonth: z.number().int().min(1).max(12),
+    termMonths: z.number().int().min(0),
+    balanceAsOfMonth: z.number().int().min(1).max(12).optional(),
+    balanceAsOfYear: YEAR.optional(),
+    linkedPropertyId: z.string().min(1).optional(),
+    ownerFamilyMemberId: z.string().min(1).optional(),
+    isInterestDeductible: z.boolean().optional(),
+    forgiveAtTermEnd: z.boolean().optional(),
+    // Must match LiabilityType in src/engine/liability-kind.ts exactly — a
+    // missing member 400s the whole recompute, not just this row.
+    liabilityType: z
+      .enum(["mortgage", "heloc", "auto", "student", "personal", "credit_card", "other"])
+      .nullable()
+      .optional(),
+    // Optional on the wire even though the engine type requires it: every
+    // consumer guards with `?? []` (engine/liability-schedules.ts:33,
+    // promote-child-writers.writeLiabilityChildren), so a payload without it
+    // is legitimate and must not 400 the whole recompute. `type` is
+    // enumerated because it lands in a Postgres enum column on promotion.
+    extraPayments: z
+      .array(
+        z
+          .object({
+            year: YEAR,
+            type: z.enum(["per_payment", "lump_sum"]),
+            amount: MONEY,
+          })
+          .passthrough(),
+      )
+      .optional(),
+    // Retitling IS the mutation, so owners must survive the parse rather than
+    // being stripped. `AccountOwner` (src/engine/ownership.ts) is a four-member
+    // union whose arms differ only in their id field, so the shape is left loose
+    // + passthrough — same treatment ACCOUNT_VALUE gives it, and no `.min(1)`
+    // for the same reason: an ownerless liability is a real state.
+    owners: z.array(z.object({ kind: z.string(), percent: z.number() }).passthrough()),
+    parentAccountId: z.string().min(1).nullable().optional(),
+  })
+  .passthrough();
+
+// Mirrors `NoteReceivable` in src/engine/notes-receivable/types.ts — the
+// lender-side counterpart to LIABILITY_VALUE, backing the trust editor's
+// Notes & sales tab (an IDGT installment sale). `owners` and `extraPayments`
+// are required on the engine type AND are genuinely stored, in child tables
+// (note_receivable_owners, note_extra_payments) written by the real
+// note CRUD routes (app/api/clients/[id]/notes-receivable/route.ts and
+// [noteId]/route.ts) — the sale-to-trust route is the one route that
+// doesn't write extraPayments, which is not representative.
+const NOTE_RECEIVABLE_VALUE = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    faceValue: z.number().positive().max(100_000_000),
+    basis: MONEY,
+    asOfBalance: z.number().nonnegative().nullable().optional(),
+    balanceAsOfMonth: z.number().int().min(1).max(12).nullable().optional(),
+    balanceAsOfYear: YEAR.nullable().optional(),
+    // Not RATE (-1 to 2) — a note's rate can't be negative. Matches the
+    // canonical create/update schema (schemas/note-receivable.ts), which
+    // bounds this `gte(0)` with no upper cap; RATE's -1 floor would silently
+    // accept a negative rate the canonical validator rejects.
+    interestRate: z.number().gte(0),
+    // Must match notePaymentTypeEnum in db/schema.ts EXACTLY — confirmed
+    // ["amortizing", "interest_only_balloon"]. A narrower/wrong enum here
+    // (the brief guessed ["interest_only", "amortizing", "balloon"]) rejects
+    // every real note.
+    paymentType: z.enum(["amortizing", "interest_only_balloon"]),
+    monthlyPayment: MONEY.nullable().optional(),
+    startYear: YEAR,
+    startMonth: z.number().int().min(1).max(12),
+    termMonths: z.number().int().min(1),
+    // uuid FK columns (db/schema.ts:3334, 3351) — `.min(1)` keeps "" (neither
+    // null nor a uuid) from parsing clean and 500ing Task 5's insert.
+    linkedTrustEntityId: z.string().min(1).nullable().optional(),
+    toggleGroupId: z.string().min(1).nullable().optional(),
+    // note_extra_payments.type is extraPaymentTypeEnum — ["per_payment",
+    // "lump_sum"] (db/schema.ts:557) — the SAME enum LIABILITY_VALUE's
+    // extraPayments uses (verified, not assumed: both tables declare
+    // `type: extraPaymentTypeEnum("type")`). `.default([])`, not
+    // `.optional()`: note-schedules.ts:62 is a bare
+    // `note.extraPayments.map(...)`, reached unconditionally for every note
+    // in the tree (projection.ts:966), so an omitted key must still parse to
+    // a real array or the next recompute TypeErrors. Omission on the wire
+    // stays legal — a note-terms edit that never touches payments is
+    // legitimate — but the parsed row can never lose the array.
+    extraPayments: z
+      .array(
+        z
+          .object({
+            year: YEAR,
+            type: z.enum(["per_payment", "lump_sum"]),
+            amount: MONEY,
+          })
+          .passthrough(),
+      )
+      .default([]),
+    // REQUIRED, unlike extraPayments: projection.ts:2745 is
+    // `for (const owner of note.owners)` with no `?? []` guard, and
+    // applyMutations does a whole-row replace — an omitted owners array
+    // would TypeError the next recompute, and `.default([])` would be worse
+    // than that: an empty owners array attributes the note's entire cash
+    // flow to nobody, so it silently vanishes from the plan. A 400 here is
+    // better than a number that quietly disappears. Percent bounded [0,1]
+    // (note_receivable_owners.percent is decimal(6,4), and
+    // projection.ts:2747-2749 multiplies note cash/interest/gain by this
+    // value directly) — mirrors the entity-flow-override-upsert
+    // distributionPercent bound.
+    //
+    // `.min(1)` + the sum refinement mirror the canonical writer exactly:
+    // schemas/note-receivable.ts:61 is `z.array(ownerSchema).min(1)` and
+    // notes-receivable/route.ts:145-151 rejects `Math.abs(sum - 1) > 0.0001`.
+    // Both checks belong HERE rather than only in the save route, because
+    // projection.ts:2747-2749 multiplies the note's cash, interest AND
+    // long-term gain by owner.percent, and the solver's recompute path parses
+    // this schema without ever reaching that route — a route-only check would
+    // leave the advisor staring at halved note income until they hit Save. Two
+    // writers to one table, one validating and one not, is the shape that
+    // produces silently wrong money.
+    owners: z
+      .array(
+        z.object({ kind: z.string(), percent: z.number().gte(0).lte(1) }).passthrough(),
+      )
+      .min(1)
+      .refine(
+        (owners) =>
+          Math.abs(owners.reduce((sum, o) => sum + o.percent, 0) - 1) <= 0.0001,
+        { message: "Owner percents must sum to 1 (100%)" },
+      ),
+  })
+  .passthrough();
+
 const INCOME_VALUE = z
   .object({
     id: z.string().min(1),
@@ -316,6 +466,52 @@ const ENTITY_VALUE = z
     trustEnds: z.enum(["client_death", "spouse_death", "survivorship"]).nullable().optional(),
     grantorStatusEndYear: z.number().int().optional(),
     splitInterest: SPLIT_INTEREST_SNAPSHOT.optional(),
+    // ── Fields the trust editor writes ───────────────────────────────────
+    // Spelled out so they are type-checked and cannot be silently dropped by
+    // a later `.strict()` — a Zod object that forgot a field has stripped a
+    // gift's valuation discount here before. Every enum below mirrors the
+    // engine union VERBATIM (src/engine/types.ts, EntitySummary); a narrower
+    // enum would reject a legitimate entity, and because each route body is
+    // `z.array(SOLVER_MUTATION_SCHEMA)` one rejected row 400s the WHOLE
+    // request across twelve routes.
+    trustee: z.string().nullable().optional(),
+    notes: z.string().nullable().optional(),
+    // engine: distributionMode?: "fixed" | "pct_liquid" | "pct_income" | null
+    // db:     entities.distribution_mode, same three values (schema.ts).
+    distributionMode: z.enum(["fixed", "pct_liquid", "pct_income"]).nullable().optional(),
+    // Numbers, not `z.coerce` — a stringified rate makes the engine
+    // concatenate (1 + "0.03" is "10.03"), which has shipped to prod here.
+    distributionAmount: z.number().nullable().optional(),
+    distributionPercent: z.number().nullable().optional(),
+    // engine: type EntityFlowMode = "annual" | "schedule"
+    // db:     pgEnum("entity_flow_mode", ["annual", "schedule"]).
+    flowMode: z.enum(["annual", "schedule"]).optional(),
+    // Element shapes stay `unknown`: BeneficiaryRef / RemainderBeneficiaryRef
+    // / EntityOwner each carry required fields a half-filled editor row may
+    // not have yet, so validating them would 400 the request. The guard here
+    // is "this is a list", plus the field being declared at all.
+    beneficiaries: z.array(z.unknown()).optional(),
+    incomeBeneficiaries: z.array(z.unknown()).optional(),
+    remainderBeneficiaries: z.array(z.unknown()).optional(),
+    owners: z.array(z.unknown()).optional(),
+  })
+  .passthrough();
+
+// Mirrors `Will` in src/engine/types.ts. The bequest and residuary element
+// shapes stay `unknown` for the same reason ENTITY_VALUE leaves its
+// beneficiary lists loose: `WillBequest` / `WillBequestRecipient` /
+// `WillResiduaryRecipient` each carry required fields a half-filled editor row
+// may not have yet, and every solver route wraps this in
+// `z.array(SOLVER_MUTATION_SCHEMA)` — one rejected element 400s the WHOLE
+// request across twelve routes, not just that row. The guard here is "these
+// are lists", plus the fields being declared at all so a later `.strict()`
+// cannot silently drop them: clearing a recipient IS the mutation.
+const WILL_VALUE = z
+  .object({
+    id: z.string().min(1),
+    grantor: PERSON,
+    bequests: z.array(z.unknown()),
+    residuaryRecipients: z.array(z.unknown()).optional(),
   })
   .passthrough();
 
@@ -524,16 +720,42 @@ export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
     kind: z.literal("account-upsert"),
     id: z.string().min(1),
     value: ACCOUNT_VALUE.nullable(),
+    // The trust or charity whose removal produced this mutation. Declared here,
+    // not on the VALUE, because it is solver-wire routing rather than part of
+    // the row: `partitionBaseSavableMutations` reads it to hold the whole
+    // removal together. A z.object STRIPS keys it does not declare, so omitting
+    // this line silently drops the pairing on the wire and Save-to-base writes
+    // half a removal to the client's real record.
+    removedRefId: z.string().min(1).optional(),
+  }),
+  z.object({
+    kind: z.literal("liability-upsert"),
+    id: z.string().min(1),
+    value: LIABILITY_VALUE.nullable(),
   }),
   z.object({
     kind: z.literal("income-upsert"),
     id: z.string().min(1),
     value: INCOME_VALUE.nullable(),
+    // The trust or charity whose removal produced this mutation. Declared here,
+    // not on the VALUE, because it is solver-wire routing rather than part of
+    // the row: `partitionBaseSavableMutations` reads it to hold the whole
+    // removal together. A z.object STRIPS keys it does not declare, so omitting
+    // this line silently drops the pairing on the wire and Save-to-base writes
+    // half a removal to the client's real record.
+    removedRefId: z.string().min(1).optional(),
   }),
   z.object({
     kind: z.literal("expense-upsert"),
     id: z.string().min(1),
     value: EXPENSE_VALUE.nullable(),
+    // The trust or charity whose removal produced this mutation. Declared here,
+    // not on the VALUE, because it is solver-wire routing rather than part of
+    // the row: `partitionBaseSavableMutations` reads it to hold the whole
+    // removal together. A z.object STRIPS keys it does not declare, so omitting
+    // this line silently drops the pairing on the wire and Save-to-base writes
+    // half a removal to the client's real record.
+    removedRefId: z.string().min(1).optional(),
   }),
   z.object({
     kind: z.literal("savings-rule-upsert"),
@@ -554,6 +776,37 @@ export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
     kind: z.literal("entity-upsert"),
     id: z.string().min(1),
     value: ENTITY_VALUE.nullable(),
+  }),
+  z.object({
+    kind: z.literal("will-upsert"),
+    id: z.string().min(1),
+    value: WILL_VALUE.nullable(),
+  }),
+  z.object({
+    kind: z.literal("entity-flow-override-upsert"),
+    entityId: z.string().min(1),
+    year: YEAR,
+    value: z
+      .object({
+        incomeAmount: z.number().nullable().optional(),
+        expenseAmount: z.number().nullable().optional(),
+        // Bounded [0, 1] to match the canonical wire validator for this same
+        // table (flow-overrides.ts) and the decimal(5,4) column — an
+        // advisor typing "50" meaning 50% must not parse clean into 5000%.
+        distributionPercent: z.number().min(0).max(1).nullable().optional(),
+      })
+      .nullable(),
+  }),
+  z.object({
+    kind: z.literal("note-receivable-upsert"),
+    id: z.string().min(1),
+    value: NOTE_RECEIVABLE_VALUE.nullable(),
+    // The account a sale-to-trust sold. Declared here and not on
+    // NOTE_RECEIVABLE_VALUE because it is solver-wire routing, not part of the
+    // note: the save route uses it to put the sale's owner-flip change and this
+    // note under one toggle group. A z.object STRIPS keys it does not declare,
+    // so omitting this line silently drops the pairing on the wire.
+    sourceAccountId: z.string().min(1).optional(),
   }),
   z.object({
     kind: z.literal("stress-inflation"),

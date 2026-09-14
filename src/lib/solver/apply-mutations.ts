@@ -312,6 +312,12 @@ export function applyMutations(
         result.accounts = list;
         break;
       }
+      case "liability-upsert": {
+        const list = result.liabilities.filter((l) => l.id !== m.id);
+        if (m.value !== null) list.push(m.value);
+        result.liabilities = list;
+        break;
+      }
       case "income-upsert": {
         const list = result.incomes.filter((i) => i.id !== m.id);
         if (m.value !== null) list.push(m.value);
@@ -368,6 +374,28 @@ export function applyMutations(
           const syntheticId = entityCheckingId(m.id);
           result.accounts = result.accounts.filter((a) => a.id !== syntheticId);
         }
+        break;
+      }
+      case "will-upsert": {
+        const list = (result.wills ?? []).filter((w) => w.id !== m.id);
+        if (m.value !== null) list.push(m.value);
+        result.wills = list;
+        break;
+      }
+      case "entity-flow-override-upsert": {
+        const list = (result.entityFlowOverrides ?? []).filter(
+          (o) => !(o.entityId === m.entityId && o.year === m.year),
+        );
+        if (m.value !== null) {
+          list.push({ entityId: m.entityId, year: m.year, ...m.value });
+        }
+        result.entityFlowOverrides = list;
+        break;
+      }
+      case "note-receivable-upsert": {
+        const list = (result.notesReceivable ?? []).filter((n) => n.id !== m.id);
+        if (m.value !== null) list.push(m.value);
+        result.notesReceivable = list;
         break;
       }
       case "stress-inflation": {

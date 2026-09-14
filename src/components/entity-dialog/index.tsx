@@ -67,8 +67,11 @@ const RECORD_DEPENDENT_TRUST_TABS = new Set<string>([
  * than imported to avoid pulling the giant trust form into the dialog shell.
  * IDGTs always show the tab; other irrevocable grantor trusts (SLAT/GRAT) also
  * qualify. Stays in lockstep with the form-side helper.
+ *
+ * Exported so the solver's trust editor gates its own Notes & sales tab on the
+ * SAME predicate rather than on a third copy that would drift from this one.
  */
-function showNotesAndSalesTab(t: { trustSubType: string | null; isIrrevocable: boolean | null; isGrantor: boolean }): boolean {
+export function showNotesAndSalesTab(t: { trustSubType: string | null; isIrrevocable: boolean | null; isGrantor: boolean }): boolean {
   if (t.trustSubType === "idgt") return true;
   return Boolean(t.isIrrevocable && t.isGrantor);
 }

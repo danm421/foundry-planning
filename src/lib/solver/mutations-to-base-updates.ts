@@ -31,8 +31,9 @@ import type { SolverMutation, SolverPerson } from "./types";
 export type ColumnPatch = Record<string, string | number | boolean | null>;
 
 /** Mutation kinds this helper cannot persist to base facts (see file header).
- *  Used to gate the Save-to-base button and to avoid clearing these from the
- *  working set on a successful save (so they remain savable as a scenario). */
+ *  Read through `partitionBaseSavableMutations`, which gates the Save-to-base
+ *  button and decides what is kept in the working set on a successful save (so
+ *  these remain savable as a scenario). */
 const NON_BASE_SAVABLE = new Set<SolverMutation["kind"]>([
   "income-self-employment",
   "roth-conversion-upsert",
@@ -46,7 +47,24 @@ const NON_BASE_SAVABLE = new Set<SolverMutation["kind"]>([
   "gift-upsert",
   "external-beneficiary-upsert",
   "entity-upsert",
+  // A will edited by the dissolve-trust lever. `wills` and its bequest /
+  // recipient child tables have no base-write path in the switch below, so
+  // reporting savable would make Save-to-base drop the cleared recipients AND
+  // clear the edit from the working set — leaving a bequest that pays to a
+  // trust the same save just deleted. It round-trips via save-as-scenario.
+  "will-upsert",
   "relocation-upsert",
+  // A liability retitled into a trust has no base-write path in the switch
+  // below — reporting savable would make Save-to-base drop it AND clear it from
+  // the working set. It round-trips via save-as-scenario.
+  "liability-upsert",
+  // Scenario-partitioned table with no base-write path here.
+  "entity-flow-override-upsert",
+  // Same story: notes_receivable is another scenario-partitioned table (its
+  // own scenario_id column) with no base-write path in the switch below.
+  // Reporting savable would make Save-to-base drop the note AND clear it
+  // from the working set. It round-trips via save-as-scenario (Task 5).
+  "note-receivable-upsert",
   // Debt paydown writes a liability's extraPayments — a child table with no
   // base-write path here (see promote-table-registry: extra_payment is a
   // nested-only kind). It round-trips via save-as-scenario instead.
@@ -71,6 +89,124 @@ const NON_BASE_SAVABLE = new Set<SolverMutation["kind"]>([
 
 export function isBaseSavableMutation(m: SolverMutation): boolean {
   return !NON_BASE_SAVABLE.has(m.kind);
+}
+
+/** The Save-to-base split of one working set. */
+export interface BaseSavablePartition {
+  /** Sent to the save-to-base route, and cleared from the working set after. */
+  savable: SolverMutation[];
+  /** Kept in the working set so the advisor can still save them as a scenario. */
+  held: SolverMutation[];
+  /** Ids of the account edits held back by a paired note rather than by their
+   *  own kind — i.e. the sales this save is leaving pending. Non-empty means
+   *  the advisor must be told, or the flip "silently doesn't save". */
+  heldSaleAccountIds: string[];
+  /** Ids of the trusts whose REMOVAL is being left pending — the second class
+   *  of mutation held by its pairing rather than by its own kind. Non-empty
+   *  means the advisor must be told, or "Save to base facts" writes half a trust
+   *  removal to the client's real record. */
+  heldDissolveEntityIds: string[];
+  /** Ids of the charities whose REMOVAL is being left pending. Same hazard, same
+   *  pairing: a cleared beneficiary designation is base-savable on its own while
+   *  the charity delete never is. Reported separately so the advisor is told
+   *  WHICH removal stayed behind. */
+  heldRemovedCharityIds: string[];
+}
+
+/**
+ * Split a working set into what Save-to-base may write and what must stay behind.
+ *
+ * Per-kind savability (`isBaseSavableMutation`) is not enough, because a sale to a
+ * trust is ONE advisor action emitted as TWO mutations: the source account's owner
+ * flip into the trust (`account-upsert`, base-savable — the route really does
+ * re-materialize `account_owners`) and the promissory note the family now holds
+ * (`note-receivable-upsert`, never base-savable — `notes_receivable` is
+ * scenario-partitioned). Classified one at a time, Save-to-base posts the flip and
+ * drops the note: the asset is permanently retitled into the trust on the client's
+ * REAL record with nothing owed for it, value leaves the taxable estate for free,
+ * and the note left in the working set makes the sale look like it is still pending.
+ *
+ * So the account half is held whenever its note is held. The pairing is DECLARED by
+ * the note's `sourceAccountId` (set by `submitSaleToTrust` to the same account id
+ * the paired `account-upsert` carries), never inferred from `owners` shapes — a
+ * sale's retitle and a plain revocable-trust funding retitle produce a byte-
+ * identical `owners` array.
+ *
+ * The unit that cannot be half-saved is the SALE, not the kind: `account-upsert` is
+ * the solver's most common mutation and stays base-savable on its own.
+ *
+ * A trust REMOVAL is the same shape and the same hazard. `buildDissolveTrustMutations`
+ * emits a mix: the `account-upsert` retitles and the `income-upsert` / `expense-upsert`
+ * returns are base-savable, while `entity-upsert: null`, `will-upsert`,
+ * `liability-upsert` and `gift-upsert` are not. Split, the real record keeps the
+ * trust's accounts titled to the grantor while the trust still exists, the will
+ * still names it, and the gifts to it are still there — and the applied half is
+ * already gone from the working set.
+ *
+ * A CHARITY removal is the same again: `buildRemoveCharityMutations` clears
+ * beneficiary designations with `account-upsert` while the
+ * `external-beneficiary-upsert: null` that removes the charity is never savable.
+ *
+ * So the whole removal is held together, again on a DECLARED pairing
+ * (`removedRefId`) and never on an inferred one: a retitle out of a trust, and a
+ * cleared designation, are byte-identical to any other edit of the same shape.
+ */
+export function partitionBaseSavableMutations(
+  mutations: readonly SolverMutation[],
+): BaseSavablePartition {
+  // Accounts whose sale note is being held back. A note that IS base-savable
+  // (no kind is today, but the set is data) holds nothing — it saves alongside.
+  const pairedAccountIds = new Set<string>();
+  for (const m of mutations) {
+    if (m.kind !== "note-receivable-upsert") continue;
+    if (isBaseSavableMutation(m)) continue;
+    if (m.sourceAccountId) pairedAccountIds.add(m.sourceAccountId);
+  }
+
+  // Trusts and charities this working set is REMOVING. Neither delete kind is
+  // ever base-savable, so a present delete is always a held delete — but the
+  // membership test still matters: a declared edit whose delete is absent
+  // (already saved, or the removal undone) must not be held hostage to a phantom.
+  const dissolvedEntityIds = new Set<string>();
+  const removedCharityIds = new Set<string>();
+  for (const m of mutations) {
+    if (m.kind !== "entity-upsert" && m.kind !== "external-beneficiary-upsert") continue;
+    if (m.value !== null || isBaseSavableMutation(m)) continue;
+    (m.kind === "entity-upsert" ? dissolvedEntityIds : removedCharityIds).add(m.id);
+  }
+
+  const savable: SolverMutation[] = [];
+  const held: SolverMutation[] = [];
+  const heldSaleAccountIds: string[] = [];
+  const heldDissolveEntityIds: string[] = [];
+  const heldRemovedCharityIds: string[] = [];
+  const note = (list: string[], id: string) => {
+    if (!list.includes(id)) list.push(id);
+  };
+  for (const m of mutations) {
+    const heldBySale = m.kind === "account-upsert" && pairedAccountIds.has(m.id);
+    if (heldBySale) heldSaleAccountIds.push(m.id);
+
+    const ref = declaredRemovalTarget(m);
+    const heldByTrustRemoval = ref != null && dissolvedEntityIds.has(ref);
+    const heldByCharityRemoval = ref != null && removedCharityIds.has(ref);
+    if (heldByTrustRemoval) note(heldDissolveEntityIds, ref);
+    if (heldByCharityRemoval) note(heldRemovedCharityIds, ref);
+
+    const heldByPair = heldBySale || heldByTrustRemoval || heldByCharityRemoval;
+    (isBaseSavableMutation(m) && !heldByPair ? savable : held).push(m);
+  }
+  return { savable, held, heldSaleAccountIds, heldDissolveEntityIds, heldRemovedCharityIds };
+}
+
+/** The trust or charity whose removal declared this mutation, or null. Only the
+ *  three base-savable kinds a removal emits carry the field; the narrowing is
+ *  what keeps the union honest. */
+function declaredRemovalTarget(m: SolverMutation): string | null {
+  if (m.kind !== "account-upsert" && m.kind !== "income-upsert" && m.kind !== "expense-upsert") {
+    return null;
+  }
+  return m.removedRefId ?? null;
 }
 
 export interface BaseUpdates {

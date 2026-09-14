@@ -1,14 +1,11 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import type { Account, EntitySummary } from "@/engine/types";
+import type { Account } from "@/engine/types";
 import {
   EstateRevocableTrustList,
   EstateGiftsList,
-  EstateTrustsList,
-  EstateCharitiesList,
 } from "../solver-tab-estate-planning";
-import type { SolverTrustDraft } from "../solver-trust-form";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 
 const acct = (over: Partial<Account>): Account =>
@@ -100,55 +97,5 @@ describe("EstateGiftsList", () => {
   it("shows an empty state when there are no gifts at all", () => {
     renderGifts({ gifts: [], baseGiftIds: new Set() });
     expect(screen.getByText("No planned gifts")).toBeTruthy();
-  });
-});
-
-const currentTrust = { id: "t1", name: "Existing ILIT", entityType: "trust", trustSubType: "ilit" } as unknown as EntitySummary;
-const addedTrust = {
-  entity: { id: "t2", name: "New CRT", trustSubType: "crt" },
-  fundedOriginals: [],
-} as unknown as SolverTrustDraft;
-
-function renderTrusts(over = {}) {
-  render(
-    <EstateTrustsList currentTrusts={[currentTrust]} addedTrusts={[addedTrust]} onRemove={vi.fn()} {...over} />,
-  );
-}
-
-describe("EstateTrustsList", () => {
-  it("lists existing + added trusts, only the added one removable", () => {
-    renderTrusts();
-    expect(screen.getByText("Existing ILIT")).toBeTruthy();
-    expect(screen.getByText(/New CRT/)).toBeTruthy();
-    expect(screen.getAllByText("Remove")).toHaveLength(1);
-  });
-
-  it("shows an empty state when there are no trusts", () => {
-    renderTrusts({ currentTrusts: [], addedTrusts: [] });
-    expect(screen.getByText("No trusts")).toBeTruthy();
-  });
-});
-
-function renderCharities(over = {}) {
-  render(
-    <EstateCharitiesList
-      currentCharities={[{ id: "c1", name: "Red Cross", charityType: "public" }]}
-      addedCharities={[{ id: "c2", name: "New Foundation", charityType: "private" }]}
-      charityName=""
-      charityType="public"
-      onChangeName={vi.fn()}
-      onChangeType={vi.fn()}
-      onAdd={vi.fn()}
-      {...over}
-    />,
-  );
-}
-
-describe("EstateCharitiesList", () => {
-  it("lists current + added charities and shows the add form", () => {
-    renderCharities();
-    expect(screen.getByText("Red Cross")).toBeTruthy();
-    expect(screen.getByText("New Foundation")).toBeTruthy();
-    expect(screen.getByPlaceholderText("Charity name")).toBeTruthy();
   });
 });

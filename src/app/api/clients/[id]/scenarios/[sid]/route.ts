@@ -8,7 +8,8 @@
 //          scenario_toggle_groups per Plan 1 schema. Snapshots survive (their
 //          FK is intentionally not cascade — see parent spec §3.1). Refuses
 //          to delete the base case to avoid orphaning the client's projection
-//          state.
+//          state. Deletes the notes_receivable rows this scenario's toggle
+//          groups gated FIRST — see the comment on the delete itself.
 //
 // Auth model (Task 17d): `requireOrgAndUser` for callerOrg (audit actor) +
 // `requireClientEditAccess` for firmId (OWNING) and edit-permission gate.
@@ -18,10 +19,10 @@
 // shared-edit recipients pass the `a.firmId === firmId` check inside it.
 
 import { NextRequest, NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { scenarios } from "@/db/schema";
+import { notesReceivable, scenarios, scenarioToggleGroups } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { requireOrgAndUser } from "@/lib/db-helpers";
@@ -148,7 +149,44 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx) {
       );
     }
 
-    await db.delete(scenarios).where(eq(scenarios.id, scenarioId));
+    // A solver sale-to-trust writes its promissory note on the client's BASE
+    // partition, gated by a toggle group THIS scenario owns — the documented
+    // shape `resolveToggleGatedNotesOnBase` assumes on promote. Deleting the
+    // scenario cascades the toggle group away, and `notes_receivable.
+    // toggle_group_id` is ON DELETE SET NULL, so the note would survive with a
+    // NULL gate. An ungated note on the base partition is "the base plan's,
+    // always visible" by the loader's own rule — so deleting a what-if would
+    // write a promissory note into the client's REAL plan, permanently, and
+    // inflate the in-estate net worth the Net Worth page displays.
+    //
+    // Scoped to this client as well as to this scenario's own groups: a toggle
+    // group is already scenario-owned, so the client predicate is redundant by
+    // construction and kept as the same defence the rest of the write path uses.
+    // Children (note_receivable_owners, note_extra_payments) cascade.
+    const ungatedNotes = await db.transaction(async (tx) => {
+      const groups = await tx
+        .select({ id: scenarioToggleGroups.id })
+        .from(scenarioToggleGroups)
+        .where(eq(scenarioToggleGroups.scenarioId, scenarioId));
+      let deleted = 0;
+      if (groups.length > 0) {
+        const removed = await tx
+          .delete(notesReceivable)
+          .where(
+            and(
+              eq(notesReceivable.clientId, clientId),
+              inArray(
+                notesReceivable.toggleGroupId,
+                groups.map((g) => g.id),
+              ),
+            ),
+          )
+          .returning({ id: notesReceivable.id });
+        deleted = removed.length;
+      }
+      await tx.delete(scenarios).where(eq(scenarios.id, scenarioId));
+      return deleted;
+    });
 
     await recordAudit({
       action: "scenario.delete",
@@ -158,6 +196,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx) {
       firmId,
       metadata: crossFirmAuditMeta({ access }, callerOrg, {
         name: scope.scenario.name,
+        gatedNotesDeleted: ungatedNotes,
       }),
     });
 

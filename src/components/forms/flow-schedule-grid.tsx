@@ -49,6 +49,38 @@ export interface FlowScheduleGridOverride {
   distributionPercent: number | null;
 }
 
+/** One whole-grid save, as `handleSave` assembles it. */
+export interface ScheduleSaveInput {
+  /**
+   * Every year that has at least one figure, as a FULL row carrying all three.
+   * Never a per-cell diff: a flow-override write is a whole-row replace, so a
+   * row that names only the cell that changed wipes that year's other two.
+   */
+  overrides: FlowScheduleGridOverride[];
+  /**
+   * Every year this save accounts for: the plan span the grid renders, plus any
+   * year in `initialOverrides` falling outside it. Those out-of-span years
+   * render nowhere and so can never carry a figure into `overrides` — but the
+   * default whole-grid PUT deletes them all the same, so an injected save has
+   * to be able to reach the same end state.
+   *
+   * A year listed here with no `overrides` row has **no figures** once this
+   * save lands. That is all it means. It does NOT say the advisor cleared it: a
+   * year that was never set looks identical, and nothing in this grid can tell
+   * the two apart. So a consumer that writes one row per year must diff against
+   * its own prior state and clear only the years it actually holds — treating
+   * every figureless year as a clear turns one edit into a no-op write per year
+   * of the plan.
+   *
+   * The HTTP route needs none of this: it replaces every row for the entity in
+   * one request, so omission alone means gone.
+   *
+   * This can only speak for what the grid was given. A year the caller holds but
+   * did not pass in `initialOverrides` appears nowhere here.
+   */
+  years: number[];
+}
+
 export interface FlowScheduleGridProps {
   clientId: string;
   target: ScheduleTarget;
@@ -68,6 +100,15 @@ export interface FlowScheduleGridProps {
   initialOverrides: FlowScheduleGridOverride[];
   /** Lifts save + saving state to the parent so the dialog footer can render the button. */
   onSaveBindingChange?: (binding: ScheduleSaveBinding | null) => void;
+  /**
+   * Persists the whole grid. Defaults to PUTting the flow-overrides route,
+   * which is what the Estate Planning details page wants. The solver passes its
+   * own, emitting entity-flow-override-upsert mutations against the working
+   * tree instead — in the solver there is no scenario to PUT to until the
+   * scenario is saved. Reject to have the grid report the failure exactly as it
+   * reports a failed PUT: `{ ok: false, error }` plus the inline error line.
+   */
+  saveOverrides?: (input: ScheduleSaveInput) => Promise<void>;
 }
 
 const isBusinessType = (t: EntityType) => t !== "trust" && t !== "foundation";
@@ -116,6 +157,24 @@ function buildSaveUrl(clientId: string, target: ScheduleTarget, scenarioId: stri
   return scenarioId ? `${path}?scenarioId=${scenarioId}` : path;
 }
 
+/** Today's behaviour: PUT the whole grid to the flow-overrides route. */
+async function putFlowOverrides(
+  clientId: string,
+  target: ScheduleTarget,
+  scenarioId: string | null,
+  input: ScheduleSaveInput,
+): Promise<void> {
+  const res = await fetch(buildSaveUrl(clientId, target, scenarioId), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ overrides: input.overrides }),
+  });
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}));
+    throw new Error((j as { error?: string }).error ?? "Failed to save");
+  }
+}
+
 export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
   const showDist = showDistColumn(props.target);
   const years = useMemo(() => {
@@ -147,6 +206,19 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
     }
     return out;
   }, [props.initialOverrides]);
+
+  // The years the SEAM reports — never the ones the table renders. A stored
+  // override can sit outside the plan span (a plan re-based to a later start
+  // year leaves one behind); it gets no row, so it can never reach `overrides`,
+  // yet the default PUT deletes it along with everything else. Reporting it
+  // keeps an injected save able to do the same.
+  const coveredYears = useMemo(() => {
+    const outOfSpan = props.initialOverrides
+      .map((o) => o.year)
+      .filter((y) => y < props.planStartYear || y > props.planEndYear);
+    if (outOfSpan.length === 0) return years;
+    return [...new Set([...years, ...outOfSpan])].sort((a, b) => a - b);
+  }, [years, props.initialOverrides, props.planStartYear, props.planEndYear]);
 
   const [income, setIncome] = useState<Record<number, Cell>>(initialIncome);
   const [expense, setExpense] = useState<Record<number, Cell>>(initialExpense);
@@ -233,15 +305,16 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
       }
     }
     try {
-      const url = buildSaveUrl(props.clientId, props.target, props.scenarioId);
-      const res = await fetch(url, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ overrides }),
-      });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        throw new Error((j as { error?: string }).error ?? "Failed to save");
+      const input: ScheduleSaveInput = { overrides, years: coveredYears };
+      if (props.saveOverrides) {
+        await props.saveOverrides(input);
+      } else {
+        await putFlowOverrides(
+          props.clientId,
+          props.target,
+          props.scenarioId,
+          input,
+        );
       }
       setSavedAt(new Date());
       setSavedSnapshot({ income, expense, dist });

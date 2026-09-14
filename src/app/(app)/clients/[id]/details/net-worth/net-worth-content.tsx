@@ -21,7 +21,6 @@ import { buildClientMilestones } from "@/lib/milestones";
 import { resolveInflationRate } from "@/lib/inflation";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { loadOverlaidAccountMeta } from "@/lib/scenario/account-meta";
-import { loadNotesReceivable } from "@/lib/loaders/notes-receivable";
 import { loadFundPortfolioOptions } from "@/lib/investments/load-fund-portfolio-options";
 import type { GrowthContext } from "@/lib/investments/growth-context";
 import { controllingEntity } from "@/engine/ownership";
@@ -85,7 +84,6 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
     allocationRows,
     assetClassRows,
     { effectiveTree, resolutionContext },
-    notesReceivableRows,
     fundPortfolioOptions,
   ] = await Promise.all([
     loadAccountMetaRows(id, scenario.id),
@@ -116,7 +114,6 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
     db.select().from(modelPortfolioAllocations),
     db.select().from(assetClasses).where(eq(assetClasses.firmId, firmId)),
     loadEffectiveTree(id, firmId, scenarioParam ?? "base", {}),
-    loadNotesReceivable(id, scenario.id),
     loadFundPortfolioOptions(firmId),
   ]);
 
@@ -324,6 +321,16 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
     resolutionContext,
     effectiveTree.accounts,
   );
+
+  // From the effective tree, NOT a second read of the base partition. Every
+  // scenario-gated note physically lives on that partition (sale-to-trust and
+  // the solver's save route both write it there) and `loadNotesReceivable`
+  // filters nothing, so reading it directly put other scenarios' notes on this
+  // screen and summed each one into `totalInEstate`. `loadEffectiveTree`
+  // already resolves gating for whichever scenario is being shown: base
+  // activates no toggle group, so gated notes drop out (loader.ts:237-244),
+  // while a scenario keeps its own.
+  const notesReceivableRows = effectiveTree.notesReceivable ?? [];
 
   return (
     <div className="space-y-6">

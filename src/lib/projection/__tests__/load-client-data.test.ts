@@ -611,4 +611,70 @@ describe("loadClientData", () => {
     });
     expect(assetEvents[0].recipientFamilyMemberId).toBeUndefined();
   });
+
+  // ── entities.notes must reach EntitySummary ───────────────────────────────
+  // `notes` is a real column and the solver's estate dialog writes it, but the
+  // mapper at load-client-data.ts:1256 has to actually carry it. Without the
+  // mapping the field is WRITE-ONLY: the note survives the wire, applyMutations
+  // and promotion into entities.notes, then comes back `undefined` on the next
+  // load and reads as deleted — permanently, for every entity.
+  //
+  // `trustee` and `notes` carry DIFFERENT values on purpose. A mapping that
+  // wired the wrong source column (`notes: e.trustee ?? undefined`) compiles
+  // and would pass a test that only checked for "some string".
+  const trustRow = {
+    id: "00000000-0000-0000-0000-0000000000e1",
+    clientId: FIXTURE_CLIENT_ID,
+    name: "Smith Family ILIT",
+    entityType: "trust",
+    includeInPortfolio: false,
+    accessibleToClient: false,
+    crummeyPowers: true,
+    isGrantor: false,
+    grantorStatusEndYear: null,
+    value: "0",
+    basis: "0",
+    owner: null,
+    grantor: "client",
+    beneficiaries: null,
+    trustSubType: "ilit",
+    isIrrevocable: true,
+    trustee: "Linda Chen",
+    trustEnds: null,
+    distributionMode: null,
+    distributionAmount: null,
+    distributionPercent: null,
+    taxTreatment: "ordinary",
+    distributionPolicyPercent: null,
+    flowMode: "annual",
+    valueGrowthRate: null,
+    notes: "Reviewed with counsel 2026-09-11",
+    createdAt: new Date("2026-01-01T00:00:00Z"),
+    updatedAt: new Date("2026-01-01T00:00:00Z"),
+  };
+
+  it("carries an entity's notes through to EntitySummary", async () => {
+    seedValidFixture();
+    dbState.entities = [trustRow];
+
+    const data = await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
+    const trust = data.entities?.find((e) => e.id === trustRow.id);
+
+    expect(trust).toBeDefined();
+    expect(trust!.notes).toBe("Reviewed with counsel 2026-09-11");
+    // Control: the neighbouring text column still maps to its own field, so a
+    // passing `notes` assertion cannot be the trustee value in disguise.
+    expect(trust!.trustee).toBe("Linda Chen");
+  });
+
+  it("maps a null note to undefined, matching the loader's ?? undefined convention", async () => {
+    seedValidFixture();
+    dbState.entities = [{ ...trustRow, notes: null }];
+
+    const data = await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
+    const trust = data.entities?.find((e) => e.id === trustRow.id);
+
+    expect(trust).toBeDefined();
+    expect(trust!.notes).toBeUndefined();
+  });
 });

@@ -34,6 +34,7 @@ import {
 import {
   writeAccountChildren,
   writeLiabilityChildren,
+  updateLiabilityChildren,
   writeIncomeChildren,
   writeExpenseChildren,
   updateExpenseChildren,
@@ -43,6 +44,7 @@ import {
   writeRothConversionChildren,
   writeReinvestmentChildren,
   writeWillChildren,
+  updateWillChildren,
   writeGiftChildren,
 } from "./promote-child-writers";
 import { translateGiftDraftForPromote } from "./promote-gift-translate";
@@ -121,7 +123,11 @@ export const PROMOTE_TABLE_REGISTRY: Partial<Record<TargetKind, RegistryEntry>> 
     childWriter: writeExpenseChildren,
     childUpdater: updateExpenseChildren,
   },
-  liability: { table: liabilities, childWriter: writeLiabilityChildren },
+  liability: {
+    table: liabilities,
+    childWriter: writeLiabilityChildren,
+    childUpdater: updateLiabilityChildren,
+  },
   savings_rule: {
     table: savingsRules,
     childWriter: writeSavingsRuleChildren,
@@ -145,7 +151,7 @@ export const PROMOTE_TABLE_REGISTRY: Partial<Record<TargetKind, RegistryEntry>> 
     // Without it the mortgage stops following the property at promote.
     childWriter: writeGiftChildren,
   },
-  will: { table: wills, childWriter: writeWillChildren },
+  will: { table: wills, childWriter: writeWillChildren, childUpdater: updateWillChildren },
   entity: { table: entities },
   relocation: { table: relocations },
 };

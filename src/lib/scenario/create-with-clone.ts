@@ -102,6 +102,46 @@ export async function cloneGiftSeriesIntoScenario(
   );
 }
 
+/**
+ * Seed a newly-created scenario's `entity_flow_overrides` partition from
+ * another scenario's.
+ *
+ * Exported for the same reason as `cloneGiftSeriesIntoScenario`: the table is
+ * scoped by scenarioId rather than modelled as scenario_changes, so any path
+ * that creates a scenario from an existing one must copy it explicitly or the
+ * new scenario silently loses the advisor's custom trust flow grids and
+ * projects on base+growth instead.
+ *
+ * `entityId` is shared across scenarios within a client, so it carries over
+ * unchanged; only scenarioId is remapped. id/createdAt/updatedAt are omitted so
+ * the column defaults apply (fresh PK, no collision with the source rows).
+ *
+ * No clientId argument, unlike the gift-series clone: `entity_flow_overrides`
+ * has no client column — a scenarioId already names exactly one client's
+ * scenario.
+ */
+export async function cloneEntityFlowOverridesIntoScenario(
+  tx: ScenarioTx,
+  args: { fromScenarioId: string; toScenarioId: string },
+): Promise<void> {
+  const rows = await tx
+    .select()
+    .from(entityFlowOverrides)
+    .where(eq(entityFlowOverrides.scenarioId, args.fromScenarioId));
+  if (rows.length === 0) return;
+
+  await tx.insert(entityFlowOverrides).values(
+    rows.map((o) => ({
+      entityId: o.entityId,
+      scenarioId: args.toScenarioId,
+      year: o.year,
+      incomeAmount: o.incomeAmount,
+      expenseAmount: o.expenseAmount,
+      distributionPercent: o.distributionPercent,
+    })),
+  );
+}
+
 /** The client's base-case scenario id, or null if it somehow has none.
  *  Exported for the solver's "Save as scenario" route, which builds its
  *  scenarios row itself and still owes the seed above. */
@@ -232,27 +272,14 @@ export async function createScenarioWithClone(
     // Clone scenario-scoped entity/account flow-override schedules. These rows
     // are scoped by scenarioId (not modelled as scenario_changes), so they must
     // be copied explicitly or a duplicated scenario silently loses its custom
-    // flow grids. entityId/accountId are shared across scenarios within the same
-    // client, so they carry over unchanged; only scenarioId is remapped to the
-    // clone. id/createdAt/updatedAt are omitted so the column defaults apply
-    // (fresh PK, avoiding unique-constraint collisions with the source rows).
-    const srcEntityOverrides = await tx
-      .select()
-      .from(entityFlowOverrides)
-      .where(eq(entityFlowOverrides.scenarioId, sourceId));
-
-    if (srcEntityOverrides.length > 0) {
-      await tx.insert(entityFlowOverrides).values(
-        srcEntityOverrides.map((o) => ({
-          entityId: o.entityId,
-          scenarioId: created.id,
-          year: o.year,
-          incomeAmount: o.incomeAmount,
-          expenseAmount: o.expenseAmount,
-          distributionPercent: o.distributionPercent,
-        })),
-      );
-    }
+    // flow grids. accountId is shared across scenarios within the same client,
+    // so it carries over unchanged; only scenarioId is remapped to the clone.
+    // id/createdAt/updatedAt are omitted so the column defaults apply (fresh
+    // PK, avoiding unique-constraint collisions with the source rows).
+    await cloneEntityFlowOverridesIntoScenario(tx, {
+      fromScenarioId: sourceId,
+      toScenarioId: created.id,
+    });
 
     const srcAccountOverrides = await tx
       .select()
