@@ -376,6 +376,12 @@ export function applyMutations(
         }
         break;
       }
+      case "will-upsert": {
+        const list = (result.wills ?? []).filter((w) => w.id !== m.id);
+        if (m.value !== null) list.push(m.value);
+        result.wills = list;
+        break;
+      }
       case "entity-flow-override-upsert": {
         const list = (result.entityFlowOverrides ?? []).filter(
           (o) => !(o.entityId === m.entityId && o.year === m.year),

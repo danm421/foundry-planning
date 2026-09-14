@@ -497,6 +497,24 @@ const ENTITY_VALUE = z
   })
   .passthrough();
 
+// Mirrors `Will` in src/engine/types.ts. The bequest and residuary element
+// shapes stay `unknown` for the same reason ENTITY_VALUE leaves its
+// beneficiary lists loose: `WillBequest` / `WillBequestRecipient` /
+// `WillResiduaryRecipient` each carry required fields a half-filled editor row
+// may not have yet, and every solver route wraps this in
+// `z.array(SOLVER_MUTATION_SCHEMA)` — one rejected element 400s the WHOLE
+// request across twelve routes, not just that row. The guard here is "these
+// are lists", plus the fields being declared at all so a later `.strict()`
+// cannot silently drop them: clearing a recipient IS the mutation.
+const WILL_VALUE = z
+  .object({
+    id: z.string().min(1),
+    grantor: PERSON,
+    bequests: z.array(z.unknown()),
+    residuaryRecipients: z.array(z.unknown()).optional(),
+  })
+  .passthrough();
+
 export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
   // Goals
   z.object({
@@ -737,6 +755,11 @@ export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
     kind: z.literal("entity-upsert"),
     id: z.string().min(1),
     value: ENTITY_VALUE.nullable(),
+  }),
+  z.object({
+    kind: z.literal("will-upsert"),
+    id: z.string().min(1),
+    value: WILL_VALUE.nullable(),
   }),
   z.object({
     kind: z.literal("entity-flow-override-upsert"),

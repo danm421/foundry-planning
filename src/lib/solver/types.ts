@@ -17,6 +17,7 @@ import type {
   ExternalBeneficiary,
   EntitySummary,
   Relocation,
+  Will,
 } from "@/engine/types";
 import type { NoteReceivable } from "@/engine/notes-receivable/types";
 import type { ProjectionResult } from "@/engine";
@@ -108,6 +109,11 @@ export type SolverMutation =
   | { kind: "gift-upsert";                 id: string; value: EstateFlowGift | null }
   | { kind: "external-beneficiary-upsert"; id: string; value: ExternalBeneficiary | null }
   | { kind: "entity-upsert";               id: string; value: EntitySummary | null }
+  /** A grantor's will, edited from the estate dialog. Today the only writer is
+   *  the dissolve-trust lever, which strips bequest and residuary recipients
+   *  that named the trust it is removing — an orphaned bequest pays to an
+   *  entity that no longer exists. `null` removes the will. */
+  | { kind: "will-upsert";                 id: string; value: Will | null }
   /** A trust's per-year income/expense/distribution figures from the Flows
    *  tab. Keyed on (entityId, year) to match entity_flow_overrides' unique
    *  index. `null` clears the year back to base+growth. */
@@ -186,6 +192,7 @@ export type SolverMutationKey =
   | `gift-upsert:${string}`
   | `external-beneficiary-upsert:${string}`
   | `entity-upsert:${string}`
+  | `will-upsert:${string}`
   | `entity-flow-override-upsert:${string}:${number}`
   | `note-receivable-upsert:${string}`
   | "stress-inflation"
@@ -288,6 +295,8 @@ export function mutationKey(m: SolverMutation): SolverMutationKey {
       return `external-beneficiary-upsert:${m.id}`;
     case "entity-upsert":
       return `entity-upsert:${m.id}`;
+    case "will-upsert":
+      return `will-upsert:${m.id}`;
     case "entity-flow-override-upsert":
       return `entity-flow-override-upsert:${m.entityId}:${m.year}`;
     case "note-receivable-upsert":
@@ -346,7 +355,7 @@ export interface SolverSaveResponse {
  *  (the route fills that in once the new scenarios row exists). */
 export interface SolverScenarioChangeDraft {
   opType: "add" | "edit" | "remove";
-  targetKind: "client" | "plan_settings" | "account" | "income" | "expense" | "savings_rule" | "roth_conversion" | "asset_transaction" | "reinvestment" | "gift" | "external_beneficiary" | "entity" | "relocation" | "liability";
+  targetKind: "client" | "plan_settings" | "account" | "income" | "expense" | "savings_rule" | "roth_conversion" | "asset_transaction" | "reinvestment" | "gift" | "external_beneficiary" | "entity" | "relocation" | "liability" | "will";
   targetId: string;
   /** edit: { field: { from, to } } map. add: full entity. remove: null. */
   payload: unknown;

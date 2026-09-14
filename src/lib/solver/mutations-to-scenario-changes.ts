@@ -640,6 +640,18 @@ export function mutationsToScenarioChanges(
         );
         break;
       }
+      case "will-upsert": {
+        pushTechniqueUpsert(
+          nonClientDrafts,
+          "will",
+          (source.wills ?? []).find((w) => w.id === m.id) as
+            | Record<string, unknown>
+            | undefined,
+          m.id,
+          m.value as Record<string, unknown> | null,
+        );
+        break;
+      }
       // entity_flow_overrides is scenario-PARTITIONED (its own scenario_id
       // column), not modelled as scenario_changes. The save-scenario route
       // clones the source partition and applies these on top — see
@@ -850,7 +862,7 @@ function diffTechniqueFields(
 
 function pushTechniqueUpsert(
   drafts: SolverScenarioChangeDraft[],
-  targetKind: "account" | "liability" | "savings_rule" | "roth_conversion" | "asset_transaction" | "reinvestment" | "income" | "expense" | "gift" | "external_beneficiary" | "entity" | "relocation",
+  targetKind: "account" | "liability" | "savings_rule" | "roth_conversion" | "asset_transaction" | "reinvestment" | "income" | "expense" | "gift" | "external_beneficiary" | "entity" | "relocation" | "will",
   existing: Record<string, unknown> | undefined,
   id: string,
   value: Record<string, unknown> | null,

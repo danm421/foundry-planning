@@ -1,4 +1,11 @@
-import type { Account, BeneficiaryRef, EntitySummary } from "@/engine/types";
+import type {
+  Account,
+  BeneficiaryRef,
+  ClientData,
+  EntitySummary,
+  GiftEvent,
+} from "@/engine/types";
+import type { AccountOwner, EntityOwner } from "@/engine/ownership";
 import type { TrustSubType } from "@/lib/entities/trust";
 import { defaultIsGrantorFor } from "@/lib/trust-defaults";
 import type { SolverMutation } from "./types";
@@ -93,4 +100,223 @@ export function buildRevertFundingMutation(original: Account): SolverMutation {
  *  non-insurance (life-insurance goes through the ILIT path). */
 export function isRetitleFundingEligible(a: Account): boolean {
   return a.category !== "life_insurance" && a.owners.every((o) => o.kind === "family_member");
+}
+
+// ── Dissolving a trust ───────────────────────────────────────────────────────
+
+/** An ownership slice belonging to the household member a dissolved trust's
+ *  assets return to. */
+type HeirOwner = { kind: "family_member"; familyMemberId: string; percent: number };
+
+/**
+ * Dissolve a trust: return everything it holds to the grantor's household,
+ * clear every reference to it, then delete the entity.
+ *
+ * Two rules keep this from moving money, and both have a price when broken:
+ *
+ *  1. **At most one mutation per key.** The solver's working set is a keyed Map
+ *     (`mutationKey` — use-solver-draft.ts:81, live-solver-workspace.tsx:1034),
+ *     so a second `account-upsert` for the same account REPLACES the first
+ *     rather than composing with it, and its `{...a}` spread restores the very
+ *     owners the retitle just removed. An ILIT's own policy — trust-owned AND
+ *     naming the trust as beneficiary — is the common case that hits it. So the
+ *     retitle, the beneficiary clear and the cash-bucket decision are taken
+ *     together, once per account; likewise a business retitle and the
+ *     beneficiary clears merge into one `entity-upsert` per entity.
+ *  2. **Only the trust's own slices move.** `owners` is a list of fractional
+ *     slices: rewriting it wholesale hands a co-owner's half to the grantor. A
+ *     `gifted_away` slice naming the trust counts as the trust's — that is how
+ *     a gift INTO a trust is titled.
+ *
+ * The entity delete is emitted LAST, so neither an intermediate tree nor a
+ * save-as-scenario `orderIndex` ever holds a row pointing at a dead entity.
+ */
+export function buildDissolveTrustMutations(
+  tree: ClientData,
+  entity: EntitySummary,
+): SolverMutation[] {
+  const muts: SolverMutation[] = [];
+  const heirId = resolveGrantorFamilyMemberId(tree, entity);
+  const heldByTrust = (owners: readonly (AccountOwner | EntityOwner)[] | undefined) =>
+    (owners ?? []).some((o) => isTrustSlice(o, entity.id));
+
+  // 1. Accounts — retitle, clear a beneficiary designation naming the trust, or
+  //    both, in one mutation.
+  for (const a of tree.accounts) {
+    const owned = heldByTrust(a.owners);
+    const bens = a.beneficiaries ?? [];
+    const namesTrust = bens.some((b) => b.entityIdRef === entity.id);
+    if (!owned && !namesTrust) continue;
+
+    // The trust's default-checking account is its cash hub. An empty one is
+    // dropped rather than handed to the household as a junk row. One that holds
+    // money comes home with the flag CLEARED: the engine resolves the
+    // household's cash hub with a `.find()` over isDefaultChecking
+    // (projection.ts:683-685), so a second flagged household account would
+    // capture every household cash flow.
+    if (owned && a.isDefaultChecking && (a.value ?? 0) === 0) {
+      muts.push({ kind: "account-upsert", id: a.id, value: null });
+      continue;
+    }
+    const next: Account = { ...a };
+    if (owned) {
+      next.owners = returnOwnersToHeir(a.owners, entity.id, heirId);
+      if (a.isDefaultChecking) next.isDefaultChecking = false;
+    }
+    if (namesTrust) next.beneficiaries = bens.filter((b) => b.entityIdRef !== entity.id);
+    muts.push({ kind: "account-upsert", id: a.id, value: next });
+  }
+
+  // 2. Liabilities the trust carries.
+  for (const l of tree.liabilities ?? []) {
+    if (!heldByTrust(l.owners)) continue;
+    muts.push({
+      kind: "liability-upsert",
+      id: l.id,
+      value: { ...l, owners: returnOwnersToHeir(l.owners, entity.id, heirId) },
+    });
+  }
+
+  // 3. Other entities — a business the trust holds, and any trust naming this
+  //    one as a beneficiary. One merged upsert per entity (see rule 1).
+  for (const e of tree.entities ?? []) {
+    if (e.id === entity.id) continue;
+    const next: EntitySummary = { ...e };
+    let changed = false;
+    if (heldByTrust(e.owners)) {
+      next.owners = returnOwnersToHeir(e.owners, entity.id, heirId);
+      changed = true;
+    }
+    const bens = (e.beneficiaries ?? []).filter((b) => b.entityIdRef !== entity.id);
+    if (bens.length !== (e.beneficiaries ?? []).length) {
+      next.beneficiaries = bens;
+      changed = true;
+    }
+    const remainder = (e.remainderBeneficiaries ?? []).filter(
+      (r) => r.entityIdRef !== entity.id,
+    );
+    if (remainder.length !== (e.remainderBeneficiaries ?? []).length) {
+      next.remainderBeneficiaries = remainder;
+      changed = true;
+    }
+    // `incomeBeneficiaries` spells the reference `entityId`; `beneficiaries` and
+    // `remainderBeneficiaries` spell it `entityIdRef`. Not a typo — see
+    // EntitySummary in engine/types.ts.
+    const income = (e.incomeBeneficiaries ?? []).filter((r) => r.entityId !== entity.id);
+    if (income.length !== (e.incomeBeneficiaries ?? []).length) {
+      next.incomeBeneficiaries = income;
+      changed = true;
+    }
+    if (changed) muts.push({ kind: "entity-upsert", id: e.id, value: next });
+  }
+
+  // 4. Gifts aimed at the trust, a CLT's remainder-interest gift included.
+  //    `tree.gifts` holds CASH gifts only — the loader filters asset, liability
+  //    and business rows out of it, and a series never appears there at all —
+  //    so the gift EVENTS carry the rest, each naming the row that produced it.
+  //    Synthesized premium gifts name a policy rather than a gift row and are
+  //    correctly skipped: they are re-derived from the policy on every apply.
+  const giftIds = new Set<string>();
+  for (const g of tree.gifts ?? []) {
+    if (g.recipientEntityId === entity.id) giftIds.add(g.id);
+  }
+  for (const e of tree.giftEvents ?? []) {
+    if (e.recipientEntityId !== entity.id) continue;
+    const sourceId = sourceGiftIdOf(e);
+    if (sourceId) giftIds.add(sourceId);
+  }
+  for (const id of giftIds) muts.push({ kind: "gift-upsert", id, value: null });
+
+  // 5. Wills — bequest recipients and residuary recipients are separate arrays.
+  //    A bequest left with no recipients is KEPT: the engine already treats a
+  //    clause with no effective allocation as not-fired and lets the asset flow
+  //    on to the residuary (death-event/shared.ts:974-981), so dropping the row
+  //    would throw away the advisor's clause for no gain.
+  const namesTrust = (r: { recipientKind: string; recipientId: string | null }) =>
+    r.recipientKind === "entity" && r.recipientId === entity.id;
+  for (const w of tree.wills ?? []) {
+    const residuary = (w.residuaryRecipients ?? []).filter((r) => !namesTrust(r));
+    const touchesBequest = w.bequests.some((b) => b.recipients.some(namesTrust));
+    if (!touchesBequest && residuary.length === (w.residuaryRecipients ?? []).length) continue;
+    muts.push({
+      kind: "will-upsert",
+      id: w.id,
+      value: {
+        ...w,
+        bequests: w.bequests.map((b) => ({
+          ...b,
+          recipients: b.recipients.filter((r) => !namesTrust(r)),
+        })),
+        // Written only when the will already had the key: adding an empty array
+        // where there was `undefined` would diff as a field change on save.
+        ...(w.residuaryRecipients ? { residuaryRecipients: residuary } : {}),
+      },
+    });
+  }
+
+  // 6. The entity itself — always last.
+  muts.push({ kind: "entity-upsert", id: entity.id, value: null });
+  return muts;
+}
+
+/** The gift row a gift event came from. A bundled liability event names its
+ *  parent asset gift; a fanned series occurrence names the series. An event with
+ *  none of the three was synthesized (a policy premium gift) and has no row to
+ *  delete. */
+function sourceGiftIdOf(e: GiftEvent): string | undefined {
+  if (e.kind === "liability") return e.parentGiftId;
+  if (e.kind === "cash") return e.sourceGiftId ?? e.seriesId;
+  return e.sourceGiftId;
+}
+
+/** True when this ownership slice belongs to the trust. A `gifted_away` slice
+ *  naming the trust counts: that is how a gift INTO a trust is titled, and the
+ *  naive `kind === "entity"` test leaves it pointing at a deleted entity. */
+function isTrustSlice(o: AccountOwner | EntityOwner, entityId: string): boolean {
+  if (o.kind === "entity") return o.entityId === entityId;
+  if (o.kind === "gifted_away") return o.recipient.id === entityId;
+  return false;
+}
+
+/** Move the trust's slices to the heir and leave every other slice — and its
+ *  exact percent — untouched. A co-owner's half is real money, and `owners:
+ *  [heir]` would hand it over. Slices landing on the heir, including one the
+ *  heir already held, collapse into a single row at their summed percent so the
+ *  row never carries the same person twice. */
+function returnOwnersToHeir<O extends AccountOwner | EntityOwner>(
+  owners: readonly O[] | undefined,
+  entityId: string,
+  heirId: string,
+): (O | HeirOwner)[] {
+  const kept: (O | HeirOwner)[] = [];
+  let heirIndex = -1;
+  let heirPercent = 0;
+  for (const owner of owners ?? []) {
+    const o: AccountOwner | EntityOwner = owner;
+    const isHeirRow = o.kind === "family_member" && o.familyMemberId === heirId;
+    if (isTrustSlice(o, entityId) || isHeirRow) {
+      if (heirIndex === -1) heirIndex = kept.length;
+      heirPercent += o.percent;
+      continue;
+    }
+    kept.push(owner);
+  }
+  if (heirIndex === -1) return kept;
+  kept.splice(heirIndex, 0, {
+    kind: "family_member",
+    familyMemberId: heirId,
+    percent: heirPercent,
+  });
+  return kept;
+}
+
+/** The family member a dissolved trust's assets return to. A third-party trust
+ *  (one a parent funded for the client) records no grantor, so the primary
+ *  client is the documented fallback rather than a silent no-op. */
+function resolveGrantorFamilyMemberId(tree: ClientData, entity: EntitySummary): string {
+  const role = entity.grantor ?? "client";
+  const members = tree.familyMembers ?? [];
+  const fm = members.find((m) => m.role === role) ?? members.find((m) => m.role === "client");
+  if (!fm) throw new Error("cannot dissolve a trust in a household with no client family member");
+  return fm.id;
 }

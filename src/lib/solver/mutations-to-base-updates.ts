@@ -46,6 +46,12 @@ const NON_BASE_SAVABLE = new Set<SolverMutation["kind"]>([
   "gift-upsert",
   "external-beneficiary-upsert",
   "entity-upsert",
+  // A will edited by the dissolve-trust lever. `wills` and its bequest /
+  // recipient child tables have no base-write path in the switch below, so
+  // reporting savable would make Save-to-base drop the cleared recipients AND
+  // clear the edit from the working set — leaving a bequest that pays to a
+  // trust the same save just deleted. It round-trips via save-as-scenario.
+  "will-upsert",
   "relocation-upsert",
   // A liability retitled into a trust has no base-write path in the switch
   // below — reporting savable would make Save-to-base drop it AND clear it from

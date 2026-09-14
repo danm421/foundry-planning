@@ -10,7 +10,10 @@ import {
   isRevocableTagEligible,
   buildRevocableTagMutations,
 } from "@/lib/solver/estate-levers";
-import { buildRevertFundingMutation } from "@/lib/solver/trust-levers";
+import {
+  buildDissolveTrustMutations,
+  buildRevertFundingMutation,
+} from "@/lib/solver/trust-levers";
 import type { SolverTrustDraft } from "./solver-trust-form";
 import {
   currentTrustEntities,
@@ -120,13 +123,23 @@ export function useSolverEstateEditor({
   }
 
   function removeTrust(draft: SolverTrustDraft) {
-    // Revert each funded account, then delete the entity.
-    for (const orig of draft.fundedOriginals) onChange(buildRevertFundingMutation(orig));
-    onChange({ kind: "entity-upsert", id: draft.entity.id, value: null });
-    // CLT: also clear the auto-emitted remainder-interest gift so it doesn't
-    // orphan onto a deleted entity.
-    if (draft.remainderGiftId)
-      onChange({ kind: "gift-upsert", id: draft.remainderGiftId, value: null });
+    // The lever reads the WORKING tree, so it reaches everything the draft
+    // cannot see: an account or liability retitled into this trust after it was
+    // created, a will bequest or another trust's beneficiary list naming it, and
+    // a CLT's auto-emitted remainder-interest gift — that gift materialises into
+    // the working tree's `gifts` with this entity as its recipient, which is why
+    // `draft.remainderGiftId` no longer needs a clearing of its own.
+    const entity =
+      (clientData.entities ?? []).find((e) => e.id === draft.entity.id) ?? draft.entity;
+    const originals = new Map(draft.fundedOriginals.map((a) => [a.id, a]));
+    for (const m of buildDissolveTrustMutations(clientData, entity)) {
+      // A trust funded in THIS session knows each account's exact prior owners.
+      // Restoring them beats the lever's "return it to the grantor" rule, which
+      // would hand a 50/50 joint account entirely to one spouse. Swapped in
+      // place so the lever's ordering — entity delete last — is preserved.
+      const original = m.kind === "account-upsert" ? originals.get(m.id) : undefined;
+      onChange(original ? buildRevertFundingMutation(original) : m);
+    }
     setTrusts((ts) => ts.filter((t) => t.entity.id !== draft.entity.id));
   }
 
