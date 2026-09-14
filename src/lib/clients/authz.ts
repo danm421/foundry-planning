@@ -7,17 +7,27 @@ import { ForbiddenError } from "@/lib/authz";
 import { resolveVisibleAdvisorIds, VISIBLE_ALL } from "@/lib/visibility";
 import { resolveSharedClientAccess, type SharePermission } from "./shared-access";
 
-// Can the current caller see this advisor's client? Admin/owner → always.
-// Staff → their mapped set. Advisor (org:member) in a siloed firm → only their
-// own advisorId (share-based access is resolved separately by the caller).
-// The single home for "can this caller see this advisor's client".
+export type Principal = {
+  userId: string;
+  orgId: string | null;
+  orgRole: string | null;
+};
+
+/** Read the ambient Clerk session as a Principal. The session doorway. */
+async function principalFromSession(): Promise<Principal | null> {
+  const { userId, orgId, orgRole } = await auth();
+  if (!userId) return null;
+  return { userId, orgId: orgId ?? null, orgRole: orgRole ?? null };
+}
+
+// Can this principal see this advisor's client? Admin/owner → always.
+// Staff → their mapped set. Advisor in a siloed firm → only their own advisorId.
 async function callerMaySeeAdvisor(
+  p: Principal,
   advisorId: string,
   firmId: string,
 ): Promise<boolean> {
-  const { userId, orgRole } = await auth();
-  if (!userId) return false;
-  const visible = await resolveVisibleAdvisorIds(userId, orgRole, firmId);
+  const visible = await resolveVisibleAdvisorIds(p.userId, p.orgRole ?? undefined, firmId);
   if (visible === VISIBLE_ALL) return true;
   return visible.has(advisorId);
 }
@@ -25,6 +35,41 @@ async function callerMaySeeAdvisor(
 export type ClientAccessCheck =
   | { ok: false }
   | { ok: true; permission: SharePermission; firmId: string; access: "own" | "shared" };
+
+/**
+ * Principal-taking core of the access check. Both doorways route here: the
+ * Clerk-session path via `verifyClientAccess`, and the MCP bearer-token path
+ * via an `McpPrincipal`. Keeping one implementation is the point — the two
+ * must never drift.
+ */
+export async function verifyClientAccessFor(
+  p: Principal,
+  clientId: string,
+): Promise<ClientAccessCheck> {
+  const [client] = await db
+    .select({ advisorId: clients.advisorId, firmId: clients.firmId })
+    .from(clients)
+    .where(eq(clients.id, clientId));
+  if (!client) return { ok: false };
+
+  if (p.orgId && client.firmId === p.orgId) {
+    if (await callerMaySeeAdvisor(p, client.advisorId, client.firmId)) {
+      return { ok: true, permission: "edit", firmId: client.firmId, access: "own" };
+    }
+    // fall through to share resolution (an intra-firm per-client share may grant access)
+  }
+
+  const { sharedClientIds, permissionByClientId } = await resolveSharedClientAccess(p.userId);
+  if (sharedClientIds.has(clientId)) {
+    return {
+      ok: true,
+      permission: permissionByClientId.get(clientId) ?? "view",
+      firmId: client.firmId,
+      access: "shared",
+    };
+  }
+  return { ok: false };
+}
 
 /**
  * Non-throwing client access check. Own-firm access depends on ownership,
@@ -35,27 +80,9 @@ export type ClientAccessCheck =
  * require `permission === "edit"`.
  */
 export async function verifyClientAccess(clientId: string): Promise<ClientAccessCheck> {
-  const { userId, orgId } = await auth();
-  if (!userId) return { ok: false };
-
-  const [client] = await db
-    .select({ advisorId: clients.advisorId, firmId: clients.firmId })
-    .from(clients)
-    .where(eq(clients.id, clientId));
-  if (!client) return { ok: false };
-
-  if (orgId && client.firmId === orgId) {
-    if (await callerMaySeeAdvisor(client.advisorId, client.firmId)) {
-      return { ok: true, permission: "edit", firmId: client.firmId, access: "own" };
-    }
-    // fall through to share resolution (an intra-firm per-client share may grant access)
-  }
-
-  const { sharedClientIds, permissionByClientId } = await resolveSharedClientAccess(userId);
-  if (sharedClientIds.has(clientId)) {
-    return { ok: true, permission: permissionByClientId.get(clientId) ?? "view", firmId: client.firmId, access: "shared" };
-  }
-  return { ok: false };
+  const p = await principalFromSession();
+  if (!p) return { ok: false };
+  return verifyClientAccessFor(p, clientId);
 }
 
 export type ClientAccess = {
@@ -78,23 +105,23 @@ export type ClientAccess = {
  * since an intra-firm per-client share can still grant access.
  */
 export async function requireClientAccess(clientId: string): Promise<ClientAccess> {
-  const { userId, orgId } = await auth();
-  if (!userId) throw new UnauthorizedError();
+  const p = await principalFromSession();
+  if (!p) throw new UnauthorizedError();
 
   // Load by id ONLY — cross-tenant grants mean we cannot pre-filter by firm.
   const [client] = await db.select().from(clients).where(eq(clients.id, clientId));
   if (!client) throw new ForbiddenError("Client not found or access denied");
 
   // Own-firm path: ownership/admin/silo rules, full edit.
-  if (orgId && client.firmId === orgId) {
-    if (await callerMaySeeAdvisor(client.advisorId, client.firmId)) {
+  if (p.orgId && client.firmId === p.orgId) {
+    if (await callerMaySeeAdvisor(p, client.advisorId, client.firmId)) {
       return { client, firmId: client.firmId, permission: "edit", access: "own" };
     }
     // fall through to share resolution (an intra-firm per-client share may grant access)
   }
 
   // Cross-firm path: consult the share resolver.
-  const { sharedClientIds, permissionByClientId } = await resolveSharedClientAccess(userId);
+  const { sharedClientIds, permissionByClientId } = await resolveSharedClientAccess(p.userId);
   if (sharedClientIds.has(clientId)) {
     return {
       client,
