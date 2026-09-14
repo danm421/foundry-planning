@@ -92,6 +92,16 @@ export async function annotateMatches(args: {
  * is the same hazard already met once on this feature and the shape a fix would
  * take: merge the changed rows onto a FRESH read by row id, never write back a
  * whole array computed from a stale one.
+ *
+ * ⚠️ The sequential loop in `use-map-rows.ts` does NOT close that race, and
+ * must not be described as doing so (final review, explicit verdict). It is a
+ * BROWSER guard on one surface; nothing server-side enforces one caller at a
+ * time, and `PATCH /chat/map-pass` — which the same loop fires once per
+ * committed row — rewrites this column too, alongside `chat/turn` and
+ * `chat/finalize`. The follow-up has to cover the PATCH leg as well as this
+ * one. Merging by `rowId` below is the cheap in-branch mitigation, not the fix:
+ * it bounds the growth and makes the stamp unambiguous, but two concurrent
+ * writers still lose one side.
  */
 export async function runMapEntityPass(args: {
   importId: string;
@@ -131,9 +141,27 @@ export async function runMapEntityPass(args: {
   // A NEW object, not `stored` with entries assigned into it. The merge must not
   // touch what was read: a refused write has to leave the snapshot exactly as it
   // found it, or "nothing was written" stops being provable in a caller or a test.
+  //
+  // MERGED BY `rowId`, not appended (final review I5, Ruling 37). A `rowId` is
+  // `${fileId}:${entity}:${index}` and is stable across a re-read of the same
+  // file, so a blind append grew this column by a full copy of the same rows on
+  // every re-run — and PATCH's `.find(rowId)` then stamped whichever duplicate
+  // sorted first rather than the row the advisor committed. Rows from a
+  // DIFFERENT file carry a different id and are untouched, which is what keeps
+  // a second file's pass additive.
+  //
+  // The incoming copy WINS: a re-read is the newer statement of what the
+  // document says, and letting the stored copy survive would show the advisor a
+  // value the file no longer carries. It also drops any `match.existingId` the
+  // PATCH stamped, which is correct for the same reason `useMapRows` clears
+  // `committedRowIds` on a re-run — the id is positional, so a different policy
+  // can land at that index, and inheriting the stamp would render "Committed"
+  // with nothing written behind it.
   const entityRows: RowsByEntity = { ...stored };
   for (const [entityId, entityRowList] of Object.entries(rows)) {
-    entityRows[entityId] = [...(stored[entityId] ?? []), ...entityRowList];
+    const merged = new Map((stored[entityId] ?? []).map((r) => [r.rowId, r] as const));
+    for (const incoming of entityRowList) merged.set(incoming.rowId, incoming);
+    entityRows[entityId] = [...merged.values()];
   }
 
   const written = await db

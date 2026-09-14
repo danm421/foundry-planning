@@ -180,6 +180,56 @@ describe("useMapRows — runPass", () => {
   });
 });
 
+/**
+ * Final review I5 / Ruling 37, the browser half. `PATCH` stamped
+ * `match.existingId` into `chat.entityRows` and `runMapEntityPass` persisted
+ * rows there — and NOTHING read that column back. The page passed no map rows
+ * and this hook started at `{}`, so a reload lost the card entirely, "Re-run
+ * extraction" offered the same policy as uncommitted, and committing it wrote
+ * a SECOND account + policy pair. The only guard was in-memory.
+ */
+describe("useMapRows — rehydration", () => {
+  it("starts from the rows already stored on the import", () => {
+    const { result } = renderHook(() =>
+      useMapRows({ clientId: "c1", importId: "i1", initialRows: { disability_policy: [d1, d2] } }),
+    );
+    expect(result.current.rows.disability_policy.map((r) => r.rowId)).toEqual([d1.rowId, d2.rowId]);
+  });
+
+  it("locks a stored row the PATCH already stamped, so a reload cannot re-arm the duplicate", () => {
+    const committed = { ...d1, match: { kind: "exact" as const, existingId: "dis_9" } };
+    const { result } = renderHook(() =>
+      useMapRows({
+        clientId: "c1",
+        importId: "i1",
+        initialRows: { disability_policy: [committed, d2] },
+      }),
+    );
+    // ONLY the stamped one. Seeding every row would report an uncommitted
+    // policy as written; seeding none is the duplicate this closes.
+    expect(result.current.committedRowIds).toEqual([committed.rowId]);
+  });
+
+  it("clears the rehydrated lock when the pass re-runs", async () => {
+    const committed = { ...d1, match: { kind: "exact" as const, existingId: "dis_9" } };
+    const { result } = renderHook(() =>
+      useMapRows({ clientId: "c1", importId: "i1", initialRows: { disability_policy: [committed] } }),
+    );
+    expect(result.current.committedRowIds).toEqual([committed.rowId]);
+
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({ rows: { disability_policy: [d1] }, warnings: [] }),
+    );
+    await act(async () => {
+      await result.current.runPass(["f1"]);
+    });
+
+    // Same reason the in-session reset exists: `rowId` is POSITIONAL, so a
+    // re-read can put a different policy at that index.
+    expect(result.current.committedRowIds).toEqual([]);
+  });
+});
+
 describe("useMapRows — commitRows", () => {
   /** Load one real row through the pass, then swap in the caller's own
    *  fetch behaviour for the commit half. */

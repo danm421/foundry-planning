@@ -6,7 +6,7 @@ import UploadZone, { type InitialUploadedFile } from "@/components/import/upload
 import { StepLine } from "@/components/statement-chat/step-line";
 import AccountsTable from "@/components/statement-chat/accounts-table";
 import EntityTables from "@/components/statement-chat/entity-tables";
-import { useMapRows } from "@/components/statement-chat/use-map-rows";
+import { useMapRows, type RowsByEntity } from "@/components/statement-chat/use-map-rows";
 import { ChatTranscript } from "@/components/statement-chat/chat-transcript";
 import { ChatComposer } from "@/components/statement-chat/chat-composer";
 import { useChatCommit, type ChatCommitResult } from "@/components/statement-chat/use-chat-commit";
@@ -69,6 +69,14 @@ interface ChatSurfaceProps {
    * before the first row renders.
    */
   reviewContext?: ChatReviewContext;
+  /**
+   * The map-driven rows already stored on this import under
+   * `chat.entityRows`, loaded by the page alongside `reviewContext` (final
+   * review I5, Ruling 37). Without them a revisit lost the policies card and
+   * re-armed a commit that had already written its record — the column was
+   * written by two routes and read by nobody.
+   */
+  initialMapRows?: RowsByEntity;
 }
 
 export function ChatSurface({
@@ -77,6 +85,7 @@ export function ChatSurface({
   initialFiles,
   initialExtractHoldings,
   reviewContext = EMPTY_CHAT_REVIEW_CONTEXT,
+  initialMapRows,
 }: ChatSurfaceProps) {
   const [uploadedCount, setUploadedCount] = useState(initialFiles.length);
   // The map pass is per FILE (one POST each), so the surface has to carry the
@@ -129,7 +138,7 @@ export function ChatSurface({
     committedRowIds: mapCommittedRowIds,
     runPass: runMapPass,
     commitRows: commitMapRows,
-  } = useMapRows({ clientId, importId });
+  } = useMapRows({ clientId, importId, initialRows: initialMapRows });
 
   // Sends a turn and adopts what comes back (Task 11b, Steps 2/3). On the
   // FIRST turn that has anything to adopt (`result` was still null — a

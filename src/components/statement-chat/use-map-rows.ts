@@ -24,11 +24,47 @@ export type RowsByEntity = Record<string, CandidateRow[]>;
  * (it is `kind: "object"`), which is the field most likely to come back missing
  * from a real statement.
  */
-export function useMapRows({ clientId, importId }: { clientId: string; importId: string }) {
-  const [rows, setRows] = useState<RowsByEntity>({});
+export function useMapRows({
+  clientId,
+  importId,
+  initialRows,
+}: {
+  clientId: string;
+  importId: string;
+  /**
+   * The rows already stored on the import under `chat.entityRows`, loaded by
+   * the page (final review I5, Ruling 37).
+   *
+   * Before this, NOTHING read that column back: `runMapEntityPass` wrote rows
+   * there and `PATCH` stamped `match.existingId` onto them, and a reload still
+   * started at `{}`. The policies card vanished, "Re-run extraction" offered
+   * the same policy as uncommitted and `new` (life insurance has no
+   * `identity`), and committing it wrote a SECOND account + policy pair.
+   *
+   * KNOWN OVERLAP, and it is bounded: `linkCreated` writes the identical
+   * `{ kind: "exact", existingId }` that `matchByIdentity` writes for a row
+   * that merely MATCHES a record the client already has, so the seed below
+   * cannot tell "I committed this" from "this already existed". Such a row then
+   * reads "Committed" rather than the more informative "already exists —
+   * update it on the Details tab". It cannot produce a duplicate either way:
+   * Ruling 34 blocks an `exact` match from committing at all. Separating the
+   * two needs a mark of its own on the stamp, which is a payload change.
+   */
+  initialRows?: RowsByEntity;
+}) {
+  const [rows, setRows] = useState<RowsByEntity>(initialRows ?? {});
   const [warnings, setWarnings] = useState<string[]>([]);
   const [status, setStatus] = useState<MapRowsStatus>("idle");
-  const [committedRowIds, setCommittedRowIds] = useState<string[]>([]);
+  // Seeded from the rows that already carry a created record's id, so a reload
+  // cannot re-arm a commit that already happened. `useState`'s initialiser runs
+  // once: a later `runPass` deliberately clears this (a `rowId` is positional —
+  // see `runPass` below), and re-seeding on every render would fight it.
+  const [committedRowIds, setCommittedRowIds] = useState<string[]>(() =>
+    Object.values(initialRows ?? {})
+      .flat()
+      .filter((row) => row.match?.kind === "exact" && row.match.existingId)
+      .map((row) => row.rowId),
+  );
 
   const mapPassUrl = `/api/clients/${clientId}/imports/${importId}/chat/map-pass`;
 

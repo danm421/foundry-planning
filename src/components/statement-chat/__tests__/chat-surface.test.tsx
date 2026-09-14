@@ -1608,6 +1608,49 @@ describe("ChatSurface — the map-driven review tables (Task 14b)", () => {
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 
+  /**
+   * Final review I5 / Ruling 37, the wiring half. Rows persisted under
+   * `chat.entityRows` had no reader at all — the page passed none and
+   * `useMapRows` started empty — so coming back to the import lost the
+   * policies card, and re-running the extraction re-armed a commit that had
+   * already written its record.
+   */
+  it("renders the stored policies on mount, with no extraction run", async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+    render(
+      <ChatSurface
+        clientId="c1"
+        importId="i1"
+        initialFiles={twoFiles}
+        initialMapRows={{ disability_policy: [policyRow("f1:disability_policy:0", "Group LTD")] }}
+      />,
+    );
+
+    expect(await screen.findByRole("table", { name: /disability policy/i })).toBeInTheDocument();
+    expect(screen.getByText("Group LTD")).toBeInTheDocument();
+    // Nothing was extracted in this session — the card is on the STORED rows.
+    expect(mapPassCalls()).toHaveLength(0);
+  });
+
+  it("shows a stored row the PATCH already stamped as committed", async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+    const stamped = {
+      ...policyRow("f1:disability_policy:0", "Group LTD"),
+      match: { kind: "exact" as const, existingId: "dis_9" },
+    };
+    render(
+      <ChatSurface
+        clientId="c1"
+        importId="i1"
+        initialFiles={twoFiles}
+        initialMapRows={{ disability_policy: [stamped] }}
+      />,
+    );
+
+    const target = await screen.findByRole("row", { name: /Group LTD/ });
+    expect(within(target).getByRole("button", { name: /committed/i })).toBeDisabled();
+  });
+
   it("surfaces the pass's warnings where the advisor can see them", async () => {
     vi.mocked(fetch).mockImplementation((url) => {
       if (String(url).endsWith("/chat/extract")) {

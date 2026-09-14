@@ -165,6 +165,33 @@ describe("runMapEntityPass persistence", () => {
     const rows = (payload.chat.entityRows as Record<string, CandidateRow[]>).disability_policy;
     expect(rows.map((r) => r.rowId)).toEqual(["f1:disability_policy:0", "f2:disability_policy:0"]);
   });
+
+  /**
+   * Final review I5 / Ruling 37, the server half. The merge used to be a blind
+   * append, so every re-run grew `chat.entityRows` by a full copy of the same
+   * rows with DUPLICATE `rowId`s — and PATCH's `.find(rowId)` then stamped
+   * whichever copy happened to sort first, which is not necessarily the one
+   * the advisor committed.
+   */
+  it("MERGES a re-run of the same file by rowId instead of storing a second copy", async () => {
+    await runMapEntityPass(ARGS);
+
+    // The SAME file read again. `rowId` is `${fileId}:${entity}:${index}` —
+    // positional — so a re-read produces the same id with new content.
+    vi.mocked(extractMapEntities).mockResolvedValue({
+      rows: { disability_policy: [candidate("Group LTD, re-read")] },
+      promptVersion: "map:test",
+      warnings: [],
+    });
+    await runMapEntityPass(ARGS);
+
+    const payload = state.imports[0].payloadJson as Record<string, Record<string, unknown>>;
+    const rows = (payload.chat.entityRows as Record<string, CandidateRow[]>).disability_policy;
+    expect(rows).toHaveLength(1);
+    // And it is the FRESH read that survives — a merge that let the stored
+    // copy win would show the advisor a row the document no longer says.
+    expect(rows[0].values.find((v) => v.key === "name")!.value).toBe("Group LTD, re-read");
+  });
 });
 
 /**
