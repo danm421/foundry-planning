@@ -54,6 +54,22 @@ export function renderBillingEmail(
   if (kind === "trial_ending_3d") {
     const trialEnd = str(payload, "trialEnd");
     const when = trialEnd ? trialEnd.slice(0, 10) : "in 3 days";
+
+    // A trial with a cancellation already scheduled does not convert, so the
+    // renewal copy below would be the exact opposite of what happens to them.
+    // The sender reads `canceled` off the live Stripe subscription; absent or
+    // false, the subscription is still on track to start.
+    if (payload.canceled === true) {
+      return {
+        subject: "Your Foundry Planning access ends soon",
+        html: shell(
+          "Your free trial is ending",
+          `<p style="font-size:14px;line-height:1.6;">Your trial ends ${when}. Because your subscription is canceled, it won't start and your firm will lose access on that date. Your plans stay read-only for 30 days afterwards.</p><p style="font-size:14px;line-height:1.6;">Changed your mind? Restart your subscription from your billing settings before ${when} and nothing is interrupted.</p>`,
+          { href: billingPage, label: "Restart my subscription" },
+        ),
+      };
+    }
+
     return {
       subject: "Your Foundry Planning trial ends soon",
       html: shell(
