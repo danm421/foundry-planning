@@ -16,9 +16,32 @@ function row(entityId: string, rowId: string, values: Record<string, unknown>, e
   };
 }
 
+/**
+ * Rows the entity's OWN create route would accept. Since I4 (Ruling 36) the
+ * table asks `buildWriteRequest` for the final verdict, so a fixture that
+ * fills only the map-`required` fields is blocked for a reason no test here is
+ * about — and an "is the button enabled?" assertion on such a row would pass
+ * or fail for the wrong cause.
+ */
+const VALID_LIFE = {
+  name: "Term Life 20",
+  policyType: "term",
+  insuredPerson: "client",
+  ownerRef: { kind: "joint" },
+  faceValue: 500000,
+  termIssueYear: 2020,
+  termLengthYears: 20,
+};
+const VALID_DISABILITY = {
+  name: "Group LTD",
+  insured: "client",
+  carrier: "Unum",
+  ltdBenefitPeriodAge: 65,
+};
+
 const rows = {
-  life_insurance_policy: [row("life_insurance_policy", "l1", { name: "Term Life 20", faceValue: 500000 })],
-  disability_policy: [row("disability_policy", "d1", { name: "Group LTD", carrier: "Unum" })],
+  life_insurance_policy: [row("life_insurance_policy", "l1", VALID_LIFE)],
+  disability_policy: [row("disability_policy", "d1", VALID_DISABILITY)],
 };
 
 const props = { rows, committedRowIds: [], onCommitRows: vi.fn(), onEditCell: vi.fn() };
@@ -63,7 +86,7 @@ describe("EntityTables", () => {
   });
 
   it("marks a low-confidence cell for review without pre-selecting discard", () => {
-    const shaky = { life_insurance_policy: [row("life_insurance_policy", "l1", { name: "Term Life 20", faceValue: 500000 }, { rowConfidence: 0.4 })] };
+    const shaky = { life_insurance_policy: [row("life_insurance_policy", "l1", VALID_LIFE, { rowConfidence: 0.4 })] };
     render(<EntityTables {...props} rows={shaky} />);
     const target = screen.getByRole("row", { name: /Term Life 20/ });
     expect(within(target).getByTestId("needs-review")).toBeInTheDocument();
@@ -79,7 +102,7 @@ describe("EntityTables", () => {
    * semantics); the honest answer is to refuse and name where to finish.
    */
   it("blocks commit on an exact match and never promises an update", () => {
-    const matched = { life_insurance_policy: [row("life_insurance_policy", "l1", { name: "Term Life 20", faceValue: 1 }, { match: { kind: "exact", existingId: "p1" } })] };
+    const matched = { life_insurance_policy: [row("life_insurance_policy", "l1", VALID_LIFE, { match: { kind: "exact", existingId: "p1" } })] };
     render(<EntityTables {...props} rows={matched} />);
     const target = screen.getByRole("row", { name: /Term Life 20/ });
     expect(within(target).getByRole("button", { name: /commit/i })).toBeDisabled();
@@ -101,10 +124,9 @@ describe("EntityTables", () => {
     const flagged = {
       life_insurance_policy: [
         {
-          ...row("life_insurance_policy", "l1", { name: "Term Life 20", faceValue: 500000 }),
+          ...row("life_insurance_policy", "l1", VALID_LIFE),
           values: [
-            { key: "name", value: "Term Life 20", snippet: "x", confidence: 0.9 },
-            { key: "faceValue", value: 500000, snippet: "x", confidence: 0.9 },
+            ...row("life_insurance_policy", "l1", VALID_LIFE).values,
             // The exact shape `confidence.test.ts` treats as ordinary: an
             // OPTIONAL value the model gave no snippet for.
             { key: "cashValue", value: 12345, snippet: null, confidence: 0.9, issue: "ungrounded" as const },
@@ -170,7 +192,7 @@ describe("EntityTables", () => {
         row(
           "life_insurance_policy",
           "l1",
-          { name: "Term Life 20", faceValue: 500000 },
+          VALID_LIFE,
           { match: { kind: "fuzzy", candidates: [{ id: "p1", score: 0.6 }] } },
         ),
       ],
@@ -179,6 +201,24 @@ describe("EntityTables", () => {
     const target = screen.getByRole("row", { name: /Term Life 20/ });
     expect(within(target).getByRole("button", { name: /commit/i })).toBeDisabled();
     expect(within(target).queryByText(/update/i)).not.toBeInTheDocument();
+  });
+
+  /**
+   * Final review I4 / Ruling 36, on the surface. Every map-`required` field is
+   * filled, nothing is flagged and nothing is matched — and the route still
+   * 400s, because a term policy needs a term issue year. The table asks
+   * `buildWriteRequest` for the last word rather than keeping a second copy of
+   * its rules, so this can never drift from what the commit would actually do.
+   */
+  it("blocks commit on a row the route's own create schema would refuse", () => {
+    const { termIssueYear: _omitted, ...noIssueYear } = VALID_LIFE;
+    const incomplete = { life_insurance_policy: [row("life_insurance_policy", "l1", noIssueYear)] };
+    render(<EntityTables {...props} rows={incomplete} />);
+    const target = screen.getByRole("row", { name: /Term Life 20/ });
+    expect(within(target).getByRole("button", { name: /commit/i })).toBeDisabled();
+    expect(
+      within(target).getByText(/Term issue year: Term policies need a term issue year/i),
+    ).toBeInTheDocument();
   });
 
   // Important 2: the brief requires fields past the column cap to be

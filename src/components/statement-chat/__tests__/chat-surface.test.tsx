@@ -1368,7 +1368,11 @@ describe("ChatSurface — the map-driven review tables (Task 14b)", () => {
       rowId,
       values: [
         { key: "name", value: name, snippet: "x", confidence: 0.9 },
-        { key: "insured", value: "Client", snippet: "x", confidence: 0.9 },
+        { key: "insured", value: "client", snippet: "x", confidence: 0.9 },
+        // Required by `disabilityPolicyCreateSchema`'s cross-field rule at the
+        // default "to_age" benefit period, which `buildWriteRequest` now
+        // validates against (I4).
+        { key: "ltdBenefitPeriodAge", value: 65, snippet: "x", confidence: 0.9 },
       ],
       missingRequired: [],
       rowConfidence: 0.9,

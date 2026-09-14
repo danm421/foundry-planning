@@ -17,9 +17,23 @@ function row(values: Record<string, unknown>, overrides: Partial<CandidateRow> =
   };
 }
 
+/**
+ * A term life policy the route's own `insurancePolicyCreateSchema` accepts.
+ * Every key here is a real map field; drop any one and the schema refuses.
+ */
+const VALID_TERM_POLICY = {
+  name: "Term 20",
+  policyType: "term",
+  insuredPerson: "client",
+  ownerRef: { kind: "joint" },
+  faceValue: 500000,
+  termIssueYear: 2020,
+  termLengthYears: 20,
+};
+
 describe("buildWriteRequest", () => {
   it("POSTs the entity's create route with a plain object body", () => {
-    const result = buildWriteRequest({ entity: life, row: row({ name: "Term 20", faceValue: 500000 }) });
+    const result = buildWriteRequest({ entity: life, row: row(VALID_TERM_POLICY) });
     expect(result).toMatchObject({
       ok: true,
       method: "POST",
@@ -52,6 +66,10 @@ describe("buildWriteRequest", () => {
   it("drops an update-only field on create and says so, rather than silently", () => {
     const entity = {
       ...life,
+      // `fields` is replaced wholesale, so life's own create schema no longer
+      // describes this entity — carrying it over would refuse the fixture on
+      // keys it deliberately does not have (I4).
+      createSchema: undefined,
       fields: [
         { key: "name", label: "Name", kind: "string" as const, required: true },
         { key: "notes", label: "Notes", kind: "text" as const, appliesTo: "update" as const },
@@ -72,6 +90,9 @@ describe("buildWriteRequest", () => {
       fields: [{ key: "assetClass", label: "Asset class", kind: "string" as const }],
     };
     const result = buildWriteRequest({ entity, row: row({ assetClass: "equity" }) });
+    // Deferred #7, MUST-FIX: without this line an `{ ok: false }` result made
+    // the whole test execute ZERO assertions and still pass.
+    expect(result.ok).toBe(true);
     if (result.ok) expect(result.body).toEqual({ allocations: [{ assetClass: "equity" }] });
   });
 
@@ -115,6 +136,9 @@ describe("buildWriteRequest", () => {
       row: row({ beneficiary: "Jane" }),
       existingSet: [{ beneficiary: "John" }],
     });
+    // Deferred #7, MUST-FIX: the guarded body assertion needs its own
+    // `ok === true` claim, not one folded into a `toMatchObject`.
+    expect(result.ok).toBe(true);
     expect(result).toMatchObject({ ok: true, method: "PUT" });
     if (result.ok) expect(result.body).toEqual([{ beneficiary: "John" }, { beneficiary: "Jane" }]);
   });
@@ -139,6 +163,60 @@ describe("buildWriteRequest", () => {
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/no create route/i);
+  });
+});
+
+/**
+ * Final review I4 / Ruling 36. Spec Layer 5: "`createSchema` — 35 entities
+ * have one; it is validated against before the request is sent." It never was,
+ * so a row with all five map-`required` fields filled passed every local check
+ * and 400'd at the route on a rule only the schema knows.
+ *
+ * NOT solved here, by ruling: `ownerRef`'s family/entity/external variants
+ * demand a real database UUID a model reading a PDF cannot produce, so only
+ * `{ kind: "joint" }` can ever succeed. That is a product limitation, filed
+ * rather than fixed.
+ */
+describe("buildWriteRequest against the route's own create schema", () => {
+  it("refuses a term policy with no term issue year, in the schema's own words", () => {
+    // I4 Scenario A, the common case: all five map-`required` fields present,
+    // `missingRequired` empty — and `validateTermFields` 400s at the route.
+    const { termIssueYear: _omitted, ...noIssueYear } = VALID_TERM_POLICY;
+    const result = buildWriteRequest({ entity: life, row: row(noIssueYear) });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/Term policies need a term issue year/);
+      // Named by the on-screen label, not the payload key.
+      expect(result.error).toMatch(/Term issue year/);
+    }
+  });
+
+  it("refuses a term policy that sets both a term length and end-at-retirement", () => {
+    // A cross-field rule NO amount of per-field required-ness can catch — the
+    // proof that this is the schema talking and not a second copy of the map.
+    const result = buildWriteRequest({
+      entity: life,
+      row: row({ ...VALID_TERM_POLICY, endsAtInsuredRetirement: true }),
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/not both/i);
+  });
+
+  it("accepts a term policy the create schema is satisfied by", () => {
+    // The other half: this must not become a blanket refusal.
+    const result = buildWriteRequest({ entity: life, row: row(VALID_TERM_POLICY) });
+    expect(result.ok).toBe(true);
+  });
+
+  it("refuses a disability policy whose insured is not one the route accepts", () => {
+    // A second entity, so the wiring is not a life-insurance special case.
+    const disability = findEntity("disability_policy")!;
+    const result = buildWriteRequest({
+      entity: disability,
+      row: { ...row({ name: "Group LTD", insured: "child" }), entityId: disability.id },
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/Who is covered: .*expected one of/i);
   });
 });
 

@@ -16,7 +16,13 @@ function jsonResponse(body: unknown, status = 200): Response {
 /** A disability_policy row — two required fields (`name`, `insured`), so a
  *  fixture that can actually be written stays small. Its create route returns
  *  the wrapped `{ policy: { … } }` shape, which is the half of `readCreatedId`
- *  a `{ id }`-only reader would silently fail on. */
+ *  a `{ id }`-only reader would silently fail on.
+ *
+ *  `insured` is the schema's own lowercase token. Since I4 (Ruling 36)
+ *  `buildWriteRequest` validates against `disabilityPolicyCreateSchema`, and
+ *  "Client" is not one of `["client","spouse"]` — the old fixture would have
+ *  400'd at the real route, which is exactly the class of row that fix now
+ *  refuses before the network call. */
 function row(rowId: string, values: Record<string, unknown>, extra: Partial<CandidateRow> = {}): CandidateRow {
   return {
     entityId: "disability_policy",
@@ -28,8 +34,12 @@ function row(rowId: string, values: Record<string, unknown>, extra: Partial<Cand
   };
 }
 
-const d1 = row("f1:disability_policy:0", { name: "Group LTD", insured: "Client" });
-const d2 = row("f2:disability_policy:0", { name: "Individual LTD", insured: "Spouse" });
+// `ltdBenefitPeriodAge` is not map-`required`, but `validateCrossFields` in
+// `disabilityPolicyCreateSchema` demands it whenever the LTD benefit period
+// mode is "to_age" — which is its DEFAULT. So `{ name, insured }` alone 400s
+// at the real route, and since I4 (Ruling 36) is refused before the call.
+const d1 = row("f1:disability_policy:0", { name: "Group LTD", insured: "client", ltdBenefitPeriodAge: 65 });
+const d2 = row("f2:disability_policy:0", { name: "Individual LTD", insured: "spouse", ltdBenefitPeriodAge: 67 });
 
 function bodyOf(init: unknown): Record<string, unknown> {
   return JSON.parse(String((init as RequestInit).body)) as Record<string, unknown>;
@@ -303,7 +313,7 @@ describe("useMapRows — commitRows", () => {
 
     // The SAME file re-read, and a different policy now sits at index 0 —
     // same rowId, different record, nothing committed for it.
-    const rerun = row(d1.rowId, { name: "A DIFFERENT policy", insured: "Spouse" });
+    const rerun = row(d1.rowId, { name: "A DIFFERENT policy", insured: "spouse", ltdBenefitPeriodAge: 65 });
     vi.mocked(fetch).mockResolvedValue(
       jsonResponse({ rows: { disability_policy: [rerun] }, warnings: [] }),
     );

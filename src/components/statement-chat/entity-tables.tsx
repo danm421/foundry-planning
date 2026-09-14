@@ -3,6 +3,7 @@
 import { findEntity, type DetailsTab } from "@/domain/forge/detail-fields";
 import { REVIEW_THRESHOLD } from "@/lib/entity-extraction";
 import type { CandidateRow } from "@/lib/entity-extraction/types";
+import { buildWriteRequest } from "@/lib/entity-writer";
 import { isAmbiguousMatch } from "@/lib/imports/commit/ambiguous-rows";
 import EntityTable from "./entity-table";
 import { columnsForEntity, overflowFields, renderOverflow, type CandidateRowView } from "./map-columns";
@@ -64,12 +65,13 @@ function toView(row: CandidateRow): CandidateRowView {
  *
  * ONE RULE, stated once: this table may never say "committable" where the
  * writer would refuse, or "will update" where the writer would create. The
- * four legs of `commitBlockedReason` below are the four ways
- * `buildWriteRequest` (`src/lib/entity-writer/build-request.ts`) can decline —
- * an `exact` match with no update leg (Ruling 34), an unresolved `fuzzy` match
- * (the SAME `isAmbiguousMatch` every commit module enforces, reused rather
- * than re-derived), a missing required field, and any flagged value
- * (Ruling 35). Add a refusal there and it belongs here too.
+ * legs of `commitBlockedReason` below name, in the advisor's own words, the
+ * refusals worth naming — an `exact` match with no update leg (Ruling 34), an
+ * unresolved `fuzzy` match (the SAME `isAmbiguousMatch` every commit module
+ * enforces, reused rather than re-derived), a missing required field, and any
+ * flagged value (Ruling 35) — and then ASK `buildWriteRequest`
+ * (`src/lib/entity-writer/build-request.ts`) for anything they missed, rather
+ * than keeping a second copy of its rules that can drift from it.
  */
 export default function EntityTables({
   rows,
@@ -163,7 +165,19 @@ export default function EntityTables({
                   );
                   return `Check ${named.join(", ")}`;
                 }
-                return null;
+                // Last leg: the WRITER's own verdict, asked rather than
+                // copied, so this table cannot drift from what Commit would
+                // actually do. It is the only thing that knows the ROUTE's own
+                // create schema (I4, Ruling 36) — a term policy with every
+                // map-`required` field filled still needs a term issue year,
+                // and a disability policy still needs an LTD benefit-period
+                // age. Nothing above can see either. `buildWriteRequest` is
+                // pure, so this costs one object build per row.
+                //
+                // The legs above are not redundant with it: they name fields
+                // by their on-screen labels, and it names payload keys.
+                const request = buildWriteRequest({ entity, row: source });
+                return request.ok ? null : request.error;
               }}
               rowNotice={(view) => {
                 const source = byRowId.get(view.__rowId);

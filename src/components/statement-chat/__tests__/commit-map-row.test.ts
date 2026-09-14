@@ -17,6 +17,23 @@ function row(values: Record<string, unknown>, overrides: Partial<CandidateRow> =
   };
 }
 
+/**
+ * A life policy `insurancePolicyCreateSchema` accepts. Since I4 (Ruling 36)
+ * `buildWriteRequest` validates against the route's own create schema, so a
+ * fixture that only fills the map-`required` fields is refused BEFORE the
+ * network call — which is the whole point of that fix, and means a test about
+ * what happens AFTER the request needs a body the route would have taken.
+ */
+const VALID_TERM_POLICY = {
+  name: "Term 20",
+  policyType: "term",
+  insuredPerson: "client",
+  ownerRef: { kind: "joint" },
+  faceValue: 500000,
+  termIssueYear: 2020,
+  termLengthYears: 20,
+};
+
 beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn());
 });
@@ -27,7 +44,7 @@ describe("commitMapRow", () => {
     const result = await commitMapRow({
       clientId: "c1",
       entity: life,
-      row: row({ name: "Term 20", faceValue: 500000 }),
+      row: row(VALID_TERM_POLICY),
     });
     expect(result.ok).toBe(true);
     const [url, init] = vi.mocked(fetch).mock.calls[0];
@@ -56,7 +73,7 @@ describe("commitMapRow", () => {
     const result = await commitMapRow({
       clientId: "c1",
       entity: life,
-      row: row({ name: "Term 20", faceValue: 1 }),
+      row: row(VALID_TERM_POLICY),
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/policyType/);
@@ -66,6 +83,9 @@ describe("commitMapRow", () => {
     vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => ({}) } as Response);
     const entity = {
       ...life,
+      // `fields` replaced wholesale — life's own create schema no longer
+      // describes this entity (I4).
+      createSchema: undefined,
       fields: [
         { key: "name", label: "Name", kind: "string" as const, required: true },
         { key: "notes", label: "Notes", kind: "text" as const, appliesTo: "update" as const },
@@ -125,7 +145,7 @@ describe("commitMapRow", () => {
     const result = await commitMapRow({
       clientId: "c1",
       entity: life,
-      row: row({ name: "Term 20", faceValue: 1 }),
+      row: row(VALID_TERM_POLICY),
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/offline/);
@@ -151,7 +171,7 @@ describe("commitMapRow — the created record's id", () => {
     const result = await commitMapRow({
       clientId: "c1",
       entity: life,
-      row: row({ name: "Term 20", faceValue: 1 }),
+      row: row(VALID_TERM_POLICY),
     });
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -169,7 +189,7 @@ describe("commitMapRow — the created record's id", () => {
     const result = await commitMapRow({
       clientId: "c1",
       entity: life,
-      row: row({ name: "Term 20", faceValue: 1 }),
+      row: row(VALID_TERM_POLICY),
     });
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.createdId).toBe("dis_1");
@@ -180,7 +200,7 @@ describe("commitMapRow — the created record's id", () => {
     const result = await commitMapRow({
       clientId: "c1",
       entity: life,
-      row: row({ name: "Term 20", faceValue: 1 }),
+      row: row(VALID_TERM_POLICY),
     });
     // The write LANDED. Reporting a successful write as a failure would send
     // the advisor back to click Commit again — the duplicate this whole
@@ -201,7 +221,7 @@ describe("commitMapRow — the created record's id", () => {
     const result = await commitMapRow({
       clientId: "c1",
       entity: life,
-      row: row({ name: "Term 20", faceValue: 1 }),
+      row: row(VALID_TERM_POLICY),
     });
     expect(result.ok).toBe(true);
     // Two top-level values: which one is the record is a GUESS, and a wrong
@@ -219,7 +239,7 @@ describe("commitMapRow — the created record's id", () => {
     const result = await commitMapRow({
       clientId: "c1",
       entity: life,
-      row: row({ name: "Term 20", faceValue: 1 }),
+      row: row(VALID_TERM_POLICY),
     });
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.createdId).toBeNull();

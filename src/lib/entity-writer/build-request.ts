@@ -1,6 +1,7 @@
 // src/lib/entity-writer/build-request.ts
 import type { DetailEntity } from "@/domain/forge/detail-fields";
 import type { CandidateRow } from "@/lib/entity-extraction/types";
+import { createSchemaRefusal } from "./create-schemas";
 import { mergeIntoSet } from "./set-merge";
 
 /**
@@ -47,7 +48,7 @@ export function buildWriteRequest(args: {
   if (row.missingRequired.length > 0) {
     return {
       ok: false,
-      error: `${entity.id} cannot be written: required field(s) missing — ${row.missingRequired.join(", ")}.`,
+      error: `Required field(s) missing — ${row.missingRequired.join(", ")}.`,
     };
   }
 
@@ -55,9 +56,7 @@ export function buildWriteRequest(args: {
   if (flagged.length > 0) {
     return {
       ok: false,
-      error: `${entity.id} cannot be written: ${flagged
-        .map((v) => `${v.key} (${v.issue})`)
-        .join(", ")}.`,
+      error: flagged.map((v) => `${v.key} (${v.issue})`).join(", ") + ".",
     };
   }
 
@@ -108,6 +107,21 @@ export function buildWriteRequest(args: {
   if (typeof shape === "object") {
     return { ok: true, method: "POST", path, body: { [shape.wrappedIn]: [payload] }, warnings };
   }
+
+  // Spec Layer 5, wired at last (final review I4, Ruling 36): the route's OWN
+  // create schema is the last word on whether this body is writable, and it
+  // knows rules the field map cannot express — a term policy needs an issue
+  // year, and a term length OR end-at-retirement but never both
+  // (`validateTermFields`). Without this a row with every map-`required` field
+  // filled passed every check here and 400'd at the route, where the surface
+  // could only report the status code.
+  //
+  // Only the plain-object shape. A wrapped or bare-array body is an ENVELOPE
+  // or a whole SET, which its schema validates as a unit rather than one row
+  // at a time — `createSchemaFor` registers no such schema, so this is belt
+  // and braces on top of that.
+  const refusal = createSchemaRefusal(entity, payload);
+  if (refusal) return { ok: false, error: refusal };
 
   return { ok: true, method: "POST", path, body: payload, warnings };
 }
