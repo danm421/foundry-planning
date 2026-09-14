@@ -13,10 +13,13 @@
 // recent cancellation. A daily "nothing happened" message is how a sender gets
 // filtered. Note the standing trials roster keeps the mail flowing while any
 // trial is running, which is the point: a trial is money in play every day.
+// The active-people roster deliberately does NOT get that power — see the
+// comment beside `who` in digest.ts.
 import { type NextRequest, NextResponse } from "next/server";
 import { loadGrowthInput } from "@/lib/ops/growth/load";
 import { buildAttention } from "@/lib/ops/growth/attention";
 import { buildAccountRows } from "@/lib/ops/growth/accounts";
+import { buildActivePeople } from "@/lib/ops/growth/active-people";
 import { buildDigest } from "@/lib/ops/growth/digest";
 import { sendOpsDigest } from "@/lib/ops/growth/email";
 
@@ -39,12 +42,14 @@ export async function GET(req: NextRequest): Promise<Response> {
   const input = await loadGrowthInput();
   const rows = buildAttention(input);
   const accounts = buildAccountRows(input);
-  const mail = buildDigest(rows, accounts, `${base}/admin/growth`);
+  const people = buildActivePeople(input);
+  const mail = buildDigest({ rows, accounts, people, dashboardUrl: `${base}/admin/growth` });
 
-  // Both counts are reported as measured in both branches — a hard-coded 0 on
+  // Every count is reported as measured in both branches — a hard-coded 0 on
   // the quiet path would hide the case where buildDigest declined rows it was
-  // actually handed.
-  const counted = { rows: rows.length, accounts: accounts.length };
+  // actually handed. `people` never keeps the mail alive, so a quiet run that
+  // reports people > 0 is correct, not a bug.
+  const counted = { rows: rows.length, accounts: accounts.length, people: people.length };
   if (!mail) return NextResponse.json({ ...counted, sent: false, reason: "quiet" });
 
   const { delivered } = await sendOpsDigest(mail);

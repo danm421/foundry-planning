@@ -2,19 +2,25 @@ import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import type { GrowthInput } from "@/lib/ops/growth/types";
 import type { AttentionRow } from "@/lib/ops/growth/attention";
 import type { AccountRow } from "@/lib/ops/growth/accounts";
+import type { ActivePersonRow } from "@/lib/ops/growth/active-people";
 
 // Mutable fixtures the mocks below read from — reset in beforeEach so tests
 // don't leak state into each other.
 let attentionRows: AttentionRow[] = [];
 let accountRows: AccountRow[] = [];
+let peopleRows: ActivePersonRow[] = [];
 let digestResult: { subject: string; text: string; html: string } | null = null;
 const loadGrowthInputMock = vi.fn().mockResolvedValue({} as GrowthInput);
 const sendOpsDigestMock = vi.fn().mockResolvedValue({ delivered: true });
 // The route owns the dashboard URL it hands to buildDigest, so that argument
 // IS the behavior under test — recorded rather than ignored.
-const buildDigestMock = vi.fn<
-  (rows: AttentionRow[], accounts: AccountRow[], url: string) => typeof digestResult
->(() => digestResult);
+type DigestArgs = {
+  rows: AttentionRow[];
+  accounts: AccountRow[];
+  people: ActivePersonRow[];
+  dashboardUrl: string;
+};
+const buildDigestMock = vi.fn<(args: DigestArgs) => typeof digestResult>(() => digestResult);
 
 // buildAttention is asserted only through its downstream effect (what the
 // route does with the rows it returns), so its mock just hands back the
@@ -28,9 +34,11 @@ vi.mock("@/lib/ops/growth/attention", () => ({
 vi.mock("@/lib/ops/growth/accounts", () => ({
   buildAccountRows: () => accountRows,
 }));
+vi.mock("@/lib/ops/growth/active-people", () => ({
+  buildActivePeople: () => peopleRows,
+}));
 vi.mock("@/lib/ops/growth/digest", () => ({
-  buildDigest: (rows: AttentionRow[], accounts: AccountRow[], url: string) =>
-    buildDigestMock(rows, accounts, url),
+  buildDigest: (args: DigestArgs) => buildDigestMock(args),
 }));
 vi.mock("@/lib/ops/growth/email", () => ({
   sendOpsDigest: (args: { subject: string; text: string; html?: string }) =>
@@ -57,6 +65,18 @@ function row(overrides: Partial<AttentionRow> = {}): AttentionRow {
   };
 }
 
+function person(overrides: Partial<ActivePersonRow> = {}): ActivePersonRow {
+  return {
+    firm: "Acme",
+    name: "Ada Byron",
+    clients: 7,
+    daysActive: 5,
+    lastSignInAt: "2026-09-13T08:30:00.000Z",
+    actions: 42,
+    ...overrides,
+  };
+}
+
 function account(overrides: Partial<AccountRow> = {}): AccountRow {
   return {
     firm: "Acme",
@@ -78,6 +98,7 @@ beforeEach(() => {
   process.env.CRON_SECRET = "secret_t";
   attentionRows = [];
   accountRows = [];
+  peopleRows = [];
   digestResult = null;
   loadGrowthInputMock.mockClear();
   buildDigestMock.mockClear();
@@ -114,6 +135,7 @@ describe("GET /api/cron/ops-digest", () => {
     await expect(res.json()).resolves.toEqual({
       rows: 0,
       accounts: 0,
+      people: 0,
       sent: false,
       reason: "quiet",
     });
@@ -131,7 +153,7 @@ describe("GET /api/cron/ops-digest", () => {
     // The HTML twin must reach the transport — a table sent as text/plain only
     // is the shape this digest was rewritten to stop producing.
     expect(sendOpsDigestMock).toHaveBeenCalledWith(digestResult);
-    await expect(res.json()).resolves.toEqual({ rows: 2, accounts: 1, sent: true });
+    await expect(res.json()).resolves.toEqual({ rows: 2, accounts: 1, people: 0, sent: true });
   });
 
   it("reports sent: false when the transport fails to deliver", async () => {
@@ -142,7 +164,7 @@ describe("GET /api/cron/ops-digest", () => {
     const res = await GET(req("Bearer secret_t") as never);
 
     expect(res.status).toBe(200);
-    await expect(res.json()).resolves.toEqual({ rows: 1, accounts: 0, sent: false });
+    await expect(res.json()).resolves.toEqual({ rows: 1, accounts: 0, people: 0, sent: false });
   });
 
   it("strips a trailing slash off the app URL before linking the dashboard", async () => {
@@ -152,11 +174,12 @@ describe("GET /api/cron/ops-digest", () => {
 
     await GET(req("Bearer secret_t") as never);
 
-    expect(buildDigestMock).toHaveBeenCalledWith(
-      attentionRows,
-      accountRows,
-      "https://app.example.com/admin/growth",
-    );
+    expect(buildDigestMock).toHaveBeenCalledWith({
+      rows: attentionRows,
+      accounts: accountRows,
+      people: peopleRows,
+      dashboardUrl: "https://app.example.com/admin/growth",
+    });
   });
 
   it("leaves an app URL without a trailing slash alone", async () => {
@@ -166,11 +189,40 @@ describe("GET /api/cron/ops-digest", () => {
 
     await GET(req("Bearer secret_t") as never);
 
-    expect(buildDigestMock).toHaveBeenCalledWith(
-      attentionRows,
-      accountRows,
-      "https://app.example.com/admin/growth",
-    );
+    expect(buildDigestMock).toHaveBeenCalledWith({
+      rows: attentionRows,
+      accounts: accountRows,
+      people: peopleRows,
+      dashboardUrl: "https://app.example.com/admin/growth",
+    });
+  });
+
+  it("hands the active-people rows to buildDigest", async () => {
+    attentionRows = [row()];
+    peopleRows = [person(), person({ name: "Grace Hopper" })];
+    digestResult = { subject: "x", text: "y", html: "<p>y</p>" };
+
+    const res = await GET(req("Bearer secret_t") as never);
+
+    expect(buildDigestMock.mock.calls[0][0].people).toEqual(peopleRows);
+    await expect(res.json()).resolves.toEqual({ rows: 1, accounts: 0, people: 2, sent: true });
+  });
+
+  it("still sends nothing on a quiet day that had active people", async () => {
+    // The people table must never be what keeps the daily email alive.
+    peopleRows = [person()];
+    digestResult = null;
+
+    const res = await GET(req("Bearer secret_t") as never);
+
+    await expect(res.json()).resolves.toEqual({
+      rows: 0,
+      accounts: 0,
+      people: 1,
+      sent: false,
+      reason: "quiet",
+    });
+    expect(sendOpsDigestMock).not.toHaveBeenCalled();
   });
 
   it("calls loadGrowthInput with no arguments — page and cron must read the same data path", async () => {

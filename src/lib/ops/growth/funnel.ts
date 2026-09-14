@@ -6,7 +6,7 @@
 // called from exactly one place — the completed-checkout webhook — so a Clerk
 // account still holding a `pending_signup` stash provably filled in /welcome
 // and never paid. See the guard test in __tests__/funnel.test.ts.
-import type { ClerkUserInput, GrowthInput } from "./types";
+import { displayName, type GrowthInput } from "./types";
 
 export type FunnelStage = "signed_up" | "stalled_checkout" | "trialing" | "resolved";
 
@@ -34,11 +34,6 @@ const LABELS: Record<FunnelStage, string> = {
 };
 
 const ORDER: FunnelStage[] = ["signed_up", "stalled_checkout", "trialing", "resolved"];
-
-function displayName(u: ClerkUserInput): string {
-  const full = [u.firstName, u.lastName].filter(Boolean).join(" ").trim();
-  return full || u.email || u.userId;
-}
 
 export function buildFunnel(input: GrowthInput): FunnelStageGroup[] {
   const { firms, subs, users } = input;
