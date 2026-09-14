@@ -3,8 +3,9 @@
 import { findEntity, type DetailsTab } from "@/domain/forge/detail-fields";
 import { REVIEW_THRESHOLD } from "@/lib/entity-extraction";
 import type { CandidateRow } from "@/lib/entity-extraction/types";
+import { isAmbiguousMatch } from "@/lib/imports/commit/ambiguous-rows";
 import EntityTable from "./entity-table";
-import { columnsForEntity, type CandidateRowView } from "./map-columns";
+import { columnsForEntity, overflowFields, renderOverflow, type CandidateRowView } from "./map-columns";
 
 /**
  * Details-sidebar order. A tab this list omits sorts LAST, never first (Task
@@ -40,10 +41,14 @@ function toView(row: CandidateRow): CandidateRowView {
  *
  * Two "why can't I commit this row?" mechanisms on one table would fight each
  * other, so this reuses `entity-table.tsx`'s existing `commitBlockedReason`
- * for the one thing that actually blocks a commit (a missing required field)
- * and only adds `rowNotice` for the two things that don't: a sub-threshold
- * confidence marker, and Add-vs-Update wording driven by the match kind
- * (Task 12 ruling 7).
+ * for everything that actually blocks a commit — a missing required field,
+ * and an unresolved `fuzzy` match (Task 12 review, Critical 1: the SAME rule
+ * `isAmbiguousMatch` enforces at commit time, reused rather than re-derived
+ * so a review table can never tell an advisor "this can commit" when the
+ * commit module would silently skip it) — and only adds `rowNotice` for the
+ * two things that don't block anything: a sub-threshold confidence marker,
+ * and Add-vs-Update wording, which only a resolved `exact` match earns (Task
+ * 12 ruling 7 / review Critical 1).
  */
 export default function EntityTables({
   rows,
@@ -66,10 +71,13 @@ export default function EntityTables({
     <div className="flex flex-col gap-8">
       {groups.map(({ entity, entityRows }) => {
         // Built once per entity rather than an `entityRows.find(...)` inside
-        // each of the two callbacks below — same rowId->row idiom
-        // `use-chat-commit.ts` already uses, and it turns two O(n) scans per
-        // row into one O(n) build reused by both.
+        // each callback below — same rowId->row idiom `use-chat-commit.ts`
+        // already uses, and it turns three O(n) scans per row into one O(n)
+        // build reused by all three.
         const byRowId = new Map(entityRows.map((r) => [r.rowId, r] as const));
+        // Fields past the column cap (Task 12 review, Important 2) — computed
+        // once per entity, not per row, and shared by `expand`/`expandLabel`.
+        const overflow = overflowFields(entity);
 
         return (
           <section key={entity.id}>
@@ -82,9 +90,20 @@ export default function EntityTables({
               committedRowIds={committedRowIds}
               onCommitRows={onCommitRows}
               onEditCell={onEditCell}
+              expand={(view) => renderOverflow(overflow, view)}
+              expandLabel={() =>
+                `Show ${overflow.length} more field${overflow.length === 1 ? "" : "s"}`
+              }
               commitBlockedReason={(view) => {
                 const source = byRowId.get(view.__rowId);
-                if (!source || source.missingRequired.length === 0) return null;
+                if (!source) return null;
+                // The exact rule every commit module in
+                // `AMBIGUOUS_ROW_SOURCES` enforces: an unresolved `fuzzy`
+                // match is a candidate LIST with no chosen record, so the row
+                // would POST, write nothing, and still read "Committed"
+                // (Task 12 review, Critical 1).
+                if (isAmbiguousMatch(source)) return "Pick a match first";
+                if (source.missingRequired.length === 0) return null;
                 // Name the missing fields the way the advisor sees them on
                 // screen. A payload key means nothing to the person reading this.
                 const missing = source.missingRequired.map(
@@ -99,7 +118,12 @@ export default function EntityTables({
                   // Low confidence MARKS the row. It never pre-selects discard —
                   // hiding a value is the failure mode Phase 1 already rejected.
                   needsReview: source.rowConfidence < REVIEW_THRESHOLD,
-                  action: source.match && source.match.kind !== "new" ? "Update" : "Add",
+                  // Only an EXACT match has a chosen record to update — a
+                  // `fuzzy` one is a candidate list nobody picked from, so it
+                  // reads "Add" like a brand-new row rather than promising an
+                  // update to a record no one resolved (Task 12 review,
+                  // Critical 1).
+                  action: source.match?.kind === "exact" ? "Update" : "Add",
                 };
               }}
             />

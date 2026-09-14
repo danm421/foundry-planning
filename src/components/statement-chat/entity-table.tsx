@@ -405,13 +405,13 @@ export default function EntityTable<Row extends EntityRow>({
                           <span
                             data-testid="needs-review"
                             title="Confidence is below the review threshold — check this value before committing."
-                            className="inline-flex items-center gap-1 rounded border border-warn/30 bg-warn/15 px-2 py-0.5 text-xs font-medium normal-case text-warn"
+                            className="inline-flex items-center gap-1 rounded border border-warn/30 bg-warn/15 px-2 py-0.5 text-xs font-medium text-warn"
                           >
                             Needs review
                           </span>
                         )}
                         {notice.action && (
-                          <span className="text-xs font-normal normal-case text-ink-3">
+                          <span className="text-xs font-normal text-ink-3">
                             {notice.action}
                           </span>
                         )}
