@@ -74,10 +74,16 @@ describe("useSolverEstateEditor", () => {
 
 // ── removeTrust ─────────────────────────────────────────────────────────────
 //
-// The body dispatches `buildDissolveTrustMutations` over the WORKING tree and
-// swaps an exact restore in for any account this session funded. The swap picks
-// between two DIFFERENT money outcomes for the same account, so both arms need
-// covering: the exact prior owners, or the lever's return-to-grantor rule.
+// `removeTrust` takes the TRUST, not a draft, so the rail can offer Remove on a
+// base-plan trust as well as one added here. It dispatches
+// `buildDissolveTrustMutations` over the WORKING tree and swaps an exact restore
+// in for any account this session funded — the swap picks between two DIFFERENT
+// money outcomes for the same account, so both arms need covering: the exact
+// prior owners, or the lever's return-to-grantor rule.
+//
+// A draft exists only for a trust `addTrust` created here, which is why these
+// scopes seed one through `addTrust` (with no mutations of its own) rather than
+// handing it to `removeTrust`.
 
 const ilit: EntitySummary = {
   id: "ent-ilit",
@@ -133,11 +139,12 @@ describe("useSolverEstateEditor — removeTrust", () => {
     const { view, onChange } = setup({ working });
 
     act(() =>
-      view.result.current.removeTrust({
+      view.result.current.addTrust([], {
         entity: ilit,
         fundedOriginals: [fundedOriginal],
       } as SolverTrustDraft),
     );
+    act(() => view.result.current.removeTrust(ilit));
 
     const upsert = accountUpserts(onChange).find((m) => m.id === "acct-funded");
     // The 50/50 split survives. The lever alone would have returned the whole
@@ -158,8 +165,9 @@ describe("useSolverEstateEditor — removeTrust", () => {
     const { view, onChange } = setup({ working });
 
     act(() =>
-      view.result.current.removeTrust({ entity: ilit, fundedOriginals: [] } as SolverTrustDraft),
+      view.result.current.addTrust([], { entity: ilit, fundedOriginals: [] } as SolverTrustDraft),
     );
+    act(() => view.result.current.removeTrust(ilit));
 
     const upsert = accountUpserts(onChange).find((m) => m.id === "acct-base");
     expect(upsert?.value?.owners).toEqual([
@@ -176,16 +184,44 @@ describe("useSolverEstateEditor — removeTrust", () => {
     const { view, onChange } = setup({ working });
 
     act(() =>
-      view.result.current.removeTrust({
+      view.result.current.addTrust([], {
         entity: ilit,
         fundedOriginals: [fundedOriginal],
       } as SolverTrustDraft),
     );
+    act(() => view.result.current.removeTrust(ilit));
 
     const emitted = onChange.mock.calls.map(([m]) => m as SolverMutation);
     expect(emitted).toHaveLength(2);
     expect(emitted[0]).toMatchObject({ kind: "account-upsert", id: "acct-funded" });
     expect(emitted[1]).toEqual({ kind: "entity-upsert", id: "ent-ilit", value: null });
+  });
+
+  it("dissolves a BASE-PLAN trust, which this session holds no draft for", () => {
+    // The rail offers Remove on every trust, not just the ones added here. A
+    // base-plan trust has no `SolverTrustDraft` and no `fundedOriginals`, so
+    // every account it holds falls through to the lever's return-to-grantor
+    // rule — which is the correct outcome for funding this session never did.
+    const baseHeld = inTrust({ ...fundedOriginal, id: "acct-base", name: "Trust brokerage" });
+    const working = clientData({
+      entities: [ilit],
+      accounts: [baseHeld],
+      familyMembers,
+    } as unknown as Partial<ClientData>);
+    const { view, onChange } = setup({ working });
+
+    act(() => view.result.current.removeTrust(ilit));
+
+    expect(onChange.mock.calls.map(([m]) => m as SolverMutation)).toEqual([
+      {
+        kind: "account-upsert",
+        id: "acct-base",
+        value: expect.objectContaining({
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+        }),
+      },
+      { kind: "entity-upsert", id: "ent-ilit", value: null },
+    ]);
   });
 
   it("leaves an account funded here but since retitled elsewhere alone", () => {
@@ -204,11 +240,12 @@ describe("useSolverEstateEditor — removeTrust", () => {
     const { view, onChange } = setup({ working });
 
     act(() =>
-      view.result.current.removeTrust({
+      view.result.current.addTrust([], {
         entity: ilit,
         fundedOriginals: [fundedOriginal],
       } as SolverTrustDraft),
     );
+    act(() => view.result.current.removeTrust(ilit));
 
     expect(accountUpserts(onChange)).toHaveLength(0);
     expect(onChange.mock.calls.map(([m]) => m as SolverMutation)).toEqual([

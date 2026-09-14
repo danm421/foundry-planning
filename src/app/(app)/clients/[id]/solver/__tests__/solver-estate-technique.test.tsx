@@ -37,6 +37,7 @@ function renderTech(
   const onChange = over.onChange ?? vi.fn();
   render(
     <SolverEstateTechnique
+      clientId="c1"
       baseClientData={base}
       clientData={base}
       baseGifts={over.baseGifts ?? []}
@@ -63,7 +64,8 @@ describe("SolverEstateTechnique", () => {
     expect(screen.getByText(/1 gift/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /edit estate/i }));
     expect(onOpenChange).toHaveBeenCalledWith(true);
-    // The gift row is present inside the open editor.
+    // The gift row is present on the rail's Planned gifts destination.
+    fireEvent.click(screen.getByRole("button", { name: /Planned gifts/i }));
     const dialog = screen.getByRole("dialog", { name: /estate planning/i });
     expect(within(dialog).getByText(/Cash gift 2030/)).toBeInTheDocument();
   });
@@ -73,6 +75,7 @@ describe("SolverEstateTechnique", () => {
     fireEvent.click(screen.getByRole("button", { name: /edit estate/i }));
     fireEvent.click(screen.getByRole("button", { name: /^Done$/ }));
     fireEvent.click(screen.getByRole("button", { name: /edit estate/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Planned gifts/i }));
     const dialog = screen.getByRole("dialog", { name: /estate planning/i });
     expect(within(dialog).getByText(/Cash gift 2030/)).toBeInTheDocument();
   });
