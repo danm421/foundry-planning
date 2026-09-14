@@ -50,15 +50,22 @@ export async function annotateMatches(args: {
     }
 
     let existing: Awaited<ReturnType<typeof loadExistingRows>> = [];
-    try {
-      existing = await loadExistingRows({ entity, clientId });
-    } catch (err) {
-      const reason = err instanceof Error ? err.message : "unknown";
-      console.warn(`[map-entity-pass] could not load existing ${entityId}: ${reason}`);
-      onWarning?.(
-        `Could not read this client's existing ${entity.label} rows (${reason}), so every ` +
-          "row below is offered as new. Check for duplicates before accepting them.",
-      );
+    // M7: only an entity with an `identity` can match against anything.
+    // `matchByIdentity` returns `{kind:"new"}` immediately without one, so the
+    // load's result was always discarded — and `life_insurance_policy` has
+    // none, which meant an `accounts` JOIN issued on every pass for nothing.
+    // This is not a behaviour change: the annotation below is identical.
+    if (entity.identity?.length) {
+      try {
+        existing = await loadExistingRows({ entity, clientId });
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : "unknown";
+        console.warn(`[map-entity-pass] could not load existing ${entityId}: ${reason}`);
+        onWarning?.(
+          `Could not read this client's existing ${entity.label} rows (${reason}), so every ` +
+            "row below is offered as new. Check for duplicates before accepting them.",
+        );
+      }
     }
 
     out[entityId] = entityRows.map((row) => ({
@@ -111,6 +118,9 @@ export async function runMapEntityPass(args: {
   pages: string[];
 }): Promise<{ rows: RowsByEntity; warnings: string[] }> {
   const { importId, clientId, firmId, fileId, pages } = args;
+  // `extracted.promptVersion` is deliberately dropped: there is no extraction
+  // cache on this path for it to key, so it is forward-looking rather than
+  // inert-by-accident (M8, Ruling 39). See `MapExtractionResult.promptVersion`.
   const extracted = await extractMapEntities({ fileId, pages });
 
   // The same four legs `imports/authz.ts:64-69` scopes on. `discardedAt` is one

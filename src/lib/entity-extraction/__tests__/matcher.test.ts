@@ -69,13 +69,37 @@ describe("matchByIdentity", () => {
     expect(matchByIdentity(disability, flagged, existing)).toEqual({ kind: "new" });
   });
 
-  it("returns at most five fuzzy candidates", () => {
-    const many = Array.from({ length: 12 }, (_, i) => ({
-      id: `x${i}`,
-      values: { name: "Group LTD", insured: "client", carrier: `Carrier ${i}` },
-    }));
-    const result = matchByIdentity(disability, row({ name: "Group LTD", insured: "client", carrier: "Unum" }), many);
+  /**
+   * Deferred #4: this used the real three-field identity, where EVERY offerable
+   * candidate scores exactly 2/3 (3/3 returns `exact`, and 1/3 is below the 0.5
+   * floor). Twelve identical scores left the `sort` unpinned — deleting it
+   * outright changed nothing any assertion could see. A FOUR-field identity has
+   * two distinct offerable scores, 3/4 and 2/4, so the order is real.
+   */
+  it("returns at most five fuzzy candidates, best-scoring first", () => {
+    const fourField = { ...disability, identity: ["name", "insured", "carrier", "notes"] };
+    const many: Array<{ id: string; values: Record<string, unknown> }> = Array.from(
+      { length: 12 },
+      (_, i) => ({
+        id: `x${i}`,
+        // Agrees on name + insured only: 2/4.
+        values: { name: "Group LTD", insured: "client", carrier: `Carrier ${i}`, notes: `n${i}` },
+      }),
+    );
+    // Agrees on name + insured + carrier: 3/4. Deliberately NOT first in the
+    // input, so a missing sort returns "x0" and this fails.
+    many[9] = { id: "best", values: { name: "Group LTD", insured: "client", carrier: "Unum", notes: "n9" } };
+
+    const result = matchByIdentity(
+      fourField,
+      row({ name: "Group LTD", insured: "client", carrier: "Unum", notes: "something else" }),
+      many,
+    );
     expect(result.kind).toBe("fuzzy");
-    if (result.kind === "fuzzy") expect(result.candidates.length).toBeLessThanOrEqual(5);
+    if (result.kind === "fuzzy") {
+      expect(result.candidates).toHaveLength(5);
+      expect(result.candidates[0].id).toBe("best");
+      expect(result.candidates[0].score).toBeGreaterThan(result.candidates[1].score);
+    }
   });
 });

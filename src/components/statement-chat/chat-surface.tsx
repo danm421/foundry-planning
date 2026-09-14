@@ -95,6 +95,12 @@ export function ChatSurface({
   const [fileIds, setFileIds] = useState<string[]>(() =>
     initialFiles.map((f) => f.serverFileId),
   );
+  // fileId -> display name, so the pass's per-file warnings can name the file
+  // rather than its id (M11). Kept beside `fileIds` rather than replacing it:
+  // the pass is driven by the id list, and a name is only ever presentation.
+  const [fileNames, setFileNames] = useState<Record<string, string>>(() =>
+    Object.fromEntries(initialFiles.map((f) => [f.serverFileId, f.name])),
+  );
   const [status, setStatus] = useState<Status>("idle");
   const [extractHoldings, setExtractHoldings] = useState(initialExtractHoldings ?? false);
   const [holdingsError, setHoldingsError] = useState<string | null>(null);
@@ -138,7 +144,7 @@ export function ChatSurface({
     committedRowIds: mapCommittedRowIds,
     runPass: runMapPass,
     commitRows: commitMapRows,
-  } = useMapRows({ clientId, importId, initialRows: initialMapRows });
+  } = useMapRows({ clientId, importId, initialRows: initialMapRows, fileNames });
 
   // Sends a turn and adopts what comes back (Task 11b, Steps 2/3). On the
   // FIRST turn that has anything to adopt (`result` was still null — a
@@ -301,6 +307,7 @@ export function ChatSurface({
               setFileIds((prev) =>
                 prev.includes(info.serverFileId) ? prev : [...prev, info.serverFileId],
               );
+              setFileNames((prev) => ({ ...prev, [info.serverFileId]: info.name }));
             }}
             onRemoved={() => setUploadedCount((c) => Math.max(0, c - 1))}
           />

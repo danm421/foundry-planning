@@ -28,6 +28,7 @@ export function useMapRows({
   clientId,
   importId,
   initialRows,
+  fileNames,
 }: {
   clientId: string;
   importId: string;
@@ -51,6 +52,13 @@ export function useMapRows({
    * two needs a mark of its own on the stamp, which is a payload change.
    */
   initialRows?: RowsByEntity;
+  /**
+   * fileId -> the name the advisor uploaded it under (M11). A per-file
+   * failure used to be prefixed with the raw `fileId` UUID, which names
+   * nothing anyone can act on. Falls back to the id when a name is not known
+   * — better a useless prefix than no attribution at all.
+   */
+  fileNames?: Record<string, string>;
 }) {
   const [rows, setRows] = useState<RowsByEntity>(initialRows ?? {});
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -67,6 +75,10 @@ export function useMapRows({
   );
 
   const mapPassUrl = `/api/clients/${clientId}/imports/${importId}/chat/map-pass`;
+  const nameOf = useCallback(
+    (fileId: string) => fileNames?.[fileId] ?? fileId,
+    [fileNames],
+  );
 
   const addWarning = useCallback((message: string) => {
     setWarnings((prev) => [...prev, message]);
@@ -110,7 +122,7 @@ export function useMapRows({
             // `fetch` resolves normally on a 4xx/5xx — it never rejects — so an
             // HTTP error has to be read here, not only in the catch below.
             const body = (await res.json().catch(() => ({}))) as { error?: string };
-            addWarning(`${fileId}: ${body.error ?? `Request failed (HTTP ${res.status}).`}`);
+            addWarning(`${nameOf(fileId)}: ${body.error ?? `Request failed (HTTP ${res.status}).`}`);
             continue;
           }
 
@@ -129,13 +141,13 @@ export function useMapRows({
           });
           for (const warning of body.warnings ?? []) addWarning(warning);
         } catch (err) {
-          addWarning(`${fileId}: ${err instanceof Error ? err.message : "Could not reach the server."}`);
+          addWarning(`${nameOf(fileId)}: ${err instanceof Error ? err.message : "Could not reach the server."}`);
         }
       }
 
       setStatus("done");
     },
-    [mapPassUrl, addWarning],
+    [mapPassUrl, addWarning, nameOf],
   );
 
   /**

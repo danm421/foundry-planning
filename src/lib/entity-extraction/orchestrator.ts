@@ -14,7 +14,18 @@ import type { CandidateRow, RawObservationRow } from "./types";
 
 export interface MapExtractionResult {
   rows: Record<string, CandidateRow[]>;
-  /** Extraction cache key component. Changes whenever the map changes. */
+  /**
+   * Extraction cache key component. Changes whenever the map changes.
+   *
+   * ⚠️ FORWARD-LOOKING, not a wired cache key (final review M8, Ruling 39 —
+   * labelled rather than wired). There is NO extraction cache on this path:
+   * `runMapEntityPass` drops this value and nothing else in the repo reads it.
+   * Spec Layer 2 wanted it in a cache key so a sub-prompt edit could not be
+   * invisible to something already extracted — the hazard it guards against
+   * therefore does not exist yet, and building a cache is not a review fix.
+   * It is computed here so that the day a cache is added, the key is already
+   * correct; until then it is inert by design and must not be read as one.
+   */
   promptVersion: string;
   warnings: string[];
 }

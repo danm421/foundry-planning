@@ -57,7 +57,14 @@ describe("coerce", () => {
 });
 
 describe("placeRow", () => {
-  it("keeps a clean value with no issue", () => {
+  /**
+   * Deferred #6 — the NAME, corrected. This row is not all-clean: `ownerRef` is
+   * passed as the scalar "client" where the map declares `kind: "object"`, so
+   * `coerce` fails and that value IS flagged (the same shape as final review I4
+   * Scenario B). What this test actually pins is the money coercion on
+   * `faceValue` — "$500,000" to 500000, with no issue attached.
+   */
+  it("coerces a money value it can read and leaves it unflagged", () => {
     const row = placeRow(life, {
       name: { value: "Term Life 20", snippet: "Policy: Term Life 20", confidence: 0.95 },
       faceValue: { value: "$500,000", snippet: "Face Amount $500,000", confidence: 0.97 },

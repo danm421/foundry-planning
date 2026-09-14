@@ -1732,10 +1732,10 @@ describe("ChatSurface — the map-driven review tables (Task 14b)", () => {
 
     // A pass that produced no rows still has to say why, or a failed read is
     // indistinguishable from a document with no policies in it.
-    // Named by the file it belongs to — both uploads failed, and "one of your
-    // statements failed" with no file name is not something an advisor can act
-    // on.
-    expect(await screen.findByText(/^f1: life\.pdf produced no readable text\.$/)).toBeInTheDocument();
-    expect(await screen.findByText(/^f2: life\.pdf produced no readable text\.$/)).toBeInTheDocument();
+    // Named by the FILENAME it belongs to (M11) — "one of your statements
+    // failed" with no name is not something an advisor can act on, and neither
+    // is a raw file-id UUID, which is what this used to print.
+    expect(await screen.findByText(/^life\.pdf: life\.pdf produced no readable text\.$/)).toBeInTheDocument();
+    expect(await screen.findByText(/^ltd\.pdf: life\.pdf produced no readable text\.$/)).toBeInTheDocument();
   });
 });

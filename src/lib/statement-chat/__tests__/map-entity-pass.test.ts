@@ -52,6 +52,11 @@ describe("annotateMatches", () => {
       rows: { life_insurance_policy: [row("life_insurance_policy", { name: "Term Life 20" })] },
     });
     expect(result.life_insurance_policy[0].match).toEqual({ kind: "new" });
+    // M7: and it must not have asked. `matchByIdentity` returns `new`
+    // immediately for an entity with no `identity`, so this load's result was
+    // always discarded — for `life_insurance_policy` that is an `accounts`
+    // JOIN issued on every pass, for nothing.
+    expect(loadExistingRows).not.toHaveBeenCalled();
   });
 
   it("does not load existing rows for an entity that produced none", async () => {

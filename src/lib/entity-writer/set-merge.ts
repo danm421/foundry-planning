@@ -38,6 +38,17 @@ function sameIdentity(
  * The contract is that the returned array is what will EXIST after the write,
  * so it always contains every existing row unless one was deliberately
  * superseded by identity. Returning a shorter array is a data-loss bug.
+ *
+ * ⚠️ NO LIVE CALLER TODAY (final review M9, Ruling 39 — stated rather than
+ * wired). The only path into `buildWriteRequest` is `commitMapRow`, which
+ * passes no `existingSet`, so every `payloadShape: "array"` entity is REFUSED
+ * before reaching here (`build-request.ts`, the "replaces the whole set"
+ * branch). That is the correct fail-closed direction and not a defect: writing
+ * one of these without the current rows deletes every existing beneficiary.
+ * But it does mean this function and `SET_REPLACING_ENTITY_IDS` above are
+ * exercised only by their own tests. Whoever gives the review surface a way to
+ * load the current set is the first real caller, and should read
+ * `sameIdentity`'s "supersedes only the FIRST match" behaviour before doing so.
  */
 export function mergeIntoSet(args: {
   entity: DetailEntity;
