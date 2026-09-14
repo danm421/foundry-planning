@@ -75,3 +75,8 @@ export function writableToday(): DetailEntity[] {
 export function missingForgeTool(): DetailEntity[] {
   return DETAIL_ENTITIES.filter((e) => e.forgeTool === undefined);
 }
+
+/** Entities the region classifier may return — the ones a document can state. */
+export function documentEvidenceEntities(): DetailEntity[] {
+  return DETAIL_ENTITIES.filter((e) => e.documentEvidence === true);
+}

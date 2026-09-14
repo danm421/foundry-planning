@@ -77,6 +77,13 @@ export interface DetailField {
   appliesTo?: "create" | "update";
   /** Anything Forge would get wrong from the type alone. */
   notes?: string;
+  /**
+   * Other wordings a document may print for this field: "Face Amount" for a
+   * death benefit, "Elimination Period" for a waiting period. Fed to the
+   * extraction prompt. This is the cheapest fix when a real document extracts
+   * badly — an alias, not a new prompt.
+   */
+  aliases?: readonly string[];
 }
 
 export interface DetailEntityRoutes {
@@ -139,5 +146,49 @@ export interface DetailEntity {
   scenarioScoped: boolean;
   /** Forge tool that already writes this, if one exists. */
   forgeTool?: { add?: string; update?: string; remove?: string };
+  /**
+   * Fields that identify this row when matching an extracted candidate against
+   * the client's existing rows. Absent means create-only: the matcher reports
+   * "new" every time and the review table says so.
+   *
+   * The nine entities with a hand-written matcher in
+   * `src/lib/imports/match-keys/` do NOT need this — those encode domain
+   * judgement (the account matcher's weighted ladder, life insurance's
+   * face-value tolerance) that a generic key cannot express.
+   */
+  identity?: readonly string[];
+
+  /**
+   * True when a document can state this entity. This is the region
+   * classifier's whole vocabulary.
+   *
+   * Absent for every derived or structural entity — schedule overrides, flow
+   * overrides, extra-payment rows — and for every Techniques, Assumptions and
+   * Observations entity. No document states a withdrawal strategy or a target
+   * probability of success; those are the advisor's choices.
+   */
+  documentEvidence?: true;
+
+  /**
+   * What a document carrying this entity looks like, in the words a document
+   * actually prints. Fed to the region classifier so it has something concrete
+   * to recognise rather than an entity id.
+   */
+  documentHints?: readonly string[];
+
+  /**
+   * How this entity's table reaches a client. Task 13's generic row loader
+   * refuses to read a table whose path is not declared here — fail closed,
+   * never an unscoped read.
+   *
+   * It cannot be inferred, and the two Phase 2 build targets disagree:
+   * `disabilityPolicies` carries `clientId` on the row, while
+   * `lifeInsurancePolicies` has none — it hangs off `accountId` and must be
+   * joined through `accounts`. A loader that assumed `table.clientId` would
+   * return every firm's policies: a cross-tenant leak, not an error.
+   */
+  scopePath?:
+    | { via: "column" }
+    | { via: "join"; through: string; on: string };
   fields: readonly DetailField[];
 }
