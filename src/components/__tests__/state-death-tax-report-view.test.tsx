@@ -1,10 +1,15 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
+// A REAL `URLSearchParams`, rebuilt on every call — which is what the router
+// does in the browser. A stub that hands back the same object forever makes a
+// load effect keyed on `searchParams` look stable when it is not, so the
+// dependency-array guard below would pass against the unfixed view.
+let search = "";
 vi.mock("next/navigation", () => ({
-  useSearchParams: () => ({ get: () => null }),
+  useSearchParams: () => new URLSearchParams(search),
 }));
 
 vi.mock("@/engine/projection", () => ({
@@ -15,6 +20,7 @@ import StateDeathTaxReportView from "../state-death-tax-report-view";
 import type { EstateTaxResult } from "@/engine/types";
 import type { StateEstateTaxResult } from "@/lib/tax/state-estate/types";
 import type { StateInheritanceTaxResult } from "@/lib/tax/state-inheritance/types";
+import type { EstateTaxColumnData } from "@/lib/estate/diff-estate-tax";
 
 const baseEstate: Partial<EstateTaxResult> = {
   year: 2050,
@@ -68,11 +74,14 @@ const paInheritance: StateInheritanceTaxResult = {
   }],
 };
 
+/** Arms `fetch`; returns the spy so a caller can count calls or read its args. */
 function mockProjection(overrides: Record<string, unknown>) {
-  global.fetch = vi.fn().mockResolvedValue({
+  const spy = vi.fn().mockResolvedValue({
     ok: true,
     json: async () => ({ __result: overrides }),
-  }) as unknown as typeof fetch;
+  });
+  global.fetch = spy as unknown as typeof fetch;
+  return spy;
 }
 
 const ownerProps = {
@@ -81,6 +90,10 @@ const ownerProps = {
   ownerDobs: { clientDob: "1970-01-01", spouseDob: null },
   retirementYear: 2035,
 };
+
+beforeEach(() => {
+  search = "";
+});
 
 describe("StateDeathTaxReportView", () => {
   afterEach(() => {
@@ -370,5 +383,308 @@ describe("StateDeathTaxReportView", () => {
     });
     expect(screen.getByText(/CT, DC, HI, IL, ME, MD, MA, MN, NY, OR, RI, VT, WA/)).toBeInTheDocument();
     expect(screen.getByText(/PA, NJ, KY, NE, MD/)).toBeInTheDocument();
+  });
+});
+
+// ── Compare mode (Task 8) ───────────────────────────────────────────────────
+
+const NY_COMPARE_DETAIL: StateEstateTaxResult = {
+  state: "NY",
+  fallbackUsed: false, fallbackRate: 0,
+  exemption: 7_160_000, exemptionYear: 2026, giftAddback: 0,
+  baseForTax: 10_000_000, amountOverExemption: 2_840_000,
+  bracketLines: [], preCapTax: 0, stateEstateTax: 0, notes: [],
+};
+
+/** One NY decedent whose top-level figure always matches its detail. */
+function nyDeath(detailOverrides: Partial<StateEstateTaxResult> = {}): EstateTaxResult {
+  const stateEstateTaxDetail = { ...NY_COMPARE_DETAIL, ...detailOverrides };
+  return {
+    ...(baseEstate as EstateTaxResult),
+    year: 2026,
+    residenceState: "NY",
+    stateEstateTax: stateEstateTaxDetail.stateEstateTax,
+    stateEstateTaxDetail,
+    stateInheritanceTax: undefined,
+  };
+}
+
+/**
+ * Arms `fetch` with the `runProjectionWithEvents` return this view really
+ * reads — `{ years, firstDeathEvent, secondDeathEvent,
+ * todayHypotheticalEstateTax }`, with `hypotheticalEstateTax` carrying a
+ * `primaryFirst` ORDERING (not a bare result). Returns the spy so a test can
+ * count calls.
+ *
+ * Pass `final` for a TWO-death fixture: without it there is no second death,
+ * so neither the second-death section nor the grand-total card renders — and
+ * those are exactly the two surfaces the wider baseline gave deltas to.
+ */
+function armCompareFetch(first: EstateTaxResult, final: EstateTaxResult | null = null) {
+  const state = first.stateEstateTax + (final?.stateEstateTax ?? 0);
+  const hypothetical = {
+    year: 2026,
+    primaryFirst: {
+      firstDecedent: "client" as const,
+      firstDeath: first,
+      finalDeath: final ?? undefined,
+      firstDeathTransfers: [],
+      finalDeathTransfers: final ? [] : undefined,
+      totals: { federal: 0, state, admin: 0, total: state },
+    },
+  };
+  return mockProjection({
+    years: [{ year: 2026, hypotheticalEstateTax: hypothetical }],
+    firstDeathEvent: first,
+    secondDeathEvent: final ?? undefined,
+    todayHypotheticalEstateTax: hypothetical,
+  });
+}
+
+/** The SECOND decedent, so the two deaths are distinguishable by `deceased`. */
+function nySecondDeath(
+  detailOverrides: Partial<StateEstateTaxResult> = {},
+): EstateTaxResult {
+  return {
+    ...nyDeath(detailOverrides),
+    deathOrder: 2,
+    deceased: "spouse",
+  };
+}
+
+/** The baseline shape the shell now hands a column: BOTH deaths. */
+function baselineOf(
+  firstDeath: EstateTaxResult,
+  finalDeath: EstateTaxResult | null = null,
+): EstateTaxColumnData {
+  return {
+    firstDeath,
+    finalDeath,
+    totals: {
+      federal: 0,
+      state: firstDeath.stateEstateTax + (finalDeath?.stateEstateTax ?? 0),
+      admin: 0,
+      total: firstDeath.stateEstateTax + (finalDeath?.stateEstateTax ?? 0),
+    },
+  };
+}
+
+function compareElement(props: Record<string, unknown> = {}) {
+  return (
+    <StateDeathTaxReportView
+      clientId="c1"
+      isMarried
+      ownerNames={{ clientName: "Alex", spouseName: "Sam" }}
+      ownerDobs={{ clientDob: "1970-01-01", spouseDob: "1972-06-01" }}
+      retirementYear={2035}
+      {...props}
+    />
+  );
+}
+
+function renderCompare(props: Record<string, unknown> = {}) {
+  return render(compareElement(props));
+}
+
+/** The NY section heading — proof the column actually rendered its report. */
+const rendered = () =>
+  waitFor(() =>
+    expect(
+      screen.getByText(/State Estate Tax \(New York\)/i),
+    ).toBeInTheDocument(),
+  );
+
+describe("State Death Tax compare mode", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("suppresses its own control row when the shell supplies asOf", async () => {
+    armCompareFetch(nyDeath({ stateEstateTax: 100_000 }));
+    renderCompare({ asOf: "today", ordering: "primaryFirst" });
+    await rendered();
+    expect(
+      screen.queryByRole("group", { name: /death order/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/as of/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /dies first/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps its own control row when used standalone", async () => {
+    armCompareFetch(nyDeath({ stateEstateTax: 100_000 }));
+    renderCompare();
+    await rendered();
+    expect(screen.getByLabelText(/as of/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Alex dies first/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("renders no delta chips without a baseline", async () => {
+    armCompareFetch(nyDeath({ stateEstateTax: 100_000 }));
+    renderCompare({ asOf: "today" });
+    await rendered();
+    expect(screen.queryAllByTestId("estate-delta-chip")).toHaveLength(0);
+    expect(
+      screen.queryByTestId("estate-delta-state-estate-tax"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders a falling state estate tax as good news", async () => {
+    const baseline = baselineOf(nyDeath({ stateEstateTax: 400_000 }));
+    armCompareFetch(nyDeath({ stateEstateTax: 100_000 }));
+    renderCompare({ asOf: "today", baseline });
+    const chip = await screen.findByTestId("estate-delta-state-estate-tax");
+    expect(chip).toHaveTextContent("$300K");
+    expect(chip).toHaveAttribute("data-tone", "good");
+  });
+
+  // Guards the assertion above it: `renders no delta chips without a baseline`
+  // only pins something because the OTHER chips keep the default testid.
+  it("renders a rising exemption as good news, under the default testid", async () => {
+    const baseline = baselineOf(nyDeath({ exemption: 7_160_000 }));
+    armCompareFetch(nyDeath({ exemption: 8_000_000 }));
+    renderCompare({ asOf: "today", baseline });
+    await rendered();
+    const chips = screen.getAllByTestId("estate-delta-chip");
+    expect(chips.length).toBeGreaterThan(0);
+    expect(chips[0]).toHaveTextContent("$840K");
+    expect(chips[0]).toHaveAttribute("data-tone", "good");
+  });
+
+  it("reports its metadata and result upward on load", async () => {
+    const onReady = vi.fn();
+    armCompareFetch(
+      nyDeath({ stateEstateTax: 100_000 }),
+      nySecondDeath({ stateEstateTax: 200_000 }),
+    );
+    renderCompare({ asOf: "today", onReady });
+    await waitFor(() => expect(onReady).toHaveBeenCalled());
+    const arg = onReady.mock.calls[0][0];
+    expect(arg.meta.todayYear).toBe(2026);
+    expect(arg.data).not.toBeNull();
+    // The column reports BOTH deaths, not just the first: the second-death
+    // section and the grand total are differenced off this same object.
+    expect(arg.data.finalDeath).not.toBeNull();
+    expect(arg.data.totals).not.toBeNull();
+  });
+
+  // Ruling 11 shipped `baseline` as the FIRST death alone, so the second-death
+  // section and the grand total rendered chip-free. Both fixtures below make
+  // the first death IDENTICAL on both sides, so its own chips fall under the
+  // noise floor and there is exactly one chip of each id to address.
+  it("carries a delta on the second decedent's section too", async () => {
+    const baseline = baselineOf(
+      nyDeath({ stateEstateTax: 100_000 }),
+      nySecondDeath({ stateEstateTax: 500_000 }),
+    );
+    armCompareFetch(
+      nyDeath({ stateEstateTax: 100_000 }),
+      nySecondDeath({ stateEstateTax: 200_000 }),
+    );
+    renderCompare({ asOf: "today", baseline });
+    const chip = await screen.findByTestId("estate-delta-state-estate-tax");
+    expect(chip).toHaveTextContent("$300K");
+    expect(chip).toHaveAttribute("data-tone", "good");
+  });
+
+  it("carries a delta on the household grand total", async () => {
+    const baseline = baselineOf(
+      nyDeath({ stateEstateTax: 250_000 }),
+      nySecondDeath({ stateEstateTax: 300_000 }),
+    );
+    armCompareFetch(
+      nyDeath({ stateEstateTax: 100_000 }),
+      nySecondDeath({ stateEstateTax: 200_000 }),
+    );
+    renderCompare({ asOf: "today", baseline });
+    // 300_000 now versus 550_000 before.
+    const chip = await screen.findByTestId("estate-delta-grand-total");
+    expect(chip).toHaveTextContent("$250K");
+    expect(chip).toHaveAttribute("data-tone", "good");
+  });
+
+  // ── Split death: the two columns can describe DIFFERENT decedents ─────────
+  //
+  // Outside split the shell's shared ordering pins both columns to the same
+  // person. In split each column emits whoever dies first in ITS OWN
+  // projection, so a scenario that moves a death year flips who the first
+  // section describes.
+  it("prints no section deltas when split pairs two different decedents", async () => {
+    // This column: Sam dies first. The compared column: Alex did.
+    armCompareFetch(
+      nySecondDeath({ stateEstateTax: 100_000 }),
+      { ...nyDeath({ stateEstateTax: 200_000 }), deathOrder: 2 },
+    );
+    renderCompare({
+      asOf: "split",
+      baseline: baselineOf(
+        nyDeath({ stateEstateTax: 500_000 }),
+        nySecondDeath({ stateEstateTax: 700_000 }),
+      ),
+    });
+
+    // The grand total sums BOTH spouses on each side, so it describes the same
+    // household whichever order they die in — and its presence proves this
+    // fixture really reached compare mode.
+    const grand = await screen.findByTestId("estate-delta-grand-total");
+    expect(grand).toHaveTextContent("$900K");
+
+    expect(
+      screen.queryAllByTestId("estate-delta-state-estate-tax"),
+    ).toHaveLength(0);
+    expect(screen.queryAllByTestId("estate-delta-chip")).toHaveLength(0);
+  });
+
+  it("still prints split deltas when both columns describe the same decedents", async () => {
+    armCompareFetch(
+      nyDeath({ stateEstateTax: 100_000 }),
+      nySecondDeath({ stateEstateTax: 200_000 }),
+    );
+    renderCompare({
+      asOf: "split",
+      baseline: baselineOf(
+        nyDeath({ stateEstateTax: 500_000 }),
+        nySecondDeath({ stateEstateTax: 700_000 }),
+      ),
+    });
+    const chips = await screen.findAllByTestId("estate-delta-state-estate-tax");
+    expect(chips).toHaveLength(2);
+    expect(chips[0]).toHaveTextContent("$400K");
+    expect(chips[1]).toHaveTextContent("$500K");
+  });
+
+  it("fetches the scenario ref it was given, not the URL param", async () => {
+    search = "scenario=s-left";
+    const spy = armCompareFetch(nyDeath({ stateEstateTax: 100_000 }));
+    renderCompare({ asOf: "today", scenarioRef: "s-right" });
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+    expect(String(spy.mock.calls[0][0])).toContain("scenario=s-right");
+  });
+
+  // The guard for the load effect's dependency array. `?compare=` is written by
+  // the shell with `router.push`, which hands every subscriber a FRESH
+  // `URLSearchParams` — so an effect keyed on that object refetches BOTH columns
+  // against a 30/min/firm rate limit every time the advisor starts or stops a
+  // comparison. Keyed on the resolved ref instead, only a scenario change
+  // refetches.
+  it("does not refetch when an unrelated URL param changes", async () => {
+    // No `scenarioRef` prop: the view must resolve the left ref off the URL, so
+    // the searchParams object is genuinely in play.
+    search = "scenario=s-left";
+    const spy = armCompareFetch(nyDeath({ stateEstateTax: 100_000 }));
+    const { rerender } = renderCompare({ asOf: "today" });
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(String(spy.mock.calls[0][0])).toContain("scenario=s-left");
+
+    // Starting a comparison: same left scenario, new param, new params object.
+    search = "scenario=s-left&compare=s-right";
+    rerender(compareElement({ asOf: "today" }));
+    // Let the re-render settle before counting, so a refetch has every chance
+    // to happen rather than the assertion racing it.
+    await rendered();
+    expect(spy).toHaveBeenCalledTimes(1);
   });
 });

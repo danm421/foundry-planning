@@ -9,12 +9,19 @@ import type { OwnerDobs } from "./report-controls/age-helpers";
 import {
   buildEstateTransferReportData,
   type AsOfSelection,
+  type EstateTransferReportData,
 } from "@/lib/estate/transfer-report";
 import type { ClientData } from "@/engine/types";
 import { EstateTransferDeathSection } from "./estate-transfer-death-section";
 import { EstateTransferRecipientTotals } from "./estate-transfer-recipient-totals";
 import { DeathOrderToggle } from "@/components/report-controls/death-order-toggle";
+import type { EstateColumnReady } from "./estate-compare-shell";
+import { useEstateColumnReady } from "@/hooks/use-estate-column-ready";
+import { diffTransferReport } from "@/lib/estate/diff-transfer-report";
+import { BASE_REF, readCompareSelection } from "@/lib/estate/compare-ref";
 import EstateTransferSkeleton from "@/app/(app)/clients/[id]/estate-planning/estate-transfer/loading-skeleton";
+
+type Ordering = "primaryFirst" | "spouseFirst";
 
 interface EstateTransferReportViewProps {
   clientId: string;
@@ -22,6 +29,18 @@ interface EstateTransferReportViewProps {
   ownerNames: { clientName: string; spouseName: string | null };
   ownerDobs: OwnerDobs;
   retirementYear: number;
+
+  // ── Compare mode (EstateCompareShell) ──
+  // All optional: with none supplied the view behaves exactly as it did before
+  // the shell existed. Supplying `asOf` is what hands the controls to the shell.
+  /** Overrides `?scenario=`; the right column needs its own ref. */
+  scenarioRef?: string;
+  asOf?: AsOfValue;
+  ordering?: Ordering;
+  /** Reports this column's projection metadata and report data upward. */
+  onReady?: (ready: EstateColumnReady<EstateTransferReportData>) => void;
+  /** The other column's report data; its presence switches on deltas. */
+  baseline?: EstateTransferReportData | null;
 }
 
 export default function EstateTransferReportView({
@@ -30,23 +49,39 @@ export default function EstateTransferReportView({
   ownerNames,
   ownerDobs,
   retirementYear,
+  scenarioRef,
+  asOf,
+  ordering: orderingProp,
+  onReady,
+  baseline = null,
 }: EstateTransferReportViewProps) {
   const searchParams = useSearchParams();
   const [projection, setProjection] = useState<ProjectionResult | null>(null);
   const [clientData, setClientData] = useState<ClientData | null>(null);
-  const [selectedAsOf, setSelectedAsOf] = useState<AsOfValue>("today");
-  const [ordering, setOrdering] = useState<"primaryFirst" | "spouseFirst">("primaryFirst");
+  const [ownAsOf, setOwnAsOf] = useState<AsOfValue>("today");
+  const [ownOrdering, setOwnOrdering] = useState<Ordering>("primaryFirst");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  const selectedAsOf = asOf ?? ownAsOf;
+  const ordering = orderingProp ?? ownOrdering;
+  /** The shell renders one control row for both columns; a column renders none. */
+  const showOwnControls = asOf === undefined;
+
+  // The shell supplies its column's ref; standalone, the URL's left ref is read
+  // by the same helper the shell uses, so "what an absent `?scenario=` means"
+  // has exactly one definition.
+  const resolvedScenarioRef =
+    scenarioRef ?? readCompareSelection(searchParams).left;
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
-        const scenarioParam = searchParams?.get("scenario");
-        const url = scenarioParam
-          ? `/api/clients/${clientId}/projection-data?scenario=${encodeURIComponent(scenarioParam)}`
-          : `/api/clients/${clientId}/projection-data`;
+        const url =
+          resolvedScenarioRef === BASE_REF
+            ? `/api/clients/${clientId}/projection-data`
+            : `/api/clients/${clientId}/projection-data?scenario=${encodeURIComponent(resolvedScenarioRef)}`;
         const res = await fetch(url);
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -70,7 +105,10 @@ export default function EstateTransferReportView({
     return () => {
       cancelled = true;
     };
-  }, [clientId, searchParams]);
+    // Keyed on the resolved ref, never on `searchParams`: that object is fresh
+    // whenever ANY param changes, so toggling `?compare=` would refetch both
+    // columns against a 30/min/firm rate limit.
+  }, [clientId, resolvedScenarioRef]);
 
   const projectionYears = useMemo(() => projection?.years ?? [], [projection]);
   const todayYear = projectionYears[0]?.year;
@@ -84,6 +122,8 @@ export default function EstateTransferReportView({
     return { kind: "year", year: selectedAsOf };
   }, [selectedAsOf]);
 
+  // Memoized, so its identity survives an unrelated re-render — the shell
+  // compares a column's reported `data` by identity.
   const reportData = useMemo(() => {
     if (!projection || !clientData) return null;
     return buildEstateTransferReportData({
@@ -94,6 +134,8 @@ export default function EstateTransferReportView({
       ownerNames,
     });
   }, [projection, clientData, asOfSelection, ordering, ownerNames]);
+
+  useEstateColumnReady(projection, reportData, onReady);
 
   if (loadError) {
     return (
@@ -124,47 +166,73 @@ export default function EstateTransferReportView({
 
   const isSplit = selectedAsOf === "split";
 
+  // `EstateTransferReportData` carries BOTH death sections, so this report
+  // compares across both deaths — not only the first, the way the two tax
+  // reports do.
+  const diff =
+    baseline && reportData ? diffTransferReport(baseline, reportData) : null;
+
+  // A recipient the other column has and this one does not still gets a row, at
+  // $0 — otherwise "the trust stops inheriting" reads as a recipient who was
+  // never there, and `removed` is unreachable in this view. Built here from the
+  // baseline the view already holds, so the table's prop contract is unchanged.
+  const recipientTotals = [
+    ...(reportData?.aggregateRecipientTotals ?? []),
+    ...(baseline?.aggregateRecipientTotals ?? [])
+      .filter(
+        (t) => diff?.aggregateRecipientTotals.get(t.key)?.status === "removed",
+      )
+      .map((t) => ({ ...t, fromFirstDeath: 0, fromSecondDeath: 0, total: 0 })),
+  ];
+
   return (
     <div className="space-y-4 pt-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <TimePeriodButtons
-          selected={selectedAsOf}
-          onChange={setSelectedAsOf}
-          todayYear={todayYear}
-          retirementYear={retirementYear}
-          firstDeathYear={firstDeathYear}
-          lastDeathYear={lastDeathYear}
-          showSplit={isMarried && firstDeathYear != null && secondDeathYear != null}
-        />
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 text-xs uppercase tracking-wide text-gray-300">
-            As of
-            <AsOfDropdown
-              years={dropdownYears}
-              todayYear={todayYear}
-              selected={selectedAsOf}
-              onChange={setSelectedAsOf}
-              dobs={ownerDobs}
-              milestones={milestones}
-              allowSplit={isMarried && firstDeathYear != null && secondDeathYear != null}
-              yearPrefix="Both die in"
-            />
-          </label>
-          {isMarried && !isSplit && (
-            <DeathOrderToggle
-              value={ordering}
-              onChange={setOrdering}
-              ownerNames={ownerNames}
-            />
-          )}
+      {showOwnControls && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <TimePeriodButtons
+            selected={selectedAsOf}
+            onChange={setOwnAsOf}
+            todayYear={todayYear}
+            retirementYear={retirementYear}
+            firstDeathYear={firstDeathYear}
+            lastDeathYear={lastDeathYear}
+            showSplit={isMarried && firstDeathYear != null && secondDeathYear != null}
+          />
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 text-xs uppercase tracking-wide text-gray-300">
+              As of
+              <AsOfDropdown
+                years={dropdownYears}
+                todayYear={todayYear}
+                selected={selectedAsOf}
+                onChange={setOwnAsOf}
+                dobs={ownerDobs}
+                milestones={milestones}
+                allowSplit={isMarried && firstDeathYear != null && secondDeathYear != null}
+                yearPrefix="Both die in"
+              />
+            </label>
+            {isMarried && !isSplit && (
+              <DeathOrderToggle
+                value={ordering}
+                onChange={setOwnOrdering}
+                ownerNames={ownerNames}
+              />
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {reportData && (
         <p className="text-xs text-gray-400">{reportData.asOfLabel}</p>
       )}
 
-      {reportData?.isEmpty && (
+      {/* `isEmpty` describes THIS column's own report. In compare mode the
+          table below is built from the derived collection, which can still
+          carry ghost rows for recipients the OTHER column has — so the gate
+          has to test the derived collection too, or the banner prints directly
+          above a populated table. */}
+      {reportData?.isEmpty && recipientTotals.length === 0 && (
         <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
           No transfers to display for this selection.
         </div>
@@ -176,16 +244,21 @@ export default function EstateTransferReportView({
             isMarried ? "First to die" : "Hypothetical death"
           } · ${reportData.firstDeath.year}`}
           section={reportData.firstDeath}
+          diff={diff?.firstDeath}
         />
       )}
       {reportData?.secondDeath && (
         <EstateTransferDeathSection
           heading={`${reportData.secondDeath.decedentName} — Second to die · ${reportData.secondDeath.year}`}
           section={reportData.secondDeath}
+          diff={diff?.secondDeath}
         />
       )}
-      {reportData && reportData.aggregateRecipientTotals.length > 0 && (
-        <EstateTransferRecipientTotals totals={reportData.aggregateRecipientTotals} />
+      {recipientTotals.length > 0 && (
+        <EstateTransferRecipientTotals
+          totals={recipientTotals}
+          diff={diff?.aggregateRecipientTotals}
+        />
       )}
     </div>
   );

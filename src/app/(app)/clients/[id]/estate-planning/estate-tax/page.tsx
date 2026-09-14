@@ -6,6 +6,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import EstateTaxTabbedView from "@/components/estate-tax-tabbed-view";
 import ScenarioDrawerShell from "@/components/scenario/scenario-drawer-shell";
 import { hasSpouseForEstate } from "@/lib/estate/spousal-household";
+import { loadScenarioOptions } from "@/lib/scenario/load-scenario-options";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -56,6 +57,10 @@ export default async function EstateTaxReportPage({ params, searchParams }: Page
     spouseDob: spouseDob ?? null,
   };
 
+  // Safe here: firm scope is established above by requireOrgId + the scoped
+  // client lookup, and loadScenarioOptions does not scope by org itself.
+  const scenarios = await loadScenarioOptions(id);
+
   const clientBirthYear = parseInt(clientDob.slice(0, 4), 10);
   const clientRetirementYear = clientBirthYear + client.retirementAge;
   const spouseRetirementYear =
@@ -76,6 +81,7 @@ export default async function EstateTaxReportPage({ params, searchParams }: Page
         ownerNames={ownerNames}
         ownerDobs={ownerDobs}
         retirementYear={retirementYear}
+        scenarios={scenarios}
       />
     </ScenarioDrawerShell>
   );

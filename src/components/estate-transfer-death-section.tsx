@@ -1,4 +1,9 @@
-import type { DeathSectionData } from "@/lib/estate/transfer-report";
+import {
+  estateAtDeathOf,
+  type DeathSectionData,
+} from "@/lib/estate/transfer-report";
+import type { DeathSectionDiff } from "@/lib/estate/diff-transfer-report";
+import { EstateDeltaChip } from "./estate-delta-chip";
 import { EstateTransferRecipientCard } from "./estate-transfer-recipient-card";
 import { EstateTransferReductionsCard } from "./estate-transfer-reductions-card";
 import { EstateTransferConflictsCallout } from "./estate-transfer-conflicts-callout";
@@ -13,12 +18,15 @@ const fmt = new Intl.NumberFormat("en-US", {
 export function EstateTransferDeathSection({
   heading,
   section,
+  diff = null,
 }: {
   heading: string;
   section: DeathSectionData;
+  /** Compare mode: this death's change against the other column. Absent
+   *  outside compare mode, and the section then renders exactly as before. */
+  diff?: DeathSectionDiff | null;
 }) {
-  const estateValue =
-    section.assetEstateValue + section.reconciliation.sumLiabilityTransfers;
+  const estateValue = estateAtDeathOf(section);
   const debtAssumed = section.reconciliation.sumLiabilityTransfers;
   const reductionsTotal = section.reconciliation.sumReductions;
 
@@ -35,6 +43,16 @@ export function EstateTransferDeathSection({
           <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-gray-500">
             Estate at death
           </span>
+          {/* The headline figure an advisor reads off this card. Its own
+              quantity, not the asset leg: the reconciliation line below keeps
+              its own chip, because the sentence around it names the assets. */}
+          {diff && (
+            <EstateDeltaChip
+              delta={diff.estateAtDeath}
+              goodDirection="up"
+              testId="estate-delta-estate-at-death"
+            />
+          )}
           <span className="text-xl font-semibold tabular-nums text-gray-50">
             {fmt.format(estateValue)}
           </span>
@@ -51,13 +69,33 @@ export function EstateTransferDeathSection({
         <EstateTransferReductionsCard
           reductions={section.reductions}
           taxableEstate={section.taxableEstate}
+          taxableEstateDelta={diff?.taxableEstate}
         />
         <EstateTransferConflictsCallout conflicts={section.conflicts} />
 
         {section.reconciliation.reconciles ? (
           <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-t border-gray-800/60 pt-2 text-[11px] text-gray-500">
             <span>
-              <span className="text-emerald-400">✓</span> Reconciled · {fmt.format(section.assetEstateValue)} flows to recipients
+              <span className="text-emerald-400">✓</span> Reconciled ·{" "}
+              {fmt.format(section.assetEstateValue)}
+              {/*
+                Beside the ASSET figure, because that is what
+                `diff.assetEstateValue` measures — the header's "Estate at
+                death" nets debt assumed, which this diff does not carry. More
+                reaching recipients is the good news, so this chip points UP.
+              */}
+              {diff && (
+                // `empty:hidden` drops the margin when the chip renders
+                // nothing — below its $1 noise floor it returns null, which
+                // would otherwise leave a live 6px gap mid-sentence.
+                <span className="ml-1.5 align-middle empty:hidden">
+                  <EstateDeltaChip
+                    delta={diff.assetEstateValue}
+                    goodDirection="up"
+                  />
+                </span>
+              )}{" "}
+              flows to recipients
               {debtAssumed !== 0 && (
                 <> · {fmt.format(Math.abs(debtAssumed))} debt assumed</>
               )}
