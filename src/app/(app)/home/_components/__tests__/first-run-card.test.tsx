@@ -3,10 +3,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { FirstRunCard } from "../first-run-card";
 
-vi.mock("@/components/forge/walkthrough-context", () => ({
-  useWalkthrough: () => ({ start: vi.fn() }),
-}));
-
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }),
 }));
@@ -23,9 +19,12 @@ describe("FirstRunCard", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("offers guided setup when there is no client yet", () => {
+  it("sends guided setup straight into the guided wizard flow", () => {
     render(<FirstRunCard card={{ kind: "no_client" }} />);
-    expect(screen.getByRole("button", { name: /start guided setup/i })).toBeTruthy();
+    const cta = screen.getByRole("link", { name: /start guided setup/i });
+    // /clients/new?path=guided creates the household and the planning client
+    // in one pass; /crm/new alone leaves the card stuck on "no_client".
+    expect(cta.getAttribute("href")).toBe("/clients/new?path=guided");
     expect(screen.getByRole("button", { name: /i'll explore first/i })).toBeTruthy();
   });
 

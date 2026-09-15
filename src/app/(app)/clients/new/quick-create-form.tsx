@@ -586,7 +586,6 @@ export default function QuickCreateForm() {
       {path && (
         <form
           onSubmit={onSubmit}
-          data-forge-anchor="clients-new-planning-fields"
           className="space-y-5 border-t border-hair pt-4"
         >
           {path === "guided" && (

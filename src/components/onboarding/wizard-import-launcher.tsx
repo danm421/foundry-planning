@@ -23,10 +23,7 @@ export default function WizardImportLauncher({
 
   return (
     <>
-      <div
-        data-forge-anchor="wizard-import-launcher"
-        className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-[var(--radius-sm)] border border-hair bg-card-2/40 px-3.5 py-3"
-      >
+      <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-[var(--radius-sm)] border border-hair bg-card-2/40 px-3.5 py-3">
         <button
           type="button"
           onClick={() => setOpen(true)}
