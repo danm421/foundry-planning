@@ -2,14 +2,25 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, fireEvent, within, act } from "@testing-library/react";
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+// One object, not a fresh one per call — Next's own useRouter is stable, and a
+// router that changes identity every render turns any effect that depends on
+// it into a render loop.
+const router = { refresh: vi.fn(), replace: vi.fn() };
+// The "Add Account" deep link is read off the URL, so the search params are a
+// per-test knob rather than a constant.
+let searchParams = new URLSearchParams();
+vi.mock("next/navigation", () => ({
+  useRouter: () => router,
+  usePathname: () => "/portal/organizer/accounts",
+  useSearchParams: () => searchParams,
+}));
 // Canvas is unavailable in jsdom.
 vi.mock("../networth-trend-chart", () => ({ NetWorthTrendChart: () => <div data-testid="trend" /> }));
 // Plaid Link pulls in a dynamic browser-only bundle. Surface `scope` so the
 // header's two entry points stay distinguishable in tests.
 vi.mock("../plaid-link-button-dynamic", () => ({
-  PlaidLinkButton: ({ scope }: { scope?: string }) => (
-    <button type="button" data-scope={scope}>
+  PlaidLinkButton: ({ scope, autoStart }: { scope?: string; autoStart?: boolean }) => (
+    <button type="button" data-scope={scope} data-autostart={String(autoStart ?? false)}>
       Link Account
     </button>
   ),
@@ -595,5 +606,71 @@ describe("AccountsWorkspace", () => {
       fireEvent.click(getByRole("button", { name: "Holdings" }));
     });
     expect(container.textContent).toContain("No holdings for this account yet.");
+  });
+});
+
+describe("Add Account deep link", () => {
+  let replaceState: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    searchParams = new URLSearchParams();
+    // `spyOn` hands back the SAME spy when the property is already spied, so
+    // without the clear this accumulates every earlier test's calls.
+    replaceState = vi.spyOn(window.history, "replaceState").mockImplementation(() => {});
+    replaceState.mockClear();
+  });
+
+  function autostart(container: HTMLElement, scope: string): string | null {
+    return container
+      .querySelector(`[data-scope="${scope}"]`)
+      ?.getAttribute("data-autostart") ?? null;
+  }
+
+  it("opens the banking link flow — and only that one — for add=banking", () => {
+    searchParams = new URLSearchParams("add=banking");
+    const { container } = render(<AccountsWorkspace dto={dto()} />);
+    expect(autostart(container, "banking")).toBe("true");
+    expect(autostart(container, "investments")).toBe("false");
+  });
+
+  it("opens the investments link flow for add=investments", () => {
+    searchParams = new URLSearchParams("add=investments");
+    const { container } = render(<AccountsWorkspace dto={dto()} />);
+    expect(autostart(container, "investments")).toBe("true");
+    expect(autostart(container, "banking")).toBe("false");
+  });
+
+  it("opens the hand-entry form for add=manual", () => {
+    searchParams = new URLSearchParams("add=manual");
+    const { container } = render(<AccountsWorkspace dto={dto()} />);
+    expect(container.textContent).toContain("What are you adding?");
+  });
+
+  it("strips the param without a second trip to the server", () => {
+    searchParams = new URLSearchParams("add=banking");
+    render(<AccountsWorkspace dto={dto()} />);
+    expect(replaceState).toHaveBeenCalledWith(null, "", "/portal/organizer/accounts");
+    // A router navigation here would refetch the page's whole RSC payload.
+    expect(router.replace).not.toHaveBeenCalled();
+  });
+
+  it("does nothing without the param — the control that proves the rest", () => {
+    const { container } = render(<AccountsWorkspace dto={dto()} />);
+    expect(autostart(container, "banking")).toBe("false");
+    expect(autostart(container, "investments")).toBe("false");
+    expect(container.textContent).not.toContain("What are you adding?");
+    expect(replaceState).not.toHaveBeenCalled();
+  });
+
+  it("ignores an intent it doesn't recognise — this is a hand-editable URL", () => {
+    searchParams = new URLSearchParams("add=everything");
+    const { container } = render(<AccountsWorkspace dto={dto()} />);
+    expect(autostart(container, "banking")).toBe("false");
+    expect(container.textContent).not.toContain("What are you adding?");
+  });
+
+  it("refuses the deep link on a read-only portal", () => {
+    searchParams = new URLSearchParams("add=manual");
+    const { container } = render(<AccountsWorkspace dto={dto({ editEnabled: false })} />);
+    expect(container.textContent).not.toContain("What are you adding?");
   });
 });

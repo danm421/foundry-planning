@@ -12,7 +12,10 @@ import PortalReadOnlyBanner from "@/components/portal/portal-read-only-banner";
 import { PortalBrandingStrip } from "@/components/portal/portal-branding-mark";
 import { PortalModeProvider } from "@/components/portal/portal-mode-context";
 import { toPortalFeatures } from "@/lib/portal/features";
-import { portalGreetingName } from "@/lib/portal/greeting-name";
+import {
+  portalGreetingFullName,
+  portalGreetingName,
+} from "@/lib/portal/greeting-name";
 import { portalFeatureColumns } from "@/lib/portal/load-features";
 import { getPortalBindings } from "@/lib/portal/get-portal-client";
 import { loadPortalHouseholdOptions } from "@/lib/portal/household-options";
@@ -41,15 +44,14 @@ export default async function PortalLayout({
 
   // Both halves of the household — the welcome line names the spouse too.
   // Roles are unique per household (one primary, one spouse), so this is at
-  // most two rows. Email stays the primary's: it identifies the signed-in
-  // account, not the household.
+  // most two rows.
   const contacts = householdId
     ? await db
         .select({
           role: crmHouseholdContacts.role,
           firstName: crmHouseholdContacts.firstName,
+          lastName: crmHouseholdContacts.lastName,
           preferredName: crmHouseholdContacts.preferredName,
-          email: crmHouseholdContacts.email,
         })
         .from(crmHouseholdContacts)
         .where(
@@ -60,8 +62,11 @@ export default async function PortalLayout({
         )
     : [];
 
+  // Two greetings, one household: the desktop letterhead runs the window's
+  // full width and carries surnames; the mobile top bar shares its single row
+  // with the firm mark and truncates, so it keeps first names.
   const displayName = portalGreetingName(contacts);
-  const email = contacts.find((c) => c.role === "primary")?.email ?? "";
+  const letterheadName = portalGreetingFullName(contacts);
 
   // Letterhead for the portal chrome, keyed by the client's advisor — an
   // advisor with branding enabled overlays their own logo/name/favicon over
@@ -90,61 +95,75 @@ export default async function PortalLayout({
   const features = toPortalFeatures(row);
 
   return (
-    <div className="min-h-dvh bg-paper text-ink lg:relative lg:grid lg:h-dvh lg:grid-cols-[240px_minmax(0,1fr)] lg:overflow-hidden">
-      {/* Desktop side rail — hidden on mobile, replaced by the top tab bar. */}
+    <div className="min-h-dvh bg-paper text-ink lg:flex lg:h-dvh lg:flex-col lg:overflow-hidden">
       {/*
-        On desktop the nav and the main column are each pinned to the viewport
-        height (`lg:h-dvh`) and scroll independently (`lg:overflow-y-auto`), so
-        scrolling one panel leaves the top of the other in view. Below `lg` the
-        layout stacks and the page scrolls as one.
+        Desktop letterhead — one bar across the whole window, above both the
+        rail and the content, so the firm mark and the greeting beside it stay
+        on one line. Outside the scrolling panes below, so it never scrolls
+        away and needs no sticky positioning.
       */}
-      <PortalNav
-        displayName={displayName}
-        email={email}
-        className="hidden lg:flex lg:h-dvh lg:overflow-y-auto"
-        alerts={navAlerts}
-        features={features}
+      <PortalBrandingStrip
+        branding={branding}
+        displayName={letterheadName}
+        className="hidden lg:flex"
       />
-      <main id="main" className="min-w-0 lg:h-dvh lg:overflow-y-auto lg:border-x lg:border-hair">
-        {/* Mobile-only swipeable top tab bar. */}
-        <PortalMobileNav
-          displayName={displayName}
-          branding={branding}
-          className="lg:hidden"
+      {/*
+        On desktop the nav and the main column split the height left under the
+        letterhead (`lg:flex-1 lg:min-h-0`) and scroll independently, so
+        scrolling one panel leaves the top of the other in view. Below `lg` the
+        layout stacks and the page scrolls as one. `lg:relative` anchors the
+        detail drawer to this row rather than to the letterhead above it.
+      */}
+      <div className="lg:relative lg:grid lg:min-h-0 lg:flex-1 lg:grid-cols-[240px_minmax(0,1fr)]">
+        {/* Desktop side rail — hidden on mobile, replaced by the top tab bar. */}
+        <PortalNav
+          className="hidden lg:flex lg:min-h-0 lg:overflow-y-auto"
           alerts={navAlerts}
           features={features}
+          editEnabled={row?.portalEditEnabled ?? false}
         />
-        {/* Desktop-only firm letterhead pinned above the scrolling content. */}
-        <PortalBrandingStrip branding={branding} className="hidden lg:flex" />
+        <main
+          id="main"
+          className="min-w-0 lg:min-h-0 lg:overflow-y-auto lg:border-x lg:border-hair"
+        >
+          {/* Mobile-only swipeable top tab bar, with its own mark and greeting. */}
+          <PortalMobileNav
+            displayName={displayName}
+            branding={branding}
+            className="lg:hidden"
+            alerts={navAlerts}
+            features={features}
+          />
+          {/*
+            Rendered ONCE, here in the main column, rather than inside each nav:
+            `main` exists at every breakpoint, so one node is reachable on both
+            the desktop rail layout and the mobile tab bar. Putting it in both
+            navs instead would put two <select>s with the same accessible name
+            into the DOM. Renders nothing below two households.
+          */}
+          <HouseholdSwitcher households={householdOptions} activeClientId={clientId} />
+          {!row?.portalEditEnabled && <PortalReadOnlyBanner />}
+          <PortalModeProvider value={{ mode: "client", clientId }}>
+            {children}
+          </PortalModeProvider>
+        </main>
         {/*
-          Rendered ONCE, here in the main column, rather than inside each nav:
-          `main` exists at every breakpoint, so one node is reachable on both
-          the desktop rail layout and the mobile tab bar. Putting it in both
-          navs instead would put two <select>s with the same accessible name
-          into the DOM. Renders nothing below two households.
+          Detail target (createPortal). On desktop it's an overlay drawer, not a
+          third grid column: `lg:absolute` takes it out of the grid so opening a
+          drill-down slides the 480px panel OVER the right of the page instead of
+          squeezing the tiles underneath into a narrower column. `empty:hidden`
+          keeps it out of the way when nothing is selected. Below `lg` the slot
+          stays a zero-height block in flow and the portaled content positions
+          itself as a bottom sheet (see portal-detail-rail). The Budget tabs opt
+          out of the overlay by reserving a matching column (see
+          budget-drawer-gutter) — change the width here and you must change it
+          there.
         */}
-        <HouseholdSwitcher households={householdOptions} activeClientId={clientId} />
-        {!row?.portalEditEnabled && <PortalReadOnlyBanner />}
-        <PortalModeProvider value={{ mode: "client", clientId }}>
-          {children}
-        </PortalModeProvider>
-      </main>
-      {/*
-        Detail target (createPortal). On desktop it's an overlay drawer, not a
-        third grid column: `lg:absolute` takes it out of the grid so opening a
-        drill-down slides the 480px panel OVER the right of the page instead of
-        squeezing the tiles underneath into a narrower column. `empty:hidden`
-        keeps it out of the way when nothing is selected. Below `lg` the slot
-        stays a zero-height block in flow and the portaled content positions
-        itself as a bottom sheet (see portal-detail-rail). The Budget tabs opt
-        out of the overlay by reserving a matching column (see
-        budget-drawer-gutter) — change the width here and you must change it
-        there.
-      */}
-      <aside
-        id="portal-detail"
-        className="portal-drawer empty:hidden lg:absolute lg:inset-y-0 lg:right-0 lg:z-30 lg:w-[480px] lg:overflow-y-auto lg:border-l lg:border-hair lg:bg-paper lg:p-4 lg:shadow-xl"
-      />
+        <aside
+          id="portal-detail"
+          className="portal-drawer empty:hidden lg:absolute lg:inset-y-0 lg:right-0 lg:z-30 lg:w-[480px] lg:overflow-y-auto lg:border-l lg:border-hair lg:bg-paper lg:p-4 lg:shadow-xl"
+        />
+      </div>
     </div>
   );
 }

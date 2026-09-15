@@ -13,7 +13,7 @@ import PortalNav from "../portal-nav";
 
 describe("PortalNav basePath", () => {
   it("defaults to /portal when basePath is omitted (backwards compat)", () => {
-    const { container } = render(<PortalNav displayName="A" email="a@b.co" />);
+    const { container } = render(<PortalNav editEnabled={false} />);
     const hrefs = Array.from(container.querySelectorAll("a")).map((a) =>
       a.getAttribute("href"),
     );
@@ -24,11 +24,7 @@ describe("PortalNav basePath", () => {
 
   it("prefixes all nav links with the provided basePath", () => {
     const { container } = render(
-      <PortalNav
-        displayName="A"
-        email="a@b.co"
-        basePath="/clients/c1/portal/preview"
-      />,
+      <PortalNav editEnabled={false} basePath="/clients/c1/portal/preview" />,
     );
     const hrefs = Array.from(container.querySelectorAll("a")).map((a) =>
       a.getAttribute("href"),
@@ -42,14 +38,14 @@ describe("PortalNav basePath", () => {
   });
 
   it("renders a Dashboard link resolving to the base path", () => {
-    render(<PortalNav displayName="A" email="a@b.c" basePath="/portal" />);
+    render(<PortalNav editEnabled={false} basePath="/portal" />);
     const link = screen.getByRole("link", { name: "Dashboard" });
     expect(link).toHaveAttribute("href", "/portal");
   });
 
   it("resolves Dashboard under the advisor preview base path", () => {
     render(
-      <PortalNav displayName="A" email="a@b.c" basePath="/clients/abc/portal/preview" />,
+      <PortalNav editEnabled={false} basePath="/clients/abc/portal/preview" />,
     );
     expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute(
       "href",
@@ -59,7 +55,7 @@ describe("PortalNav basePath", () => {
 
   it("renders an attention dot only on the alerted item", () => {
     const { container } = render(
-      <PortalNav displayName="A" email="a@b.co" alerts={{ "/settings": true }} />,
+      <PortalNav editEnabled={false} alerts={{ "/settings": true }} />,
     );
     const dots = container.querySelectorAll('[aria-label="Needs attention"]');
     expect(dots).toHaveLength(1);
@@ -70,7 +66,7 @@ describe("PortalNav basePath", () => {
   });
 
   it("renders no attention dot when alerts is omitted (default {})", () => {
-    const { container } = render(<PortalNav displayName="A" email="a@b.co" />);
+    const { container } = render(<PortalNav editEnabled={false} />);
     expect(
       container.querySelectorAll('[aria-label="Needs attention"]'),
     ).toHaveLength(0);
@@ -78,7 +74,7 @@ describe("PortalNav basePath", () => {
 
   it("renders no attention dot when the alert is explicitly false", () => {
     const { container } = render(
-      <PortalNav displayName="A" email="a@b.co" alerts={{ "/settings": false }} />,
+      <PortalNav editEnabled={false} alerts={{ "/settings": false }} />,
     );
     expect(
       container.querySelectorAll('[aria-label="Needs attention"]'),
@@ -90,7 +86,7 @@ describe("PortalNav basePath", () => {
     // (`() => null`) contributing zero anchors. If that mock ever renders a
     // real UserButton (which can include an avatar/menu link), re-scope this
     // query to the rail's own <nav> element instead of the whole container.
-    const { container } = render(<PortalNav displayName="A" email="a@b.co" />);
+    const { container } = render(<PortalNav editEnabled={false} />);
     expect(
       Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href")),
     ).toEqual([
@@ -105,7 +101,7 @@ describe("PortalNav basePath", () => {
   });
 
   it("renders no group subheader now that Profile is gone", () => {
-    const { container } = render(<PortalNav displayName="A" email="a@b.co" />);
+    const { container } = render(<PortalNav editEnabled={false} />);
     expect(container.textContent).not.toContain("Profile");
   });
 });

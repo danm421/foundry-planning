@@ -14,4 +14,21 @@ describe("PortalBrandingStrip", () => {
       screen.getByRole("img", { name: "Foundry Planning" }),
     ).toBeInTheDocument();
   });
+
+  it("greets the household beside the mark, on one line", () => {
+    const { container } = render(
+      <PortalBrandingStrip
+        branding={null}
+        displayName="John Cooper & Jane Cooper"
+      />,
+    );
+    // One text node, not a stacked eyebrow-over-name block: the bar is a row.
+    expect(container).toHaveTextContent("Welcome back, John Cooper & Jane Cooper");
+  });
+
+  it("renders a nameless welcome — not a dangling comma — with no name", () => {
+    const { container } = render(<PortalBrandingStrip branding={null} />);
+    expect(container).toHaveTextContent("Welcome back");
+    expect(container.textContent).not.toContain("Welcome back,");
+  });
 });

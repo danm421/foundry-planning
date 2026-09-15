@@ -105,17 +105,14 @@ describe("portalFeatureForPath", () => {
 
 describe("PortalNav features", () => {
   it("hides the switched-off rail entries", () => {
-    const { container } = render(
-      <PortalNav displayName="A" email="a@b.co" features={ALL_OFF} />,
-    );
+    const { container } = render(<PortalNav editEnabled={false} features={ALL_OFF} />);
     expect(hrefs(container)).toEqual(["/portal", "/portal/organizer", "/portal/settings"]);
   });
 
   it("hides only Documents when only Documents is off", () => {
     const { container } = render(
       <PortalNav
-        displayName="A"
-        email="a@b.co"
+        editEnabled={false}
         features={{ investments: true, budget: true, documents: false, calculators: true }}
       />,
     );
@@ -130,7 +127,7 @@ describe("PortalNav features", () => {
   });
 
   it("renders the full rail when features is omitted", () => {
-    const { container } = render(<PortalNav displayName="A" email="a@b.co" />);
+    const { container } = render(<PortalNav editEnabled={false} />);
     expect(hrefs(container)).toHaveLength(7);
   });
 });

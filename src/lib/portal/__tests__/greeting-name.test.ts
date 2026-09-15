@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { portalGreetingName } from "../greeting-name";
+import { portalGreetingFullName, portalGreetingName } from "../greeting-name";
 
 describe("portalGreetingName", () => {
   it("joins the primary and spouse first names", () => {
@@ -67,5 +67,42 @@ describe("portalGreetingName", () => {
         { role: "spouse", firstName: null },
       ]),
     ).toBe("John");
+  });
+});
+
+describe("portalGreetingFullName", () => {
+  it("names both halves of the household in full", () => {
+    expect(
+      portalGreetingFullName([
+        { role: "primary", firstName: "John", lastName: "Cooper" },
+        { role: "spouse", firstName: "Jane", lastName: "Whitfield" },
+      ]),
+    ).toBe("John Cooper & Jane Whitfield");
+  });
+
+  it("still prefers the preferred name over the legal first name", () => {
+    expect(
+      portalGreetingFullName([
+        { role: "primary", firstName: "Katherine", lastName: "Cooper", preferredName: "Kate" },
+      ]),
+    ).toBe("Kate Cooper");
+  });
+
+  it("falls back to the first name alone when no surname is on file", () => {
+    expect(
+      portalGreetingFullName([
+        { role: "primary", firstName: "John", lastName: null },
+        { role: "spouse", firstName: "Jane", lastName: "Cooper" },
+      ]),
+    ).toBe("John & Jane Cooper");
+  });
+
+  it("drops a contact with no usable name instead of emitting a dangling '&'", () => {
+    expect(
+      portalGreetingFullName([
+        { role: "primary", firstName: "John", lastName: "Cooper" },
+        { role: "spouse", firstName: null, lastName: null },
+      ]),
+    ).toBe("John Cooper");
   });
 });

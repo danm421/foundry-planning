@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useDismissableMenu } from "@/lib/use-dismissable-menu";
 
 export type OverflowMenuItem = {
   label: string;
@@ -23,6 +23,10 @@ const ITEM_CLASS: Record<"default" | "destructive", string> = {
  * copies (RelationshipCard in crm-household-relationships-section.tsx and
  * the family-card menu in contacts-tab.tsx) so the interaction logic lives
  * in one place. Each item is either a Link (href) or a button (onClick).
+ *
+ * The dismissal half now lives in `useDismissableMenu`, shared with the portal
+ * rail's "Add Account" menu — that one wears a full-width accent CTA rather
+ * than a kebab, so it reuses the behaviour and not the markup.
  */
 export function OverflowMenu({
   triggerLabel,
@@ -36,24 +40,7 @@ export function OverflowMenu({
   /** Preserves each call site's original dropdown width. */
   minWidthClassName?: string;
 }) {
-  const [open, setOpen] = useState(false);
-  const wrapperRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function onPointerDown(e: MouseEvent) {
-      if (!wrapperRef.current?.contains(e.target as Node)) setOpen(false);
-    }
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open]);
+  const { open, setOpen, ref: wrapperRef } = useDismissableMenu<HTMLDivElement>();
 
   return (
     <div ref={wrapperRef} className="relative shrink-0">

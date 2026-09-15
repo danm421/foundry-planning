@@ -13,17 +13,13 @@ import PortalNav from "../portal-nav";
 import PortalMobileNav from "../portal-mobile-nav";
 
 describe("PortalNav welcome line", () => {
-  it("greets the household by name above the email", () => {
-    render(<PortalNav displayName="John & Jane" email="john@cooper.test" />);
-    expect(screen.getByText("Welcome back,")).toBeInTheDocument();
-    expect(screen.getByText("John & Jane")).toBeInTheDocument();
-    expect(screen.getByText("john@cooper.test")).toBeInTheDocument();
-  });
-
-  it("renders a nameless welcome — not a dangling comma — when no name resolved", () => {
-    render(<PortalNav displayName="" email="" />);
-    expect(screen.getByText("Welcome")).toBeInTheDocument();
-    expect(screen.queryByText("Welcome back,")).not.toBeInTheDocument();
+  it("leaves the greeting to the letterhead — the rail must not greet twice", () => {
+    // Desktop renders the rail and the letterhead bar together, so a greeting
+    // left here would put two "Welcome back"s on one screen.
+    const { container } = render(<PortalNav editEnabled={false} />);
+    expect(container.textContent).not.toContain("Welcome");
+    // Positive control: the rail did render.
+    expect(screen.getByRole("link", { name: "Dashboard" })).toBeInTheDocument();
   });
 });
 

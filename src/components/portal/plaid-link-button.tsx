@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePlaidLink } from "react-plaid-link";
 import { usePortalFetch } from "@/components/portal/portal-mode-context";
@@ -19,6 +19,13 @@ type Props =
       // new link says which kind it is after. See the link-token route.
       scope: LinkScope;
       onLinkSuccess: (payload: LinkSuccessPayload) => void;
+      /**
+       * Mint a token and open Plaid on mount, without a click. Set when the
+       * client arrived here from the rail's "Add Account" menu, which already
+       * asked which kind of link they wanted. Fires at most ONCE per mount, so
+       * the re-render that follows can't reopen the modal.
+       */
+      autoStart?: boolean;
     }
   | {
       mode: "reauth";
@@ -113,6 +120,18 @@ export function PlaidLinkButton(props: Props) {
       setBusy(false);
     }
   }, [busy, props, portalFetch]);
+
+  // Arrived from the rail's "Add Account" menu: run the same click path the
+  // button would, once. `handleClick` is re-created every render (it closes
+  // over `props`), so the ref — not the dep list — is what makes this fire a
+  // single time.
+  const autoStarted = useRef(false);
+  const autoStart = props.mode === "link" && props.autoStart === true;
+  useEffect(() => {
+    if (!autoStart || autoStarted.current) return;
+    autoStarted.current = true;
+    void handleClick();
+  }, [autoStart, handleClick]);
 
   // When the linkToken is set and Plaid Link is ready, open the modal.
   // usePlaidLink requires the token at hook construction time, not at click

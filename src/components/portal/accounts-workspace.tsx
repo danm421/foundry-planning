@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState, useTransition, type ReactElement } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState, useTransition, type ReactElement } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { AccountsPageDTO } from "@/lib/portal/load-accounts-page";
 import type { PortalAccountRow, PortalDebtRow } from "@/lib/portal/contracts";
 import {
@@ -32,7 +32,7 @@ import {
 import { PlaidLinkButton } from "@/components/portal/plaid-link-button-dynamic";
 import { PlaidConsentNotice } from "@/components/portal/plaid-consent-notice";
 import { PlaidAccountPicker } from "@/components/portal/plaid-account-picker";
-import type { LinkSuccessPayload } from "@/lib/portal/plaid-link-complete";
+import type { LinkScope, LinkSuccessPayload } from "@/lib/portal/plaid-link-complete";
 
 /** What the right panel is showing instead of the card list. */
 type Drill =
@@ -83,6 +83,8 @@ function AddKindPicker({
 
 export function AccountsWorkspace({ dto }: { dto: AccountsPageDTO }): ReactElement {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const portalFetch = usePortalFetch();
   const [isPending, startTransition] = useTransition();
   // `isPending` only covers the post-success router.refresh(); `busy` covers the
@@ -93,6 +95,8 @@ export function AccountsWorkspace({ dto }: { dto: AccountsPageDTO }): ReactEleme
   const [accountForm, setAccountForm] = useState<AccountFormState | null>(null);
   const [debtForm, setDebtForm] = useState<DebtFormState | null>(null);
   const [linkPayload, setLinkPayload] = useState<LinkSuccessPayload | null>(null);
+  // Which link flow to open on arrival, if any — see the effect below.
+  const [autoLink, setAutoLink] = useState<LinkScope | null>(null);
 
   const rail = useMemo(
     () => buildAccountRail({ assets: dto.assets, debts: dto.debts }),
@@ -142,6 +146,35 @@ export function AccountsWorkspace({ dto }: { dto: AccountsPageDTO }): ReactEleme
     setDebtForm(emptyDebtForm(primaryFm?.id ?? null));
     setDrill({ kind: "add-debt" });
   }
+
+  /**
+   * Deep link from the rail's "Add Account" menu. The menu only navigates; the
+   * flows it names live here, so the page performs the intent on arrival and
+   * then strips the param — a refresh or a back-nav must not reopen Plaid.
+   * Gated on `editEnabled` for the same reason the header's buttons are: a
+   * read-only portal has no add path, hand-typed URL or not.
+   */
+  const addIntent = searchParams?.get("add") ?? null;
+  useEffect(() => {
+    if (addIntent === null) return;
+    // `history.replaceState`, not `router.replace`: the latter is a real
+    // navigation that refetches this page's RSC payload — re-running the auth
+    // check and every query in `loadAccountsPage` — purely to drop a query
+    // param. Next integrates the native call into its router, so `usePathname`
+    // and `useSearchParams` still see the change (Next 16 docs, "Shallow
+    // routing on the client").
+    window.history.replaceState(null, "", pathname);
+    if (!dto.editEnabled) return;
+    // Anything else is ignored — this is a URL, so it is user input.
+    if (addIntent === "manual") openAddAccount();
+    else if (addIntent === "banking" || addIntent === "investments") {
+      setAutoLink(addIntent);
+    }
+    // Keyed on the intent ALONE. `pathname` and `editEnabled` are read here,
+    // not triggers, and re-running this on anything that changes per render
+    // would setState in a loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addIntent]);
 
   function openEditAccount(id: string): void {
     const a = account(id);
@@ -381,8 +414,18 @@ export function AccountsWorkspace({ dto }: { dto: AccountsPageDTO }): ReactEleme
         {dto.editEnabled && (
           <div className="flex flex-wrap items-center justify-end gap-3">
             <PlaidConsentNotice />
-            <PlaidLinkButton mode="link" scope="banking" onLinkSuccess={setLinkPayload} />
-            <PlaidLinkButton mode="link" scope="investments" onLinkSuccess={setLinkPayload} />
+            <PlaidLinkButton
+              mode="link"
+              scope="banking"
+              autoStart={autoLink === "banking"}
+              onLinkSuccess={setLinkPayload}
+            />
+            <PlaidLinkButton
+              mode="link"
+              scope="investments"
+              autoStart={autoLink === "investments"}
+              onLinkSuccess={setLinkPayload}
+            />
             <button
               type="button"
               onClick={openAddAccount}

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { UserButton } from "@clerk/nextjs";
 import type { ReactElement } from "react";
+import PortalAddAccountMenu from "@/components/portal/portal-add-account-menu";
 import {
   visiblePortalNavItems,
   isPortalNavItemActive,
@@ -26,13 +27,6 @@ import {
 const GROUP_ORDER: readonly PortalNavGroup[] = ["overview", "money", "settings"];
 
 interface Props {
-  /**
-   * Who the rail greets — both halves of the household when there are two
-   * ("John & Jane"), from `portalGreetingName`. Empty renders a nameless
-   * "Welcome".
-   */
-  displayName: string;
-  email: string;
   basePath?: string;
   /**
    * Display + visibility classes for the root <nav>. Defaults to `"flex"` so
@@ -52,15 +46,20 @@ interface Props {
    * consumers and existing tests render the full rail.
    */
   features?: PortalFeatures;
+  /**
+   * The client's portal write switch. Gates the "Add Account" menu, whose every
+   * destination is a write. Required, unlike the props above: a forgotten write
+   * gate should not compile, which is stronger than any default it could take.
+   */
+  editEnabled: boolean;
 }
 
 export default function PortalNav({
-  displayName,
-  email,
   basePath = "/portal",
   className = "flex",
   alerts = {},
   features = DEFAULT_PORTAL_FEATURES,
+  editEnabled,
 }: Props): ReactElement {
   const pathname = usePathname();
   const items = visiblePortalNavItems(features);
@@ -91,23 +90,16 @@ export default function PortalNav({
       className={`${className} flex-col gap-2 border-r border-hair bg-card-2 p-5`}
     >
       {/*
-        The rail's warm anchor. The name carries it at `h3` scale (22px) rather
-        than sitting at nav-item size — this is the one place in the portal
-        that addresses the client as a person, so it leads, and the eyebrow and
-        email stay quiet underneath.
+        The rail leads with its one action, above Dashboard — adding an account
+        is what a client comes here to do that isn't reading. The household
+        greeting it replaced now runs across the letterhead bar above
+        (see portal-branding-mark).
       */}
-      <header className="mb-5">
-        {displayName && (
-          <div className="text-[12px] text-ink-3">Welcome back,</div>
-        )}
-        {/* Names wrap rather than truncate — a two-person household ("Welcome
-            back, John & Jane") needs the second line more than it needs one
-            row. */}
-        <div className="text-[22px] font-semibold leading-tight tracking-[-0.015em] text-ink">
-          {displayName || "Welcome"}
+      {editEnabled && (
+        <div className="mb-4">
+          <PortalAddAccountMenu basePath={basePath} />
         </div>
-        <div className="mt-1 truncate text-[12px] text-ink-3">{email}</div>
-      </header>
+      )}
 
       {groups.map(({ group, items: groupItems }) => (
         <div key={group} className="mb-3">
