@@ -1,22 +1,28 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { z, ZodError } from "zod";
 
 // vi.hoisted, not a bare top-level const: these factories run during ESM
 // import evaluation, before this file's own top-level statements — see
 // define-tool.test.ts for the same pattern already established in this repo.
-const { resolveMcpPrincipal, McpUnauthorizedError } = vi.hoisted(() => {
+const { resolveMcpPrincipal, McpUnauthorizedError, MCP_RESOURCE_URL } = vi.hoisted(() => {
   class FakeMcpUnauthorizedError extends Error {
     constructor(reason: string) {
       super(reason);
       this.name = "McpUnauthorizedError";
     }
   }
-  return { resolveMcpPrincipal: vi.fn(), McpUnauthorizedError: FakeMcpUnauthorizedError };
+  return {
+    resolveMcpPrincipal: vi.fn(),
+    McpUnauthorizedError: FakeMcpUnauthorizedError,
+    // F5 (Task 12 fix round 1): route.ts now imports this constant from
+    // `@/lib/mcp/principal` rather than defining its own copy, so this
+    // file's mock of that module must supply it too.
+    MCP_RESOURCE_URL: "https://app.foundryplanning.com/api/mcp",
+  };
 });
 const { recordAudit } = vi.hoisted(() => ({ recordAudit: vi.fn() }));
 const { decodeJwt } = vi.hoisted(() => ({ decodeJwt: vi.fn() }));
 
-vi.mock("@/lib/mcp/principal", () => ({ resolveMcpPrincipal, McpUnauthorizedError }));
+vi.mock("@/lib/mcp/principal", () => ({ resolveMcpPrincipal, McpUnauthorizedError, MCP_RESOURCE_URL }));
 vi.mock("@/lib/audit", () => ({ recordAudit }));
 // route.ts's own `decodeJwt` call, mocked so audience tests don't need a real
 // signed JWT — safe in isolation here because resolveMcpPrincipal (the only
@@ -24,13 +30,7 @@ vi.mock("@/lib/audit", () => ({ recordAudit }));
 // real jwtVerify/createRemoteJWKSet code never runs in this file.
 vi.mock("jose", () => ({ decodeJwt }));
 
-import {
-  audienceIsAcceptable,
-  toolFailureResult,
-  recordDenial,
-  verifyToken,
-  MCP_RESOURCE_URL,
-} from "../route";
+import { audienceIsAcceptable, toolFailureResult, recordDenial, verifyToken } from "../route";
 import { McpRateLimitedError, type McpTool } from "@/domain/mcp/define-tool";
 import { McpForbiddenError, CLIENT_UNREADABLE_MESSAGE } from "@/domain/mcp/guards";
 import type { McpPrincipal } from "@/lib/mcp/principal";
@@ -44,12 +44,6 @@ const principal: McpPrincipal = {
 };
 
 const fakeTool = { name: "test_tool" } as McpTool;
-
-function zodErrorFor(value: unknown): ZodError {
-  const result = z.object({ clientId: z.string() }).safeParse(value);
-  if (result.success) throw new Error("fixture must fail validation");
-  return result.error;
-}
 
 beforeEach(() => {
   resolveMcpPrincipal.mockReset();
@@ -83,22 +77,18 @@ describe("audienceIsAcceptable (D4)", () => {
   });
 });
 
-describe("toolFailureResult (D5)", () => {
-  it("wraps a ZodError into a short sentence naming the bad field, not a raw JSON dump", () => {
-    const out = toolFailureResult(zodErrorFor({ clientId: 123 }));
-    expect(out.isError).toBe(true);
-    expect(out.content[0].text).toBe('Invalid argument "clientId": Invalid input: expected string, received number.');
-    // The defect this guards: ZodError#message is a multi-line JSON array of
-    // issue objects — never let that reach the model verbatim.
-    expect(out.content[0].text).not.toContain("[");
-    expect(out.content[0].text).not.toContain('"code"');
-  });
-
-  it("falls back to 'input' when a ZodError issue carries no path", () => {
-    const result = z.string().safeParse(42);
-    if (result.success) throw new Error("fixture must fail validation");
-    const out = toolFailureResult(result.error);
-    expect(out.content[0].text).toMatch(/^Invalid argument "input"/);
+describe("toolFailureResult (D5, F4, F6)", () => {
+  it("does NOT pass through an arbitrary Error's message — F4's default-deny allowlist", () => {
+    // The exact shape I1 named: a raw driver error (Postgres 22P02 for a
+    // malformed clientId) is a plain Error with no hand-written, model-safe
+    // message. Only McpRateLimitedError/McpForbiddenError may pass their
+    // `.message` through; everything else gets the generic sentence.
+    const out = toolFailureResult(
+      new Error('invalid input syntax for type uuid: "not-a-uuid"'),
+    );
+    expect(out.content[0].text).toBe("Foundry could not complete that request.");
+    expect(out.content[0].text).not.toContain("uuid");
+    expect(out.content[0].text).not.toContain("syntax");
   });
 
   it("passes through McpRateLimitedError's 'exceeded' message — retry helps", () => {
@@ -131,7 +121,7 @@ describe("toolFailureResult (D5)", () => {
   });
 });
 
-describe("recordDenial (D6)", () => {
+describe("recordDenial (D6, F9)", () => {
   it("records a denial with a null clientId — never the id the caller was refused", async () => {
     await recordDenial(fakeTool, principal, new McpForbiddenError(CLIENT_UNREADABLE_MESSAGE));
     expect(recordAudit).toHaveBeenCalledTimes(1);
@@ -147,22 +137,20 @@ describe("recordDenial (D6)", () => {
     });
   });
 
-  it("labels a rate-limit denial with its specific reason, not just 'denied'", async () => {
-    await recordDenial(fakeTool, principal, new McpRateLimitedError("exceeded"));
+  it("labels a rate-limit denial with its specific reason, not just 'denied' (server-side fault, not 'exceeded')", async () => {
+    // "unconfigured" is a rare server-side fault worth a trace (F9/R87) —
+    // unlike "exceeded" below, this one still writes a row.
+    await recordDenial(fakeTool, principal, new McpRateLimitedError("unconfigured"));
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
-        metadata: { tool: "test_tool", outcome: "denied", reason: "rate_limited:exceeded" },
+        metadata: { tool: "test_tool", outcome: "denied", reason: "rate_limited:unconfigured" },
       }),
     );
   });
 
-  it("labels a bad-argument denial distinctly from a forbidden one", async () => {
-    await recordDenial(fakeTool, principal, zodErrorFor({ clientId: 123 }));
-    expect(recordAudit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        metadata: { tool: "test_tool", outcome: "denied", reason: "invalid_args" },
-      }),
-    );
+  it("F9 (Ruling R87): skips the audit row entirely for a plain 'exceeded' rate-limit refusal", async () => {
+    await recordDenial(fakeTool, principal, new McpRateLimitedError("exceeded"));
+    expect(recordAudit).not.toHaveBeenCalled();
   });
 
   it("labels an unrecognized failure generically", async () => {

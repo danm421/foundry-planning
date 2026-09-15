@@ -1,7 +1,7 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { stateFromMeta, type OrgMeta } from "@/lib/billing/subscription-state";
-import { decideAccess } from "@/lib/billing/access-policy";
+import { decideAccess, enforcementMode } from "@/lib/billing/access-policy";
 import { recordAudit } from "@/lib/audit";
 import { operationsBlocked } from "@/lib/operations-route-guard";
 import { getPortalClientId } from "@/lib/portal/get-portal-client";
@@ -88,11 +88,6 @@ const isBillingExemptRoute = createRouteMatcher([
   "/settings/billing(.*)",
   "/api/billing/portal",
 ]);
-
-type EnforcementMode = "log" | "enforce";
-function enforcementMode(): EnforcementMode {
-  return process.env.BILLING_ENFORCEMENT_MODE === "enforce" ? "enforce" : "log";
-}
 
 export default clerkMiddleware(async (auth, request) => {
   // Surface the request pathname so server components (e.g. SettingsTabs)

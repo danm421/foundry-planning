@@ -1,6 +1,9 @@
 import { clerkClient } from "@clerk/nextjs/server";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import type { Principal } from "@/lib/clients/authz";
+import { STAFF_ROLES } from "@/lib/capabilities";
+import { stateFromMeta, type OrgMeta } from "@/lib/billing/subscription-state";
+import { decideAccess, enforcementMode } from "@/lib/billing/access-policy";
 
 /**
  * A verified MCP caller. `orgId` is non-nullable on purpose: Foundry's tenant
@@ -29,8 +32,19 @@ export class McpUnauthorizedError extends Error {
   }
 }
 
-/** Passed explicitly: Clerk's own default page is smaller. See `resolveOrgRole`. */
+/** Passed explicitly: Clerk's own default page is smaller. See `resolveOrgMembership`. */
 const MEMBERSHIP_PAGE_SIZE = 100;
+
+/**
+ * The MCP endpoint IS the protected resource identifier (RFC 9728) — the
+ * same string `.well-known/oauth-protected-resource/route.ts` advertises as
+ * `resource` and `app/api/mcp/route.ts` enforces as the expected token
+ * `aud` (Task 12 / D4, F5). Both routes already import this module for
+ * `deriveIssuer`, so sharing this constant from here costs neither route a
+ * new dependency — unlike the two independently-editable literals this
+ * replaces, whose comments incorrectly claimed no such shared file existed.
+ */
+export const MCP_RESOURCE_URL = `${process.env.NEXT_PUBLIC_APP_URL ?? "https://app.foundryplanning.com"}/api/mcp`;
 
 /**
  * Clerk's OAuth issuer, derived from the publishable key rather than read from
@@ -84,8 +98,12 @@ function tokenVerifier() {
   return verifier;
 }
 
+/** The caller's live role plus the org's billing metadata, read from one membership record. */
+type OrgMembership = { role: string; orgMeta: OrgMeta | null };
+
 /**
- * The caller's role in `orgId`, read LIVE from Clerk — never from the token.
+ * The caller's role in `orgId`, read LIVE from Clerk — never from the token —
+ * plus that same org's public metadata, for the billing gate (F2).
  *
  * A Clerk OAuth access token carries no role claim at all, so a principal built
  * from the token alone would always have `orgRole: null`. That is not a
@@ -99,7 +117,7 @@ function tokenVerifier() {
  * Returns null when the user holds no membership in that org; the caller fails
  * closed on that.
  */
-async function resolveOrgRole(userId: string, orgId: string): Promise<string | null> {
+async function resolveOrgMembership(userId: string, orgId: string): Promise<OrgMembership | null> {
   const clerk = await clerkClient();
 
   // The list is paginated and Clerk's default page is smaller than ours, so a
@@ -114,8 +132,20 @@ async function resolveOrgRole(userId: string, orgId: string): Promise<string | n
       limit: MEMBERSHIP_PAGE_SIZE,
       offset: page * MEMBERSHIP_PAGE_SIZE,
     });
-    const role = data.find((m) => m.organization?.id === orgId)?.role;
-    if (role) return role;
+    const membership = data.find((m) => m.organization?.id === orgId);
+    if (membership?.role) {
+      // Reuses the membership Clerk already sent for the role lookup above —
+      // no second Clerk call (Task 12 fix round 1 / F2). Empirically
+      // confirmed against the real dev Clerk instance
+      // (GET /v1/users/{id}/organization_memberships) that the nested
+      // `organization.public_metadata` IS populated on this endpoint, not
+      // just declared by the deserializer's types. Clerk's
+      // `OrganizationPublicMetadata` is an opaque, augmentable interface
+      // this app never augments, so the cast is the same narrow move
+      // src/proxy.ts:219 makes for the session-claims copy of this data.
+      const orgMeta = (membership.organization?.publicMetadata ?? null) as OrgMeta | null;
+      return { role: membership.role, orgMeta };
+    }
     pageCount = Math.ceil(totalCount / MEMBERSHIP_PAGE_SIZE);
   }
   return null;
@@ -147,7 +177,16 @@ export async function resolveMcpPrincipal(bearerToken: string): Promise<McpPrinc
   // algorithm confusion is not reachable today. Pinning it keeps that true if
   // either side changes.
   const verifyOptions = { issuer, typ: "at+jwt", algorithms: ["RS256"] };
-  const { payload } = await jwtVerify(bearerToken, jwks, verifyOptions).catch(() => {
+  const { payload } = await jwtVerify(bearerToken, jwks, verifyOptions).catch((joseErr) => {
+    // F7 (Task 12 fix round 1, Ruling R79): log the underlying jose failure
+    // server-side before converting it. Without this line a JWKS fetch
+    // outage is byte-identical, in both the response AND the server log, to
+    // an ordinary bad token — `withMcpAuth` only logs a THROW from this
+    // function's caller, and route.ts's `verifyToken` converts every
+    // `McpUnauthorizedError` here into a silent `return undefined`. The
+    // thrown message stays byte-identical on purpose (see the comment
+    // below) — only the log line is new, so no probing oracle opens.
+    console.error("MCP: token verification failed", joseErr);
     // Deliberately opaque: signature, issuer, type, algorithm and expiry
     // failures share one message, so a caller cannot probe which check it
     // tripped.
@@ -168,10 +207,51 @@ export async function resolveMcpPrincipal(bearerToken: string): Promise<McpPrinc
   const scopes =
     typeof payload.scope === "string" ? payload.scope.split(/\s+/).filter(Boolean) : [];
 
-  const orgRole = await resolveOrgRole(userId, orgId);
-  if (!orgRole) {
+  const membership = await resolveOrgMembership(userId, orgId);
+  if (!membership) {
     throw new McpUnauthorizedError(
       "this account is not a member of the connected organization — reconnect Foundry in Claude and pick a firm you belong to",
+    );
+  }
+  const { role: orgRole, orgMeta } = membership;
+
+  // F1 (Task 12 fix round 1, Rulings R82/R83): block book-scoped staff roles
+  // from the connector, matching the web's planning block
+  // (src/lib/operations-route-guard.ts). Enforced HERE, not in `defineTool`
+  // — this is the only place an MCP bearer token is interpreted, and
+  // gating here means a blocked staffer's Claude never even receives the
+  // tool catalogue via `tools/list`, matching the web where ops reaches no
+  // planning surface at all. Deliberately `STAFF_ROLES.has(orgRole)`, never
+  // `roleHasCapability` — that helper is deny-by-default and this app
+  // deliberately supports arbitrary custom Clerk advisor role keys (e.g.
+  // `org:senior_advisor`) that carry no entry in `ROLE_CAPABILITIES`; a
+  // capability gate here would lock out a real advisor, not just staff.
+  if (STAFF_ROLES.has(orgRole)) {
+    // Role only — never a user id, token, or any PII. `withMcpAuth` cannot
+    // carry a reason back to the caller (every rejection reads as the same
+    // generic 401), so without this log a blocked staffer's failure is
+    // undiagnosable.
+    console.error(`MCP: denied connector access — role "${orgRole}" is book-scoped staff`);
+    throw new McpUnauthorizedError(
+      "this role cannot use the Foundry connector — ask an advisor or firm admin to connect instead",
+    );
+  }
+
+  // F2 (Task 12 fix round 1, Rulings R84/R85): the connector must honor the
+  // same billing lockout the web enforces (src/proxy.ts). "GET", not
+  // "POST" — every MCP tool is read-only by construction (`defineTool`
+  // hard-codes `readOnlyHint: true`), and `decideAccess` only blocks
+  // mutating methods for a grace-period firm, so "POST" would wrongly
+  // 401 a firm the web still lets read. `enforcementMode()` and the
+  // `state.kind === "missing"` override are the exact shape
+  // `src/proxy.ts` uses, imported from one place (R85) so the two can
+  // never drift apart.
+  const billingState = stateFromMeta(orgMeta ?? undefined);
+  const billingDecision = decideAccess(billingState, "GET", "/api/mcp");
+  if (billingDecision === "lock_out" && (enforcementMode() === "enforce" || billingState.kind === "missing")) {
+    console.error(`MCP: denied connector access — billing state "${billingState.kind}"`);
+    throw new McpUnauthorizedError(
+      "this firm's Foundry subscription is inactive — restore billing in the web app to reconnect",
     );
   }
 

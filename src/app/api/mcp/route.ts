@@ -1,10 +1,10 @@
-import { ZodError } from "zod";
 import { decodeJwt } from "jose";
 import type { AuthInfo } from "@modelcontextprotocol/server";
 import { createMcpHandler, withMcpAuth } from "mcp-handler";
 import {
   resolveMcpPrincipal,
   McpUnauthorizedError,
+  MCP_RESOURCE_URL,
   type McpPrincipal,
 } from "@/lib/mcp/principal";
 import { McpRateLimitedError, type McpTool } from "@/domain/mcp/define-tool";
@@ -15,15 +15,6 @@ import { ALL_MCP_TOOLS } from "@/domain/mcp/tools";
 // Solver and Monte Carlo tools run the engine. Matches the Forge compute
 // routes; Vercel's function config already gives every route the large machine.
 export const maxDuration = 300;
-
-// The MCP endpoint IS the protected resource identifier — the same string
-// `.well-known/oauth-protected-resource/route.ts` advertises as `resource`.
-// Kept as an identical expression there rather than a shared import: this
-// route already pulls in every tool (and everything they depend on), and
-// making the tiny metadata route import from here — or vice versa — would
-// tie a lightweight endpoint's bundle to the other's dependency graph for a
-// one-line string.
-export const MCP_RESOURCE_URL = `${process.env.NEXT_PUBLIC_APP_URL ?? "https://app.foundryplanning.com"}/api/mcp`;
 
 /**
  * True when a token's `aud` claim (absent, one value, or several) permits
@@ -50,52 +41,63 @@ type ToolCallOutcome = {
 
 /**
  * Turn a thrown tool failure into an actionable message — never a stack
- * trace, never a raw error dump — for the three failure shapes `defineTool`
- * can throw. Exported for direct unit coverage (D5).
+ * trace, never a raw error dump — for the model. Exported for direct unit
+ * coverage (D5).
  *
- * `McpRateLimitedError` and `McpForbiddenError` already carry a
- * hand-written, model-safe `.message` (see define-tool.ts / guards.ts), so
- * they fall through to the generic branch unchanged. Only `ZodError` needs
- * rewriting here: `inputSchema.parse` throws it directly, and its own
- * `.message` is a multi-line JSON blob naming internal Zod issue codes, not
- * a sentence.
+ * F4 (Task 12 fix round 1): a DEFAULT-DENY allowlist, not a default-pass
+ * with special cases. Only `McpRateLimitedError` and `McpForbiddenError` may
+ * pass their `.message` through, because those two are the only error
+ * shapes in this codebase with a hand-written, model-safe message
+ * (define-tool.ts / guards.ts). Everything else — including a raw Postgres
+ * `22P02 invalid input syntax for type uuid` from a malformed `clientId`
+ * that reached the driver (every household-id schema is a bare
+ * `z.string()`, not `.uuid()` — see the deferred whole-branch minor) — gets
+ * one generic sentence, with the real error logged server-side so it isn't
+ * simply lost.
  *
- * NOTE on the "map exceeded -> 429, else -> 503" instruction (D5): verified
- * against the installed `@modelcontextprotocol/server@2.0.0` source (the
- * package `mcp-handler` actually delegates to — NOT the unrelated, older
- * `@modelcontextprotocol/sdk` also present in node_modules) that this is not
- * reachable as a real HTTP status. Every completed JSON-RPC response for a
- * request — a successful tool result, an `isError: true` tool result, or
- * even a protocol-level error object — is sent back as HTTP 200:
- * node_modules/@modelcontextprotocol/server/dist/index.mjs:892-899 resolves
- * both `isJSONRPCResultResponse` and `isJSONRPCErrorResponse` through the
- * SAME `Response.json(..., { status: 200 })` call. There is no per-tool-call
- * hook to override that status from inside a `registerTool` callback. The
- * achievable equivalent is the message text itself, which
- * `McpRateLimitedError`'s constructor already tailors by reason ("wait a
- * minute and retry" for `exceeded`, "temporarily unavailable" for everything
- * else) — preserved here by letting it fall through unchanged rather than
- * flattening it.
+ * F6 (Task 12 fix round 1): this function used to also rewrite a raw
+ * `ZodError` into a short sentence, and a comment here claimed
+ * `inputSchema.parse` throws it directly. Traced to the branch actually
+ * taken in the installed `@modelcontextprotocol/server@2.0.0` (the package
+ * `mcp-handler` delegates to — NOT the unrelated, unused, transitive
+ * `@modelcontextprotocol/sdk` also in node_modules): `validateToolInput`
+ * validates every tool call against the SAME schema BEFORE our callback
+ * ever runs (mcp-DXXb3Vv3.mjs:1399-1400) and turns a failure into a
+ * `ProtocolError(InvalidParams, ...)` answered from `formatIssue`
+ * (src-CX2iR2pK.mjs:5339-5341) as `"<path>: <message>"` — already a
+ * readable sentence, not a JSON blob. `defineTool`'s own re-parse
+ * (define-tool.ts:95) therefore re-validates data the SDK already accepted
+ * against the identical schema, and no tool schema uses
+ * `transform`/`default`/`preprocess`, so it can never throw. The `ZodError`
+ * branch that used to live here was dead code proving a path the product
+ * never executes; deleted along with the two tests that exercised it. The
+ * one thing this means, and cannot be fixed from this callback (the SDK
+ * throws before it runs): a bad-argument call writes NO audit row (see
+ * `denialReason`/`recordDenial` below). A workaround of registering a
+ * looser schema so our own parse becomes the throwing one was considered
+ * and rejected — it would strip the tool's real schema from `tools/list`
+ * and make the model worse at calling it correctly in the first place.
  */
 export function toolFailureResult(err: unknown): ToolCallOutcome {
-  if (err instanceof ZodError) {
-    const issue = err.issues[0];
-    const field = issue && issue.path.length > 0 ? issue.path.join(".") : "input";
-    const detail = issue?.message ?? "failed validation";
-    return {
-      content: [{ type: "text", text: `Invalid argument "${field}": ${detail}.` }],
-      isError: true,
-    };
+  if (err instanceof McpRateLimitedError || err instanceof McpForbiddenError) {
+    return { content: [{ type: "text", text: err.message }], isError: true };
   }
-  const message = err instanceof Error ? err.message : "Foundry could not complete that request.";
-  return { content: [{ type: "text", text: message }], isError: true };
+  console.error("MCP tool call failed with an unexpected error:", err);
+  return {
+    content: [{ type: "text", text: "Foundry could not complete that request." }],
+    isError: true,
+  };
 }
 
-/** Short, closed label for the audit row's `metadata.reason` — never the raw error text. */
+/**
+ * Short, closed label for the audit row's `metadata.reason` — never the raw
+ * error text. (F6: the `ZodError` → `"invalid_args"` case that used to live
+ * here was dead — see `toolFailureResult`'s comment — and is removed with
+ * its test.)
+ */
 function denialReason(err: unknown): string {
   if (err instanceof McpRateLimitedError) return `rate_limited:${err.reason}`;
   if (err instanceof McpForbiddenError) return "forbidden";
-  if (err instanceof ZodError) return "invalid_args";
   return "error";
 }
 
@@ -106,6 +108,15 @@ function denialReason(err: unknown): string {
  * ids across firms would be invisible to the audit log. This is that missing
  * row for every other outcome.
  *
+ * F9 (Task 12 fix round 1, Ruling R87): EXCEPT a plain over-budget refusal.
+ * D6's purpose is to make cross-firm PROBING visible — a forbidden client or
+ * a malformed argument. A caller hammering past the rate limit is already
+ * counted by the Upstash limiter, which is the better record and costs no
+ * row; without this skip, the limiter's whole job of damping load would
+ * instead amplify into one `audit_log` INSERT per refused call.
+ * `"unconfigured"` and `"redis_error"` are NOT skipped — those are rare
+ * server-side faults worth a trace, not caller-side throttling.
+ *
  * `clientId` is always `null` here, never the id the caller asked for and
  * was refused: writing it would put a household the caller was NOT cleared
  * to read into the same field `getPortalActivity` and
@@ -114,6 +125,8 @@ function denialReason(err: unknown): string {
  * audit write still returns the tool's real error to the model.
  */
 export async function recordDenial(tool: McpTool, principal: McpPrincipal, err: unknown): Promise<void> {
+  if (err instanceof McpRateLimitedError && err.reason === "exceeded") return;
+
   await recordAudit({
     action: "mcp.tool_call",
     resourceType: "mcp_tool",
@@ -193,13 +206,22 @@ export const verifyToken = async (_req: Request, bearerToken?: string): Promise<
     // `withMcpAuth` instead of silently collapsing into the same "reconnect"
     // 401 an actually-bad token gets.
     //
-    // NOTE (D5, third bullet — "distinguish a JWKS outage from a bad
-    // token"): verified against node_modules/mcp-handler/dist/index.js:150-160
-    // that `withMcpAuth` itself catches every rejection here, logged or not,
-    // and answers with the SAME bearerAuthChallengeResponse("Invalid token").
-    // The advisor-facing response cannot be distinguished at that HTTP layer
-    // with this dependency; rethrowing still buys the operational win of a
-    // server-side log line instead of silence, which is what's implemented.
+    // NOTE (F7, Task 12 fix round 1, Ruling R79 — CORRECTS the comment this
+    // replaces, which claimed both branches answer identically; they do
+    // not): a THROW from this function reaches `withMcpAuth`'s own
+    // try/catch (node_modules/mcp-handler/dist/index.js:155-163), which
+    // logs "Unexpected error authenticating bearer token" and answers
+    // `bearerAuthChallengeResponse("Invalid token")`. Returning `undefined`
+    // instead (the `McpUnauthorizedError` branch above) takes
+    // `withMcpAuth`'s `required && !authInfo` branch (:165-169), which
+    // throws an `OAuthError` whose OWN catch (:190-194) suppresses the
+    // `console.error` specifically because `OAuthError.isInstance` is true —
+    // so THAT path is silent, and its message is "No authorization
+    // provided", not "Invalid token". The two are neither the same log
+    // behaviour nor the same message. Rethrowing here still buys a
+    // server-side log line a dependency outage would otherwise never get;
+    // the advisor-facing HTTP response still cannot be made to differ at
+    // this layer with this dependency.
     throw err;
   }
 };

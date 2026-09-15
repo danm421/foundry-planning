@@ -5,8 +5,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // `deriveIssuer()`, one derivation. Mock it directly so the test pins that
 // call, rather than the publishable-key parsing `deriveIssuer` itself does
 // (already covered where `principal.ts` is tested).
-const { deriveIssuer } = vi.hoisted(() => ({ deriveIssuer: vi.fn() }));
-vi.mock("@/lib/mcp/principal", () => ({ deriveIssuer }));
+//
+// F5 (Task 12 fix round 1): this route also now imports `MCP_RESOURCE_URL`
+// from the same module instead of defining its own `RESOURCE` literal, so
+// the mock must supply that too.
+const { deriveIssuer, MCP_RESOURCE_URL } = vi.hoisted(() => ({
+  deriveIssuer: vi.fn(),
+  MCP_RESOURCE_URL: "https://app.foundryplanning.com/api/mcp",
+}));
+vi.mock("@/lib/mcp/principal", () => ({ deriveIssuer, MCP_RESOURCE_URL }));
 
 import { GET, OPTIONS } from "../route";
 
@@ -33,6 +40,25 @@ describe("GET /.well-known/oauth-protected-resource (D3)", () => {
     const body = await res.json();
     expect(body.scopes_supported).toEqual(["profile", "email", "user:org:read"]);
     expect(body.bearer_methods_supported).toEqual(["header"]);
+  });
+
+  it("F8 (minor m6): answers a clean, logged 500 instead of an uncaught throw when deriveIssuer() fails", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    deriveIssuer.mockImplementation(() => {
+      throw new Error("this server is not configured for MCP access");
+    });
+    let res: Response;
+    // Before F8 this call THROWS out of GET() entirely, rather than
+    // returning a Response — expect.not.toThrow proves the uncaught-throw
+    // mutation (removing the try/catch) would fail this assertion.
+    expect(() => {
+      res = GET();
+    }).not.toThrow();
+    const body = await res!.json();
+    expect(res!.status).toBe(500);
+    expect(body.error).toBeTruthy();
+    expect(consoleErrorSpy).toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
   });
 });
 

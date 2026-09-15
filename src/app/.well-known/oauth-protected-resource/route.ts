@@ -1,24 +1,34 @@
 import { generateProtectedResourceMetadata, metadataCorsOptionsRequestHandler } from "mcp-handler";
-import { deriveIssuer } from "@/lib/mcp/principal";
-
-// The MCP endpoint IS the protected resource identifier (RFC 9728) — never
-// the bare app origin. Kept as an identical expression in
-// `src/app/api/mcp/route.ts`, which enforces this same string as the
-// expected token `aud` (Task 12 / D4): the two must never drift apart, and
-// there is no third file both routes could safely share it from without
-// pulling the whole MCP tool registry into this otherwise-tiny metadata
-// endpoint's bundle.
-const RESOURCE = `${process.env.NEXT_PUBLIC_APP_URL ?? "https://app.foundryplanning.com"}/api/mcp`;
+import { deriveIssuer, MCP_RESOURCE_URL } from "@/lib/mcp/principal";
 
 export function GET() {
+  let authServerUrl: string;
+  try {
+    // `deriveIssuer()` is the SAME derivation `resolveMcpPrincipal` verifies
+    // tokens against (src/lib/mcp/principal.ts). Reading env vars here
+    // independently risks advertising an authorization server that isn't
+    // the one actually enforced — see Ruling R74 / D3. `MCP_RESOURCE_URL`
+    // is that same file's single source of truth for the `resource` value
+    // too (Task 12 fix round 1 / F5) — both routes already import this
+    // module, so nothing is shared here that wasn't already in each
+    // route's bundle.
+    authServerUrl = deriveIssuer();
+  } catch (err) {
+    // F8 (Task 12 fix round 1, minor m6): `deriveIssuer()` throws
+    // `McpUnauthorizedError` on a garbled or absent publishable key. Left
+    // uncaught, that 500s this GET with no log line — a deploy
+    // misconfiguration would surface only as a client-side connector
+    // failure with nothing server-side to point at it.
+    console.error("MCP metadata: cannot derive the Clerk issuer — check the Clerk publishable key", err);
+    return Response.json(
+      { error: "server_error", error_description: "This server is not configured for MCP access." },
+      { status: 500 },
+    );
+  }
   return Response.json(
     generateProtectedResourceMetadata({
-      // `deriveIssuer()` is the SAME derivation `resolveMcpPrincipal` verifies
-      // tokens against (src/lib/mcp/principal.ts). Reading env vars here
-      // independently risks advertising an authorization server that isn't
-      // the one actually enforced — see Ruling R74 / D3.
-      authServerUrls: [deriveIssuer()],
-      resourceUrl: RESOURCE,
+      authServerUrls: [authServerUrl],
+      resourceUrl: MCP_RESOURCE_URL,
       additionalMetadata: {
         resource_name: "Foundry Planning",
         scopes_supported: ["profile", "email", "user:org:read"],
