@@ -27,9 +27,13 @@ describe("sanitizeRow (strict)", () => {
     expect(sanitizeRow({ n: 42, b: true, z: null })).toEqual({ n: 42, b: true, z: null });
   });
 
-  it("defaults to strict when no mode is given", () => {
-    expect(sanitizeRow({ accountNumber: "12345678" })).toEqual(
-      sanitizeRow({ accountNumber: "12345678" }, "strict"),
-    );
+  it("never exposes a full SSN or a full account number in either mode", () => {
+    const row = { accountNumber: "12345678", note: "ssn 123-45-6789 on file" };
+    for (const mode of ["strict", "identifiers-allowed"] as const) {
+      expect(sanitizeRow(row, mode)).toEqual({
+        accountNumber: "••••5678",
+        note: "ssn [REDACTED-SSN] on file",
+      });
+    }
   });
 });
