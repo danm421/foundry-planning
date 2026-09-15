@@ -420,3 +420,129 @@ describe("accounts table — an unresolved match blocks Commit", () => {
     expect(within(roth).queryByText(/Pick a match first/i)).toBeNull();
   });
 });
+
+/**
+ * The figures under the table. Asserted with `toHaveTextContent` rather than
+ * `getByText`, because every figure is split across a `.tabular` span — the
+ * brand puts numbers in mono — so `getByText("2 accounts")` matches no single
+ * text node (recorded trap).
+ *
+ * The shape here is the real one from import 93ff2c60: a statement balance, a
+ * paystub that names the direct-deposit account but prints no balance (so the
+ * extractor wrote 0), and a beneficiary .jpg with no value at all.
+ */
+describe("accounts table — totals", () => {
+  const props = {
+    excluded: [],
+    committedRowIds: [],
+    onCommitRows: vi.fn(),
+    onEditCell: vi.fn(),
+    onEditHolding: vi.fn(),
+    onDropHolding: vi.fn(),
+  };
+
+  // The whole tfoot: the figures row plus, when a column could not cover
+  // every row, the footnote row beneath it.
+  const footer = () => {
+    const el = document.querySelector("tfoot");
+    if (!el) throw new Error("no tfoot rendered");
+    return el as HTMLElement;
+  };
+
+  // Kills: dropping the footer entirely, and counting rows without summing
+  // them.
+  it("counts the accounts and sums their values", () => {
+    render(<AccountsTable rows={rows} {...props} />);
+    expect(footer()).toHaveTextContent("2 accounts");
+    // 8,618.60 + 22,873.46
+    expect(footer()).toHaveTextContent("$31,492");
+  });
+
+  // Kills: silently summing 3 of 4 rows under a count of 4. The disclosure is
+  // the whole point of question (b) — without it the figure reads as covering
+  // every account above it.
+  it("discloses a row whose value is missing, and leaves it out of the sum", () => {
+    const withGap = [
+      { __rowId: "r1", name: "401(k) Savings Plan", value: 361_262.23, custodian: "John Hancock" },
+      { __rowId: "r2", name: "Checking x0479", value: 0, category: "cash" },
+      { __rowId: "r3", name: "Savings", value: 0, category: "cash" },
+      { __rowId: "r4", name: "401k Savings Plan", category: "retirement" },
+    ] as never;
+    render(<AccountsTable rows={withGap} {...props} />);
+    expect(footer()).toHaveTextContent("4 accounts");
+    expect(footer()).toHaveTextContent("$361,262");
+    // The ONE row with no value at all — not the two real $0 readings, which
+    // sum to zero correctly and already show "$0" in their own cells.
+    expect(footer()).toHaveTextContent("Value excludes 1 account without a figure.");
+  });
+
+  // Kills: reporting a real zero as missing, which would overstate the gap on
+  // every household with a paystub in the upload.
+  it("says nothing about a gap when every row carries a figure", () => {
+    render(<AccountsTable rows={rows} {...props} />);
+    expect(footer()).not.toHaveTextContent(/without a figure/);
+  });
+
+  // Kills: totalling every `money` column. Basis is a different question, and
+  // 3,919.45 + 10,010.17 = 13,930 must not appear.
+  it("totals Value and not Basis", () => {
+    render(<AccountsTable rows={rows} {...props} />);
+    expect(footer()).not.toHaveTextContent("$13,930");
+  });
+
+  // Dan's scope decision: the footer totals exactly what the table SHOWS, so a
+  // committed row keeps counting — it is still on screen.
+  it("keeps counting a row after it is committed", () => {
+    render(<AccountsTable rows={rows} {...props} committedRowIds={["r1"]} />);
+    expect(footer()).toHaveTextContent("2 accounts");
+    expect(footer()).toHaveTextContent("$31,492");
+  });
+
+  // The other half of that rule: a rollup `detectRollups` set aside is "a total
+  // covering N accounts already listed", so summing it would double count the
+  // household. It is not a row, so it is not in the figure.
+  it("ignores a rollup held in the excluded list", () => {
+    const excluded = [
+      {
+        row: { __rowId: "x1", name: "Total Plan Analysis", value: 1_000_000 },
+        decision: { kind: "rollup-excluded", coversCount: 2 },
+        reason: "a total covering 2 accounts already listed",
+      },
+    ] as never;
+    render(<AccountsTable rows={rows} {...props} excluded={excluded} />);
+    expect(footer()).toHaveTextContent("2 accounts");
+    expect(footer()).toHaveTextContent("$31,492");
+    expect(footer()).not.toHaveTextContent("$1,031,492");
+  });
+
+  // A table with no rows states no total: the surface shows its own
+  // "No accounts found" card instead, and "0 accounts · $0" under an empty
+  // table is a figure nobody computed.
+  it("renders no totals row for an empty table", () => {
+    render(<AccountsTable rows={[] as never} {...props} />);
+    // Counted, not text-matched: with no rows, a "no total here" text
+    // assertion would pass for the wrong reason. No tfoot at all is the fact.
+    expect(document.querySelector("tfoot")).toBeNull();
+    expect(screen.getAllByRole("row")).toHaveLength(1);
+  });
+
+  // The positive control for the assertion above: header + 2 body + the
+  // figures row, and NO footnote row because both rows carry a value.
+  // Without this, "no tfoot" proves nothing about whether one is ever emitted.
+  it("adds one footer row when it totals, and no footnote when nothing is missing", () => {
+    render(<AccountsTable rows={rows} {...props} />);
+    expect(document.querySelector("tfoot")).not.toBeNull();
+    expect(screen.getAllByRole("row")).toHaveLength(4);
+  });
+
+  // The footnote is a SECOND footer row, and only when a figure is missing.
+  it("adds a footnote row only when a column cannot cover every row", () => {
+    const withGap = [
+      { __rowId: "r1", name: "401(k) Savings Plan", value: 361_262.23 },
+      { __rowId: "r2", name: "401k Savings Plan" },
+    ] as never;
+    render(<AccountsTable rows={withGap} {...props} />);
+    // header + 2 body + figures + footnote
+    expect(screen.getAllByRole("row")).toHaveLength(5);
+  });
+});

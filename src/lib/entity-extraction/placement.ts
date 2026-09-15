@@ -2,28 +2,13 @@
 import { askableFields } from "@/domain/forge/detail-fields";
 import type { DetailEntity, DetailField } from "@/domain/forge/detail-fields";
 import type { CandidateRow, Observation, RawObservationRow, ValueIssue } from "./types";
+import { toNumber } from "@/lib/extraction/numeric";
 
 type FieldKind = DetailField["kind"];
 type CoerceResult = { ok: true; value: unknown } | { ok: false };
 
 const OK = (value: unknown): CoerceResult => ({ ok: true, value });
 const FAIL: CoerceResult = { ok: false };
-
-function toNumber(raw: unknown): number | null {
-  if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
-  if (typeof raw !== "string") return null;
-  let text = raw.trim();
-  if (!text) return null;
-  // Accounting negatives: ($1,200.00)
-  const parenthesised = /^\((.*)\)$/.exec(text);
-  const negative = Boolean(parenthesised);
-  if (parenthesised) text = parenthesised[1];
-  text = text.replace(/[$,\s%]/g, "");
-  if (!/^-?\d*\.?\d+$/.test(text)) return null;
-  const n = Number(text);
-  if (!Number.isFinite(n)) return null;
-  return negative ? -n : n;
-}
 
 /**
  * Coerce an extracted value to the shape the field's `kind` promises.
