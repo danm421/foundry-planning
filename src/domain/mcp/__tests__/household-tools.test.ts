@@ -114,6 +114,7 @@ describe("get_client_summary", () => {
     // NOT suppressed: computed independently of the projection.
     expect(out.netWorth).toBe(5_000_000);
     expect(out.liquidPortfolio).toBe(2_000_000);
+    expect(out.yearsToRetirement).toBe(10);
     expect(out.allocation).toEqual([{ group: "Bonds", value: 500_000, pct: 0.25 }]);
     expect(out.openItemCount).toBe(3);
     expect(out.openItemsPreview).toEqual([{ id: "oi1" }]);
@@ -159,9 +160,9 @@ describe("get_balance_sheet", () => {
     const out = await byName("get_balance_sheet").run({ clientId: "c1" }, principal);
     expect(out).toEqual({
       scenarioId: "base",
-      totalAssets: 0,
+      totalAccountValue: 0,
       totalLiabilities: 0,
-      netWorth: 0,
+      accountsLessLiabilities: 0,
       assetsByCategory: [],
       liabilities: [],
       accountCount: 0,
@@ -188,17 +189,17 @@ describe("get_balance_sheet", () => {
       { clientId: "c1", scenarioId: "s1" },
       principal,
     )) as {
-      totalAssets: number;
+      totalAccountValue: number;
       totalLiabilities: number;
-      netWorth: number;
+      accountsLessLiabilities: number;
       accountCount: number;
       scenarioId: string;
       assetsByCategory: { category: string; value: number }[];
       liabilities: { name: string | null; balance: number }[];
     };
-    expect(out.totalAssets).toBe(1_050_000);
+    expect(out.totalAccountValue).toBe(1_050_000);
     expect(out.totalLiabilities).toBe(420_000);
-    expect(out.netWorth).toBe(630_000);
+    expect(out.accountsLessLiabilities).toBe(630_000);
     expect(out.accountCount).toBe(4);
     expect(out.scenarioId).toBe("s1");
     expect(out.assetsByCategory).toEqual(
@@ -225,6 +226,31 @@ describe("get_balance_sheet", () => {
     loadEffectiveTree.mockResolvedValue({ effectiveTree: {} });
     await byName("get_balance_sheet").run({ clientId: "c1", scenarioId: "s99" }, principal);
     expect(loadEffectiveTree).toHaveBeenCalledWith("c1", "org_1", "s99", {});
+  });
+
+  // R46 minor 2 — no other fixture omits a.value / l.name / l.balance, so the
+  // `?? 0` / `?? null` guards around them could be deleted and every other
+  // case here would stay green while production returned NaN/undefined.
+  it("defaults a missing account value, liability name, and liability balance instead of NaN/undefined", async () => {
+    loadEffectiveTree.mockResolvedValue({
+      effectiveTree: {
+        accounts: [{ name: "No Value", category: "taxable" }],
+        liabilities: [{ balance: 1_000 }, { name: "No Balance" }],
+      },
+    });
+    const out = (await byName("get_balance_sheet").run({ clientId: "c1" }, principal)) as {
+      totalAccountValue: number;
+      totalLiabilities: number;
+      assetsByCategory: { category: string; value: number }[];
+      liabilities: { name: string | null; balance: number }[];
+    };
+    expect(out.totalAccountValue).toBe(0);
+    expect(out.assetsByCategory).toEqual([{ category: "taxable", value: 0 }]);
+    expect(out.totalLiabilities).toBe(1_000);
+    expect(out.liabilities).toEqual([
+      { name: null, balance: 1_000 },
+      { name: "No Balance", balance: 0 },
+    ]);
   });
 
   it("rejects when the caller cannot access the household", async () => {
@@ -261,13 +287,22 @@ describe("list_plan_details", () => {
     loadEffectiveTree.mockResolvedValue({
       effectiveTree: { expenses: [{ n: 1 }, { n: 2 }, { n: 3 }] },
     });
-    const out = (await byName("list_plan_details").run(
+    const out = await byName("list_plan_details").run(
       { clientId: "c1", kind: "expense", limit: 2, offset: 1 },
       principal,
-    )) as { rows: unknown[]; count: number; totalCount: number };
-    expect(out.rows).toHaveLength(2);
-    expect(out.rows).toEqual([{ n: 2 }, { n: 3 }]);
-    expect(out.totalCount).toBe(3);
+    );
+    // R45 — the whole object, not a subset: `count: all.length` (3, wrong)
+    // vs `count: rows.length` (2, right) are indistinguishable from any
+    // narrower assertion here, and nothing else in this file checks `count`
+    // against a totalCount that actually differs from it.
+    expect(out).toEqual({
+      kind: "expense",
+      scenarioId: "base",
+      rows: [{ n: 2 }, { n: 3 }],
+      count: 2,
+      totalCount: 3,
+      foundryUrl: foundryUrl("c1", "netWorth"),
+    });
   });
 
   it("defaults limit to 50 when omitted", async () => {
@@ -288,18 +323,26 @@ describe("list_plan_details", () => {
     ).rejects.toBeTruthy();
   });
 
-  it("passes scenarioId to loadEffectiveTree, defaulting to base", async () => {
+  it("passes scenarioId to loadEffectiveTree, defaulting to base, and echoes it in the output", async () => {
     loadEffectiveTree.mockResolvedValue({ effectiveTree: { expenses: [] } });
-    await byName("list_plan_details").run({ clientId: "c1", kind: "expense" }, principal);
+    const outBase = (await byName("list_plan_details").run(
+      { clientId: "c1", kind: "expense" },
+      principal,
+    )) as { scenarioId: string };
     expect(loadEffectiveTree).toHaveBeenCalledWith("c1", "org_1", "base", {});
+    expect(outBase.scenarioId).toBe("base");
 
     loadEffectiveTree.mockClear();
     loadEffectiveTree.mockResolvedValue({ effectiveTree: { expenses: [] } });
-    await byName("list_plan_details").run(
+    const outS99 = (await byName("list_plan_details").run(
       { clientId: "c1", kind: "expense", scenarioId: "s99" },
       principal,
-    );
+    )) as { scenarioId: string };
     expect(loadEffectiveTree).toHaveBeenCalledWith("c1", "org_1", "s99", {});
+    // R45 — the loader CALL was already asserted above; this is the output
+    // FIELD, which a frozen `scenarioId: "base"` in the return object would
+    // pass the call assertion but fail here.
+    expect(outS99.scenarioId).toBe("s99");
   });
 
   it("attaches a foundryUrl deep link to the net-worth detail page", async () => {
@@ -324,6 +367,11 @@ describe("list_plan_details", () => {
     expect(tool.annotations).toEqual({ readOnlyHint: true, destructiveHint: false, openWorldHint: false });
     expect(tool.title).toMatch(/\S/);
     expect(tool.description).toMatch(/\S/);
+    // R46 minor 3 — pins the R43 privacy contract itself: a description
+    // rewritten to something false (e.g. dropping the birthYear promise)
+    // would otherwise pass every case in this file, since nothing else
+    // reads the description's text.
+    expect(tool.description).toContain("birthYear");
   });
 
   // R43: each `kind` must read its OWN effectiveTree slice, not a
@@ -372,6 +420,33 @@ describe("list_plan_details", () => {
       expect(out.kind).toBe(kind);
     },
   );
+
+  /** Recursively checks every object in `value` — arrays and nested objects
+   *  included — for a literal `key`. Used by the R46 minor-4 ratchet below. */
+  function containsKeyDeep(value: unknown, key: string): boolean {
+    if (Array.isArray(value)) return value.some((v) => containsKeyDeep(v, key));
+    if (value && typeof value === "object") {
+      if (key in (value as Record<string, unknown>)) return true;
+      return Object.values(value as Record<string, unknown>).some((v) => containsKeyDeep(v, key));
+    }
+    return false;
+  }
+
+  // R46 minor 4 — today's redaction is keyed on `kind === "family_member"`,
+  // not on the FIELD, so it silently stops protecting the day a 9th kind (or
+  // a nested family-member-shaped sub-object) carries a dateOfBirth. This
+  // walks every current kind's real output at any depth: it holds today
+  // because only family_member's fixture carries the field (and it's
+  // stripped), and it's the generic, structural check — not "kind ===
+  // family_member" — so it extends automatically to a future kindCases
+  // entry that adds a birth-date-shaped field without updating the guard.
+  it("never returns a dateOfBirth key at any depth, for any kind", async () => {
+    for (const { kind, property, row } of kindCases) {
+      loadEffectiveTree.mockResolvedValue({ effectiveTree: { [property]: [row] } });
+      const out = await byName("list_plan_details").run({ clientId: "c1", kind }, principal);
+      expect(containsKeyDeep(out, "dateOfBirth")).toBe(false);
+    }
+  });
 
   it("strips an exact date of birth from every family_member row across a page, not just the first", async () => {
     loadEffectiveTree.mockResolvedValue({

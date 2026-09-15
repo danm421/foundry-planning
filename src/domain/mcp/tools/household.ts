@@ -99,9 +99,12 @@ const getBalanceSheet = defineTool({
   name: "get_balance_sheet",
   title: "Balance sheet",
   description:
-    "The household's assets, liabilities and net worth, rolled up by category totals — no " +
-    "individual account numbers appear in this output. For the individual rows behind a " +
-    "category, use list_plan_details.",
+    "The household's accounts and liabilities, rolled up by category totals — no individual " +
+    "account numbers appear in this output. accountsLessLiabilities is total account value minus " +
+    "total liabilities; it is NOT the household's all-in net worth — it excludes business " +
+    "entities held at a flat valuation and notes receivable. Use get_client_summary's netWorth " +
+    "for the all-in household figure. For the individual rows behind a category, use " +
+    "list_plan_details.",
   inputSchema: z.object({
     clientId: z.string().describe("Household id from search_clients."),
     scenarioId: z.string().optional().describe("Scenario id, or omit for the base case."),
@@ -117,14 +120,14 @@ const getBalanceSheet = defineTool({
       const key = a.category ?? "other";
       byCategory.set(key, (byCategory.get(key) ?? 0) + (a.value ?? 0));
     }
-    const totalAssets = accounts.reduce((s, a) => s + (a.value ?? 0), 0);
+    const totalAccountValue = accounts.reduce((s, a) => s + (a.value ?? 0), 0);
     const totalLiabilities = liabilities.reduce((s, l) => s + (l.balance ?? 0), 0);
 
     return {
       scenarioId: scenarioId ?? "base",
-      totalAssets,
+      totalAccountValue,
       totalLiabilities,
-      netWorth: totalAssets - totalLiabilities,
+      accountsLessLiabilities: totalAccountValue - totalLiabilities,
       assetsByCategory: [...byCategory].map(([category, value]) => ({ category, value })),
       liabilities: liabilities.map((l) => ({ name: l.name ?? null, balance: l.balance ?? 0 })),
       accountCount: accounts.length,
