@@ -8,9 +8,7 @@ import {
   visiblePortalNavItems,
   isPortalNavItemActive,
 } from "@/components/portal/portal-nav-items";
-import PortalBrandingMark, {
-  type PortalBranding,
-} from "@/components/portal/portal-branding-mark";
+import FirmMark, { type FirmMarkBranding } from "@/components/firm-mark";
 import {
   DEFAULT_PORTAL_FEATURES,
   type PortalFeatures,
@@ -24,7 +22,7 @@ interface Props {
    */
   displayName: string;
   /** Resolved firm branding; null → Foundry lockup (same fallback as intake). */
-  branding?: PortalBranding | null;
+  branding?: FirmMarkBranding | null;
   basePath?: string;
   /** Visibility classes from the layout (e.g. `"lg:hidden"`). */
   className?: string;
@@ -82,7 +80,7 @@ export default function PortalMobileNav({
           {displayName ? `Welcome back, ${displayName}` : "Your portal"}
         </span>
         <div className="flex shrink-0 items-center gap-3">
-          <PortalBrandingMark branding={branding} className="h-7 max-w-[130px]" />
+          <FirmMark branding={branding} className="h-7 max-w-[130px]" />
           <UserButton />
         </div>
       </div>
