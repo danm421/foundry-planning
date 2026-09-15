@@ -28,7 +28,7 @@ export function PortalBrandingStrip({
 }): ReactElement {
   return (
     <div
-      className={`${className} shrink-0 items-center gap-4 border-b border-hair bg-paper px-5 py-3 lg:px-6`}
+      className={`${className} shrink-0 items-center gap-4 border-b border-hair bg-paper px-5 py-3`}
     >
       <FirmMark branding={branding} />
       {/* Hairline, not a gap alone: the mark carries its own letterhead plate,
