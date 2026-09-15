@@ -10,6 +10,7 @@ import type {
   ExtractedWill,
   ExtractionResult,
 } from "@/lib/extraction/types";
+import { realLast4 } from "@/lib/extraction/account-number";
 import { holdingKey } from "@/lib/extraction/holdings-completion";
 import {
   emptyImportPayload,
@@ -134,6 +135,128 @@ function unionFields<T extends object>(base: T, other: T): T {
     }
   }
   return merged;
+}
+
+/**
+ * Collapse the same account read TWICE out of ONE document.
+ *
+ * `extractWithMultiPass` reads a document once per page range the section
+ * classifier hands it, and a statement's SUMMARY page is routinely a real
+ * `accounts` region alongside each account's own detail pages. Both reads find
+ * the same money, so one file emits the account twice: off the cover as
+ * "401(k) Savings" / "John Hancock Retirement Plan Services" with no account
+ * number, and off pages 3-4 as "401(k) Savings Plan x0210" / "John Hancock" —
+ * $361,262.23 on both, to the cent.
+ *
+ * The cross-file merge below cannot undo it: its bucket key needs a custodian
+ * AND a real last-4, and the cover row has neither, so it takes the null-key
+ * fallback id and never reaches the detail row's bucket. Both rows land in the
+ * advisor's review table and committing books the 401(k) twice.
+ *
+ * Deliberately here rather than in `extractWithMultiPass`, where the
+ * duplication is made. `fileResults` is PERSISTED (assemble/route.ts hands the
+ * stored column straight in), so a collapse at extraction time would bake into
+ * new extractions only and leave every existing draft duplicated forever —
+ * the trap `condense-account-name.ts` documents for itself. Here it is
+ * re-derived on every assemble, so old drafts heal, the single-pass path in
+ * `extract.ts` is covered too, and `payload.warnings` is in reach to say what
+ * happened.
+ */
+
+/**
+ * The page range the row was read from, when it came from a multi-pass read.
+ * `null` for a single-pass row, which read the whole document at once.
+ */
+function pageRangeOf(row: ExtractedAccount): string | null {
+  const provenance = (row as { __provenance?: { pageRange?: [number, number] } }).__provenance;
+  const range = provenance?.pageRange;
+  return Array.isArray(range) ? `${range[0]}-${range[1]}` : null;
+}
+
+/**
+ * Two rows that are the same account read twice, rather than two accounts.
+ *
+ * Requires all three:
+ *
+ * 1. DIFFERENT page ranges. This is the structural fact the bug is about — the
+ *    duplicate exists BECAUSE two reads of one document overlapped in content.
+ *    Two rows from the SAME range are two accounts the extractor deliberately
+ *    listed side by side, and folding those would delete a real one: a fact
+ *    finder listing two $25,000 CDs, or a checking and a savings both at
+ *    $10,000, is exactly this function's input. A row with no page range
+ *    (single-pass) never collapses, for the same reason.
+ * 2. The same balance, to within the merge's own 1%, and NON-ZERO. A zero
+ *    balance matches nothing, including another zero (`base` is 0 below): a
+ *    document routinely lists several accounts at $0, they are the one set a
+ *    value rule cannot tell apart, and folding them would delete real rows on
+ *    no evidence.
+ * 3. No contradicting account number — two REAL four-digit numbers that differ
+ *    are the one piece of evidence that settles it the other way.
+ */
+function isSameAccountReadTwice(a: ExtractedAccount, b: ExtractedAccount): boolean {
+  const rangeA = pageRangeOf(a);
+  const rangeB = pageRangeOf(b);
+  if (rangeA === null || rangeB === null || rangeA === rangeB) return false;
+
+  if (a.value === undefined || b.value === undefined) return false;
+  const base = Math.max(Math.abs(a.value), Math.abs(b.value));
+  if (base === 0) return false;
+  if (Math.abs(a.value - b.value) / base > AMOUNT_TOLERANCE_PCT) return false;
+
+  const numberA = realLast4(a.accountNumberLast4);
+  const numberB = realLast4(b.accountNumberLast4);
+  return !(numberA !== null && numberB !== null && numberA !== numberB);
+}
+
+/**
+ * How much the row proves about itself, so the survivor is the one the advisor
+ * can act on. A real last-4 outranks everything (every downstream match keys
+ * on it), then per-position holdings, then sheer field count as the tiebreak.
+ * `__`-prefixed annotations are skipped: they are bookkeeping, and a row does
+ * not become the better reading by carrying more of them.
+ */
+function readingStrength(row: ExtractedAccount): number {
+  let score = 0;
+  if (realLast4(row.accountNumberLast4) !== null) score += 100;
+  if (row.holdings && row.holdings.length > 0) score += 10;
+  for (const [key, value] of Object.entries(row)) {
+    if (!key.startsWith("__") && value !== undefined && value !== null) score += 1;
+  }
+  return score;
+}
+
+/**
+ * Collapse duplicate readings within ONE file's rows, keeping source order and
+ * naming each collapse in `warnings`. Never call this across files — two
+ * statements for one account are `mergeSection`'s job, and it has a statement
+ * date to reason with that this does not.
+ */
+export function collapseDuplicateReadings(
+  rows: ExtractedAccount[],
+  sourceName: string,
+  warnings: string[],
+): ExtractedAccount[] {
+  const kept: ExtractedAccount[] = [];
+
+  for (const row of rows) {
+    const twinIndex = kept.findIndex((existing) => isSameAccountReadTwice(existing, row));
+    if (twinIndex === -1) {
+      kept.push(row);
+      continue;
+    }
+    const existing = kept[twinIndex];
+    const [winner, loser] =
+      readingStrength(row) > readingStrength(existing) ? [row, existing] : [existing, row];
+    // `unionFields`, so a collapse can only ever ADD information: the cover row
+    // is often the only one that named an owner or spelled the custodian out.
+    kept[twinIndex] = unionFields(winner, loser);
+    warnings.push(
+      `"${winner.name}" was read twice from ${sourceName} (pages ${pageRangeOf(loser)} and ` +
+        `${pageRangeOf(winner)}) at the same balance; kept the more detailed reading.`,
+    );
+  }
+
+  return kept;
 }
 
 interface SourceRow<T> {
@@ -898,7 +1021,11 @@ export function mergeAcrossFiles(
     // name it. `fileName` is required on `ExtractionResult`.
     const sourceName = result.fileName;
 
-    for (const row of result.extracted.accounts) {
+    for (const row of collapseDuplicateReadings(
+      result.extracted.accounts,
+      sourceName,
+      payload.warnings,
+    )) {
       accountRows.push({ content: row, provenance: provenanceFor("accounts"), sourceName });
     }
     for (const row of result.extracted.incomes) {
@@ -985,7 +1112,19 @@ export function mergeAcrossFiles(
     // blind merge. Two unrelated accounts that happen to share four masked
     // digits would fold into one, which is the money-losing mirror of the
     // split this fix exists to stop.
-    (row) => (row.custodian && row.accountNumberLast4 ? row.accountNumberLast4 : null),
+    // `realLast4`, not the raw field. A masked account number is four digits;
+    // the extractor also puts things there that are NOT this account's number
+    // — a 401(k) statement's six-digit GROUP number, a five-digit plan
+    // contract number — and ~8% of extracted rows carry one. Keyed on the raw
+    // string, a Gensler statement whose 401(k), profit-sharing plan and ESOP
+    // all print "433350" put three different plans in ONE bucket: they merged
+    // into a single account and two real balances were thrown away as
+    // "another statement reported…". Treating a malformed number as NO number
+    // sends those rows to the null-key fallback instead, where they stay
+    // separate — the same direction the custodian guard below takes, for the
+    // same reason: a merge that should not have happened makes a whole
+    // account disappear, and that is the error that costs money.
+    (row) => (row.custodian ? realLast4(row.accountNumberLast4) : null),
     // Now that the bucket is only the last-4, this is what keeps a Fidelity
     // statement out of a Schwab account that happens to share four masked
     // digits — the same `normalizeCustodian` + `custodianMatches`

@@ -23,6 +23,36 @@ describe("mergeAcrossFiles", () => {
     expect(r.payload.accounts).toHaveLength(2);
   });
 
+  it("does not fold three plans together because the statement printed one group number", () => {
+    // Real import 93ff2c60: a Gensler 401(k) statement prints the six-digit
+    // GROUP number "433350" on all three of its plans, and the extractor put
+    // it in accountNumberLast4. Keyed on it, the 401(k), the profit-sharing
+    // plan and the ESOP became ONE account and two real balances were
+    // discarded as "another statement reported…". A masked account number is
+    // four digits; anything else is not this account's identity.
+    const r = mergeAcrossFiles({
+      f1: er("gensler-q1.pdf", {
+        accounts: [
+          { name: "401(k) Savings Plan", custodian: "John Hancock", accountNumberLast4: "433350", value: 313554.32, owner: "client" },
+          { name: "Profit Sharing Plan", custodian: "John Hancock", accountNumberLast4: "433350", value: 43029.84, owner: "client" },
+          { name: "ESOP", custodian: "John Hancock", accountNumberLast4: "433350", value: 94795.39, owner: "client" },
+        ],
+      }),
+    });
+
+    expect(r.payload.accounts).toHaveLength(3);
+    expect(r.payload.accounts.map((a) => a.value)).toEqual([313554.32, 43029.84, 94795.39]);
+  });
+
+  it("does not merge two accounts across files on a malformed account number", () => {
+    const r = mergeAcrossFiles({
+      f1: er("a.pdf", { accounts: [{ name: "401(k) Plan", custodian: "Merrill", accountNumberLast4: "07264", value: 100000, owner: "client" }] }),
+      f2: er("b.pdf", { accounts: [{ name: "Profit Sharing", custodian: "Merrill", accountNumberLast4: "07264", value: 250000, owner: "client" }] }),
+    });
+
+    expect(r.payload.accounts).toHaveLength(2);
+  });
+
   it("does not merge accounts lacking custodian+last4", () => {
     const r = mergeAcrossFiles({
       f1: er("a.pdf", { accounts: [{ name: "Brokerage", value: 100, category: "taxable" }] }),
