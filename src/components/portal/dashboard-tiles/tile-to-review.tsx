@@ -1,29 +1,36 @@
 import type { ReactElement } from "react";
 import { fmtUsd } from "@/lib/portal/format";
 import type { ReviewTxn } from "@/lib/portal/load-dashboard";
+import { CategoryPill } from "@/components/portal/category-pill";
+import { CategoryComboBox, type CategoryRow } from "@/components/portal/category-combobox";
 import { TileFrame } from "./tile-frame";
 
 // Presentational: DashboardGrid owns the queue state so the rail panel's
-// "Mark as reviewed" and these checkmarks stay in sync. "Mark these reviewed"
-// clears only the rows on screen and DashboardGrid refills with the next page,
-// so the client works the backlog a page at a time instead of blessing rows
-// they never read. Edit controls follow the same editEnabled gate as the
-// transactions list — hidden when the advisor has turned off portal editing.
+// "Mark as reviewed", the category the rail panel picks, and these rows stay in
+// sync. "Mark these reviewed" clears only the rows on screen and DashboardGrid
+// refills with the next page, so the client works the backlog a page at a time
+// instead of blessing rows they never read. Edit controls follow the same
+// editEnabled gate as the transactions list — hidden when the advisor has
+// turned off portal editing.
 export function TileToReview({
   items,
   count,
   error,
   editEnabled,
+  categories,
   onMarkReviewed,
   onMarkPage,
+  onPickCategory,
   onOpen,
 }: {
   items: ReviewTxn[];
   count: number;
   error: boolean;
   editEnabled: boolean;
+  categories: CategoryRow[];
   onMarkReviewed: (id: string) => void;
   onMarkPage: () => void;
+  onPickCategory: (id: string, categoryId: string | null) => void;
   onOpen: (id: string) => void;
 }): ReactElement {
   return (
@@ -62,11 +69,27 @@ export function TileToReview({
                 <button
                   type="button"
                   onClick={() => onOpen(t.id)}
-                  className="flex min-w-0 flex-1 items-center justify-between rounded-md px-2 py-1.5 text-left hover:bg-card-2"
+                  className="min-w-0 flex-1 truncate rounded-md px-2 py-1.5 text-left text-[13px] text-ink-2 hover:bg-card-2"
                 >
-                  <span className="min-w-0 truncate text-[13px] text-ink-2">{t.merchantName ?? t.name}</span>
-                  <span className="tabular shrink-0 text-[13px] text-ink">{fmtUsd(t.amount)}</span>
+                  {t.merchantName ?? t.name}
                 </button>
+                {/* Category column, the same control the Transactions page uses:
+                    the client fixes a wrong category here and then blesses the
+                    row, without a detour through the transactions list. */}
+                <div className="w-24 shrink-0 sm:w-32">
+                  {editEnabled ? (
+                    <CategoryComboBox
+                      categories={categories}
+                      value={t.categoryId}
+                      currentName={t.categoryName}
+                      currentColor={t.categoryColor}
+                      onPick={(categoryId) => onPickCategory(t.id, categoryId)}
+                    />
+                  ) : (
+                    <CategoryPill name={t.categoryName} color={t.categoryColor} />
+                  )}
+                </div>
+                <span className="tabular shrink-0 text-[13px] text-ink">{fmtUsd(t.amount)}</span>
               </li>
             ))}
           </ul>

@@ -4,7 +4,7 @@ import type { ReactElement } from "react";
 import { createPortal } from "react-dom";
 import { CategoryPill } from "@/components/portal/category-pill";
 
-type CategoryRow = { id: string; name: string; kind: "group" | "category"; parentId: string | null; color: string | null };
+export type CategoryRow = { id: string; name: string; kind: "group" | "category"; parentId: string | null; color: string | null };
 
 const MENU_W = 240;
 

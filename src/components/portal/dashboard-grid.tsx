@@ -1,7 +1,8 @@
 "use client";
-import { useCallback, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useState, type ReactElement } from "react";
 import type { PortalDashboardDTO, ReviewTxn } from "@/lib/portal/load-dashboard";
 import { usePortalFetch } from "@/components/portal/portal-mode-context";
+import type { CategoryRow } from "@/components/portal/category-combobox";
 import { PortalDetailPortal } from "@/components/portal/portal-detail-rail";
 import { TileMonthlySpending } from "./dashboard-tiles/tile-monthly-spending";
 import { TileNetWorth } from "./dashboard-tiles/tile-net-worth";
@@ -39,15 +40,45 @@ export function DashboardGrid({
   // and the rail panel's "Mark as reviewed" stay in sync.
   const [reviewItems, setReviewItems] = useState(dto.toReview.sample);
   const [reviewCount, setReviewCount] = useState(dto.toReview.count);
-  const [reviewError, setReviewError] = useState(false);
+  /**
+   * A queue write that didn't save, by the rows it failed for. The tile prints
+   * one line for any failure; the rail prints it only for the row it has open,
+   * so a failed pick on one row can't read as an error about another.
+   */
+  const [failedIds, setFailedIds] = useState<string[] | null>(null);
 
-  // Undoing an optimistic mark is the same three moves everywhere: put the
-  // rows back, put the count back, say it didn't save.
+  /**
+   * Categories for the to-review pickers — the tile's and the rail panel's.
+   * Loaded here so both read one list, and only when there is a picker to
+   * fill: a read-only queue renders plain pills, a hidden tile has no rows,
+   * and a caught-up client has nothing to categorize.
+   */
+  const showToReview = budgetEnabled && sharing.shareTransactions;
+  const needCategories = editEnabled && showToReview && reviewItems.length > 0;
+  const [categories, setCategories] = useState<CategoryRow[]>([]);
+  useEffect(() => {
+    if (!needCategories) return;
+    let live = true;
+    void portalFetch("/api/portal/categories")
+      .then((r) => (r.ok ? r.json() : { categories: [] }))
+      .then((d: { categories: CategoryRow[] }) => {
+        if (live) setCategories(d.categories ?? []);
+      })
+      .catch(() => {
+        if (live) setCategories([]);
+      });
+    return () => {
+      live = false;
+    };
+  }, [needCategories, portalFetch]);
+
+  // Undoing an optimistic write is the same three moves everywhere: put the
+  // rows back, put the count back, say which rows didn't save.
   const revertTo = useCallback(
-    (items: ReviewTxn[], count: number) => () => {
+    (items: ReviewTxn[], count: number, ids: string[]) => () => {
       setReviewItems(items);
       setReviewCount(count);
-      setReviewError(true);
+      setFailedIds(ids);
     },
     [],
   );
@@ -75,8 +106,8 @@ export function DashboardGrid({
 
   const markReviewed = useCallback(
     async (id: string): Promise<void> => {
-      setReviewError(false);
-      const revert = revertTo(reviewItems, reviewCount);
+      setFailedIds(null);
+      const revert = revertTo(reviewItems, reviewCount, [id]);
       setReviewItems((xs) => xs.filter((t) => t.id !== id));
       setReviewCount((c) => Math.max(0, c - 1));
       setDetail((d) => (d?.kind === "transaction" && d.id === id ? null : d));
@@ -104,8 +135,8 @@ export function DashboardGrid({
   const markPageReviewed = useCallback(async (): Promise<void> => {
     const ids = reviewItems.map((t) => t.id);
     if (ids.length === 0) return;
-    setReviewError(false);
-    const revert = revertTo(reviewItems, reviewCount);
+    setFailedIds(null);
+    const revert = revertTo(reviewItems, reviewCount, ids);
     setReviewItems([]);
     setReviewCount((c) => Math.max(0, c - ids.length));
     setDetail((d) => (d?.kind === "transaction" && ids.includes(d.id) ? null : d));
@@ -127,6 +158,42 @@ export function DashboardGrid({
       revert();
     }
   }, [reviewItems, reviewCount, portalFetch, applyQueuePage, revertTo]);
+
+  // Recategorizing a queued row happens before it is blessed, so the row stays
+  // in the queue — only its category changes. Optimistic like the marks above,
+  // and it reverts through the same three moves.
+  const pickCategory = useCallback(
+    async (id: string, categoryId: string | null): Promise<void> => {
+      const row = reviewItems.find((t) => t.id === id);
+      if (!row || row.categoryId === categoryId) return;
+      setFailedIds(null);
+      const revert = revertTo(reviewItems, reviewCount, [id]);
+      const picked = categoryId ? categories.find((c) => c.id === categoryId) : null;
+      setReviewItems((xs) =>
+        xs.map((t) =>
+          t.id === id
+            ? {
+                ...t,
+                categoryId,
+                categoryName: picked?.name ?? null,
+                categoryColor: picked?.color ?? null,
+              }
+            : t,
+        ),
+      );
+      try {
+        const res = await portalFetch(`/api/portal/transactions/${id}`, {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ categoryId }),
+        });
+        if (!res.ok) revert();
+      } catch {
+        revert();
+      }
+    },
+    [reviewItems, reviewCount, categories, portalFetch, revertTo],
+  );
 
   return (
     <>
@@ -158,14 +225,16 @@ export function DashboardGrid({
             ) : (
               <NotSharedNotice area="budgets" variant="tile" />
             )}
-            {sharing.shareTransactions ? (
+            {showToReview ? (
               <TileToReview
                 items={reviewItems}
                 count={reviewCount}
-                error={reviewError}
+                error={failedIds !== null}
                 editEnabled={editEnabled}
+                categories={categories}
                 onMarkReviewed={(id) => void markReviewed(id)}
                 onMarkPage={() => void markPageReviewed()}
+                onPickCategory={(id, categoryId) => void pickCategory(id, categoryId)}
                 onOpen={(id) => setDetail({ kind: "transaction", id })}
               />
             ) : (
@@ -202,10 +271,13 @@ export function DashboardGrid({
             dto={dto}
             reviewItems={reviewItems}
             editEnabled={editEnabled}
+            categories={categories}
+            failedIds={failedIds}
             onOpenCategory={(categoryId, name) =>
               setDetail({ kind: "category", categoryId, name })
             }
             onMarkReviewed={(id) => void markReviewed(id)}
+            onPickCategory={(id, categoryId) => void pickCategory(id, categoryId)}
             onClose={closeDetail}
           />
         </PortalDetailPortal>
