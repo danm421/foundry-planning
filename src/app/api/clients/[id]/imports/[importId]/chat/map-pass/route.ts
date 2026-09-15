@@ -54,10 +54,17 @@ function jsonResponse(
  *
  * Shared by both handlers here rather than transcribed twice, because two
  * copies of a security chain is how one of them drifts. `op` is the only
- * thing that varies: POST spends an Azure read ("extract"), PATCH is a cheap
+ * thing that varies: POST spends an Azure read ("map"), PATCH is a cheap
  * write ("match").
+ *
+ * POST draws on "map", NOT the sibling batch route's "extract". The two
+ * routes have opposite request shapes — `chat/extract` streams every file
+ * behind one request, this one is posted once per file — so sharing a bucket
+ * mis-sizes this pass by the file count. It did: a 33-file import read five
+ * files and was refused twenty-eight times inside eight seconds, taking both
+ * life insurance policies with it.
  */
-async function runGateChain(paramsPromise: Params["params"], op: "extract" | "match"): Promise<Gate> {
+async function runGateChain(paramsPromise: Params["params"], op: "map" | "match"): Promise<Gate> {
   let firmId: string;
   let userId: string;
   let entitlements: string[] | undefined;
@@ -170,7 +177,7 @@ async function runGateChain(paramsPromise: Params["params"], op: "extract" | "ma
  * `chat/extract/route.ts:165`).
  */
 export async function POST(request: Request, { params }: Params) {
-  const gate = await runGateChain(params, "extract");
+  const gate = await runGateChain(params, "map");
   if (!gate.ok) return gate.response;
   const { firmId, clientId, importId } = gate;
 

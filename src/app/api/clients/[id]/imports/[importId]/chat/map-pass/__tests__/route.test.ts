@@ -295,9 +295,14 @@ describe("map-pass route — gate chain", () => {
     expect(runMapEntityPass).not.toHaveBeenCalled();
   });
 
-  it("POST takes the rate limiter at the 'extract' op", async () => {
+  // The op is the whole point, not an implementation detail: "extract" is the
+  // SSE batch route's bucket, sized at five CLICKS a minute, and this route is
+  // posted once per FILE. Sharing it throttled a 33-file import after five
+  // files. Kills a revert to "extract".
+  it("POST takes the rate limiter at the per-file 'map' op, not the batch 'extract' op", async () => {
     await POST(req({ fileId: "f1" }), params);
-    expect(checkImportRateLimit).toHaveBeenCalledWith("org_1", "extract");
+    expect(checkImportRateLimit).toHaveBeenCalledWith("org_1", "map");
+    expect(checkImportRateLimit).not.toHaveBeenCalledWith("org_1", "extract");
   });
 
   it("404s an import that cannot be found for this client/firm", async () => {

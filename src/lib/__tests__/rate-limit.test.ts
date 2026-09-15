@@ -192,6 +192,44 @@ describe("checkPlanStoryRateLimit", () => {
   });
 });
 
+/**
+ * The map pass posts ONE request per uploaded file (`use-map-rows.ts` loops
+ * `fileIds` sequentially), while the SSE batch route spends one token for the
+ * whole import. Sharing the `extract` bucket therefore mis-sized the map pass
+ * by the file count: a 33-file import on 2026-09-14 read five files and was
+ * refused twenty-eight times inside eight seconds, and BOTH life insurance
+ * policies were in the refused set — so the review surface rendered no
+ * "Policies and other details" table at all and looked like a missing feature
+ * rather than a throttle.
+ */
+describe("checkImportRateLimit", () => {
+  // Kills: putting the map pass back on the `extract` bucket, and sizing its
+  // own bucket for clicks rather than for files.
+  it("spends the per-file map pass from its own bucket, sized for a whole import", async () => {
+    mockLimit.mockResolvedValue({ success: true, remaining: 1, reset: 1 });
+    const { checkImportRateLimit } = await import("../rate-limit");
+    await checkImportRateLimit("firm-1", "extract");
+    await checkImportRateLimit("firm-1", "map");
+
+    expect(mockLimit).toHaveBeenNthCalledWith(1, "firm-1:extract");
+    expect(mockLimit).toHaveBeenNthCalledWith(2, "firm-1:map");
+    const built = RatelimitMock.mock.calls as unknown as [{ prefix: string }][];
+    expect(built.map((c) => c[0].prefix)).toEqual([
+      "rl:import:extract",
+      "rl:import:map",
+    ]);
+
+    // The number is the point, not just the separation. One pass over a
+    // realistic household document dump has to fit inside one window; the
+    // batch route's five-a-minute cannot.
+    const windows = RatelimitMock.slidingWindow.mock.calls as unknown as [
+      number,
+    ][];
+    expect(windows[0][0]).toBe(5);
+    expect(windows[1][0]).toBeGreaterThanOrEqual(60);
+  });
+});
+
 describe("rateLimitErrorResponse", () => {
   it("uses 429 with Retry-After when exceeded", async () => {
     const { rateLimitErrorResponse } = await import("../rate-limit");

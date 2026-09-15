@@ -110,6 +110,17 @@ const getImportExtractLimiter = buildLimiter(5, "1 m", "rl:import:extract");
 const getImportViewLimiter = buildLimiter(60, "1 m", "rl:import:view");
 const getImportMatchLimiter = buildLimiter(10, "1 m", "rl:import:match");
 const getImportCommitLimiter = buildLimiter(20, "1 m", "rl:import:commit");
+// The map-entity pass, and deliberately NOT the `extract` bucket above. That
+// one is sized for the SSE batch route, where one click spends one token and
+// the server loops every file itself. This pass is the opposite shape:
+// `use-map-rows.ts` posts ONE request per file, so its budget has to clear a
+// whole import rather than a handful of clicks — on the `extract` bucket a
+// 33-file import read five files and was refused twenty-eight times in eight
+// seconds. 60/min is well above what the pass can actually issue (the loop is
+// sequential and a real read costs seconds), so it never binds on legitimate
+// use; it still caps a runaway client, which is the case that matters because
+// every request costs at least one Azure classify call.
+const getImportMapLimiter = buildLimiter(60, "1 m", "rl:import:map");
 // Statement-chat turns (Task 11). Deliberately a SEPARATE bucket from
 // `checkForgeRateLimit` ("rl:forge") even though both gate a tool-calling
 // conversation: that limiter is keyed by firm only, with no op suffix, so
@@ -281,7 +292,14 @@ export async function checkPreviewPdfRateLimit(
   return safeLimit(limiter, key);
 }
 
-export type ImportRateLimitOp = "upload" | "extract" | "view" | "match" | "commit" | "turn";
+export type ImportRateLimitOp =
+  | "upload"
+  | "extract"
+  | "map"
+  | "view"
+  | "match"
+  | "commit"
+  | "turn";
 
 /**
  * Multi-bucket rate-limit dispatcher for the import tool v2. The `op`
@@ -298,6 +316,7 @@ export async function checkImportRateLimit(
   const factories = {
     upload: getImportUploadLimiter,
     extract: getImportExtractLimiter,
+    map: getImportMapLimiter,
     view: getImportViewLimiter,
     match: getImportMatchLimiter,
     commit: getImportCommitLimiter,
