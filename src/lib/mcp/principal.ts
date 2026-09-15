@@ -10,6 +10,14 @@ import type { Principal } from "@/lib/clients/authz";
  */
 export type McpPrincipal = Principal & {
   orgId: string;
+  /**
+   * Non-nullable too, and for a sharper reason than `orgId`: the role is read
+   * live from Clerk's membership list, and no membership means no principal at
+   * all. A `null` here would be read downstream as a plain member, which in a
+   * firm without book siloing widens to the whole firm's book — so the type
+   * refuses to represent that state.
+   */
+  orgRole: string;
   scopes: string[];
   tokenSubject: string;
 };
@@ -129,9 +137,15 @@ export async function resolveMcpPrincipal(bearerToken: string): Promise<McpPrinc
 
   const { issuer, jwks } = tokenVerifier();
 
-  const { payload } = await jwtVerify(bearerToken, jwks, { issuer, typ: "at+jwt" }).catch(() => {
-    // Deliberately opaque: signature, issuer, type and expiry failures share one
-    // message, so a caller cannot probe which check it tripped.
+  // `algorithms` is defence in depth: jose 6.2.3 already filters candidate keys
+  // by algorithm before it looks one up, and Clerk's JWKS declares RS256, so
+  // algorithm confusion is not reachable today. Pinning it keeps that true if
+  // either side changes.
+  const verifyOptions = { issuer, typ: "at+jwt", algorithms: ["RS256"] };
+  const { payload } = await jwtVerify(bearerToken, jwks, verifyOptions).catch(() => {
+    // Deliberately opaque: signature, issuer, type, algorithm and expiry
+    // failures share one message, so a caller cannot probe which check it
+    // tripped.
     throw new McpUnauthorizedError("token failed verification");
   });
 

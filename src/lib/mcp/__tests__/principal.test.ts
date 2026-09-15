@@ -33,6 +33,7 @@ vi.mock("@clerk/nextjs/server", () => ({
 }));
 
 import { McpUnauthorizedError, resolveMcpPrincipal } from "../principal";
+import type { Principal } from "@/lib/clients/authz";
 
 // The dev instance the Phase 0 spike ran against. `pk_test_` body is
 // base64("assuring-monkfish-94.clerk.accounts.dev$").
@@ -46,13 +47,22 @@ const SCOPE = "profile email user:org:read offline_access";
 type KeyPair = Awaited<ReturnType<typeof generateKeyPair>>;
 let clerkKeys: KeyPair;
 let attackerKeys: KeyPair;
+let ecKeys: KeyPair;
+
+/** Second key id, published in the same key set but with an EC key behind it. */
+const EC_KID = "ins_elliptic_curve_key";
 
 beforeAll(async () => {
   process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = PUBLISHABLE_KEY;
   clerkKeys = await generateKeyPair("RS256", { extractable: true });
   attackerKeys = await generateKeyPair("RS256", { extractable: true });
+  ecKeys = await generateKeyPair("ES256", { extractable: true });
   const jwk: JWK = { ...(await exportJWK(clerkKeys.publicKey)), kid: KID, alg: "RS256" };
-  h.jwks = createLocalJWKSet({ keys: [jwk] });
+  // A second, legitimately-published key on a different algorithm. Without an
+  // `algorithms` pin a token signed with it verifies fine — which is the point
+  // of the algorithm-pin test below.
+  const ecJwk: JWK = { ...(await exportJWK(ecKeys.publicKey)), kid: EC_KID, alg: "ES256" };
+  h.jwks = createLocalJWKSet({ keys: [jwk, ecJwk] });
 });
 
 beforeEach(() => {
@@ -73,6 +83,8 @@ type MintOptions = {
   scope?: string | null;
   issuer?: string;
   typ?: string;
+  alg?: string;
+  kid?: string;
   /** Absolute unix seconds. */
   expiresAt?: number;
   signWith?: KeyPair;
@@ -92,7 +104,7 @@ async function mintToken(o: MintOptions = {}): Promise<string> {
   if (o.scope !== null) payload.scope = o.scope ?? SCOPE;
 
   let jwt = new SignJWT(payload)
-    .setProtectedHeader({ alg: "RS256", kid: KID, typ: o.typ ?? "at+jwt" })
+    .setProtectedHeader({ alg: o.alg ?? "RS256", kid: o.kid ?? KID, typ: o.typ ?? "at+jwt" })
     .setIssuer(o.issuer ?? ISSUER)
     .setIssuedAt(now - 120)
     .setNotBefore(now - 120)
@@ -109,6 +121,25 @@ describe("resolveMcpPrincipal", () => {
       orgRole: "org:operations",
       scopes: ["profile", "email", "user:org:read", "offline_access"],
       tokenSubject: USER_ID,
+    });
+  });
+
+  it("stays assignable to Principal with a non-nullable orgRole", async () => {
+    const principal = await resolveMcpPrincipal(await mintToken());
+    // Two compile-time claims; the RED for both is `tsc`, not vitest.
+    // 1. orgRole is narrowed to `string` — this line errors if it widens back
+    //    to `string | null` under strictNullChecks.
+    const role: string = principal.orgRole;
+    // 2. Narrowing must not break the hand-off to verifyClientAccessFor, which
+    //    takes the wider `Principal`.
+    const asPrincipal: Principal = principal;
+    expect(role).toBe("org:operations");
+    expect(asPrincipal.orgId).toBe(ORG_ID);
+  });
+
+  it("returns no scopes when the token carries no scope claim", async () => {
+    await expect(resolveMcpPrincipal(await mintToken({ scope: null }))).resolves.toMatchObject({
+      scopes: [],
     });
   });
 
@@ -130,11 +161,28 @@ describe("resolveMcpPrincipal", () => {
     );
   });
 
+  it("rejects a token signed with a published key on another algorithm", async () => {
+    // EC_KID really is in the key set and the signature really is valid, so
+    // only the `algorithms: ["RS256"]` pin can reject this one.
+    const token = await mintToken({ alg: "ES256", kid: EC_KID, signWith: ecKeys });
+    await expect(resolveMcpPrincipal(token)).rejects.toBeInstanceOf(McpUnauthorizedError);
+  });
+
   it("rejects an expired token", async () => {
     const expiredAt = Math.floor(Date.now() / 1000) - 60;
     await expect(
       resolveMcpPrincipal(await mintToken({ expiresAt: expiredAt })),
     ).rejects.toBeInstanceOf(McpUnauthorizedError);
+  });
+
+  it("rejects a verified token that carries no subject", async () => {
+    await expect(resolveMcpPrincipal(await mintToken({ sub: null }))).rejects.toThrow(
+      /no subject/i,
+    );
+    // Rejected before Clerk is consulted. A principal with a blank userId and a
+    // real orgRole would reach resolveVisibleAdvisorIds("", "org:admin", firm)
+    // and come back VISIBLE_ALL — firm-wide read with nobody attributable.
+    expect(h.getOrganizationMembershipList).not.toHaveBeenCalled();
   });
 
   it("rejects a valid token that carries no organization", async () => {
@@ -153,9 +201,11 @@ describe("resolveMcpPrincipal", () => {
       data: [{ role: "org:admin", organization: { id: "org_someone_elses_firm" } }],
       totalCount: 1,
     });
-    await expect(resolveMcpPrincipal(await mintToken())).rejects.toBeInstanceOf(
-      McpUnauthorizedError,
-    );
+    const rejection = resolveMcpPrincipal(await mintToken());
+    await expect(rejection).rejects.toBeInstanceOf(McpUnauthorizedError);
+    // Pin WHICH guard fired. A valid token with a present org has no other
+    // rejecter today, but nothing locks that in without this.
+    await expect(rejection).rejects.toThrow(/not a member/i);
   });
 
   it("takes orgRole from the live membership, never from the token", async () => {
@@ -205,7 +255,10 @@ describe("resolveMcpPrincipal", () => {
     expect(calls).toHaveLength(2);
     expect(calls[0][0]).toMatchObject({ userId: USER_ID, offset: 0 });
     expect(typeof calls[0][0].limit).toBe("number");
-    expect(calls[1][0].offset).toBeGreaterThan(0);
+    // The stride must be the page size exactly. `toBeGreaterThan(0)` would also
+    // pass for `offset: page * 50`, which silently skips records 50-99 and
+    // locks out an advisor whose membership sits in the skipped band.
+    expect(calls[1][0].offset).toBe(calls[0][0].limit);
   });
 
   it("derives the pinned issuer and the JWKS url from the publishable key, once", async () => {
