@@ -41,6 +41,7 @@ vi.mock("@/lib/rate-limit", () => ({
 
 import { analysisTools } from "../tools/analysis";
 import { ADAPTERS } from "@/lib/projection-explain/registry";
+import { foundryUrl } from "@/lib/mcp/foundry-url";
 import type { McpPrincipal } from "@/lib/mcp/principal";
 
 const principal: McpPrincipal = {
@@ -69,9 +70,15 @@ function makeYear(overrides: Record<string, unknown> = {}): Record<string, unkno
   };
 }
 
-/** A realistic, fully-populated Explanation fixture (available branch) — every
- *  key the real adapter.deltaExtras + assembly emit, so the key-set pin (R60)
- *  is checked against the real shape, not a trimmed stand-in. */
+/** A realistic Explanation fixture (available branch) covering the keys this
+ *  file's key-set pin (R60) exercises: the deltaExtras fields
+ *  (taxLineDeltas/incomeDeltas/sourceDeltas/withdrawalPicture/
+ *  marginalFederalRate) plus headline/causes/analysisContext/notes. It does
+ *  NOT carry every key the real assembly can emit — the optional
+ *  branch-only fields `noSignificantChange`, `degraded`, and
+ *  `probableIntendedJump` are deliberately absent (separate branches, out of
+ *  this fixture's scope; a prior version of this comment overstated that
+ *  coverage — see F10, fix round 1). */
 function makeExplanation() {
   return {
     available: true,
@@ -171,6 +178,17 @@ describe("explain_projection_change", () => {
     expect(schema.safeParse({ clientId: "c", subject: "tax", year: 2030 }).success).toBe(true);
   });
 
+  it("requires year and compareYear to be integers (F1/B3)", () => {
+    const schema = byName("explain_projection_change").inputSchema;
+    expect(schema.safeParse({ clientId: "c", subject: "tax", year: 2030.5 }).success).toBe(false);
+    expect(schema.safeParse({ clientId: "c", subject: "tax", year: 2030, compareYear: 2028.5 }).success).toBe(false);
+    expect(schema.safeParse({ clientId: "c", subject: "tax", year: 2030, compareYear: 2028 }).success).toBe(true);
+  });
+
+  it("pins the subject-restriction claim in the description, so a rewrite to 'any figure' can't slip past (F6)", () => {
+    expect(byName("explain_projection_change").description).toContain("Only the 'tax' subject exists today");
+  });
+
   it("looks up the tax adapter from the registry by bare index and passes it through, resolving scenario to 'base' when omitted", async () => {
     h.runProjectionWithEvents.mockReturnValue({
       years: [makeYear()],
@@ -190,7 +208,21 @@ describe("explain_projection_change", () => {
     expect(h.loadEffectiveTree).toHaveBeenCalledWith("c1", "org_1", "base", {});
   });
 
-  it("fills analysisContext.scenarioId from context, since the pure adapter can't know it (C2)", async () => {
+  it("resolves firstDeathYear to null when no death event fired, mirroring secondDeathYear's null fallback (F7/S11)", async () => {
+    h.runProjectionWithEvents.mockReturnValue({ years: [makeYear()], firstDeathEvent: undefined, secondDeathEvent: undefined });
+    await byName("explain_projection_change").run({ clientId: "c1", subject: "tax", year: 2030 }, principal);
+    expect(h.explainChange).toHaveBeenCalledWith({
+      adapter: ADAPTERS.tax,
+      years: [makeYear()],
+      firstDeathYear: null,
+      secondDeathYear: null,
+      year: 2030,
+      compareYear: undefined,
+      ctx: {},
+    });
+  });
+
+  it("fills analysisContext.scenarioId from context, since the pure adapter can't know it, AND echoes the same scenario at the top level (C2/F7-M13)", async () => {
     h.explainChange.mockReturnValue(makeExplanation());
     const out = (await byName("explain_projection_change").run(
       { clientId: "c1", scenarioId: "s1", subject: "tax", year: 2030 },
@@ -198,6 +230,7 @@ describe("explain_projection_change", () => {
     )) as Record<string, unknown>;
     const ctx = out.analysisContext as { scenarioId: string | null };
     expect(ctx.scenarioId).toBe("s1");
+    expect(out.scenarioId).toBe("s1");
   });
 
   it("pins the exact top-level key set on the available branch, including foundryUrl (R60)", async () => {
@@ -225,7 +258,7 @@ describe("explain_projection_change", () => {
         "year",
       ].sort(),
     );
-    expect(out.foundryUrl).toBe(`${process.env.NEXT_PUBLIC_APP_URL ?? "https://app.foundryplanning.com"}/clients/c1/details/tax-analysis`);
+    expect(out.foundryUrl).toBe(foundryUrl("c1", "tax"));
   });
 
   it("pins the exact top-level key set on the unavailable branch", async () => {
@@ -254,6 +287,17 @@ describe("break_down_projection_figure", () => {
     expect(schema.safeParse({ clientId: "c", subject: "tax", year: 2030 }).success).toBe(true);
   });
 
+  it("requires year to be an integer, including the numeric compareTo branch (F1/B4)", () => {
+    const schema = byName("break_down_projection_figure").inputSchema;
+    expect(schema.safeParse({ clientId: "c", subject: "tax", year: 2030.5 }).success).toBe(false);
+    expect(schema.safeParse({ clientId: "c", subject: "tax", year: 2030, compareTo: 2028.5 }).success).toBe(false);
+    expect(schema.safeParse({ clientId: "c", subject: "tax", year: 2030, compareTo: 2028 }).success).toBe(true);
+  });
+
+  it("pins the subject-restriction claim in the description (F6)", () => {
+    expect(byName("break_down_projection_figure").description).toContain("Only the 'tax' subject exists today");
+  });
+
   it("defaults compareTo to 'none' when omitted", async () => {
     await byName("break_down_projection_figure").run({ clientId: "c1", subject: "tax", year: 2030 }, principal);
     expect(h.explainComposition).toHaveBeenCalledWith({
@@ -271,6 +315,14 @@ describe("break_down_projection_figure", () => {
       principal,
     );
     expect(h.explainComposition).toHaveBeenCalledWith(expect.objectContaining({ compareTo: "prior_year" }));
+  });
+
+  it("passes a numeric compareTo (a specific year) straight through, not just the named references (F9)", async () => {
+    await byName("break_down_projection_figure").run(
+      { clientId: "c1", subject: "tax", year: 2030, compareTo: 2028 },
+      principal,
+    );
+    expect(h.explainComposition).toHaveBeenCalledWith(expect.objectContaining({ compareTo: 2028 }));
   });
 
   it("fills analysisContext.scenarioId from context (C2)", async () => {
@@ -292,6 +344,17 @@ describe("break_down_projection_figure", () => {
     expect(Object.keys(out).sort()).toEqual(
       ["analysisContext", "available", "componentBreakdown", "figure", "foundryUrl", "notes", "scenarioId", "subject", "year"].sort(),
     );
+    expect(out.foundryUrl).toBe(foundryUrl("c1", "tax"));
+  });
+
+  it("pins the exact top-level key set on the unavailable branch too, mirroring explain_projection_change (F9)", async () => {
+    h.explainComposition.mockReturnValue({ available: false, reason: "Year 2099 is outside the projection (2025–2060)." });
+    const out = (await byName("break_down_projection_figure").run(
+      { clientId: "c1", subject: "tax", year: 2099 },
+      principal,
+    )) as Record<string, unknown>;
+    expect(Object.keys(out).sort()).toEqual(["available", "foundryUrl", "reason", "scenarioId"].sort());
+    expect(out.available).toBe(false);
   });
 
   it("rejects when the caller cannot access the household", async () => {
@@ -308,6 +371,14 @@ describe("solve_max_spending", () => {
     const schema = byName("solve_max_spending").inputSchema;
     expect(schema.safeParse({ clientId: "c", targetPoS: 1.5 }).success).toBe(false);
     expect(schema.safeParse({ clientId: "c", targetPoS: 0.85 }).success).toBe(true);
+  });
+
+  it("pins the stated bounds exactly — 0 and 1 are both out of range, only [0.01, 0.99] is in (F1/B1/B2)", () => {
+    const schema = byName("solve_max_spending").inputSchema;
+    expect(schema.safeParse({ clientId: "c", targetPoS: 0 }).success).toBe(false);
+    expect(schema.safeParse({ clientId: "c", targetPoS: 1 }).success).toBe(false);
+    expect(schema.safeParse({ clientId: "c", targetPoS: 0.01 }).success).toBe(true);
+    expect(schema.safeParse({ clientId: "c", targetPoS: 0.99 }).success).toBe(true);
   });
 
   it("calls the canonical cached solver with clientId/firmId/scenarioId/targetPoS, never hand-assembling loadEffectiveTree + a raw MC payload (C3)", async () => {
@@ -353,7 +424,27 @@ describe("solve_max_spending", () => {
     expect(out.status).toBe("converged");
   });
 
-  it("pins the exact top-level key set (R60)", async () => {
+  it("passes a SECOND, distinct targetPoS (0.95) into the solver call and echoes that same value in the payload, not the 0.85 used elsewhere (F1/M8/M9)", async () => {
+    h.getOrComputeMaxSpending.mockResolvedValue({
+      realAnnualSpend: 200_000,
+      scaleFactor: 1.4,
+      achievedPoS: 0.95,
+      status: "converged",
+    });
+    const out = (await byName("solve_max_spending").run({ clientId: "c1", targetPoS: 0.95 }, principal)) as Record<
+      string,
+      unknown
+    >;
+    expect(h.getOrComputeMaxSpending).toHaveBeenCalledWith({
+      clientId: "c1",
+      firmId: "org_1",
+      scenarioId: "base",
+      targetPoS: 0.95,
+    });
+    expect(out.targetPoS).toBe(0.95);
+  });
+
+  it("pins the exact top-level key set (R60), including the exact deep link (F5)", async () => {
     h.getOrComputeMaxSpending.mockResolvedValue({
       realAnnualSpend: 142_000,
       scaleFactor: 1.1,
@@ -367,6 +458,7 @@ describe("solve_max_spending", () => {
     expect(Object.keys(out).sort()).toEqual(
       ["achievedPoS", "foundryUrl", "realAnnualSpend", "scaleFactor", "scenarioId", "status", "targetPoS"].sort(),
     );
+    expect(out.foundryUrl).toBe(foundryUrl("c1", "monteCarlo"));
   });
 
   it("rejects when the caller cannot access the household", async () => {
@@ -396,6 +488,28 @@ describe("analyze_roth_conversion", () => {
         conversions: [{ id: "r1", year: 2030, amount: 50_000, sourceAccountId: "a", destinationAccountId: "b" }],
       }).success,
     ).toBe(true);
+  });
+
+  it("requires each conversion's year to be an integer (F1/B4)", () => {
+    const schema = byName("analyze_roth_conversion").inputSchema;
+    expect(
+      schema.safeParse({
+        clientId: "c",
+        conversions: [{ id: "r1", year: 2030.5, amount: 50_000, sourceAccountId: "a", destinationAccountId: "b" }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("discloses the single-year fixed-dollar shape and the aggregate-only attribution guard in the description (F4)", () => {
+    const description = byName("analyze_roth_conversion").description;
+    expect(description).toContain("single-year, fixed-dollar conversion");
+    expect(description).toContain("do not attribute a dollar amount to any single conversion");
+  });
+
+  it("pins the liquid-portfolio disclosure in the description (F6)", () => {
+    expect(byName("analyze_roth_conversion").description).toContain(
+      "it excludes home/real estate, business, stock options, and locked trust assets.",
+    );
   });
 
   it("builds ONE roth-conversion-upsert mutation PER conversion, each carrying a full RothConversion value with an array sourceAccountIds (C4)", async () => {
@@ -460,14 +574,20 @@ describe("analyze_roth_conversion", () => {
     expect(out.withConversions.endingPortfolio).toBe(800_000);
   });
 
-  it("sums lifetimeTax across years, defaulting a year with no taxResult to 0", async () => {
+  it("sums lifetimeTax across years, defaulting a year with no taxResult to 0, and computes a SIGNED endingPortfolioDelta that a sign flip would catch (F2)", async () => {
+    // baseline and withConversions end at DIFFERENT liquidTotal values (round
+    // 1's fixture had both end at 2,460,000, making `a-b`, `b-a` and a
+    // literal 0 all pass — M11). Distinct, non-zero-delta endings here mean
+    // swapping the subtraction's operand order reddens this assertion.
     h.runProjection
       .mockReturnValueOnce([
-        makeYear({ year: 2030, taxResult: { flow: { totalTax: 10_000 } } }),
-        makeYear({ year: 2031, taxResult: undefined }),
-        makeYear({ year: 2032, taxResult: { flow: { totalTax: 20_000 } } }),
+        makeYear({ year: 2030, taxResult: { flow: { totalTax: 10_000 } }, portfolioAssets: { total: 1, liquidTotal: 1_000_000 } }),
+        makeYear({ year: 2031, taxResult: undefined, portfolioAssets: { total: 1, liquidTotal: 1_010_000 } }),
+        makeYear({ year: 2032, taxResult: { flow: { totalTax: 20_000 } }, portfolioAssets: { total: 1, liquidTotal: 1_020_000 } }),
       ])
-      .mockReturnValueOnce([makeYear({ year: 2030, taxResult: { flow: { totalTax: 15_000 } } })]);
+      .mockReturnValueOnce([
+        makeYear({ year: 2030, taxResult: { flow: { totalTax: 15_000 } }, portfolioAssets: { total: 1, liquidTotal: 900_000 } }),
+      ]);
     const out = (await byName("analyze_roth_conversion").run(
       {
         clientId: "c1",
@@ -475,10 +595,22 @@ describe("analyze_roth_conversion", () => {
       },
       principal,
     )) as Record<string, unknown>;
-    expect(out.baseline).toEqual({ lifetimeTax: 30_000, endingPortfolio: 2_460_000 });
-    expect(out.withConversions).toEqual({ lifetimeTax: 15_000, endingPortfolio: 2_460_000 });
+    expect(out.baseline).toEqual({ lifetimeTax: 30_000, endingPortfolio: 1_020_000 });
+    expect(out.withConversions).toEqual({ lifetimeTax: 15_000, endingPortfolio: 900_000 });
     expect(out.lifetimeTaxDelta).toBe(-15_000);
-    expect(out.endingPortfolioDelta).toBe(0);
+    expect(out.endingPortfolioDelta).toBe(-120_000);
+  });
+
+  it("defaults endingPortfolio (and lifetimeTax) to 0 when a projection returns no years at all, guarding against NaN/undefined in production (F7/M12)", async () => {
+    h.runProjection.mockReturnValueOnce([]).mockReturnValueOnce([makeYear()]);
+    const out = (await byName("analyze_roth_conversion").run(
+      {
+        clientId: "c1",
+        conversions: [{ id: "rc1", year: 2031, amount: 50_000, sourceAccountId: "a", destinationAccountId: "b" }],
+      },
+      principal,
+    )) as { baseline: { endingPortfolio: number; lifetimeTax: number } };
+    expect(out.baseline).toEqual({ lifetimeTax: 0, endingPortfolio: 0 });
   });
 
   it("pins the exact top-level key set (R60)", async () => {
@@ -494,6 +626,7 @@ describe("analyze_roth_conversion", () => {
       ["baseline", "endingPortfolioDelta", "foundryUrl", "lifetimeTaxDelta", "note", "scenarioId", "withConversions"].sort(),
     );
     expect(out.note).toBe("Modeled only — nothing was saved to the household's plan.");
+    expect(out.foundryUrl).toBe(foundryUrl("c1", "tax"));
   });
 
   it("rejects when the caller cannot access the household", async () => {
@@ -531,6 +664,28 @@ describe("analyze_social_security", () => {
       person: "client",
       resolutionContext: { id: "rc1" },
     });
+  });
+
+  it("passes a SECOND, distinct person ('spouse') into the solver call and echoes that same value in the payload, not the 'client' used elsewhere (F1/X1/X2)", async () => {
+    h.solveSsClaimAgeByPortfolio.mockReturnValue({
+      objective: "ending-portfolio",
+      status: "converged",
+      solvedValue: 64,
+      endingPortfolio: 750_000,
+      candidates: [{ value: 64, endingPortfolio: 750_000 }],
+      finalProjection: [makeYear()],
+    });
+    const out = (await byName("analyze_social_security").run({ clientId: "c1", person: "spouse" }, principal)) as Record<
+      string,
+      unknown
+    >;
+    expect(h.solveSsClaimAgeByPortfolio).toHaveBeenCalledWith({
+      effectiveTree: BASE_TREE,
+      baselineMutations: [],
+      person: "spouse",
+      resolutionContext: { id: "rc1" },
+    });
+    expect(out.person).toBe("spouse");
   });
 
   it("renames candidates[].value to claimAge, never leaving a bare 'value' key (C6)", async () => {
@@ -572,7 +727,19 @@ describe("analyze_social_security", () => {
       ["candidates", "endingPortfolio", "foundryUrl", "note", "person", "scenarioId", "solvedClaimAge", "status"].sort(),
     );
     expect(out.solvedClaimAge).toBe(67);
+    // F3: value-assert the dollar figure itself, distinct from solvedValue
+    // (67, an age) — swapping solved.endingPortfolio for solved.solvedValue
+    // in the handler would otherwise pass every case here undetected, since
+    // the key-set pin only sees the KEY "endingPortfolio", never its value.
+    expect(out.endingPortfolio).toBe(900_000);
     expect(out.note).toBe("Modeled only — nothing was saved to the household's plan.");
+    expect(out.foundryUrl).toBe(foundryUrl("c1", "cashflow"));
+  });
+
+  it("pins the final-year liquid-portfolio disclosure in the description (F6)", () => {
+    expect(byName("analyze_social_security").description).toContain(
+      "it excludes home/real estate, business, stock options, and locked trust assets.",
+    );
   });
 
   it("rejects when the caller cannot access the household", async () => {

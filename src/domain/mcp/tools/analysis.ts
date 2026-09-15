@@ -42,7 +42,9 @@ const explainProjectionChange = defineTool({
     "Explain WHY a household's tax bill changed between two projection years. Returns the " +
     "from/to/delta headline, federal and state tax-line deltas, income-composition deltas, " +
     "per-source recognized-income deltas, the per-account withdrawal picture, and ranked root " +
-    "causes. Only the 'tax' subject exists today. estimatedImpact values are approximations — " +
+    "causes. When the asked year is one row off the real cliff, the payload also carries a " +
+    "probableIntendedJump object — an already-explained nearby boundary the advisor probably " +
+    "meant. Only the 'tax' subject exists today. estimatedImpact values are approximations — " +
     "present them as estimates; exact movement is in taxLineDeltas.",
   inputSchema: z.object({
     clientId: clientIdArg,
@@ -116,9 +118,10 @@ const solveMaxSpendingTool = defineTool({
   description:
     "Solve the highest annual spending a household can sustain while still hitting a target " +
     "probability of success. Answers 'how much can they spend and still be at 85%'. targetPoS is " +
-    "a fraction between 0.01 and 0.99. The result is in today's dollars (real). Reads from a " +
-    "per-scenario cache when the inputs haven't changed since the last solve; a cache miss reruns " +
-    "the search, which is slower. status 'unreachable' means no spending level hits the target; " +
+    "a fraction between 0.01 and 0.99. realAnnualSpend is in today's dollars (real), rounded to " +
+    "the nearest $5,000. Reads from a per-scenario cache when the inputs haven't changed since " +
+    "the last solve; a cache miss reruns the search and writes the fresh result back to that " +
+    "cache, which is slower. status 'unreachable' means no spending level hits the target; " +
     "'max-iterations' means the solver stopped early and the number is approximate.",
   inputSchema: z.object({
     clientId: clientIdArg,
@@ -145,7 +148,11 @@ const analyzeRothConversion = defineTool({
   title: "Analyze Roth conversions",
   description:
     "Model one or more Roth conversions against a household's current plan and report the effect " +
-    "on lifetime tax and ending portfolio. " +
+    "on lifetime tax and ending portfolio. Each conversion is modeled as a single-year, " +
+    "fixed-dollar conversion (that year's gross amount, no indexing) — pass one conversion per " +
+    "year to model a multi-year series (e.g. '$50k/yr 2030-2035' needs six entries). " +
+    "lifetimeTaxDelta and endingPortfolioDelta are aggregate baseline-to-scenario totals across " +
+    "every conversion combined; do not attribute a dollar amount to any single conversion. " +
     LIQUID_PORTFOLIO_NOTE +
     " Nothing is saved — this is analysis only. You need account ids from list_plan_details with " +
     "kind 'account': a pre-tax source account to drain and a Roth destination account to fund.",
@@ -217,10 +224,12 @@ const analyzeSocialSecurity = defineTool({
   name: "analyze_social_security",
   title: "Analyze Social Security claiming age",
   description:
-    "Solve the Social Security claiming age (62-70) that maximizes a household member's ending " +
-    "portfolio, and return the candidate ages considered with the ending portfolio for each. " +
-    "Deterministic: one straight-line projection per integer age, no Monte Carlo; ties break " +
-    "toward the earliest age. " +
+    "Solve the Social Security claiming age (62-70) that maximizes a household member's " +
+    "FINAL-YEAR liquid portfolio, and return the candidate ages considered with that final-year " +
+    "portfolio for each. Deterministic: one straight-line projection per integer age, no Monte " +
+    "Carlo; ties break toward the earliest age. Forces claim-age mode to 'years' for every " +
+    "candidate, overriding a household actually set to claim at FRA or at retirement — this " +
+    "solves for the AGE, not the household's current claiming strategy. " +
     LIQUID_PORTFOLIO_NOTE +
     " Nothing is saved. Pick 'client' or 'spouse' for whose claim age to solve.",
   inputSchema: z.object({
