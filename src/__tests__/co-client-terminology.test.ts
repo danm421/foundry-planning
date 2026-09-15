@@ -174,6 +174,11 @@ const PERMANENT_ALLOWLIST = new Set<string>([
 const ALLOWLIST_PREFIXES = [
   "src/lib/extraction/prompts/",
   "src/domain/forge/tools/",
+  // Task 8 (2026-09-15): MCP tool descriptions, same class as
+  // src/domain/forge/tools/ above — LLM-facing tool-schema prose, not
+  // advisor- or client-visible UI copy. The model needs the precise kinship
+  // word to answer correctly; CO_CLIENT_LABEL is a display-copy concern.
+  "src/domain/mcp/tools/",
 ];
 
 /** A quoted string literal or a JSX text node — i.e. something a person reads.

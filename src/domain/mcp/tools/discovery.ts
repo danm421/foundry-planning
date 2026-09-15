@@ -7,8 +7,9 @@ const searchClientsTool = defineTool({
   name: "search_clients",
   title: "Search households",
   description:
-    "Search the advisor's book by free-text name and return matching households (id and title). " +
-    "A household is one client record and may cover two spouses. Call this first to turn a name " +
+    "Search the households this advisor may see — their own book, or the firm's whole book if " +
+    "their role allows it — by free-text name, and return matching households (id and title). " +
+    "A household is one client record and may include a co-client. Call this first to turn a name " +
     "into the household id every other Foundry tool needs. Returns at most 8 matches.",
   inputSchema: z.object({
     query: z.string().min(1).describe("Name fragment to search for, e.g. 'mueller'."),
@@ -28,10 +29,12 @@ const scanBookTool = defineTool({
   name: "scan_book",
   title: "Scan the book for planning signals",
   description:
-    "Scan the advisor's own clients — the ones assigned to them, not the whole firm's book — for " +
+    "Scan the advisor's own households — the ones assigned to them, not the whole firm's book — for " +
     "planning signals: net worth, liquid assets, uninvested cash, days since last contact, open " +
-    "tasks, open data-collection items, and pending imports. Use this to answer 'who should I be " +
-    "calling' or 'who is sitting on excess cash'. Returns a ranked table, not full household detail.",
+    "tasks, open data-collection items, and pending imports. " +
+    `Capped at ${MAX_LIMIT} rows per call; the response's truncated and totalCount fields say ` +
+    "whether more exist. Use this to answer 'who should I be calling' or 'who is sitting on excess " +
+    "cash'. Returns a ranked table, not full household detail.",
   inputSchema: z.object({
     sortBy: z.enum(SIGNAL_KEYS).optional().describe("Signal to rank by."),
     direction: z.enum(["asc", "desc"]).optional(),

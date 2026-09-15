@@ -25,8 +25,12 @@ vi.mock("@/lib/rate-limit", () => ({
 import { discoveryTools } from "../tools/discovery";
 import type { McpPrincipal } from "@/lib/mcp/principal";
 
+// tokenSubject deliberately differs from userId: they collide as "user_1" in
+// most MCP fixtures, which would let a handler that reads
+// `principal.tokenSubject` instead of `principal.userId` pass every case here
+// undetected.
 const principal: McpPrincipal = {
-  userId: "user_1", orgId: "org_1", orgRole: "org:member", scopes: [], tokenSubject: "user_1",
+  userId: "user_1", orgId: "org_1", orgRole: "org:member", scopes: [], tokenSubject: "sub_1",
 };
 const byName = (n: string) => discoveryTools.find((t) => t.name === n)!;
 
@@ -40,10 +44,11 @@ describe("search_clients", () => {
     searchClients.mockResolvedValue([
       { id: "c1", householdTitle: "Mueller", primaryFirstName: "Dan", primaryLastName: "Mueller", primaryEmail: "dan@example.com" },
     ]);
-    const out = (await byName("search_clients").run({ query: "mue" }, principal)) as {
-      households: Record<string, unknown>[];
-    };
-    expect(out.households).toEqual([{ id: "c1", householdTitle: "Mueller" }]);
+    const out = await byName("search_clients").run({ query: "mue" }, principal);
+    // Asserts the whole payload, not just out.households: a leak into a
+    // sibling key (e.g. {households: projected, contacts: rows}) or a stray
+    // foundryUrl would pass a narrower `out.households`-only assertion.
+    expect(out).toEqual({ households: [{ id: "c1", householdTitle: "Mueller" }] });
   });
 
   it("scopes the search to the token's firm and user", async () => {
@@ -55,8 +60,19 @@ describe("search_clients", () => {
     });
   });
 
-  it("is annotated read-only", () => {
-    expect(byName("search_clients").annotations.readOnlyHint).toBe(true);
+  // R41 — readOnlyHint alone is unfalsifiable: McpToolAnnotations declares it
+  // literal `true`, so no mutation of discovery.ts can move it. Assert the
+  // whole annotations object (still pinned by define-tool.test.ts, but worth
+  // repeating per-tool) plus a non-empty title, since `title: ""` would slip
+  // past every other case here.
+  it("carries read-only annotations and a real title", () => {
+    const tool = byName("search_clients");
+    expect(tool.annotations).toEqual({
+      readOnlyHint: true,
+      destructiveHint: false,
+      openWorldHint: false,
+    });
+    expect(tool.title).toMatch(/\S/);
   });
 
   // R38.4 — .min(1) dropped from the schema: without it, "" parses fine, the
@@ -67,8 +83,12 @@ describe("search_clients", () => {
     expect(searchClients).not.toHaveBeenCalled();
   });
 
-  // R38.5 — the scope-override proof: a conflicting firmId/userId in the tool
-  // ARGS must never reach searchClients. Scope comes only from the token.
+  // R38.5 / R42 — the scope-override proof: a conflicting firmId/userId in
+  // the tool ARGS must never reach searchClients. Scope comes only from the
+  // token. This guards define-tool.ts:95/114 (schema parse + ctx derivation),
+  // not this file — kept per controller ruling even though no mutation
+  // confined to discovery.ts alone can redden it independently of the case
+  // above.
   it("ignores a conflicting firmId/userId passed as tool arguments — scope comes only from the token", async () => {
     searchClients.mockResolvedValue([]);
     await byName("search_clients").run(
@@ -134,8 +154,11 @@ describe("scan_book", () => {
     expect(out).toEqual(result);
   });
 
-  // R38.5 — the scope-override proof for scan_book: a conflicting
-  // firmId/advisorId in the tool ARGS must never reach scanBook.
+  // R38.5 / R42 — the scope-override proof for scan_book: a conflicting
+  // firmId/advisorId in the tool ARGS must never reach scanBook. This guards
+  // define-tool.ts:95/114 (schema parse + ctx derivation), not this file —
+  // kept per controller ruling even though no mutation confined to
+  // discovery.ts alone can redden it independently of the case above.
   it("ignores a conflicting firmId/advisorId passed as tool arguments — scope comes only from the token", async () => {
     scanBook.mockResolvedValue({ rows: [], totalCount: 0, truncated: false });
     await byName("scan_book").run(
@@ -148,7 +171,15 @@ describe("scan_book", () => {
     );
   });
 
-  it("is annotated read-only", () => {
-    expect(byName("scan_book").annotations.readOnlyHint).toBe(true);
+  // R41 — see the same-named test in the search_clients block above for why
+  // this asserts the full object plus a non-empty title.
+  it("carries read-only annotations and a real title", () => {
+    const tool = byName("scan_book");
+    expect(tool.annotations).toEqual({
+      readOnlyHint: true,
+      destructiveHint: false,
+      openWorldHint: false,
+    });
+    expect(tool.title).toMatch(/\S/);
   });
 });
