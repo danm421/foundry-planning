@@ -1,80 +1,95 @@
 "use client";
 
-import Link from "next/link";
 import type { ReactElement } from "react";
-import { PlusIcon } from "@/components/icons";
-import { useDismissableMenu } from "@/lib/use-dismissable-menu";
+import {
+  OverflowMenu,
+  type MenuAlign,
+  type OverflowMenuItem,
+} from "@/components/overflow-menu";
 import type { LinkScope } from "@/lib/portal/plaid-link-complete";
 
+/** What the client picked. `LinkScope` plus "manual", so the vocabulary the
+ *  Accounts page reads back is the same type this side writes. */
+export type AddAccountIntent = LinkScope | "manual";
+
 /**
- * Where each item lands. Every one navigates to the Accounts page carrying its
- * intent in `?add=`, and that page performs it: a successful Plaid link ends
- * in the account picker, which reconciles the new accounts against the
- * client's existing rows and refreshes the page's data. The client finishes on
- * Accounts either way, so the navigation has to happen regardless — the URL is
- * just carrying the intent across it.
+ * The three ways into an account, in one place so the rail and the Accounts
+ * page can never word them differently.
  *
- * There are only two link items because Plaid offers only two flows: ONE
+ * There are only two LINK items because Plaid offers only two flows: ONE
  * covering depository, credit and loan accounts, and a separate one for
  * investments (see `buildNewLinkProducts` in the link-token route). The first
  * label names all three account types rather than saying "Account", because a
  * client adding a mortgage otherwise has no reason to think it belongs behind
  * a word that sounds like checking.
- *
- * The intent values are `LinkScope` plus "manual", so the vocabulary the
- * Accounts page reads back is the same type this side writes.
  */
-const ITEMS: readonly { label: string; intent: LinkScope | "manual" }[] = [
+const ITEMS: readonly { label: string; intent: AddAccountIntent }[] = [
   { label: "Link Bank, Card or Loan", intent: "banking" },
   { label: "Link Investments", intent: "investments" },
   { label: "Add Manually", intent: "manual" },
 ];
 
 /**
- * The rail's one write action, sitting above Dashboard: a compact CTA that
- * opens a short menu of ways to add an account. It hugs its label rather than
- * filling the rail so the rail reads as a list of destinations with one button
- * above it, not two competing full-width blocks, and shares the nav items'
- * left edge and `px-3` inset so its icon starts where their labels do.
+ * Read an intent back off a URL, for the Accounts page performing what the rail
+ * sent it. Derived from `ITEMS`, so a new menu item is understood on arrival
+ * without a second list to remember — and anything else is rejected, because a
+ * query param is user input.
  */
-export default function PortalAddAccountMenu({
-  basePath = "/portal",
-}: {
-  basePath?: string;
-}): ReactElement {
-  const { open, setOpen, ref } = useDismissableMenu<HTMLDivElement>();
+export function parseAddAccountIntent(raw: string | null): AddAccountIntent | null {
+  return ITEMS.find((item) => item.intent === raw)?.intent ?? null;
+}
+
+type Props =
+  /**
+   * Rail binding. The rail can't run these flows — they live on the Accounts
+   * page — so each item navigates there carrying its intent in `?add=`, and
+   * that page performs it on arrival. The client finishes on Accounts either
+   * way, so the navigation has to happen regardless; the URL is just carrying
+   * the intent across it.
+   */
+  | { basePath?: string; onSelect?: undefined; disabled?: undefined; align?: MenuAlign }
+  /**
+   * Accounts-page binding. The flows are right here, so each item acts in
+   * place and nothing navigates.
+   */
+  | {
+      basePath?: undefined;
+      onSelect: (intent: AddAccountIntent) => void;
+      disabled?: boolean;
+      align?: MenuAlign;
+    };
+
+/**
+ * A compact accent CTA that opens a short menu of ways to add an account. It
+ * hugs its label rather than filling its container so a rail reads as a list of
+ * destinations with one button above it, not two competing full-width blocks.
+ */
+export default function PortalAddAccountMenu(props: Props): ReactElement {
+  // Alignment belongs to wherever the menu is standing, not to the menu: the
+  // rail's copy starts a left-aligned column, the Accounts header's sits at the
+  // right end of a `justify-end` row where a left-hung panel would run off the
+  // page.
+  const align = props.align ?? "left";
+  const items: OverflowMenuItem[] = ITEMS.map((item) =>
+    props.onSelect
+      ? {
+          label: item.label,
+          disabled: props.disabled,
+          onClick: () => props.onSelect(item.intent),
+        }
+      : {
+          label: item.label,
+          href: `${props.basePath ?? "/portal"}/organizer/accounts?add=${item.intent}`,
+        },
+  );
 
   return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-fit items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-[13px] font-medium text-accent-on transition-colors hover:bg-accent/90"
-      >
-        <PlusIcon width={13} height={13} aria-hidden />
-        Add Account
-      </button>
-
-      {open && (
-        <div
-          role="menu"
-          className="absolute left-0 top-full z-30 mt-1.5 w-max min-w-[10rem] rounded-[var(--radius-sm)] border border-hair bg-paper p-1 shadow-lg"
-        >
-          {ITEMS.map((item) => (
-            <Link
-              key={item.label}
-              role="menuitem"
-              href={`${basePath}/organizer/accounts?add=${item.intent}`}
-              onClick={() => setOpen(false)}
-              className="block rounded-[var(--radius-sm)] px-3 py-1.5 text-left text-[13px] text-ink-2 transition-colors hover:bg-card-2 hover:text-ink"
-            >
-              {item.label}
-            </Link>
-          ))}
-        </div>
-      )}
-    </div>
+    <OverflowMenu
+      variant="cta"
+      align={align}
+      triggerLabel="Add Account"
+      minWidthClassName="min-w-[10rem]"
+      items={items}
+    />
   );
 }

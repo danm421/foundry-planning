@@ -16,3 +16,13 @@ export const PlaidLinkButton = dynamic(
     ),
   },
 );
+
+/**
+ * The same component for `trigger="auto"`, which draws no button — so the
+ * loading state has to reserve nothing. Sharing `PlaidLinkButton`'s fallback
+ * would flash a button-shaped placeholder where no button belongs.
+ */
+export const PlaidLinkAuto = dynamic(
+  () => import("@/components/portal/plaid-link-button").then((m) => m.PlaidLinkButton),
+  { ssr: false, loading: () => null },
+);

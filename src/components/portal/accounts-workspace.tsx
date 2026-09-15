@@ -29,7 +29,11 @@ import {
   emptyDebtForm,
   type DebtFormState,
 } from "@/components/portal/debt-form-panel";
-import { PlaidLinkButton } from "@/components/portal/plaid-link-button-dynamic";
+import { PlaidLinkAuto } from "@/components/portal/plaid-link-button-dynamic";
+import PortalAddAccountMenu, {
+  parseAddAccountIntent,
+  type AddAccountIntent,
+} from "@/components/portal/portal-add-account-menu";
 import { PlaidConsentNotice } from "@/components/portal/plaid-consent-notice";
 import { PlaidAccountPicker } from "@/components/portal/plaid-account-picker";
 import type { LinkScope, LinkSuccessPayload } from "@/lib/portal/plaid-link-complete";
@@ -95,8 +99,16 @@ export function AccountsWorkspace({ dto }: { dto: AccountsPageDTO }): ReactEleme
   const [accountForm, setAccountForm] = useState<AccountFormState | null>(null);
   const [debtForm, setDebtForm] = useState<DebtFormState | null>(null);
   const [linkPayload, setLinkPayload] = useState<LinkSuccessPayload | null>(null);
-  // Which link flow to open on arrival, if any — see the effect below.
-  const [autoLink, setAutoLink] = useState<LinkScope | null>(null);
+  /**
+   * The link flow to run, if any. Set by the header's "Add Account" menu or by
+   * an `?add=` arrival from the rail's copy of it, and cleared when the flow
+   * ends either way — Plaid handed back a payload, or the client backed out.
+   *
+   * Clearing it is what lets a client retry: `PlaidLinkAuto` mints its token on
+   * mount, so it has to unmount between attempts or picking the same scope
+   * twice would be the same value and change nothing.
+   */
+  const [pendingLink, setPendingLink] = useState<LinkScope | null>(null);
 
   const rail = useMemo(
     () => buildAccountRail({ assets: dto.assets, debts: dto.debts }),
@@ -141,6 +153,11 @@ export function AccountsWorkspace({ dto }: { dto: AccountsPageDTO }): ReactEleme
     setDrill({ kind: "add-account" });
   }
 
+  function chooseAdd(intent: AddAccountIntent): void {
+    if (intent === "manual") openAddAccount();
+    else setPendingLink(intent);
+  }
+
   function openAddDebt(): void {
     setAccountForm(null);
     setDebtForm(emptyDebtForm(primaryFm?.id ?? null));
@@ -148,9 +165,10 @@ export function AccountsWorkspace({ dto }: { dto: AccountsPageDTO }): ReactEleme
   }
 
   /**
-   * Deep link from the rail's "Add Account" menu. The menu only navigates; the
-   * flows it names live here, so the page performs the intent on arrival and
-   * then strips the param — a refresh or a back-nav must not reopen Plaid.
+   * Deep link from the rail's copy of the "Add Account" menu. The rail can only
+   * navigate; the flows it names live here, so the page performs the intent on
+   * arrival and then strips the param — a refresh or a back-nav must not
+   * reopen Plaid.
    * Gated on `editEnabled` for the same reason the header's buttons are: a
    * read-only portal has no add path, hand-typed URL or not.
    */
@@ -165,11 +183,11 @@ export function AccountsWorkspace({ dto }: { dto: AccountsPageDTO }): ReactEleme
     // routing on the client").
     window.history.replaceState(null, "", pathname);
     if (!dto.editEnabled) return;
-    // Anything else is ignored — this is a URL, so it is user input.
-    if (addIntent === "manual") openAddAccount();
-    else if (addIntent === "banking" || addIntent === "investments") {
-      setAutoLink(addIntent);
-    }
+    // Anything else is ignored — this is a URL, so it is user input. The guard
+    // reads the menu's own item list, so a new item can't be reachable from the
+    // rail and rejected here.
+    const intent = parseAddAccountIntent(addIntent);
+    if (intent) chooseAdd(intent);
     // Keyed on the intent ALONE. `pathname` and `editEnabled` are read here,
     // not triggers, and re-running this on anything that changes per render
     // would setState in a loop.
@@ -414,26 +432,29 @@ export function AccountsWorkspace({ dto }: { dto: AccountsPageDTO }): ReactEleme
         {dto.editEnabled && (
           <div className="flex flex-wrap items-center justify-end gap-3">
             <PlaidConsentNotice />
-            <PlaidLinkButton
-              mode="link"
-              scope="banking"
-              autoStart={autoLink === "banking"}
-              onLinkSuccess={setLinkPayload}
-            />
-            <PlaidLinkButton
-              mode="link"
-              scope="investments"
-              autoStart={autoLink === "investments"}
-              onLinkSuccess={setLinkPayload}
-            />
-            <button
-              type="button"
-              onClick={openAddAccount}
+            {/*
+              One menu, not three buttons: the two link flows and the manual
+              form are three ways into the same thing, and the rail already
+              offers exactly this menu. `PlaidLinkAuto` draws nothing — the
+              menu is the trigger, and this mount is what runs the flow the
+              client picked.
+            */}
+            <PortalAddAccountMenu
+              onSelect={chooseAdd}
               disabled={inFlight}
-              className="rounded-md border border-accent bg-accent/15 px-3 py-1.5 text-[13px] font-medium text-accent disabled:opacity-50"
-            >
-              Add Account or Loan
-            </button>
+              align="right"
+            />
+            {pendingLink && (
+              <PlaidLinkAuto
+                mode="link"
+                scope={pendingLink}
+                onLinkSuccess={(payload) => {
+                  setPendingLink(null);
+                  setLinkPayload(payload);
+                }}
+                onExit={() => setPendingLink(null)}
+              />
+            )}
           </div>
         )}
       </header>

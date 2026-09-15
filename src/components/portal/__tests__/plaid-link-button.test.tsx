@@ -29,13 +29,18 @@ beforeEach(() => {
 });
 
 describe("PlaidLinkButton", () => {
-  it("mints a link token and opens Plaid Link in 'link' mode", async () => {
+  // A new link is triggered by the "Add Account" menu, which has already asked
+  // which kind it is — so link mode draws nothing and mints on mount.
+  it("mints a link token and opens Plaid Link on mount in 'link' mode", async () => {
     const open = vi.fn();
     usePlaidLink.mockReturnValue({ open, ready: true });
 
     const { PlaidLinkButton } = await import("../plaid-link-button");
-    render(<PlaidLinkButton mode="link" scope="banking" onLinkSuccess={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: /link bank or loan/i }));
+    const { container } = render(
+      <PlaidLinkButton mode="link" scope="banking" onLinkSuccess={vi.fn()} />,
+    );
+    // No button of its own — mounting IS the trigger.
+    expect(container.querySelector("button")).toBeNull();
     await waitFor(() => expect(open).toHaveBeenCalled());
     expect(global.fetch).toHaveBeenCalledWith(
       "/api/portal/plaid/link-token",
@@ -45,16 +50,12 @@ describe("PlaidLinkButton", () => {
 
   // The scope decides which Plaid product the token requires; dropping it on the
   // floor would silently send every client down the banking path.
-  it.each([
-    ["banking", /link bank or loan/i],
-    ["investments", /link investments/i],
-  ] as const)("sends scope=%s from its own button", async (scope, label) => {
+  it.each(["banking", "investments"] as const)("sends scope=%s on mount", async (scope) => {
     const open = vi.fn();
     usePlaidLink.mockReturnValue({ open, ready: true });
 
     const { PlaidLinkButton } = await import("../plaid-link-button");
     render(<PlaidLinkButton mode="link" scope={scope} onLinkSuccess={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: label }));
     await waitFor(() => expect(open).toHaveBeenCalled());
     // The fetch spy accumulates across tests in this file — take the most
     // recent link-token call, not the first.
@@ -62,6 +63,22 @@ describe("PlaidLinkButton", () => {
       .filter((c) => String(c[0]).endsWith("/link-token"))
       .at(-1)?.[1] as RequestInit;
     expect(JSON.parse(String(init.body))).toEqual({ scope });
+  });
+
+  // Backing out has to reach the caller, which is what lets the Accounts page
+  // forget the flow and let the client retry it.
+  it("reports an exit to its caller in 'link' mode", async () => {
+    const onExit = vi.fn();
+    usePlaidLink.mockImplementation((cfg: { onExit: () => void }) => ({
+      open: () => cfg.onExit(),
+      ready: true,
+    }));
+
+    const { PlaidLinkButton } = await import("../plaid-link-button");
+    render(
+      <PlaidLinkButton mode="link" scope="banking" onLinkSuccess={vi.fn()} onExit={onExit} />,
+    );
+    await waitFor(() => expect(onExit).toHaveBeenCalled());
   });
 
   it("posts reauth-complete and refreshes in 'reauth' mode after Link success", async () => {

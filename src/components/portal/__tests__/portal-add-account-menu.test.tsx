@@ -65,6 +65,41 @@ describe("PortalAddAccountMenu", () => {
   });
 });
 
+describe("PortalAddAccountMenu acting in place", () => {
+  it("reports the picked intent instead of navigating", () => {
+    const onSelect = vi.fn();
+    render(<PortalAddAccountMenu onSelect={onSelect} />);
+    openMenu();
+
+    // No hrefs at all: on the Accounts page the flows are already here, so a
+    // navigation would be a round trip to the page the client is standing on.
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("menuitem", { name: "Link Investments" }));
+    expect(onSelect).toHaveBeenCalledWith("investments");
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("carries the same three intents the navigating binding does", () => {
+    const onSelect = vi.fn();
+    render(<PortalAddAccountMenu onSelect={onSelect} />);
+    // Reopened between picks: choosing an item closes the menu, which is what
+    // unmounts the other two.
+    for (const label of ["Link Bank, Card or Loan", "Link Investments", "Add Manually"]) {
+      openMenu();
+      fireEvent.click(screen.getByRole("menuitem", { name: label }));
+    }
+    expect(onSelect.mock.calls.flat()).toEqual(["banking", "investments", "manual"]);
+  });
+
+  it("locks every item while a write is in flight", () => {
+    const onSelect = vi.fn();
+    render(<PortalAddAccountMenu onSelect={onSelect} disabled />);
+    openMenu();
+    for (const item of screen.getAllByRole("menuitem")) expect(item).toBeDisabled();
+  });
+});
+
 describe("PortalNav add-account gate", () => {
   it("shows the menu above Dashboard when the client may edit", () => {
     render(<PortalNav editEnabled />);

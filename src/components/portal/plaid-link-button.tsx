@@ -20,12 +20,11 @@ type Props =
       scope: LinkScope;
       onLinkSuccess: (payload: LinkSuccessPayload) => void;
       /**
-       * Mint a token and open Plaid on mount, without a click. Set when the
-       * client arrived here from the rail's "Add Account" menu, which already
-       * asked which kind of link they wanted. Fires at most ONCE per mount, so
-       * the re-render that follows can't reopen the modal.
+       * The client closed Plaid without linking. The caller decides what that
+       * means; the Accounts page uses it to forget the flow it started, which
+       * is what lets the client immediately retry the same one.
        */
-      autoStart?: boolean;
+      onExit?: () => void;
     }
   | {
       mode: "reauth";
@@ -84,9 +83,18 @@ export function PlaidLinkButton(props: Props) {
     [props, itemId, router, portalFetch],
   );
 
+  // Backing out is an ending too: drop the OAuth handoff context so a later
+  // visit to /portal/oauth can't resume a flow the client abandoned. Matches
+  // what plaid-oauth-resume already does on exit.
+  const onExit = useCallback(() => {
+    clearPlaidOAuthCtx();
+    if (props.mode === "link") props.onExit?.();
+  }, [props]);
+
   const { open, ready } = usePlaidLink({
     token: linkToken,
     onSuccess,
+    onExit,
   });
 
   const handleClick = useCallback(async () => {
@@ -121,12 +129,17 @@ export function PlaidLinkButton(props: Props) {
     }
   }, [busy, props, portalFetch]);
 
-  // Arrived from the rail's "Add Account" menu: run the same click path the
-  // button would, once. `handleClick` is re-created every render (it closes
-  // over `props`), so the ref — not the dep list — is what makes this fire a
-  // single time.
+  // A NEW link is always triggered somewhere else — the "Add Account" menu, on
+  // the Accounts page or in the portal rail — because Plaid needs to know which
+  // kind of link this is before it can mint a token, and that menu is where the
+  // client says so. A second button here would only ask again, so link mode
+  // mints on mount and draws nothing (see the early return below).
+  //
+  // `handleClick` is re-created every render (it closes over `props`), so the
+  // ref — not the dep list — is what makes this fire a single time. Remount it
+  // to run the flow again.
   const autoStarted = useRef(false);
-  const autoStart = props.mode === "link" && props.autoStart === true;
+  const autoStart = props.mode === "link";
   useEffect(() => {
     if (!autoStart || autoStarted.current) return;
     autoStarted.current = true;
@@ -149,16 +162,18 @@ export function PlaidLinkButton(props: Props) {
     }
   }, [linkToken, ready, open, props.mode, itemId]);
 
+  // Headless: the trigger lives in the caller's menu, so there is nothing to
+  // draw. Everything above still runs — that is the whole point of the mount.
+  if (props.mode === "link") return null;
+
+  // The remaining modes act on an EXISTING item, so each is a real button on
+  // the row or dialog that owns that item.
   const label =
-    props.mode === "link"
-      ? props.scope === "investments"
-        ? "Link investments"
-        : "Link bank or loan"
-      : props.mode === "reauth"
-        ? "Re-authenticate"
-        : props.mode === "account-selection"
-          ? "Find more accounts"
-          : "Enable spending insights";
+    props.mode === "reauth"
+      ? "Re-authenticate"
+      : props.mode === "account-selection"
+        ? "Find more accounts"
+        : "Enable spending insights";
 
   return (
     <button
