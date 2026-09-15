@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { requireOrgAndUser } from "@/lib/db-helpers";
 import { findClientRecipient } from "@/lib/client-search";
 import { listFormsForFirm, loadAdvisorDefaultSections } from "@/lib/intake/queries";
+import { loadLastRemindedAt } from "@/lib/intake/reminders";
 import Queue, { type QueueGroup } from "@/components/intake/admin/queue";
 import SendIntakeForm from "@/components/intake/admin/send-intake-form";
 import { ExternalLinkIcon, PencilIcon } from "@/components/icons";
@@ -22,11 +23,20 @@ export default async function DataCollectionPage({
   const { orgId, userId } = await requireOrgAndUser();
   const { orgRole } = await auth();
   const { clientId } = await searchParams;
-  const forms = await listFormsForFirm(orgId);
-  const defaultSections = await loadAdvisorDefaultSections(orgId, userId);
-  const prefill = clientId
-    ? await findClientRecipient(clientId, orgId, { userId, orgRole })
-    : null;
+  // Three independent reads — none feeds another — so they overlap instead of
+  // queueing behind each other on a page an advisor lands on cold.
+  const [forms, defaultSections, prefill] = await Promise.all([
+    listFormsForFirm(orgId),
+    loadAdvisorDefaultSections(orgId, userId),
+    clientId ? findClientRecipient(clientId, orgId, { userId, orgRole }) : null,
+  ]);
+
+  // Only the In-flight bucket can be chased, so only its forms need the lookup.
+  const inFlight = forms.filter((f) => f.status === "draft");
+  const lastRemindedAt = await loadLastRemindedAt(
+    orgId,
+    inFlight.map((f) => f.id),
+  );
 
   // Order is the tab order: what you're waiting on, then what's waiting on you,
   // then the record. History stays a tab rather than a separate page so applied
@@ -34,11 +44,13 @@ export default async function DataCollectionPage({
   const groups: QueueGroup[] = [
     {
       label: "In flight",
-      forms: forms.filter((f) => f.status === "draft"),
+      forms: inFlight,
       // The chasing question: did they get it, and did they look? Sent alone
       // can't tell an ignored invite from one that's half-filled.
       dateColumns: ["sent", "accessed"],
       empty: "No forms are out with a client right now.",
+      remindable: true,
+      lastRemindedAt,
     },
     {
       label: "Needs review",

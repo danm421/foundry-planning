@@ -19,6 +19,14 @@ export interface QueueGroup {
   dateColumns: QueueDateColumn[];
   /** Copy shown in the panel when this bucket is empty. */
   empty?: string;
+  /**
+   * Rows in this bucket get a "Remind" button. Only true where the form is
+   * genuinely still out with the client — the endpoint refuses anything else,
+   * and a button that can only 409 is worse than no button.
+   */
+  remindable?: boolean;
+  /** Form id → when that form was last nudged. Absent means never. */
+  lastRemindedAt?: Record<string, Date>;
 }
 
 interface QueueProps {
@@ -193,13 +201,20 @@ export default function Queue({ groups }: QueueProps) {
                   "minmax(0,1fr)",
                   "auto",
                   ...group.dateColumns.map(() => "auto"),
+                  ...(group.remindable ? ["auto"] : []),
                   "1rem",
                 ].join(" "),
               }}
             >
               <ColumnHeader columns={group.dateColumns} />
               {group.forms.map((form) => (
-                <FormRow key={form.id} form={form} columns={group.dateColumns} />
+                <FormRow
+                  key={form.id}
+                  form={form}
+                  columns={group.dateColumns}
+                  remindable={group.remindable}
+                  lastRemindedAt={group.lastRemindedAt?.[form.id]}
+                />
               ))}
             </div>
           )}
@@ -258,19 +273,38 @@ function DateCell({ column, form }: { column: QueueDateColumn; form: IntakeFormR
   );
 }
 
-function FormRow({ form, columns }: { form: IntakeFormRow; columns: QueueDateColumn[] }) {
+function FormRow({
+  form,
+  columns,
+  remindable,
+  lastRemindedAt,
+}: {
+  form: IntakeFormRow;
+  columns: QueueDateColumn[];
+  remindable?: boolean;
+  lastRemindedAt?: Date;
+}) {
   const meta = STATUS_META[form.status];
 
   return (
-    <Link
-      href={`/data-collection/${form.id}`}
-      className="group col-span-full grid grid-cols-subgrid items-center px-4 py-3.5 transition-colors hover:bg-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent sm:px-5"
+    // Not a <Link> wrapping the row any more: a button inside an anchor is
+    // invalid HTML, and the click would open the form instead of sending the
+    // reminder. The name below carries the href and stretches a pseudo-element
+    // over the whole row, so the row still opens from anywhere but the button.
+    <div
+      // The row is no longer a single element in the a11y tree, so it needs a
+      // handle of its own for the date assertions that used to read the link.
+      data-testid="form-row"
+      className="group relative col-span-full grid grid-cols-subgrid items-center px-4 py-3.5 transition-colors hover:bg-card-hover has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-inset has-[a:focus-visible]:ring-accent sm:px-5"
     >
       <div className="min-w-0">
         <div className="flex items-center gap-2">
-          <span className="truncate text-[14px] font-medium text-ink">
+          <Link
+            href={`/data-collection/${form.id}`}
+            className="truncate text-[14px] font-medium text-ink outline-none after:absolute after:inset-0 after:content-['']"
+          >
             {form.recipientName ?? form.recipientEmail}
-          </span>
+          </Link>
           <span className="shrink-0 rounded-full border border-hair-2 px-2 py-0.5 text-[11px] leading-none text-ink-3">
             {recipientLabel(form)}
           </span>
@@ -291,6 +325,8 @@ function FormRow({ form, columns }: { form: IntakeFormRow; columns: QueueDateCol
         <DateCell key={key} column={key} form={form} />
       ))}
 
+      {remindable && <RemindCell form={form} lastRemindedAt={lastRemindedAt} />}
+
       <ChevronRightIcon
         width={16}
         height={16}
@@ -300,6 +336,89 @@ function FormRow({ form, columns }: { form: IntakeFormRow; columns: QueueDateCol
         // there. `md:ml-5` matches what it spent once a date is showing.
         className="ml-3 text-ink-4 transition-colors group-hover:text-ink-2 md:ml-5"
       />
-    </Link>
+    </div>
+  );
+}
+
+const remindBtnCls =
+  "inline-flex items-center rounded-[var(--radius-sm)] border border-hair px-2.5 py-1 text-[12px] font-medium text-ink-2 transition-colors hover:border-hair-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50";
+
+/**
+ * Mails the same access link to a recipient who hasn't finished their form.
+ *
+ * `relative z-[1]`: the row's link stretches a pseudo-element across the whole
+ * row, and without its own stacking this button would sit underneath it —
+ * clicking "Remind" would silently open the form instead.
+ */
+function RemindCell({
+  form,
+  lastRemindedAt,
+}: {
+  form: IntakeFormRow;
+  lastRemindedAt?: Date;
+}) {
+  // One request state, not a `busy` flag beside an `error` string: those two are
+  // the same request seen at different moments and can't both be true.
+  // `sentAt` stays separate because it's durable — the server seeds it, and a
+  // failed retry must not erase the fact that an earlier reminder went out.
+  const [request, setRequest] = useState<
+    { status: "idle" | "busy" } | { status: "error"; message: string }
+  >({ status: "idle" });
+  const [sentAt, setSentAt] = useState<Date | null>(lastRemindedAt ?? null);
+  const who = form.recipientName ?? form.recipientEmail;
+
+  async function remind() {
+    setRequest({ status: "busy" });
+    try {
+      const res = await fetch(`/api/data-collection/${form.id}/remind`, {
+        method: "POST",
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        // The route's own wording, not a generic failure: its 409s name the
+        // thing the advisor has to do instead (send a new form, use the
+        // Access tab), which a swallowed message would throw away.
+        setRequest({
+          status: "error",
+          message: body.error ?? "We couldn't send the reminder.",
+        });
+        return;
+      }
+      setSentAt(new Date());
+      setRequest({ status: "idle" });
+    } catch {
+      setRequest({ status: "error", message: "We couldn't send the reminder." });
+    }
+  }
+
+  return (
+    <div className="relative z-[1] flex flex-col items-end pl-4">
+      <button
+        type="button"
+        onClick={remind}
+        disabled={request.status === "busy"}
+        // Every row's button reads "Remind", so the name carries the recipient.
+        aria-label={`${sentAt ? "Remind again" : "Remind"} ${who}`}
+        className={remindBtnCls}
+      >
+        {request.status === "busy"
+          ? "Sending…"
+          : sentAt
+            ? "Remind again"
+            : "Remind"}
+      </button>
+      {/* Always mounted, so a later message is announced rather than appearing
+          silently — a live region added at the same moment as its text isn't. */}
+      <span
+        aria-live="polite"
+        className="mt-1 max-w-[26ch] text-right text-[11px] leading-[1.35]"
+      >
+        {request.status === "error" ? (
+          <span className="text-crit">{request.message}</span>
+        ) : sentAt ? (
+          <span className="tabular text-ink-3">Reminded {formatDate(sentAt)}</span>
+        ) : null}
+      </span>
+    </div>
   );
 }

@@ -527,6 +527,12 @@ const getIntakeVerifyLimiter = buildLimiter(8, "1 h", "rl:intake-verify");
 // Document uploads on the public intake link. Lower than autosave — each call
 // carries up to 10MB and writes a live vault row.
 const getIntakeDocumentLimiter = buildLimiter(30, "1 h", "rl:intake-documents");
+// Advisor-side nudge on a form already out with a client. Keyed on the FORM,
+// not the firm: one client being chased must not use up another's budget, and
+// the thing to stop is the same person receiving the same mail all afternoon.
+// 3 a day leaves room for a genuine follow-up plus a retry after a typo'd
+// bounce, and nothing like enough to harass.
+const getIntakeRemindLimiter = buildLimiter(3, "24 h", "rl:intake-remind");
 
 export async function checkIntakeAutosaveRateLimit(key: string): Promise<RateLimitResult> {
   const limiter = getIntakeAutosaveLimiter();
@@ -548,6 +554,12 @@ export async function checkIntakeVerifyRateLimit(key: string): Promise<RateLimit
 
 export async function checkIntakeDocumentRateLimit(key: string): Promise<RateLimitResult> {
   const limiter = getIntakeDocumentLimiter();
+  if (!limiter) return { allowed: false, reason: "unconfigured" };
+  return safeLimit(limiter, key);
+}
+
+export async function checkIntakeRemindRateLimit(key: string): Promise<RateLimitResult> {
+  const limiter = getIntakeRemindLimiter();
   if (!limiter) return { allowed: false, reason: "unconfigured" };
   return safeLimit(limiter, key);
 }

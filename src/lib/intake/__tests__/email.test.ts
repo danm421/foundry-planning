@@ -26,7 +26,7 @@ describe("sendIntakeFormEmail", () => {
     }
   });
 
-  it("resolves without throwing when RESEND_API_KEY is not set", async () => {
+  it("reports undelivered rather than throwing when RESEND_API_KEY is not set", async () => {
     await expect(
       sendIntakeFormEmail({
         to: "client@example.com",
@@ -34,7 +34,7 @@ describe("sendIntakeFormEmail", () => {
         advisorName: "Jane Advisor",
         clientName: "Smith Family",
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ delivered: false, reason: "unconfigured" });
   });
 
   it("resolves without throwing with minimal args (no advisorName/clientName)", async () => {
@@ -43,7 +43,33 @@ describe("sendIntakeFormEmail", () => {
         to: "client@example.com",
         link: "https://foundryplanning.com/intake/abc123",
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ delivered: false, reason: "unconfigured" });
+  });
+
+  it("reports delivered once Resend accepts the send", async () => {
+    process.env.RESEND_API_KEY = "re_test_key";
+    mockSend.mockClear();
+    mockSend.mockResolvedValueOnce({ data: { id: "re_1" }, error: null });
+
+    await expect(
+      sendIntakeFormEmail({
+        to: "client@example.com",
+        link: "https://foundryplanning.com/intake/abc123",
+      }),
+    ).resolves.toEqual({ delivered: true });
+  });
+
+  it("reports send_failed — never throws — when Resend rejects", async () => {
+    process.env.RESEND_API_KEY = "re_test_key";
+    mockSend.mockClear();
+    mockSend.mockRejectedValueOnce(new Error("resend is down"));
+
+    await expect(
+      sendIntakeFormEmail({
+        to: "client@example.com",
+        link: "https://foundryplanning.com/intake/abc123",
+      }),
+    ).resolves.toEqual({ delivered: false, reason: "send_failed" });
   });
 
   it("passes replyTo through to the Resend payload", async () => {

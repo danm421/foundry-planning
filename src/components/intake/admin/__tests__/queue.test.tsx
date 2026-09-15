@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from "vitest";
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { render, screen, fireEvent, within, waitFor } from "@testing-library/react";
 import Queue, { type QueueGroup } from "../queue";
 import type { IntakeFormRow } from "@/lib/intake/queries";
 
@@ -210,7 +210,7 @@ describe("Queue", () => {
     // as the wrong month rather than passing on a shared value. Asserted as
     // label+value together — each cell carries its own screen-reader label, so
     // this also pins the date to the column it belongs to.
-    const row = screen.getByRole("link");
+    const row = screen.getByTestId("form-row");
     expect(row).toHaveTextContent("Sent: Mar 2, 2026");
     expect(row).toHaveTextContent("Accessed: Apr 3, 2026");
     expect(row).toHaveTextContent("Completed: May 4, 2026");
@@ -238,7 +238,7 @@ describe("Queue", () => {
     );
     // "Accessed" has no createdAt fallback: an em-dash is the honest answer,
     // and a fallback would read as "they opened it the day it was created".
-    const row = screen.getByRole("link");
+    const row = screen.getByTestId("form-row");
     expect(row).toHaveTextContent("Accessed: not yet");
     // Sent still resolves — only the columns with no fallback go blank.
     expect(row).toHaveTextContent("Sent: Jun 1, 2026");
@@ -274,8 +274,125 @@ describe("Queue", () => {
     );
     // appliedAt wins over the later updatedAt; a discarded form has no
     // appliedAt, so it falls to updatedAt.
-    const [applied, discarded] = screen.getAllByRole("link");
+    const [applied, discarded] = screen.getAllByTestId("form-row");
     expect(applied).toHaveTextContent("Closed: Jun 5, 2026");
     expect(discarded).toHaveTextContent("Closed: Aug 7, 2026");
+  });
+});
+
+// ── Remind ────────────────────────────────────────────────────────────────────
+
+/** Stubs `fetch` and hands back the calls it saw. */
+function mockFetch(response: { ok: boolean; body?: unknown }) {
+  const calls: Array<[string, RequestInit | undefined]> = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push([url, init]);
+      return {
+        ok: response.ok,
+        json: async () => response.body ?? {},
+      } as Response;
+    }),
+  );
+  return calls;
+}
+
+describe("Queue — reminders", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const inFlight = (extra: Partial<QueueGroup> = {}): QueueGroup => ({
+    label: "In flight",
+    forms: [makeForm({ id: "f-draft", recipientName: "Carol" })],
+    dateColumns: ["sent", "accessed"],
+    remindable: true,
+    ...extra,
+  });
+
+  it("offers a Remind button named for its recipient", () => {
+    render(<Queue groups={[inFlight()]} />);
+    expect(screen.getByRole("button", { name: /remind carol/i })).toBeInTheDocument();
+  });
+
+  it("offers no Remind button in a bucket that isn't remindable", () => {
+    render(
+      <Queue
+        groups={[
+          {
+            label: "Needs review",
+            forms: [submittedForm],
+            dateColumns: ["sent"],
+          },
+        ]}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /remind/i })).not.toBeInTheDocument();
+  });
+
+  it("posts to that form's remind endpoint and reports the date back", async () => {
+    const calls = mockFetch({ ok: true, body: { ok: true } });
+    render(<Queue groups={[inFlight()]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /remind carol/i }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("form-row")).toHaveTextContent(/Reminded /),
+    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0]![0]).toBe("/api/data-collection/f-draft/remind");
+    expect(calls[0]![1]?.method).toBe("POST");
+    // Already chased — the label says so, so a second nudge is a decision.
+    expect(screen.getByRole("button", { name: /remind again carol/i })).toBeInTheDocument();
+  });
+
+  it("opens already chased when the server knows about an earlier reminder", () => {
+    render(
+      <Queue
+        groups={[inFlight({ lastRemindedAt: { "f-draft": new Date("2026-06-09T12:00:00Z") } })]}
+      />,
+    );
+    expect(screen.getByTestId("form-row")).toHaveTextContent("Reminded Jun 9, 2026");
+  });
+
+  it("surfaces the server's own refusal, not a generic failure", async () => {
+    mockFetch({
+      ok: false,
+      body: { error: "This form's link has expired. Send a new form instead." },
+    });
+    render(<Queue groups={[inFlight()]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /remind carol/i }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/link has expired/i)).toBeInTheDocument(),
+    );
+    // Nothing claims a reminder went out.
+    expect(screen.getByTestId("form-row")).not.toHaveTextContent(/Reminded /);
+  });
+
+  it("does not claim a send when the request itself throws", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("offline"); }));
+    render(<Queue groups={[inFlight()]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /remind carol/i }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/couldn't send the reminder/i)).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("form-row")).not.toHaveTextContent(/Reminded /);
+  });
+
+  it("keeps the row's own link clickable alongside the button", () => {
+    render(<Queue groups={[inFlight()]} />);
+    // A button nested inside an anchor is invalid HTML and would navigate
+    // instead of sending — the row's link must stay a sibling of the button.
+    const button = screen.getByRole("button", { name: /remind carol/i });
+    expect(button.closest("a")).toBeNull();
+    expect(screen.getByRole("link", { name: "Carol" })).toHaveAttribute(
+      "href",
+      "/data-collection/f-draft",
+    );
   });
 });

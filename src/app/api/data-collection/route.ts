@@ -1,10 +1,9 @@
 // @allow-firm-scope-exception — firm scoping is enforced by requireClientEditAccess(clientId) / requireOrgId; the literal getOrgId/requireOrgId grep doesn't see this.
 
 import { NextResponse } from "next/server";
-import { currentUser } from "@clerk/nextjs/server";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { clients, intakeForms, intakeEmailSettings } from "@/db/schema";
+import { clients, intakeForms } from "@/db/schema";
 import { requireOrgAndUser } from "@/lib/db-helpers";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import {
@@ -20,9 +19,7 @@ import {
 import { resolveClientPortalUserId } from "@/lib/portal/bindings";
 import { checkPortalInviteRateLimit } from "@/lib/rate-limit";
 import { sendPortalInvite } from "@/lib/clients/send-portal-invite";
-import { sendIntakeFormEmail } from "@/lib/intake/email";
-import { getAdvisorProfile } from "@/lib/branding/advisor-profile";
-import { resolveFirmName } from "@/lib/activity/resolve-firm-names";
+import { sendIntakeLinkEmail } from "@/lib/intake/send-form-email";
 import { newIntakeToken, defaultExpiry } from "@/lib/intake/tokens";
 import { EMAIL_RE, normalizeRecipientName } from "@/lib/intake/schema";
 import {
@@ -186,44 +183,14 @@ export async function POST(req: Request): Promise<Response> {
     let invitationId: string | undefined;
 
     if (mode === "blank") {
-      const link = `${APP_URL}/intake/${token}`;
-      const firmName = await resolveFirmName(firmId);
-      const advisor = await currentUser();
-      const advisorName =
-        [advisor?.firstName, advisor?.lastName].filter(Boolean).join(" ") ||
-        undefined;
-      const advisorEmail = advisor?.primaryEmailAddress?.emailAddress ?? undefined;
-
-      const [settings] = await db
-        .select()
-        .from(intakeEmailSettings)
-        .where(and(eq(intakeEmailSettings.firmId, firmId), eq(intakeEmailSettings.userId, userId)));
-
       // Brand resolves by the CLIENT's advisor, not the sender (matches Tasks
       // 11/12). A blank invite carrying no clientId falls back to the sender.
-      const advisorUserId = accessedClient?.advisorId ?? userId;
-      const advisorProfile = await getAdvisorProfile(firmId, advisorUserId);
-
-      // Per-field fall-through, brand wins: a blank/unset brand field must
-      // never clobber a working intake_email_settings value, so trim-then-
-      // truthy rather than `??` (a stored "" would otherwise win — see Task 10).
-      const brandFromName = advisorProfile?.brandingEnabled
-        ? advisorProfile.emailFromName?.trim() || undefined
-        : undefined;
-      const brandReplyTo = advisorProfile?.brandingEnabled
-        ? advisorProfile.emailReplyTo?.trim() || undefined
-        : undefined;
-
-      await sendIntakeFormEmail({
+      await sendIntakeLinkEmail({
+        firmId,
+        senderUserId: userId,
+        brandAdvisorUserId: accessedClient?.advisorId ?? userId,
         to: recipientEmail,
-        link,
-        fromName: brandFromName ?? settings?.fromName ?? undefined,
-        replyTo: brandReplyTo,
-        subject: settings?.subject ?? undefined,
-        introBody: settings?.introBody ?? undefined,
-        advisorName,
-        advisorEmail,
-        firmName,
+        link: `${APP_URL}/intake/${token}`,
         clientName: recipientNameStr,
       });
     } else {

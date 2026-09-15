@@ -454,6 +454,7 @@ export type AuditAction =
   | "webhook.plaid.refresh"
   // Intake / data-collection forms
   | "intake.form.sent"
+  | "intake.form.reminded"
   | "intake.form.submitted"
   | "intake.form.applied"
   | "intake.form.discarded"
