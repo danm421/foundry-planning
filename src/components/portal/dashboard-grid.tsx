@@ -159,9 +159,21 @@ export function DashboardGrid({
     }
   }, [reviewItems, reviewCount, portalFetch, applyQueuePage, revertTo]);
 
-  // Recategorizing a queued row happens before it is blessed, so the row stays
-  // in the queue — only its category changes. Optimistic like the marks above,
-  // and it reverts through the same three moves.
+  /**
+   * Recategorizing a queued row happens before it is blessed, so the row stays
+   * in the queue — only its category changes. Optimistic like the marks above,
+   * and it reverts through the same three moves.
+   *
+   * Deliberately does NOT offer `RuleConfirmBar`, though the Transactions list
+   * and the Budget category panel both do after a hand-pick. Decided against
+   * 2026-09-15 on two counts. It would not shorten this queue: membership is
+   * `reviewedAt IS NULL` alone (`to-review-queue.ts`) and a rule only rewrites
+   * categories (`applyRuleRetroactively`), so the count would not move. And it
+   * would add a stacking case the app has never had — the bar is `fixed
+   * bottom-4 z-40`, the rail below `lg` is `fixed inset-0 z-40`, and this
+   * surface can raise the bar from INSIDE an open rail because its panel owns a
+   * picker. The Transactions list can't: its rail offers a rule dialog instead.
+   */
   const pickCategory = useCallback(
     async (id: string, categoryId: string | null): Promise<void> => {
       const row = reviewItems.find((t) => t.id === id);
