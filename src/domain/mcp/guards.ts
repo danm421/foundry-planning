@@ -9,6 +9,14 @@ export class McpForbiddenError extends Error {
 }
 
 /**
+ * The one message for every unreadable-client outcome — denied, wrong firm,
+ * or (in `define-tool.ts`) a schema-declared `clientId` whose parsed value
+ * isn't a string. Shared so the two throw sites can never drift apart; a
+ * denied client and a missing client must stay indistinguishable.
+ */
+export const CLIENT_UNREADABLE_MESSAGE = "Household not found or access denied";
+
+/**
  * Assert this principal may read `clientId`, always against the firm derived
  * from the token — never a firm supplied by the model.
  *
@@ -24,7 +32,11 @@ export async function assertClientReadableForPrincipal(
   clientId: string,
 ): Promise<void> {
   const access = await verifyClientAccessFor(p, clientId);
+  // `ok` plus the firm match is deliberately the WHOLE gate — no
+  // `access.permission` check. Every MCP tool is read-only, so "view" is
+  // always sufficient; a later task must not assume permission was checked
+  // here and add its own (weaker) gate on top.
   if (!access.ok || access.firmId !== p.orgId) {
-    throw new McpForbiddenError("Household not found or access denied");
+    throw new McpForbiddenError(CLIENT_UNREADABLE_MESSAGE);
   }
 }

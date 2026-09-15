@@ -20,6 +20,7 @@ vi.mock("@/lib/rate-limit", () => ({ checkMcpRateLimit }));
 import { defineTool, McpRateLimitedError } from "../define-tool";
 import { McpForbiddenError } from "../guards";
 import type { McpPrincipal } from "@/lib/mcp/principal";
+import type { McpToolContext } from "../context";
 
 const principal: McpPrincipal = {
   userId: "user_1",
@@ -29,10 +30,21 @@ const principal: McpPrincipal = {
   tokenSubject: "user_1",
 };
 
+// A real spy (not an inline arrow) so tests can assert exactly what
+// defineTool hands the handler — args and ctx — and, separately, that a
+// denied call never reaches it at all.
+const handlerSpy = vi.fn<
+  (args: { clientId: string }, ctx: McpToolContext) => Promise<{ secret: string; accountNumber: string }>
+>();
+
+const optionalClientHandlerSpy = vi.fn<() => Promise<{ ok: true }>>();
+
 beforeEach(() => {
   verifyClientAccessFor.mockReset().mockResolvedValue({ ok: true, permission: "view", firmId: "org_1", access: "own" });
   recordAudit.mockReset().mockResolvedValue(undefined);
   checkMcpRateLimit.mockReset().mockResolvedValue({ allowed: true, remaining: 59, reset: 0 });
+  handlerSpy.mockReset().mockResolvedValue({ secret: "ssn 123-45-6789", accountNumber: "12345678" });
+  optionalClientHandlerSpy.mockReset().mockResolvedValue({ ok: true });
 });
 
 const tool = defineTool({
@@ -41,7 +53,7 @@ const tool = defineTool({
   description: "A tool for tests.",
   inputSchema: z.object({ clientId: z.string() }),
   page: "overview",
-  handler: async () => ({ secret: "ssn 123-45-6789", accountNumber: "12345678" }),
+  handler: handlerSpy,
 });
 
 const noPageTool = defineTool({
@@ -50,6 +62,31 @@ const noPageTool = defineTool({
   description: "A tool with no deep-link page.",
   inputSchema: z.object({ clientId: z.string() }),
   handler: async () => ({ ok: true }),
+});
+
+// clientId declared but OPTIONAL — exercises the schema-driven trigger from
+// Important 2. Duck-typing the parsed value (the pre-fix approach) would
+// silently skip the check here, since an omitted optional field parses to
+// `undefined`, not a string.
+const optionalClientIdTool = defineTool({
+  name: "optional_client_tool",
+  title: "Optional Client Tool",
+  description: "Declares clientId as optional but must still be checked when declared.",
+  inputSchema: z.object({ clientId: z.string().optional() }),
+  handler: optionalClientHandlerSpy,
+});
+
+// Returns the array itself, not wrapped in an object — exercises the
+// array-safety guard from Important 3. (Every real Task 8-11 tool wraps its
+// list in an object; this fixture deliberately violates that convention to
+// prove the wrapper still can't be corrupted by it.)
+const arrayTool = defineTool({
+  name: "array_tool",
+  title: "Array Tool",
+  description: "Returns a raw list.",
+  inputSchema: z.object({ clientId: z.string() }),
+  page: "overview",
+  handler: async () => ["a", "b", "c"],
 });
 
 describe("defineTool", () => {
@@ -78,6 +115,23 @@ describe("defineTool", () => {
     expect(out).not.toHaveProperty("foundryUrl");
   });
 
+  it("returns an array result intact instead of corrupting it into an indexed object", async () => {
+    const out = await arrayTool.run({ clientId: "c1" }, principal);
+    expect(out).toEqual(["a", "b", "c"]);
+  });
+
+  it("passes the parsed args and a firm-scoped context to the handler — never a model-supplied scope", async () => {
+    await tool.run({ clientId: "c1" }, principal);
+    expect(handlerSpy).toHaveBeenCalledTimes(1);
+    const [args, ctx] = handlerSpy.mock.calls[0]!;
+    expect(args).toEqual({ clientId: "c1" });
+    expect(ctx.firmId).toBe("org_1");
+    expect(ctx.principal).toBe(principal);
+    // The bucket key is firm + user: a firm's whole staff must not share one
+    // budget, and one advisor's calls must not draw on a colleague's.
+    expect(checkMcpRateLimit).toHaveBeenCalledWith("org_1:user_1");
+  });
+
   it("records an audit row naming the tool", async () => {
     await tool.run({ clientId: "c1" }, principal);
     expect(recordAudit).toHaveBeenCalledWith(
@@ -97,6 +151,14 @@ describe("defineTool", () => {
     await expect(tool.run({ clientId: "c1" }, principal)).rejects.toBeInstanceOf(McpForbiddenError);
   });
 
+  it("refuses a client the principal cannot read, even when firmId happens to match", async () => {
+    // Isolates the `!access.ok` clause from the firm-match clause: firmId
+    // matches the principal's org here, so only the `ok:false` check can be
+    // the thing raising. Without it this would (wrongly) pass through.
+    verifyClientAccessFor.mockResolvedValue({ ok: false, firmId: "org_1" });
+    await expect(tool.run({ clientId: "c1" }, principal)).rejects.toBeInstanceOf(McpForbiddenError);
+  });
+
   it("refuses a client owned by another firm, even when access resolves ok", async () => {
     verifyClientAccessFor.mockResolvedValue({
       ok: true,
@@ -107,9 +169,21 @@ describe("defineTool", () => {
     await expect(tool.run({ clientId: "c1" }, principal)).rejects.toBeInstanceOf(McpForbiddenError);
   });
 
+  it("refuses when the schema declares clientId but none was supplied, and never reaches the handler", async () => {
+    await expect(optionalClientIdTool.run({}, principal)).rejects.toBeInstanceOf(McpForbiddenError);
+    expect(optionalClientHandlerSpy).not.toHaveBeenCalled();
+    // Not run at all — the throw happens before the DB-backed authz check.
+    expect(verifyClientAccessFor).not.toHaveBeenCalled();
+  });
+
   it("never runs the handler when the rate limit denies", async () => {
     checkMcpRateLimit.mockResolvedValue({ allowed: false, reason: "exceeded" });
     await expect(tool.run({ clientId: "c1" }, principal)).rejects.toThrow(/rate limit/i);
+    // The direct claim the test name makes...
+    expect(handlerSpy).not.toHaveBeenCalled();
+    // ...and the ordering invariant ("rate limit runs FIRST") that a
+    // handler-only assertion can't distinguish from "authz ran and also
+    // happened to deny."
     expect(verifyClientAccessFor).not.toHaveBeenCalled();
   });
 
