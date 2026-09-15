@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { ReactElement } from "react";
-import { ChevronDownIcon, PlusIcon } from "@/components/icons";
+import { PlusIcon } from "@/components/icons";
 import { useDismissableMenu } from "@/lib/use-dismissable-menu";
 import type { LinkScope } from "@/lib/portal/plaid-link-complete";
 
@@ -14,25 +14,27 @@ import type { LinkScope } from "@/lib/portal/plaid-link-complete";
  * Accounts either way, so the navigation has to happen regardless — the URL is
  * just carrying the intent across it.
  *
- * "Link Account" and "Link Liability" share an intent on purpose: Plaid runs
- * ONE link flow covering depository, credit and loan accounts and cannot know
- * which the client means until they choose inside it. Investments are a
- * genuinely separate flow (see `buildNewLinkProducts` in the link-token
- * route), so they get their own item.
+ * There are only two link items because Plaid offers only two flows: ONE
+ * covering depository, credit and loan accounts, and a separate one for
+ * investments (see `buildNewLinkProducts` in the link-token route). The first
+ * label names all three account types rather than saying "Account", because a
+ * client adding a mortgage otherwise has no reason to think it belongs behind
+ * a word that sounds like checking.
  *
  * The intent values are `LinkScope` plus "manual", so the vocabulary the
  * Accounts page reads back is the same type this side writes.
  */
 const ITEMS: readonly { label: string; intent: LinkScope | "manual" }[] = [
-  { label: "Link Account", intent: "banking" },
+  { label: "Link Bank, Card or Loan", intent: "banking" },
   { label: "Link Investments", intent: "investments" },
-  { label: "Link Liability", intent: "banking" },
   { label: "Add Manually", intent: "manual" },
 ];
 
 /**
- * The rail's one write action, sitting above Dashboard: a labelled CTA that
- * opens a short menu of ways to add an account.
+ * The rail's one write action, sitting above Dashboard: a compact, centred CTA
+ * that opens a short menu of ways to add an account. It hugs its label rather
+ * than filling the rail so the rail reads as a list of destinations with one
+ * button above it, not two competing full-width blocks.
  */
 export default function PortalAddAccountMenu({
   basePath = "/portal",
@@ -48,17 +50,16 @@ export default function PortalAddAccountMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 rounded-md bg-accent px-3 py-2 text-[13px] font-medium text-accent-on transition-colors hover:bg-accent/90"
+        className="mx-auto flex w-fit items-center gap-1.5 rounded-full bg-accent px-3.5 py-1.5 text-[13px] font-medium text-accent-on transition-colors hover:bg-accent/90"
       >
-        <PlusIcon width={14} height={14} aria-hidden />
+        <PlusIcon width={13} height={13} aria-hidden />
         Add Account
-        <ChevronDownIcon width={14} height={14} aria-hidden className="ml-auto" />
       </button>
 
       {open && (
         <div
           role="menu"
-          className="absolute inset-x-0 top-full z-30 mt-1.5 rounded-[var(--radius-sm)] border border-hair bg-paper p-1 shadow-lg"
+          className="absolute left-1/2 top-full z-30 mt-1.5 w-max min-w-[10rem] -translate-x-1/2 rounded-[var(--radius-sm)] border border-hair bg-paper p-1 shadow-lg"
         >
           {ITEMS.map((item) => (
             <Link

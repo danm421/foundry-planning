@@ -27,12 +27,11 @@ describe("PortalAddAccountMenu", () => {
     const hrefs = screen
       .getAllByRole("menuitem")
       .map((el) => [el.textContent, el.getAttribute("href")]);
+    // Two link items, not three: Plaid runs one flow for depository, credit
+    // and loan accounts, so they share a label as well as an intent.
     expect(hrefs).toEqual([
-      ["Link Account", "/portal/organizer/accounts?add=banking"],
+      ["Link Bank, Card or Loan", "/portal/organizer/accounts?add=banking"],
       ["Link Investments", "/portal/organizer/accounts?add=investments"],
-      // Same intent as "Link Account" on purpose — Plaid runs one flow for
-      // depository, credit and loan accounts.
-      ["Link Liability", "/portal/organizer/accounts?add=banking"],
       ["Add Manually", "/portal/organizer/accounts?add=manual"],
     ]);
   });
