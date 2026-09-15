@@ -55,8 +55,6 @@ const DETAIL_KINDS = {
   external_beneficiary: (t: ClientData) => t.externalBeneficiaries ?? [],
 } satisfies Record<string, (t: ClientData) => unknown[]>;
 
-type DetailKind = keyof typeof DETAIL_KINDS;
-
 const getClientSummary = defineTool({
   name: "get_client_summary",
   title: "Household summary",
@@ -161,7 +159,7 @@ const listPlanDetails = defineTool({
   page: "netWorth",
   handler: async ({ clientId, kind, scenarioId, limit, offset }, { firmId }) => {
     const { effectiveTree } = await loadEffectiveTree(clientId, firmId, scenarioId ?? "base", {});
-    const all = DETAIL_KINDS[kind as DetailKind](effectiveTree);
+    const all = DETAIL_KINDS[kind](effectiveTree);
     const start = offset ?? 0;
     const sliced = all.slice(start, start + (limit ?? 50));
     // R43: family_member is the only kind carrying a birth-date-shaped

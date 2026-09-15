@@ -406,6 +406,21 @@ describe("list_plan_details", () => {
     },
   ];
 
+  // F4: `kindCases` is hand-maintained, so a 9th `kind` added to the tool's
+  // real `z.enum` (e.g. "trust") could silently skip both the kind-mapping
+  // coverage above AND the R43 date-of-birth privacy ratchet below — the
+  // exact gap that let a 9th kind compile clean, pass every test that
+  // existed, and still TypeError at runtime (DETAIL_KINDS[kind] undefined).
+  // Reading the enum off the REAL tool, not a copy of the literal list here,
+  // means adding a kind without adding its kindCases row now fails THIS
+  // assertion first.
+  it("kindCases covers every kind the tool's own schema actually accepts", () => {
+    const kindSchema = byName("list_plan_details").inputSchema.shape.kind as unknown as {
+      options: readonly string[];
+    };
+    expect(kindCases.map((c) => c.kind).sort()).toEqual([...kindSchema.options].sort());
+  });
+
   it.each(kindCases)(
     "kind '$kind' reads effectiveTree.$property only, and is echoed back unchanged",
     async ({ kind, property, row, expectedRow }) => {

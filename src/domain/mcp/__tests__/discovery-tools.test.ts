@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { ZodError } from "zod";
 
 // vi.hoisted, not a bare top-level const: `vi.mock` factories run during ESM
 // import evaluation, before this file's own top-level statements — a plain
@@ -11,11 +12,16 @@ const { searchClients, scanBook } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/client-search", () => ({ searchClients }));
-vi.mock("@/lib/book-scan/scan", () => ({
+// F9: the three constants below used to be hardcoded literals here, so a
+// rename in scan.ts (SIGNAL_KEYS/DEFAULT_LIMIT/MAX_LIMIT) would leave this
+// suite green against a vocabulary the real z.enum would reject.
+// `importOriginal` pulls the REAL module (including its `@/db` import —
+// already proven safe by this exact pattern in
+// src/domain/forge/tools/__tests__/book.test.ts) and only `scanBook` itself
+// is overridden with the mock.
+vi.mock("@/lib/book-scan/scan", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/book-scan/scan")>()),
   scanBook,
-  SIGNAL_KEYS: ["netWorth", "liquid", "cashBalance", "lastContactDays", "openTasks", "openItems"],
-  DEFAULT_LIMIT: 25,
-  MAX_LIMIT: 200,
 }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/lib/rate-limit", () => ({
@@ -77,9 +83,15 @@ describe("search_clients", () => {
 
   // R38.4 — .min(1) dropped from the schema: without it, "" parses fine, the
   // handler forwards it, and this test is the only thing that would notice.
-  it("rejects an empty query instead of forwarding it", async () => {
+  // F9: `.rejects.toBeTruthy()` passes on ANY rejection — a rate limit, a
+  // type error, anything — so it was asserting almost nothing. Tightened to
+  // the specific error class AND message, matching this suite's own
+  // convention elsewhere of asserting a specific message, not "it threw".
+  it("rejects an empty query with a ZodError naming the constraint, instead of forwarding it", async () => {
     searchClients.mockResolvedValue([]);
-    await expect(byName("search_clients").run({ query: "" }, principal)).rejects.toBeTruthy();
+    const result = byName("search_clients").run({ query: "" }, principal);
+    await expect(result).rejects.toBeInstanceOf(ZodError);
+    await expect(result).rejects.toThrow(/too small|expected string to have/i);
     expect(searchClients).not.toHaveBeenCalled();
   });
 

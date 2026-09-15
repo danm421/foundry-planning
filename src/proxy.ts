@@ -1,5 +1,6 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { OAuthError, OAuthErrorCode, bearerAuthChallengeResponse } from "@modelcontextprotocol/server";
 import { stateFromMeta, type OrgMeta } from "@/lib/billing/subscription-state";
 import { decideAccess, enforcementMode } from "@/lib/billing/access-policy";
 import { recordAudit } from "@/lib/audit";
@@ -89,7 +90,12 @@ const isBillingExemptRoute = createRouteMatcher([
   "/api/billing/portal",
 ]);
 
-export default clerkMiddleware(async (auth, request) => {
+// F6: narrow matcher just for the malformed-bearer-token catch below — never
+// reuse `isPublicRoute` here, which covers many OTHER unauthenticated routes
+// this fix must not touch.
+const isMcpRoute = createRouteMatcher(["/api/mcp(.*)"]);
+
+const clerkAuthMiddleware = clerkMiddleware(async (auth, request) => {
   // Surface the request pathname so server components (e.g. SettingsTabs)
   // can read it via `headers().get("x-pathname")` for active-tab highlight.
   const requestHeaders = new Headers(request.headers);
@@ -251,6 +257,51 @@ export default clerkMiddleware(async (auth, request) => {
 
   return passthroughResponse;
 });
+
+/**
+ * F6 (controller, measured over the wire against a real `next dev`): a Bearer
+ * header shaped like a JWT — three dot-separated segments — whose segments
+ * are NOT valid base64url (e.g. `Bearer not.a.jwt`) makes Clerk's own
+ * `decodeJwt` (`@clerk/backend`) throw a raw `SyntaxError` synchronously
+ * inside `authenticateRequest`, which `clerkMiddleware` calls BEFORE the
+ * callback above ever runs — so `isPublicRoute`'s `/api/mcp` exemption never
+ * gets a chance to fire, and the client gets a bare 500 with no
+ * `WWW-Authenticate` challenge to recover from. Every OTHER bad-token shape
+ * (missing, a single segment, a real 3-segment JWT with a bad signature or
+ * expiry) is already safe: `decodeJwt` either short-circuits before
+ * `authenticateRequest` calls the base64 decoder (a non-3-segment string) or
+ * fails INSIDE `resolveMcpPrincipal`'s own `jwtVerify(...).catch(...)`
+ * (`src/lib/mcp/principal.ts`), which converts every such failure to a clean
+ * `McpUnauthorizedError` → 401. This is the one shape neither of those
+ * layers can reach, because it never gets past Clerk's own middleware to
+ * reach either one.
+ *
+ * Scoped to `/api/mcp` and to this exact error class — for any other route,
+ * or any other thrown error, this rethrows unchanged, so nothing about any
+ * other route's behaviour moves. Reuses `bearerAuthChallengeResponse` (the
+ * same builder `mcp-handler`'s `withMcpAuth` uses internally) rather than
+ * hand-rolling the `WWW-Authenticate` header, so the challenge shape can't
+ * drift from what a real MCP client already expects from every other bad
+ * token.
+ */
+export default async function proxy(...args: Parameters<typeof clerkAuthMiddleware>) {
+  const [request] = args;
+  try {
+    return await clerkAuthMiddleware(...args);
+  } catch (err) {
+    if (isMcpRoute(request) && err instanceof SyntaxError) {
+      const resourceMetadataUrl = new URL(
+        "/.well-known/oauth-protected-resource",
+        request.url,
+      ).toString();
+      return bearerAuthChallengeResponse(
+        new OAuthError(OAuthErrorCode.InvalidToken, "Invalid token"),
+        { resourceMetadataUrl },
+      );
+    }
+    throw err;
+  }
+}
 
 export const config = {
   matcher: [

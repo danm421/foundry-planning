@@ -289,21 +289,26 @@ const getMonteCarlo = defineTool({
   description:
     "Foundry's Monte Carlo result for a household: the probability of success (successRate), the " +
     "failure rate, requestedTrials vs trialsRun, ending-balance percentiles, and per-year balance " +
-    "bands. Reads from cache when available; on a miss it runs the full canonical simulation, " +
-    "which is slow — set refresh true only when the plan changed since the last run. aborted true " +
-    "means the run was cut short and trialsRun is less than requestedTrials — treat the " +
-    "percentiles and successRate as resting on a partial run, not the full trial count, and say " +
-    "so. successRate is a fraction between 0 and 1.",
+    "bands. Reads from a per-scenario cache when the inputs haven't changed since the last run; a " +
+    "cache miss reruns the full canonical simulation and writes the fresh result back to that " +
+    "cache, which is slower. aborted true means the run was cut short and trialsRun is less than " +
+    "requestedTrials — treat the percentiles and successRate as resting on a partial run, not the " +
+    "full trial count, and say so. successRate is a fraction between 0 and 1.",
   inputSchema: z.object({
     clientId: clientIdArg,
     scenarioId: scenarioArg,
-    refresh: z.boolean().optional().describe("Force a recompute instead of using the cache."),
   }),
   page: "monteCarlo",
-  handler: async ({ clientId, scenarioId, refresh }, { firmId }) => {
+  handler: async ({ clientId, scenarioId }, { firmId }) => {
     const scenario = scenarioId ?? "base";
+    // F2: no `refresh` input — Monte Carlo is stochastic, so a model-triggered
+    // forced recompute would overwrite the probability-of-success figure the
+    // advisor sees on the web page with a freshly re-rolled one. The cache key
+    // is an input hash, so a stale entry can only ever be served when the plan
+    // is UNCHANGED; the cache-fill-on-miss below stays (idempotent, same as
+    // the web), only the model-triggerable overwrite is gone.
     const [cached, { effectiveTree }] = await Promise.all([
-      getOrComputeMonteCarlo({ clientId, firmId, scenarioId: scenario, forceRefresh: refresh ?? false }),
+      getOrComputeMonteCarlo({ clientId, firmId, scenarioId: scenario, forceRefresh: false }),
       loadEffectiveTree(clientId, firmId, scenario, {}),
     ]);
     const summary = summarizeMonteCarlo(cached.raw, {

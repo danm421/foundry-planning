@@ -30,7 +30,13 @@ vi.mock("@/lib/audit", () => ({ recordAudit }));
 // real jwtVerify/createRemoteJWKSet code never runs in this file.
 vi.mock("jose", () => ({ decodeJwt }));
 
-import { audienceIsAcceptable, toolFailureResult, recordDenial, verifyToken } from "../route";
+import {
+  audienceIsAcceptable,
+  toolFailureResult,
+  recordDenial,
+  requestedClientIdFrom,
+  verifyToken,
+} from "../route";
 import { McpRateLimitedError, type McpTool } from "@/domain/mcp/define-tool";
 import { McpForbiddenError, CLIENT_UNREADABLE_MESSAGE } from "@/domain/mcp/guards";
 import type { McpPrincipal } from "@/lib/mcp/principal";
@@ -158,6 +164,76 @@ describe("recordDenial (D6, F9)", () => {
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({ metadata: { tool: "test_tool", outcome: "denied", reason: "error" } }),
     );
+  });
+
+  // F7: D6's stated purpose is to make cross-firm PROBING visible, which a
+  // null clientId on every denial row cannot show — an admin cannot tell a
+  // fat-fingered id from someone sweeping ids across firms.
+  it("F7: records the probed household id in metadata, never the typed clientId column", async () => {
+    await recordDenial(
+      fakeTool,
+      principal,
+      new McpForbiddenError(CLIENT_UNREADABLE_MESSAGE),
+      "22222222-2222-2222-2222-222222222222",
+    );
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clientId: null,
+        metadata: {
+          tool: "test_tool",
+          outcome: "denied",
+          reason: "forbidden",
+          requestedClientId: "22222222-2222-2222-2222-222222222222",
+        },
+      }),
+    );
+  });
+
+  it("F7: a malformed (non-uuid) probed id lands in metadata as plain text and does not throw", async () => {
+    await expect(
+      recordDenial(fakeTool, principal, new McpForbiddenError(CLIENT_UNREADABLE_MESSAGE), "not-a-uuid"),
+    ).resolves.toBeUndefined();
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({ requestedClientId: "not-a-uuid" }),
+      }),
+    );
+  });
+
+  it("F7: truncates an overlong probed id to a sane length", async () => {
+    const huge = "x".repeat(500);
+    await recordDenial(fakeTool, principal, new McpForbiddenError(CLIENT_UNREADABLE_MESSAGE), huge);
+    const metadata = recordAudit.mock.calls[0][0].metadata as { requestedClientId: string };
+    expect(metadata.requestedClientId.length).toBe(200);
+  });
+
+  it("F7: omits requestedClientId entirely when the call carried no clientId", async () => {
+    await recordDenial(fakeTool, principal, new McpForbiddenError(CLIENT_UNREADABLE_MESSAGE), null);
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: { tool: "test_tool", outcome: "denied", reason: "forbidden" },
+      }),
+    );
+  });
+});
+
+describe("requestedClientIdFrom (F7)", () => {
+  it("reads a string clientId off the raw args", () => {
+    expect(requestedClientIdFrom({ clientId: "c1" })).toBe("c1");
+  });
+
+  it("returns null when clientId is absent", () => {
+    expect(requestedClientIdFrom({})).toBeNull();
+  });
+
+  it("returns null for non-object args, never throwing", () => {
+    expect(requestedClientIdFrom(null)).toBeNull();
+    expect(requestedClientIdFrom(undefined)).toBeNull();
+    expect(requestedClientIdFrom("just a string")).toBeNull();
+  });
+
+  it("returns null when clientId is present but not a string", () => {
+    expect(requestedClientIdFrom({ clientId: 12345 })).toBeNull();
   });
 });
 

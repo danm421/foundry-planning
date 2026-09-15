@@ -117,14 +117,30 @@ function denialReason(err: unknown): string {
  * `"unconfigured"` and `"redis_error"` are NOT skipped — those are rare
  * server-side faults worth a trace, not caller-side throttling.
  *
- * `clientId` is always `null` here, never the id the caller asked for and
- * was refused: writing it would put a household the caller was NOT cleared
- * to read into the same field `getPortalActivity` and
+ * The TYPED `clientId` column is always `null` here, never the id the caller
+ * asked for and was refused: writing it would put a household the caller was
+ * NOT cleared to read into the same field `getPortalActivity` and
  * `src/lib/ops/growth/load.ts` read as "this actor touched this client."
  * `recordAudit` fails soft on its own (see src/lib/audit.ts), so a broken
  * audit write still returns the tool's real error to the model.
+ *
+ * F7 (NEW — controller, measured over the wire, not in the original report): D6's stated
+ * purpose was to make cross-firm PROBING visible, but with `clientId` always
+ * `null` an admin reading the log sees THAT denials happened, never WHICH
+ * household ids were probed — the one fact that tells a fat-fingered id
+ * apart from someone sweeping ids across firms. `requestedClientId` restores
+ * that, in `metadata` (jsonb), never the typed column: `audit_log.client_id`
+ * is a `uuid` column with no FK, and a MALFORMED id (the `reason:"error"` row
+ * — no household-id schema is `.uuid()`) cannot be cast to `uuid` and would
+ * throw inside the audit write itself. Truncated defensively; a model can
+ * send an arbitrarily long string as `clientId`.
  */
-export async function recordDenial(tool: McpTool, principal: McpPrincipal, err: unknown): Promise<void> {
+export async function recordDenial(
+  tool: McpTool,
+  principal: McpPrincipal,
+  err: unknown,
+  requestedClientId?: string | null,
+): Promise<void> {
   if (err instanceof McpRateLimitedError && err.reason === "exceeded") return;
 
   await recordAudit({
@@ -135,8 +151,27 @@ export async function recordDenial(tool: McpTool, principal: McpPrincipal, err: 
     firmId: principal.orgId,
     actorId: principal.userId,
     actorKind: "advisor",
-    metadata: { tool: tool.name, outcome: "denied", reason: denialReason(err) },
+    metadata: {
+      tool: tool.name,
+      outcome: "denied",
+      reason: denialReason(err),
+      ...(requestedClientId ? { requestedClientId: requestedClientId.slice(0, 200) } : {}),
+    },
   });
+}
+
+/**
+ * F7: pull the household id the caller asked for out of a tool call's raw
+ * args, for the denial audit row above — best-effort and defensive, since
+ * `args` here is whatever the SDK's own pre-callback validation accepted
+ * against the tool's schema, not something this file has re-checked itself.
+ * Every household-id schema across the 17 tools declares the field as
+ * `clientId`, so one key name covers all of them.
+ */
+export function requestedClientIdFrom(args: unknown): string | null {
+  if (!args || typeof args !== "object") return null;
+  const raw = (args as Record<string, unknown>).clientId;
+  return typeof raw === "string" ? raw : null;
 }
 
 const handler = createMcpHandler(
@@ -165,7 +200,7 @@ const handler = createMcpHandler(
               structuredContent: result,
             };
           } catch (err) {
-            await recordDenial(tool, principal, err);
+            await recordDenial(tool, principal, err, requestedClientIdFrom(args));
             return toolFailureResult(err);
           }
         },
@@ -226,9 +261,29 @@ export const verifyToken = async (_req: Request, bearerToken?: string): Promise<
   }
 };
 
+/**
+ * F5 (report I3, downgraded from Important — controller-refuted): the report
+ * claimed a `scope: "profile"`-only token could reach household data. Refuted
+ * against the real dev Clerk instance: a genuine DCR client registered with
+ * that scope drove a full PKCE flow, got an EMPTY org selector, and its token
+ * carried no `org_id` at all — sent to this server it 401'd on both
+ * `tools/list` and `tools/call`, because `resolveMcpPrincipal` already throws
+ * `McpUnauthorizedError` on a missing `org_id` (R20). So this is defence in
+ * depth, not a hole: `requiredScopes` makes that guarantee explicit at the
+ * `withMcpAuth` boundary instead of leaving it emergent from what Clerk
+ * happens to mint today. Verified against `mcp-handler`'s own source
+ * (node_modules/mcp-handler/dist/index.js:141,174-183) before wiring this:
+ * it compares `requiredScopes` against `authInfo.scopes` (exactly what our
+ * `verifyToken` populates from the token's `scope` claim) with `.every(...
+ * .includes(...))`, and a missing scope throws `OAuthError(InsufficientScope)`
+ * — caught by the SAME catch block as every other auth failure and answered
+ * via `bearerAuthChallengeResponse`, i.e. refused (403) with the identical
+ * `WWW-Authenticate` + `resource_metadata` challenge, never silently passed.
+ */
 const authHandler = withMcpAuth(handler, verifyToken, {
   required: true,
   resourceMetadataPath: "/.well-known/oauth-protected-resource",
+  requiredScopes: ["user:org:read"],
 });
 
 export { authHandler as GET, authHandler as POST };

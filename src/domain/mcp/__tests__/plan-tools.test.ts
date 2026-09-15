@@ -547,29 +547,39 @@ describe("get_monte_carlo", () => {
     expect(out.ending).toEqual({ p5: 1, p20: 2, p50: 3, p80: 4, p95: 5, min: 0, max: 6, mean: 3 });
   });
 
-  it("does not force a refresh unless asked", async () => {
+  it("always passes forceRefresh: false — F2, no model-triggerable forced overwrite", async () => {
     getOrComputeMonteCarlo.mockResolvedValue({ payload: {}, raw: {}, meta: { startingLiquidBalance: 0 } });
     loadEffectiveTree.mockResolvedValue({ effectiveTree: { client: {}, planSettings: {} } });
     summarizeMonteCarlo.mockReturnValue({
       requestedTrials: 60, trialsRun: 55, aborted: false, successRate: 1, failureRate: 0,
       ending: { p5: 0, p20: 0, p50: 0, p80: 0, p95: 0, min: 0, max: 0, mean: 0 }, byYear: [],
     });
-    await byName("get_monte_carlo").run({ clientId: "c1" }, principal);
-    expect(getOrComputeMonteCarlo.mock.calls[0][0].forceRefresh).toBe(false);
+    await byName("get_monte_carlo").run({ clientId: "c1", scenarioId: "s5" }, principal);
+    expect(getOrComputeMonteCarlo.mock.calls[0][0]).toEqual({
+      clientId: "c1", firmId: "org_1", scenarioId: "s5", forceRefresh: false,
+    });
+    expect(loadEffectiveTree).toHaveBeenCalledWith("c1", "org_1", "s5", {});
   });
 
-  it("forces a refresh when asked, on the same scenario passed to loadEffectiveTree", async () => {
+  // F2: the schema must not even ADVERTISE a refresh knob — the SDK's own
+  // pre-callback zod validation is what would otherwise let a model re-roll
+  // the cached probability-of-success figure on shared state.
+  it("has no `refresh` key in its input schema", () => {
+    expect("refresh" in byName("get_monte_carlo").inputSchema.shape).toBe(false);
+  });
+
+  it("strips an unknown refresh:true argument before the handler ever sees it", async () => {
     getOrComputeMonteCarlo.mockResolvedValue({ payload: {}, raw: {}, meta: { startingLiquidBalance: 0 } });
     loadEffectiveTree.mockResolvedValue({ effectiveTree: { client: {}, planSettings: {} } });
     summarizeMonteCarlo.mockReturnValue({
-      requestedTrials: 75, trialsRun: 68, aborted: false, successRate: 1, failureRate: 0,
+      requestedTrials: 60, trialsRun: 55, aborted: false, successRate: 1, failureRate: 0,
       ending: { p5: 0, p20: 0, p50: 0, p80: 0, p95: 0, min: 0, max: 0, mean: 0 }, byYear: [],
     });
-    await byName("get_monte_carlo").run({ clientId: "c1", scenarioId: "s5", refresh: true }, principal);
-    expect(getOrComputeMonteCarlo.mock.calls[0][0]).toEqual({
-      clientId: "c1", firmId: "org_1", scenarioId: "s5", forceRefresh: true,
-    });
-    expect(loadEffectiveTree).toHaveBeenCalledWith("c1", "org_1", "s5", {});
+    // `.run` takes `args: unknown`, so this compiles even though `refresh`
+    // is no longer in the schema — simulating a model that still sends the
+    // old argument name.
+    await byName("get_monte_carlo").run({ clientId: "c1", refresh: true }, principal);
+    expect(getOrComputeMonteCarlo.mock.calls[0][0].forceRefresh).toBe(false);
   });
 
   it("rejects when the caller cannot access the household", async () => {

@@ -88,13 +88,13 @@ afterAll(() => {
   else process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = ORIGINAL_PUBLISHABLE_KEY;
 });
 
-async function mintToken(): Promise<string> {
+async function mintToken(opts: { scope?: string } = {}): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   return new SignJWT({
     client_id: "M9NpdFrml5CuYHwW",
     jti: "oat_72EKJWP5V50YKPWF",
     org_id: ORG_ID,
-    scope: SCOPE,
+    scope: opts.scope ?? SCOPE,
   })
     .setProtectedHeader({ alg: "RS256", kid: KID, typ: "at+jwt" })
     .setSubject(USER_ID)
@@ -275,6 +275,32 @@ describe("route.ts auth/wiring boundary, driven over the real authHandler (F3, C
       );
       expect(res.status).toBe(401);
       expect(searchClients).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("F5 — requiredScopes: [\"user:org:read\"] makes the org-scope guarantee explicit at the boundary", () => {
+    it("refuses a token whose scopes lack user:org:read, with the same OAuth challenge shape (no tool reached)", async () => {
+      const res = await POST(
+        mcpRequest(
+          { jsonrpc: "2.0", id: 6, method: "tools/list", params: {} },
+          { auth: `Bearer ${await mintToken({ scope: "profile email offline_access" })}` },
+        ),
+      );
+      expect(res.status).toBe(403);
+      expect(res.headers.get("www-authenticate")).toMatch(/bearer/i);
+      expect(res.headers.get("www-authenticate")).toContain("resource_metadata");
+    });
+
+    it("accepts a token carrying exactly user:org:read and nothing else", async () => {
+      const res = await POST(
+        mcpRequest(
+          { jsonrpc: "2.0", id: 7, method: "tools/list", params: {} },
+          { auth: `Bearer ${await mintToken({ scope: "user:org:read" })}` },
+        ),
+      );
+      const { status, json } = await readMcpResponse(res);
+      expect(status).toBe(200);
+      expect(json?.result?.tools).toHaveLength(ALL_MCP_TOOLS.length);
     });
   });
 });
