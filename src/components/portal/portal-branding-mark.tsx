@@ -1,8 +1,6 @@
 import type { ReactElement } from "react";
 import FirmMark, { type FirmMarkBranding } from "@/components/firm-mark";
 
-/** What the portal chrome calls the firm-branding slice it renders. */
-export type PortalBranding = FirmMarkBranding;
 
 /**
  * Sticky centered strip hosting the mark at the top of the portal's main
@@ -15,7 +13,7 @@ export function PortalBrandingStrip({
   branding,
   className = "flex",
 }: {
-  branding: PortalBranding | null;
+  branding: FirmMarkBranding | null;
   className?: string;
 }): ReactElement {
   return (

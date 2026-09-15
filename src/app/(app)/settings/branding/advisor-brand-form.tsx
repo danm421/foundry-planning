@@ -233,7 +233,7 @@ export default function AdvisorBrandForm({
         accept="image/png,image/jpeg,image/webp"
         initialUrl={initial.logoUrl}
         previewClass="h-16 w-auto max-w-[240px] object-contain"
-        previewOnLetterhead
+        previewBoxClass="bg-letterhead"
         onUpload={(file) =>
           uploadAdvisorBrandingAsset("logo", toFileFormData(file), advisorUserId)
         }

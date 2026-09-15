@@ -12,10 +12,9 @@ export type FirmMarkBranding = Pick<IntakeBranding, "logoUrl" | "firmName">;
  * Plain <img>: logo URLs are public-blob unguessable hashes, not next/image
  * remote-pattern candidates.
  *
- * Only an uploaded logo gets the `letterhead` plate — see that token in
- * globals.css for why it needs its own ground. Our `lockup-horizontal.svg` is
- * already the dark-canvas cut of the mark, so a plate under it would be a
- * white patch on the surrounding chrome.
+ * Every mark carries its own ground: `lockup-horizontal.svg` bakes a dark one
+ * into the SVG, so it is drawn bare; an uploaded logo is print ink and gets
+ * the `letterhead` plate. That token in globals.css is where the rule lives.
  *
  * One component rather than one per surface: the black-on-black defect the
  * plate fixes reached production on four surfaces at once precisely because
@@ -25,7 +24,7 @@ export default function FirmMark({
   branding,
   className = "h-10 max-w-[240px]",
 }: {
-  branding: FirmMarkBranding | null;
+  branding?: FirmMarkBranding | null;
   className?: string;
 }): ReactElement {
   return branding ? (

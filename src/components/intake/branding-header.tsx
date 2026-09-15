@@ -5,9 +5,9 @@ export type IntakeHeaderBranding = FirmMarkBranding;
 
 /**
  * Letterhead shown at the top of every client-facing intake state (welcome,
- * wizard steps, thank-you, expired) and of the risk questionnaire. This is the
- * client's first sight of the firm, and it sits on `paper` — dark under the
- * default theme — so the mark brings its own letterhead plate; see `FirmMark`.
+ * wizard steps, thank-you, expired) and of the risk questionnaire — the
+ * client's first sight of the firm. The mark brings its own ground; see
+ * `FirmMark`.
  */
 export function IntakeBrandingHeader({
   branding,
@@ -16,7 +16,7 @@ export function IntakeBrandingHeader({
 }) {
   return (
     <header className="flex justify-center px-4 pt-8">
-      <FirmMark branding={branding ?? null} />
+      <FirmMark branding={branding} />
     </header>
   );
 }

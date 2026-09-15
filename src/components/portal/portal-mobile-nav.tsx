@@ -49,7 +49,7 @@ interface Props {
  */
 export default function PortalMobileNav({
   displayName,
-  branding = null,
+  branding,
   basePath = "/portal",
   className = "",
   alerts = {},
