@@ -31,10 +31,11 @@ const ITEMS: readonly { label: string; intent: LinkScope | "manual" }[] = [
 ];
 
 /**
- * The rail's one write action, sitting above Dashboard: a compact, centred CTA
- * that opens a short menu of ways to add an account. It hugs its label rather
- * than filling the rail so the rail reads as a list of destinations with one
- * button above it, not two competing full-width blocks.
+ * The rail's one write action, sitting above Dashboard: a compact CTA that
+ * opens a short menu of ways to add an account. It hugs its label rather than
+ * filling the rail so the rail reads as a list of destinations with one button
+ * above it, not two competing full-width blocks, and shares the nav items'
+ * left edge and `px-3` inset so its icon starts where their labels do.
  */
 export default function PortalAddAccountMenu({
   basePath = "/portal",
@@ -50,7 +51,7 @@ export default function PortalAddAccountMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="mx-auto flex w-fit items-center gap-1.5 rounded-full bg-accent px-3.5 py-1.5 text-[13px] font-medium text-accent-on transition-colors hover:bg-accent/90"
+        className="flex w-fit items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-[13px] font-medium text-accent-on transition-colors hover:bg-accent/90"
       >
         <PlusIcon width={13} height={13} aria-hidden />
         Add Account
@@ -59,7 +60,7 @@ export default function PortalAddAccountMenu({
       {open && (
         <div
           role="menu"
-          className="absolute left-1/2 top-full z-30 mt-1.5 w-max min-w-[10rem] -translate-x-1/2 rounded-[var(--radius-sm)] border border-hair bg-paper p-1 shadow-lg"
+          className="absolute left-0 top-full z-30 mt-1.5 w-max min-w-[10rem] rounded-[var(--radius-sm)] border border-hair bg-paper p-1 shadow-lg"
         >
           {ITEMS.map((item) => (
             <Link
