@@ -101,6 +101,29 @@ describe("sendFeedbackEmail", () => {
     expect(arg.attachments).toHaveLength(1);
   });
 
+  // Resend resolves { data: null, error } for every non-2xx rather than
+  // throwing, so the catch block never sees a refused send — an oversized
+  // attachment or a suppressed recipient would leave no trace whatsoever.
+  it("logs when Resend RESOLVES an error on the support send instead of throwing", async () => {
+    process.env.RESEND_API_KEY = "re_test";
+    process.env.SUPPORT_EMAIL = "support@foundryplanning.com";
+    mockSend.mockResolvedValue({
+      data: null,
+      error: { name: "validation_error", message: "Attachment too large." },
+    });
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await sendFeedbackEmail({ ...base, attachments: [] });
+
+    // Distinct from the acknowledgement's "...rejected the acknowledgement:",
+    // which this same stub also trips — the support send is what's asserted.
+    expect(spy).toHaveBeenCalledWith(
+      expect.stringContaining("[feedback-email] Resend rejected the send for"),
+      expect.anything(),
+    );
+    spy.mockRestore();
+  });
+
   it("sends from a support sender, never billing, when SUPPORT_EMAIL_FROM is unset", async () => {
     process.env.RESEND_API_KEY = "re_test";
     process.env.BILLING_EMAIL_FROM = "Foundry <billing@foundryplanning.com>";

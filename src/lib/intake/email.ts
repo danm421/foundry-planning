@@ -45,13 +45,23 @@ export async function sendIntakeFormEmail(args: {
   try {
     const resend = new Resend(apiKey);
     const html = buildIntakeEmailHtml({ link, introBody, advisorName, advisorEmail, firmName, clientName });
-    await resend.emails.send({
+    // resend.emails.send() resolves { data: null, error } for every non-2xx
+    // response rather than throwing — the `error` check is the real net. The
+    // catch below only ever sees a transport fault, which is the rarer half.
+    const { error } = await resend.emails.send({
       from,
       to,
       subject: resolveSubject(subject),
       html,
       replyTo,
     });
+    if (error) {
+      console.error(
+        "[intake-email] Resend rejected the send:",
+        error.message ?? error,
+      );
+      return { delivered: false, reason: "send_failed" };
+    }
     return { delivered: true };
   } catch (err) {
     console.error(

@@ -47,10 +47,10 @@ export function buildSignInIntro(ttlSeconds: number = SIGNIN_LINK_TTL_SECONDS): 
 /**
  * Mint a sign-in token for `clerkUserId` and email the ticket link to `email`.
  *
- * REPORTS delivery rather than swallowing it (unlike sendIntakeFormEmail): the
- * advisor is standing at a button, and a silent success on an unsent email
- * reads as "the client has a link" when nobody has one. On a failed send the
- * token is revoked, so a dead button never leaves a live credential behind.
+ * REPORTS delivery rather than swallowing it: the advisor is standing at a
+ * button, and a silent success on an unsent email reads as "the client has a
+ * link" when nobody has one. On a failed send the token is revoked, so a dead
+ * button never leaves a live credential behind.
  *
  * Callers are responsible for verifying `clientId` belongs to `firmId` and for
  * rate limiting BEFORE calling.
