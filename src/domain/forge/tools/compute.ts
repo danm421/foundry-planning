@@ -8,7 +8,7 @@ import { withOutputRetry } from "./with-output-retry";
 import { requireOrgId } from "@/lib/db-helpers";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { runProjectionWithEvents } from "@/engine";
-import type { ProjectionYear } from "@/engine";
+import { compactYear } from "@/lib/projection/compact-year";
 import { explainChange, explainComposition } from "@/lib/projection-explain/explain";
 import { buildDrillContext } from "@/lib/projection-explain/context";
 import { ADAPTERS, SUBJECT_KEYS } from "@/lib/projection-explain/registry";
@@ -77,21 +77,6 @@ const RunProjectionResultSchema = z.looseObject({
 const RunMonteCarloResultSchema = z.looseObject({ available: z.boolean() });
 const ExplainProjectionChangeResultSchema = z.looseObject({ available: z.boolean() });
 const BreakDownProjectionFigureResultSchema = z.looseObject({ available: z.boolean() });
-
-/** Per-year story compacted for the model — the engine's own numbers only. */
-function compactYear(y: ProjectionYear) {
-  return {
-    year: y.year,
-    ages: y.ages,
-    totalIncome: y.income.total,
-    totalExpenses: y.expenses.total,
-    netCashFlow: y.netCashFlow,
-    totalTax: y.taxResult?.flow.totalTax ?? null,
-    medicareTotal: y.medicare?.totalAnnualCost ?? null,
-    irmaaSurcharge: y.medicare?.totalIrmaaSurcharge ?? null,
-    portfolioAssets: y.portfolioAssets,
-  };
-}
 
 export function buildComputeTools(
   toolCtx: ForgeToolContext,
