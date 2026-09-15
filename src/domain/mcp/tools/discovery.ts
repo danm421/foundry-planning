@@ -9,7 +9,7 @@ const searchClientsTool = defineTool({
   description:
     "Search the households this advisor may see — their own book, or the firm's whole book if " +
     "their role allows it — by free-text name, and return matching households (id and title). " +
-    "A household is one client record and may include a co-client. Call this first to turn a name " +
+    "A household is one client record and may include a spouse. Call this first to turn a name " +
     "into the household id every other Foundry tool needs. Returns at most 8 matches.",
   inputSchema: z.object({
     query: z.string().min(1).describe("Name fragment to search for, e.g. 'mueller'."),

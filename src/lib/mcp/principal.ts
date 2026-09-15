@@ -43,8 +43,13 @@ const MEMBERSHIP_PAGE_SIZE = 100;
  * Taking `iss` out of the untrusted token instead would be a confused deputy:
  * the attacker would pick the issuer, therefore the JWKS, therefore the signing
  * keys, and could mint tokens we accept.
+ *
+ * Exported so the `.well-known/oauth-protected-resource` route can advertise
+ * this exact issuer as the authorization server (Task 12 / Ruling R74) — one
+ * derivation, one source of truth, instead of a second guess that can drift
+ * from what this file actually enforces.
  */
-function deriveIssuer(): string {
+export function deriveIssuer(): string {
   const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ?? "";
   const encodedHost = publishableKey.replace(/^pk_(test|live)_/, "");
   let host = "";

@@ -21,6 +21,10 @@ const isPublicRoute = createRouteMatcher([
   // self-protects via a Bearer CRON_SECRET check (see reconcile-billing,
   // refresh-holding-prices). Without this, clerkMiddleware 307s the cron.
   "/api/cron/(.*)",
+  // The MCP connector authenticates with an OAuth bearer token, not a Clerk
+  // session cookie, so auth.protect() would reject it. It self-protects
+  // inside the handler via withMcpAuth — same shape as /api/cron/*.
+  "/api/mcp(.*)",
   // Browsers POST CSP violation reports here with no session cookie.
   "/api/csp-report",
   "/api/webhooks/clerk",
