@@ -79,13 +79,10 @@ export default function PortalMobileNav({
     >
       <div className="flex items-center justify-between gap-3 px-4 pb-2 pt-[max(0.75rem,env(safe-area-inset-top))]">
         <span className="truncate text-[15px] font-semibold text-ink">
-          {displayName ? `Welcome, ${displayName}` : "Your portal"}
+          {displayName ? `Welcome back, ${displayName}` : "Your portal"}
         </span>
         <div className="flex shrink-0 items-center gap-3">
-          <PortalBrandingMark
-            branding={branding}
-            className="h-6 max-w-[140px]"
-          />
+          <PortalBrandingMark branding={branding} className="h-7 max-w-[130px]" />
           <UserButton />
         </div>
       </div>

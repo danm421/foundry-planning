@@ -30,6 +30,18 @@
   --color-card-hover: #1f2330;
   --color-card-active: #262b3a;
 
+  /* Letterhead plate — the ground an uploaded FIRM logo stands on.
+     Deliberately NOT re-themed: declared once in this base block and left
+     alone by the light and industrial blocks, the way this file already
+     handles theme-independent tokens like the spacing and radii below. An
+     advisor uploads one logo and it is a print asset — black ink on
+     transparent, drawn for white paper; `PDF_THEME.paper` is this exact value
+     and already renders that logo on it in every client report. Both dark
+     themes need the same ground or the mark paints black-on-black (paper is
+     #0b0c0f dark, #111419 industrial); under the light theme it equals `paper`
+     and reads as no plate at all. */
+  --color-letterhead: #fefdf8;
+
   /* Ink — high-contrast on near-black */
   --color-ink: #f4f5f7;
   --color-ink-2: #d4d7de;
@@ -279,6 +291,7 @@
   --color-card-2: var(--color-card-2);
   --color-card-hover: var(--color-card-hover);
   --color-card-active: var(--color-card-active);
+  --color-letterhead: var(--color-letterhead);
 
   --color-ink: var(--color-ink);
   --color-ink-2: var(--color-ink-2);

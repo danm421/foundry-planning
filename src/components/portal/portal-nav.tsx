@@ -90,14 +90,23 @@ export default function PortalNav({
     <nav
       className={`${className} flex-col gap-2 border-r border-hair bg-card-2 p-5`}
     >
-      <header className="mb-4">
-        {/* Names wrap rather than truncate — a two-person household ("Welcome,
-            John & Jane") needs the second line more than it needs one row. */}
-        {displayName && <div className="text-[12px] text-ink-3">Welcome,</div>}
-        <div className="text-[14px] font-semibold text-ink">
+      {/*
+        The rail's warm anchor. The name carries it at `h3` scale (22px) rather
+        than sitting at nav-item size — this is the one place in the portal
+        that addresses the client as a person, so it leads, and the eyebrow and
+        email stay quiet underneath.
+      */}
+      <header className="mb-5">
+        {displayName && (
+          <div className="text-[12px] text-ink-3">Welcome back,</div>
+        )}
+        {/* Names wrap rather than truncate — a two-person household ("Welcome
+            back, John & Jane") needs the second line more than it needs one
+            row. */}
+        <div className="text-[22px] font-semibold leading-tight tracking-[-0.015em] text-ink">
           {displayName || "Welcome"}
         </div>
-        <div className="truncate text-[12px] text-ink-3">{email}</div>
+        <div className="mt-1 truncate text-[12px] text-ink-3">{email}</div>
       </header>
 
       {groups.map(({ group, items: groupItems }) => (
