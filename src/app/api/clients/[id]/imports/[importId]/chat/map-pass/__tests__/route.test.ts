@@ -364,11 +364,17 @@ describe("map-pass route — POST", () => {
     expect(runMapEntityPass).not.toHaveBeenCalled();
   });
 
-  it("502s (naming the file) when the blob cannot be read", async () => {
+  it("502s when the blob cannot be read, without naming the file", async () => {
+    // The browser posts one file at a time and attributes every notice itself
+    // (`use-map-rows.ts`). Naming the file here too printed it twice, and made
+    // two files with one problem two different strings that the warnings card
+    // could not fold into a line — see `summarizeMapWarnings`.
     vi.mocked(downloadImportFile).mockResolvedValue(null);
     const res = await POST(req({ fileId: "f1" }), params);
     expect(res.status).toBe(502);
-    expect((await res.json()).error).toContain("statement.pdf");
+    const { error } = await res.json();
+    expect(error).toBe("Could not read this document from storage.");
+    expect(error).not.toContain("statement.pdf");
     expect(runMapEntityPass).not.toHaveBeenCalled();
   });
 
@@ -376,7 +382,9 @@ describe("map-pass route — POST", () => {
     vi.mocked(extractPdfPages).mockResolvedValue([]);
     const res = await POST(req({ fileId: "f1" }), params);
     expect(res.status).toBe(422);
-    expect((await res.json()).error).toContain("statement.pdf");
+    const { error } = await res.json();
+    expect(error).toBe("This document produced no readable text.");
+    expect(error).not.toContain("statement.pdf");
     expect(runMapEntityPass).not.toHaveBeenCalled();
   });
 

@@ -117,7 +117,10 @@ describe("useMapRows — runPass", () => {
     });
 
     expect(result.current.rows.disability_policy.map((r) => r.rowId)).toEqual([d1.rowId, d2.rowId]);
-    expect(result.current.warnings).toEqual(["redacted 1 SSN", "could not classify page 4"]);
+    expect(result.current.warnings).toEqual([
+      { source: "f1", message: "redacted 1 SSN" },
+      { source: "f2", message: "could not classify page 4" },
+    ]);
   });
 
   it("records a failed file's error into warnings, naming it, and still runs the remaining files", async () => {
@@ -125,7 +128,7 @@ describe("useMapRows — runPass", () => {
       const fileId = String(bodyOf(init).fileId);
       return Promise.resolve(
         fileId === "f1"
-          ? jsonResponse({ error: "statement.pdf produced no readable text." }, 422)
+          ? jsonResponse({ error: "This document produced no readable text." }, 422)
           : jsonResponse({ rows: { disability_policy: [d2] }, warnings: [] }),
       );
     });
@@ -135,8 +138,11 @@ describe("useMapRows — runPass", () => {
       await result.current.runPass(["f1", "f2"]);
     });
 
-    expect(result.current.warnings.join(" ")).toContain("f1");
-    expect(result.current.warnings.join(" ")).toContain("produced no readable text");
+    // Attribution is the hook's job now that the route no longer names the file.
+    expect(result.current.warnings).toContainEqual({
+      source: "f1",
+      message: "This document produced no readable text.",
+    });
     // The surviving file's rows are the whole point of carrying on.
     expect(result.current.rows.disability_policy.map((r) => r.rowId)).toEqual([d2.rowId]);
   });
@@ -153,7 +159,7 @@ describe("useMapRows — runPass", () => {
       await result.current.runPass(["f1", "f2"]);
     });
 
-    expect(result.current.warnings.join(" ")).toContain("offline");
+    expect(result.current.warnings).toContainEqual({ source: "f1", message: "offline" });
     expect(result.current.rows.disability_policy).toHaveLength(1);
   });
 
@@ -287,7 +293,7 @@ describe("useMapRows — commitRows", () => {
     expect(callsTo(MAP_PASS, "PATCH")).toHaveLength(0);
     // The write LANDED, so the row is committed and the advisor is warned.
     expect(result.current.committedRowIds).toEqual([d1.rowId]);
-    expect(result.current.warnings.join(" ")).toMatch(/could not be marked/i);
+    expect(result.current.warnings.map((w) => w.message).join(" ")).toMatch(/could not be marked/i);
   });
 
   it("does NOT mark a row committed when its entity write failed, and still commits the rest", async () => {
@@ -337,7 +343,7 @@ describe("useMapRows — commitRows", () => {
 
     // The policy exists in the plan; pretending otherwise invites a duplicate.
     expect(result.current.committedRowIds).toEqual([d1.rowId]);
-    expect(result.current.warnings.join(" ")).toMatch(/Import not found/);
+    expect(result.current.warnings.map((w) => w.message).join(" ")).toMatch(/Import not found/);
   });
 
   /**

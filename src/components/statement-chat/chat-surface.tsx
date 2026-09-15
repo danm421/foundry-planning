@@ -10,6 +10,7 @@ import { useMapRows, type RowsByEntity } from "@/components/statement-chat/use-m
 import { ChatTranscript } from "@/components/statement-chat/chat-transcript";
 import { ChatComposer } from "@/components/statement-chat/chat-composer";
 import { useChatCommit, type ChatCommitResult } from "@/components/statement-chat/use-chat-commit";
+import { summarizeMapWarnings } from "@/lib/statement-chat/map-warnings";
 import {
   EMPTY_CHAT_REVIEW_CONTEXT,
   type ChatReviewContext,
@@ -570,7 +571,7 @@ export function ChatSurface({
             </h2>
           </CardHeader>
           <CardBody className="flex flex-col gap-1.5">
-            {mapWarnings.map((w, i) => (
+            {summarizeMapWarnings(mapWarnings).map((w, i) => (
               <p key={i} className="text-sm text-ink-3">
                 {w}
               </p>

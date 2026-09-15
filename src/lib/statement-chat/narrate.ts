@@ -33,8 +33,14 @@ function plural(n: number, one: string, many: string): string {
   return n === 1 ? one : many;
 }
 
-/** Oxford-comma join: ["a"] -> "a"; ["a","b"] -> "a and b"; ["a","b","c"] -> "a, b, and c". */
-function joinWithAnd(items: string[]): string {
+/**
+ * Oxford-comma join: ["a"] -> "a"; ["a","b"] -> "a and b"; ["a","b","c"] -> "a, b, and c".
+ *
+ * Exported for `map-warnings.ts`, which renders its own list of file names in
+ * the same import screen: a second local joiner there disagreed with this one
+ * about the Oxford comma, so one advisor saw both punctuations at once.
+ */
+export function joinWithAnd(items: string[]): string {
   if (items.length <= 1) return items.join("");
   if (items.length === 2) return `${items[0]} and ${items[1]}`;
   return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;

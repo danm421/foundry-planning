@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { findEntity } from "@/domain/forge/detail-fields";
 import type { CandidateRow, RowsByEntity } from "@/lib/entity-extraction/types";
+import type { MapWarning } from "@/lib/statement-chat/map-warnings";
 import { commitMapRow } from "./commit-map-row";
 
 export type MapRowsStatus = "idle" | "running" | "done";
@@ -62,7 +63,7 @@ export function useMapRows({
   fileNames?: Record<string, string>;
 }) {
   const [rows, setRows] = useState<RowsByEntity>(initialRows ?? {});
-  const [warnings, setWarnings] = useState<string[]>([]);
+  const [warnings, setWarnings] = useState<MapWarning[]>([]);
   const [status, setStatus] = useState<MapRowsStatus>("idle");
   // Seeded from the rows that already carry a created record's id, so a reload
   // cannot re-arm a commit that already happened. `useState`'s initialiser runs
@@ -81,8 +82,11 @@ export function useMapRows({
     [fileNames],
   );
 
-  const addWarning = useCallback((message: string) => {
-    setWarnings((prev) => [...prev, message]);
+  // Carries the file ALONGSIDE the message rather than prefixed into it, so
+  // the card can fold the files that hit one problem into a single line.
+  // See `summarizeMapWarnings`.
+  const addWarning = useCallback((source: string, message: string) => {
+    setWarnings((prev) => [...prev, { source, message }]);
   }, []);
 
   /**
@@ -123,7 +127,7 @@ export function useMapRows({
             // `fetch` resolves normally on a 4xx/5xx — it never rejects — so an
             // HTTP error has to be read here, not only in the catch below.
             const body = (await res.json().catch(() => ({}))) as { error?: string };
-            addWarning(`${nameOf(fileId)}: ${body.error ?? `Request failed (HTTP ${res.status}).`}`);
+            addWarning(nameOf(fileId), body.error ?? `Request failed (HTTP ${res.status}).`);
             continue;
           }
 
@@ -140,9 +144,9 @@ export function useMapRows({
             }
             return next;
           });
-          for (const warning of body.warnings ?? []) addWarning(warning);
+          for (const warning of body.warnings ?? []) addWarning(nameOf(fileId), warning);
         } catch (err) {
-          addWarning(`${nameOf(fileId)}: ${err instanceof Error ? err.message : "Could not reach the server."}`);
+          addWarning(nameOf(fileId), err instanceof Error ? err.message : "Could not reach the server.");
         }
       }
 
@@ -187,7 +191,7 @@ export function useMapRows({
           failures.push(`${entity.label}: ${outcome.error}`);
           continue;
         }
-        for (const warning of outcome.warnings) addWarning(warning);
+        for (const warning of outcome.warnings) addWarning(entity.label, warning);
 
         // ONLY the id the create route itself returned. Never derived, never
         // reused from anywhere else: the PATCH stamps `match.existingId` with
@@ -221,8 +225,9 @@ export function useMapRows({
           }
           if (stampFailure !== null) {
             addWarning(
-              `${entity.label} was written, but marking the row as committed failed ` +
-                `(${stampFailure}). Committing it again would create a duplicate.`,
+              entity.label,
+              `Written, but marking the row as committed failed (${stampFailure}). ` +
+                `Committing it again would create a duplicate.`,
             );
           }
         }

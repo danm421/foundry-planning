@@ -204,9 +204,12 @@ export async function POST(request: Request, { params }: Params) {
 
   const buffer = await downloadImportFile(file.blobUrl);
   if (!buffer) {
-    return jsonResponse(502, {
-      error: `Could not read ${file.originalFilename} from storage.`,
-    });
+    // Deliberately unnamed. The browser knows which file it posted and
+    // attributes every notice itself; naming the file HERE too printed
+    // "x.pdf: x.pdf produced no readable text", and — worse — made two files
+    // with one problem two different strings, which the warnings card can no
+    // longer fold into a single line. See `summarizeMapWarnings`.
+    return jsonResponse(502, { error: "Could not read this document from storage." });
   }
 
   let pages = await extractPdfPages(buffer);
@@ -248,9 +251,8 @@ export async function POST(request: Request, { params }: Params) {
     // Either an empty document, or one whose text neither the text layer nor
     // OCR could recover. Say so rather than spending a multi-second billable
     // Azure call reading nothing and handing back a table with no reason.
-    return jsonResponse(422, {
-      error: `${file.originalFilename} produced no readable text.`,
-    });
+    // Unnamed, for the reason the 502 above gives.
+    return jsonResponse(422, { error: "This document produced no readable text." });
   }
 
   let result: Awaited<ReturnType<typeof runMapEntityPass>>;

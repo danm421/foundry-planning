@@ -1778,7 +1778,7 @@ describe("ChatSurface — the map-driven review tables (Task 14b)", () => {
         return Promise.resolve(makeFramedResponse([doneWithNoAccounts]));
       }
       return Promise.resolve(
-        new Response(JSON.stringify({ error: "life.pdf produced no readable text." }), {
+        new Response(JSON.stringify({ error: "This document produced no readable text." }), {
           status: 422,
           headers: { "content-type": "application/json" },
         }),
@@ -1790,10 +1790,17 @@ describe("ChatSurface — the map-driven review tables (Task 14b)", () => {
 
     // A pass that produced no rows still has to say why, or a failed read is
     // indistinguishable from a document with no policies in it.
-    // Named by the FILENAME it belongs to (M11) — "one of your statements
-    // failed" with no name is not something an advisor can act on, and neither
-    // is a raw file-id UUID, which is what this used to print.
-    expect(await screen.findByText(/^life\.pdf: life\.pdf produced no readable text\.$/)).toBeInTheDocument();
-    expect(await screen.findByText(/^ltd\.pdf: life\.pdf produced no readable text\.$/)).toBeInTheDocument();
+    //
+    // Both files are still NAMED (M11) — "one of your statements failed" with
+    // no name is not something an advisor can act on, and neither is a raw
+    // file-id UUID, which is what this used to print. They now share ONE line
+    // instead of repeating the sentence per file, and the file name appears
+    // once rather than twice; see `summarizeMapWarnings`.
+    expect(
+      await screen.findByText(
+        "This document produced no readable text. — 2 documents: life.pdf and ltd.pdf",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/life\.pdf: life\.pdf/)).not.toBeInTheDocument();
   });
 });
