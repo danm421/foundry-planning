@@ -11,13 +11,19 @@ import { issueReason } from "./value-issue";
 
 /**
  * Details-sidebar order. A tab this list omits sorts LAST, never first (Task
- * 12 ruling 10) — `DetailsTab` has eight members and only three of them read
- * documents today, so an entity on one of the other five (a plain
+ * 12 ruling 10) — `DetailsTab` has eight members and only four of them read
+ * documents today, so an entity on one of the other four (a plain
  * `TAB_ORDER.indexOf` would return -1 for those and sort them to the front,
  * the opposite of "anything on another tab sorts last") must not jump ahead
  * of the tabs this task actually orders.
+ *
+ * `profile` leads it (Phase 3A, Task 8). All three of the people pass's
+ * entities sit on that tab, and while it was absent they fell to the
+ * sorts-LAST rule above — a fact finder's family members rendered BELOW the
+ * insurance policies, which is not the order the document states them in and
+ * not the order an advisor reviews a household in.
  */
-const TAB_ORDER: DetailsTab[] = ["net-worth", "income-expenses", "insurance"];
+const TAB_ORDER: DetailsTab[] = ["profile", "net-worth", "income-expenses", "insurance"];
 
 function tabRank(tab: DetailsTab): number {
   const i = TAB_ORDER.indexOf(tab);

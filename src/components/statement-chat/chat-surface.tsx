@@ -7,6 +7,15 @@ import { StepLine } from "@/components/statement-chat/step-line";
 import AccountsTable from "@/components/statement-chat/accounts-table";
 import EntityTables from "@/components/statement-chat/entity-tables";
 import { useMapRows, type RowsByEntity } from "@/components/statement-chat/use-map-rows";
+import HouseholdDiffTable from "@/components/statement-chat/household-diff-table";
+import {
+  buildHouseholdCommitRow,
+  buildHouseholdDiff,
+} from "@/components/statement-chat/household-diff";
+import { commitMapRow } from "@/components/statement-chat/commit-map-row";
+import { findEntity } from "@/domain/forge/detail-fields";
+import { PEOPLE_ENTITY_IDS } from "@/lib/entity-extraction/people-pass";
+import type { CandidateRow } from "@/lib/entity-extraction/types";
 import { ChatTranscript } from "@/components/statement-chat/chat-transcript";
 import { ChatComposer } from "@/components/statement-chat/chat-composer";
 import { useChatCommit, type ChatCommitResult } from "@/components/statement-chat/use-chat-commit";
@@ -54,6 +63,24 @@ function* parseChatExtractSse(buffer: string): Generator<ChatExtractEvent, strin
     }
   }
 }
+
+/**
+ * The household, named through the people pass's own list (`people-pass.ts`)
+ * rather than spelled again here — `satisfies` is what pins the two together:
+ * if `client_household` ever stops being one of that pass's entities, this
+ * file stops compiling instead of silently reviewing nothing.
+ *
+ * Of the three entities the people pass owns it is the only one that is not a
+ * candidate ROW. The client already exists, so what a document says about the
+ * household is a field-level DIFF against the record, not a record to add.
+ * `family_member` and `related_party` ARE ordinary candidates and stay with
+ * the review tables below.
+ */
+const HOUSEHOLD_ENTITY_ID = "client_household" satisfies (typeof PEOPLE_ENTITY_IDS)[number];
+
+/** Its field map entry — a lookup over a static catalogue, so it is resolved
+ *  once here rather than on every render and again inside every callback. */
+const HOUSEHOLD_ENTITY = findEntity(HOUSEHOLD_ENTITY_ID);
 
 type Status = "idle" | "streaming" | "done" | "error";
 
@@ -146,6 +173,42 @@ export function ChatSurface({
     runPass: runMapPass,
     commitRows: commitMapRows,
   } = useMapRows({ clientId, importId, initialRows: initialMapRows, fileNames });
+
+  // The household fields already written to the record in THIS session. The
+  // page read `reviewContext.household` before any of them landed, so without
+  // this overlay an accepted row would keep sitting in the diff as an
+  // outstanding disagreement with a record that now agrees with it.
+  const [householdWritten, setHouseholdWritten] = useState<Record<string, unknown>>({});
+
+  /**
+   * Write the accepted household fields to the client record.
+   *
+   * Goes through the SAME writer, validation and audit path as every other row
+   * on this surface: `buildHouseholdCommitRow` states the match, which is what
+   * routes it to `buildWriteRequest`'s UPDATE leg rather than a create the
+   * household has no route for, and `commitMapRow` performs the request.
+   */
+  const commitHousehold = useCallback(
+    async (extracted: CandidateRow, acceptedKeys: string[]) => {
+      if (!HOUSEHOLD_ENTITY) {
+        throw new Error(`${HOUSEHOLD_ENTITY_ID} is not in the Details field map.`);
+      }
+
+      const row = buildHouseholdCommitRow({ clientId, extracted, acceptedKeys });
+      // No `existingSet`: `client_household` does not replace a set.
+      const outcome = await commitMapRow({ clientId, entity: HOUSEHOLD_ENTITY, row });
+      // Thrown rather than filed as a warning — `HouseholdDiffTable` renders a
+      // rejection under its own button, where the advisor just clicked. A
+      // message in the warnings card far above reads as a dead button.
+      if (!outcome.ok) throw new Error(outcome.error);
+
+      setHouseholdWritten((prev) => ({
+        ...prev,
+        ...Object.fromEntries(row.values.map((value) => [value.key, value.value])),
+      }));
+    },
+    [clientId],
+  );
 
   // Sends a turn and adopts what comes back (Task 11b, Steps 2/3). On the
   // FIRST turn that has anything to adopt (`result` was still null — a
@@ -272,7 +335,34 @@ export function ChatSurface({
 
   const isStreaming = status === "streaming";
   const hasFailure = fileEvents.some((e) => e.error);
-  const hasMapRows = Object.values(mapRows).some((list) => list.length > 0);
+
+  // PARTITION, never a filter-for. All three of the people pass's entities sit
+  // on the `profile` tab exactly like each other, so a household row LEFT in
+  // the rows handed to `<EntityTables>` also renders as an ordinary candidate
+  // table — the same facts twice, once as a diff and once as a row offering
+  // "Add" for a client that already exists.
+  const { [HOUSEHOLD_ENTITY_ID]: householdRows = [], ...candidateRows } = mapRows;
+
+  // One diff per extracted household row: the pass runs per FILE, so two
+  // documents that both state the household produce two rows, and folding them
+  // together would need a merge policy nothing here can justify. A row the
+  // record already agrees with yields no diff and is dropped.
+  const onHouseholdRecord = { ...reviewContext.household, ...householdWritten };
+  const householdDiffs = HOUSEHOLD_ENTITY
+    ? householdRows
+        .map((extracted) => ({
+          extracted,
+          diff: buildHouseholdDiff({
+            entity: HOUSEHOLD_ENTITY,
+            extracted,
+            onRecord: onHouseholdRecord,
+          }),
+        }))
+        .filter(({ diff }) => diff.length > 0)
+    : [];
+  const householdWrittenCount = Object.keys(householdWritten).length;
+
+  const hasMapRows = Object.values(candidateRows).some((list) => list.length > 0);
   // The stream's own `status` is already "done" by the time the pass runs (it
   // has to be — the pass must not start until the stream closes), so the pass
   // needs its OWN in-flight gate. Without it the Extract button re-enables
@@ -285,7 +375,7 @@ export function ChatSurface({
   // close an import with uncommitted map rows and never hear about it. The
   // route is deliberately NOT changed (that would reshape finalize's
   // semantics); the honest minimum is telling them here, where the button is.
-  const uncommittedMapRows = Object.values(mapRows)
+  const uncommittedMapRows = Object.values(candidateRows)
     .flat()
     .filter((row) => row.match?.kind !== "exact" && !mapCommittedRowIds.includes(row.rowId)).length;
 
@@ -581,6 +671,39 @@ export function ChatSurface({
       )}
 
       {/*
+        The people half of the review (Phase 3A, Task 8), above the candidate
+        tables because a document states who the household IS before it states
+        what they own. Its own gate: a household the record already agrees with
+        produces no diff rows and is nothing to review.
+      */}
+      {(householdDiffs.length > 0 || householdWrittenCount > 0) && (
+        <Card>
+          <CardHeader>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-2">
+              Household
+            </h2>
+          </CardHeader>
+          <CardBody className="flex flex-col gap-6">
+            {householdDiffs.map(({ extracted, diff }) => (
+              <HouseholdDiffTable
+                key={extracted.rowId}
+                rows={diff}
+                onCommit={(acceptedKeys) => commitHousehold(extracted, acceptedKeys)}
+              />
+            ))}
+            {householdWrittenCount > 0 && (
+              <p className="text-sm text-good">
+                {householdWrittenCount === 1
+                  ? "1 field was"
+                  : `${householdWrittenCount} fields were`}{" "}
+                written to the household record.
+              </p>
+            )}
+          </CardBody>
+        </Card>
+      )}
+
+      {/*
         Deliberately OUTSIDE the `result &&` gate above, not nested under the
         Accounts card. A life insurance statement is the document this feature
         exists for and it yields zero ACCOUNTS — `result.rows` empty, the
@@ -598,7 +721,7 @@ export function ChatSurface({
           </CardHeader>
           <CardBody>
             <EntityTables
-              rows={mapRows}
+              rows={candidateRows}
               committedRowIds={mapCommittedRowIds}
               onCommitRows={commitMapRows}
             />

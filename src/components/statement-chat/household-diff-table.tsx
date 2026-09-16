@@ -6,8 +6,17 @@ import { issueReason } from "./value-issue";
 
 export interface HouseholdDiffTableProps {
   rows: HouseholdDiffRow[];
-  /** The accepted field keys, in the order the table shows them. */
-  onCommit: (acceptedKeys: string[]) => void;
+  /**
+   * The accepted field keys, in the order the table shows them.
+   *
+   * May return a promise, and when it does this table awaits it: the button
+   * reads "Updating…" and refuses a second click until the write settles, and
+   * a rejection is rendered under the button as the reason. Without that the
+   * control stayed live with the boxes still ticked and no feedback of any
+   * kind, so a second click sent a second write and the advisor had no way to
+   * tell whether the first one had landed.
+   */
+  onCommit: (acceptedKeys: string[]) => void | Promise<void>;
 }
 
 /**
@@ -47,6 +56,11 @@ function ValueCell({ value }: { value: unknown }) {
 export default function HouseholdDiffTable({ rows, onCommit }: HouseholdDiffTableProps) {
   const noteId = useId();
   const [accepted, setAccepted] = useState<ReadonlySet<string>>(new Set());
+  // In-flight guard, the same one `entity-table.tsx` keeps for its own Commit
+  // — one boolean rather than a set of row ids, because this table writes the
+  // whole acceptance in a single request.
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // A household the document agrees with is not an empty table with a dead
   // button — it is nothing to review, and nothing to show.
@@ -62,6 +76,19 @@ export default function HouseholdDiffTable({ rows, onCommit }: HouseholdDiffTabl
   // Row order, not click order: the keys the advisor sees top to bottom are the
   // keys the writer receives.
   const acceptedKeys = rows.filter((row) => accepted.has(row.key)).map((row) => row.key);
+
+  const commit = () => {
+    if (saving || acceptedKeys.length === 0) return;
+    setError(null);
+    setSaving(true);
+    // `Promise.resolve(...)` normalizes a caller that returns nothing as well
+    // as a real promise — both need the `.catch`/`.finally` below.
+    Promise.resolve(onCommit(acceptedKeys))
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : "Could not update the household.");
+      })
+      .finally(() => setSaving(false));
+  };
 
   return (
     <div className="overflow-x-auto">
@@ -117,7 +144,7 @@ export default function HouseholdDiffTable({ rows, onCommit }: HouseholdDiffTabl
                   <input
                     type="checkbox"
                     checked={accepted.has(row.key)}
-                    disabled={issue !== undefined}
+                    disabled={issue !== undefined || saving}
                     onChange={() => toggle(row.key)}
                     // Named rather than wrapped in a `<label>`: the label text
                     // sits in another cell, and the row's note belongs to the
@@ -132,18 +159,18 @@ export default function HouseholdDiffTable({ rows, onCommit }: HouseholdDiffTabl
           })}
         </tbody>
       </table>
-      <div className="flex items-center gap-3 px-3 py-3">
+      <div className="flex flex-wrap items-center gap-3 px-3 py-3">
         <button
           type="button"
-          onClick={() => onCommit(acceptedKeys)}
-          disabled={acceptedKeys.length === 0}
+          onClick={commit}
+          disabled={saving || acceptedKeys.length === 0}
           // The same control the entity tables on this surface use for their
           // own Commit, so one screen reads as one screen. Hover rules are
           // `enabled:`-scoped because CSS :hover still matches a disabled
           // button.
           className="rounded border border-hair px-2.5 py-1 text-xs font-medium text-accent transition-[color,background-color,border-color,transform] duration-150 enabled:cursor-pointer enabled:hover:border-accent enabled:hover:bg-accent-wash enabled:hover:text-accent-ink motion-safe:enabled:hover:-translate-y-px disabled:cursor-default disabled:text-ink-4 disabled:opacity-60"
         >
-          Update household
+          {saving ? "Updating…" : "Update household"}
         </button>
         <span className="text-xs text-ink-3">
           {acceptedKeys.length === 0 ? (
@@ -155,6 +182,9 @@ export default function HouseholdDiffTable({ rows, onCommit }: HouseholdDiffTabl
             </>
           )}
         </span>
+        {/* Under the button, where the advisor is looking — the same place
+            `entity-table.tsx` puts a rejected row commit. */}
+        {error && <p className="basis-full text-xs text-crit">{error}</p>}
       </div>
     </div>
   );

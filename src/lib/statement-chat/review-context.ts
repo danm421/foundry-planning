@@ -1,7 +1,15 @@
 import { and, eq } from "drizzle-orm";
 
 import { db } from "@/db";
-import { accountOwners, accounts, entities, familyMembers, scenarios } from "@/db/schema";
+import {
+  accountOwners,
+  accounts,
+  clients,
+  crmHouseholdContacts,
+  entities,
+  familyMembers,
+  scenarios,
+} from "@/db/schema";
 import type { AccountCandidate } from "@/lib/imports/match-keys/account";
 import type { OwnerMatchFamilyMember } from "@/lib/imports/owner-match";
 
@@ -22,12 +30,25 @@ export interface ChatReviewContext {
   entities: { id: string; name: string }[];
   /** Existing accounts in the scenario this import commits to. */
   accounts: AccountCandidate[];
+  /**
+   * What the plan already says about the client and spouse, keyed by the SAME
+   * `client_household` field keys the Details map declares — the LEFT column of
+   * the household diff (`household-diff.ts`).
+   *
+   * Two sources, because the household's own fields have two homes: identity
+   * and contact details live on the CRM household contacts and the PUT mirrors
+   * them across (`profile.ts:20-23`), while only the horizon and tax fields are
+   * columns on the `clients` row. A left column built from either half alone
+   * would show every field of the other half as a disagreement.
+   */
+  household: Record<string, unknown>;
 }
 
 export const EMPTY_CHAT_REVIEW_CONTEXT: ChatReviewContext = {
   familyMembers: [],
   entities: [],
   accounts: [],
+  household: {},
 };
 
 /**
@@ -52,6 +73,85 @@ async function resolveScenarioId(
 }
 
 /**
+ * The `clients`-row half of the household's fields — the PUT's own
+ * `MUTABLE_CLIENT_FIELDS` allowlist (`api/clients/[id]/route.ts`) minus
+ * `planEndAge`, which the map marks `writable: false` because the route
+ * recomputes it. Declared once and used BOTH as the select projection and as
+ * the keys copied onto the record, so the two cannot drift apart.
+ */
+const PLAN_COLUMNS = {
+  retirementAge: clients.retirementAge,
+  retirementMonth: clients.retirementMonth,
+  lifeExpectancy: clients.lifeExpectancy,
+  spouseRetirementAge: clients.spouseRetirementAge,
+  spouseRetirementMonth: clients.spouseRetirementMonth,
+  spouseLifeExpectancy: clients.spouseLifeExpectancy,
+  filingStatus: clients.filingStatus,
+  riskTolerance: clients.riskTolerance,
+} as const;
+
+/**
+ * The contact columns the household's field map reads, and the key each one
+ * occupies on the SPOUSE's side of that map.
+ *
+ * This is the inverse of `mirrorContactToCrm` (`src/lib/clients/`), which is
+ * the only writer of these columns: `spouseName` lands in the spouse contact's
+ * `firstName`, `spouseDob` in its `dateOfBirth`, and so on. Written as one
+ * table rather than two hand-rolled objects because the asymmetry — the client
+ * side keeps the column's own name, the spouse side does not — is exactly what
+ * a second copy would get wrong.
+ */
+const SPOUSE_KEY = {
+  firstName: "spouseName",
+  lastName: "spouseLastName",
+  dateOfBirth: "spouseDob",
+  email: "spouseEmail",
+  phone: "spousePhone",
+  mobile: "spouseMobile",
+  addressLine1: "spouseAddressLine1",
+  addressLine2: "spouseAddressLine2",
+  city: "spouseCity",
+  state: "spouseState",
+  postalCode: "spousePostalCode",
+  country: "spouseCountry",
+} as const;
+
+type ContactKey = keyof typeof SPOUSE_KEY;
+type ContactRow = { role: string } & Record<ContactKey, unknown>;
+
+/**
+ * The household's current values under the `client_household` field keys.
+ *
+ * `planEndAge` is deliberately absent: the map marks it `writable: false`
+ * (it is recomputed server-side), so the diff drops it anyway and carrying it
+ * here would only be a value nothing can read.
+ */
+function buildHouseholdRecord(
+  client: Record<string, unknown> | undefined,
+  contacts: ContactRow[],
+): Record<string, unknown> {
+  if (!client) return {};
+  const record: Record<string, unknown> = {};
+  for (const key of Object.keys(PLAN_COLUMNS)) record[key] = client[key];
+
+  const primary = contacts.find((c) => c.role === "primary");
+  const spouse = contacts.find((c) => c.role === "spouse");
+  for (const key of Object.keys(SPOUSE_KEY) as ContactKey[]) {
+    record[key] = primary?.[key] ?? null;
+    record[SPOUSE_KEY[key]] = spouse?.[key] ?? null;
+  }
+
+  // The map's two legacy single-line address keys. The PUT routes both into
+  // `addressLine1`, so that column is what a document stating `address` would
+  // actually overwrite — leaving them undefined would report every extracted
+  // `address` as a disagreement with a record that already matches it.
+  record.address = record.addressLine1;
+  record.spouseAddress = record.spouseAddressLine1;
+
+  return record;
+}
+
+/**
  * Load the roster, the entities, and the existing-account candidates.
  *
  * Candidates are loaded whatever the import's mode. `runMatchingPass` skips them
@@ -66,9 +166,18 @@ export async function loadChatReviewContext(
   clientId: string,
   scenarioId: string | null,
 ): Promise<ChatReviewContext> {
-  const resolvedScenarioId = await resolveScenarioId(clientId, scenarioId);
+  // The `clients` half of the household's own fields, plus the household id the
+  // contact read below needs. Paired with the scenario resolve rather than
+  // folded into the batch after it: both are inputs to that batch.
+  const [resolvedScenarioId, [clientRow]] = await Promise.all([
+    resolveScenarioId(clientId, scenarioId),
+    db
+      .select({ crmHouseholdId: clients.crmHouseholdId, ...PLAN_COLUMNS })
+      .from(clients)
+      .where(eq(clients.id, clientId)),
+  ]);
 
-  const [familyRows, entityRows, accountRows, ownerRows] = await Promise.all([
+  const [familyRows, entityRows, accountRows, ownerRows, contactRows] = await Promise.all([
     db
       .select({
         id: familyMembers.id,
@@ -109,6 +218,29 @@ export async function loadChatReviewContext(
             and(eq(accounts.clientId, clientId), eq(accounts.scenarioId, resolvedScenarioId)),
           )
       : Promise.resolve([]),
+    // The identity half of the household, scoped to THIS client's own CRM
+    // household — the id came from the clients row above, so there is no path
+    // from here to another household's contacts.
+    clientRow
+      ? db
+          .select({
+            role: crmHouseholdContacts.role,
+            firstName: crmHouseholdContacts.firstName,
+            lastName: crmHouseholdContacts.lastName,
+            dateOfBirth: crmHouseholdContacts.dateOfBirth,
+            email: crmHouseholdContacts.email,
+            phone: crmHouseholdContacts.phone,
+            mobile: crmHouseholdContacts.mobile,
+            addressLine1: crmHouseholdContacts.addressLine1,
+            addressLine2: crmHouseholdContacts.addressLine2,
+            city: crmHouseholdContacts.city,
+            state: crmHouseholdContacts.state,
+            postalCode: crmHouseholdContacts.postalCode,
+            country: crmHouseholdContacts.country,
+          })
+          .from(crmHouseholdContacts)
+          .where(eq(crmHouseholdContacts.householdId, clientRow.crmHouseholdId))
+      : Promise.resolve([]),
   ]);
 
   const ownerIdsByAccount = new Map<string, string[]>();
@@ -133,5 +265,6 @@ export async function loadChatReviewContext(
       value: Number(r.value),
       ownerIds: ownerIdsByAccount.get(r.id) ?? [],
     })),
+    household: buildHouseholdRecord(clientRow, contactRows),
   };
 }
