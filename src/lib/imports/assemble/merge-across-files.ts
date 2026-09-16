@@ -10,7 +10,7 @@ import type {
   ExtractedWill,
   ExtractionResult,
 } from "@/lib/extraction/types";
-import { accountLast4 } from "@/lib/extraction/account-number";
+import { accountLast4, documentVouchesForLast4 } from "@/lib/extraction/account-number";
 import { stripLast4Suffix } from "@/lib/extraction/condense-account-name";
 import { holdingKey } from "@/lib/extraction/holdings-completion";
 import {
@@ -88,6 +88,55 @@ function normalizeOwnerNameHint(raw: string | undefined): string | null {
 }
 
 /**
+ * Whether two registration names name two DIFFERENT people — the only question
+ * `backfillMissingCustodians` can ask a hint that is worth acting on.
+ *
+ * Deliberately asked in the negative, and deliberately tolerant, because the
+ * caller uses the answer to REMOVE a candidate. A false "different people"
+ * drops the true candidate and can leave a rival institution standing as the
+ * only one, which is how an inferred custodian would send a row into another
+ * account's bucket. So anything short of a contradiction has to read as "no
+ * objection": an absent hint on either side, and any pair of spellings that
+ * could be one person written two ways.
+ *
+ * Both of those shapes are in the production corpus for ONE man: "MICHAEL
+ * SHARESKY" on his Voya statements, "MICHAEL V SHARESKY" plus the custodian's
+ * registration boilerplate on his Schwab ones. So the test is word
+ * CONTAINMENT, not equality — every word of the shorter reading has to appear
+ * in the longer one. A middle initial drops out with the other one-character
+ * words, and "CHARLES SCHWAB & CO INC CUST" is extra words rather than
+ * disagreeing ones.
+ *
+ * What it does catch is a different given name, which is the whole reason it
+ * exists: "MICHAEL SHARESKY" against Jennifer's "GE2702Jennifer Sharesky" —
+ * OCR dirt and all, since this never gets clean input — shares only the
+ * surname a household shares by definition, so neither covers the other.
+ *
+ * NOT the same test as `sameAccountOwner`'s, forty lines below, and the
+ * divergence is deliberate: that one compares the two hints for EQUALITY and
+ * uses the answer to permit a merge, so its tolerant direction is the strict
+ * one. Handed the pair above it says "not the same owner" where this says
+ * "could be one man" — and both are right for what they gate. Unifying them
+ * would let `sameAccountOwner` merge pairs it currently refuses, which is the
+ * direction that makes an account disappear, so it wants its own corpus
+ * measurement rather than a shared helper.
+ */
+function hintsNameDifferentPeople(a: string | undefined, b: string | undefined): boolean {
+  const x = normalizeOwnerNameHint(a);
+  const y = normalizeOwnerNameHint(b);
+  if (x === null || y === null) return false;
+  return !nameCovers(x, y) && !nameCovers(y, x);
+}
+
+/** Every word of `part` worth comparing appears somewhere in `whole`. */
+function nameCovers(whole: string, part: string): boolean {
+  return part
+    .split(" ")
+    .filter((word) => word.length >= 2)
+    .every((word) => whole.includes(word));
+}
+
+/**
  * Do two same-custodian, same-last-4 account rows belong to the same OWNER?
  *
  * `owner` is a `client | spouse | joint` enum the EXTRACTOR guesses. The
@@ -145,7 +194,8 @@ function sameAccountOwner(existing: ExtractedAccount, incoming: ExtractedAccount
  *   dated the same day — they never reach this at all, because one document
  *   carries one date.
  * - Agreeing NAMES. "401(k) Savings Plan" and "401(k) Savings" are one plan
- *   described twice; "401(k) Savings" and "Profit Sharing" are not.
+ *   described twice; "401(k) Savings" and "Profit Sharing" are not. A name the
+ *   model CLIPPED counts as agreeing — see `isClippedReadingOf`.
  *
  * What it still cannot see: two genuinely different accounts of the same type
  * at one custodian, both unnumbered, both named the same thing, read from
@@ -158,7 +208,44 @@ function sameUnnumberedAccount(a: ExtractedAccount, b: ExtractedAccount): boolea
   const dateA = orderableDate(a.statementDate);
   const dateB = orderableDate(b.statementDate);
   if (dateA === undefined || dateB === undefined || dateA === dateB) return false;
-  return nameSimilarity(a.name, b.name) >= NAME_AGREEMENT_ACROSS_STATEMENTS;
+  return (
+    nameSimilarity(a.name, b.name) >= NAME_AGREEMENT_ACROSS_STATEMENTS ||
+    isClippedReadingOf(a.name, b.name)
+  );
+}
+
+/**
+ * Whether one of two names is the other with the end cut off — the model
+ * stopped reading mid-header, so "401(k" and "401(k) Savings" are one plan
+ * described twice rather than two plans.
+ *
+ * MEASURED: `nameSimilarity` scores that pair 0.5 against a 0.6 bar, because
+ * the clip costs it a whole token. Lowering the bar is not the answer — 0.6 is
+ * exactly what refuses "Profit Sharing" against "401(k) Savings", two real
+ * plans at one custodian. A truncation is a different thing from a
+ * disagreement, and `betterName` one screen above already says so with the
+ * same strict-prefix test; this is that rule reaching the merge decision as
+ * well as the display string.
+ *
+ * The shared-token clause is what keeps a prefix from meaning anything on its
+ * own: "40" is a prefix of "401(k) Savings" too, as is any stray character the
+ * extractor emitted, and neither shares a whole word with it. Requiring both
+ * makes the shorter string a clipped READING of the longer rather than a
+ * coincidence.
+ *
+ * This only ever loosens the NAME clause. A pair still has to clear every
+ * other one — same institution, same category, two real and different
+ * statement dates — before it is asked about at all.
+ */
+function isClippedReadingOf(a: string, b: string): boolean {
+  // Normalized BEFORE the lengths are compared: a name with trailing
+  // whitespace is not the longer reading, and picking the sides off the raw
+  // strings would ask `startsWith` the question backwards and silently miss.
+  const [shorter, longer] = [a, b]
+    .map((name) => name.trim().toLowerCase())
+    .sort((x, y) => x.length - y.length);
+  if (shorter === longer || !longer.startsWith(shorter)) return false;
+  return nameSimilarity(a, b) > 0;
 }
 
 /**
@@ -296,7 +383,71 @@ function betterName(winner: string, loser: string): string {
   const a = winner.trim();
   const b = loser.trim();
   if (a.length < b.length && b.toLowerCase().startsWith(a.toLowerCase())) return b;
+  if (isAcronymOf(a, b)) return b;
   return a;
+}
+
+/**
+ * Whether `short` is `long` written as an acronym — "ESOP" for "Employee Stock
+ * Ownership", which the collapse used to keep over the expansion and which
+ * shares no word with it, so no name comparison downstream could join the two
+ * quarters of Jennifer's ESOP.
+ *
+ * Deliberately narrow, because this is the one case where the collapse
+ * overrules the stronger reading about what an account is CALLED:
+ *
+ * - `short` must be nothing but capitals. A mixed-case or spaced name is a
+ *   name, not an abbreviation, and "Roth" must not lose to whatever longer
+ *   string the other reading offered.
+ * - `long`'s word initials and `short` must agree as far as the shorter of the
+ *   two runs. "ESOP" against "Employee Stock Ownership" is the real shape —
+ *   the expansion is missing the "Plan" the P stands for — so this cannot
+ *   demand the initials match in full. What it does demand is that they do not
+ *   CONTRADICT: "ESOP" is not an acronym of "Profit Sharing Plan and Trust",
+ *   which is how an unrelated longer name is refused.
+ */
+function isAcronymOf(short: string, long: string): boolean {
+  if (!/^[A-Z]{2,8}$/.test(short)) return false;
+  const initials = long
+    .split(/[^A-Za-z]+/)
+    .filter(Boolean)
+    .map((word) => word[0].toUpperCase())
+    .join("");
+  if (initials.length < 2) return false;
+  return initials.startsWith(short) || short.startsWith(initials);
+}
+
+/**
+ * The fuller of two readings of one institution's name.
+ *
+ * `readingStrength` ranks a reading by how much it PROVES about the money, and
+ * a statement's detail pages win that on every document. They do not always
+ * win the CUSTODIAN: the running header on Jennifer's Gensler detail pages says
+ * "John Hancock" where the cover page says "John Hancock Retirement Plan
+ * Services", and `unionFields` cannot help because the winner's custodian is
+ * not null — it is just shorter.
+ *
+ * That mattered far more than a display string should, because the cross-file
+ * bucket key for an unnumbered row USED to be the normalized custodian:
+ * carrying the detail read's "John Hancock" put Q1 in one bucket and Q2's
+ * fuller spelling in another, and the two quarters of all three plans never
+ * met. The key no longer carries the custodian — see the accounts
+ * `mergeSection` below — so that is no longer what this defends. What is left
+ * is the display string and every name comparison downstream that reads it,
+ * which is reason enough to keep it but is NOT a merge-correctness claim.
+ *
+ * Only a spelling `custodianMatches` already calls the same institution can
+ * win here — the whole-word-prefix rule, the same one `isSameEntity` uses — so
+ * this can never rename an account's custodian to a different firm. Two
+ * readings of one document really can name two different institutions (a
+ * collapse pairs on the balance and the page range and never looks at the
+ * custodian), and in that case the stronger reading keeps its own.
+ */
+function betterCustodian(winner: string, loser: string): string {
+  const a = normalizeCustodian(winner);
+  const b = normalizeCustodian(loser);
+  if (a === null || b === null || !custodianMatches(a, b)) return winner;
+  return loser.trim().length > winner.trim().length ? loser : winner;
 }
 
 function readingStrength(row: ExtractedAccount): number {
@@ -457,6 +608,84 @@ function numberReadings(fileResults: Record<string, ExtractionResult>): NumberRe
 }
 
 /**
+ * Phrases that mean the stored copy of a document is NOT the whole document.
+ * Matched on the advisor-facing warning text because that is what `extract.ts`
+ * leaves behind and what a persisted `fileResults` entry from before any of
+ * this carries — there is no structured flag to read, and inventing one would
+ * only ever be set on NEW extractions, leaving every existing draft judged
+ * against a partial copy.
+ */
+const INCOMPLETE_TEXT_WARNINGS = [
+  // `capPersistedPages` dropped whole trailing pages past the at-rest budget.
+  "dropped from the copy saved for AI review",
+  // Vision OCR stopped at `EXTRACTION_OCR_MAX_PAGES`.
+  "data on later pages was skipped",
+];
+
+/** The marker both truncation paths in `extract.ts` append to what they cut. */
+const TRUNCATION_MARKER = "... [truncated]";
+
+/**
+ * The document's stored text, or null when there is no complete copy to reason
+ * about.
+ *
+ * Only `documentVouchesForLast4` uses this, and it is the half of that rule
+ * that keeps it honest. That rule reads "this number is nowhere in the text" as
+ * evidence the model invented it — which is true of the whole document and
+ * false of a fragment. Handed a truncated copy, or one whose trailing pages
+ * were dropped, it would clear numbers that were printed perfectly clearly on
+ * a page nobody stored, and each one it cleared would drop a real account into
+ * the unnumbered bucket.
+ *
+ * So every incomplete case returns null and the numbers in that file are left
+ * exactly as extracted:
+ *
+ * - No `text` and no `pages`. A `.docx` whose parser yielded nothing, and every
+ *   `fileResults` entry persisted before those fields existed — the merge is
+ *   re-derived on every assemble precisely so old drafts heal, so this is a
+ *   live shape, not a legacy curiosity.
+ * - The truncation marker, from either path that cuts mid-content: the
+ *   single-pass `MAX_DOCUMENT_TEXT_CHARS` cap, and `capPersistedPages` when
+ *   page one alone exceeded the budget.
+ * - A warning naming pages that were dropped or skipped, where the text that
+ *   survived carries no marker at all.
+ *
+ * `pdf-parser`'s own 300-page ceiling is deliberately NOT covered: it leaves
+ * nothing on the result to read, and a 300-page account statement is not a
+ * shape this has to defend against.
+ */
+function judgeableText(result: ExtractionResult): string | null {
+  if (result.warnings.some((w) => INCOMPLETE_TEXT_WARNINGS.some((phrase) => w.includes(phrase)))) {
+    return null;
+  }
+  const text = result.text ?? result.pages?.join("\n");
+  if (!text?.trim() || text.includes(TRUNCATION_MARKER)) return null;
+  return text;
+}
+
+/**
+ * Every four-digit number in ONE file's rows that the file's own text never
+ * printed as an account number.
+ *
+ * Per FILE, not per import, and that is load-bearing: the same four digits are
+ * a labelled account number on one statement and an invention on another, and
+ * judged over the import's pooled text the invention borrows the real one's
+ * credibility. `untrustworthyNumbers` above reasons the opposite way — its
+ * evidence IS the contradiction between files — so the two sets are computed at
+ * different scopes and unioned at the call site.
+ */
+function unvouchedNumbers(result: ExtractionResult): Set<string> {
+  const unvouched = new Set<string>();
+  const text = judgeableText(result);
+  if (text === null) return unvouched;
+  for (const row of result.extracted.accounts) {
+    const number = accountLast4(row.accountNumberLast4);
+    if (number !== null && !documentVouchesForLast4(text, number)) unvouched.add(number);
+  }
+  return unvouched;
+}
+
+/**
  * Clear the account number on every row whose number is not an identity — one
  * `untrustworthyNumbers` named, or one that was never four digits in the first
  * place (a six-digit plan GROUP number, UBS's "FI" branch suffix).
@@ -494,6 +723,191 @@ function clearUntrustedNumbers(
 }
 
 /**
+ * Names a lender prints on a debt. A row called one of these is not an asset,
+ * whatever category the extractor filed it under.
+ *
+ * Whole words, so "Loan" does not fire on "Sloane" and "Mortgage Note
+ * Receivable" — a real asset — is still caught only when the same document
+ * reported a matching debt, which it will not have.
+ */
+const DEBT_NAME = /\b(mortgage|heloc|home equity|loan)\b/i;
+
+/**
+ * Drop an accounts row that is really one of this document's own liabilities.
+ *
+ * MEASURED on production import `31acfca2-5c91-4f63-8bc4-8c65bcf50659`. The
+ * secondary-residence mortgage statement reported its debt correctly as a
+ * liability ("Mortgage - 5304 Hudson Avenue D", $99,802.55, 3.25%) AND emitted
+ * an accounts row for the same money ("Mortgage x3596", $99,802.55, category
+ * `real_estate`, sub-type `primary_residence` — on a statement for the
+ * SECONDARY residence). That row renders on the balance sheet as PROPERTY, so
+ * one debt became $99,802.55 of assets. The primary-residence file, same lender
+ * and same import, emitted one liability and no accounts row — extraction
+ * variance, not intent.
+ *
+ * BOTH CONDITIONS ARE REQUIRED, and the second is the safety argument:
+ *
+ * - the row is NAMED like a debt, which is what distinguishes a misfiled
+ *   mortgage from a brokerage account that happens to be worth the same as one;
+ * - the SAME FILE already reported a liability at that balance, so the debt is
+ *   recorded as a debt no matter what this drops. Without a matching
+ *   liability the row is the only record of the money and it stays — which is
+ *   also what keeps a mortgage note RECEIVABLE, a genuine asset, on the table.
+ *
+ * Scoped to one file for the same reason `collapseDuplicateReadings` is: a
+ * mortgage statement and its debt are one document. Two files in an import can
+ * legitimately report a $99,802 asset and a $99,802 debt that have nothing to
+ * do with each other.
+ */
+function dropDebtsFiledAsAssets(
+  rows: ExtractedAccount[],
+  liabilities: ExtractedLiability[],
+  sourceName: string,
+  warnings: string[],
+): ExtractedAccount[] {
+  if (liabilities.length === 0) return rows;
+
+  return rows.filter((row) => {
+    if (!DEBT_NAME.test(row.name)) return true;
+    if (!liabilities.some((debt) => withinTolerance(debt.balance, row.value))) return true;
+    warnings.push(
+      `${sourceName} listed "${row.name}" as an account as well as a debt of the same ` +
+        `${formatMoney(row.value)}. It is recorded as a debt only, so the balance sheet does not ` +
+        "count it as property. Check the liabilities before committing.",
+    );
+    return false;
+  });
+}
+
+/**
+ * Drop an account row that asserts nothing but a name, naming it in
+ * `warnings`.
+ *
+ * MEASURED on production import `31acfca2-5c91-4f63-8bc4-8c65bcf50659`: a
+ * photographed beneficiary-designation form produced a row named "401(k)
+ * Savings Plan" with no custodian, no value, no statement date and no number.
+ * The form MENTIONS a plan; it does not report one. The row reached the review
+ * table with an empty balance, and — having neither a custodian nor a number —
+ * could never merge into the plan it was naming, so it stayed there as an
+ * eighth account for seven real ones.
+ *
+ * "NOTHING AT ALL" IS THE WHOLE BAR, and each clause is a row that IS real:
+ * a balance with no institution (a fact finder's "401(k): $94,795"), an
+ * institution with no balance (a statement whose figures failed to parse), a
+ * number, a date, a position. A zero balance counts as a reading — a closed
+ * account is a real thing to show an advisor — so only undefined/null is
+ * "no figure".
+ */
+function dropEmptyRows(
+  rows: ExtractedAccount[],
+  sourceName: string,
+  warnings: string[],
+): ExtractedAccount[] {
+  const kept: ExtractedAccount[] = [];
+  for (const row of rows) {
+    if (assertsSomething(row)) {
+      kept.push(row);
+    } else {
+      warnings.push(
+        `${sourceName} mentioned "${row.name}" but reported no balance, institution, date or ` +
+          "account number for it, so it is not listed as an account. If it is one, add it by hand.",
+      );
+    }
+  }
+  return kept;
+}
+
+/** Whether a row carries any reading at all. A zero balance is a reading. */
+function assertsSomething(row: ExtractedAccount): boolean {
+  if (row.value !== undefined && row.value !== null) return true;
+  return (
+    Boolean(row.custodian) ||
+    row.statementDate !== undefined ||
+    accountLast4(row.accountNumberLast4) !== null ||
+    (row.holdings?.length ?? 0) > 0
+  );
+}
+
+/**
+ * Fill in the institution on any row the extractor read without one, from the
+ * rest of the import — but only when the import names exactly one candidate.
+ *
+ * THE DEFECT. Mike's Q1 401(k) came back with no custodian at all, from a
+ * document whose text contains "Voya" plainly (measured, production import
+ * `31acfca2-5c91-4f63-8bc4-8c65bcf50659`). A row with no custodian has nothing
+ * to bucket on, so it takes `mergeSection`'s null-key fallback, which by
+ * design never merges with anything — and Q1's $772,449.78 went on the review
+ * table as a second 401(k) beside Q2's $884,095.37.
+ *
+ * WHY HERE AND NOT IN THE PROMPT. Eventually both. But `fileResults` is
+ * PERSISTED, so a better prompt only helps documents extracted after it ships
+ * and leaves every draft already in review double-counted. This is re-derived
+ * on every assemble, so existing drafts heal — the same argument that puts
+ * `collapseDuplicateReadings` in this file.
+ *
+ * WHY IT IS NARROW. Adopting an institution is adopting an identity, and a
+ * wrong one would send the row into another account's bucket, which is the
+ * direction that makes an account disappear. So:
+ *
+ * - Only a row with NO custodian is touched. A misread custodian stays as
+ *   read; an inference does not get to overrule the document.
+ * - A candidate has to AGREE with the row on category and on name, at the same
+ *   bar the cross-file merge itself uses for two statements
+ *   (`NAME_AGREEMENT_ACROSS_STATEMENTS`). Anything looser and a household's
+ *   Roth IRA starts donating its custodian to its 401(k).
+ * - A candidate whose REGISTRATION NAME contradicts the row's is dropped
+ *   before the institutions are counted. Name agreement alone cannot separate
+ *   two spouses' 401(k)s — measured, `nameSimilarity("401K", "401(k")` is 0.8
+ *   — and the statements carry the one field that can. This only ever removes
+ *   a candidate, never adds one, so it can make the set unambiguous but never
+ *   more permissive than the institution count below. See
+ *   `hintsNameDifferentPeople` for why it is tolerant rather than exact.
+ * - Every remaining candidate must name ONE institution, by `custodianMatches`
+ *   — so two spellings of Voya count once, and a Voya 401(k) beside a Fidelity
+ *   401(k) counts twice and the rule refuses. That refusal is the whole safety
+ *   argument: the ambiguous case is precisely a household with two same-named
+ *   plans at two custodians, and there is no evidence here to choose.
+ *
+ * The advisor is told, because this is the one field on the row that was
+ * inferred rather than read.
+ */
+function backfillMissingCustodians(
+  rows: SourceRow<ExtractedAccount>[],
+  warnings: string[],
+): SourceRow<ExtractedAccount>[] {
+  const named = rows.filter((r) => normalizeCustodian(r.content.custodian) !== null);
+  if (named.length === 0) return rows;
+
+  return rows.map((source) => {
+    const row = source.content;
+    if (row.custodian) return source;
+
+    const candidates = named.filter(
+      (other) =>
+        other.content.category === row.category &&
+        nameSimilarity(row.name, other.content.name) >= NAME_AGREEMENT_ACROSS_STATEMENTS &&
+        !hintsNameDifferentPeople(row.ownerNameHint, other.content.ownerNameHint),
+    );
+    if (candidates.length === 0) return source;
+
+    // One institution, however many rows or spellings said so.
+    const spellings = candidates.map((c) => c.content.custodian as string);
+    const normalized = spellings.map((c) => normalizeCustodian(c) as string);
+    if (!normalized.every((n) => custodianMatches(n, normalized[0]))) return source;
+
+    // Which spelling to adopt is a question `betterCustodian` already answers,
+    // and answering it a second time here is how the two would drift apart.
+    const custodian = spellings.reduce((a, b) => betterCustodian(a, b));
+    warnings.push(
+      `"${row.name}" in ${source.sourceName} did not name an institution; it was read as ` +
+        `${custodian} because that is the only one this import's other statements name for ` +
+        "an account like it. Check it before committing.",
+    );
+    return { ...source, content: { ...row, custodian } };
+  });
+}
+
+/**
  * Collapse duplicate readings within ONE file's rows, keeping source order and
  * naming each collapse in `warnings`. Never call this across files — two
  * statements for one account are `mergeSection`'s job, and it has a statement
@@ -517,7 +931,16 @@ export function collapseDuplicateReadings(
       readingStrength(row) > readingStrength(existing) ? [row, existing] : [existing, row];
     // `unionFields`, so a collapse can only ever ADD information: the cover row
     // is often the only one that named an owner or spelled the custodian out.
-    kept[twinIndex] = { ...unionFields(winner, loser), name: betterName(winner.name, loser.name) };
+    kept[twinIndex] = {
+      ...unionFields(winner, loser),
+      name: betterName(winner.name, loser.name),
+      // Only when BOTH readings named one — `unionFields` has already
+      // backfilled the case where the winner had none, and handing a null to
+      // `betterCustodian` would make it choose between a name and nothing.
+      ...(winner.custodian && loser.custodian
+        ? { custodian: betterCustodian(winner.custodian, loser.custodian) }
+        : {}),
+    };
     warnings.push(
       `"${kept[twinIndex].name}" was read twice from ${sourceName} (pages ${pageRangeOf(loser)} and ` +
         `${pageRangeOf(winner)}) at the same balance; kept the more detailed reading.`,
@@ -1267,6 +1690,46 @@ function stampHoldingIds(accounts: Annotated<ExtractedAccount>[]): void {
  * `__rowId` fallback in `mergeSection`, which is scoped to its own source
  * file for exactly this reason.
  */
+/**
+ * ONE file's account rows, cleaned, in the order the four passes have to run.
+ *
+ * They are a pipeline rather than four nested calls because the ORDER is the
+ * part worth stating, and nesting states it inside-out:
+ *
+ * 1. `dropEmptyRows` first. A row asserting nothing cannot be judged for a
+ *    fabricated number (it has none) and cannot be a duplicate reading of
+ *    anything (it has no balance to match on), so the passes below never see
+ *    it and never have to special-case it.
+ * 2. `dropDebtsFiledAsAssets` before the number work, for the same reason: a
+ *    row the file already recorded as a debt should not be reasoned about as
+ *    an account at all.
+ * 3. `clearUntrustedNumbers` before the collapse, because the collapse buckets
+ *    on the account number, and a plan number left in place buckets two
+ *    unrelated accounts together.
+ * 4. `collapseDuplicateReadings` last — it is the only pass that JOINS rows,
+ *    and it should join the cleaned ones.
+ *
+ * Everything here is scoped to one document. The cross-file judgement arrives
+ * as `untrusted`, and the two number judgements are unioned rather than
+ * ranked: `untrusted` is the whole import's — a number is not an identity if
+ * it contradicts itself ACROSS files — and `unvouchedNumbers` is this file's —
+ * a number is not an identity if THIS document never printed it as one.
+ * Neither subsumes the other.
+ */
+function accountRowsFor(
+  result: ExtractionResult,
+  untrusted: Set<string>,
+  warnings: string[],
+): ExtractedAccount[] {
+  const sourceName = result.fileName;
+  const untrustedHere = new Set([...untrusted, ...unvouchedNumbers(result)]);
+
+  let rows = dropEmptyRows(result.extracted.accounts, sourceName, warnings);
+  rows = dropDebtsFiledAsAssets(rows, result.extracted.liabilities, sourceName, warnings);
+  rows = clearUntrustedNumbers(rows, untrustedHere, sourceName, warnings);
+  return collapseDuplicateReadings(rows, sourceName, warnings);
+}
+
 export function mergeAcrossFiles(
   fileResults: Record<string, ExtractionResult>,
 ): MergeAcrossFilesResult {
@@ -1294,11 +1757,7 @@ export function mergeAcrossFiles(
     // name it. `fileName` is required on `ExtractionResult`.
     const sourceName = result.fileName;
 
-    for (const row of collapseDuplicateReadings(
-      clearUntrustedNumbers(result.extracted.accounts, untrusted, sourceName, payload.warnings),
-      sourceName,
-      payload.warnings,
-    )) {
+    for (const row of accountRowsFor(result, untrusted, payload.warnings)) {
       accountRows.push({ content: row, provenance: provenanceFor("accounts"), sourceName });
     }
     for (const row of result.extracted.incomes) {
@@ -1343,7 +1802,11 @@ export function mergeAcrossFiles(
 
   mergeSection(
     payload.accounts,
-    accountRows,
+    // Runs over the WHOLE import's rows, after every file has had its
+    // fabricated numbers cleared and its duplicate readings collapsed — the
+    // institution that fills a gap may be on any other statement, and the
+    // rows it compares against should already be the best reading of each.
+    backfillMissingCustodians(accountRows, payload.warnings),
     "account",
     // `owner` used to be in the key too (FIX 5), to stop a client IRA and a
     // spouse IRA sharing a masked last-4 at the same custodian from ever
@@ -1407,16 +1870,32 @@ export function mergeAcrossFiles(
     // numbers are all plan numbers is exactly the statement that most needs the
     // quarters joined, and the null key can never join anything.
     //
-    // The fallback bucket is the custodian, with `isSameEntity` below carrying
-    // the whole burden of deciding which of that custodian's unnumbered rows
-    // are one account. A row with no custodian EITHER still takes the null key
-    // — there is nothing left to compare.
+    // The fallback bucket says only "this row has no number", with
+    // `isSameEntity` below carrying the whole burden of deciding which
+    // unnumbered rows are one account. A row with no custodian EITHER still
+    // takes the null key — there is nothing left to compare.
+    //
+    // THE CUSTODIAN IS NOT IN THIS KEY, and that is the same correction the
+    // numbered path above got, for the same reason. It used to be
+    // (`no-number@${normalizeCustodian(row.custodian)}`), and that re-opened
+    // the trap the numbered path had just been fixed for: a key is exact-match
+    // by construction, and one institution is routinely spelled two ways
+    // across two statements. Measured — Jennifer's Gensler Q1 keyed as
+    // `no-number@john hancock` off its detail pages and Q2 as `no-number@john
+    // hancock retirement plan services` off its cover, `custodianMatches`
+    // returns TRUE for that pair, and the two quarters still never met,
+    // because the comparison that would have joined them only runs inside a
+    // bucket a key already found. Three plans were on the review table twice.
+    //
+    // The cost is that every unnumbered row in the import shares one bucket,
+    // so `isSameEntity` is asked about pairs it never used to see. That is the
+    // point — it is the only place the prefix rule CAN run — and it is also
+    // why `sameUnnumberedAccount` is the narrowest merge in this file.
     (row) => {
       if (!row.custodian) return null;
       const number = accountLast4(row.accountNumberLast4);
       if (number !== null) return number;
-      const custodian = normalizeCustodian(row.custodian);
-      return custodian === null ? null : `no-number@${custodian}`;
+      return normalizeCustodian(row.custodian) === null ? null : "no-number";
     },
     // Now that the bucket is only the last-4, this is what keeps a Fidelity
     // statement out of a Schwab account that happens to share four masked

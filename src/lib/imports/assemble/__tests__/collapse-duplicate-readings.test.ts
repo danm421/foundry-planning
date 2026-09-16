@@ -47,7 +47,17 @@ describe("collapsing a document read twice", () => {
 
     expect(kept).toHaveLength(1);
     expect(kept[0].name).toBe("401(k) Savings Plan x0210");
-    expect(kept[0].custodian).toBe("John Hancock");
+    // The detail row wins every field EXCEPT the custodian, and that one
+    // exception is `betterCustodian`. This assertion used to read "John
+    // Hancock" — the detail page's running-header spelling — and that was the
+    // defect, not the contract: the cross-file bucket for an unnumbered row
+    // keys on the custodian, so carrying the shorter spelling put Q1 in one
+    // bucket and Q2's fuller spelling in another and the two quarters of all
+    // three Gensler plans never met. Measured on production import
+    // `31acfca2-5c91-4f63-8bc4-8c65bcf50659`. Same institution either way —
+    // `custodianMatches` is what licenses the swap — so nothing here changes
+    // WHICH account this is, only how completely it is named.
+    expect(kept[0].custodian).toBe("John Hancock Retirement Plan Services");
   });
 
   it("folds when the summary row carries a plan number instead of a real last-4", () => {
@@ -176,7 +186,13 @@ describe("collapsing a document read twice", () => {
 
     expect(
       accountsOf([
-        onPages([1, 1], { name: "401k Savings Plan" }),
+        // The custodian is here so the row survives `dropEmptyRows` — a row
+        // with NOTHING on it is not an account at all and is dropped before
+        // the collapse ever sees it, which would make this assertion pass for
+        // the wrong reason. What is being tested is that a valueless row does
+        // not FOLD into a valued one: there is no balance to match on, so
+        // there is no evidence the two readings are the same account.
+        onPages([1, 1], { name: "401k Savings Plan", custodian: "John Hancock" }),
         onPages([2, 2], { name: "401(k) Savings Plan x0210", accountNumberLast4: "0210", value: 361262.23 }),
       ]),
     ).toHaveLength(2);
