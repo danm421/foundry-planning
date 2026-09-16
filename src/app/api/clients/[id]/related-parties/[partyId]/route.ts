@@ -79,10 +79,15 @@ export async function PATCH(
       // see on the Household screen reads as a bug. It names the likely reason
       // without claiming it: the other way to land here is a `partyId` from
       // another household, which is genuinely not found.
+      //
+      // "primary, spouse or dependent", not "client and spouse": the role leg
+      // refuses all three non-`other` values of `crmContactRoleEnum`, and a
+      // dependent hitting a sentence about spouses would be told the wrong
+      // thing. Worded as the roles, not as the enum, for the advisor.
       return NextResponse.json(
         {
           error:
-            "Related party not found — the household's own client and spouse contacts are edited on the Household screen, not here.",
+            "Related party not found — the household's own contacts (the client, their spouse and any dependants) are edited on the Household screen, not here.",
         },
         { status: 404 },
       );

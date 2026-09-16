@@ -110,6 +110,7 @@ import { requireOrgAndUser, UnauthorizedError } from "@/lib/db-helpers";
 import { requireActiveSubscriptionForFirm, ForbiddenError } from "@/lib/authz";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { recordAudit } from "@/lib/audit";
+import { crmContactRoleEnum } from "@/db/schema";
 
 function req(body: unknown, method: "POST" | "PATCH" = "POST") {
   return new Request("http://t/api/clients/client-1/related-parties", {
@@ -303,13 +304,23 @@ describe("related-parties route — PATCH", () => {
 
   // The refusal is right; a bare "not found" for a person the advisor is
   // looking at on the Household screen is not. `commitMapRow` renders this
-  // text, so it has to say where the contact is actually edited.
+  // text, so it has to say where the contact is actually edited — and it has to
+  // cover every role the predicate refuses, `dependent` included, not just the
+  // primary and the spouse.
   it("says where a household contact is edited instead of just 'not found'", async () => {
     const res = await PATCH(req({ firstName: "Mallory" }, "PATCH"), partyParams("primary-1"));
     expect(await res.json()).toEqual({
       error:
-        "Related party not found — the household's own client and spouse contacts are edited on the Household screen, not here.",
+        "Related party not found — the household's own contacts (the client, their spouse and any dependants) are edited on the Household screen, not here.",
     });
+    // Ratchet on the roles that sentence has to describe: the predicate refuses
+    // every non-'other' value, so a fourth one appearing here means the wording
+    // must be revisited rather than silently under-describing a case.
+    expect(crmContactRoleEnum.enumValues.filter((role) => role !== "other")).toEqual([
+      "primary",
+      "spouse",
+      "dependent",
+    ]);
   });
 
   it("refuses a client the caller cannot edit, and writes nothing", async () => {
