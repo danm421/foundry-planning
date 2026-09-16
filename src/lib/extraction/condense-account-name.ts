@@ -112,9 +112,45 @@ function stripCustodian(name: string, custodian: string | null | undefined): str
  * Only shapes the display name — the stored `accountNumberLast4` is untouched,
  * because account matching compares it verbatim.
  */
-function normalizeLast4(raw: string | null | undefined): string {
+export function normalizeLast4(raw: string | null | undefined): string {
   if (typeof raw !== "string") return "";
   return raw.replace(/[^a-z0-9]/gi, "").slice(-4);
+}
+
+/** Separators a statement puts between a name and its masked suffix. */
+const SEPARATOR = "[\\s\\-\u2013\u2014#]";
+/** Mask characters that can front the digits. See `LAST4_MASK` above. */
+const MASK = "[x*.\u2022]";
+
+/**
+ * Matches a trailing "x1234" suffix, with any mask and separator spelling.
+ *
+ * The digits must open at a separator, a mask, or the string start — hence the
+ * leading alternation rather than `\b`, which would also match INSIDE a longer
+ * run and rename "Portfolio 17254" to "Portfolio 1".
+ *
+ * Built once, here, because `composeAccountName` APPENDS this suffix and
+ * `stripLast4Suffix` REMOVES it — two halves of one fact. They lived in two
+ * modules as two hand-escaped copies, and this file's own docstring invites
+ * widening `LAST4_MASK`, which would have silently broken the stripper.
+ */
+function last4Suffix(last4: string): RegExp {
+  return new RegExp(`(?:^|${SEPARATOR}+)(?:${MASK}+${SEPARATOR}*)?${last4}\\b\\s*$`, "i");
+}
+
+/**
+ * The inverse of the suffix `composeAccountName` appends — the name with its
+ * masked last-4 taken back off.
+ *
+ * For a caller that has decided the number was never this account's: the field
+ * is only half of where a wrong number shows, and the name is the half an
+ * advisor reads. Never returns empty — a name that is nothing but its suffix
+ * keeps the suffix, because a bad name still beats no name.
+ */
+export function stripLast4Suffix(name: string, raw: string | null | undefined): string {
+  const last4 = normalizeLast4(raw);
+  if (!last4) return name;
+  return name.replace(last4Suffix(last4), "").trim() || name;
 }
 
 /**
@@ -147,12 +183,8 @@ export function composeAccountName(
   // own mask rule needs three. Missing it printed the number twice —
   // "Inh. IRA x7254 x7254".
   //
-  // The digits must open at a separator, a mask, or the string start — hence
-  // the leading alternation rather than `\b`, which would also match INSIDE a
-  // longer run and rename "Portfolio 17254" to "Portfolio 1".
-  const deduped = base
-    .replace(new RegExp(`(?:^|[\\s\\-–—#]+)(?:[x*.•]+[\\s\\-–—#]*)?${last4}\\b\\s*$`, "i"), "")
-    .trim();
+  // See `last4Suffix` for why the pattern opens the way it does.
+  const deduped = base.replace(last4Suffix(last4), "").trim();
   const suffix = `${LAST4_MASK}${last4}`;
   if (!deduped) return suffix;
   return `${truncateOnWordBoundary(deduped, MAX_LENGTH - suffix.length - 1)} ${suffix}`;

@@ -11,6 +11,7 @@ import type {
   ExtractionResult,
 } from "@/lib/extraction/types";
 import { accountLast4 } from "@/lib/extraction/account-number";
+import { stripLast4Suffix } from "@/lib/extraction/condense-account-name";
 import { holdingKey } from "@/lib/extraction/holdings-completion";
 import {
   emptyImportPayload,
@@ -257,39 +258,7 @@ function isSameAccountReadTwice(a: ExtractedAccount, b: ExtractedAccount): boole
 
   const numberA = accountLast4(a.accountNumberLast4);
   const numberB = accountLast4(b.accountNumberLast4);
-  if (numberA !== null && numberB !== null && numberA !== numberB) return isSummaryOfDetail(a, b);
-  return true;
-}
-
-/**
- * The one shape that outweighs two real, DIFFERENT masked numbers.
- *
- * Measured on Jennifer's Stantec Q2 statement: the cover page prints the plan's
- * contract number ("...7264", four digits, so nothing about its shape says it
- * is not an account number) and the detail pages print the account's own
- * ("...7265"). Both read $126,591.46 — the same cent — and both are named
- * "401(k) Plan". Rule 3 above then refuses the collapse on the strength of two
- * numbers, one of which is not a number for this account at all, and one real
- * 401(k) becomes two committable rows.
- *
- * All three conditions are load-bearing, because the case this must NOT eat is
- * two sibling accounts — two custodial savings accounts funded identically,
- * two $25,000 CDs:
- *
- * - The balances agree TO THE CENT, not within the merge's 1%. Two statements
- *   of one account taken from the same document cannot disagree at all.
- * - Exactly ONE side lists positions. That is the cover-versus-detail
- *   signature: a summary page prints a balance, a detail section prints what
- *   the balance is invested in. Two sibling accounts are both read the same
- *   way, so both carry positions or neither does, and this refuses them.
- * - The names agree. "Savings x6049" and "Savings x8952" share only the noun.
- */
-function isSummaryOfDetail(a: ExtractedAccount, b: ExtractedAccount): boolean {
-  if (a.value !== b.value) return false;
-  const detailA = (a.holdings?.length ?? 0) > 0;
-  const detailB = (b.holdings?.length ?? 0) > 0;
-  if (detailA === detailB) return false;
-  return nameSimilarity(a.name, b.name) >= NAME_AGREEMENT;
+  return !(numberA !== null && numberB !== null && numberA !== numberB);
 }
 
 /**
@@ -341,85 +310,185 @@ function readingStrength(row: ExtractedAccount): number {
 }
 
 /**
- * Strip the masked suffix a composed name carries, when it repeats a number
- * this file has just been shown is not an account number.
+ * One reading of an account number, with everything needed to judge whether the
+ * number is this account's identity at all.
  *
- * `composeAccountName` appends "x" + the LAST FOUR CHARACTERS of whatever the
- * extractor put in `accountNumberLast4` — deliberately, because a
- * plausible-looking suffix beats none on a name an advisor reads. Once the
- * field itself is cleared the suffix is the only place the wrong number still
- * shows, and it is the half that reaches the screen: "401(k) Savings Plan
- * x3350", "Profit Sharing Plan x3350" and "ESOP x3350" are three different
- * plans wearing one plan group number.
+ * `scope` is the set of readings the judgement is made against. It is NOT the
+ * source file: two of one household's plans routinely arrive as two PDFs, and a
+ * pass that could only see one file at a time found no contradiction in either
+ * and cleared nothing — measured, and it discarded $142,862. What one statement
+ * DATE says is the real unit, because one account has one balance on one date;
+ * a row with no orderable date falls back to its file, which is the tightest
+ * scope still available.
  */
-function stripLast4Suffix(name: string, raw: string): string {
-  const printed = raw.replace(/[^a-z0-9]/gi, "").slice(-4);
-  if (!printed) return name;
-  const stripped = name
-    .replace(new RegExp(`(?:^|[\\s\\-\u2013\u2014#]+)(?:[x*.\u2022]+[\\s\\-\u2013\u2014#]*)?${printed}\\b\\s*$`, "i"), "")
-    .trim();
-  return stripped || name;
+interface NumberReading {
+  number: string;
+  scope: string;
+  fileId: string;
+  value: number | undefined;
+  hasHoldings: boolean;
+  name: string;
 }
 
 /**
- * The numbers this file put in `accountNumberLast4` that are NOT an account's
- * identity, cleared off every row that carries one.
+ * Every four-digit value this import put in `accountNumberLast4` that cannot be
+ * an account's identity.
  *
- * Two kinds, one consequence. A value that is not four digits was never an
- * account number — a 401(k)'s six-digit plan GROUP number ("433350"), a
- * five-digit contract number, the "FI" branch suffix UBS prints after the
- * digits. And a four-digit value that SEVERAL rows of one document carry at
- * MATERIALLY DIFFERENT balances cannot be an account number either: one
- * statement does not list one account three times at three balances, so what
- * those rows share is the plan, not the account. Jennifer's Gensler Q2
- * statement prints "0410" against the 401(k) ($361,262), the profit-sharing
- * plan ($48,034) and the ESOP ($94,829) alike.
+ * A masked account number is four digits, so shape alone cannot catch this: a
+ * 401(k)'s contract number and the page-imposition code printed in a statement's
+ * FOOTER are both four digits and both get copied into the field. What gives
+ * them away is that they contradict themselves across readings, in two shapes:
  *
- * Leaving it in place is not neutral, because every identity seam downstream
- * keys on this field. `mergeSection`'s bucket folded those three plans into
- * ONE row and threw two real balances away as "another statement reported…",
- * and `matchAccount` would have auto-written whichever of them the advisor
- * committed last over a stored account. Clearing it sends the rows to the
- * null-key fallback instead, where they stay separate — a visible duplicate is
- * recoverable, an eaten account is not.
+ * 1. ONE number at SEVERAL balances as of one date, on rows named DIFFERENTLY.
+ *    One account has one balance on one day, so a number carried by rows worth
+ *    $361,262, $48,034 and $94,829 on 2026-06-30 and named "401(k) Savings",
+ *    "Profit Sharing" and "Employee Stock Ownership" is the plan's, not any of
+ *    the three accounts'. The NAME clause is load-bearing and was measured
+ *    missing: two documents reporting ONE account at one date and disagreeing
+ *    about the balance is an ordinary stale-statement conflict, which the merge
+ *    exists to collapse and disclose — and without the name test this cleared
+ *    that account's number and split it in two.
+ * 2. TWO numbers on ONE account, within one document, on rows named the SAME.
+ *    A cover page prints the plan's contract number and the detail pages print
+ *    the participant's — or, on a Merrill statement, the footer's imposition
+ *    code changes between them. Balances equal to the CENT and one side listing
+ *    positions while the other does not is the summary-versus-detail signature;
+ *    two sibling accounts are read the same way, so both carry positions or
+ *    neither does.
  *
- * DIFFERENT balances, specifically. A cover page and a detail section reading
- * the same account both print the same number at the SAME balance, and that is
- * the pairing `collapseDuplicateReadings` needs the number FOR; treating it as
- * a plan number would break the collapse this runs to enable.
+ * The two are mirror images, and the name clause runs the opposite way in each:
+ * shape 1 needs the rows to be DIFFERENT accounts, shape 2 needs them to be the
+ * SAME one.
+ *
+ * Shape 2 is scoped to the FILE rather than the date, because a cover page and
+ * its detail pages are intrinsically one document. Shape 1 has to reach across
+ * files, and does: two of one household's plans routinely arrive as two PDFs,
+ * and a pass that could only see one file at a time found no contradiction in
+ * either and cleared nothing — measured, and it discarded $142,862.
+ *
+ * Both clear the number rather than choosing between the two readings. A number
+ * that has been shown to contradict itself is not evidence for either row, and
+ * every identity seam downstream — this file's bucket, and `matchAccount`, which
+ * auto-writes value, basis and holdings over a stored account on a last-4 hit —
+ * would otherwise take it at face value.
  */
-function dropPlanNumbers(
+function untrustworthyNumbers(readings: NumberReading[]): Set<string> {
+  const bad = new Set<string>();
+
+  const group = <K>(key: (r: NumberReading) => K): Map<K, NumberReading[]> => {
+    const groups = new Map<K, NumberReading[]>();
+    for (const r of readings) {
+      const list = groups.get(key(r));
+      if (list) list.push(r);
+      else groups.set(key(r), [r]);
+    }
+    return groups;
+  };
+
+  // Shape 1: one number, two accounts.
+  for (const rows of group((r) => `${r.scope}|${r.number}`).values()) {
+    if (rows.some((a, i) => rows.slice(i + 1).some((b) => disagreeOnBalance(a, b) && !sameNamedAccount(a, b)))) {
+      bad.add(rows[0].number);
+    }
+  }
+
+  // Shape 2: one account, two numbers.
+  for (const rows of group((r) => r.fileId).values()) {
+    for (let i = 0; i < rows.length; i += 1) {
+      for (let j = i + 1; j < rows.length; j += 1) {
+        const a = rows[i];
+        const b = rows[j];
+        if (a.number === b.number) continue;
+        if (a.value === undefined || a.value !== b.value) continue;
+        if (a.hasHoldings === b.hasHoldings) continue;
+        if (!sameNamedAccount(a, b)) continue;
+        bad.add(a.number);
+        bad.add(b.number);
+      }
+    }
+  }
+
+  return bad;
+}
+
+function disagreeOnBalance(a: NumberReading, b: NumberReading): boolean {
+  if (a.value === undefined || b.value === undefined) return false;
+  if (!Number.isFinite(a.value) || !Number.isFinite(b.value)) return false;
+  return !withinTolerance(a.value, b.value);
+}
+
+/**
+ * Whether two readings name the same account, with the masked suffixes OFF.
+ *
+ * With them on, "Savings x6049" and "Savings x8952" score exactly 0.5 and
+ * "401(k) Plan x7264" and "401(k) Plan x7265" score 0.93 — a separation earned
+ * entirely by the field this whole pass exists to distrust. Stripped, both
+ * pairs score 1.0, which honestly reports that the name carries no signal
+ * between two same-typed accounts and leaves the decision to the other clauses.
+ */
+function sameNamedAccount(a: NumberReading, b: NumberReading): boolean {
+  return (
+    nameSimilarity(stripLast4Suffix(a.name, a.number), stripLast4Suffix(b.name, b.number)) >=
+    NAME_AGREEMENT
+  );
+}
+
+/**
+ * Read every file's account rows as `NumberReading`s, so the judgement above is
+ * made once over the whole import rather than once per file.
+ */
+function numberReadings(fileResults: Record<string, ExtractionResult>): NumberReading[] {
+  const readings: NumberReading[] = [];
+  for (const [fileId, result] of Object.entries(fileResults)) {
+    for (const row of result.extracted.accounts) {
+      const number = accountLast4(row.accountNumberLast4);
+      if (number === null) continue;
+      readings.push({
+        number,
+        scope: orderableDate(row.statementDate) ?? fileId,
+        fileId,
+        value: row.value,
+        hasHoldings: (row.holdings?.length ?? 0) > 0,
+        name: row.name,
+      });
+    }
+  }
+  return readings;
+}
+
+/**
+ * Clear the account number on every row whose number is not an identity — one
+ * `untrustworthyNumbers` named, or one that was never four digits in the first
+ * place (a six-digit plan GROUP number, UBS's "FI" branch suffix).
+ *
+ * The name suffix goes with the field. `composeAccountName` built it from the
+ * same value, and it is the half that reaches the screen: "401(k) Savings Plan
+ * x3350", "Profit Sharing Plan x3350" and "ESOP x3350" are three plans wearing
+ * one group number.
+ */
+function clearUntrustedNumbers(
   rows: ExtractedAccount[],
+  untrusted: ReadonlySet<string>,
   sourceName: string,
   warnings: string[],
 ): ExtractedAccount[] {
-  const valuesByNumber = new Map<string, number[]>();
-  for (const row of rows) {
-    const number = accountLast4(row.accountNumberLast4);
-    if (number === null || row.value === undefined || !Number.isFinite(row.value)) continue;
-    const seen = valuesByNumber.get(number);
-    if (seen) seen.push(row.value);
-    else valuesByNumber.set(number, [row.value]);
-  }
-  const planNumbers = new Set<string>();
-  for (const [number, values] of valuesByNumber) {
-    if (values.some((v) => values.some((w) => !withinTolerance(v, w)))) planNumbers.add(number);
-  }
-
-  let stripped = false;
   const cleaned = rows.map((row) => {
     const raw = row.accountNumberLast4;
     if (raw === undefined) return row;
     const number = accountLast4(raw);
-    if (number !== null && !planNumbers.has(number)) return row;
-    stripped = true;
+    if (number !== null && !untrusted.has(number)) return row;
     return { ...row, accountNumberLast4: undefined, name: stripLast4Suffix(row.name, raw) };
   });
-  if (!stripped) return rows;
+
+  // Unchanged rows come back by reference, so this is also the "did anything
+  // change" test — no flag mutated inside the transform above.
+  if (cleaned.every((row, i) => row === rows[i])) return rows;
 
   warnings.push(
-    `${sourceName} labelled ${planNumbers.size > 0 ? "several accounts with the same number" : "an account with a number that is not a masked account number"}; ` +
-      "those numbers were dropped so unrelated accounts are not merged together. Check the account numbers before committing.",
+    `${sourceName} labelled one or more accounts with a number that is not reliably that ` +
+      "account's own — a plan or contract number, or a code printed in the page footer. Those " +
+      "numbers were dropped so unrelated accounts are not merged together; check the account " +
+      "numbers before committing.",
   );
   return cleaned;
 }
@@ -1204,6 +1273,11 @@ export function mergeAcrossFiles(
   const payload = emptyImportPayload();
   const decisions: MergeDecision[] = [];
 
+  // Computed over EVERY file before the per-file loop: whether a four-digit
+  // value is an account's identity is a fact about the whole import, not about
+  // the file the row happened to arrive in.
+  const untrusted = untrustworthyNumbers(numberReadings(fileResults));
+
   const accountRows: SourceRow<ExtractedAccount>[] = [];
   const incomeRows: SourceRow<ExtractedIncome>[] = [];
   const expenseRows: SourceRow<ExtractedExpense>[] = [];
@@ -1221,7 +1295,7 @@ export function mergeAcrossFiles(
     const sourceName = result.fileName;
 
     for (const row of collapseDuplicateReadings(
-      dropPlanNumbers(result.extracted.accounts, sourceName, payload.warnings),
+      clearUntrustedNumbers(result.extracted.accounts, untrusted, sourceName, payload.warnings),
       sourceName,
       payload.warnings,
     )) {

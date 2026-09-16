@@ -113,35 +113,31 @@ export async function loadChatReviewContext(
       : Promise.resolve([]),
   ]);
 
-  const ownerIdsByAccount = new Map<string, string[]>();
-  for (const r of ownerRows) {
-    // Entity- and external-beneficiary-owned rows have a null familyMemberId
-    // and contribute nothing to family-based owner comparison.
-    if (!r.familyMemberId) continue;
-    const list = ownerIdsByAccount.get(r.accountId);
-    if (list) list.push(r.familyMemberId);
-    else ownerIdsByAccount.set(r.accountId, [r.familyMemberId]);
-  }
-
-  // The same ownership rows read for DISPLAY rather than for scoring, so the
-  // link picker can name who an existing account belongs to. Entities count
-  // here and not above: "Sharesky Family Trust" is exactly what an advisor
-  // needs to see to tell a trust's brokerage account from the couple's own,
-  // even though it contributes no family_member id to `ownerAgreement`. An
-  // external beneficiary resolves to no name on either list and is skipped —
-  // `validateOwnersShape` does not accept one as an owner in the first place.
+  // Ownership read twice out of one pass: `ownerIds` are what `ownerAgreement`
+  // SCORES, and they cover family members alone; `ownerNames` are what the link
+  // picker SHOWS, and they cover whoever the account is actually titled to.
+  // Entities belong on the second list and not the first — "Sharesky Family
+  // Trust" is exactly what an advisor needs to see to tell a trust's brokerage
+  // account from the couple's own, even though it contributes no family_member
+  // id to compare. An external beneficiary resolves to no name on either list
+  // and is skipped; `validateOwnersShape` does not accept one as an owner.
   const nameOfFamilyMember = new Map(familyRows.map((f) => [f.id, familyMemberName(f)]));
   const nameOfEntity = new Map(entityRows.map((e) => [e.id, e.name]));
+  const ownerIdsByAccount = new Map<string, string[]>();
   const ownerNamesByAccount = new Map<string, string[]>();
   for (const r of ownerRows) {
+    if (r.familyMemberId) {
+      const ids = ownerIdsByAccount.get(r.accountId);
+      if (ids) ids.push(r.familyMemberId);
+      else ownerIdsByAccount.set(r.accountId, [r.familyMemberId]);
+    }
     const name =
       (r.familyMemberId ? nameOfFamilyMember.get(r.familyMemberId) : undefined) ??
       (r.entityId ? nameOfEntity.get(r.entityId) : undefined);
     if (!name) continue;
-    const list = ownerNamesByAccount.get(r.accountId);
-    if (list) {
-      if (!list.includes(name)) list.push(name);
-    } else ownerNamesByAccount.set(r.accountId, [name]);
+    const names = ownerNamesByAccount.get(r.accountId);
+    if (!names) ownerNamesByAccount.set(r.accountId, [name]);
+    else if (!names.includes(name)) names.push(name);
   }
 
   return {

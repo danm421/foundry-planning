@@ -119,14 +119,20 @@ export default function MatchLinkPicker({
                     <span className="tabular shrink-0 text-ink-2">{c.amount}</span>
                   ) : null}
                 </span>
-                <span className="flex w-full items-baseline justify-between gap-3">
-                  <span className="min-w-0 text-xs text-ink-4">{c.subtitle}</span>
-                  {typeof c.score === "number" ? (
-                    <span className="shrink-0 font-mono text-xs text-ink-4">
-                      {(c.score * 100).toFixed(0)}%
-                    </span>
-                  ) : null}
-                </span>
+                {/* Conditional as a whole: the wills, insurance and dependent
+                    pickers build candidates with neither a subtitle nor a
+                    score, and an unconditional row gives every one of their
+                    options a blank second line. */}
+                {c.subtitle || typeof c.score === "number" ? (
+                  <span className="flex w-full items-baseline justify-between gap-3">
+                    <span className="min-w-0 text-xs text-ink-4">{c.subtitle}</span>
+                    {typeof c.score === "number" ? (
+                      <span className="shrink-0 font-mono text-xs text-ink-4">
+                        {(c.score * 100).toFixed(0)}%
+                      </span>
+                    ) : null}
+                  </span>
+                ) : null}
               </button>
             </li>
           );
