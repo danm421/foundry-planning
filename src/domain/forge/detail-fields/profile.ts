@@ -299,10 +299,9 @@ export const PROFILE_ENTITIES: readonly DetailEntity[] = [
   // ───────────────────────────────────────────────────────────────────────────
   // Family Members — children, parents, siblings and anyone else in the tree.
   //
-  // No zod schema: both POST and PUT destructure the body by hand. The ONLY
-  // create-time validation is `if (!firstName) 400`; everything else goes
-  // straight into the insert, so an out-of-enum `relationship` reaches Postgres
-  // and comes back as a 500, not a 400.
+  // The POST parses its body with `familyMemberCreateSchema`. The PUT still
+  // destructures by hand, so an out-of-enum `relationship` on the UPDATE path
+  // reaches Postgres and comes back as a 500, not a 400.
   // ───────────────────────────────────────────────────────────────────────────
   {
     id: "family_member",
@@ -316,6 +315,7 @@ export const PROFILE_ENTITIES: readonly DetailEntity[] = [
       update: "/family-members/[memberId]",
       delete: "/family-members/[memberId]",
     },
+    createSchema: { module: "@/lib/schemas/family-members", export: "familyMemberCreateSchema" },
     scenarioScoped: false,
     documentEvidence: true,
     documentHints: [
@@ -365,7 +365,7 @@ export const PROFILE_ENTITIES: readonly DetailEntity[] = [
         ],
         defaultValue: "child",
         notes:
-          "NOT validated by the route — an unlisted value reaches the Postgres enum and surfaces as a 500, not a 400.",
+          "The create schema rejects an unlisted value with a 400. The PUT does not — there an unlisted value still reaches the Postgres enum and surfaces as a 500.",
       },
       {
         key: "dateOfBirth",
@@ -388,7 +388,7 @@ export const PROFILE_ENTITIES: readonly DetailEntity[] = [
         kind: "object",
         defaultValue: null,
         notes:
-          'Shape: Partial<Record<"PA"|"NJ"|"KY"|"NE"|"MD", "A"|"B"|"C"|"D">>. Server default is {} (auto-classify from relationship). Not validated by the route.',
+          'Shape: Partial<Record<"PA"|"NJ"|"KY"|"NE"|"MD", "A"|"B"|"C"|"D">>. Server default is {} (auto-classify from relationship). A partial map is fine; an unknown state or class letter is a 400 on create.',
       },
       {
         key: "claimedAsDependent",

@@ -7,6 +7,7 @@ import { recordAudit } from "@/lib/audit";
 import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
+import { familyMemberCreateSchema } from "@/lib/schemas/family-members";
 
 export const dynamic = "force-dynamic";
 
@@ -45,14 +46,17 @@ export async function POST(
     const { firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
 
-    const body = await request.json();
+    const parsed = familyMemberCreateSchema.safeParse(await request.json());
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: parsed.error.issues.map((i) => i.message).join("; ") },
+        { status: 400 },
+      );
+    }
     const {
       firstName, lastName, relationship, dateOfBirth, notes,
       domesticPartner, inheritanceClassOverride,
-    } = body;
-    if (!firstName) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
-    }
+    } = parsed.data;
 
     const [member] = await db
       .insert(familyMembers)
