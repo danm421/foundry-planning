@@ -74,7 +74,18 @@ export async function PATCH(
       .returning();
 
     if (!updated) {
-      return NextResponse.json({ error: "Related party not found" }, { status: 404 });
+      // Same predicate, same status — a better sentence. `commitMapRow` shows
+      // this text to the advisor, and a bare "not found" for a person they can
+      // see on the Household screen reads as a bug. It names the likely reason
+      // without claiming it: the other way to land here is a `partyId` from
+      // another household, which is genuinely not found.
+      return NextResponse.json(
+        {
+          error:
+            "Related party not found — the household's own client and spouse contacts are edited on the Household screen, not here.",
+        },
+        { status: 404 },
+      );
     }
 
     await recordAudit({

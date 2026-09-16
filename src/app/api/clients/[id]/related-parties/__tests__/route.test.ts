@@ -301,6 +301,17 @@ describe("related-parties route — PATCH", () => {
     expect(updateCalls[0]?.matched ?? 0).toBe(0);
   });
 
+  // The refusal is right; a bare "not found" for a person the advisor is
+  // looking at on the Household screen is not. `commitMapRow` renders this
+  // text, so it has to say where the contact is actually edited.
+  it("says where a household contact is edited instead of just 'not found'", async () => {
+    const res = await PATCH(req({ firstName: "Mallory" }, "PATCH"), partyParams("primary-1"));
+    expect(await res.json()).toEqual({
+      error:
+        "Related party not found — the household's own client and spouse contacts are edited on the Household screen, not here.",
+    });
+  });
+
   it("refuses a client the caller cannot edit, and writes nothing", async () => {
     vi.mocked(requireClientEditAccess).mockRejectedValueOnce(
       new ForbiddenError("Client not found or access denied"),
