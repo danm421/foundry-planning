@@ -415,6 +415,77 @@ export const PROFILE_ENTITIES: readonly DetailEntity[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // Related parties — the external people a document names: trustees,
+  // executors, powers of attorney, CPAs, attorneys.
+  //
+  // These live in the CRM's household contacts, NOT on a planning table, so
+  // this is the one entity whose table reaches a client through a parent's
+  // non-id column: `crm_household_contacts.household_id` matches
+  // `clients.crm_household_id`, and the client is then `clients.id`.
+  //
+  // `role` is listed but `writable: false` — `relatedPartyCreateSchema` fixes
+  // it to "other" and the extractor never sees it (a non-writable field is left
+  // out of the prompt, and `buildWriteRequest` drops it from the payload). The
+  // table allows exactly one `primary` and one `spouse` per household and both
+  // belong to the Household surface, so a row read off a document must never
+  // contend for either slot. It is listed rather than omitted because
+  // `schema-conformance.test.ts` requires every key of the named create schema
+  // to appear in the catalogue.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    id: "related_party",
+    label: "Related party",
+    tab: "profile",
+    surface: "CRM → Household → Contacts",
+    table: "crmHouseholdContacts",
+    routes: {
+      list: "/related-parties",
+      create: "/related-parties",
+      update: "/related-parties/[partyId]",
+    },
+    createSchema: { module: "@/lib/schemas/related-parties", export: "relatedPartyCreateSchema" },
+    scenarioScoped: false,
+    documentEvidence: true,
+    documentHints: [
+      "a trustee, successor trustee, executor, personal representative or guardian named in a trust or will",
+      "a power of attorney, attorney-in-fact or health care proxy",
+      "an advisor's professional team: CPA, accountant, attorney, insurance agent",
+      "a business partner or key employee named alongside a business interest",
+    ],
+    identity: ["firstName", "lastName"],
+    scopePath: { via: "parentColumn", through: "clients", on: "householdId", parentColumn: "crmHouseholdId" },
+    updateSemantics: { method: "PATCH" },
+    fields: [
+      { key: "firstName", label: "First Name", kind: "string", required: true },
+      { key: "lastName", label: "Last Name", kind: "string", required: true },
+      {
+        key: "relationshipLabel",
+        label: "Role",
+        kind: "string",
+        nullable: true,
+        notes: "Free text as the document words it: Trustee, Successor Trustee, Executor, CPA, Attorney.",
+        aliases: ["Trustee", "Successor Trustee", "Executor", "Personal Representative", "Power of Attorney", "CPA", "Attorney", "Guardian"],
+      },
+      { key: "email", label: "Email", kind: "string", nullable: true },
+      { key: "phone", label: "Phone", kind: "string", nullable: true },
+      { key: "mobile", label: "Mobile", kind: "string", nullable: true },
+      { key: "employer", label: "Firm", kind: "string", nullable: true, aliases: ["Employer", "Company"] },
+      { key: "occupation", label: "Occupation", kind: "string", nullable: true },
+      { key: "notes", label: "Notes", kind: "text", nullable: true },
+      {
+        key: "role",
+        label: "Contact role",
+        kind: "enum",
+        enumValues: ["other"],
+        defaultValue: "other",
+        writable: false,
+        notes:
+          "Fixed. `relatedPartyCreateSchema` accepts the literal \"other\" and nothing else, and the PATCH schema does not carry the key at all. The household's own primary and spouse rows are owned by the Household surface.",
+      },
+    ],
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   // Trusts (the `entities` table).
   //
   // ⚠️ `entities` has NO scenario column — one write is visible from every

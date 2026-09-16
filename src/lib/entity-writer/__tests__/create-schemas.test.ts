@@ -40,6 +40,21 @@ describe("createSchemaFor", () => {
     );
   });
 
+  /**
+   * The same end-to-end pin for `related_party`. Its registry key is the fourth
+   * hand-typed `module#export` string in the file, and the most likely refusal
+   * this entity will ever produce is the one below: a trust deed that prints
+   * "Trustee: Ada" names a first name and no surname, and `last_name` is
+   * `.notNull()` on `crm_household_contacts`.
+   */
+  it("resolves the related-party schema through its registry key", () => {
+    const entity = findEntity("related_party")!;
+    expect(createSchemaFor(entity)).toBeDefined();
+    expect(createSchemaRefusal(entity, { firstName: "Ada" })).toBe(
+      "Last Name: Last name is required",
+    );
+  });
+
   it("returns nothing for an entity that declares no create schema", () => {
     const entity = { ...findEntity("life_insurance_policy")!, createSchema: undefined };
     expect(createSchemaFor(entity)).toBeUndefined();

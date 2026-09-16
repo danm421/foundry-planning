@@ -4,6 +4,7 @@ import type { DetailEntity } from "@/domain/forge/detail-fields";
 import { disabilityPolicyCreateSchema } from "@/lib/schemas/disability-policies";
 import { familyMemberCreateSchema } from "@/lib/schemas/family-members";
 import { insurancePolicyCreateSchema } from "@/lib/schemas/insurance-policies";
+import { relatedPartyCreateSchema } from "@/lib/schemas/related-parties";
 
 /**
  * The route create schemas this module can validate a row against, keyed
@@ -31,6 +32,7 @@ const CREATE_SCHEMAS: Record<string, ZodType> = {
   "@/lib/schemas/insurance-policies#insurancePolicyCreateSchema": insurancePolicyCreateSchema,
   "@/lib/schemas/disability-policies#disabilityPolicyCreateSchema": disabilityPolicyCreateSchema,
   "@/lib/schemas/family-members#familyMemberCreateSchema": familyMemberCreateSchema,
+  "@/lib/schemas/related-parties#relatedPartyCreateSchema": relatedPartyCreateSchema,
 };
 
 export function createSchemaFor(entity: DetailEntity): ZodType | undefined {

@@ -204,6 +204,7 @@ describe("document-evidence marking", () => {
       "disability_policy",
       "family_member",
       "life_insurance_policy",
+      "related_party",
     ]);
   });
 
@@ -304,27 +305,64 @@ describe("document-evidence marking", () => {
       checked.push(entity.id);
       expect(entity.scopePath, `${entity.id} has no scopePath, so a generic loader would read it unscoped`).toBeDefined();
     }
-    // Named, not counted: a population that shrinks from three to two — or that
+    // Named, not counted: a population that shrinks from four to three — or that
     // swaps one entity for another — must fail here rather than pass quietly.
-    expect(checked.sort()).toEqual(["disability_policy", "family_member", "life_insurance_policy"]);
+    expect(checked.sort()).toEqual([
+      "disability_policy",
+      "family_member",
+      "life_insurance_policy",
+      "related_party",
+    ]);
   });
 
-  it("a join scope path names a real table and a real column", () => {
+  // BOTH parent-reaching variants, because a typo in either is a runtime throw
+  // rather than anything a type can catch. The loop was once `via !== "join"`
+  // and was therefore blind to `parentColumn` — the variant `related_party`
+  // uses, and the only one that reaches a client through a parent's NON-id
+  // column (`clients.crm_household_id`).
+  it("a parent-reaching scope path names a real table and real columns", () => {
+    const checkedJoin: string[] = [];
+    const checkedParentColumn: string[] = [];
+
     for (const entity of DETAIL_ENTITIES) {
       const path = entity.scopePath;
-      if (path?.via !== "join") continue;
+      if (path?.via !== "join" && path?.via !== "parentColumn") continue;
       const through = (schema as Record<string, unknown>)[path.through];
       expect(through, `${entity.id}.scopePath.through names "${path.through}", which is not a table in the schema`).toBeDefined();
-      expect(
-        Object.prototype.hasOwnProperty.call(through as object, "clientId"),
-        `${entity.id} joins through "${path.through}", which has no clientId to scope by`,
-      ).toBe(true);
+      if (path.via === "join") {
+        checkedJoin.push(entity.id);
+        expect(
+          Object.prototype.hasOwnProperty.call(through as object, "clientId"),
+          `${entity.id} joins through "${path.through}", which has no clientId to scope by`,
+        ).toBe(true);
+      } else {
+        checkedParentColumn.push(entity.id);
+        // The filter column for this variant is the parent's own `id`, and the
+        // JOIN lands on `parentColumn` — the mirror image of the join variant.
+        expect(
+          Object.prototype.hasOwnProperty.call(through as object, "id"),
+          `${entity.id} joins through "${path.through}", which has no id to scope by`,
+        ).toBe(true);
+        expect(
+          Object.prototype.hasOwnProperty.call(through as object, path.parentColumn),
+          `${entity.id}.scopePath.parentColumn names "${path.parentColumn}", which is not a column on ${path.through}`,
+        ).toBe(true);
+      }
       const own = (schema as Record<string, unknown>)[entity.table];
       expect(
         Object.prototype.hasOwnProperty.call(own as object, path.on),
         `${entity.id}.scopePath.on names "${path.on}", which is not a column on ${entity.table}`,
       ).toBe(true);
     }
+
+    // Non-vacuity, per variant. Blindness to `parentColumn` is exactly how this
+    // loop came to check nothing for `related_party`; a counter makes the next
+    // blind spot fail here instead of passing quietly.
+    expect(checkedJoin.length, "no join scope path was checked").toBeGreaterThan(0);
+    expect(
+      checkedParentColumn.length,
+      "no parentColumn scope path was checked — the loop has gone blind to the variant again",
+    ).toBeGreaterThan(0);
   });
 });
 
