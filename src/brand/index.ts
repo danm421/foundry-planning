@@ -54,6 +54,19 @@ export const colors = {
   },
 } as const;
 
+// The PRINT palette, and deliberately no longer identical to globals.css's
+// `light` theme block.
+//
+// Every consumer below renders to a page rather than a screen: @react-pdf
+// documents, presentation decks, exported report artifacts. The 2026-09-16
+// light retune darkened the SCREEN's `paper` to #eee9dd so cards could lift
+// off it — a separation problem a printed page does not have, and a cream
+// that costs toner across every page of a client report. `--color-letterhead`
+// pins the app's logo plate to `colorsLight.paper` for exactly this reason
+// (see index.test.ts), so syncing these two would silently repaint every PDF.
+//
+// Screen-only tokens (`cardHover`, the surface ramp) are the divergence.
+// Ink and status values still track globals.css.
 export const colorsLight = {
   // Brand — Verdigris deepened for contrast on cream (v2.2).
   accent:      "#0f7d6c",

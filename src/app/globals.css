@@ -150,7 +150,7 @@
 
 :root[data-theme="light"] {
   /* Brand — Verdigris deepened for contrast on cream (v2.2) */
-  --color-accent: #0f7d6c;
+  --color-accent: #0f7766;
   --color-accent-ink: #0b5d50;
   --color-accent-deep: #08463b;
   --color-accent-on: #f3fbf8;
@@ -163,22 +163,22 @@
   --color-secondary-wash: rgba(79, 70, 229, 0.16);
 
   /* Surfaces */
-  --color-paper: #fefdf8;
-  --color-card: #faf8ef;
-  --color-card-2: #f5f1e6;
-  --color-card-hover: #faf7ee;
-  --color-card-active: #efeada;
+  --color-paper: #eee9dd;
+  --color-card: #fffefa;
+  --color-card-2: #f2efe4;
+  --color-card-hover: #e7e4da;
+  --color-card-active: #dcdad0;
 
   /* Ink — ink-3/ink-4 hold ≥4.5:1 on paper, card and card-2 (WCAG AA; 2026-09-04 a11y audit) */
   --color-ink: #1a1d27;
   --color-ink-2: #474c59;
-  --color-ink-3: #5c5f69;
-  --color-ink-4: #6a6c71;
+  --color-ink-3: #53565d;
+  --color-ink-4: #66686d;
 
   /* Hairlines */
-  --color-hair: #e8e4d6;
-  --color-hair-2: #d9d2bd;
-  --color-hair-3: #c0b596;
+  --color-hair: #c1bdaf;
+  --color-hair-2: #a6a193;
+  --color-hair-3: #8c846c;
 
   /* Filled button surfaces — a CONTROL's fill, not a hairline or a hue.
 
@@ -196,13 +196,13 @@
      hairline token spent on hover borders across CRM, and lightening it for
      this would brighten all of them. */
   --color-control: #9e9169;
-  --color-action: #0f7d6c;
+  --color-action: #0f7766;
   --color-action-ink: #0b5d50;
   --color-action-on: #f3fbf8;
 
   /* Status — deeper for legibility on cream */
   --color-good: #047857;
-  --color-warn: #b45309;
+  --color-warn: #a84f09;
   --color-crit: #b91c1c;
 
   /* Category taxonomy — deepened for cream surfaces */

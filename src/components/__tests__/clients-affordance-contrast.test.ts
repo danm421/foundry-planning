@@ -129,9 +129,21 @@ describe("Clients list affordance contrast (globals.css ratchet)", () => {
       expect(contrast(token(theme, "control"), card())).toBeGreaterThanOrEqual(2.5);
     });
 
-    it("keeps the control fill more present than the hairline it replaced", () => {
+    // Originally compared against `hair-3`. That held while `hair-3` was a
+    // faint decorative hairline, but the 2026-09-16 light retune promoted it
+    // to the INTERACTIVE boundary and pushed it to 3.69:1 on cream so it
+    // clears WCAG 1.4.11's 3:1 — which is the whole point of that work. A
+    // border that has to be seen and a fill that has to carry a label are no
+    // longer the same kind of thing, and on cream no value satisfies both
+    // "3:1 on paper" and "dimmer than control on card" at once.
+    //
+    // What the clause actually protects is unchanged and still pinned: the
+    // grey fill must outrank the app's structural DIVIDER, so the secondary
+    // button never reads as a hairline box. `control >= hair-2` says that
+    // directly, and the absolute >= 2.5 floor above still guards the fill.
+    it("keeps the control fill more present than a structural divider", () => {
       expect(contrast(token(theme, "control"), card())).toBeGreaterThanOrEqual(
-        contrast(token(theme, "hair-3"), card()),
+        contrast(token(theme, "hair-2"), card()),
       );
     });
 
