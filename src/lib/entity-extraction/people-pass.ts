@@ -18,6 +18,16 @@ export const PEOPLE_ENTITY_IDS = [
 
 const PEOPLE = new Set<string>(PEOPLE_ENTITY_IDS);
 
+/**
+ * Route each classified entity to its pass, and report the pages spanned.
+ *
+ * `claimedPages` is every page some entity's classified REGION spans — what
+ * the classifier named, not what was read. A range that holds no readable
+ * text, or that runs past the end of the document, still counts. That
+ * over-claim is deliberate: a skipped re-read of an empty page costs nothing,
+ * whereas under-claiming lets two passes read one page and emit a duplicate
+ * table — the harm the complement exists to prevent.
+ */
 export function splitRegions(regions: DocumentRegions): {
   people: DocumentRegions;
   map: DocumentRegions;

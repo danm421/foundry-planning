@@ -7,6 +7,13 @@ describe("splitRegions", () => {
     family_member: [[2, 3] as [number, number]],
     related_party: [],
     life_insurance_policy: [[7, 9] as [number, number]],
+    // Declared AFTER the [7, 9] range on purpose: page 4 therefore enters the
+    // page set out of numeric order, so `claimedPages` only comes back
+    // ascending if something actually sorts it. Also deliberately an id
+    // OUTSIDE today's five-entity document-evidence vocabulary — an entity
+    // `splitRegions` does not know must still fall to the map half, which is
+    // the shape Phase 3C's open-world pass produces.
+    annuity_contract: [[4, 4] as [number, number]],
     disability_policy: [],
   };
 
@@ -18,7 +25,11 @@ describe("splitRegions", () => {
 
   it("leaves every other entity to the map pass", () => {
     const { map } = splitRegions(regions);
-    expect(Object.keys(map).sort()).toEqual(["disability_policy", "life_insurance_policy"]);
+    expect(Object.keys(map).sort()).toEqual([
+      "annuity_contract",
+      "disability_policy",
+      "life_insurance_policy",
+    ]);
   });
 
   it("never lets one entity appear in both halves", () => {
@@ -27,7 +38,7 @@ describe("splitRegions", () => {
   });
 
   it("reports every claimed page once, sorted, so a later pass can take the complement", () => {
-    expect(splitRegions(regions).claimedPages).toEqual([1, 2, 3, 7, 8, 9]);
+    expect(splitRegions(regions).claimedPages).toEqual([1, 2, 3, 4, 7, 8, 9]);
   });
 
   it("claims no page for an entity with no ranges", () => {
