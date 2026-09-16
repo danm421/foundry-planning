@@ -2,7 +2,7 @@ import { keyedRowIdBucket } from "@/lib/imports/assemble/merge-across-files";
 import { custodianMatches, normalizeCustodian } from "@/lib/imports/normalize-custodian";
 import { livingHoldings, tombstonedHoldings } from "@/lib/imports/living-rows";
 import { holdingMarketValue } from "@/lib/extraction/normalize-holdings";
-import { holdingKey } from "@/lib/extraction/holdings-completion";
+import { holdingKey } from "@/lib/extraction/normalize-holdings";
 import type { Annotated } from "@/lib/imports/types";
 import type { ExtractedAccount, ExtractedHolding } from "@/lib/extraction/types";
 

@@ -3,11 +3,16 @@
 // Task 7: proves annotateReconciliation is wired into BOTH orchestrators.
 //
 // The first describe block (verbatim from the task brief) documents the
-// LEAK each merger has on its own: mergeExtractionResults dedupes nothing at
-// all, and mergeAcrossFiles never buckets a W-2 with its own paystubs since
-// their row names differ. Both blocks call annotateReconciliation BY HAND,
-// so they go green the moment reconcile-compensation.ts exists (Task 6) and
-// prove nothing about the wiring this task adds.
+// LEAK each merger has on its own: mergeExtractionResults does not dedupe
+// INCOMES at all, and mergeAcrossFiles never buckets a W-2 with its own
+// paystubs since their row names differ. Both blocks call
+// annotateReconciliation BY HAND, so they go green the moment
+// reconcile-compensation.ts exists (Task 6) and prove nothing about the
+// wiring this task adds.
+//
+// INCOMES, specifically: mergeExtractionResults does clean its ACCOUNTS rows
+// (accountRowsFor, see merge-account-rules.test.ts). Incomes it still merely
+// concatenates, which is why reconciliation has to exist on this path.
 //
 // The second describe block is what actually proves the wiring: it drives
 // runImportMatching and runAssemble themselves (mocking only the DB, audit,

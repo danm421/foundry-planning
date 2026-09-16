@@ -1,5 +1,6 @@
 import type { ExtractionResult } from "@/lib/extraction/types";
 import { coerceYearRef } from "@/lib/milestones";
+import { accountRowsFor, untrustedNumbersForImport } from "./assemble/merge-across-files";
 import {
   emptyImportPayload,
   type Annotated,
@@ -23,11 +24,28 @@ type RowWithMaybeProvenance = {
  * `match: { kind: "new" }` so the UI can render the diff before the
  * matching pass runs. Singleton fields (primary, spouse) keep the first
  * non-empty value across files; conflicts are recorded in warnings.
+ *
+ * Accounts are the one section this cleans before copying, via
+ * `accountRowsFor` — four passes that are all scoped to a SINGLE document
+ * (read its comment for the order and why). Across files this is still a
+ * concat that joins nothing: two statements for one account arrive as two
+ * rows, and resolving that is `mergeAcrossFiles`/`mergeSection`'s job, which
+ * has a statement date and a bucket key to reason with that this does not.
  */
 export function mergeExtractionResults(
   files: FileExtraction[],
 ): ImportPayload {
   const payload = emptyImportPayload();
+
+  // Computed over EVERY file before the per-file loop, for the same reason
+  // `mergeAcrossFiles` does it: whether a four-digit value is an account's
+  // identity is a fact about the whole import, not about the file the row
+  // arrived in. `FileExtraction[]` is the same content the judgement wants in
+  // a different shape, so this rebuilds the map rather than changing the
+  // signature every caller of this merge already passes.
+  const untrusted = untrustedNumbersForImport(
+    Object.fromEntries(files.map((f) => [f.fileId, f.result])),
+  );
 
   for (const { fileId, result } of files) {
     const fallbackProvenance = (section: string): Provenance => ({
@@ -55,7 +73,15 @@ export function mergeExtractionResults(
       endYearRef: coerceYearRef(row.endYearRef),
     });
 
-    for (const row of result.extracted.accounts) {
+    // `accountRowsFor`, not `result.extracted.accounts` — the four per-file
+    // cleanup passes (ghost rows, a debt filed as an asset, a fabricated or
+    // plan or page-footer number, one account read twice in one document) were
+    // shipped on `mergeAcrossFiles` only, which left them off the `/match`
+    // route this merge backs: Details→Import→Extract, the onboarding drawer
+    // and Forge mode "updating". Same documents, same defects, three surfaces.
+    // Four of that fix's nine rules; the remaining five are cross-file and
+    // need machinery this merge does not have (see the header).
+    for (const row of accountRowsFor(result, untrusted, payload.warnings)) {
       payload.accounts.push(annotateRow(row, "accounts"));
     }
     for (const row of result.extracted.incomes) {

@@ -12,7 +12,7 @@ import type {
 } from "@/lib/extraction/types";
 import { accountLast4, documentVouchesForLast4 } from "@/lib/extraction/account-number";
 import { stripLast4Suffix } from "@/lib/extraction/condense-account-name";
-import { holdingKey } from "@/lib/extraction/holdings-completion";
+import { holdingKey } from "@/lib/extraction/normalize-holdings";
 import {
   emptyImportPayload,
   type Annotated,
@@ -605,6 +605,20 @@ function numberReadings(fileResults: Record<string, ExtractionResult>): NumberRe
     }
   }
   return readings;
+}
+
+/**
+ * The four-digit numbers this WHOLE import has shown not to be identities.
+ *
+ * One exported entry point rather than two halves, so both merges make the
+ * same judgement over the same input and cannot drift. The file-scoped half
+ * is not here — `accountRowsFor` unions `unvouchedNumbers` in at the point of
+ * use, and says why neither subsumes the other.
+ */
+export function untrustedNumbersForImport(
+  fileResults: Record<string, ExtractionResult>,
+): Set<string> {
+  return untrustworthyNumbers(numberReadings(fileResults));
 }
 
 /**
@@ -1716,9 +1730,9 @@ function stampHoldingIds(accounts: Annotated<ExtractedAccount>[]): void {
  * a number is not an identity if THIS document never printed it as one.
  * Neither subsumes the other.
  */
-function accountRowsFor(
+export function accountRowsFor(
   result: ExtractionResult,
-  untrusted: Set<string>,
+  untrusted: ReadonlySet<string>,
   warnings: string[],
 ): ExtractedAccount[] {
   const sourceName = result.fileName;
@@ -1739,7 +1753,7 @@ export function mergeAcrossFiles(
   // Computed over EVERY file before the per-file loop: whether a four-digit
   // value is an account's identity is a fact about the whole import, not about
   // the file the row happened to arrive in.
-  const untrusted = untrustworthyNumbers(numberReadings(fileResults));
+  const untrusted = untrustedNumbersForImport(fileResults);
 
   const accountRows: SourceRow<ExtractedAccount>[] = [];
   const incomeRows: SourceRow<ExtractedIncome>[] = [];
