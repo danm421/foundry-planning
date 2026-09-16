@@ -1015,19 +1015,19 @@ export default function BalanceSheetView({
       {/* KPI row */}
       {!isWizard && (
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-          <Kpi label="Assets (in estate)" value={fmt(totalInEstate)} accent="text-gray-100" />
+          <Kpi label="Assets (in estate)" value={fmt(totalInEstate)} accent="text-ink" />
           <Kpi
             label="Portfolio assets"
             value={fmt(portfolioAssets)}
-            accent="text-gray-100"
+            accent="text-ink"
             subtitle={liquidAccounts.length ? `${liquidAccounts.length} liquid account${liquidAccounts.length > 1 ? "s" : ""}` : "—"}
           />
-          <Kpi label="Liabilities" value={`(${fmt(totalLiabilities)})`} accent="text-red-400" />
-          <Kpi label="Net Worth" value={fmt(netWorth)} accent={netWorth >= 0 ? "text-green-500" : "text-red-500"} />
+          <Kpi label="Liabilities" value={`(${fmt(totalLiabilities)})`} accent="text-crit" />
+          <Kpi label="Net Worth" value={fmt(netWorth)} accent={netWorth >= 0 ? "text-good" : "text-crit"} />
           <Kpi
             label="Out of estate"
             value={fmt(totalOutOfEstate)}
-            accent="text-amber-300"
+            accent="text-warn"
             subtitle={outOfEstate.length ? `${outOfEstate.length} asset${outOfEstate.length > 1 ? "s" : ""}` : "—"}
           />
         </div>
@@ -1201,7 +1201,7 @@ export default function BalanceSheetView({
                       label={note.name}
                       labelBadge={
                         note.linkedTrustEntityId ? (
-                          <span className="inline-flex shrink-0 items-center rounded-full bg-amber-900/30 px-2 py-0.5 text-xs text-amber-300">
+                          <span className="inline-flex shrink-0 items-center rounded-full bg-warn/15 px-2 py-0.5 text-xs text-warn">
                             → {entityMap[note.linkedTrustEntityId]?.name ?? "Trust"}
                           </span>
                         ) : undefined
@@ -1214,15 +1214,15 @@ export default function BalanceSheetView({
                     <a
                       key={`flat-${e.id}`}
                       href={withScenario(`/clients/${clientId}/details/family`)}
-                      className="flex items-center justify-between px-4 py-2 hover:bg-gray-800/60"
+                      className="flex items-center justify-between px-4 py-2 hover:bg-card-hover"
                     >
                       <div>
-                        <div className="text-sm font-medium text-gray-100">{e.name}</div>
-                        <div className="text-xs text-gray-400">
+                        <div className="text-sm font-medium text-ink">{e.name}</div>
+                        <div className="text-xs text-ink-3">
                           {ENTITY_TYPE_LABELS[e.entityType ?? "other"] ?? "Entity"} · edit in Family
                         </div>
                       </div>
-                      <span className="text-sm font-medium text-gray-100">{fmt(Number(e.value ?? "0"))}</span>
+                      <span className="text-sm font-medium text-ink">{fmt(Number(e.value ?? "0"))}</span>
                     </a>
                   ))}
                 </CategoryGroup>
@@ -1237,7 +1237,7 @@ export default function BalanceSheetView({
         <Panel
           title="Liabilities"
           totalLabel={`Total ${fmt(totalLiabilities)}`}
-          totalClassName="text-red-400"
+          totalClassName="text-crit"
           actions={
             <div className="flex items-center gap-2">
               {canEdit && liabilities.length > 0 && (
@@ -1260,8 +1260,8 @@ export default function BalanceSheetView({
           {topLevelLiabilities.length === 0 ? (
             <EmptyRow message="No liabilities yet." />
           ) : (
-            <div className="overflow-hidden rounded-md border border-gray-700 bg-gray-900/60">
-              <div className="divide-y divide-gray-800">
+            <div className="overflow-hidden rounded-md border border-hair bg-card">
+              <div className="divide-y divide-hair">
                 {topLevelLiabilities.map((l) => (
                   <Row
                     key={l.id}
@@ -1344,12 +1344,12 @@ export default function BalanceSheetView({
                           onSave={(next) =>
                             saveLiabilityField(l.id, { balance: String(Math.abs(next)) })
                           }
-                          className="min-w-[88px] rounded-sm px-1.5 py-0.5 text-right text-sm font-medium text-red-400 hover:bg-card-hover hover:ring-1 hover:ring-inset hover:ring-hair-2"
+                          className="min-w-[88px] rounded-sm px-1.5 py-0.5 text-right text-sm font-medium text-crit hover:bg-card-hover hover:ring-1 hover:ring-inset hover:ring-hair-2"
                         />
                       ) : undefined
                     }
                     value={`(${fmt(currentYearBalance(l))})`}
-                    valueClassName="text-red-400"
+                    valueClassName="text-crit"
                   />
                 ))}
               </div>
@@ -1361,15 +1361,15 @@ export default function BalanceSheetView({
 
       {/* Out of Estate */}
       {!isWizard && (outOfEstate.length > 0 || outOfEstateBusinessEntityRows.length > 0) && (
-        <div className="rounded-lg border border-amber-900/40 bg-amber-950/10 p-4">
+        <div className="rounded-lg border border-warn/40 bg-warn/10 p-4">
           <div className="mb-3 flex items-baseline justify-between">
             <div>
-              <h3 className="text-sm font-semibold uppercase tracking-wider text-amber-300">Out of Estate</h3>
-              <p className="text-xs text-amber-200/60">
+              <h3 className="text-sm font-semibold uppercase tracking-wider text-warn">Out of Estate</h3>
+              <p className="text-xs text-warn/80">
                 Assets held outside the household — irrevocable trusts and entities not owned by household members. Not included in the household net-worth calculation above.
               </p>
             </div>
-            <span className="text-sm font-medium text-amber-200">{fmt(totalOutOfEstate)}</span>
+            <span className="text-sm font-medium text-warn">{fmt(totalOutOfEstate)}</span>
           </div>
 
           <div className="space-y-3">
@@ -1378,41 +1378,41 @@ export default function BalanceSheetView({
               const entityName = entityMap[entityId]?.name ?? "Unknown entity";
               const expanded = expandedOutOfEstate.has(entityId);
               return (
-                <div key={entityId} className="overflow-hidden rounded-md border border-amber-900/40 bg-gray-900/60">
+                <div key={entityId} className="overflow-hidden rounded-md border border-warn/40 bg-card">
                   <button
                     type="button"
                     onClick={() => toggleOutOfEstate(entityId)}
                     aria-expanded={expanded}
-                    className={`flex w-full items-center justify-between bg-amber-900/15 px-3 py-2 text-left hover:bg-amber-900/25 ${expanded ? "border-b border-amber-900/40" : ""}`}
+                    className={`flex w-full items-center justify-between bg-warn/10 px-3 py-2 text-left hover:bg-warn/20 ${expanded ? "border-b border-warn/40" : ""}`}
                   >
                     <span className="flex items-center gap-2">
-                      <span className="flex h-4 w-4 shrink-0 items-center justify-center text-amber-200/70">
+                      <span className="flex h-4 w-4 shrink-0 items-center justify-center text-warn/80">
                         {expanded ? <ChevronDown /> : <ChevronRight />}
                       </span>
-                      <span className="text-xs font-semibold uppercase tracking-wider text-amber-200">
+                      <span className="text-xs font-semibold uppercase tracking-wider text-warn">
                         {entityName}
                       </span>
                     </span>
-                    <span className="text-xs font-medium text-amber-200/80">{fmt(subtotal)}</span>
+                    <span className="text-xs font-medium text-warn">{fmt(subtotal)}</span>
                   </button>
                   {expanded && (
-                    <div className="divide-y divide-gray-800">
+                    <div className="divide-y divide-hair">
                       {rows.map((a) => (
                         <div
                           key={a.id}
                           onClick={canEdit ? () => handleAccountClick(a) : undefined}
-                          className={`flex items-center justify-between px-4 py-2 ${canEdit ? "cursor-pointer hover:bg-gray-800/60" : ""}`}
+                          className={`flex items-center justify-between px-4 py-2 ${canEdit ? "cursor-pointer hover:bg-card-hover" : ""}`}
                         >
                           <div className="min-w-0">
                             <div className="flex min-w-0 items-center gap-1.5">
-                              <span className="truncate text-sm font-medium text-gray-100">{a.name}</span>
+                              <span className="truncate text-sm font-medium text-ink">{a.name}</span>
                               {a.linkedSource && <LinkedSourceBadge source={a.linkedSource} />}
                             </div>
-                            <div className="text-xs text-gray-400">
+                            <div className="text-xs text-ink-3">
                               {CATEGORY_LABELS[a.category]} · {growthDisplay(a)}
                             </div>
                           </div>
-                          <span className="text-sm font-medium text-gray-100">{fmt(a.value)}</span>
+                          <span className="text-sm font-medium text-ink">{fmt(a.value)}</span>
                         </div>
                       ))}
                     </div>
@@ -1424,38 +1424,38 @@ export default function BalanceSheetView({
             {outOfEstateBusinessEntityRows.length > 0 && (() => {
               const expanded = expandedOutOfEstate.has("__business_interests__");
               return (
-                <div className="overflow-hidden rounded-md border border-amber-900/40 bg-gray-900/60">
+                <div className="overflow-hidden rounded-md border border-warn/40 bg-card">
                   <button
                     type="button"
                     onClick={() => toggleOutOfEstate("__business_interests__")}
                     aria-expanded={expanded}
-                    className={`flex w-full items-center justify-between bg-amber-900/15 px-3 py-2 text-left hover:bg-amber-900/25 ${expanded ? "border-b border-amber-900/40" : ""}`}
+                    className={`flex w-full items-center justify-between bg-warn/10 px-3 py-2 text-left hover:bg-warn/20 ${expanded ? "border-b border-warn/40" : ""}`}
                   >
                     <span className="flex items-center gap-2">
-                      <span className="flex h-4 w-4 shrink-0 items-center justify-center text-amber-200/70">
+                      <span className="flex h-4 w-4 shrink-0 items-center justify-center text-warn/80">
                         {expanded ? <ChevronDown /> : <ChevronRight />}
                       </span>
-                      <span className="text-xs font-semibold uppercase tracking-wider text-amber-200">
+                      <span className="text-xs font-semibold uppercase tracking-wider text-warn">
                         Business interests
                       </span>
                     </span>
-                    <span className="text-xs font-medium text-amber-200/80">{fmt(outOfEstateBusinessEntityTotal)}</span>
+                    <span className="text-xs font-medium text-warn">{fmt(outOfEstateBusinessEntityTotal)}</span>
                   </button>
                   {expanded && (
-                    <div className="divide-y divide-gray-800">
+                    <div className="divide-y divide-hair">
                       {outOfEstateBusinessEntityRows.map((e) => (
                         <a
                           key={e.id}
                           href={withScenario(`/clients/${clientId}/details/family`)}
-                          className="flex items-center justify-between px-4 py-2 hover:bg-gray-800/60"
+                          className="flex items-center justify-between px-4 py-2 hover:bg-card-hover"
                         >
                           <div>
-                            <div className="text-sm font-medium text-gray-100">{e.name}</div>
-                            <div className="text-xs text-gray-400">
+                            <div className="text-sm font-medium text-ink">{e.name}</div>
+                            <div className="text-xs text-ink-3">
                               {ENTITY_TYPE_LABELS[e.entityType ?? "other"] ?? "Entity"} · edit in Family
                             </div>
                           </div>
-                          <span className="text-sm font-medium text-gray-100">{fmt(Number(e.value ?? "0"))}</span>
+                          <span className="text-sm font-medium text-ink">{fmt(Number(e.value ?? "0"))}</span>
                         </a>
                       ))}
                     </div>
@@ -1701,10 +1701,10 @@ function Kpi({
   subtitle?: string;
 }) {
   return (
-    <div className="rounded-lg border border-gray-800 bg-gray-900/60 px-4 py-3">
-      <p className="text-xs font-medium uppercase tracking-wider text-gray-400">{label}</p>
+    <div className="rounded-lg border border-hair bg-card px-4 py-3">
+      <p className="text-xs font-medium uppercase tracking-wider text-ink-3">{label}</p>
       <p className={`mt-1 text-lg font-bold ${accent}`}>{value}</p>
-      {subtitle && <p className="text-xs text-gray-400">{subtitle}</p>}
+      {subtitle && <p className="text-xs text-ink-3">{subtitle}</p>}
     </div>
   );
 }
@@ -1723,11 +1723,11 @@ function Panel({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-gray-800 bg-gray-900/30">
-      <div className="flex items-center justify-between rounded-t-lg border-b border-gray-800 bg-gray-900 px-4 py-3">
+    <div className="rounded-lg border border-hair bg-card">
+      <div className="flex items-center justify-between rounded-t-lg border-b border-hair bg-card-2 px-4 py-3">
         <div>
-          <h2 className="text-sm font-semibold text-gray-100">{title}</h2>
-          <p className={`text-xs ${totalClassName ?? "text-gray-400"}`}>{totalLabel}</p>
+          <h2 className="text-sm font-semibold text-ink">{title}</h2>
+          <p className={`text-xs ${totalClassName ?? "text-ink-3"}`}>{totalLabel}</p>
         </div>
         {actions}
       </div>
@@ -1743,7 +1743,7 @@ function EditToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
       className={`rounded-md border px-3 py-1 text-xs font-medium ${
         on
           ? "border-accent bg-accent/15 text-accent-ink"
-          : "border-gray-600 bg-gray-900 text-gray-300 hover:bg-gray-800"
+          : "border-hair-3 bg-card-2 text-ink-2 hover:bg-card-hover"
       }`}
     >
       {on ? "Done" : "Edit"}
@@ -1752,5 +1752,5 @@ function EditToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
 }
 
 function EmptyRow({ message }: { message: string }) {
-  return <div className="px-4 py-8 text-center text-sm text-gray-400">{message}</div>;
+  return <div className="px-4 py-8 text-center text-sm text-ink-3">{message}</div>;
 }

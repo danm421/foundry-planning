@@ -88,7 +88,7 @@ export function TaxAdjustmentsList({
   return (
     <section>
       <div className="mb-3 flex items-center justify-between gap-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-300">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-3">
           Tax adjustments
         </h2>
         {canEdit && (
@@ -102,20 +102,20 @@ export function TaxAdjustmentsList({
         )}
       </div>
 
-      <p className="mb-3 text-sm text-gray-400">
+      <p className="mb-3 text-sm text-ink-3">
         Income that has already happened. The plan includes it in the tax math — brackets,
         Medicare premiums, how much of Social Security is taxable — but no money moves, because
         the accounts already reflect it.
       </p>
 
-      <div className="overflow-hidden rounded-md border border-gray-800 bg-gray-900/40">
+      <div className="overflow-hidden rounded-md border border-hair bg-card">
         {rows.length === 0 ? (
-          <div className="px-4 py-8 text-center text-sm text-gray-400">
-            No tax adjustments yet. Click <span className="text-gray-300">+ Add tax adjustment</span> to start.
+          <div className="px-4 py-8 text-center text-sm text-ink-3">
+            No tax adjustments yet. Click <span className="text-ink-2">+ Add tax adjustment</span> to start.
           </div>
         ) : (
           <>
-            <div className={`${ROW_GRID} border-b border-gray-800 bg-gray-900/60 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400`}>
+            <div className={`${ROW_GRID} border-b border-hair bg-card-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-3`}>
               <span>Treatment</span>
               <span>Description</span>
               <span>Owner</span>
@@ -124,21 +124,21 @@ export function TaxAdjustmentsList({
               <span className="text-right">Tax paid</span>
               <span className="text-right">Actions</span>
             </div>
-            <ol className="divide-y divide-gray-800">
+            <ol className="divide-y divide-hair">
               {rows.map((r) => {
                 const paid = taxPaidDollars(r);
                 return (
                   <li key={r.id} className={`${ROW_GRID} text-sm`}>
-                    <span className="truncate text-xs text-gray-300">{TAX_TYPE_LABELS[r.taxType] ?? r.taxType}</span>
-                    <span className="truncate text-gray-100">{r.name ?? "—"}</span>
-                    <span className="truncate text-xs text-gray-400">{OWNER_LABELS[r.owner]}</span>
-                    <span className="truncate text-xs tabular-nums text-gray-400">
+                    <span className="truncate text-xs text-ink-3">{TAX_TYPE_LABELS[r.taxType] ?? r.taxType}</span>
+                    <span className="truncate text-ink">{r.name ?? "—"}</span>
+                    <span className="truncate text-xs text-ink-3">{OWNER_LABELS[r.owner]}</span>
+                    <span className="truncate text-xs tabular-nums text-ink-3">
                       {r.startYear}–{r.endYear}
                     </span>
-                    <span className="justify-self-end tabular-nums text-gray-200">
+                    <span className="justify-self-end tabular-nums text-ink-2">
                       {fmt.format(r.annualAmount)}
                     </span>
-                    <span className="justify-self-end tabular-nums text-xs text-gray-400">
+                    <span className="justify-self-end tabular-nums text-xs text-ink-3">
                       {r.withheldMode === "none" ? "—" : fmt.format(paid)}
                     </span>
                     {canEdit && (
@@ -148,7 +148,7 @@ export function TaxAdjustmentsList({
                           title="Edit"
                           aria-label={`Edit ${r.name ?? "tax adjustment"}`}
                           onClick={() => setEditing(r)}
-                          className="rounded border border-gray-700 px-2 py-0.5 text-xs text-gray-200 hover:bg-gray-800"
+                          className="rounded border border-hair-3 px-2 py-0.5 text-xs text-ink-2 hover:bg-card-hover"
                         >
                           Edit
                         </button>
@@ -177,9 +177,9 @@ export function TaxAdjustmentsList({
         )}
       </div>
 
-      <div className="mt-3 flex justify-between rounded-md border border-gray-800 bg-gray-900/40 px-4 py-2 text-sm">
-        <span className="text-gray-300">Total for {currentYear}</span>
-        <span className="tabular-nums font-semibold text-gray-100">{fmt.format(currentYearTotal)}</span>
+      <div className="mt-3 flex justify-between rounded-md border border-hair bg-card px-4 py-2 text-sm">
+        <span className="text-ink-3">Total for {currentYear}</span>
+        <span className="tabular-nums font-semibold text-ink">{fmt.format(currentYearTotal)}</span>
       </div>
 
       {canEdit && (adding || editing) && (

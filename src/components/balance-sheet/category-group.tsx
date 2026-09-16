@@ -20,27 +20,27 @@ function CategoryGroup({
   children: React.ReactNode;
 }) {
   return (
-    <div className="overflow-hidden rounded-md border border-gray-700 bg-gray-900/60">
+    <div className="overflow-hidden rounded-md border border-hair bg-card">
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={expanded}
-        className={`flex w-full items-center justify-between bg-gray-800/60 px-3 py-2 text-left hover:bg-gray-800 ${expanded ? "border-b border-gray-700" : ""}`}
+        className={`flex w-full items-center justify-between bg-card-2 px-3 py-2 text-left hover:bg-card-hover ${expanded ? "border-b border-hair" : ""}`}
       >
         <span className="flex items-center gap-2">
-          <span className="flex h-4 w-4 shrink-0 items-center justify-center text-gray-400">
+          <span className="flex h-4 w-4 shrink-0 items-center justify-center text-ink-3">
             {expanded ? <ChevronDown /> : <ChevronRight />}
           </span>
-          <span className="text-xs font-semibold uppercase tracking-wider text-gray-200">{label}</span>
+          <span className="text-xs font-semibold uppercase tracking-wider text-ink-2">{label}</span>
           {tag && (
-            <span className="rounded border border-amber-900/40 bg-amber-900/20 px-1.5 py-0.5 text-[10px] font-medium normal-case tracking-normal text-amber-300">
+            <span className="rounded border border-warn/40 bg-warn/10 px-1.5 py-0.5 text-[10px] font-medium normal-case tracking-normal text-warn">
               {tag}
             </span>
           )}
         </span>
-        <span className="text-xs font-medium text-gray-300">{total}</span>
+        <span className="text-xs font-medium text-ink-3">{total}</span>
       </button>
-      {expanded && <div className="divide-y divide-gray-800">{children}</div>}
+      {expanded && <div className="divide-y divide-hair">{children}</div>}
     </div>
   );
 }

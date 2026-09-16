@@ -65,7 +65,7 @@ export function LinkedSourceBadge({ source }: { source: LinkedSource }) {
       role="img"
       aria-label={label}
       title={label}
-      className="inline-flex shrink-0 cursor-help items-center text-gray-500"
+      className="inline-flex shrink-0 cursor-help items-center text-ink-4"
     >
       <LinkIcon />
     </span>

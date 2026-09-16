@@ -89,7 +89,7 @@ export function DeductionsItemizedList({
     <section>
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-300">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-3">
             Itemized deductions
           </h2>
           <HelpTip text="The bracket engine compares your itemized total to the standard deduction (inflated by the tax-inflation rate) and uses whichever is larger. Each row inflates with its own growth rate." />
@@ -105,14 +105,14 @@ export function DeductionsItemizedList({
         )}
       </div>
 
-      <div className="overflow-hidden rounded-md border border-gray-800 bg-gray-900/40">
+      <div className="overflow-hidden rounded-md border border-hair bg-card">
         {rows.length === 0 ? (
-          <div className="px-4 py-8 text-center text-sm text-gray-400">
-            No itemized deductions yet. Click <span className="text-gray-300">+ Add deduction</span> to start.
+          <div className="px-4 py-8 text-center text-sm text-ink-3">
+            No itemized deductions yet. Click <span className="text-ink-2">+ Add deduction</span> to start.
           </div>
         ) : (
           <>
-            <div className={`${ROW_GRID} border-b border-gray-800 bg-gray-900/60 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400`}>
+            <div className={`${ROW_GRID} border-b border-hair bg-card-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-3`}>
               <span>Type</span>
               <span>Name</span>
               <span>Owner</span>
@@ -121,24 +121,24 @@ export function DeductionsItemizedList({
               <span className="text-right">Growth</span>
               <span className="text-right">Actions</span>
             </div>
-            <ol className="divide-y divide-gray-800">
+            <ol className="divide-y divide-hair">
               {rows.map((r) => {
                 const isSaltType = r.type === "property_tax";
                 return (
                   <li key={r.id} className={`${ROW_GRID} text-sm`}>
-                    <span className="flex items-center gap-1 truncate text-xs text-gray-300">
+                    <span className="flex items-center gap-1 truncate text-xs text-ink-3">
                       <span className="truncate">{TYPE_LABELS[r.type]}</span>
                       {isSaltType && <HelpTip text="Subject to the SALT cap." />}
                     </span>
-                    <span className="truncate text-gray-100">{r.name ?? "—"}</span>
-                    <span className="truncate text-xs text-gray-400">{OWNER_LABELS[r.owner]}</span>
-                    <span className="truncate text-xs tabular-nums text-gray-400">
+                    <span className="truncate text-ink">{r.name ?? "—"}</span>
+                    <span className="truncate text-xs text-ink-3">{OWNER_LABELS[r.owner]}</span>
+                    <span className="truncate text-xs tabular-nums text-ink-3">
                       {r.startYear}–{r.endYear}
                     </span>
-                    <span className="justify-self-end tabular-nums text-gray-200">
+                    <span className="justify-self-end tabular-nums text-ink-2">
                       {fmt.format(r.annualAmount)}
                     </span>
-                    <span className="justify-self-end tabular-nums text-xs text-gray-400">
+                    <span className="justify-self-end tabular-nums text-xs text-ink-3">
                       {r.growthRate > 0 ? `${(r.growthRate * 100).toFixed(1)}%` : "—"}
                     </span>
                     {canEdit && (
@@ -148,7 +148,7 @@ export function DeductionsItemizedList({
                           title="Edit"
                           aria-label={`Edit ${r.name ?? "deduction"}`}
                           onClick={() => setEditing(r)}
-                          className="rounded border border-gray-700 px-2 py-0.5 text-xs text-gray-200 hover:bg-gray-800"
+                          className="rounded border border-hair-3 px-2 py-0.5 text-xs text-ink-2 hover:bg-card-hover"
                         >
                           Edit
                         </button>
@@ -177,9 +177,9 @@ export function DeductionsItemizedList({
         )}
       </div>
 
-      <div className="mt-3 flex justify-between rounded-md border border-gray-800 bg-gray-900/40 px-4 py-2 text-sm">
-        <span className="text-gray-300">Total itemized for {currentYear}</span>
-        <span className="tabular-nums font-semibold text-gray-100">{fmt.format(itemizedTotal)}</span>
+      <div className="mt-3 flex justify-between rounded-md border border-hair bg-card px-4 py-2 text-sm">
+        <span className="text-ink-3">Total itemized for {currentYear}</span>
+        <span className="tabular-nums font-semibold text-ink">{fmt.format(itemizedTotal)}</span>
       </div>
 
       {canEdit && (adding || editing) && (

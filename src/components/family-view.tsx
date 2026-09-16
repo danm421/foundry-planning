@@ -5,6 +5,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { giftScenarioRemove } from "@/lib/gifts/gift-write";
 import { useClientAccess } from "./client-access-provider";
+import { inputClassName, selectBaseClassName } from "@/components/forms/input-styles";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
 import AddClientDialog from "./add-client-dialog";
 import EntityDialog from "./entity-dialog";
@@ -537,13 +538,13 @@ export default function FamilyView({
         <section>
           <header className="mb-3 flex items-center justify-between">
             <div>
-              <h2 className="text-xl font-bold text-gray-100">Household</h2>
-              <p className="text-xs text-gray-400">Client and Co-client. Edit from the Clients list.</p>
+              <h2 className="text-xl font-bold text-ink">Household</h2>
+              <p className="text-xs text-ink-3">Client and Co-client. Edit from the Clients list.</p>
             </div>
             {canEdit && (
               <button
                 onClick={() => setEditProfileOpen(true)}
-                className="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-gray-700"
+                className="rounded-md border border-hair-3 bg-card-2 px-3 py-1.5 text-xs font-medium text-ink-2 hover:bg-card-hover"
               >
                 Edit profile
               </button>
@@ -571,7 +572,7 @@ export default function FamilyView({
                 ]}
               />
             ) : (
-              <div className="flex items-center justify-center rounded-lg border border-dashed border-gray-800 bg-gray-900/40 p-6 text-sm text-gray-400">
+              <div className="flex items-center justify-center rounded-lg border border-dashed border-hair bg-card p-6 text-sm text-ink-3">
                 No Co-client on file
               </div>
             )}
@@ -590,8 +591,8 @@ export default function FamilyView({
       <section>
         <header className="mb-3 flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-bold text-gray-100">Family Members</h2>
-            <p className="text-xs text-gray-400">Children, grandchildren, parents, and others.</p>
+            <h2 className="text-xl font-bold text-ink">Family Members</h2>
+            <p className="text-xs text-ink-3">Children, grandchildren, parents, and others.</p>
           </div>
           <div className="flex items-center gap-2">
             {canEdit && members.length > 0 && (
@@ -600,7 +601,7 @@ export default function FamilyView({
                 className={`rounded-md border px-3 py-1 text-xs font-medium ${
                   membersEdit
                     ? "border-accent bg-accent/15 text-accent-ink"
-                    : "border-gray-600 bg-gray-900 text-gray-300 hover:bg-gray-800"
+                    : "border-hair-3 bg-card-2 text-ink-2 hover:bg-card-hover"
                 }`}
               >
                 {membersEdit ? "Done" : "Edit"}
@@ -621,7 +622,7 @@ export default function FamilyView({
         </header>
 
         {claimedAsDependentError && (
-          <p className="mb-3 rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">
+          <p className="mb-3 rounded bg-crit/10 px-3 py-2 text-sm text-crit">
             {claimedAsDependentError}
           </p>
         )}
@@ -629,10 +630,10 @@ export default function FamilyView({
         {members.length === 0 ? (
           <EmptyState label="No family members added yet." />
         ) : (
-          <div className="overflow-hidden rounded-lg border border-gray-800 bg-gray-900/50">
-            <table className="min-w-full divide-y divide-gray-800">
-              <thead className="bg-gray-800/60">
-                <tr className="text-left text-xs font-medium uppercase tracking-wider text-gray-300">
+          <div className="overflow-hidden rounded-lg border border-hair bg-card">
+            <table className="min-w-full divide-y divide-hair">
+              <thead className="bg-card-2">
+                <tr className="text-left text-xs font-medium uppercase tracking-wider text-ink-3">
                   <th className="px-4 py-2">Name</th>
                   <th className="px-4 py-2">Relationship</th>
                   <th className="px-4 py-2">Age</th>
@@ -641,24 +642,24 @@ export default function FamilyView({
                   <th className="px-4 py-2" />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-800">
+              <tbody className="divide-y divide-hair">
                 {(["child", "stepchild", "grandchild", "parent", "sibling", "other"] as Relationship[]).flatMap((rel) =>
                   byRel[rel].map((m) => (
                     <tr
                       key={m.id}
-                      className={canEdit ? "cursor-pointer hover:bg-gray-800/50" : ""}
+                      className={canEdit ? "cursor-pointer hover:bg-card-hover" : ""}
                       onClick={canEdit ? () => {
                         if (membersEdit) return;
                         setEditingMember(m);
                         setMemberDialogOpen(true);
                       } : undefined}
                     >
-                      <td className="px-4 py-2 text-sm text-gray-100">
+                      <td className="px-4 py-2 text-sm text-ink">
                         {m.firstName} {m.lastName ?? ""}
                       </td>
-                      <td className="px-4 py-2 text-sm text-gray-300">{RELATIONSHIP_LABELS[m.relationship]}</td>
-                      <td className="px-4 py-2 text-sm text-gray-300">{computeAge(m.dateOfBirth)}</td>
-                      <td className="px-4 py-2 text-sm text-gray-400 truncate max-w-[260px]">{m.notes ?? ""}</td>
+                      <td className="px-4 py-2 text-sm text-ink-3">{RELATIONSHIP_LABELS[m.relationship]}</td>
+                      <td className="px-4 py-2 text-sm text-ink-3">{computeAge(m.dateOfBirth)}</td>
+                      <td className="px-4 py-2 text-sm text-ink-3 truncate max-w-[260px]">{m.notes ?? ""}</td>
                       <td className="px-4 py-2 text-sm">
                         {DEPENDENT_ELIGIBLE_RELATIONSHIPS.has(m.relationship) ? (
                           <select
@@ -670,14 +671,14 @@ export default function FamilyView({
                               e.stopPropagation();
                               handleClaimedAsDependentChange(m, e.target.value as DependentOverride);
                             }}
-                            className="rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                            className={`${selectBaseClassName} disabled:cursor-not-allowed`}
                           >
                             <option value="auto">Auto</option>
                             <option value="yes">Yes</option>
                             <option value="no">No</option>
                           </select>
                         ) : (
-                          <span className="text-gray-400">—</span>
+                          <span className="text-ink-3">—</span>
                         )}
                       </td>
                       <td className="px-4 py-2 text-right">
@@ -709,8 +710,8 @@ export default function FamilyView({
       <section>
         <header className="mb-3 flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-bold text-gray-100">Trusts</h2>
-            <p className="text-xs text-gray-400">
+            <h2 className="text-xl font-bold text-ink">Trusts</h2>
+            <p className="text-xs text-ink-3">
               Trusts that can own accounts, incomes, or expenses.
             </p>
           </div>
@@ -721,7 +722,7 @@ export default function FamilyView({
                 className={`rounded-md border px-3 py-1 text-xs font-medium ${
                   entitiesEdit
                     ? "border-accent bg-accent/15 text-accent-ink"
-                    : "border-gray-600 bg-gray-900 text-gray-300 hover:bg-gray-800"
+                    : "border-hair-3 bg-card-2 text-ink-2 hover:bg-card-hover"
                 }`}
               >
                 {entitiesEdit ? "Done" : "Edit"}
@@ -744,29 +745,29 @@ export default function FamilyView({
         {entities.length === 0 ? (
           <EmptyState label="No trusts yet. Add a trust to own assets separately." />
         ) : (
-          <div className="overflow-hidden rounded-lg border border-gray-800 bg-gray-900/50">
-            <table className="min-w-full divide-y divide-gray-800">
-              <thead className="bg-gray-800/60">
-                <tr className="text-left text-xs font-medium uppercase tracking-wider text-gray-300">
+          <div className="overflow-hidden rounded-lg border border-hair bg-card">
+            <table className="min-w-full divide-y divide-hair">
+              <thead className="bg-card-2">
+                <tr className="text-left text-xs font-medium uppercase tracking-wider text-ink-3">
                   <th className="px-4 py-2">Name</th>
                   <th className="px-4 py-2">Type</th>
                   <th className="px-4 py-2">Notes</th>
                   <th className="px-4 py-2" />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-800">
+              <tbody className="divide-y divide-hair">
                 {entities.map((e) => (
                   <tr
                     key={e.id}
-                    className={canEdit ? "cursor-pointer hover:bg-gray-800/50" : ""}
+                    className={canEdit ? "cursor-pointer hover:bg-card-hover" : ""}
                     onClick={canEdit ? () => {
                       if (entitiesEdit) return;
                       openEntityEditor(e);
                     } : undefined}
                   >
-                    <td className="px-4 py-2 text-sm text-gray-100">{e.name}</td>
-                    <td className="px-4 py-2 text-sm text-gray-300">{ENTITY_LABELS[e.entityType]}</td>
-                    <td className="px-4 py-2 text-sm text-gray-400 truncate max-w-[260px]">{e.notes ?? ""}</td>
+                    <td className="px-4 py-2 text-sm text-ink">{e.name}</td>
+                    <td className="px-4 py-2 text-sm text-ink-3">{ENTITY_LABELS[e.entityType]}</td>
+                    <td className="px-4 py-2 text-sm text-ink-3 truncate max-w-[260px]">{e.notes ?? ""}</td>
                     <td className="px-4 py-2 text-right">
                       {entitiesEdit && (
                         <button
@@ -795,8 +796,8 @@ export default function FamilyView({
       <section>
         <header className="mb-3 flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-bold text-gray-100">Revocable Trusts</h2>
-            <p className="text-xs text-gray-400">
+            <h2 className="text-xl font-bold text-ink">Revocable Trusts</h2>
+            <p className="text-xs text-ink-3">
               Living trusts that tag accounts for probate-avoidance tracking.
             </p>
           </div>
@@ -1053,18 +1054,18 @@ export default function FamilyView({
 
 function PersonCard({ name, badge, fields }: { name: string; badge: string; fields: [string, string][] }) {
   return (
-    <div className="rounded-lg border border-gray-800 bg-gray-900/60 p-4">
+    <div className="rounded-lg border border-hair bg-card p-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-gray-100">{name}</h3>
-        <span className="rounded bg-gray-800 px-2 py-0.5 text-xs font-medium uppercase tracking-wider text-gray-300">
+        <h3 className="text-sm font-semibold text-ink">{name}</h3>
+        <span className="rounded bg-card-2 px-2 py-0.5 text-xs font-medium uppercase tracking-wider text-ink-3">
           {badge}
         </span>
       </div>
       <dl className="mt-3 space-y-1.5 text-sm">
         {fields.map(([k, v]) => (
           <div key={k} className="flex justify-between gap-4">
-            <dt className="text-gray-400">{k}</dt>
-            <dd className="text-gray-200">{v}</dd>
+            <dt className="text-ink-3">{k}</dt>
+            <dd className="text-ink-2">{v}</dd>
           </div>
         ))}
       </dl>
@@ -1152,9 +1153,9 @@ function GiftsSection(props: {
   const closeDialog = () => { setAdding(false); setEditingGift(null); setEditingSeries(null); };
 
   return (
-    <section className="mt-6 rounded-lg border border-gray-700 bg-gray-900 p-4">
+    <section className="mt-6 rounded-lg border border-hair bg-card p-4">
       <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-300">Gifts</h3>
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-ink-3">Gifts</h3>
         {props.canEdit && (
           <button
             type="button"
@@ -1202,11 +1203,11 @@ function GiftsSection(props: {
       )}
 
       {props.gifts.length === 0 && props.series.length === 0 ? (
-        <p className="text-sm text-gray-400">No gifts recorded.</p>
+        <p className="text-sm text-ink-3">No gifts recorded.</p>
       ) : (
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-xs uppercase text-gray-300">
+            <tr className="text-left text-xs uppercase text-ink-3">
               <th className="px-2 py-1">When</th>
               <th className="px-2 py-1">Grantor</th>
               <th className="px-2 py-1 text-right">Amount</th>
@@ -1217,7 +1218,7 @@ function GiftsSection(props: {
           </thead>
           <tbody>
             {props.gifts.map((g) => (
-              <tr key={`gift-${g.id}`} className="border-t border-gray-800">
+              <tr key={`gift-${g.id}`} className="border-t border-hair">
                 <td className="px-2 py-1">{g.year}</td>
                 <td className="px-2 py-1 capitalize">{g.grantor === "joint" ? "Both (split)" : g.grantor}</td>
                 <td className="px-2 py-1 text-right">
@@ -1233,14 +1234,14 @@ function GiftsSection(props: {
                   {props.canEdit && (
                     <>
                       <button type="button" onClick={() => { setEditingGift(g); setEditingSeries(null); setAdding(false); }} className="mr-3 text-xs text-accent-ink hover:underline">Edit</button>
-                      <button type="button" onClick={() => deleteGift(g.id)} className="text-xs text-red-400 hover:text-red-300">Delete</button>
+                      <button type="button" onClick={() => deleteGift(g.id)} className="text-xs text-crit hover:underline">Delete</button>
                     </>
                   )}
                 </td>
               </tr>
             ))}
             {props.series.map((s) => (
-              <tr key={`series-${s.id}`} className="border-t border-gray-800">
+              <tr key={`series-${s.id}`} className="border-t border-hair">
                 <td className="px-2 py-1">{s.startYear}–{s.endYear}/yr</td>
                 <td className="px-2 py-1 capitalize">{s.grantor === "joint" ? "Both (split)" : s.grantor}</td>
                 <td className="px-2 py-1 text-right">
@@ -1252,7 +1253,7 @@ function GiftsSection(props: {
                   {props.canEdit && (
                     <>
                       <button type="button" onClick={() => { setEditingSeries(s); setEditingGift(null); setAdding(false); }} className="mr-3 text-xs text-accent-ink hover:underline">Edit</button>
-                      <button type="button" onClick={() => deleteSeries(s.id)} className="text-xs text-red-400 hover:text-red-300">Delete</button>
+                      <button type="button" onClick={() => deleteSeries(s.id)} className="text-xs text-crit hover:underline">Delete</button>
                     </>
                   )}
                 </td>
@@ -1268,7 +1269,7 @@ function GiftsSection(props: {
 
 function EmptyState({ label }: { label: string }) {
   return (
-    <div className="rounded-lg border border-dashed border-gray-800 bg-gray-900/40 p-8 text-center text-sm text-gray-400">
+    <div className="rounded-lg border border-dashed border-hair bg-card p-8 text-center text-sm text-ink-3">
       {label}
     </div>
   );
@@ -1297,8 +1298,8 @@ function ExternalBeneficiariesSection({
     <section>
       <header className="mb-3 flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold text-gray-100">External Beneficiaries</h2>
-          <p className="text-xs text-gray-400">
+          <h2 className="text-xl font-bold text-ink">External Beneficiaries</h2>
+          <p className="text-xs text-ink-3">
             Charities or individuals outside the immediate household.
           </p>
         </div>
@@ -1309,7 +1310,7 @@ function ExternalBeneficiariesSection({
               className={`rounded-md border px-3 py-1 text-xs font-medium ${
                 editMode
                   ? "border-accent bg-accent/15 text-accent-ink"
-                  : "border-gray-600 bg-gray-900 text-gray-300 hover:bg-gray-800"
+                  : "border-hair-3 bg-card-2 text-ink-2 hover:bg-card-hover"
               }`}
             >
               {editMode ? "Done" : "Edit"}
@@ -1330,23 +1331,23 @@ function ExternalBeneficiariesSection({
       </header>
 
       {error && (
-        <p className="mb-2 rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>
+        <p className="mb-2 rounded bg-crit/10 px-3 py-2 text-sm text-crit">{error}</p>
       )}
 
       {externals.length === 0 && !adding ? (
         <EmptyState label="No external beneficiaries yet." />
       ) : (
-        <div className="overflow-hidden rounded-lg border border-gray-800 bg-gray-900/50">
-          <table className="min-w-full divide-y divide-gray-800">
-            <thead className="bg-gray-800/60">
-              <tr className="text-left text-xs font-medium uppercase tracking-wider text-gray-300">
+        <div className="overflow-hidden rounded-lg border border-hair bg-card">
+          <table className="min-w-full divide-y divide-hair">
+            <thead className="bg-card-2">
+              <tr className="text-left text-xs font-medium uppercase tracking-wider text-ink-3">
                 <th className="px-4 py-2">Name</th>
                 <th className="px-4 py-2">Kind</th>
                 <th className="px-4 py-2">Notes</th>
                 <th className="px-4 py-2" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-800">
+            <tbody className="divide-y divide-hair">
               {externals.map((x) =>
                 editingId === x.id ? (
                   <ExternalBeneficiaryRowForm
@@ -1365,15 +1366,15 @@ function ExternalBeneficiariesSection({
                 ) : (
                   <tr
                     key={x.id}
-                    className={canEdit ? "cursor-pointer hover:bg-gray-800/50" : ""}
+                    className={canEdit ? "cursor-pointer hover:bg-card-hover" : ""}
                     onClick={canEdit ? () => {
                       if (editMode) return;
                       setEditingId(x.id);
                     } : undefined}
                   >
-                    <td className="px-4 py-2 text-sm text-gray-100">{x.name}</td>
-                    <td className="px-4 py-2 text-sm text-gray-300 capitalize">{x.kind}</td>
-                    <td className="px-4 py-2 text-sm text-gray-400 truncate max-w-[260px]">
+                    <td className="px-4 py-2 text-sm text-ink">{x.name}</td>
+                    <td className="px-4 py-2 text-sm text-ink-3 capitalize">{x.kind}</td>
+                    <td className="px-4 py-2 text-sm text-ink-3 truncate max-w-[260px]">
                       {x.notes ?? ""}
                     </td>
                     <td className="px-4 py-2 text-right">
@@ -1483,20 +1484,20 @@ function ExternalBeneficiaryRowForm({
   }
 
   return (
-    <tr className="bg-gray-800/30">
+    <tr className="bg-card-2/40">
       <td className="px-4 py-2">
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Name"
-          className="w-full rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-accent focus:outline-none"
+          className={inputClassName}
         />
       </td>
       <td className="px-4 py-2">
         <select
           value={kind}
           onChange={(e) => setKind(e.target.value as "charity" | "individual")}
-          className="rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-accent focus:outline-none"
+          className={selectBaseClassName}
         >
           <option value="charity">Charity</option>
           <option value="individual">Individual</option>
@@ -1507,7 +1508,7 @@ function ExternalBeneficiaryRowForm({
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           placeholder="Notes"
-          className="w-full rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-accent focus:outline-none"
+          className={inputClassName}
         />
       </td>
       <td className="px-4 py-2 text-right whitespace-nowrap">
@@ -1520,7 +1521,7 @@ function ExternalBeneficiaryRowForm({
         </button>
         <button
           onClick={onCancel}
-          className="rounded-md border border-gray-600 bg-gray-900 px-3 py-1 text-xs font-medium text-gray-300 hover:bg-gray-800"
+          className="rounded-md border border-hair-3 bg-card-2 px-3 py-1 text-xs font-medium text-ink-2 hover:bg-card-hover"
         >
           Cancel
         </button>

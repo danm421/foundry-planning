@@ -47,14 +47,14 @@ function BusinessRowGroup({
   const hasChildren = children_.length > 0 || childLiabilities.length > 0 || ownedIncomes.length > 0;
   return (
     <>
-      <div className="flex items-center justify-between px-4 py-2 hover:bg-gray-800/60">
+      <div className="flex items-center justify-between px-4 py-2 hover:bg-card-hover">
         <button
           type="button"
           onClick={(e) => {
             e.stopPropagation();
             onToggle();
           }}
-          className="mr-2 flex h-5 w-5 shrink-0 items-center justify-center text-gray-400 hover:text-gray-100 disabled:opacity-40"
+          className="mr-2 flex h-5 w-5 shrink-0 items-center justify-center text-ink-3 hover:text-ink disabled:opacity-40"
           aria-label={expanded ? "Collapse" : "Expand"}
           aria-expanded={expanded}
           disabled={!hasChildren}
@@ -67,15 +67,15 @@ function BusinessRowGroup({
         >
           <div className="min-w-0">
             <div className="flex min-w-0 items-center gap-1.5">
-              <span className="truncate text-sm font-medium text-gray-100">{biz.name}</span>
+              <span className="truncate text-sm font-medium text-ink">{biz.name}</span>
               {biz.linkedSource && <LinkedSourceBadge source={biz.linkedSource} />}
             </div>
-            <div className="truncate text-xs text-gray-400">
+            <div className="truncate text-xs text-ink-3">
               {ownerDisplay(biz)} · {growthDisplay(biz)}
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-sm font-medium text-gray-100">
+            <span className="text-sm font-medium text-ink">
               {new Intl.NumberFormat("en-US", {
                 style: "currency",
                 currency: "USD",
@@ -98,28 +98,28 @@ function BusinessRowGroup({
         </div>
       </div>
       {expanded && hasChildren && (
-        <div className="bg-gray-950/40 px-4 py-2 pl-12">
+        <div className="bg-paper/40 px-4 py-2 pl-12">
           {children_.length > 0 && (
             <div className="mb-2">
-              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-4">
                 Owned accounts
               </div>
-              <div className="divide-y divide-gray-800/60 overflow-hidden rounded-md border border-gray-800/80">
+              <div className="divide-y divide-hair overflow-hidden rounded-md border border-hair">
                 {children_.map((c) => (
                   <div
                     key={c.id}
                     onClick={onClickChild ? () => onClickChild(c) : undefined}
-                    className={`flex items-center justify-between px-3 py-1.5 ${onClickChild ? "cursor-pointer hover:bg-gray-800/60" : ""}`}
+                    className={`flex items-center justify-between px-3 py-1.5 ${onClickChild ? "cursor-pointer hover:bg-card-hover" : ""}`}
                   >
                     <div className="min-w-0">
                       <div className="flex min-w-0 items-center gap-1.5">
-                        <span className="truncate text-[13px] text-gray-100">{c.name}</span>
+                        <span className="truncate text-[13px] text-ink">{c.name}</span>
                         {c.linkedSource && <LinkedSourceBadge source={c.linkedSource} />}
                       </div>
-                      <div className="truncate text-[11px] text-gray-500">{c.category}</div>
+                      <div className="truncate text-[11px] text-ink-4">{c.category}</div>
                     </div>
                     <div className="flex items-center gap-3">
-                      <span className="text-[13px] text-gray-100">
+                      <span className="text-[13px] text-ink">
                         {new Intl.NumberFormat("en-US", {
                           style: "currency",
                           currency: "USD",
@@ -146,20 +146,20 @@ function BusinessRowGroup({
           )}
           {childLiabilities.length > 0 && (
             <div className="mb-2">
-              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-4">
                 Owed liabilities
               </div>
-              <div className="divide-y divide-gray-800/60 overflow-hidden rounded-md border border-gray-800/80">
+              <div className="divide-y divide-hair overflow-hidden rounded-md border border-hair">
                 {childLiabilities.map((l) => (
                   <div
                     key={l.id}
                     onClick={onClickChildLiability ? () => onClickChildLiability(l) : undefined}
-                    className={`flex items-center justify-between px-3 py-1.5 ${onClickChildLiability ? "cursor-pointer hover:bg-gray-800/60" : ""}`}
+                    className={`flex items-center justify-between px-3 py-1.5 ${onClickChildLiability ? "cursor-pointer hover:bg-card-hover" : ""}`}
                   >
                     <div className="min-w-0">
-                      <div className="truncate text-[13px] text-gray-100">{l.name}</div>
+                      <div className="truncate text-[13px] text-ink">{l.name}</div>
                     </div>
-                    <span className="text-[13px] text-red-400">
+                    <span className="text-[13px] text-crit">
                       (
                       {new Intl.NumberFormat("en-US", {
                         style: "currency",
@@ -187,13 +187,13 @@ function BusinessRowGroup({
               {incomesPopoverOpen && (
                 <div
                   role="dialog"
-                  className="absolute left-0 z-20 mt-1 w-56 overflow-hidden rounded-md border border-gray-700 bg-gray-900 shadow-lg"
+                  className="absolute left-0 z-20 mt-1 w-56 overflow-hidden rounded-md border border-hair bg-card shadow-lg"
                 >
                   <ul className="max-h-56 overflow-y-auto py-1">
                     {ownedIncomes.map((i) => (
                       <li
                         key={i.id}
-                        className="px-3 py-1.5 text-[12px] text-gray-200"
+                        className="px-3 py-1.5 text-[12px] text-ink-2"
                       >
                         {i.name}
                       </li>

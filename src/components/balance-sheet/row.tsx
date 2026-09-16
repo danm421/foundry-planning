@@ -51,10 +51,10 @@ function Row({
     <div
       onClick={hasInlineSlots ? undefined : onClick}
       data-row-clickable={rowClickable ? "true" : undefined}
-      className={`flex items-center justify-between px-4 py-2 ${rowClickable ? "cursor-pointer hover:bg-gray-800/60" : ""}`}
+      className={`flex items-center justify-between px-4 py-2 ${rowClickable ? "cursor-pointer hover:bg-card-hover" : ""}`}
     >
       <div className="min-w-0">
-        <div className="flex min-w-0 items-center gap-1.5 text-sm font-medium text-gray-100">
+        <div className="flex min-w-0 items-center gap-1.5 text-sm font-medium text-ink">
           {nameOpensEditor ? (
             <button
               type="button"
@@ -76,13 +76,13 @@ function Row({
           )}
           {labelBadge}
         </div>
-        {subLabel && <div className="truncate text-xs text-gray-400">{subLabel}</div>}
+        {subLabel && <div className="truncate text-xs text-ink-3">{subLabel}</div>}
       </div>
       <div data-testid="row-cells" className="flex shrink-0 items-center gap-3">
         {ownerSlot && <span className="w-[92px] truncate text-right">{ownerSlot}</span>}
         {rateSlot && <span className="w-[64px] text-right">{rateSlot}</span>}
         {valueSlot ?? (
-          <span className={`text-sm font-medium ${valueClassName ?? "text-gray-100"}`}>{value}</span>
+          <span className={`text-sm font-medium ${valueClassName ?? "text-ink"}`}>{value}</span>
         )}
         {editMode && deletable && onDelete ? (
           <button
@@ -105,7 +105,7 @@ function Row({
               e.stopPropagation();
               onEdit();
             }}
-            className="text-gray-500 hover:text-accent"
+            className="text-ink-4 hover:text-accent"
             aria-label={`Edit ${label}`}
             title={`Edit ${label}`}
           >

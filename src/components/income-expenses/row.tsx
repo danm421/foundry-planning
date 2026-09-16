@@ -60,8 +60,8 @@ function Row({
       onClick={hasInlineSlots ? undefined : onClick}
       data-row-clickable={rowClickable ? "true" : undefined}
       className={`flex items-center justify-between gap-2 px-4 py-2 ${
-        rowClickable ? "cursor-pointer hover:bg-gray-800/60" : ""
-      } ${outOfEstate ? "bg-amber-950/10" : ""}`}
+        rowClickable ? "cursor-pointer hover:bg-card-hover" : ""
+      } ${outOfEstate ? "bg-warn/10" : ""}`}
     >
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
@@ -79,23 +79,23 @@ function Row({
                 onEdit!();
               }}
               title={label}
-              className="cursor-pointer truncate text-left text-sm font-medium text-gray-100 hover:text-accent"
+              className="cursor-pointer truncate text-left text-sm font-medium text-ink hover:text-accent"
             >
               {label}
             </button>
           ) : (
-            <span title={label} className="truncate text-sm font-medium text-gray-100">
+            <span title={label} className="truncate text-sm font-medium text-ink">
               {label}
             </span>
           )}
           {outOfEstate && (
-            <span className="rounded-sm bg-amber-900/30 px-1.5 py-0.5 text-xs font-medium text-amber-300">
+            <span className="rounded-sm bg-warn/15 px-1.5 py-0.5 text-xs font-medium text-warn">
               OOE
             </span>
           )}
         </div>
         {metaLine && (
-          <div title={metaLine} className="truncate text-xs text-gray-400">
+          <div title={metaLine} className="truncate text-xs text-ink-3">
             {metaLine}
           </div>
         )}
@@ -107,7 +107,7 @@ function Row({
         {startSlot ? (
           <span className="w-[52px] text-right">{startSlot}</span>
         ) : starts ? (
-          <span className="min-w-[72px] text-right text-xs text-gray-400">{starts}</span>
+          <span className="min-w-[72px] text-right text-xs text-ink-3">{starts}</span>
         ) : null}
         {/* 52px holds a four-digit year plus the cell's hover padding, and
             matches the width `InlineYearCell` arms its custom-year input at — so
@@ -119,7 +119,7 @@ function Row({
         {inlineEditable ? (
           <InlineAmount amount={amount} onSave={onSaveAmount} label={label} />
         ) : (
-          <span className="min-w-[88px] text-right text-sm font-medium text-gray-100">{value}</span>
+          <span className="min-w-[88px] text-right text-sm font-medium text-ink">{value}</span>
         )}
         {editMode && onDelete ? (
           <button
@@ -142,7 +142,7 @@ function Row({
               e.stopPropagation();
               onEdit();
             }}
-            className="text-gray-500 hover:text-accent"
+            className="text-ink-4 hover:text-accent"
             aria-label={`Edit ${label}`}
             title={`Edit ${label}`}
           >

@@ -12,7 +12,7 @@ export function AddGroupButton({ onClick, label = "Add" }: { onClick: () => void
   return (
     <button
       onClick={onClick}
-      className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-gray-800 text-gray-400 hover:bg-accent/15 hover:text-accent"
+      className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-card-hover text-ink-3 hover:bg-accent/15 hover:text-accent"
       aria-label={label}
       title={label}
     >
@@ -33,15 +33,15 @@ function Group({
   children: React.ReactNode;
 }) {
   return (
-    <div className="border-b border-gray-800 last:border-0">
-      <div className="flex items-center justify-between bg-gray-900/70 px-4 py-2">
+    <div className="border-b border-hair last:border-0">
+      <div className="flex items-center justify-between bg-card-2 px-4 py-2">
         <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold uppercase tracking-wider text-gray-300">{label}</span>
+          <span className="text-xs font-semibold uppercase tracking-wider text-ink-3">{label}</span>
           {onAdd && <AddGroupButton onClick={onAdd} label={`Add to ${label}`} />}
         </div>
-        <span className="text-xs text-gray-400">{total}</span>
+        <span className="text-xs text-ink-3">{total}</span>
       </div>
-      <div className="divide-y divide-gray-800">{children}</div>
+      <div className="divide-y divide-hair">{children}</div>
     </div>
   );
 }

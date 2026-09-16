@@ -35,6 +35,12 @@ import { useClientAccess } from "./client-access-provider";
 import Row from "@/components/income-expenses/row";
 import Group from "@/components/income-expenses/group";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
+import {
+  fieldLabelBaseClassName,
+  inputClassName,
+  selectBaseClassName,
+  selectClassName,
+} from "@/components/forms/input-styles";
 import { isRetirementLivingExpense } from "@/lib/solver/living-expense";
 import { toSalaryOptions } from "@/lib/savings/salary-options";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
@@ -356,10 +362,10 @@ function SectionHeader({
   actions?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between border-b border-gray-800 bg-gray-900 px-4 py-3">
+    <div className="flex items-center justify-between border-b border-hair bg-card-2 px-4 py-3">
       <div>
-        <h2 className="text-sm font-semibold text-gray-100">{title}</h2>
-        {subtitle && <p className="text-xs text-gray-400">{subtitle}</p>}
+        <h2 className="text-sm font-semibold text-ink">{title}</h2>
+        {subtitle && <p className="text-xs text-ink-3">{subtitle}</p>}
       </div>
       {actions && <div className="flex items-center gap-2">{actions}</div>}
     </div>
@@ -373,7 +379,7 @@ function EditToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
       className={`rounded-md border px-2.5 py-1 text-xs font-medium ${
         on
           ? "border-accent bg-accent/15 text-accent-ink"
-          : "border-gray-700 bg-gray-900 text-gray-300 hover:bg-gray-800"
+          : "border-hair-3 bg-card-2 text-ink-2 hover:bg-card-hover"
       }`}
     >
       {on ? "Done" : "Edit"}
@@ -425,14 +431,14 @@ function CashAccountPicker({
 
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-300" htmlFor={id}>
+      <label className={`block ${fieldLabelBaseClassName}`} htmlFor={id}>
         {label}
       </label>
       <select
         id={id}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+        className={`mt-1 ${selectClassName}`}
       >
         <option value="">Default ({defaultLabel})</option>
         {household.length > 0 && (
@@ -481,14 +487,14 @@ function BusinessOwnerSelect({ id, accounts, value, onChange }: BusinessOwnerSel
 
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-300" htmlFor={id}>
+      <label className={`block ${fieldLabelBaseClassName}`} htmlFor={id}>
         Owned by business (optional)
       </label>
       <select
         id={id}
         value={value ?? ""}
         onChange={(e) => onChange(e.target.value || null)}
-        className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+        className={`mt-1 ${selectClassName}`}
       >
         <option value="">— None —</option>
         {businessAccounts.map((a) => (
@@ -731,28 +737,28 @@ function IncomeDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/70" onClick={() => onOpenChange(false)} />
-      <div className="relative z-10 flex max-h-[90vh] w-full max-w-lg flex-col rounded-lg border-2 border-ink-3 ring-1 ring-black/60 bg-gray-900 shadow-xl">
+      <div className="relative z-10 flex max-h-[90vh] w-full max-w-lg flex-col rounded-lg border-2 border-ink-3 ring-1 ring-black/60 bg-card shadow-xl">
         <div className="flex shrink-0 items-center justify-between px-6 pt-6 pb-4">
-          <h2 className="text-lg font-semibold text-gray-100">{isEdit ? "Edit Income" : "Add Income"}</h2>
-          <button onClick={() => onOpenChange(false)} className="text-gray-300 hover:text-gray-200">
+          <h2 className="text-lg font-semibold text-ink">{isEdit ? "Edit Income" : "Add Income"}</h2>
+          <button onClick={() => onOpenChange(false)} className="text-ink-3 hover:text-ink-2">
             <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
             </svg>
           </button>
         </div>
 
-        <div className="mx-6 flex shrink-0 border-b border-gray-700">
-          <button type="button" onClick={() => setActiveTab("details")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "details" ? "border-accent text-accent" : "border-transparent text-gray-300 hover:text-gray-200"}`}>Details</button>
-          <button type="button" onClick={() => setActiveTab("schedule")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "schedule" ? "border-accent text-accent" : "border-transparent text-gray-300 hover:text-gray-200"}`}>Schedule</button>
+        <div className="mx-6 flex shrink-0 border-b border-hair">
+          <button type="button" onClick={() => setActiveTab("details")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "details" ? "border-accent text-accent" : "border-transparent text-ink-3 hover:text-ink-2"}`}>Details</button>
+          <button type="button" onClick={() => setActiveTab("schedule")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "schedule" ? "border-accent text-accent" : "border-transparent text-ink-3 hover:text-ink-2"}`}>Schedule</button>
         </div>
 
         {activeTab === "details" && (<>
           <form id="income-form-fields" onSubmit={handleSubmit} className="flex-1 space-y-4 overflow-y-auto px-6 py-4">
-          {error && <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>}
+          {error && <p className="rounded bg-crit/10 px-3 py-2 text-sm text-crit">{error}</p>}
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="inc-type">Type</label>
+              <label className={`block ${fieldLabelBaseClassName}`} htmlFor="inc-type">Type</label>
               <select
                 id="inc-type"
                 name="type"
@@ -763,7 +769,7 @@ function IncomeDialog({
                   setType(next);
                   if (next !== "other") setLinkedPropertyId(null);
                 }}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                className={`mt-1 ${selectClassName}`}
               >
                 {Object.entries(INCOME_TYPE_LABELS).map(([v, l]) => (
                   <option key={v} value={v}>{l}</option>
@@ -772,13 +778,13 @@ function IncomeDialog({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="inc-taxType">Tax Treatment</label>
+              <label className={`block ${fieldLabelBaseClassName}`} htmlFor="inc-taxType">Tax Treatment</label>
               <select
                 id="inc-taxType"
                 name="taxType"
                 value={taxType}
                 onChange={(e) => setTaxType(e.target.value as IncomeTaxType)}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                className={`mt-1 ${selectClassName}`}
               >
                 {Object.entries(INCOME_TAX_TYPE_LABELS).map(([v, l]) => (
                   <option key={v} value={v}>{l}</option>
@@ -788,7 +794,7 @@ function IncomeDialog({
 
             <div className={type === "other" ? "col-span-2 grid grid-cols-2 gap-4" : undefined}>
               <div>
-                <label className="block text-sm font-medium text-gray-300">Owner</label>
+                <label className={`block ${fieldLabelBaseClassName}`}>Owner</label>
                 <input type="hidden" name="owner" value={owner} />
                 <div
                   role="group"
@@ -817,19 +823,19 @@ function IncomeDialog({
                   )}
                 </div>
                 {linkedProperty && (
-                  <p className="mt-1 text-xs text-gray-400">Owner follows {linkedProperty.name}.</p>
+                  <p className="mt-1 text-xs text-ink-3">Owner follows {linkedProperty.name}.</p>
                 )}
               </div>
               {type === "other" && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-300" htmlFor="inc-linked-property">
+                  <label className={`block ${fieldLabelBaseClassName}`} htmlFor="inc-linked-property">
                     Linked Property
                   </label>
                   <select
                     id="inc-linked-property"
                     value={linkedPropertyId ?? ""}
                     onChange={(e) => setLinkedPropertyId(e.target.value || null)}
-                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 py-2 px-3 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                    className={`mt-1 ${selectClassName}`}
                   >
                     <option value="">None</option>
                     {realEstateAccounts.map((a) => (
@@ -842,8 +848,8 @@ function IncomeDialog({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-300" htmlFor="inc-name">
-              Name <span className="text-red-500">*</span>
+            <label className={`block ${fieldLabelBaseClassName}`} htmlFor="inc-name">
+              Name <span className="text-crit">*</span>
             </label>
             <input
               id="inc-name"
@@ -853,7 +859,7 @@ function IncomeDialog({
               value={name}
               onChange={(e) => { nameTouchedRef.current = true; setName(e.target.value); }}
               placeholder="e.g., Base Salary"
-              className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+              className={`mt-1 ${inputClassName}`}
             />
           </div>
 
@@ -870,7 +876,7 @@ function IncomeDialog({
                 <div className="col-span-2 flex items-center justify-between rounded-md border border-accent/40 bg-accent/10 px-3 py-2.5">
                   <div>
                     <p className="text-sm font-medium text-accent">Using custom schedule</p>
-                    <p className="text-xs text-gray-400">Annual amount and growth rate are overridden by the schedule.</p>
+                    <p className="text-xs text-ink-3">Annual amount and growth rate are overridden by the schedule.</p>
                   </div>
                   <button
                     type="button"
@@ -884,19 +890,19 @@ function IncomeDialog({
             ) : (
               <>
                 <div>
-                  <label className="block text-sm font-medium text-gray-300" htmlFor="inc-amount">
-                    Annual Amount ($) <span className="text-red-500">*</span>
+                  <label className={`block ${fieldLabelBaseClassName}`} htmlFor="inc-amount">
+                    Annual Amount ($) <span className="text-crit">*</span>
                   </label>
                   <CurrencyInput
                     id="inc-amount"
                     name="annualAmount"
                     required
                     defaultValue={editing?.annualAmount ?? 0}
-                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                    className="mt-1"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-300">Growth Rate</label>
+                  <label className={`block ${fieldLabelBaseClassName}`}>Growth Rate</label>
                   <div className="mt-1">
                     <GrowthSourceRadio
                       value={growthSource}
@@ -906,12 +912,12 @@ function IncomeDialog({
                     />
                   </div>
                 </div>
-                <label className="col-span-2 flex items-center gap-1.5 text-xs text-gray-300">
+                <label className="col-span-2 flex items-center gap-1.5 text-xs text-ink-2">
                   <input
                     type="checkbox"
                     checked={todaysDollars}
                     onChange={(e) => setTodaysDollars(e.target.checked)}
-                    className="h-3 w-3 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
+                    className="h-3 w-3 rounded border-hair-3 bg-paper text-accent focus:ring-accent"
                   />
                   Amount in today&apos;s dollars (inflate from {planStartYear})
                 </label>
@@ -951,7 +957,7 @@ function IncomeDialog({
             ) : (
               <>
                 <div>
-                  <label className="block text-xs font-medium text-gray-300" htmlFor="inc-start">
+                  <label className={`block ${fieldLabelBaseClassName}`} htmlFor="inc-start">
                     Start Year
                   </label>
                   <input
@@ -961,11 +967,11 @@ function IncomeDialog({
                     required
                     value={startYear}
                     onChange={(e) => { startYearTouchedRef.current = true; setStartYear(Number(e.target.value)); setStartYearRef(null); }}
-                    className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                    className={`mt-1 ${inputClassName}`}
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-300" htmlFor="inc-end">
+                  <label className={`block ${fieldLabelBaseClassName}`} htmlFor="inc-end">
                     End Year
                   </label>
                   <input
@@ -975,7 +981,7 @@ function IncomeDialog({
                     required
                     value={endYear}
                     onChange={(e) => { endYearTouchedRef.current = true; setEndYear(Number(e.target.value)); setEndYearRef(null); }}
-                    className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                    className={`mt-1 ${inputClassName}`}
                   />
                 </div>
               </>
@@ -988,7 +994,7 @@ function IncomeDialog({
 
           {type === "deferred" && (owner === "client" || owner === "spouse") && (
             <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="inc-survivorship-pct">
+              <label className={`block ${fieldLabelBaseClassName}`} htmlFor="inc-survivorship-pct">
                 Survivor benefit %
               </label>
               <input
@@ -1000,9 +1006,9 @@ function IncomeDialog({
                 value={survivorshipPctInput}
                 onChange={(e) => setSurvivorshipPctInput(e.target.value)}
                 placeholder="e.g. 50"
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                className={`mt-1 ${inputClassName}`}
               />
-              <p className="mt-1 text-xs text-gray-400">
+              <p className="mt-1 text-xs text-ink-3">
                 Reduced % the surviving spouse keeps after the owner&apos;s death.
               </p>
             </div>
@@ -1015,11 +1021,11 @@ function IncomeDialog({
                 type="checkbox"
                 checked={qtipElectOut}
                 onChange={(e) => setQtipElectOut(e.target.checked)}
-                className="mt-1 h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
+                className="mt-1 h-4 w-4 rounded border-hair-3 bg-paper text-accent focus:ring-accent"
               />
-              <label htmlFor="inc-qtip-elect-out" className="text-sm text-gray-300">
+              <label htmlFor="inc-qtip-elect-out" className="text-sm text-ink-2">
                 Elect out of survivor-annuity marital deduction
-                <span className="mt-0.5 block text-xs text-gray-400">
+                <span className="mt-0.5 block text-xs text-ink-3">
                   Default (unchecked): the annuity qualifies as deemed QTIP and is not
                   taxed in the first estate. Check to tax its present value at the first death.
                 </span>
@@ -1043,12 +1049,12 @@ function IncomeDialog({
           />
 
           </form>
-          <div className="flex shrink-0 items-center justify-between border-t border-gray-800 bg-gray-900 px-6 py-4">
+          <div className="flex shrink-0 items-center justify-between border-t border-hair bg-card-2 px-6 py-4">
             {isEdit && onRequestDelete ? (
               <button
                 type="button"
                 onClick={onRequestDelete}
-                className="rounded-md border border-red-700 bg-red-900/30 px-4 py-2 text-sm font-medium text-red-400 hover:bg-red-900/60"
+                className="rounded-md border border-crit/40 bg-crit/10 px-4 py-2 text-sm font-medium text-crit hover:bg-crit/20"
               >
                 Delete…
               </button>
@@ -1353,27 +1359,27 @@ function ExpenseDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/70" onClick={() => onOpenChange(false)} />
-      <div className="relative z-10 flex max-h-[90vh] w-full max-w-lg flex-col rounded-lg border-2 border-ink-3 ring-1 ring-black/60 bg-gray-900 shadow-xl">
+      <div className="relative z-10 flex max-h-[90vh] w-full max-w-lg flex-col rounded-lg border-2 border-ink-3 ring-1 ring-black/60 bg-card shadow-xl">
         <div className="flex shrink-0 items-center justify-between px-6 pt-6 pb-4">
-          <h2 className="text-lg font-semibold text-gray-100">{isEdit ? "Edit Expense" : "Add Expense"}</h2>
-          <button onClick={() => onOpenChange(false)} className="text-gray-300 hover:text-gray-200">
+          <h2 className="text-lg font-semibold text-ink">{isEdit ? "Edit Expense" : "Add Expense"}</h2>
+          <button onClick={() => onOpenChange(false)} className="text-ink-3 hover:text-ink-2">
             <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
             </svg>
           </button>
         </div>
 
-        <div className="mx-6 flex shrink-0 border-b border-gray-700">
-          <button type="button" onClick={() => setActiveTab("details")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "details" ? "border-accent text-accent" : "border-transparent text-gray-300 hover:text-gray-200"}`}>Details</button>
-          <button type="button" onClick={() => setActiveTab("schedule")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "schedule" ? "border-accent text-accent" : "border-transparent text-gray-300 hover:text-gray-200"}`}>Schedule</button>
+        <div className="mx-6 flex shrink-0 border-b border-hair">
+          <button type="button" onClick={() => setActiveTab("details")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "details" ? "border-accent text-accent" : "border-transparent text-ink-3 hover:text-ink-2"}`}>Details</button>
+          <button type="button" onClick={() => setActiveTab("schedule")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "schedule" ? "border-accent text-accent" : "border-transparent text-ink-3 hover:text-ink-2"}`}>Schedule</button>
         </div>
 
         {activeTab === "details" && (<>
           <form id="expense-form-fields" onSubmit={handleSubmit} className="flex-1 space-y-4 overflow-y-auto px-6 py-4">
-          {error && <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>}
+          {error && <p className="rounded bg-crit/10 px-3 py-2 text-sm text-crit">{error}</p>}
 
           <div>
-            <label className="block text-sm font-medium text-gray-300" htmlFor="exp-type">Type</label>
+            <label className={`block ${fieldLabelBaseClassName}`} htmlFor="exp-type">Type</label>
             <select
               id="exp-type"
               name="type"
@@ -1381,7 +1387,7 @@ function ExpenseDialog({
               value={type}
               onChange={(e) => handleTypeChange(e.target.value as ExpenseType)}
               disabled={Boolean(editing?.isDefault)}
-              className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+              className={`mt-1 ${selectClassName} disabled:cursor-not-allowed`}
             >
               <option value="living">Living Expense</option>
               <option value="insurance">Insurance</option>
@@ -1389,7 +1395,7 @@ function ExpenseDialog({
               <option value="other">Other</option>
             </select>
             {editing?.isDefault && (
-              <p className="mt-1 text-xs text-gray-400">
+              <p className="mt-1 text-xs text-ink-3">
                 This is a default living expense — it’s always part of the plan and its type can’t be changed.
               </p>
             )}
@@ -1410,14 +1416,14 @@ function ExpenseDialog({
           </label>
 
           {type === "education" && (
-            <div className="space-y-3 rounded-md border border-gray-700 bg-gray-900/40 p-3">
+            <div className="space-y-3 rounded-md border border-hair bg-card-2/40 p-3">
               <div>
-                <label className="block text-sm font-medium text-gray-300" htmlFor="exp-for">For</label>
+                <label className={`block ${fieldLabelBaseClassName}`} htmlFor="exp-for">For</label>
                 <select
                   id="exp-for"
                   value={forFamilyMemberId}
                   onChange={(e) => handleForChange(e.target.value)}
-                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                  className={`mt-1 ${selectClassName}`}
                 >
                   <option value="">— Select —</option>
                   {(familyMembers ?? []).map((fm) => (
@@ -1429,23 +1435,23 @@ function ExpenseDialog({
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-300" htmlFor="exp-inst-state">Institution State</label>
+                  <label className={`block ${fieldLabelBaseClassName}`} htmlFor="exp-inst-state">Institution State</label>
                   <StateSelect
                     id="exp-inst-state"
                     name="institutionState"
                     value={institutionState}
                     onChange={setInstitutionState}
-                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                    className={`mt-1 ${selectClassName}`}
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-300" htmlFor="exp-inst-name">Institution Name</label>
+                  <label className={`block ${fieldLabelBaseClassName}`} htmlFor="exp-inst-name">Institution Name</label>
                   <input
                     id="exp-inst-name"
                     type="text"
                     value={institutionName}
                     onChange={(e) => setInstitutionName(e.target.value)}
-                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                    className={`mt-1 ${inputClassName}`}
                   />
                 </div>
               </div>
@@ -1456,7 +1462,7 @@ function ExpenseDialog({
                 allowedOwnerFamilyMemberIds={allowedFundingOwnerIds}
                 familyMemberNames={familyMemberNames}
               />
-              <label className="flex items-center gap-2 text-sm text-gray-100">
+              <label className="flex items-center gap-2 text-sm text-ink">
                 <input
                   type="checkbox"
                   checked={payOutOfPocket}
@@ -1468,8 +1474,8 @@ function ExpenseDialog({
           )}
 
           <div>
-            <label className="block text-sm font-medium text-gray-300" htmlFor="exp-name">
-              Name <span className="text-red-500">*</span>
+            <label className={`block ${fieldLabelBaseClassName}`} htmlFor="exp-name">
+              Name <span className="text-crit">*</span>
             </label>
             <input
               id="exp-name"
@@ -1479,7 +1485,7 @@ function ExpenseDialog({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g., Housing"
-              className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+              className={`mt-1 ${inputClassName}`}
             />
           </div>
 
@@ -1503,7 +1509,7 @@ function ExpenseDialog({
                 <div className="col-span-2 flex items-center justify-between rounded-md border border-accent/40 bg-accent/10 px-3 py-2.5">
                   <div>
                     <p className="text-sm font-medium text-accent">Using custom schedule</p>
-                    <p className="text-xs text-gray-400">Annual amount and growth rate are overridden by the schedule.</p>
+                    <p className="text-xs text-ink-3">Annual amount and growth rate are overridden by the schedule.</p>
                   </div>
                   <button
                     type="button"
@@ -1517,11 +1523,11 @@ function ExpenseDialog({
             ) : (
               <>
                 <div>
-                  <label className="block text-sm font-medium text-gray-300" htmlFor="exp-amount">
+                  <label className={`block ${fieldLabelBaseClassName}`} htmlFor="exp-amount">
                     {absorbActive ? (
                       "Minimum annual spend ($)"
                     ) : (
-                      <>Annual Amount ($) <span className="text-red-500">*</span></>
+                      <>Annual Amount ($) <span className="text-crit">*</span></>
                     )}
                   </label>
                   <CurrencyInput
@@ -1529,11 +1535,11 @@ function ExpenseDialog({
                     name="annualAmount"
                     required
                     defaultValue={editing?.annualAmount ?? 0}
-                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                    className="mt-1"
                   />
                 </div>
                 <div className={type === "education" ? undefined : "col-span-2"}>
-                  <label className="block text-sm font-medium text-gray-300">Growth Rate</label>
+                  <label className={`block ${fieldLabelBaseClassName}`}>Growth Rate</label>
                   <div className="mt-1">
                     <GrowthSourceRadio
                       value={growthSource}
@@ -1542,12 +1548,12 @@ function ExpenseDialog({
                       onChange={(next) => { setGrowthSource(next.value); setGrowthRateDisplay(next.customRate); }}
                     />
                   </div>
-                  <label className="mt-2 flex items-center gap-1.5 text-xs text-gray-300">
+                  <label className="mt-2 flex items-center gap-1.5 text-xs text-ink-2">
                     <input
                       type="checkbox"
                       checked={todaysDollars}
                       onChange={(e) => setTodaysDollars(e.target.checked)}
-                      className="h-3 w-3 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
+                      className="h-3 w-3 rounded border-hair-3 bg-paper text-accent focus:ring-accent"
                     />
                     Amount in today&apos;s dollars (inflate from {planStartYear})
                   </label>
@@ -1589,7 +1595,7 @@ function ExpenseDialog({
             ) : (
               <>
                 <div>
-                  <label className="block text-xs font-medium text-gray-300" htmlFor="exp-start">
+                  <label className={`block ${fieldLabelBaseClassName}`} htmlFor="exp-start">
                     Start Year
                   </label>
                   <input
@@ -1599,11 +1605,11 @@ function ExpenseDialog({
                     required
                     value={startYear}
                     onChange={(e) => { setStartYear(Number(e.target.value)); setStartYearRef(null); }}
-                    className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                    className={`mt-1 ${inputClassName}`}
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-300" htmlFor="exp-end">
+                  <label className={`block ${fieldLabelBaseClassName}`} htmlFor="exp-end">
                     End Year
                   </label>
                   <input
@@ -1613,7 +1619,7 @@ function ExpenseDialog({
                     required
                     value={endYear}
                     onChange={(e) => { setEndYear(Number(e.target.value)); setEndYearRef(null); }}
-                    className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                    className={`mt-1 ${inputClassName}`}
                   />
                 </div>
               </>
@@ -1628,12 +1634,12 @@ function ExpenseDialog({
               so the Tax Treatment selector only applies to insurance/other. */}
           {type !== "living" && (
             <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="exp-deductionType">Tax Treatment</label>
+              <label className={`block ${fieldLabelBaseClassName}`} htmlFor="exp-deductionType">Tax Treatment</label>
               <select
                 id="exp-deductionType"
                 value={deductionType}
                 onChange={(e) => setDeductionType(e.target.value)}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                className={`mt-1 ${selectClassName}`}
               >
                 <option value="">None (not a deduction)</option>
                 <option value="charitable">Charitable Gift</option>
@@ -1644,8 +1650,8 @@ function ExpenseDialog({
             </div>
           )}
 
-          <div className="flex flex-col gap-2 border-t border-gray-700 pt-3">
-            <label className="flex items-center gap-2 text-sm text-gray-200">
+          <div className="flex flex-col gap-2 border-t border-hair pt-3">
+            <label className="flex items-center gap-2 text-sm text-ink-2">
               <input
                 type="checkbox"
                 checked={endsAtMedicareEligibilityOwner !== null}
@@ -1661,7 +1667,7 @@ function ExpenseDialog({
                 onChange={e =>
                   setEndsAtMedicareEligibilityOwner(e.target.value as "client" | "spouse")
                 }
-                className="ml-6 rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 w-48"
+                className={`ml-6 w-48 ${selectBaseClassName}`}
               >
                 <option value="client">Client</option>
                 {hasSpouse && <option value="spouse">{CO_CLIENT_LABEL}</option>}
@@ -1677,12 +1683,12 @@ function ExpenseDialog({
           />
 
           </form>
-          <div className="flex shrink-0 items-center justify-between border-t border-gray-800 bg-gray-900 px-6 py-4">
+          <div className="flex shrink-0 items-center justify-between border-t border-hair bg-card-2 px-6 py-4">
             {isEdit && onRequestDelete ? (
               <button
                 type="button"
                 onClick={onRequestDelete}
-                className="rounded-md border border-red-700 bg-red-900/30 px-4 py-2 text-sm font-medium text-red-400 hover:bg-red-900/60"
+                className="rounded-md border border-crit/40 bg-crit/10 px-4 py-2 text-sm font-medium text-crit hover:bg-crit/20"
               >
                 Delete…
               </button>
@@ -2167,17 +2173,17 @@ export default function IncomeExpensesView({
       {/* KPI strip — hidden in wizard mode; the wizard shell shows its own progress */}
       {!isWizard && (
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <Kpi label="Income" value={fmt(householdIncome)} accent="text-gray-100" />
-          <Kpi label="Expenses" value={fmt(householdExpense)} accent="text-gray-100" />
+          <Kpi label="Income" value={fmt(householdIncome)} accent="text-ink" />
+          <Kpi label="Expenses" value={fmt(householdExpense)} accent="text-ink" />
           <Kpi
             label="Net Cash Flow"
             value={(netCashFlow >= 0 ? "+" : "") + fmt(netCashFlow)}
-            accent={netCashFlow >= 0 ? "text-green-500" : "text-red-400"}
+            accent={netCashFlow >= 0 ? "text-good" : "text-crit"}
           />
           <Kpi
             label="Out of estate"
             value={fmt(outOfEstateIncome - outOfEstateExpense)}
-            accent="text-amber-300"
+            accent="text-warn"
             subtitle={
               outOfEstateIncome || outOfEstateExpense
                 ? `${fmt(outOfEstateIncome)} in / ${fmt(outOfEstateExpense)} out`
@@ -2644,18 +2650,18 @@ function Kpi({
   subtitle?: string;
 }) {
   return (
-    <div className="rounded-lg border border-gray-800 bg-gray-900/60 px-4 py-3">
-      <p className="text-xs font-medium uppercase tracking-wider text-gray-400">{label}</p>
+    <div className="rounded-lg border border-hair bg-card px-4 py-3">
+      <p className="text-xs font-medium uppercase tracking-wider text-ink-3">{label}</p>
       <p className={`mt-1 text-lg font-bold ${accent}`}>{value}</p>
-      {subtitle && <p className="text-xs text-gray-400">{subtitle}</p>}
+      {subtitle && <p className="text-xs text-ink-3">{subtitle}</p>}
     </div>
   );
 }
 
 function Panel({ children }: { children: React.ReactNode }) {
-  return <div className="overflow-hidden rounded-lg border border-gray-800 bg-gray-900/50">{children}</div>;
+  return <div className="overflow-hidden rounded-lg border border-hair bg-card">{children}</div>;
 }
 
 function EmptyRow({ message }: { message: string }) {
-  return <div className="px-4 py-8 text-center text-sm text-gray-400">{message}</div>;
+  return <div className="px-4 py-8 text-center text-sm text-ink-3">{message}</div>;
 }

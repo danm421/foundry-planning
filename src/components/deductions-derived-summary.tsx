@@ -178,36 +178,36 @@ export function DeductionsDerivedSummary({
   return (
     <section className="space-y-3">
       <div className="flex items-center gap-2">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-300">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-3">
           Auto-derived deductions
         </h2>
         <HelpTip text="Pulled automatically from your savings, expenses, mortgages, and real-estate data. Edit on their respective tabs." />
       </div>
 
-      <div className="overflow-hidden rounded-md border border-gray-800 bg-gray-900/40">
-        <div className={`${ROW_GRID} border-b border-gray-800 bg-gray-900/60 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400`}>
+      <div className="overflow-hidden rounded-md border border-hair bg-card">
+        <div className={`${ROW_GRID} border-b border-hair bg-card-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-3`}>
           <span>Item</span>
           <span>Detail</span>
           <span className="text-right">Amount / yr</span>
         </div>
 
-        <div className="divide-y divide-gray-800">
+        <div className="divide-y divide-hair">
           {groups.map((group) => (
             <div key={group.name}>
-              <div className="flex items-center gap-1.5 bg-gray-900/30 px-3 py-1 text-[11px] font-medium text-gray-300">
+              <div className="flex items-center gap-1.5 bg-card-2/40 px-3 py-1 text-[11px] font-medium text-ink-3">
                 <span>{group.name}</span>
                 <HelpTip text={GROUP_HELP[group.name]} />
               </div>
               {group.rows.length === 0 ? (
-                <div className="px-3 py-2 text-xs italic text-gray-500">
+                <div className="px-3 py-2 text-xs italic text-ink-4">
                   {EMPTY_HINT[group.name]}
                 </div>
               ) : (
                 group.rows.map((r) => (
                   <div key={`${r.group}:${r.id}`} className={`${ROW_GRID} text-sm`}>
-                    <span className="truncate text-gray-200">{r.name}</span>
-                    <span className="truncate text-xs text-gray-400">{r.meta}</span>
-                    <span className="justify-self-end tabular-nums text-gray-300">
+                    <span className="truncate text-ink-2">{r.name}</span>
+                    <span className="truncate text-xs text-ink-3">{r.meta}</span>
+                    <span className="justify-self-end tabular-nums text-ink-3">
                       {fmt.format(r.amount)}
                     </span>
                   </div>
@@ -219,23 +219,23 @@ export function DeductionsDerivedSummary({
       </div>
 
       {/* Footer totals */}
-      <div className="rounded-md border border-gray-800 bg-gray-900/40 px-4 py-3 space-y-1 text-sm">
+      <div className="rounded-md border border-hair bg-card px-4 py-3 space-y-1 text-sm">
         <div className="flex justify-between">
-          <span className="text-gray-300">
+          <span className="text-ink-3">
             Total above-line for {currentYear}
           </span>
-          <span className="tabular-nums font-semibold text-gray-100">
+          <span className="tabular-nums font-semibold text-ink">
             {fmt.format(totalAboveLine)}
           </span>
         </div>
         <div className="flex justify-between">
-          <span className="flex items-center gap-1.5 text-gray-300">
+          <span className="flex items-center gap-1.5 text-ink-3">
             Total itemized for {currentYear}
             {rawSalt > saltCap && (
               <HelpTip text={`SALT ${fmt.format(rawSalt)} capped at ${fmt.format(saltCap)}.`} />
             )}
           </span>
-          <span className="tabular-nums font-semibold text-gray-100">
+          <span className="tabular-nums font-semibold text-ink">
             {fmt.format(totalItemized)}
           </span>
         </div>

@@ -375,7 +375,7 @@ describe("BalanceSheetView liability balance cell", () => {
   it("keeps the balance red once the cell replaces the plain span", () => {
     renderView();
     expect(screen.getByRole("button", { name: "Edit amount for Home Mortgage" }).className).toContain(
-      "text-red-400",
+      "text-crit",
     );
   });
 });

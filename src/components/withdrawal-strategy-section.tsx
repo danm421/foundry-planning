@@ -8,6 +8,11 @@ import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { defaultWithdrawalRefs, resolveMilestone } from "@/lib/milestones";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useClientAccess } from "@/components/client-access-provider";
+import {
+  fieldLabelBaseClassName,
+  inputClassName,
+  selectClassName,
+} from "@/components/forms/input-styles";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -187,12 +192,12 @@ function WithdrawalDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/70" onClick={() => onOpenChange(false)} />
-      <div className="relative z-10 w-full max-w-lg rounded-lg border-2 border-ink-3 ring-1 ring-black/60 bg-gray-900 p-6 shadow-xl">
+      <div className="relative z-10 w-full max-w-lg rounded-lg border-2 border-ink-3 ring-1 ring-black/60 bg-card p-6 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-100">
+          <h2 className="text-lg font-semibold text-ink">
             {isEdit ? "Edit Withdrawal Entry" : "Add Withdrawal Entry"}
           </h2>
-          <button onClick={() => onOpenChange(false)} className="text-gray-300 hover:text-gray-200">
+          <button onClick={() => onOpenChange(false)} className="text-ink-3 hover:text-ink-2">
             <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
               <path
                 fillRule="evenodd"
@@ -204,19 +209,19 @@ function WithdrawalDialog({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {error && <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>}
+          {error && <p className="rounded bg-crit/10 px-3 py-2 text-sm text-crit">{error}</p>}
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="ws-account">
-                Account <span className="text-red-500">*</span>
+              <label className={`block ${fieldLabelBaseClassName}`} htmlFor="ws-account">
+                Account <span className="text-crit">*</span>
               </label>
               <select
                 id="ws-account"
                 name="accountId"
                 required
                 defaultValue={editing?.accountId ?? (eligible[0]?.id ?? "")}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                className={`mt-1 ${selectClassName}`}
               >
                 {eligible.map((a) => (
                   <option key={a.id} value={a.id}>
@@ -227,7 +232,7 @@ function WithdrawalDialog({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="ws-priority">
+              <label className={`block ${fieldLabelBaseClassName}`} htmlFor="ws-priority">
                 Priority Order
               </label>
               <input
@@ -237,7 +242,7 @@ function WithdrawalDialog({
                 min={1}
                 required
                 defaultValue={editing?.priorityOrder ?? nextPriority}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                className={`mt-1 ${inputClassName}`}
               />
             </div>
 
@@ -274,7 +279,7 @@ function WithdrawalDialog({
             ) : (
               <>
                 <div>
-                  <label className="block text-xs font-medium text-gray-300" htmlFor="ws-start">
+                  <label className={`block ${fieldLabelBaseClassName}`} htmlFor="ws-start">
                     Start Year
                   </label>
                   <input
@@ -284,11 +289,11 @@ function WithdrawalDialog({
                     required
                     value={startYear}
                     onChange={(e) => { setStartYear(Number(e.target.value)); setStartYearRef(null); }}
-                    className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                    className={`mt-1 ${inputClassName}`}
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-300" htmlFor="ws-end">
+                  <label className={`block ${fieldLabelBaseClassName}`} htmlFor="ws-end">
                     End Year
                   </label>
                   <input
@@ -298,7 +303,7 @@ function WithdrawalDialog({
                     required
                     value={endYear}
                     onChange={(e) => { setEndYear(Number(e.target.value)); setEndYearRef(null); }}
-                    className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                    className={`mt-1 ${inputClassName}`}
                   />
                 </div>
               </>
@@ -310,7 +315,7 @@ function WithdrawalDialog({
               <button
                 type="button"
                 onClick={onRequestDelete}
-                className="rounded-md border border-red-700 bg-red-900/30 px-4 py-2 text-sm font-medium text-red-400 hover:bg-red-900/60"
+                className="rounded-md border border-crit/40 bg-crit/10 px-4 py-2 text-sm font-medium text-crit hover:bg-crit/20"
               >
                 Delete…
               </button>
@@ -377,7 +382,7 @@ export default function WithdrawalStrategySection({
     <section>
       <header className="mb-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-300">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-3">
             Withdrawal Strategy
           </h3>
           <HelpTip text="When household income can't cover expenses and savings, the projection pulls from these accounts in priority order. If left empty, the default order is Cash → Taxable → Tax-Deferred → Roth → Annuities, so an annuity is only surrendered as a last resort. Illiquid accounts are skipped, and an annuitized contract is never touched — that money is already with the carrier." />
@@ -393,32 +398,32 @@ export default function WithdrawalStrategySection({
         )}
       </header>
 
-      <div className="overflow-hidden rounded-lg border border-gray-800 bg-gray-900/40">
+      <div className="overflow-hidden rounded-lg border border-hair bg-card">
         {sorted.length === 0 ? (
-          <div className="px-4 py-8 text-center text-sm text-gray-400">
+          <div className="px-4 py-8 text-center text-sm text-ink-3">
             No custom order set — the default tax-efficient order applies.
           </div>
         ) : (
           <>
-            <div className={`${ROW_GRID} border-b border-gray-800 bg-gray-900/60 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400`}>
+            <div className={`${ROW_GRID} border-b border-hair bg-card-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-3`}>
               <span>#</span>
               <span>Account</span>
               <span>Years</span>
               <span className="text-right">Actions</span>
             </div>
-            <ol className="divide-y divide-gray-800">
+            <ol className="divide-y divide-hair">
               {sorted.map((ws) => (
-                <li key={ws.id} className={`${ROW_GRID} hover:bg-gray-900/60`}>
+                <li key={ws.id} className={`${ROW_GRID} hover:bg-card-hover`}>
                   <span
                     aria-hidden
-                    className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-gray-700 bg-gray-800 text-xs font-semibold tabular-nums text-gray-300"
+                    className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-hair bg-card-2 text-xs font-semibold tabular-nums text-ink-3"
                   >
                     {ws.priorityOrder}
                   </span>
-                  <span className="truncate text-sm font-medium text-gray-100">
+                  <span className="truncate text-sm font-medium text-ink">
                     {accountMap[ws.accountId]?.name ?? ws.accountId}
                   </span>
-                  <span className="truncate text-xs tabular-nums text-gray-400">
+                  <span className="truncate text-xs tabular-nums text-ink-3">
                     {yearsDescriptor(ws.startYear, ws.endYear)}
                   </span>
                   {canEdit && (
@@ -428,7 +433,7 @@ export default function WithdrawalStrategySection({
                         title="Edit"
                         aria-label={`Edit ${accountMap[ws.accountId]?.name ?? "entry"}`}
                         onClick={() => setDialog({ open: true, editing: ws })}
-                        className="rounded border border-gray-700 px-2 py-0.5 text-xs text-gray-200 hover:bg-gray-800"
+                        className="rounded border border-hair-3 px-2 py-0.5 text-xs text-ink-2 hover:bg-card-hover"
                       >
                         Edit
                       </button>
