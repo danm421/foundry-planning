@@ -96,7 +96,9 @@ describe("a number several accounts share is a plan number, not an account numbe
       "esop.pdf": [plan("Employee Stock Ownership x0410", 94829.35)],
     });
 
-    expect(kept.map((a) => a.value).sort((x, y) => x - y)).toEqual([48033.54, 94829.35, 361262.23]);
+    expect(kept.map((a) => a.value).sort((x, y) => (x ?? 0) - (y ?? 0))).toEqual([
+      48033.54, 94829.35, 361262.23,
+    ]);
   });
 
   it("does NOT clear a number when two statements disagree about ONE account", () => {
