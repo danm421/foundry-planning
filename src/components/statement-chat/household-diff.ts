@@ -25,6 +25,19 @@ function same(a: unknown, b: unknown): boolean {
   return norm(a) === norm(b);
 }
 
+/**
+ * `client_household`'s labels are written for the Details screen, which shows
+ * them in a client section and a spouse section. This flat table throws that
+ * grouping away, so `email` and `spouseEmail` both arrive as "Email" and the
+ * advisor cannot tell whose is whose. Name the spouse's side — unless the
+ * label already does, which it does for `spouseName`, `spouseDob` and friends.
+ */
+function qualifyLabel(key: string, label: string): string {
+  return key.startsWith("spouse") && !label.toLowerCase().startsWith("spouse")
+    ? `Spouse ${label}`
+    : label;
+}
+
 /** One row per field the document states and the record does not already agree with. */
 export function buildHouseholdDiff(args: {
   entity: DetailEntity;
@@ -32,9 +45,17 @@ export function buildHouseholdDiff(args: {
   onRecord: Record<string, unknown>;
 }): HouseholdDiffRow[] {
   const { entity, extracted, onRecord } = args;
-  const labels = new Map(entity.fields.map((f) => [f.key, f.label]));
+  // `writable: false` fields are dropped from the update body by the writer
+  // (`build-request.ts:99`), so a row the advisor accepted would silently do
+  // nothing. NOT `askableFields()`: that also strips `appliesTo: "update"`
+  // fields, which the update leg legitimately accepts.
+  const labels = new Map(
+    entity.fields
+      .filter((f) => f.writable !== false)
+      .map((f) => [f.key, qualifyLabel(f.key, f.label)]),
+  );
 
-  return extracted.values
+  const rows = extracted.values
     .filter((v) => labels.has(v.key) && !same(onRecord[v.key], v.value))
     .map((v) => ({
       key: v.key,
@@ -44,6 +65,17 @@ export function buildHouseholdDiff(args: {
       issue: v.issue,
       movesPlanHorizon: HORIZON_KEYS.has(v.key),
     }));
+
+  // Naming the spouse only halves it: `addressLine1`, the legacy `address`,
+  // `spouseAddressLine1` and the legacy `spouseAddress` ALL read "Address
+  // line 1". Anything still sharing a label with another emitted row falls
+  // back to its key, which is unique by construction.
+  const emitted = rows.map((r) => r.label);
+  return rows.map((r) =>
+    emitted.indexOf(r.label) === emitted.lastIndexOf(r.label)
+      ? r
+      : { ...r, label: `${r.label} (${r.key})` },
+  );
 }
 
 /**

@@ -20,6 +20,29 @@ const extracted = {
 
 const onRecord = { firstName: "John", lastName: "Smith", dateOfBirth: "1968-03-04", mobile: null };
 
+/** One `values` array, the same envelope — for the cases that need other keys. */
+function rowOf(values: { key: string; value: unknown }[]): CandidateRow {
+  return {
+    ...extracted,
+    values: values.map((v) => ({ ...v, snippet: `${v.key} ${String(v.value)}`, confidence: 0.9 })),
+  } as unknown as CandidateRow;
+}
+
+/**
+ * The document the entity's own `documentHints` describe: contact details for
+ * the client AND the spouse, which is where `client_household`'s duplicate
+ * labels collide. `address` / `spouseAddress` are the legacy single-line keys,
+ * which carry the SAME label as `addressLine1` / `spouseAddressLine1`.
+ */
+const contacts = rowOf([
+  { key: "email", value: "jon@example.com" },
+  { key: "spouseEmail", value: "mary@example.com" },
+  { key: "addressLine1", value: "12 Oak St" },
+  { key: "address", value: "12 Oak Street" },
+  { key: "spouseAddressLine1", value: "9 Elm St" },
+  { key: "spouseAddress", value: "9 Elm Street" },
+]);
+
 describe("buildHouseholdDiff", () => {
   it("omits a field the document agrees with", () => {
     expect(buildHouseholdDiff({ entity, extracted, onRecord }).map((r) => r.key)).not.toContain("lastName");
@@ -39,6 +62,49 @@ describe("buildHouseholdDiff", () => {
     expect(dob?.movesPlanHorizon).toBe(true);
     const mobile = buildHouseholdDiff({ entity, extracted, onRecord }).find((r) => r.key === "mobile");
     expect(mobile?.movesPlanHorizon).toBe(false);
+  });
+
+  it("omits a field that differs from the record only by case and surrounding space", () => {
+    const rows = buildHouseholdDiff({ entity, extracted, onRecord: { ...onRecord, firstName: " jonathan " } });
+    expect(rows.map((r) => r.key)).not.toContain("firstName");
+  });
+
+  it("omits a numeric on-record value the document states as a string", () => {
+    const found = rowOf([{ key: "lifeExpectancy", value: "92" }]);
+    expect(buildHouseholdDiff({ entity, extracted: found, onRecord: { lifeExpectancy: 92 } })).toEqual([]);
+  });
+
+  it("says whose Email is whose", () => {
+    const rows = buildHouseholdDiff({ entity, extracted: contacts, onRecord: {} });
+    expect(rows.find((r) => r.key === "email")?.label).toBe("Email");
+    expect(rows.find((r) => r.key === "spouseEmail")?.label).toBe("Spouse Email");
+  });
+
+  it("does not say Spouse twice when the label already names the spouse", () => {
+    const rows = buildHouseholdDiff({ entity, extracted: rowOf([{ key: "spouseDob", value: "1970-02-02" }]), onRecord: {} });
+    expect(rows[0].label).toBe("Spouse Date of Birth");
+  });
+
+  it("falls back to the key when two emitted rows would still share a label", () => {
+    const rows = buildHouseholdDiff({ entity, extracted: contacts, onRecord: {} });
+    expect(rows.filter((r) => r.label.startsWith("Address line 1")).map((r) => r.label)).toEqual([
+      "Address line 1 (addressLine1)",
+      "Address line 1 (address)",
+    ]);
+    expect(rows.filter((r) => r.label.startsWith("Spouse Address line 1")).map((r) => r.label)).toEqual([
+      "Spouse Address line 1 (spouseAddressLine1)",
+      "Spouse Address line 1 (spouseAddress)",
+    ]);
+  });
+
+  it("gives every emitted row a label of its own", () => {
+    const rows = buildHouseholdDiff({ entity, extracted: contacts, onRecord: {} });
+    expect(new Set(rows.map((r) => r.label)).size).toBe(rows.length);
+  });
+
+  it("never offers a field the writer would drop from the update body", () => {
+    const found = rowOf([{ key: "planEndAge", value: "95" }]);
+    expect(buildHouseholdDiff({ entity, extracted: found, onRecord: { planEndAge: 92 } })).toEqual([]);
   });
 });
 
