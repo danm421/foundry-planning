@@ -141,11 +141,13 @@ export interface EntityTableProps<Row extends EntityRow> {
    * prop) renders nothing extra — Phase 1's `accounts-table.tsx` never
    * passes this and is unaffected.
    */
-  // "Add" only, never "Update": Ruling 34 removed the update caption when the
-  // writer turned out to POST a create for every non-array entity, so a row
-  // captioned "Update" was the one it would have DUPLICATED. Keeping the word
-  // representable here is what lets it come back by accident.
-  rowNotice?: (row: Row) => { needsReview?: boolean; action?: "Add" };
+  // "Update" is representable again (Phase 3A, Task 2) because
+  // `buildWriteRequest` now builds one, for an entity that declared
+  // `updateSemantics`. Ruling 34 had removed the caption when the writer
+  // turned out to POST a create for every non-array entity, so a row
+  // captioned "Update" was the one it would have DUPLICATED. The caller owns
+  // that correctness — this union only says which words exist.
+  rowNotice?: (row: Row) => { needsReview?: boolean; action?: "Add" | "Update" };
   /**
    * What one row IS, for the totals row's count ("25 accounts"). Defaults to
    * rows, which is the honest generic answer but reads as internal language on

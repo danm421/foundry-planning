@@ -93,7 +93,18 @@ export async function commitMapRow(args: {
   // and calling it a failure would send the advisor back to click Commit a
   // second time, creating the duplicate this id exists to prevent.
   const body = await response.json().catch(() => null);
-  const createdId = readCreatedId(body);
+  // An UPDATE already knows its id — it came from the match — and an update
+  // route need not return one at all. Without this every successful
+  // correction ended with the duplicate warning below, whose two halves are
+  // both false for an update: the record IS identified, and re-committing
+  // overwrites the same row rather than adding a second.
+  //
+  // Conditioned on `entity.updateSemantics`, NOT on the method: a
+  // `payloadShape: "array"` entity also PUTs, and its write replaces the
+  // whole set, which carries none of an update's guarantees.
+  const updatedId =
+    entity.updateSemantics && row.match?.kind === "exact" ? row.match.existingId : null;
+  const createdId = updatedId ?? readCreatedId(body);
   const warnings = [...request.warnings];
   if (createdId === null) {
     warnings.push(

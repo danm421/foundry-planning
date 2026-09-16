@@ -105,6 +105,16 @@ export interface DetailEntity {
   table: string;
   routes: DetailEntityRoutes;
   /**
+   * Present ONLY where `routes.update` genuinely accepts a partial body and
+   * merges it into the existing row. Absent means an `exact` match is refused
+   * rather than updated — the Phase 2 default (Ruling 34), and still correct
+   * for every entity whose update semantics nobody has read.
+   *
+   * The method is NOT uniform and must not be assumed: `client_household` and
+   * `family_member` are PUT, `related_party` is PATCH.
+   */
+  updateSemantics?: { method: "PUT" | "PATCH" };
+  /**
    * Exported zod schema validating creates, if the route uses one.
    *
    * `validatesSubset` marks a schema that checks only PART of the body — a
