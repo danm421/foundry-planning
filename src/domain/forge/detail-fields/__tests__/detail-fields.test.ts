@@ -241,16 +241,35 @@ describe("document-evidence marking", () => {
     }
   });
 
+  // The ONE entity whose write path this guard cannot see, named rather than
+  // inferred from its flags. `client_household` is a singleton: it is never
+  // CREATED from a document (the client already exists), and today it declares
+  // no `identity`, so `matchByIdentity` reports "new", the create leg runs and
+  // `buildWriteRequest` refuses it. It genuinely cannot be written yet — Task 7
+  // supplies its match directly as `{ kind: "exact", existingId: clientId }`,
+  // which routes it to the update leg it already declares.
+  //
+  // DELETE THIS ENTRY when that lands. A predicate over `updateSemantics` would
+  // have silently exempted every future entity with an update leg and no create
+  // route; an id is a line someone has to remove.
+  const MATCH_SUPPLIED_DIRECTLY = ["client_household"];
+
   it("every document-evidence entity can actually be written", () => {
     for (const entity of documentEvidenceEntities()) {
-      // Three ways an extracted row can land: the entity's own create route, a
-      // parent's payload, or an update leg it has explicitly opted into. The
-      // third is not a loophole — `client_household` is a singleton that is
-      // never CREATED from a document (the client already exists), so an
-      // update leg is the only write it can ever have.
-      const updatable = Boolean(entity.updateSemantics) && Boolean(entity.routes.update);
-      const writable = Boolean(entity.routes.create) || Boolean(entity.nestedIn) || updatable;
-      expect(writable, `${entity.id} is marked document evidence but has no create route, is not nested, and declares no update leg`).toBe(true);
+      if (MATCH_SUPPLIED_DIRECTLY.includes(entity.id)) continue;
+      const writable = Boolean(entity.routes.create) || Boolean(entity.nestedIn);
+      expect(writable, `${entity.id} is marked document evidence but has no create route and is not nested`).toBe(true);
+    }
+  });
+
+  it("does not keep a write exemption for an entity that no longer needs one", () => {
+    for (const id of MATCH_SUPPLIED_DIRECTLY) {
+      const entity = documentEvidenceEntities().find((e) => e.id === id);
+      expect(entity, `exemption "${id}" names no document-evidence entity`).toBeDefined();
+      expect(
+        Boolean(entity!.routes.create) || Boolean(entity!.nestedIn),
+        `exemption "${id}" is stale — it can be written like any other entity now`,
+      ).toBe(false);
     }
   });
 
@@ -272,21 +291,22 @@ describe("document-evidence marking", () => {
     }
   });
 
-  // Scoped to the entities `loadExistingRows` can actually be called for: the
-  // map pass loads existing rows only for an entity that declares an
-  // `identity` (`map-entity-pass.ts`), and the loader itself throws without a
-  // scopePath. `client_household` is why the rule is not "every
-  // document-evidence entity" — a singleton addressed by the client id, whose
-  // match is supplied directly, is never loaded and has no client column to
-  // declare.
-  it("every identity-matched document-evidence entity declares how its table reaches a client", () => {
-    let checked = 0;
+  // `client_household` is the only exemption, and it has to earn it twice over:
+  // it declares no `identity`, so `loadExistingRows` is never called for it
+  // (`map-entity-pass.ts` gates the call on one), AND it declares no scopePath,
+  // so there is nothing to check. Any entity that declares either is held to
+  // the full rule — an entity with a scopePath but no identity
+  // (`life_insurance_policy`) stays covered.
+  it("every document-evidence entity a generic loader reads declares how its table reaches a client", () => {
+    const checked: string[] = [];
     for (const entity of documentEvidenceEntities()) {
-      if (!entity.identity?.length) continue;
-      checked++;
+      if (!entity.identity?.length && !entity.scopePath) continue;
+      checked.push(entity.id);
       expect(entity.scopePath, `${entity.id} has no scopePath, so a generic loader would read it unscoped`).toBeDefined();
     }
-    expect(checked, "no identity-matched document-evidence entity — this guard asserted nothing").toBeGreaterThan(0);
+    // Named, not counted: a population that shrinks from three to two — or that
+    // swaps one entity for another — must fail here rather than pass quietly.
+    expect(checked.sort()).toEqual(["disability_policy", "family_member", "life_insurance_policy"]);
   });
 
   it("a join scope path names a real table and a real column", () => {
