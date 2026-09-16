@@ -1,5 +1,7 @@
 "use client";
 
+import { fieldLabelClassName } from "./input-styles";
+
 interface PickerAccount {
   id: string;
   name: string;
@@ -82,7 +84,7 @@ export function DedicatedFundingPicker({
     // what made a hidden 529 look like an unsupported account type.
     const narrowed = accounts.some(isEligibleType);
     return (
-      <p className="text-xs text-gray-400">
+      <p className="text-xs text-ink-3">
         {narrowed
           ? "The plan's cash / taxable / 529 accounts all belong to someone outside this goal."
           : "No eligible funding accounts (cash / taxable / 529)."}
@@ -94,8 +96,8 @@ export function DedicatedFundingPicker({
 
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-300">Dedicated Funding</label>
-      <div className="mt-1 space-y-1 rounded-md border border-gray-600 bg-gray-800 p-2">
+      <label className={fieldLabelClassName}>Dedicated Funding</label>
+      <div className="space-y-1 rounded-md border border-hair-2 bg-paper p-2">
         {eligible.map((a) => {
           const idx = value.indexOf(a.id);
           const beneficiary = a.beneficiaryFamilyMemberId
@@ -108,23 +110,23 @@ export function DedicatedFundingPicker({
             !!a.beneficiaryFamilyMemberId &&
             !allowed.has(a.beneficiaryFamilyMemberId);
           return (
-            <label key={a.id} className="flex items-center gap-2 text-sm text-gray-100">
+            <label key={a.id} className="flex items-center gap-2 text-sm text-ink">
               <input type="checkbox" checked={idx >= 0} onChange={() => toggle(a.id)} aria-label={a.name} />
               <span>{a.name}</span>
               {is529(a) &&
                 (beneficiary ? (
-                  <span className={`text-xs ${otherBeneficiary ? "text-amber-400" : "text-gray-400"}`}>
+                  <span className={`text-xs ${otherBeneficiary ? "text-warn" : "text-ink-3"}`}>
                     · for {beneficiary}
                   </span>
                 ) : (
-                  <span className="text-xs text-gray-400">· no beneficiary on file</span>
+                  <span className="text-xs text-ink-3">· no beneficiary on file</span>
                 ))}
-              {idx >= 0 && <span className="text-xs text-gray-400">· #{idx + 1}</span>}
+              {idx >= 0 && <span className="text-xs text-ink-3">· #{idx + 1}</span>}
             </label>
           );
         })}
       </div>
-      <p className="mt-1 text-xs text-gray-400">Drawn in the order selected. Uncovered cost is a shortfall unless &quot;pay out of pocket&quot; is on.</p>
+      <p className="mt-1 text-xs text-ink-3">Drawn in the order selected. Uncovered cost is a shortfall unless &quot;pay out of pocket&quot; is on.</p>
     </div>
   );
 }

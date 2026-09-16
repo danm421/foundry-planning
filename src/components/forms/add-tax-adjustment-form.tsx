@@ -4,6 +4,13 @@ import { useState, FormEvent } from "react";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { PercentInput } from "@/components/percent-input";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
+import {
+  fieldLabelClassName,
+  inputBaseClassName,
+  inputClassName,
+  selectBaseClassName,
+  selectClassName,
+} from "./input-styles";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import type { IncomeTaxType } from "@/engine/tax-adjustments";
 
@@ -58,11 +65,6 @@ const TYPE_HELP: Partial<Record<TaxAdjustmentRow["taxType"], string>> = {
   tax_exempt:
     "Excluded from tax entirely — an inheritance, a VA or disability benefit, a life-insurance payout. Does not affect Medicare or Social Security.",
 };
-
-const INPUT_CLASS =
-  "mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
-const SELECT_CLASS =
-  "mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none";
 
 export function AddTaxAdjustmentForm({
   clientId,
@@ -182,23 +184,23 @@ export function AddTaxAdjustmentForm({
       <form
         onSubmit={handleSubmit}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md space-y-3 rounded-xl border-2 border-ink-3 ring-1 ring-black/60 bg-gray-900 p-5 shadow-xl"
+        className="w-full max-w-md space-y-3 rounded-xl border-2 border-ink-3 ring-1 ring-black/60 bg-card p-5 shadow-xl"
       >
         <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-100">
+          <h3 className="text-base font-semibold text-ink">
             {existing ? "Edit tax adjustment" : "Add tax adjustment"}
           </h3>
-          <button type="button" onClick={onClose} className="text-xl text-gray-300 hover:text-gray-200" aria-label="Close">
+          <button type="button" onClick={onClose} className="text-xl text-ink-3 hover:text-ink-2" aria-label="Close">
             ×
           </button>
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-gray-300">Tax treatment</label>
+          <label className={fieldLabelClassName}>Tax treatment</label>
           <select
             value={taxType}
             onChange={(e) => setTaxType(e.target.value as TaxAdjustmentRow["taxType"])}
-            className={SELECT_CLASS}
+            className={selectClassName}
             aria-label="Tax treatment"
           >
             {TYPE_OPTIONS.map((o) => (
@@ -206,26 +208,26 @@ export function AddTaxAdjustmentForm({
             ))}
           </select>
           {TYPE_HELP[taxType] && (
-            <p className="mt-1 text-xs text-gray-400">{TYPE_HELP[taxType]}</p>
+            <p className="mt-1 text-xs text-ink-3">{TYPE_HELP[taxType]}</p>
           )}
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-gray-300">Description (optional)</label>
+          <label className={fieldLabelClassName}>Description (optional)</label>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g., 2026 Roth conversion"
-            className={INPUT_CLASS}
+            className={inputClassName}
           />
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-gray-300">Owner</label>
+          <label className={fieldLabelClassName}>Owner</label>
           <select
             value={owner}
             onChange={(e) => setOwner(e.target.value as TaxAdjustmentRow["owner"])}
-            className={SELECT_CLASS}
+            className={selectClassName}
             aria-label="Owner"
           >
             <option value="joint">Joint</option>
@@ -236,35 +238,34 @@ export function AddTaxAdjustmentForm({
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-gray-300">Amount ($)</label>
+            <label className={fieldLabelClassName}>Amount ($)</label>
             <input
               type="number"
               step="100"
               value={annualAmount}
               onChange={(e) => setAnnualAmount(e.target.value)}
               required
-              className={INPUT_CLASS}
+              className={inputClassName}
               aria-label="Annual amount"
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-300">Growth rate (% / yr)</label>
+            <label className={fieldLabelClassName}>Growth rate (% / yr)</label>
             <PercentInput
               value={growthRate}
               onChange={(raw) => setGrowthRate(raw)}
-              className={INPUT_CLASS}
             />
           </div>
         </div>
 
         {hasWithholdableAmount && (
           <div>
-            <label className="block text-xs font-medium text-gray-300">Tax already paid</label>
+            <label className={fieldLabelClassName}>Tax already paid</label>
             <div className="mt-1 flex gap-2">
               <select
                 value={withheldMode}
                 onChange={(e) => setWithheldMode(e.target.value as "none" | "amount" | "percent")}
-                className={SELECT_CLASS}
+                className={`${selectBaseClassName} flex-1 min-w-0`}
                 aria-label="Tax already paid mode"
               >
                 <option value="none">None</option>
@@ -277,12 +278,12 @@ export function AddTaxAdjustmentForm({
                   step="any"
                   value={withheldValue}
                   onChange={(e) => setWithheldValue(e.target.value)}
-                  className={INPUT_CLASS}
+                  className={`${inputBaseClassName} flex-1 min-w-0`}
                   aria-label={withheldMode === "percent" ? "Percent withheld" : "Amount withheld"}
                 />
               )}
             </div>
-            <p className="mt-1 text-xs text-gray-400">
+            <p className="mt-1 text-xs text-ink-3">
               What was already withheld or paid on this item. The plan still shows the full tax bill —
               it just won&apos;t take this part out of the accounts a second time.
             </p>
@@ -308,7 +309,7 @@ export function AddTaxAdjustmentForm({
             />
           ) : (
             <div>
-              <label className="block text-xs font-medium text-gray-300">Start year</label>
+              <label className={fieldLabelClassName}>Start year</label>
               <input
                 type="number"
                 min={2000}
@@ -319,7 +320,7 @@ export function AddTaxAdjustmentForm({
                   setStartYearRef(null);
                 }}
                 required
-                className={INPUT_CLASS}
+                className={inputClassName}
               />
             </div>
           )}
@@ -342,7 +343,7 @@ export function AddTaxAdjustmentForm({
             />
           ) : (
             <div>
-              <label className="block text-xs font-medium text-gray-300">End year</label>
+              <label className={fieldLabelClassName}>End year</label>
               <input
                 type="number"
                 min={2000}
@@ -353,7 +354,7 @@ export function AddTaxAdjustmentForm({
                   setEndYearRef(null);
                 }}
                 required
-                className={INPUT_CLASS}
+                className={inputClassName}
               />
             </div>
           )}
@@ -363,7 +364,7 @@ export function AddTaxAdjustmentForm({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-800 hover:text-gray-200"
+            className="rounded-md px-3 py-1.5 text-sm text-ink-3 hover:bg-card-hover hover:text-ink-2"
           >
             Cancel
           </button>

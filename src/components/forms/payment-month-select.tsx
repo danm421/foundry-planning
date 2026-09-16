@@ -1,5 +1,7 @@
 "use client";
 
+import { fieldLabelClassName, selectClassName } from "./input-styles";
+
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
@@ -13,9 +15,7 @@ const MONTHS = [
  * a setting the advisor declined to make.
  *
  * Presentation only — `paymentMonth` shapes the month-by-month cash flow view
- * and nothing under `src/engine/` reads it. Styled by hand in gray-* to match
- * the other selects in `income-expenses-view.tsx` (its ~40 controls import no
- * design tokens; one token-styled control among them would read as a mistake).
+ * and nothing under `src/engine/` reads it.
  */
 export function PaymentMonthSelect({
   id,
@@ -28,14 +28,14 @@ export function PaymentMonthSelect({
 }) {
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-300" htmlFor={id}>
+      <label className={fieldLabelClassName} htmlFor={id}>
         Paid in
       </label>
       <select
         id={id}
         value={value == null ? "" : String(value)}
         onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))}
-        className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+        className={selectClassName}
       >
         <option value="">Monthly</option>
         {MONTHS.map((m, i) => (
@@ -44,7 +44,7 @@ export function PaymentMonthSelect({
           </option>
         ))}
       </select>
-      <p className="mt-1 text-xs text-gray-400">
+      <p className="mt-1 text-xs text-ink-3">
         Monthly spreads the amount evenly. Pick a month to have the whole
         year&apos;s amount land there instead.
       </p>

@@ -69,24 +69,24 @@ export default function SalaryBasisFields({
   }
 
   return (
-    <div className="rounded-md border border-gray-800 bg-gray-900/60 p-3">
-      <span className="text-xs font-semibold uppercase tracking-wider text-gray-300">
+    <div className="rounded-md border border-hair bg-card-2/60 p-3">
+      <span className="text-xs font-semibold uppercase tracking-wider text-ink-3">
         Salary basis
       </span>
 
       {salaries.length === 0 ? (
-        <p className="mt-2 text-xs text-gray-400">
+        <p className="mt-2 text-xs text-ink-3">
           No salaries in this plan. The percent resolves to nothing until one is added.
         </p>
       ) : (
         <>
-          <label className="mt-2 flex items-center gap-2 text-sm text-gray-200" htmlFor={`${idPrefix}-salary-all`}>
+          <label className="mt-2 flex items-center gap-2 text-sm text-ink-2" htmlFor={`${idPrefix}-salary-all`}>
             <input
               id={`${idPrefix}-salary-all`}
               type="checkbox"
               checked={allChecked}
               onChange={(e) => toggleAll(e.target.checked)}
-              className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-1 focus:ring-accent"
+              className="h-4 w-4 rounded border-hair-3 bg-card-2 text-accent focus:ring-1 focus:ring-accent"
             />
             All salaries
           </label>
@@ -96,7 +96,7 @@ export default function SalaryBasisFields({
               <label
                 key={s.id}
                 htmlFor={`${idPrefix}-salary-${s.id}`}
-                className={`flex items-center gap-2 text-sm ${allChecked ? "text-gray-500" : "text-gray-200"}`}
+                className={`flex items-center gap-2 text-sm ${allChecked ? "text-ink-4" : "text-ink-2"}`}
               >
                 <input
                   id={`${idPrefix}-salary-${s.id}`}
@@ -104,7 +104,7 @@ export default function SalaryBasisFields({
                   checked={isChecked(s.id)}
                   disabled={allChecked}
                   onChange={(e) => toggleOne(s.id, e.target.checked)}
-                  className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-1 focus:ring-accent disabled:opacity-50"
+                  className="h-4 w-4 rounded border-hair-3 bg-card-2 text-accent focus:ring-1 focus:ring-accent disabled:opacity-50"
                 />
                 <span className="truncate">
                   {s.name} — {s.ownerLabel}
@@ -113,7 +113,7 @@ export default function SalaryBasisFields({
             ))}
           </div>
 
-          <p className="mt-2 text-xs text-gray-400">
+          <p className="mt-2 text-xs text-ink-3">
             {value.basis === "owner"
               ? "Nothing selected — uses the account owner's salary."
               : value.basis === "all"

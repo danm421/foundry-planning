@@ -85,12 +85,12 @@ describe("VestingGrid Remaining — F41, an impossible entry is visible", () => 
     // "fully disposed" instead of "this cannot be right".
     const { remaining, remainingClass } = renderGrid([row("1000", "1400", "1400")], "nqso");
     expect(remaining).toEqual(["-400"]);
-    expect(remainingClass[0]).toContain("text-red-400");
+    expect(remainingClass[0]).toContain("text-crit");
   });
 
   it("colours a valid row normally", () => {
     const { remainingClass } = renderGrid([row("1000", "400", "400")], "nqso");
-    expect(remainingClass[0]).not.toContain("text-red-400");
-    expect(remainingClass[0]).toContain("text-gray-300");
+    expect(remainingClass[0]).not.toContain("text-crit");
+    expect(remainingClass[0]).toContain("text-ink-3");
   });
 });

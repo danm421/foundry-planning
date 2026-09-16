@@ -4,6 +4,7 @@ import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
 import { FieldTooltip } from "./field-tooltip";
 import { supportsContributionCap } from "./contribution-cap-checkbox";
+import { fieldLabelBaseClassName, fieldLabelClassName } from "./input-styles";
 
 /** Retirement subtypes on which the employee's contribution can be entered as a
  *  percent of salary (payroll-deduction accounts). Traditional / Roth IRAs are
@@ -122,9 +123,9 @@ export default function ContributionAmountFields({
   return (
     <div>
       <div className="flex items-center justify-between">
-        <label className="block text-sm font-medium text-gray-300" {...(primaryInputId ? { htmlFor: primaryInputId } : {})}>
+        <label className={fieldLabelBaseClassName} {...(primaryInputId ? { htmlFor: primaryInputId } : {})}>
           {label}
-          {required && mode !== "max" && <span className="text-red-500"> *</span>}
+          {required && mode !== "max" && <span className="text-crit"> *</span>}
           {mode === "max" && (
             <span className="ml-1.5 align-middle">
               <FieldTooltip text="Contributes the IRS limit each year for the account owner's age (base + age-50 catch-up + SECURE 2.0 60-63 super catch-up when applicable)." />
@@ -141,7 +142,7 @@ export default function ContributionAmountFields({
                 className={`rounded-md border px-2 py-0.5 text-xs font-medium ${
                   mode === m
                     ? "border-accent bg-accent/15 text-accent-ink"
-                    : "border-gray-700 bg-gray-900 text-gray-300 hover:bg-gray-800"
+                    : "border-hair-3 bg-card-2 text-ink-3 hover:bg-card-hover"
                 }`}
               >
                 {m === "amount" ? "Dollar amount" : m === "percent" ? "% of salary" : "Max (IRS limit)"}
@@ -153,21 +154,19 @@ export default function ContributionAmountFields({
       {mode === "amount" && (rothSplit ? (
         <div className="mt-1 grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs text-gray-400" htmlFor={`${idPrefix}-pretax-amount`}>Pre-tax ($)</label>
+            <label className={fieldLabelClassName} htmlFor={`${idPrefix}-pretax-amount`}>Pre-tax ($)</label>
             <CurrencyInput
               id={`${idPrefix}-pretax-amount`}
               name="pretaxAmount"
               defaultValue={splitInitials.pretaxAmount}
-              className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
             />
           </div>
           <div>
-            <label className="block text-xs text-gray-400" htmlFor={`${idPrefix}-roth-amount`}>Roth ($)</label>
+            <label className={fieldLabelClassName} htmlFor={`${idPrefix}-roth-amount`}>Roth ($)</label>
             <CurrencyInput
               id={`${idPrefix}-roth-amount`}
               name="rothAmount"
               defaultValue={splitInitials.rothAmount}
-              className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
             />
           </div>
         </div>
@@ -177,34 +176,32 @@ export default function ContributionAmountFields({
           name="annualAmount"
           required={required}
           defaultValue={initialAmount ?? 0}
-          className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+          className="mt-1"
         />
       ))}
       {mode === "percent" && (rothSplit ? (
         <>
           <div className="mt-1 grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-gray-400" htmlFor={`${idPrefix}-pretax-percent`}>Pre-tax (% of salary)</label>
+              <label className={fieldLabelClassName} htmlFor={`${idPrefix}-pretax-percent`}>Pre-tax (% of salary)</label>
               <PercentInput
                 id={`${idPrefix}-pretax-percent`}
                 name="pretaxPercent"
                 placeholder="e.g., 4"
                 defaultValue={splitInitials.pretaxPercent || ""}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-400" htmlFor={`${idPrefix}-roth-percent`}>Roth (% of salary)</label>
+              <label className={fieldLabelClassName} htmlFor={`${idPrefix}-roth-percent`}>Roth (% of salary)</label>
               <PercentInput
                 id={`${idPrefix}-roth-percent`}
                 name="rothPercentInput"
                 placeholder="e.g., 3"
                 defaultValue={splitInitials.rothPercent || ""}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
               />
             </div>
           </div>
-          <p className="mt-1 text-xs text-gray-400">
+          <p className="mt-1 text-xs text-ink-3">
             Each resolves against the account owner&rsquo;s salary. No salary that year &rarr; no contribution.
           </p>
         </>
@@ -216,22 +213,21 @@ export default function ContributionAmountFields({
             required={required}
             placeholder="e.g., 10"
             defaultValue={initialPercent ? pctFromDecimal(initialPercent, 0) : ""}
-            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+            className="mt-1"
           />
-          <p className="mt-1 text-xs text-gray-400">
+          <p className="mt-1 text-xs text-ink-3">
             Resolves against the account owner&rsquo;s salary each year. No salary that year → no contribution.
           </p>
         </>
       ))}
       {mode === "max" && rothSplit && (
         <div className="mt-2">
-          <label className="block text-xs text-gray-400" htmlFor={`${idPrefix}-roth-share`}>Roth share of max contribution (%)</label>
+          <label className={fieldLabelClassName} htmlFor={`${idPrefix}-roth-share`}>Roth share of max contribution (%)</label>
           <PercentInput
             id={`${idPrefix}-roth-share`}
             name="rothShareOfMax"
             placeholder="0"
             defaultValue={rothRatio ? rothRatio * 100 : ""}
-            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
           />
         </div>
       )}

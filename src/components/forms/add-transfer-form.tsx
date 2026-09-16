@@ -6,6 +6,7 @@ import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
+import { fieldLabelClassName, inputClassName, selectClassName } from "./input-styles";
 
 interface ScheduleRow {
   id: string;
@@ -37,11 +38,6 @@ interface AddTransferFormProps {
   onSaved: () => void;
 }
 
-const INPUT_CLASS =
-  "mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
-const SELECT_CLASS =
-  "mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none";
-
 function getTransferTaxLabel(
   sourceCategory: string,
   sourceSubType: string,
@@ -53,17 +49,17 @@ function getTransferTaxLabel(
 
   if (sourceCategory === "retirement" && targetCategory === "retirement") {
     if (taxDeferred.includes(sourceSubType) && roth.includes(targetSubType)) {
-      return { label: "Roth Conversion — Taxable", color: "text-amber-400" };
+      return { label: "Roth Conversion — Taxable", color: "text-warn" };
     }
-    return { label: "Tax-Free Rollover", color: "text-green-400" };
+    return { label: "Tax-Free Rollover", color: "text-good" };
   }
   if (sourceCategory === "retirement") {
-    return { label: "Distribution — Taxable", color: "text-red-400" };
+    return { label: "Distribution — Taxable", color: "text-crit" };
   }
   if (sourceCategory === "taxable" || sourceCategory === "cash") {
-    return { label: "Liquidation", color: "text-gray-300" };
+    return { label: "Liquidation", color: "text-ink-3" };
   }
-  return { label: "Transfer", color: "text-gray-300" };
+  return { label: "Transfer", color: "text-ink-3" };
 }
 
 function makeId(): string {
@@ -233,17 +229,17 @@ export default function AddTransferForm({
       <form
         onSubmit={handleSubmit}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg space-y-3 rounded-xl border-2 border-ink-3 ring-1 ring-black/60 bg-gray-900 p-5 shadow-xl"
+        className="w-full max-w-lg space-y-3 rounded-xl border-2 border-ink-3 ring-1 ring-black/60 bg-card p-5 shadow-xl"
         style={{ maxHeight: "90vh", overflowY: "auto" }}
       >
         <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-100">
+          <h3 className="text-base font-semibold text-ink">
             {initialData ? "Edit Transfer" : "Add Transfer"}
           </h3>
           <button
             type="button"
             onClick={onClose}
-            className="text-xl text-gray-300 hover:text-gray-200"
+            className="text-xl text-ink-3 hover:text-ink-2"
             aria-label="Close"
           >
             ×
@@ -252,24 +248,24 @@ export default function AddTransferForm({
 
         {/* Name */}
         <div>
-          <label className="block text-xs font-medium text-gray-300">Name</label>
+          <label className={fieldLabelClassName}>Name</label>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g., IRA to Roth conversion"
             required
-            className={INPUT_CLASS}
+            className={inputClassName}
           />
         </div>
 
         {/* Source / Target accounts */}
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-gray-300">Source account</label>
+            <label className={fieldLabelClassName}>Source account</label>
             <select
               value={sourceAccountId}
               onChange={(e) => setSourceAccountId(e.target.value)}
-              className={SELECT_CLASS}
+              className={selectClassName}
             >
               {liquidAccounts.map((a) => (
                 <option key={a.id} value={a.id}>
@@ -279,11 +275,11 @@ export default function AddTransferForm({
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-300">Target account</label>
+            <label className={fieldLabelClassName}>Target account</label>
             <select
               value={targetAccountId}
               onChange={(e) => setTargetAccountId(e.target.value)}
-              className={SELECT_CLASS}
+              className={selectClassName}
             >
               {liquidAccounts.map((a) => (
                 <option key={a.id} value={a.id}>
@@ -303,22 +299,21 @@ export default function AddTransferForm({
 
         {/* Amount */}
         <div>
-          <label className="block text-xs font-medium text-gray-300">Amount ($)</label>
+          <label className={fieldLabelClassName}>Amount ($)</label>
           <CurrencyInput
             value={amount}
             onChange={(raw) => setAmount(raw)}
             required
-            className={INPUT_CLASS.replace("px-2", "pr-2")}
           />
         </div>
 
         {/* Mode */}
         <div>
-          <label className="block text-xs font-medium text-gray-300">Mode</label>
+          <label className={fieldLabelClassName}>Mode</label>
           <select
             value={mode}
             onChange={(e) => setMode(e.target.value as "one_time" | "recurring" | "scheduled")}
-            className={SELECT_CLASS}
+            className={selectClassName}
           >
             <option value="one_time">One-Time</option>
             <option value="recurring">Recurring</option>
@@ -344,7 +339,7 @@ export default function AddTransferForm({
               />
             ) : (
               <>
-                <label className="block text-xs font-medium text-gray-300">Start year</label>
+                <label className={fieldLabelClassName}>Start year</label>
                 <input
                   type="number"
                   min={2000}
@@ -352,7 +347,7 @@ export default function AddTransferForm({
                   value={startYear}
                   onChange={(e) => { setStartYear(Number(e.target.value)); setStartYearRef(null); }}
                   required
-                  className={INPUT_CLASS}
+                  className={inputClassName}
                 />
               </>
             )}
@@ -377,7 +372,7 @@ export default function AddTransferForm({
                 />
               ) : (
                 <>
-                  <label className="block text-xs font-medium text-gray-300">End year</label>
+                  <label className={fieldLabelClassName}>End year</label>
                   <input
                     type="number"
                     min={2000}
@@ -385,7 +380,7 @@ export default function AddTransferForm({
                     value={endYear}
                     onChange={(e) => { setEndYear(Number(e.target.value)); setEndYearRef(null); }}
                     required
-                    className={INPUT_CLASS}
+                    className={inputClassName}
                   />
                 </>
               )}
@@ -396,13 +391,12 @@ export default function AddTransferForm({
         {/* Growth rate — recurring only */}
         {mode === "recurring" && (
           <div>
-            <label className="block text-xs font-medium text-gray-300">
+            <label className={fieldLabelClassName}>
               Growth rate (% / yr)
             </label>
             <PercentInput
               value={growthRate}
               onChange={(raw) => setGrowthRate(raw)}
-              className={INPUT_CLASS}
             />
           </div>
         )}
@@ -411,7 +405,7 @@ export default function AddTransferForm({
         {mode === "scheduled" && (
           <div>
             <div className="mb-1 flex items-center justify-between">
-              <label className="block text-xs font-medium text-gray-300">Schedule</label>
+              <label className={fieldLabelClassName}>Schedule</label>
               <button
                 type="button"
                 onClick={addScheduleRow}
@@ -421,11 +415,11 @@ export default function AddTransferForm({
               </button>
             </div>
             {scheduleRows.length === 0 ? (
-              <p className="text-xs text-gray-400">No rows yet. Click Add row to add one.</p>
+              <p className="text-xs text-ink-3">No rows yet. Click Add row to add one.</p>
             ) : (
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-left text-xs text-gray-400">
+                  <tr className="text-left text-xs text-ink-3">
                     <th className="pb-1 pr-2 font-medium">Year</th>
                     <th className="pb-1 pr-2 font-medium">Amount ($)</th>
                     <th className="pb-1 font-medium"></th>
@@ -441,14 +435,13 @@ export default function AddTransferForm({
                           max={2100}
                           value={row.year}
                           onChange={(e) => updateScheduleRow(row.id, "year", e.target.value)}
-                          className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-gray-100 focus:border-accent focus:outline-none"
+                          className={inputClassName}
                         />
                       </td>
                       <td className="pr-2 pb-1">
                         <CurrencyInput
                           value={row.amount}
                           onChange={(raw) => updateScheduleRow(row.id, "amount", raw)}
-                          className="w-full rounded border border-gray-700 bg-gray-800 pr-2 py-1 text-xs text-gray-100 focus:border-accent focus:outline-none"
                         />
                       </td>
                       <td className="pb-1">
@@ -473,7 +466,7 @@ export default function AddTransferForm({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-800 hover:text-gray-200"
+            className="rounded-md px-3 py-1.5 text-sm text-ink-3 hover:bg-card-hover hover:text-ink-2"
           >
             Cancel
           </button>

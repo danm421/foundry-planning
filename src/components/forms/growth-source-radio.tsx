@@ -31,7 +31,7 @@ export default function GrowthSourceRadio({
             "rounded-md border px-2 py-0.5 text-xs font-medium transition-colors " +
             (value === "inflation"
               ? "border-accent bg-accent/15 text-accent-ink"
-              : "border-gray-700 bg-gray-900 text-gray-300 hover:bg-gray-800") +
+              : "border-hair-3 bg-card-2 text-ink-3 hover:bg-card-hover") +
             (disabled ? " opacity-50" : "")
           }
         >
@@ -45,7 +45,7 @@ export default function GrowthSourceRadio({
             "rounded-md border px-2 py-0.5 text-xs font-medium transition-colors " +
             (value === "custom"
               ? "border-accent bg-accent/15 text-accent-ink"
-              : "border-gray-700 bg-gray-900 text-gray-300 hover:bg-gray-800") +
+              : "border-hair-3 bg-card-2 text-ink-3 hover:bg-card-hover") +
             (disabled ? " opacity-50" : "")
           }
         >
@@ -59,7 +59,7 @@ export default function GrowthSourceRadio({
             name={customRateName}
             disabled={disabled}
             onChange={(v) => onChange({ value: "custom", customRate: v })}
-            className="w-24 rounded-md border border-gray-700 bg-gray-800 px-2 py-1 text-sm text-gray-100 disabled:opacity-50"
+            className="w-24"
           />
         </div>
       )}

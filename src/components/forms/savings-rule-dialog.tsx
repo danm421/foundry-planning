@@ -572,7 +572,7 @@ export default function SavingsRuleDialog({
                 <input type="hidden" name="annualPercent" value={String(editing?.annualPercent ?? "")} />
                 {showRothSplit && (
                   <div className="col-span-2">
-                    <label className="block text-xs text-gray-400" htmlFor="sr-sched-roth-share">Roth share of contribution (%)</label>
+                    <label className={fieldLabelClassName} htmlFor="sr-sched-roth-share">Roth share of contribution (%)</label>
                     <input
                       id="sr-sched-roth-share"
                       name="rothShareOfMax"
@@ -587,7 +587,7 @@ export default function SavingsRuleDialog({
                 <div className="col-span-2 flex items-center justify-between rounded-md border border-accent/40 bg-accent/10 px-3 py-2.5">
                   <div>
                     <p className="text-sm font-medium text-accent">Using custom schedule</p>
-                    <p className="text-xs text-gray-400">Annual contribution and growth rate are overridden by the schedule. Employer match still applies.</p>
+                    <p className="text-xs text-ink-3">Annual contribution and growth rate are overridden by the schedule. Employer match still applies.</p>
                   </div>
                   <button
                     type="button"

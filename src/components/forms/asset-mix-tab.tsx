@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { inputCompactClassName } from "./input-styles";
+
 export interface AssetClassOption {
   id: string;
   name: string;
@@ -80,9 +82,9 @@ export function AssetMixTab({
   return (
     <div className="space-y-4">
       {/* Blended Return summary */}
-      <div className="flex items-center justify-between rounded-md border border-gray-600 px-3 py-2 bg-gray-800">
-        <span className="text-sm font-medium text-gray-300">Blended Return</span>
-        <span className="text-sm font-semibold text-gray-100">
+      <div className="flex items-center justify-between rounded-md border border-hair-2 px-3 py-2 bg-card-2">
+        <span className="text-sm font-medium text-ink-3">Blended Return</span>
+        <span className="text-sm font-semibold text-ink">
           {(blendedReturn * 100).toFixed(2)}%
         </span>
       </div>
@@ -110,9 +112,9 @@ export function AssetMixTab({
             type="checkbox"
             checked={hideZero}
             onChange={(e) => setHideZero(e.target.checked)}
-            className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
+            className="h-4 w-4 rounded border-hair-3 bg-card-2 text-accent focus:ring-accent"
           />
-          <span className="text-sm text-gray-300">Hide 0% allocations</span>
+          <span className="text-sm text-ink-3">Hide 0% allocations</span>
         </label>
       </div>
 
@@ -125,8 +127,8 @@ export function AssetMixTab({
               key={ac.id}
               className="flex items-center justify-between gap-2"
             >
-              <span className="text-sm flex-1 truncate text-gray-200">{ac.name}</span>
-              <span className="text-xs text-gray-400 w-14 text-right shrink-0">
+              <span className="text-sm flex-1 truncate text-ink-2">{ac.name}</span>
+              <span className="text-xs text-ink-3 w-14 text-right shrink-0">
                 {(ac.geometricReturn * 100).toFixed(2)}%
               </span>
               <div className="flex items-center gap-1 w-20 shrink-0">
@@ -135,7 +137,7 @@ export function AssetMixTab({
                   onChange={(v) => handleWeightChange(ac.id, v)}
                   readOnly={derivedFromHoldings}
                 />
-                <span className="text-sm text-gray-400">%</span>
+                <span className="text-sm text-ink-3">%</span>
               </div>
             </div>
           );
@@ -144,23 +146,23 @@ export function AssetMixTab({
 
       {/* Unclassified row */}
       {unclassified > 0.0001 && (
-        <div className="flex items-center justify-between gap-3 border-t border-gray-700 pt-2">
-          <span className="text-sm flex-1 text-gray-400 italic">
+        <div className="flex items-center justify-between gap-3 border-t border-hair pt-2">
+          <span className="text-sm flex-1 text-ink-3 italic">
             Unclassified
           </span>
-          <span className="text-xs text-gray-400 w-16 text-right">
+          <span className="text-xs text-ink-3 w-16 text-right">
             {inflationClass
               ? `${(inflationClass.geometricReturn * 100).toFixed(2)}%`
               : "—"}
           </span>
-          <span className="text-sm font-medium w-20 text-right text-gray-100">
+          <span className="text-sm font-medium w-20 text-right text-ink">
             {(unclassified * 100).toFixed(1)}%
           </span>
         </div>
       )}
 
       {unclassified > 0.0001 && (
-        <p className="text-xs text-gray-400">
+        <p className="text-xs text-ink-3">
           Unclassified portion grows at the Inflation rate
           {inflationClass
             ? ` (${(inflationClass.geometricReturn * 100).toFixed(2)}%)`
@@ -170,10 +172,10 @@ export function AssetMixTab({
       )}
 
       {/* Total row */}
-      <div className="flex items-center justify-between gap-3 border-t border-gray-700 pt-2 font-medium">
-        <span className="text-sm flex-1 text-gray-200">Total</span>
+      <div className="flex items-center justify-between gap-3 border-t border-hair pt-2 font-medium">
+        <span className="text-sm flex-1 text-ink-2">Total</span>
         <span className="w-16" />
-        <span className="text-sm w-20 text-right text-gray-100">100.0%</span>
+        <span className="text-sm w-20 text-right text-ink">100.0%</span>
       </div>
     </div>
   );
@@ -206,11 +208,11 @@ function WeightInput({ weight, onChange, readOnly = false }: WeightInputProps) {
         onChange(cleaned);
       }}
       onBlur={() => setDraft(null)}
-      className={`h-7 w-full rounded-md border px-2 text-right text-sm text-gray-100 focus:outline-none ${
+      className={
         readOnly
-          ? "cursor-default border-gray-700 bg-gray-800/40 text-gray-400"
-          : "border-gray-600 bg-gray-800 focus:border-accent focus:ring-1 focus:ring-accent"
-      }`}
+          ? "h-8 w-full cursor-default rounded-[var(--radius-sm)] border border-hair bg-card-2 px-2 text-right text-[14px] text-ink-3 outline-none"
+          : `${inputCompactClassName} text-right`
+      }
     />
   );
 }

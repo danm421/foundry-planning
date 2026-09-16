@@ -2228,7 +2228,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                  the single `disabled` attribute reaches every control inside. */
               <fieldset className="contents" disabled={equityScenarioBlocked}>
                 {equityScenarioBlocked && (
-                  <p className="col-span-2 rounded-md border border-gray-700 bg-gray-800/60 px-3 py-3 text-sm text-gray-400">
+                  <p className="col-span-2 rounded-md border border-hair bg-card-2/60 px-3 py-3 text-sm text-ink-3">
                     {EQUITY_SCENARIO_BLOCKED_MSG}
                   </p>
                 )}
@@ -2252,12 +2252,12 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                       type="checkbox"
                       checked={isPublic}
                       onChange={(e) => setIsPublic(e.target.checked)}
-                      className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
+                      className="h-4 w-4 rounded border-hair-3 bg-card-2 text-accent focus:ring-accent"
                     />
                     <span className={fieldLabelClassName}>Publicly traded</span>
                   </label>
                   {isPublic && (
-                    <p className="text-xs text-gray-400">
+                    <p className="text-xs text-ink-3">
                       Public ticker — price can be refreshed from market data (auto-refresh coming soon).
                     </p>
                   )}
@@ -2303,7 +2303,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                       type="checkbox"
                       checked={sellToCover}
                       onChange={(e) => setSellToCover(e.target.checked)}
-                      className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
+                      className="h-4 w-4 rounded border-hair-3 bg-card-2 text-accent focus:ring-accent"
                     />
                     <span className={fieldLabelClassName}>Sell to cover taxes</span>
                   </label>
@@ -2447,7 +2447,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                   className={inputClassName}
                 />
                 {drivenByHoldings && (
-                  <p className="mt-1 text-xs text-gray-400">
+                  <p className="mt-1 text-xs text-ink-3">
                     {category === "retirement"
                       ? "Value is derived from this account's holdings."
                       : "Value \u0026 basis are derived from this account's holdings."}
@@ -2467,7 +2467,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                     onChange={(raw) => setAccountRothValue(raw)}
                     className={inputClassName}
                   />
-                  <p className="mt-1 text-xs text-gray-400">
+                  <p className="mt-1 text-xs text-ink-3">
                     Portion of the balance designated as Roth. Grows with the
                     account and is excluded from tax on withdrawal.
                   </p>
@@ -2507,7 +2507,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                       type="checkbox"
                       checked={countsTowardAum}
                       onChange={(e) => setCountsTowardAum(e.target.checked)}
-                      className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
+                      className="h-4 w-4 rounded border-hair-3 bg-card-2 text-accent focus:ring-accent"
                     />
                     <span className="whitespace-nowrap">Counts toward AUM</span>
                     <FieldTooltip text="Include this balance in Total book value on the home screen." />
@@ -2711,7 +2711,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                   <option value="self">Self-only</option>
                   <option value="family">Family</option>
                 </select>
-                <p className="mt-1 text-xs text-gray-400">
+                <p className="mt-1 text-xs text-ink-3">
                   Sets the annual contribution limit. Catch-up (+$1,000) applies automatically at 55+.
                 </p>
               </div>
@@ -2924,7 +2924,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       {!lockTab && category === "taxable" && (
         <div className={activeTab === "realization" ? "" : "hidden"}>
           <div className="space-y-4">
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-ink-3">
               How growth is realized for tax purposes. Leave blank to inherit from the model portfolio.
             </p>
             <div className="grid grid-cols-2 gap-4">
@@ -2966,7 +2966,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                   value={turnoverPct}
                   onChange={(raw) => setTurnoverPct(raw)}
                   className={inputClassName} />
-                <p className="mt-1 text-xs text-gray-400">Portion of LT CG realized as short-term each year.</p>
+                <p className="mt-1 text-xs text-ink-3">Portion of LT CG realized as short-term each year.</p>
               </div>
             </div>
           </div>
@@ -3019,11 +3019,11 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                   type="checkbox"
                   checked={rmdEnabled}
                   onChange={(e) => setRmdEnabled(e.target.checked)}
-                  className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
+                  className="h-4 w-4 rounded border-hair-3 bg-card-2 text-accent focus:ring-accent"
                 />
-                <span className="text-sm font-medium text-gray-300">Subject to RMDs</span>
+                <span className="text-sm font-medium text-ink-3">Subject to RMDs</span>
               </label>
-              <p className="mt-1 ml-6 text-xs text-gray-400">
+              <p className="mt-1 ml-6 text-xs text-ink-3">
                 Required Minimum Distributions apply to pre-tax retirement accounts starting at age 73 or 75.
               </p>
             </div>
@@ -3040,7 +3040,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                   className={inputClassName}
                   placeholder="Leave blank to use current value"
                 />
-                <p className="mt-1 text-xs text-gray-400">
+                <p className="mt-1 text-xs text-ink-3">
                   IRS RMDs are calculated off the prior calendar year-end balance. If
                   the account value above isn&apos;t a true Dec 31 snapshot, set this to
                   align the first projection year&apos;s RMD with the custodian&apos;s
@@ -3096,7 +3096,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
               </button>
             </div>
           ) : annuityLoad === "loading" ? (
-            <p className="text-sm text-gray-300">Loading the contract&hellip;</p>
+            <p className="text-sm text-ink-3">Loading the contract&hellip;</p>
           ) : (
             <AnnuityTab
               value={annuityContractResolved}
@@ -3119,7 +3119,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
           it's usable the moment switching to it force-creates the account. */}
       <div className={activeTab === "beneficiaries" ? "" : "hidden"}>
         {!effectiveAccountId ? (
-          <p className="text-sm text-gray-300">Save the account first, then designate beneficiaries.</p>
+          <p className="text-sm text-ink-3">Save the account first, then designate beneficiaries.</p>
         ) : (
           <BeneficiariesTab clientId={clientId} accountId={effectiveAccountId} active={activeTab === "beneficiaries"} />
         )}
@@ -3158,11 +3158,11 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     {deletingSr && (
       <div className="fixed inset-0 z-50 flex items-center justify-center">
         <div className="absolute inset-0 bg-black/70" onClick={() => setDeletingSr(null)} />
-        <div className="relative z-10 w-full max-w-sm rounded-lg border-2 border-ink-3 ring-1 ring-black/60 bg-gray-900 p-6 shadow-xl">
-          <h3 className="mb-2 text-base font-semibold text-gray-100">Delete Savings Rule</h3>
-          <p className="mb-4 text-sm text-gray-300">Remove this savings rule? This cannot be undone.</p>
+        <div className="relative z-10 w-full max-w-sm rounded-lg border-2 border-ink-3 ring-1 ring-black/60 bg-card p-6 shadow-xl">
+          <h3 className="mb-2 text-base font-semibold text-ink">Delete Savings Rule</h3>
+          <p className="mb-4 text-sm text-ink-3">Remove this savings rule? This cannot be undone.</p>
           <div className="flex justify-end gap-3">
-            <button type="button" onClick={() => setDeletingSr(null)} className="rounded-md border border-gray-700 px-4 py-2 text-sm text-gray-300 hover:bg-gray-800">Cancel</button>
+            <button type="button" onClick={() => setDeletingSr(null)} className="rounded-md border border-hair-3 px-4 py-2 text-sm text-ink-3 hover:bg-card-hover">Cancel</button>
             <button
               type="button"
               onClick={async () => {

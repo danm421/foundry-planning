@@ -68,22 +68,22 @@ export default function SavingsRulesList({
   return (
     <div className="flex flex-col gap-2">
       {rules.length === 0 ? (
-        <p className="text-sm text-gray-400">{emptyMessage}</p>
+        <p className="text-sm text-ink-3">{emptyMessage}</p>
       ) : (
-        <div className="divide-y divide-gray-800 rounded-md border border-gray-800">
+        <div className="divide-y divide-hair rounded-md border border-hair">
           {rules.map((rule) => {
             const matchSummary = formatMatch(rule);
             const rothTag = formatRothTag(rule);
             return (
             <div key={rule.id} className="flex items-center justify-between gap-3 px-4 py-3">
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium text-gray-100">
+                <div className="text-sm font-medium text-ink">
                   {formatContribution(rule)}
                   {showAccountColumn && accountsById[rule.accountId] && (
-                    <span className="ml-2 text-gray-400">→ {accountsById[rule.accountId].name}</span>
+                    <span className="ml-2 text-ink-3">→ {accountsById[rule.accountId].name}</span>
                   )}
                 </div>
-                <div className="text-xs text-gray-400">
+                <div className="text-xs text-ink-3">
                   {rule.startYear}–{rule.endYear}
                   {matchSummary && <span> · {matchSummary}</span>}
                   {rothTag && (
@@ -99,7 +99,7 @@ export default function SavingsRulesList({
                     <button
                       type="button"
                       onClick={() => onEdit(rule)}
-                      className="rounded border border-gray-700 bg-gray-800 px-2.5 py-1 text-xs font-medium text-gray-300 hover:bg-gray-700"
+                      className="rounded border border-hair-3 bg-card-2 px-2.5 py-1 text-xs font-medium text-ink-3 hover:bg-card-hover"
                     >
                       Edit
                     </button>
@@ -108,7 +108,7 @@ export default function SavingsRulesList({
                     <button
                       type="button"
                       onClick={() => onDelete(rule)}
-                      className="rounded border border-red-800 bg-red-900/30 px-2.5 py-1 text-xs font-medium text-red-400 hover:bg-red-900/60"
+                      className="rounded border border-crit/30 bg-crit/10 px-2.5 py-1 text-xs font-medium text-crit hover:bg-crit/20"
                     >
                       Delete
                     </button>
@@ -125,7 +125,7 @@ export default function SavingsRulesList({
           <button
             type="button"
             onClick={onAdd}
-            className="w-full rounded-md border border-dashed border-gray-700 py-2 text-sm text-gray-300 hover:border-gray-500 hover:text-gray-200"
+            className="w-full rounded-md border border-dashed border-hair-3 py-2 text-sm text-ink-3 hover:border-ink-4 hover:text-ink-2"
           >
             + Add savings rule
           </button>

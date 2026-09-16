@@ -260,7 +260,7 @@ export default function TransferAssetForm({
       {/* Asset selector */}
       <div>
         {eligibleAccounts.length === 0 ? (
-          <div className="text-xs text-gray-400 italic">
+          <div className="text-xs text-ink-3 italic">
             No eligible assets to transfer. (Excludes retirement, default-checking,
             100%-trust-owned, and other-entity-pinned accounts.)
           </div>

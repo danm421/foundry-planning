@@ -2,6 +2,7 @@
 
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
+import { fieldLabelClassName } from "./input-styles";
 
 /** Account subtypes that can receive an employer match. UI hides the entire
  *  match section for any account whose subType is not in this set. Consolidates
@@ -65,9 +66,9 @@ export default function EmployerMatchFields({
   idPrefix = "sr",
 }: Props) {
   return (
-    <div className="rounded-md border border-gray-800 bg-gray-900/60 p-3">
+    <div className="rounded-md border border-hair bg-card-2/60 p-3">
       <div className="mb-2 flex items-center gap-4">
-        <span className="text-xs font-semibold uppercase tracking-wider text-gray-300">
+        <span className="text-xs font-semibold uppercase tracking-wider text-ink-3">
           Employer Match
         </span>
         <div className="flex gap-1 text-xs">
@@ -79,7 +80,7 @@ export default function EmployerMatchFields({
               className={`rounded-md border px-2 py-0.5 text-xs font-medium ${
                 mode === m
                   ? "border-accent bg-accent/15 text-accent-ink"
-                  : "border-gray-700 bg-gray-900 text-gray-300 hover:bg-gray-800"
+                  : "border-hair-3 bg-card-2 text-ink-3 hover:bg-card-hover"
               }`}
             >
               {m === "none" ? "None" : m === "percent" ? "% of salary" : "Flat $"}
@@ -91,7 +92,7 @@ export default function EmployerMatchFields({
       {mode === "percent" && (
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-gray-300" htmlFor={`${idPrefix}-match-pct`}>
+            <label className={fieldLabelClassName} htmlFor={`${idPrefix}-match-pct`}>
               Match rate (%)
             </label>
             <PercentInput
@@ -99,11 +100,10 @@ export default function EmployerMatchFields({
               name="employerMatchPct"
               placeholder="e.g., 50 or 3"
               defaultValue={initialPct ? pctFromDecimal(initialPct, 0) : ""}
-              className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-300" htmlFor={`${idPrefix}-match-cap`}>
+            <label className={fieldLabelClassName} htmlFor={`${idPrefix}-match-cap`}>
               Cap (% of salary) — optional
             </label>
             <PercentInput
@@ -111,10 +111,9 @@ export default function EmployerMatchFields({
               name="employerMatchCap"
               placeholder="e.g., 6"
               defaultValue={initialCap ? pctFromDecimal(initialCap, 0) : ""}
-              className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
             />
           </div>
-          <p className="col-span-2 text-xs text-gray-400">
+          <p className="col-span-2 text-xs text-ink-3">
             No cap → <code>rate × account-owner salary</code>. With cap →{" "}
             <code>rate × cap × salary</code> (e.g. 50% match up to 6% of salary).
           </p>
@@ -123,7 +122,7 @@ export default function EmployerMatchFields({
 
       {mode === "flat" && (
         <div>
-          <label className="block text-xs font-medium text-gray-300" htmlFor={`${idPrefix}-match-amt`}>
+          <label className={fieldLabelClassName} htmlFor={`${idPrefix}-match-amt`}>
             Flat annual amount ($)
           </label>
           <CurrencyInput
@@ -131,9 +130,8 @@ export default function EmployerMatchFields({
             name="employerMatchAmount"
             placeholder="5000"
             defaultValue={initialAmount ?? ""}
-            className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
           />
-          <p className="mt-1 text-xs text-gray-400">
+          <p className="mt-1 text-xs text-ink-3">
             The employer deposits this flat amount each year, regardless of salary.
           </p>
         </div>

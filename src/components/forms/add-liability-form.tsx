@@ -437,7 +437,7 @@ const AddLiabilityForm = forwardRef<LiabilityFormAutoSaveHandle, AddLiabilityFor
       <button
         type="button"
         onClick={onClick}
-        className="ml-1 inline-flex h-7 w-7 items-center justify-center rounded text-gray-300 hover:bg-gray-700 hover:text-accent"
+        className="ml-1 inline-flex h-7 w-7 items-center justify-center rounded text-ink-3 hover:bg-card-hover hover:text-accent"
         title={title}
       >
         <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
@@ -655,7 +655,7 @@ const AddLiabilityForm = forwardRef<LiabilityFormAutoSaveHandle, AddLiabilityFor
               type="checkbox"
               checked={interestOnly}
               onChange={(e) => setInterestOnly(e.target.checked)}
-              className="h-4 w-4 rounded border-hair bg-card-2 text-accent focus:ring-accent"
+              className="h-4 w-4 rounded border-hair-3 bg-card-2 text-accent focus:ring-accent"
             />
             Interest only
           </label>
@@ -688,12 +688,12 @@ const AddLiabilityForm = forwardRef<LiabilityFormAutoSaveHandle, AddLiabilityFor
 
       {/* Row 7: Interest deductible checkbox */}
       <div>
-        <label className="flex items-center gap-2 text-sm text-gray-300">
+        <label className="flex items-center gap-2 text-sm text-ink-3">
           <input
             type="checkbox"
             checked={isInterestDeductible}
             onChange={(e) => setIsInterestDeductible(e.target.checked)}
-            className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
+            className="h-4 w-4 rounded border-hair-3 bg-card-2 text-accent focus:ring-accent"
           />
           Interest is tax-deductible
           <HelpTip text="When checked, the annual interest portion flows into your itemized deductions (e.g., mortgage interest)." />
@@ -704,7 +704,7 @@ const AddLiabilityForm = forwardRef<LiabilityFormAutoSaveHandle, AddLiabilityFor
       <div>
         <label
           className={`flex items-center gap-2 text-sm ${
-            hasTerm ? "text-gray-300" : "text-gray-500"
+            hasTerm ? "text-ink-3" : "text-ink-4"
           }`}
         >
           <input
@@ -712,7 +712,7 @@ const AddLiabilityForm = forwardRef<LiabilityFormAutoSaveHandle, AddLiabilityFor
             checked={forgiveAtTermEnd}
             disabled={!hasTerm}
             onChange={(e) => setForgiveAtTermEnd(e.target.checked)}
-            className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent disabled:opacity-40"
+            className="h-4 w-4 rounded border-hair-3 bg-card-2 text-accent focus:ring-accent disabled:opacity-40"
           />
           Forgive remaining balance at end of term
           <HelpTip

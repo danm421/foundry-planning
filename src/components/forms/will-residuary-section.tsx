@@ -45,7 +45,7 @@ function HelpIcon({ label }: { label: string }) {
       aria-label={label}
       title={label}
       tabIndex={0}
-      className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-gray-600 text-[10px] font-semibold text-gray-400 hover:border-gray-400 hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-accent/40"
+      className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-hair-3 text-[10px] font-semibold text-ink-3 hover:border-ink-4 hover:text-ink-2 focus:outline-none focus:ring-2 focus:ring-accent/40"
     >
       ?
     </span>
@@ -101,9 +101,9 @@ export default function WillResiduarySection({
     tooltip: string,
     body: React.ReactNode,
   ) => (
-    <div className="rounded-md border border-gray-800 bg-gray-900/40 p-3">
+    <div className="rounded-md border border-hair bg-card-2/40 p-3">
       <div className="mb-2 flex items-center gap-1.5">
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-300">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-ink-3">
           {label}
         </h4>
         <HelpIcon label={tooltip} />
@@ -113,13 +113,13 @@ export default function WillResiduarySection({
   );
 
   return (
-    <div className="mt-6 rounded-md border border-gray-800 bg-gray-900/30 p-4">
+    <div className="mt-6 rounded-md border border-hair bg-card-2/30 p-4">
       <div className="mb-3 flex items-center gap-1.5">
-        <h3 className="text-sm font-medium text-gray-300">Remainder estate</h3>
+        <h3 className="text-sm font-medium text-ink-3">Remainder estate</h3>
         <HelpIcon label="Where the residue of the estate goes after specific bequests have been distributed." />
       </div>
       {isEmpty && (
-        <p className="mb-3 text-xs text-gray-400">
+        <p className="mb-3 text-xs text-ink-3">
           No remainder clause specified. Residual assets are distributed by the
           default order — surviving spouse, then children, then other heirs.
         </p>

@@ -52,10 +52,10 @@ const GRANT_TYPE_LABELS: Record<"rsu" | "nqso" | "iso", string> = {
 
 // Color palette for the segmented status bar segments
 const BAR_COLORS = {
-  unvested: "bg-gray-600",
-  vestedHeld: "bg-blue-500",
+  unvested: "bg-data-grey",
+  vestedHeld: "bg-data-blue",
   exercisedHeld: "bg-accent",
-  sold: "bg-green-600",
+  sold: "bg-data-green",
 };
 
 function fmt(n: number): string {
@@ -92,20 +92,20 @@ export default function GrantCard({ grant, currentYear, onEdit, onDelete, readOn
   const displayName = grant.grantNumber ? `Grant ${grant.grantNumber}` : "Grant";
 
   return (
-    <div className="rounded-md border border-gray-700 bg-card p-4 space-y-3">
+    <div className="rounded-md border border-hair bg-card p-4 space-y-3">
       {/* Header */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm font-semibold text-gray-200">{displayName}</span>
-          <span className="rounded px-1.5 py-0.5 text-xs font-medium bg-gray-700 text-gray-200">
+          <span className="text-sm font-semibold text-ink-2">{displayName}</span>
+          <span className="rounded px-1.5 py-0.5 text-xs font-medium bg-card-hover text-ink-2">
             {GRANT_TYPE_LABELS[grant.grantType]}
           </span>
           {grant.has83bElection && (
-            <span className="rounded px-1.5 py-0.5 text-xs font-medium bg-amber-900/60 text-amber-300 border border-amber-700/50">
+            <span className="rounded px-1.5 py-0.5 text-xs font-medium bg-warn/10 text-warn border border-warn/30">
               83(b)
             </span>
           )}
-          <span className="text-xs text-gray-400">{grant.grantDate}</span>
+          <span className="text-xs text-ink-3">{grant.grantDate}</span>
         </div>
         {!readOnly && (
           <div className="flex items-center gap-2 shrink-0">
@@ -119,7 +119,7 @@ export default function GrantCard({ grant, currentYear, onEdit, onDelete, readOn
             <button
               type="button"
               onClick={onDelete}
-              className="text-xs text-gray-400 hover:text-red-400"
+              className="text-xs text-ink-3 hover:text-crit"
             >
               Remove
             </button>
@@ -130,7 +130,7 @@ export default function GrantCard({ grant, currentYear, onEdit, onDelete, readOn
       {/* Segmented status bar */}
       {granted > 0 ? (
         <div
-          className="flex h-3 w-full overflow-hidden rounded-full bg-gray-800"
+          className="flex h-3 w-full overflow-hidden rounded-full bg-card-2"
           title={`${fmt(unvested)} unvested · ${fmt(vestedHeld)} vested held · ${fmt(exercisedHeld)} exercised held · ${fmt(sold)} sold`}
           role="img"
           aria-label="Grant share status"
@@ -141,25 +141,25 @@ export default function GrantCard({ grant, currentYear, onEdit, onDelete, readOn
           <div className={`${BAR_COLORS.sold} h-full`} style={{ width: barWidth(sold) }} />
         </div>
       ) : (
-        <div className="h-3 w-full rounded-full bg-gray-800" />
+        <div className="h-3 w-full rounded-full bg-card-2" />
       )}
 
       {/* Chips row */}
-      <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-400">
+      <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-ink-3">
         <span>
-          <span className="text-gray-200">{fmt(granted)}</span> granted
+          <span className="text-ink-2">{fmt(granted)}</span> granted
         </span>
-        <span className="text-gray-600">·</span>
+        <span className="text-ink-4">·</span>
         <span>
-          <span className="text-gray-200">{fmt(unvested)}</span> unvested
+          <span className="text-ink-2">{fmt(unvested)}</span> unvested
         </span>
-        <span className="text-gray-600">·</span>
+        <span className="text-ink-4">·</span>
         <span>
-          <span className="text-gray-200">{fmt(held)}</span> held
+          <span className="text-ink-2">{fmt(held)}</span> held
         </span>
-        <span className="text-gray-600">·</span>
+        <span className="text-ink-4">·</span>
         <span>
-          <span className="text-gray-200">{fmt(sold)}</span> sold
+          <span className="text-ink-2">{fmt(sold)}</span> sold
         </span>
       </div>
 

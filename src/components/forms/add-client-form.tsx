@@ -395,10 +395,10 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
       className="space-y-4"
     >
       {error && (
-        <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>
+        <p className="rounded bg-crit/10 px-3 py-2 text-sm text-crit">{error}</p>
       )}
 
-      <nav className="-mt-2 flex items-center justify-between border-b border-gray-700" role="tablist" aria-label="Client form sections">
+      <nav className="-mt-2 flex items-center justify-between border-b border-hair" role="tablist" aria-label="Client form sections">
         <div className="flex gap-1">
           <TabButton active={activeTab === "details"} onClick={() => goToTab("details")}>Details</TabButton>
           <TabButton active={activeTab === "contact"} onClick={() => goToTab("contact")}>Contact</TabButton>
@@ -418,7 +418,7 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
             this block — identity already lives in CRM under the existing
             household and the form only edits planning fields. */}
         {!isEdit && (
-          <div className="space-y-3 rounded-md border border-gray-700 bg-gray-800/40 p-3">
+          <div className="space-y-3 rounded-md border border-hair bg-card-2/40 p-3">
             {!selectedHouseholdId && !createNewHousehold && (
               <CrmHouseholdPicker
                 onSelect={(id) => setSelectedHouseholdId(id)}
@@ -427,26 +427,26 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
             )}
 
             {selectedHouseholdId && (
-              <div className="flex items-start gap-3 rounded-md border border-emerald-700/40 bg-emerald-900/20 px-3 py-2 text-sm">
-                <CheckCircleIcon width={16} height={16} className="mt-0.5 shrink-0 text-emerald-400" aria-hidden="true" />
-                <span className="flex-1 text-gray-100">CRM household linked.</span>
+              <div className="flex items-start gap-3 rounded-md border border-good/40 bg-good/10 px-3 py-2 text-sm">
+                <CheckCircleIcon width={16} height={16} className="mt-0.5 shrink-0 text-good" aria-hidden="true" />
+                <span className="flex-1 text-ink">CRM household linked.</span>
                 <button
                   type="button"
                   onClick={() => setSelectedHouseholdId(null)}
-                  className="text-xs text-gray-300 hover:text-gray-100"
+                  className="text-xs text-ink-3 hover:text-ink"
                 >
                   Change
                 </button>
               </div>
             )}
 
-            <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-200">
+            <label className="flex items-center gap-2 cursor-pointer text-sm text-ink-2">
               <input
                 type="checkbox"
                 checked={createNewHousehold}
                 disabled={!!selectedHouseholdId}
                 onChange={(e) => setCreateNewHousehold(e.target.checked)}
-                className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
+                className="h-4 w-4 rounded border-hair-3 bg-card-2 text-accent focus:ring-accent"
               />
               <span>Create a new household</span>
             </label>
@@ -454,7 +454,7 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
               <div className="space-y-2">
                 <div>
                   <label className={fieldLabelClassName} htmlFor="householdState">
-                    State of residence <span className="text-red-500">*</span>
+                    State of residence <span className="text-crit">*</span>
                   </label>
                   <StateSelect
                     id="householdState"
@@ -465,7 +465,7 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
                     className={`mt-1 ${selectClassName}`}
                   />
                 </div>
-                <p className="text-xs text-gray-400">
+                <p className="text-xs text-ink-3">
                   A new CRM household will be created from the details below. Drives
                   state income &amp; estate tax for the plan.
                 </p>
@@ -479,21 +479,21 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
             <>
               <div>
                 <label className={fieldLabelClassName} htmlFor="firstName">
-                  First Name <span className="text-red-500">*</span>
+                  First Name <span className="text-crit">*</span>
                 </label>
                 <input id="firstName" name="firstName" type="text" required defaultValue={initial?.firstName ?? ""} className={`mt-1 ${inputClassName}`} />
               </div>
 
               <div>
                 <label className={fieldLabelClassName} htmlFor="lastName">
-                  Last Name <span className="text-red-500">*</span>
+                  Last Name <span className="text-crit">*</span>
                 </label>
                 <input id="lastName" name="lastName" type="text" required value={lastName} onChange={(e) => setLastName(e.target.value)} className={`mt-1 ${inputClassName}`} />
               </div>
 
               <div>
                 <label className={fieldLabelClassName} htmlFor="dateOfBirth">
-                  Date of Birth <span className="text-red-500">*</span>
+                  Date of Birth <span className="text-crit">*</span>
                 </label>
                 <input id="dateOfBirth" name="dateOfBirth" type="date" required min="1910-01-01" value={dob} onChange={(e) => setDob(e.target.value)} className={`mt-1 ${inputClassName}`} />
               </div>
@@ -502,7 +502,7 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
 
           <div>
             <label className={fieldLabelClassName} htmlFor="filingStatus">
-              Filing Status <span className="text-red-500">*</span>
+              Filing Status <span className="text-crit">*</span>
             </label>
             <select id="filingStatus" name="filingStatus" required defaultValue={initial?.filingStatus ?? "single"} className={`mt-1 ${selectClassName}`}>
               <option value="single">Single</option>
@@ -529,7 +529,7 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
                 <option key={m.value} value={m.value}>{m.label}</option>
               ))}
             </select>
-            <p className="mt-1 text-xs text-gray-400">
+            <p className="mt-1 text-xs text-ink-3">
               Income/expenses linked to retirement are pro-rated for this month in the retirement year.
             </p>
           </div>
@@ -543,22 +543,22 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
             max={120}
             birthYear={clientBirthYear}
             hint={
-              <p className="text-xs text-gray-400">
+              <p className="text-xs text-ink-3">
                 Plan horizon ends the year of the last Co-client to die.
               </p>
             }
           />
         </div>
 
-        <div className="border-t border-gray-700 pt-4">
+        <div className="border-t border-hair pt-4">
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
               checked={showSpouse}
               onChange={(e) => setShowSpouse(e.target.checked)}
-              className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
+              className="h-4 w-4 rounded border-hair-3 bg-card-2 text-accent focus:ring-accent"
             />
-            <span className="text-sm font-medium text-gray-300">Add Co-client</span>
+            <span className="text-sm font-medium text-ink-3">Add Co-client</span>
           </label>
 
           {showSpouse && (
@@ -616,11 +616,11 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
       <div role="tabpanel" hidden={activeTab !== "contact"} className="space-y-6">
         <ContactInfoSection heading="Client" initial={initial} prefix="" />
         {showSpouse ? (
-          <div className="border-t border-gray-700 pt-4">
+          <div className="border-t border-hair pt-4">
             <ContactInfoSection heading="Co-client" initial={initial} prefix="spouse" />
           </div>
         ) : (
-          <p className="text-xs text-gray-400">
+          <p className="text-xs text-ink-3">
             Add a Co-client on the Details tab to enter separate Co-client contact info.
           </p>
         )}
@@ -639,7 +639,7 @@ function ContactInfoSection({
 
   return (
     <div>
-      <h3 className="text-sm font-medium text-gray-300">{heading}</h3>
+      <h3 className="text-sm font-medium text-ink-3">{heading}</h3>
       <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-2">
         <ContactInput label="Email"       name={fieldName("email")}       type="email" defaultValue={v("email")} />
         <ContactInput label="Phone"       name={fieldName("phone")}       type="tel"   defaultValue={v("phone")} />
@@ -676,7 +676,7 @@ function TabButton({
       aria-selected={active}
       onClick={onClick}
       className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
-        active ? "border-accent text-gray-100" : "border-transparent text-gray-300 hover:text-gray-200"
+        active ? "border-accent text-ink" : "border-transparent text-ink-3 hover:text-ink-2"
       }`}
     >
       {children}

@@ -130,7 +130,7 @@ export function GrowthRateField({
         <option value="custom">Custom %</option>
       </select>
       {growthSource === "inflation" && (
-        <p className="mt-1 text-xs text-gray-400">
+        <p className="mt-1 text-xs text-ink-3">
           Growth tracks plan inflation rate: {(resolvedInflationRate * 100).toFixed(2)}%
         </p>
       )}

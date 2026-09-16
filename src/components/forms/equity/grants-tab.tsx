@@ -3,6 +3,13 @@
 import { useEffect, useState, useCallback } from "react";
 import GrantCard, { type GrantDisplay } from "./grant-card";
 import VestingGrid, { type TrancheRow, newTrancheKey, acquiredShares } from "./vesting-grid";
+import {
+  fieldLabelBaseClassName,
+  fieldLabelClassName,
+  inputClassName,
+  selectClassName,
+  textareaClassName,
+} from "../input-styles";
 
 interface GrantsTabProps {
   clientId: string;
@@ -272,9 +279,6 @@ function buildBody(state: GrantEditorState) {
   };
 }
 
-const inputCls = "rounded border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none w-full";
-const labelCls = "block text-xs font-medium text-gray-400 mb-1";
-
 function GrantEditor({
   initial,
   onSave,
@@ -293,14 +297,14 @@ function GrantEditor({
   const validationError = validateEditor(state);
 
   return (
-    <div className="rounded-md border border-gray-600 bg-gray-900 p-4 space-y-4">
-      <h4 className="text-sm font-semibold text-gray-200">
+    <div className="rounded-md border border-hair-2 bg-card-2 p-4 space-y-4">
+      <h4 className="text-sm font-semibold text-ink-2">
         {initial.grantDate ? "Edit Grant" : "Add Grant"}
       </h4>
 
       {/* Grant type */}
       <div>
-        <label className={labelCls}>Grant Type</label>
+        <label className={fieldLabelClassName}>Grant Type</label>
         <select
           value={state.grantType}
           onChange={(e) => {
@@ -313,7 +317,7 @@ function GrantEditor({
                 : { grantType, has83bElection: false, fmvAtGrant: "" },
             );
           }}
-          className={inputCls}
+          className={selectClassName}
         >
           <option value="rsu">RSU</option>
           <option value="nqso">NQSO</option>
@@ -324,33 +328,33 @@ function GrantEditor({
       <div className="grid grid-cols-2 gap-4">
         {/* Grant number (optional) */}
         <div>
-          <label className={labelCls}>Grant Number (optional)</label>
+          <label className={fieldLabelClassName}>Grant Number (optional)</label>
           <input
             type="text"
             value={state.grantNumber}
             onChange={(e) => set({ grantNumber: e.target.value })}
             placeholder="e.g. G-2024-001"
-            className={inputCls}
+            className={inputClassName}
           />
         </div>
 
         {/* Grant date */}
         <div>
-          <label className={labelCls}>
-            Grant Date <span className="text-red-400">*</span>
+          <label className={fieldLabelClassName}>
+            Grant Date <span className="text-crit">*</span>
           </label>
           <input
             type="date"
             value={state.grantDate}
             onChange={(e) => set({ grantDate: e.target.value })}
-            className={inputCls}
+            className={inputClassName}
           />
         </div>
 
         {/* Shares granted */}
         <div>
-          <label className={labelCls}>
-            Shares Granted <span className="text-red-400">*</span>
+          <label className={fieldLabelClassName}>
+            Shares Granted <span className="text-crit">*</span>
           </label>
           <input
             type="number"
@@ -358,7 +362,7 @@ function GrantEditor({
             value={state.sharesGranted}
             onChange={(e) => set({ sharesGranted: e.target.value })}
             placeholder="e.g. 10000"
-            className={inputCls}
+            className={inputClassName}
           />
         </div>
       </div>
@@ -371,14 +375,14 @@ function GrantEditor({
               type="checkbox"
               checked={state.has83bElection}
               onChange={(e) => set({ has83bElection: e.target.checked })}
-              className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
+              className="h-4 w-4 rounded border-hair-3 bg-card-2 text-accent focus:ring-accent"
             />
-            <span className="text-sm text-gray-300">83(b) Election filed</span>
+            <span className="text-sm text-ink-3">83(b) Election filed</span>
           </label>
           {state.has83bElection && (
             <div className="ml-6">
-              <label className={labelCls}>
-                FMV at Grant <span className="text-red-400">*</span>
+              <label className={fieldLabelClassName}>
+                FMV at Grant <span className="text-crit">*</span>
               </label>
               <input
                 type="number"
@@ -387,7 +391,7 @@ function GrantEditor({
                 value={state.fmvAtGrant}
                 onChange={(e) => set({ fmvAtGrant: e.target.value })}
                 placeholder="e.g. 12.50"
-                className={inputCls}
+                className={inputClassName}
               />
             </div>
           )}
@@ -399,8 +403,8 @@ function GrantEditor({
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className={labelCls}>
-                Strike Price <span className="text-xs text-gray-500">(or use discount %)</span>
+              <label className={fieldLabelClassName}>
+                Strike Price <span className="text-xs text-ink-4">(or use discount %)</span>
               </label>
               <input
                 type="number"
@@ -409,12 +413,12 @@ function GrantEditor({
                 value={state.strikePrice}
                 onChange={(e) => set({ strikePrice: e.target.value })}
                 placeholder="e.g. 15.00"
-                className={inputCls}
+                className={inputClassName}
               />
             </div>
             <div>
-              <label className={labelCls}>
-                Strike Discount % <span className="text-xs text-gray-500">(or use strike price)</span>
+              <label className={fieldLabelClassName}>
+                Strike Discount % <span className="text-xs text-ink-4">(or use strike price)</span>
               </label>
               <input
                 type="number"
@@ -424,19 +428,19 @@ function GrantEditor({
                 value={state.strikeDiscountPct}
                 onChange={(e) => set({ strikeDiscountPct: e.target.value })}
                 placeholder="e.g. 15"
-                className={inputCls}
+                className={inputClassName}
               />
             </div>
           </div>
           <div>
-            <label className={labelCls}>
-              Expiration Date <span className="text-red-400">*</span>
+            <label className={fieldLabelClassName}>
+              Expiration Date <span className="text-crit">*</span>
             </label>
             <input
               type="date"
               value={state.expirationDate}
               onChange={(e) => set({ expirationDate: e.target.value })}
-              className={inputCls}
+              className={inputClassName}
             />
           </div>
         </div>
@@ -444,19 +448,19 @@ function GrantEditor({
 
       {/* Notes */}
       <div>
-        <label className={labelCls}>Notes (optional)</label>
+        <label className={fieldLabelClassName}>Notes (optional)</label>
         <textarea
           value={state.notes}
           onChange={(e) => set({ notes: e.target.value })}
           rows={2}
           placeholder="Any additional notes..."
-          className={`${inputCls} resize-none`}
+          className={`${textareaClassName} resize-none`}
         />
       </div>
 
       {/* Vesting schedule grid */}
       <div>
-        <label className={labelCls + " mb-2"}>Vesting Schedule</label>
+        <label className={`${fieldLabelBaseClassName} block mb-2`}>Vesting Schedule</label>
         <VestingGrid
           rows={state.tranches}
           grantType={state.grantType}
@@ -467,8 +471,8 @@ function GrantEditor({
       </div>
 
       {/* Grant-level strategy overrides */}
-      <div className="rounded-md border border-gray-700 bg-gray-800/40 p-3 space-y-3">
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
+      <div className="rounded-md border border-hair bg-card-2/40 p-3 space-y-3">
+        <p className="text-xs font-semibold text-ink-3 uppercase tracking-wide">
           Strategy (overrides account default)
         </p>
 
@@ -476,11 +480,11 @@ function GrantEditor({
         {(state.grantType === "nqso" || state.grantType === "iso") && (
           <div className="space-y-2">
             <div>
-              <label className={labelCls}>Exercise Timing</label>
+              <label className={fieldLabelClassName}>Exercise Timing</label>
               <select
                 value={state.exerciseTiming}
                 onChange={(e) => set({ exerciseTiming: e.target.value, exerciseYear: "" })}
-                className={inputCls}
+                className={selectClassName}
               >
                 <option value="">Inherit account default</option>
                 <option value="at_vest">At vest</option>
@@ -500,7 +504,7 @@ function GrantEditor({
             </div>
             {state.exerciseTiming === "specific_year" && (
               <div>
-                <label className={labelCls}>Exercise Year</label>
+                <label className={fieldLabelClassName}>Exercise Year</label>
                 <input
                   type="number"
                   min={1900}
@@ -508,7 +512,7 @@ function GrantEditor({
                   value={state.exerciseYear}
                   onChange={(e) => set({ exerciseYear: e.target.value })}
                   placeholder="e.g. 2028"
-                  className={inputCls}
+                  className={inputClassName}
                 />
               </div>
             )}
@@ -518,13 +522,13 @@ function GrantEditor({
         {/* Sell timing */}
         <div className="space-y-2">
           <div>
-            <label className={labelCls}>Sell Timing</label>
+            <label className={fieldLabelClassName}>Sell Timing</label>
             <select
               value={state.sellTiming}
               onChange={(e) =>
                 set({ sellTiming: e.target.value, sellYear: "", sellPercentPerYear: "", sellStartYear: "" })
               }
-              className={inputCls}
+              className={selectClassName}
             >
               <option value="">Inherit account default</option>
               <option value="immediately">Immediately</option>
@@ -535,7 +539,7 @@ function GrantEditor({
           </div>
           {state.sellTiming === "hold_then_sell_year" && (
             <div>
-              <label className={labelCls}>Sell Year</label>
+              <label className={fieldLabelClassName}>Sell Year</label>
               <input
                 type="number"
                 min={1900}
@@ -543,14 +547,14 @@ function GrantEditor({
                 value={state.sellYear}
                 onChange={(e) => set({ sellYear: e.target.value })}
                 placeholder="e.g. 2030"
-                className={inputCls}
+                className={inputClassName}
               />
             </div>
           )}
           {state.sellTiming === "percent_per_year" && (
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className={labelCls}>Sell % Per Year</label>
+                <label className={fieldLabelClassName}>Sell % Per Year</label>
                 <input
                   type="number"
                   min={0}
@@ -559,11 +563,11 @@ function GrantEditor({
                   value={state.sellPercentPerYear}
                   onChange={(e) => set({ sellPercentPerYear: e.target.value })}
                   placeholder="e.g. 25"
-                  className={inputCls}
+                  className={inputClassName}
                 />
               </div>
               <div>
-                <label className={labelCls}>Sell Start Year</label>
+                <label className={fieldLabelClassName}>Sell Start Year</label>
                 <input
                   type="number"
                   min={1900}
@@ -571,7 +575,7 @@ function GrantEditor({
                   value={state.sellStartYear}
                   onChange={(e) => set({ sellStartYear: e.target.value })}
                   placeholder="e.g. 2026"
-                  className={inputCls}
+                  className={inputClassName}
                 />
               </div>
             </div>
@@ -586,7 +590,7 @@ function GrantEditor({
 
       {/* Save error from API */}
       {saveError && (
-        <p className="text-xs text-red-400">{saveError}</p>
+        <p className="text-xs text-crit">{saveError}</p>
       )}
 
       {/* Actions */}
@@ -602,7 +606,7 @@ function GrantEditor({
         <button
           type="button"
           onClick={onCancel}
-          className="rounded-md border border-gray-600 px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-800"
+          className="rounded-md border border-hair-3 px-3 py-1.5 text-xs text-ink-3 hover:bg-card-hover"
         >
           Cancel
         </button>
@@ -663,7 +667,7 @@ export default function GrantsTab({
 
   if (accountId == null) {
     return (
-      <p className="text-sm text-gray-400 italic">
+      <p className="text-sm text-ink-3 italic">
         Save the account details first to add grants.
       </p>
     );
@@ -782,22 +786,22 @@ export default function GrantsTab({
   return (
     <div className="space-y-4">
       {scenarioActive && (
-        <p className="rounded-md border border-gray-700 bg-gray-800/60 px-3 py-3 text-sm text-gray-400">
+        <p className="rounded-md border border-hair bg-card-2/60 px-3 py-3 text-sm text-ink-3">
           Grants are edited on the base plan. Switch out of this scenario to add
           or change grants.
         </p>
       )}
 
       {loadError && (
-        <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{loadError}</p>
+        <p className="rounded bg-crit/10 px-3 py-2 text-sm text-crit">{loadError}</p>
       )}
 
       {loading && grants.length === 0 && (
-        <p className="text-sm text-gray-400">Loading grants…</p>
+        <p className="text-sm text-ink-3">Loading grants…</p>
       )}
 
       {!loading && grants.length === 0 && !editorOpen && (
-        <p className="text-sm text-gray-400 italic">
+        <p className="text-sm text-ink-3 italic">
           No grants yet. Add one below.
         </p>
       )}

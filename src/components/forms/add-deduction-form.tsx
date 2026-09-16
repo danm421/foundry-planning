@@ -5,6 +5,7 @@ import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { PercentInput } from "@/components/percent-input";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
+import { fieldLabelClassName, inputClassName, selectClassName } from "./input-styles";
 
 interface DeductionRow {
   id: string;
@@ -35,11 +36,6 @@ const TYPE_OPTIONS: Array<{ value: DeductionRow["type"]; label: string }> = [
   { value: "below_line", label: "Below-the-Line" },
   { value: "property_tax", label: "Property Tax (SALT)" },
 ];
-
-const INPUT_CLASS =
-  "mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
-const SELECT_CLASS =
-  "mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none";
 
 export function AddDeductionForm({
   clientId,
@@ -131,21 +127,21 @@ export function AddDeductionForm({
       <form
         onSubmit={handleSubmit}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md space-y-3 rounded-xl border-2 border-ink-3 ring-1 ring-black/60 bg-gray-900 p-5 shadow-xl"
+        className="w-full max-w-md space-y-3 rounded-xl border-2 border-ink-3 ring-1 ring-black/60 bg-card p-5 shadow-xl"
       >
         <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-100">{existing ? "Edit deduction" : "Add deduction"}</h3>
-          <button type="button" onClick={onClose} className="text-xl text-gray-300 hover:text-gray-200" aria-label="Close">
+          <h3 className="text-base font-semibold text-ink">{existing ? "Edit deduction" : "Add deduction"}</h3>
+          <button type="button" onClick={onClose} className="text-xl text-ink-3 hover:text-ink-2" aria-label="Close">
             ×
           </button>
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-gray-300">Type</label>
+          <label className={fieldLabelClassName}>Type</label>
           <select
             value={type}
             onChange={(e) => setType(e.target.value as DeductionRow["type"])}
-            className={SELECT_CLASS}
+            className={selectClassName}
           >
             {TYPE_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
@@ -154,28 +150,28 @@ export function AddDeductionForm({
         </div>
 
         {type === "property_tax" && (
-          <p className="rounded-md bg-amber-900/30 px-3 py-2 text-xs text-amber-200">
+          <p className="rounded-md bg-warn/10 px-3 py-2 text-xs text-warn">
             Property taxes are subject to the SALT cap ($40k for 2026+, $10k pre-2026).
             Enter your full amount; the engine will apply the cap.
           </p>
         )}
 
         <div>
-          <label className="block text-xs font-medium text-gray-300">Name (optional)</label>
+          <label className={fieldLabelClassName}>Name (optional)</label>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g., First Baptist Church"
-            className={INPUT_CLASS}
+            className={inputClassName}
           />
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-gray-300">Owner</label>
+          <label className={fieldLabelClassName}>Owner</label>
           <select
             value={owner}
             onChange={(e) => setOwner(e.target.value as DeductionRow["owner"])}
-            className={SELECT_CLASS}
+            className={selectClassName}
           >
             <option value="joint">Joint</option>
             <option value="client">Client</option>
@@ -185,7 +181,7 @@ export function AddDeductionForm({
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-gray-300">Annual amount ($)</label>
+            <label className={fieldLabelClassName}>Annual amount ($)</label>
             <input
               type="number"
               step="100"
@@ -193,15 +189,14 @@ export function AddDeductionForm({
               value={annualAmount}
               onChange={(e) => setAnnualAmount(e.target.value)}
               required
-              className={INPUT_CLASS}
+              className={inputClassName}
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-300">Growth rate (% / yr)</label>
+            <label className={fieldLabelClassName}>Growth rate (% / yr)</label>
             <PercentInput
               value={growthRate}
               onChange={(raw) => setGrowthRate(raw)}
-              className={INPUT_CLASS}
             />
           </div>
         </div>
@@ -225,7 +220,7 @@ export function AddDeductionForm({
             />
           ) : (
             <div>
-              <label className="block text-xs font-medium text-gray-300">Start year</label>
+              <label className={fieldLabelClassName}>Start year</label>
               <input
                 type="number"
                 min={2000}
@@ -236,7 +231,7 @@ export function AddDeductionForm({
                   setStartYearRef(null);
                 }}
                 required
-                className={INPUT_CLASS}
+                className={inputClassName}
               />
             </div>
           )}
@@ -259,7 +254,7 @@ export function AddDeductionForm({
             />
           ) : (
             <div>
-              <label className="block text-xs font-medium text-gray-300">End year</label>
+              <label className={fieldLabelClassName}>End year</label>
               <input
                 type="number"
                 min={2000}
@@ -270,7 +265,7 @@ export function AddDeductionForm({
                   setEndYearRef(null);
                 }}
                 required
-                className={INPUT_CLASS}
+                className={inputClassName}
               />
             </div>
           )}
@@ -280,7 +275,7 @@ export function AddDeductionForm({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-800 hover:text-gray-200"
+            className="rounded-md px-3 py-1.5 text-sm text-ink-3 hover:bg-card-hover hover:text-ink-2"
           >
             Cancel
           </button>

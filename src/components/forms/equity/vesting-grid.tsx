@@ -2,6 +2,12 @@
 
 import { useState } from "react";
 
+import {
+  fieldLabelBaseClassName,
+  inputCompactClassName,
+  selectBaseClassName,
+} from "../input-styles";
+
 export interface TrancheRow {
   /** Stable client-only identity for React keys (never sent to the API).
    *  Tranche rows have no server id while being edited, and index keys would
@@ -142,9 +148,7 @@ export function acquiredShares(row: TrancheRow, isRsu: boolean): number {
   return parseFloat(isRsu ? row.shares : row.sharesExercised) || 0;
 }
 
-const inputCls =
-  "rounded border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-accent focus:outline-none w-full";
-const thCls = "border-b border-gray-600 pb-1.5 text-xs font-medium text-gray-400 text-right first:text-left";
+const thCls = "border-b border-hair-2 pb-1.5 text-xs font-medium text-ink-3 text-right first:text-left";
 const tdCls = "py-1 pr-1 last:pr-0 text-right first:text-left";
 
 export default function VestingGrid({ rows, onChange, grantType, sharesGranted, grantDate }: VestingGridProps) {
@@ -192,10 +196,10 @@ export default function VestingGrid({ rows, onChange, grantType, sharesGranted, 
 
   return (
     <div className="space-y-2">
-      <div className="overflow-x-auto rounded-md border border-gray-600 bg-gray-900">
+      <div className="overflow-x-auto rounded-md border border-hair-2 bg-card-2">
         <table className="w-full min-w-[640px] border-collapse text-xs">
           <thead>
-            <tr className="border-b border-gray-600">
+            <tr className="border-b border-hair-2">
               <th className={thCls + " pl-3 w-36"}>Vest Date</th>
               <th className={thCls + " w-24"}>Shares</th>
               {!isRsu && <th className={thCls + " w-24"}>Exercised</th>}
@@ -211,7 +215,7 @@ export default function VestingGrid({ rows, onChange, grantType, sharesGranted, 
               <tr>
                 <td
                   colSpan={isRsu ? 7 : 8}
-                  className="px-3 py-3 text-center text-xs text-gray-500 italic"
+                  className="px-3 py-3 text-center text-xs text-ink-4 italic"
                 >
                   No tranches yet. Add one below.
                 </td>
@@ -224,13 +228,13 @@ export default function VestingGrid({ rows, onChange, grantType, sharesGranted, 
               // count changes per row is unreadable.
               const showAcquisition = acquiredShares(row, isRsu) > 0;
               return (
-                <tr key={row._key} className="border-b border-gray-700/50 last:border-0">
+                <tr key={row._key} className="border-b border-hair/50 last:border-0">
                   <td className={tdCls + " pl-3"}>
                     <input
                       type="date"
                       value={row.vestDate}
                       onChange={(e) => setRow(i, { vestDate: e.target.value })}
-                      className={inputCls}
+                      className={inputCompactClassName}
                     />
                   </td>
                   <td className={tdCls}>
@@ -240,7 +244,7 @@ export default function VestingGrid({ rows, onChange, grantType, sharesGranted, 
                       value={row.shares}
                       onChange={(e) => setRow(i, { shares: e.target.value, sharesEdited: true })}
                       placeholder="0"
-                      className={inputCls + " text-right"}
+                      className={`${inputCompactClassName} text-right`}
                     />
                   </td>
                   {!isRsu && (
@@ -251,7 +255,7 @@ export default function VestingGrid({ rows, onChange, grantType, sharesGranted, 
                         value={row.sharesExercised}
                         onChange={(e) => setRow(i, { sharesExercised: e.target.value })}
                         placeholder="0"
-                        className={inputCls + " text-right"}
+                        className={`${inputCompactClassName} text-right`}
                       />
                     </td>
                   )}
@@ -262,7 +266,7 @@ export default function VestingGrid({ rows, onChange, grantType, sharesGranted, 
                       value={row.sharesSold}
                       onChange={(e) => setRow(i, { sharesSold: e.target.value })}
                       placeholder="0"
-                      className={inputCls + " text-right"}
+                      className={`${inputCompactClassName} text-right`}
                     />
                   </td>
                   <td className={tdCls}>
@@ -272,10 +276,10 @@ export default function VestingGrid({ rows, onChange, grantType, sharesGranted, 
                         aria-label={`Acquired date, row ${i + 1}`}
                         value={row.acquiredOn}
                         onChange={(e) => setRow(i, { acquiredOn: e.target.value })}
-                        className={inputCls}
+                        className={inputCompactClassName}
                       />
                     ) : (
-                      <span className="text-gray-600">—</span>
+                      <span className="text-ink-4">—</span>
                     )}
                   </td>
                   <td className={tdCls}>
@@ -288,13 +292,13 @@ export default function VestingGrid({ rows, onChange, grantType, sharesGranted, 
                         value={row.priceAtAcquisition}
                         onChange={(e) => setRow(i, { priceAtAcquisition: e.target.value })}
                         placeholder="0.00"
-                        className={inputCls + " text-right"}
+                        className={`${inputCompactClassName} text-right`}
                       />
                     ) : (
-                      <span className="text-gray-600">—</span>
+                      <span className="text-ink-4">—</span>
                     )}
                   </td>
-                  <td className={tdCls + (remaining < 0 ? " text-red-400" : " text-gray-300") + " pr-2"}>
+                  <td className={tdCls + (remaining < 0 ? " text-crit" : " text-ink-3") + " pr-2"}>
                     {remaining.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                   </td>
                   <td className={tdCls + " pr-3"}>
@@ -303,7 +307,7 @@ export default function VestingGrid({ rows, onChange, grantType, sharesGranted, 
                       onClick={() => removeRow(i)}
                       title="Remove tranche"
                       aria-label="Remove tranche"
-                      className="inline-flex h-6 w-6 items-center justify-center rounded border border-gray-500 bg-gray-700 text-sm leading-none text-gray-100 hover:border-red-500 hover:bg-red-500/20 hover:text-red-300 transition-colors"
+                      className="inline-flex h-6 w-6 items-center justify-center rounded border border-hair-3 bg-card-2 text-sm leading-none text-ink hover:border-crit hover:bg-crit/20 hover:text-crit transition-colors"
                     >
                       ✕
                     </button>
@@ -314,21 +318,21 @@ export default function VestingGrid({ rows, onChange, grantType, sharesGranted, 
           </tbody>
           {rows.length > 0 && (
             <tfoot>
-              <tr className="border-t border-gray-600 bg-gray-800/50">
-                <td className="pl-3 py-1.5 text-xs font-medium text-gray-400">Total</td>
-                <td className={tdCls + " font-medium text-gray-300"}>
+              <tr className="border-t border-hair-2 bg-card-2/50">
+                <td className="pl-3 py-1.5 text-xs font-medium text-ink-3">Total</td>
+                <td className={tdCls + " font-medium text-ink-3"}>
                   {fmtNum(totalShares)}
                 </td>
                 {!isRsu && (
-                  <td className={tdCls + " font-medium text-gray-300"}>
+                  <td className={tdCls + " font-medium text-ink-3"}>
                     {fmtNum(totalExercised)}
                   </td>
                 )}
-                <td className={tdCls + " font-medium text-gray-300"}>
+                <td className={tdCls + " font-medium text-ink-3"}>
                   {fmtNum(totalSold)}
                 </td>
                 <td colSpan={2} />
-                <td className={tdCls + " font-medium text-gray-300 pr-2"}>
+                <td className={tdCls + " font-medium text-ink-3 pr-2"}>
                   {fmtNum(totalRemaining)}
                 </td>
                 <td />
@@ -338,7 +342,7 @@ export default function VestingGrid({ rows, onChange, grantType, sharesGranted, 
         </table>
       </div>
       {rows.length > 0 && (
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-ink-4">
           Acquired date and price then come off the client&apos;s exercise confirmation or
           1099-B. Left blank, the plan assumes the shares were acquired at the strike price
           on the plan start date — the most conservative reading — and marks the figures
@@ -354,14 +358,14 @@ export default function VestingGrid({ rows, onChange, grantType, sharesGranted, 
           {addLabel}
         </button>
         <div className="flex items-center gap-1.5">
-          <label htmlFor="vest-frequency" className="text-xs text-gray-400">
+          <label htmlFor="vest-frequency" className={fieldLabelBaseClassName}>
             Auto-fill
           </label>
           <select
             id="vest-frequency"
             value={frequency}
             onChange={(e) => setFrequency(e.target.value as VestFrequency)}
-            className="rounded border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-gray-100 focus:border-accent focus:outline-none"
+            className={selectBaseClassName}
           >
             <option value="none">Manual</option>
             <option value="annual">Annual</option>
@@ -371,7 +375,7 @@ export default function VestingGrid({ rows, onChange, grantType, sharesGranted, 
         </div>
       </div>
       {frequency !== "none" && (
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-ink-4">
           {needsGrantDate
             ? "Set a grant date on Account Details to auto-fill vest dates. Shares are split evenly across tranches."
             : "Each added tranche advances one period and re-splits the granted shares evenly. Edit any amount to lock it — the rest keep dividing."}

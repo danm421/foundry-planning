@@ -419,7 +419,7 @@ const AddNoteReceivableForm = forwardRef<
   function tabButtonClass(id: TabId) {
     return activeTab === id
       ? "border-b-2 border-accent px-3 py-1.5 text-sm text-white"
-      : "border-b-2 border-transparent px-3 py-1.5 text-sm text-gray-400 hover:text-gray-200";
+      : "border-b-2 border-transparent px-3 py-1.5 text-sm text-ink-3 hover:text-ink-2";
   }
 
   // ── Amortization preview ─────────────────────────────────────────────────
@@ -482,7 +482,7 @@ const AddNoteReceivableForm = forwardRef<
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-4">
-      <nav className="flex gap-1 border-b border-gray-700">
+      <nav className="flex gap-1 border-b border-hair">
         <button
           type="button"
           className={tabButtonClass("details")}
@@ -570,7 +570,7 @@ const AddNoteReceivableForm = forwardRef<
                   onChange={handleBasisChange}
                   className={inputClassName}
                 />
-                <p className="mt-1 text-xs text-gray-500">
+                <p className="mt-1 text-xs text-ink-4">
                   Lower than face value only if this is an installment sale of
                   an appreciated asset.
                 </p>
@@ -590,7 +590,7 @@ const AddNoteReceivableForm = forwardRef<
                   className={inputClassName}
                   placeholder="(optional)"
                 />
-                <p className="mt-1 text-xs text-gray-500">
+                <p className="mt-1 text-xs text-ink-4">
                   Leave blank if the note starts on the start date below.
                 </p>
               </div>
@@ -677,7 +677,7 @@ const AddNoteReceivableForm = forwardRef<
                   className={inputClassName}
                   placeholder="(auto)"
                 />
-                <p className="mt-1 text-xs text-gray-500">
+                <p className="mt-1 text-xs text-ink-4">
                   Leave blank to compute from face value, rate, and term.
                 </p>
               </div>
@@ -769,14 +769,14 @@ const AddNoteReceivableForm = forwardRef<
         {activeTab === "amortization" && (
           <div>
             {previewSchedule.length === 0 ? (
-              <p className="rounded border border-gray-700 p-4 text-sm text-gray-400">
+              <p className="rounded border border-hair p-4 text-sm text-ink-3">
                 Enter a face value and term on the Details tab to see the
                 amortization schedule.
               </p>
             ) : (
-              <div className="max-h-[28rem] overflow-y-auto rounded border border-gray-700">
+              <div className="max-h-[28rem] overflow-y-auto rounded border border-hair">
                 <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-gray-900 text-left text-xs uppercase text-gray-400">
+                  <thead className="sticky top-0 bg-card-2 text-left text-xs uppercase text-ink-3">
                     <tr>
                       <th className="px-3 py-2">Year</th>
                       <th className="px-3 py-2 text-right">Payment</th>
@@ -789,7 +789,7 @@ const AddNoteReceivableForm = forwardRef<
                     {previewSchedule.map((row) => (
                       <tr
                         key={row.year}
-                        className="border-t border-gray-800 text-gray-200"
+                        className="border-t border-hair text-ink-2"
                       >
                         <td className="px-3 py-1.5">{row.year}</td>
                         <td className="px-3 py-1.5 text-right">
@@ -815,18 +815,18 @@ const AddNoteReceivableForm = forwardRef<
 
         {activeTab === "extra-payments" && (
           <div className="space-y-3">
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-ink-3">
               Lump-sum payments are applied in addition to scheduled monthly
               payments and shorten the term. Per-payment additions are added to
               every monthly payment that year.
             </p>
             {extraPayments.length === 0 ? (
-              <p className="rounded border border-dashed border-gray-700 p-4 text-sm text-gray-400">
+              <p className="rounded border border-dashed border-hair p-4 text-sm text-ink-3">
                 No extra payments yet.
               </p>
             ) : (
               <table className="w-full text-sm">
-                <thead className="text-left text-xs uppercase text-gray-400">
+                <thead className="text-left text-xs uppercase text-ink-3">
                   <tr>
                     <th className="px-2 py-1.5">Year</th>
                     <th className="px-2 py-1.5">Type</th>
@@ -838,7 +838,7 @@ const AddNoteReceivableForm = forwardRef<
                   {extraPayments.map((ep, idx) => (
                     <tr
                       key={idx}
-                      className="border-t border-gray-800 align-middle"
+                      className="border-t border-hair align-middle"
                     >
                       <td className="px-2 py-1.5">
                         <input
@@ -885,7 +885,7 @@ const AddNoteReceivableForm = forwardRef<
                         <button
                           type="button"
                           onClick={() => removeExtraPayment(idx)}
-                          className="text-xs text-gray-400 hover:text-red-400"
+                          className="text-xs text-ink-3 hover:text-crit"
                         >
                           Remove
                         </button>
@@ -898,7 +898,7 @@ const AddNoteReceivableForm = forwardRef<
             <button
               type="button"
               onClick={addExtraPayment}
-              className="rounded border border-gray-600 px-3 py-1.5 text-sm text-gray-200 hover:bg-gray-800"
+              className="rounded border border-hair-3 px-3 py-1.5 text-sm text-ink-2 hover:bg-card-hover"
             >
               + Add extra payment
             </button>
