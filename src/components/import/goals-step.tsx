@@ -11,11 +11,14 @@ import type {
 } from "@/lib/imports/assemble/types";
 import { stated } from "@/lib/imports/assemble/field";
 import { RISK_LEVELS, RISK_LEVEL_LABELS, type RiskLevel } from "@/lib/risk-levels";
+import {
+  inputClassName,
+  selectClassName,
+  fieldLabelClassName,
+  fieldLabelBaseClassName,
+} from "@/components/forms/input-styles";
 import AssumedChip from "./assumed-chip";
 import { chipFor, FieldLabel } from "./provenance-fields";
-
-const INPUT_CLASS =
-  "w-full rounded border border-gray-600 bg-gray-800 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
 
 interface GoalsStepProps {
   value: AssembleGoals;
@@ -140,11 +143,11 @@ function DedicatedFunding({
 
   return (
     <div className="mt-3">
-      <p className="mb-1 text-xs text-gray-300">Dedicated 529 funding</p>
+      <p className="mb-1 text-xs text-ink-3">Dedicated 529 funding</p>
       {educationAccounts.length > 0 && (
         <div className="flex flex-wrap gap-3">
           {educationAccounts.map((account) => (
-            <label key={account.id} className="flex items-center gap-1.5 text-xs text-gray-300">
+            <label key={account.id} className={`flex items-center gap-1.5 ${fieldLabelBaseClassName}`}>
               <input
                 type="checkbox"
                 checked={goal.dedicatedAccountNames.includes(account.name)}
@@ -160,18 +163,18 @@ function DedicatedFunding({
           {unmatched.map((name) => (
             <li
               key={name}
-              className="flex items-start justify-between gap-2 rounded border border-amber-700/50 bg-amber-900/20 px-2 py-1.5 text-xs text-amber-200"
+              className="flex items-start justify-between gap-2 rounded border border-warn/50 bg-warn/10 px-2 py-1.5 text-xs text-warn"
             >
               <span>
                 No committed account named{" "}
-                <span className="font-medium text-amber-100">{name}</span>. Until one exists, this
+                <span className="font-medium text-warn">{name}</span>. Until one exists, this
                 goal will be created without that dedicated funding.
               </span>
               <button
                 type="button"
                 aria-label={`Remove funding account ${name}`}
                 onClick={() => onToggle(goal, name)}
-                className="shrink-0 text-amber-300 underline hover:text-amber-100"
+                className="shrink-0 text-warn underline hover:opacity-80"
               >
                 Remove
               </button>
@@ -245,10 +248,10 @@ export default function GoalsStep({
     <div className="space-y-8">
       <section className="space-y-2">
         <div>
-          <label htmlFor="risk-tolerance" className="text-xs text-gray-300">Risk tolerance</label>
+          <label htmlFor="risk-tolerance" className={fieldLabelClassName}>Risk tolerance</label>
           <select
             id="risk-tolerance"
-            className={INPUT_CLASS}
+            className={selectClassName}
             value={value.riskTolerance.value ?? ""}
             onChange={(e) => onChange({ ...value, riskTolerance: stated<string>(e.target.value || null) })}
           >
@@ -273,10 +276,10 @@ export default function GoalsStep({
         </h3>
         <div className="space-y-3">
           {value.education.map((goal) => (
-            <div key={goal.id} className="rounded-lg border border-gray-700 bg-gray-900 p-3">
+            <div key={goal.id} className="rounded-lg border border-hair bg-card-2 p-3">
               <div className="mb-3 flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-sm font-medium text-gray-100">
+                  <span className="text-sm font-medium text-ink">
                     {goal.name.value || "Education Goal"}
                   </span>
                   <AssumedChip assumption={chipFor(goal.name)} />
@@ -284,7 +287,7 @@ export default function GoalsStep({
                 <button
                   type="button"
                   onClick={() => removeEducation(goal.id)}
-                  className="text-xs text-red-400 hover:text-red-300"
+                  className="text-xs text-crit hover:opacity-80"
                 >
                   Remove
                 </button>
@@ -301,7 +304,7 @@ export default function GoalsStep({
                     }
                   />
                   {goal.annualAmount.value == null && (
-                    <p className="mt-1 text-xs text-amber-400">
+                    <p className="mt-1 text-xs text-warn">
                       Add an annual cost — this goal will not be created without one.
                     </p>
                   )}
@@ -311,7 +314,7 @@ export default function GoalsStep({
                   <FieldLabel id={`${goal.id}-student`} label="Student" field={goal.forFamilyMemberName} />
                   <select
                     id={`${goal.id}-student`}
-                    className={INPUT_CLASS}
+                    className={selectClassName}
                     value={goal.forFamilyMemberName.value ?? ""}
                     onChange={(e) =>
                       setEducation(goal.id, { forFamilyMemberName: stated(e.target.value || null) })
@@ -329,7 +332,7 @@ export default function GoalsStep({
                   <input
                     id={`${goal.id}-start-year`}
                     type="number"
-                    className={INPUT_CLASS}
+                    className={inputClassName}
                     value={goal.startYear.value ?? ""}
                     onChange={(e) => {
                       const raw = e.target.value;
@@ -343,7 +346,7 @@ export default function GoalsStep({
                   <input
                     id={`${goal.id}-years`}
                     type="number"
-                    className={INPUT_CLASS}
+                    className={inputClassName}
                     value={goal.years.value ?? ""}
                     onChange={(e) => {
                       const raw = e.target.value;
@@ -370,7 +373,7 @@ export default function GoalsStep({
                 {/* The chip stays OUTSIDE the <label>, same rule as
                     `FieldLabel` above: nesting it would fold the reason
                     prose into the checkbox's accessible name. */}
-                <label className="flex items-center gap-2 text-xs text-gray-300">
+                <label className={`flex items-center gap-2 ${fieldLabelBaseClassName}`}>
                   <input
                     type="checkbox"
                     checked={goal.payShortfallOutOfPocket.value ?? false}
@@ -395,7 +398,7 @@ export default function GoalsStep({
         <button
           type="button"
           onClick={addEducation}
-          className="mt-3 rounded-md bg-gray-800 px-3 py-1.5 text-sm text-accent hover:bg-gray-700"
+          className="mt-3 rounded-md bg-card-2 px-3 py-1.5 text-sm text-accent hover:bg-card-hover"
         >
           Add education goal
         </button>
@@ -407,16 +410,16 @@ export default function GoalsStep({
         </h3>
         <div className="space-y-3">
           {value.homePurchases.map((purchase) => (
-            <div key={purchase.id} className="rounded-lg border border-gray-700 bg-gray-900 p-3">
+            <div key={purchase.id} className="rounded-lg border border-hair bg-card-2 p-3">
               <div className="mb-3 flex items-center justify-between">
                 <div className="w-40">
-                  <label htmlFor={`${purchase.id}-year`} className="mb-1 block text-xs text-gray-300">
+                  <label htmlFor={`${purchase.id}-year`} className={fieldLabelClassName}>
                     Purchase year
                   </label>
                   <input
                     id={`${purchase.id}-year`}
                     type="number"
-                    className={INPUT_CLASS}
+                    className={inputClassName}
                     value={purchase.year}
                     onChange={(e) => setPurchase(purchase.id, { year: e.target.value })}
                   />
@@ -424,7 +427,7 @@ export default function GoalsStep({
                 <button
                   type="button"
                   onClick={() => removePurchase(purchase.id)}
-                  className="text-xs text-red-400 hover:text-red-300"
+                  className="text-xs text-crit hover:opacity-80"
                 >
                   Remove
                 </button>
@@ -451,7 +454,7 @@ export default function GoalsStep({
         <button
           type="button"
           onClick={addPurchase}
-          className="mt-3 rounded-md bg-gray-800 px-3 py-1.5 text-sm text-accent hover:bg-gray-700"
+          className="mt-3 rounded-md bg-card-2 px-3 py-1.5 text-sm text-accent hover:bg-card-hover"
         >
           Add planned purchase
         </button>

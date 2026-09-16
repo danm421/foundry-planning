@@ -1,6 +1,7 @@
 "use client";
 
 import { CurrencyInput } from "@/components/currency-input";
+import { inputClassName } from "@/components/forms/input-styles";
 import type { AssemblePlanBasics, PlanBasicsField } from "@/lib/imports/assemble/types";
 import { FieldLabel } from "./provenance-fields";
 
@@ -9,9 +10,6 @@ interface PlanBasicsStepProps {
   hasSpouse: boolean;
   onChange: (next: AssemblePlanBasics) => void;
 }
-
-const INPUT_CLASS =
-  "w-full rounded border border-gray-600 bg-gray-800 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
 
 /** A plain number field — for ages, not dollar amounts. */
 function NumberField({
@@ -37,7 +35,7 @@ function NumberField({
           const raw = e.target.value;
           onSet(raw === "" ? null : Number(raw));
         }}
-        className={INPUT_CLASS}
+        className={inputClassName}
       />
     </div>
   );
@@ -104,7 +102,7 @@ export default function PlanBasicsStep({ value, hasSpouse, onChange }: PlanBasic
         <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-ink-3">
           Retirement horizon
         </h3>
-        <div className="rounded-lg border border-gray-700 bg-gray-900 p-3">
+        <div className="rounded-lg border border-hair bg-card-2 p-3">
           <div className="grid grid-cols-4 gap-3">
             <NumberField id="retirementAge" label="Retirement age" field={value.retirementAge}
               onSet={(v) => set("retirementAge", v)} />
@@ -132,7 +130,7 @@ export default function PlanBasicsStep({ value, hasSpouse, onChange }: PlanBasic
         <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-ink-3">
           Living spending
         </h3>
-        <div className="rounded-lg border border-gray-700 bg-gray-900 p-3">
+        <div className="rounded-lg border border-hair bg-card-2 p-3">
           <div className="grid grid-cols-2 gap-3">
             <CurrencyField id="currentLivingSpending" label="Current living spending"
               field={value.currentLivingSpending} onSet={(v) => set("currentLivingSpending", v)} />
@@ -148,7 +146,7 @@ export default function PlanBasicsStep({ value, hasSpouse, onChange }: PlanBasic
         </h3>
         <div className="space-y-3">
           {value.socialSecurity.map((row, i) => (
-            <div key={row.owner} className="rounded-lg border border-gray-700 bg-gray-900 p-3">
+            <div key={row.owner} className="rounded-lg border border-hair bg-card-2 p-3">
               <div className="grid grid-cols-2 gap-3">
                 {/* Labelled for what it actually writes: `incomes.pia_monthly`
                     on a row committed as `ssBenefitMode: "pia_at_fra"`, which

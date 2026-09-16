@@ -95,11 +95,11 @@ export default function ExtractionProgress({
   if (!data) {
     return (
       <div className="space-y-2">
-        <h3 className="text-sm font-medium text-gray-300">Extracting documents…</h3>
+        <h3 className="text-sm font-medium text-ink-3">Extracting documents…</h3>
         {pollError ? (
-          <p className="text-xs text-red-400">{pollError}</p>
+          <p className="text-xs text-crit">{pollError}</p>
         ) : (
-          <p className="text-xs text-gray-400">Loading…</p>
+          <p className="text-xs text-ink-4">Loading…</p>
         )}
       </div>
     );
@@ -107,9 +107,9 @@ export default function ExtractionProgress({
 
   return (
     <div className="space-y-2">
-      <h3 className="text-sm font-medium text-gray-300">Extracting documents…</h3>
+      <h3 className="text-sm font-medium text-ink-3">Extracting documents…</h3>
       {pollError ? (
-        <p className="text-xs text-amber-400">
+        <p className="text-xs text-warn">
           Last poll failed ({pollError}). Retrying…
         </p>
       ) : null}
@@ -118,16 +118,16 @@ export default function ExtractionProgress({
         return (
           <div
             key={f.id}
-            className="flex items-center gap-3 rounded-md border border-gray-700 bg-gray-900 px-3 py-2"
+            className="flex items-center gap-3 rounded-md border border-hair bg-card-2 px-3 py-2"
           >
             <StatusIndicator status={status} />
-            <span className="min-w-0 flex-1 truncate text-sm text-gray-200">
+            <span className="min-w-0 flex-1 truncate text-sm text-ink-2">
               {f.originalFilename}
             </span>
-            <span className="text-xs capitalize text-gray-400">{status}</span>
+            <span className="text-xs capitalize text-ink-4">{status}</span>
             {status === "failed" && f.latestExtraction?.errorMessage ? (
               <span
-                className="max-w-[300px] truncate text-xs text-red-400"
+                className="max-w-[300px] truncate text-xs text-crit"
                 title={f.latestExtraction.errorMessage}
               >
                 {f.latestExtraction.errorMessage}
@@ -143,13 +143,13 @@ export default function ExtractionProgress({
 function StatusIndicator({ status }: { status: ExtractionStatus }) {
   if (status === "extracting") {
     return (
-      <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-600 border-t-accent" />
+      <div className="h-4 w-4 animate-spin rounded-full border-2 border-hair-2 border-t-accent" />
     );
   }
   if (status === "success") {
     return (
       <svg
-        className="h-4 w-4 text-green-400"
+        className="h-4 w-4 text-good"
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
@@ -162,7 +162,7 @@ function StatusIndicator({ status }: { status: ExtractionStatus }) {
     );
   }
   if (status === "failed") {
-    return <div className="h-4 w-4 rounded-full bg-red-500" />;
+    return <div className="h-4 w-4 rounded-full bg-crit" />;
   }
-  return <div className="h-4 w-4 rounded-full bg-gray-600" />;
+  return <div className="h-4 w-4 rounded-full bg-ink-4" />;
 }

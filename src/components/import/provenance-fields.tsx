@@ -1,6 +1,7 @@
 "use client";
 
 import type { PlanBasicsField } from "@/lib/imports/assemble/types";
+import { fieldLabelBaseClassName } from "@/components/forms/input-styles";
 import AssumedChip, { type ChipAssumption } from "./assumed-chip";
 
 /** A field carries a chip only when it was derived or model-estimated AND says
@@ -16,7 +17,7 @@ export function FieldLabel<T>({ id, label, field }: { id: string; label: string;
       {/* The chip stays OUTSIDE the <label>: nesting it folds the reason prose
           into the accessible name, and a reason mentioning another field's
           numbers can then match an unrelated getByLabelText regex. */}
-      <label htmlFor={id} className="text-xs text-gray-300">{label}</label>
+      <label htmlFor={id} className={fieldLabelBaseClassName}>{label}</label>
       <AssumedChip assumption={chipFor(field)} />
     </div>
   );

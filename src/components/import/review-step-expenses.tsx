@@ -7,13 +7,14 @@ import { candidatesForRow } from "@/lib/imports/candidates-for-row";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
+import { inputClassName, selectClassName, fieldLabelClassName } from "@/components/forms/input-styles";
 import MatchColumn from "./match-column";
 import type { MatchCandidate } from "./match-link-picker";
 import SourceBadge from "./source-badge";
 
 // Layered on top of CurrencyInput/PercentInput's own inputClassName baseline
 // to flag fields the AI didn't extract.
-const TINT_EMPTY = "bg-amber-900/20 border-amber-600/50";
+const TINT_EMPTY = "bg-warn/10 border-warn/40";
 
 const EXPENSE_TYPE_OPTIONS: { value: ExpenseType; label: string }[] = [
   { value: "living", label: "Living" },
@@ -37,12 +38,7 @@ interface ReviewStepExpensesProps {
   candidates?: MatchCandidate[];
 }
 
-const INPUT_CLASS =
-  "w-full rounded border border-gray-600 bg-gray-800 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
-const EMPTY_CLASS =
-  "w-full rounded border border-amber-600/50 bg-amber-900/20 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
-const SELECT_CLASS =
-  "w-full rounded border border-gray-600 bg-gray-800 px-2 py-1.5 text-sm text-gray-300 focus:border-accent focus:outline-none";
+const EMPTY_CLASS = `${inputClassName} ${TINT_EMPTY}`;
 
 export default function ReviewStepExpenses({
   expenses,
@@ -93,12 +89,12 @@ export default function ReviewStepExpenses({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-medium text-gray-100">
+        <h3 className="text-lg font-medium text-ink">
           Expenses ({expenses.length} found)
         </h3>
         <button
           onClick={addRow}
-          className="rounded-md bg-gray-800 px-3 py-1.5 text-sm text-accent hover:bg-gray-700"
+          className="rounded-md bg-card-2 px-3 py-1.5 text-sm text-accent hover:bg-card-hover"
         >
           + Add Row
         </button>
@@ -113,7 +109,7 @@ export default function ReviewStepExpenses({
             : undefined;
 
           return (
-            <div key={i} className="rounded-lg border border-gray-700 bg-gray-900 p-3">
+            <div key={i} className="rounded-lg border border-hair bg-card-2 p-3">
               {matchingEnabled ? (
                 <div className="mb-2 flex items-center gap-2">
                   <span className="text-xs text-ink-3">Link to:</span>
@@ -128,20 +124,20 @@ export default function ReviewStepExpenses({
               ) : null}
               <div className="grid grid-cols-6 gap-2">
                 <div className="col-span-2">
-                  <label className="mb-1 block text-xs text-gray-300">Name</label>
+                  <label className={fieldLabelClassName}>Name</label>
                   <input
                     value={expense.name}
                     onChange={(e) => updateField(i, "name", e.target.value)}
-                    className={expense.name ? INPUT_CLASS : EMPTY_CLASS}
+                    className={expense.name ? inputClassName : EMPTY_CLASS}
                     placeholder="Expense name"
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-gray-300">Type</label>
+                  <label className={fieldLabelClassName}>Type</label>
                   <select
                     value={expense.type ?? ""}
                     onChange={(e) => updateField(i, "type", e.target.value || undefined)}
-                    className={expense.type ? SELECT_CLASS : `${SELECT_CLASS} border-amber-600/50 bg-amber-900/20`}
+                    className={expense.type ? selectClassName : `${selectClassName} ${TINT_EMPTY}`}
                   >
                     <option value="">Select...</option>
                     {EXPENSE_TYPE_OPTIONS.map((o) => (
@@ -150,7 +146,7 @@ export default function ReviewStepExpenses({
                   </select>
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-gray-300">Annual Amount</label>
+                  <label className={fieldLabelClassName}>Annual Amount</label>
                   <CurrencyInput
                     value={expense.annualAmount != null ? String(expense.annualAmount) : ""}
                     onChange={(raw) => updateField(i, "annualAmount", raw === "" ? undefined : Number(raw))}
@@ -175,12 +171,12 @@ export default function ReviewStepExpenses({
                     />
                   ) : (
                     <>
-                      <label className="mb-1 block text-xs text-gray-300">Start Year</label>
+                      <label className={fieldLabelClassName}>Start Year</label>
                       <input
                         type="number"
                         value={expense.startYear ?? ""}
                         onChange={(e) => updateField(i, "startYear", e.target.value ? Number(e.target.value) : undefined)}
-                        className={expense.startYear != null ? INPUT_CLASS : EMPTY_CLASS}
+                        className={expense.startYear != null ? inputClassName : EMPTY_CLASS}
                         placeholder={String(defaultStartYear)}
                       />
                     </>
@@ -204,19 +200,19 @@ export default function ReviewStepExpenses({
                     />
                   ) : (
                     <>
-                      <label className="mb-1 block text-xs text-gray-300">End Year</label>
+                      <label className={fieldLabelClassName}>End Year</label>
                       <input
                         type="number"
                         value={expense.endYear ?? ""}
                         onChange={(e) => updateField(i, "endYear", e.target.value ? Number(e.target.value) : undefined)}
-                        className={expense.endYear != null ? INPUT_CLASS : EMPTY_CLASS}
+                        className={expense.endYear != null ? inputClassName : EMPTY_CLASS}
                         placeholder={String(defaultEndYear)}
                       />
                     </>
                   )}
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-gray-300">Growth Rate</label>
+                  <label className={fieldLabelClassName}>Growth Rate</label>
                   <PercentInput
                     value={expense.growthRate != null ? (expense.growthRate * 100).toFixed(2) : ""}
                     onChange={(raw) => updateField(i, "growthRate", raw === "" ? undefined : Number(raw) / 100)}

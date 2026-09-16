@@ -12,6 +12,7 @@ import type {
 import type { MatchAnnotation } from "@/lib/imports/types";
 import type { AssembleAssumption } from "@/lib/imports/assemble/types";
 import { candidatesForRow } from "@/lib/imports/candidates-for-row";
+import { inputClassName, selectClassName, fieldLabelClassName, fieldLabelBaseClassName } from "@/components/forms/input-styles";
 import AssumedChip from "./assumed-chip";
 import MatchColumn from "./match-column";
 import type { MatchCandidate } from "./match-link-picker";
@@ -37,12 +38,7 @@ const ROLE_OPTIONS: { value: FamilyMemberRole; label: string }[] = [
   { value: "other", label: "Other dependent" },
 ];
 
-const INPUT_CLASS =
-  "w-full rounded border border-gray-600 bg-gray-800 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
-const EMPTY_CLASS =
-  "w-full rounded border border-amber-600/50 bg-amber-900/20 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
-const SELECT_CLASS =
-  "w-full rounded border border-gray-600 bg-gray-800 px-2 py-1.5 text-sm text-gray-300 focus:border-accent focus:outline-none";
+const EMPTY_CLASS = `${inputClassName} bg-warn/10 border-warn/40`;
 
 interface ReviewStepFamilyProps {
   primary?: ExtractedPrimaryFamilyMember;
@@ -118,37 +114,37 @@ export default function ReviewStepFamily({
         <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-ink-3">
           Primary
         </h3>
-        <div className="rounded-lg border border-gray-700 bg-gray-900 p-3">
+        <div className="rounded-lg border border-hair bg-card-2 p-3">
           <div className="grid grid-cols-4 gap-3">
             <div>
-              <label className="mb-1 block text-xs text-gray-300">First name</label>
+              <label className={fieldLabelClassName}>First name</label>
               <input
                 value={primary?.firstName ?? ""}
                 onChange={(e) => ensurePrimary({ firstName: e.target.value })}
-                className={primary?.firstName ? INPUT_CLASS : EMPTY_CLASS}
+                className={primary?.firstName ? inputClassName : EMPTY_CLASS}
                 placeholder="First name"
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs text-gray-300">Last name</label>
+              <label className={fieldLabelClassName}>Last name</label>
               <input
                 value={primary?.lastName ?? ""}
                 onChange={(e) => ensurePrimary({ lastName: e.target.value || undefined })}
-                className={INPUT_CLASS}
+                className={inputClassName}
                 placeholder="Last name"
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs text-gray-300">Date of birth</label>
+              <label className={fieldLabelClassName}>Date of birth</label>
               <input
                 type="date"
                 value={primary?.dateOfBirth ?? ""}
                 onChange={(e) => ensurePrimary({ dateOfBirth: e.target.value || undefined })}
-                className={INPUT_CLASS}
+                className={inputClassName}
               />
             </div>
             <div>
-              <label className="mb-1 flex items-center gap-1.5 text-xs text-gray-300">
+              <label className={`mb-1 flex items-center gap-1.5 ${fieldLabelBaseClassName}`}>
                 Filing status
                 <AssumedChip assumption={assumptionByField["client.filingStatus"]} />
               </label>
@@ -157,7 +153,7 @@ export default function ReviewStepFamily({
                 onChange={(e) => ensurePrimary({
                   filingStatus: (e.target.value || undefined) as FilingStatus | undefined,
                 })}
-                className={SELECT_CLASS}
+                className={selectClassName}
               >
                 <option value="">Select…</option>
                 {FILING_STATUS_OPTIONS.map((o) => (
@@ -177,7 +173,7 @@ export default function ReviewStepFamily({
           {spouse ? (
             <button
               onClick={() => onSpouseChange(undefined)}
-              className="text-xs text-gray-400 underline hover:text-red-400"
+              className="text-xs text-ink-4 underline hover:text-crit"
             >
               Remove Co-client
             </button>
@@ -191,33 +187,33 @@ export default function ReviewStepFamily({
           )}
         </div>
         {spouse ? (
-          <div className="rounded-lg border border-gray-700 bg-gray-900 p-3">
+          <div className="rounded-lg border border-hair bg-card-2 p-3">
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <label className="mb-1 block text-xs text-gray-300">First name</label>
+                <label className={fieldLabelClassName}>First name</label>
                 <input
                   value={spouse.firstName}
                   onChange={(e) => ensureSpouse({ firstName: e.target.value })}
-                  className={spouse.firstName ? INPUT_CLASS : EMPTY_CLASS}
+                  className={spouse.firstName ? inputClassName : EMPTY_CLASS}
                   placeholder="First name"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-gray-300">Last name</label>
+                <label className={fieldLabelClassName}>Last name</label>
                 <input
                   value={spouse.lastName ?? ""}
                   onChange={(e) => ensureSpouse({ lastName: e.target.value || undefined })}
-                  className={INPUT_CLASS}
+                  className={inputClassName}
                   placeholder="Last name"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-gray-300">Date of birth</label>
+                <label className={fieldLabelClassName}>Date of birth</label>
                 <input
                   type="date"
                   value={spouse.dateOfBirth ?? ""}
                   onChange={(e) => ensureSpouse({ dateOfBirth: e.target.value || undefined })}
-                  className={INPUT_CLASS}
+                  className={inputClassName}
                 />
               </div>
             </div>
@@ -234,7 +230,7 @@ export default function ReviewStepFamily({
           </h3>
           <button
             onClick={addDependent}
-            className="rounded-md bg-gray-800 px-3 py-1 text-xs text-accent hover:bg-gray-700"
+            className="rounded-md bg-card-2 px-3 py-1 text-xs text-accent hover:bg-card-hover"
           >
             + Add
           </button>
@@ -246,7 +242,7 @@ export default function ReviewStepFamily({
             {dependents.map((d, i) => {
               const match = dependentMatches?.[i];
               return (
-                <div key={i} className="rounded-lg border border-gray-700 bg-gray-900 p-3">
+                <div key={i} className="rounded-lg border border-hair bg-card-2 p-3">
                   {dependentMatchingEnabled && (
                     <div className="mb-2">
                       <MatchColumn
@@ -259,38 +255,38 @@ export default function ReviewStepFamily({
                   )}
                   <div className="grid grid-cols-5 gap-2">
                     <div>
-                      <label className="mb-1 block text-xs text-gray-300">First name</label>
+                      <label className={fieldLabelClassName}>First name</label>
                       <input
                         value={d.firstName}
                         onChange={(e) => updateDependent(i, "firstName", e.target.value)}
-                        className={d.firstName ? INPUT_CLASS : EMPTY_CLASS}
+                        className={d.firstName ? inputClassName : EMPTY_CLASS}
                         placeholder="First"
                       />
                     </div>
                     <div>
-                      <label className="mb-1 block text-xs text-gray-300">Last name</label>
+                      <label className={fieldLabelClassName}>Last name</label>
                       <input
                         value={d.lastName ?? ""}
                         onChange={(e) => updateDependent(i, "lastName", e.target.value || undefined)}
-                        className={INPUT_CLASS}
+                        className={inputClassName}
                         placeholder="Last"
                       />
                     </div>
                     <div>
-                      <label className="mb-1 block text-xs text-gray-300">Date of birth</label>
+                      <label className={fieldLabelClassName}>Date of birth</label>
                       <input
                         type="date"
                         value={d.dateOfBirth ?? ""}
                         onChange={(e) => updateDependent(i, "dateOfBirth", e.target.value || undefined)}
-                        className={INPUT_CLASS}
+                        className={inputClassName}
                       />
                     </div>
                     <div>
-                      <label className="mb-1 block text-xs text-gray-300">Relationship</label>
+                      <label className={fieldLabelClassName}>Relationship</label>
                       <select
                         value={d.relationship ?? ""}
                         onChange={(e) => updateDependent(i, "relationship", e.target.value || undefined)}
-                        className={SELECT_CLASS}
+                        className={selectClassName}
                       >
                         <option value="">Select…</option>
                         {RELATIONSHIP_OPTIONS.map((o) => (
@@ -302,7 +298,7 @@ export default function ReviewStepFamily({
                       <select
                         value={d.role ?? ""}
                         onChange={(e) => updateDependent(i, "role", e.target.value || undefined)}
-                        className={SELECT_CLASS}
+                        className={selectClassName}
                       >
                         <option value="">Role…</option>
                         {ROLE_OPTIONS.map((o) => (

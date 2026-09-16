@@ -296,17 +296,17 @@ export default function UploadZone({
         onClick={() => !disabled && inputRef.current?.click()}
         className={`flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 transition-colors ${
           disabled
-            ? "cursor-not-allowed border-gray-700 bg-gray-900/50 opacity-50"
+            ? "cursor-not-allowed border-hair-3 bg-card-2/50 opacity-50"
             : isDragging
               ? "border-accent bg-accent/10"
-              : "border-gray-600 bg-gray-900/30 hover:border-gray-500 hover:bg-gray-900/50"
+              : "border-hair-3 bg-card-2/30 hover:bg-card-2/50"
         }`}
       >
         <UploadIcon />
-        <p className="mt-3 text-sm text-gray-300">
+        <p className="mt-3 text-sm text-ink-3">
           Drag & drop files here, or <span className="text-accent underline">browse</span>
         </p>
-        <p className="mt-1 text-xs text-gray-400">
+        <p className="mt-1 text-xs text-ink-4">
           PDF, Word, Excel, CSV, PNG, JPG — up to 20MB each
         </p>
         <input
@@ -351,17 +351,17 @@ function UploadRow({ file, onRetry, onRemove, onTypeChange, disabled }: UploadRo
     disabled || (file.state !== "queued" && file.state !== "uploaded");
 
   return (
-    <div className="rounded-md border border-gray-700 bg-gray-900 px-3 py-2">
+    <div className="rounded-md border border-hair bg-card px-3 py-2">
       <div className="flex items-center gap-3">
         <FileIcon />
-        <span className="min-w-0 flex-1 truncate text-sm text-gray-200">
+        <span className="min-w-0 flex-1 truncate text-sm text-ink-2">
           {file.name}
         </span>
         <select
           value={file.documentType}
           onChange={(e) => onTypeChange(e.target.value as DocumentType | "auto")}
           disabled={pickerDisabled}
-          className="rounded border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-gray-300 focus:border-accent focus:outline-none disabled:opacity-60"
+          className="rounded border border-hair-2 bg-paper px-2 py-1 text-xs text-ink-3 focus:border-accent focus:outline-none disabled:opacity-60"
         >
           <option value="auto">Auto-detect</option>
           {DOCUMENT_TYPES.map((dt) => (
@@ -394,7 +394,7 @@ function UploadRow({ file, onRetry, onRemove, onTypeChange, disabled }: UploadRo
       </div>
 
       {file.state === "uploading" && (
-        <div className="mt-2 h-1 w-full overflow-hidden rounded bg-gray-800">
+        <div className="mt-2 h-1 w-full overflow-hidden rounded bg-card-2">
           <div
             className="h-full bg-accent transition-all"
             style={{ width: `${file.progress}%` }}
@@ -402,7 +402,7 @@ function UploadRow({ file, onRetry, onRemove, onTypeChange, disabled }: UploadRo
         </div>
       )}
       {file.state === "failed" && file.errorMessage && (
-        <p className="mt-1 text-xs text-red-400">{file.errorMessage}</p>
+        <p className="mt-1 text-xs text-crit">{file.errorMessage}</p>
       )}
     </div>
   );
@@ -412,7 +412,7 @@ function StateBadge({ file }: { file: UploadingFile }) {
   switch (file.state) {
     case "queued":
       return (
-        <span className="text-xs text-gray-400">Queued</span>
+        <span className="text-xs text-ink-4">Queued</span>
       );
     case "uploading":
       return (
@@ -425,13 +425,13 @@ function StateBadge({ file }: { file: UploadingFile }) {
         </span>
       );
     case "failed":
-      return <span className="text-xs text-red-400">Failed</span>;
+      return <span className="text-xs text-crit">Failed</span>;
   }
 }
 
 function UploadIcon() {
   return (
-    <svg className="h-10 w-10 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <svg className="h-10 w-10 text-ink-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
       <polyline points="17 8 12 3 7 8" />
       <line x1="12" y1="3" x2="12" y2="15" />
@@ -441,7 +441,7 @@ function UploadIcon() {
 
 function FileIcon() {
   return (
-    <svg className="h-4 w-4 flex-shrink-0 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <svg className="h-4 w-4 flex-shrink-0 text-ink-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
       <polyline points="14 2 14 8 20 8" />
     </svg>

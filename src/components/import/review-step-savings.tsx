@@ -4,7 +4,12 @@ import type { Annotated } from "@/lib/imports/types";
 import type { ExtractedSavings } from "@/lib/extraction/types";
 import { resolveAccountName } from "@/lib/imports/account-name-match";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
+import { inputClassName, selectClassName, fieldLabelClassName } from "@/components/forms/input-styles";
 import SourceBadge from "./source-badge";
+
+// Layered on top of inputClassName/selectClassName's own baseline to flag
+// fields the AI didn't extract.
+const TINT_EMPTY = "bg-warn/10 border-warn/40";
 
 const OWNER_OPTIONS = [
   { value: "client", label: "Client" },
@@ -24,18 +29,15 @@ export interface ReviewStepSavingsProps {
   onChange: (rows: Annotated<ExtractedSavings>[]) => void;
 }
 
-const INPUT_CLASS =
-  "w-full rounded border border-gray-600 bg-gray-800 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
-const EMPTY_CLASS =
-  "w-full rounded border border-amber-600/50 bg-amber-900/20 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
-const SELECT_CLASS =
-  "w-full rounded border border-gray-600 bg-gray-800 px-2 py-1.5 text-sm text-gray-300 focus:border-accent focus:outline-none";
+const EMPTY_CLASS = `${inputClassName} ${TINT_EMPTY}`;
 // Amount stays read-only — it is a derived label (percent / flat / match), not
 // a raw value to type over. Destination IS editable (a picker): it resolves to
 // an account by name at commit, and a row whose name matches nothing is
 // silently skipped there, so the advisor needs a way to point it somewhere real.
+// (A plain `<div>`, not an `<input>` — it doesn't route through inputClassName,
+// so it can skip the hover/focus affordances a non-editable cell shouldn't carry.)
 const DISPLAY_CLASS =
-  "w-full truncate rounded border border-gray-700 bg-gray-800/50 px-2 py-1.5 text-sm text-gray-300";
+  "w-full truncate rounded border border-hair bg-card-2/50 px-2 py-1.5 text-sm text-ink-3";
 
 /** Renders the amount cell: percent-of-salary, flat dollars, or a match. */
 export function formatSavingsAmount(row: ExtractedSavings): string {
@@ -83,7 +85,7 @@ function DestinationCell({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className={resolved ? SELECT_CLASS : EMPTY_CLASS}
+      className={resolved ? selectClassName : `${selectClassName} ${TINT_EMPTY}`}
       title={value}
     >
       <option value="">— Select account —</option>
@@ -123,37 +125,37 @@ export default function ReviewStepSavings({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-medium text-gray-100">
+        <h3 className="text-lg font-medium text-ink">
           Savings ({rows.length} found)
         </h3>
         <button
           onClick={addRow}
-          className="rounded-md bg-gray-800 px-3 py-1.5 text-sm text-accent hover:bg-gray-700"
+          className="rounded-md bg-card-2 px-3 py-1.5 text-sm text-accent hover:bg-card-hover"
         >
           + Add Row
         </button>
       </div>
 
       {rows.length === 0 ? (
-        <p className="text-sm text-gray-400">
+        <p className="text-sm text-ink-4">
           No savings or contributions were found in these documents.
         </p>
       ) : (
         <div className="space-y-3">
           {rows.map((row, i) => (
-            <div key={i} className="rounded-lg border border-gray-700 bg-gray-900 p-3">
+            <div key={i} className="rounded-lg border border-hair bg-card-2 p-3">
               <div className="grid grid-cols-5 gap-2">
                 <div>
-                  <label className="mb-1 block text-xs text-gray-300">Name</label>
+                  <label className={fieldLabelClassName}>Name</label>
                   <input
                     value={row.name}
                     onChange={(e) => updateField(i, "name", e.target.value)}
-                    className={row.name ? INPUT_CLASS : EMPTY_CLASS}
+                    className={row.name ? inputClassName : EMPTY_CLASS}
                     placeholder="Contribution name"
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-gray-300">Destination</label>
+                  <label className={fieldLabelClassName}>Destination</label>
                   <DestinationCell
                     value={row.destinationAccountName}
                     accountOptions={accountOptions}
@@ -161,11 +163,11 @@ export default function ReviewStepSavings({
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-gray-300">Owner</label>
+                  <label className={fieldLabelClassName}>Owner</label>
                   <select
                     value={row.owner ?? "client"}
                     onChange={(e) => updateField(i, "owner", e.target.value)}
-                    className={SELECT_CLASS}
+                    className={selectClassName}
                   >
                     {OWNER_OPTIONS.map((o) => (
                       <option key={o.value} value={o.value}>{o.label}</option>
@@ -173,7 +175,7 @@ export default function ReviewStepSavings({
                   </select>
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-gray-300">Amount</label>
+                  <label className={fieldLabelClassName}>Amount</label>
                   <div className={DISPLAY_CLASS}>{formatSavingsAmount(row)}</div>
                 </div>
                 <div className="flex items-end gap-2">

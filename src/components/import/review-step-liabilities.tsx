@@ -3,11 +3,12 @@
 import type { ExtractedLiability } from "@/lib/extraction/types";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
+import { inputClassName, fieldLabelClassName } from "@/components/forms/input-styles";
 import SourceBadge from "./source-badge";
 
 // Layered on top of CurrencyInput/PercentInput's own inputClassName baseline
 // to flag fields the AI didn't extract.
-const TINT_EMPTY = "bg-amber-900/20 border-amber-600/50";
+const TINT_EMPTY = "bg-warn/10 border-warn/40";
 
 interface ReviewStepLiabilitiesProps {
   liabilities: ExtractedLiability[];
@@ -16,10 +17,7 @@ interface ReviewStepLiabilitiesProps {
   defaultEndYear: number;
 }
 
-const INPUT_CLASS =
-  "w-full rounded border border-gray-600 bg-gray-800 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
-const EMPTY_CLASS =
-  "w-full rounded border border-amber-600/50 bg-amber-900/20 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
+const EMPTY_CLASS = `${inputClassName} ${TINT_EMPTY}`;
 
 export default function ReviewStepLiabilities({
   liabilities,
@@ -48,12 +46,12 @@ export default function ReviewStepLiabilities({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-medium text-gray-100">
+        <h3 className="text-lg font-medium text-ink">
           Liabilities ({liabilities.length} found)
         </h3>
         <button
           onClick={addRow}
-          className="rounded-md bg-gray-800 px-3 py-1.5 text-sm text-accent hover:bg-gray-700"
+          className="rounded-md bg-card-2 px-3 py-1.5 text-sm text-accent hover:bg-card-hover"
         >
           + Add Row
         </button>
@@ -61,19 +59,19 @@ export default function ReviewStepLiabilities({
 
       <div className="space-y-3">
         {liabilities.map((liability, i) => (
-          <div key={i} className="rounded-lg border border-gray-700 bg-gray-900 p-3">
+          <div key={i} className="rounded-lg border border-hair bg-card-2 p-3">
             <div className="grid grid-cols-6 gap-2">
               <div className="col-span-2">
-                <label className="mb-1 block text-xs text-gray-300">Name</label>
+                <label className={fieldLabelClassName}>Name</label>
                 <input
                   value={liability.name}
                   onChange={(e) => updateField(i, "name", e.target.value)}
-                  className={liability.name ? INPUT_CLASS : EMPTY_CLASS}
+                  className={liability.name ? inputClassName : EMPTY_CLASS}
                   placeholder="Liability name"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-gray-300">Balance</label>
+                <label className={fieldLabelClassName}>Balance</label>
                 <CurrencyInput
                   value={liability.balance != null ? String(liability.balance) : ""}
                   onChange={(raw) => updateField(i, "balance", raw === "" ? undefined : Number(raw))}
@@ -82,7 +80,7 @@ export default function ReviewStepLiabilities({
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-gray-300">Interest Rate</label>
+                <label className={fieldLabelClassName}>Interest Rate</label>
                 <PercentInput
                   value={liability.interestRate != null ? (liability.interestRate * 100).toFixed(3) : ""}
                   onChange={(raw) => updateField(i, "interestRate", raw === "" ? undefined : Number(raw) / 100)}
@@ -91,7 +89,7 @@ export default function ReviewStepLiabilities({
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-gray-300">Monthly Payment</label>
+                <label className={fieldLabelClassName}>Monthly Payment</label>
                 <CurrencyInput
                   value={liability.monthlyPayment != null ? String(liability.monthlyPayment) : ""}
                   onChange={(raw) => updateField(i, "monthlyPayment", raw === "" ? undefined : Number(raw))}
@@ -101,22 +99,22 @@ export default function ReviewStepLiabilities({
               </div>
               <div className="flex items-end gap-4">
                 <div className="flex-1">
-                  <label className="mb-1 block text-xs text-gray-300">Start</label>
+                  <label className={fieldLabelClassName}>Start</label>
                   <input
                     type="number"
                     value={liability.startYear ?? ""}
                     onChange={(e) => updateField(i, "startYear", e.target.value ? Number(e.target.value) : undefined)}
-                    className={liability.startYear != null ? INPUT_CLASS : EMPTY_CLASS}
+                    className={liability.startYear != null ? inputClassName : EMPTY_CLASS}
                     placeholder={String(defaultStartYear)}
                   />
                 </div>
                 <div className="flex-1">
-                  <label className="mb-1 block text-xs text-gray-300">End</label>
+                  <label className={fieldLabelClassName}>End</label>
                   <input
                     type="number"
                     value={liability.endYear ?? ""}
                     onChange={(e) => updateField(i, "endYear", e.target.value ? Number(e.target.value) : undefined)}
-                    className={liability.endYear != null ? INPUT_CLASS : EMPTY_CLASS}
+                    className={liability.endYear != null ? inputClassName : EMPTY_CLASS}
                     placeholder={String(defaultEndYear)}
                   />
                 </div>

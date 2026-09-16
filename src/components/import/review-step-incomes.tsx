@@ -7,12 +7,13 @@ import MilestoneYearPicker from "@/components/milestone-year-picker";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
+import { inputClassName, selectClassName, fieldLabelClassName } from "@/components/forms/input-styles";
 import SourceBadge from "./source-badge";
 
-// The file's amber flag pair. Layered on top of CurrencyInput/PercentInput's
+// The file's warn flag pair. Layered on top of CurrencyInput/PercentInput's
 // own inputClassName baseline to flag fields the AI didn't extract, and reused
 // on the superseded-row badge (which supplies its own `border` width).
-const TINT_EMPTY = "bg-amber-900/20 border-amber-600/50";
+const TINT_EMPTY = "bg-warn/10 border-warn/40";
 
 const INCOME_TYPE_OPTIONS: { value: IncomeType; label: string }[] = [
   { value: "salary", label: "Salary" },
@@ -46,12 +47,7 @@ interface ReviewStepIncomesProps {
   spouseFirstName?: string;
 }
 
-const INPUT_CLASS =
-  "w-full rounded border border-gray-600 bg-gray-800 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
-const EMPTY_CLASS =
-  "w-full rounded border border-amber-600/50 bg-amber-900/20 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
-const SELECT_CLASS =
-  "w-full rounded border border-gray-600 bg-gray-800 px-2 py-1.5 text-sm text-gray-300 focus:border-accent focus:outline-none";
+const EMPTY_CLASS = `${inputClassName} ${TINT_EMPTY}`;
 
 export default function ReviewStepIncomes({
   incomes,
@@ -97,12 +93,12 @@ export default function ReviewStepIncomes({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-medium text-gray-100">
+        <h3 className="text-lg font-medium text-ink">
           Income ({incomes.length} found)
         </h3>
         <button
           onClick={addRow}
-          className="rounded-md bg-gray-800 px-3 py-1.5 text-sm text-accent hover:bg-gray-700"
+          className="rounded-md bg-card-2 px-3 py-1.5 text-sm text-accent hover:bg-card-hover"
         >
           + Add Row
         </button>
@@ -112,35 +108,30 @@ export default function ReviewStepIncomes({
         {incomes.map((income, i) => (
           <div
             key={i}
-            // A superseded row is recessed a step below its peers' bg-gray-900
-            // and hairlined amber, never dropped: commitIncomes skips it, so the
-            // advisor has to be able to see the row and read why. The recess is
-            // an OPAQUE darker gray, not a translucent tint of the peer surface:
-            // every other surface in this row is hardcoded dark, so a
-            // translucent one would be the row's only theme-dependent value and
-            // would composite against the light-theme canvas — bleaching the one
-            // sentence this notice exists to make readable. The fields below
-            // stay editable.
+            // A superseded row is recessed a step below its peers' bg-card-2
+            // and hairlined warn, never dropped: commitIncomes skips it, so the
+            // advisor has to be able to see the row and read why. The fields
+            // below stay editable.
             className={`rounded-lg border p-3 ${
               income.reconciliation
-                ? "border-amber-600/50 bg-gray-950"
-                : "border-gray-700 bg-gray-900"
+                ? "border-warn/50 bg-card"
+                : "border-hair bg-card-2"
             }`}
           >
             {income.reconciliation && (
-              <div className="mb-2.5 border-b border-amber-600/30 pb-2.5">
+              <div className="mb-2.5 border-b border-warn/30 pb-2.5">
                 <div className="flex flex-wrap items-center gap-2">
                   {income.name && (
-                    <span className="text-sm font-medium text-gray-100">{income.name}</span>
+                    <span className="text-sm font-medium text-ink">{income.name}</span>
                   )}
                   <span
-                    className={`rounded border ${TINT_EMPTY} px-1.5 py-0.5 text-[11px] font-medium uppercase tracking-wide text-amber-300`}
+                    className={`rounded border ${TINT_EMPTY} px-1.5 py-0.5 text-[11px] font-medium uppercase tracking-wide text-warn`}
                   >
                     Won&apos;t be imported
                   </span>
                 </div>
                 {income.reconciliation.reason && (
-                  <p className="mt-1 max-w-prose text-xs leading-snug text-gray-300">
+                  <p className="mt-1 max-w-prose text-xs leading-snug text-ink-3">
                     {income.reconciliation.reason}
                   </p>
                 )}
@@ -148,20 +139,20 @@ export default function ReviewStepIncomes({
             )}
             <div className="grid grid-cols-6 gap-2">
               <div className="col-span-2">
-                <label className="mb-1 block text-xs text-gray-300">Name</label>
+                <label className={fieldLabelClassName}>Name</label>
                 <input
                   value={income.name}
                   onChange={(e) => updateField(i, "name", e.target.value)}
-                  className={income.name ? INPUT_CLASS : EMPTY_CLASS}
+                  className={income.name ? inputClassName : EMPTY_CLASS}
                   placeholder="Income source name"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-gray-300">Type</label>
+                <label className={fieldLabelClassName}>Type</label>
                 <select
                   value={income.type ?? ""}
                   onChange={(e) => updateField(i, "type", e.target.value || undefined)}
-                  className={income.type ? SELECT_CLASS : `${SELECT_CLASS} border-amber-600/50 bg-amber-900/20`}
+                  className={income.type ? selectClassName : `${selectClassName} ${TINT_EMPTY}`}
                 >
                   <option value="">Select...</option>
                   {INCOME_TYPE_OPTIONS.map((o) => (
@@ -170,7 +161,7 @@ export default function ReviewStepIncomes({
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-xs text-gray-300">Annual Amount</label>
+                <label className={fieldLabelClassName}>Annual Amount</label>
                 <CurrencyInput
                   value={income.annualAmount != null ? String(income.annualAmount) : ""}
                   onChange={(raw) => updateField(i, "annualAmount", raw === "" ? undefined : Number(raw))}
@@ -179,11 +170,11 @@ export default function ReviewStepIncomes({
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-gray-300">Owner</label>
+                <label className={fieldLabelClassName}>Owner</label>
                 <select
                   value={income.owner ?? "client"}
                   onChange={(e) => updateField(i, "owner", e.target.value)}
-                  className={SELECT_CLASS}
+                  className={selectClassName}
                 >
                   {OWNER_OPTIONS.map((o) => (
                     <option key={o.value} value={o.value}>{o.label}</option>
@@ -207,12 +198,12 @@ export default function ReviewStepIncomes({
                   />
                 ) : (
                   <>
-                    <label className="mb-1 block text-xs text-gray-300">Start Year</label>
+                    <label className={fieldLabelClassName}>Start Year</label>
                     <input
                       type="number"
                       value={income.startYear ?? ""}
                       onChange={(e) => updateField(i, "startYear", e.target.value ? Number(e.target.value) : undefined)}
-                      className={income.startYear != null ? INPUT_CLASS : EMPTY_CLASS}
+                      className={income.startYear != null ? inputClassName : EMPTY_CLASS}
                       placeholder={String(defaultStartYear)}
                     />
                   </>
@@ -236,19 +227,19 @@ export default function ReviewStepIncomes({
                   />
                 ) : (
                   <>
-                    <label className="mb-1 block text-xs text-gray-300">End Year</label>
+                    <label className={fieldLabelClassName}>End Year</label>
                     <input
                       type="number"
                       value={income.endYear ?? ""}
                       onChange={(e) => updateField(i, "endYear", e.target.value ? Number(e.target.value) : undefined)}
-                      className={income.endYear != null ? INPUT_CLASS : EMPTY_CLASS}
+                      className={income.endYear != null ? inputClassName : EMPTY_CLASS}
                       placeholder={String(defaultEndYear)}
                     />
                   </>
                 )}
               </div>
               <div>
-                <label className="mb-1 block text-xs text-gray-300">Growth Rate</label>
+                <label className={fieldLabelClassName}>Growth Rate</label>
                 <PercentInput
                   value={income.growthRate != null ? (income.growthRate * 100).toFixed(2) : ""}
                   onChange={(raw) => updateField(i, "growthRate", raw === "" ? undefined : Number(raw) / 100)}

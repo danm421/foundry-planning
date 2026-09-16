@@ -7,10 +7,11 @@ import { CurrencyInput } from "@/components/currency-input";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import MatchColumn from "./match-column";
 import type { MatchCandidate } from "./match-link-picker";
+import { inputClassName, selectClassName, fieldLabelClassName } from "@/components/forms/input-styles";
 import SourceBadge from "./source-badge";
 
 // Layered on top of CurrencyInput's inputClassName baseline to flag empty fields.
-const TINT_EMPTY = "bg-amber-900/20 border-amber-600/50";
+const TINT_EMPTY = "bg-warn/10 border-warn/40";
 
 const POLICY_TYPE_OPTIONS: { value: LifePolicyType; label: string }[] = [
   { value: "term", label: "Term" },
@@ -25,12 +26,7 @@ const INSURED_OPTIONS = [
   { value: "joint", label: "Joint" },
 ] as const;
 
-const INPUT_CLASS =
-  "w-full rounded border border-gray-600 bg-gray-800 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
-const EMPTY_CLASS =
-  "w-full rounded border border-amber-600/50 bg-amber-900/20 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
-const SELECT_CLASS =
-  "w-full rounded border border-gray-600 bg-gray-800 px-2 py-1.5 text-sm text-gray-300 focus:border-accent focus:outline-none";
+const EMPTY_CLASS = `${inputClassName} ${TINT_EMPTY}`;
 
 interface ReviewStepInsuranceProps {
   policies: ExtractedLifePolicy[];
@@ -79,12 +75,12 @@ export default function ReviewStepInsurance({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-medium text-gray-100">
+        <h3 className="text-lg font-medium text-ink">
           Insurance ({policies.length} {policies.length === 1 ? "policy" : "policies"})
         </h3>
         <button
           onClick={addRow}
-          className="rounded-md bg-gray-800 px-3 py-1.5 text-sm text-accent hover:bg-gray-700"
+          className="rounded-md bg-card-2 px-3 py-1.5 text-sm text-accent hover:bg-card-hover"
         >
           + Add Row
         </button>
@@ -94,7 +90,7 @@ export default function ReviewStepInsurance({
         {policies.map((policy, i) => {
           const match = matches?.[i];
           return (
-            <div key={i} className="rounded-lg border border-gray-700 bg-gray-900 p-3">
+            <div key={i} className="rounded-lg border border-hair bg-card-2 p-3">
               {matchingEnabled && (
                 <div className="mb-2">
                   <MatchColumn
@@ -107,39 +103,39 @@ export default function ReviewStepInsurance({
               )}
               <div className="grid grid-cols-6 gap-2">
                 <div className="col-span-2">
-                  <label className="mb-1 block text-xs text-gray-300">Policy name</label>
+                  <label className={fieldLabelClassName}>Policy name</label>
                   <input
                     value={policy.accountName}
                     onChange={(e) => updateField(i, "accountName", e.target.value)}
-                    className={policy.accountName ? INPUT_CLASS : EMPTY_CLASS}
+                    className={policy.accountName ? inputClassName : EMPTY_CLASS}
                     placeholder="Policy name"
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-gray-300">Carrier</label>
+                  <label className={fieldLabelClassName}>Carrier</label>
                   <input
                     value={policy.carrier ?? ""}
                     onChange={(e) => updateField(i, "carrier", e.target.value || undefined)}
-                    className={INPUT_CLASS}
+                    className={inputClassName}
                     placeholder="e.g. Northwestern"
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-gray-300">Policy ####</label>
+                  <label className={fieldLabelClassName}>Policy ####</label>
                   <input
                     value={policy.policyNumberLast4 ?? ""}
                     onChange={(e) => updateField(i, "policyNumberLast4", e.target.value || undefined)}
-                    className={INPUT_CLASS}
+                    className={inputClassName}
                     placeholder="Last 4"
                     maxLength={4}
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-gray-300">Type</label>
+                  <label className={fieldLabelClassName}>Type</label>
                   <select
                     value={policy.policyType}
                     onChange={(e) => updateField(i, "policyType", e.target.value as LifePolicyType)}
-                    className={SELECT_CLASS}
+                    className={selectClassName}
                   >
                     {POLICY_TYPE_OPTIONS.map((o) => (
                       <option key={o.value} value={o.value}>{o.label}</option>
@@ -147,11 +143,11 @@ export default function ReviewStepInsurance({
                   </select>
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-gray-300">Insured</label>
+                  <label className={fieldLabelClassName}>Insured</label>
                   <select
                     value={policy.insuredPerson}
                     onChange={(e) => updateField(i, "insuredPerson", e.target.value)}
-                    className={SELECT_CLASS}
+                    className={selectClassName}
                   >
                     {INSURED_OPTIONS.map((o) => (
                       <option key={o.value} value={o.value}>{o.label}</option>
@@ -159,7 +155,7 @@ export default function ReviewStepInsurance({
                   </select>
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-gray-300">Face value</label>
+                  <label className={fieldLabelClassName}>Face value</label>
                   <CurrencyInput
                     value={policy.faceValue > 0 ? String(policy.faceValue) : ""}
                     onChange={(raw) => updateField(i, "faceValue", raw === "" ? 0 : Number(raw))}
@@ -168,7 +164,7 @@ export default function ReviewStepInsurance({
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-gray-300">Premium</label>
+                  <label className={fieldLabelClassName}>Premium</label>
                   <CurrencyInput
                     value={policy.premiumAmount != null ? String(policy.premiumAmount) : ""}
                     onChange={(raw) => updateField(i, "premiumAmount", raw === "" ? undefined : Number(raw))}

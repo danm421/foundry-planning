@@ -1,7 +1,12 @@
 "use client";
 
 import type { ExtractedEntity, EntityType } from "@/lib/extraction/types";
+import { inputClassName, selectClassName, fieldLabelClassName } from "@/components/forms/input-styles";
 import SourceBadge from "./source-badge";
+
+// Layered on top of selectClassName's own baseline to flag fields the AI
+// didn't extract.
+const TINT_EMPTY = "bg-warn/10 border-warn/40";
 
 const ENTITY_TYPE_OPTIONS: { value: EntityType; label: string }[] = [
   { value: "trust", label: "Trust" },
@@ -18,12 +23,7 @@ interface ReviewStepEntitiesProps {
   onChange: (entities: ExtractedEntity[]) => void;
 }
 
-const INPUT_CLASS =
-  "w-full rounded border border-gray-600 bg-gray-800 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
-const EMPTY_CLASS =
-  "w-full rounded border border-amber-600/50 bg-amber-900/20 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
-const SELECT_CLASS =
-  "w-full rounded border border-gray-600 bg-gray-800 px-2 py-1.5 text-sm text-gray-300 focus:border-accent focus:outline-none";
+const EMPTY_CLASS = `${inputClassName} ${TINT_EMPTY}`;
 
 export default function ReviewStepEntities({
   entities,
@@ -47,12 +47,12 @@ export default function ReviewStepEntities({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-medium text-gray-100">
+        <h3 className="text-lg font-medium text-ink">
           Entities ({entities.length} found)
         </h3>
         <button
           onClick={addRow}
-          className="rounded-md bg-gray-800 px-3 py-1.5 text-sm text-accent hover:bg-gray-700"
+          className="rounded-md bg-card-2 px-3 py-1.5 text-sm text-accent hover:bg-card-hover"
         >
           + Add Row
         </button>
@@ -60,23 +60,23 @@ export default function ReviewStepEntities({
 
       <div className="space-y-3">
         {entities.map((entity, i) => (
-          <div key={i} className="rounded-lg border border-gray-700 bg-gray-900 p-3">
+          <div key={i} className="rounded-lg border border-hair bg-card-2 p-3">
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <label className="mb-1 block text-xs text-gray-300">Name</label>
+                <label className={fieldLabelClassName}>Name</label>
                 <input
                   value={entity.name}
                   onChange={(e) => updateField(i, "name", e.target.value)}
-                  className={entity.name ? INPUT_CLASS : EMPTY_CLASS}
+                  className={entity.name ? inputClassName : EMPTY_CLASS}
                   placeholder="Entity name"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-gray-300">Type</label>
+                <label className={fieldLabelClassName}>Type</label>
                 <select
                   value={entity.entityType ?? ""}
                   onChange={(e) => updateField(i, "entityType", e.target.value || undefined)}
-                  className={entity.entityType ? SELECT_CLASS : `${SELECT_CLASS} border-amber-600/50 bg-amber-900/20`}
+                  className={entity.entityType ? selectClassName : `${selectClassName} ${TINT_EMPTY}`}
                 >
                   <option value="">Select...</option>
                   {ENTITY_TYPE_OPTIONS.map((o) => (

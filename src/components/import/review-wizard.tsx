@@ -626,7 +626,7 @@ export default function ReviewWizard({
       />
 
       {commitError ? (
-        <div className="rounded border border-red-700/50 bg-red-900/20 px-3 py-2 text-sm text-red-300">
+        <div className="rounded border border-crit/50 bg-crit/10 px-3 py-2 text-sm text-crit">
           {commitError}
         </div>
       ) : null}
@@ -637,7 +637,7 @@ export default function ReviewWizard({
           made every cross-tab resolution failure silent. */}
       {commitWarnings.length > 0 && (
         <div className="space-y-1">
-          <p className="text-xs font-medium uppercase tracking-wide text-amber-300">
+          <p className="text-xs font-medium uppercase tracking-wide text-warn">
             Warnings from the last commit
           </p>
           <WarningsBanner warnings={commitWarnings} />
@@ -764,7 +764,7 @@ export default function ReviewWizard({
       {currentTab !== "summary" && (
         <div className="space-y-2 border-t border-hair pt-3">
           {goalsBlockedOnAccounts && (
-            <p className="text-xs text-amber-400">
+            <p className="text-xs text-warn">
               Commit the Accounts step first — these goals draw from a 529 that has not been created yet.
             </p>
           )}
@@ -948,7 +948,7 @@ function SummaryStep({
 }: SummaryStepProps) {
   return (
     <div className="space-y-4">
-      <h3 className="text-lg font-medium text-gray-100">Summary</h3>
+      <h3 className="text-lg font-medium text-ink">Summary</h3>
       <ul className="divide-y divide-hair rounded-lg border border-hair">
         {tabs.map((t) => (
           <li key={t} className="flex items-center justify-between px-3 py-2 text-sm">
@@ -966,7 +966,7 @@ function SummaryStep({
                   ✓ Committed {formatTimestamp(t, perTabCommittedAt)}
                 </span>
               ) : (
-                <span className="text-amber-400">Pending</span>
+                <span className="text-warn">Pending</span>
               )}
             </div>
           </li>

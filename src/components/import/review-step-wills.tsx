@@ -13,6 +13,7 @@ import WillBequestMapper, {
   type WizardBequest,
 } from "./will-bequest-mapper";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
+import { inputClassName, fieldLabelClassName } from "@/components/forms/input-styles";
 
 /**
  * Wizard-internal will shape. Replaces the extracted bequests array
@@ -27,9 +28,6 @@ export interface WizardWill {
   /** Source-document provenance, carried through for the source badge. */
   __provenance?: Provenance;
 }
-
-const INPUT_CLASS =
-  "w-full rounded border border-gray-600 bg-gray-800 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
 
 interface ReviewStepWillsProps {
   wills: WizardWill[];
@@ -88,7 +86,7 @@ export default function ReviewStepWills({
 
   return (
     <div className="space-y-6">
-      <h3 className="text-lg font-medium text-gray-100">
+      <h3 className="text-lg font-medium text-ink">
         Wills ({wills.length})
       </h3>
       {wills.length === 0 ? (
@@ -104,7 +102,7 @@ export default function ReviewStepWills({
         return (
           <section
             key={wIndex}
-            className="rounded-lg border border-gray-700 bg-gray-900/50 p-4"
+            className="rounded-lg border border-hair bg-card-2/50 p-4"
           >
             <div className="mb-3 flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
@@ -123,7 +121,7 @@ export default function ReviewStepWills({
               </div>
               <span
                 className={`text-xs ${
-                  allResolved ? "text-good" : "text-amber-400"
+                  allResolved ? "text-good" : "text-warn"
                 }`}
               >
                 {resolvedCount}/{total} bequests resolved
@@ -132,25 +130,25 @@ export default function ReviewStepWills({
 
             <div className="mb-4 grid grid-cols-2 gap-3">
               <div>
-                <label className="mb-1 block text-xs text-gray-300">Executor</label>
+                <label className={fieldLabelClassName}>Executor</label>
                 <input
                   value={will.executor ?? ""}
                   onChange={(e) =>
                     updateWill(wIndex, { executor: e.target.value || undefined })
                   }
-                  className={INPUT_CLASS}
+                  className={inputClassName}
                   placeholder="e.g. Jane Doe"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-gray-300">Execution date</label>
+                <label className={fieldLabelClassName}>Execution date</label>
                 <input
                   type="date"
                   value={will.executionDate ?? ""}
                   onChange={(e) =>
                     updateWill(wIndex, { executionDate: e.target.value || undefined })
                   }
-                  className={INPUT_CLASS}
+                  className={inputClassName}
                 />
               </div>
             </div>
