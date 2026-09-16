@@ -10,7 +10,7 @@ import type {
   ExtractedWill,
   ExtractionResult,
 } from "@/lib/extraction/types";
-import { realLast4 } from "@/lib/extraction/account-number";
+import { accountLast4 } from "@/lib/extraction/account-number";
 import { holdingKey } from "@/lib/extraction/holdings-completion";
 import {
   emptyImportPayload,
@@ -20,6 +20,7 @@ import {
 } from "../types";
 import type { MergeDecision } from "./decisions";
 import { custodianMatches, normalizeCustodian } from "../normalize-custodian";
+import { nameSimilarity } from "../match-keys/account";
 
 export interface MergeAcrossFilesResult {
   payload: ImportPayload;
@@ -119,6 +120,57 @@ function sameAccountOwner(existing: ExtractedAccount, incoming: ExtractedAccount
 }
 
 /**
+ * Whether two rows at one custodian, neither carrying a usable account number,
+ * are two statements for ONE account.
+ *
+ * This is the only merge in the file that runs on no account number at all, so
+ * it is deliberately the narrowest. Every clause is there to refuse a pair the
+ * advisor would have wanted kept apart, because the failure mode here is an
+ * account disappearing rather than appearing twice:
+ *
+ * - Same CATEGORY. A retirement plan and a taxable brokerage at one custodian
+ *   share an owner and nothing else. SUB-TYPE is deliberately NOT tested with
+ *   it: it is the finer of the two model CLASSIFICATIONS and it flips between
+ *   readings of one account — measured on Jennifer's Gensler ESOP, read as
+ *   `401k` off the March statement and `other` off the June one, which put one
+ *   plan in two buckets and booked it twice. A key made of extraction output
+ *   inherits the extractor's variance, and the finer the field the more of it
+ *   there is. What separates two plan types here is their NAMES, below, which
+ *   are read off the page rather than inferred.
+ * - DIFFERENT statement dates, both of them real. This is what makes the
+ *   pairing "two quarters of one account" rather than "two accounts". It is
+ *   also the clause that refuses the shape that has actually lost money here:
+ *   four UBS accounts read out of ONE statement, all masked identically, all
+ *   dated the same day — they never reach this at all, because one document
+ *   carries one date.
+ * - Agreeing NAMES. "401(k) Savings Plan" and "401(k) Savings" are one plan
+ *   described twice; "401(k) Savings" and "Profit Sharing" are not.
+ *
+ * What it still cannot see: two genuinely different accounts of the same type
+ * at one custodian, both unnumbered, both named the same thing, read from
+ * statements of different dates. Nothing in the extraction distinguishes those
+ * either — and the merge says so, in the balances-differ caveat the advisor
+ * gets on the merged row.
+ */
+function sameUnnumberedAccount(a: ExtractedAccount, b: ExtractedAccount): boolean {
+  if (a.category !== b.category) return false;
+  const dateA = orderableDate(a.statementDate);
+  const dateB = orderableDate(b.statementDate);
+  if (dateA === undefined || dateB === undefined || dateA === dateB) return false;
+  return nameSimilarity(a.name, b.name) >= NAME_AGREEMENT_ACROSS_STATEMENTS;
+}
+
+/**
+ * The name bar for joining two SEPARATE documents, higher than
+ * `NAME_AGREEMENT`'s. Within one file a collapse also has the page ranges and
+ * a to-the-cent balance behind it; across files the name is most of the case,
+ * so it has to carry more of it. 0.6 takes "401(k) Savings Plan" / "401(k)
+ * Savings" (two thirds) and refuses "Profit Sharing Plan" / "401(k) Savings
+ * Plan" (one third).
+ */
+const NAME_AGREEMENT_ACROSS_STATEMENTS = 0.6;
+
+/**
  * Backfill any undefined/null field on `base` using the corresponding field
  * from `other`, without touching fields `base` already has populated. Used
  * so that merging two rows unions their non-null fields — the row picked as
@@ -203,10 +255,51 @@ function isSameAccountReadTwice(a: ExtractedAccount, b: ExtractedAccount): boole
   if (base === 0) return false;
   if (Math.abs(a.value - b.value) / base > AMOUNT_TOLERANCE_PCT) return false;
 
-  const numberA = realLast4(a.accountNumberLast4);
-  const numberB = realLast4(b.accountNumberLast4);
-  return !(numberA !== null && numberB !== null && numberA !== numberB);
+  const numberA = accountLast4(a.accountNumberLast4);
+  const numberB = accountLast4(b.accountNumberLast4);
+  if (numberA !== null && numberB !== null && numberA !== numberB) return isSummaryOfDetail(a, b);
+  return true;
 }
+
+/**
+ * The one shape that outweighs two real, DIFFERENT masked numbers.
+ *
+ * Measured on Jennifer's Stantec Q2 statement: the cover page prints the plan's
+ * contract number ("...7264", four digits, so nothing about its shape says it
+ * is not an account number) and the detail pages print the account's own
+ * ("...7265"). Both read $126,591.46 — the same cent — and both are named
+ * "401(k) Plan". Rule 3 above then refuses the collapse on the strength of two
+ * numbers, one of which is not a number for this account at all, and one real
+ * 401(k) becomes two committable rows.
+ *
+ * All three conditions are load-bearing, because the case this must NOT eat is
+ * two sibling accounts — two custodial savings accounts funded identically,
+ * two $25,000 CDs:
+ *
+ * - The balances agree TO THE CENT, not within the merge's 1%. Two statements
+ *   of one account taken from the same document cannot disagree at all.
+ * - Exactly ONE side lists positions. That is the cover-versus-detail
+ *   signature: a summary page prints a balance, a detail section prints what
+ *   the balance is invested in. Two sibling accounts are both read the same
+ *   way, so both carry positions or neither does, and this refuses them.
+ * - The names agree. "Savings x6049" and "Savings x8952" share only the noun.
+ */
+function isSummaryOfDetail(a: ExtractedAccount, b: ExtractedAccount): boolean {
+  if (a.value !== b.value) return false;
+  const detailA = (a.holdings?.length ?? 0) > 0;
+  const detailB = (b.holdings?.length ?? 0) > 0;
+  if (detailA === detailB) return false;
+  return nameSimilarity(a.name, b.name) >= NAME_AGREEMENT;
+}
+
+/**
+ * How much of two account names has to overlap before they are the same
+ * account. `nameSimilarity` is token overlap, so 0.5 is "half the words",
+ * which "401(k) Plan x7264" / "401(k) Plan x7265" clears (the near-identical
+ * suffixes earn partial credit) and "Profit Sharing" / "401(k) Savings" does
+ * not.
+ */
+const NAME_AGREEMENT = 0.5;
 
 /**
  * How much the row proves about itself, so the survivor is the one the advisor
@@ -215,14 +308,120 @@ function isSameAccountReadTwice(a: ExtractedAccount, b: ExtractedAccount): boole
  * `__`-prefixed annotations are skipped: they are bookkeeping, and a row does
  * not become the better reading by carrying more of them.
  */
+/**
+ * The more complete of two readings of one account's name.
+ *
+ * `readingStrength` ranks a reading by how much it PROVES — a real account
+ * number, per-position holdings — and the detail pages win that on every
+ * statement. They do not always win the NAME: the header the detail read
+ * clipped is "401(k" where the cover read the whole "401(k) Savings", and
+ * carrying the winner's name wholesale puts the clipped one on screen and into
+ * every name comparison downstream.
+ *
+ * Only a strict PREFIX is treated as a truncation, so this can never talk the
+ * collapse into preferring a different name over a shorter one it meant:
+ * "ESOP" is not a prefix of "Employee Stock Ownership", and both readings keep
+ * whichever the stronger one chose.
+ */
+function betterName(winner: string, loser: string): string {
+  const a = winner.trim();
+  const b = loser.trim();
+  if (a.length < b.length && b.toLowerCase().startsWith(a.toLowerCase())) return b;
+  return a;
+}
+
 function readingStrength(row: ExtractedAccount): number {
   let score = 0;
-  if (realLast4(row.accountNumberLast4) !== null) score += 100;
+  if (accountLast4(row.accountNumberLast4) !== null) score += 100;
   if (row.holdings && row.holdings.length > 0) score += 10;
   for (const [key, value] of Object.entries(row)) {
     if (!key.startsWith("__") && value !== undefined && value !== null) score += 1;
   }
   return score;
+}
+
+/**
+ * Strip the masked suffix a composed name carries, when it repeats a number
+ * this file has just been shown is not an account number.
+ *
+ * `composeAccountName` appends "x" + the LAST FOUR CHARACTERS of whatever the
+ * extractor put in `accountNumberLast4` — deliberately, because a
+ * plausible-looking suffix beats none on a name an advisor reads. Once the
+ * field itself is cleared the suffix is the only place the wrong number still
+ * shows, and it is the half that reaches the screen: "401(k) Savings Plan
+ * x3350", "Profit Sharing Plan x3350" and "ESOP x3350" are three different
+ * plans wearing one plan group number.
+ */
+function stripLast4Suffix(name: string, raw: string): string {
+  const printed = raw.replace(/[^a-z0-9]/gi, "").slice(-4);
+  if (!printed) return name;
+  const stripped = name
+    .replace(new RegExp(`(?:^|[\\s\\-\u2013\u2014#]+)(?:[x*.\u2022]+[\\s\\-\u2013\u2014#]*)?${printed}\\b\\s*$`, "i"), "")
+    .trim();
+  return stripped || name;
+}
+
+/**
+ * The numbers this file put in `accountNumberLast4` that are NOT an account's
+ * identity, cleared off every row that carries one.
+ *
+ * Two kinds, one consequence. A value that is not four digits was never an
+ * account number — a 401(k)'s six-digit plan GROUP number ("433350"), a
+ * five-digit contract number, the "FI" branch suffix UBS prints after the
+ * digits. And a four-digit value that SEVERAL rows of one document carry at
+ * MATERIALLY DIFFERENT balances cannot be an account number either: one
+ * statement does not list one account three times at three balances, so what
+ * those rows share is the plan, not the account. Jennifer's Gensler Q2
+ * statement prints "0410" against the 401(k) ($361,262), the profit-sharing
+ * plan ($48,034) and the ESOP ($94,829) alike.
+ *
+ * Leaving it in place is not neutral, because every identity seam downstream
+ * keys on this field. `mergeSection`'s bucket folded those three plans into
+ * ONE row and threw two real balances away as "another statement reported…",
+ * and `matchAccount` would have auto-written whichever of them the advisor
+ * committed last over a stored account. Clearing it sends the rows to the
+ * null-key fallback instead, where they stay separate — a visible duplicate is
+ * recoverable, an eaten account is not.
+ *
+ * DIFFERENT balances, specifically. A cover page and a detail section reading
+ * the same account both print the same number at the SAME balance, and that is
+ * the pairing `collapseDuplicateReadings` needs the number FOR; treating it as
+ * a plan number would break the collapse this runs to enable.
+ */
+function dropPlanNumbers(
+  rows: ExtractedAccount[],
+  sourceName: string,
+  warnings: string[],
+): ExtractedAccount[] {
+  const valuesByNumber = new Map<string, number[]>();
+  for (const row of rows) {
+    const number = accountLast4(row.accountNumberLast4);
+    if (number === null || row.value === undefined || !Number.isFinite(row.value)) continue;
+    const seen = valuesByNumber.get(number);
+    if (seen) seen.push(row.value);
+    else valuesByNumber.set(number, [row.value]);
+  }
+  const planNumbers = new Set<string>();
+  for (const [number, values] of valuesByNumber) {
+    if (values.some((v) => values.some((w) => !withinTolerance(v, w)))) planNumbers.add(number);
+  }
+
+  let stripped = false;
+  const cleaned = rows.map((row) => {
+    const raw = row.accountNumberLast4;
+    if (raw === undefined) return row;
+    const number = accountLast4(raw);
+    if (number !== null && !planNumbers.has(number)) return row;
+    stripped = true;
+    return { ...row, accountNumberLast4: undefined, name: stripLast4Suffix(row.name, raw) };
+  });
+  if (!stripped) return rows;
+
+  warnings.push(
+    `${sourceName} labelled ${planNumbers.size > 0 ? "several accounts with the same number" : "an account with a number that is not a masked account number"}; ` +
+      "those numbers were dropped so unrelated accounts are not merged together. Check the account numbers before committing.",
+  );
+  return cleaned;
 }
 
 /**
@@ -249,9 +448,9 @@ export function collapseDuplicateReadings(
       readingStrength(row) > readingStrength(existing) ? [row, existing] : [existing, row];
     // `unionFields`, so a collapse can only ever ADD information: the cover row
     // is often the only one that named an owner or spelled the custodian out.
-    kept[twinIndex] = unionFields(winner, loser);
+    kept[twinIndex] = { ...unionFields(winner, loser), name: betterName(winner.name, loser.name) };
     warnings.push(
-      `"${winner.name}" was read twice from ${sourceName} (pages ${pageRangeOf(loser)} and ` +
+      `"${kept[twinIndex].name}" was read twice from ${sourceName} (pages ${pageRangeOf(loser)} and ` +
         `${pageRangeOf(winner)}) at the same balance; kept the more detailed reading.`,
     );
   }
@@ -1022,7 +1221,7 @@ export function mergeAcrossFiles(
     const sourceName = result.fileName;
 
     for (const row of collapseDuplicateReadings(
-      result.extracted.accounts,
+      dropPlanNumbers(result.extracted.accounts, sourceName, payload.warnings),
       sourceName,
       payload.warnings,
     )) {
@@ -1112,19 +1311,39 @@ export function mergeAcrossFiles(
     // blind merge. Two unrelated accounts that happen to share four masked
     // digits would fold into one, which is the money-losing mirror of the
     // split this fix exists to stop.
-    // `realLast4`, not the raw field. A masked account number is four digits;
-    // the extractor also puts things there that are NOT this account's number
-    // — a 401(k) statement's six-digit GROUP number, a five-digit plan
+    // `accountLast4`, not the raw field. A masked account number is four
+    // digits; the extractor also puts things there that are NOT this account's
+    // number — a 401(k) statement's six-digit GROUP number, a five-digit plan
     // contract number — and ~8% of extracted rows carry one. Keyed on the raw
     // string, a Gensler statement whose 401(k), profit-sharing plan and ESOP
     // all print "433350" put three different plans in ONE bucket: they merged
     // into a single account and two real balances were thrown away as
-    // "another statement reported…". Treating a malformed number as NO number
-    // sends those rows to the null-key fallback instead, where they stay
-    // separate — the same direction the custodian guard below takes, for the
-    // same reason: a merge that should not have happened makes a whole
-    // account disappear, and that is the error that costs money.
-    (row) => (row.custodian ? realLast4(row.accountNumberLast4) : null),
+    // "another statement reported…". `dropPlanNumbers` has already cleared
+    // those, and the shapes it cannot see from one file's rows alone are
+    // refused here too, for the same reason the custodian guard below exists:
+    // a merge that should not have happened makes a whole account disappear,
+    // and that is the error that costs money.
+    //
+    // A row with NO usable number is not sent straight to the null-key
+    // fallback any more (Sept 2026). It used to be, and the cost showed up the
+    // moment the number-stripping above started clearing plan numbers: a
+    // household that uploads Q1 and Q2 of the same 401(k) got SIX review rows
+    // for THREE plans, each quarter listed again at its own balance, and
+    // committing them booked the retirement plan twice. A statement whose
+    // numbers are all plan numbers is exactly the statement that most needs the
+    // quarters joined, and the null key can never join anything.
+    //
+    // The fallback bucket is the custodian, with `isSameEntity` below carrying
+    // the whole burden of deciding which of that custodian's unnumbered rows
+    // are one account. A row with no custodian EITHER still takes the null key
+    // — there is nothing left to compare.
+    (row) => {
+      if (!row.custodian) return null;
+      const number = accountLast4(row.accountNumberLast4);
+      if (number !== null) return number;
+      const custodian = normalizeCustodian(row.custodian);
+      return custodian === null ? null : `no-number@${custodian}`;
+    },
     // Now that the bucket is only the last-4, this is what keeps a Fidelity
     // statement out of a Schwab account that happens to share four masked
     // digits — the same `normalizeCustodian` + `custodianMatches`
@@ -1145,7 +1364,13 @@ export function mergeAcrossFiles(
       const a = normalizeCustodian(existing.custodian);
       const b = normalizeCustodian(incoming.custodian);
       const sameCustodian = a === null || b === null ? a === b : custodianMatches(a, b);
-      return sameCustodian && sameAccountOwner(existing, incoming);
+      if (!sameCustodian || !sameAccountOwner(existing, incoming)) return false;
+      // A numbered bucket has already agreed on four digits, which is the
+      // evidence this whole ladder is built on — nothing further to ask. An
+      // UNNUMBERED bucket has agreed on nothing but the institution, so the
+      // rest of the case has to be made explicitly.
+      if (accountLast4(existing.accountNumberLast4) !== null) return true;
+      return sameUnnumberedAccount(existing, incoming);
     },
     payload.warnings,
     (existing, incoming) =>

@@ -376,6 +376,25 @@ describe("accounts table — the Match column", () => {
     expect(offered[0]).toContain("Schwab Brokerage");
   });
 
+  // Whenever the matcher cannot settle a row the advisor settles it by hand,
+  // and they do it by recognising the owner and the balance. A picker that
+  // shows neither is why a row stays Ambiguous.
+  it("shows each candidate's owner and value", async () => {
+    const withOwners = MATCH_CANDIDATES.map((c, i) => ({
+      ...c,
+      ownerNames: i === 0 ? ["Michael Sharesky"] : ["Michael Sharesky", "Jennifer Sharesky"],
+    }));
+    render(table({ matchCandidates: withOwners }));
+    const row = screen.getByRole("row", { name: /Schwab Taxable 0707/ });
+    await userEvent.click(within(row).getByRole("button", { name: /New/ }));
+    const options = within(await screen.findByRole("listbox")).getAllByRole("option");
+
+    expect(options[0].textContent).toContain("Michael Sharesky");
+    expect(options[0].textContent).toContain("$8,600");
+    expect(options[1].textContent).toContain("Michael Sharesky & Jennifer Sharesky");
+    expect(options[1].textContent).toContain("$22,800");
+  });
+
   it("offers no picker on a committed row", () => {
     render(table({ committedRowIds: ["r1"] }));
     const row = screen.getByRole("row", { name: /Schwab Taxable 0707/ });

@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { accountOwners, accounts, entities, familyMembers, scenarios } from "@/db/schema";
 import type { AccountCandidate } from "@/lib/imports/match-keys/account";
 import type { OwnerMatchFamilyMember } from "@/lib/imports/owner-match";
+import { familyMemberName } from "./owner-options";
 
 /**
  * Everything the statement-chat review table needs about the plan it is
@@ -102,6 +103,7 @@ export async function loadChatReviewContext(
           .select({
             accountId: accountOwners.accountId,
             familyMemberId: accountOwners.familyMemberId,
+            entityId: accountOwners.entityId,
           })
           .from(accountOwners)
           .innerJoin(accounts, eq(accounts.id, accountOwners.accountId))
@@ -121,6 +123,27 @@ export async function loadChatReviewContext(
     else ownerIdsByAccount.set(r.accountId, [r.familyMemberId]);
   }
 
+  // The same ownership rows read for DISPLAY rather than for scoring, so the
+  // link picker can name who an existing account belongs to. Entities count
+  // here and not above: "Sharesky Family Trust" is exactly what an advisor
+  // needs to see to tell a trust's brokerage account from the couple's own,
+  // even though it contributes no family_member id to `ownerAgreement`. An
+  // external beneficiary resolves to no name on either list and is skipped —
+  // `validateOwnersShape` does not accept one as an owner in the first place.
+  const nameOfFamilyMember = new Map(familyRows.map((f) => [f.id, familyMemberName(f)]));
+  const nameOfEntity = new Map(entityRows.map((e) => [e.id, e.name]));
+  const ownerNamesByAccount = new Map<string, string[]>();
+  for (const r of ownerRows) {
+    const name =
+      (r.familyMemberId ? nameOfFamilyMember.get(r.familyMemberId) : undefined) ??
+      (r.entityId ? nameOfEntity.get(r.entityId) : undefined);
+    if (!name) continue;
+    const list = ownerNamesByAccount.get(r.accountId);
+    if (list) {
+      if (!list.includes(name)) list.push(name);
+    } else ownerNamesByAccount.set(r.accountId, [name]);
+  }
+
   return {
     familyMembers: familyRows,
     entities: entityRows,
@@ -132,6 +155,7 @@ export async function loadChatReviewContext(
       custodian: r.custodian,
       value: Number(r.value),
       ownerIds: ownerIdsByAccount.get(r.id) ?? [],
+      ownerNames: ownerNamesByAccount.get(r.id) ?? [],
     })),
   };
 }

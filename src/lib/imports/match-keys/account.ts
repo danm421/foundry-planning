@@ -1,4 +1,5 @@
 import type { AccountCategory, ExtractedAccount } from "@/lib/extraction/types";
+import { accountLast4 } from "@/lib/extraction/account-number";
 import { boundedLevenshtein } from "../levenshtein";
 import { custodianMatches, normalizeCustodian } from "../normalize-custodian";
 import type { MatchAnnotation } from "../types";
@@ -24,6 +25,14 @@ export interface AccountCandidate {
    * external-beneficiary-owned accounts contribute no ids.
    */
   ownerIds?: string[];
+  /**
+   * The owners as an advisor reads them — "Jennifer Sharesky", "Sharesky
+   * Family Trust". Display only, and deliberately separate from `ownerIds`:
+   * the ids are what `ownerAgreement` scores, and they cover family members
+   * alone, while this covers whoever the account is actually titled to so the
+   * link picker can show it.
+   */
+  ownerNames?: string[];
 }
 
 /** Relative weights; sum to 1. */
@@ -75,7 +84,7 @@ const TYPO_MATCH_CREDIT = 0.8;
  * would tie "Schwab Brokerage" with "Schwab Brokrage" and let input order
  * decide which the advisor sees first.
  */
-function nameSimilarity(a: string, b: string): number {
+export function nameSimilarity(a: string, b: string): number {
   const ta = tokens(a);
   const tb = tokens(b);
   if (ta.length === 0 || tb.length === 0) return 0;
@@ -140,14 +149,27 @@ export function matchAccount(
   existing: AccountCandidate[],
   incomingOwnerIds: string[] = [],
 ): MatchAnnotation {
-  const last4 = incoming.accountNumberLast4?.trim();
+  // `accountLast4`, not the raw field. Both `exact` rungs below auto-write
+  // value, basis, custodian and holdings at commit with NO advisor
+  // confirmation, and ~8% of extracted rows carry something in this field that
+  // is not this account's number — a 401(k)'s six-digit plan GROUP number, a
+  // five-digit contract number, UBS's branch suffix "FI". Keyed on the raw
+  // string, a Gensler statement whose 401(k), profit-sharing plan and ESOP all
+  // print "433350" gives three rows one identity, and whichever the advisor
+  // committed last would overwrite one stored account with another's balance,
+  // basis and positions. A number that is not four digits is not an identity,
+  // so those rows fall through to the ranked `fuzzy` below and wait for a
+  // ruling — the same line `merge-across-files.ts` draws on the same field.
+  //
+  // Normalizing BOTH sides also fixes the mirror case: `commitAccounts`
+  // persists the extracted last-4 verbatim, so a stored " 1234" would never
+  // equal an incoming "1234" and the same account would duplicate on every
+  // later import.
+  const last4 = accountLast4(incoming.accountNumberLast4);
   const incomingCustodian = normalizeCustodian(incoming.custodian);
 
   if (last4) {
-    // Trim BOTH sides: commitAccounts persists the extracted last4 verbatim,
-    // so a stored " 1234" would never equal a trimmed incoming "1234" and the
-    // same account would duplicate on every later import.
-    const sameLast4 = existing.filter((a) => a.accountNumberLast4?.trim() === last4);
+    const sameLast4 = existing.filter((a) => accountLast4(a.accountNumberLast4) === last4);
 
     // Rung 1: custodian agrees and singles out exactly one candidate.
     if (incomingCustodian) {

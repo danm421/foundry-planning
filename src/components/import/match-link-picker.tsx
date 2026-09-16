@@ -18,6 +18,13 @@ export interface MatchCandidate {
   name: string;
   /** Optional secondary text rendered under the name (e.g. "401(k) — Fidelity"). */
   subtitle?: string;
+  /**
+   * Pre-formatted headline figure for the existing row — its value — shown
+   * opposite the name. Formatted by the caller rather than here: this picker
+   * is shared by accounts, policies, incomes and expenses, and only the caller
+   * knows whether the figure is a balance, a premium or an annual amount.
+   */
+  amount?: string;
   /** Optional fuzzy match score (0-1); shown when present. */
   score?: number;
 }
@@ -71,7 +78,7 @@ export default function MatchLinkPicker({
   return (
     <div
       ref={ref}
-      className="absolute right-0 top-full z-20 mt-1 w-72 rounded border border-hair bg-card-2 shadow-lg"
+      className="absolute right-0 top-full z-20 mt-1 w-96 max-w-[calc(100vw-2rem)] rounded border border-hair bg-card-2 shadow-lg"
       role="dialog"
     >
       <div className="border-b border-hair p-2">
@@ -98,21 +105,28 @@ export default function MatchLinkPicker({
                 onClick={() =>
                   onPick({ kind: "exact", existingId: c.id })
                 }
-                className={`flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm hover:bg-card ${
+                className={`flex w-full flex-col gap-0.5 px-3 py-2 text-left text-sm hover:bg-card ${
                   selected ? "bg-accent/10" : ""
                 }`}
               >
-                <span className="flex flex-col">
-                  <span className="text-ink">{c.name}</span>
-                  {c.subtitle ? (
-                    <span className="text-xs text-ink-4">{c.subtitle}</span>
+                {/* Name and value on one line, the value right-aligned and
+                    tabular: picking the right account by hand is mostly a
+                    matter of recognising the balance, so it reads as a figure
+                    rather than as more of the subtitle. */}
+                <span className="flex w-full items-baseline justify-between gap-3">
+                  <span className="min-w-0 truncate text-ink">{c.name}</span>
+                  {c.amount ? (
+                    <span className="tabular shrink-0 text-ink-2">{c.amount}</span>
                   ) : null}
                 </span>
-                {typeof c.score === "number" ? (
-                  <span className="font-mono text-xs text-ink-4">
-                    {(c.score * 100).toFixed(0)}%
-                  </span>
-                ) : null}
+                <span className="flex w-full items-baseline justify-between gap-3">
+                  <span className="min-w-0 text-xs text-ink-4">{c.subtitle}</span>
+                  {typeof c.score === "number" ? (
+                    <span className="shrink-0 font-mono text-xs text-ink-4">
+                      {(c.score * 100).toFixed(0)}%
+                    </span>
+                  ) : null}
+                </span>
               </button>
             </li>
           );

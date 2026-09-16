@@ -51,20 +51,33 @@ export interface AccountsTableProps {
 
 /**
  * Enough of an existing account to tell two similar ones apart in the picker.
- * The search box filters on name AND subtitle, so custodian and last 4 are
- * searchable too — which is how an advisor finds the right "Brokerage" among
- * four of them.
+ * The search box filters on name AND subtitle, so owner, custodian and last 4
+ * are searchable too — which is how an advisor finds the right "Brokerage"
+ * among four of them.
+ *
+ * OWNER leads the subtitle and VALUE is lifted out onto its own line opposite
+ * the name. Whenever the matcher cannot settle a row the advisor settles it by
+ * hand, and the two questions they ask of a candidate are "is this the right
+ * person's account" and "is that roughly the right money" — a picker that
+ * answers neither without leaving the page is the reason a row stays
+ * Ambiguous. Custodian, last 4 and category stay, after the owner, because
+ * they are what separates two of one person's accounts from each other.
  */
 const NO_CANDIDATES: AccountCandidate[] = [];
 
 function pickerOption(a: AccountCandidate): MatchCandidate {
   const parts = [
+    a.ownerNames?.length ? a.ownerNames.join(" & ") : null,
     a.custodian,
     a.accountNumberLast4 ? `x${a.accountNumberLast4}` : null,
     formatAccountCategory(a.category),
-    formatValue("money", a.value),
   ].filter(Boolean);
-  return { id: a.id, name: a.name, subtitle: parts.join(" · ") };
+  return {
+    id: a.id,
+    name: a.name,
+    subtitle: parts.join(" · "),
+    amount: formatValue("money", a.value),
+  };
 }
 
 /**

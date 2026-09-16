@@ -23,3 +23,19 @@
 export function realLast4(raw: string | undefined): string | null {
   return raw !== undefined && /^\d{4}$/.test(raw) ? raw : null;
 }
+
+/**
+ * The same decision as `realLast4`, but tolerant of the packaging a model
+ * leaves around a number it read correctly: padding (`" 1234"`), or the mask
+ * the statement printed in front of it (`"x1234"`, `"****1234"`, `"XXXX-1234"`).
+ *
+ * Only the WRAPPER is forgiven. Nothing here invents digits: "433350" is six
+ * digits with no mask to strip and still returns null, and UBS's "IJ 58621 FI"
+ * has no trailing four-digit run at all. That is the line `realLast4` draws and
+ * this keeps — the point is to stop a correctly-read number from being thrown
+ * away over a stray "x", not to widen what counts as a number.
+ */
+export function accountLast4(raw: string | null | undefined): string | null {
+  if (typeof raw !== "string") return null;
+  return realLast4(raw.trim().replace(/^[x*.•\s#-]+/i, ""));
+}
