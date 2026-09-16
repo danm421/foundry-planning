@@ -122,6 +122,33 @@ export async function loadExistingRows(args: {
       );
     }
     rows = await db.select(columns).from(table).where(eq(clientIdColumn, clientId));
+  } else if (path.via === "parentColumn") {
+    const through = resolveTable(path.through);
+    if (!through) {
+      throw new Error(
+        `${entity.id} joins through "${path.through}", which is not a table in @/db/schema`,
+      );
+    }
+    const throughColumns = columnsOf(through);
+    const parentId = throughColumns.id;
+    const parentJoin = throughColumns[path.parentColumn];
+    if (!parentId) {
+      throw new Error(`${entity.id} joins through "${path.through}", which has no id to scope by`);
+    }
+    if (!parentJoin) {
+      throw new Error(
+        `${entity.id} joins to parent column "${path.parentColumn}", which is not a column on ${path.through}`,
+      );
+    }
+    const joinColumn = columns[path.on];
+    if (!joinColumn) {
+      throw new Error(`${entity.id} joins on "${path.on}", which is not a column on ${entity.table}`);
+    }
+    rows = await db
+      .select(columns)
+      .from(table)
+      .innerJoin(through, eq(joinColumn, parentJoin))
+      .where(eq(parentId, clientId));
   } else {
     const through = resolveTable(path.through);
     if (!through) {

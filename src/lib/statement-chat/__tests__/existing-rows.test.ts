@@ -272,3 +272,39 @@ describe("loadExistingRows scopes by the declared path", () => {
     expect(rows).toEqual([]);
   });
 });
+
+describe("scopePath via parentColumn", () => {
+  const entity = {
+    id: "related_party",
+    label: "Related party",
+    tab: "profile",
+    surface: "test",
+    table: "crmHouseholdContacts",
+    routes: { create: "/related-parties" },
+    scenarioScoped: false,
+    identity: ["firstName", "lastName"],
+    scopePath: { via: "parentColumn", through: "clients", on: "householdId", parentColumn: "crmHouseholdId" },
+    fields: [],
+  } as unknown as DetailEntity;
+
+  beforeEach(() => {
+    fixtures.clients = [
+      { id: "client-1", crmHouseholdId: "hh-1" },
+      { id: "client-2", crmHouseholdId: "hh-2" },
+    ];
+    fixtures.crm_household_contacts = [
+      { id: "party-1", householdId: "hh-1", firstName: "Ada", lastName: "Byron" },
+      { id: "party-2", householdId: "hh-2", firstName: "Grace", lastName: "Hopper" },
+    ];
+  });
+
+  it("returns only the requested client's contacts", async () => {
+    const rows = await loadExistingRows({ entity, clientId: "client-1" });
+    expect(rows.map((r) => r.id)).toEqual(["party-1"]);
+  });
+
+  it("refuses when parentColumn names a column the parent does not have", async () => {
+    const broken = { ...entity, scopePath: { via: "parentColumn", through: "clients", on: "householdId", parentColumn: "nope" } } as unknown as DetailEntity;
+    await expect(loadExistingRows({ entity: broken, clientId: "client-1" })).rejects.toThrow(/nope/);
+  });
+});

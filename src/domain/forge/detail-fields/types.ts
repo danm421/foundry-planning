@@ -189,6 +189,13 @@ export interface DetailEntity {
    */
   scopePath?:
     | { via: "column" }
-    | { via: "join"; through: string; on: string };
+    | { via: "join"; through: string; on: string }
+    /**
+     * The table reaches a client through a parent's NON-id column.
+     * `crm_household_contacts.household_id` matches `clients.crm_household_id`,
+     * and the client is then `clients.id`. The `join` variant cannot express
+     * this: it filters on `through.clientId`, which `clients` does not have.
+     */
+    | { via: "parentColumn"; through: string; on: string; parentColumn: string };
   fields: readonly DetailField[];
 }
