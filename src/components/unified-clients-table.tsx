@@ -93,10 +93,18 @@ export function UnifiedClientsTable({ rows, emptyMessage, canManage, sort }: Uni
         measured in-browser, not eyeballed:
           · quick links (228px, i.e. a 196px content budget after TD padding) —
             `ClientRowActions`' widest state is the "CRM" + "Start planning"
-            pill pair, measured at 184px once those pills gained their 1px
-            borders. That left the old 216px column with ZERO slack.
+            button pair, measured at 172px once those became filled buttons
+            (h-7, px-3, no border). 24px of slack.
           · status (176px) — `HouseholdStatusSelect` is a fixed `w-32` (128px).
         Widening that copy, that select, or the row font means re-measuring both.
+
+        MEASURE THE BUTTONS, NOT THE CELL. The obvious probe —
+        `cell.firstElementChild.scrollWidth` — reads the flex container, which
+        STRETCHES to the cell, so it answers 196 for any pair that fits and
+        reads as "zero slack" forever. An earlier note here recorded 184px and
+        no slack on that basis; both were the instrument. Sum the buttons'
+        bounding boxes plus the gap, or set the container to `width:max-content`
+        first, and confirm the number moves when the content really overflows.
       */}
       <table className="w-full min-w-[1124px] table-fixed divide-y divide-hair">
         <colgroup>

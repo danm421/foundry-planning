@@ -41,8 +41,14 @@ export const RECORD_NAME_LINK =
 /**
  * Row hover for a table whose rows contain controls.
  *
- * `card-hover`, never `card-2`: `card-2` is the fill those controls sit on, so
- * a row that hovers to it erases its own buttons and badges at the one moment
- * someone is hunting for something to click.
+ * `card-hover`, never `card-2`: a row must not hover to the same fill its own
+ * controls sit on, or it erases them at the one moment someone is hunting for
+ * something to click.
+ *
+ * Still live for Shared-with-me, whose sharer and permission badges are both
+ * filled `card-2`. The clients list no longer collides that way — its quick
+ * links became opaque `hair-3` / `accent` buttons — but the rule holds for
+ * both tables, because `card-2` is what every quiet filled control on this
+ * screen reaches for by default.
  */
 export const ROW_HOVER = "hover:bg-card-hover";
