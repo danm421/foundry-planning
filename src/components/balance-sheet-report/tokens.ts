@@ -53,23 +53,28 @@ export const CATEGORY_HEX: Record<AssetCategoryKey, string> = {
   lifeInsurance: dataLight.teal,    // #198b83
 };
 
-/** Screen theme (dark). */
+/** Screen theme. Mirrors PDF_THEME below role-for-role, in token classes.
+ *
+ *  Currently has no callers — the on-screen components reach for the tokens
+ *  directly. Left in place (it is pre-existing) but moved off Tailwind's
+ *  default palette with the rest of the app, so reviving it cannot revive the
+ *  theme-blind rendering the 2026-09-16 sweep removed. */
 export const SCREEN_THEME = {
   surface: {
-    panel: "bg-gray-900 border border-gray-800 rounded-lg",
-    panelHeader: "bg-gradient-to-b from-gray-800/50 to-gray-900 px-4 py-3",
-    divider: "border-gray-800",
-    netWorthAccent: "bg-gradient-to-br from-blue-900/40 to-gray-900 border border-blue-800/50 shadow-[0_0_24px_rgba(59,130,246,0.15)]",
+    panel: "bg-card border border-hair rounded-lg",
+    panelHeader: "bg-card-2 px-4 py-3",
+    divider: "border-hair",
+    netWorthAccent: "bg-card-2 border border-accent/40",
   },
   text: {
-    primary: "text-gray-100",
-    secondary: "text-gray-300",
-    muted: "text-gray-400",
+    primary: "text-ink",
+    secondary: "text-ink-2",
+    muted: "text-ink-3",
   },
   status: {
-    up: "text-emerald-400 bg-emerald-950/50 border border-emerald-900",
-    down: "text-rose-400 bg-rose-950/50 border border-rose-900",
-    flat: "text-gray-300 bg-gray-800 border border-gray-700",
+    up: "text-good bg-good/10 border border-good/30",
+    down: "text-crit bg-crit/10 border border-crit/30",
+    flat: "text-ink-2 bg-card-2 border border-hair-2",
   },
 } as const;
 

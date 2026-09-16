@@ -2,11 +2,21 @@ import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
 import noRawHex from "./eslint-rules/no-raw-hex.mjs";
+import noDefaultPalette from "./eslint-rules/no-default-palette.mjs";
 import svgTextAnchor from "./eslint-rules/svg-text-anchor.mjs";
 
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
+  {
+    // The `brand` namespace is defined ONCE. Flat config refuses to redefine a
+    // plugin across two blocks that both apply to a file, and the two brand
+    // rules below deliberately carry different ignore lists.
+    files: ["src/**/*.{ts,tsx}"],
+    plugins: {
+      brand: { rules: { "no-raw-hex": noRawHex, "no-default-palette": noDefaultPalette } },
+    },
+  },
   {
     // Ban raw hex so the brand token system can't drift back. Ignores the
     // token sources (brand mirror, chart-colors band helper, the
@@ -32,8 +42,21 @@ const eslintConfig = defineConfig([
       "src/components/*-report-pdf/**",
       "src/components/**/*-pdf.tsx",
     ],
-    plugins: { brand: { rules: { "no-raw-hex": noRawHex } } },
     rules: { "brand/no-raw-hex": "error" },
+  },
+  {
+    // Sibling to no-raw-hex: that one stops drift OUT of the token system,
+    // this one stops drift back INTO Tailwind's default palette. A class like
+    // `text-gray-300` renders the same pixels under all three themes, so it is
+    // wrong in at least two of them — on the light ramp it measures ~1.3:1.
+    //
+    // Scope is deliberately wider than no-raw-hex's. A raw hex is legitimate
+    // in a print/PDF token module; a Tailwind CLASS in one is still
+    // theme-blind, so `**/tokens.ts` is NOT exempt here. Only tests are, and
+    // only because they assert on class strings.
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: ["**/*.test.{ts,tsx}", "**/__tests__/**"],
+    rules: { "brand/no-default-palette": "error" },
   },
   {
     // Every label a react-pdf chart draws must say which way it runs. The
