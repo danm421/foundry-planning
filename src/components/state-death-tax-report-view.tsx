@@ -171,7 +171,7 @@ export default function StateDeathTaxReportView({
   }
   if (projectionYears.length === 0 || todayYear == null) {
     return (
-      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
+      <div className="rounded-lg border border-hair bg-card-2 p-6 text-center text-ink-3">
         No projection data available.
       </div>
     );
@@ -179,7 +179,7 @@ export default function StateDeathTaxReportView({
 
   if (!isSplit && !hypothetical) {
     return (
-      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
+      <div className="rounded-lg border border-hair bg-card-2 p-6 text-center text-ink-3">
         No state death tax snapshot available for {resolvedYear}.
       </div>
     );
@@ -219,7 +219,7 @@ export default function StateDeathTaxReportView({
   const residenceState = visibleDeaths[0]?.residenceState ?? null;
 
   return (
-    <div className="space-y-4 pt-4 text-gray-100">
+    <div className="space-y-4 pt-4 text-ink">
       {showOwnControls && (
         <div className="flex flex-wrap items-center justify-between gap-3">
           <TimePeriodButtons
@@ -232,7 +232,7 @@ export default function StateDeathTaxReportView({
             showSplit={isMarried && firstDeathYear != null && secondDeathYear != null}
           />
           <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 text-xs uppercase tracking-wide text-gray-300">
+            <label className="flex items-center gap-2 text-xs uppercase tracking-wide text-ink-3">
               As of
               <AsOfDropdown
                 years={dropdownYears}
@@ -246,12 +246,12 @@ export default function StateDeathTaxReportView({
               />
             </label>
             {isMarried && !isSplit && (
-              <div className="inline-flex rounded border border-gray-700 bg-gray-900 p-0.5 text-sm">
+              <div className="inline-flex rounded border border-hair-3 bg-card-2 p-0.5 text-sm">
                 <button
                   type="button"
                   className={ordering === "primaryFirst"
-                    ? "rounded bg-gray-700 px-3 py-1 text-gray-100"
-                    : "rounded px-3 py-1 text-gray-300 hover:text-gray-200"}
+                    ? "rounded bg-card-hover px-3 py-1 text-ink"
+                    : "rounded px-3 py-1 text-ink-3 hover:text-ink-2"}
                   onClick={() => setOwnOrdering("primaryFirst")}
                 >
                   {ownerNames.clientName} dies first
@@ -259,8 +259,8 @@ export default function StateDeathTaxReportView({
                 <button
                   type="button"
                   className={ordering === "spouseFirst"
-                    ? "rounded bg-gray-700 px-3 py-1 text-gray-100"
-                    : "rounded px-3 py-1 text-gray-300 hover:text-gray-200"}
+                    ? "rounded bg-card-hover px-3 py-1 text-ink"
+                    : "rounded px-3 py-1 text-ink-3 hover:text-ink-2"}
                   onClick={() => setOwnOrdering("spouseFirst")}
                 >
                   {personLabel("spouse", ownerNames)} dies first
@@ -368,16 +368,16 @@ function LineRow({
     : formatAmount(amount);
   const negative = showAsDeduction && amount > 0;
   return (
-    <div className={"flex items-baseline justify-between gap-4 py-1 text-sm " + (muted ? "text-gray-500" : "text-gray-300")}>
+    <div className={"flex items-baseline justify-between gap-4 py-1 text-sm " + (muted ? "text-ink-4" : "text-ink-3")}>
       <span className="min-w-0 break-words">
         {label}
-        {hint && <span className="ml-2 text-xs text-gray-500">{hint}</span>}
+        {hint && <span className="ml-2 text-xs text-ink-4">{hint}</span>}
       </span>
       <span className="flex shrink-0 items-baseline gap-2">
         {delta != null && (
           <EstateDeltaChip delta={delta} goodDirection={deltaGoodDirection} />
         )}
-        <span className={"tabular-nums " + (negative ? "text-rose-300/90" : muted ? "text-gray-500" : "text-gray-200")}>
+        <span className={"tabular-nums " + (negative ? "text-rose-300/90" : muted ? "text-ink-4" : "text-ink-2")}>
           {value}
         </span>
       </span>
@@ -399,9 +399,9 @@ function Section({
   const accent = subtotal > 0 ? "text-rose-200" : "text-emerald-200";
   return (
     <div className="px-5 py-3">
-      <h3 className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-gray-200">{title}</h3>
+      <h3 className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-ink-2">{title}</h3>
       <div>{children}</div>
-      <div className="mt-1.5 flex items-baseline justify-between gap-4 border-t border-gray-800/80 pt-1.5">
+      <div className="mt-1.5 flex items-baseline justify-between gap-4 border-t border-hair/80 pt-1.5">
         <span className={"text-sm font-medium " + accent}>{subtotalLabel}</span>
         <span className="flex shrink-0 items-baseline gap-2">
           {delta != null && (
@@ -487,7 +487,7 @@ function StateEstateTaxSection({
         <LineRow label={`Max combined cap ($${fmtBound(detail.cap.cap)})`} amount={detail.cap.reduction} showAsDeduction />
       )}
       {detail.notes.length > 0 && (
-        <div className="mt-3 space-y-1 pb-1 text-xs text-gray-400">
+        <div className="mt-3 space-y-1 pb-1 text-xs text-ink-3">
           {detail.notes.map((n, i) => <div key={i}>• {n}</div>)}
         </div>
       )}
@@ -516,12 +516,12 @@ function hasAnyStateDeathTax(r: EstateTaxResult): boolean {
 function NoStateDeathTaxLegend({ residenceState }: { residenceState: USPSStateCode | null }) {
   const label = residenceState != null ? USPS_STATE_NAMES[residenceState] : "This state";
   return (
-    <div className="rounded-lg border border-gray-700 bg-gray-900 p-4 text-sm text-gray-200">
+    <div className="rounded-lg border border-hair bg-card-2 p-4 text-sm text-ink-2">
       <p>{label} does not levy a state estate tax or inheritance tax.</p>
-      <p className="mt-2 text-xs text-gray-400">
+      <p className="mt-2 text-xs text-ink-3">
         State estate tax states: CT, DC, HI, IL, ME, MD, MA, MN, NY, OR, RI, VT, WA.
       </p>
-      <p className="mt-1 text-xs text-gray-400">
+      <p className="mt-1 text-xs text-ink-3">
         State inheritance tax states: PA, NJ, KY, NE, MD.
       </p>
     </div>
@@ -546,7 +546,7 @@ function GrandTotalsCard({
   return (
     <section className="overflow-hidden rounded-xl border border-indigo-900/50 bg-indigo-950/15">
       <header className="border-b border-indigo-900/40 px-5 py-3">
-        <h2 className="text-base font-semibold text-gray-50">Grand totals — state death taxes</h2>
+        <h2 className="text-base font-semibold text-ink">Grand totals — state death taxes</h2>
       </header>
       <div className="px-5 py-3">
         <LineRow label="First decedent state death tax" amount={deathTotal(first)} />
@@ -554,7 +554,7 @@ function GrandTotalsCard({
       </div>
       <div className="border-t border-indigo-900/40 bg-indigo-950/30 px-5 py-3">
         <div className="flex items-baseline justify-between gap-4">
-          <span className="text-sm font-semibold uppercase tracking-[0.16em] text-gray-100">
+          <span className="text-sm font-semibold uppercase tracking-[0.16em] text-ink">
             Total state death taxes
           </span>
           <span className="flex shrink-0 items-baseline gap-2">
@@ -603,21 +603,21 @@ function DecedentSection({
   if (!showEstate && !sti) return null;
 
   return (
-    <section className="overflow-hidden rounded-xl border border-gray-800 bg-gray-900/40">
-      <header className="border-b border-gray-800 px-5 py-3">
-        <h2 className="text-base font-semibold text-gray-50">{heading}</h2>
+    <section className="overflow-hidden rounded-xl border border-hair bg-card-2/40">
+      <header className="border-b border-hair px-5 py-3">
+        <h2 className="text-base font-semibold text-ink">{heading}</h2>
       </header>
-      <div className="divide-y divide-gray-800/70">
+      <div className="divide-y divide-hair/70">
         {showEstate && <StateEstateTaxSection detail={stateDetail} diff={diff} />}
         {sti && (
           <div className="px-5 py-3">
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-gray-200">
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-ink-2">
               State Inheritance Tax ({sti.state})
             </h3>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-800 text-xs uppercase text-gray-400">
+                  <tr className="border-b border-hair text-xs uppercase text-ink-3">
                     <th className="py-2 pr-3 text-left">Recipient</th>
                     <th className="px-3 text-left">Class</th>
                     <th className="px-3 text-right">Gross share</th>
@@ -630,7 +630,7 @@ function DecedentSection({
                 </thead>
                 <tbody>
                   {sti.perRecipient.map((r) => <RecipientRow key={r.recipientKey} r={r} />)}
-                  <tr className="border-t border-gray-800 font-medium">
+                  <tr className="border-t border-hair font-medium">
                     <td className="py-2 pr-3" colSpan={6}>Total inheritance tax</td>
                     <td className="px-3 text-right">{fmt.format(sti.totalTax)}</td>
                     <td />
@@ -639,7 +639,7 @@ function DecedentSection({
               </table>
             </div>
             {sti.notes.length > 0 && (
-              <ul className="mt-3 space-y-1 text-xs text-gray-400">
+              <ul className="mt-3 space-y-1 text-xs text-ink-3">
                 {sti.notes.map((n, i) => <li key={i}>• {n}</li>)}
               </ul>
             )}
@@ -652,9 +652,9 @@ function DecedentSection({
           </div>
         )}
         {showEstate && sti && (
-          <div className="border-t border-gray-800 bg-gray-900/40 px-5 py-3">
+          <div className="border-t border-hair bg-card-2/40 px-5 py-3">
             <div className="flex items-baseline justify-between gap-4">
-              <span className="text-sm font-semibold uppercase tracking-[0.16em] text-gray-100">
+              <span className="text-sm font-semibold uppercase tracking-[0.16em] text-ink">
                 Total state death tax
               </span>
               <span className="text-base font-semibold tabular-nums text-rose-200">
@@ -670,13 +670,13 @@ function DecedentSection({
 
 function RecipientRow({ r }: { r: InheritanceRecipientResult }) {
   return (
-    <tr className="border-b border-gray-800/60">
+    <tr className="border-b border-hair/60">
       <td className="py-2 pr-3">{r.label}</td>
       <td className="px-3">
         Class {r.classLabel}
-        <span className="ml-1 text-xs text-gray-500">({r.classSource})</span>
+        <span className="ml-1 text-xs text-ink-4">({r.classSource})</span>
         {r.excludedReasons.length > 0 && (
-          <div className="mt-1 text-xs text-gray-500">
+          <div className="mt-1 text-xs text-ink-4">
             {r.excludedReasons.map((reason, i) => <div key={i}>{reason}</div>)}
           </div>
         )}

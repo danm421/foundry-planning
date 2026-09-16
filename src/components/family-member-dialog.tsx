@@ -218,28 +218,28 @@ export default function FamilyMemberDialog({
           </div>
         </div>
 
-        <label className="flex items-center gap-2 text-sm text-gray-300">
+        <label className="flex items-center gap-2 text-sm text-ink-3">
           <input
             type="checkbox"
             name="domesticPartner"
             defaultChecked={editing?.domesticPartner ?? false}
-            className="h-4 w-4 rounded border-gray-700 bg-gray-800 text-blue-500 focus:ring-blue-500"
+            className="h-4 w-4 rounded border-hair-3 bg-card-2 text-blue-500 focus:ring-blue-500"
           />
           Domestic partner (affects NJ/MD inheritance tax)
         </label>
 
-        <details className="rounded border border-gray-700 bg-gray-800/50 p-3">
-          <summary className="cursor-pointer select-none text-sm text-gray-300 hover:text-gray-100">
+        <details className="rounded border border-hair bg-card-2/50 p-3">
+          <summary className="cursor-pointer select-none text-sm text-ink-3 hover:text-ink">
             Inheritance tax class overrides
           </summary>
           <div className="mt-3 space-y-2">
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-ink-3">
               Use these only if the auto-classification (based on the relationship dropdown above) is wrong for a specific state.
             </p>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {INHERITANCE_STATES.map((state) => (
                 <div key={state} className="flex items-center gap-2">
-                  <label htmlFor={`fm-override-${state}`} className="w-10 text-xs font-medium text-gray-400">
+                  <label htmlFor={`fm-override-${state}`} className="w-10 text-xs font-medium text-ink-3">
                     {state}
                   </label>
                   <select

@@ -74,23 +74,23 @@ export function SocialSecurityCard({ clientId, clientInfo, planSettings, incomes
 
   const rowContent = (owner: "client" | "spouse", row: ReturnType<typeof findRow>) => (
     <span className="text-sm">
-      <span className="font-medium text-gray-100">{personLabel(owner, { clientName: clientInfo.firstName, spouseName: clientInfo.spouseName ?? null })}</span>
-      <span className="text-gray-400 ml-2">{summaryLabel(row, clientInfo, owner)}</span>
+      <span className="font-medium text-ink">{personLabel(owner, { clientName: clientInfo.firstName, spouseName: clientInfo.spouseName ?? null })}</span>
+      <span className="text-ink-3 ml-2">{summaryLabel(row, clientInfo, owner)}</span>
     </span>
   );
 
   return (
     <div className="mt-8">
       <h3 className="text-sm font-semibold mb-2">Social Security</h3>
-      <div className="border border-gray-800 rounded divide-y divide-gray-800">
+      <div className="border border-hair rounded divide-y divide-hair">
         {canEdit ? (
           <button
             type="button"
             onClick={() => setEditing("client")}
-            className="w-full text-left px-4 py-3 hover:bg-gray-800/60 flex items-center justify-between"
+            className="w-full text-left px-4 py-3 hover:bg-card-hover/60 flex items-center justify-between"
           >
             {rowContent("client", clientRow)}
-            <span className="text-gray-500">›</span>
+            <span className="text-ink-4">›</span>
           </button>
         ) : (
           <div className="w-full text-left px-4 py-3 flex items-center">
@@ -102,10 +102,10 @@ export function SocialSecurityCard({ clientId, clientInfo, planSettings, incomes
             <button
               type="button"
               onClick={() => setEditing("spouse")}
-              className="w-full text-left px-4 py-3 hover:bg-gray-800/60 flex items-center justify-between"
+              className="w-full text-left px-4 py-3 hover:bg-card-hover/60 flex items-center justify-between"
             >
               {rowContent("spouse", spouseRow)}
-              <span className="text-gray-500">›</span>
+              <span className="text-ink-4">›</span>
             </button>
           ) : (
             <div className="w-full text-left px-4 py-3 flex items-center">

@@ -248,7 +248,7 @@ export default function InsurancePanel(props: InsurancePanelProps) {
     <div className="flex flex-col gap-6">
       <header className={props.embed === "wizard" ? "flex items-center justify-end" : "flex items-center justify-between"}>
         {props.embed !== "wizard" && (
-          <h1 className="text-2xl font-semibold text-gray-100">Insurance</h1>
+          <h1 className="text-2xl font-semibold text-ink">Insurance</h1>
         )}
         {canEdit && (
           <button
@@ -262,7 +262,7 @@ export default function InsurancePanel(props: InsurancePanelProps) {
       </header>
 
       {!hasAny && (
-        <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-gray-300">
+        <div className="rounded-lg border border-hair bg-card-2 p-6 text-ink-3">
           <p className="text-sm">
             No insurance policies yet. Click + Add policy to get started.
           </p>
@@ -276,10 +276,10 @@ export default function InsurancePanel(props: InsurancePanelProps) {
         if (items.length === 0) return null;
         return (
           <section key={group.key} className="flex flex-col gap-2">
-            <h2 className="text-sm font-semibold text-gray-300">{group.label}</h2>
+            <h2 className="text-sm font-semibold text-ink-3">{group.label}</h2>
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-gray-400">
+                <tr className="text-left text-ink-3">
                   <th className="py-2 font-medium">Name</th>
                   <th className="font-medium">Insured</th>
                   <th className="font-medium">Owner</th>
@@ -294,9 +294,9 @@ export default function InsurancePanel(props: InsurancePanelProps) {
               </thead>
               <tbody>
                 {items.map((row) => (
-                  <tr key={row.id} className="border-t border-gray-800">
-                    <td className="py-2 text-gray-100">{row.name}</td>
-                    <td className="text-gray-300">
+                  <tr key={row.id} className="border-t border-hair">
+                    <td className="py-2 text-ink">{row.name}</td>
+                    <td className="text-ink-3">
                       <InlineSelect
                         display={insuredLabel(row.insuredPerson)}
                         // A <select> whose value matches no option shows option
@@ -312,7 +312,7 @@ export default function InsurancePanel(props: InsurancePanelProps) {
                         }
                         label={`insured for ${row.name}`}
                         canEdit={canEdit}
-                        className="rounded-sm px-1 py-0.5 text-gray-300 hover:bg-card-hover hover:text-gray-100"
+                        className="rounded-sm px-1 py-0.5 text-ink-3 hover:bg-card-hover hover:text-ink"
                         onSelect={(next) => {
                           if (next === "") return;
                           const insuredPerson = next as "client" | "spouse" | "joint";
@@ -326,8 +326,8 @@ export default function InsurancePanel(props: InsurancePanelProps) {
                         REPLACES every account_owners row from the ref it is
                         given, so a select here could erase a gift to an ILIT and
                         pull the death benefit back into the gross estate. */}
-                    <td className="text-gray-300">{ownerLabel(row)}</td>
-                    <td className="text-right tabular-nums text-gray-100">
+                    <td className="text-ink-3">{ownerLabel(row)}</td>
+                    <td className="text-right tabular-nums text-ink">
                       {canEdit ? (
                         <InlineAmount
                           amount={row.faceValue}
@@ -340,7 +340,7 @@ export default function InsurancePanel(props: InsurancePanelProps) {
                         currencyFmt.format(row.faceValue)
                       )}
                     </td>
-                    <td className="text-right tabular-nums text-gray-100">
+                    <td className="text-right tabular-nums text-ink">
                       {row.policyType === "term" ? (
                         "—"
                       ) : canEdit ? (
@@ -371,7 +371,7 @@ export default function InsurancePanel(props: InsurancePanelProps) {
                         currencyFmt.format(Number(row.value))
                       )}
                     </td>
-                    <td className="text-right tabular-nums text-gray-100">
+                    <td className="text-right tabular-nums text-ink">
                       {canEdit ? (
                         // "/yr" is a SIBLING of the control, not part of `format`
                         // — folding it in would put it inside the open input.

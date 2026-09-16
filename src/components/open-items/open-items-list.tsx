@@ -14,7 +14,7 @@ type Item = {
 };
 
 const PRIORITY_STYLES: Record<Item["priority"], string> = {
-  low: "bg-gray-700 text-gray-200",
+  low: "bg-card-hover text-ink-2",
   medium: "bg-accent/15 text-accent-ink",
   high: "bg-red-900/60 text-red-200",
 };
@@ -66,7 +66,7 @@ export default function OpenItemsList({
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-base font-semibold text-gray-100">
+        <h3 className="text-base font-semibold text-ink">
           Open Items ({open.length} open · {done.length} completed)
         </h3>
         {canEdit && (
@@ -80,7 +80,7 @@ export default function OpenItemsList({
       </div>
 
       {open.length === 0 ? (
-        <p className="text-sm text-gray-300">No open items.</p>
+        <p className="text-sm text-ink-3">No open items.</p>
       ) : (
         <ul className="space-y-2">
           {open.map((i) => (
@@ -89,7 +89,7 @@ export default function OpenItemsList({
               className={`flex items-center gap-3 rounded border px-3 py-2 ${
                 isOverdue(i)
                   ? "border-red-800 border-l-4 border-l-red-500 bg-red-950/20"
-                  : "border-gray-700 bg-gray-900"
+                  : "border-hair bg-card-2"
               }`}
             >
               <input
@@ -99,18 +99,18 @@ export default function OpenItemsList({
                 aria-label={`Complete ${i.title}`}
                 disabled={!canEdit}
               />
-              <span className="flex-1 text-gray-100">{i.title}</span>
+              <span className="flex-1 text-ink">{i.title}</span>
               <span className={`rounded px-2 py-0.5 text-xs ${PRIORITY_STYLES[i.priority]}`}>
                 {i.priority}
               </span>
               {i.dueDate && (
-                <span className={`text-xs ${isOverdue(i) ? "text-red-300" : "text-gray-300"}`}>
+                <span className={`text-xs ${isOverdue(i) ? "text-red-300" : "text-ink-3"}`}>
                   {i.dueDate}
                 </span>
               )}
               {canEdit && (
                 <button
-                  className="text-sm text-gray-300 hover:text-gray-200"
+                  className="text-sm text-ink-3 hover:text-ink-2"
                   onClick={() => { setEditing(i); setDialogOpen(true); }}
                 >
                   Edit
@@ -123,12 +123,12 @@ export default function OpenItemsList({
 
       {done.length > 0 && (
         <details className="mt-4">
-          <summary className="cursor-pointer text-sm text-gray-300">
+          <summary className="cursor-pointer text-sm text-ink-3">
             Completed ({done.length})
           </summary>
           <ul className="mt-2 space-y-2">
             {done.slice(0, 30).map((i) => (
-              <li key={i.id} className="flex items-center gap-3 rounded border border-gray-800 bg-gray-950 px-3 py-2">
+              <li key={i.id} className="flex items-center gap-3 rounded border border-hair bg-card-2 px-3 py-2">
                 <input
                   type="checkbox"
                   checked
@@ -136,10 +136,10 @@ export default function OpenItemsList({
                   aria-label={`Reopen ${i.title}`}
                   disabled={!canEdit}
                 />
-                <span className="flex-1 text-gray-300 line-through">{i.title}</span>
+                <span className="flex-1 text-ink-3 line-through">{i.title}</span>
                 {canEdit && (
                   <button
-                    className="text-sm text-gray-400 hover:text-gray-200"
+                    className="text-sm text-ink-3 hover:text-ink-2"
                     onClick={() => remove(i.id)}
                   >
                     Delete

@@ -20,13 +20,13 @@ export function FormatSelector({
 }) {
   return (
     <fieldset className="flex flex-col gap-2">
-      <legend className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-400">
+      <legend className="mb-1 text-xs font-medium uppercase tracking-wide text-ink-3">
         Format
       </legend>
       {variants.map((v) => (
         <label
           key={v}
-          className="flex cursor-pointer items-center gap-2 rounded border border-gray-700 bg-gray-800/40 px-3 py-2 text-sm text-gray-200 hover:border-gray-600 hover:bg-gray-800"
+          className="flex cursor-pointer items-center gap-2 rounded border border-hair-2 bg-card-2/40 px-3 py-2 text-sm text-ink-2 hover:border-hair-3 hover:bg-card-2"
         >
           <input
             type="radio"

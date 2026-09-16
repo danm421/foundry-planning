@@ -201,10 +201,10 @@ export default function EntitiesCashFlowReportView({ clientId, entities }: Props
     }
   };
 
-  if (loading) return <div className="p-6 text-sm text-gray-400">Loading…</div>;
+  if (loading) return <div className="p-6 text-sm text-ink-3">Loading…</div>;
   if (error) return <div className="p-6 text-sm text-red-400">Error: {error}</div>;
   if (entities.length === 0) {
-    return <div className="p-6 text-sm text-gray-400">No trusts or businesses on file.</div>;
+    return <div className="p-6 text-sm text-ink-3">No trusts or businesses on file.</div>;
   }
 
   const currentYear = new Date().getFullYear();
@@ -255,7 +255,7 @@ export default function EntitiesCashFlowReportView({ clientId, entities }: Props
           />
         )}
         {selected.kind === "empty" && (
-          <div className="text-sm text-gray-400">No activity for this entity in the selected year range.</div>
+          <div className="text-sm text-ink-3">No activity for this entity in the selected year range.</div>
         )}
       </div>
       {openLedger && ledger && (() => {

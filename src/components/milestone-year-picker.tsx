@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { availableRefs, resolveMilestone, YEAR_REF_LABELS } from "@/lib/milestones";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
+import { inputClassName, selectClassName } from "@/components/forms/input-styles";
 
 interface MilestoneYearPickerProps {
   /** HTML name attribute for the year input (used by FormData) */
@@ -55,10 +56,8 @@ interface MilestoneYearPickerProps {
   minYear?: number;
 }
 
-const INPUT_CLASS =
-  "block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
-const SELECT_CLASS =
-  "block w-full rounded-md border border-gray-700 bg-gray-900 px-2 py-1 text-xs text-gray-300 focus:border-accent focus:outline-none";
+const INPUT_CLASS = `block ${inputClassName}`;
+const SELECT_CLASS = `block ${selectClassName}`;
 
 /** Build display labels for this picker, personalized if names are provided. */
 function buildLabels(
@@ -198,7 +197,7 @@ export default function MilestoneYearPicker({
 
   return (
     <div>
-      <label className="block text-xs font-medium text-gray-300" htmlFor={id}>
+      <label className="block text-xs font-medium text-ink-3" htmlFor={id}>
         {label}
       </label>
 
@@ -227,7 +226,7 @@ export default function MilestoneYearPicker({
             onChange={(e) => setDuration(Math.max(1, Number(e.target.value) || 1))}
             className={INPUT_CLASS}
           />
-          <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-gray-300">
+          <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-ink-3">
             years → {currentYear}
           </span>
           {/* Hidden input carries the computed year for FormData */}
@@ -244,7 +243,7 @@ export default function MilestoneYearPicker({
             value={currentYear}
             readOnly={currentRef !== null}
             onChange={(e) => handleYearChange(Number(e.target.value))}
-            className={`${INPUT_CLASS} ${currentRef ? "text-gray-300" : ""}`}
+            className={`${INPUT_CLASS} ${currentRef ? "text-ink-3" : ""}`}
           />
           {currentRef && (
             <span

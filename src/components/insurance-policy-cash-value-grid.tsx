@@ -1,6 +1,7 @@
 "use client";
 
 import { type ChangeEvent, useEffect, useState } from "react";
+import { inputCompactBaseClassName } from "@/components/forms/input-styles";
 
 export interface ScheduleRow {
   year: number;
@@ -261,7 +262,7 @@ export default function InsurancePolicyCashValueGrid({
             type="button"
             onClick={clearSchedule}
             disabled={!hasAnyValue}
-            className="ml-auto text-gray-400 hover:text-red-400 disabled:opacity-40 disabled:hover:text-gray-400"
+            className="ml-auto text-ink-3 hover:text-red-400 disabled:opacity-40 disabled:hover:text-ink-3"
           >
             Clear schedule
           </button>
@@ -269,22 +270,22 @@ export default function InsurancePolicyCashValueGrid({
         {csvError ? (
           <p className="text-xs text-red-400">{csvError}</p>
         ) : (
-          <p className="text-xs text-gray-400">
+          <p className="text-xs text-ink-3">
             CSV columns:{" "}
-            <code className="text-gray-300">{SCHEDULE_CSV_HEADER}</code>
+            <code className="text-ink-3">{SCHEDULE_CSV_HEADER}</code>
           </p>
         )}
       </div>
 
       {gridRows.length === 0 ? (
-        <p className="mb-3 text-xs text-gray-400">
+        <p className="mb-3 text-xs text-ink-3">
           No years to show for this schedule.
         </p>
       ) : (
         <div className="mb-3 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-xs uppercase text-gray-300">
+              <tr className="text-left text-xs uppercase text-ink-3">
                 <th className="py-1 pr-2 font-medium">Year</th>
                 <th className="py-1 pr-2 text-right font-medium">Premium</th>
                 <th className="py-1 pr-2 text-right font-medium">Income</th>
@@ -294,8 +295,8 @@ export default function InsurancePolicyCashValueGrid({
             </thead>
             <tbody>
               {gridRows.map((row, i) => (
-                <tr key={row._id} className="border-t border-gray-800">
-                  <td className="py-1 pr-2 tabular-nums text-gray-300">
+                <tr key={row._id} className="border-t border-hair">
+                  <td className="py-1 pr-2 tabular-nums text-ink-3">
                     {row.year}
                   </td>
                   <td className="py-1 pr-2">
@@ -308,7 +309,7 @@ export default function InsurancePolicyCashValueGrid({
                       onChange={(e) =>
                         updateRow(i, { premiumAmount: toOptNum(e.target.value) })
                       }
-                      className="w-28 rounded-md border border-gray-700 bg-gray-800 px-2 py-1 text-right text-sm text-gray-100 placeholder:text-gray-600 focus:border-accent focus:outline-none"
+                      className={`${inputCompactBaseClassName} w-28 text-right`}
                     />
                   </td>
                   <td className="py-1 pr-2">
@@ -321,7 +322,7 @@ export default function InsurancePolicyCashValueGrid({
                       onChange={(e) =>
                         updateRow(i, { income: toOptNum(e.target.value) })
                       }
-                      className="w-28 rounded-md border border-gray-700 bg-gray-800 px-2 py-1 text-right text-sm text-gray-100 placeholder:text-gray-600 focus:border-accent focus:outline-none"
+                      className={`${inputCompactBaseClassName} w-28 text-right`}
                     />
                   </td>
                   <td className="py-1 pr-2">
@@ -334,7 +335,7 @@ export default function InsurancePolicyCashValueGrid({
                       onChange={(e) =>
                         updateRow(i, { cashValue: toOptNum(e.target.value) })
                       }
-                      className="w-28 rounded-md border border-gray-700 bg-gray-800 px-2 py-1 text-right text-sm text-gray-100 placeholder:text-gray-600 focus:border-accent focus:outline-none"
+                      className={`${inputCompactBaseClassName} w-28 text-right`}
                     />
                   </td>
                   <td className="py-1 pr-2">
@@ -347,7 +348,7 @@ export default function InsurancePolicyCashValueGrid({
                       onChange={(e) =>
                         updateRow(i, { deathBenefit: toOptNum(e.target.value) })
                       }
-                      className="w-28 rounded-md border border-gray-700 bg-gray-800 px-2 py-1 text-right text-sm text-gray-100 placeholder:text-gray-600 focus:border-accent focus:outline-none"
+                      className={`${inputCompactBaseClassName} w-28 text-right`}
                     />
                   </td>
                 </tr>

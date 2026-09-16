@@ -124,7 +124,7 @@ export default function YearlyLiquidityReportView({
   }
   if (!projection || !report) {
     return (
-      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
+      <div className="rounded-lg border border-hair bg-card-2 p-6 text-center text-ink-3">
         No projection data available.
       </div>
     );
@@ -136,7 +136,7 @@ export default function YearlyLiquidityReportView({
         <button
           type="button"
           onClick={() => setShowPortfolio((p) => !p)}
-          className="rounded border border-gray-700 bg-gray-900 px-3 py-1 text-sm text-gray-200 hover:bg-gray-800"
+          className="rounded border border-hair bg-card-2 px-3 py-1 text-sm text-ink-2 hover:bg-card-hover"
         >
           {showPortfolio ? "Hide portfolio assets" : "Show portfolio assets"}
         </button>

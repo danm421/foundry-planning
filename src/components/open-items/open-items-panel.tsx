@@ -17,7 +17,7 @@ export default async function OpenItemsPanel({
     completedAt: r.completedAt ? new Date(r.completedAt).toISOString() : null,
   }));
   return (
-    <section className="mt-8 rounded-lg border border-gray-800 bg-gray-950 p-6">
+    <section className="mt-8 rounded-lg border border-hair bg-card-2 p-6">
       <OpenItemsList clientId={clientId} items={items} />
     </section>
   );

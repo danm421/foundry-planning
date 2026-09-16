@@ -143,7 +143,7 @@ function GuidedSetupLink({
   return (
     <Link
       href={withScenario(`/clients/${clientId}/onboarding`)}
-      className="mt-3 flex w-full items-center gap-3 rounded-md border border-dashed border-gray-700 px-3 py-2 text-sm font-medium text-gray-300 hover:bg-gray-800"
+      className="mt-3 flex w-full items-center gap-3 rounded-md border border-dashed border-hair px-3 py-2 text-sm font-medium text-ink-3 hover:bg-card-2"
     >
       <svg className="h-[18px] w-[18px] flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <path d="M4 5h16M4 12h16M4 19h10" />
@@ -176,7 +176,7 @@ export default function DetailsSidebar({
           className={`flex items-center justify-center rounded-md border p-2 transition-colors ${
             isActive
               ? "border-accent bg-card-2 text-accent"
-              : "border-transparent text-gray-400 hover:bg-card-2 hover:text-gray-200"
+              : "border-transparent text-ink-3 hover:bg-card-2 hover:text-ink-2"
           }`}
         >
           {tab.icon}
@@ -191,10 +191,10 @@ export default function DetailsSidebar({
         className={`flex items-center gap-3 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
           isActive
             ? "border-accent bg-card-2 text-accent"
-            : "border-transparent text-gray-300 hover:bg-card-2 hover:text-gray-200"
+            : "border-transparent text-ink-3 hover:bg-card-2 hover:text-ink-2"
         }`}
       >
-        <span className={isActive ? "text-accent" : "text-gray-400"}>{tab.icon}</span>
+        <span className={isActive ? "text-accent" : "text-ink-3"}>{tab.icon}</span>
         <span>{tab.label}</span>
       </Link>
     );
@@ -204,7 +204,7 @@ export default function DetailsSidebar({
     <nav className="flex flex-col gap-1">
       {TABS.map(renderLink)}
       {access === "own" && (
-        <div className="mt-2 flex flex-col gap-1 border-t border-gray-800 pt-3">
+        <div className="mt-2 flex flex-col gap-1 border-t border-hair pt-3">
           {renderLink(IMPORT_TAB)}
           {renderLink(TAX_ANALYSIS_TAB)}
         </div>

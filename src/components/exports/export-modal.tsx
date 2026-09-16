@@ -45,7 +45,7 @@ export function ExportModal({ reportId, open, onOpenChange, clientId: clientIdPr
         title="Export"
         size="sm"
       >
-        <p className="text-sm text-gray-300">Unknown report: {reportId}</p>
+        <p className="text-sm text-ink-3">Unknown report: {reportId}</p>
       </DialogShell>
     );
   }
@@ -111,7 +111,7 @@ export function ExportModal({ reportId, open, onOpenChange, clientId: clientIdPr
       }}
     >
       <div className="flex flex-col gap-4">
-        <p className="text-xs text-gray-400">
+        <p className="text-xs text-ink-3">
           Single export · <span className="opacity-60">Build PDF package (coming soon)</span>
         </p>
         <FormatSelector
