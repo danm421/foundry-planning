@@ -394,6 +394,7 @@ export const PROFILE_ENTITIES: readonly DetailEntity[] = [
       },
       {
         key: "claimedAsDependent",
+        appliesTo: "update",
         label: "Dependent",
         kind: "enum",
         enumValues: ["auto", "yes", "no"],
