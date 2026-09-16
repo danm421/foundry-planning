@@ -45,6 +45,14 @@ export const INSURANCE_ENTITIES: readonly DetailEntity[] = [
     // is no scenarioId in the payload, and the write always lands on the
     // client's base-case scenario regardless of which scenario is open.
     scenarioScoped: true,
+    documentEvidence: true,
+    documentHints: [
+      "annual statement of policy values",
+      "life insurance policy schedule or declarations page",
+      "in-force illustration",
+      "a policy summary listing a death benefit and a premium",
+    ],
+    scopePath: { via: "join", through: "accounts", on: "accountId" },
     fields: [
       {
         key: "name",
@@ -93,6 +101,7 @@ export const INSURANCE_ENTITIES: readonly DetailEntity[] = [
         kind: "money",
         required: true,
         range: { min: 0 },
+        aliases: ["Face Amount", "Death Benefit Amount", "Total Death Benefit", "Specified Amount"],
       },
       {
         key: "cashValue",
@@ -104,6 +113,7 @@ export const INSURANCE_ENTITIES: readonly DetailEntity[] = [
           "Term policies have no cash value (dialog hides the field and shows " +
           "\"Term policies have no cash value\" on the Schedule tab); the column still " +
           "accepts a value for term rows. Written to accounts.value, not a policy column.",
+        aliases: ["Accumulated Value", "Account Value", "Cash Surrender Value", "Net Surrender Value"],
       },
       {
         key: "costBasis",
@@ -119,6 +129,7 @@ export const INSURANCE_ENTITIES: readonly DetailEntity[] = [
         kind: "money",
         defaultValue: 0,
         range: { min: 0 },
+        aliases: ["Modal Premium", "Annual Premium Outlay", "Scheduled Premium", "Planned Premium"],
       },
       {
         key: "premiumYears",
@@ -441,6 +452,14 @@ export const INSURANCE_ENTITIES: readonly DetailEntity[] = [
     // set is visible from every scenario, like life insurance policies but
     // unlike scenario-scoped tables such as accounts.
     scenarioScoped: false,
+    documentEvidence: true,
+    identity: ["name", "insured", "carrier"],
+    documentHints: [
+      "disability income policy declarations page",
+      "group long-term disability certificate of coverage",
+      "a benefits summary listing an elimination period and a monthly benefit",
+    ],
+    scopePath: { via: "column" },
     fields: [
       {
         key: "name",
@@ -503,6 +522,7 @@ export const INSURANCE_ENTITIES: readonly DetailEntity[] = [
         defaultValue: 7,
         range: { min: 0, max: 730 },
         notes: "Under the Short-term section. stdDurationWeeks*7 must exceed this (duration must outlast the wait).",
+        aliases: ["Elimination Period", "Waiting Period", "Benefit Waiting Period"],
       },
       {
         key: "stdBenefitPct",
@@ -547,6 +567,7 @@ export const INSURANCE_ENTITIES: readonly DetailEntity[] = [
         defaultValue: 90,
         range: { min: 0, max: 730 },
         notes: "Under the Long-term section (same visible label as stdEliminationDays).",
+        aliases: ["Elimination Period", "Waiting Period", "Benefit Waiting Period"],
       },
       {
         key: "ltdBenefitPct",
@@ -555,6 +576,7 @@ export const INSURANCE_ENTITIES: readonly DetailEntity[] = [
         defaultValue: 0.6,
         range: { min: 0, max: 1 },
         notes: "Decimal fraction; under the Long-term section (same visible label as stdBenefitPct).",
+        aliases: ["Benefit Percentage", "Monthly Benefit Percent", "Percent of Covered Earnings"],
       },
       {
         key: "ltdMonthlyMax",

@@ -4,6 +4,19 @@ import { render, screen } from "@testing-library/react";
 import { ClientRowActions } from "../client-row-actions";
 
 describe("ClientRowActions", () => {
+  // The reported defect was a CLASS STRING: `border-transparent` on a dark fill
+  // over a dark row, which advisors read as "nothing here is clickable". The
+  // href tests below cannot see that, so pin the border itself.
+  it("gives each quick link a visible border, not a transparent one", () => {
+    render(<ClientRowActions householdId="H1" planningClientId="C1" />);
+
+    for (const name of ["CRM", "Planning"]) {
+      const cls = screen.getByRole("link", { name }).className;
+      expect(cls).toContain("border-hair-2");
+      expect(cls).not.toContain("border-transparent");
+    }
+  });
+
   it("links CRM + Planning when a plan exists", () => {
     render(<ClientRowActions householdId="H1" planningClientId="C1" />);
 

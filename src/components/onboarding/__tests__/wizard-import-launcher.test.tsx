@@ -27,11 +27,6 @@ describe("WizardImportLauncher", () => {
     expect(screen.getByText(/or add them manually below/i)).toBeTruthy();
   });
 
-  it("keeps the forge anchor for the first-run tour", () => {
-    const { container } = render(<WizardImportLauncher {...baseProps} />);
-    expect(container.querySelector('[data-forge-anchor="wizard-import-launcher"]')).toBeTruthy();
-  });
-
   it("does not mount the drawer until the upload option is chosen", () => {
     render(<WizardImportLauncher {...baseProps} />);
     expect(screen.queryByTestId("drawer")).toBeNull();

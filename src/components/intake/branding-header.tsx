@@ -1,15 +1,13 @@
-import type { IntakeBranding } from "@/lib/branding/branding";
+import FirmMark, { type FirmMarkBranding } from "@/components/firm-mark";
 
-/** The slice of resolved firm branding the letterhead renders (type-only
- *  import — the server-only resolver module is never bundled client-side). */
-export type IntakeHeaderBranding = Pick<IntakeBranding, "logoUrl" | "firmName">;
+/** What the letterhead calls the firm-branding slice it renders. */
+export type IntakeHeaderBranding = FirmMarkBranding;
 
 /**
  * Letterhead shown at the top of every client-facing intake state (welcome,
- * wizard steps, thank-you, expired). Firm logo when the firm uploaded one in
- * Settings → Branding; Foundry Planning lockup otherwise — same fallback
- * pattern as the (auth) layout. Plain <img>: logo URLs are public-blob
- * unguessable hashes, not next/image remote-pattern candidates.
+ * wizard steps, thank-you, expired) and of the risk questionnaire — the
+ * client's first sight of the firm. The mark brings its own ground; see
+ * `FirmMark`.
  */
 export function IntakeBrandingHeader({
   branding,
@@ -18,21 +16,7 @@ export function IntakeBrandingHeader({
 }) {
   return (
     <header className="flex justify-center px-4 pt-8">
-      {branding ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={branding.logoUrl}
-          alt={branding.firmName}
-          className="h-10 max-w-[240px] object-contain"
-        />
-      ) : (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src="/brand/lockup-horizontal.svg"
-          alt="Foundry Planning"
-          className="h-7 w-auto"
-        />
-      )}
+      <FirmMark branding={branding} />
     </header>
   );
 }

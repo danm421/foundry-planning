@@ -163,6 +163,7 @@ export default function AccountsTable({
         ) : null
       }
       expandLabel={(row) => `Show positions for ${row.name}`}
+      totalsNoun={{ one: "account", many: "accounts" }}
       {...props}
     />
   );

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { uuidSchema } from "./common";
 import { AddBusinessInputSchema } from "./accounts-business";
 import { YEAR_REFS } from "@/lib/milestones";
+import { accountCategoryEnum, accountSubTypeEnum } from "@/db/schema";
 
 // Local per-file enum (mirrors note-receivable.ts / gifts.ts / gift-series.ts —
 // no shared cross-file yearRef export exists yet to reuse).
@@ -120,10 +121,8 @@ const nullDefaultUpdate = {
 export const accountCreateSchema = z
   .object({
     name: z.string().min(1),
-    // Route casts the raw string to the category enum at the DB boundary; keep
-    // it a plain string here (Task 14's core casts).
-    category: z.string().min(1),
-    subType: z.string().optional().default("other"),
+    category: z.enum(accountCategoryEnum.enumValues),
+    subType: z.enum(accountSubTypeEnum.enumValues).default("other"),
     value: decOrZeroOptional.default("0"),
     basis: decOrZeroOptional.default("0"),
     rothValue: decOrZeroOptional.default("0"),
@@ -160,8 +159,8 @@ export const accountCreateSchema = z
 // An omitted field stays absent; a present field is coerced identically to create.
 export const accountUpdateSchema = z.object({
   name: z.string().min(1).optional(),
-  category: z.string().min(1).optional(),
-  subType: z.string().optional(),
+  category: z.enum(accountCategoryEnum.enumValues).optional(),
+  subType: z.enum(accountSubTypeEnum.enumValues).optional(),
   value: decOrZeroOptional,
   basis: decOrZeroOptional,
   rothValue: decOrZeroOptional,

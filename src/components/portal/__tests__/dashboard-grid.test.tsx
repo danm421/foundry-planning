@@ -112,6 +112,37 @@ function pageOf(start: number, len: number): PortalDashboardDTO["toReview"]["sam
   }));
 }
 
+/** The picker's list, portaled to body — a trigger carries the same pill text. */
+function menu(): HTMLElement {
+  return screen.getByRole("dialog", { name: "Choose category" });
+}
+
+/** The to-review tile's category trigger, scoped off the rail panel's own. */
+function tilePicker(): HTMLElement {
+  return within(screen.getByTestId("dashboard-grid")).getByTitle("Change category");
+}
+
+const CATEGORIES = [
+  { id: "grp1", name: "Food", kind: "group" as const, parentId: null, color: null },
+  { id: "cat1", name: "Groceries", kind: "category" as const, parentId: "grp1", color: "var(--data-green)" },
+];
+
+type StubFetch = (
+  url: RequestInfo | URL,
+  init?: RequestInit,
+) => Promise<{ ok: boolean; json: () => Promise<unknown> }>;
+
+/** Categories always load; `ok` decides whether the queue's writes save. */
+function stubFetch(ok: boolean) {
+  const mock = vi.fn<StubFetch>((url) =>
+    String(url).includes("/api/portal/categories")
+      ? Promise.resolve({ ok: true, json: () => Promise.resolve({ categories: CATEGORIES }) })
+      : Promise.resolve({ ok, json: () => Promise.resolve({}) }),
+  );
+  vi.stubGlobal("fetch", mock);
+  return mock;
+}
+
 function rail(): HTMLElement {
   const el = document.getElementById("portal-detail");
   if (!el) throw new Error("no #portal-detail in test DOM");
@@ -353,6 +384,48 @@ describe("DashboardGrid rail drill-downs", () => {
     expect(screen.getByText("12")).toBeInTheDocument();
   });
 
+  // One failure flag, two surfaces: the rail must not report an error about the
+  // row it has open when the write that failed was for a different row.
+  it("keeps a failed pick's error off an unrelated row's rail panel", async () => {
+    stubFetch(false);
+    const user = userEvent.setup();
+    render(<LayoutLike editEnabled dto={{ ...DTO, toReview: { count: 5, sample: pageOf(1, 5) } }} />);
+
+    // Rail shows row 2; the failing pick is on row 1.
+    await user.click(screen.getByRole("button", { name: /Merchant 2/ }));
+    const pickers = within(screen.getByTestId("dashboard-grid")).getAllByTitle("Change category");
+    await user.click(pickers[0]);
+    await user.click(await within(menu()).findByRole("button", { name: "Groceries" }));
+
+    await waitFor(() =>
+      expect(within(screen.getByTestId("dashboard-grid")).getByText(/Couldn.t save/)).toBeInTheDocument(),
+    );
+    expect(within(rail()).queryByText(/Couldn.t save/)).not.toBeInTheDocument();
+  });
+
+  it("reports a failed pick in the rail panel of the row it failed for", async () => {
+    stubFetch(false);
+    const user = userEvent.setup();
+    render(<LayoutLike editEnabled dto={{ ...DTO, toReview: { count: 5, sample: pageOf(1, 5) } }} />);
+
+    await user.click(screen.getByRole("button", { name: /Merchant 1/ }));
+    await user.click(within(rail()).getByTitle("Change category"));
+    await user.click(await within(menu()).findByRole("button", { name: "Groceries" }));
+
+    await waitFor(() => expect(within(rail()).getByText(/Couldn.t save/)).toBeInTheDocument());
+  });
+
+  // Nothing to categorize means no picker can render, so the landing page must
+  // not spend a round trip on the list.
+  it("doesn't load categories for a caught-up queue", async () => {
+    const fetchMock = stubFetch(true);
+    render(<LayoutLike editEnabled dto={{ ...DTO, toReview: { count: 0, sample: [] } }} />);
+    await waitFor(() => expect(screen.getByText(/caught up/)).toBeInTheDocument());
+    expect(
+      fetchMock.mock.calls.filter(([u]) => String(u).includes("/api/portal/categories")),
+    ).toHaveLength(0);
+  });
+
   it("opens the net-worth breakdown from the net-worth tile", async () => {
     const user = userEvent.setup();
     render(<LayoutLike />);
@@ -360,6 +433,57 @@ describe("DashboardGrid rail drill-downs", () => {
     expect(within(rail()).getByText("Visa")).toBeInTheDocument();
     expect(within(rail()).getByText("Checking")).toBeInTheDocument();
     expect(within(rail()).getByText(/Open in Accounts/)).toBeInTheDocument();
+  });
+
+  // The queue is where a mis-categorized transaction is caught, so the category
+  // is fixable on the row itself — no detour through the Transactions page.
+  it("recategorizes a to-review row from the tile and keeps it in the queue", async () => {
+    const fetchMock = stubFetch(true);
+    const user = userEvent.setup();
+    render(<LayoutLike editEnabled />);
+
+    await user.click(tilePicker());
+    await user.click(await within(menu()).findByRole("button", { name: "Groceries" }));
+
+    const put = fetchMock.mock.calls.find(([u]) =>
+      String(u).includes("/api/portal/transactions/txn1"),
+    );
+    expect(put).toBeTruthy();
+    expect(put![1]?.method).toBe("PUT");
+    expect(JSON.parse(String(put![1]!.body))).toEqual({ categoryId: "cat1" });
+
+    // Optimistic, and the row is still there to be reviewed — recategorizing
+    // is not blessing.
+    await waitFor(() => expect(tilePicker()).toHaveTextContent("Groceries"));
+    expect(screen.getByText("Whole Foods")).toBeInTheDocument();
+    expect(screen.getByText("1")).toBeInTheDocument();
+  });
+
+  it("puts the category back when the recategorize PUT fails", async () => {
+    stubFetch(false);
+    const user = userEvent.setup();
+    render(<LayoutLike editEnabled />);
+
+    await user.click(tilePicker());
+    await user.click(await within(menu()).findByRole("button", { name: "Groceries" }));
+
+    await waitFor(() => expect(screen.getByText(/Couldn.t save/)).toBeInTheDocument());
+    expect(tilePicker()).toHaveTextContent("Uncategorized");
+  });
+
+  // One list, loaded by the grid: a category picked in the rail shows on the
+  // tile row behind it.
+  it("shows a category picked in the rail panel on the tile row", async () => {
+    stubFetch(true);
+    const user = userEvent.setup();
+    render(<LayoutLike editEnabled />);
+
+    await user.click(screen.getByRole("button", { name: /Whole Foods/ }));
+    await user.click(within(rail()).getByTitle("Change category"));
+    await user.click(await within(menu()).findByRole("button", { name: "Groceries" }));
+
+    await waitFor(() => expect(tilePicker()).toHaveTextContent("Groceries"));
+    expect(within(rail()).getByTitle("Change category")).toHaveTextContent("Groceries");
   });
 
   it("opens the spending groups panel and swaps to a category detail", async () => {

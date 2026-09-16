@@ -22,4 +22,20 @@ describe("IntakeBrandingHeader", () => {
     const img = screen.getByRole("img", { name: "Foundry Planning" });
     expect(img).toHaveAttribute("src", "/brand/lockup-horizontal.svg");
   });
+
+  // The letterhead sits on `paper`, which is dark under the default theme, so
+  // an uploaded black-ink logo needs its plate here too — this is the client's
+  // first sight of the firm. See `--color-letterhead` in globals.css.
+  it("stands the firm logo on a letterhead plate", () => {
+    render(
+      <IntakeBrandingHeader
+        branding={{
+          logoUrl: "https://cdn.example/logo.png",
+          firmName: "Acme Wealth",
+        }}
+      />,
+    );
+    const img = screen.getByRole("img", { name: "Acme Wealth" });
+    expect(img.parentElement?.className).toContain("bg-letterhead");
+  });
 });

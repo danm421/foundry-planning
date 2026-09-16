@@ -102,7 +102,10 @@ export function accountColumns(ctx: AccountColumnsContext): ColumnSpec<Row>[] {
   const matchCtx = ctx.match;
   return [
     { key: "name", header: "Name", kind: "string" },
-    { key: "value", header: "Value", kind: "money" },
+    // `total` on Value and NOT on Basis: the household figure an advisor
+    // reconciles against the statement in hand is what the accounts are
+    // worth. A basis total is a different question nobody asked at this step.
+    { key: "value", header: "Value", kind: "money", total: true },
     { key: "basis", header: "Basis", kind: "money" },
     {
       key: "accountNumberLast4",

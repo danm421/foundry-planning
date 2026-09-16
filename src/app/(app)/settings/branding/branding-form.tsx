@@ -22,6 +22,7 @@ export default function BrandingForm({ initial }: { initial: Initial }) {
         accept="image/png,image/jpeg,image/webp"
         initialUrl={initial.logoUrl}
         previewClass="h-16 w-auto max-w-[240px] object-contain"
+        previewBoxClass="bg-letterhead"
         onUpload={(file) => uploadBrandingAsset("logo", toFileFormData(file))}
         onRemove={() => removeBrandingAsset("logo")}
       />

@@ -6,6 +6,7 @@ import { clientImports, clientImportFiles, clients } from "@/db/schema";
 import { getOrgId } from "@/lib/db-helpers";
 import DetailsPageShell from "@/components/details-page-shell";
 import { ChatSurface } from "@/components/statement-chat/chat-surface";
+import type { RowsByEntity } from "@/lib/entity-extraction/types";
 import { loadChatReviewContext } from "@/lib/statement-chat/review-context";
 
 interface PageProps {
@@ -42,6 +43,7 @@ export default async function StatementChatPage({ params, searchParams }: PagePr
       status: clientImports.status,
       extractHoldings: clientImports.extractHoldings,
       scenarioId: clientImports.scenarioId,
+      payloadJson: clientImports.payloadJson,
     })
     .from(clientImports)
     .where(
@@ -64,6 +66,17 @@ export default async function StatementChatPage({ params, searchParams }: PagePr
   // scenario the commit route resolves, so the candidates offered are the rows
   // the commit can actually update.
   const reviewContext = await loadChatReviewContext(clientId, imp.scenarioId);
+
+  // The map-driven rows a previous visit already extracted (final review I5,
+  // Ruling 37). `runMapEntityPass` persists them here and `PATCH /chat/map-pass`
+  // stamps the committed ones with `match.existingId` — and until now NOTHING
+  // read the column back, so returning to this import showed no policies card
+  // and "Re-run extraction" offered a policy that had already been written.
+  // Read straight off the payload rather than through another query: it is the
+  // same row already fetched above.
+  const storedMapRows = (
+    ((imp.payloadJson ?? {}) as { chat?: { entityRows?: RowsByEntity } }).chat?.entityRows ?? {}
+  ) as RowsByEntity;
 
   const files = await db
     .select()
@@ -98,6 +111,7 @@ export default async function StatementChatPage({ params, searchParams }: PagePr
           }))}
           initialExtractHoldings={imp.extractHoldings === true}
           reviewContext={reviewContext}
+          initialMapRows={storedMapRows}
         />
       </div>
     </DetailsPageShell>

@@ -2,16 +2,31 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, fireEvent, within, act } from "@testing-library/react";
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+// One object, not a fresh one per call — Next's own useRouter is stable, and a
+// router that changes identity every render turns any effect that depends on
+// it into a render loop.
+const router = { refresh: vi.fn(), replace: vi.fn() };
+// The "Add Account" deep link is read off the URL, so the search params are a
+// per-test knob rather than a constant.
+let searchParams = new URLSearchParams();
+vi.mock("next/navigation", () => ({
+  useRouter: () => router,
+  usePathname: () => "/portal/organizer/accounts",
+  useSearchParams: () => searchParams,
+}));
 // Canvas is unavailable in jsdom.
 vi.mock("../networth-trend-chart", () => ({ NetWorthTrendChart: () => <div data-testid="trend" /> }));
-// Plaid Link pulls in a dynamic browser-only bundle. Surface `scope` so the
-// header's two entry points stay distinguishable in tests.
+// Plaid Link pulls in a dynamic browser-only bundle. The real one draws nothing
+// — it mints a token on mount — so this double surfaces the scope it was
+// mounted with, the only observable that says which flow the page started, and
+// exposes an "I backed out" button standing in for Plaid's own onExit.
 vi.mock("../plaid-link-button-dynamic", () => ({
-  PlaidLinkButton: ({ scope }: { scope?: string }) => (
-    <button type="button" data-scope={scope}>
-      Link Account
-    </button>
+  PlaidLinkAuto: ({ scope, onExit }: { scope?: string; onExit?: () => void }) => (
+    <span data-testid="plaid-auto" data-scope={scope}>
+      <button type="button" onClick={onExit}>
+        plaid-exit
+      </button>
+    </span>
   ),
 }));
 vi.mock("../plaid-consent-notice", () => ({ PlaidConsentNotice: () => null }));
@@ -31,6 +46,19 @@ vi.mock("../portal-mode-context", () => ({
 
 import { AccountsWorkspace } from "../accounts-workspace";
 import type { AccountsPageDTO } from "@/lib/portal/load-accounts-page";
+
+type Queries = ReturnType<typeof render>;
+
+/** Drive the header's one "Add Account" menu: open it, then pick an item. */
+function pickAdd(q: Pick<Queries, "getByRole">, label: string): void {
+  fireEvent.click(q.getByRole("button", { name: "Add Account" }));
+  fireEvent.click(q.getByRole("menuitem", { name: label }));
+}
+
+/** The scope of the link flow the page currently has running, if any. */
+function pendingScope(container: HTMLElement): string | null {
+  return container.querySelector("[data-testid=\"plaid-auto\"]")?.getAttribute("data-scope") ?? null;
+}
 
 function dto(over: Partial<AccountsPageDTO> = {}): AccountsPageDTO {
   return {
@@ -130,20 +158,39 @@ describe("AccountsWorkspace", () => {
   });
 
   // Plaid can't require one product that fits every account type, so banking and
-  // investment links are separate tokens. Losing either button silently strands
-  // half a client's accounts — the bug this pair replaced.
+  // investment links are separate tokens. Losing either entry point silently
+  // strands half a client's accounts — the bug this guard replaced. Now that
+  // both live behind one menu, reaching them means opening it.
   it("offers both a banking and an investments link entry point", () => {
-    const { container } = render(<AccountsWorkspace dto={dto()} />);
-    const scopes = Array.from(container.querySelectorAll("button[data-scope]")).map((b) =>
-      b.getAttribute("data-scope"),
-    );
-    expect(scopes).toEqual(["banking", "investments"]);
+    const q = render(<AccountsWorkspace dto={dto()} />);
+    // Nothing is running before a pick — the control that keeps the two
+    // assertions below from passing on a page that always mounts a flow.
+    expect(pendingScope(q.container)).toBeNull();
+
+    pickAdd(q, "Link Bank, Card or Loan");
+    expect(pendingScope(q.container)).toBe("banking");
+
+    pickAdd(q, "Link Investments");
+    expect(pendingScope(q.container)).toBe("investments");
+  });
+
+  // Backing out has to unmount the flow, or a client who immediately retries
+  // picks the same scope, the state never changes, and nothing reopens.
+  it("forgets a link flow the client backed out of, so the same one can be retried", () => {
+    const q = render(<AccountsWorkspace dto={dto()} />);
+    pickAdd(q, "Link Bank, Card or Loan");
+    expect(pendingScope(q.container)).toBe("banking");
+
+    fireEvent.click(q.getByRole("button", { name: "plaid-exit" }));
+    expect(pendingScope(q.container)).toBeNull();
+
+    pickAdd(q, "Link Bank, Card or Loan");
+    expect(pendingScope(q.container)).toBe("banking");
   });
 
   it("hides every write affordance when editEnabled is false", () => {
     const { queryByRole, getByText } = render(<AccountsWorkspace dto={dto({ editEnabled: false })} />);
-    expect(queryByRole("button", { name: "Add Account or Loan" })).toBeNull();
-    expect(queryByRole("button", { name: /Link Account/ })).toBeNull();
+    expect(queryByRole("button", { name: "Add Account" })).toBeNull();
     fireEvent.click(getByText("Joint Checking"));
     expect(queryByRole("button", { name: "Edit" })).toBeNull();
     expect(queryByRole("button", { name: "Delete" })).toBeNull();
@@ -235,7 +282,7 @@ describe("AccountsWorkspace", () => {
 
   it("POSTs a new account when the add panel is left on Account", async () => {
     const { getByRole, getByLabelText } = render(<AccountsWorkspace dto={dto()} />);
-    fireEvent.click(getByRole("button", { name: "Add Account or Loan" }));
+    pickAdd({ getByRole }, "Add Manually");
     fireEvent.change(getByLabelText("Name"), { target: { value: "New Savings" } });
     await act(async () => {
       fireEvent.click(getByRole("button", { name: "Save" }));
@@ -248,7 +295,7 @@ describe("AccountsWorkspace", () => {
 
   it("switches the add panel to the loan form and POSTs to the liabilities route", async () => {
     const { getByRole, getByLabelText, container } = render(<AccountsWorkspace dto={dto()} />);
-    fireEvent.click(getByRole("button", { name: "Add Account or Loan" }));
+    pickAdd({ getByRole }, "Add Manually");
     fireEvent.change(getByLabelText("What are you adding?"), { target: { value: "debt" } });
 
     // The loan form is showing: its Type select replaced the account Category one.
@@ -274,7 +321,7 @@ describe("AccountsWorkspace", () => {
 
   it("sends the typed rate as a FRACTION and previews the payoff year", async () => {
     const { getByRole, getByLabelText, container } = render(<AccountsWorkspace dto={dto()} />);
-    fireEvent.click(getByRole("button", { name: "Add Account or Loan" }));
+    pickAdd({ getByRole }, "Add Manually");
     fireEvent.change(getByLabelText("What are you adding?"), { target: { value: "debt" } });
     fireEvent.change(getByLabelText("Name"), { target: { value: "Car Loan" } });
     fireEvent.change(getByLabelText("Type"), { target: { value: "auto" } });
@@ -297,7 +344,7 @@ describe("AccountsWorkspace", () => {
 
   it("converts a percent rate to a fraction", async () => {
     const { getByRole, getByLabelText } = render(<AccountsWorkspace dto={dto()} />);
-    fireEvent.click(getByRole("button", { name: "Add Account or Loan" }));
+    pickAdd({ getByRole }, "Add Manually");
     fireEvent.change(getByLabelText("What are you adding?"), { target: { value: "debt" } });
     fireEvent.change(getByLabelText("Name"), { target: { value: "Car Loan" } });
     fireEvent.change(getByLabelText("Balance"), { target: { value: "22687.59" } });
@@ -311,7 +358,7 @@ describe("AccountsWorkspace", () => {
 
   it("blocks the save and says why when the payment never covers the interest", () => {
     const { getByRole, getByLabelText, container } = render(<AccountsWorkspace dto={dto()} />);
-    fireEvent.click(getByRole("button", { name: "Add Account or Loan" }));
+    pickAdd({ getByRole }, "Add Manually");
     fireEvent.change(getByLabelText("What are you adding?"), { target: { value: "debt" } });
     fireEvent.change(getByLabelText("Balance"), { target: { value: "100000" } });
     fireEvent.change(getByLabelText("Interest rate"), { target: { value: "5" } });
@@ -322,7 +369,7 @@ describe("AccountsWorkspace", () => {
 
   it("refuses a rate that isn't a number rather than quietly saving 0%", () => {
     const { getByRole, getByLabelText, container } = render(<AccountsWorkspace dto={dto()} />);
-    fireEvent.click(getByRole("button", { name: "Add Account or Loan" }));
+    pickAdd({ getByRole }, "Add Manually");
     fireEvent.change(getByLabelText("What are you adding?"), { target: { value: "debt" } });
     fireEvent.change(getByLabelText("Balance"), { target: { value: "12000" } });
     fireEvent.change(getByLabelText("Interest rate"), { target: { value: "six point five" } });
@@ -333,7 +380,7 @@ describe("AccountsWorkspace", () => {
 
   it("hides the payment terms for a credit card, which the plan holds flat", () => {
     const { getByRole, getByLabelText, container } = render(<AccountsWorkspace dto={dto()} />);
-    fireEvent.click(getByRole("button", { name: "Add Account or Loan" }));
+    pickAdd({ getByRole }, "Add Manually");
     fireEvent.change(getByLabelText("What are you adding?"), { target: { value: "debt" } });
     expect(container.textContent).toContain("Payment terms");
     fireEvent.change(getByLabelText("Type"), { target: { value: "credit_card" } });
@@ -388,7 +435,7 @@ describe("AccountsWorkspace", () => {
 
   it("keeps the loan add form editable — nothing is Plaid-locked on a new row", () => {
     const { getByRole, getByLabelText, container } = render(<AccountsWorkspace dto={dto()} />);
-    fireEvent.click(getByRole("button", { name: "Add Account or Loan" }));
+    pickAdd({ getByRole }, "Add Manually");
     fireEvent.change(getByLabelText("What are you adding?"), { target: { value: "debt" } });
     expect(container.textContent).not.toContain("syncs from your institution");
     expect(getByLabelText("Balance").tagName).toBe("INPUT");
@@ -420,7 +467,8 @@ describe("AccountsWorkspace", () => {
     // reachable from this view must be locked.
     expect(getByRole("button", { name: "Saving…" })).toBeDisabled();
     expect(getByRole("button", { name: "Cancel" })).toBeDisabled();
-    expect(getByRole("button", { name: "Add Account or Loan" })).toBeDisabled();
+    fireEvent.click(getByRole("button", { name: "Add Account" }));
+    expect(getByRole("menuitem", { name: "Add Manually" })).toBeDisabled();
 
     await act(async () => {
       resolveSave({ ok: true, status: 200, json: async () => ({}) });
@@ -444,7 +492,8 @@ describe("AccountsWorkspace", () => {
     // Mid-flight: the DELETE has fired but not resolved.
     expect(getByRole("button", { name: "Edit" })).toBeDisabled();
     expect(getByRole("button", { name: "Delete" })).toBeDisabled();
-    expect(getByRole("button", { name: "Add Account or Loan" })).toBeDisabled();
+    fireEvent.click(getByRole("button", { name: "Add Account" }));
+    expect(getByRole("menuitem", { name: "Add Manually" })).toBeDisabled();
 
     await act(async () => {
       resolveDelete({ ok: true, status: 200, json: async () => ({}) });
@@ -595,5 +644,62 @@ describe("AccountsWorkspace", () => {
       fireEvent.click(getByRole("button", { name: "Holdings" }));
     });
     expect(container.textContent).toContain("No holdings for this account yet.");
+  });
+});
+
+describe("Add Account deep link", () => {
+  let replaceState: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    searchParams = new URLSearchParams();
+    // `spyOn` hands back the SAME spy when the property is already spied, so
+    // without the clear this accumulates every earlier test's calls.
+    replaceState = vi.spyOn(window.history, "replaceState").mockImplementation(() => {});
+    replaceState.mockClear();
+  });
+
+  it("opens the banking link flow — and only that one — for add=banking", () => {
+    searchParams = new URLSearchParams("add=banking");
+    const { container } = render(<AccountsWorkspace dto={dto()} />);
+    expect(pendingScope(container)).toBe("banking");
+  });
+
+  it("opens the investments link flow for add=investments", () => {
+    searchParams = new URLSearchParams("add=investments");
+    const { container } = render(<AccountsWorkspace dto={dto()} />);
+    expect(pendingScope(container)).toBe("investments");
+  });
+
+  it("opens the hand-entry form for add=manual", () => {
+    searchParams = new URLSearchParams("add=manual");
+    const { container } = render(<AccountsWorkspace dto={dto()} />);
+    expect(container.textContent).toContain("What are you adding?");
+  });
+
+  it("strips the param without a second trip to the server", () => {
+    searchParams = new URLSearchParams("add=banking");
+    render(<AccountsWorkspace dto={dto()} />);
+    expect(replaceState).toHaveBeenCalledWith(null, "", "/portal/organizer/accounts");
+    // A router navigation here would refetch the page's whole RSC payload.
+    expect(router.replace).not.toHaveBeenCalled();
+  });
+
+  it("does nothing without the param — the control that proves the rest", () => {
+    const { container } = render(<AccountsWorkspace dto={dto()} />);
+    expect(pendingScope(container)).toBeNull();
+    expect(container.textContent).not.toContain("What are you adding?");
+    expect(replaceState).not.toHaveBeenCalled();
+  });
+
+  it("ignores an intent it doesn't recognise — this is a hand-editable URL", () => {
+    searchParams = new URLSearchParams("add=everything");
+    const { container } = render(<AccountsWorkspace dto={dto()} />);
+    expect(pendingScope(container)).toBeNull();
+    expect(container.textContent).not.toContain("What are you adding?");
+  });
+
+  it("refuses the deep link on a read-only portal", () => {
+    searchParams = new URLSearchParams("add=manual");
+    const { container } = render(<AccountsWorkspace dto={dto({ editEnabled: false })} />);
+    expect(container.textContent).not.toContain("What are you adding?");
   });
 });

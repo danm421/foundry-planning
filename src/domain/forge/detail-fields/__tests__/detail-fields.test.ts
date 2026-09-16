@@ -15,9 +15,10 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { DETAIL_ENTITIES, TAB_ROUTES } from "../index";
+import { DETAIL_ENTITIES, TAB_ROUTES, documentEvidenceEntities, findEntity } from "../index";
 import { YEAR_REFS } from "@/lib/milestones";
 import type { DetailEntity } from "../types";
+import * as schema from "@/db/schema";
 
 const REPO = path.resolve(__dirname, "../../../../..");
 const SCHEMA = fs.readFileSync(path.join(REPO, "src/db/schema.ts"), "utf8");
@@ -192,6 +193,113 @@ describe("Details field map", () => {
         parent.fields.some((f) => f.key === e.nestedIn!.key),
         `${parent.id} has no "${e.nestedIn!.key}" field, but ${e.id} says its rows are sent under it`,
       ).toBe(true);
+    }
+  });
+});
+
+describe("document-evidence marking", () => {
+  it("every identity field exists on its own entity", () => {
+    for (const entity of DETAIL_ENTITIES) {
+      if (!entity.identity) continue;
+      const keys = new Set(entity.fields.map((f) => f.key));
+      for (const key of entity.identity) {
+        expect(keys.has(key), `${entity.id}.identity names missing field "${key}"`).toBe(true);
+      }
+    }
+  });
+
+  it("an identity field is never one the server refuses on create", () => {
+    for (const entity of DETAIL_ENTITIES) {
+      if (!entity.identity) continue;
+      for (const key of entity.identity) {
+        const field = entity.fields.find((f) => f.key === key)!;
+        expect(field.appliesTo, `${entity.id}.${key} is update-only, so it cannot identify a new row`).not.toBe("update");
+        expect(field.writable, `${entity.id}.${key} is derived, so it cannot identify a row`).not.toBe(false);
+      }
+    }
+  });
+
+  it("no advisor-choice entity is marked as document evidence", () => {
+    const NEVER_ON_A_DOCUMENT = ["techniques", "assumptions", "observations"];
+    for (const entity of documentEvidenceEntities()) {
+      expect(NEVER_ON_A_DOCUMENT, `${entity.id} is on the ${entity.tab} tab and cannot be document evidence`).not.toContain(entity.tab);
+    }
+  });
+
+  it("every document-evidence entity can actually be written", () => {
+    for (const entity of documentEvidenceEntities()) {
+      const writable = Boolean(entity.routes.create) || Boolean(entity.nestedIn);
+      expect(writable, `${entity.id} is marked document evidence but has no create route and is not nested`).toBe(true);
+    }
+  });
+
+  it("document hints are non-empty strings when present", () => {
+    for (const entity of DETAIL_ENTITIES) {
+      for (const hint of entity.documentHints ?? []) {
+        expect(hint.trim().length, `${entity.id} has an empty document hint`).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("an alias never duplicates its own field label", () => {
+    for (const entity of DETAIL_ENTITIES) {
+      for (const field of entity.fields) {
+        for (const alias of field.aliases ?? []) {
+          expect(alias.toLowerCase(), `${entity.id}.${field.key} aliases its own label`).not.toBe(field.label.toLowerCase());
+        }
+      }
+    }
+  });
+
+  it("every document-evidence entity declares how its table reaches a client", () => {
+    for (const entity of documentEvidenceEntities()) {
+      expect(entity.scopePath, `${entity.id} has no scopePath, so a generic loader would read it unscoped`).toBeDefined();
+    }
+  });
+
+  it("a join scope path names a real table and a real column", () => {
+    for (const entity of DETAIL_ENTITIES) {
+      const path = entity.scopePath;
+      if (path?.via !== "join") continue;
+      const through = (schema as Record<string, unknown>)[path.through];
+      expect(through, `${entity.id}.scopePath.through names "${path.through}", which is not a table in the schema`).toBeDefined();
+      expect(
+        Object.prototype.hasOwnProperty.call(through as object, "clientId"),
+        `${entity.id} joins through "${path.through}", which has no clientId to scope by`,
+      ).toBe(true);
+      const own = (schema as Record<string, unknown>)[entity.table];
+      expect(
+        Object.prototype.hasOwnProperty.call(own as object, path.on),
+        `${entity.id}.scopePath.on names "${path.on}", which is not a column on ${entity.table}`,
+      ).toBe(true);
+    }
+  });
+});
+
+describe("the two Phase 2 entities", () => {
+  it("marks exactly life insurance and disability as document evidence", () => {
+    expect(documentEvidenceEntities().map((e) => e.id).sort()).toEqual([
+      "disability_policy",
+      "life_insurance_policy",
+    ]);
+  });
+
+  it("life insurance has no identity key — matchLifePolicy owns that job", () => {
+    expect(findEntity("life_insurance_policy")!.identity).toBeUndefined();
+  });
+
+  it("disability identifies a row by name, insured and carrier", () => {
+    expect(findEntity("disability_policy")!.identity).toEqual(["name", "insured", "carrier"]);
+  });
+
+  it("the death benefit carries the wordings a policy actually prints", () => {
+    const face = findEntity("life_insurance_policy")!.fields.find((f) => f.key === "faceValue")!;
+    expect(face.aliases).toContain("Face Amount");
+  });
+
+  it("both entities tell the classifier what their document looks like", () => {
+    for (const entity of documentEvidenceEntities()) {
+      expect(entity.documentHints?.length, `${entity.id} has no document hints`).toBeGreaterThan(0);
     }
   });
 });

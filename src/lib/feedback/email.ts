@@ -165,7 +165,10 @@ export async function sendFeedbackEmail(args: {
 
   try {
     const { subject, html } = buildFeedbackEmail(submission, context);
-    await resend.emails.send({
+    // resend.emails.send() resolves { data: null, error } for every non-2xx
+    // response rather than throwing — the `error` check is the real net, and
+    // an oversized attachment refused here would otherwise log nothing at all.
+    const { error } = await resend.emails.send({
       from,
       to,
       replyTo: context.advisorEmail,
@@ -176,6 +179,12 @@ export async function sendFeedbackEmail(args: {
         content: a.content,
       })),
     });
+    if (error) {
+      console.error(
+        `[feedback-email] Resend rejected the send for ${action}:`,
+        error.message ?? error,
+      );
+    }
   } catch (err) {
     console.error(
       `[feedback-email] Resend send failed for ${action}:`,

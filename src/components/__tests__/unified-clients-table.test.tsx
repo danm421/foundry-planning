@@ -53,6 +53,37 @@ describe("UnifiedClientsTable", () => {
     expect(planningEls[0].tagName).toBe("A");
   });
 
+  it("makes the household name the row's primary link", () => {
+    renderTable(ROWS);
+    // A plan exists → the name opens it. Advisors click the NAME to reach a
+    // client's financials; before this it was inert text.
+    expect(screen.getByRole("link", { name: "Smith Household" })).toHaveAttribute(
+      "href",
+      "/clients/C1/details",
+    );
+    // No plan yet → the CRM record, never the quick-create wizard. Clicking a
+    // name must not start a create flow.
+    expect(screen.getByRole("link", { name: "Jones Household" })).toHaveAttribute(
+      "href",
+      "/crm/households/H2",
+    );
+  });
+
+  it("underlines the name without waiting for a hover", () => {
+    renderTable(ROWS);
+    const cls = screen.getByRole("link", { name: "Smith Household" }).className;
+    // A `hover:`-only affordance is the bug: there is nothing to see until the
+    // pointer is already on the target.
+    expect(cls).toMatch(/(^|\s)underline(\s|$)/);
+    expect(cls).toContain("decoration-ink-3");
+  });
+
+  it("leaves a trashed household's name unlinked", () => {
+    renderTable([{ ...ROWS[0], deletedAt: "2026-05-03T00:00:00.000Z" }]);
+    expect(screen.queryByRole("link", { name: "Smith Household" })).toBeNull();
+    expect(screen.getByText("Smith Household")).toBeInTheDocument();
+  });
+
   it("shows an em dash for households with no plan and no primary contact", () => {
     renderTable(ROWS);
     const prospectRow = screen.getByText("Jones Household").closest("tr")!;

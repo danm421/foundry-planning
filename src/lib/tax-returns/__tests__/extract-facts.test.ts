@@ -76,6 +76,7 @@ describe("extractTaxReturnFacts", () => {
     vi.mocked(extractPdfPages).mockResolvedValue([]);
     vi.mocked(visionOcrPdf).mockResolvedValue({
       text: "Form 1040 wages 100 ".repeat(10),
+      segments: ["Form 1040 wages 100 ".repeat(10)],
       pageCount: 3,
       pagesProcessed: 3,
       truncated: false,
@@ -91,6 +92,7 @@ describe("extractTaxReturnFacts", () => {
     vi.mocked(extractPdfPages).mockResolvedValue([]);
     vi.mocked(visionOcrPdf).mockResolvedValue({
       text: "Form 1040 wages 100 ".repeat(10),
+      segments: ["Form 1040 wages 100 ".repeat(10)],
       pageCount: 45,
       pagesProcessed: 30,
       truncated: true,

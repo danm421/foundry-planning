@@ -6,12 +6,11 @@
 // rather than introducing a second mailer. The only differences are the
 // link path (built by the caller) and the subject line.
 //
-// Unlike sendIntakeFormEmail, this reports whether a send was actually
-// dispatched. sendIntakeFormEmail is intentionally silent (logs and returns
-// void) so intake-form callers never see a delivery failure; here the
-// caller's UI needs to tell the advisor when RESEND_API_KEY is unset or the
-// transport threw, instead of showing a bare success for an email nobody
-// received.
+// Reports whether the send was actually accepted, because the caller's UI
+// tells the advisor so and the send-rtq route writes the flag into the audit
+// log -- a bare success there is a record of mail nobody received.
+// sendIntakeFormEmail reports the same way; it just distinguishes an unset
+// RESEND_API_KEY from a refused send, which this caller has no use for.
 import { Resend } from "resend";
 import { buildIntakeEmailHtml, buildIntakeFromHeader } from "@/lib/intake/email-template";
 
@@ -58,13 +57,23 @@ export async function sendRiskQuestionnaireEmail(args: {
       firmName,
       clientName,
     });
-    await resend.emails.send({
+    // resend.emails.send() resolves { data: null, error } for every non-2xx
+    // response rather than throwing — the `error` check is the real net. The
+    // catch below only ever sees a transport fault, which is the rarer half.
+    const { error } = await resend.emails.send({
       from,
       to,
       subject: RTQ_EMAIL_SUBJECT,
       html,
       replyTo,
     });
+    if (error) {
+      console.error(
+        "[risk-email] Resend rejected the send:",
+        error.message ?? error,
+      );
+      return { delivered: false };
+    }
     return { delivered: true };
   } catch (err) {
     console.error(

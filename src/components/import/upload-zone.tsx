@@ -24,6 +24,9 @@ export interface UploadingFile {
 
 export interface UploadedFileInfo {
   serverFileId: string;
+  /** Display name, so a caller that reports per-file problems can name the
+   *  file the advisor actually recognises rather than its id (M11). */
+  name: string;
   deduped: boolean;
 }
 
@@ -132,6 +135,7 @@ export default function UploadZone({
             });
             onUploadedRef.current?.({
               serverFileId: body.file.id,
+              name: target.name,
               deduped: body.deduped,
             });
           } catch {

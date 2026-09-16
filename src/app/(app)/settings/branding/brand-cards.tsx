@@ -29,6 +29,7 @@ export function AssetCard({
   accept,
   initialUrl,
   previewClass,
+  previewBoxClass = "bg-paper",
   onUpload,
   onRemove,
 }: {
@@ -37,6 +38,9 @@ export function AssetCard({
   accept: string;
   initialUrl: string | null;
   previewClass: string;
+  /** The ground to preview this asset on — a logo is print ink and belongs on
+   *  `bg-letterhead`, a favicon is browser chrome and keeps the app's own. */
+  previewBoxClass?: string;
   onUpload: (file: File) => Promise<AssetResult>;
   onRemove: () => Promise<RemoveResult>;
 }) {
@@ -76,7 +80,13 @@ export function AssetCard({
         {toast ? <span className="text-xs text-ink-3">{toast}</span> : null}
       </div>
       <div className="flex items-center gap-4">
-        <div className="flex h-20 min-w-[120px] items-center justify-center rounded border border-dashed border-hair bg-paper px-3">
+        {/* Previewing on `paper` is how a black-ink logo shipped invisible: the
+            advisor confirmed it against the very background that hid it. The
+            empty state keeps the app ground either way — its placeholder is
+            `ink-4`, cut for the app, not for cream. */}
+        <div
+          className={`flex h-20 min-w-[120px] items-center justify-center rounded border border-dashed border-hair px-3 ${url ? previewBoxClass : "bg-paper"}`}
+        >
           {url ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={url} alt={`${label} preview`} className={previewClass} />

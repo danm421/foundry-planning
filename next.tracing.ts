@@ -57,6 +57,9 @@ export const outputFileTracingIncludes: Record<string, string[]> = {
     // fallback (src/lib/statement-chat/tools.ts).
     "/api/clients/*/imports/*/chat/extract": OCR_CANVAS_FILES,
     "/api/clients/*/imports/*/chat/turn": OCR_CANVAS_FILES,
+    // The map-entity pass reads a SCANNED policy the same way: a genuine
+    // carrier document has no text layer, so the route falls back to OCR.
+    "/api/clients/*/imports/*/chat/map-pass": OCR_CANVAS_FILES,
     "/api/clients/*/rebalance/extract-holdings": OCR_CANVAS_FILES,
     "/api/clients/*/tax-returns": OCR_CANVAS_FILES,
     "/api/clients/*/tax-returns/*/documents": OCR_CANVAS_FILES,

@@ -5,9 +5,12 @@ import { Card, CardBody, CardHeader } from "@/components/card";
 import UploadZone, { type InitialUploadedFile } from "@/components/import/upload-zone";
 import { StepLine } from "@/components/statement-chat/step-line";
 import AccountsTable from "@/components/statement-chat/accounts-table";
+import EntityTables from "@/components/statement-chat/entity-tables";
+import { useMapRows, type RowsByEntity } from "@/components/statement-chat/use-map-rows";
 import { ChatTranscript } from "@/components/statement-chat/chat-transcript";
 import { ChatComposer } from "@/components/statement-chat/chat-composer";
 import { useChatCommit, type ChatCommitResult } from "@/components/statement-chat/use-chat-commit";
+import { summarizeMapWarnings } from "@/lib/statement-chat/map-warnings";
 import {
   EMPTY_CHAT_REVIEW_CONTEXT,
   type ChatReviewContext,
@@ -67,6 +70,14 @@ interface ChatSurfaceProps {
    * before the first row renders.
    */
   reviewContext?: ChatReviewContext;
+  /**
+   * The map-driven rows already stored on this import under
+   * `chat.entityRows`, loaded by the page alongside `reviewContext` (final
+   * review I5, Ruling 37). Without them a revisit lost the policies card and
+   * re-armed a commit that had already written its record — the column was
+   * written by two routes and read by nobody.
+   */
+  initialMapRows?: RowsByEntity;
 }
 
 export function ChatSurface({
@@ -75,8 +86,22 @@ export function ChatSurface({
   initialFiles,
   initialExtractHoldings,
   reviewContext = EMPTY_CHAT_REVIEW_CONTEXT,
+  initialMapRows,
 }: ChatSurfaceProps) {
   const [uploadedCount, setUploadedCount] = useState(initialFiles.length);
+  // The map pass is per FILE (one POST each), so the surface has to carry the
+  // ids, not just the count. `UploadZone`'s `onRemoved` carries no id, so a
+  // removed file's id stays in this list — the pass 404s on it and records a
+  // warning naming it, rather than silently dropping every other file.
+  const [fileIds, setFileIds] = useState<string[]>(() =>
+    initialFiles.map((f) => f.serverFileId),
+  );
+  // fileId -> display name, so the pass's per-file warnings can name the file
+  // rather than its id (M11). Kept beside `fileIds` rather than replacing it:
+  // the pass is driven by the id list, and a name is only ever presentation.
+  const [fileNames, setFileNames] = useState<Record<string, string>>(() =>
+    Object.fromEntries(initialFiles.map((f) => [f.serverFileId, f.name])),
+  );
   const [status, setStatus] = useState<Status>("idle");
   const [extractHoldings, setExtractHoldings] = useState(initialExtractHoldings ?? false);
   const [holdingsError, setHoldingsError] = useState<string | null>(null);
@@ -107,6 +132,20 @@ export function ChatSurface({
     handleRestore,
     handleFinalize,
   } = useChatCommit(clientId, importId, reviewContext.familyMembers, reviewContext.accounts);
+
+  // The map-driven half (Task 14b): policies and anything else the Details
+  // field map marks as document evidence. Kept in its OWN hook rather than
+  // folded into `useChatCommit` — these rows live under `chat.entityRows` and
+  // commit one at a time to each entity's own route, which shares nothing with
+  // the accounts tab's bulk commit route.
+  const {
+    rows: mapRows,
+    warnings: mapWarnings,
+    status: mapStatus,
+    committedRowIds: mapCommittedRowIds,
+    runPass: runMapPass,
+    commitRows: commitMapRows,
+  } = useMapRows({ clientId, importId, initialRows: initialMapRows, fileNames });
 
   // Sends a turn and adopts what comes back (Task 11b, Steps 2/3). On the
   // FIRST turn that has anything to adopt (`result` was still null — a
@@ -220,15 +259,35 @@ export function ChatSurface({
         buffer = next.value;
       }
       setStatus((s) => (s === "streaming" ? "done" : s));
+      // ONLY once the stream is closed. The pass reads and rewrites the SAME
+      // `client_imports.payloadJson` the extraction is still writing while it
+      // streams, so starting earlier would race the extraction's own write.
+      await runMapPass(fileIds);
     } catch (err) {
       if (ac.signal.aborted) return;
       setStatus("error");
       setErrorMessage(err instanceof Error ? err.message : "The connection dropped.");
     }
-  }, [clientId, importId, resetForNewExtraction, applyExtractionResult]);
+  }, [clientId, importId, resetForNewExtraction, applyExtractionResult, runMapPass, fileIds]);
 
   const isStreaming = status === "streaming";
   const hasFailure = fileEvents.some((e) => e.error);
+  const hasMapRows = Object.values(mapRows).some((list) => list.length > 0);
+  // The stream's own `status` is already "done" by the time the pass runs (it
+  // has to be — the pass must not start until the stream closes), so the pass
+  // needs its OWN in-flight gate. Without it the Extract button re-enables
+  // mid-pass and a second click starts a concurrent pass on the same import:
+  // the `payloadJson` read-modify-write race the sequential loop exists to
+  // close, reopened from the other end.
+  const mapPassRunning = mapStatus === "running";
+  // Deferred #17, promoted to MUST-FIX (Ruling 38). `chat/finalize` counts
+  // ACCOUNT rows only, so its 409 says nothing about policies — an advisor can
+  // close an import with uncommitted map rows and never hear about it. The
+  // route is deliberately NOT changed (that would reshape finalize's
+  // semantics); the honest minimum is telling them here, where the button is.
+  const uncommittedMapRows = Object.values(mapRows)
+    .flat()
+    .filter((row) => row.match?.kind !== "exact" && !mapCommittedRowIds.includes(row.rowId)).length;
 
   return (
     <div className="flex flex-col gap-6">
@@ -244,7 +303,13 @@ export function ChatSurface({
             importId={importId}
             initialFiles={initialFiles}
             disabled={isStreaming}
-            onUploaded={() => setUploadedCount((c) => c + 1)}
+            onUploaded={(info) => {
+              setUploadedCount((c) => c + 1);
+              setFileIds((prev) =>
+                prev.includes(info.serverFileId) ? prev : [...prev, info.serverFileId],
+              );
+              setFileNames((prev) => ({ ...prev, [info.serverFileId]: info.name }));
+            }}
             onRemoved={() => setUploadedCount((c) => Math.max(0, c - 1))}
           />
           <div className="flex items-center justify-between gap-3">
@@ -274,21 +339,25 @@ export function ChatSurface({
                 // that resolves DURING a fresh extraction must never be the
                 // thing that re-enables this button (Ruling 63's second
                 // clause, from the other direction).
-                disabled={uploadedCount === 0 || isStreaming || turnStatus === "sending"}
+                disabled={
+                  uploadedCount === 0 || isStreaming || mapPassRunning || turnStatus === "sending"
+                }
                 className="rounded bg-accent px-5 py-2 text-sm font-medium text-accent-on hover:bg-accent/90 disabled:opacity-50"
               >
                 {isStreaming
                   ? "Reading statements…"
-                  : status === "done" || status === "error"
-                    ? "Re-run extraction"
-                    : "Extract statements"}
+                  : mapPassRunning
+                    ? "Reading policies…"
+                    : status === "done" || status === "error"
+                      ? "Re-run extraction"
+                      : "Extract statements"}
               </button>
             </div>
           </div>
         </CardBody>
       </Card>
 
-      {(isStreaming || fileEvents.length > 0) && (
+      {(isStreaming || mapPassRunning || fileEvents.length > 0) && (
         <Card>
           <CardHeader>
             <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-2">Progress</h2>
@@ -305,6 +374,9 @@ export function ChatSurface({
             ))}
             {isStreaming && fileEvents.length === 0 && (
               <p className="py-1.5 text-sm text-ink-3">Reading statements…</p>
+            )}
+            {mapPassRunning && (
+              <p className="py-1.5 text-sm text-ink-3">Reading policies and other details…</p>
             )}
           </CardBody>
         </Card>
@@ -448,6 +520,15 @@ export function ChatSurface({
                     {finalizeStatus === "error" && finalizeError && (
                       <p className="mt-1 text-sm text-crit">{finalizeError}</p>
                     )}
+                    {finalizeStatus !== "done" && uncommittedMapRows > 0 && (
+                      <p className="mt-1 text-sm text-warn">
+                        {uncommittedMapRows === 1
+                          ? "1 row in “Policies and other details” below has not been committed"
+                          : `${uncommittedMapRows} rows in “Policies and other details” below have not been committed`}
+                        {" "}— closing the import leaves{" "}
+                        {uncommittedMapRows === 1 ? "it" : "them"} out of the plan.
+                      </p>
+                    )}
                   </div>
                   {finalizeStatus !== "done" && (
                     <button
@@ -472,6 +553,57 @@ export function ChatSurface({
             </>
           )}
         </>
+      )}
+
+      {/*
+        The map pass's own warnings, in the same idiom the extraction's own
+        `hasFailure` copy uses. Its OWN gate, not the table's: a pass where
+        every file failed produces no rows at all, and a failed read the
+        advisor never sees is indistinguishable from a document that simply
+        had no policies in it. Headed, unlike the caveats card, because it
+        does not sit directly under the thing it is about.
+      */}
+      {mapWarnings.length > 0 && (
+        <Card>
+          <CardHeader>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-2">
+              Reading policies and other details
+            </h2>
+          </CardHeader>
+          <CardBody className="flex flex-col gap-1.5">
+            {summarizeMapWarnings(mapWarnings).map((w, i) => (
+              <p key={i} className="text-sm text-ink-3">
+                {w}
+              </p>
+            ))}
+          </CardBody>
+        </Card>
+      )}
+
+      {/*
+        Deliberately OUTSIDE the `result &&` gate above, not nested under the
+        Accounts card. A life insurance statement is the document this feature
+        exists for and it yields zero ACCOUNTS — `result.rows` empty, the
+        accounts branch rendering its "No accounts found" empty state — so a
+        policies table gated on that would be invisible for exactly the import
+        it was built to review. Gated on having rows instead: an empty card on
+        every import is noise.
+      */}
+      {hasMapRows && (
+        <Card>
+          <CardHeader>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-2">
+              Policies and other details
+            </h2>
+          </CardHeader>
+          <CardBody>
+            <EntityTables
+              rows={mapRows}
+              committedRowIds={mapCommittedRowIds}
+              onCommitRows={commitMapRows}
+            />
+          </CardBody>
+        </Card>
       )}
     </div>
   );

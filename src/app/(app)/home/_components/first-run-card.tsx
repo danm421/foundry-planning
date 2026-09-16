@@ -3,7 +3,6 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useWalkthrough } from "@/components/forge/walkthrough-context";
 import { CheckCircleIcon } from "@/components/icons";
 import type { FirstRunCard as FirstRunCardState } from "@/lib/onboarding/advisor-first-run";
 
@@ -12,12 +11,14 @@ async function patchFirstRun(action: "start" | "dismiss") {
     method: "PATCH",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ action }),
+    // "start" fires as its own link navigates away from /home; keepalive is
+    // what stops the browser cancelling the write mid-flight.
+    keepalive: true,
   });
 }
 
 export function FirstRunCard({ card }: { card: FirstRunCardState }) {
   const router = useRouter();
-  const { start } = useWalkthrough();
   const [dismissed, setDismissed] = useState(false);
   const [, startTransition] = useTransition();
 
@@ -29,11 +30,6 @@ export function FirstRunCard({ card }: { card: FirstRunCardState }) {
   function dismiss() {
     setDismissed(true);
     void patchFirstRun("dismiss").then(() => startTransition(() => router.refresh()));
-  }
-
-  function beginSetup() {
-    void patchFirstRun("start");
-    start("first-run-setup");
   }
 
   return (
@@ -115,13 +111,19 @@ export function FirstRunCard({ card }: { card: FirstRunCardState }) {
 
           <div className="mt-4 flex items-center gap-4">
             {card.kind === "no_client" ? (
-              <button
-                type="button"
-                onClick={beginSetup}
+              // /clients/new creates the household inline AND the planning
+              // client, landing in the wizard — one screen where /crm/new
+              // would detour through a four-way "how do you want to start?"
+              // fork that the deleted coachmark tour existed to shepherd past.
+              // The PATCH is fire-and-forget: nothing reads startedAt (the
+              // audit row is the record), so it must not hold up the click.
+              <Link
+                href="/clients/new?path=guided"
+                onClick={() => void patchFirstRun("start").catch(() => {})}
                 className="inline-flex h-9 items-center rounded-[var(--radius-sm)] bg-accent px-4 text-[13px] font-semibold text-accent-on transition-colors hover:bg-accent-ink"
               >
                 Start guided setup
-              </button>
+              </Link>
             ) : (
               <Link
                 href={`/clients/${card.clientId}/onboarding`}

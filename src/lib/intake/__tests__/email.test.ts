@@ -26,7 +26,7 @@ describe("sendIntakeFormEmail", () => {
     }
   });
 
-  it("resolves without throwing when RESEND_API_KEY is not set", async () => {
+  it("reports undelivered rather than throwing when RESEND_API_KEY is not set", async () => {
     await expect(
       sendIntakeFormEmail({
         to: "client@example.com",
@@ -34,7 +34,7 @@ describe("sendIntakeFormEmail", () => {
         advisorName: "Jane Advisor",
         clientName: "Smith Family",
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ delivered: false, reason: "unconfigured" });
   });
 
   it("resolves without throwing with minimal args (no advisorName/clientName)", async () => {
@@ -43,7 +43,54 @@ describe("sendIntakeFormEmail", () => {
         to: "client@example.com",
         link: "https://foundryplanning.com/intake/abc123",
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ delivered: false, reason: "unconfigured" });
+  });
+
+  it("reports delivered once Resend accepts the send", async () => {
+    process.env.RESEND_API_KEY = "re_test_key";
+    mockSend.mockClear();
+    mockSend.mockResolvedValueOnce({ data: { id: "re_1" }, error: null });
+
+    await expect(
+      sendIntakeFormEmail({
+        to: "client@example.com",
+        link: "https://foundryplanning.com/intake/abc123",
+      }),
+    ).resolves.toEqual({ delivered: true });
+  });
+
+  it("reports send_failed — never throws — when the transport throws", async () => {
+    process.env.RESEND_API_KEY = "re_test_key";
+    mockSend.mockClear();
+    mockSend.mockRejectedValueOnce(new Error("resend is down"));
+
+    await expect(
+      sendIntakeFormEmail({
+        to: "client@example.com",
+        link: "https://foundryplanning.com/intake/abc123",
+      }),
+    ).resolves.toEqual({ delivered: false, reason: "send_failed" });
+  });
+
+  // The throw above is the RARE failure. Resend's SDK resolves
+  // { data: null, error } for every non-2xx — an unknown recipient, a quota,
+  // a suppressed address — and those are the failures that actually happen.
+  // Reading only the thrown path reports `delivered: true` for mail that was
+  // never accepted, which is what the reminder route's 502 hangs off.
+  it("reports send_failed when Resend RESOLVES an error instead of throwing", async () => {
+    process.env.RESEND_API_KEY = "re_test_key";
+    mockSend.mockClear();
+    mockSend.mockResolvedValueOnce({
+      data: null,
+      error: { name: "validation_error", message: "Invalid `to` field." },
+    });
+
+    await expect(
+      sendIntakeFormEmail({
+        to: "nobody@example.com",
+        link: "https://foundryplanning.com/intake/abc123",
+      }),
+    ).resolves.toEqual({ delivered: false, reason: "send_failed" });
   });
 
   it("passes replyTo through to the Resend payload", async () => {

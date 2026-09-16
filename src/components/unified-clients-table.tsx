@@ -1,10 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { ClientRowActions } from "./client-row-actions";
 import { ClientsSortHeader, TH } from "./clients-sort-header";
 import { HouseholdStatusSelect, HOUSEHOLD_STATUS_LABELS } from "./household-status-select";
 import { HouseholdTrashActions } from "./household-trash-actions";
 import { daysUntilPurge } from "@/lib/crm/trash";
+import { postHouseholdOpen } from "@/lib/crm/record-open";
+import { RECORD_NAME_LINK, RECORD_NAME_TEXT, ROW_HOVER } from "./table-styles";
 import type { ClientSortKey, SortDir } from "@/lib/crm/sort";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
@@ -45,6 +48,17 @@ function dash(value: string | null) {
   return value && value.trim() ? value : <span className="text-ink-3">—</span>;
 }
 
+/**
+ * Where a name click lands: the deepest record the household actually has.
+ * A plan when one exists, the CRM record when it doesn't — never the
+ * quick-create wizard, which is a create action and has its own pill.
+ */
+function primaryHref(row: UnifiedClientRow) {
+  return row.planningClientId
+    ? `/clients/${row.planningClientId}/details`
+    : `/crm/households/${row.householdId}`;
+}
+
 export function UnifiedClientsTable({ rows, emptyMessage, canManage, sort }: UnifiedClientsTableProps) {
   if (rows.length === 0) {
     return (
@@ -77,15 +91,17 @@ export function UnifiedClientsTable({ rows, emptyMessage, canManage, sort }: Uni
         Two widths are pinned to content that lives in OTHER files and cannot
         ellipsize its way out of an overflow, so they carry deliberate slack —
         measured in-browser, not eyeballed:
-          · quick links (208px) — `ClientRowActions`' widest state is the
-            "CRM" + "Start planning" pill pair.
+          · quick links (228px, i.e. a 196px content budget after TD padding) —
+            `ClientRowActions`' widest state is the "CRM" + "Start planning"
+            pill pair, measured at 184px once those pills gained their 1px
+            borders. That left the old 216px column with ZERO slack.
           · status (176px) — `HouseholdStatusSelect` is a fixed `w-32` (128px).
         Widening that copy, that select, or the row font means re-measuring both.
       */}
-      <table className="w-full min-w-[1112px] table-fixed divide-y divide-hair">
+      <table className="w-full min-w-[1124px] table-fixed divide-y divide-hair">
         <colgroup>
           <col className="w-[236px]" />
-          <col className="w-[216px]" />
+          <col className="w-[228px]" />
           <col className="w-[176px]" />
           <col className="w-[148px]" />
           <col className="w-[148px]" />
@@ -149,15 +165,29 @@ export function UnifiedClientsTable({ rows, emptyMessage, canManage, sort }: Uni
         <tbody className="divide-y divide-hair">
           {rows.map((r) => {
             return (
-              <tr key={r.householdId} className="hover:bg-card-2">
+              <tr key={r.householdId} className={ROW_HOVER}>
+                {/* A trashed household is a record to RESTORE, not one to
+                    open, so its name stays plain text — the same reason the
+                    status cell drops its dropdown below. */}
                 <td className={TD}>
-                  <span className="block truncate text-sm font-medium text-ink" title={r.name}>
-                    {r.name}
-                  </span>
-                  {r.deletedAt && (
-                    <span className="mt-0.5 block truncate text-xs text-ink-3">
-                      In Trash · purges in {daysUntilPurge(r.deletedAt)} days
-                    </span>
+                  {r.deletedAt ? (
+                    <>
+                      <span className={RECORD_NAME_TEXT} title={r.name}>
+                        {r.name}
+                      </span>
+                      <span className="mt-0.5 block truncate text-xs text-ink-3">
+                        In Trash · purges in {daysUntilPurge(r.deletedAt)} days
+                      </span>
+                    </>
+                  ) : (
+                    <Link
+                      href={primaryHref(r)}
+                      className={RECORD_NAME_LINK}
+                      title={r.name}
+                      onClick={() => postHouseholdOpen(r.householdId)}
+                    >
+                      {r.name}
+                    </Link>
                   )}
                 </td>
                 <td className={`${TD} whitespace-nowrap`}>

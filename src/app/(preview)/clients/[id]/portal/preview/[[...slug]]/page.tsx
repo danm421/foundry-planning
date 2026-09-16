@@ -30,7 +30,7 @@ import { DebtPaydownScreen } from "@/components/portal/debt-paydown-screen";
 import { SavingsGoalScreen } from "@/components/portal/savings-goal-screen";
 import { loadPortalPrivacy } from "@/lib/portal/privacy";
 import { toPortalFeatures } from "@/lib/portal/features";
-import { portalGreetingName } from "@/lib/portal/greeting-name";
+import { portalGreetingFullName } from "@/lib/portal/greeting-name";
 import { portalFeatureForPath } from "@/components/portal/portal-nav-items";
 import { loadPortalConnectionAlert } from "@/lib/portal/load-plaid-items";
 import { resolveIntakeBrandingForClient } from "@/lib/branding/resolve-for-client";
@@ -82,7 +82,6 @@ export default async function PortalPreviewPage({
             firstName: crmHouseholdContacts.firstName,
             lastName: crmHouseholdContacts.lastName,
             preferredName: crmHouseholdContacts.preferredName,
-            email: crmHouseholdContacts.email,
             role: crmHouseholdContacts.role,
           })
           .from(crmHouseholdContacts)
@@ -178,12 +177,12 @@ export default async function PortalPreviewPage({
   const inOrganizer = path === "organizer" || path.startsWith("organizer/");
 
   const primary = contacts.find((c) => c.role === "primary") ?? contacts[0];
-  // The banner names the client the advisor is previewing (full name, one
-  // person); the rail greets the household (first names, both spouses).
+  // The banner names the client the advisor is previewing (one person); the
+  // letterhead greets the household (both spouses).
   const clientName = primary
     ? `${primary.firstName} ${primary.lastName ?? ""}`.trim()
     : "";
-  const greetingName = portalGreetingName(contacts);
+  const letterheadName = portalGreetingFullName(contacts);
 
   // Bound once: the Budget branch below nests it inside the drawer gutter,
   // every other section renders it directly.
@@ -202,6 +201,9 @@ export default async function PortalPreviewPage({
         clientName={clientName}
         editEnabled={access.client.portalEditEnabled}
       />
+      {/* Firm letterhead — full width under the banner, mirroring the client
+          portal's own chrome (see (portal)/portal/layout.tsx). */}
+      <PortalBrandingStrip branding={branding} displayName={letterheadName} />
       {/*
         The grid fills the height left below the banner (`flex-1 min-h-0`) and
         the nav and main columns scroll independently (`min-h-0 overflow-y-auto`
@@ -211,15 +213,13 @@ export default async function PortalPreviewPage({
       */}
       <div className="relative grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)] grid-rows-1">
         <PortalNav
-          displayName={greetingName}
-          email={primary?.email ?? ""}
           basePath={basePath}
           className="flex min-h-0 overflow-y-auto"
           alerts={navAlerts}
           features={features}
+          editEnabled={access.client.portalEditEnabled}
         />
         <main id="main" className="min-h-0 min-w-0 overflow-y-auto border-x border-hair">
-          <PortalBrandingStrip branding={branding} />
           {/* The Budget section's tab strip sits above the privacy gate, so an
               advisor can still move between tabs when one area isn't shared.
               Budget alone keeps its content out of the drawer's column; every

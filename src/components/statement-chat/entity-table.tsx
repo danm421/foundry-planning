@@ -1,30 +1,25 @@
 "use client";
 
 import { Fragment, useState, type ReactNode } from "react";
+import type { FieldKind } from "@/domain/forge/detail-fields";
+import { columnTotal } from "@/lib/statement-chat/column-totals";
 import ExcludedRows, { type ExcludedRow } from "./excluded-rows";
 
 /**
- * Mirrors `FieldKind` in `src/domain/forge/detail-fields/types.ts` — NOT
- * imported from there (controller amendment, Task 10): that directory is
- * currently uncommitted in a tree shared with other sessions. This is a
- * deliberate 9-member SUBSET of the real 13-member union (C3); Phase 2's
- * swap therefore only ever WIDENS it. `formatValue`'s `default` branch below
- * is what stays safe on that day — it must never become an exhaustive
- * switch with no fallback.
+ * The map's own `FieldKind` (`src/domain/forge/detail-fields/types.ts`), widened
+ * by `"price"` — a per-unit quote the map has no notion of, added by the
+ * holdings wave for bond/fund/money-market quotes. Imported rather than
+ * mirrored (Task 12) now that the map is committed (`ba2e21b2f`) — that only
+ * ever WIDENS the 9-member subset Phase 1 declared here by hand, so it can
+ * never silently drop a kind `formatValue` relies on. `formatValue`'s
+ * `default` branch below is what stays safe when a kind neither switch names
+ * arrives — it must never become an exhaustive switch with no fallback.
  *
  * `"rate"` is a decimal fraction (0.03 = 3%); `"percent"` is a whole number
  * (3 = 3%). Collapsing the two would silently be 100x wrong for one of them.
  */
 export type ColumnKind =
-  | "string"
-  | "money"
-  | "number"
-  | "percent"
-  | "rate"
-  | "year"
-  | "date"
-  | "boolean"
-  | "enum"
+  | FieldKind
   /** A per-unit quote, which whole dollars destroy: a bond prices per $100
    *  par (99.875 -> "$100"), a money market sits at $1.00, and a sub-dollar
    *  position rounds to "$0" beside a real market value. Separate from
@@ -67,6 +62,15 @@ export interface ColumnSpec<Row> {
    * (exactly the shape of Task 10's Important 3 typo).
    */
   fields?: (keyof Row & string)[];
+  /**
+   * Sum this column into the table's totals row.
+   *
+   * Opt-in per column rather than "every `money` column", because the accounts
+   * spec has TWO of those (Value and Basis) and only one of them is a figure
+   * the advisor reconciles against the statement in hand. A blanket rule would
+   * print a basis total nobody asked for, beside the one they did.
+   */
+  total?: boolean;
 }
 
 /** The one thing every entity row is guaranteed to carry (Task 6): a stable
@@ -82,6 +86,13 @@ export interface EntityTableProps<Row extends EntityRow> {
   committedRowIds: string[];
   onCommitRows: (rowIds: string[]) => Promise<void>;
   onEditCell: (rowId: string, field: string, value: unknown) => void;
+  /**
+   * Accessible name for the `<table>` element. Optional because Phase 1's
+   * single-table pages never needed one; Phase 2 renders several tables on
+   * one page, so each needs a name a screen reader (and this task's own
+   * `getByRole("table", { name })`) can tell apart.
+   */
+  ariaLabel?: string;
   /**
    * Lifts an excluded row into the working set WITHOUT committing it
    * (Task 10 review, CRITICAL). Optional because the brief's unchangeable
@@ -123,6 +134,26 @@ export interface EntityTableProps<Row extends EntityRow> {
   expand?: (row: Row, meta: { isCommitted: boolean }) => ReactNode;
   /** Accessible name for the disclosure button. Defaults to "Show details". */
   expandLabel?: (row: Row) => string;
+  /**
+   * The two things `commitBlockedReason` cannot express, because neither one
+   * blocks the commit: a sub-threshold-confidence marker, and Add-vs-Update
+   * wording driven by the row's match kind. Returning `{}` (or omitting the
+   * prop) renders nothing extra — Phase 1's `accounts-table.tsx` never
+   * passes this and is unaffected.
+   */
+  // "Add" only, never "Update": Ruling 34 removed the update caption when the
+  // writer turned out to POST a create for every non-array entity, so a row
+  // captioned "Update" was the one it would have DUPLICATED. Keeping the word
+  // representable here is what lets it come back by accident.
+  rowNotice?: (row: Row) => { needsReview?: boolean; action?: "Add" };
+  /**
+   * What one row IS, for the totals row's count ("25 accounts"). Defaults to
+   * rows, which is the honest generic answer but reads as internal language on
+   * an advisor screen — every real table should name its own entity.
+   *
+   * Only consulted when some column opts into `total`.
+   */
+  totalsNoun?: { one: string; many: string };
 }
 
 const RIGHT_ALIGN_KINDS: ReadonlySet<ColumnKind> = new Set([
@@ -221,6 +252,9 @@ export default function EntityTable<Row extends EntityRow>({
   commitBlockedReason,
   expand,
   expandLabel,
+  ariaLabel,
+  rowNotice,
+  totalsNoun = { one: "row", many: "rows" },
 }: EntityTableProps<Row>) {
   const [editing, setEditing] = useState<{ rowId: string; key: string } | null>(null);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
@@ -260,6 +294,44 @@ export default function EntityTable<Row extends EntityRow>({
       });
   };
 
+  // The figures under the table, for every column that opted into `total`.
+  //
+  // Computed over `rows` — the set the table is SHOWING — so the footer can
+  // never disagree with the rows above it. That one rule settles the cases
+  // that look like separate decisions: a rollup `detectRollups` moved into
+  // `excluded` is not summed (it is "a total covering N accounts already
+  // listed", so adding it would double count the household), one the advisor
+  // lifts back with "Include anyway" starts counting because it is then a row,
+  // and a committed row keeps counting because it is still on screen.
+  //
+  // Null for a table with nothing to total, and for an empty one — a footer
+  // reading "0 accounts · $0" under no rows states a total nobody computed.
+  //
+  // Derived inline, NOT memoized, following this feature's own precedent
+  // (`summarizeMapWarnings` in `chat-surface.tsx`): the input is bounded by
+  // accounts-per-import, and a `useMemo` keyed on `columns` would recompute
+  // every render anyway — the only caller builds its column spec inline, so
+  // the dependency is a fresh array identity each time. A memo that never
+  // caches is just a claim to future readers that this path is cached.
+  const totalledColumns = columns.filter((col) => col.total);
+  const totals =
+    totalledColumns.length > 0 && rows.length > 0
+      ? new Map(
+          totalledColumns.map(
+            (col) =>
+              [col.key, columnTotal(rows as unknown as Record<string, unknown>[], col.key)] as const,
+          ),
+        )
+      : null;
+
+  // Which totalled columns could not cover every row, for the footnote under
+  // the figures. Derived from `totals` so the sentence and the sum can never
+  // disagree about whether there is a gap.
+  const shortfalls = totalledColumns.flatMap((col) => {
+    const missing = totals?.get(col.key)?.missing ?? 0;
+    return missing > 0 ? [{ header: col.header, missing }] : [];
+  });
+
   // Reused to label an excluded row with the same identity the main table
   // shows for it — the first column, by the convention every entity's
   // column spec follows (name/label first).
@@ -284,7 +356,7 @@ export default function EntityTable<Row extends EntityRow>({
         if (e.key === "Escape" && editing) setEditing(null);
       }}
     >
-      <table className="w-full text-left text-sm">
+      <table className="w-full text-left text-sm" aria-label={ariaLabel}>
         <thead>
           <tr className="border-b border-hair text-xs uppercase tracking-wide text-ink-3">
             {expand && <th className="w-10 py-2 pl-3 pr-1" />}
@@ -306,6 +378,11 @@ export default function EntityTable<Row extends EntityRow>({
             const isPending = rowId != null && pending.has(rowId);
             const child = expand?.(row, { isCommitted });
             const blockedReason = isCommitted ? null : (commitBlockedReason?.(row) ?? null);
+            // Neither field here blocks the commit — a row can need review AND
+            // still be committable — so this is computed independently of
+            // `blockedReason`, and withheld once committed for the same reason
+            // `blockedReason` is: the decision it informs is already made.
+            const notice = isCommitted ? undefined : rowNotice?.(row);
             const isExpanded = rowId != null && expanded.has(rowId);
 
             return (
@@ -378,6 +455,29 @@ export default function EntityTable<Row extends EntityRow>({
                     );
                   })}
                   <td className="px-3 py-2 text-right">
+                    {(notice?.needsReview || notice?.action) && (
+                      <div className="mb-1 flex items-center justify-end gap-1.5">
+                        {notice.needsReview && (
+                          // Color is never the only signal (ui-ux-pro-max
+                          // `color-not-only`) — the label carries the meaning,
+                          // the warn tone is the accent. Same pill shape as
+                          // `AssumedChip`, so a "this needs a look" marker
+                          // reads consistently wherever it shows up.
+                          <span
+                            data-testid="needs-review"
+                            title="Confidence is below the review threshold — check this value before committing."
+                            className="inline-flex items-center gap-1 rounded border border-warn/30 bg-warn/15 px-2 py-0.5 text-xs font-medium text-warn"
+                          >
+                            Needs review
+                          </span>
+                        )}
+                        {notice.action && (
+                          <span className="text-xs font-normal text-ink-3">
+                            {notice.action}
+                          </span>
+                        )}
+                      </div>
+                    )}
                     <button
                       type="button"
                       onClick={() => commit(rowId)}
@@ -415,6 +515,82 @@ export default function EntityTable<Row extends EntityRow>({
             );
           })}
         </tbody>
+        {totals && (
+          // Hierarchy comes from weight and a stronger hairline, never from
+          // color: the accent is reserved for action, and coloring a figure
+          // with it to make it "pop" is a brand violation.
+          <tfoot>
+            <tr className="border-t border-hair-2 font-semibold text-ink">
+              {expand && <td className="py-2 pl-3 pr-1" />}
+              {columns.map((col, i) => {
+                const total = totals.get(col.key);
+                if (total) {
+                  return (
+                    <td
+                      key={col.key}
+                      // Through `alignFor`, not a hardcoded `text-right`: it is
+                      // the one place a column's `align` override is honored,
+                      // and the header and body cells both already go through
+                      // it. A second copy here would silently disagree with the
+                      // column it sits under.
+                      className={`tabular px-3 py-2 ${alignFor(col) === "right" ? "text-right" : "text-left"}`}
+                    >
+                      {formatValue(col.kind, total.sum)}
+                    </td>
+                  );
+                }
+                // Column 0 by the same convention `label` above relies on —
+                // every entity's spec puts name/label first. A spec that
+                // totalled its first column would already have broken `label`,
+                // so hunting for "the first column that isn't a total" was
+                // defending a state this file treats as impossible elsewhere.
+                if (i === 0) {
+                  return (
+                    <th
+                      key={col.key}
+                      scope="row"
+                      // `whitespace-nowrap` because the identity column is
+                      // sized for names, not for this label — "31 accounts"
+                      // otherwise breaks after the figure.
+                      className="whitespace-nowrap px-3 py-2 text-left font-semibold"
+                    >
+                      <span className="tabular">{rows.length.toLocaleString("en-US")}</span>{" "}
+                      {rows.length === 1 ? totalsNoun.one : totalsNoun.many}
+                    </th>
+                  );
+                }
+                return <td key={col.key} className="px-3 py-2" />;
+              })}
+              <td className="px-3 py-2" />
+            </tr>
+            {/*
+             * The gap gets its own full-width row rather than a note tucked
+             * under the figure: inside a money column it wrapped to three
+             * lines ("excludes 1 / without a / value"), and a figure the
+             * advisor is reconciling should not sit above a stack of broken
+             * text. With the width it can say what it MEANS — a total under 25
+             * rows reads as covering all 25 unless it says otherwise. Text,
+             * not a color or an icon alone (`color-not-only`).
+             */}
+            {shortfalls.length > 0 && (
+              <tr className="border-t border-hair">
+                <td
+                  // `columns.length + 2` matches the expanded-child row above:
+                  // the leading disclosure cell plus the trailing action cell.
+                  colSpan={columns.length + 2}
+                  className="px-3 pb-2 pt-1.5 text-xs font-normal text-ink-3"
+                >
+                  {shortfalls.map((s) => (
+                    <div key={s.header}>
+                      {s.header} excludes <span className="tabular">{s.missing}</span>{" "}
+                      {s.missing === 1 ? totalsNoun.one : totalsNoun.many} without a figure.
+                    </div>
+                  ))}
+                </td>
+              </tr>
+            )}
+          </tfoot>
+        )}
       </table>
       <ExcludedRows excluded={excluded} label={label} onRestore={onRestore} />
     </div>

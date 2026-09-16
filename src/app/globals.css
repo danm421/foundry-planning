@@ -30,6 +30,23 @@
   --color-card-hover: #1f2330;
   --color-card-active: #262b3a;
 
+  /* Letterhead plate — the ground an uploaded FIRM logo stands on.
+
+     The rule this encodes: every mark carries its own ground. Our own lockup
+     SVG bakes a dark one into the file, a PDF page simply IS one, and an
+     advisor's uploaded logo gets this plate. That logo is a print asset —
+     black ink on transparent, drawn for white paper — so its ground has to be
+     constant, which is why this token alone is declared here and never
+     re-cut by the light or industrial blocks (the radii below ARE re-cut;
+     this is not that). Both dark themes would otherwise paint the mark
+     black-on-black (paper is #0b0c0f dark, #111419 industrial); under the
+     light theme it equals `paper` and reads as no plate at all.
+
+     The value tracks `colorsLight.paper` in src/brand/index.ts — the cream
+     every client report already prints this same logo on, via
+     `PDF_THEME.paper`. src/brand/index.test.ts fails if the two ever drift. */
+  --color-letterhead: #fefdf8;
+
   /* Ink — high-contrast on near-black */
   --color-ink: #f4f5f7;
   --color-ink-2: #d4d7de;
@@ -279,6 +296,7 @@
   --color-card-2: var(--color-card-2);
   --color-card-hover: var(--color-card-hover);
   --color-card-active: var(--color-card-active);
+  --color-letterhead: var(--color-letterhead);
 
   --color-ink: var(--color-ink);
   --color-ink-2: var(--color-ink-2);

@@ -3,9 +3,8 @@
 // the shared #portal-detail aside (bottom sheet < lg) — the same surface the
 // Transactions / Recurrings / Budget / Accounts pages use.
 import Link from "next/link";
-import { useEffect, useState, type ReactElement } from "react";
+import { type ReactElement } from "react";
 import { fmtDay, fmtUsd } from "@/lib/portal/format";
-import { usePortalFetch } from "@/components/portal/portal-mode-context";
 import {
   CloseButton,
   Row,
@@ -13,7 +12,7 @@ import {
 } from "@/components/portal/portal-detail-rail";
 import { BudgetCategoryDetail } from "@/components/portal/budget-category-detail";
 import { RecurringDetailPanel } from "@/components/portal/recurring-detail-panel";
-import { CategoryComboBox } from "@/components/portal/category-combobox";
+import { CategoryComboBox, type CategoryRow } from "@/components/portal/category-combobox";
 import { CategoryPill } from "@/components/portal/category-pill";
 import type {
   NetWorthLine,
@@ -27,14 +26,6 @@ export type DashboardDetailPayload =
   | { kind: "transaction"; id: string }
   | { kind: "networth" }
   | { kind: "spending" };
-
-type CategoryRow = {
-  id: string;
-  name: string;
-  kind: "group" | "category";
-  parentId: string | null;
-  color: string | null;
-};
 
 function monthLabel(month: string): string {
   return new Date(`${month}-01T00:00:00Z`).toLocaleDateString("en-US", {
@@ -58,68 +49,27 @@ function FooterLink({ href, label }: { href: string; label: string }): ReactElem
 /**
  * To-review drill-down: the transaction facts plus, when editing is enabled,
  * a category picker and "Mark as reviewed" — the review queue is clearable
- * right from the dashboard.
+ * right from the dashboard. Both write through DashboardGrid, which owns the
+ * queue, so a category picked here shows on the tile row behind the rail.
  */
 function ReviewTransactionPanel({
   txn,
   editEnabled,
+  categories,
+  error,
+  onPickCategory,
   onMarkReviewed,
   onClose,
 }: {
   txn: ReviewTxn;
   editEnabled: boolean;
+  categories: CategoryRow[];
+  error: boolean;
+  onPickCategory: (categoryId: string | null) => void;
   onMarkReviewed: () => void;
   onClose: () => void;
 }): ReactElement {
-  const portalFetch = usePortalFetch();
   const basePath = usePortalBasePath();
-  const [categories, setCategories] = useState<CategoryRow[]>([]);
-  const [cat, setCat] = useState({
-    id: txn.categoryId,
-    name: txn.categoryName,
-    color: txn.categoryColor,
-  });
-  const [error, setError] = useState(false);
-
-  // Categories load on demand — only an editable panel needs the picker.
-  useEffect(() => {
-    if (!editEnabled) return;
-    let live = true;
-    void portalFetch("/api/portal/categories")
-      .then((r) => (r.ok ? r.json() : { categories: [] }))
-      .then((d: { categories: CategoryRow[] }) => {
-        if (live) setCategories(d.categories ?? []);
-      })
-      .catch(() => {
-        if (live) setCategories([]);
-      });
-    return () => {
-      live = false;
-    };
-  }, [editEnabled, portalFetch]);
-
-  async function pickCategory(catId: string | null): Promise<void> {
-    if (catId === cat.id) return;
-    setError(false);
-    const prev = cat;
-    const picked = catId ? categories.find((c) => c.id === catId) : null;
-    setCat({ id: catId, name: picked?.name ?? null, color: picked?.color ?? null });
-    try {
-      const res = await portalFetch(`/api/portal/transactions/${txn.id}`, {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ categoryId: catId }),
-      });
-      if (!res.ok) {
-        setCat(prev);
-        setError(true);
-      }
-    } catch {
-      setCat(prev);
-      setError(true);
-    }
-  }
-
   const n = txn.amount;
   return (
     <div className="space-y-4 rounded-xl border border-hair bg-card p-5">
@@ -140,13 +90,13 @@ function ReviewTransactionPanel({
             {editEnabled ? (
               <CategoryComboBox
                 categories={categories}
-                value={cat.id}
-                currentName={cat.name}
-                currentColor={cat.color}
-                onPick={(id) => void pickCategory(id)}
+                value={txn.categoryId}
+                currentName={txn.categoryName}
+                currentColor={txn.categoryColor}
+                onPick={onPickCategory}
               />
             ) : (
-              <CategoryPill name={cat.name} color={cat.color} />
+              <CategoryPill name={txn.categoryName} color={txn.categoryColor} />
             )}
           </dd>
         </div>
@@ -304,8 +254,11 @@ export function DashboardDetailPanel({
   dto,
   reviewItems,
   editEnabled,
+  categories,
+  failedIds,
   onOpenCategory,
   onMarkReviewed,
+  onPickCategory,
   onClose,
 }: {
   payload: DashboardDetailPayload;
@@ -313,8 +266,12 @@ export function DashboardDetailPanel({
   /** Live to-review queue (owned by DashboardGrid so tile + panel stay in sync). */
   reviewItems: ReviewTxn[];
   editEnabled: boolean;
+  categories: CategoryRow[];
+  /** Rows whose last queue write failed, or null — owned by DashboardGrid. */
+  failedIds: string[] | null;
   onOpenCategory: (categoryId: string, name: string) => void;
   onMarkReviewed: (id: string) => void;
+  onPickCategory: (id: string, categoryId: string | null) => void;
   onClose: () => void;
 }): ReactElement {
   const basePath = usePortalBasePath();
@@ -360,11 +317,11 @@ export function DashboardDetailPanel({
     if (!t) return <EmptyPanel onClose={onClose} />;
     return (
       <ReviewTransactionPanel
-        // Keyed so category state re-seeds when the user jumps straight from
-        // one to-review row to another (the panel doesn't unmount in between).
-        key={t.id}
         txn={t}
         editEnabled={editEnabled}
+        categories={categories}
+        error={failedIds?.includes(t.id) ?? false}
+        onPickCategory={(categoryId) => onPickCategory(t.id, categoryId)}
         onMarkReviewed={() => onMarkReviewed(t.id)}
         onClose={onClose}
       />

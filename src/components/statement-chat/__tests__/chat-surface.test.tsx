@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import { render, screen, fireEvent, within, act, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ChatSurface } from "../chat-surface";
 
@@ -379,6 +379,127 @@ describe("ChatSurface — wiring the table in (Task 10b)", () => {
     // really committed?" check on the server, not a client precondition, so
     // the button stays clickable and the server's 409 does the talking.
     expect(screen.getByRole("button", { name: /finish import/i })).toBeEnabled();
+  });
+
+  /**
+   * Final review, deferred #17 promoted to MUST-FIX (Ruling 38). The finalize
+   * route counts ACCOUNT rows only, so an advisor could close an import with
+   * uncommitted policies — and combined with I5 that DISCARDED them, with no
+   * warning and no way back short of re-uploading. `finalize/route.ts` is
+   * deliberately untouched: the minimum honest fix is saying so on screen.
+   */
+  /** A resumed draft: accounts already on the payload (so the Finish import
+   *  card renders via mount hydration), plus whatever map rows the last visit
+   *  stored. No extraction is run — which is exactly the state Ruling 38 is
+   *  about, since `runPass` would clear the stored rows. */
+  function renderResumedDraft(mapRows: Record<string, unknown[]>) {
+    vi.mocked(fetch).mockReset();
+    vi.mocked(fetch).mockResolvedValue(
+      importGetResponse({
+        payload: {
+          accounts: [
+            { name: "IRA", custodian: "Schwab", category: "taxable", subType: "brokerage", value: 100, __rowId: "r1" },
+          ],
+        },
+      }),
+    );
+    return render(
+      <ChatSurface
+        clientId="c1"
+        importId="i1"
+        initialFiles={initialFiles}
+        initialMapRows={mapRows as never}
+      />,
+    );
+  }
+
+  function storedPolicy(extra: Record<string, unknown> = {}) {
+    return {
+      entityId: "disability_policy",
+      rowId: "f1:disability_policy:0",
+      values: [{ key: "name", value: "Group LTD", snippet: "x", confidence: 0.9 }],
+      missingRequired: [],
+      rowConfidence: 0.9,
+      ...extra,
+    };
+  }
+
+  it("warns beside Finish import when map rows are still uncommitted", async () => {
+    renderResumedDraft({ disability_policy: [storedPolicy()] });
+
+    expect(await screen.findByRole("button", { name: /finish import/i })).toBeInTheDocument();
+    expect(
+      screen.getByText(/1 row in .Policies and other details. below has not been committed/i),
+    ).toBeInTheDocument();
+  });
+
+  it("says nothing beside Finish import when every map row is already committed", async () => {
+    // The negative half: without it a hardcoded warning passes the test above.
+    // `useMapRows` seeds the lock from the stamp the commit's PATCH wrote.
+    renderResumedDraft({
+      disability_policy: [storedPolicy({ match: { kind: "exact", existingId: "dis_9" } })],
+    });
+
+    expect(await screen.findByRole("button", { name: /finish import/i })).toBeInTheDocument();
+    expect(screen.queryByText(/not been committed/i)).not.toBeInTheDocument();
+  });
+
+  /**
+   * Re-review gap: the test above rehydrates its row via `initialMapRows`,
+   * which `useMapRows`'s committed-row seed locks anyway — so it passes even
+   * if `uncommittedMapRows` counted every uncommitted row, exact match
+   * included. This row is instead produced by a PASS IN THIS SESSION
+   * (`runPass` clears that seed at the start of every pass), the actual path
+   * a false, permanent warning was reachable from: `entity-tables.tsx`
+   * refuses to let an `exact` match commit at all, so `committedRowIds` can
+   * never catch up to it.
+   */
+  it("says nothing beside Finish import for an in-session row that already exists (match.kind exact)", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeFramedResponse([oneRowDoneFrame()]));
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          rows: {
+            disability_policy: [
+              storedPolicy({ match: { kind: "exact", existingId: "dis_9" } }),
+            ],
+          },
+          warnings: [],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={initialFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+
+    expect(await screen.findByRole("button", { name: /finish import/i })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("Group LTD")).toBeInTheDocument());
+    expect(screen.queryByText(/not been committed/i)).not.toBeInTheDocument();
+  });
+
+  // The positive half in the same in-session path: a genuinely uncommitted
+  // `new` row must still be counted and still produce the warning.
+  it("still warns beside Finish import for an in-session row that is genuinely new", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeFramedResponse([oneRowDoneFrame()]));
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          rows: { disability_policy: [storedPolicy({ match: { kind: "new" } })] },
+          warnings: [],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={initialFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+
+    expect(await screen.findByRole("button", { name: /finish import/i })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("Group LTD")).toBeInTheDocument());
+    expect(
+      screen.getByText(/1 row in .Policies and other details. below has not been committed/i),
+    ).toBeInTheDocument();
   });
 });
 
@@ -1345,5 +1466,341 @@ describe("ChatSurface — a flush failure tells the advisor their question was n
     // Re-enabled, and the question wasn't lost.
     expect(sendButton()).toBeEnabled();
     expect(textbox).toHaveValue("what's the total?");
+  });
+});
+
+/**
+ * Task 14b Step 3 — the map-driven review tables.
+ *
+ * Fifteen tasks built the extraction, the matching, the request builder, the
+ * tables and the commit function, and nothing called any of it. These tests
+ * are the ones that go red if the surface stops calling it again.
+ */
+describe("ChatSurface — the map-driven review tables (Task 14b)", () => {
+  const twoFiles = [
+    { serverFileId: "f1", name: "life.pdf", documentType: "auto" },
+    { serverFileId: "f2", name: "ltd.pdf", documentType: "auto" },
+  ];
+  const MAP_PASS = "/api/clients/c1/imports/i1/chat/map-pass";
+
+  function policyRow(rowId: string, name: string) {
+    return {
+      entityId: "disability_policy",
+      rowId,
+      values: [
+        { key: "name", value: name, snippet: "x", confidence: 0.9 },
+        { key: "insured", value: "client", snippet: "x", confidence: 0.9 },
+        // Required by `disabilityPolicyCreateSchema`'s cross-field rule at the
+        // default "to_age" benefit period, which `buildWriteRequest` now
+        // validates against (I4).
+        { key: "ltdBenefitPeriodAge", value: 65, snippet: "x", confidence: 0.9 },
+      ],
+      missingRequired: [],
+      rowConfidence: 0.9,
+    };
+  }
+
+  /** An extraction stream that finds NO accounts — the shape a genuine life
+   *  insurance statement takes, and the one that proves the policies table is
+   *  not hidden behind the accounts table's own render gate. */
+  const doneWithNoAccounts = `data: ${JSON.stringify({
+    type: "done",
+    summary: "Read 2 statements covering 0 accounts.",
+    caveats: [],
+    rows: [],
+    excluded: [],
+  })}\n\n`;
+
+  function mapPassCalls() {
+    return vi
+      .mocked(fetch)
+      .mock.calls.filter(([url, init]) =>
+        String(url) === MAP_PASS && (init as RequestInit | undefined)?.method === "POST",
+      );
+  }
+
+  it("runs the pass once per uploaded file after the stream, and renders its rows even with no accounts", async () => {
+    vi.mocked(fetch).mockImplementation((url, init) => {
+      if (String(url).endsWith("/chat/extract")) {
+        return Promise.resolve(makeFramedResponse([doneWithNoAccounts]));
+      }
+      if (String(url) === MAP_PASS) {
+        const fileId = JSON.parse(String((init as RequestInit).body)).fileId as string;
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              rows: { disability_policy: [policyRow(`${fileId}:disability_policy:0`, `Policy ${fileId}`)] },
+              warnings: [],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }));
+    });
+
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={twoFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+
+    expect(await screen.findByRole("table", { name: /disability policy/i })).toBeInTheDocument();
+    // One POST per file, each naming its own file — not one call for the import.
+    expect(mapPassCalls().map(([, init]) => JSON.parse(String((init as RequestInit).body)).fileId)).toEqual([
+      "f1",
+      "f2",
+    ]);
+    // Both files' rows, merged — not just the last one's.
+    expect(screen.getByText("Policy f1")).toBeInTheDocument();
+    expect(screen.getByText("Policy f2")).toBeInTheDocument();
+    // And it renders even though this statement produced no ACCOUNTS at all.
+    expect(screen.getByText("No accounts found in these statements.")).toBeInTheDocument();
+  });
+
+  // Finding 5: the test above asserts the table renders, NOT where. This one
+  // asserts the order the brief asked for — the policies card below the
+  // accounts table — which is the half a co-presence assertion cannot see.
+  it("renders the policies card below the accounts table when the statement has both", async () => {
+    vi.mocked(fetch).mockImplementation((url) => {
+      if (String(url).endsWith("/chat/extract")) {
+        return Promise.resolve(
+          makeFramedResponse([
+            `data: ${JSON.stringify({
+              type: "done",
+              summary: "Read 2 statements.",
+              caveats: [],
+              rows: [{ name: "IRA", custodian: "Schwab", value: 100, __rowId: "r1" }],
+              excluded: [],
+            })}\n\n`,
+          ]),
+        );
+      }
+      if (String(url) === MAP_PASS) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              rows: { disability_policy: [policyRow("f1:disability_policy:0", "Group LTD")] },
+              warnings: [],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }));
+    });
+
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={twoFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+
+    await screen.findByRole("heading", { name: "Policies and other details" });
+    const headings = screen.getAllByRole("heading").map((h) => h.textContent);
+    expect(headings.indexOf("Accounts")).toBeGreaterThanOrEqual(0);
+    expect(headings.indexOf("Accounts")).toBeLessThan(
+      headings.indexOf("Policies and other details"),
+    );
+  });
+
+  it("does not run the pass while the extraction stream is still open", async () => {
+    const encoder = new TextEncoder();
+    let controller!: ReadableStreamDefaultController<Uint8Array>;
+    const stream = new ReadableStream<Uint8Array>({
+      start(c) {
+        controller = c;
+      },
+    });
+
+    vi.mocked(fetch).mockImplementation((url) => {
+      if (String(url).endsWith("/chat/extract")) {
+        return Promise.resolve(
+          new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } }),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ rows: {}, warnings: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    });
+
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={twoFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+
+    // The stream is open and has already delivered a per-file event: the
+    // surface is mid-extraction, and a pass launched here would read a
+    // payloadJson the extraction is still writing.
+    await act(async () => {
+      controller.enqueue(
+        encoder.encode(
+          `data: ${JSON.stringify({ type: "file", fileName: "life.pdf", accountCount: 0 })}\n\n`,
+        ),
+      );
+    });
+    // Two matches: UploadZone's own file row, plus the Progress step line the
+    // event just added — i.e. the stream is live and being consumed.
+    await waitFor(() => expect(screen.getAllByText("life.pdf")).toHaveLength(2));
+    expect(screen.getByRole("button", { name: /reading statements/i })).toBeInTheDocument();
+    expect(mapPassCalls()).toHaveLength(0);
+
+    await act(async () => {
+      controller.enqueue(encoder.encode(doneWithNoAccounts));
+      controller.close();
+    });
+    await waitFor(() => expect(mapPassCalls()).toHaveLength(2));
+  });
+
+  /**
+   * Fix round 1, Finding 2. The stream's own `status` flips to "done" before
+   * the pass starts, so without a second gate the Extract button re-enables and
+   * reads "Re-run extraction" while the pass is still POSTing — and with no
+   * indicator the advisor has no way to know. A second click starts a SECOND
+   * pass on the same import: exactly the `payloadJson` read-modify-write race
+   * the sequential loop exists to close, plus duplicate rowIds in the table.
+   */
+  it("keeps the extract button disabled and shows progress while the pass is still running", async () => {
+    const release: Array<(r: Response) => void> = [];
+    vi.mocked(fetch).mockImplementation((url) => {
+      if (String(url).endsWith("/chat/extract")) {
+        return Promise.resolve(makeFramedResponse([doneWithNoAccounts]));
+      }
+      if (String(url) === MAP_PASS) {
+        return new Promise<Response>((resolve) => release.push(resolve));
+      }
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }));
+    });
+
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={twoFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+
+    // The stream has closed and the pass has started.
+    await waitFor(() => expect(mapPassCalls()).toHaveLength(1));
+    const button = screen.getByRole("button", { name: /reading policies/i });
+    expect(button).toBeDisabled();
+    expect(screen.getByText(/reading policies and other details…/i)).toBeInTheDocument();
+
+    await act(async () => {
+      release[0](
+        new Response(JSON.stringify({ rows: {}, warnings: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    });
+    await waitFor(() => expect(mapPassCalls()).toHaveLength(2));
+    // Still disabled for the SECOND file — the window is the whole pass, not
+    // one request of it.
+    expect(screen.getByRole("button", { name: /reading policies/i })).toBeDisabled();
+
+    await act(async () => {
+      release[1](
+        new Response(JSON.stringify({ rows: {}, warnings: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /re-run extraction/i })).toBeEnabled(),
+    );
+    expect(screen.queryByText(/reading policies and other details…/i)).not.toBeInTheDocument();
+  });
+
+  it("renders no policies card when the pass found nothing", async () => {
+    vi.mocked(fetch).mockImplementation((url) => {
+      if (String(url).endsWith("/chat/extract")) {
+        return Promise.resolve(makeFramedResponse([doneWithNoAccounts]));
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ rows: {}, warnings: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    });
+
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={twoFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+
+    await waitFor(() => expect(mapPassCalls()).toHaveLength(2));
+    // An empty card on every import is noise. Matched on the heading EXACTLY:
+    // the warnings card's own header also contains that phrase, so a loose
+    // regex here would pass for the wrong reason the moment a warning lands.
+    expect(
+      screen.queryByRole("heading", { name: "Policies and other details" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  /**
+   * Final review I5 / Ruling 37, the wiring half. Rows persisted under
+   * `chat.entityRows` had no reader at all — the page passed none and
+   * `useMapRows` started empty — so coming back to the import lost the
+   * policies card, and re-running the extraction re-armed a commit that had
+   * already written its record.
+   */
+  it("renders the stored policies on mount, with no extraction run", async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+    render(
+      <ChatSurface
+        clientId="c1"
+        importId="i1"
+        initialFiles={twoFiles}
+        initialMapRows={{ disability_policy: [policyRow("f1:disability_policy:0", "Group LTD")] }}
+      />,
+    );
+
+    expect(await screen.findByRole("table", { name: /disability policy/i })).toBeInTheDocument();
+    expect(screen.getByText("Group LTD")).toBeInTheDocument();
+    // Nothing was extracted in this session — the card is on the STORED rows.
+    expect(mapPassCalls()).toHaveLength(0);
+  });
+
+  it("shows a stored row the PATCH already stamped as committed", async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+    const stamped = {
+      ...policyRow("f1:disability_policy:0", "Group LTD"),
+      match: { kind: "exact" as const, existingId: "dis_9" },
+    };
+    render(
+      <ChatSurface
+        clientId="c1"
+        importId="i1"
+        initialFiles={twoFiles}
+        initialMapRows={{ disability_policy: [stamped] }}
+      />,
+    );
+
+    const target = await screen.findByRole("row", { name: /Group LTD/ });
+    expect(within(target).getByRole("button", { name: /committed/i })).toBeDisabled();
+  });
+
+  it("surfaces the pass's warnings where the advisor can see them", async () => {
+    vi.mocked(fetch).mockImplementation((url) => {
+      if (String(url).endsWith("/chat/extract")) {
+        return Promise.resolve(makeFramedResponse([doneWithNoAccounts]));
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ error: "This document produced no readable text." }), {
+          status: 422,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    });
+
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={twoFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+
+    // A pass that produced no rows still has to say why, or a failed read is
+    // indistinguishable from a document with no policies in it.
+    //
+    // Both files are still NAMED (M11) — "one of your statements failed" with
+    // no name is not something an advisor can act on, and neither is a raw
+    // file-id UUID, which is what this used to print. They now share ONE line
+    // instead of repeating the sentence per file, and the file name appears
+    // once rather than twice; see `summarizeMapWarnings`.
+    expect(
+      await screen.findByText(
+        "This document produced no readable text. — 2 documents: life.pdf and ltd.pdf",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/life\.pdf: life\.pdf/)).not.toBeInTheDocument();
   });
 });

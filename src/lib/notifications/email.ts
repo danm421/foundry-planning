@@ -4,8 +4,8 @@
 // contract: no RESEND_API_KEY means log-and-skip rather than throw, so a local
 // or preview environment without mail configured runs the cron harmlessly.
 //
-// Unlike sendIntakeFormEmail this REPORTS delivery, because the digest worker
-// must not stamp rows as emailed for a send that never happened.
+// REPORTS delivery, because the digest worker must not stamp rows as emailed
+// for a send that never happened.
 import { Resend } from "resend";
 
 const FROM = "Foundry Planning <alerts@foundryplanning.com>";
