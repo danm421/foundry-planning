@@ -307,4 +307,26 @@ describe("scopePath via parentColumn", () => {
     const broken = { ...entity, scopePath: { via: "parentColumn", through: "clients", on: "householdId", parentColumn: "nope" } } as unknown as DetailEntity;
     await expect(loadExistingRows({ entity: broken, clientId: "client-1" })).rejects.toThrow(/nope/);
   });
+
+  // The three remaining guards on the shared join body, each reached down the
+  // parentColumn path. They sit on the cross-tenant boundary: every one of them
+  // must throw, because the alternative — an unfiltered read — hands back every
+  // firm's contacts.
+
+  it("refuses when `through` is not a table in the schema", async () => {
+    const broken = { ...entity, scopePath: { ...entity.scopePath, through: "notARealTable" } } as unknown as DetailEntity;
+    await expect(loadExistingRows({ entity: broken, clientId: "client-1" })).rejects.toThrow(/notARealTable/);
+  });
+
+  it("refuses when the parent table has no id to filter by", async () => {
+    // lifeInsurancePolicies' primary key IS accountId; it has no `id` column at
+    // all, so there is nothing for the client filter to scope against.
+    const broken = { ...entity, scopePath: { ...entity.scopePath, through: "lifeInsurancePolicies", parentColumn: "accountId" } } as unknown as DetailEntity;
+    await expect(loadExistingRows({ entity: broken, clientId: "client-1" })).rejects.toThrow(/has no id\/clientId to scope by/);
+  });
+
+  it("refuses when `on` names a column the entity's own table does not have", async () => {
+    const broken = { ...entity, scopePath: { ...entity.scopePath, on: "notAColumn" } } as unknown as DetailEntity;
+    await expect(loadExistingRows({ entity: broken, clientId: "client-1" })).rejects.toThrow(/joins on "notAColumn"/);
+  });
 });
