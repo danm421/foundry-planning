@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { SharedRow } from "@/app/(app)/clients/clients-content";
+import { RECORD_NAME_LINK, ROW_HOVER } from "../table-styles";
 
 // ---------------------------------------------------------------------------
 // Inline SVG — lucide-react is absent in this worktree.
@@ -80,12 +81,18 @@ export function SharedWithMeTable({ rows }: Props) {
         </thead>
         <tbody className="divide-y divide-hair">
           {rows.map((row) => (
-            <tr key={row.clientId} className="hover:bg-card-2">
-              {/* Client name — links to the planning detail page */}
+            // `ROW_HOVER`, not `card-2`: this row's permission and sharer
+            // badges are both filled `card-2`, so hovering to it erased them.
+            <tr key={row.clientId} className={ROW_HOVER}>
+              {/* Client name — links to the planning detail page. Shares the
+                  clients table's treatment on purpose: both tables render a
+                  client's name on the same screen, and an advisor reported the
+                  hover-only underline this replaced as "nothing is clickable". */}
               <td className="whitespace-nowrap px-6 py-4">
                 <Link
                   href={`/clients/${row.clientId}/overview`}
-                  className="font-medium text-ink hover:text-accent hover:underline"
+                  className={RECORD_NAME_LINK}
+                  title={row.displayName}
                 >
                   {row.displayName}
                 </Link>
