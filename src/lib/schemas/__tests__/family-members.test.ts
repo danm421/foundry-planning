@@ -26,6 +26,38 @@ describe("familyMemberCreateSchema", () => {
     expect(parsed.data.dateOfBirth).toBeNull();
   });
 
+  it("takes an explicit null date of birth, and an omitted one, as null", () => {
+    const explicit = familyMemberCreateSchema.safeParse({ firstName: "Emma", dateOfBirth: null });
+    const omitted = familyMemberCreateSchema.safeParse({ firstName: "Emma" });
+    if (!explicit.success || !omitted.success) throw new Error("expected success");
+    expect(explicit.data.dateOfBirth).toBeNull();
+    expect(omitted.data.dateOfBirth).toBeNull();
+  });
+
+  it("accepts a real date of birth", () => {
+    const parsed = familyMemberCreateSchema.safeParse({ firstName: "Emma", dateOfBirth: "2020-03-15" });
+    if (!parsed.success) throw new Error(JSON.stringify(parsed.error.issues));
+    expect(parsed.data.dateOfBirth).toBe("2020-03-15");
+  });
+
+  it("rejects a date that is shaped right but is not a real day", () => {
+    // `2020-13-45` is what `placement.ts` makes of a document printing
+    // "13/45/2020", and it matches /^\d{4}-\d{2}-\d{2}$/ — so the shape alone
+    // would let it reach the Postgres date column as a 500.
+    for (const dateOfBirth of ["2020-13-45", "2020-00-00", "2020-02-31", "2029-02-29", "15/03/2020", "2020-3-5"]) {
+      expect(
+        familyMemberCreateSchema.safeParse({ firstName: "Emma", dateOfBirth }).success,
+        dateOfBirth,
+      ).toBe(false);
+    }
+  });
+
+  it("accepts a leap day in a leap year", () => {
+    expect(
+      familyMemberCreateSchema.safeParse({ firstName: "Emma", dateOfBirth: "2028-02-29" }).success,
+    ).toBe(true);
+  });
+
   it("strips claimedAsDependent, which the create route ignores", () => {
     const parsed = familyMemberCreateSchema.safeParse({ firstName: "Emma", claimedAsDependent: "yes" });
     if (!parsed.success) throw new Error("expected success");

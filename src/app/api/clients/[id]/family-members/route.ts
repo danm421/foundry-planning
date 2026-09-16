@@ -7,6 +7,7 @@ import { recordAudit } from "@/lib/audit";
 import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
+import { summarizeZodIssues } from "@/lib/schemas/common";
 import { familyMemberCreateSchema } from "@/lib/schemas/family-members";
 
 export const dynamic = "force-dynamic";
@@ -48,10 +49,7 @@ export async function POST(
 
     const parsed = familyMemberCreateSchema.safeParse(await request.json());
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: parsed.error.issues.map((i) => i.message).join("; ") },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: summarizeZodIssues(parsed.error) }, { status: 400 });
     }
     const {
       firstName, lastName, relationship, dateOfBirth, notes,

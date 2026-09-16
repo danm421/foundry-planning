@@ -10,10 +10,32 @@ export const FAMILY_RELATIONSHIPS = [
   "niece_nephew", "aunt_uncle", "cousin", "grand_aunt_uncle", "other",
 ] as const;
 
+/**
+ * A real calendar date in `yyyy-mm-dd` — the only form the Postgres `date`
+ * column takes, the only form `<input type="date">` can submit, and the only
+ * form the extractor emits (`placement.ts`'s `date` case rewrites `13/45/2020`
+ * into `2020-13-45` and FAILs anything it cannot shape).
+ *
+ * ⚠️ The shape alone is NOT enough, which is why this is not a bare regex:
+ * `\d{2}` happily matches month `13` and day `45`, so `2020-13-45` passes any
+ * `^\d{4}-\d{2}-\d{2}$` test — this repo's own `isoDate` included — and reaches
+ * the date column as a 500. The round trip through `Date.UTC` is what rejects
+ * it: an out-of-range month or day rolls over to a different date, so
+ * comparing the parts back catches `2020-13-45`, `2020-00-00`, `2020-02-31`
+ * and a Feb 29 in a non-leap year alike.
+ */
+function isCalendarDate(v: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const [y, m, d] = v.split("-").map(Number);
+  const utc = new Date(Date.UTC(y, m - 1, d));
+  return utc.getUTCFullYear() === y && utc.getUTCMonth() === m - 1 && utc.getUTCDate() === d;
+}
+
 const nullableDate = z
   .union([z.string(), z.null()])
   .optional()
-  .transform((v) => (v == null || v === "" ? null : v));
+  .transform((v) => (v == null || v === "" ? null : v))
+  .refine((v) => v === null || isCalendarDate(v), "Must be a real date in yyyy-mm-dd form");
 
 const INHERITANCE_STATES = ["PA", "NJ", "KY", "NE", "MD"] as const;
 const INHERITANCE_CLASSES = ["A", "B", "C", "D"] as const;

@@ -372,7 +372,8 @@ export const PROFILE_ENTITIES: readonly DetailEntity[] = [
         label: "Date of Birth",
         kind: "date",
         nullable: true,
-        notes: "ISO yyyy-mm-dd. An empty string is coerced to null.",
+        notes:
+          "ISO yyyy-mm-dd. An empty string is coerced to null. On create, anything that is not a real calendar date is a 400.",
       },
       { key: "notes", label: "Notes", kind: "text", nullable: true },
       {
@@ -380,7 +381,8 @@ export const PROFILE_ENTITIES: readonly DetailEntity[] = [
         label: "Domestic partner (affects NJ/MD inheritance tax)",
         kind: "boolean",
         defaultValue: false,
-        notes: "Coerced with `!!` — any truthy value stores true.",
+        notes:
+          "Send a real boolean: the create schema rejects \"yes\" or 1 with a 400. The PUT still coerces with `!!`, where any truthy value stores true.",
       },
       {
         key: "inheritanceClassOverride",
