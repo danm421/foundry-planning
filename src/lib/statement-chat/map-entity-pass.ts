@@ -2,7 +2,7 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { clientImports } from "@/db/schema";
-import { findEntity } from "@/domain/forge/detail-fields";
+import { findEntity, type DetailEntity } from "@/domain/forge/detail-fields";
 import { extractMapEntities } from "@/lib/entity-extraction";
 // Imported from the module rather than the barrel on purpose. `matchByIdentity`
 // is pure and deterministic, and this file's tests assert the REAL exact/new
@@ -32,8 +32,12 @@ import { loadExistingRows } from "./existing-rows";
  *
  * A new people entity belongs HERE rather than in the field map: this says
  * which rows are candidates for matching, not what a field means.
+ *
+ * Exported for the ratchet in this module's tests, which pins both allowlists
+ * against the real Drizzle enums so a role added to either one cannot inherit a
+ * side by default.
  */
-const MATCHABLE_ROLES_BY_ENTITY: Record<string, readonly string[]> = {
+export const MATCHABLE_ROLES_BY_ENTITY: Record<string, readonly string[]> = {
   // `familyMemberRoleEnum` is ["client", "spouse", "child", "other"]; the
   // household sync writes the client and the spouse rows.
   family_member: ["child", "other"],
@@ -43,9 +47,33 @@ const MATCHABLE_ROLES_BY_ENTITY: Record<string, readonly string[]> = {
   related_party: ["other"],
 };
 
-function matchableExistingRows(entityId: string, existing: ExistingRow[]): ExistingRow[] {
-  const matchable = MATCHABLE_ROLES_BY_ENTITY[entityId];
+function matchableExistingRows(
+  entity: DetailEntity,
+  existing: ExistingRow[],
+  onWarning?: (message: string) => void,
+): ExistingRow[] {
+  const matchable = MATCHABLE_ROLES_BY_ENTITY[entity.id];
   if (!matchable) return existing;
+
+  // The rule reads a column, and nothing in this module owns the select that
+  // returns it — `loadExistingRows` hands back whatever `getTableColumns` gave
+  // it. Narrow that select to the identity columns one day and every row here
+  // fails the filter, the population silently becomes empty, and every test
+  // stays green because they all mock the loader.
+  //
+  // So: rows present but NOT ONE carries the key is treated exactly like a
+  // failed load — the filter below yields nothing, and the advisor is told why
+  // rather than left to read an empty population as "this client has none".
+  // Guarded on `length` because a client with no family members legitimately
+  // has no rows to carry the key, and that is not a fault.
+  if (existing.length > 0 && !existing.some((candidate) => "role" in candidate.values)) {
+    console.warn(`[map-entity-pass] existing ${entity.id} rows carry no role column`);
+    onWarning?.(
+      `Could not tell which of this client's existing ${entity.label} rows are the household's own ` +
+        "people, so every row below is offered as new. Check for duplicates before accepting them.",
+    );
+  }
+
   return existing.filter((candidate) => matchable.includes(String(candidate.values.role)));
 }
 
@@ -92,7 +120,11 @@ export async function annotateMatches(args: {
       try {
         // Filtered in the same expression the load feeds, so no later edit can
         // put an unfiltered `existing` in front of `matchByIdentity`.
-        existing = matchableExistingRows(entityId, await loadExistingRows({ entity, clientId }));
+        existing = matchableExistingRows(
+          entity,
+          await loadExistingRows({ entity, clientId }),
+          onWarning,
+        );
       } catch (err) {
         const reason = err instanceof Error ? err.message : "unknown";
         console.warn(`[map-entity-pass] could not load existing ${entityId}: ${reason}`);

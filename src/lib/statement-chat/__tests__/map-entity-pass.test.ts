@@ -7,7 +7,8 @@ vi.mock("@/db", () => ({ db: { query: {}, update: vi.fn() } }));
 
 import { extractMapEntities } from "../../entity-extraction";
 import { loadExistingRows } from "../existing-rows";
-import { annotateMatches } from "../map-entity-pass";
+import { annotateMatches, MATCHABLE_ROLES_BY_ENTITY } from "../map-entity-pass";
+import { crmContactRoleEnum, familyMemberRoleEnum } from "@/db/schema";
 import type { CandidateRow } from "@/lib/entity-extraction/types";
 
 function row(entityId: string, values: Record<string, unknown>): CandidateRow {
@@ -135,6 +136,20 @@ describe("annotateMatches — the household's own people are not match candidate
     expect(result.family_member[0].match).toEqual({ kind: "new" });
   });
 
+  // The OTHER half of the family rule, and the worse half. A fact finder's
+  // Family section that lists the client themself exact-matched `client-row` on
+  // the first name alone, and the PUT rewrote the CLIENT's own record with
+  // `relationship: "child"`. Without this, `family_member: [..., "client"]`
+  // passes every other test in this file.
+  it("offers a family member sharing the client's own first name as new", async () => {
+    vi.mocked(loadExistingRows).mockResolvedValue(familyRows);
+    const result = await annotateMatches({
+      clientId: "c1",
+      rows: { family_member: [row("family_member", { firstName: "John", relationship: "child" })] },
+    });
+    expect(result.family_member[0].match).toEqual({ kind: "new" });
+  });
+
   // NON-VACUITY. A filter that emptied the population would pass the test above
   // and duplicate every child the document names. The child must still match.
   it("still matches a family member onto an existing child", async () => {
@@ -161,6 +176,21 @@ describe("annotateMatches — the household's own people are not match candidate
     expect(result.related_party[0].match).toEqual({ kind: "new" });
   });
 
+  // The `primary` contact is the client themself, named explicitly by the
+  // brief. An extracted executor who shares their full name lands on it.
+  it("offers a related party sharing the household primary's name as new", async () => {
+    vi.mocked(loadExistingRows).mockResolvedValue(contactRows);
+    const result = await annotateMatches({
+      clientId: "c1",
+      rows: {
+        related_party: [
+          row("related_party", { firstName: "John", lastName: "Smith", relationshipLabel: "Executor" }),
+        ],
+      },
+    });
+    expect(result.related_party[0].match).toEqual({ kind: "new" });
+  });
+
   it("still matches a related party onto an existing 'other' contact", async () => {
     vi.mocked(loadExistingRows).mockResolvedValue(contactRows);
     const result = await annotateMatches({
@@ -181,12 +211,103 @@ describe("annotateMatches — the household's own people are not match candidate
     vi.mocked(loadExistingRows).mockResolvedValue([
       { id: "d9", values: { name: "Group LTD", insured: "client", carrier: "Unum" } },
     ]);
+    const onWarning = vi.fn();
     const result = await annotateMatches({
       clientId: "c1",
       rows: {
         disability_policy: [row("disability_policy", { name: "Group LTD", insured: "client", carrier: "Unum" })],
       },
+      onWarning,
     });
     expect(result.disability_policy[0].match).toEqual({ kind: "exact", existingId: "d9" });
+    // And no warning: an entity with NO role rule is not missing anything. The
+    // guard below must sit after the rule lookup, or every disability pass
+    // would carry a warning about a column that entity never had.
+    expect(onWarning).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The filter reads `values.role`, and every test above mocks the loader — so
+ * nothing here proves production rows actually carry the key. Today they do:
+ * `loadExistingRows` selects `getTableColumns(table)`. If that select were ever
+ * narrowed to the identity columns, both people populations would silently
+ * become empty in production and every test above would stay green.
+ *
+ * So a mapped entity whose rows carry no `role` key at all is treated the same
+ * way as a failed load: the population is empty, and the advisor is TOLD that
+ * is why everything below is offered as new.
+ */
+describe("annotateMatches — a mapped entity whose rows lost the role column", () => {
+  it("warns when existing rows are present but none carry a role", async () => {
+    vi.mocked(loadExistingRows).mockResolvedValue([
+      { id: "f1", values: { firstName: "Emma", lastName: "Smith" } },
+    ]);
+    const onWarning = vi.fn();
+    const result = await annotateMatches({
+      clientId: "c1",
+      rows: { family_member: [row("family_member", { firstName: "Emma" })] },
+      onWarning,
+    });
+    expect(result.family_member[0].match).toEqual({ kind: "new" });
+    expect(onWarning).toHaveBeenCalledTimes(1);
+    expect(onWarning.mock.calls[0][0]).toMatch(/offered as new/);
+  });
+
+  // THE EDGE CASE. A client with no family members at all yields an empty
+  // population legitimately — there are no rows to carry the key, and a warning
+  // here would fire for every client whose first document names a child.
+  it("stays silent when the client simply has no existing rows", async () => {
+    vi.mocked(loadExistingRows).mockResolvedValue([]);
+    const onWarning = vi.fn();
+    const result = await annotateMatches({
+      clientId: "c1",
+      rows: { family_member: [row("family_member", { firstName: "Emma" })] },
+      onWarning,
+    });
+    expect(result.family_member[0].match).toEqual({ kind: "new" });
+    expect(onWarning).not.toHaveBeenCalled();
+  });
+
+  it("stays silent when the rows do carry a role", async () => {
+    vi.mocked(loadExistingRows).mockResolvedValue([
+      { id: "f1", values: { firstName: "Emma", lastName: "Smith", role: "child" } },
+    ]);
+    const onWarning = vi.fn();
+    await annotateMatches({
+      clientId: "c1",
+      rows: { family_member: [row("family_member", { firstName: "Emma" })] },
+      onWarning,
+    });
+    expect(onWarning).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * RATCHET. `MATCHABLE_ROLES_BY_ENTITY` is an allowlist, which fails CLOSED when
+ * a role is added to either enum: the new role stops matching and the advisor
+ * sees a duplicate. The denylist form fails OPEN — the new role starts matching
+ * and can silently overwrite a row, which is the defect this whole module
+ * exists to prevent.
+ *
+ * That difference must not be discovered by accident. Each assertion below
+ * partitions the REAL Drizzle enum into the roles that may be matched and the
+ * roles that are the household's own, so adding a value to either enum — or to
+ * either allowlist — turns this red and forces someone to classify it
+ * deliberately rather than let it inherit a side.
+ */
+describe("MATCHABLE_ROLES_BY_ENTITY covers every role of both enums", () => {
+  it("classifies every familyMemberRoleEnum value as matchable or the household's own", () => {
+    const householdsOwn = ["client", "spouse"];
+    expect([...MATCHABLE_ROLES_BY_ENTITY.family_member, ...householdsOwn].sort()).toEqual(
+      [...familyMemberRoleEnum.enumValues].sort(),
+    );
+  });
+
+  it("classifies every crmContactRoleEnum value as matchable or the household's own", () => {
+    const householdsOwn = ["primary", "spouse", "dependent"];
+    expect([...MATCHABLE_ROLES_BY_ENTITY.related_party, ...householdsOwn].sort()).toEqual(
+      [...crmContactRoleEnum.enumValues].sort(),
+    );
   });
 });
