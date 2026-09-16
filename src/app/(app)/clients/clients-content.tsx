@@ -191,10 +191,13 @@ function ClientsShell({
           >
             Bulk import
           </Link>
+          {/* `action`, matching the row quick links below it. Two verdigris
+              fills on one screen — a bright one here and a deeper one in every
+              row — would read as two different buttons, not one vocabulary. */}
           <Link
             href="/crm/new"
             data-forge-anchor="crm-new-household-button"
-            className="inline-flex h-10 items-center rounded-[var(--radius-sm)] bg-accent px-4 text-[13px] font-semibold text-accent-on shadow-[0_1px_0_rgba(0,0,0,0.25)] transition-colors hover:bg-accent-ink"
+            className="inline-flex h-10 items-center rounded-[var(--radius-sm)] bg-action px-4 text-[13px] font-semibold text-action-on shadow-[0_1px_0_rgba(0,0,0,0.25)] transition-colors hover:bg-action-ink"
           >
             New household
           </Link>

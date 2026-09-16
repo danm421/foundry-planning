@@ -16,13 +16,13 @@ const ROWS = [
 
 describe("SharedWithMeTable", () => {
   // This table renders a client's name on the SAME screen as the clients list.
-  // It carried the exact defect an advisor reported — a hover-only underline —
-  // so it must not drift back to its own treatment.
-  it("gives the shared client's name the same standing link affordance", () => {
+  // What it must never do is grow its own treatment: the reported defect was
+  // one table's name behaving differently from the other's. The exact-equality
+  // assertion is the guard, and it holds whatever `RECORD_NAME_LINK` becomes.
+  it("gives the shared client's name the same link affordance as the main list", () => {
     render(<SharedWithMeTable rows={ROWS} />);
     const link = screen.getByRole("link", { name: "Ada Lovelace" });
     expect(link.className).toBe(RECORD_NAME_LINK);
-    expect(link.className).not.toMatch(/(^|\s)hover:underline(\s|$)/);
   });
 
   // Both of this row's badges are filled `card-2`, so a row that hovers to

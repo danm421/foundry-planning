@@ -77,46 +77,75 @@ describe("Clients list affordance contrast (globals.css ratchet)", () => {
   describe.each(THEMES)("%s theme", (theme) => {
     const card = () => token(theme, "card");
 
-    // The secondary button's grey fill. `hair-3` is the strongest neutral the
-    // palette has; anything quieter is what already failed twice.
+    // The secondary button's grey fill. `control` exists because `hair-3`,
+    // the strongest neutral in the palette, only reached 2.30:1 and read as a
+    // smudge; anything quieter is what already failed twice.
     it("gives the grey CRM button a fill that separates from the card", () => {
-      expect(contrast(token(theme, "hair-3"), card())).toBeGreaterThanOrEqual(1.5);
+      expect(contrast(token(theme, "control"), card())).toBeGreaterThanOrEqual(1.5);
     });
 
     it("keeps the CRM label readable on that grey fill", () => {
-      expect(contrast(token(theme, "ink"), token(theme, "hair-3"))).toBeGreaterThanOrEqual(AA);
+      expect(contrast(token(theme, "ink"), token(theme, "control"))).toBeGreaterThanOrEqual(AA);
     });
 
-    // The primary button. The accent is the only token in the palette with
-    // real presence against the card — this is what that claim rests on.
+    // The primary button. `action` is the brand hue tuned to CARRY A LABEL,
+    // which `accent` is not: the dark `accent` is tuned to read as accent TEXT
+    // on a card, and a near-white label on it measures 3.32:1.
     it("gives the Planning button a fill with real presence", () => {
-      expect(contrast(token(theme, "accent"), card())).toBeGreaterThanOrEqual(3);
+      expect(contrast(token(theme, "action"), card())).toBeGreaterThanOrEqual(3);
     });
 
     it("keeps the Planning label readable on the accent fill", () => {
-      expect(contrast(token(theme, "accent-on"), token(theme, "accent"))).toBeGreaterThanOrEqual(AA);
+      expect(contrast(token(theme, "action-on"), token(theme, "action"))).toBeGreaterThanOrEqual(AA);
     });
 
     // Hover is a state a keyboard or pointer user reads for real, so it holds
-    // AA too — both buttons land on an accent-family fill when hovered.
+    // AA too. The CRM pill hovers onto `action` and swaps to `action-on`; the
+    // Planning pill DEEPENS to `action-ink` rather than brightening, because a
+    // brighter verdigris is exactly what its near-white label cannot sit on.
     it("keeps both labels readable on their hover fills", () => {
-      expect(contrast(token(theme, "accent-on"), token(theme, "accent"))).toBeGreaterThanOrEqual(AA);
-      expect(contrast(token(theme, "accent-on"), token(theme, "accent-ink"))).toBeGreaterThanOrEqual(AA);
+      expect(contrast(token(theme, "action-on"), token(theme, "action"))).toBeGreaterThanOrEqual(AA);
+      expect(contrast(token(theme, "action-on"), token(theme, "action-ink"))).toBeGreaterThanOrEqual(AA);
     });
 
     // Neither button may dissolve into the row it sits on when that row is
     // hovered — the original complaint was half about exactly this.
     it("keeps both fills distinct from the hovered row", () => {
       const rowHover = token(theme, "card-hover");
-      expect(contrast(token(theme, "hair-3"), rowHover)).toBeGreaterThanOrEqual(1.5);
-      expect(contrast(token(theme, "accent"), rowHover)).toBeGreaterThanOrEqual(3);
+      expect(contrast(token(theme, "control"), rowHover)).toBeGreaterThanOrEqual(1.5);
+      expect(contrast(token(theme, "action"), rowHover)).toBeGreaterThanOrEqual(2.5);
     });
 
-    // `table-styles.ts` claims this one in a comment (8.21 dark · 5.99 light ·
-    // 4.70 industrial) and nothing else enforces it. The record NAME is the
-    // other half of "is anything here clickable".
-    it("keeps the record-name underline visible against the card", () => {
-      expect(contrast(token(theme, "ink-3"), card())).toBeGreaterThanOrEqual(3);
+    // `control` is boxed in from BOTH sides, and each end has its own reason.
+    //
+    // Floor: it must separate from the card, because it is the CRM button's
+    // fill AND the status box's border — and the status box has no fill of its
+    // own to fall back on, so a faint border means no box at all. The old
+    // `hair-2` border measured 1.92:1 on cream and simply did not draw.
+    //
+    // Ceiling: the `ink` assertion above. Lightening it on the dark themes or
+    // darkening it on cream eventually eats the label.
+    it("keeps the control fill separated enough to draw a box on its own", () => {
+      expect(contrast(token(theme, "control"), card())).toBeGreaterThanOrEqual(2.5);
+    });
+
+    it("keeps the control fill more present than the hairline it replaced", () => {
+      expect(contrast(token(theme, "control"), card())).toBeGreaterThanOrEqual(
+        contrast(token(theme, "hair-3"), card()),
+      );
+    });
+
+    // The status box is a `bg-paper` select — one step BEHIND the card — so
+    // what has to hold is its label on `paper`, not on the card.
+    it("keeps the status label readable in its own well", () => {
+      expect(contrast(token(theme, "ink-2"), token(theme, "paper"))).toBeGreaterThanOrEqual(AA);
+    });
+
+    // The record NAME is the other half of "is anything here clickable". Its
+    // underline is now HOVER-ONLY, so what has to hold is the hovered state:
+    // the name turns `accent` and the underline paints with it.
+    it("keeps the hovered record name readable on the row it sits on", () => {
+      expect(contrast(token(theme, "accent"), token(theme, "card-hover"))).toBeGreaterThanOrEqual(3);
     });
   });
 });

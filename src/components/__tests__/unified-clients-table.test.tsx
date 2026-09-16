@@ -69,13 +69,16 @@ describe("UnifiedClientsTable", () => {
     );
   });
 
-  it("underlines the name without waiting for a hover", () => {
+  it("underlines the name on hover, and only on hover", () => {
     renderTable(ROWS);
     const cls = screen.getByRole("link", { name: "Smith Household" }).className;
-    // A `hover:`-only affordance is the bug: there is nothing to see until the
-    // pointer is already on the target.
-    expect(cls).toMatch(/(^|\s)underline(\s|$)/);
-    expect(cls).toContain("decoration-ink-3");
+    // The row's two opaque quick-link buttons now answer "is anything here
+    // clickable", so the name no longer has to carry a STANDING underline —
+    // that ruled the whole column. What it must still do is respond.
+    expect(cls).toContain("hover:underline");
+    expect(cls).not.toMatch(/(^|\s)underline(\s|$)/);
+    // And the keyboard path keeps its own affordance, which is the ring.
+    expect(cls).toContain("focus-visible:ring-2");
   });
 
   it("leaves a trashed household's name unlinked", () => {

@@ -25,10 +25,31 @@ const inputCore =
 export const inputBaseClassName = inputCore;
 export const inputClassName = "w-full " + inputCore;
 
+// The same recipe one step shorter, for an input that sits inside a table cell.
+// It keeps the hover/focus treatment so a grid cell reads as editable the way a
+// form field does — that affordance is the whole reason it exists.
+const inputCompactCore =
+  "h-8 rounded-[var(--radius-sm)] bg-paper border border-hair-2 px-2 text-[14px] text-ink placeholder:text-ink-4 outline-none " +
+  "hover:border-hair-3 focus:border-accent focus:ring-2 focus:ring-accent/25 disabled:opacity-50";
+
+export const inputCompactBaseClassName = inputCompactCore;
+export const inputCompactClassName = "w-full " + inputCompactCore;
+
 const selectExtras =
   " appearance-none pr-8 bg-no-repeat bg-[right_0.5rem_center] " +
   // amber chevron, base64-inlined to avoid an asset import
   "bg-[url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 20 20%22 fill=%22%238b909c%22><path fill-rule=%22evenodd%22 d=%22M5.23 7.21a.75.75 0 011.06.02L10 11.04l3.71-3.81a.75.75 0 111.08 1.04l-4.25 4.36a.75.75 0 01-1.08 0L5.21 8.27a.75.75 0 01.02-1.06z%22 clip-rule=%22evenodd%22/></svg>')]";
+
+/**
+ * The chevron + appearance reset alone, with NO border, fill or size.
+ *
+ * Exported so a caller that needs its own border can COMPOSE one rather than
+ * appending an override to `selectBaseClassName`. Two `border-*` utilities in
+ * one class string are resolved by their order in the GENERATED stylesheet,
+ * not by their order in the attribute, so an override appended there wins or
+ * loses depending on what else the app happens to use.
+ */
+export const selectChevronClassName = selectExtras.trim();
 
 export const selectBaseClassName = inputCore + selectExtras;
 export const selectClassName = "w-full " + selectBaseClassName;
@@ -40,5 +61,6 @@ const textareaCore =
 export const textareaBaseClassName = textareaCore;
 export const textareaClassName = "w-full " + textareaCore;
 
-export const fieldLabelClassName =
-  "block mb-1.5 text-[13px] font-medium text-ink-2";
+export const fieldLabelBaseClassName = "text-[13px] font-medium text-ink-2";
+
+export const fieldLabelClassName = "block mb-1.5 " + fieldLabelBaseClassName;

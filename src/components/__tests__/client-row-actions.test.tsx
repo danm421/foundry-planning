@@ -39,8 +39,16 @@ describe("ClientRowActions", () => {
     }
 
     // CRM is the filled GREY button; Planning is the filled VERDIGRIS one.
-    expect(crm).toContain("bg-hair-3");
-    expect(planning).toContain("bg-accent");
+    expect(crm).toContain("bg-control");
+    expect(planning).toContain("bg-action");
+
+    // Both labels are near-white PER THEME, which is what `*-on` means. A
+    // hardcoded `text-white` is the failure mode to guard: the industrial
+    // theme's accent is a pale olive, where white measures 1.43:1.
+    expect(planning).toContain("text-action-on");
+    for (const cls of [crm, planning]) {
+      expect(cls).not.toContain("text-white");
+    }
   });
 
   // Hierarchy, not just weight: the accent is reserved for action, and a row
@@ -48,15 +56,15 @@ describe("ClientRowActions", () => {
   // the column becomes two CTAs per row and the hierarchy is gone.
   it("spends the accent on the planning action only", () => {
     render(<ClientRowActions householdId="H1" planningClientId="C1" />);
-    expect(restingClasses("CRM")).not.toContain("bg-accent");
+    expect(restingClasses("CRM")).not.toContain("bg-action");
   });
 
   // Its own test, not a second `render` in the one above: two mounted trees
   // share a screen, so any later "CRM" lookup would match twice and throw.
   it("keeps that hierarchy in the no-plan state", () => {
     render(<ClientRowActions householdId="H2" planningClientId={null} />);
-    expect(restingClasses("Start planning")).toContain("bg-accent");
-    expect(restingClasses("CRM")).not.toContain("bg-accent");
+    expect(restingClasses("Start planning")).toContain("bg-action");
+    expect(restingClasses("CRM")).not.toContain("bg-action");
   });
 
   // Keyboard reachability — these are links in a dense table and the ring is

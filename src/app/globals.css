@@ -58,6 +58,26 @@
   --color-hair-2: #3a4051;
   --color-hair-3: #4b5266;
 
+  /* Filled button surfaces — a CONTROL's fill, not a hairline or a hue.
+
+     Two tokens exist because a filled control has different needs from the
+     brand hue itself. `accent` is tuned to read as ACCENT TEXT on a card
+     (5.39:1 dark), which makes it too bright to carry a near-white LABEL —
+     white on dark `accent` measures 3.32:1, under the 4.5 AA floor. `action`
+     is the same verdigris deepened until a near-white label clears AA, so the
+     app's filled primaries can be white-on-green the way every other filled
+     primary in the product is. Light and industrial need no deepening: their
+     `accent-on` is already the right polarity, so `action*` simply tracks
+     `accent*` there.
+
+     `control` is the filled GREY secondary. It is not `hair-3` — that is a
+     hairline token spent on hover borders across CRM, and lightening it for
+     this would brighten all of them. */
+  --color-control: #5f6880;
+  --color-action: #16796a;
+  --color-action-ink: #12655a;
+  --color-action-on: #f4f5f7;
+
   /* Status (solid hues; tinted backgrounds are color-mix at call site) */
   --color-good: #4ade80;
   --color-warn: #fbbf24;
@@ -160,6 +180,26 @@
   --color-hair-2: #d9d2bd;
   --color-hair-3: #c0b596;
 
+  /* Filled button surfaces — a CONTROL's fill, not a hairline or a hue.
+
+     Two tokens exist because a filled control has different needs from the
+     brand hue itself. `accent` is tuned to read as ACCENT TEXT on a card
+     (5.39:1 dark), which makes it too bright to carry a near-white LABEL —
+     white on dark `accent` measures 3.32:1, under the 4.5 AA floor. `action`
+     is the same verdigris deepened until a near-white label clears AA, so the
+     app's filled primaries can be white-on-green the way every other filled
+     primary in the product is. Light and industrial need no deepening: their
+     `accent-on` is already the right polarity, so `action*` simply tracks
+     `accent*` there.
+
+     `control` is the filled GREY secondary. It is not `hair-3` — that is a
+     hairline token spent on hover borders across CRM, and lightening it for
+     this would brighten all of them. */
+  --color-control: #9e9169;
+  --color-action: #0f7d6c;
+  --color-action-ink: #0b5d50;
+  --color-action-on: #f3fbf8;
+
   /* Status — deeper for legibility on cream */
   --color-good: #047857;
   --color-warn: #b45309;
@@ -232,6 +272,26 @@
   --color-hair: #303741;
   --color-hair-2: #414953;
   --color-hair-3: #626a72;
+
+  /* Filled button surfaces — a CONTROL's fill, not a hairline or a hue.
+
+     Two tokens exist because a filled control has different needs from the
+     brand hue itself. `accent` is tuned to read as ACCENT TEXT on a card
+     (5.39:1 dark), which makes it too bright to carry a near-white LABEL —
+     white on dark `accent` measures 3.32:1, under the 4.5 AA floor. `action`
+     is the same verdigris deepened until a near-white label clears AA, so the
+     app's filled primaries can be white-on-green the way every other filled
+     primary in the product is. Light and industrial need no deepening: their
+     `accent-on` is already the right polarity, so `action*` simply tracks
+     `accent*` there.
+
+     `control` is the filled GREY secondary. It is not `hair-3` — that is a
+     hairline token spent on hover borders across CRM, and lightening it for
+     this would brighten all of them. */
+  --color-control: #666e77;
+  --color-action: #d7dca0;
+  --color-action-ink: #e3e7b2;
+  --color-action-on: #111419;
 
   /* Status */
   --color-good: #a8c5a0;
@@ -317,6 +377,11 @@
   --color-hair: var(--color-hair);
   --color-hair-2: var(--color-hair-2);
   --color-hair-3: var(--color-hair-3);
+
+  --color-control: var(--color-control);
+  --color-action: var(--color-action);
+  --color-action-ink: var(--color-action-ink);
+  --color-action-on: var(--color-action-on);
 
   --color-good: var(--color-good);
   --color-warn: var(--color-warn);
