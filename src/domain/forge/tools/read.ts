@@ -28,10 +28,10 @@ import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
 import { loadPanelData } from "@/lib/scenario/load-panel-data";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { redactSsns } from "@/lib/extraction/redact-ssn";
+import { sanitizeRow } from "@/lib/redaction/sanitize-row";
 import type { ClientData } from "@/engine/types";
 import type { ForgeToolContext } from "../context";
 import { assertClientReadable } from "../guards";
-import { maskAccountNumber } from "../account-mask";
 
 /** Detail kinds the model may request → the corresponding effective-tree slice. */
 const DETAIL_KINDS = {
@@ -46,34 +46,6 @@ const DETAIL_KINDS = {
 } satisfies Record<string, (t: ClientData) => unknown[]>;
 
 type DetailKind = keyof typeof DETAIL_KINDS;
-
-/** Account-number-bearing fields are masked to last-4 before the model sees them. */
-const ACCOUNT_NUMBER_FIELDS = new Set(["accountNumber", "accountNumberRaw"]);
-
-/**
- * Recursively sanitize a detail row before it leaves the server: redact SSNs
- * from every string, and collapse any account-number field to a masked
- * last-4 value (`accountNumber`). Walks arrays and nested objects so a leaked
- * SSN or raw account number anywhere in the row is caught.
- */
-function sanitizeRow(value: unknown): unknown {
-  if (typeof value === "string") return redactSsns(value).text;
-  if (Array.isArray(value)) return value.map(sanitizeRow);
-  if (value && typeof value === "object") {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      if (ACCOUNT_NUMBER_FIELDS.has(k)) {
-        // Coerce to string first: a numeric account number must be masked too,
-        // never echoed raw or crash maskAccountNumber's .trim().
-        out.accountNumber = maskAccountNumber(v == null ? null : String(v));
-      } else {
-        out[k] = sanitizeRow(v);
-      }
-    }
-    return out;
-  }
-  return value;
-}
 
 /** Join a first/last name into a display string, or null when both are empty. */
 function joinName(
@@ -273,7 +245,7 @@ export function buildReadTools(
       await assertClientReadable(ctx, clientId);
 
       const { effectiveTree } = await loadEffectiveTree(clientId, firmId, "base", {});
-      const rows = DETAIL_KINDS[kind](effectiveTree).map(sanitizeRow);
+      const rows = DETAIL_KINDS[kind](effectiveTree).map((row) => sanitizeRow(row));
 
       return JSON.stringify({ kind, rows, count: rows.length });
     },

@@ -401,6 +401,8 @@ export type AuditAction =
   | "forge.write_approved" // the advisor confirmed a proposed write (executed)
   | "forge.write_rejected" // the advisor rejected a proposed write
   | "forge.undo" // the advisor reverted the conversation to a prior checkpoint
+  // MCP — a remote Claude connector invoked a read tool
+  | "mcp.tool_call"
   | "copilot.query" // legacy (pre-2026-06-17 cutover)
   | "copilot.tool_call" // legacy
   | "copilot.write_proposed" // legacy

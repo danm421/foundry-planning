@@ -98,3 +98,18 @@ function mutationDecision(method: string, pathname: string): AccessDecision {
   if (m === "POST" && isReadPost(pathname)) return "allow";
   return "block_mutation";
 }
+
+export type BillingEnforcementMode = "log" | "enforce";
+
+/**
+ * Whether a "lock_out"/"block_mutation" decision actually blocks, or only
+ * logs. Single source of truth (Task 12 fix round 1 / F2, Ruling R85):
+ * `src/proxy.ts` (the web) and `src/lib/mcp/principal.ts` (the MCP
+ * connector) both import this rather than each reading
+ * `process.env.BILLING_ENFORCEMENT_MODE` independently — a second copy is
+ * exactly the drift-able duplicate this file already exists to prevent (see
+ * R74, which banned the same pattern for the OAuth issuer).
+ */
+export function enforcementMode(): BillingEnforcementMode {
+  return process.env.BILLING_ENFORCEMENT_MODE === "enforce" ? "enforce" : "log";
+}

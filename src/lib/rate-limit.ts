@@ -175,6 +175,17 @@ export async function checkForgeRateLimit(
   return safeLimit(limiter, key);
 }
 
+// MCP connector reads. Keyed by firm + user, so one advisor's Claude session
+// cannot exhaust the firm's budget. Deliberately tighter than a UI limiter:
+// a model can call tools in a tight loop.
+const getMcpLimiter = buildLimiter(60, "1 m", "rl:mcp");
+
+export async function checkMcpRateLimit(key: string): Promise<RateLimitResult> {
+  const limiter = getMcpLimiter();
+  if (!limiter) return { allowed: false, reason: "unconfigured" };
+  return safeLimit(limiter, key);
+}
+
 // PDF export (presentation decks + comparison / balance-sheet / liquidity
 // reports). A full @react-pdf render of a multi-page document is heavier and
 // rarer than an interactive projection, so it gets its own budget — a burst of
