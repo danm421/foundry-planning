@@ -198,6 +198,21 @@ describe("Details field map", () => {
 });
 
 describe("document-evidence marking", () => {
+  it("marks exactly the entities a document can state", () => {
+    expect(documentEvidenceEntities().map((e) => e.id).sort()).toEqual([
+      "client_household",
+      "disability_policy",
+      "family_member",
+      "life_insurance_policy",
+    ]);
+  });
+
+  it("every document-evidence entity tells the classifier what its document looks like", () => {
+    for (const entity of documentEvidenceEntities()) {
+      expect(entity.documentHints?.length, `${entity.id} has no document hints`).toBeGreaterThan(0);
+    }
+  });
+
   it("every identity field exists on its own entity", () => {
     for (const entity of DETAIL_ENTITIES) {
       if (!entity.identity) continue;
@@ -228,8 +243,14 @@ describe("document-evidence marking", () => {
 
   it("every document-evidence entity can actually be written", () => {
     for (const entity of documentEvidenceEntities()) {
-      const writable = Boolean(entity.routes.create) || Boolean(entity.nestedIn);
-      expect(writable, `${entity.id} is marked document evidence but has no create route and is not nested`).toBe(true);
+      // Three ways an extracted row can land: the entity's own create route, a
+      // parent's payload, or an update leg it has explicitly opted into. The
+      // third is not a loophole — `client_household` is a singleton that is
+      // never CREATED from a document (the client already exists), so an
+      // update leg is the only write it can ever have.
+      const updatable = Boolean(entity.updateSemantics) && Boolean(entity.routes.update);
+      const writable = Boolean(entity.routes.create) || Boolean(entity.nestedIn) || updatable;
+      expect(writable, `${entity.id} is marked document evidence but has no create route, is not nested, and declares no update leg`).toBe(true);
     }
   });
 
@@ -251,10 +272,21 @@ describe("document-evidence marking", () => {
     }
   });
 
-  it("every document-evidence entity declares how its table reaches a client", () => {
+  // Scoped to the entities `loadExistingRows` can actually be called for: the
+  // map pass loads existing rows only for an entity that declares an
+  // `identity` (`map-entity-pass.ts`), and the loader itself throws without a
+  // scopePath. `client_household` is why the rule is not "every
+  // document-evidence entity" — a singleton addressed by the client id, whose
+  // match is supplied directly, is never loaded and has no client column to
+  // declare.
+  it("every identity-matched document-evidence entity declares how its table reaches a client", () => {
+    let checked = 0;
     for (const entity of documentEvidenceEntities()) {
+      if (!entity.identity?.length) continue;
+      checked++;
       expect(entity.scopePath, `${entity.id} has no scopePath, so a generic loader would read it unscoped`).toBeDefined();
     }
+    expect(checked, "no identity-matched document-evidence entity — this guard asserted nothing").toBeGreaterThan(0);
   });
 
   it("a join scope path names a real table and a real column", () => {
@@ -277,13 +309,6 @@ describe("document-evidence marking", () => {
 });
 
 describe("the two Phase 2 entities", () => {
-  it("marks exactly life insurance and disability as document evidence", () => {
-    expect(documentEvidenceEntities().map((e) => e.id).sort()).toEqual([
-      "disability_policy",
-      "life_insurance_policy",
-    ]);
-  });
-
   it("life insurance has no identity key — matchLifePolicy owns that job", () => {
     expect(findEntity("life_insurance_policy")!.identity).toBeUndefined();
   });
@@ -296,10 +321,36 @@ describe("the two Phase 2 entities", () => {
     const face = findEntity("life_insurance_policy")!.fields.find((f) => f.key === "faceValue")!;
     expect(face.aliases).toContain("Face Amount");
   });
+});
 
-  it("both entities tell the classifier what their document looks like", () => {
-    for (const entity of documentEvidenceEntities()) {
-      expect(entity.documentHints?.length, `${entity.id} has no document hints`).toBeGreaterThan(0);
+describe("phase 3A people entities", () => {
+  const PRIMARY_CONTACT_KEYS = ["email", "phone", "mobile", "city", "country"];
+
+  it("asks for the client's own contact fields, not just the spouse's", () => {
+    const household = findEntity("client_household");
+    if (!household) throw new Error("client_household missing");
+    const keys = household.fields.map((f) => f.key);
+    for (const key of PRIMARY_CONTACT_KEYS) {
+      expect(keys).toContain(key);
+      expect(keys).toContain(`spouse${key[0].toUpperCase()}${key.slice(1)}`);
     }
+  });
+
+  it("marks the household and family as readable from a document", () => {
+    expect(findEntity("client_household")?.documentEvidence).toBe(true);
+    expect(findEntity("family_member")?.documentEvidence).toBe(true);
+  });
+
+  it("gives family_member a single-field identity so a missing DOB cannot duplicate a child", () => {
+    expect(findEntity("family_member")?.identity).toEqual(["firstName"]);
+  });
+
+  it("declares update semantics for both", () => {
+    expect(findEntity("client_household")?.updateSemantics).toEqual({ method: "PUT" });
+    expect(findEntity("family_member")?.updateSemantics).toEqual({ method: "PUT" });
+  });
+
+  it("scopes family_member by its own client column", () => {
+    expect(findEntity("family_member")?.scopePath).toEqual({ via: "column" });
   });
 });

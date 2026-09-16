@@ -45,6 +45,16 @@ export const PROFILE_ENTITIES: readonly DetailEntity[] = [
     table: "clients",
     routes: { list: "/", update: "/", delete: "/" },
     scenarioScoped: false,
+    documentEvidence: true,
+    documentHints: [
+      "a fact finder or client profile page printing the client's and spouse's legal names",
+      "dates of birth, email, phone and home address for the client and spouse",
+      "a 'Personal Information' or 'Client Information' header",
+    ],
+    updateSemantics: { method: "PUT" },
+    // No `identity` and no `scopePath`: the household is a singleton addressed
+    // by the client id itself, so it never reaches `matchByIdentity` or
+    // `loadExistingRows` — the match is supplied directly as the client id.
     fields: [
       {
         key: "firstName",
@@ -307,6 +317,23 @@ export const PROFILE_ENTITIES: readonly DetailEntity[] = [
       delete: "/family-members/[memberId]",
     },
     scenarioScoped: false,
+    documentEvidence: true,
+    documentHints: [
+      "a list of children, dependants or family members with dates of birth",
+      "a 'Family' or 'Dependants' section of a fact finder",
+      "names and ages of children alongside the client's own details",
+    ],
+    // First name ALONE, deliberately. `matchByIdentity` reports "new" unless
+    // every identity field is present and unflagged, and a document naming
+    // three children rarely prints all three dates of birth — a
+    // ["firstName", "dateOfBirth"] identity would mark every child new and
+    // duplicate the household. Within one household a first name identifies a
+    // member well, a single-field identity can only ever yield `exact` or
+    // `new` (never an ambiguous `fuzzy`), and the date of birth then arrives
+    // as an UPDATE to the matched row.
+    identity: ["firstName"],
+    scopePath: { via: "column" },
+    updateSemantics: { method: "PUT" },
     fields: [
       {
         key: "firstName",
