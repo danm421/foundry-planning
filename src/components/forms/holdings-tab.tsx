@@ -4,10 +4,11 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AssetClassOption } from "./asset-mix-tab";
 import { HoldingOverrideEditor } from "./holding-override-editor";
+import { fieldLabelBaseClassName, inputBaseClassName, inputCompactClassName } from "./input-styles";
 import {
   listHoldings, createHolding, updateHolding, deleteHolding,
   setHoldingOverride, classifyTicker, setAccountDeriveFromHoldings, getQuote,
-  type HoldingRow,
+  type HoldingRow, type QuoteResult,
 } from "@/lib/investments/holdings-client";
 import { summarizeHoldings, rowChip } from "@/lib/investments/holdings-display";
 import { holdingMarketValue } from "@/lib/investments/holdings-rollup";
@@ -52,6 +53,10 @@ const fmtMoney = (raw: string) => {
   return Number.isFinite(n) ? money(n) : raw;
 };
 
+// Opaque fill lives on the cells, not the row: a sticky `<thead>` doesn't paint
+// its own background, so rows would scroll through it.
+const TH = "sticky top-0 z-10 border-b border-hair bg-card-2 px-2 py-2 font-medium";
+
 export function HoldingsTab({
   clientId, accountId, scenarioActive, assetClasses,
   deriveFromHoldings, onDeriveFromHoldingsChange, onTotalsChange, onHoldingsChanged,
@@ -67,10 +72,19 @@ export function HoldingsTab({
   const [price, setPrice] = useState("");
   const [basis, setBasis] = useState("");
   const [adding, setAdding] = useState(false);
-  const [priceAsOf, setPriceAsOf] = useState<string | null>(null);
   const [fetchingPrice, setFetchingPrice] = useState(false);
+  /** What the last price lookup did, as one value — an "unpriced" outcome is
+   *  shown so a blank Price box reads as "we couldn't price this" rather than
+   *  "the app ignored me". Splitting it across two slots let a stale as-of line
+   *  survive a ticker change. */
+  const [quoteOutcome, setQuoteOutcome] = useState<
+    { kind: "priced"; asOf: string } | { kind: "unpriced"; ticker: string } | null
+  >(null);
   // Guards against out-of-order responses: only the latest ticker's result wins.
   const quoteSeq = useRef(0);
+  // A click on "+ Add" blurs the ticker field first, so the blur lookup and the
+  // add would otherwise each buy the same (paid) quote. Callers share one.
+  const inFlightQuote = useRef<{ ticker: string; promise: Promise<QuoteResult | null> } | null>(null);
   // Last ticker we successfully priced — skip refetching it so a manually-edited
   // price isn't clobbered on a re-blur (and we don't burn a paid quote call).
   const lastQuotedTicker = useRef("");
@@ -106,13 +120,53 @@ export function HoldingsTab({
     onDeriveFromHoldingsChange(next);
   }, [clientId, accountId, onDeriveFromHoldingsChange]);
 
+  /** Price a ticker and reflect the outcome in the add row. Returns the quote so
+   *  a caller mid-add can use it without waiting for a state flush. */
+  const fetchQuoteFor = useCallback((t: string): Promise<QuoteResult | null> => {
+    if (!accountId || t === "") return Promise.resolve(null);
+    if (inFlightQuote.current?.ticker === t) return inFlightQuote.current.promise;
+    const seq = ++quoteSeq.current;
+    setFetchingPrice(true);
+    const promise = (async () => {
+      try {
+        const quote = await getQuote(clientId, accountId, t);
+        // The caller still gets the answer for the ticker it asked about; only
+        // the add row skips it, because the user has moved on to another one.
+        if (seq !== quoteSeq.current) return quote;
+        if (quote) {
+          setPrice(String(quote.price));
+          setQuoteOutcome({ kind: "priced", asOf: quote.asOf });
+          lastQuotedTicker.current = t;
+        } else {
+          setQuoteOutcome({ kind: "unpriced", ticker: t });
+        }
+        return quote;
+      } finally {
+        if (seq === quoteSeq.current) setFetchingPrice(false);
+        if (inFlightQuote.current?.ticker === t) inFlightQuote.current = null;
+      }
+    })();
+    inFlightQuote.current = { ticker: t, promise };
+    return promise;
+  }, [clientId, accountId]);
+
   async function handleAdd() {
-    if (!accountId || ticker.trim() === "") return;
+    if (!accountId || ticker.trim() === "" || adding) return;
     setAdding(true);
     setError(null);
     try {
       const t = ticker.trim().toUpperCase();
-      const classified = await classifyTicker(clientId, accountId, t); // fail-soft
+      // Enter-to-add can fire before the ticker field ever blurs, so an unpriced
+      // row would save at $0. Resolve the price here too rather than on blur
+      // only — independent of the classify call, so both go out together.
+      const [quote, classified] = await Promise.all([
+        price === "" ? fetchQuoteFor(t) : Promise.resolve(null),
+        classifyTicker(clientId, accountId, t), // fail-soft
+      ]);
+      const resolvedPrice = quote ? String(quote.price) : price;
+      const resolvedAsOf = quote
+        ? quote.asOf
+        : quoteOutcome?.kind === "priced" ? quoteOutcome.asOf : null;
       await createHolding(clientId, accountId, {
         securityId: classified.security?.id ?? null,
         displayTicker: t,
@@ -120,8 +174,8 @@ export function HoldingsTab({
         // classified — a named row beats a bare ticker even unclassified.
         displayName: classified.security?.name ?? classified.displayName ?? null,
         shares: shares === "" ? 0 : parseFloat(shares),
-        price: price === "" ? 0 : parseFloat(price),
-        priceAsOf: priceAsOf ?? undefined,
+        price: resolvedPrice === "" ? 0 : parseFloat(resolvedPrice),
+        priceAsOf: resolvedAsOf ?? undefined,
         costBasis: basis === "" ? 0 : parseFloat(basis),
       });
       // The POST response is a raw row; re-list to get the enriched shape
@@ -131,7 +185,8 @@ export function HoldingsTab({
       // First holding on an opted-in account: the server sync already seeded the
       // mix + set growthSource; just make sure the form reflects derive=true.
       if (list.length === 1 && deriveFromHoldings) onDeriveFromHoldingsChange(true);
-      setTicker(""); setShares(""); setPrice(""); setBasis(""); setPriceAsOf(null);
+      setTicker(""); setShares(""); setPrice(""); setBasis("");
+      setQuoteOutcome(null);
       lastQuotedTicker.current = "";
       onHoldingsChanged?.();
     } catch {
@@ -143,17 +198,8 @@ export function HoldingsTab({
 
   async function handleTickerBlur() {
     const t = ticker.trim().toUpperCase();
-    if (!canEdit || !accountId || t === "" || t === lastQuotedTicker.current) return;
-    const seq = ++quoteSeq.current;
-    setFetchingPrice(true);
-    try {
-      const quote = await getQuote(clientId, accountId, t);
-      // Ignore a stale response if the ticker changed (or blurred again) since.
-      if (seq !== quoteSeq.current) return;
-      if (quote) { setPrice(String(quote.price)); setPriceAsOf(quote.asOf); lastQuotedTicker.current = t; }
-    } finally {
-      if (seq === quoteSeq.current) setFetchingPrice(false);
-    }
+    if (!canEdit || t === "" || t === lastQuotedTicker.current) return;
+    await fetchQuoteFor(t);
   }
 
   async function handleFieldBlur(
@@ -206,14 +252,14 @@ export function HoldingsTab({
   // ── Gate states ──────────────────────────────────────────────────────────
   if (accountId == null) {
     return (
-      <p className="rounded-md border border-gray-700 bg-gray-800/60 px-3 py-4 text-sm text-gray-400">
+      <p className="rounded-md border border-hair bg-card-2 px-3 py-4 text-sm text-ink-3">
         Save the account first to add holdings.
       </p>
     );
   }
   if (scenarioActive) {
     return (
-      <p className="rounded-md border border-gray-700 bg-gray-800/60 px-3 py-4 text-sm text-gray-400">
+      <p className="rounded-md border border-hair bg-card-2 px-3 py-4 text-sm text-ink-3">
         Holdings are edited on the base plan. Switch out of this scenario to add or change holdings.
       </p>
     );
@@ -226,14 +272,14 @@ export function HoldingsTab({
       {/* Holdings-driving banner + toggle */}
       {rows.length > 0 && (
         driving ? (
-          <div className="flex items-center justify-between rounded-md border border-accent/40 bg-accent/10 px-3 py-2 text-sm text-accent-ink">
+          <div className="flex items-center justify-between rounded-md border border-accent/40 bg-accent-wash px-3 py-2 text-sm text-accent-ink">
             <span>This account&apos;s value &amp; asset mix are derived from the holdings below.</span>
             <button type="button" onClick={() => setDerive(false)} className="ml-3 shrink-0 underline">
               Use a different source
             </button>
           </div>
         ) : (
-          <div className="flex items-center justify-between rounded-md border border-gray-700 bg-gray-800/60 px-3 py-2 text-sm text-gray-300">
+          <div className="flex items-center justify-between rounded-md border border-hair bg-card-2 px-3 py-2 text-sm text-ink-2">
             <span>Holdings are entered but not driving this account.</span>
             <button type="button" onClick={() => setDerive(true)} className="ml-3 shrink-0 underline">
               Drive this account from holdings
@@ -243,46 +289,63 @@ export function HoldingsTab({
       )}
 
       {error && (
-        <p className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-300">{error}</p>
+        <p className="rounded-md border border-crit/40 bg-crit/10 px-3 py-2 text-sm text-crit">{error}</p>
       )}
 
       {/* Add-holding row */}
-      <div className="flex flex-wrap items-end gap-2 rounded-md border border-gray-700 bg-gray-900/40 p-3">
-        <AddField label="Ticker" value={ticker} onChange={setTicker} width="w-28"
-          onEnter={handleAdd} onBlur={handleTickerBlur} placeholder="VTI" />
-        <AddField label="Shares" value={shares} onChange={setShares} width="w-24" onEnter={handleAdd} />
-        <AddField label="Price" value={price} onChange={setPrice} width="w-24"
-          onEnter={handleAdd} placeholder={fetchingPrice ? "fetching…" : undefined} />
-        <AddField label="Cost basis" value={basis} onChange={setBasis} width="w-28" onEnter={handleAdd} />
-        <button
-          type="button"
-          onClick={handleAdd}
-          disabled={adding || ticker.trim() === ""}
-          className="h-9 rounded-md bg-accent px-4 text-sm font-medium text-black hover:opacity-90 disabled:opacity-50"
-        >
-          {adding ? "Adding…" : "+ Add"}
-        </button>
+      <div className="rounded-md border border-hair bg-card-2 p-3">
+        <div className="flex flex-wrap items-end gap-3">
+          <AddField label="Ticker" value={ticker} width="w-32"
+            onChange={(v) => { setTicker(v); setQuoteOutcome(null); }}
+            onEnter={handleAdd} onBlur={handleTickerBlur} />
+          <AddField label="Shares" value={shares} onChange={setShares} width="w-28" onEnter={handleAdd} numeric />
+          <AddField label="Price" value={price} onChange={setPrice} width="w-28"
+            onEnter={handleAdd} numeric placeholder={fetchingPrice ? "fetching…" : undefined} />
+          <AddField label="Cost basis" value={basis} onChange={setBasis} width="w-32" onEnter={handleAdd} numeric />
+          <button
+            type="button"
+            onClick={handleAdd}
+            disabled={adding || ticker.trim() === ""}
+            className="h-9 rounded-[var(--radius-sm)] bg-accent px-4 text-sm font-medium text-accent-on hover:opacity-90 disabled:opacity-50"
+          >
+            {adding ? "Adding…" : "+ Add"}
+          </button>
+        </div>
+        {/* Says out loud what the price lookup did — a silently blank Price box
+            was being read as a broken field rather than an unpriced security. */}
+        {quoteOutcome?.kind === "unpriced" ? (
+          <p className="mt-2 text-xs text-warn">
+            No market price found for {quoteOutcome.ticker} — type one in, or leave it blank and
+            set the market value on the row.
+          </p>
+        ) : quoteOutcome?.kind === "priced" ? (
+          <p className="mt-2 text-xs text-ink-3">
+            Price is the market close for {quoteOutcome.asOf}. Type over it to use your own.
+          </p>
+        ) : null}
       </div>
 
       {/* Holdings table */}
       {loaded && rows.length === 0 ? (
-        <p className="text-sm text-gray-400">No holdings yet. Add a ticker above.</p>
+        <p className="text-sm text-ink-3">No holdings yet. Add a ticker above.</p>
       ) : (
-        <div className="overflow-x-auto rounded-md border border-gray-700">
+        <div className="max-h-[min(46vh,340px)] overflow-auto rounded-md border border-hair">
           <table className="w-full text-sm">
-            <thead className="bg-gray-800 text-xs uppercase text-gray-400">
+            {/* Header pins to the top of this region so the column a value belongs
+                to stays on screen while the list scrolls. */}
+            <thead className="text-xs uppercase text-ink-3">
               <tr>
-                <th className="px-2 py-2 text-left">Ticker</th>
-                <th className="px-2 py-2 text-left">Name</th>
-                <th className="px-2 py-2 text-right">Shares</th>
-                <th className="px-2 py-2 text-right">Price</th>
-                <th className="px-2 py-2 text-right">Market value</th>
-                <th className="px-2 py-2 text-right">Cost basis</th>
-                <th className="px-2 py-2 text-left">Asset class</th>
-                <th className="px-2 py-2" />
+                <th className={`${TH} text-left`}>Ticker</th>
+                <th className={`${TH} text-left`}>Name</th>
+                <th className={`${TH} text-right`}>Shares</th>
+                <th className={`${TH} text-right`}>Price</th>
+                <th className={`${TH} text-right`}>Market value</th>
+                <th className={`${TH} text-right`}>Cost basis</th>
+                <th className={`${TH} text-left`}>Asset class</th>
+                <th className={TH} />
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-800">
+            <tbody className="divide-y divide-hair">
               {rows.map((r) => {
                 const chip = rowChip(r, assetClasses);
                 const mv = holdingMarketValue({
@@ -292,8 +355,8 @@ export function HoldingsTab({
                 });
                 return (
                   <Fragment key={r.id}>
-                    <tr className="text-gray-200">
-                      <td className="whitespace-nowrap px-2 py-2 font-medium">{r.displayTicker ?? "—"}</td>
+                    <tr className="text-ink-2">
+                      <td className="whitespace-nowrap px-2 py-2 font-medium text-ink">{r.displayTicker ?? "—"}</td>
                       <td className="min-w-[12rem] px-2 py-2">
                         <CellInput defaultValue={r.displayName ?? ""} align="left"
                           onCommit={(v) => handleFieldBlur(r.id, { displayName: v })} text />
@@ -335,7 +398,7 @@ export function HoldingsTab({
                       </td>
                       <td className="px-2 py-2 text-right">
                         <button type="button" onClick={() => handleDelete(r.id)}
-                          className="text-gray-500 hover:text-red-400" aria-label="Delete holding">✕</button>
+                          className="text-ink-4 hover:text-crit" aria-label="Delete holding">✕</button>
                       </td>
                     </tr>
                     {editingOverride === r.id && (
@@ -360,16 +423,16 @@ export function HoldingsTab({
 
       {/* Derived totals strip */}
       {rows.length > 0 && (
-        <div className="space-y-1 rounded-md border border-gray-600 bg-gray-800 px-3 py-2">
+        <div className="space-y-1 rounded-md border border-hair-2 bg-card-2 px-3 py-2">
           <div className="flex items-center justify-between text-sm">
-            <span className="font-medium text-gray-300">Account value (derived)</span>
-            <span className="font-semibold tabular-nums text-gray-100">{money(summary.value)}</span>
+            <span className="font-medium text-ink-2">Account value (derived)</span>
+            <span className="tabular font-semibold text-ink">{money(summary.value)}</span>
           </div>
           <div className="flex items-center justify-between text-sm">
-            <span className="text-gray-400">Cost basis (derived)</span>
-            <span className="tabular-nums text-gray-300">{money(summary.basis)}</span>
+            <span className="text-ink-3">Cost basis (derived)</span>
+            <span className="tabular text-ink-2">{money(summary.basis)}</span>
           </div>
-          <div className="border-t border-gray-700 pt-1 text-xs text-gray-400">
+          <div className="border-t border-hair pt-1 text-xs text-ink-3">
             Blend:{" "}
             {summary.blend.length === 0
               ? "unclassified"
@@ -382,33 +445,35 @@ export function HoldingsTab({
   );
 }
 
+
 function chipClass(kind: "derived" | "manual" | "needs_review" | "locked") {
   const base = "rounded-full px-2 py-0.5 text-xs";
-  if (kind === "locked") return `${base} bg-gray-800 text-gray-500 cursor-default`;
+  if (kind === "locked") return `${base} bg-card-2 text-ink-4 cursor-default`;
   const interactive = `${base} hover:opacity-80`;
-  if (kind === "manual") return `${interactive} bg-accent/20 text-accent-ink`;
-  if (kind === "needs_review") return `${interactive} bg-amber-500/20 text-amber-300`;
-  return `${interactive} bg-gray-700 text-gray-200`;
+  if (kind === "manual") return `${interactive} bg-accent-wash text-accent-ink`;
+  if (kind === "needs_review") return `${interactive} bg-warn/15 text-warn`;
+  return `${interactive} bg-card-hover text-ink-2`;
 }
 
 function AddField({
-  label, value, onChange, width, onEnter, onBlur, placeholder,
+  label, value, onChange, width, onEnter, onBlur, placeholder, numeric = false,
 }: {
   label: string; value: string; onChange: (v: string) => void;
   width: string; onEnter: () => void; onBlur?: () => void; placeholder?: string;
+  numeric?: boolean;
 }) {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-xs text-gray-400">{label}</span>
+    <label className="flex flex-col gap-1.5">
+      <span className={fieldLabelBaseClassName}>{label}</span>
       <input
         type="text"
-        inputMode={label === "Ticker" ? "text" : "decimal"}
+        inputMode={numeric ? "decimal" : "text"}
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
         onBlur={() => onBlur?.()}
         onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onEnter(); } }}
-        className={`h-9 ${width} rounded-md border border-gray-600 bg-gray-800 px-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent`}
+        className={`${inputBaseClassName} ${width} ${numeric ? "tabular text-right" : ""}`}
       />
     </label>
   );
@@ -418,7 +483,7 @@ function CellInput({
   defaultValue, onCommit, align = "right", text = false, format,
 }: {
   defaultValue: string; onCommit: (v: string) => void; align?: "left" | "right"; text?: boolean;
-  /** Render this grouped/currency string when the cell is at rest; raw value while focused. */
+  /** Render this grouped/currency string when the cell is at rest, raw value while focused. */
   format?: (v: string) => string;
 }) {
   const [v, setV] = useState(defaultValue);
@@ -437,7 +502,11 @@ function CellInput({
       onFocus={() => setFocused(true)}
       onChange={(e) => setV(text ? e.target.value : e.target.value.replace(/[^\d.]/g, ""))}
       onBlur={() => { setFocused(false); if (v !== defaultValue) onCommit(v); }}
-      className={`h-7 w-full rounded-md border border-transparent bg-transparent px-1 text-${align} text-sm text-gray-100 ${text ? "" : "tabular-nums"} hover:border-gray-600 focus:border-accent focus:bg-gray-800 focus:outline-none`}
+      // The border is always drawn: with a transparent-until-hover box these read
+      // as printed text, and a saved row looked like it could no longer be edited.
+      className={`${inputCompactClassName} ${align === "right" ? "text-right" : "text-left"} ${
+        text ? "" : "tabular"
+      }`}
     />
   );
 }

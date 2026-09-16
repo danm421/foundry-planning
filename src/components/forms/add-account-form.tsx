@@ -197,6 +197,9 @@ interface AddAccountFormProps {
   existingAccountNames?: string[];
   resolvedInflationRate?: number;
   initialTab?: "details" | "savings" | "realization" | "asset_mix" | "rmd" | "beneficiaries" | "holdings" | "grants" | "annuity";
+  /** Reports the tab actually on screen (including the initial one). The dialog
+   *  uses it to widen the surface for the Holdings grid. */
+  onActiveTabChange?: (tab: string) => void;
   /**
    * When true, only the Beneficiaries tab button renders and all other panels
    * are unmounted. Prevents accidental overwrite when `initial` is a lite shape
@@ -341,6 +344,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   existingAccountNames,
   resolvedInflationRate = 0,
   initialTab,
+  onActiveTabChange,
   lockTab,
   onSuccess,
   onSubmitStateChange,
@@ -453,6 +457,10 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   const [activeTab, setActiveTab] = useState<"details" | "savings" | "realization" | "asset_mix" | "rmd" | "beneficiaries" | "holdings" | "grants" | "annuity">(
     initialTab ?? "details",
   );
+  // Report the visible tab up so the dialog can size itself to the panel (the
+  // Holdings grid needs a wider surface than the rest of the form).
+  useEffect(() => { onActiveTabChange?.(activeTab); }, [activeTab, onActiveTabChange]);
+
   const [subType, setSubType] = useState(
     initial?.subType ?? SUB_TYPE_BY_CATEGORY[defaultCategory ?? "taxable"][0]
   );
@@ -1831,7 +1839,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       {/* Tab bar — pinned flush to the top of the dialog's scroll region. The
           dialog drops its body top-padding (bodyTopFlush) and we bleed full-width
           (-mx-6 px-6) so content scrolls cleanly behind the strip. */}
-      <div className="sticky top-0 z-10 -mx-6 flex items-center border-b border-gray-700 bg-card px-6">
+      <div className="sticky top-0 z-10 -mx-6 flex items-center border-b border-hair bg-card px-6">
         <div className="flex flex-1">
           {!lockTab && (
             <button
@@ -1840,7 +1848,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
               className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
                 activeTab === "details"
                   ? "border-accent text-accent"
-                  : "border-transparent text-gray-300 hover:text-gray-200"
+                  : "border-transparent text-ink-2 hover:text-ink"
               }`}
             >
               Account Details
@@ -1853,7 +1861,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
               className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
                 activeTab === "savings"
                   ? "border-accent text-accent"
-                  : "border-transparent text-gray-300 hover:text-gray-200"
+                  : "border-transparent text-ink-2 hover:text-ink"
               }`}
             >
               Savings
@@ -1866,7 +1874,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
               className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
                 activeTab === "realization"
                   ? "border-accent text-accent"
-                  : "border-transparent text-gray-300 hover:text-gray-200"
+                  : "border-transparent text-ink-2 hover:text-ink"
               }`}
             >
               Realization
@@ -1879,7 +1887,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
               className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
                 activeTab === "asset_mix"
                   ? "border-accent text-accent"
-                  : "border-transparent text-gray-300 hover:text-gray-200"
+                  : "border-transparent text-ink-2 hover:text-ink"
               }`}
             >
               Asset Mix
@@ -1892,7 +1900,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
               className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
                 activeTab === "holdings"
                   ? "border-accent text-accent"
-                  : "border-transparent text-gray-300 hover:text-gray-200"
+                  : "border-transparent text-ink-2 hover:text-ink"
               }`}
             >
               Holdings
@@ -1905,7 +1913,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
               className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
                 activeTab === "rmd"
                   ? "border-accent text-accent"
-                  : "border-transparent text-gray-300 hover:text-gray-200"
+                  : "border-transparent text-ink-2 hover:text-ink"
               }`}
             >
               RMD
@@ -1919,7 +1927,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
               className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
                 activeTab === "grants"
                   ? "border-accent text-accent"
-                  : "border-transparent text-gray-300 hover:text-gray-200"
+                  : "border-transparent text-ink-2 hover:text-ink"
               }`}
             >
               Grants
@@ -1933,7 +1941,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
               className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
                 activeTab === "annuity"
                   ? "border-accent text-accent"
-                  : "border-transparent text-gray-300 hover:text-gray-200"
+                  : "border-transparent text-ink-2 hover:text-ink"
               }`}
             >
               Income &amp; Guarantees
@@ -1945,7 +1953,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
               activeTab === "beneficiaries"
                 ? "border-accent text-accent"
-                : "border-transparent text-gray-300 hover:text-gray-200"
+                : "border-transparent text-ink-2 hover:text-ink"
             }`}
           >
             Beneficiaries

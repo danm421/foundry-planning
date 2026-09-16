@@ -4,7 +4,7 @@ import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import DialogTabs, { type DialogTab } from "./dialog-tabs";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 
-type Size = "sm" | "md" | "lg" | "xl";
+type Size = "sm" | "md" | "lg" | "wide" | "xl";
 
 /** Maps the surface sizing flags to an inline height style. Driven by inline
  *  style (not a Tailwind class) so the fixedHeight case can't silently fall
@@ -73,6 +73,9 @@ const sizeClass: Record<Size, string> = {
   sm: "max-w-[480px]",
   md: "max-w-[640px]",
   lg: "max-w-[880px]",
+  // Sized for a wide data grid: the holdings table needs ~832px of content
+  // before it starts scrolling sideways, and `lg` leaves it none to spare.
+  wide: "max-w-[1120px]",
   xl: "max-w-[1600px]",
 };
 
@@ -176,7 +179,7 @@ export default function DialogShell({
         aria-label={title}
         tabIndex={-1}
         style={surfaceHeightStyle({ contentFill, fixedHeight })}
-        className={`relative z-10 w-full ${sizeClass[size]} flex flex-col whitespace-normal rounded-[var(--radius)] bg-card border-2 border-ink-3 ring-1 ring-black/60 shadow-2xl outline-none`}
+        className={`relative z-10 w-full ${sizeClass[size]} motion-safe:transition-[max-width] motion-safe:duration-200 flex flex-col whitespace-normal rounded-[var(--radius)] bg-card border-2 border-ink-3 ring-1 ring-black/60 shadow-2xl outline-none`}
       >
         {/* Header */}
         <div

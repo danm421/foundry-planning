@@ -99,6 +99,10 @@ export default function AddAccountDialog({
   const isEdit = Boolean(editing) || Boolean(editingNote);
   const isNoteCategory = category === "notes_receivable" || Boolean(editingNote);
 
+  // Mirrors the form's visible tab so the surface can widen for the Holdings
+  // grid, which needs more room than the 640px the rest of the form is built for.
+  const [activeTab, setActiveTab] = useState<string>(initialTab ?? "details");
+
   // Track whether any autosave occurred so we can refresh the balance sheet
   // on close (mirrors the liability dialog pattern).
   const autoSavedRef = useRef(false);
@@ -108,6 +112,9 @@ export default function AddAccountDialog({
       router.refresh();
       autoSavedRef.current = false;
     }
+    // Reset so reopening on Details doesn't flash the wide Holdings surface
+    // before the remounted form reports its tab.
+    setActiveTab(initialTab ?? "details");
     if (isControlled) onOpenChange?.(false);
     else setInternalOpen(false);
   }
@@ -140,7 +147,7 @@ export default function AddAccountDialog({
               ? "Edit Note Receivable"
               : "Edit Account"
           }
-          size="md"
+          size={!isNoteCategory && activeTab === "holdings" ? "wide" : "md"}
           bodyTopFlush={!isNoteCategory}
           fixedHeight={!lockTab}
           primaryAction={{
@@ -196,6 +203,7 @@ export default function AddAccountDialog({
               resolvedInflationRate={resolvedInflationRate}
               initialParentAccountId={initialParentAccountId}
               initialTab={initialTab}
+              onActiveTabChange={setActiveTab}
               lockTab={lockTab}
               onSuccess={close}
               onSubmitStateChange={setSubmitState}

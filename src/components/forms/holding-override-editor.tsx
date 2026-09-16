@@ -4,6 +4,7 @@
 import { useMemo, useState } from "react";
 import type { AssetClassOption } from "./asset-mix-tab";
 import type { HoldingRow } from "@/lib/investments/holdings-client";
+import { inputCompactClassName } from "./input-styles";
 import {
   pulledBlend,
   blendFromEntries,
@@ -117,34 +118,34 @@ export function HoldingOverrideEditor({ holding, assetClasses, onSave, onClose }
     : assetClasses;
 
   return (
-    <div className="space-y-3 rounded-md border border-gray-700 bg-gray-900/60 p-3">
+    <div className="space-y-3 rounded-md border border-hair-2 bg-card p-3">
       <div className="flex items-center justify-between">
-        <span className="text-sm font-medium text-gray-200">
+        <span className="text-sm font-medium text-ink">
           Asset classes — {holding.displayTicker ?? holding.displayName ?? "holding"}
         </span>
-        <label className="flex items-center gap-2 text-xs text-gray-400">
+        <label className="flex items-center gap-2 text-xs text-ink-3">
           <input
             type="checkbox"
             checked={hideZero}
             onChange={(e) => setHideZero(e.target.checked)}
-            className="h-3.5 w-3.5 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
+            className="h-3.5 w-3.5 rounded border-hair-2 bg-paper text-accent focus:ring-accent"
           />
           Hide 0%
         </label>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs">
-        <p className="text-gray-400">
+        <p className="text-ink-3">
           {hasPulled ? (
             <>
-              Pulled from holding: <span className="text-gray-300">{pulledText}</span>. Adjust any
+              Pulled from holding: <span className="text-ink-2">{pulledText}</span>. Adjust any
               row to customize.
             </>
           ) : (
             <>No pulled classification — set the asset classes manually below.</>
           )}
         </p>
-        <span className={customized ? "shrink-0 text-amber-300" : "shrink-0 text-gray-500"}>
+        <span className={customized ? "shrink-0 text-warn" : "shrink-0 text-ink-4"}>
           {status}
         </span>
       </div>
@@ -152,7 +153,7 @@ export function HoldingOverrideEditor({ holding, assetClasses, onSave, onClose }
       <div className="grid grid-cols-2 gap-x-6 gap-y-1">
         {visible.map((ac) => (
           <div key={ac.id} className="flex items-center justify-between gap-2">
-            <span className="flex-1 truncate text-sm text-gray-200">{ac.name}</span>
+            <span className="flex-1 truncate text-sm text-ink-2">{ac.name}</span>
             <div className="flex w-20 shrink-0 items-center gap-1">
               <input
                 type="text"
@@ -160,16 +161,16 @@ export function HoldingOverrideEditor({ holding, assetClasses, onSave, onClose }
                 value={texts.get(ac.id) ?? ""}
                 placeholder="0"
                 onChange={(e) => setWeight(ac.id, e.target.value)}
-                className="h-7 w-full rounded-md border border-gray-600 bg-gray-800 px-2 text-right text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                className={`${inputCompactClassName} tabular text-right`}
               />
-              <span className="text-sm text-gray-400">%</span>
+              <span className="text-sm text-ink-3">%</span>
             </div>
           </div>
         ))}
       </div>
 
-      <div className="flex items-center justify-between border-t border-gray-700 pt-2 text-sm">
-        <span className={over ? "text-red-400" : "text-gray-300"}>
+      <div className="flex items-center justify-between border-t border-hair pt-2 text-sm">
+        <span className={over ? "text-crit" : "text-ink-2"}>
           Total {(total * 100).toFixed(1)}%
           {over ? " — exceeds 100%" : ""}
         </span>
@@ -178,7 +179,7 @@ export function HoldingOverrideEditor({ holding, assetClasses, onSave, onClose }
             type="button"
             onClick={resetToPulled}
             disabled={saving || !hasPulled || !customized}
-            className="rounded-md border border-gray-600 px-3 py-1 text-xs text-gray-300 hover:bg-gray-800 disabled:opacity-50"
+            className="rounded-[var(--radius-sm)] border border-hair-2 px-3 py-1 text-xs text-ink-2 hover:bg-card-hover disabled:opacity-50"
           >
             Reset to pulled
           </button>
@@ -186,7 +187,7 @@ export function HoldingOverrideEditor({ holding, assetClasses, onSave, onClose }
             type="button"
             onClick={onClose}
             disabled={saving}
-            className="rounded-md border border-gray-600 px-3 py-1 text-xs text-gray-300 hover:bg-gray-800 disabled:opacity-50"
+            className="rounded-[var(--radius-sm)] border border-hair-2 px-3 py-1 text-xs text-ink-2 hover:bg-card-hover disabled:opacity-50"
           >
             Cancel
           </button>
@@ -194,7 +195,7 @@ export function HoldingOverrideEditor({ holding, assetClasses, onSave, onClose }
             type="button"
             onClick={handleSave}
             disabled={saving || over}
-            className="rounded-md bg-accent px-3 py-1 text-xs font-medium text-black hover:opacity-90 disabled:opacity-50"
+            className="rounded-[var(--radius-sm)] bg-accent px-3 py-1 text-xs font-medium text-accent-on hover:opacity-90 disabled:opacity-50"
           >
             {saving ? "Saving…" : "Save"}
           </button>
