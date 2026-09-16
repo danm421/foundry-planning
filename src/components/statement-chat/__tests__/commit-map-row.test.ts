@@ -245,3 +245,75 @@ describe("commitMapRow — the created record's id", () => {
     if (result.ok) expect(result.createdId).toBeNull();
   });
 });
+
+/**
+ * Task 2 (Phase 3A). An update already knows the record's id — it came from
+ * the match — and an update route need not return `{ id }` at all. Without
+ * this, every successful correction ended with "the response did not identify
+ * the new record … committing it again would create a duplicate", where both
+ * halves are false: re-committing an update overwrites the same row.
+ */
+describe("commitMapRow — an opted-in update", () => {
+  const updatable = { ...life, updateSemantics: { method: "PUT" as const } };
+  const matched = row(VALID_TERM_POLICY, { match: { kind: "exact", existingId: "pol_7" } });
+
+  it("PUTs the entity's update route with the matched id substituted", async () => {
+    vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => ({}) } as Response);
+    const result = await commitMapRow({ clientId: "c1", entity: updatable, row: matched });
+    expect(result.ok).toBe(true);
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toBe("/api/clients/c1/insurance-policies/pol_7");
+    expect(init?.method).toBe("PUT");
+  });
+
+  it("takes the id from the match and raises no duplicate warning", async () => {
+    // The real shape of an update route's response: 200 with no id in it.
+    vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => ({}) } as Response);
+    const result = await commitMapRow({ clientId: "c1", entity: updatable, row: matched });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.createdId).toBe("pol_7");
+      expect(result.warnings.join(" ")).not.toMatch(/could not be marked/i);
+      expect(result.warnings.join(" ")).not.toMatch(/duplicate/i);
+    }
+  });
+
+  it("still reads a CREATE's id out of the response body", async () => {
+    // The other half: opting an entity into updates must not stop an unmatched
+    // row on that same entity reading its new id from the create response.
+    vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => ({ id: "pol_1" }) } as Response);
+    const result = await commitMapRow({ clientId: "c1", entity: updatable, row: row(VALID_TERM_POLICY) });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.createdId).toBe("pol_1");
+      expect(result.warnings.join(" ")).not.toMatch(/could not be marked/i);
+    }
+  });
+
+  it("still warns for a set-replacing PUT, which is not an update leg", async () => {
+    // The id must be taken from the match ONLY for an entity that declared
+    // `updateSemantics` — not for every non-POST request. A
+    // `payloadShape: "array"` entity also PUTs, and its write REPLACES the
+    // whole set, so it has none of an update's guarantees.
+    vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => ({}) } as Response);
+    const setEntity = {
+      ...life,
+      payloadShape: "array" as const,
+      routes: { ...life.routes, update: "/insurance-policies/p1/beneficiaries" },
+      fields: [{ key: "recipientId", label: "Recipient", kind: "string" as const }],
+    };
+    const result = await commitMapRow({
+      clientId: "c1",
+      entity: setEntity,
+      row: row({ recipientId: "b" }),
+      existingSet: [{ recipientId: "a" }],
+    });
+    expect(result.ok).toBe(true);
+    const [, init] = vi.mocked(fetch).mock.calls[0];
+    expect(init?.method).toBe("PUT");
+    if (result.ok) {
+      expect(result.createdId).toBeNull();
+      expect(result.warnings.join(" ")).toMatch(/could not be marked/i);
+    }
+  });
+});

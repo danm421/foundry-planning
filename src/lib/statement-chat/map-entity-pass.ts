@@ -2,18 +2,80 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { clientImports } from "@/db/schema";
-import { findEntity } from "@/domain/forge/detail-fields";
+import { findEntity, type DetailEntity } from "@/domain/forge/detail-fields";
 import { extractMapEntities } from "@/lib/entity-extraction";
 // Imported from the module rather than the barrel on purpose. `matchByIdentity`
 // is pure and deterministic, and this file's tests assert the REAL exact/new
 // verdicts while stubbing the barrel's AI-calling `extractMapEntities`. Taking
 // both from the barrel would let one mock silently stub out the matching this
 // function exists to do, and every row would come back undefined-matched.
-import { matchByIdentity } from "@/lib/entity-extraction/matcher";
+import { matchByIdentity, type ExistingRow } from "@/lib/entity-extraction/matcher";
 import type { RowsByEntity } from "@/lib/entity-extraction/types";
 import { NotFoundError } from "@/lib/imports/authz";
 import { loadExistingRows } from "./existing-rows";
 
+/**
+ * Which values of an existing row's `role` column an entity may be matched
+ * against. An entity absent from this map matches against every row it loads.
+ *
+ * WHY: the household's OWN people live in the same tables as the people a
+ * document describes. The spouse is a `family_members` row with role "spouse",
+ * and `family_member`'s identity is a first name alone — so a fact finder that
+ * listed the spouse produced an `exact` match onto her row, and the opt-in PUT
+ * then copied `relationship`, whose enum has no spouse value and whose map
+ * default is "child". The spouse silently became a child. `related_party`
+ * reached the household's `primary` CRM contact the same way.
+ *
+ * ALLOWLIST, so a role added to either enum later is not matched until someone
+ * decides it should be. The cost of that is an offered duplicate the advisor
+ * can see, which is the trade `annotateMatches` already makes below.
+ *
+ * A new people entity belongs HERE rather than in the field map: this says
+ * which rows are candidates for matching, not what a field means.
+ *
+ * Exported for the ratchet in this module's tests, which pins both allowlists
+ * against the real Drizzle enums so a role added to either one cannot inherit a
+ * side by default.
+ */
+export const MATCHABLE_ROLES_BY_ENTITY: Record<string, readonly string[]> = {
+  // `familyMemberRoleEnum` is ["client", "spouse", "child", "other"]; the
+  // household sync writes the client and the spouse rows.
+  family_member: ["child", "other"],
+  // `crmContactRoleEnum` is ["primary", "spouse", "dependent", "other"]. Only
+  // "other" is a related party — the map fixes the entity's own `role` field to
+  // "other" for the same reason.
+  related_party: ["other"],
+};
+
+function matchableExistingRows(
+  entity: DetailEntity,
+  existing: ExistingRow[],
+  onWarning?: (message: string) => void,
+): ExistingRow[] {
+  const matchable = MATCHABLE_ROLES_BY_ENTITY[entity.id];
+  if (!matchable) return existing;
+
+  // The rule reads a column, and nothing in this module owns the select that
+  // returns it — `loadExistingRows` hands back whatever `getTableColumns` gave
+  // it. Narrow that select to the identity columns one day and every row here
+  // fails the filter, the population silently becomes empty, and every test
+  // stays green because they all mock the loader.
+  //
+  // So: rows present but NOT ONE carries the key is treated exactly like a
+  // failed load — the filter below yields nothing, and the advisor is told why
+  // rather than left to read an empty population as "this client has none".
+  // Guarded on `length` because a client with no family members legitimately
+  // has no rows to carry the key, and that is not a fault.
+  if (existing.length > 0 && !existing.some((candidate) => "role" in candidate.values)) {
+    console.warn(`[map-entity-pass] existing ${entity.id} rows carry no role column`);
+    onWarning?.(
+      `Could not tell which of this client's existing ${entity.label} rows are the household's own ` +
+        "people, so every row below is offered as new. Check for duplicates before accepting them.",
+    );
+  }
+
+  return existing.filter((candidate) => matchable.includes(String(candidate.values.role)));
+}
 
 /**
  * Annotate each candidate row with `exact` / `fuzzy` / `new` against the
@@ -56,7 +118,13 @@ export async function annotateMatches(args: {
     // This is not a behaviour change: the annotation below is identical.
     if (entity.identity?.length) {
       try {
-        existing = await loadExistingRows({ entity, clientId });
+        // Filtered in the same expression the load feeds, so no later edit can
+        // put an unfiltered `existing` in front of `matchByIdentity`.
+        existing = matchableExistingRows(
+          entity,
+          await loadExistingRows({ entity, clientId }),
+          onWarning,
+        );
       } catch (err) {
         const reason = err instanceof Error ? err.message : "unknown";
         console.warn(`[map-entity-pass] could not load existing ${entityId}: ${reason}`);

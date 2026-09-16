@@ -24,6 +24,37 @@ describe("createSchemaFor", () => {
     }
   });
 
+  /**
+   * The ratchet above proves SOME schema is registered for every declaring
+   * entity, but a registry key that does not match the map's
+   * `module#export` is a SILENT lookup miss — `createSchemaFor` returns
+   * undefined and the row is written unvalidated, with nothing raising. So pin
+   * one real entity end to end, from the map's declaration through the
+   * registry to the schema's own refusal.
+   */
+  it("resolves the family-member schema through its registry key", () => {
+    const entity = findEntity("family_member")!;
+    expect(createSchemaFor(entity)).toBeDefined();
+    expect(createSchemaRefusal(entity, { lastName: "Doe" })).toBe(
+      "First Name: First name is required",
+    );
+  });
+
+  /**
+   * The same end-to-end pin for `related_party`. Its registry key is the fourth
+   * hand-typed `module#export` string in the file, and the most likely refusal
+   * this entity will ever produce is the one below: a trust deed that prints
+   * "Trustee: Ada" names a first name and no surname, and `last_name` is
+   * `.notNull()` on `crm_household_contacts`.
+   */
+  it("resolves the related-party schema through its registry key", () => {
+    const entity = findEntity("related_party")!;
+    expect(createSchemaFor(entity)).toBeDefined();
+    expect(createSchemaRefusal(entity, { firstName: "Ada" })).toBe(
+      "Last Name: Last name is required",
+    );
+  });
+
   it("returns nothing for an entity that declares no create schema", () => {
     const entity = { ...findEntity("life_insurance_policy")!, createSchema: undefined };
     expect(createSchemaFor(entity)).toBeUndefined();

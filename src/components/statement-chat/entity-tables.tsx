@@ -11,13 +11,19 @@ import { issueReason } from "./value-issue";
 
 /**
  * Details-sidebar order. A tab this list omits sorts LAST, never first (Task
- * 12 ruling 10) — `DetailsTab` has eight members and only three of them read
- * documents today, so an entity on one of the other five (a plain
+ * 12 ruling 10) — `DetailsTab` has eight members and only four of them read
+ * documents today, so an entity on one of the other four (a plain
  * `TAB_ORDER.indexOf` would return -1 for those and sort them to the front,
  * the opposite of "anything on another tab sorts last") must not jump ahead
  * of the tabs this task actually orders.
+ *
+ * `profile` leads it (Phase 3A, Task 8). All three of the people pass's
+ * entities sit on that tab, and while it was absent they fell to the
+ * sorts-LAST rule above — a fact finder's family members rendered BELOW the
+ * insurance policies, which is not the order the document states them in and
+ * not the order an advisor reviews a household in.
  */
-const TAB_ORDER: DetailsTab[] = ["net-worth", "income-expenses", "insurance"];
+const TAB_ORDER: DetailsTab[] = ["profile", "net-worth", "income-expenses", "insurance"];
 
 function tabRank(tab: DetailsTab): number {
   const i = TAB_ORDER.indexOf(tab);
@@ -127,15 +133,17 @@ export default function EntityTables({
                 // payload key means nothing to the person reading this.
                 const labelFor = (key: string) =>
                   entity.fields.find((f) => f.key === key)?.label ?? key;
-                // C1 (final review, Ruling 34). An `exact` match names a
-                // record that ALREADY exists, and `buildWriteRequest` has no
-                // update leg — every non-array entity returns
-                // `POST routes.create`. So the one row this table used to
-                // promise an "Update" for was the one it DUPLICATED, and the
-                // stamp then pointed at the duplicate. Refuse honestly and
-                // name the screen that can finish it, the same posture the
-                // `fuzzy` leg already takes.
-                if (source.match?.kind === "exact") {
+                // C1 (final review, Ruling 34), now CONDITIONAL (Phase 3A,
+                // Task 2). An `exact` match names a record that ALREADY
+                // exists. Where the entity has not declared `updateSemantics`
+                // the writer would still create, so the one row this table
+                // would promise an "Update" for is the one it would
+                // DUPLICATE — refuse honestly and name the screen that can
+                // finish it, the same posture the `fuzzy` leg takes. An
+                // entity that HAS declared its partial-update semantics falls
+                // through to `buildWriteRequest` below, which builds the
+                // update and decides.
+                if (source.match?.kind === "exact" && !entity.updateSemantics) {
                   return `This ${entity.label.toLowerCase()} already exists — update it on the Details tab`;
                 }
                 // The exact rule every commit module in
@@ -182,17 +190,19 @@ export default function EntityTables({
               rowNotice={(view) => {
                 const source = byRowId.get(view.__rowId);
                 if (!source) return {};
+                // The word has to match what Commit would actually do (this
+                // table's ONE RULE, the "will update" half). An exact match on
+                // an entity that opted into updates IS an update; on one that
+                // has not, it is blocked above with its own reason and gets no
+                // word at all, rather than a contradictory "Add" beside "this
+                // already exists".
+                const matched = source.match?.kind === "exact";
+                const action = matched ? (entity.updateSemantics ? "Update" : undefined) : "Add";
                 return {
                   // Low confidence MARKS the row. It never pre-selects discard —
                   // hiding a value is the failure mode Phase 1 already rejected.
                   needsReview: source.rowConfidence < REVIEW_THRESHOLD,
-                  // "Update" is GONE (Ruling 34). It described a leg
-                  // `buildWriteRequest` does not have, and an `exact` match is
-                  // now blocked above with its own reason — so the only state
-                  // left for an action word to describe is a row that will be
-                  // added. An exact match gets no word at all rather than a
-                  // contradictory "Add" beside "this already exists".
-                  action: source.match?.kind === "exact" ? undefined : "Add",
+                  action,
                 };
               }}
             />

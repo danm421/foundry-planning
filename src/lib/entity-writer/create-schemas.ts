@@ -2,7 +2,9 @@
 import type { ZodType } from "zod";
 import type { DetailEntity } from "@/domain/forge/detail-fields";
 import { disabilityPolicyCreateSchema } from "@/lib/schemas/disability-policies";
+import { familyMemberCreateSchema } from "@/lib/schemas/family-members";
 import { insurancePolicyCreateSchema } from "@/lib/schemas/insurance-policies";
+import { relatedPartyCreateSchema } from "@/lib/schemas/related-parties";
 
 /**
  * The route create schemas this module can validate a row against, keyed
@@ -14,15 +16,14 @@ import { insurancePolicyCreateSchema } from "@/lib/schemas/insurance-policies";
  * string to a module at call time would make it async and would defeat every
  * bundler. So the schemas a caller can actually reach are imported by name.
  *
- * WHY ONLY TWO: `buildWriteRequest`'s only caller is the statement-chat map
- * pass, whose entity set is `documentEvidenceEntities()` — today exactly
- * `life_insurance_policy` and `disability_policy`. `create-schemas.test.ts`
+ * WHY SO FEW: `buildWriteRequest`'s only caller is the statement-chat map
+ * pass, whose entity set is `documentEvidenceEntities()`. `create-schemas.test.ts`
  * asserts that every document-evidence entity declaring a schema is registered
- * here, so adding a third entity to the map and forgetting this file is a RED
+ * here, so adding another entity to the map and forgetting this file is a RED
  * test rather than a silently unvalidated write.
  *
  * CLIENT-SAFE, and it has to stay that way: this module reaches a "use client"
- * component through `commit-map-row.ts`. Both schemas above import only `zod`,
+ * component through `commit-map-row.ts`. The schemas above import only `zod`,
  * `@/lib/schemas/strict-partial` and `@/lib/milestones` (which the field map
  * itself already pulls client-side). Never register a schema whose module
  * touches the database or a node-only API.
@@ -30,6 +31,8 @@ import { insurancePolicyCreateSchema } from "@/lib/schemas/insurance-policies";
 const CREATE_SCHEMAS: Record<string, ZodType> = {
   "@/lib/schemas/insurance-policies#insurancePolicyCreateSchema": insurancePolicyCreateSchema,
   "@/lib/schemas/disability-policies#disabilityPolicyCreateSchema": disabilityPolicyCreateSchema,
+  "@/lib/schemas/family-members#familyMemberCreateSchema": familyMemberCreateSchema,
+  "@/lib/schemas/related-parties#relatedPartyCreateSchema": relatedPartyCreateSchema,
 };
 
 export function createSchemaFor(entity: DetailEntity): ZodType | undefined {

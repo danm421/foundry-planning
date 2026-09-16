@@ -1,9 +1,33 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import EntityTables from "../entity-tables";
 import type { CandidateRow } from "@/lib/entity-extraction/types";
+
+/**
+ * Task 2 (Phase 3A). No entity declares `updateSemantics` yet — Tasks 3 and 5
+ * do — so the opted-in case has to be staged here. This wraps the REAL
+ * `findEntity` and adds the declaration only for the ids a test opts in, so
+ * every other test in this file still sees the real map unchanged.
+ */
+const OPTED_IN_ENTITY_IDS = vi.hoisted(() => new Set<string>());
+
+vi.mock("@/domain/forge/detail-fields", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/domain/forge/detail-fields")>();
+  return {
+    ...actual,
+    findEntity: (id: string) => {
+      const entity = actual.findEntity(id);
+      if (!entity || !OPTED_IN_ENTITY_IDS.has(id)) return entity;
+      return { ...entity, updateSemantics: { method: "PUT" as const } };
+    },
+  };
+});
+
+// Imported AFTER the mock so the component's own `findEntity` is the wrapped one.
+import EntityTables from "../entity-tables";
+
+afterEach(() => OPTED_IN_ENTITY_IDS.clear());
 
 function row(entityId: string, rowId: string, values: Record<string, unknown>, extra: Partial<CandidateRow> = {}): CandidateRow {
   return {
@@ -244,5 +268,53 @@ describe("EntityTables", () => {
     render(<EntityTables {...props} rows={noOverflow} />);
     const table = screen.getByRole("table", { name: /medicare/i });
     expect(within(table).queryByRole("button", { name: /show/i })).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Task 2 (Phase 3A), the surface half. `buildWriteRequest` now has a real
+ * update leg, opted into per entity. This table's ONE RULE cuts both ways: it
+ * may not say "committable" where the writer would refuse, and it may not say
+ * "Add" where the writer would UPDATE.
+ *
+ * The opt-OUT regression guard is the existing "blocks commit on an exact
+ * match and never promises an update" case above, which runs with
+ * `OPTED_IN_ENTITY_IDS` empty — an entity that has not declared its
+ * partial-update semantics is still blocked, still told to use the Details
+ * tab, and still never captioned "Update".
+ */
+describe("EntityTables — an entity that has opted into updates", () => {
+  const matched = {
+    life_insurance_policy: [
+      row("life_insurance_policy", "l1", VALID_LIFE, { match: { kind: "exact", existingId: "p1" } }),
+    ],
+  };
+
+  it("lets an exact match through to the writer instead of blocking it", () => {
+    OPTED_IN_ENTITY_IDS.add("life_insurance_policy");
+    render(<EntityTables {...props} rows={matched} />);
+    const target = screen.getByRole("row", { name: /Term Life 20/ });
+    expect(within(target).getByRole("button", { name: /commit/i })).not.toBeDisabled();
+    expect(
+      within(target).queryByText(/already exists — update it on the Details tab/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("captions that row 'Update', never 'Add'", () => {
+    OPTED_IN_ENTITY_IDS.add("life_insurance_policy");
+    render(<EntityTables {...props} rows={matched} />);
+    const target = screen.getByRole("row", { name: /Term Life 20/ });
+    expect(within(target).getByText("Update")).toBeInTheDocument();
+    expect(within(target).queryByText("Add")).not.toBeInTheDocument();
+  });
+
+  it("still captions an UNMATCHED row on the same entity 'Add'", () => {
+    // The other half: opting an entity in must not relabel every row. Without
+    // this, hardcoding "Update" would pass the case above.
+    OPTED_IN_ENTITY_IDS.add("life_insurance_policy");
+    render(<EntityTables {...props} rows={{ life_insurance_policy: rows.life_insurance_policy }} />);
+    const target = screen.getByRole("row", { name: /Term Life 20/ });
+    expect(within(target).getByText("Add")).toBeInTheDocument();
+    expect(within(target).queryByText("Update")).not.toBeInTheDocument();
   });
 });

@@ -123,6 +123,18 @@ export async function loadExistingRows(args: {
     }
     rows = await db.select(columns).from(table).where(eq(clientIdColumn, clientId));
   } else {
+    // Both remaining paths reach the client through one parent row, and they
+    // differ in exactly two columns: which parent column the join lands on, and
+    // which parent column carries the client.
+    //
+    //   join:         table[on] = through.id,            filtered by through.clientId
+    //   parentColumn: table[on] = through[parentColumn], filtered by through.id
+    //
+    // `lifeInsurancePolicies` hangs off `accounts.id` and only `accounts.clientId`
+    // says whose it is. `crmHouseholdContacts` is the mirror image: its
+    // `householdId` matches `clients.crm_household_id`, and the client is
+    // `clients.id` — `clients` has no `clientId` at all. One body, two column
+    // choices, so a guard or a message can only be changed in one place.
     const through = resolveTable(path.through);
     if (!through) {
       throw new Error(
@@ -130,9 +142,16 @@ export async function loadExistingRows(args: {
       );
     }
     const throughColumns = columnsOf(through);
-    const parentId = throughColumns.id;
-    const parentClientId = throughColumns.clientId;
-    if (!parentId || !parentClientId) {
+    const parentJoin =
+      path.via === "parentColumn" ? throughColumns[path.parentColumn] : throughColumns.id;
+    const parentFilter =
+      path.via === "parentColumn" ? throughColumns.id : throughColumns.clientId;
+    if (path.via === "parentColumn" && !parentJoin) {
+      throw new Error(
+        `${entity.id} joins to parent column "${path.parentColumn}", which is not a column on ${path.through}`,
+      );
+    }
+    if (!parentJoin || !parentFilter) {
       throw new Error(
         `${entity.id} joins through "${path.through}", which has no id/clientId to scope by`,
       );
@@ -146,8 +165,8 @@ export async function loadExistingRows(args: {
     rows = await db
       .select(columns)
       .from(table)
-      .innerJoin(through, eq(joinColumn, parentId))
-      .where(eq(parentClientId, clientId));
+      .innerJoin(through, eq(joinColumn, parentJoin))
+      .where(eq(parentFilter, clientId));
   }
 
   return rows.map((row) => ({ id: String(row[idKey]), values: row }));

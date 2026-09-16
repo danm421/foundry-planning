@@ -119,6 +119,12 @@ export type AuditAction =
   | "family_member.create"
   | "family_member.update"
   | "family_member.delete"
+  // Related parties — trustees, executors, POAs, CPAs and attorneys. The row
+  // is a `crm_household_contacts` record, but it is written through a
+  // client-keyed route and audited against the CLIENT, not the CRM household,
+  // which is why these are not the `crm.contact.*` actions.
+  | "related_party.create"
+  | "related_party.update"
   // Estate flow — gifts (one-off + recurring series) and wills
   | "gift.create"
   | "gift.update"

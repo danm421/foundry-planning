@@ -39,12 +39,22 @@ export const PROFILE_ENTITIES: readonly DetailEntity[] = [
   // ───────────────────────────────────────────────────────────────────────────
   {
     id: "client_household",
-    label: "Household (client and spouse)",
+    label: "Household (client and co-client)",
     tab: "profile",
     surface: "Profile → Household → Edit profile",
     table: "clients",
     routes: { list: "/", update: "/", delete: "/" },
     scenarioScoped: false,
+    documentEvidence: true,
+    documentHints: [
+      "a fact finder or client profile page printing the client's and spouse's legal names",
+      "dates of birth, email, phone and home address for the client and spouse",
+      "a 'Personal Information' or 'Client Information' header",
+    ],
+    updateSemantics: { method: "PUT" },
+    // No `identity` and no `scopePath`: the household is a singleton addressed
+    // by the client id itself, so it never reaches `matchByIdentity` or
+    // `loadExistingRows` — the match is supplied directly as the client id.
     fields: [
       {
         key: "firstName",
@@ -68,7 +78,7 @@ export const PROFILE_ENTITIES: readonly DetailEntity[] = [
       },
       {
         key: "spouseName",
-        label: "Spouse First Name",
+        label: "Co-client First Name",
         kind: "string",
         nullable: true,
         notes:
@@ -76,14 +86,14 @@ export const PROFILE_ENTITIES: readonly DetailEntity[] = [
       },
       {
         key: "spouseLastName",
-        label: "Spouse Last Name",
+        label: "Co-client Last Name",
         kind: "string",
         nullable: true,
         notes: "Blank inherits the client's last name. " + CONTACT_NOTE,
       },
       {
         key: "spouseDob",
-        label: "Spouse Date of Birth",
+        label: "Co-client Date of Birth",
         kind: "date",
         nullable: true,
         notes: "ISO yyyy-mm-dd. Feeds the plan-horizon recompute. " + CONTACT_NOTE,
@@ -115,21 +125,21 @@ export const PROFILE_ENTITIES: readonly DetailEntity[] = [
       },
       {
         key: "spouseRetirementAge",
-        label: "Spouse Retirement Age",
+        label: "Co-client Retirement Age",
         kind: "number",
         nullable: true,
         range: { min: 18, max: 100 },
       },
       {
         key: "spouseRetirementMonth",
-        label: "Spouse Retirement Month",
+        label: "Co-client Retirement Month",
         kind: "number",
         nullable: true,
         range: { min: 1, max: 12 },
       },
       {
         key: "spouseLifeExpectancy",
-        label: "Spouse Life Expectancy",
+        label: "Co-client Life Expectancy",
         kind: "number",
         nullable: true,
         range: { min: 1, max: 130 },
@@ -289,10 +299,9 @@ export const PROFILE_ENTITIES: readonly DetailEntity[] = [
   // ───────────────────────────────────────────────────────────────────────────
   // Family Members — children, parents, siblings and anyone else in the tree.
   //
-  // No zod schema: both POST and PUT destructure the body by hand. The ONLY
-  // create-time validation is `if (!firstName) 400`; everything else goes
-  // straight into the insert, so an out-of-enum `relationship` reaches Postgres
-  // and comes back as a 500, not a 400.
+  // The POST parses its body with `familyMemberCreateSchema`. The PUT still
+  // destructures by hand, so an out-of-enum `relationship` on the UPDATE path
+  // reaches Postgres and comes back as a 500, not a 400.
   // ───────────────────────────────────────────────────────────────────────────
   {
     id: "family_member",
@@ -306,7 +315,25 @@ export const PROFILE_ENTITIES: readonly DetailEntity[] = [
       update: "/family-members/[memberId]",
       delete: "/family-members/[memberId]",
     },
+    createSchema: { module: "@/lib/schemas/family-members", export: "familyMemberCreateSchema" },
     scenarioScoped: false,
+    documentEvidence: true,
+    documentHints: [
+      "a list of children, dependants or family members with dates of birth",
+      "a 'Family' or 'Dependants' section of a fact finder",
+      "names and ages of children alongside the client's own details",
+    ],
+    // First name ALONE, deliberately. `matchByIdentity` reports "new" unless
+    // every identity field is present and unflagged, and a document naming
+    // three children rarely prints all three dates of birth — a
+    // ["firstName", "dateOfBirth"] identity would mark every child new and
+    // duplicate the household. Within one household a first name identifies a
+    // member well, a single-field identity can only ever yield `exact` or
+    // `new` (never an ambiguous `fuzzy`), and the date of birth then arrives
+    // as an UPDATE to the matched row.
+    identity: ["firstName"],
+    scopePath: { via: "column" },
+    updateSemantics: { method: "PUT" },
     fields: [
       {
         key: "firstName",
@@ -338,14 +365,15 @@ export const PROFILE_ENTITIES: readonly DetailEntity[] = [
         ],
         defaultValue: "child",
         notes:
-          "NOT validated by the route — an unlisted value reaches the Postgres enum and surfaces as a 500, not a 400.",
+          "The create schema rejects an unlisted value with a 400. The PUT does not — there an unlisted value still reaches the Postgres enum and surfaces as a 500.",
       },
       {
         key: "dateOfBirth",
         label: "Date of Birth",
         kind: "date",
         nullable: true,
-        notes: "ISO yyyy-mm-dd. An empty string is coerced to null.",
+        notes:
+          "ISO yyyy-mm-dd. An empty string is coerced to null. On create, anything that is not a real calendar date is a 400.",
       },
       { key: "notes", label: "Notes", kind: "text", nullable: true },
       {
@@ -353,7 +381,8 @@ export const PROFILE_ENTITIES: readonly DetailEntity[] = [
         label: "Domestic partner (affects NJ/MD inheritance tax)",
         kind: "boolean",
         defaultValue: false,
-        notes: "Coerced with `!!` — any truthy value stores true.",
+        notes:
+          "Send a real boolean: the create schema rejects \"yes\" or 1 with a 400. The PUT still coerces with `!!`, where any truthy value stores true.",
       },
       {
         key: "inheritanceClassOverride",
@@ -361,10 +390,11 @@ export const PROFILE_ENTITIES: readonly DetailEntity[] = [
         kind: "object",
         defaultValue: null,
         notes:
-          'Shape: Partial<Record<"PA"|"NJ"|"KY"|"NE"|"MD", "A"|"B"|"C"|"D">>. Server default is {} (auto-classify from relationship). Not validated by the route.',
+          'Shape: Partial<Record<"PA"|"NJ"|"KY"|"NE"|"MD", "A"|"B"|"C"|"D">>. Server default is {} (auto-classify from relationship). A partial map is fine; an unknown state or class letter is a 400 on create.',
       },
       {
         key: "claimedAsDependent",
+        appliesTo: "update",
         label: "Dependent",
         kind: "enum",
         enumValues: ["auto", "yes", "no"],
@@ -381,6 +411,83 @@ export const PROFILE_ENTITIES: readonly DetailEntity[] = [
         writable: false,
         notes:
           "Neither family-members route accepts this. The client/spouse rows are created and kept in step by PUT /api/clients/[id]'s household sync.",
+      },
+    ],
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Related parties — the external people a document names: trustees,
+  // executors, powers of attorney, CPAs, attorneys.
+  //
+  // These live in the CRM's household contacts, NOT on a planning table, so
+  // this is the one entity whose table reaches a client through a parent's
+  // non-id column: `crm_household_contacts.household_id` matches
+  // `clients.crm_household_id`, and the client is then `clients.id`.
+  //
+  // `role` is listed but `writable: false` — `relatedPartyCreateSchema` fixes
+  // it to "other" and the extractor never sees it (a non-writable field is left
+  // out of the prompt, and `buildWriteRequest` drops it from the payload). The
+  // table allows exactly one `primary` and one `spouse` per household and both
+  // belong to the Household surface, so a row read off a document must never
+  // contend for either slot. It is listed rather than omitted because
+  // `schema-conformance.test.ts` requires every key of the named create schema
+  // to appear in the catalogue.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    id: "related_party",
+    label: "Related party",
+    tab: "profile",
+    surface: "CRM → Household → Contacts",
+    table: "crmHouseholdContacts",
+    // No `list`: the route file is POST-only. Nothing in `src` reads
+    // `routes.list` (the sole consumers of `.routes` are build-request.ts's
+    // `create`/`update` lookups), and the conformance test checks only that a
+    // route FILE exists, never which methods it exports — so a declared `list`
+    // here would be a claim the map cannot back and nobody would catch. The
+    // map pass reads existing rows straight from the table via `scopePath`,
+    // not over HTTP, so no consumer wants one.
+    routes: {
+      create: "/related-parties",
+      update: "/related-parties/[partyId]",
+    },
+    createSchema: { module: "@/lib/schemas/related-parties", export: "relatedPartyCreateSchema" },
+    scenarioScoped: false,
+    documentEvidence: true,
+    documentHints: [
+      "a trustee, successor trustee, executor, personal representative or guardian named in a trust or will",
+      "a power of attorney, attorney-in-fact or health care proxy",
+      "an advisor's professional team: CPA, accountant, attorney, insurance agent",
+      "a business partner or key employee named alongside a business interest",
+    ],
+    identity: ["firstName", "lastName"],
+    scopePath: { via: "parentColumn", through: "clients", on: "householdId", parentColumn: "crmHouseholdId" },
+    updateSemantics: { method: "PATCH" },
+    fields: [
+      { key: "firstName", label: "First Name", kind: "string", required: true },
+      { key: "lastName", label: "Last Name", kind: "string", required: true },
+      {
+        key: "relationshipLabel",
+        label: "Role",
+        kind: "string",
+        nullable: true,
+        notes: "Free text as the document words it: Trustee, Successor Trustee, Executor, CPA, Attorney.",
+        aliases: ["Trustee", "Successor Trustee", "Executor", "Personal Representative", "Power of Attorney", "CPA", "Attorney", "Guardian"],
+      },
+      { key: "email", label: "Email", kind: "string", nullable: true },
+      { key: "phone", label: "Phone", kind: "string", nullable: true },
+      { key: "mobile", label: "Mobile", kind: "string", nullable: true },
+      { key: "employer", label: "Firm", kind: "string", nullable: true, aliases: ["Employer", "Company"] },
+      { key: "occupation", label: "Occupation", kind: "string", nullable: true },
+      { key: "notes", label: "Notes", kind: "text", nullable: true },
+      {
+        key: "role",
+        label: "Contact role",
+        kind: "enum",
+        enumValues: ["other"],
+        defaultValue: "other",
+        writable: false,
+        notes:
+          "Fixed. `relatedPartyCreateSchema` accepts the literal \"other\" and nothing else, and the PATCH schema does not carry the key at all. The household's own primary and spouse rows are owned by the Household surface.",
       },
     ],
   },

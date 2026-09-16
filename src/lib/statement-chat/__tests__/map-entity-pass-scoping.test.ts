@@ -131,6 +131,7 @@ beforeEach(() => {
     rows: { disability_policy: [candidate("Group LTD")] },
     promptVersion: "map:test",
     warnings: ["a warning from the extractor"],
+    claimedPages: [],
   });
 });
 
@@ -182,6 +183,7 @@ describe("runMapEntityPass persistence", () => {
       rows: { disability_policy: [candidate("Group LTD, re-read")] },
       promptVersion: "map:test",
       warnings: [],
+      claimedPages: [],
     });
     await runMapEntityPass(ARGS);
 

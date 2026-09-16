@@ -38,6 +38,20 @@ function row(rowId: string, values: Record<string, unknown>, extra: Partial<Cand
 // `disabilityPolicyCreateSchema` demands it whenever the LTD benefit period
 // mode is "to_age" — which is its DEFAULT. So `{ name, insured }` alone 400s
 // at the real route, and since I4 (Ruling 36) is refused before the call.
+/** A `family_member` row. Unlike `disability_policy` above, this entity
+ *  declares `updateSemantics: { method: "PUT" }` (Task 2) — which is what makes
+ *  an `exact` match on it a pending UPDATE rather than an unreachable row. */
+function member(rowId: string, values: Record<string, unknown>, extra: Partial<CandidateRow> = {}): CandidateRow {
+  return {
+    entityId: "family_member",
+    rowId,
+    values: Object.entries(values).map(([key, value]) => ({ key, value, snippet: "x", confidence: 0.9 })),
+    missingRequired: [],
+    rowConfidence: 0.9,
+    ...extra,
+  };
+}
+
 const d1 = row("f1:disability_policy:0", { name: "Group LTD", insured: "client", ltdBenefitPeriodAge: 65 });
 const d2 = row("f2:disability_policy:0", { name: "Individual LTD", insured: "spouse", ltdBenefitPeriodAge: 67 });
 
@@ -214,6 +228,37 @@ describe("useMapRows — rehydration", () => {
     // ONLY the stamped one. Seeding every row would report an uncommitted
     // policy as written; seeding none is the duplicate this closes.
     expect(result.current.committedRowIds).toEqual([committed.rowId]);
+  });
+
+  /**
+   * FINAL WHOLE-BRANCH REVIEW, CRITICAL. This seed read
+   * `match.kind === "exact"` as "I already wrote this". Task 2 deleted that
+   * premise: an entity declaring `updateSemantics` can now be UPDATED, so the
+   * same stamp on one of its rows means the opposite — a correction the
+   * advisor has not applied yet. Seeding it disabled the only control that
+   * applies it and rendered "Committed" over a write that never happened,
+   * observed live on the Chidi row during Task 9's browser pass.
+   *
+   * Both halves in ONE stored set, because the fix is a discrimination
+   * between them, not a blanket change: the create-only policy must still
+   * lock (that is the duplicate this seed exists to prevent), and the
+   * updatable family member must not.
+   */
+  it("locks the create-only match but NOT the updatable one from the same stored set", () => {
+    const policy = { ...d1, match: { kind: "exact" as const, existingId: "dis_9" } };
+    const relative = member(
+      "f1:family_member:0",
+      { firstName: "Chidi", dateOfBirth: "1970-02-02" },
+      { match: { kind: "exact" as const, existingId: "fm_9" } },
+    );
+    const { result } = renderHook(() =>
+      useMapRows({
+        clientId: "c1",
+        importId: "i1",
+        initialRows: { disability_policy: [policy], family_member: [relative] },
+      }),
+    );
+    expect(result.current.committedRowIds).toEqual([policy.rowId]);
   });
 
   it("clears the rehydrated lock when the pass re-runs", async () => {

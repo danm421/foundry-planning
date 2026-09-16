@@ -8,6 +8,7 @@ import { documentEvidenceEntities } from "@/domain/forge/detail-fields";
 import type { DetailEntity } from "@/domain/forge/detail-fields";
 import { buildEntityPrompt } from "./prompt-builder";
 import { classifyRegions } from "./region-classifier";
+import { splitRegions } from "./people-pass";
 import { placeRow } from "./placement";
 import { scoreRow } from "./confidence";
 import type { CandidateRow, RawObservationRow, RowsByEntity } from "./types";
@@ -28,6 +29,17 @@ export interface MapExtractionResult {
    */
   promptVersion: string;
   warnings: string[];
+  /**
+   * Every page some entity's CLASSIFIED REGION spans — what the classifier
+   * named, not what was successfully read. A range that held no readable text,
+   * or that ran past the end of the document, is still counted here.
+   *
+   * Phase 3C's open-world pass reads the COMPLEMENT. Over-claiming is the
+   * deliberate direction: skipping a re-read of an empty or out-of-bounds page
+   * costs nothing, whereas under-claiming lets two passes read the same page
+   * and emit a duplicate table.
+   */
+  claimedPages: number[];
 }
 
 /** Same anchor set `extract.ts` builds: the first three pages plus the last. */
@@ -143,8 +155,18 @@ export async function extractMapEntities(args: {
 
   if (!regions) {
     warnings.push("Could not classify this document into entity regions; nothing was read from it.");
-    return { rows: {}, promptVersion, warnings };
+    return { rows: {}, promptVersion, warnings, claimedPages: [] };
   }
+
+  // The people/map split is reported, not branched on: `readRegion` is
+  // entity-driven, so both halves are read exactly the same way and `targets`
+  // below is still built from ALL present entities. What the split adds is
+  // `claimedPages` — the pages some entity's region spans — so Phase 3C's
+  // open-world pass can read the complement instead of re-reading a page this
+  // pass already owns. Computed here, BEFORE the empty-region filter below, on
+  // purpose: see `MapExtractionResult.claimedPages` for why over-claiming is
+  // the safe direction.
+  const { claimedPages } = splitRegions(regions);
 
   // "The classifier named a range" is not the same fact as "that range holds
   // text". `sliceRegion` drops out-of-bounds pages, so a range the model
@@ -181,5 +203,5 @@ export async function extractMapEntities(args: {
     if (result.rows.length > 0) rows[result.entity.id] = result.rows;
   }
 
-  return { rows, promptVersion, warnings };
+  return { rows, promptVersion, warnings, claimedPages };
 }

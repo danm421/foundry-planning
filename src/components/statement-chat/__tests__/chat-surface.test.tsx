@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, within, act, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ChatSurface } from "../chat-surface";
+import { EMPTY_CHAT_REVIEW_CONTEXT } from "@/lib/statement-chat/review-context";
 
 const initialFiles = [{ serverFileId: "f1", name: "statement.pdf", documentType: "auto" }];
 
@@ -423,6 +424,62 @@ describe("ChatSurface — wiring the table in (Task 10b)", () => {
       ...extra,
     };
   }
+
+  /** A `family_member` row. This entity declares `updateSemantics` (Task 2),
+   *  so an `exact` match on it is a pending UPDATE — not, as `disability_policy`
+   *  above, a row that can never be committed. */
+  function storedMember(extra: Record<string, unknown> = {}) {
+    return {
+      entityId: "family_member",
+      rowId: "f1:family_member:0",
+      values: [
+        { key: "firstName", value: "Chidi", snippet: "x", confidence: 0.9 },
+        { key: "dateOfBirth", value: "1970-02-02", snippet: "x", confidence: 0.9 },
+      ],
+      missingRequired: [],
+      rowConfidence: 0.9,
+      ...extra,
+    };
+  }
+
+  /**
+   * FINAL WHOLE-BRANCH REVIEW, CRITICAL (the warning half). `exact` is
+   * excluded from this count because a create-only entity can never clear it,
+   * so counting it would warn forever. Task 2 made `family_member` updatable
+   * and the exclusion stopped being true for it: the row is a correction the
+   * advisor has NOT applied, and "Finish import" said nothing — the second of
+   * the two places this branch told them a write had landed when it had not.
+   */
+  it("warns beside Finish import for a matched row whose entity can be updated", async () => {
+    renderResumedDraft({
+      family_member: [storedMember({ match: { kind: "exact", existingId: "fm_9" } })],
+    });
+
+    expect(await screen.findByRole("button", { name: /finish import/i })).toBeInTheDocument();
+    expect(
+      screen.getByText(/1 row in .Policies and other details. below has not been committed/i),
+    ).toBeInTheDocument();
+  });
+
+  /**
+   * The same Critical at the row itself, the whole chain in one render: the
+   * page's stored rows → `useMapRows`'s seed → what `entity-table.tsx` puts in
+   * front of the advisor. The row used to arrive already in `committedRowIds`,
+   * so it rendered a DISABLED "Committed" button with no blocked reason and no
+   * "Update" notice — an affirmative claim that the date of birth had been
+   * written, for a write that had not happened and could no longer be made.
+   */
+  it("leaves a matched updatable row commitable rather than rendering it Committed", async () => {
+    renderResumedDraft({
+      family_member: [storedMember({ match: { kind: "exact", existingId: "fm_9" } })],
+    });
+
+    const table = await screen.findByRole("table", { name: /Family member/ });
+    expect(within(table).queryByRole("button", { name: "Committed" })).not.toBeInTheDocument();
+    expect(within(table).getByRole("button", { name: "Commit" })).toBeEnabled();
+    // The word this table promises for an exact match on an updatable entity.
+    expect(within(table).getByText("Update")).toBeInTheDocument();
+  });
 
   it("warns beside Finish import when map rows are still uncommitted", async () => {
     renderResumedDraft({ disability_policy: [storedPolicy()] });
@@ -1802,5 +1859,282 @@ describe("ChatSurface — the map-driven review tables (Task 14b)", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/life\.pdf: life\.pdf/)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Task 8 — the people half of the review surface, mounted.
+ *
+ * Tasks 3, 5, 6 and 7 built the household diff, the family/related-party
+ * extraction and the writer's update leg, and NOTHING on screen reached any of
+ * it. These tests are the wiring: the household arrives as a field-level diff
+ * above the candidate tables, the other two people entities arrive as ordinary
+ * candidate tables, and accepting a household field writes it to the client
+ * record through the same writer every other row uses.
+ */
+describe("ChatSurface — the people section", () => {
+  const householdRow = {
+    entityId: "client_household",
+    rowId: "f1:client_household:0",
+    values: [
+      { key: "firstName", value: "Jonathan", snippet: "Jonathan A. Smith", confidence: 0.95 },
+      { key: "mobile", value: "(215) 555-0147", snippet: "Mobile (215) 555-0147", confidence: 0.9 },
+    ],
+    missingRequired: [],
+    rowConfidence: 0.92,
+  };
+
+  const emma = {
+    entityId: "family_member",
+    rowId: "f1:family_member:0",
+    values: [
+      { key: "firstName", value: "Emma", snippet: "Emma Smith", confidence: 0.9 },
+      { key: "lastName", value: "Smith", snippet: "Emma Smith", confidence: 0.9 },
+      { key: "relationship", value: "child", snippet: "daughter", confidence: 0.9 },
+    ],
+    missingRequired: [],
+    rowConfidence: 0.9,
+  };
+
+  const trustee = {
+    entityId: "related_party",
+    rowId: "f1:related_party:0",
+    values: [
+      { key: "firstName", value: "Marjorie", snippet: "Marjorie Vance, Trustee", confidence: 0.9 },
+      { key: "lastName", value: "Vance", snippet: "Marjorie Vance, Trustee", confidence: 0.9 },
+      { key: "relationshipLabel", value: "Trustee", snippet: "Trustee", confidence: 0.9 },
+    ],
+    missingRequired: [],
+    rowConfidence: 0.9,
+  };
+
+  /** What the plan already holds — the diff's left column. */
+  const contextWithRecord = {
+    ...EMPTY_CHAT_REVIEW_CONTEXT,
+    household: {
+      firstName: "John",
+      lastName: "Smith",
+      dateOfBirth: "1968-03-04",
+      mobile: null,
+    },
+  };
+
+  const props = { clientId: "c1", importId: "i1", initialFiles };
+
+  beforeEach(() => {
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+  });
+
+  function householdPuts() {
+    return vi
+      .mocked(fetch)
+      .mock.calls.filter(
+        ([url, init]) =>
+          String(url) === "/api/clients/c1/" &&
+          (init as RequestInit | undefined)?.method === "PUT",
+      );
+  }
+
+  it("renders the household diff above the entity tables", async () => {
+    render(
+      <ChatSurface
+        {...props}
+        initialMapRows={{ client_household: [householdRow] } as never}
+        reviewContext={contextWithRecord}
+      />,
+    );
+    expect(await screen.findByRole("heading", { name: /Household/ })).toBeInTheDocument();
+  });
+
+  it("puts the household section before the candidate tables in the document", async () => {
+    render(
+      <ChatSurface
+        {...props}
+        initialMapRows={{ client_household: [householdRow], family_member: [emma] } as never}
+        reviewContext={contextWithRecord}
+      />,
+    );
+    const household = await screen.findByRole("heading", { name: /Household/ });
+    const family = screen.getByRole("heading", { name: /Family member/ });
+    // "Above" is the assertion the section's name makes — a diff rendered
+    // below the tables it is meant to lead is not what was asked for.
+    expect(
+      household.compareDocumentPosition(family) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("renders family and related-party rows as ordinary review tables", async () => {
+    render(
+      <ChatSurface
+        {...props}
+        initialMapRows={{ family_member: [emma], related_party: [trustee] } as never}
+        reviewContext={contextWithRecord}
+      />,
+    );
+    expect(await screen.findByRole("heading", { name: /Family member/ })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Related party/ })).toBeInTheDocument();
+  });
+
+  /**
+   * `TAB_ORDER` (`entity-tables.tsx`) is what decides this, and it listed only
+   * three tabs — so `profile`, the tab all three people entities sit on, fell
+   * to the "anything else sorts LAST" rule and buried the family table below
+   * insurance and net worth. Pinned against a net-worth entity whose label
+   * ALPHABETISES first, so only the tab rule can put the person above it.
+   */
+  it("sorts the people tables above the net-worth ones", async () => {
+    render(
+      <ChatSurface
+        {...props}
+        initialMapRows={
+          {
+            family_member: [emma],
+            account: [
+              {
+                entityId: "account",
+                rowId: "f1:account:0",
+                values: [{ key: "name", value: "Joint brokerage", snippet: "x", confidence: 0.9 }],
+                missingRequired: [],
+                rowConfidence: 0.9,
+              },
+            ],
+          } as never
+        }
+        reviewContext={contextWithRecord}
+      />,
+    );
+    const family = await screen.findByRole("heading", { name: "Family member" });
+    const account = screen.getByRole("heading", { name: "Account" });
+    expect(
+      family.compareDocumentPosition(account) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  /**
+   * The trap the partition exists for. `client_household` is `tab: "profile"`
+   * exactly like the other two people entities, so a surface that FILTERS FOR
+   * the household instead of PARTITIONING it out renders the same facts twice
+   * — once as the diff, and once as an ordinary candidate row offering "Add"
+   * for a client that already exists.
+   */
+  it("does not also render the household as an ordinary candidate table", async () => {
+    render(
+      <ChatSurface
+        {...props}
+        initialMapRows={{ client_household: [householdRow] } as never}
+        reviewContext={contextWithRecord}
+      />,
+    );
+    await screen.findByRole("heading", { name: /Household/ });
+    // `EntityTable`'s aria-label is the entity's own map label. Matched on its
+    // stable PREFIX, not the full string: this is a negative assertion, so a
+    // regex pinned to wording the map later changes would pass vacuously and
+    // stop watching for the duplicate table it exists to catch.
+    expect(screen.queryByRole("table", { name: /^Household \(/ })).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("table", { name: /Household details found in the document/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows no household section when the document states nothing about the household", async () => {
+    render(<ChatSurface {...props} initialMapRows={{}} reviewContext={contextWithRecord} />);
+    await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalled());
+    expect(screen.queryByRole("heading", { name: /Household/ })).not.toBeInTheDocument();
+  });
+
+  it("shows no household section when the document agrees with the record", async () => {
+    render(
+      <ChatSurface
+        {...props}
+        initialMapRows={
+          {
+            client_household: [
+              {
+                ...householdRow,
+                values: [{ key: "firstName", value: "John", snippet: "John Smith", confidence: 0.9 }],
+              },
+            ],
+          } as never
+        }
+        reviewContext={contextWithRecord}
+      />,
+    );
+    await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalled());
+    expect(screen.queryByRole("heading", { name: /Household/ })).not.toBeInTheDocument();
+  });
+
+  it("writes only the accepted fields to the client record", async () => {
+    render(
+      <ChatSurface
+        {...props}
+        initialMapRows={{ client_household: [householdRow] } as never}
+        reviewContext={contextWithRecord}
+      />,
+    );
+    await userEvent.click(await screen.findByRole("checkbox", { name: /Accept First Name/ }));
+    await userEvent.click(screen.getByRole("button", { name: /Update household/ }));
+
+    await waitFor(() => expect(householdPuts()).toHaveLength(1));
+    // The PUT the household's own `updateSemantics` declares — not a POST that
+    // would create a second client — carrying the accepted field and nothing
+    // else. `Mobile` was left unchecked and must not be in the body.
+    expect(JSON.parse(String((householdPuts()[0][1] as RequestInit).body))).toEqual({
+      firstName: "Jonathan",
+    });
+  });
+
+  /**
+   * Task 7's deferred minor, now owned here because Task 8 owns the request:
+   * the button used to stay live with the boxes still ticked and no feedback
+   * at all, so a second click sent a second PUT and the advisor had no way to
+   * tell whether the first one landed.
+   */
+  it("reports what was written and drops the row once it lands", async () => {
+    render(
+      <ChatSurface
+        {...props}
+        initialMapRows={{ client_household: [householdRow] } as never}
+        reviewContext={contextWithRecord}
+      />,
+    );
+    await userEvent.click(await screen.findByRole("checkbox", { name: /Accept First Name/ }));
+    await userEvent.click(screen.getByRole("button", { name: /Update household/ }));
+
+    expect(
+      await screen.findByText(/1 field was written to the household record/i),
+    ).toBeInTheDocument();
+    // The record now says "Jonathan", so the row is no longer a disagreement.
+    expect(screen.queryByRole("row", { name: /First Name/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("row", { name: /Mobile/ })).toBeInTheDocument();
+  });
+
+  it("surfaces a refused write instead of reporting it as saved", async () => {
+    vi.mocked(fetch).mockImplementation((url, init) =>
+      String(url) === "/api/clients/c1/" && (init as RequestInit | undefined)?.method === "PUT"
+        ? Promise.resolve(
+            new Response(JSON.stringify({ error: "Invalid risk tolerance" }), {
+              status: 400,
+              headers: { "content-type": "application/json" },
+            }),
+          )
+        : Promise.resolve(new Response(JSON.stringify({}), { status: 200 })),
+    );
+
+    render(
+      <ChatSurface
+        {...props}
+        initialMapRows={{ client_household: [householdRow] } as never}
+        reviewContext={contextWithRecord}
+      />,
+    );
+    await userEvent.click(await screen.findByRole("checkbox", { name: /Accept First Name/ }));
+    await userEvent.click(screen.getByRole("button", { name: /Update household/ }));
+
+    expect(await screen.findByText("Invalid risk tolerance")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/field was written to the household record/i),
+    ).not.toBeInTheDocument();
+    // Still on screen and still accepted, so the advisor can retry it.
+    expect(screen.getByRole("row", { name: /First Name/ })).toBeInTheDocument();
   });
 });

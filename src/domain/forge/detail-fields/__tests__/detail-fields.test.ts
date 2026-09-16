@@ -198,6 +198,22 @@ describe("Details field map", () => {
 });
 
 describe("document-evidence marking", () => {
+  it("marks exactly the entities a document can state", () => {
+    expect(documentEvidenceEntities().map((e) => e.id).sort()).toEqual([
+      "client_household",
+      "disability_policy",
+      "family_member",
+      "life_insurance_policy",
+      "related_party",
+    ]);
+  });
+
+  it("every document-evidence entity tells the classifier what its document looks like", () => {
+    for (const entity of documentEvidenceEntities()) {
+      expect(entity.documentHints?.length, `${entity.id} has no document hints`).toBeGreaterThan(0);
+    }
+  });
+
   it("every identity field exists on its own entity", () => {
     for (const entity of DETAIL_ENTITIES) {
       if (!entity.identity) continue;
@@ -226,10 +242,60 @@ describe("document-evidence marking", () => {
     }
   });
 
+  // The ONE entity whose write path this guard cannot see, named rather than
+  // inferred from its flags. `client_household` is a singleton: it is never
+  // CREATED from a document (the client already exists), and it declares no
+  // `identity`, so it never reaches `matchByIdentity` at all.
+  //
+  // It IS written. `buildHouseholdCommitRow`
+  // (`src/components/statement-chat/household-diff.ts`) synthesises a row
+  // carrying `match: { kind: "exact", existingId: clientId }`, which routes it
+  // to the update leg it declares. `routes.create || nestedIn` cannot see that
+  // path by design, and never will: `profile.ts` states there is no create
+  // route below /api/clients/[id] and none is coming. So this entry is
+  // PERMANENT, not pending — do not delete it expecting the household to pass
+  // the predicate one day.
+  //
+  // Hand-maintained rather than widened into a predicate: a predicate over
+  // `updateSemantics` would have silently exempted every future entity with an
+  // update leg and no create route. An id is a line someone has to justify,
+  // and the test below is what holds that justification to something — an
+  // exempted entity must declare the update path it is exempted onto.
+  const MATCH_SUPPLIED_DIRECTLY = ["client_household"];
+
   it("every document-evidence entity can actually be written", () => {
     for (const entity of documentEvidenceEntities()) {
+      if (MATCH_SUPPLIED_DIRECTLY.includes(entity.id)) continue;
       const writable = Boolean(entity.routes.create) || Boolean(entity.nestedIn);
       expect(writable, `${entity.id} is marked document evidence but has no create route and is not nested`).toBe(true);
+    }
+  });
+
+  // The exemption above says "this entity is written by a path the predicate
+  // cannot see". This is what makes that a claim with teeth rather than a free
+  // pass: the entity has to declare the path it is exempted ONTO — an update
+  // leg (`updateSemantics`, which `buildWriteRequest` requires before it will
+  // build anything for an `exact` match) and a route to send it to. Strip
+  // either one and the household is not "written another way", it is not
+  // written at all, and this goes red.
+  //
+  // The staleness half is the second assertion. It can never fire for
+  // `client_household` — `profile.ts` says no create route is coming — but it
+  // WOULD fire for a future entry added here that has a create route and never
+  // needed exempting: without it, such an entry is skipped by the loop above
+  // forever and nobody is told.
+  it("only exempts an entity that still needs it and declares the update path it is exempted onto", () => {
+    for (const id of MATCH_SUPPLIED_DIRECTLY) {
+      const entity = documentEvidenceEntities().find((e) => e.id === id);
+      expect(entity, `exemption "${id}" names no document-evidence entity`).toBeDefined();
+      expect(
+        Boolean(entity!.updateSemantics) && Boolean(entity!.routes.update),
+        `exemption "${id}" is exempted from the create-route check but declares no update leg to be written through — nothing can write it`,
+      ).toBe(true);
+      expect(
+        Boolean(entity!.routes.create) || Boolean(entity!.nestedIn),
+        `exemption "${id}" now has a create route or a parent, so the check above would pass on its own — drop it from MATCH_SUPPLIED_DIRECTLY`,
+      ).toBe(false);
     }
   });
 
@@ -251,39 +317,81 @@ describe("document-evidence marking", () => {
     }
   });
 
-  it("every document-evidence entity declares how its table reaches a client", () => {
+  // `client_household` is the only exemption, and it has to earn it twice over:
+  // it declares no `identity`, so `loadExistingRows` is never called for it
+  // (`map-entity-pass.ts` gates the call on one), AND it declares no scopePath,
+  // so there is nothing to check. Any entity that declares either is held to
+  // the full rule — an entity with a scopePath but no identity
+  // (`life_insurance_policy`) stays covered.
+  it("every document-evidence entity a generic loader reads declares how its table reaches a client", () => {
+    const checked: string[] = [];
     for (const entity of documentEvidenceEntities()) {
+      if (!entity.identity?.length && !entity.scopePath) continue;
+      checked.push(entity.id);
       expect(entity.scopePath, `${entity.id} has no scopePath, so a generic loader would read it unscoped`).toBeDefined();
     }
+    // Named, not counted: a population that shrinks from four to three — or that
+    // swaps one entity for another — must fail here rather than pass quietly.
+    expect(checked.sort()).toEqual([
+      "disability_policy",
+      "family_member",
+      "life_insurance_policy",
+      "related_party",
+    ]);
   });
 
-  it("a join scope path names a real table and a real column", () => {
+  // BOTH parent-reaching variants, because a typo in either is a runtime throw
+  // rather than anything a type can catch. The loop was once `via !== "join"`
+  // and was therefore blind to `parentColumn` — the variant `related_party`
+  // uses, and the only one that reaches a client through a parent's NON-id
+  // column (`clients.crm_household_id`).
+  it("a parent-reaching scope path names a real table and real columns", () => {
+    const checkedJoin: string[] = [];
+    const checkedParentColumn: string[] = [];
+
     for (const entity of DETAIL_ENTITIES) {
       const path = entity.scopePath;
-      if (path?.via !== "join") continue;
+      if (path?.via !== "join" && path?.via !== "parentColumn") continue;
       const through = (schema as Record<string, unknown>)[path.through];
       expect(through, `${entity.id}.scopePath.through names "${path.through}", which is not a table in the schema`).toBeDefined();
-      expect(
-        Object.prototype.hasOwnProperty.call(through as object, "clientId"),
-        `${entity.id} joins through "${path.through}", which has no clientId to scope by`,
-      ).toBe(true);
+      if (path.via === "join") {
+        checkedJoin.push(entity.id);
+        expect(
+          Object.prototype.hasOwnProperty.call(through as object, "clientId"),
+          `${entity.id} joins through "${path.through}", which has no clientId to scope by`,
+        ).toBe(true);
+      } else {
+        checkedParentColumn.push(entity.id);
+        // The filter column for this variant is the parent's own `id`, and the
+        // JOIN lands on `parentColumn` — the mirror image of the join variant.
+        expect(
+          Object.prototype.hasOwnProperty.call(through as object, "id"),
+          `${entity.id} joins through "${path.through}", which has no id to scope by`,
+        ).toBe(true);
+        expect(
+          Object.prototype.hasOwnProperty.call(through as object, path.parentColumn),
+          `${entity.id}.scopePath.parentColumn names "${path.parentColumn}", which is not a column on ${path.through}`,
+        ).toBe(true);
+      }
       const own = (schema as Record<string, unknown>)[entity.table];
       expect(
         Object.prototype.hasOwnProperty.call(own as object, path.on),
         `${entity.id}.scopePath.on names "${path.on}", which is not a column on ${entity.table}`,
       ).toBe(true);
     }
+
+    // Non-vacuity, per variant. Blindness to `parentColumn` is exactly how this
+    // loop came to check nothing for `related_party`; a counter makes the next
+    // blind spot fail here instead of passing quietly.
+    expect(checkedJoin.length, "no join scope path was checked").toBeGreaterThan(0);
+    expect(
+      checkedParentColumn.length,
+      "no parentColumn scope path was checked — the loop has gone blind to the variant again",
+    ).toBeGreaterThan(0);
   });
 });
 
 describe("the two Phase 2 entities", () => {
-  it("marks exactly life insurance and disability as document evidence", () => {
-    expect(documentEvidenceEntities().map((e) => e.id).sort()).toEqual([
-      "disability_policy",
-      "life_insurance_policy",
-    ]);
-  });
-
   it("life insurance has no identity key — matchLifePolicy owns that job", () => {
     expect(findEntity("life_insurance_policy")!.identity).toBeUndefined();
   });
@@ -296,10 +404,36 @@ describe("the two Phase 2 entities", () => {
     const face = findEntity("life_insurance_policy")!.fields.find((f) => f.key === "faceValue")!;
     expect(face.aliases).toContain("Face Amount");
   });
+});
 
-  it("both entities tell the classifier what their document looks like", () => {
-    for (const entity of documentEvidenceEntities()) {
-      expect(entity.documentHints?.length, `${entity.id} has no document hints`).toBeGreaterThan(0);
+describe("phase 3A people entities", () => {
+  const PRIMARY_CONTACT_KEYS = ["email", "phone", "mobile", "city", "country"];
+
+  it("asks for the client's own contact fields, not just the spouse's", () => {
+    const household = findEntity("client_household");
+    if (!household) throw new Error("client_household missing");
+    const keys = household.fields.map((f) => f.key);
+    for (const key of PRIMARY_CONTACT_KEYS) {
+      expect(keys).toContain(key);
+      expect(keys).toContain(`spouse${key[0].toUpperCase()}${key.slice(1)}`);
     }
+  });
+
+  it("marks the household and family as readable from a document", () => {
+    expect(findEntity("client_household")?.documentEvidence).toBe(true);
+    expect(findEntity("family_member")?.documentEvidence).toBe(true);
+  });
+
+  it("gives family_member a single-field identity so a missing DOB cannot duplicate a child", () => {
+    expect(findEntity("family_member")?.identity).toEqual(["firstName"]);
+  });
+
+  it("declares update semantics for both", () => {
+    expect(findEntity("client_household")?.updateSemantics).toEqual({ method: "PUT" });
+    expect(findEntity("family_member")?.updateSemantics).toEqual({ method: "PUT" });
+  });
+
+  it("scopes family_member by its own client column", () => {
+    expect(findEntity("family_member")?.scopePath).toEqual({ via: "column" });
   });
 });

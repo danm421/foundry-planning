@@ -1,6 +1,6 @@
 // src/lib/entity-writer/__tests__/build-request.test.ts
 import { describe, it, expect } from "vitest";
-import { findEntity, findEntity as find } from "@/domain/forge/detail-fields";
+import { findEntity, findEntity as find, type DetailEntity } from "@/domain/forge/detail-fields";
 import { buildWriteRequest } from "../build-request";
 import type { CandidateRow } from "@/lib/entity-extraction/types";
 
@@ -257,5 +257,114 @@ describe("buildWriteRequest on a set-replacing entity", () => {
       expect(result.body).toContainEqual({ recipientId: "a", percent: 100 });
       expect(result.body).toContainEqual({ recipientId: "b", percent: 50 });
     }
+  });
+});
+
+/**
+ * Task 2 (Phase 3A). The pipeline could only ever CREATE, so a row matching a
+ * record that already exists had nowhere to go. The update leg is opted into
+ * per entity by `updateSemantics` on the map, never inferred: an entity whose
+ * partial-update semantics nobody has read keeps Ruling 34's refusal.
+ */
+describe("update leg", () => {
+  const base = {
+    id: "family_member",
+    label: "Family member",
+    tab: "profile",
+    surface: "test",
+    table: "familyMembers",
+    routes: { create: "/family-members", update: "/family-members/[memberId]" },
+    scenarioScoped: false,
+    fields: [
+      { key: "firstName", label: "First Name", kind: "string", required: true },
+      { key: "dateOfBirth", label: "Date of Birth", kind: "date" },
+      { key: "claimedAsDependent", label: "Dependent", kind: "enum", enumValues: ["auto", "yes", "no"], appliesTo: "update" },
+      { key: "role", label: "Household role", kind: "enum", enumValues: ["child"], writable: false },
+    ],
+  } as unknown as DetailEntity;
+
+  const row = {
+    entityId: "family_member",
+    rowId: "f:family_member:0",
+    missingRequired: [],
+    rowConfidence: 0.9,
+    match: { kind: "exact", existingId: "fm-7" },
+    values: [
+      { key: "firstName", value: "Emma", snippet: "Emma", confidence: 0.9 },
+      { key: "dateOfBirth", value: "2011-03-14", snippet: "3/14/2011", confidence: 0.9 },
+      { key: "claimedAsDependent", value: "yes", snippet: "dependent", confidence: 0.9 },
+      { key: "role", value: "child", snippet: "child", confidence: 0.9 },
+    ],
+  } as unknown as CandidateRow;
+
+  it("refuses an exact match when the entity has not opted in", () => {
+    const result = buildWriteRequest({ entity: base, row });
+    expect(result.ok).toBe(false);
+  });
+
+  it("builds a PUT with the existing id substituted when opted in", () => {
+    const entity = { ...base, updateSemantics: { method: "PUT" } } as unknown as DetailEntity;
+    const result = buildWriteRequest({ entity, row });
+    expect(result).toMatchObject({ ok: true, method: "PUT", path: "/family-members/fm-7" });
+  });
+
+  it("includes update-only fields on an update and still drops non-writable ones", () => {
+    const entity = { ...base, updateSemantics: { method: "PUT" } } as unknown as DetailEntity;
+    const result = buildWriteRequest({ entity, row });
+    if (!result.ok) throw new Error(result.error);
+    expect(result.body).toEqual({
+      firstName: "Emma",
+      dateOfBirth: "2011-03-14",
+      claimedAsDependent: "yes",
+    });
+  });
+
+  it("honours a PATCH declaration", () => {
+    const entity = { ...base, updateSemantics: { method: "PATCH" } } as unknown as DetailEntity;
+    const result = buildWriteRequest({ entity, row });
+    expect(result).toMatchObject({ ok: true, method: "PATCH" });
+  });
+
+  it("still creates when the match is new", () => {
+    const entity = { ...base, updateSemantics: { method: "PUT" } } as unknown as DetailEntity;
+    const newRow = { ...row, match: { kind: "new" } } as unknown as CandidateRow;
+    const result = buildWriteRequest({ entity, row: newRow });
+    expect(result).toMatchObject({ ok: true, method: "POST", path: "/family-members" });
+  });
+
+  /**
+   * T2-m2, promoted to fix-before-merge. The update leg had no empty-body
+   * floor: `family_member`'s PUT answers 200 to `{}`, writes nothing, and the
+   * row then reads "Committed". Every value here is `writable: false`, so the
+   * body assembles to `{}` with no refusal above it to catch it.
+   */
+  it("refuses an update whose values all fall out of the body", () => {
+    const entity = { ...base, updateSemantics: { method: "PUT" } } as unknown as DetailEntity;
+    const emptyRow = {
+      ...row,
+      values: [{ key: "role", value: "child", snippet: "child", confidence: 0.9 }],
+    } as unknown as CandidateRow;
+    const result = buildWriteRequest({ entity, row: emptyRow });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected refusal");
+    expect(result.error).toMatch(/nothing to update/i);
+  });
+
+  it("refuses an update built from a row carrying no values at all", () => {
+    const entity = { ...base, updateSemantics: { method: "PUT" } } as unknown as DetailEntity;
+    const emptyRow = { ...row, values: [] } as unknown as CandidateRow;
+    expect(buildWriteRequest({ entity, row: emptyRow }).ok).toBe(false);
+  });
+
+  it("refuses an update whose route still has an unresolved segment", () => {
+    const entity = {
+      ...base,
+      updateSemantics: { method: "PUT" },
+      routes: { create: "/x", update: "/accounts/[accountId]/members/[memberId]" },
+    } as unknown as DetailEntity;
+    const result = buildWriteRequest({ entity, row });
+    expect(result).toMatchObject({ ok: false });
+    if (result.ok) throw new Error("expected refusal");
+    expect(result.error).toContain("[accountId]");
   });
 });
