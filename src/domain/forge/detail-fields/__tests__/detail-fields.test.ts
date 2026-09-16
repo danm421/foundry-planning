@@ -279,10 +279,12 @@ describe("document-evidence marking", () => {
   // either one and the household is not "written another way", it is not
   // written at all, and this goes red.
   //
-  // This replaces an assertion that `routes.create || nestedIn` is false, which
-  // `profile.ts` makes permanently true and which therefore could never prompt
-  // anyone.
-  it("only exempts an entity that declares the update path it is exempted onto", () => {
+  // The staleness half is the second assertion. It can never fire for
+  // `client_household` — `profile.ts` says no create route is coming — but it
+  // WOULD fire for a future entry added here that has a create route and never
+  // needed exempting: without it, such an entry is skipped by the loop above
+  // forever and nobody is told.
+  it("only exempts an entity that still needs it and declares the update path it is exempted onto", () => {
     for (const id of MATCH_SUPPLIED_DIRECTLY) {
       const entity = documentEvidenceEntities().find((e) => e.id === id);
       expect(entity, `exemption "${id}" names no document-evidence entity`).toBeDefined();
@@ -290,6 +292,10 @@ describe("document-evidence marking", () => {
         Boolean(entity!.updateSemantics) && Boolean(entity!.routes.update),
         `exemption "${id}" is exempted from the create-route check but declares no update leg to be written through — nothing can write it`,
       ).toBe(true);
+      expect(
+        Boolean(entity!.routes.create) || Boolean(entity!.nestedIn),
+        `exemption "${id}" now has a create route or a parent, so the check above would pass on its own — drop it from MATCH_SUPPLIED_DIRECTLY`,
+      ).toBe(false);
     }
   });
 
