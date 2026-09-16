@@ -84,15 +84,57 @@ const FACT_FINDER_VENDOR_SIGNATURES: { vendor: string; patterns: RegExp[] }[] = 
  * statement would never contain), is treated as a fact finder even when no
  * vendor signature matched — this is what catches unbranded / less-common /
  * in-house fact finders.
+ *
+ * Every keyword here must be a phrase a planning FORM uses, not a word that
+ * happens to be financial. An ordinary word puts its category permanently on,
+ * which turns a >= 4 threshold into a >= 3 one for every document that carries
+ * the usual boilerplate. Measured over 24 real client PDFs, none of them a fact
+ * finder, the original list lit up on:
+ *
+ *   "will"            20/24 — the English MODAL VERB ("payment will be applied")
+ *   "social security"  9/24 — "Social Security NUMBER" / "…Administration"
+ *   "objective"        5/24 — "Investment Objective:", prospectus boilerplate
+ *   "beneficiary"      4/24 — every retirement statement names beneficiaries
+ *   "policy"           3/24 — "Privacy Policy", "Excessive Trading Policy"
+ *   "mortgage"         2/24 — servicer LICENSING boilerplate ("Licensed
+ *                             Mortgage Banker-NYS"); the debt itself is printed
+ *                             as "Unpaid Principal Balance", so the bare word
+ *                             never denoted a liability on those documents
+ *   "life insurance"   2/24 — the CARRIER'S NAME ("ReliaStar Life Insurance
+ *                             Company") in a 401(k) statement's fine print
+ *
+ * Eleven of the 24 were routed to the slow multi-pass fact-finder path on those
+ * hits alone, including two plain Wells Fargo checking/savings statements. Each
+ * is replaced below by the phrasing a fact finder actually prints.
+ *
+ * `assets` is deliberately left broad: it is not planning-only, a fact finder
+ * lists assets too, and the >= 2 planning-only gate is what discriminates.
+ *
+ * "annual income" is knowingly kept loose despite Schwab's "Estimated Annual
+ * Income" bond column (9/24). Being outside a planning-only category does NOT
+ * make it harmless: a category still counts toward STRUCTURAL_MIN_CATEGORIES,
+ * so a false income hit can be the deciding FOURTH one. It is kept because it
+ * is a canonical fact-finder label and no narrower phrasing covers the forms
+ * that print a bare "Annual income: $____"; the cost is a document that needs
+ * only three other categories to tip.
+ *
+ * KNOWN GAP: these replacements are the phrasings a PROSE fact finder prints.
+ * A terse table ("Mortgage  412,000") or a checkbox form ("Will [ ]  Trust [ ]")
+ * prints the column HEADER, not the sentence, and is no longer detected here —
+ * measured, 3 of 5 unbranded shapes that the loose list caught are now missed.
+ * Such documents usually carry a vendor or "fact finder" signature and are
+ * caught by tier 1; the fix for the rest is to match a bare word only when it
+ * LABELS A VALUE (followed by a number, $, a blank or a checkbox), which
+ * re-routes many documents at once and needs its own corpus sweep.
  */
 const PLANNING_CATEGORY_KEYWORDS: { category: string; planningOnly: boolean; keywords: string[] }[] = [
   { category: "assets", planningOnly: false, keywords: ["account", "balance", "holdings", "portfolio", "brokerage", "401(k)", "market value"] },
-  { category: "income", planningOnly: false, keywords: ["salary", "wages", "social security", "pension", "annual income", "earned income"] },
+  { category: "income", planningOnly: false, keywords: ["salary", "wages", "social security benefit", "social security income", "pension", "annual income", "earned income"] },
   { category: "expenses", planningOnly: true, keywords: ["living expenses", "monthly expenses", "budget", "discretionary spending", "annual spending"] },
-  { category: "liabilities", planningOnly: false, keywords: ["mortgage", "loan balance", "credit card", "liability", "outstanding debt"] },
-  { category: "insurance", planningOnly: true, keywords: ["life insurance", "death benefit", "policy", "premium", "coverage amount"] },
-  { category: "estate", planningOnly: true, keywords: ["will", "revocable trust", "estate plan", "executor", "power of attorney", "beneficiary"] },
-  { category: "goals", planningOnly: true, keywords: ["retirement goal", "financial goal", "objective", "retire at age", "target retirement"] },
+  { category: "liabilities", planningOnly: false, keywords: ["mortgage balance", "mortgage payment", "loan balance", "credit card", "liability", "outstanding debt"] },
+  { category: "insurance", planningOnly: true, keywords: ["life insurance policy", "life insurance coverage", "death benefit", "coverage amount", "annual premium"] },
+  { category: "estate", planningOnly: true, keywords: ["last will", "living will", "will and testament", "revocable trust", "estate plan", "executor", "power of attorney"] },
+  { category: "goals", planningOnly: true, keywords: ["retirement goal", "financial goal", "financial objective", "planning objective", "retire at age", "target retirement"] },
   { category: "family", planningOnly: true, keywords: ["spouse", "dependent", "date of birth", "marital status", "household member", "children"] },
 ];
 
@@ -195,6 +237,14 @@ function looksLikeFactFinderStructurally(lowerText: string): boolean {
   return count >= STRUCTURAL_MIN_CATEGORIES && planningOnlyCount >= STRUCTURAL_MIN_PLANNING_ONLY;
 }
 
+/** "estate=last will, family=spouse" — the categories that fired, and on what. */
+function describeStructuralMatch(lowerText: string): string {
+  return PLANNING_CATEGORY_KEYWORDS.flatMap(({ category, keywords }) => {
+    const hit = keywords.find((kw) => matchesKeyword(lowerText, kw));
+    return hit ? [`${category}=${hit}`] : [];
+  }).join(", ");
+}
+
 /**
  * Classify document text into a DocumentType using keyword heuristics.
  *
@@ -250,6 +300,13 @@ export function classifyDocument(text: string, fileName?: string): DocumentType 
     bestType !== "pay_stub" &&
     looksLikeFactFinderStructurally(lower)
   ) {
+    // The other two tiers log their match; this one is the likeliest to be
+    // wrong, so it is the one worth being able to grep. Names the categories
+    // and the keyword that fired each, which turns re-measuring this heuristic
+    // into a log query instead of a manual pass over a folder of PDFs.
+    console.log(
+      `[classify] structural fact-finder: ${describeStructuralMatch(lower)}`,
+    );
     return "fact_finder";
   }
 
