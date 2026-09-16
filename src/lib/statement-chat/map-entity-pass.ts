@@ -9,11 +9,45 @@ import { extractMapEntities } from "@/lib/entity-extraction";
 // verdicts while stubbing the barrel's AI-calling `extractMapEntities`. Taking
 // both from the barrel would let one mock silently stub out the matching this
 // function exists to do, and every row would come back undefined-matched.
-import { matchByIdentity } from "@/lib/entity-extraction/matcher";
+import { matchByIdentity, type ExistingRow } from "@/lib/entity-extraction/matcher";
 import type { RowsByEntity } from "@/lib/entity-extraction/types";
 import { NotFoundError } from "@/lib/imports/authz";
 import { loadExistingRows } from "./existing-rows";
 
+/**
+ * Which values of an existing row's `role` column an entity may be matched
+ * against. An entity absent from this map matches against every row it loads.
+ *
+ * WHY: the household's OWN people live in the same tables as the people a
+ * document describes. The spouse is a `family_members` row with role "spouse",
+ * and `family_member`'s identity is a first name alone — so a fact finder that
+ * listed the spouse produced an `exact` match onto her row, and the opt-in PUT
+ * then copied `relationship`, whose enum has no spouse value and whose map
+ * default is "child". The spouse silently became a child. `related_party`
+ * reached the household's `primary` CRM contact the same way.
+ *
+ * ALLOWLIST, so a role added to either enum later is not matched until someone
+ * decides it should be. The cost of that is an offered duplicate the advisor
+ * can see, which is the trade `annotateMatches` already makes below.
+ *
+ * A new people entity belongs HERE rather than in the field map: this says
+ * which rows are candidates for matching, not what a field means.
+ */
+const MATCHABLE_ROLES_BY_ENTITY: Record<string, readonly string[]> = {
+  // `familyMemberRoleEnum` is ["client", "spouse", "child", "other"]; the
+  // household sync writes the client and the spouse rows.
+  family_member: ["child", "other"],
+  // `crmContactRoleEnum` is ["primary", "spouse", "dependent", "other"]. Only
+  // "other" is a related party — the map fixes the entity's own `role` field to
+  // "other" for the same reason.
+  related_party: ["other"],
+};
+
+function matchableExistingRows(entityId: string, existing: ExistingRow[]): ExistingRow[] {
+  const matchable = MATCHABLE_ROLES_BY_ENTITY[entityId];
+  if (!matchable) return existing;
+  return existing.filter((candidate) => matchable.includes(String(candidate.values.role)));
+}
 
 /**
  * Annotate each candidate row with `exact` / `fuzzy` / `new` against the
@@ -56,7 +90,9 @@ export async function annotateMatches(args: {
     // This is not a behaviour change: the annotation below is identical.
     if (entity.identity?.length) {
       try {
-        existing = await loadExistingRows({ entity, clientId });
+        // Filtered in the same expression the load feeds, so no later edit can
+        // put an unfiltered `existing` in front of `matchByIdentity`.
+        existing = matchableExistingRows(entityId, await loadExistingRows({ entity, clientId }));
       } catch (err) {
         const reason = err instanceof Error ? err.message : "unknown";
         console.warn(`[map-entity-pass] could not load existing ${entityId}: ${reason}`);
