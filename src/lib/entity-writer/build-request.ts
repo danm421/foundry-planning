@@ -100,6 +100,18 @@ export function buildWriteRequest(args: {
       updateBody[value.key] = value.value;
     }
 
+    // The create leg has refused an empty payload since Ruling 36 (its route
+    // schema does it); the update leg had no such floor. `family_member`'s PUT
+    // answers 200 to `{}` — it writes nothing and the row then reads
+    // "Committed", the false-success shape this surface has already been
+    // burned by twice. Refuse it here, where the reason can name the fields.
+    if (Object.keys(updateBody).length === 0) {
+      return {
+        ok: false,
+        error: `Nothing to update — none of the values read from the document can be written to ${entity.label}.`,
+      };
+    }
+
     return { ok: true, method: entity.updateSemantics.method, path, body: updateBody, warnings: [] };
   }
 

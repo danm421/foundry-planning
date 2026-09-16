@@ -375,9 +375,19 @@ export function ChatSurface({
   // close an import with uncommitted map rows and never hear about it. The
   // route is deliberately NOT changed (that would reshape finalize's
   // semantics); the honest minimum is telling them here, where the button is.
+  //
+  // An `exact` match is only silent where it is UNCOMMITTABLE: a create-only
+  // entity refuses it outright (`build-request.ts`), so counting it would warn
+  // about a row no button can clear. An entity that declares `updateSemantics`
+  // is the opposite case — its exact match is a correction still waiting to be
+  // written, and saying nothing here told the advisor it had landed.
   const uncommittedMapRows = Object.values(candidateRows)
     .flat()
-    .filter((row) => row.match?.kind !== "exact" && !mapCommittedRowIds.includes(row.rowId)).length;
+    .filter(
+      (row) =>
+        (row.match?.kind !== "exact" || Boolean(findEntity(row.entityId)?.updateSemantics)) &&
+        !mapCommittedRowIds.includes(row.rowId),
+    ).length;
 
   return (
     <div className="flex flex-col gap-6">

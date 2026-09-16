@@ -44,14 +44,22 @@ export function useMapRows({
    * the same policy as uncommitted and `new` (life insurance has no
    * `identity`), and committing it wrote a SECOND account + policy pair.
    *
-   * KNOWN OVERLAP, and it is bounded: `linkCreated` writes the identical
-   * `{ kind: "exact", existingId }` that `matchByIdentity` writes for a row
-   * that merely MATCHES a record the client already has, so the seed below
-   * cannot tell "I committed this" from "this already existed". Such a row then
-   * reads "Committed" rather than the more informative "already exists —
-   * update it on the Details tab". It cannot produce a duplicate either way:
-   * Ruling 34 blocks an `exact` match from committing at all. Separating the
-   * two needs a mark of its own on the stamp, which is a payload change.
+   * KNOWN OVERLAP, and it is bounded to the entities that cannot be updated:
+   * `linkCreated` writes the identical `{ kind: "exact", existingId }` that
+   * `matchByIdentity` writes for a row that merely MATCHES a record the client
+   * already has, so the seed below cannot tell "I committed this" from "this
+   * already existed". For a CREATE-ONLY entity that costs only a word — the
+   * row reads "Committed" rather than the more informative "already exists —
+   * update it on the Details tab" — and it buys the anti-duplicate lock.
+   *
+   * It is NOT harmless for an entity that declares `updateSemantics`. Task 2
+   * of this phase opened the writer's update leg, so an `exact` match on
+   * `family_member`, `related_party` or `client_household` is a correction
+   * WAITING to be written, not a write that happened. Seeding those rows
+   * disabled the only control that applies it and stated a write that never
+   * landed, so the seed skips them. Nothing can duplicate as a result:
+   * committing an update targets the matched id, so a second click rewrites
+   * the same record.
    */
   initialRows?: RowsByEntity;
   /**
@@ -72,7 +80,12 @@ export function useMapRows({
   const [committedRowIds, setCommittedRowIds] = useState<string[]>(() =>
     Object.values(initialRows ?? {})
       .flat()
-      .filter((row) => row.match?.kind === "exact" && row.match.existingId)
+      .filter(
+        (row) =>
+          row.match?.kind === "exact" &&
+          row.match.existingId &&
+          !findEntity(row.entityId)?.updateSemantics,
+      )
       .map((row) => row.rowId),
   );
 

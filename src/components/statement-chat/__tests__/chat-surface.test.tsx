@@ -425,6 +425,62 @@ describe("ChatSurface — wiring the table in (Task 10b)", () => {
     };
   }
 
+  /** A `family_member` row. This entity declares `updateSemantics` (Task 2),
+   *  so an `exact` match on it is a pending UPDATE — not, as `disability_policy`
+   *  above, a row that can never be committed. */
+  function storedMember(extra: Record<string, unknown> = {}) {
+    return {
+      entityId: "family_member",
+      rowId: "f1:family_member:0",
+      values: [
+        { key: "firstName", value: "Chidi", snippet: "x", confidence: 0.9 },
+        { key: "dateOfBirth", value: "1970-02-02", snippet: "x", confidence: 0.9 },
+      ],
+      missingRequired: [],
+      rowConfidence: 0.9,
+      ...extra,
+    };
+  }
+
+  /**
+   * FINAL WHOLE-BRANCH REVIEW, CRITICAL (the warning half). `exact` is
+   * excluded from this count because a create-only entity can never clear it,
+   * so counting it would warn forever. Task 2 made `family_member` updatable
+   * and the exclusion stopped being true for it: the row is a correction the
+   * advisor has NOT applied, and "Finish import" said nothing — the second of
+   * the two places this branch told them a write had landed when it had not.
+   */
+  it("warns beside Finish import for a matched row whose entity can be updated", async () => {
+    renderResumedDraft({
+      family_member: [storedMember({ match: { kind: "exact", existingId: "fm_9" } })],
+    });
+
+    expect(await screen.findByRole("button", { name: /finish import/i })).toBeInTheDocument();
+    expect(
+      screen.getByText(/1 row in .Policies and other details. below has not been committed/i),
+    ).toBeInTheDocument();
+  });
+
+  /**
+   * The same Critical at the row itself, the whole chain in one render: the
+   * page's stored rows → `useMapRows`'s seed → what `entity-table.tsx` puts in
+   * front of the advisor. The row used to arrive already in `committedRowIds`,
+   * so it rendered a DISABLED "Committed" button with no blocked reason and no
+   * "Update" notice — an affirmative claim that the date of birth had been
+   * written, for a write that had not happened and could no longer be made.
+   */
+  it("leaves a matched updatable row commitable rather than rendering it Committed", async () => {
+    renderResumedDraft({
+      family_member: [storedMember({ match: { kind: "exact", existingId: "fm_9" } })],
+    });
+
+    const table = await screen.findByRole("table", { name: /Family member/ });
+    expect(within(table).queryByRole("button", { name: "Committed" })).not.toBeInTheDocument();
+    expect(within(table).getByRole("button", { name: "Commit" })).toBeEnabled();
+    // The word this table promises for an exact match on an updatable entity.
+    expect(within(table).getByText("Update")).toBeInTheDocument();
+  });
+
   it("warns beside Finish import when map rows are still uncommitted", async () => {
     renderResumedDraft({ disability_policy: [storedPolicy()] });
 
@@ -1970,10 +2026,11 @@ describe("ChatSurface — the people section", () => {
       />,
     );
     await screen.findByRole("heading", { name: /Household/ });
-    // `EntityTable`'s aria-label is the entity's own map label.
-    expect(
-      screen.queryByRole("table", { name: /Household \(client and spouse\)/ }),
-    ).not.toBeInTheDocument();
+    // `EntityTable`'s aria-label is the entity's own map label. Matched on its
+    // stable PREFIX, not the full string: this is a negative assertion, so a
+    // regex pinned to wording the map later changes would pass vacuously and
+    // stop watching for the duplicate table it exists to catch.
+    expect(screen.queryByRole("table", { name: /^Household \(/ })).not.toBeInTheDocument();
     expect(
       screen.getByRole("table", { name: /Household details found in the document/ }),
     ).toBeInTheDocument();

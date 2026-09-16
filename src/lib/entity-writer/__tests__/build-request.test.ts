@@ -332,6 +332,30 @@ describe("update leg", () => {
     expect(result).toMatchObject({ ok: true, method: "POST", path: "/family-members" });
   });
 
+  /**
+   * T2-m2, promoted to fix-before-merge. The update leg had no empty-body
+   * floor: `family_member`'s PUT answers 200 to `{}`, writes nothing, and the
+   * row then reads "Committed". Every value here is `writable: false`, so the
+   * body assembles to `{}` with no refusal above it to catch it.
+   */
+  it("refuses an update whose values all fall out of the body", () => {
+    const entity = { ...base, updateSemantics: { method: "PUT" } } as unknown as DetailEntity;
+    const emptyRow = {
+      ...row,
+      values: [{ key: "role", value: "child", snippet: "child", confidence: 0.9 }],
+    } as unknown as CandidateRow;
+    const result = buildWriteRequest({ entity, row: emptyRow });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected refusal");
+    expect(result.error).toMatch(/nothing to update/i);
+  });
+
+  it("refuses an update built from a row carrying no values at all", () => {
+    const entity = { ...base, updateSemantics: { method: "PUT" } } as unknown as DetailEntity;
+    const emptyRow = { ...row, values: [] } as unknown as CandidateRow;
+    expect(buildWriteRequest({ entity, row: emptyRow }).ok).toBe(false);
+  });
+
   it("refuses an update whose route still has an unresolved segment", () => {
     const entity = {
       ...base,
