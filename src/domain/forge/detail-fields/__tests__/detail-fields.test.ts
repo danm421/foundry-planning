@@ -244,15 +244,23 @@ describe("document-evidence marking", () => {
 
   // The ONE entity whose write path this guard cannot see, named rather than
   // inferred from its flags. `client_household` is a singleton: it is never
-  // CREATED from a document (the client already exists), and today it declares
-  // no `identity`, so `matchByIdentity` reports "new", the create leg runs and
-  // `buildWriteRequest` refuses it. It genuinely cannot be written yet — Task 7
-  // supplies its match directly as `{ kind: "exact", existingId: clientId }`,
-  // which routes it to the update leg it already declares.
+  // CREATED from a document (the client already exists), and it declares no
+  // `identity`, so it never reaches `matchByIdentity` at all.
   //
-  // DELETE THIS ENTRY when that lands. A predicate over `updateSemantics` would
-  // have silently exempted every future entity with an update leg and no create
-  // route; an id is a line someone has to remove.
+  // It IS written. `buildHouseholdCommitRow`
+  // (`src/components/statement-chat/household-diff.ts`) synthesises a row
+  // carrying `match: { kind: "exact", existingId: clientId }`, which routes it
+  // to the update leg it declares. `routes.create || nestedIn` cannot see that
+  // path by design, and never will: `profile.ts` states there is no create
+  // route below /api/clients/[id] and none is coming. So this entry is
+  // PERMANENT, not pending — do not delete it expecting the household to pass
+  // the predicate one day.
+  //
+  // Hand-maintained rather than widened into a predicate: a predicate over
+  // `updateSemantics` would have silently exempted every future entity with an
+  // update leg and no create route. An id is a line someone has to justify,
+  // and the test below is what holds that justification to something — an
+  // exempted entity must declare the update path it is exempted onto.
   const MATCH_SUPPLIED_DIRECTLY = ["client_household"];
 
   it("every document-evidence entity can actually be written", () => {
@@ -263,14 +271,25 @@ describe("document-evidence marking", () => {
     }
   });
 
-  it("does not keep a write exemption for an entity that no longer needs one", () => {
+  // The exemption above says "this entity is written by a path the predicate
+  // cannot see". This is what makes that a claim with teeth rather than a free
+  // pass: the entity has to declare the path it is exempted ONTO — an update
+  // leg (`updateSemantics`, which `buildWriteRequest` requires before it will
+  // build anything for an `exact` match) and a route to send it to. Strip
+  // either one and the household is not "written another way", it is not
+  // written at all, and this goes red.
+  //
+  // This replaces an assertion that `routes.create || nestedIn` is false, which
+  // `profile.ts` makes permanently true and which therefore could never prompt
+  // anyone.
+  it("only exempts an entity that declares the update path it is exempted onto", () => {
     for (const id of MATCH_SUPPLIED_DIRECTLY) {
       const entity = documentEvidenceEntities().find((e) => e.id === id);
       expect(entity, `exemption "${id}" names no document-evidence entity`).toBeDefined();
       expect(
-        Boolean(entity!.routes.create) || Boolean(entity!.nestedIn),
-        `exemption "${id}" is stale — it can be written like any other entity now`,
-      ).toBe(false);
+        Boolean(entity!.updateSemantics) && Boolean(entity!.routes.update),
+        `exemption "${id}" is exempted from the create-route check but declares no update leg to be written through — nothing can write it`,
+      ).toBe(true);
     }
   });
 
