@@ -77,29 +77,62 @@ describe("buildHouseholdDiff", () => {
   it("says whose Email is whose", () => {
     const rows = buildHouseholdDiff({ entity, extracted: contacts, onRecord: {} });
     expect(rows.find((r) => r.key === "email")?.label).toBe("Email");
-    expect(rows.find((r) => r.key === "spouseEmail")?.label).toBe("Spouse Email");
+    expect(rows.find((r) => r.key === "spouseEmail")?.label).toBe("Co-client Email");
   });
 
-  it("does not say Spouse twice when the label already names the spouse", () => {
+  it("does not qualify twice when the label already names the co-client", () => {
     const rows = buildHouseholdDiff({ entity, extracted: rowOf([{ key: "spouseDob", value: "1970-02-02" }]), onRecord: {} });
-    expect(rows[0].label).toBe("Spouse Date of Birth");
+    expect(rows[0].label).toBe("Co-client Date of Birth");
   });
 
-  it("falls back to the key when two emitted rows would still share a label", () => {
+  /**
+   * T7-(11). The dedupe fallback used to append the raw payload key, so the
+   * advisor read "Address line 1 (spouseAddressLine1)" — a developer token in
+   * advisor-facing copy. The collision is still real after the rename, so the
+   * fallback still has to fire; it just has to fire in English.
+   */
+  it("names a colliding row from its key in words, never as a raw key", () => {
     const rows = buildHouseholdDiff({ entity, extracted: contacts, onRecord: {} });
-    expect(rows.filter((r) => r.label.startsWith("Address line 1")).map((r) => r.label)).toEqual([
-      "Address line 1 (addressLine1)",
-      "Address line 1 (address)",
+    const collided = rows.filter((r) => r.key.toLowerCase().includes("address"));
+    expect(collided.map((r) => r.label)).toEqual([
+      "Address line 1",
+      "Address",
+      "Co-client Address line 1",
+      "Co-client Address",
     ]);
-    expect(rows.filter((r) => r.label.startsWith("Spouse Address line 1")).map((r) => r.label)).toEqual([
-      "Spouse Address line 1 (spouseAddressLine1)",
-      "Spouse Address line 1 (spouseAddress)",
-    ]);
+    // The shape of the old fallback, in any row: a bracketed camelCase token.
+    for (const row of rows) expect(row.label).not.toMatch(/\([a-z]+[A-Z]/);
   });
 
   it("gives every emitted row a label of its own", () => {
     const rows = buildHouseholdDiff({ entity, extracted: contacts, onRecord: {} });
     expect(new Set(rows.map((r) => r.label)).size).toBe(rows.length);
+  });
+
+  /**
+   * Both whole-table guarantees at full width — EVERY writable field of the
+   * real `client_household` map at once, not the six-field fixture above.
+   *
+   * Uniqueness holds only because no two keys reduce to the same words, which
+   * is a property of the MAP and a future field could break it.
+   *
+   * And the vocabulary is a property of the map too: the qualifier flipped to
+   * "Co-client", so a map label still reading "Spouse Date of Birth" would
+   * render "Co-client Email" next to it in one table — the half-renamed state
+   * the controller ruled worse than either extreme. The repo's own gate cannot
+   * catch that regression, because `profile.ts` stays red from its
+   * machine-facing `documentHints` and `notes` either way.
+   */
+  it("gives every writable field of the real map a unique label an advisor can read", () => {
+    const writable = entity.fields.filter((f) => f.writable !== false);
+    const rows = buildHouseholdDiff({
+      entity,
+      extracted: rowOf(writable.map((f) => ({ key: f.key, value: `v-${f.key}` }))),
+      onRecord: {},
+    });
+    expect(rows).toHaveLength(writable.length);
+    expect(new Set(rows.map((r) => r.label)).size).toBe(rows.length);
+    for (const row of rows) expect(row.label.toLowerCase()).not.toContain("spouse");
   });
 
   it("never offers a field the writer would drop from the update body", () => {

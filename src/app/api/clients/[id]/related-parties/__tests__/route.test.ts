@@ -311,7 +311,7 @@ describe("related-parties route — PATCH", () => {
     const res = await PATCH(req({ firstName: "Mallory" }, "PATCH"), partyParams("primary-1"));
     expect(await res.json()).toEqual({
       error:
-        "Related party not found — the household's own contacts (the client, their spouse and any dependants) are edited on the Household screen, not here.",
+        "Related party not found — the household's own contacts (the client, their co-client and any dependants) are edited on the Household screen, not here.",
     });
     // Ratchet on the roles that sentence has to describe: the predicate refuses
     // every non-'other' value, so a fourth one appearing here means the wording

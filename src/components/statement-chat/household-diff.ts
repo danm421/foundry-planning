@@ -27,15 +27,40 @@ function same(a: unknown, b: unknown): boolean {
 
 /**
  * `client_household`'s labels are written for the Details screen, which shows
- * them in a client section and a spouse section. This flat table throws that
+ * them in a client section and a co-client section. This flat table throws that
  * grouping away, so `email` and `spouseEmail` both arrive as "Email" and the
- * advisor cannot tell whose is whose. Name the spouse's side — unless the
+ * advisor cannot tell whose is whose. Name the co-client's side — unless the
  * label already does, which it does for `spouseName`, `spouseDob` and friends.
+ *
+ * The KEY still says `spouse` (it is the PUT's payload key and the DB's own
+ * vocabulary); only the words the advisor reads say co-client.
  */
 function qualifyLabel(key: string, label: string): string {
-  return key.startsWith("spouse") && !label.toLowerCase().startsWith("spouse")
-    ? `Spouse ${label}`
+  return key.startsWith("spouse") && !label.toLowerCase().startsWith("co-client")
+    ? `Co-client ${label}`
     : label;
+}
+
+/**
+ * A label built from the payload key, for the rows whose map labels collide.
+ *
+ * Read as English, not as a token: `spouseAddressLine1` becomes "Co-client
+ * Address line 1", which is what distinguishes it from the legacy
+ * `spouseAddress` ("Co-client Address"). The raw key used to be appended in
+ * brackets instead, which shipped a developer identifier into advisor-facing
+ * copy ("Address line 1 (spouseAddressLine1)").
+ *
+ * The `spouse` prefix is stripped before the words are split and handed back
+ * to `qualifyLabel`, so the co-client's side is named the same way everywhere.
+ */
+function labelFromKey(key: string): string {
+  const stem = key.startsWith("spouse") ? key.slice("spouse".length) : key;
+  const words = stem
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/([A-Za-z])(\d)/g, "$1 $2")
+    .trim()
+    .toLowerCase();
+  return qualifyLabel(key, words.charAt(0).toUpperCase() + words.slice(1));
 }
 
 /** One row per field the document states and the record does not already agree with. */
@@ -66,15 +91,16 @@ export function buildHouseholdDiff(args: {
       movesPlanHorizon: HORIZON_KEYS.has(v.key),
     }));
 
-  // Naming the spouse only halves it: `addressLine1`, the legacy `address`,
+  // Naming the co-client only halves it: `addressLine1`, the legacy `address`,
   // `spouseAddressLine1` and the legacy `spouseAddress` ALL read "Address
-  // line 1". Anything still sharing a label with another emitted row falls
-  // back to its key, which is unique by construction.
+  // line 1". Anything still sharing a label with another emitted row is named
+  // from its key instead — which no two fields of this entity share, pinned by
+  // this module's own test over the real `client_household` map.
   const emitted = rows.map((r) => r.label);
   return rows.map((r) =>
     emitted.indexOf(r.label) === emitted.lastIndexOf(r.label)
       ? r
-      : { ...r, label: `${r.label} (${r.key})` },
+      : { ...r, label: labelFromKey(r.key) },
   );
 }
 

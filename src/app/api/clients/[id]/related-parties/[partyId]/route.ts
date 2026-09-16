@@ -87,7 +87,7 @@ export async function PATCH(
       return NextResponse.json(
         {
           error:
-            "Related party not found — the household's own contacts (the client, their spouse and any dependants) are edited on the Household screen, not here.",
+            "Related party not found — the household's own contacts (the client, their co-client and any dependants) are edited on the Household screen, not here.",
         },
         { status: 404 },
       );

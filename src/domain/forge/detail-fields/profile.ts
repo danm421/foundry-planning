@@ -39,7 +39,7 @@ export const PROFILE_ENTITIES: readonly DetailEntity[] = [
   // ───────────────────────────────────────────────────────────────────────────
   {
     id: "client_household",
-    label: "Household (client and spouse)",
+    label: "Household (client and co-client)",
     tab: "profile",
     surface: "Profile → Household → Edit profile",
     table: "clients",
@@ -78,7 +78,7 @@ export const PROFILE_ENTITIES: readonly DetailEntity[] = [
       },
       {
         key: "spouseName",
-        label: "Spouse First Name",
+        label: "Co-client First Name",
         kind: "string",
         nullable: true,
         notes:
@@ -86,14 +86,14 @@ export const PROFILE_ENTITIES: readonly DetailEntity[] = [
       },
       {
         key: "spouseLastName",
-        label: "Spouse Last Name",
+        label: "Co-client Last Name",
         kind: "string",
         nullable: true,
         notes: "Blank inherits the client's last name. " + CONTACT_NOTE,
       },
       {
         key: "spouseDob",
-        label: "Spouse Date of Birth",
+        label: "Co-client Date of Birth",
         kind: "date",
         nullable: true,
         notes: "ISO yyyy-mm-dd. Feeds the plan-horizon recompute. " + CONTACT_NOTE,
@@ -125,21 +125,21 @@ export const PROFILE_ENTITIES: readonly DetailEntity[] = [
       },
       {
         key: "spouseRetirementAge",
-        label: "Spouse Retirement Age",
+        label: "Co-client Retirement Age",
         kind: "number",
         nullable: true,
         range: { min: 18, max: 100 },
       },
       {
         key: "spouseRetirementMonth",
-        label: "Spouse Retirement Month",
+        label: "Co-client Retirement Month",
         kind: "number",
         nullable: true,
         range: { min: 1, max: 12 },
       },
       {
         key: "spouseLifeExpectancy",
-        label: "Spouse Life Expectancy",
+        label: "Co-client Life Expectancy",
         kind: "number",
         nullable: true,
         range: { min: 1, max: 130 },
