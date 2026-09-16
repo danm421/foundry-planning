@@ -31,16 +31,16 @@ export function EstateTransferDeathSection({
   const reductionsTotal = section.reconciliation.sumReductions;
 
   return (
-    <section className="overflow-hidden rounded-xl border border-gray-800 bg-gray-900/40">
-      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-800 px-5 py-3">
+    <section className="overflow-hidden rounded-xl border border-hair bg-card-2">
+      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-hair px-5 py-3">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <span className="text-[10px] font-medium uppercase tracking-[0.2em] text-gray-500">
+          <span className="text-[10px] font-medium uppercase tracking-[0.2em] text-ink-4">
             Estate transfer
           </span>
-          <h2 className="text-base font-semibold text-gray-50">{heading}</h2>
+          <h2 className="text-base font-semibold text-ink">{heading}</h2>
         </div>
         <div className="flex items-baseline gap-2">
-          <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-gray-500">
+          <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-ink-4">
             Estate at death
           </span>
           {/* The headline figure an advisor reads off this card. Its own
@@ -53,7 +53,7 @@ export function EstateTransferDeathSection({
               testId="estate-delta-estate-at-death"
             />
           )}
-          <span className="text-xl font-semibold tabular-nums text-gray-50">
+          <span className="text-xl font-semibold tabular-nums text-ink">
             {fmt.format(estateValue)}
           </span>
         </div>
@@ -61,7 +61,7 @@ export function EstateTransferDeathSection({
 
       <div className="space-y-3 p-4">
         {section.recipients.length === 0 && (
-          <p className="text-sm text-gray-400">No transfers in this death event.</p>
+          <p className="text-sm text-ink-3">No transfers in this death event.</p>
         )}
         {section.recipients.map((r) => (
           <EstateTransferRecipientCard key={r.key} group={r} />
@@ -74,7 +74,7 @@ export function EstateTransferDeathSection({
         <EstateTransferConflictsCallout conflicts={section.conflicts} />
 
         {section.reconciliation.reconciles ? (
-          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-t border-gray-800/60 pt-2 text-[11px] text-gray-500">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-t border-hair pt-2 text-[11px] text-ink-4">
             <span>
               <span className="text-emerald-400">✓</span> Reconciled ·{" "}
               {fmt.format(section.assetEstateValue)}
@@ -103,7 +103,7 @@ export function EstateTransferDeathSection({
                 <> · {fmt.format(reductionsTotal)} drained for taxes &amp; expenses</>
               )}
             </span>
-            <span className="tabular-nums text-gray-400">
+            <span className="tabular-nums text-ink-3">
               Net to recipients {fmt.format(section.reconciliation.sumRecipients)}
             </span>
           </div>

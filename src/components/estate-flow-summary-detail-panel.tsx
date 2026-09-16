@@ -50,16 +50,16 @@ export function EstateFlowSummaryDetailPanel({ selected, onClose }: Props) {
       role="dialog"
       aria-modal="false"
       aria-label={panelTitle(selected)}
-      className="flex max-h-[60vh] w-full flex-col overflow-hidden rounded-xl border-2 border-amber-400 bg-gradient-to-b from-slate-900 to-slate-950 shadow-xl shadow-amber-500/30 ring-1 ring-inset ring-amber-300/20"
+      className="flex max-h-[60vh] w-full flex-col overflow-hidden rounded-xl border-2 border-amber-400 bg-card-2 shadow-xl shadow-amber-500/30 ring-1 ring-inset ring-amber-300/20"
     >
       <header className="flex items-center justify-between gap-2 border-b border-amber-400/30 px-4 py-3">
-        <h2 className="truncate text-xs font-semibold uppercase tracking-wider text-gray-100">
+        <h2 className="truncate text-xs font-semibold uppercase tracking-wider text-ink">
           {panelTitle(selected)}
         </h2>
         <button
           type="button"
           onClick={onClose}
-          className="rounded-md p-1 text-gray-400 transition-colors hover:bg-white/10 hover:text-gray-100"
+          className="rounded-md p-1 text-ink-3 transition-colors hover:bg-white/10 hover:text-ink"
           aria-label="Close panel"
         >
           ✕
@@ -160,7 +160,7 @@ function PanelBody({ selected }: { selected: SelectedPanel }) {
           </div>
           {debtLines.length > 0 && (
             <>
-              <div className="pt-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+              <div className="pt-2 text-[11px] font-semibold uppercase tracking-wider text-ink-3">
                 Debts Assumed
               </div>
               <LineList
@@ -176,7 +176,7 @@ function PanelBody({ selected }: { selected: SelectedPanel }) {
           )}
           {drainLines.length > 0 && (
             <>
-              <div className="pt-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+              <div className="pt-2 text-[11px] font-semibold uppercase tracking-wider text-ink-3">
                 Taxes &amp; Expenses
               </div>
               <LineList
@@ -201,10 +201,10 @@ function PanelBody({ selected }: { selected: SelectedPanel }) {
       return (
         <div className="space-y-4">
           {selected.payload.entities.map((e) => (
-            <section key={e.entityId} className="rounded-lg border border-gray-800 px-3 py-2">
+            <section key={e.entityId} className="rounded-lg border border-hair px-3 py-2">
               <div className="flex items-baseline justify-between gap-3">
-                <h3 className="text-sm font-semibold text-gray-100">{e.entityLabel}</h3>
-                <span className="text-sm tabular-nums text-gray-200">{fmt.format(e.amount)}</span>
+                <h3 className="text-sm font-semibold text-ink">{e.entityLabel}</h3>
+                <span className="text-sm tabular-nums text-ink-2">{fmt.format(e.amount)}</span>
               </div>
               <LineList lines={e.assets} />
             </section>
@@ -222,7 +222,7 @@ function PanelBody({ selected }: { selected: SelectedPanel }) {
             <EstateTransferRecipientCard group={heir.recipientGroups.secondDeath} />
           )}
           <EstateFlowSummaryTrustInterests trustInterests={heir.trustInterests} />
-          <div className="border-t border-gray-800 pt-2">
+          <div className="border-t border-hair pt-2">
             <Stat label="Outright" amount={heir.outright} />
             <Stat label="In Trust" amount={heir.inTrust} />
             <Stat label="Total" amount={heir.total} bold />
@@ -236,7 +236,7 @@ function PanelBody({ selected }: { selected: SelectedPanel }) {
           {selected.payload.heirs.map((h) => (
             <Stat key={h.recipientKey} label={h.recipientLabel} amount={h.total} />
           ))}
-          <div className="border-t border-gray-800 pt-2">
+          <div className="border-t border-hair pt-2">
             <Stat label="Total" amount={selected.payload.total} bold />
           </div>
         </div>
@@ -246,14 +246,14 @@ function PanelBody({ selected }: { selected: SelectedPanel }) {
 
 function LineList({ lines }: { lines: { label: string; amount: number }[] }) {
   if (lines.length === 0) {
-    return <div className="text-sm text-gray-500">No items.</div>;
+    return <div className="text-sm text-ink-4">No items.</div>;
   }
   return (
     <div className="space-y-1">
       {lines.map((l, i) => (
         <div
           key={`${l.label}-${i}`}
-          className="flex items-baseline justify-between gap-4 py-0.5 text-sm text-gray-300"
+          className="flex items-baseline justify-between gap-4 py-0.5 text-sm text-ink-3"
         >
           <span className="truncate">{l.label}</span>
           <span className="tabular-nums">{fmt.format(l.amount)}</span>
@@ -274,11 +274,11 @@ function Stat({
 }) {
   return (
     <div className="flex items-baseline justify-between gap-4 text-sm">
-      <span className={bold ? "font-semibold text-gray-100" : "text-gray-300"}>
+      <span className={bold ? "font-semibold text-ink" : "text-ink-3"}>
         {label}
       </span>
       <span
-        className={`tabular-nums ${bold ? "font-semibold text-gray-100" : "text-gray-300"}`}
+        className={`tabular-nums ${bold ? "font-semibold text-ink" : "text-ink-3"}`}
       >
         {fmt.format(amount)}
       </span>

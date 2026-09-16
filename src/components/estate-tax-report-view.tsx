@@ -189,7 +189,7 @@ export default function EstateTaxReportView({
 
   if (projectionYears.length === 0 || todayYear == null) {
     return (
-      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
+      <div className="rounded-lg border border-hair bg-card-2 p-6 text-center text-ink-3">
         No projection data available. Ensure plan settings and base case scenario are configured.
       </div>
     );
@@ -197,7 +197,7 @@ export default function EstateTaxReportView({
 
   if (!isSplit && !hypothetical) {
     return (
-      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
+      <div className="rounded-lg border border-hair bg-card-2 p-6 text-center text-ink-3">
         No estate tax snapshot available for {resolvedYear}.
       </div>
     );
@@ -253,7 +253,7 @@ export default function EstateTaxReportView({
             showSplit={isMarried && firstDeathYear != null && secondDeathYear != null}
           />
           <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 text-xs uppercase tracking-wide text-gray-300">
+            <label className="flex items-center gap-2 text-xs uppercase tracking-wide text-ink-3">
               As of
               <AsOfDropdown
                 years={dropdownYears}
@@ -267,13 +267,13 @@ export default function EstateTaxReportView({
               />
             </label>
             {isMarried && !isSplit && (
-              <div className="inline-flex rounded border border-gray-700 bg-gray-900 p-0.5 text-sm">
+              <div className="inline-flex rounded border border-hair-3 bg-card-2 p-0.5 text-sm">
                 <button
                   type="button"
                   className={
                     ordering === "primaryFirst"
-                      ? "rounded bg-gray-700 px-3 py-1 text-gray-100"
-                      : "rounded px-3 py-1 text-gray-300 hover:text-gray-200"
+                      ? "rounded bg-card-active px-3 py-1 text-ink"
+                      : "rounded px-3 py-1 text-ink-3 hover:text-ink-2"
                   }
                   onClick={() => setOwnOrdering("primaryFirst")}
                 >
@@ -283,8 +283,8 @@ export default function EstateTaxReportView({
                   type="button"
                   className={
                     ordering === "spouseFirst"
-                      ? "rounded bg-gray-700 px-3 py-1 text-gray-100"
-                      : "rounded px-3 py-1 text-gray-300 hover:text-gray-200"
+                      ? "rounded bg-card-active px-3 py-1 text-ink"
+                      : "rounded px-3 py-1 text-ink-3 hover:text-ink-2"
                   }
                   onClick={() => setOwnOrdering("spouseFirst")}
                 >
@@ -296,7 +296,7 @@ export default function EstateTaxReportView({
         </div>
       )}
 
-      <p className="text-xs text-gray-400">{headerNote}</p>
+      <p className="text-xs text-ink-3">{headerNote}</p>
 
       {isSplit ? (
         <>
@@ -394,7 +394,7 @@ function LineRow({
     <div
       className={
         "flex items-baseline justify-between gap-4 py-1 text-sm " +
-        (muted ? "text-gray-500" : "text-gray-300")
+        (muted ? "text-ink-4" : "text-ink-3")
       }
     >
       <span className="min-w-0 break-words">
@@ -404,7 +404,7 @@ function LineRow({
             {badge}
           </span>
         )}
-        {hint && <span className="ml-2 text-xs text-gray-500">{hint}</span>}
+        {hint && <span className="ml-2 text-xs text-ink-4">{hint}</span>}
         {/* `empty:hidden` drops the gap on rows the marker renders nothing for. */}
         {status && (
           <span className="ml-2 empty:hidden">
@@ -415,7 +415,7 @@ function LineRow({
       <span
         className={
           "shrink-0 tabular-nums " +
-          (negative ? "text-rose-300/90" : muted ? "text-gray-500" : "text-gray-200")
+          (negative ? "text-rose-300/90" : muted ? "text-ink-4" : "text-ink-2")
         }
       >
         {value}
@@ -449,14 +449,14 @@ function Section({
       ? subtotal > 0
         ? "text-rose-200"
         : "text-emerald-200"
-      : "text-gray-50";
+      : "text-ink";
   return (
     <div className="px-5 py-3">
-      <h3 className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-gray-200">
+      <h3 className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-ink-2">
         {title}
       </h3>
       <div>{children}</div>
-      <div className="mt-1.5 flex items-baseline justify-between gap-4 border-t border-gray-800/80 pt-1.5">
+      <div className="mt-1.5 flex items-baseline justify-between gap-4 border-t border-hair pt-1.5">
         <span className={"text-sm font-medium " + accentClass}>
           {subtotalLabel}
         </span>
@@ -532,12 +532,12 @@ function DecedentBreakdown({
   const unifiedCreditHint = `(${fmt.format(tax.beaAtDeathYear)} Basic Exclusion + ${fmt.format(tax.dsueReceived)} DSUE)`;
 
   return (
-    <section className="overflow-hidden rounded-xl border border-gray-800 bg-gray-900/40">
-      <header className="border-b border-gray-800 px-5 py-3">
+    <section className="overflow-hidden rounded-xl border border-hair bg-card-2">
+      <header className="border-b border-hair px-5 py-3">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <h2 className="text-base font-semibold text-gray-50">{heading}</h2>
+          <h2 className="text-base font-semibold text-ink">{heading}</h2>
           <div className="flex items-baseline gap-2">
-            <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-gray-500">
+            <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-ink-4">
               Total Taxes &amp; Expenses
             </span>
             <span
@@ -558,7 +558,7 @@ function DecedentBreakdown({
         </div>
       )}
 
-      <div className="divide-y divide-gray-800/70">
+      <div className="divide-y divide-hair">
         {/* Gross Estate */}
         <Section
           title="Gross Estate"
@@ -742,7 +742,7 @@ function TotalsCard({
           <span className="text-[10px] font-medium uppercase tracking-[0.2em] text-indigo-300/80">
             Combined household
           </span>
-          <h2 className="text-base font-semibold text-gray-50">{heading}</h2>
+          <h2 className="text-base font-semibold text-ink">{heading}</h2>
         </div>
       </header>
       <div className="px-5 py-3">
@@ -763,7 +763,7 @@ function TotalsCard({
       </div>
       <div className="border-t border-indigo-900/40 bg-indigo-950/30 px-5 py-3">
         <div className="flex items-baseline justify-between gap-4">
-          <span className="text-sm font-semibold uppercase tracking-[0.16em] text-gray-100">
+          <span className="text-sm font-semibold uppercase tracking-[0.16em] text-ink">
             Grand total · taxes &amp; expenses
           </span>
           <span className="flex shrink-0 items-baseline gap-2">

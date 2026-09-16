@@ -52,7 +52,7 @@ export function EstateFlowSummaryView({
 
   if (!summary) {
     return (
-      <div className="py-16 text-center text-sm text-gray-500">
+      <div className="py-16 text-center text-sm text-ink-4">
         {emptyMessage}
       </div>
     );
@@ -286,7 +286,7 @@ function DeathColumn({
       {stage.subBoxes.length > 0 && (
         <>
           <FlowArrow compact />
-          <div className="flex flex-col gap-1.5 rounded-xl border border-white/5 bg-slate-950/40 p-2 shadow-inner shadow-black/30">
+          <div className="flex flex-col gap-1.5 rounded-xl border border-white/5 bg-card-2 p-2 shadow-inner shadow-black/30">
             {stage.subBoxes.map((b) => (
               <SubBoxButton
                 key={b.kind}
@@ -312,7 +312,7 @@ function OoeEntityGroup({
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+      <div className="px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-4">
         {label}
       </div>
       {entities.map((entity) => (
@@ -330,11 +330,11 @@ function OoeEntityGroup({
 
 function OoeEmptyState() {
   return (
-    <div className="flex flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-slate-600/50 bg-slate-950/30 px-5 py-6 text-center">
-      <span className="text-xs font-medium text-slate-400">
+    <div className="flex flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-hair-2 bg-card-2 px-5 py-6 text-center">
+      <span className="text-xs font-medium text-ink-3">
         Nothing outside the estate
       </span>
-      <span className="text-[11px] leading-snug text-slate-500">
+      <span className="text-[11px] leading-snug text-ink-4">
         All assets are included in the taxable estate.
       </span>
     </div>
@@ -351,9 +351,9 @@ function SectionHeader({
   const dotClass =
     tone === "estate"
       ? "bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.5)]"
-      : "bg-slate-400 shadow-[0_0_10px_rgba(148,163,184,0.5)]";
+      : "bg-ink-3 shadow-[0_0_10px_rgba(148,163,184,0.5)]";
   return (
-    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-3">
       <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`} aria-hidden />
       {label}
     </div>
@@ -363,7 +363,7 @@ function SectionHeader({
 function FlowArrow({ compact = false }: { compact?: boolean }) {
   return (
     <div
-      className={`flex justify-center text-slate-500 ${compact ? "py-1" : "py-2"}`}
+      className={`flex justify-center text-ink-4 ${compact ? "py-1" : "py-2"}`}
       aria-hidden
     >
       <svg
@@ -415,9 +415,9 @@ const TONE_CLASSES = {
   clientSolid:
     "border-amber-700/80 bg-accent/80 text-white backdrop-blur-sm shadow-lg shadow-amber-500/25 ring-1 ring-inset ring-amber-300/40",
   spouse:
-    "border-slate-200/40 bg-gradient-to-br from-slate-100/15 via-slate-200/10 to-slate-300/20 text-white shadow-lg shadow-slate-200/10 ring-1 ring-inset ring-white/20",
+    "border-white/40 bg-gradient-to-br from-white/15 via-white/10 to-white/20 text-white shadow-lg shadow-white/10 ring-1 ring-inset ring-white/20",
   spouseSolid:
-    "border-white/70 bg-white/75 text-slate-950 backdrop-blur-sm shadow-lg shadow-slate-300/25 ring-1 ring-inset ring-white/60",
+    "border-white/70 bg-white/75 text-black backdrop-blur-sm shadow-lg shadow-black/25 ring-1 ring-inset ring-white/60",
   tax:
     "border-red-700/80 bg-red-600/75 text-white backdrop-blur-sm shadow-lg shadow-red-500/25 ring-1 ring-inset ring-red-300/40",
   inheritanceSpouse:
@@ -425,11 +425,11 @@ const TONE_CLASSES = {
   heirs:
     "border-emerald-700/80 bg-emerald-600/75 text-white backdrop-blur-sm shadow-lg shadow-emerald-600/25 ring-1 ring-inset ring-emerald-400/40",
   neutral:
-    "border-slate-500/80 bg-slate-400/70 text-white backdrop-blur-sm shadow-lg shadow-slate-500/25 ring-1 ring-inset ring-slate-200/40",
+    "border-hair-2 bg-card-active text-ink backdrop-blur-sm shadow-lg shadow-black/25 ring-1 ring-inset ring-hair",
 } as const;
 
 const INTERACTIVE =
-  "transition-all duration-200 hover:-translate-y-0.5 hover:brightness-110 hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950";
+  "transition-all duration-200 hover:-translate-y-0.5 hover:brightness-110 hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-paper";
 
 function BoxButton({
   tone,

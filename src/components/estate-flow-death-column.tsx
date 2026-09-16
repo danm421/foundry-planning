@@ -55,7 +55,7 @@ function DeathWarningsCallout({ notes }: { notes: DeathWarningNote[] }) {
 }
 
 const DISTRIBUTION_FORM_CHIP = {
-  outright: { className: "bg-gray-800/70 text-gray-300", label: "Outright" },
+  outright: { className: "bg-card-active text-ink-3", label: "Outright" },
   in_trust: { className: "bg-indigo-900/40 text-indigo-200", label: "In trust" },
 } as const;
 
@@ -199,12 +199,12 @@ function ClickableRecipientGroup({
           ? "border-indigo-900/40 bg-indigo-950/15"
           : isSystemDefault
             ? "border-amber-900/40 bg-amber-950/15"
-            : "border-gray-800/80 bg-gray-900/50")
+            : "border-hair bg-card-2")
       }
     >
       {/* Recipient header */}
       <div className="flex items-baseline justify-between gap-2">
-        <h3 className="flex items-baseline gap-2 text-xs font-semibold text-gray-100">
+        <h3 className="flex items-baseline gap-2 text-xs font-semibold text-ink">
           <span>{group.recipientLabel}</span>
           {isSystemDefault && (
             <span className="rounded bg-amber-900/40 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-amber-200">
@@ -214,11 +214,11 @@ function ClickableRecipientGroup({
         </h3>
         <div className="flex items-baseline gap-1.5">
           {hasReductions && (
-            <span className="text-[10px] uppercase tracking-wider text-gray-500">
+            <span className="text-[10px] uppercase tracking-wider text-ink-4">
               Net
             </span>
           )}
-          <span className="text-sm font-semibold tabular-nums text-gray-50">
+          <span className="text-sm font-semibold tabular-nums text-ink">
             {fmt.format(group.netTotal)}
           </span>
         </div>
@@ -247,15 +247,15 @@ function ClickableRecipientGroup({
                 aria-disabled={accountId == null ? true : undefined}
                 onClick={() => accountId != null && onAssetClick(accountId)}
                 className={
-                  "group flex w-full items-baseline justify-between gap-3 py-0.5 pl-2 text-left text-xs text-gray-300 " +
+                  "group flex w-full items-baseline justify-between gap-3 py-0.5 pl-2 text-left text-xs text-ink-3 " +
                   (accountId != null
-                    ? "cursor-pointer hover:text-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500"
+                    ? "cursor-pointer hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500"
                     : "cursor-default")
                 }
               >
                 <span className="flex items-baseline gap-1.5 truncate">
                   <span className="truncate">{a.label}</span>
-                  <span className="shrink-0 rounded bg-gray-800/70 px-1 py-0.5 text-[9px] font-medium uppercase tracking-wider text-gray-400">
+                  <span className="shrink-0 rounded bg-card-active px-1 py-0.5 text-[9px] font-medium uppercase tracking-wider text-ink-3">
                     {mechanismLabel}
                   </span>
                   {a.conflictIds.length > 0 && (
@@ -274,7 +274,7 @@ function ClickableRecipientGroup({
                     </span>
                   )}
                 </span>
-                <span className="tabular-nums text-gray-200">
+                <span className="tabular-nums text-ink-2">
                   {fmt.format(a.amount)}
                 </span>
               </button>
@@ -292,14 +292,14 @@ function ClickableRecipientGroup({
 
       {/* Reductions footer */}
       {hasReductions && (
-        <div className="mt-1.5 flex items-baseline justify-between gap-2 border-t border-gray-800/60 pt-1 text-[10px] text-gray-400">
+        <div className="mt-1.5 flex items-baseline justify-between gap-2 border-t border-hair pt-1 text-[10px] text-ink-3">
           <span>
             Gross {fmt.format(group.total)}{" "}
             <span className="text-rose-300/80">
               − reductions {fmt.format(totalDrains)}
             </span>
           </span>
-          <span className="tabular-nums text-gray-300">{fmt.format(group.netTotal)}</span>
+          <span className="tabular-nums text-ink-3">{fmt.format(group.netTotal)}</span>
         </div>
       )}
     </section>
@@ -314,16 +314,16 @@ function TotalsStrip({ section }: { section: DeathSectionData }) {
   const net = section.reconciliation.sumRecipients;
 
   return (
-    <div className="flex items-baseline justify-between gap-3 rounded border border-gray-800/50 bg-gray-900/40 px-3 py-1.5 text-[10px] tabular-nums">
-      <span className="text-gray-400">
-        Gross <span className="text-gray-200">{fmt.format(gross)}</span>
+    <div className="flex items-baseline justify-between gap-3 rounded border border-hair bg-card-2 px-3 py-1.5 text-[10px] tabular-nums">
+      <span className="text-ink-3">
+        Gross <span className="text-ink-2">{fmt.format(gross)}</span>
       </span>
       {tax > 0 && (
         <span className="text-rose-400/80">
           − {fmt.format(tax)} taxes
         </span>
       )}
-      <span className="font-semibold text-gray-100">
+      <span className="font-semibold text-ink">
         Net {fmt.format(net)}
       </span>
     </div>
@@ -381,7 +381,7 @@ export function EstateFlowDeathColumn({
 
   if (!section) {
     return (
-      <div className="flex h-full items-center justify-center text-center text-xs text-gray-600">
+      <div className="flex h-full items-center justify-center text-center text-xs text-ink-4">
         {deathOrder === 2
           ? "No second death projected in plan window."
           : "No death event projected in plan window."}
@@ -401,10 +401,10 @@ export function EstateFlowDeathColumn({
       {/* Column header */}
       <div>
         <div className="flex items-baseline justify-between gap-2">
-          <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-500">
+          <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-ink-4">
             {deathLabel}
           </span>
-          <span className="text-xs font-semibold tabular-nums text-gray-300">
+          <span className="text-xs font-semibold tabular-nums text-ink-3">
             {section.year}
           </span>
         </div>
@@ -422,7 +422,7 @@ export function EstateFlowDeathColumn({
 
       {/* Recipient groups */}
       {section.recipients.length === 0 ? (
-        <p className="text-xs text-gray-500">No transfers in this death event.</p>
+        <p className="text-xs text-ink-4">No transfers in this death event.</p>
       ) : (
         <div className="flex flex-col gap-2">
           {section.recipients.map((group) => (

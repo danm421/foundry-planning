@@ -91,11 +91,11 @@ export default function BeneficiarySummary({
     return (
       <section>
         <header className="mb-3">
-          <h2 className="text-xl font-bold text-gray-100">Beneficiary Designations</h2>
+          <h2 className="text-xl font-bold text-ink">Beneficiary Designations</h2>
         </header>
-        <div className="rounded-lg border border-dashed border-gray-800 bg-gray-900/40 p-6 text-center">
-          <p className="text-sm text-gray-300">No beneficiary designations yet.</p>
-          <p className="mt-1 text-xs text-gray-400">
+        <div className="rounded-lg border border-dashed border-hair bg-card-2 p-6 text-center">
+          <p className="text-sm text-ink-3">No beneficiary designations yet.</p>
+          <p className="mt-1 text-xs text-ink-3">
             Open an account or trust above to add primary and contingent beneficiaries.
           </p>
         </div>
@@ -106,12 +106,12 @@ export default function BeneficiarySummary({
   return (
     <section>
       <header className="mb-4">
-        <h2 className="text-xl font-bold text-gray-100">Beneficiary Designations</h2>
+        <h2 className="text-xl font-bold text-ink">Beneficiary Designations</h2>
       </header>
 
       {accountRows.length > 0 && (
         <div className="mb-6">
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-400">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-3">
             Accounts
           </h3>
           <div className="space-y-2">
@@ -122,15 +122,15 @@ export default function BeneficiarySummary({
               return (
                 <div
                   key={account.id}
-                  className="group rounded-lg border border-gray-800 bg-gray-900/60 p-4 transition-colors hover:border-gray-700"
+                  className="group rounded-lg border border-hair bg-card-2 p-4 transition-colors hover:border-hair-2"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                        <span className="text-sm font-semibold text-gray-100">
+                        <span className="text-sm font-semibold text-ink">
                           {account.name}
                         </span>
-                        <span className="text-xs tracking-wide text-gray-400">
+                        <span className="text-xs tracking-wide text-ink-3">
                           {formatAccountCategory(account.category)}
                         </span>
                         {isTOD && (
@@ -142,17 +142,17 @@ export default function BeneficiarySummary({
                           </span>
                         )}
                       </div>
-                      <dl className="mt-2 space-y-1 text-xs text-gray-300">
+                      <dl className="mt-2 space-y-1 text-xs text-ink-3">
                         {primaryLine && (
                           <div className="flex gap-2">
-                            <dt className="w-20 shrink-0 text-gray-400">Primary:</dt>
-                            <dd className="min-w-0 flex-1 text-gray-200">{primaryLine}</dd>
+                            <dt className="w-20 shrink-0 text-ink-3">Primary:</dt>
+                            <dd className="min-w-0 flex-1 text-ink-2">{primaryLine}</dd>
                           </div>
                         )}
                         {contingentLine && (
                           <div className="flex gap-2">
-                            <dt className="w-20 shrink-0 text-gray-400">Contingent:</dt>
-                            <dd className="min-w-0 flex-1 text-gray-200">{contingentLine}</dd>
+                            <dt className="w-20 shrink-0 text-ink-3">Contingent:</dt>
+                            <dd className="min-w-0 flex-1 text-ink-2">{contingentLine}</dd>
                           </div>
                         )}
                       </dl>
@@ -161,7 +161,7 @@ export default function BeneficiarySummary({
                       <button
                         type="button"
                         onClick={() => onEditAccount(account.id)}
-                        className="shrink-0 rounded-md border border-gray-700 px-2.5 py-1 text-xs font-medium text-gray-300 transition-colors hover:border-gray-600 hover:bg-gray-800 hover:text-gray-100"
+                        className="shrink-0 rounded-md border border-hair-3 px-2.5 py-1 text-xs font-medium text-ink-3 transition-colors hover:bg-card-hover hover:text-ink"
                       >
                         Edit <span aria-hidden="true">→</span>
                       </button>
@@ -176,7 +176,7 @@ export default function BeneficiarySummary({
 
       {trustRows.length > 0 && (
         <div>
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-400">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-3">
             Trust Remainders
           </h3>
           <div className="space-y-2">
@@ -186,22 +186,22 @@ export default function BeneficiarySummary({
               return (
                 <div
                   key={entity.id}
-                  className="group rounded-lg border border-gray-800 bg-gray-900/60 p-4 transition-colors hover:border-gray-700"
+                  className="group rounded-lg border border-hair bg-card-2 p-4 transition-colors hover:border-hair-2"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0 flex-1">
-                      <div className="text-sm font-semibold text-gray-100">{entity.name}</div>
-                      <dl className="mt-2 space-y-1 text-xs text-gray-300">
+                      <div className="text-sm font-semibold text-ink">{entity.name}</div>
+                      <dl className="mt-2 space-y-1 text-xs text-ink-3">
                         {primaryLine && (
                           <div className="flex gap-2">
-                            <dt className="w-20 shrink-0 text-gray-400">Primary:</dt>
-                            <dd className="min-w-0 flex-1 text-gray-200">{primaryLine}</dd>
+                            <dt className="w-20 shrink-0 text-ink-3">Primary:</dt>
+                            <dd className="min-w-0 flex-1 text-ink-2">{primaryLine}</dd>
                           </div>
                         )}
                         {contingentLine && (
                           <div className="flex gap-2">
-                            <dt className="w-20 shrink-0 text-gray-400">Contingent:</dt>
-                            <dd className="min-w-0 flex-1 text-gray-200">{contingentLine}</dd>
+                            <dt className="w-20 shrink-0 text-ink-3">Contingent:</dt>
+                            <dd className="min-w-0 flex-1 text-ink-2">{contingentLine}</dd>
                           </div>
                         )}
                       </dl>
@@ -210,7 +210,7 @@ export default function BeneficiarySummary({
                       <button
                         type="button"
                         onClick={() => onEditEntity(entity.id)}
-                        className="shrink-0 rounded-md border border-gray-700 px-2.5 py-1 text-xs font-medium text-gray-300 transition-colors hover:border-gray-600 hover:bg-gray-800 hover:text-gray-100"
+                        className="shrink-0 rounded-md border border-hair-3 px-2.5 py-1 text-xs font-medium text-ink-3 transition-colors hover:bg-card-hover hover:text-ink"
                       >
                         Edit <span aria-hidden="true">→</span>
                       </button>

@@ -101,10 +101,10 @@ function AssetRow({
         onClick={() => onAssetClick(asset.accountId)}
         aria-label={`${asset.name}, ${fmt.format(asset.value)}${asset.hasConflict ? ", no estate plan" : ""}${asset.hasBeneficiaries ? ", has beneficiary" : ""}${asset.isSplit ? `, ${Math.round(asset.percent * 100)}% split` : ""}${asset.isDefaultCash ? "" : ". Click to edit."}`}
         className={
-          "group flex w-full items-baseline justify-between gap-3 py-0.5 pl-2 text-left text-xs text-gray-300 transition-colors " +
+          "group flex w-full items-baseline justify-between gap-3 py-0.5 pl-2 text-left text-xs text-ink-3 transition-colors " +
           (asset.isDefaultCash
             ? "cursor-default"
-            : "cursor-pointer hover:text-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500")
+            : "cursor-pointer hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500")
         }
       >
         <span className="flex items-baseline gap-1.5 truncate">
@@ -130,11 +130,11 @@ function AssetRow({
               No Plan
             </span>
           )}
-          <span className="shrink-0 rounded bg-gray-800/70 px-1 py-0.5 text-[9px] font-medium uppercase tracking-wider text-gray-400">
+          <span className="shrink-0 rounded bg-card-active px-1 py-0.5 text-[9px] font-medium uppercase tracking-wider text-ink-3">
             {formatAccountType(asset.accountType)}
           </span>
         </span>
-        <span className="tabular-nums text-gray-200">
+        <span className="tabular-nums text-ink-2">
           {fmt.format(asset.value)}
         </span>
       </button>
@@ -145,7 +145,7 @@ function AssetRow({
           {asset.linkedLiabilities.map((liab) => (
             <div
               key={liab.liabilityId}
-              className="flex items-baseline justify-between gap-3 text-[11px] text-gray-500"
+              className="flex items-baseline justify-between gap-3 text-[11px] text-ink-4"
             >
               <span className="truncate">{liab.name}</span>
               <span className="tabular-nums text-rose-400/80">
@@ -153,7 +153,7 @@ function AssetRow({
               </span>
             </div>
           ))}
-          <div className="flex items-baseline justify-end gap-3 text-[11px] text-gray-400">
+          <div className="flex items-baseline justify-end gap-3 text-[11px] text-ink-3">
             <span className="tabular-nums">net {fmt.format(asset.netValue)}</span>
           </div>
         </div>
@@ -207,16 +207,16 @@ function GroupCard({
   const kindLabel = KIND_LABEL[group.kind];
 
   return (
-    <section className="rounded-lg border border-gray-800/80 bg-gray-900/50 px-3 py-2.5">
+    <section className="rounded-lg border border-hair bg-card-2 px-3 py-2.5">
       {/* Header */}
       <div className="flex items-baseline justify-between gap-2">
-        <h3 className="flex items-baseline gap-2 text-xs font-semibold text-gray-100">
+        <h3 className="flex items-baseline gap-2 text-xs font-semibold text-ink">
           <span>{group.label}</span>
-          <span className="text-[10px] font-medium uppercase tracking-wider text-gray-500">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-ink-4">
             {kindLabel}
           </span>
         </h3>
-        <span className="text-sm font-semibold tabular-nums text-gray-50">
+        <span className="text-sm font-semibold tabular-nums text-ink">
           {fmt.format(group.subtotal)}
         </span>
       </div>
@@ -329,7 +329,7 @@ export function EstateFlowOwnershipColumn({
       {/* Column heading */}
       <div className="flex flex-col gap-1.5 px-1">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-3">
             Ownership
           </h2>
           <button
@@ -347,7 +347,7 @@ export function EstateFlowOwnershipColumn({
           onChange={onYearChange}
         />
         {isProjected && (
-          <span className="text-[10px] uppercase tracking-wider text-gray-400">
+          <span className="text-[10px] uppercase tracking-wider text-ink-3">
             Projected values · {asOfYear}
           </span>
         )}
@@ -361,7 +361,7 @@ export function EstateFlowOwnershipColumn({
       />
 
       {data.groups.length === 0 ? (
-        <div className="flex items-center justify-center rounded border border-gray-800/60 p-6 text-sm text-gray-500">
+        <div className="flex items-center justify-center rounded border border-hair p-6 text-sm text-ink-4">
           No assets
         </div>
       ) : (
@@ -381,11 +381,11 @@ export function EstateFlowOwnershipColumn({
           </div>
 
           {/* Grand total footer */}
-          <div className="flex items-baseline justify-between gap-3 rounded border border-gray-800/40 bg-gray-900/30 px-3 py-2">
-            <span className="text-xs font-medium uppercase tracking-wider text-gray-400">
+          <div className="flex items-baseline justify-between gap-3 rounded border border-hair bg-card-2 px-3 py-2">
+            <span className="text-xs font-medium uppercase tracking-wider text-ink-3">
               Total
             </span>
-            <span className="text-sm font-semibold tabular-nums text-gray-50">
+            <span className="text-sm font-semibold tabular-nums text-ink">
               {fmt.format(data.grandTotal)}
             </span>
           </div>

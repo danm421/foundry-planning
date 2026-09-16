@@ -8,7 +8,7 @@ const fmt = new Intl.NumberFormat("en-US", {
 });
 
 const DISTRIBUTION_FORM_CHIP = {
-  outright: { className: "bg-gray-800/70 text-gray-300", label: "Outright" },
+  outright: { className: "bg-card-active text-ink-3", label: "Outright" },
   in_trust: { className: "bg-indigo-900/40 text-indigo-200", label: "In trust" },
 } as const;
 
@@ -36,11 +36,11 @@ export function EstateTransferRecipientCard({
           ? "border-indigo-900/40 bg-indigo-950/15"
           : isSystemDefault
             ? "border-amber-900/40 bg-amber-950/15"
-            : "border-gray-800/80 bg-gray-900/50")
+            : "border-hair bg-card-2")
       }
     >
       <div className="flex items-baseline justify-between gap-3">
-        <h3 className="flex items-baseline gap-2 text-sm font-semibold text-gray-100">
+        <h3 className="flex items-baseline gap-2 text-sm font-semibold text-ink">
           <span>{group.recipientLabel}</span>
           {isSystemDefault && (
             <span className="rounded bg-amber-900/40 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-amber-200">
@@ -50,11 +50,11 @@ export function EstateTransferRecipientCard({
         </h3>
         <div className="flex items-baseline gap-2">
           {hasReductions && (
-            <span className="text-[10px] uppercase tracking-wider text-gray-500">
+            <span className="text-[10px] uppercase tracking-wider text-ink-4">
               Net
             </span>
           )}
-          <span className="text-base font-semibold tabular-nums text-gray-50">
+          <span className="text-base font-semibold tabular-nums text-ink">
             {fmt.format(group.netTotal)}
           </span>
         </div>
@@ -63,7 +63,7 @@ export function EstateTransferRecipientCard({
       <div className="mt-2 space-y-2">
         {group.byMechanism.map((mech) => (
           <div key={mech.mechanism}>
-            <div className="flex items-baseline justify-between gap-4 border-b border-gray-800/40 pb-0.5 text-[11px] uppercase tracking-wider text-gray-400">
+            <div className="flex items-baseline justify-between gap-4 border-b border-hair pb-0.5 text-[11px] uppercase tracking-wider text-ink-3">
               <span>{mech.mechanismLabel}</span>
               <span className="tabular-nums">
                 {fmt.format(mech.total)}
@@ -73,7 +73,7 @@ export function EstateTransferRecipientCard({
               {mech.assets.map((a, i) => (
                 <div
                   key={`${a.sourceAccountId ?? a.sourceLiabilityId ?? "asset"}-${i}`}
-                  className="flex items-baseline justify-between gap-4 py-0.5 pl-3 text-sm text-gray-300"
+                  className="flex items-baseline justify-between gap-4 py-0.5 pl-3 text-sm text-ink-3"
                 >
                   <span className="flex items-baseline gap-2 truncate">
                     <span className="truncate">{a.label}</span>
@@ -93,7 +93,7 @@ export function EstateTransferRecipientCard({
                       </span>
                     )}
                   </span>
-                  <span className="tabular-nums text-gray-200">
+                  <span className="tabular-nums text-ink-2">
                     {fmt.format(a.amount)}
                   </span>
                 </div>
@@ -104,14 +104,14 @@ export function EstateTransferRecipientCard({
       </div>
 
       {hasReductions && (
-        <div className="mt-2 flex items-baseline justify-between gap-3 border-t border-gray-800/60 pt-1.5 text-xs text-gray-400">
+        <div className="mt-2 flex items-baseline justify-between gap-3 border-t border-hair pt-1.5 text-xs text-ink-3">
           <span>
             Gross transfers {fmt.format(group.total)}{" "}
             <span className="text-rose-300/80">
               − reductions {fmt.format(totalDrains)}
             </span>
           </span>
-          <span className="tabular-nums text-gray-300">
+          <span className="tabular-nums text-ink-3">
             {fmt.format(group.netTotal)}
           </span>
         </div>

@@ -123,7 +123,7 @@ export default function YearlyEstateReportView({
   }
   if (!projection || !report) {
     return (
-      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
+      <div className="rounded-lg border border-hair bg-card-2 p-6 text-center text-ink-3">
         No projection data available.
       </div>
     );
@@ -133,13 +133,13 @@ export default function YearlyEstateReportView({
     <div className="space-y-4 pt-4">
       {isMarried && (
         <div className="flex justify-end">
-          <div className="inline-flex rounded border border-gray-700 bg-gray-900 p-0.5 text-sm">
+          <div className="inline-flex rounded border border-hair-3 bg-card-2 p-0.5 text-sm">
             <button
               type="button"
               className={
                 ordering === "primaryFirst"
-                  ? "rounded bg-gray-700 px-3 py-1 text-gray-100"
-                  : "rounded px-3 py-1 text-gray-300 hover:text-gray-200"
+                  ? "rounded bg-card-active px-3 py-1 text-ink"
+                  : "rounded px-3 py-1 text-ink-3 hover:text-ink-2"
               }
               onClick={() => setOrdering("primaryFirst")}
             >
@@ -149,8 +149,8 @@ export default function YearlyEstateReportView({
               type="button"
               className={
                 ordering === "spouseFirst"
-                  ? "rounded bg-gray-700 px-3 py-1 text-gray-100"
-                  : "rounded px-3 py-1 text-gray-300 hover:text-gray-200"
+                  ? "rounded bg-card-active px-3 py-1 text-ink"
+                  : "rounded px-3 py-1 text-ink-3 hover:text-ink-2"
               }
               onClick={() => setOrdering("spouseFirst")}
             >

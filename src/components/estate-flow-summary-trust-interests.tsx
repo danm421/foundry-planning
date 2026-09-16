@@ -28,10 +28,10 @@ export function EstateFlowSummaryTrustInterests({
         {trustInterests.map((t, i) => (
           <div
             key={`${t.trustId}-${i}`}
-            className="flex items-baseline justify-between gap-4 py-0.5 text-sm text-gray-300"
+            className="flex items-baseline justify-between gap-4 py-0.5 text-sm text-ink-3"
           >
             <span className="truncate">{t.trustLabel}</span>
-            <span className="tabular-nums text-gray-200">
+            <span className="tabular-nums text-ink-2">
               {fmt.format(t.amount)}
             </span>
           </div>

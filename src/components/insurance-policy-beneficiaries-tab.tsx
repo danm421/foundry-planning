@@ -15,6 +15,10 @@ import type {
   Tier,
 } from "./family-view";
 import { redistributeTier, splitEvenly } from "./forms/auto-split-percentages";
+import {
+  inputBaseClassName,
+  selectBaseClassName,
+} from "./forms/input-styles";
 import type { SaveResult } from "@/lib/use-tab-auto-save";
 import { describeApiError, type ApiErrorBody } from "@/lib/api-error-message";
 
@@ -285,7 +289,7 @@ const AccountBeneficiaryEditor = forwardRef<
     return (
       <div className="mt-3">
         <div className="flex items-center justify-between">
-          <h4 className="text-sm font-semibold capitalize text-gray-200">{tier}</h4>
+          <h4 className="text-sm font-semibold capitalize text-ink-2">{tier}</h4>
           <span className={sumOk ? "text-xs text-green-400" : "text-xs text-amber-400"}>
             sum: {sum.toFixed(2)}%
           </span>
@@ -326,7 +330,7 @@ const AccountBeneficiaryEditor = forwardRef<
                     updateRow(r.id, clear);
                   }
                 }}
-                className="rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-accent focus:outline-none"
+                className={`${selectBaseClassName} min-w-0 flex-1`}
               >
                 <option value="">— select beneficiary —</option>
                 <optgroup label="Household">
@@ -366,9 +370,9 @@ const AccountBeneficiaryEditor = forwardRef<
                 max={100}
                 value={r.percentage}
                 onChange={(e) => changePercentage(r.id, tier, parseFloat(e.target.value) || 0)}
-                className="w-24 rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-right text-sm text-gray-100 focus:border-accent focus:outline-none"
+                className={`${inputBaseClassName} w-24 shrink-0 text-right`}
               />
-              <span className="text-sm text-gray-300">%</span>
+              <span className="text-sm text-ink-3">%</span>
               <button
                 type="button"
                 onClick={() => removeRow(r.id)}
@@ -406,7 +410,7 @@ const AccountBeneficiaryEditor = forwardRef<
             <button
               type="button"
               onClick={() => splitAmongChildren(tier)}
-              className="text-xs text-gray-400 hover:text-gray-200"
+              className="text-xs text-ink-3 hover:text-ink-2"
               title={`Replace with ${children.length} child${children.length === 1 ? "" : "ren"}, split evenly`}
             >
               Split among children
@@ -418,7 +422,7 @@ const AccountBeneficiaryEditor = forwardRef<
   };
 
   return (
-    <div className="mt-3 border-t border-gray-800 pt-3">
+    <div className="mt-3 border-t border-hair pt-3">
       {renderTier("primary")}
       {renderTier("contingent")}
       {saveError && <div className="mt-2 text-sm text-red-400">{saveError}</div>}

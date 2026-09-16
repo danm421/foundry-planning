@@ -189,13 +189,13 @@ export default function EstateFlowRemainderDialog({
         predeceased.
       </p>
 
-      <section className="mb-6 rounded-md border border-gray-800 bg-gray-900/30 p-4">
-        <h3 className="mb-3 text-sm font-medium text-gray-300">
+      <section className="mb-6 rounded-md border border-hair bg-card-2 p-4">
+        <h3 className="mb-3 text-sm font-medium text-ink-3">
           {ownerNames.clientName}&apos;s will
         </h3>
         {isMarried ? (
           <div className="grid gap-3 md:grid-cols-2">
-            <div className="rounded-md border border-gray-800 bg-gray-900/40 p-3">
+            <div className="rounded-md border border-hair bg-card-2 p-3">
               <WillRecipientList
                 label="Primary — if Co-client survives"
                 sumMsgId="rmd-client-primary"
@@ -209,7 +209,7 @@ export default function EstateFlowRemainderDialog({
                 recipientAriaLabel="Client primary remainder recipient"
               />
             </div>
-            <div className="rounded-md border border-gray-800 bg-gray-900/40 p-3">
+            <div className="rounded-md border border-hair bg-card-2 p-3">
               <WillRecipientList
                 label="Contingent — if Co-client predeceased"
                 sumMsgId="rmd-client-contingent"
@@ -225,7 +225,7 @@ export default function EstateFlowRemainderDialog({
             </div>
           </div>
         ) : (
-          <div className="rounded-md border border-gray-800 bg-gray-900/40 p-3">
+          <div className="rounded-md border border-hair bg-card-2 p-3">
             <WillRecipientList
               label="Primary"
               sumMsgId="rmd-client-primary"
@@ -243,12 +243,12 @@ export default function EstateFlowRemainderDialog({
       </section>
 
       {isMarried && ownerNames.spouseName && (
-        <section className="rounded-md border border-gray-800 bg-gray-900/30 p-4">
-          <h3 className="mb-3 text-sm font-medium text-gray-300">
+        <section className="rounded-md border border-hair bg-card-2 p-4">
+          <h3 className="mb-3 text-sm font-medium text-ink-3">
             {ownerNames.spouseName}&apos;s will
           </h3>
           <div className="grid gap-3 md:grid-cols-2">
-            <div className="rounded-md border border-gray-800 bg-gray-900/40 p-3">
+            <div className="rounded-md border border-hair bg-card-2 p-3">
               <WillRecipientList
                 label="Primary — if Co-client survives"
                 sumMsgId="rmd-spouse-primary"
@@ -262,7 +262,7 @@ export default function EstateFlowRemainderDialog({
                 recipientAriaLabel="Co-client primary remainder recipient"
               />
             </div>
-            <div className="rounded-md border border-gray-800 bg-gray-900/40 p-3">
+            <div className="rounded-md border border-hair bg-card-2 p-3">
               <WillRecipientList
                 label="Contingent — if Co-client predeceased"
                 sumMsgId="rmd-spouse-contingent"

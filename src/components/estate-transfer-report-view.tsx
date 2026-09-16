@@ -151,7 +151,7 @@ export default function EstateTransferReportView({
 
   if (!projection || projectionYears.length === 0 || todayYear == null) {
     return (
-      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
+      <div className="rounded-lg border border-hair bg-card-2 p-6 text-center text-ink-3">
         No projection data available. Ensure plan settings and base case scenario are configured.
       </div>
     );
@@ -199,7 +199,7 @@ export default function EstateTransferReportView({
             showSplit={isMarried && firstDeathYear != null && secondDeathYear != null}
           />
           <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 text-xs uppercase tracking-wide text-gray-300">
+            <label className="flex items-center gap-2 text-xs uppercase tracking-wide text-ink-3">
               As of
               <AsOfDropdown
                 years={dropdownYears}
@@ -224,7 +224,7 @@ export default function EstateTransferReportView({
       )}
 
       {reportData && (
-        <p className="text-xs text-gray-400">{reportData.asOfLabel}</p>
+        <p className="text-xs text-ink-3">{reportData.asOfLabel}</p>
       )}
 
       {/* `isEmpty` describes THIS column's own report. In compare mode the
@@ -233,7 +233,7 @@ export default function EstateTransferReportView({
           has to test the derived collection too, or the banner prints directly
           above a populated table. */}
       {reportData?.isEmpty && recipientTotals.length === 0 && (
-        <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
+        <div className="rounded-lg border border-hair bg-card-2 p-6 text-center text-ink-3">
           No transfers to display for this selection.
         </div>
       )}

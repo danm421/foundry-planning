@@ -460,7 +460,7 @@ export default function WillsPanel(props: WillsPanelProps) {
 
   return (
     <div className="space-y-8">
-      {saving && <div className="text-xs text-gray-300">Saving…</div>}
+      {saving && <div className="text-xs text-ink-3">Saving…</div>}
       {error && <div className="text-xs text-red-400">{error}</div>}
       {(["client", "spouse"] as const).map((g) => {
         if (g === "spouse" && !primary.spouseName) return null;
@@ -473,9 +473,9 @@ export default function WillsPanel(props: WillsPanelProps) {
         );
 
         return (
-          <section key={g} className="rounded-lg border border-gray-800 bg-gray-900/40 p-5">
+          <section key={g} className="rounded-lg border border-hair bg-card-2 p-5">
             <header className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-100">
+              <h2 className="text-lg font-semibold text-ink">
                 {heading}&apos;s Will
               </h2>
               {canEdit && (
@@ -496,7 +496,7 @@ export default function WillsPanel(props: WillsPanelProps) {
                   <button
                     type="button"
                     disabled={saving}
-                    className="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-100 hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="rounded-md border border-hair-3 bg-card-2 px-3 py-1.5 text-sm text-ink hover:bg-card-hover disabled:cursor-not-allowed disabled:opacity-50"
                     onClick={() => {
                       setDialogEditing(undefined);
                       setEditingIndex(null);
@@ -520,14 +520,14 @@ export default function WillsPanel(props: WillsPanelProps) {
             )}
 
             <div className="mb-4">
-              <h3 className="mb-2 text-sm font-medium text-gray-300">Bequests</h3>
+              <h3 className="mb-2 text-sm font-medium text-ink-3">Bequests</h3>
               {bequests.length === 0 ? (
-                <p className="text-sm text-gray-400">No bequests yet.</p>
+                <p className="text-sm text-ink-3">No bequests yet.</p>
               ) : (
-                <div className="overflow-hidden rounded-md border border-gray-800">
+                <div className="overflow-hidden rounded-md border border-hair">
                   <div
                     role="row"
-                    className="hidden grid-cols-[2.25rem_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1.4fr)_auto] items-center gap-3 border-b border-gray-800 bg-gray-900/60 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400 md:grid"
+                    className="hidden grid-cols-[2.25rem_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1.4fr)_auto] items-center gap-3 border-b border-hair bg-card-2 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-ink-3 md:grid"
                   >
                     <span>#</span>
                     <span>Bequest</span>
@@ -535,7 +535,7 @@ export default function WillsPanel(props: WillsPanelProps) {
                     <span>Recipients</span>
                     <span className="text-right">Actions</span>
                   </div>
-                  <ol className="divide-y divide-gray-800">
+                  <ol className="divide-y divide-hair">
                     {bequests.map((b, idx) => {
                       const isAsset = b.kind === "asset";
                       const tagLabel = isAsset ? "Asset" : "Debt";
@@ -554,14 +554,14 @@ export default function WillsPanel(props: WillsPanelProps) {
                               ? (entities.find((e) => e.id === b.entityId)?.name ?? "(unknown entity)")
                               : (accounts.find((a) => a.id === b.accountId)?.name ?? "(unknown account)");
                         detailNode = (
-                          <span className="text-sm text-gray-200">
+                          <span className="text-sm text-ink-2">
                             {b.percentage}% of {assetLabel}
                           </span>
                         );
                         conditionNode = (
                           <span
                             title={CONDITION_LABEL[b.condition]}
-                            className="mt-1 inline-block w-fit rounded border border-gray-700 bg-gray-800/60 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-gray-300"
+                            className="mt-1 inline-block w-fit rounded border border-hair bg-card-2 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-ink-3"
                           >
                             {CONDITION_LABEL[b.condition]}
                           </span>
@@ -569,11 +569,11 @@ export default function WillsPanel(props: WillsPanelProps) {
                       } else {
                         const liab = liabilities.find((l) => l.id === b.liabilityId);
                         detailNode = liab ? (
-                          <span className="text-sm text-gray-200">
+                          <span className="text-sm text-ink-2">
                             ${liab.balance.toLocaleString()}
                           </span>
                         ) : (
-                          <span className="text-sm text-gray-500">—</span>
+                          <span className="text-sm text-ink-4">—</span>
                         );
                       }
 
@@ -590,11 +590,11 @@ export default function WillsPanel(props: WillsPanelProps) {
                       return (
                         <li
                           key={b.id ?? `${b.kind}-${idx}`}
-                          className="grid grid-cols-[2.25rem_minmax(0,1fr)] items-start gap-3 bg-gray-900/30 px-3 py-2.5 transition-colors hover:bg-gray-900/60 md:grid-cols-[2.25rem_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1.4fr)_auto] md:items-center"
+                          className="grid grid-cols-[2.25rem_minmax(0,1fr)] items-start gap-3 bg-card px-3 py-2.5 transition-colors hover:bg-card-hover md:grid-cols-[2.25rem_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1.4fr)_auto] md:items-center"
                         >
                           <span
                             aria-hidden
-                            className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-gray-700 bg-gray-800 text-xs font-semibold tabular-nums text-gray-300"
+                            className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-hair bg-card-2 text-xs font-semibold tabular-nums text-ink-3"
                           >
                             {idx + 1}
                           </span>
@@ -605,17 +605,17 @@ export default function WillsPanel(props: WillsPanelProps) {
                               >
                                 {tagLabel}
                               </span>
-                              <p className="truncate font-medium text-gray-100">{b.name}</p>
+                              <p className="truncate font-medium text-ink">{b.name}</p>
                             </div>
                           </div>
                           <div className="col-span-2 col-start-2 flex flex-col gap-1 md:col-span-1 md:col-start-auto">
                             {detailNode}
                             {conditionNode}
                           </div>
-                          <p className="col-span-2 col-start-2 truncate text-xs text-gray-300 md:col-span-1 md:col-start-auto" title={recipientsText}>
+                          <p className="col-span-2 col-start-2 truncate text-xs text-ink-3 md:col-span-1 md:col-start-auto" title={recipientsText}>
                             {recipientsText}
                             {isPartialDebt && (
-                              <span className="ml-1 text-gray-400">
+                              <span className="ml-1 text-ink-3">
                                 · {remainder.toFixed(2)}% to estate creditor-payoff
                               </span>
                             )}
@@ -634,7 +634,7 @@ export default function WillsPanel(props: WillsPanelProps) {
                                   next[idx] = { ...tmp, sortOrder: idx };
                                   await saveWill(g, next);
                                 }}
-                                className="rounded p-1 text-gray-400 hover:bg-gray-800 hover:text-gray-100 disabled:cursor-not-allowed disabled:opacity-30"
+                                className="rounded p-1 text-ink-3 hover:bg-card-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
                               >
                                 <span aria-hidden className="block h-4 w-4 text-center text-xs leading-4">↑</span>
                               </button>
@@ -650,7 +650,7 @@ export default function WillsPanel(props: WillsPanelProps) {
                                   next[idx] = { ...tmp, sortOrder: idx };
                                   await saveWill(g, next);
                                 }}
-                                className="rounded p-1 text-gray-400 hover:bg-gray-800 hover:text-gray-100 disabled:cursor-not-allowed disabled:opacity-30"
+                                className="rounded p-1 text-ink-3 hover:bg-card-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
                               >
                                 <span aria-hidden className="block h-4 w-4 text-center text-xs leading-4">↓</span>
                               </button>
@@ -664,7 +664,7 @@ export default function WillsPanel(props: WillsPanelProps) {
                                   setEditingIndex(idx);
                                   setDialogOpenFor(g);
                                 }}
-                                className="ml-1 rounded border border-gray-700 px-2 py-0.5 text-xs text-gray-200 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
+                                className="ml-1 rounded border border-hair-3 px-2 py-0.5 text-xs text-ink-2 hover:bg-card-hover disabled:cursor-not-allowed disabled:opacity-40"
                               >
                                 Edit
                               </button>

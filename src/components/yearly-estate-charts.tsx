@@ -36,7 +36,7 @@ export function YearlyEstateCharts({
           <span className="text-[10px] font-medium uppercase tracking-[0.2em] text-indigo-300/80">
             Where it ends up — by year
           </span>
-          <h2 className="text-base font-semibold text-gray-50">
+          <h2 className="text-base font-semibold text-ink">
             Estate transfer at-a-glance
           </h2>
         </div>

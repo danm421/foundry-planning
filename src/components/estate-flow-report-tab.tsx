@@ -212,7 +212,7 @@ export function EstateFlowReportTab({
       {/* Death-column as-of selector — aligned over the two death columns */}
       <div className="mb-3 grid grid-cols-3 gap-4">
         <label className="col-span-2 col-start-2 flex items-center gap-2">
-          <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-500">
+          <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-ink-4">
             Death columns as of
           </span>
           <AsOfDropdown
@@ -232,7 +232,7 @@ export function EstateFlowReportTab({
       {/* Three-column layout */}
       <div className="grid grid-cols-3 gap-4">
         {/* Ownership column */}
-        <div className="rounded border border-gray-800/60 p-3">
+        <div className="rounded border border-hair p-3">
           <EstateFlowOwnershipColumn
             data={ownership}
             onAssetClick={(id) => setOwnerDialogId(id)}
@@ -256,7 +256,7 @@ export function EstateFlowReportTab({
           );
           return (
             <>
-              <div className="rounded border border-gray-800/60 p-3">
+              <div className="rounded border border-hair p-3">
                 <EstateFlowDeathColumn
                   section={col2Section}
                   deathOrder={1}
@@ -269,7 +269,7 @@ export function EstateFlowReportTab({
               </div>
               {/* Death column 3 — second death, married only */}
               {isMarried ? (
-                <div className="rounded border border-gray-800/60 p-3">
+                <div className="rounded border border-hair p-3">
                   <EstateFlowDeathColumn
                     section={col3Section}
                     deathOrder={2}
@@ -281,7 +281,7 @@ export function EstateFlowReportTab({
                   />
                 </div>
               ) : (
-                <div className="rounded border border-gray-800/60 p-3" aria-hidden="true" />
+                <div className="rounded border border-hair p-3" aria-hidden="true" />
               )}
             </>
           );
