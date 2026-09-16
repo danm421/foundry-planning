@@ -349,14 +349,19 @@ describe("SendIntakeForm", () => {
   });
 
   it("says an invite went out only when the response carries one", async () => {
-    // A bound client gets no invite — the form simply appears in their portal.
-    // Claiming "invite sent" there is a claim the response does not support.
+    // A bound client gets no invite — they already have access, so the route
+    // mails them a link to the portal instead (`delivered`). Claiming "invite
+    // sent" there is a claim the response does not support.
     vi.stubGlobal(
       "fetch",
       vi.fn().mockImplementation(async (url: string) =>
         typeof url === "string" && url.startsWith("/api/clients/search")
           ? { ok: true, status: 200, json: async () => [HIT] }
-          : { ok: true, status: 200, json: async () => ({ ok: true, formId: "f1" }) },
+          : {
+              ok: true,
+              status: 200,
+              json: async () => ({ ok: true, formId: "f1", delivered: true }),
+            },
       ),
     );
     render(<SendIntakeForm defaultSections={null} portalEnabled />);
@@ -366,6 +371,7 @@ describe("SendIntakeForm", () => {
     await waitFor(() => {
       expect(screen.getByRole("status")).toHaveTextContent(/already have access/i);
     });
+    expect(screen.getByRole("status")).toHaveTextContent(/emailed them/i);
     expect(screen.getByRole("status")).not.toHaveTextContent(/invite sent/i);
   });
 

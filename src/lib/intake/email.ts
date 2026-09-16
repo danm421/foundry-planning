@@ -14,9 +14,10 @@ export type IntakeEmailResult = {
  * Send a client intake form invitation email via Resend. Never throws: a
  * missing RESEND_API_KEY or a Resend-side error comes back as
  * `{ delivered: false }` so a caller that needs to tell the advisor nothing
- * went out can say so. The first send ignores the result — the form row is the
- * primary artifact there and already exists — while the reminder reports it,
- * since a reminder that sent nothing has done nothing at all.
+ * went out can say so. Every caller now reports it: the reminder fails the
+ * request outright (a reminder that sent nothing has done nothing at all),
+ * while the first send keeps the form row — the primary artifact, already
+ * written — and returns `delivered: false` with a warning beside it.
  */
 export async function sendIntakeFormEmail(args: {
   to: string;

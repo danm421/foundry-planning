@@ -165,13 +165,17 @@ export default function SendIntakeForm({
       const body = (await res.json().catch(() => ({}))) as {
         warning?: string;
         invitationId?: string;
+        delivered?: boolean;
       };
-      const confirmation =
-        mode === "blank"
-          ? `Intake form sent to ${to}.`
-          : body.invitationId
-            ? `Pre-filled form created and portal invite sent to ${to}.`
-            : `Pre-filled form is waiting in ${household}'s portal — they already have access, so no new invite was sent.`;
+      // Early returns rather than a four-deep ternary: each line is one way the
+      // send can land, read top to bottom.
+      const confirmation = (() => {
+        if (mode === "blank") return `Intake form sent to ${to}.`;
+        if (body.invitationId) return `Pre-filled form created and portal invite sent to ${to}.`;
+        if (body.delivered)
+          return `Pre-filled form sent to ${to} — they already have access, so we emailed them a link to sign in.`;
+        return `Pre-filled form is waiting in ${household}'s portal.`;
+      })();
 
       setFirstName("");
       setLastName("");

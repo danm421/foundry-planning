@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useId, useRef, useState } from "react";
 import type { IntakeFormRow } from "@/lib/intake/queries";
 import { ChevronRightIcon } from "@/components/icons";
+import { STATUS_META } from "./status-meta";
 
 /** A date column a bucket can show. See `DATE_COLUMNS` for what each reads. */
 export type QueueDateColumn = "sent" | "accessed" | "completed" | "closed";
@@ -51,21 +52,6 @@ function formatDate(d: Date | null | undefined): string {
 // plan), so reading the recipient off the mode would label those "Prospect".
 const recipientLabel = (form: IntakeFormRow): "Client" | "Prospect" =>
   form.clientId ? "Client" : "Prospect";
-
-/**
- * Per-status presentation: a plain-language label and the pip colour. Status is
- * carried by the word as well as the pip, so it never rests on colour alone.
- *
- * Keyed by the status enum rather than `string`, so adding a sixth intake
- * status fails the build here instead of rendering an unlabelled row.
- */
-const STATUS_META: Record<IntakeFormRow["status"], { label: string; pip: string; text: string }> = {
-  draft: { label: "Awaiting reply", pip: "bg-ink-4", text: "text-ink-3" },
-  submitted: { label: "Ready to review", pip: "bg-accent", text: "text-accent" },
-  applied: { label: "Applied", pip: "bg-good", text: "text-good" },
-  discarded: { label: "Discarded", pip: "bg-ink-4", text: "text-ink-4" },
-  expired: { label: "Expired", pip: "bg-warn", text: "text-warn" },
-};
 
 /**
  * History mixes three end states in one list, and each ends on a different

@@ -20,6 +20,7 @@ import { resolveClientPortalUserId } from "@/lib/portal/bindings";
 import { checkPortalInviteRateLimit } from "@/lib/rate-limit";
 import { sendPortalInvite } from "@/lib/clients/send-portal-invite";
 import { sendIntakeLinkEmail } from "@/lib/intake/send-form-email";
+import type { IntakeEmailResult } from "@/lib/intake/email";
 import { newIntakeToken, defaultExpiry } from "@/lib/intake/tokens";
 import { EMAIL_RE, normalizeRecipientName } from "@/lib/intake/schema";
 import {
@@ -34,6 +35,26 @@ export const dynamic = "force-dynamic";
 
 const APP_URL =
   process.env.NEXT_PUBLIC_APP_URL ?? "https://app.foundryplanning.com";
+
+/**
+ * What to tell the advisor when the form was created but the mail wasn't sent.
+ * Splits `unconfigured` out the way the reminder route does: on an environment
+ * with no Resend key that is not an outage, and saying so stops the advisor
+ * chasing a delivery problem that does not exist.
+ */
+function undeliveredWarning(
+  mode: "blank" | "prefilled",
+  to: string,
+  reason: IntakeEmailResult["reason"],
+): string {
+  const waiting =
+    mode === "prefilled"
+      ? "The form is waiting in the portal"
+      : "The form was created";
+  return reason === "unconfigured"
+    ? `${waiting}, but email isn't configured on this environment, so nothing was sent to ${to}.`
+    : `${waiting}, but we couldn't email ${to} to tell them. Try sending a reminder from the queue.`;
+}
 
 export async function POST(req: Request): Promise<Response> {
   try {
@@ -181,11 +202,18 @@ export async function POST(req: Request): Promise<Response> {
 
     // ── Send ───────────────────────────────────────────────────────────────
     let invitationId: string | undefined;
+    /**
+     * Whether mail actually left, on the two paths that send it — the naming
+     * the rest of the app already uses for this fact (`IntakeEmailResult`,
+     * /risk/send-rtq). Stays undefined on the invite path, where the Clerk
+     * invitation is the delivery and `invitationId` reports it.
+     */
+    let mail: IntakeEmailResult | undefined;
 
     if (mode === "blank") {
       // Brand resolves by the CLIENT's advisor, not the sender (matches Tasks
       // 11/12). A blank invite carrying no clientId falls back to the sender.
-      await sendIntakeLinkEmail({
+      mail = await sendIntakeLinkEmail({
         firmId,
         senderUserId: userId,
         brandAdvisorUserId: accessedClient?.advisorId ?? userId,
@@ -263,26 +291,49 @@ export async function POST(req: Request): Promise<Response> {
           // Non-Clerk error: re-throw so the outer catch handles it.
           throw inviteErr;
         }
+      } else {
+        // A bound client needs no invite — but silence is not a delivery. The
+        // portal only surfaces the form once they sign in, and nothing prompts
+        // them to: before this, a pre-filled send to an existing portal user
+        // mailed them nothing at all and sat in draft until they happened to
+        // log in. Same mail the reminder sends, pointing at the portal rather
+        // than minting a token this mode deliberately never surfaces.
+        mail = await sendIntakeLinkEmail({
+          firmId,
+          senderUserId: userId,
+          brandAdvisorUserId: accessedClient?.advisorId ?? userId,
+          to: recipientEmail,
+          link: `${APP_URL}/portal/intake`,
+          clientName: recipientNameStr,
+        });
       }
-      // A bound client needs no invite — they can already sign in and will find
-      // the form waiting in the portal.
     }
 
     // ── Audit ──────────────────────────────────────────────────────────────
+    // `delivered` rides in metadata (the /risk/send-rtq convention): the row is
+    // otherwise identical whether or not anyone was actually told, and that is
+    // the first thing you want when a client says they never got it.
     await recordAudit({
       action: "intake.form.sent",
       resourceType: "intake_form",
       resourceId: formId,
       clientId: clientIdStr ?? null,
       firmId,
+      ...(mail ? { metadata: { delivered: mail.delivered } } : {}),
     });
 
-    return NextResponse.json({
-      ok: true,
-      formId,
-      token,
-      ...(invitationId ? { invitationId } : {}),
-    });
+    // The form row is the primary artifact and exists either way, so mail that
+    // never left is a warning rather than an error — but the advisor has to
+    // know the client was never told, on BOTH sending paths.
+    const result: Record<string, unknown> = { ok: true, formId, token };
+    if (invitationId) result.invitationId = invitationId;
+    if (mail) {
+      result.delivered = mail.delivered;
+      if (!mail.delivered) {
+        result.warning = undeliveredWarning(mode, recipientEmail, mail.reason);
+      }
+    }
+    return NextResponse.json(result);
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });

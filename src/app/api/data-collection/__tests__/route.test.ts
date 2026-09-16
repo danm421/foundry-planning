@@ -150,7 +150,7 @@ beforeEach(() => {
   selectClientResultMock.mockResolvedValue([{ clerkUserId: null }]); // unbound client
   createInvitationMock.mockResolvedValue({ id: "inv_1" });
   dbUpdateMock.mockResolvedValue(undefined);
-  sendIntakeFormEmailMock.mockResolvedValue(undefined);
+  sendIntakeFormEmailMock.mockResolvedValue({ delivered: true });
   recordAuditMock.mockResolvedValue(undefined);
 });
 
@@ -340,6 +340,56 @@ describe("POST /api/data-collection — prefilled mode, already-bound client", (
     expect(recordAuditMock).toHaveBeenCalledWith(
       expect.objectContaining({ action: "intake.form.sent" }),
     );
+  });
+
+  it("still emails them — the portal never announces a form on its own", async () => {
+    // No invite is owed, but nothing else tells the client the form exists:
+    // the portal only surfaces it once they sign in, and before this the send
+    // mailed them nothing at all. Same mail the reminder sends.
+    selectClientResultMock.mockResolvedValue([{ clerkUserId: "user_clerk_123" }]);
+    resolveClientPortalUserIdMock.mockResolvedValue("user_clerk_123");
+
+    const res = await POST(
+      postReq({
+        mode: "prefilled",
+        clientId: "client-1",
+        recipientEmail: "client@example.com",
+      }),
+    );
+
+    const json = await res.json();
+    expect(json.delivered).toBe(true);
+    expect(json.warning).toBeUndefined();
+
+    expect(sendIntakeFormEmailMock).toHaveBeenCalledTimes(1);
+    const mail = sendIntakeFormEmailMock.mock.calls[0][0] as { to: string; link: string };
+    expect(mail.to).toBe("client@example.com");
+    // The portal, NOT /intake/<token>: a prefilled form lives behind the login
+    // and this mode deliberately never surfaces its token.
+    expect(mail.link).toMatch(/\/portal\/intake$/);
+    expect(mail.link).not.toContain("test-token-abc");
+  });
+
+  it("warns the advisor when that mail did not go out", async () => {
+    selectClientResultMock.mockResolvedValue([{ clerkUserId: "user_clerk_123" }]);
+    resolveClientPortalUserIdMock.mockResolvedValue("user_clerk_123");
+    sendIntakeFormEmailMock.mockResolvedValue({ delivered: false, reason: "send_failed" });
+
+    const res = await POST(
+      postReq({
+        mode: "prefilled",
+        clientId: "client-1",
+        recipientEmail: "client@example.com",
+      }),
+    );
+
+    // The form row is the primary artifact and still exists — a failed mail is
+    // a warning, not a rollback.
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.ok).toBe(true);
+    expect(json.delivered).toBe(false);
+    expect(json.warning).toMatch(/couldn't email/i);
   });
 });
 
