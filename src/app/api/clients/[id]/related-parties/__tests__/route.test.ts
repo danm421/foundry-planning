@@ -25,6 +25,9 @@ vi.mock("@/lib/clients/authz", () => ({ requireClientEditAccess: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 
 // --- Predicate-evaluating drizzle + @/db mocks -----------------------------
+// The mocks record the TABLE they were handed, not just the values: without
+// that, retargeting a write at a different table passes every other assertion
+// in this file.
 type Cond =
   | { op: "and"; parts: Cond[] }
   | { op: "eq"; col: string; value: unknown }
@@ -48,8 +51,14 @@ function matches(cond: Cond, row: Record<string, unknown>): boolean {
 
 /** Rows of `crm_household_contacts`, keyed by SQL column name. */
 let contactTable: Record<string, unknown>[] = [];
-let insertedValues: Record<string, unknown>[] = [];
-let updateCalls: Array<{ patch: Record<string, unknown>; matched: number }> = [];
+let inserts: Array<{ table: string; values: Record<string, unknown> }> = [];
+let updateCalls: Array<{ table: string; patch: Record<string, unknown>; matched: number }> = [];
+
+/** The values of the single insert this route should have made. */
+function insertedValues(): Record<string, unknown> {
+  expect(inserts).toHaveLength(1);
+  return inserts[0].values;
+}
 
 function seedTables() {
   contactTable = [
@@ -62,26 +71,26 @@ function seedTables() {
     // PATCH stops checking `householdId`.
     { id: "party-other", household_id: "hh-OTHER", role: "other", first_name: "Grace", last_name: "Hopper" },
   ];
-  insertedValues = [];
+  inserts = [];
   updateCalls = [];
 }
 
 vi.mock("@/db", () => ({
   db: {
-    insert: () => ({
+    insert: (table: Parameters<typeof getTableName>[0]) => ({
       values: (values: Record<string, unknown>) => {
-        insertedValues.push(values);
+        inserts.push({ table: getTableName(table), values });
         return {
           returning: () =>
             Promise.resolve([{ id: "party-new", ...values }]),
         };
       },
     }),
-    update: () => ({
+    update: (table: Parameters<typeof getTableName>[0]) => ({
       set: (patch: Record<string, unknown>) => ({
         where: (cond: Cond) => {
           const hits = contactTable.filter((r) => matches(cond, r));
-          updateCalls.push({ patch, matched: hits.length });
+          updateCalls.push({ table: getTableName(table), patch, matched: hits.length });
           return {
             returning: () =>
               Promise.resolve(
@@ -94,6 +103,7 @@ vi.mock("@/db", () => ({
   },
 }));
 
+import { getTableName } from "drizzle-orm";
 import { POST } from "../route";
 import { PATCH } from "../[partyId]/route";
 import { requireOrgAndUser, UnauthorizedError } from "@/lib/db-helpers";
@@ -142,14 +152,14 @@ describe("related-parties route — POST", () => {
     const res = await POST(req({ firstName: "Ada", lastName: "Byron" }), params);
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: "Client not found or access denied" });
-    expect(insertedValues).toHaveLength(0);
+    expect(inserts).toHaveLength(0);
   });
 
   it("401s an unauthenticated caller, and writes nothing", async () => {
     vi.mocked(requireOrgAndUser).mockRejectedValueOnce(new UnauthorizedError());
     const res = await POST(req({ firstName: "Ada", lastName: "Byron" }), params);
     expect(res.status).toBe(401);
-    expect(insertedValues).toHaveLength(0);
+    expect(inserts).toHaveLength(0);
   });
 
   it("403s a firm without an active subscription, and writes nothing", async () => {
@@ -158,7 +168,7 @@ describe("related-parties route — POST", () => {
     );
     const res = await POST(req({ firstName: "Ada", lastName: "Byron" }), params);
     expect(res.status).toBe(403);
-    expect(insertedValues).toHaveLength(0);
+    expect(inserts).toHaveLength(0);
   });
 
   // THE TENANT TEST. "attacker-household" is a real, live household id — it
@@ -170,9 +180,8 @@ describe("related-parties route — POST", () => {
       params,
     );
     expect(res.status).toBe(201);
-    expect(insertedValues).toHaveLength(1);
-    expect(insertedValues[0].householdId).toBe("hh-1");
-    expect(Object.values(insertedValues[0])).not.toContain("attacker-household");
+    expect(insertedValues().householdId).toBe("hh-1");
+    expect(Object.values(insertedValues())).not.toContain("attacker-household");
   });
 
   // The hard constraint. `crm_household_contacts` allows exactly one `primary`
@@ -184,19 +193,27 @@ describe("related-parties route — POST", () => {
       params,
     );
     expect(res.status).toBe(400);
-    expect(insertedValues).toHaveLength(0);
+    expect(inserts).toHaveLength(0);
   });
 
   it("always stores role 'other', even when the body says nothing about it", async () => {
     await POST(req({ firstName: "Ada", lastName: "Byron" }), params);
-    expect(insertedValues[0].role).toBe("other");
+    expect(insertedValues().role).toBe("other");
   });
 
   it("400s an invalid body and names the field that failed", async () => {
     const res = await POST(req({ firstName: "Ada" }), params);
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "lastName: Last name is required" });
-    expect(insertedValues).toHaveLength(0);
+    expect(inserts).toHaveLength(0);
+  });
+
+  // Without this the harness cannot tell `crm_household_contacts` from any
+  // other table: retargeting the insert satisfies every other assertion here,
+  // because they all read the VALUES and never the destination.
+  it("writes to crm_household_contacts and no other table", async () => {
+    await POST(req({ firstName: "Ada", lastName: "Byron" }), params);
+    expect(inserts.map((i) => i.table)).toEqual(["crm_household_contacts"]);
   });
 
   it("returns the created id so the review row can be stamped", async () => {
@@ -216,7 +233,7 @@ describe("related-parties route — POST", () => {
       }),
       params,
     );
-    expect(insertedValues[0]).toMatchObject({
+    expect(insertedValues()).toMatchObject({
       firstName: "Ada",
       lastName: "Byron",
       relationshipLabel: "Successor Trustee",
@@ -310,6 +327,50 @@ describe("related-parties route — PATCH", () => {
   it("touches only the keys the body actually sent", async () => {
     await PATCH(req({ phone: "555-0100" }, "PATCH"), partyParams("party-1"));
     expect(Object.keys(updateCalls[0].patch).sort()).toEqual(["phone", "updatedAt"]);
+  });
+
+  it("updates crm_household_contacts and no other table", async () => {
+    await PATCH(req({ relationshipLabel: "Trustee" }, "PATCH"), partyParams("party-1"));
+    expect(updateCalls.map((u) => u.table)).toEqual(["crm_household_contacts"]);
+  });
+
+  /**
+   * A body that parses to `{}` asks for no change. Performing it anyway wrote
+   * `updatedAt`, answered 200 and filed a `related_party.update` audit row for
+   * a change that never happened — and `commitMapRow` treats any 2xx as a
+   * landed write, so the advisor's review row was stamped "committed" having
+   * written nothing.
+   *
+   * NOT hypothetical: `buildWriteRequest`'s update leg builds its body from the
+   * row's values, skipping every `writable: false` field, so a row whose
+   * extracted keys are all non-writable produces exactly `{}`.
+   *
+   * 400, not 422: the repo already answers 400 for this exact case in three
+   * places (`portal/settings`, `portal/transactions/[id]`, and the
+   * `toggle-groups` PATCH, whose wording this borrows). 422 here is reserved
+   * for input that was processed and yielded nothing usable — an OCR read, an
+   * AI call — which is a different thing from a caller asking for nothing.
+   */
+  it("400s a PATCH that asks for nothing, and writes and audits nothing", async () => {
+    const res = await PATCH(req({}, "PATCH"), partyParams("party-1"));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: "PATCH body must include at least one field to update",
+    });
+    expect(updateCalls).toHaveLength(0);
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  // The same refusal, reached the way it actually will be: every key the caller
+  // sent is one the schema strips, so the parse succeeds into `{}`.
+  it("400s a PATCH whose only keys are ones the schema strips", async () => {
+    const res = await PATCH(
+      req({ householdId: "attacker-household", role: "primary" }, "PATCH"),
+      partyParams("party-1"),
+    );
+    expect(res.status).toBe(400);
+    expect(updateCalls).toHaveLength(0);
+    expect(recordAudit).not.toHaveBeenCalled();
   });
 
   it("400s an invalid body and names the field that failed", async () => {

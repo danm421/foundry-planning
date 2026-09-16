@@ -31,6 +31,29 @@ export async function PATCH(
       return NextResponse.json({ error: summarizeZodIssues(parsed.error) }, { status: 400 });
     }
 
+    // A body that asks for NOTHING is refused, not performed. Left to run, the
+    // update would set only `updatedAt`, answer 200 and file a
+    // `related_party.update` audit row for a change that never happened — and
+    // `commitMapRow` reads any 2xx as a landed write, so the advisor's review
+    // row would be stamped "committed" having written nothing.
+    //
+    // Reached in practice, not just by a hand-crafted request:
+    // `buildWriteRequest`'s update leg skips every `writable: false` field, so
+    // a row whose extracted keys are all non-writable yields exactly `{}`. A
+    // body of keys this schema strips (`role`, `householdId`) lands here too.
+    //
+    // 400 rather than 422: the repo already answers 400 for this case in
+    // `portal/settings`, `portal/transactions/[id]` and the `toggle-groups`
+    // PATCH, whose wording this borrows. 422 is used here for input that WAS
+    // processed and yielded nothing usable (an OCR read, an AI call), which is
+    // not what a caller asking for no change is.
+    if (Object.keys(parsed.data).length === 0) {
+      return NextResponse.json(
+        { error: "PATCH body must include at least one field to update" },
+        { status: 400 },
+      );
+    }
+
     const [updated] = await db
       .update(crmHouseholdContacts)
       .set({ ...parsed.data, updatedAt: new Date() })

@@ -439,8 +439,14 @@ export const PROFILE_ENTITIES: readonly DetailEntity[] = [
     tab: "profile",
     surface: "CRM → Household → Contacts",
     table: "crmHouseholdContacts",
+    // No `list`: the route file is POST-only. Nothing in `src` reads
+    // `routes.list` (the sole consumers of `.routes` are build-request.ts's
+    // `create`/`update` lookups), and the conformance test checks only that a
+    // route FILE exists, never which methods it exports — so a declared `list`
+    // here would be a claim the map cannot back and nobody would catch. The
+    // map pass reads existing rows straight from the table via `scopePath`,
+    // not over HTTP, so no consumer wants one.
     routes: {
-      list: "/related-parties",
       create: "/related-parties",
       update: "/related-parties/[partyId]",
     },
