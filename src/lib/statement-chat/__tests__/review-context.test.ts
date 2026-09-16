@@ -102,19 +102,10 @@ beforeEach(() => {
   state.rows = {
     scenarios: [{ id: "s1", clientId: "client-1", isBaseCase: true }],
     clients: [
-      {
-        id: "client-1",
-        crmHouseholdId: "hh-1",
-        retirementAge: 65,
-        retirementMonth: 1,
-        lifeExpectancy: 95,
-        spouseRetirementAge: 63,
-        spouseRetirementMonth: 6,
-        spouseLifeExpectancy: 92,
-        filingStatus: "married_joint",
-        riskTolerance: "moderate",
-      },
-      // A second household in the same firm. Nothing below may read it.
+      // ADVERSARIAL ORDER, on purpose. Another household in the same firm sits
+      // FIRST in every fixture below, so a read that lost its scoping leg takes
+      // THIS row — and the assertions that name the scoping are what decide the
+      // test, rather than the fixture happening to list the right row first.
       {
         id: "client-2",
         crmHouseholdId: "hh-2",
@@ -127,8 +118,38 @@ beforeEach(() => {
         filingStatus: "single",
         riskTolerance: null,
       },
+      {
+        id: "client-1",
+        crmHouseholdId: "hh-1",
+        retirementAge: 65,
+        retirementMonth: 1,
+        lifeExpectancy: 95,
+        spouseRetirementAge: 63,
+        spouseRetirementMonth: 6,
+        spouseLifeExpectancy: 92,
+        filingStatus: "married_joint",
+        riskTolerance: "moderate",
+      },
     ],
     crm_household_contacts: [
+      // FIRST, so `find(role === "primary")` on an unscoped read returns
+      // THIS contact and the scoping assertion below is the deciding one.
+      {
+        householdId: "hh-2",
+        role: "primary",
+        firstName: "Nobody",
+        lastName: "Else",
+        dateOfBirth: "1950-01-01",
+        email: null,
+        phone: null,
+        mobile: null,
+        addressLine1: null,
+        addressLine2: null,
+        city: null,
+        state: null,
+        postalCode: null,
+        country: null,
+      },
       {
         householdId: "hh-1",
         role: "primary",
@@ -160,22 +181,6 @@ beforeEach(() => {
         state: "PA",
         postalCode: "19087",
         country: "US",
-      },
-      {
-        householdId: "hh-2",
-        role: "primary",
-        firstName: "Nobody",
-        lastName: "Else",
-        dateOfBirth: "1950-01-01",
-        email: null,
-        phone: null,
-        mobile: null,
-        addressLine1: null,
-        addressLine2: null,
-        city: null,
-        state: null,
-        postalCode: null,
-        country: null,
       },
     ],
     family_members: [],
@@ -215,7 +220,12 @@ describe("loadChatReviewContext — the household's current values", () => {
 
   it("reads only this client's household, never another's contacts", async () => {
     const ctx = await loadChatReviewContext("client-1", null);
-    expect(ctx.household.firstName).not.toBe("Nobody");
+    // The OTHER household's primary contact and clients row are FIRST in the
+    // fixtures, so a read that lost its scoping leg takes them: "Nobody" and
+    // a retirement age of 70. Asserted positively — `not.toBe("Nobody")` would
+    // have been satisfied by fixture order alone.
+    expect(ctx.household.firstName).toBe("Dana");
+    expect(ctx.household.lastName).toBe("Reyes");
     expect(ctx.household.retirementAge).toBe(65);
   });
 
