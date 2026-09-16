@@ -291,6 +291,141 @@ describe("SendIntakeForm", () => {
     );
   });
 
+  // ── The pre-filled send ────────────────────────────────────────────────────
+  // It is a portal invite into a form seeded from the client's own plan, so it
+  // needs a picked client AND the advisor's `client_portal` entitlement. The
+  // create route enforces both; these pin that the card never offers a send the
+  // route would refuse.
+
+  it("hides the pre-filled send when the advisor has no portal entitlement", async () => {
+    vi.stubGlobal("fetch", searchFetch([HIT]));
+    render(<SendIntakeForm defaultSections={null} portalEnabled={false} />);
+    await pickClient("Bob & Beth Baxter");
+
+    expect(screen.queryByRole("button", { name: /pre-filled/i })).not.toBeInTheDocument();
+    // …and the blank send keeps the primary fill, since it is the only send.
+    expect(screen.getByRole("button", { name: /^send$/i })).toHaveClass("btn-primary");
+  });
+
+  it("hides the pre-filled send until a client is picked, and for a prospect", async () => {
+    vi.stubGlobal("fetch", searchFetch([HIT]));
+    render(<SendIntakeForm defaultSections={null} portalEnabled />);
+
+    // Prospect: there is no plan to seed from.
+    expect(screen.queryByRole("button", { name: /pre-filled/i })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /existing client/i }));
+    // Existing client, none picked yet: still nothing to snapshot.
+    expect(screen.queryByRole("button", { name: /pre-filled/i })).not.toBeInTheDocument();
+
+    await pickClient("Bob & Beth Baxter");
+    expect(screen.getByRole("button", { name: /pre-filled/i })).toBeInTheDocument();
+    // Pre-filled takes the fill; blank steps back to the ghost.
+    expect(screen.getByRole("button", { name: /^send$/i })).toHaveClass("btn-ghost");
+  });
+
+  it("posts mode 'prefilled' with the picked client and the steps on screen", async () => {
+    vi.stubGlobal("fetch", searchFetch([HIT]));
+    render(<SendIntakeForm defaultSections={null} portalEnabled />);
+    await pickClient("Bob & Beth Baxter");
+
+    fireEvent.click(screen.getByRole("button", { name: /pre-filled/i }));
+
+    await waitFor(() => {
+      const post = vi
+        .mocked(fetch)
+        .mock.calls.find(([url]) => url === "/api/data-collection");
+      expect(post).toBeDefined();
+      expect(JSON.parse(post![1]!.body as string)).toEqual({
+        mode: "prefilled",
+        clientId: "client-1",
+        recipientName: "Bob Baxter",
+        recipientEmail: "bob@baxter.test",
+        // Carried, not dropped: the portal wizard renders the stored set, so the
+        // picker on screen has to be the form the client actually opens.
+        sections: ["family", "accounts", "income", "property", "goals", "documents"],
+      });
+    });
+  });
+
+  it("says an invite went out only when the response carries one", async () => {
+    // A bound client gets no invite — the form simply appears in their portal.
+    // Claiming "invite sent" there is a claim the response does not support.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async (url: string) =>
+        typeof url === "string" && url.startsWith("/api/clients/search")
+          ? { ok: true, status: 200, json: async () => [HIT] }
+          : { ok: true, status: 200, json: async () => ({ ok: true, formId: "f1" }) },
+      ),
+    );
+    render(<SendIntakeForm defaultSections={null} portalEnabled />);
+    await pickClient("Bob & Beth Baxter");
+    fireEvent.click(screen.getByRole("button", { name: /pre-filled/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("status")).toHaveTextContent(/already have access/i);
+    });
+    expect(screen.getByRole("status")).not.toHaveTextContent(/invite sent/i);
+  });
+
+  it("surfaces the create route's warning instead of a bare success", async () => {
+    // 200-with-warning: the form exists, but no portal invitation went out
+    // because the email already has a Foundry account. Showing "sent" alone
+    // leaves the advisor waiting on a client who was never told.
+    const warning = "The form was sent, but bob@baxter.test already has a Foundry account.";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async (url: string) =>
+        typeof url === "string" && url.startsWith("/api/clients/search")
+          ? { ok: true, status: 200, json: async () => [HIT] }
+          : { ok: true, status: 200, json: async () => ({ ok: true, warning }) },
+      ),
+    );
+    render(<SendIntakeForm defaultSections={null} portalEnabled />);
+    await pickClient("Bob & Beth Baxter");
+    fireEvent.click(screen.getByRole("button", { name: /pre-filled/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("status")).toHaveTextContent(/already has a Foundry account/i);
+    });
+  });
+
+  it("refuses a documents-only pre-filled send in the route's own words", async () => {
+    // The portal has no upload surface, so that form would render as Welcome →
+    // Review with nothing between. The route refuses it; the card must show why
+    // rather than a generic failure.
+    const error =
+      "A portal request can't collect documents only — the portal has no upload step.";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async (url: string) =>
+        typeof url === "string" && url.startsWith("/api/clients/search")
+          ? { ok: true, status: 200, json: async () => [HIT] }
+          : { ok: false, status: 400, json: async () => ({ error }) },
+      ),
+    );
+    render(<SendIntakeForm defaultSections={null} portalEnabled />);
+    await pickClient("Bob & Beth Baxter");
+    fireEvent.click(screen.getByRole("button", { name: /documents only/i }));
+    fireEvent.click(screen.getByRole("button", { name: /pre-filled/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(/no upload step/i);
+    });
+  });
+
+  it("links the picked client to their own Portal tab", async () => {
+    // Where a pre-filled send lands — access granted, invite pending, revoked —
+    // is only visible there, so the card points at it rather than describing it.
+    render(<SendIntakeForm defaultSections={null} prefill={HIT} portalEnabled />);
+
+    expect(screen.getByRole("link", { name: "Bob & Beth Baxter" })).toHaveAttribute(
+      "href",
+      "/clients/client-1/portal",
+    );
+  });
+
   it("shows 429 rate limit error", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 429, json: async () => ({}) }));
     render(<SendIntakeForm defaultSections={null} />);

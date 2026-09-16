@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { EMAIL_RE } from "@/lib/intake/schema";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
@@ -22,9 +23,13 @@ import {
  * scenario instead of creating a second household for someone already on the
  * roster.
  *
- * Both send the emailed blank form (`mode: "blank"`). Pre-filled sends are a
- * portal invite rather than a form link, so they stay on the client's own
- * Portal tab where the invite state is visible.
+ * Two send modes. Blank (`mode: "blank"`) is the emailed link, and it is the
+ * only mode a prospect can be sent. Pre-filled (`mode: "prefilled"`) is a
+ * portal invite into a form already seeded from the client's plan — it needs a
+ * picked client to snapshot and the `client_portal` entitlement to deliver
+ * into, so it appears only when both hold. The same send lives on the client's
+ * own Portal tab, which is where the invite/access state is visible; the link
+ * on the picked client's name goes there.
  */
 
 // py-3 is not arbitrary: it matches `.btn-primary`'s own 0.75rem padding, so the
@@ -34,10 +39,15 @@ import {
 const inputCls =
   "w-full rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-3 text-[14px] text-ink outline-none transition-colors placeholder:text-ink-4 hover:border-hair-2 focus:border-accent focus:ring-1 focus:ring-accent";
 const labelCls = "mb-1.5 block text-[12px] font-medium text-ink-2";
+// Everything but the fill: the two send buttons differ only in .btn-primary vs
+// .btn-ghost, which swap by which mode is on offer.
+const sendBtnCls =
+  "shrink-0 text-[14px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-50";
 
 export default function SendIntakeForm({
   defaultSections,
   prefill = null,
+  portalEnabled = false,
 }: {
   /** The advisor's saved default, or null for the system default. Seeds the
    *  picker only — what gets stored is whatever is on screen when Send is
@@ -49,6 +59,13 @@ export default function SendIntakeForm({
    *  advisor's next action is Send. Every field stays editable, and the email
    *  can still be blank: CRM contacts often carry no email. */
   prefill?: ClientSearchResult | null;
+  /** Whether THE ADVISOR VIEWING THIS holds the `client_portal` entitlement —
+   *  the firm's setting with their own per-user override applied. False hides
+   *  the pre-filled send, which is delivered as a portal invite. Defaults to
+   *  the hiding value: the create route refuses a prefilled send without the
+   *  entitlement anyway, so a caller that forgets this loses a button rather
+   *  than offering one that 403s. */
+  portalEnabled?: boolean;
 }) {
   const router = useRouter();
   const [recipientKind, setRecipientKind] = useState<"prospect" | "client">(
@@ -66,7 +83,9 @@ export default function SendIntakeForm({
   const [selected, setSelected] = useState<ClientSearchResult | null>(prefill);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
-  const [success, setSuccess] = useState(false);
+  // What the last send actually did, in its own words: a plain confirmation, or
+  // the create route's `warning` when the form was made but no invite went out.
+  const [notice, setNotice] = useState<string | null>(null);
 
   function pickKind(kind: "prospect" | "client") {
     setRecipientKind(kind);
@@ -87,8 +106,12 @@ export default function SendIntakeForm({
     setError(null);
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  // A pre-filled send needs a client row to snapshot and a portal to deliver
+  // into, so it is offered only when both are on screen. The create route
+  // enforces the same two conditions at write time.
+  const canSendPrefilled = portalEnabled && recipientKind === "client" && selected !== null;
+
+  async function send(mode: "blank" | "prefilled") {
     setError(null);
 
     if (recipientKind === "client" && !selected) {
@@ -100,16 +123,27 @@ export default function SendIntakeForm({
       return;
     }
 
+    // Read the fields before the reset below clears them — the confirmation
+    // names the recipient, and it is written after the await.
+    const to = email;
+    const household = selected?.householdTitle;
+
     setSending(true);
     try {
       const res = await fetch("/api/data-collection", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          mode: "blank",
+          mode,
           ...(selected ? { clientId: selected.id } : {}),
           recipientName: `${firstName.trim()} ${lastName.trim()}`.trim(),
-          recipientEmail: email,
+          recipientEmail: to,
+          // Sent on BOTH modes. The portal wizard renders the stored set the
+          // same way the emailed link does (see portal/intake/page.tsx), so
+          // omitting them here would leave the picker on screen describing a
+          // form the client never gets. The one set the portal cannot host —
+          // documents alone, which has no upload surface there — is refused by
+          // the create route with copy that says so.
           sections,
         }),
       });
@@ -124,16 +158,37 @@ export default function SendIntakeForm({
         return;
       }
 
+      // A 200 does not mean an email left the building. A prefilled send only
+      // carries an invite when the client is not already bound, and it can
+      // carry a `warning` instead when Clerk refused one — saying "invite sent"
+      // in either case is a claim the response does not support.
+      const body = (await res.json().catch(() => ({}))) as {
+        warning?: string;
+        invitationId?: string;
+      };
+      const confirmation =
+        mode === "blank"
+          ? `Intake form sent to ${to}.`
+          : body.invitationId
+            ? `Pre-filled form created and portal invite sent to ${to}.`
+            : `Pre-filled form is waiting in ${household}'s portal — they already have access, so no new invite was sent.`;
+
       setFirstName("");
       setLastName("");
       setEmail("");
       setSelected(null);
-      setSuccess(true);
+      setNotice(body.warning ?? confirmation);
       router.refresh();
-      setTimeout(() => setSuccess(false), 4000);
+      // A warning is the advisor's next task, so it stays until the next send.
+      if (!body.warning) setTimeout(() => setNotice(null), 4000);
     } finally {
       setSending(false);
     }
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    void send("blank");
   }
 
   return (
@@ -172,7 +227,16 @@ export default function SendIntakeForm({
             <>
               <span className={labelCls}>Client</span>
               <div className="flex items-center gap-3 rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-2.5">
-                <span className="flex-1 truncate text-[14px] text-ink">{selected.householdTitle}</span>
+                {/* The household is a link, not a label: a pre-filled send is a
+                    portal invite, and whether it lands — access granted, invite
+                    pending, revoked — is only visible on their Portal tab. */}
+                <Link
+                  href={`/clients/${selected.id}/portal`}
+                  title="Open this client's Portal tab — access, invites, and what they have changed."
+                  className="flex-1 truncate text-[14px] text-ink transition-colors hover:text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                  {selected.householdTitle}
+                </Link>
                 <button
                   type="button"
                   onClick={() => setSelected(null)}
@@ -254,13 +318,31 @@ export default function SendIntakeForm({
             className={inputCls}
           />
         </div>
-        <button
-          type="submit"
-          disabled={sending}
-          className="btn-primary shrink-0 text-[14px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-50"
-        >
-          {sending ? "Sending…" : "Send"}
-        </button>
+        {/* Peer actions, so they share a row and stack together on a narrow
+            viewport. Pre-filled takes the primary fill when it is available —
+            the same weighting the client's own Portal tab gives it, since a
+            client who already has a plan should be confirming it, not retyping
+            it. Blank stays the submit button, so Enter still sends a link. */}
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <button
+            type="submit"
+            disabled={sending}
+            className={`${canSendPrefilled ? "btn-ghost" : "btn-primary"} ${sendBtnCls}`}
+          >
+            {sending ? "Sending…" : "Send"}
+          </button>
+          {canSendPrefilled && (
+            <button
+              type="button"
+              disabled={sending}
+              onClick={() => void send("prefilled")}
+              title="Sends a portal invite instead of an email link. The client signs in to a form already holding their family, accounts, income and property — they confirm and correct rather than retype. The portal has no upload step, so a Documents step is skipped there."
+              className={`btn-primary ${sendBtnCls}`}
+            >
+              {sending ? "Sending…" : "Send pre-filled"}
+            </button>
+          )}
+        </div>
       </form>
 
       {/* The steps ride in the URL rather than the saved default, so the
@@ -280,9 +362,9 @@ export default function SendIntakeForm({
           {error}
         </p>
       )}
-      {success && (
+      {notice && (
         <p role="status" className="mt-3 text-[13px] text-good">
-          Intake form sent.
+          {notice}
         </p>
       )}
       </div>

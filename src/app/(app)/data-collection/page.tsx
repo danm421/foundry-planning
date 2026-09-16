@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { auth } from "@clerk/nextjs/server";
 import { requireOrgAndUser } from "@/lib/db-helpers";
+import { currentUserHasClientPortal } from "@/lib/authz";
 import { findClientRecipient } from "@/lib/client-search";
 import { listFormsForFirm, loadAdvisorDefaultSections } from "@/lib/intake/queries";
 import { loadLastRemindedAt } from "@/lib/intake/reminders";
@@ -23,12 +24,16 @@ export default async function DataCollectionPage({
   const { orgId, userId } = await requireOrgAndUser();
   const { orgRole } = await auth();
   const { clientId } = await searchParams;
-  // Three independent reads — none feeds another — so they overlap instead of
+  // Four independent reads — none feeds another — so they overlap instead of
   // queueing behind each other on a page an advisor lands on cold.
-  const [forms, defaultSections, prefill] = await Promise.all([
+  const [forms, defaultSections, prefill, portalEnabled] = await Promise.all([
     listFormsForFirm(orgId),
     loadAdvisorDefaultSections(orgId, userId),
     clientId ? findClientRecipient(clientId, orgId, { userId, orgRole }) : null,
+    // Gates the pre-filled send, which is delivered as a portal invite. The
+    // effective entitlement for THIS advisor — the firm's, with their own
+    // per-user override applied.
+    currentUserHasClientPortal(),
   ]);
 
   // Only the In-flight bucket can be chased, so only its forms need the lookup.
@@ -108,7 +113,11 @@ export default async function DataCollectionPage({
       </header>
 
       <div className="space-y-10">
-        <SendIntakeForm defaultSections={defaultSections} prefill={prefill} />
+        <SendIntakeForm
+          defaultSections={defaultSections}
+          prefill={prefill}
+          portalEnabled={portalEnabled}
+        />
         <Queue groups={groups} />
       </div>
     </div>
