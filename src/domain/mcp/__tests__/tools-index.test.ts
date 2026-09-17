@@ -4,8 +4,8 @@ import { ALL_MCP_TOOLS } from "../tools";
 import type { McpTool } from "../define-tool";
 
 describe("the MCP tool registry", () => {
-  it("exposes exactly 17 tools", () => {
-    expect(ALL_MCP_TOOLS).toHaveLength(17);
+  it("exposes exactly 19 tools", () => {
+    expect(ALL_MCP_TOOLS).toHaveLength(19);
   });
 
   it("has unique names, each at most 64 characters", () => {

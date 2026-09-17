@@ -235,6 +235,18 @@ describe("requestedClientIdFrom (F7)", () => {
   it("returns null when clientId is present but not a string", () => {
     expect(requestedClientIdFrom({ clientId: 12345 })).toBeNull();
   });
+
+  it("falls back to a string householdId when clientId is absent", () => {
+    expect(requestedClientIdFrom({ householdId: "hh1" })).toBe("hh1");
+  });
+
+  it("returns null when householdId is present but not a string", () => {
+    expect(requestedClientIdFrom({ householdId: 12345 })).toBeNull();
+  });
+
+  it("prefers clientId over householdId when both are present", () => {
+    expect(requestedClientIdFrom({ clientId: "c1", householdId: "hh1" })).toBe("c1");
+  });
 });
 
 describe("verifyToken (D2, D4)", () => {

@@ -7,18 +7,28 @@ import { z } from "zod";
 // throws "Cannot access 'x' before initialization" (TDZ). vi.hoisted() runs
 // ahead of the vi.mock calls themselves, so the references are initialized in
 // time. Each factory still exports exactly one name, unchanged from the brief.
-const { verifyClientAccessFor, recordAudit, checkMcpRateLimit } = vi.hoisted(() => ({
+const { verifyClientAccessFor, recordAudit, checkMcpRateLimit, assertHouseholdReadable } = vi.hoisted(() => ({
   verifyClientAccessFor: vi.fn(),
   recordAudit: vi.fn(),
   checkMcpRateLimit: vi.fn(),
+  assertHouseholdReadable: vi.fn(),
 }));
 
 vi.mock("@/lib/clients/authz", () => ({ verifyClientAccessFor }));
 vi.mock("@/lib/audit", () => ({ recordAudit }));
 vi.mock("@/lib/rate-limit", () => ({ checkMcpRateLimit }));
+// Only `assertHouseholdReadableForPrincipal` is replaced — everything else
+// (McpForbiddenError, CLIENT_UNREADABLE_MESSAGE, the real
+// assertClientReadableForPrincipal that the clientId tests below exercise via
+// the mocked verifyClientAccessFor) passes through untouched via
+// importOriginal, so this mock only intercepts the new householdId path.
+vi.mock("../guards", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../guards")>();
+  return { ...actual, assertHouseholdReadableForPrincipal: assertHouseholdReadable };
+});
 
 import { defineTool, McpRateLimitedError } from "../define-tool";
-import { McpForbiddenError } from "../guards";
+import { McpForbiddenError, CLIENT_UNREADABLE_MESSAGE } from "../guards";
 import type { McpPrincipal } from "@/lib/mcp/principal";
 import type { McpToolContext } from "../context";
 
@@ -45,6 +55,7 @@ beforeEach(() => {
   checkMcpRateLimit.mockReset().mockResolvedValue({ allowed: true, remaining: 59, reset: 0 });
   handlerSpy.mockReset().mockResolvedValue({ secret: "ssn 123-45-6789", accountNumber: "12345678" });
   optionalClientHandlerSpy.mockReset().mockResolvedValue({ ok: true });
+  assertHouseholdReadable.mockReset();
 });
 
 const tool = defineTool({
@@ -207,5 +218,65 @@ describe("defineTool", () => {
       destructiveHint: false,
       openWorldHint: false,
     });
+  });
+});
+
+describe("householdId is guarded from the schema, like clientId", () => {
+  it("runs the household check and passes the parsed id", async () => {
+    assertHouseholdReadable.mockResolvedValue(undefined);
+    const tool = defineTool({
+      name: "t_household",
+      title: "t",
+      description: "d",
+      inputSchema: z.object({ householdId: z.string() }),
+      handler: async () => ({ ok: true }),
+    });
+    await tool.run({ householdId: "hh1" }, principal);
+    expect(assertHouseholdReadable).toHaveBeenCalledWith(principal, "hh1");
+    // Unlike clientId (also carried in the audit row's top-level `clientId`
+    // column), householdId exists ONLY in metadata — this is the one place
+    // that attribution is pinned. A dropped spread here would ship silently.
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({ householdId: "hh1" }),
+      }),
+    );
+  });
+
+  it("refuses when the schema declares householdId but the value is not a string", async () => {
+    const tool = defineTool({
+      name: "t_optional_household",
+      title: "t",
+      description: "d",
+      // `.optional()` is the fail-open trap: duck-typing the value would skip
+      // the check entirely and run the handler unauthorized.
+      inputSchema: z.object({ householdId: z.string().optional() }),
+      handler: async () => ({ ok: true }),
+    });
+    await expect(tool.run({}, principal)).rejects.toThrow(CLIENT_UNREADABLE_MESSAGE);
+    expect(assertHouseholdReadable).not.toHaveBeenCalled();
+  });
+
+  it("never calls the household check for a tool that declares no householdId", async () => {
+    const tool = defineTool({
+      name: "t_bookwide",
+      title: "t",
+      description: "d",
+      inputSchema: z.object({ query: z.string() }),
+      handler: async () => ({ ok: true }),
+    });
+    await tool.run({ query: "x" }, principal);
+    expect(assertHouseholdReadable).not.toHaveBeenCalled();
+    // Pins the conditional spread's OTHER branch: a tool with no declared
+    // householdId must produce a metadata object with no householdId key at
+    // all — not an undefined one — so the spread can't be made unconditional
+    // and stay green.
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.not.objectContaining({ householdId: expect.anything() }),
+      }),
+    );
+    const metadata = recordAudit.mock.calls[0]![0].metadata as Record<string, unknown>;
+    expect(metadata).not.toHaveProperty("householdId");
   });
 });

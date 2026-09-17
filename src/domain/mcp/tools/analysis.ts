@@ -12,7 +12,12 @@ import type { ProjectionYear } from "@/engine";
 import type { RothConversion } from "@/engine/types";
 import { defineTool, type McpTool } from "../define-tool";
 
-const clientIdArg = z.string().describe("Household id from search_clients.");
+const clientIdArg = z
+  .string()
+  .describe(
+    "Planning client id from search_clients (the clientId field, present only when " +
+      "hasPlan is true). NOT a CRM household id.",
+  );
 const scenarioArg = z.string().optional().describe("Scenario id, or omit for the base case.");
 
 // SUBJECT_KEYS is ["tax"] — the one registered SubjectAdapter today. Widening

@@ -165,13 +165,16 @@ export async function recordDenial(
  * args, for the denial audit row above — best-effort and defensive, since
  * `args` here is whatever the SDK's own pre-callback validation accepted
  * against the tool's schema, not something this file has re-checked itself.
- * Every household-id schema across the 17 tools declares the field as
- * `clientId`, so one key name covers all of them.
+ * Across the 19 tools, a household-id schema declares the field as either
+ * `clientId` (planning clients) or `householdId` (CRM households) — never
+ * both — so checking `clientId` first and falling back to `householdId`
+ * covers all of them.
  */
 export function requestedClientIdFrom(args: unknown): string | null {
   if (!args || typeof args !== "object") return null;
-  const raw = (args as Record<string, unknown>).clientId;
-  return typeof raw === "string" ? raw : null;
+  const record = args as Record<string, unknown>;
+  if (typeof record.clientId === "string") return record.clientId;
+  return typeof record.householdId === "string" ? record.householdId : null;
 }
 
 const handler = createMcpHandler(

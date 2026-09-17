@@ -4,7 +4,12 @@ import { checkMcpRateLimit, type RateLimitResult } from "@/lib/rate-limit";
 import { sanitizeRow } from "@/lib/redaction/sanitize-row";
 import { foundryUrl, type FoundryPage } from "@/lib/mcp/foundry-url";
 import type { McpPrincipal } from "@/lib/mcp/principal";
-import { assertClientReadableForPrincipal, McpForbiddenError, CLIENT_UNREADABLE_MESSAGE } from "./guards";
+import {
+  assertClientReadableForPrincipal,
+  assertHouseholdReadableForPrincipal,
+  McpForbiddenError,
+  CLIENT_UNREADABLE_MESSAGE,
+} from "./guards";
 import type { McpToolContext } from "./context";
 
 /** The reason union `checkMcpRateLimit` returns on `allowed: false`. */
@@ -54,24 +59,31 @@ type DefineToolSpec<S extends z.ZodObject<z.ZodRawShape>, R extends object> = {
 
 /**
  * Wrap a tool body with everything that must never be forgotten: the rate
- * limit, the per-client authorization check, output sanitization, the deep
- * link, and the audit row. A tool author writes only the handler.
+ * limit, the authorization check, output sanitization, the deep link, and the
+ * audit row. A tool author writes only the handler.
  *
  * Order matters. The rate limit runs FIRST so a denied caller cannot use tool
- * calls to probe which client ids exist.
+ * calls to probe which ids exist.
  *
- * Whether a per-client check runs is driven by the SCHEMA (`"clientId" in
- * spec.inputSchema.shape`), never by duck-typing the parsed value. A schema
- * that declares `clientId` (required, optional, or nullable) always gets
- * checked; if the key is declared but the parsed value isn't a string —
- * omitted, null, or any other shape — that raises the SAME
- * `McpForbiddenError` a denied client raises, rather than silently skipping
- * the check and letting the handler run. A schema that declares no
- * `clientId` at all (a book-scoped, discovery-style tool) never triggers a
- * check, same as before.
+ * There are TWO id spaces and a gate for each: `clientId` (a planning client,
+ * checked against `assertClientReadableForPrincipal`) and `householdId` (a CRM
+ * household, checked against `assertHouseholdReadableForPrincipal`). A tool
+ * declares one, the other, or neither; if one ever declares both, both checks
+ * run.
+ *
+ * Whether either check runs is driven by the SCHEMA (`"clientId" in
+ * spec.inputSchema.shape`, and the same for `"householdId"`), never by
+ * duck-typing the parsed value. A schema that declares the key (required,
+ * optional, or nullable) always gets checked; if the key is declared but the
+ * parsed value isn't a string — omitted, null, or any other shape — that
+ * raises the SAME `McpForbiddenError` a denial raises, rather than silently
+ * skipping the check and letting the handler run. A schema that declares
+ * neither (a book-scoped, discovery-style tool) never triggers a check, same
+ * as before. Both denials, and a missing row, carry one message, so existence
+ * never leaks.
  *
  * A handler must wrap a list result in an object (e.g. `{ accounts: [...] }`)
- * — every one of the 17 Task 8-11 tools already does this. `sanitizeRow`
+ * — every one of the 19 registered tools already does this. `sanitizeRow`
  * preserves an array's shape, and spreading one into
  * `{ ...sanitized, foundryUrl }` would silently renumber it into
  * `{0: ..., 1: ..., foundryUrl}`. As a second line of defence this wrapper
@@ -111,6 +123,20 @@ export function defineTool<S extends z.ZodObject<z.ZodRawShape>, R extends objec
         await assertClientReadableForPrincipal(principal, clientId);
       }
 
+      // Same schema-driven rule as clientId above: a declared `householdId` is
+      // ALWAYS checked. A tool may declare either, or neither; no tool today
+      // declares both, and if one ever does, both checks run.
+      const declaresHouseholdId = "householdId" in spec.inputSchema.shape;
+      let householdId: string | null = null;
+      if (declaresHouseholdId) {
+        const rawHouseholdId = (args as Record<string, unknown>).householdId;
+        if (typeof rawHouseholdId !== "string") {
+          throw new McpForbiddenError(CLIENT_UNREADABLE_MESSAGE);
+        }
+        householdId = rawHouseholdId;
+        await assertHouseholdReadableForPrincipal(principal, householdId);
+      }
+
       const ctx: McpToolContext = { principal, firmId: principal.orgId };
       const result = await spec.handler(args, ctx);
 
@@ -128,7 +154,11 @@ export function defineTool<S extends z.ZodObject<z.ZodRawShape>, R extends objec
         firmId: principal.orgId,
         actorId: principal.userId,
         actorKind: "advisor",
-        metadata: { tool: spec.name, argKeys: Object.keys(args as object) },
+        metadata: {
+          tool: spec.name,
+          argKeys: Object.keys(args as object),
+          ...(householdId ? { householdId } : {}),
+        },
       });
 
       return withLink;

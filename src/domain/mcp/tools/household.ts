@@ -66,7 +66,14 @@ const getClientSummary = defineTool({
     "computed from current holdings and are always populated. When projectionAvailable is false, " +
     "the plan projection itself failed: minProjectedNetWorth comes back null and lifeEvents comes " +
     "back empty — say so rather than inferring values; the other fields are unaffected.",
-  inputSchema: z.object({ clientId: z.string().describe("Household id from search_clients.") }),
+  inputSchema: z.object({
+    clientId: z
+      .string()
+      .describe(
+        "Planning client id from search_clients (the clientId field, present only " +
+          "when hasPlan is true). NOT a CRM household id.",
+      ),
+  }),
   page: "overview",
   handler: async ({ clientId }, { firmId }) => {
     const [overview, client] = await Promise.all([
@@ -104,7 +111,12 @@ const getBalanceSheet = defineTool({
     "for the all-in household figure. For the individual rows behind a category, use " +
     "list_plan_details.",
   inputSchema: z.object({
-    clientId: z.string().describe("Household id from search_clients."),
+    clientId: z
+      .string()
+      .describe(
+        "Planning client id from search_clients (the clientId field, present only " +
+          "when hasPlan is true). NOT a CRM household id.",
+      ),
     scenarioId: z.string().optional().describe("Scenario id, or omit for the base case."),
   }),
   page: "balanceSheet",
@@ -145,7 +157,12 @@ const listPlanDetails = defineTool({
     "family_member rows carry a birthYear instead of an exact date of birth. This can be large; " +
     "use limit and offset.",
   inputSchema: z.object({
-    clientId: z.string().describe("Household id from search_clients."),
+    clientId: z
+      .string()
+      .describe(
+        "Planning client id from search_clients (the clientId field, present only " +
+          "when hasPlan is true). NOT a CRM household id.",
+      ),
     kind: z
       .enum([
         "account", "income", "expense", "liability",
@@ -186,7 +203,12 @@ const getInsurance = defineTool({
     "premium, term expiry, beneficiaries) and disability policies. Both are read from the " +
     "household's base data, not any what-if scenario — this tool takes no scenarioId.",
   inputSchema: z.object({
-    clientId: z.string().describe("Household id from search_clients."),
+    clientId: z
+      .string()
+      .describe(
+        "Planning client id from search_clients (the clientId field, present only " +
+          "when hasPlan is true). NOT a CRM household id.",
+      ),
   }),
   page: "insurance",
   handler: async ({ clientId }, { firmId }) => {
