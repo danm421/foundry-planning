@@ -47,7 +47,54 @@ describe("accounts table", () => {
     render(<AccountsTable rows={rows} excluded={[]} committedRowIds={[]} onCommitRows={onCommitRows} onEditCell={vi.fn()} onEditHolding={vi.fn()} onDropHolding={vi.fn()} />);
     const roth = screen.getByRole("row", { name: /Schwab Roth IRA/ });
     await userEvent.click(within(roth).getByRole("button", { name: /commit/i }));
-    expect(onCommitRows).toHaveBeenCalledWith(["r2"]);
+    // The second argument is the override box's state, and pinning it here is
+    // the point: a plain Commit click must never arrive as an override.
+    expect(onCommitRows).toHaveBeenCalledWith(["r2"], { overrideAll: false });
+  });
+
+  /**
+   * The "Override all fields" box under a matched row's Commit button. It is
+   * offered ONLY on a row that will UPDATE an existing account, because on a
+   * row that creates one there is nothing to override — a checkbox that
+   * cannot change the outcome is worse than no checkbox.
+   */
+  describe("the override box", () => {
+    const matched = [
+      { ...(rows as never as Record<string, unknown>[])[0], match: { kind: "exact", existingId: "acct-1" } },
+      (rows as never as Record<string, unknown>[])[1],
+    ] as never;
+
+    it("is offered on a matched row and withheld from a new one", () => {
+      render(<AccountsTable rows={matched} excluded={[]} committedRowIds={[]} onCommitRows={vi.fn()} onEditCell={vi.fn()} onEditHolding={vi.fn()} onDropHolding={vi.fn()} />);
+      const updating = screen.getByRole("row", { name: /Schwab Taxable 0707/ });
+      const creating = screen.getByRole("row", { name: /Schwab Roth IRA/ });
+      expect(within(updating).getByRole("checkbox", { name: /override all fields/i })).toBeInTheDocument();
+      expect(within(creating).queryByRole("checkbox", { name: /override all fields/i })).toBeNull();
+    });
+
+    it("sends the override only after it is ticked, and only for its own row", async () => {
+      const onCommitRows = vi.fn();
+      render(<AccountsTable rows={matched} excluded={[]} committedRowIds={[]} onCommitRows={onCommitRows} onEditCell={vi.fn()} onEditHolding={vi.fn()} onDropHolding={vi.fn()} />);
+      const updating = screen.getByRole("row", { name: /Schwab Taxable 0707/ });
+
+      // Ticking alone commits nothing — the box is a modifier for the button.
+      await userEvent.click(within(updating).getByRole("checkbox", { name: /override all fields/i }));
+      expect(onCommitRows).not.toHaveBeenCalled();
+
+      await userEvent.click(within(updating).getByRole("button", { name: /commit/i }));
+      expect(onCommitRows).toHaveBeenCalledWith(["r1"], { overrideAll: true });
+
+      // The neighbour was never ticked, so its own Commit stays a plain one.
+      const creating = screen.getByRole("row", { name: /Schwab Roth IRA/ });
+      await userEvent.click(within(creating).getByRole("button", { name: /commit/i }));
+      expect(onCommitRows).toHaveBeenLastCalledWith(["r2"], { overrideAll: false });
+    });
+
+    it("is withheld from a row that is already committed", () => {
+      render(<AccountsTable rows={matched} excluded={[]} committedRowIds={["r1"]} onCommitRows={vi.fn()} onEditCell={vi.fn()} onEditHolding={vi.fn()} onDropHolding={vi.fn()} />);
+      const updating = screen.getByRole("row", { name: /Schwab Taxable 0707/ });
+      expect(within(updating).queryByRole("checkbox", { name: /override all fields/i })).toBeNull();
+    });
   });
 
   // `owners[]` is a RECORDED fact — the advisor picked, or the registration

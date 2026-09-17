@@ -59,37 +59,56 @@ export async function synthesizeAccountOwners(
   tx: Tx,
   accountId: string,
   owner: "client" | "spouse" | "joint" | undefined,
-  { clientFmId, spouseFmId }: FamilyRoleIds,
+  family: FamilyRoleIds,
   isRetirement: boolean,
 ): Promise<void> {
+  const rows = accountOwnerRowsFor(accountId, owner, family, isRetirement);
+  if (rows.length > 0) await tx.insert(accountOwners).values(rows);
+}
+
+/** One `account_owners` row, ready to insert. */
+export interface NewAccountOwnerRow {
+  accountId: string;
+  familyMemberId: string | null;
+  entityId: string | null;
+  percent: string;
+}
+
+/**
+ * The rows `synthesizeAccountOwners` would write, WITHOUT writing them —
+ * the same rule, decided before anything is touched.
+ *
+ * Split out because a caller that REPLACES ownership has to delete the
+ * existing rows first, and an empty result means it must not: deleting and
+ * then writing nothing leaves the account ownerless, which silently drops its
+ * balance out of every by-owner readout. Returning `[]` (a household with no
+ * role='client' family member yet) is that caller's cue to leave ownership
+ * alone and say so.
+ */
+export function accountOwnerRowsFor(
+  accountId: string,
+  owner: "client" | "spouse" | "joint" | undefined,
+  { clientFmId, spouseFmId }: FamilyRoleIds,
+  isRetirement: boolean,
+): NewAccountOwnerRow[] {
   if (!isRetirement && owner === "joint" && clientFmId && spouseFmId) {
-    await tx.insert(accountOwners).values([
+    return [
       { accountId, familyMemberId: clientFmId, entityId: null, percent: "0.5000" },
       { accountId, familyMemberId: spouseFmId, entityId: null, percent: "0.5000" },
-    ]);
-    return;
+    ];
   }
 
   if (owner === "spouse" && spouseFmId) {
-    await tx.insert(accountOwners).values({
-      accountId,
-      familyMemberId: spouseFmId,
-      entityId: null,
-      percent: "1.0000",
-    });
-    return;
+    return [{ accountId, familyMemberId: spouseFmId, entityId: null, percent: "1.0000" }];
   }
 
   // Default: client at 100% — covers explicit "client", a joint/spouse account
   // on a household with no spouse row, and an owner the caller never supplied.
   if (clientFmId) {
-    await tx.insert(accountOwners).values({
-      accountId,
-      familyMemberId: clientFmId,
-      entityId: null,
-      percent: "1.0000",
-    });
+    return [{ accountId, familyMemberId: clientFmId, entityId: null, percent: "1.0000" }];
   }
+
+  return [];
 }
 
 /**

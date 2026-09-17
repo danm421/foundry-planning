@@ -13,9 +13,10 @@ import {
 import { getExistingId, linkCreated, type ImportPayload } from "../types";
 import { holdingsWereReviewed, livingHoldings } from "../living-rows";
 import {
+  accountOwnerRowsFor,
   loadFamilyRoleIds,
-  synthesizeAccountOwners,
   type FamilyRoleIds,
+  type NewAccountOwnerRow,
 } from "./family-resolver";
 import { writeAccountHoldings } from "./holdings";
 import { accountHoldingsGuardrail } from "./holdings-guardrail";
@@ -122,6 +123,13 @@ export function education529Columns(
  *   category, subType: replace
  *   value, basis, accountNumberLast4, custodian: replace
  *   growthRate, rmdEnabled: replace-if-non-null
+ *   accountOwners: keep-existing
+ *
+ * A row listed in `ctx.overrideRowIds` — the advisor ticked "Override every
+ * field" under its Commit button — widens that map by exactly two entries,
+ * `name` and `accountOwners`, both of which become "replace". Growth is
+ * deliberately NOT among them: a rate someone tuned by hand is not something
+ * a statement has an opinion about, and the checkbox's own label says so.
  *
  * 529s (`education_savings`, or any row whose subType is "529") deviate on
  * three points, matching what accounts-writes.ts enforces for hand-entered
@@ -140,6 +148,7 @@ export async function commitAccounts(
   // Built once outside the loop rather than `ctx.rowIds.includes(...)` per
   // row, which would be O(n²) over the payload.
   const rowIdFilter = ctx.rowIds ? new Set(ctx.rowIds) : null;
+  const overrideFilter = ctx.overrideRowIds ? new Set(ctx.overrideRowIds) : null;
 
   for (const row of payload.accounts) {
     // An explicit id list means the advisor committed specific rows from the
@@ -249,7 +258,15 @@ export async function commitAccounts(
       result.skipped += 1;
       continue;
     }
+    // Listed = the advisor ticked the override box under THIS row's Commit
+    // button. A row carrying no `__rowId` can never be listed, the same
+    // fail-closed direction `rowIdFilter` above takes.
+    const overrideAll = Boolean(row.__rowId && overrideFilter?.has(row.__rowId));
     const updates: Record<string, unknown> = { updatedAt: now };
+    // `name` is keep-existing precisely BECAUSE the advisor may have renamed
+    // the account, so only an explicit override may replace it — and never
+    // with a blank, which would leave the row unidentifiable in every picker.
+    if (overrideAll && row.name?.trim()) updates.name = row.name.trim();
     // Recompute category when the row explicitly sets one (normal replace, per
     // the field map above) or when subType alone heals to a 529 (Task 4). A
     // subType edit to anything else, with category left untouched by the
@@ -333,12 +350,50 @@ export async function commitAccounts(
           eq(accounts.scenarioId, ctx.scenarioId),
         ),
       )
-      .returning({ id: accounts.id });
+      .returning({ id: accounts.id, subType: accounts.subType });
     if (updateIs529 && updatedRows.length > 0) {
       // Reclassifying an existing account INTO a 529 has to clear whatever
       // ownership it used to carry, or the balance stays in the household
       // estate through both doors at once.
       await tx.delete(accountOwners).where(eq(accountOwners.accountId, existingId));
+    }
+    // Ownership is advisor-managed on a normal update, so the field map leaves
+    // it alone. An override is the advisor saying the statement wins, so the
+    // rows are REPLACED — gated on `updatedRows` for exactly the reason the
+    // 529 clear above is: `existingId` is a claim off payload JSON, and
+    // account_owners carries no clientId of its own to scope a delete by.
+    // A 529 is excluded outright: it holds no account_owners rows at all (its
+    // beneficiary columns are its ownership) and the branch above just cleared
+    // whatever it had.
+    else if (overrideAll && updatedRows.length > 0) {
+      // `subType` off the UPDATE's OWN `returning()`, which is post-update:
+      // the incoming sub-type when the row carried one, the stored one when it
+      // didn't. Reading it off `row` alone would call a stored IRA "not
+      // retirement" whenever the advisor left the type cell untouched, and
+      // `account_owners_retirement_check` is DEFERRABLE INITIALLY DEFERRED —
+      // so two owners on an IRA roll back at COMMIT, taking the whole import
+      // with them.
+      const isRetirement = (RETIREMENT_SUBTYPES as readonly string[]).includes(
+        updatedRows[0].subType,
+      );
+      const ownerRows = await resolveImportedOwnerRows(
+        existingId,
+        row,
+        ctx.clientId,
+        family,
+        isRetirement,
+      );
+      // Resolving to nothing means the delete would strand the account with no
+      // owner at all, which drops its balance out of every by-owner readout.
+      // Keeping the old ownership and saying so is the honest failure.
+      if (ownerRows.length > 0) {
+        await tx.delete(accountOwners).where(eq(accountOwners.accountId, existingId));
+        await tx.insert(accountOwners).values(ownerRows);
+      } else {
+        result.warnings.push(
+          `${row.name}: ownership left unchanged — the statement's owner could not be matched to anyone in this household.`,
+        );
+      }
     }
     await writeAccountHoldings(
       tx,
@@ -384,28 +439,41 @@ async function writeImportedOwners(
   family: FamilyRoleIds,
   isRetirement: boolean,
 ): Promise<void> {
+  const rows = await resolveImportedOwnerRows(accountId, row, clientId, family, isRetirement);
+  if (rows.length > 0) await tx.insert(accountOwners).values(rows);
+}
+
+/**
+ * The same resolution WITHOUT the insert — see `accountOwnerRowsFor`'s
+ * docstring for why a caller that REPLACES ownership needs the rows in hand
+ * before it deletes anything. `[]` means nothing could be resolved, and
+ * ownership must then be left exactly as it is.
+ */
+async function resolveImportedOwnerRows(
+  accountId: string,
+  row: ImportPayload["accounts"][number],
+  clientId: string,
+  family: FamilyRoleIds,
+  isRetirement: boolean,
+): Promise<NewAccountOwnerRow[]> {
   const owners = row.owners;
   if (Array.isArray(owners) && owners.length > 0) {
     const shape = validateOwnersShape(owners);
     if ("owners" in shape) {
       const tenantErr = await validateOwnersTenant(shape.owners, clientId);
-      if (!tenantErr) {
-        if (isRetirement && shape.owners.length > 1) {
-          await synthesizeAccountOwners(tx, accountId, row.owner, family, true);
-          return;
-        }
-        await tx.insert(accountOwners).values(
-          shape.owners.map((o) => ({
-            accountId,
-            familyMemberId: o.kind === "family_member" ? o.familyMemberId : null,
-            entityId: o.kind === "entity" ? o.entityId : null,
-            percent: o.percent.toString(),
-          })),
-        );
-        return;
+      // A multi-owner retirement account falls through to coarse synthesis,
+      // which collapses it to a single owner — the deferred check constraint
+      // takes the whole import down otherwise.
+      if (!tenantErr && !(isRetirement && shape.owners.length > 1)) {
+        return shape.owners.map((o) => ({
+          accountId,
+          familyMemberId: o.kind === "family_member" ? o.familyMemberId : null,
+          entityId: o.kind === "entity" ? o.entityId : null,
+          percent: o.percent.toString(),
+        }));
       }
     }
     // validation/tenant failure → fall through to coarse synthesis below.
   }
-  await synthesizeAccountOwners(tx, accountId, row.owner, family, isRetirement);
+  return accountOwnerRowsFor(accountId, row.owner, family, isRetirement);
 }

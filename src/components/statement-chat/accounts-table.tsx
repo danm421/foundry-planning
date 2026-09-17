@@ -118,6 +118,26 @@ function withReason(excluded: ExcludedRow<Row>[]): ExcludedRow<Row>[] {
  * column spec applied. Phase 2 adds sibling `<entity>-table.tsx` wrappers
  * the same way, each supplying its own column spec.
  */
+/**
+ * The override box, offered ONLY on a row that will update an existing account
+ * — on a row that creates one there is nothing to override, so the checkbox
+ * would be a control with no effect.
+ *
+ * The label says "all fields" because from the advisor's side that is what it
+ * does; `commitAccounts`' field map is where the two fields it actually adds
+ * (name, ownership) are stated. The exception goes in the tooltip, because it
+ * is the one thing an advisor would be surprised to lose.
+ */
+function overrideLabel(row: Row): { label: string; title: string } | null {
+  if (row.match?.kind !== "exact") return null;
+  return {
+    label: "Override all fields",
+    title:
+      "Also replace this account's name and ownership with what the statement says. " +
+      "Growth rate is never changed.",
+  };
+}
+
 export default function AccountsTable({
   excluded,
   onEditHolding,
@@ -155,6 +175,7 @@ export default function AccountsTable({
       columns={accountColumns({ ...columnsContext, match })}
       excluded={withReason(excluded)}
       commitBlockedReason={accountCommitBlockedReason}
+      overrideLabel={overrideLabel}
       expand={(row, { isCommitted }) =>
         livingHoldings(row).length > 0 && row.__rowId ? (
           <HoldingsTable

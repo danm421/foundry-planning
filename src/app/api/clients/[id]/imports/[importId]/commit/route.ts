@@ -64,6 +64,32 @@ export function parseRowIds(input: unknown): string[] | undefined | { error: str
     return input;
 }
 
+// `overrideRowIds` widens which fields a matched row may overwrite (see
+// `CommitContext.overrideRowIds`), so it is refused unless it is a SUBSET of
+// the rows this request is actually committing. Without that check a caller
+// could name rows it never asked to commit, and — with `rowIds` absent, the
+// wizard's commit-everything shape — silently escalate every matched row in
+// the payload to an override.
+export function parseOverrideRowIds(
+    input: unknown,
+    rowIds: readonly string[] | undefined,
+): string[] | undefined | { error: string } {
+    if (input === undefined) return undefined;
+    if (!Array.isArray(input) || input.length === 0 || input.some((r) => typeof r !== "string")) {
+        return {
+            error: "Body's `overrideRowIds`, when present, must be a non-empty array of strings.",
+        };
+    }
+    if (!rowIds) {
+        return { error: "Body's `overrideRowIds` requires `rowIds`." };
+    }
+    const committing = new Set(rowIds);
+    if (input.some((r) => !committing.has(r as string))) {
+        return { error: "Body's `overrideRowIds` must be a subset of `rowIds`." };
+    }
+    return input;
+}
+
 export async function POST(request: NextRequest, { params }: Params) {
     try {
         const firmId = await requireOrgId();
@@ -149,7 +175,7 @@ export async function POST(request: NextRequest, { params }: Params) {
         }
 
         const body = (await request.json().catch(() => null)) as
-            | { tabs?: unknown; rowIds?: unknown }
+            | { tabs?: unknown; rowIds?: unknown; overrideRowIds?: unknown }
             | null;
         const parsed = parseTabs(body?.tabs);
         if ("error" in parsed) {
@@ -162,6 +188,12 @@ export async function POST(request: NextRequest, { params }: Params) {
             return NextResponse.json({ error: parsedRowIds.error }, { status: 400 });
         }
         const rowIds = parsedRowIds;
+
+        const parsedOverrideRowIds = parseOverrideRowIds(body?.overrideRowIds, rowIds);
+        if (parsedOverrideRowIds !== undefined && !Array.isArray(parsedOverrideRowIds)) {
+            return NextResponse.json({ error: parsedOverrideRowIds.error }, { status: 400 });
+        }
+        const overrideRowIds = parsedOverrideRowIds;
 
         const persistedPayload = (imp.payloadJson as ImportPayloadJson)?.payload;
         if (!persistedPayload) {
@@ -197,6 +229,7 @@ export async function POST(request: NextRequest, { params }: Params) {
                 holdingsAccountIds,
                 milestones: importMilestones?.milestones,
                 rowIds,
+                overrideRowIds,
             },
         });
 
@@ -212,7 +245,15 @@ export async function POST(request: NextRequest, { params }: Params) {
                     resourceId: importId,
                     clientId,
                     firmId,
-                    metadata: { tab, ...results[tab] },
+                    // `overrideRowIds` is audited because it is the one flag
+                    // that lets a commit overwrite a field an advisor set by
+                    // hand — "why did this account get renamed" has to be
+                    // answerable from the log.
+                    metadata: {
+                        tab,
+                        ...results[tab],
+                        ...(overrideRowIds ? { overrideRowIds } : {}),
+                    },
                 }),
             ),
         );

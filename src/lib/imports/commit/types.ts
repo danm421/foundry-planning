@@ -77,6 +77,18 @@ export interface CommitContext {
    * re-extraction that removes an earlier row in the same file.
    */
   rowIds?: readonly string[];
+  /**
+   * The subset of `rowIds` the advisor ticked "Override every field" on, so
+   * the commit replaces the fields the default field map protects. Today only
+   * `commitAccounts` reads it, where it means `name` and ownership become
+   * "replace" — see that module's field-map docstring for the exact list, and
+   * for why growth is not on it.
+   *
+   * Separate from the payload on purpose: which fields THIS click may
+   * overwrite is an instruction about one commit, not a fact read off the
+   * statement, and it must not persist into the next one.
+   */
+  overrideRowIds?: readonly string[];
 }
 
 /** A ticker resolved to a security + (optional) live price during commit. */

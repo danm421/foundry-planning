@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { CommitRowsOptions } from "@/components/statement-chat/entity-table";
 import type { ExcludedRow } from "@/components/statement-chat/excluded-rows";
 import type { ExtractedAccount, ExtractedHolding } from "@/lib/extraction/types";
 import type { Annotated } from "@/lib/imports/types";
@@ -362,7 +363,7 @@ export function useChatCommit(
   // previous queued commit persisted has already landed by the time this
   // read happens.
   const commitRowsNow = useCallback(
-    async (rowIds: string[]) => {
+    async (rowIds: string[], overrideAll: boolean) => {
       const current = resultRef.current;
       if (!current) return;
 
@@ -392,7 +393,14 @@ export function useChatCommit(
         // `tabs` MUST be present alongside `rowIds` — `rowIds` is honoured
         // only by `commitAccounts`, so naming any tab besides "accounts"
         // here would commit that other tab completely unfiltered.
-        body: JSON.stringify({ tabs: ["accounts"], rowIds }),
+        // `overrideRowIds` is sent only when the box is ticked — the route
+        // refuses an empty array, and omitting the key is what "no override"
+        // means there.
+        body: JSON.stringify({
+          tabs: ["accounts"],
+          rowIds,
+          ...(overrideAll ? { overrideRowIds: rowIds } : {}),
+        }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}) as { error?: string });
@@ -437,7 +445,8 @@ export function useChatCommit(
   // one is ever running `commitRowsNow` at a time — see that function's
   // docstring and the queue's own comment above for why.
   const handleCommitRows = useCallback(
-    (rowIds: string[]): Promise<void> => enqueue(commitQueueRef, () => commitRowsNow(rowIds)),
+    (rowIds: string[], opts?: CommitRowsOptions): Promise<void> =>
+      enqueue(commitQueueRef, () => commitRowsNow(rowIds, opts?.overrideAll ?? false)),
     [commitRowsNow],
   );
 
