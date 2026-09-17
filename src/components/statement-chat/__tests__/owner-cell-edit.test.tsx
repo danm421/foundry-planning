@@ -35,8 +35,8 @@ describe("owner cell edit", () => {
     expect(
       [...select.querySelectorAll("option")].filter((o) => !o.disabled).map((o) => o.textContent),
     ).toEqual([
-      "Michael Sharesky (client)",
-      "Julia Sharesky (co-client)",
+      "Michael Sharesky",
+      "Julia Sharesky",
       "Ellie Sharesky",
       "Michael & Julia (joint)",
       "Sharesky Family Trust",
@@ -91,7 +91,7 @@ describe("owner cell edit", () => {
   it("offers no joint option on a retirement account", () => {
     renderCell({ subType: "traditional_ira" });
     expect(screen.queryByRole("option", { name: /joint/i })).toBeNull();
-    expect(screen.getByRole("option", { name: "Michael Sharesky (client)" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Michael Sharesky" })).toBeInTheDocument();
   });
 
   /** A 529 gets no `account_owners` rows at all — it is attributed to its

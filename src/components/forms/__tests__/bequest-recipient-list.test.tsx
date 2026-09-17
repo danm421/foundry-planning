@@ -78,7 +78,7 @@ describe("BequestRecipientList — asset mode", () => {
     const householdOptions = Array.from(
       select.querySelectorAll('optgroup[label="Household"] option'),
     ).map((o) => (o as HTMLOptionElement).textContent ?? "");
-    expect(householdOptions).toEqual(["Cooper (co-client)"]);
+    expect(householdOptions).toEqual(["Cooper"]);
     expect(householdOptions.some((l) => l.includes("Sarah"))).toBe(false);
   });
 

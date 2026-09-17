@@ -81,7 +81,7 @@ function householdOtherName(
 
 function spouseLabel(grantor: WillGrantor, p: WillsPanelPrimary): string {
   const name = householdOtherName(grantor, p);
-  return name ? `${name} (co-client)` : CO_CLIENT_LABEL;
+  return name || CO_CLIENT_LABEL;
 }
 
 const setRowPercentage = (r: BequestRecipient, percentage: number): BequestRecipient => ({ ...r, percentage });

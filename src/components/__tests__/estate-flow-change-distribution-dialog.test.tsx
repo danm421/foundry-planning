@@ -69,14 +69,14 @@ describe("EstateFlowChangeDistributionDialog — household beneficiary options",
     );
 
     // The fixture starts with no beneficiary rows; add one to render the
-    // "Household" optgroup (both household members' real names, tagged).
+    // "Household" optgroup (both household members' real names).
     fireEvent.click(screen.getByRole("button", { name: /add primary/i }));
 
     expect(
-      screen.getByRole("option", { name: "Client Sample (client)" }),
+      screen.getByRole("option", { name: "Client Sample" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("option", { name: "Robin Sample (co-client)" }),
+      screen.getByRole("option", { name: "Robin Sample" }),
     ).toBeInTheDocument();
   });
 });

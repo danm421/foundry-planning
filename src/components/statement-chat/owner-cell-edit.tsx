@@ -3,7 +3,6 @@
 import { selectClassName } from "@/components/forms/input-styles";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
 import { OWNER_HINT_REASON } from "./owner-cell";
-import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import type { AccountOwner } from "@/engine/ownership";
 import type { OwnerMatchFamilyMember } from "@/lib/imports/owner-match";
 import {
@@ -83,10 +82,7 @@ export default function OwnerCellEdit({
       </div>
     );
   }
-  const options = buildOwnerOptions(family, entities, {
-    subType,
-    coClientLabel: CO_CLIENT_LABEL,
-  });
+  const options = buildOwnerOptions(family, entities, { subType });
   const current = ownersToOptionValue(owners, family);
 
   return (

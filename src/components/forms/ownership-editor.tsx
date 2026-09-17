@@ -187,7 +187,7 @@ function OwnerRow({
           <optgroup label="Household">
             {familyMembers.map((fm) => (
               <option key={fm.id} value={`fm:${fm.id}`}>
-                {fm.firstName} ({fm.role})
+                {fm.firstName}
               </option>
             ))}
           </optgroup>
@@ -272,7 +272,7 @@ function SingleOwnerPicker({ value, familyMembers, entities, onChange }: SingleO
         <optgroup label="Household">
           {familyMembers.map((fm) => (
             <option key={fm.id} value={`fm:${fm.id}`}>
-              {fm.firstName} ({fm.role})
+              {fm.firstName}
             </option>
           ))}
         </optgroup>
@@ -604,7 +604,7 @@ export function OwnershipEditor({
                   <optgroup label="Household">
                     {familyMembers.map((fm) => (
                       <option key={fm.id} value={`fm:${fm.id}`}>
-                        {fm.firstName} ({fm.role})
+                        {fm.firstName}
                       </option>
                     ))}
                   </optgroup>

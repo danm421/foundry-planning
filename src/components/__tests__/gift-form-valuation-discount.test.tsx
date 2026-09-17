@@ -11,7 +11,7 @@ import { MAX_DISCOUNT_PCT } from "@/lib/gifts/apply-valuation-discount";
 
 const recipients = {
   trusts: [{ id: "t1", name: "Dynasty Trust" }],
-  familyMembers: [{ id: "k1", firstName: "Alice", lastName: "Byron", roleLabel: "child" }],
+  familyMembers: [{ id: "k1", firstName: "Alice", lastName: "Byron" }],
   externals: [],
 };
 

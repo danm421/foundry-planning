@@ -408,7 +408,7 @@ export const INSURANCE_ENTITIES: readonly DetailEntity[] = [
         kind: "enum",
         enumValues: ["client", "spouse"],
         nullable: true,
-        notes: "Rendered as \"{clientFirstName} (client)\" / \"{spouseFirstName} (spouse)\".",
+        notes: "Rendered as the household member's own name, under the Household option group.",
       },
       {
         key: "sortOrder",

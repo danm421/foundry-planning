@@ -334,9 +334,9 @@ const AccountBeneficiaryEditor = forwardRef<
               >
                 <option value="">— select beneficiary —</option>
                 <optgroup label="Household">
-                  <option value="hh:client">{clientFirstName} (client)</option>
+                  <option value="hh:client">{clientFirstName}</option>
                   {spouseFirstName && (
-                    <option value="hh:spouse">{spouseFirstName} (co-client)</option>
+                    <option value="hh:spouse">{spouseFirstName}</option>
                   )}
                 </optgroup>
                 <optgroup label="Family">

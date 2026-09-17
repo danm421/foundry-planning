@@ -15,7 +15,7 @@ const FAMILY: OwnerMatchFamilyMember[] = [
   { id: "k", role: "child", firstName: "Ellie", lastName: "Sharesky" },
 ];
 const ENTITIES = [{ id: "t", name: "Sharesky Family Trust" }];
-const OPTS = { coClientLabel: "Co-client" };
+const OPTS = {};
 
 describe("buildOwnerOptions", () => {
   it("offers every person and entity, household first", () => {
@@ -23,10 +23,10 @@ describe("buildOwnerOptions", () => {
     expect(options.map((o) => o.value)).toEqual(["fm:c", "fm:s", "fm:k", "joint", "ent:t"]);
   });
 
-  it("labels the two household roles but leaves a child's name plain", () => {
+  it("labels every person by name alone, and the pair as joint", () => {
     const byValue = new Map(buildOwnerOptions(FAMILY, ENTITIES, OPTS).map((o) => [o.value, o.label]));
-    expect(byValue.get("fm:c")).toBe("Michael Sharesky (client)");
-    expect(byValue.get("fm:s")).toBe("Julia Sharesky (co-client)");
+    expect(byValue.get("fm:c")).toBe("Michael Sharesky");
+    expect(byValue.get("fm:s")).toBe("Julia Sharesky");
     expect(byValue.get("fm:k")).toBe("Ellie Sharesky");
     expect(byValue.get("joint")).toBe("Michael & Julia (joint)");
   });

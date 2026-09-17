@@ -45,19 +45,6 @@ export function familyMemberName(fm: Pick<OwnerMatchFamilyMember, "firstName" | 
   return [fm.firstName, fm.lastName].filter((p) => typeof p === "string" && p.trim()).join(" ").trim();
 }
 
-/**
- * The role suffix that disambiguates two people with the same first name, and
- * tells the advisor which of the two spouses is the primary client. Children and
- * "other" members carry no suffix — their names are already unambiguous against
- * the two household roles, and "Ellie Whitfield (child)" reads as a label for a
- * dependent rather than a person who owns an account.
- */
-function roleSuffix(role: OwnerMatchFamilyMember["role"], coClientLabel: string): string {
-  if (role === "client") return " (client)";
-  if (role === "spouse") return ` (${coClientLabel.toLowerCase()})`;
-  return "";
-}
-
 function clientAndSpouse(family: OwnerMatchFamilyMember[]) {
   return {
     client: family.find((f) => f.role === "client"),
@@ -77,7 +64,7 @@ function clientAndSpouse(family: OwnerMatchFamilyMember[]) {
 export function buildOwnerOptions(
   family: OwnerMatchFamilyMember[],
   entities: OwnerEntityOption[],
-  opts: { subType?: string | null; coClientLabel: string },
+  opts: { subType?: string | null },
 ): OwnerOption[] {
   const options: OwnerOption[] = [];
   const { client, spouse } = clientAndSpouse(family);
@@ -87,7 +74,7 @@ export function buildOwnerOptions(
     if (!name) continue;
     options.push({
       value: `fm:${fm.id}`,
-      label: `${name}${roleSuffix(fm.role, opts.coClientLabel)}`,
+      label: name,
       group: HOUSEHOLD_GROUP,
     });
   }

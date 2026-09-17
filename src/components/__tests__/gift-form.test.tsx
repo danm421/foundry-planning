@@ -7,7 +7,7 @@ import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 const base = (over: Partial<GiftFormProps> = {}): GiftFormProps => ({
   recipients: {
     trusts: [{ id: "t1", name: "ILIT" }],
-    familyMembers: [{ id: "m1", firstName: "Jane", lastName: "Doe", roleLabel: "child" }],
+    familyMembers: [{ id: "m1", firstName: "Jane", lastName: "Doe" }],
     externals: [{ id: "x1", name: "Red Cross", kindLabel: "charity" }],
   },
   accounts: [{ id: "a1", name: "Brokerage" }],

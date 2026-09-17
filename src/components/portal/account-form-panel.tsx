@@ -219,8 +219,7 @@ export function AccountFormPanel({
               checked={form.ownerFmIds.has(m.id)}
               onChange={() => toggleFm(m.id)}
             />
-            {m.firstName}{m.lastName ? " " + m.lastName : ""}{" "}
-            <span className="text-[12px] text-ink-3">({m.role})</span>
+            {m.firstName}{m.lastName ? " " + m.lastName : ""}
           </label>
         ))}
         {trustEntities.map((t) => (

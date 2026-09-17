@@ -127,14 +127,14 @@ describe("BeneficiariesTab", () => {
     // Principals are not duplicated as "(child)" kin in the Family group...
     expect(screen.queryByRole("option", { name: /Pat Client \(child\)/ })).toBeNull();
     expect(screen.queryByRole("option", { name: /Sam Reyes \(child\)/ })).toBeNull();
-    // ...but DO appear by real name in the Household group.
-    expect(screen.getAllByRole("option", { name: /Pat Client \(client\)/ }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole("option", { name: /Sam Reyes \(co-client\)/ }).length).toBeGreaterThan(0);
+    // ...but DO appear by real name — and only their name — in the Household group.
+    expect(screen.getAllByRole("option", { name: "Pat Client" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("option", { name: "Sam Reyes" }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("option", { name: /Kid Smith/ }).length).toBeGreaterThan(0);
 
     // Household is listed first: its options precede the family kin options.
-    const options = screen.getAllByRole("option").map((o) => o.textContent ?? "");
-    const householdIdx = options.findIndex((t) => /Pat Client \(client\)/.test(t));
+    const options = screen.getAllByRole("option").map((o) => o.textContent?.trim() ?? "");
+    const householdIdx = options.findIndex((t) => t === "Pat Client");
     const familyIdx = options.findIndex((t) => /Kid Smith/.test(t));
     expect(householdIdx).toBeGreaterThanOrEqual(0);
     expect(householdIdx).toBeLessThan(familyIdx);

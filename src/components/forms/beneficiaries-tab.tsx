@@ -261,11 +261,11 @@ function AccountBeneficiaryEditor({
                 <option value="">— select beneficiary —</option>
                 <optgroup label="Household">
                   <option value="hh:client">
-                    {household.client ? fullName(household.client) : "Client"} (client)
+                    {household.client ? fullName(household.client) : "Client"}
                   </option>
                   {(household.spouse || rows.some((x) => x.householdRole === "spouse")) && (
                     <option value="hh:spouse">
-                      {household.spouse ? fullName(household.spouse) : CO_CLIENT_LABEL} (co-client)
+                      {household.spouse ? fullName(household.spouse) : CO_CLIENT_LABEL}
                     </option>
                   )}
                 </optgroup>

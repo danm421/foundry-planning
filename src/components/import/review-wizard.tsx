@@ -276,7 +276,7 @@ export default function ReviewWizard({
       opts.push({
         kind: "family_member",
         id: fm.id,
-        label: `${fm.firstName}${last} (${fm.role})`,
+        label: `${fm.firstName}${last}`,
       });
     }
     for (const e of canonical.entities) {
