@@ -224,9 +224,16 @@ export async function searchHouseholds(
   firmId: string,
   opts: { userId: string; orgRole?: string },
 ): Promise<HouseholdSearchResult[]> {
+  // Mirrors searchClients' guard: a whitespace-only query still passes the
+  // MCP schema's `.min(1)`, and containsPattern(" ") produces "% %", which
+  // LIKE-matches nearly every auto-named ("First Last") household — an
+  // enumeration of the book rather than a search.
+  const trimmed = query.trim();
+  if (trimmed.length === 0) return [];
+
   const visible = await resolveVisibleAdvisorIds(opts.userId, opts.orgRole, firmId);
   const scope = advisorScopeCondition(crmHouseholds.advisorId, visible);
-  const pattern = containsPattern(query);
+  const pattern = containsPattern(trimmed);
 
   const rows = await db
     .select({
