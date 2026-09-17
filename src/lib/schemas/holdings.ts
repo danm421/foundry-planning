@@ -38,6 +38,19 @@ export const classifyTickerSchema = z.object({ ticker: z.string().trim().min(1).
 export const quoteTickerSchema = classifyTickerSchema;
 export type QuoteTickerQuery = z.infer<typeof quoteTickerSchema>;
 
+/** Below this, EODHD's `/search` answers with noise — one letter matches
+ *  hundreds of listings and no advisor can pick among them. Lives here, the
+ *  dependency-free leaf, so the route boundary and the search itself can't
+ *  drift apart. (The picker restates it client-side; see MIN_QUERY.) */
+export const MIN_SEARCH_QUERY = 2;
+
+// Query-param validation for GET /holdings/search — free text, so it takes a
+// security NAME as readily as a symbol and is sized for the longer of the two.
+export const securitySearchSchema = z
+  .object({ q: z.string().trim().min(MIN_SEARCH_QUERY).max(120) })
+  .strict();
+export type SecuritySearchQuery = z.infer<typeof securitySearchSchema>;
+
 export type HoldingCreateBody = z.infer<typeof holdingCreateSchema>;
 export type HoldingUpdateBody = z.infer<typeof holdingUpdateSchema>;
 export type HoldingOverrideBody = z.infer<typeof holdingOverrideSchema>;

@@ -4,11 +4,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AssetClassOption } from "./asset-mix-tab";
 import { HoldingOverrideEditor } from "./holding-override-editor";
+import { SecuritySearchDialog, SecuritySearchTrigger } from "./security-search-dialog";
 import { fieldLabelBaseClassName, inputBaseClassName, inputCompactClassName } from "./input-styles";
 import {
   listHoldings, createHolding, updateHolding, deleteHolding,
   setHoldingOverride, classifyTicker, setAccountDeriveFromHoldings, getQuote,
-  type HoldingRow, type QuoteResult,
+  type HoldingRow, type QuoteResult, type SecuritySearchHit,
 } from "@/lib/investments/holdings-client";
 import { summarizeHoldings, rowChip } from "@/lib/investments/holdings-display";
 import { holdingMarketValue } from "@/lib/investments/holdings-rollup";
@@ -65,6 +66,10 @@ export function HoldingsTab({
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editingOverride, setEditingOverride] = useState<string | null>(null);
+  /** Which ticker picker is open: the add row, or one saved holding. */
+  const [searching, setSearching] = useState<
+    { kind: "add" } | { kind: "row"; id: string } | null
+  >(null);
 
   // Add-row inputs.
   const [ticker, setTicker] = useState("");
@@ -202,6 +207,47 @@ export function HoldingsTab({
     await fetchQuoteFor(t);
   }
 
+  /** A pick from the add row's picker: drop the ticker in and price it. The
+   *  name isn't carried over — `handleAdd` already classifies the ticker, and
+   *  that answer is the better of the two. */
+  function handleAddPick(hit: SecuritySearchHit) {
+    setTicker(hit.ticker);
+    setQuoteOutcome(null);
+    lastQuotedTicker.current = "";
+    void fetchQuoteFor(hit.ticker);
+  }
+
+  /** A pick on a saved row: attach the real security, so the row stops being a
+   *  bare name and starts carrying a classification and a live price. */
+  async function handleRowPick(row: HoldingRow, hit: SecuritySearchHit) {
+    if (!accountId) return;
+    setError(null);
+    try {
+      // A row that already has a price got it from somewhere — a statement, or
+      // typed by hand. Naming its ticker shouldn't silently reprice it; the
+      // unpriced row (the one this feature exists for) does get a quote.
+      const unpriced = !(parseFloat(row.price) > 0);
+      const [classified, quote] = await Promise.all([
+        classifyTicker(clientId, accountId, hit.ticker), // fail-soft
+        unpriced ? getQuote(clientId, accountId, hit.ticker) : Promise.resolve(null),
+      ]);
+      await updateHolding(clientId, accountId, row.id, {
+        // Deliberately cleared when classification misses: the ticker changed,
+        // so the old security id no longer describes this row.
+        securityId: classified.security?.id ?? null,
+        displayTicker: hit.ticker,
+        displayName: classified.security?.name ?? classified.displayName ?? hit.name,
+        ...(quote ? { price: quote.price, priceAsOf: quote.asOf } : {}),
+      });
+      // Re-list rather than patch in place: the server re-derives the asset mix
+      // on update, so securityWeights/needsReview all move with the new ticker.
+      setRows(await listHoldings(clientId, accountId));
+      onHoldingsChanged?.();
+    } catch {
+      setError("Couldn't attach that security to the holding.");
+    }
+  }
+
   async function handleFieldBlur(
     holdingId: string,
     patch: { shares?: number; price?: number; costBasis?: number; displayName?: string; marketValue?: number | null },
@@ -267,6 +313,11 @@ export function HoldingsTab({
 
   const driving = deriveFromHoldings && rows.length > 0;
   const editingRow = rows.find((r) => r.id === editingOverride) ?? null;
+  // The saved holding the ticker picker is aimed at — undefined on the add row,
+  // which has no holding yet.
+  const searchRow = searching?.kind === "row"
+    ? rows.find((r) => r.id === searching.id)
+    : undefined;
 
   return (
     <div className="space-y-4">
@@ -296,9 +347,20 @@ export function HoldingsTab({
       {/* Add-holding row */}
       <div className="rounded-md border border-hair bg-card-2 p-3">
         <div className="flex flex-wrap items-end gap-3">
-          <AddField label="Ticker" value={ticker} width="w-32"
-            onChange={(v) => { setTicker(v); setQuoteOutcome(null); }}
-            onEnter={handleAdd} onBlur={handleTickerBlur} />
+          {/* Trigger sits outside the <label>: a <button> inside one is a
+              labelable element and would take over the field's name. */}
+          <div className="flex items-end gap-1.5">
+            <SecuritySearchTrigger
+              label="Search for a security by name"
+              onClick={() => setSearching({ kind: "add" })}
+              // Matches the input's own `h-9` instead of restating a
+              // pixel offset derived from it.
+              className="flex h-9 items-center"
+            />
+            <AddField label="Ticker" value={ticker} width="w-32"
+              onChange={(v) => { setTicker(v); setQuoteOutcome(null); }}
+              onEnter={handleAdd} onBlur={handleTickerBlur} />
+          </div>
           <AddField label="Shares" value={shares} onChange={setShares} width="w-28" onEnter={handleAdd} numeric />
           <AddField label="Price" value={price} onChange={setPrice} width="w-28"
             onEnter={handleAdd} numeric placeholder={fetchingPrice ? "fetching…" : undefined} />
@@ -356,7 +418,15 @@ export function HoldingsTab({
                 });
                 return (
                     <tr key={r.id} className="text-ink-2">
-                      <td className="whitespace-nowrap px-2 py-2 font-medium text-ink">{r.displayTicker ?? "—"}</td>
+                      <td className="whitespace-nowrap px-2 py-2">
+                        <span className="flex items-center gap-1.5">
+                          <SecuritySearchTrigger
+                            label={`Search for a security by name to match ${r.displayName ?? r.displayTicker ?? "this holding"}`}
+                            onClick={() => setSearching({ kind: "row", id: r.id })}
+                          />
+                          <span className="font-medium text-ink">{r.displayTicker ?? "—"}</span>
+                        </span>
+                      </td>
                       <td className="min-w-[12rem] px-2 py-2">
                         <CellInput defaultValue={r.displayName ?? ""} align="left"
                           onCommit={(v) => handleFieldBlur(r.id, { displayName: v })} text />
@@ -406,6 +476,20 @@ export function HoldingsTab({
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* Ticker picker — a dialog, not an inline dropdown: the row trigger lives
+          inside the table's scroll box, which would clip a popover. */}
+      {searching && (
+        <SecuritySearchDialog
+          clientId={clientId}
+          seed={searchRow ? (searchRow.displayName ?? searchRow.displayTicker ?? "") : ticker}
+          onPick={(hit) => {
+            if (searching.kind === "add") handleAddPick(hit);
+            else if (searchRow) void handleRowPick(searchRow, hit);
+          }}
+          onClose={() => setSearching(null)}
+        />
       )}
 
       {/* Asset-class editor — a compact dialog so the whole class list can be

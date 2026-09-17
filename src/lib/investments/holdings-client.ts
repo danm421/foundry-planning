@@ -49,6 +49,16 @@ export interface QuoteResult {
   asOf: string;
 }
 
+/** One row of the ticker picker. Mirrors the server's `SecuritySearchHit`;
+ *  `securityType` stays a plain string here so the client bundle doesn't pull
+ *  in the classification module. */
+export interface SecuritySearchHit {
+  ticker: string;
+  name: string;
+  exchange: string;
+  securityType: string;
+}
+
 const base = (clientId: string, accountId: string) =>
   `/api/clients/${clientId}/accounts/${accountId}/holdings`;
 
@@ -118,6 +128,20 @@ export async function getQuote(
   } catch {
     return null;
   }
+}
+
+/** Search securities by NAME or ticker — the path for a statement that names a
+ *  fund without giving its symbol. Unlike `getQuote`/`classifyTicker` this
+ *  throws on failure: the picker has to distinguish "nothing matches" from
+ *  "the search is down", and only one of those is the advisor's problem. */
+export async function searchSecurities(
+  clientId: string, query: string, signal?: AbortSignal,
+): Promise<SecuritySearchHit[]> {
+  // Client-scoped, not under an account: the answer is reference data and has
+  // nothing to do with which account the holding lands in.
+  const url = `/api/clients/${clientId}/holdings/search?q=${encodeURIComponent(query.trim())}`;
+  const body = await json<{ results?: SecuritySearchHit[] }>(await fetch(url, { signal }));
+  return body.results ?? [];
 }
 
 export interface HoldingRefreshSummary {
