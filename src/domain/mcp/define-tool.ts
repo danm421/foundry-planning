@@ -4,7 +4,12 @@ import { checkMcpRateLimit, type RateLimitResult } from "@/lib/rate-limit";
 import { sanitizeRow } from "@/lib/redaction/sanitize-row";
 import { foundryUrl, type FoundryPage } from "@/lib/mcp/foundry-url";
 import type { McpPrincipal } from "@/lib/mcp/principal";
-import { assertClientReadableForPrincipal, McpForbiddenError, CLIENT_UNREADABLE_MESSAGE } from "./guards";
+import {
+  assertClientReadableForPrincipal,
+  assertHouseholdReadableForPrincipal,
+  McpForbiddenError,
+  CLIENT_UNREADABLE_MESSAGE,
+} from "./guards";
 import type { McpToolContext } from "./context";
 
 /** The reason union `checkMcpRateLimit` returns on `allowed: false`. */
@@ -111,6 +116,20 @@ export function defineTool<S extends z.ZodObject<z.ZodRawShape>, R extends objec
         await assertClientReadableForPrincipal(principal, clientId);
       }
 
+      // Same schema-driven rule as clientId above: a declared `householdId` is
+      // ALWAYS checked. A tool may declare either, or neither; no tool today
+      // declares both, and if one ever does, both checks run.
+      const declaresHouseholdId = "householdId" in spec.inputSchema.shape;
+      let householdId: string | null = null;
+      if (declaresHouseholdId) {
+        const rawHouseholdId = (args as Record<string, unknown>).householdId;
+        if (typeof rawHouseholdId !== "string") {
+          throw new McpForbiddenError(CLIENT_UNREADABLE_MESSAGE);
+        }
+        householdId = rawHouseholdId;
+        await assertHouseholdReadableForPrincipal(principal, householdId);
+      }
+
       const ctx: McpToolContext = { principal, firmId: principal.orgId };
       const result = await spec.handler(args, ctx);
 
@@ -128,7 +147,11 @@ export function defineTool<S extends z.ZodObject<z.ZodRawShape>, R extends objec
         firmId: principal.orgId,
         actorId: principal.userId,
         actorKind: "advisor",
-        metadata: { tool: spec.name, argKeys: Object.keys(args as object) },
+        metadata: {
+          tool: spec.name,
+          argKeys: Object.keys(args as object),
+          ...(householdId ? { householdId } : {}),
+        },
       });
 
       return withLink;

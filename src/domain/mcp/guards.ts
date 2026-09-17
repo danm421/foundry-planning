@@ -1,4 +1,5 @@
 import { verifyClientAccessFor } from "@/lib/clients/authz";
+import { verifyCrmHouseholdAccessFor } from "@/lib/crm/authz";
 import type { McpPrincipal } from "@/lib/mcp/principal";
 
 export class McpForbiddenError extends Error {
@@ -39,4 +40,20 @@ export async function assertClientReadableForPrincipal(
   if (!access.ok || access.firmId !== p.orgId) {
     throw new McpForbiddenError(CLIENT_UNREADABLE_MESSAGE);
   }
+}
+
+/**
+ * Assert this principal may read `householdId`, always against the firm
+ * derived from the token — never a firm supplied by the model.
+ *
+ * Raises the SAME message as the client guard: a caller must not be able to
+ * tell a denied household from a missing one, or a household id from a
+ * planning-client id passed in the wrong argument.
+ */
+export async function assertHouseholdReadableForPrincipal(
+  p: McpPrincipal,
+  householdId: string,
+): Promise<void> {
+  const access = await verifyCrmHouseholdAccessFor(p, householdId);
+  if (!access.ok) throw new McpForbiddenError(CLIENT_UNREADABLE_MESSAGE);
 }
