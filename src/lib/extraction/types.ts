@@ -154,6 +154,19 @@ export interface ExtractedAccount {
   /** Set when the account originated from a third-party sync (e.g. Orion). */
   externalProvider?: string;
   externalId?: string;
+  /**
+   * ── real_estate only ──────────────────────────────────────────────────────
+   * The property's street address. Written to `accounts.property_address` at
+   * commit, and the exact key `matchMortgageToProperty` prefers over name-token
+   * scoring when linking a mortgage to its property.
+   */
+  propertyAddress?: string;
+  /**
+   * ── real_estate only ──────────────────────────────────────────────────────
+   * Annual property tax in whole dollars. A mortgage statement never states
+   * this directly; `splitMortgageEscrow` derives it from (PITI − P&I) × 12.
+   */
+  annualPropertyTax?: number;
 }
 
 export interface ExtractedIncome {
@@ -196,9 +209,32 @@ export interface ExtractedLiability {
   name: string;
   balance?: number;
   interestRate?: number;
+  /**
+   * PRINCIPAL AND INTEREST only — the figure the engine amortizes with.
+   * Escrow is deliberately excluded; see `totalPayment`.
+   */
   monthlyPayment?: number;
   startYear?: number;
   endYear?: number;
+  /**
+   * The statement's own "as of" / balance date, ISO YYYY-MM-DD. Absent when
+   * the document prints none — never inferred from the filename or upload
+   * time, the same rule `ExtractedAccount.statementDate` follows.
+   */
+  balanceAsOfDate?: string;
+  /** Maturity / final scheduled payment date, ISO YYYY-MM-DD. */
+  maturityDate?: string;
+  /**
+   * The full scheduled monthly payment INCLUDING escrow (PITI). Its excess
+   * over `monthlyPayment` is the escrow, which `splitMortgageEscrow` moves
+   * onto the secured property as annual property tax — it is never stored on
+   * the liability itself.
+   */
+  totalPayment?: number;
+  /** Secured property address exactly as printed. Mortgages / HELOCs only. */
+  propertyAddress?: string;
+  /** Servicer / lender as printed. */
+  lender?: string;
 }
 
 export interface ExtractedEntity {
