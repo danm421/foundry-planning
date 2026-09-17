@@ -132,7 +132,10 @@ export function SecuritySearchDialog({ clientId, seed, onPick, onClose }: Props)
       open
       onOpenChange={(next) => { if (!next) onClose(); }}
       title="Find a security"
-      size="sm"
+      // `md`, not `sm`: a European fund's identifier is the full ISIN plus an
+      // exchange suffix (GB0033772624.EUFUND), which overran the ticker column
+      // and printed on top of the name at 480px.
+      size="md"
       secondaryAction={{ label: "Cancel", onClick: onClose }}
     >
       <div className="space-y-3">
@@ -177,10 +180,20 @@ export function SecuritySearchDialog({ clientId, seed, onPick, onClose }: Props)
                 onClick={() => pick(hit)}
                 className="flex w-full items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-card-hover"
               >
-                <span className="tabular w-20 shrink-0 text-[13px] font-medium text-ink">
+                {/* Both columns clip rather than wrap — a picker reads as a list
+                    only while every row is one line high. `title` is what makes
+                    the clipped half recoverable: the ISIN's tail here, and the
+                    share class ("… Instl Class") that distinguishes two
+                    otherwise identical fund names there. */}
+                <span
+                  className="tabular w-[124px] shrink-0 truncate text-[13px] font-medium text-ink"
+                  title={hit.ticker}
+                >
                   {hit.ticker}
                 </span>
-                <span className="min-w-0 flex-1 truncate text-[13px] text-ink-2">{hit.name}</span>
+                <span className="min-w-0 flex-1 truncate text-[13px] text-ink-2" title={hit.name}>
+                  {hit.name}
+                </span>
                 <span
                   className={`tabular shrink-0 text-right text-[13px] ${
                     hit.price === undefined ? "text-ink-4" : "text-ink-2"
