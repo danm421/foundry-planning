@@ -3027,7 +3027,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       if (!sold) return [];
       return ownersForYear(sold, data.giftEvents, year, planSettings.planStartYear);
     };
-    const entityRoutableSales: Array<{
+    type EntityRoutableSale = {
       transactionId: string;
       /** `bySource` drill-down prefix — the two spellings stay distinguishable. */
       kind: "sale" | "business_sale";
@@ -3042,7 +3042,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
        * it replaces did.
        */
       owners: AccountOwner[];
-    }> = [
+    };
+    const entityRoutableSales: EntityRoutableSale[] = [
       ...saleResult.breakdown.map((i) => ({
         transactionId: i.transactionId,
         kind: "sale" as const,
@@ -3155,11 +3156,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // to the capitalGains total netted above, not re-assert the exempt slice. (F1)
       //
       // i3: itemize the POST-§121 / post-§165(c) `taxableGain`, NOT the raw
-      // signed gain. The total this row sits under sums `saleResult.capitalGains`,
-      // which is Σ taxableCapitalGain. Using the raw figure emitted a −$200,000
-      // row under a $0 total for a residence sold below basis, and a +$200,000
-      // row under a $0 total for a §121-excluded gain. (A business sale's two
-      // figures are equal — neither §121 nor §165(c) reaches one.)
+      // signed gain. These rows sit under `saleResult.capitalGains` +
+      // `businessSaleResult.capitalGains` — the first is Σ taxableCapitalGain, so
+      // the raw figure emitted a −$200,000 row under a $0 total for a residence
+      // sold below basis, and a +$200,000 row under a $0 total for a
+      // §121-excluded gain. The second needs no such care: a business sale's raw
+      // and taxable gains are equal, since neither §121 nor §165(c) reaches one.
       const householdGain =
         item.taxableGain - (crtSaleGainByTxn.get(item.transactionId) ?? 0);
       if (householdGain !== 0) {
