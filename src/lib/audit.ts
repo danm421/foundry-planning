@@ -301,6 +301,7 @@ export type AuditAction =
   | "ops.user_entitlement.revoked"
   | "ops.billing.portal_opened"
   | "ops.billing.trial_extended"
+  | "ops.billing.comped_to_founder"
   | "ops.impersonation.started"
   | "ops.impersonation.ended"
   // Who holds ops access (firmId = "system"; these are not scoped to a firm)

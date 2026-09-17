@@ -18,12 +18,20 @@ vi.mock("@clerk/nextjs/server", () => ({
 
 const mockSubUpdate = vi.fn();
 const mockFirmUpdate = vi.fn();
+// The firms row the handler reads to decide whether this cancellation is
+// churn (archive it) or a comp (leave it alone).
+const h = vi.hoisted(() => ({ firmRow: { isFounder: false } as { isFounder: boolean } }));
 vi.mock("@/db", () => ({
   db: {
     update: (table: unknown) => ({
       set: (v: unknown) => ({
         where: () =>
           table === "subscriptions" ? mockSubUpdate(v) : mockFirmUpdate(v),
+      }),
+    }),
+    select: () => ({
+      from: () => ({
+        where: () => ({ limit: () => Promise.resolve([h.firmRow]) }),
       }),
     }),
   },
@@ -48,6 +56,7 @@ beforeEach(() => {
   mockSubUpdate.mockReset();
   mockFirmUpdate.mockReset();
   mockRecordAudit.mockReset();
+  h.firmRow = { isFounder: false };
 });
 
 describe("handleSubscriptionDeleted", () => {
@@ -86,6 +95,61 @@ describe("handleSubscriptionDeleted", () => {
         firmId: "org_1",
         actorId: "stripe:webhook:evt_del",
       }),
+    );
+  });
+});
+
+describe("handleSubscriptionDeleted — a founder's cancellation is a comp, not churn", () => {
+  const founderEvent = {
+    id: "evt_del_founder",
+    type: "customer.subscription.deleted",
+    data: { object: { id: "sub_f" } },
+  } as never;
+
+  beforeEach(() => {
+    h.firmRow = { isFounder: true };
+    mockSubsRetrieve.mockResolvedValue({
+      id: "sub_f",
+      status: "canceled",
+      canceled_at: 1700000000,
+      metadata: { firm_id: "org_founder" },
+    });
+  });
+
+  it("does NOT archive the firm — archiving would hand it to the purge cron", async () => {
+    await handleSubscriptionDeleted(founderEvent);
+    // The subscription row is still marked canceled; only the firm is spared.
+    expect(mockSubUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "canceled" }),
+    );
+    expect(mockFirmUpdate).not.toHaveBeenCalled();
+  });
+
+  it("keeps Clerk on the founder status with no cancellation shadow", async () => {
+    await handleSubscriptionDeleted(founderEvent);
+    expect(mockUpdateOrgMeta).toHaveBeenCalledWith(
+      "org_founder",
+      expect.objectContaining({
+        publicMetadata: { subscription_status: "founder", archived_at: null },
+      }),
+    );
+  });
+
+  it("records why the archive was skipped", async () => {
+    await handleSubscriptionDeleted(founderEvent);
+    expect(mockRecordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "billing.canceled",
+        metadata: expect.objectContaining({ founder: true }),
+      }),
+    );
+  });
+
+  it("control: the identical event DOES archive a non-founder firm", async () => {
+    h.firmRow = { isFounder: false };
+    await handleSubscriptionDeleted(founderEvent);
+    expect(mockFirmUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ archivedAt: expect.any(Date) }),
     );
   });
 });

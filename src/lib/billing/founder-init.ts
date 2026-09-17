@@ -36,6 +36,7 @@ export type FounderState = {
     publicMetadata: Record<string, unknown>;
     ownerRole: string | null;
     firmsRowExists: boolean;
+    firmIsFounder: boolean;
   };
   target: {
     orgName: string;
@@ -47,6 +48,7 @@ export type FounderState = {
     };
     ownerRole: "org:admin";
     firmsRowExists: true;
+    firmIsFounder: true;
   };
   drift: string[];
 };
@@ -96,7 +98,13 @@ export async function getFounderState(opts: FounderInitOptions): Promise<Founder
   if (currentMeta.billing_contact_userId !== ownerUserId) drift.push("metadata.billing_contact");
   if (!ownerMembership) drift.push("membership.missing");
   else if (ownerMembership.role !== TARGET_ROLE) drift.push("membership.role");
+  // Two distinct drifts, because the remedies differ: a missing row is an
+  // INSERT, an existing non-founder row is an UPDATE. Comping a firm that
+  // already pays (its row was created by checkout with isFounder=false) only
+  // ever hits the second — treating them as one meant the flag silently
+  // stayed false, and the reconcile cron reads THAT, not Clerk.
   if (firmsRow.length === 0) drift.push("firms.row");
+  else if (!firmsRow[0].isFounder) drift.push("firms.is_founder");
 
   return {
     current: {
@@ -104,6 +112,7 @@ export async function getFounderState(opts: FounderInitOptions): Promise<Founder
       publicMetadata: currentMeta,
       ownerRole: ownerMembership?.role ?? null,
       firmsRowExists: firmsRow.length > 0,
+      firmIsFounder: firmsRow[0]?.isFounder ?? false,
     },
     target: {
       orgName: displayName,
@@ -115,6 +124,7 @@ export async function getFounderState(opts: FounderInitOptions): Promise<Founder
       },
       ownerRole: TARGET_ROLE,
       firmsRowExists: true,
+      firmIsFounder: true,
     },
     drift,
   };
@@ -164,6 +174,10 @@ export async function applyFounderState(opts: FounderInitOptions): Promise<void>
         ...state.current.publicMetadata,
         is_founder: true,
         subscription_status: FOUNDER_STATUS,
+        // A founder is never archived. Comping a firm that previously churned
+        // spreads its old cancellation shadow forward otherwise, and that
+        // timestamp is read as enforcement truth everywhere but `stateFromMeta`.
+        archived_at: null,
         entitlements,
         billing_contact_userId: ownerUserId,
       },
@@ -184,6 +198,11 @@ export async function applyFounderState(opts: FounderInitOptions): Promise<void>
       displayName,
       isFounder: true,
     });
+  } else if (state.drift.includes("firms.is_founder")) {
+    await db
+      .update(firms)
+      .set({ isFounder: true, updatedAt: new Date() })
+      .where(eq(firms.firmId, firmId));
   }
 
   await recordAudit({

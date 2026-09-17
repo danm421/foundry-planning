@@ -381,3 +381,65 @@ describe("createFounderOrgForUser", () => {
     expect(row?.isFounder).toBe(true);
   });
 });
+
+describe("applyFounderState — comping a firm that already exists", () => {
+  // The path every paying customer takes. Checkout already created their
+  // firms row with isFounder=false, so the INSERT branch never fires for them.
+  // Before this branch existed, applyFounderState wrote Clerk correctly and
+  // left the DB flag false — and the reconcile cron reads the DB flag, not Clerk.
+  beforeEach(() => {
+    mockGetOrg.mockResolvedValue({
+      id: TEST_FIRM_ID,
+      name: "The Paying Firm",
+      publicMetadata: { subscription_status: "trialing", entitlements: ["ai_import"] },
+    });
+    mockGetMembershipList.mockResolvedValue({
+      data: [
+        {
+          publicUserData: { userId: TEST_USER_ID, identifier: OWNER_EMAIL },
+          role: "org:admin",
+          id: "mem_1",
+        },
+      ],
+    });
+  });
+
+  it("reports firms.is_founder drift — not firms.row — when the row exists but is false", async () => {
+    await db.insert(firms).values({
+      firmId: TEST_FIRM_ID,
+      displayName: "The Paying Firm",
+      isFounder: false,
+    });
+
+    const state = await getFounderState({
+      firmId: TEST_FIRM_ID,
+      displayName: "The Paying Firm",
+      ownerUserId: TEST_USER_ID,
+      entitlements: [],
+    });
+
+    expect(state.drift).toContain("firms.is_founder");
+    expect(state.drift).not.toContain("firms.row");
+    expect(state.current.firmsRowExists).toBe(true);
+    expect(state.current.firmIsFounder).toBe(false);
+  });
+
+  it("flips the existing row to founder instead of inserting a duplicate", async () => {
+    await db.insert(firms).values({
+      firmId: TEST_FIRM_ID,
+      displayName: "The Paying Firm",
+      isFounder: false,
+    });
+
+    await applyFounderState({
+      firmId: TEST_FIRM_ID,
+      displayName: "The Paying Firm",
+      ownerUserId: TEST_USER_ID,
+      entitlements: [],
+    });
+
+    const rows = await db.select().from(firms).where(eq(firms.firmId, TEST_FIRM_ID));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].isFounder).toBe(true);
+  });
+});

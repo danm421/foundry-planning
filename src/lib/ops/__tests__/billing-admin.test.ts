@@ -4,12 +4,21 @@ const h = vi.hoisted(() => ({
   subRows: [] as Array<Record<string, unknown>>,
   portalCreate: vi.fn(),
   subUpdate: vi.fn(),
+  subCancel: vi.fn(),
+  applyFounder: vi.fn(),
+  billingContact: vi.fn(),
+  orgMeta: {} as Record<string, unknown>,
+  orgName: "Acme Wealth",
   audits: [] as Array<Record<string, unknown>>,
+  /** Ordered log of the writes whose sequence is load-bearing. */
+  calls: [] as string[],
+  firmUpdates: [] as Array<Record<string, unknown>>,
 }));
 
 vi.mock("@/db/schema", () => ({
   subscriptions: { __t: "subscriptions" },
   invoices: { __t: "invoices" },
+  firms: { __t: "firms" },
 }));
 
 vi.mock("@/db", () => ({
@@ -24,13 +33,47 @@ vi.mock("@/db", () => ({
         }),
       }),
     }),
+    update: () => ({
+      set: (v: Record<string, unknown>) => ({
+        where: () => {
+          h.calls.push("firms.update");
+          h.firmUpdates.push(v);
+          return Promise.resolve();
+        },
+      }),
+    }),
   },
 }));
 
 vi.mock("@/lib/billing/stripe-client", () => ({
   getStripe: () => ({
     billingPortal: { sessions: { create: (...a: unknown[]) => h.portalCreate(...a) } },
-    subscriptions: { update: (...a: unknown[]) => h.subUpdate(...a) },
+    subscriptions: {
+      update: (...a: unknown[]) => h.subUpdate(...a),
+      cancel: (...a: unknown[]) => {
+        h.calls.push("stripe.cancel");
+        return h.subCancel(...a);
+      },
+    },
+  }),
+}));
+
+vi.mock("@/lib/billing/founder-init", () => ({
+  applyFounderState: (...a: unknown[]) => {
+    h.calls.push("applyFounderState");
+    return h.applyFounder(...a);
+  },
+}));
+
+vi.mock("@/lib/billing/billing-contact", () => ({
+  resolveBillingContactUserId: (...a: unknown[]) => h.billingContact(...a),
+}));
+
+vi.mock("@clerk/nextjs/server", () => ({
+  clerkClient: async () => ({
+    organizations: {
+      getOrganization: async () => ({ name: h.orgName, publicMetadata: h.orgMeta }),
+    },
   }),
 }));
 
@@ -46,13 +89,21 @@ import {
   computeExtendedTrialEnd,
   createPortalSessionForFirm,
   extendTrialForFirm,
+  compFirmToFounder,
 } from "../billing-admin";
 
 beforeEach(() => {
   h.subRows = [];
   h.portalCreate.mockReset().mockResolvedValue({ url: "https://billing.stripe.test/session" });
   h.subUpdate.mockReset().mockResolvedValue({});
+  h.subCancel.mockReset().mockResolvedValue({});
+  h.applyFounder.mockReset().mockResolvedValue(undefined);
+  h.billingContact.mockReset().mockResolvedValue("user_owner");
+  h.orgMeta = {};
+  h.orgName = "Acme Wealth";
   h.audits = [];
+  h.calls = [];
+  h.firmUpdates = [];
 });
 
 describe("stripeDashboardCustomerUrl", () => {
@@ -125,5 +176,124 @@ describe("extendTrialForFirm", () => {
     await expect(
       extendTrialForFirm({ firmId: "org_1", days: 0, reason: "x", setBy: "user_op" }),
     ).rejects.toThrow(/1.?90 days/i);
+  });
+});
+
+describe("compFirmToFounder", () => {
+  const live = { status: "trialing", stripeSubscriptionId: "sub_live", stripeCustomerId: "cus_1" };
+
+  it("sets founder state BEFORE cancelling in Stripe", async () => {
+    // The ordering is the whole safety property. The deleted-subscription
+    // webhook decides whether to archive the firm by reading firms.is_founder,
+    // which applyFounderState writes — so cancelling first would archive a
+    // customer we just comped and start the purge clock on their data.
+    h.subRows = [live];
+    await compFirmToFounder({ firmId: "org_1", reason: "design partner", setBy: "user_op" });
+    expect(h.calls).toEqual(["applyFounderState", "firms.update", "stripe.cancel"]);
+  });
+
+  it("cancels the live subscription without proration", async () => {
+    h.subRows = [live];
+    const res = await compFirmToFounder({ firmId: "org_1", reason: "design partner", setBy: "user_op" });
+    expect(h.subCancel).toHaveBeenCalledWith("sub_live", { prorate: false });
+    expect(res.canceledSubscriptionId).toBe("sub_live");
+  });
+
+  it("comps a firm that never subscribed, cancelling nothing", async () => {
+    h.subRows = [];
+    const res = await compFirmToFounder({ firmId: "org_1", reason: "beta", setBy: "user_op" });
+    expect(h.subCancel).not.toHaveBeenCalled();
+    expect(res.canceledSubscriptionId).toBeNull();
+    expect(h.calls).toEqual(["applyFounderState", "firms.update"]);
+  });
+
+  it("leaves a canceled-only firm's dead subscription alone", async () => {
+    h.subRows = [{ status: "canceled", stripeSubscriptionId: "sub_dead" }];
+    const res = await compFirmToFounder({ firmId: "org_1", reason: "winback", setBy: "user_op" });
+    expect(h.subCancel).not.toHaveBeenCalled();
+    expect(res.canceledSubscriptionId).toBeNull();
+  });
+
+  it("carries existing entitlements forward so a grant isn't silently stripped", async () => {
+    // client_portal is not in the base set and no Stripe price implies it, so
+    // deriving from scratch would drop it from a firm that had been granted it.
+    h.subRows = [live];
+    h.orgMeta = { entitlements: ["ai_import", "client_portal"] };
+    await compFirmToFounder({ firmId: "org_1", reason: "design partner", setBy: "user_op" });
+    expect(h.applyFounder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        firmId: "org_1",
+        ownerUserId: "user_owner",
+        entitlements: ["ai_import", "client_portal"],
+      }),
+    );
+  });
+
+  it("resolves the owner through the billing contact chain", async () => {
+    h.subRows = [live];
+    h.billingContact.mockResolvedValue("user_pinned");
+    await compFirmToFounder({ firmId: "org_1", reason: "x", setBy: "user_op" });
+    expect(h.applyFounder).toHaveBeenCalledWith(
+      expect.objectContaining({ ownerUserId: "user_pinned" }),
+    );
+  });
+
+  it("refuses a member-less org rather than guessing an owner", async () => {
+    h.billingContact.mockResolvedValue(null);
+    await expect(
+      compFirmToFounder({ firmId: "org_1", reason: "x", setBy: "user_op" }),
+    ).rejects.toThrow(/no members/i);
+    expect(h.calls).toEqual([]);
+  });
+
+  it("requires a reason, and writes nothing without one", async () => {
+    h.subRows = [live];
+    await expect(
+      compFirmToFounder({ firmId: "org_1", reason: "   ", setBy: "user_op" }),
+    ).rejects.toThrow(/reason is required/i);
+    expect(h.calls).toEqual([]);
+    expect(h.audits).toEqual([]);
+  });
+
+  it("audits the comp with the reason and what was cancelled", async () => {
+    h.subRows = [live];
+    await compFirmToFounder({ firmId: "org_1", reason: "design partner", setBy: "user_op" });
+    expect(h.audits[0]).toMatchObject({
+      action: "ops.billing.comped_to_founder",
+      firmId: "org_1",
+      actorId: "user_op",
+      metadata: expect.objectContaining({
+        reason: "design partner",
+        canceledSubscriptionId: "sub_live",
+        previousStatus: "trialing",
+      }),
+    });
+  });
+});
+
+describe("compFirmToFounder — comping a firm that already churned", () => {
+  // The case with no live subscription to cancel. Nothing calls Stripe, so the
+  // deleted-subscription webhook never fires, so the branch that spares a
+  // founder from being archived never runs — the archive stamp and its 90-day
+  // deletion clock are still sitting on the row from the original cancellation.
+  it("lifts the archive stamp and the deletion clock", async () => {
+    h.subRows = [{ status: "canceled", stripeSubscriptionId: "sub_dead" }];
+    await compFirmToFounder({ firmId: "org_1", reason: "winback", setBy: "user_op" });
+    expect(h.subCancel).not.toHaveBeenCalled();
+    expect(h.firmUpdates).toHaveLength(1);
+    expect(h.firmUpdates[0]).toMatchObject({ archivedAt: null, dataRetentionUntil: null });
+  });
+
+  it("clears the stamp before cancelling, so the webhook can't re-stamp it", async () => {
+    h.subRows = [{ status: "trialing", stripeSubscriptionId: "sub_live" }];
+    await compFirmToFounder({ firmId: "org_1", reason: "design partner", setBy: "user_op" });
+    expect(h.calls.indexOf("firms.update")).toBeLessThan(h.calls.indexOf("stripe.cancel"));
+  });
+
+  it("writes nothing when the reason is missing", async () => {
+    await expect(
+      compFirmToFounder({ firmId: "org_1", reason: "", setBy: "user_op" }),
+    ).rejects.toThrow(/reason is required/i);
+    expect(h.firmUpdates).toEqual([]);
   });
 });

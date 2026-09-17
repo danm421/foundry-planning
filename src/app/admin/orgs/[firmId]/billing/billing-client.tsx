@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { FirmBilling } from "@/lib/ops/billing-admin";
-import { openPortalAction, extendTrialAction } from "./actions";
+import { openPortalAction, extendTrialAction, compToFounderAction } from "./actions";
 
 const STATE_STYLE: Record<string, string> = {
   active: "bg-emerald-500/15 text-emerald-300",
@@ -51,6 +51,8 @@ export default function BillingClient({
   const { state, subscription, invoices, dashboardUrl, canExtendTrial } = billing;
   const [reason, setReason] = useState("");
   const [days, setDays] = useState(14);
+  const [compReason, setCompReason] = useState("");
+  const [compAck, setCompAck] = useState(false);
 
   return (
     <section className="space-y-6">
@@ -144,6 +146,46 @@ export default function BillingClient({
           <p className="text-xs text-ink-3">
             Updates the trial in Stripe; the change syncs back via webhook and is recorded in the audit log.
           </p>
+        </form>
+      )}
+
+      {/* Comp to Founder — hidden once the firm already is one */}
+      {!isFounder && (
+        <form action={compToFounderAction} className="space-y-3 rounded border border-warn/40 p-4">
+          <input type="hidden" name="firmId" value={firmId} />
+          <div className="text-sm font-medium text-ink-2">Comp to Founder</div>
+          <p className="text-xs text-ink-3">
+            Grants permanent full access and cancels{" "}
+            {subscription ? "the subscription above" : "any live subscription"}, so the firm is
+            never billed again. Their data is protected from the purge cron once comped.{" "}
+            <span className="text-warn">
+              There is no undo — restoring billing means sending them through checkout again.
+            </span>
+          </p>
+          <input
+            required
+            name="reason"
+            value={compReason}
+            onChange={(e) => setCompReason(e.target.value)}
+            placeholder="Reason (required — recorded in the audit log)"
+            className="w-full rounded border border-hair-2 bg-card-2 px-3 py-1.5 text-sm text-ink placeholder:text-ink-4 focus:border-accent focus:outline-none"
+          />
+          <label className="flex items-center gap-2 text-xs text-ink-2">
+            <input
+              type="checkbox"
+              checked={compAck}
+              onChange={(e) => setCompAck(e.target.checked)}
+              className="accent-warn"
+            />
+            I understand this cancels their subscription and cannot be undone.
+          </label>
+          <button
+            type="submit"
+            disabled={!compReason.trim() || !compAck}
+            className="rounded bg-warn/15 px-3 py-1.5 text-sm text-warn hover:bg-warn/25 disabled:opacity-40"
+          >
+            Comp to Founder
+          </button>
         </form>
       )}
 

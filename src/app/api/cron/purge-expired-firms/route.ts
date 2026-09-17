@@ -1,6 +1,6 @@
 // src/app/api/cron/purge-expired-firms/route.ts
 import { type NextRequest, NextResponse } from "next/server";
-import { and, isNotNull, isNull, lt, sql } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { firms, subscriptions } from "@/db/schema";
 import { purgeFirmById } from "@/lib/billing/purge-firm";
@@ -31,6 +31,10 @@ export async function GET(req: NextRequest): Promise<Response> {
     .from(firms)
     .where(
       and(
+        // Founders should never carry an archive stamp at all (comping clears
+        // it). Excluding them here keeps a stale one from selecting the firm
+        // daily only for purgeFirmById to reject it and log an error.
+        eq(firms.isFounder, false),
         isNotNull(firms.archivedAt),
         lt(firms.dataRetentionUntil, new Date()),
         isNull(firms.purgedAt),

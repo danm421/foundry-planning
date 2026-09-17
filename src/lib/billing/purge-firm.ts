@@ -112,6 +112,7 @@ export async function purgeFirmById(firmId: string): Promise<void> {
       archivedAt: firms.archivedAt,
       purgedAt: firms.purgedAt,
       dataRetentionUntil: firms.dataRetentionUntil,
+      isFounder: firms.isFounder,
       liveSubCount: sql<number>`(
         select count(*)::int from ${subscriptions}
         where ${subscriptions.firmId} = ${firms.firmId}
@@ -129,6 +130,7 @@ export async function purgeFirmById(firmId: string): Promise<void> {
         purgedAt: firm.purgedAt,
         dataRetentionUntil: firm.dataRetentionUntil,
         liveSubCount: Number(firm.liveSubCount ?? 0),
+        isFounder: firm.isFounder,
       },
       new Date(),
     )

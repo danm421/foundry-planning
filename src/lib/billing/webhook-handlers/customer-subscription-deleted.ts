@@ -36,21 +36,37 @@ export async function handleSubscriptionDeleted(
     })
     .where(eq(subscriptions.stripeSubscriptionId, sub.id));
 
-  await db
-    .update(firms)
-    .set({
-      archivedAt: now,
-      dataRetentionUntil: new Date(now.getTime() + RETENTION_MS),
-      updatedAt: now,
-    })
-    .where(eq(firms.firmId, firmId));
+  // A founder's cancellation is a comp, not churn: the subscription is being
+  // retired precisely BECAUSE they keep access forever. Archiving them would
+  // start the 90-day retention clock and hand them to the purge cron, which
+  // has no idea they're a founder. Comping sets this flag before it cancels
+  // in Stripe, so by the time this webhook lands the flag is already true.
+  const [firm] = await db
+    .select({ isFounder: firms.isFounder })
+    .from(firms)
+    .where(eq(firms.firmId, firmId))
+    .limit(1);
+  const isFounder = firm?.isFounder === true;
+
+  if (!isFounder) {
+    await db
+      .update(firms)
+      .set({
+        archivedAt: now,
+        dataRetentionUntil: new Date(now.getTime() + RETENTION_MS),
+        updatedAt: now,
+      })
+      .where(eq(firms.firmId, firmId));
+  }
 
   const cc = await clerkClient();
   await cc.organizations.updateOrganizationMetadata(firmId, {
-    publicMetadata: {
-      subscription_status: "canceled",
-      archived_at: now.toISOString(),
-    },
+    publicMetadata: isFounder
+      ? // Keep the founder status string canonical and clear any cancellation
+        // shadow — `stateFromMeta` already short-circuits on is_founder, but a
+        // stale archived_at here would misreport the firm everywhere it's read.
+        { subscription_status: "founder", archived_at: null }
+      : { subscription_status: "canceled", archived_at: now.toISOString() },
   });
 
   await recordAudit({
@@ -59,6 +75,6 @@ export async function handleSubscriptionDeleted(
     resourceId: sub.id,
     firmId,
     actorId: `stripe:webhook:${event.id}`,
-    metadata: { canceled_at: now.toISOString() },
+    metadata: { canceled_at: now.toISOString(), founder: isFounder },
   });
 }
