@@ -56,7 +56,7 @@ describe("AddAssetTransactionForm — add mode fan-out", () => {
 
     for (const row of sellRows) {
       fireEvent.click(row);
-      const sourceSelect = screen.getByLabelText(/Account to Sell/i);
+      const sourceSelect = screen.getByLabelText(/Asset to Sell/i);
       fireEvent.change(sourceSelect, { target: { value: "acc-brokerage" } });
       fireEvent.click(screen.getByRole("button", { name: /^Done$/i }));
     }

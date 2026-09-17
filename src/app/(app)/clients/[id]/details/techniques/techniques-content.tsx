@@ -11,7 +11,7 @@ import {
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import TechniquesView from "@/components/techniques-view";
-import type { BusinessSaleOption } from "@/components/forms/add-asset-transaction-form";
+import { buildBusinessSaleOptions } from "@/lib/techniques/sell-source-options";
 import { buildClientMilestones } from "@/lib/milestones";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { controllingFamilyMember } from "@/engine/ownership";
@@ -204,6 +204,10 @@ export async function TechniquesContent({ clientId: id, scenarioParam }: Techniq
     category: a.category,
     subType: a.subType,
     ownerFamilyMemberId: controllingFamilyMember(a),
+    value: Number(a.value ?? 0),
+    isDefaultChecking: a.isDefaultChecking === true,
+    parentAccountId: a.parentAccountId ?? null,
+    isEntityOwned: (a.owners ?? []).some((o) => o.kind === "entity"),
   }));
 
   const liabilityOptions = liabilityRows.map((l) => ({
@@ -220,55 +224,11 @@ export async function TechniquesContent({ clientId: id, scenarioParam }: Techniq
     ]),
   );
 
-  // Build the business options the asset-transaction form needs to drive
-  // its business-sale subform: top-level business accounts (parentAccountId
-  // is null) with their child accounts/liabilities and family-member owners.
-  const BUSINESS_TYPE_LABELS: Record<string, string> = {
-    sole_prop: "Sole prop",
-    partnership: "Partnership",
-    s_corp: "S-Corp",
-    c_corp: "C-Corp",
-    llc: "LLC",
-    other: "Other",
-  };
-  const businessOptions: BusinessSaleOption[] = accountRows
-    .filter(
-      (a) => a.category === "business" && a.parentAccountId == null,
-    )
-    .map((b) => {
-      const childAccounts = accountRows
-        .filter((a) => a.parentAccountId === b.id)
-        .map((a) => ({
-          id: a.id,
-          name: a.name,
-          currentValue: Number(a.value ?? 0),
-        }));
-      const childLiabilities = liabilityRows
-        .filter((l) => l.parentAccountId === b.id)
-        .map((l) => ({
-          id: l.id,
-          name: l.name,
-          currentBalance: Number(l.balance ?? 0),
-        }));
-      return {
-        id: b.id,
-        name: b.name,
-        businessTypeLabel:
-          BUSINESS_TYPE_LABELS[b.businessType ?? "other"] ?? "Business",
-        value: Number(b.value ?? 0),
-        basis: Number(b.basis ?? 0),
-        owners: (b.owners ?? [])
-          .filter((o) => o.kind === "family_member")
-          .map((o) => ({
-            familyMemberId: o.familyMemberId,
-            familyMemberName:
-              familyMemberNameById.get(o.familyMemberId) ?? o.familyMemberId,
-            percent: o.percent,
-          })),
-        childAccounts,
-        childLiabilities,
-      };
-    });
+  const businessOptions = buildBusinessSaleOptions(
+    accountRows,
+    liabilityRows,
+    (id) => familyMemberNameById.get(id) ?? id,
+  );
 
   return (
     <TechniquesView

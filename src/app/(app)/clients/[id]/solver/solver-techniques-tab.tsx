@@ -18,6 +18,10 @@ import { controllingFamilyMember } from "@/engine/ownership";
 import { flipEnabled, isEnabled } from "@/lib/solver/technique-enabled";
 import { groupAssetTransactionBundles } from "@/lib/solver/asset-transaction-bundles";
 import {
+  buildBusinessSaleOptions,
+  type SellSourceAccount,
+} from "@/lib/techniques/sell-source-options";
+import {
   summarizeRothConversion,
   summarizeReinvestment,
   summarizeRelocation,
@@ -276,7 +280,25 @@ export function SolverTechniquesTab({
   // Merge those drafts in so a technique that targets one still resolves it
   // when its dialog is re-opened to edit — otherwise the destination looks
   // missing and the form forces a re-create.
+  //
+  // The prop also predates the sell picker's value + entity/business flags, so
+  // every row is re-hydrated from the working tree: without them the picker
+  // can't price an asset or tell a business' locked cash bucket from a real
+  // holding.
   const accountsWithDrafts = useMemo(() => {
+    const engineById = new Map((workingTree.accounts ?? []).map((a) => [a.id, a]));
+    const hydrate = <T extends { id: string }>(row: T): T & Partial<SellSourceAccount> => {
+      const a = engineById.get(row.id);
+      return a
+        ? {
+            ...row,
+            value: Number(a.value ?? 0),
+            isDefaultChecking: a.isDefaultChecking === true,
+            parentAccountId: a.parentAccountId ?? null,
+            isEntityOwned: (a.owners ?? []).some((o) => o.kind === "entity"),
+          }
+        : row;
+    };
     const baseIds = new Set(accounts.map((a) => a.id));
     const drafts = (workingTree.accounts ?? [])
       .filter((a) => !baseIds.has(a.id))
@@ -287,8 +309,25 @@ export function SolverTechniquesTab({
         subType: a.subType ?? "",
         ownerFamilyMemberId: controllingFamilyMember(a) ?? null,
       }));
-    return drafts.length ? [...accounts, ...drafts] : accounts;
+    return [...accounts, ...drafts].map(hydrate);
   }, [accounts, workingTree.accounts]);
+
+  // Businesses sell through the engine's cascade, which takes every account and
+  // liability parented to them. Derived here rather than passed in — the
+  // working tree already holds the drafts the prop would miss.
+  const businessOptions = useMemo(() => {
+    const nameById = new Map(
+      (workingTree.familyMembers ?? []).map((fm) => [
+        fm.id,
+        [fm.firstName, fm.lastName].filter(Boolean).join(" "),
+      ]),
+    );
+    return buildBusinessSaleOptions(
+      workingTree.accounts ?? [],
+      workingTree.liabilities ?? [],
+      (id) => nameById.get(id) || id,
+    );
+  }, [workingTree.accounts, workingTree.liabilities, workingTree.familyMembers]);
 
   // Legs from one dialog are ONE technique. Account names sharpen the summary
   // ("Sell 45 Oak Avenue" rather than the derived leg name).
@@ -511,6 +550,7 @@ export function SolverTechniquesTab({
         clientId={clientId}
         accounts={accountsWithDrafts}
         liabilities={liabilities}
+        businesses={businessOptions}
         milestones={milestones}
         existingNames={workingAsset.map((t) => t.name)}
         initialData={

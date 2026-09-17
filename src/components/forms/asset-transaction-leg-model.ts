@@ -100,6 +100,45 @@ export function emptySellLeg(key: string): SellLegDraft {
     proceedsAccountId: "", qualifiesForHomeSaleExclusion: false,
   };
 }
+/** Translate a pick from the unified sell-source dropdown into a leg patch.
+ *  The three source fields are mutually exclusive — exactly one is set and the
+ *  other two are cleared, or the engine would see an ambiguous sale.
+ *  Namespaces: `biz:` a business, `buy:` a prior buy transaction, bare an
+ *  existing account. A business sale has no $-amount mode, so `dollar` falls
+ *  back to a full sale. */
+export function patchForSource(
+  value: string,
+  currentAmountMode: SellAmountMode,
+): Partial<SellLegDraft> {
+  if (value.startsWith("biz:")) {
+    return {
+      sellMode: "business",
+      sellBusinessAccountId: value.slice(4),
+      sellAccountId: "",
+      sellPurchaseTransactionId: "",
+      sellAmountMode: currentAmountMode === "dollar" ? "full" : currentAmountMode,
+      // §121 is a personal-residence exclusion; it can't ride along on a business.
+      qualifiesForHomeSaleExclusion: false,
+      // Business proceeds always land in household default checking.
+      proceedsAccountId: "",
+    };
+  }
+  if (value.startsWith("buy:")) {
+    return {
+      sellMode: "account",
+      sellPurchaseTransactionId: value.slice(4),
+      sellAccountId: "",
+      sellBusinessAccountId: "",
+    };
+  }
+  return {
+    sellMode: "account",
+    sellAccountId: value,
+    sellPurchaseTransactionId: "",
+    sellBusinessAccountId: "",
+  };
+}
+
 export function emptyBuyLeg(key: string): BuyLegDraft {
   return {
     key, kind: "buy", name: "", assetName: "",

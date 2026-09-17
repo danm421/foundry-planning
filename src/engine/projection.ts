@@ -110,6 +110,7 @@ import {
   applyAssetSales,
   applyAssetPurchases,
   applyBusinessSales,
+  normalizeBusinessSales,
   _resetSyntheticIdCounter,
   DEFAULT_PROPERTY_TAX_GROWTH,
 } from "./asset-transactions";
@@ -507,6 +508,17 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     accounts: data.accounts.map(normalizeOwners),
     liabilities: data.liabilities.map(normalizeOwners),
   };
+
+  // Selling a business must take everything the business owns with it. A sell
+  // that names one through `accountId` instead of `businessAccountId` would
+  // otherwise dispose of the shell alone — see normalizeBusinessSales. Run
+  // against the entry account list, before any year's cascade removes rows.
+  if (data.assetTransactions?.length) {
+    data = {
+      ...data,
+      assetTransactions: normalizeBusinessSales(data.assetTransactions, data.accounts),
+    };
+  }
 
   // Stress test "Higher inflation": pin living-expense growth at the override
   // rate. Scoped to `type === "living"` on purpose — insurance/other expenses,

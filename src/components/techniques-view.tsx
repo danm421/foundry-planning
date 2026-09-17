@@ -8,7 +8,8 @@ import { useClientAccess } from "@/components/client-access-provider";
 import AddTransferForm from "./forms/add-transfer-form";
 import AddReinvestmentForm, { type ReinvestmentInitialData } from "./forms/add-reinvestment-form";
 import AddRelocationForm from "./forms/add-relocation-form";
-import AddAssetTransactionForm, { type BusinessSaleOption } from "./forms/add-asset-transaction-form";
+import AddAssetTransactionForm from "./forms/add-asset-transaction-form";
+import type { BusinessSaleOption, SellSourceAccount } from "@/lib/techniques/sell-source-options";
 import AddRothConversionForm, { type RothConversionInitialData } from "./forms/add-roth-conversion-form";
 import { HelpTip } from "@/components/help-tip";
 import { runProjection } from "@/engine";
@@ -79,15 +80,9 @@ export interface AssetTransactionRow {
   propertyTaxGrowthSource: "custom" | "inflation" | null;
 }
 
-export interface AccountOption {
-  id: string;
-  name: string;
-  category: string;
-  subType: string;
-  /** Controlling family-member id when 100% owned by a single person.
-   *  Used to restrict Roth-conversion sources to the destination's owner. */
-  ownerFamilyMemberId?: string | null;
-}
+/** `SellSourceAccount` already carries the identity fields plus the value and
+ *  entity/business flags the sell picker filters on. */
+export type AccountOption = SellSourceAccount;
 
 export interface LiabilityOption {
   id: string;

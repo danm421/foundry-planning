@@ -624,6 +624,54 @@ export function applyAssetPurchases(input: ApplyAssetPurchasesInput): AssetPurch
   return { newAccounts, newLiabilities, breakdown };
 }
 
+// ── normalizeBusinessSales ────────────────────────────────────────────────────
+
+/** Re-point any sell that names a top-level business through `accountId` at
+ *  `businessAccountId`, which is the field `applyBusinessSales` dispatches on.
+ *
+ *  Both fields can name a business: `businessAccountId` is what the sell picker
+ *  writes today, but rows saved before it did — and any writer that treats a
+ *  business as an ordinary account — land in `accountId`. Those fall through to
+ *  `applyAssetSales`, which sells the business shell alone and leaves every
+ *  account and liability the business owns sitting on the balance sheet. One
+ *  normalization at the top of the projection puts both spellings on the
+ *  cascade. Child accounts of a business stay sellable on their own; only the
+ *  top-level row (`parentAccountId == null`) is the whole company.
+ *
+ *  A business an entity holds a slice of is deliberately left alone. Its sale
+ *  runs through `applyAssetSales`, which routes the gain to the owning trust's
+ *  1041 and the proceeds to that trust's checking — routing `applyBusinessSales`
+ *  has no equivalent of (it attributes gain to family-member owners and deposits
+ *  into household checking). Re-pointing one would quietly move a trust's gain
+ *  onto the household return.
+ *
+ *  Returns the input array untouched when nothing needs re-pointing. */
+export function normalizeBusinessSales(
+  transactions: AssetTransaction[],
+  accounts: Account[],
+): AssetTransaction[] {
+  const businessIds = new Set(
+    accounts
+      .filter(
+        (a) =>
+          a.category === "business" &&
+          a.parentAccountId == null &&
+          a.owners.length > 0 &&
+          a.owners.every((o) => o.kind === "family_member"),
+      )
+      .map((a) => a.id),
+  );
+  if (businessIds.size === 0) return transactions;
+
+  const needsRepoint = (t: AssetTransaction): boolean =>
+    t.type === "sell" && !t.businessAccountId && !!t.accountId && businessIds.has(t.accountId);
+
+  if (!transactions.some(needsRepoint)) return transactions;
+  return transactions.map((t) =>
+    needsRepoint(t) ? { ...t, businessAccountId: t.accountId!, accountId: undefined } : t,
+  );
+}
+
 // ── applyBusinessSales ────────────────────────────────────────────────────────
 
 export interface BusinessSaleBreakdown {

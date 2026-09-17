@@ -22,6 +22,12 @@ import {
   parseNum,
 } from "./asset-transaction-leg-model";
 import {
+  type BusinessSaleOption,
+  type SellSourceAccount,
+  businessChildAssetValue,
+  businessTotalDebt,
+} from "@/lib/techniques/sell-source-options";
+import {
   legToBody,
   deriveLegName,
   legsFromInitialData,
@@ -64,35 +70,9 @@ export interface AssetTransactionInitialData {
   bundleId?: string | null;
 }
 
-export interface BusinessSaleOption {
-  id: string;
-  name: string;
-  /** Display label for the business type (e.g. "LLC", "S-Corp"). */
-  businessTypeLabel: string;
-  value: number;
-  basis: number;
-  owners: Array<{
-    familyMemberId: string;
-    familyMemberName: string;
-    percent: number;
-  }>;
-  /** Child accounts (accounts.parentAccountId === business.id). */
-  childAccounts: Array<{
-    id: string;
-    name: string;
-    currentValue: number;
-  }>;
-  /** Child liabilities (liabilities.parentAccountId === business.id). */
-  childLiabilities: Array<{
-    id: string;
-    name: string;
-    currentBalance: number;
-  }>;
-}
-
 interface AddAssetTransactionFormProps {
   clientId: string;
-  accounts: { id: string; name: string; category: string; subType: string }[];
+  accounts: SellSourceAccount[];
   liabilities: { id: string; name: string; linkedPropertyId: string | null; balance: string }[];
   /** Available business accounts the user can sell from. */
   businesses?: BusinessSaleOption[];
@@ -179,7 +159,27 @@ export default function AddAssetTransactionForm({
     () => (bundleRecords?.length ? bundleRecords : initialData ? [initialData] : []),
     [bundleRecords, initialData],
   );
-  const initialLegs = useMemo(() => records.flatMap(legsFromInitialData), [records]);
+  // A record saved before the picker routed businesses through
+  // `businessAccountId` names its business in `accountId`. Show it as the
+  // business sale the engine now runs it as, so re-saving writes the right
+  // field. `$ amount` has no meaning for a business, so it falls back to a
+  // full sale.
+  const initialLegs = useMemo(() => {
+    const businessIds = new Set(businessOptions.map((b) => b.id));
+    return records.flatMap(legsFromInitialData).map((leg) => {
+      if (leg.kind !== "sell") return leg;
+      const asBusiness = leg.sellBusinessAccountId ||
+        (businessIds.has(leg.sellAccountId) ? leg.sellAccountId : "");
+      if (!asBusiness) return leg;
+      return {
+        ...leg,
+        sellMode: "business" as const,
+        sellBusinessAccountId: asBusiness,
+        sellAccountId: "",
+        sellAmountMode: leg.sellAmountMode === "dollar" ? ("full" as const) : leg.sellAmountMode,
+      };
+    });
+  }, [records, businessOptions]);
 
   const [name, setName] = useState(() =>
     records.length === 0
@@ -254,9 +254,25 @@ export default function AddAssetTransactionForm({
     [projectionYears, year],
   );
 
-  /** Informational net proceeds for a sell leg (sale − costs − mortgage payoff). */
+  /** Informational net proceeds for a sell leg (sale − costs − mortgage payoff).
+   *  A business leg mirrors the engine's cascade: the operating value plus every
+   *  account the business owns, less the debt that goes with it. */
   const sellNetFor = useCallback(
     (leg: SellLegDraft): number => {
+      if (leg.sellMode === "business") {
+        const business = businessOptions.find((b) => b.id === leg.sellBusinessAccountId);
+        if (!business) return 0;
+        const fraction =
+          leg.sellAmountMode === "percent" ? parseNum(leg.fractionSoldPct) / 100 : 1;
+        // An override replaces the OPERATING value only — the engine still
+        // cascades the owned accounts on top of it.
+        const operating = parseNum(leg.overrideSaleValue) || business.value;
+        const gross = fraction * (operating + businessChildAssetValue(business));
+        const costs = gross * (parseNum(leg.transactionCostPct) / 100) +
+          parseNum(leg.transactionCostFlat);
+        return gross - costs - fraction * businessTotalDebt(business);
+      }
+
       const projectedValue = leg.sellAccountId
         ? projYear?.accountLedgers[leg.sellAccountId]?.beginningValue ?? 0
         : 0;
@@ -276,7 +292,7 @@ export default function AddAssetTransactionForm({
 
       return saleValue - totalCosts - mortgagePayoff;
     },
-    [projYear, liabilities],
+    [projYear, liabilities, businessOptions],
   );
 
   /** Informational cash cost for a buy leg (price − mortgage financed). */
