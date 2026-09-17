@@ -1,6 +1,12 @@
 import { z } from "zod";
-import { listHouseholdNotesPage, getHouseholdNotesField, NOTE_KINDS } from "@/lib/crm/notes";
-import { truncateNoteBody, NOTE_LIMIT_MAX } from "@/lib/crm/notes-window";
+import {
+  listHouseholdNotes,
+  listHouseholdNotesPage,
+  getHouseholdNotesField,
+  NOTE_KINDS,
+  type NoteRow,
+} from "@/lib/crm/notes";
+import { truncateNoteBody, NOTE_BODY_MAX, NOTE_LIMIT_MAX } from "@/lib/crm/notes-window";
 import { resolveActors } from "@/lib/activity/resolve-actors";
 import { foundryCrmNotesUrl } from "@/lib/mcp/foundry-url";
 import { McpForbiddenError, CLIENT_UNREADABLE_MESSAGE } from "../guards";
@@ -15,14 +21,36 @@ const householdIdArg = z
   .string()
   .describe("CRM household id from search_clients. NOT a planning client id.");
 
-/** ISO calendar day, e.g. 2026-06-01. */
-const dayArg = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+/**
+ * ISO calendar day, e.g. 2026-06-01. The regex alone lets shape-valid
+ * nonsense through (month 13, day 45); `Date.parse` on that returns NaN,
+ * and `filterNotesWindow`'s `sinceMs != null` guard treats NaN as "no
+ * bound" — so an unparseable date would silently disable the filter instead
+ * of narrowing it, while totalCount and hasMore still read as if it had.
+ * The `.refine` rejects that at the schema boundary, before it ever reaches
+ * the filter.
+ */
+const dayArg = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD.")
+  .refine((d) => !Number.isNaN(Date.parse(`${d}T00:00:00.000Z`)), {
+    message: "Not a valid calendar date.",
+  });
 
 async function authorNames(actorIds: Array<string | null>): Promise<Map<string, string>> {
   const ids = actorIds.filter((id): id is string => id !== null);
   if (ids.length === 0) return new Map();
   const resolved = await resolveActors(ids);
   return new Map([...resolved].map(([id, display]) => [id, display.name]));
+}
+
+/**
+ * Fields common to both tools' output shape. `title` maps to `subject`
+ * here — the ONE place that mapping happens, so `list_client_notes` and
+ * `get_client_note` can never drift apart on it.
+ */
+function noteBase(n: Pick<NoteRow, "id" | "kind" | "title" | "occurredAt">) {
+  return { id: n.id, kind: n.kind, subject: n.title, occurredAt: n.occurredAt };
 }
 
 const listClientNotes = defineTool({
@@ -33,9 +61,9 @@ const listClientNotes = defineTool({
     "meetings, calls and emails, each with a subject, date, author and body. Use this to answer " +
     "'what did we last discuss' or 'what did we promise them'. householdNotes is the standing " +
     "free-text note on the household record, separate from the dated timeline. Works for PROSPECTS as well as " +
-    "planning clients. Bodies longer than 1,000 characters come back cut, with truncated: true — " +
-    "call get_client_note with that note's id for the full text. totalCount and hasMore tell you " +
-    "whether you are seeing everything that matched. " +
+    `planning clients. Bodies longer than ${NOTE_BODY_MAX.toLocaleString("en-US")} characters come back cut, ` +
+    "with truncated: true — call get_client_note with that note's id for the full text. totalCount " +
+    "and hasMore tell you whether you are seeing everything that matched. " +
     UNTRUSTED,
   inputSchema: z.object({
     householdId: householdIdArg,
@@ -57,10 +85,7 @@ const listClientNotes = defineTool({
       notes: notes.map((n) => {
         const { body, truncated } = truncateNoteBody(n.body);
         return {
-          id: n.id,
-          kind: n.kind,
-          subject: n.title,
-          occurredAt: n.occurredAt,
+          ...noteBase(n),
           author: n.actorUserId ? (names.get(n.actorUserId) ?? "Former member") : "Former member",
           body,
           truncated,
@@ -85,21 +110,20 @@ const getClientNote = defineTool({
     noteId: z.string().describe("Note id from list_client_notes."),
   }),
   handler: async ({ householdId, noteId }, { firmId }) => {
-    // Reuse the same firm-scoped loader rather than a second query: it already
-    // proves the note belongs to this household AND this firm, so a note id
-    // from another household cannot be read by pairing it with a household the
-    // caller can see. NOTE_LIMIT_MAX bounds the scan; the largest household in
-    // production holds far fewer.
-    const { notes } = await listHouseholdNotesPage(householdId, firmId, { limit: NOTE_LIMIT_MAX });
+    // Reuse the household's full note list rather than a second query: it
+    // already proves the note belongs to this household AND this firm, so a
+    // note id from another household cannot be read by pairing it with a
+    // household the caller can see. Unbounded on purpose (not the paged,
+    // NOTE_LIMIT_MAX-capped loader): that cap exists to bound a page size for
+    // display, and applying it here would falsely deny a caller a note past
+    // #100 that they can see just fine through list_client_notes.
+    const notes = await listHouseholdNotes(householdId, firmId);
     const found = notes.find((n) => n.id === noteId);
     // Same message as an unreadable household: a caller must not learn that a
     // note id exists somewhere else.
     if (!found) throw new McpForbiddenError(CLIENT_UNREADABLE_MESSAGE);
     return {
-      id: found.id,
-      kind: found.kind,
-      subject: found.title,
-      occurredAt: found.occurredAt,
+      ...noteBase(found),
       body: found.body,
       foundryUrl: foundryCrmNotesUrl(householdId),
     };
