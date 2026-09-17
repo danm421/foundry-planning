@@ -451,19 +451,21 @@ export default function PortalAccessCard({
             </button>
           </div>
 
-          {/* Deliberately quieter and set apart from the row above: this is the
-              rare, unrecoverable one, and the everyday action must be the
-              obvious one. */}
+          {/* Set apart from the row above: this is the rare, unrecoverable one,
+              and the everyday action must be the obvious one. Quieter is
+              carried by the lack of a button border, NOT by dim ink — the
+              consequence copy has to be readable precisely because the action
+              cannot be undone. */}
           <div>
             <button
               type="button"
               onClick={deleteLogin}
               disabled={busy}
-              className="text-[12px] text-ink-4 underline underline-offset-2 transition hover:text-crit disabled:opacity-50"
+              className="text-[12px] text-ink-3 underline underline-offset-2 transition hover:text-crit disabled:opacity-50"
             >
               Delete login
             </button>
-            <p className="mt-1 text-[11px] text-ink-4">
+            <p className="mt-1 text-[12px] text-ink-3">
               Erases their Foundry login itself and disconnects them from every
               firm they use, not just yours.
             </p>
