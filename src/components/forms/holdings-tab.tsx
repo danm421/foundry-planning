@@ -223,13 +223,13 @@ export function HoldingsTab({
     if (!accountId) return;
     setError(null);
     try {
-      // A row that already has a price got it from somewhere — a statement, or
-      // typed by hand. Naming its ticker shouldn't silently reprice it; the
-      // unpriced row (the one this feature exists for) does get a quote.
-      const unpriced = !(parseFloat(row.price) > 0);
+      // Naming the ticker is what makes a real price reachable, so go get one:
+      // whatever the row had came off a statement (as old as the statement) or
+      // was typed by hand. A quote that can't answer leaves the old price
+      // alone — `price` is simply absent from the patch below.
       const [classified, quote] = await Promise.all([
         classifyTicker(clientId, accountId, hit.ticker), // fail-soft
-        unpriced ? getQuote(clientId, accountId, hit.ticker) : Promise.resolve(null),
+        getQuote(clientId, accountId, hit.ticker),
       ]);
       await updateHolding(clientId, accountId, row.id, {
         // Deliberately cleared when classification misses: the ticker changed,
@@ -238,6 +238,11 @@ export function HoldingsTab({
         displayTicker: hit.ticker,
         displayName: classified.security?.name ?? classified.displayName ?? hit.name,
         ...(quote ? { price: quote.price, priceAsOf: quote.asOf } : {}),
+        // A stored market value outranks shares x price everywhere it's read,
+        // so a newly-priced row would keep showing the statement's total. The
+        // import draws the same line (commit/holdings.ts): a tickered row lets
+        // the price drive the value. Kept when there are no shares to multiply.
+        ...(quote && parseFloat(row.shares) > 0 ? { marketValue: null } : {}),
       });
       // Re-list rather than patch in place: the server re-derives the asset mix
       // on update, so securityWeights/needsReview all move with the new ticker.

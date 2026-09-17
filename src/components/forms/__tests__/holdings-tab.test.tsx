@@ -227,9 +227,10 @@ describe("HoldingsTab ticker picker", () => {
     });
   });
 
-  it("leaves an already-priced row's price alone", async () => {
-    // Naming the ticker on a row whose price came off a statement must not
-    // silently swap in today's close.
+  it("reprices a row that came off a statement, because the market close is newer", async () => {
+    // A statement price is as old as the statement. Once the row names a real
+    // ticker there is a better number available, and attaching one is the
+    // moment to go get it.
     stubRowFetch({ ...nameOnlyRow, price: "98.76" });
     render(<HoldingsTab {...PROPS} />);
 
@@ -237,9 +238,65 @@ describe("HoldingsTab ticker picker", () => {
     fireEvent.click(await screen.findByRole("option", { name: /VTSAX/ }));
 
     await waitFor(() => expect(updated).toHaveLength(1));
+    expect(updated[0]).toMatchObject({
+      displayTicker: "VTSAX",
+      price: 142.11,
+      priceAsOf: "2026-09-16",
+    });
+  });
+
+  it("hands the value back to shares x price once the row is priced", async () => {
+    // The import's own rule: a tickered row lets the live price drive its value,
+    // and only an untickered one keeps the statement's market value. A ticker
+    // plus a quote is exactly that transition, so the override goes.
+    stubRowFetch({ ...nameOnlyRow, price: "98.76", marketValue: "9876.00" });
+    render(<HoldingsTab {...PROPS} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Search for a security by name to match/ }));
+    fireEvent.click(await screen.findByRole("option", { name: /VTSAX/ }));
+
+    await waitFor(() => expect(updated).toHaveLength(1));
+    expect(updated[0]).toMatchObject({ price: 142.11, marketValue: null });
+  });
+
+  it("keeps a stated value the price can't reproduce, when there are no shares", async () => {
+    // A statement that gives a dollar value and no share count: shares x price
+    // would be $0, so the stated value has to stay.
+    stubRowFetch({ ...nameOnlyRow, shares: "0", price: "0", marketValue: "9876.00" });
+    render(<HoldingsTab {...PROPS} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Search for a security by name to match/ }));
+    fireEvent.click(await screen.findByRole("option", { name: /VTSAX/ }));
+
+    await waitFor(() => expect(updated).toHaveLength(1));
+    expect(updated[0]).toMatchObject({ price: 142.11 });
+    expect(updated[0]).not.toHaveProperty("marketValue");
+  });
+
+  it("keeps the price it had when the feed can't price the ticker", async () => {
+    // The row still gains its ticker and name — losing a statement price to a
+    // feed outage would be strictly worse than keeping a stale one.
+    updated = [];
+    quoteCalls = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      const u = String(url);
+      if (u.includes("/search?")) return { ok: true, json: async () => ({ results: SEARCH_HITS }) };
+      if (u.includes("/quote")) { quoteCalls.push(u); return { ok: true, json: async () => ({ price: null }) }; }
+      if (u.includes("/classify")) {
+        return { ok: true, json: async () => ({ security: null, displayName: null, weights: [] }) };
+      }
+      if (init?.method === "PUT") { updated.push(JSON.parse(String(init.body))); return { ok: true, json: async () => ({}) }; }
+      return { ok: true, json: async () => [{ ...nameOnlyRow, price: "98.76" }] };
+    }));
+    render(<HoldingsTab {...PROPS} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Search for a security by name to match/ }));
+    fireEvent.click(await screen.findByRole("option", { name: /VTSAX/ }));
+
+    await waitFor(() => expect(updated).toHaveLength(1));
+    expect(quoteCalls).toHaveLength(1);
     expect(updated[0]).toMatchObject({ displayTicker: "VTSAX" });
     expect(updated[0]).not.toHaveProperty("price");
-    expect(quoteCalls).toEqual([]);
   });
 
   it("says the search is down rather than showing it as 'no matches'", async () => {

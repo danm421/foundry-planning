@@ -34,10 +34,11 @@ export interface SecuritySearchHit {
    *  company are tellable apart. */
   exchange: string;
   securityType: SecurityType;
-  /** Latest close, when the quote feed answers for this symbol. Absent — not
-   *  zero — when it doesn't: an advisor must be able to tell "we don't know"
-   *  from "it's worthless", and a whole-list blank is how a dead price
-   *  entitlement announces itself instead of hiding as a row of $0.00. */
+  /** Latest close — the search row's own dated previousClose when it has one,
+   *  otherwise the quote feed's. Absent — not zero — when neither answers: an
+   *  advisor must be able to tell "we don't know" from "it's worthless", and a
+   *  whole-list blank is how a dead price entitlement announces itself instead
+   *  of hiding as a row of $0.00. */
   price?: number;
 }
 
@@ -75,11 +76,18 @@ function toHits(raw: unknown): SecuritySearchHit[] {
     // One line per symbol: EODHD repeats a listing across its index entries.
     if (seen.has(ticker)) continue;
     seen.add(ticker);
+    // The row prices itself: `/search` carries previousClose, and on a plan
+    // whose quote feeds are refusing it is the only close we can get. A
+    // non-positive or undated one is dropped, never shown as $0.00.
+    const close = typeof r.previousClose === "number" ? r.previousClose : Number(r.previousClose);
+    const priced = Number.isFinite(close) && close > 0
+      && typeof r.previousCloseDate === "string" && r.previousCloseDate !== "";
     hits.push({
       ticker,
       name,
       exchange,
       securityType: mapSecurityType(typeof r.Type === "string" ? r.Type : undefined),
+      ...(priced ? { price: close } : {}),
     });
   }
   return hits;
@@ -111,9 +119,9 @@ function rank(hits: SecuritySearchHit[], query: string): SecuritySearchHit[] {
   return scored.map((s) => s.hit);
 }
 
-/** Attach the latest close to each hit. Fail-soft by construction:
- *  `fetchEodQuotes` never throws, and an unpriced symbol is simply left without
- *  a price rather than shown as zero. */
+/** Attach the latest close to the hits that didn't come with one. Fail-soft by
+ *  construction: `fetchEodQuotes` never throws, and an unpriced symbol is
+ *  simply left without a price rather than shown as zero. */
 async function attachPrices(
   hits: SecuritySearchHit[],
   deps: SearchSecuritiesDeps,
@@ -123,8 +131,11 @@ async function attachPrices(
   // search with no injected quotes prices nothing — see SearchSecuritiesDeps.
   const fetchQuotes =
     deps.quotes ?? (deps.search ? null : (t: string[]) => fetchEodQuotes(t));
-  if (!fetchQuotes || hits.length === 0) return hits;
-  const quotes = await fetchQuotes(hits.map((h) => h.ticker));
+  // Only the rows `/search` gave no close for — asking about the rest would buy
+  // a call per hit to learn a number already in hand.
+  const need = hits.filter((h) => h.price == null).map((h) => h.ticker);
+  if (!fetchQuotes || need.length === 0) return hits;
+  const quotes = await fetchQuotes(need);
   if (quotes.size === 0) return hits;
   return hits.map((hit) => {
     const q = quotes.get(eodhdSymbol(hit.ticker));

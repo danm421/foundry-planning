@@ -200,6 +200,51 @@ describe("searchSecurities", () => {
       expect(res.hits).toHaveLength(1);
     });
 
+    it("prices a match from the search row itself, with no quote call at all", async () => {
+      // `/search` rows carry their own dated previousClose, and it is on a
+      // different entitlement than the quote feeds — which is the only reason
+      // anything is priced at all right now. Free: the number is already here.
+      const asked: string[] = [];
+      const res = await searchSecurities("vanguard small cap growth instl", {
+        search: yields([{
+          ...hit("VSGIX", "US", "FUND", "VANGUARD SMALL-CAP GROWTH INDEX FUND INSTITUTIONAL SHARES"),
+          previousClose: 94.31,
+          previousCloseDate: "2026-09-16",
+        }]),
+        quotes: async (tickers) => { asked.push(...tickers); return new Map(); },
+      });
+      expect(res.hits[0].price).toBe(94.31);
+      expect(asked).toEqual([]);
+    });
+
+    it("still quotes the rows the search feed gave no close for", async () => {
+      const asked: string[] = [];
+      const res = await searchSecurities("index fund", {
+        search: yields([
+          { ...hit("VSGIX", "US", "FUND", "Vanguard Small-Cap Growth Index Instl"), previousClose: 94.31, previousCloseDate: "2026-09-16" },
+          hit("VTSAX", "US", "FUND", "Vanguard Total Stock Market Index Admiral"),
+        ]),
+        quotes: async (tickers) => {
+          asked.push(...tickers);
+          return new Map([["VTSAX.US", quote(151.2)]]);
+        },
+      });
+      expect(asked).toEqual(["VTSAX"]);
+      expect(res.hits.map((h) => h.price)).toEqual([94.31, 151.2]);
+    });
+
+    it("ignores an unusable close rather than showing the row at $0", async () => {
+      const res = await searchSecurities("dead fund", {
+        search: yields([{
+          ...hit("ZZZZ", "US", "FUND", "Dead Fund"),
+          previousClose: 0,
+          previousCloseDate: "2026-09-16",
+        }]),
+        quotes: async () => new Map(),
+      });
+      expect(res.hits[0].price).toBeUndefined();
+    });
+
     it("never fetches a live quote when the search transport is injected", async () => {
       // vitest loads .env.local, so a real EODHD key IS present under test. If
       // pricing defaulted to live, every search test above would hit the paid
