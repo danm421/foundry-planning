@@ -1431,6 +1431,10 @@ export const loadClientDataWithContext = cache(
       type: t.type,
       year: t.year,
       accountId: t.accountId ?? undefined,
+      // The field `applyBusinessSales` dispatches on. Dropping it here strands
+      // a business sale with no source at all — the business, the accounts it
+      // owns and its liabilities all silently survive the sale year.
+      businessAccountId: t.businessAccountId ?? undefined,
       overrideSaleValue: t.overrideSaleValue ? parseFloat(t.overrideSaleValue) : undefined,
       overrideBasis: t.overrideBasis ? parseFloat(t.overrideBasis) : undefined,
       transactionCostPct: t.transactionCostPct ? parseFloat(t.transactionCostPct) : undefined,
