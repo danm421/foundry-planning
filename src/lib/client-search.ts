@@ -256,6 +256,11 @@ export async function searchHouseholds(
         ),
       ),
     )
+    // Without an ORDER BY the SQL cap below takes an arbitrary slice, so two
+    // identical searches can return different households once more than
+    // MAX_RESULTS match. Ordering by name also leaves the output alphabetical,
+    // matching the sibling `searchClients`, which sorts by household title.
+    .orderBy(crmHouseholds.name)
     .limit(MAX_RESULTS * 2);
 
   // The contacts join multiplies rows per household (primary + spouse); collapse

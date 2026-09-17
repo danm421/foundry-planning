@@ -9,34 +9,51 @@ import { PgDialect } from "drizzle-orm/pg-core";
 const m = vi.hoisted(() => ({
   select: vi.fn(),
   where: vi.fn(),
+  orderBy: vi.fn(),
   rows: [] as unknown[],
 }));
 
-vi.mock("@/db", () => ({
-  db: {
-    select: (projection: unknown) => {
-      m.select(projection);
-      return {
-        from: () => ({
-          leftJoin: () => ({
+vi.mock("@/db", () => {
+  // `orderBy` and `limit` both hang off the same object, and `orderBy` returns
+  // it again, so the chain still resolves if the real query drops a link. A
+  // mutation therefore fails the assertion that names it, rather than dying
+  // with "limit is not a function". Declared inside the factory, not at the
+  // top level: the factory runs during hoisted module evaluation, before any
+  // top-level const is initialized.
+  const tail = (): Record<string, unknown> => ({
+    orderBy: (o: unknown) => {
+      m.orderBy(o);
+      return tail();
+    },
+    limit: () => Promise.resolve(m.rows),
+  });
+  return {
+    db: {
+      select: (projection: unknown) => {
+        m.select(projection);
+        return {
+          from: () => ({
             leftJoin: () => ({
-              where: (w: unknown) => {
-                m.where(w);
-                return { limit: () => Promise.resolve(m.rows) };
-              },
+              leftJoin: () => ({
+                where: (w: unknown) => {
+                  m.where(w);
+                  return tail();
+                },
+              }),
             }),
           }),
-        }),
-      };
+        };
+      },
     },
-  },
-}));
+  };
+});
 vi.mock("@/lib/visibility", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/visibility")>()),
   resolveVisibleAdvisorIds: vi.fn().mockResolvedValue(new Set(["user_1"])),
 }));
 
 import { searchHouseholds } from "../client-search";
+import { crmHouseholds } from "@/db/schema";
 
 const dialect = new PgDialect();
 const render = (fragment: unknown) => dialect.sqlToQuery(fragment as never);
@@ -44,6 +61,7 @@ const render = (fragment: unknown) => dialect.sqlToQuery(fragment as never);
 beforeEach(() => {
   m.select.mockReset();
   m.where.mockReset();
+  m.orderBy.mockReset();
   m.rows = [];
 });
 
@@ -132,6 +150,18 @@ describe("searchHouseholds", () => {
     expect(out).toEqual([{
       householdId: "hh1", clientId: "c1", householdTitle: "Mueller", hasPlan: true,
     }]);
+  });
+
+  // Final-review Important 2: the query caps at MAX_RESULTS * 2 rows, so with
+  // no ORDER BY the database picks an arbitrary slice and two identical
+  // searches can disagree about WHICH households come back. Rendered through
+  // the real dialect, so dropping the `.orderBy` — or ordering on the wrong
+  // column — goes red.
+  it("orders the query by household name so the capped result set is deterministic", async () => {
+    m.rows = [];
+    await searchHouseholds("mue", "org_1", { userId: "user_1", orgRole: "org:member" });
+    expect(m.orderBy).toHaveBeenCalledTimes(1);
+    expect(m.orderBy.mock.calls[0][0]).toBe(crmHouseholds.name);
   });
 
   // Finding 2 (query-hygiene review): unlike containsPattern("mue"), a
