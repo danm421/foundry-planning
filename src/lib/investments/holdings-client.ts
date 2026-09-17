@@ -57,6 +57,16 @@ export interface SecuritySearchHit {
   name: string;
   exchange: string;
   securityType: string;
+  /** Absent when the quote feed can't price this symbol — which is a different
+   *  thing from a price of zero, and is rendered as such. */
+  price?: number;
+}
+
+export interface SecuritySearchResult {
+  hits: SecuritySearchHit[];
+  /** Set when the typed name found nothing and a widened query was used
+   *  instead, so the picker can say so rather than show rows that look wrong. */
+  relaxedTo: string | null;
 }
 
 const base = (clientId: string, accountId: string) =>
@@ -136,12 +146,14 @@ export async function getQuote(
  *  "the search is down", and only one of those is the advisor's problem. */
 export async function searchSecurities(
   clientId: string, query: string, signal?: AbortSignal,
-): Promise<SecuritySearchHit[]> {
+): Promise<SecuritySearchResult> {
   // Client-scoped, not under an account: the answer is reference data and has
   // nothing to do with which account the holding lands in.
   const url = `/api/clients/${clientId}/holdings/search?q=${encodeURIComponent(query.trim())}`;
-  const body = await json<{ results?: SecuritySearchHit[] }>(await fetch(url, { signal }));
-  return body.results ?? [];
+  const body = await json<{ results?: SecuritySearchHit[]; relaxedTo?: string | null }>(
+    await fetch(url, { signal }),
+  );
+  return { hits: body.results ?? [], relaxedTo: body.relaxedTo ?? null };
 }
 
 export interface HoldingRefreshSummary {

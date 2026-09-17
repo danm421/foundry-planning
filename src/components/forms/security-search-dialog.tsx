@@ -31,6 +31,14 @@ const TYPE_LABELS: Record<string, string> = {
   bond: "Bond",
 };
 
+/** Matches the holdings table's own price format. An unpriced row shows an
+ *  em dash, never $0.00 — "we couldn't price this" and "this is worth nothing"
+ *  must not look the same. */
+const fmtPrice = (price: number | undefined) =>
+  typeof price === "number" && Number.isFinite(price)
+    ? `$${price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`
+    : "—";
+
 interface Props {
   clientId: string;
   /** Seeds the box — whatever name or ticker the row already carries, so the
@@ -43,6 +51,10 @@ interface Props {
 export function SecuritySearchDialog({ clientId, seed, onPick, onClose }: Props) {
   const [query, setQuery] = useState(seed);
   const [results, setResults] = useState<SecuritySearchHit[]>([]);
+  /** The widened query the server fell back to, when the typed name found
+   *  nothing on its own. Shown rather than hidden: otherwise the list looks
+   *  like it ignored half of what was typed. */
+  const [relaxedTo, setRelaxedTo] = useState<string | null>(null);
   // Starts true when the seed is already searchable: the debounce effect hasn't
   // run yet on first paint, and an empty `results` would otherwise read as
   // "nothing matches" for a moment.
@@ -66,6 +78,7 @@ export function SecuritySearchDialog({ clientId, seed, onPick, onClose }: Props)
     const q = query.trim();
     if (q.length < MIN_QUERY) {
       setResults([]);
+      setRelaxedTo(null);
       setLoading(false);
       return;
     }
@@ -75,10 +88,13 @@ export function SecuritySearchDialog({ clientId, seed, onPick, onClose }: Props)
       const controller = new AbortController();
       abort.current = controller;
       try {
-        setResults(await searchSecurities(clientId, q, controller.signal));
+        const { hits, relaxedTo: widened } = await searchSecurities(clientId, q, controller.signal);
+        setResults(hits);
+        setRelaxedTo(widened);
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
         setResults([]);
+        setRelaxedTo(null);
         setError(err instanceof Error ? err.message : "Search failed.");
       } finally {
         if (!controller.signal.aborted) setLoading(false);
@@ -105,7 +121,10 @@ export function SecuritySearchDialog({ clientId, seed, onPick, onClose }: Props)
   const hint =
     query.trim().length < MIN_QUERY ? `Type at least ${MIN_QUERY} characters.`
     : loading ? "Searching…"
-    : error || results.length > 0 ? null
+    : error ? null
+    : relaxedTo && results.length > 0
+      ? `No exact match \u2014 showing the closest to \u201C${relaxedTo}\u201D.`
+    : results.length > 0 ? null
     : `Nothing matches \u201C${query.trim()}\u201D. Try fewer words, or the fund family name.`;
 
   return (
@@ -158,10 +177,17 @@ export function SecuritySearchDialog({ clientId, seed, onPick, onClose }: Props)
                 onClick={() => pick(hit)}
                 className="flex w-full items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-card-hover"
               >
-                <span className="tabular w-24 shrink-0 text-[13px] font-medium text-ink">
+                <span className="tabular w-20 shrink-0 text-[13px] font-medium text-ink">
                   {hit.ticker}
                 </span>
                 <span className="min-w-0 flex-1 truncate text-[13px] text-ink-2">{hit.name}</span>
+                <span
+                  className={`tabular shrink-0 text-right text-[13px] ${
+                    hit.price === undefined ? "text-ink-4" : "text-ink-2"
+                  }`}
+                >
+                  {fmtPrice(hit.price)}
+                </span>
                 <span className="shrink-0 rounded-full border border-hair px-2 py-0.5 text-[11px] text-ink-3">
                   {TYPE_LABELS[hit.securityType] ?? hit.exchange}
                 </span>

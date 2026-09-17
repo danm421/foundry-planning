@@ -32,7 +32,11 @@ export async function GET(
     if (!parsed.success) {
       return NextResponse.json({ error: "Type at least two characters." }, { status: 400 });
     }
-    return NextResponse.json({ results: await searchSecurities(parsed.data.q) });
+    // `relaxedTo` rides along so the picker can say what it actually searched
+    // for — see search-securities.ts. Prices are attached there too, and are
+    // absent rather than zero when the quote feed can't answer.
+    const { hits, relaxedTo } = await searchSecurities(parsed.data.q);
+    return NextResponse.json({ results: hits, relaxedTo });
   } catch (err) {
     if (err instanceof UnauthorizedError) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
