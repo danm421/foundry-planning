@@ -32,8 +32,12 @@ import {
  * Returns `undefined` rather than 0 for every unsupported case. A silent zero
  * would read on the account form as "this house has no property tax", which is
  * a claim the document never made.
+ *
+ * Exported so `liabilities-columns.ts`'s "Escrow → property tax" review
+ * column can delegate to this exact computation instead of keeping a second
+ * copy that could drift from what `splitMortgageEscrow` actually writes.
  */
-function annualEscrow(row: ExtractedLiability): { annual?: number; warning?: string } {
+export function annualEscrow(row: ExtractedLiability): { annual?: number; warning?: string } {
   const { totalPayment, monthlyPayment } = row;
   if (totalPayment == null || monthlyPayment == null) return {};
   const escrow = totalPayment - monthlyPayment;

@@ -191,6 +191,27 @@ function priceText(value: number): string {
 }
 
 /**
+ * ISO YYYY-MM-DD -> "Aug 1, 2041". Anything else passes through verbatim: the
+ * extractor is told to omit a date it cannot read rather than guess, but a
+ * document that printed "Q3 2026" should show that, never "Invalid Date".
+ *
+ * Parsed as UTC (the `T00:00:00Z` suffix), not local time — `new Date("2041-08-01")`
+ * in a negative-offset timezone renders the day before.
+ */
+function isoDateText(value: unknown): string {
+  if (typeof value !== "string") return String(value);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+/**
  * Default, kind-driven cell text for a column with no `render` override.
  * The `default` branch (C3) is deliberate, not laziness — see `ColumnKind`.
  *
@@ -225,8 +246,10 @@ export function formatValue(kind: ColumnKind, value: unknown): string {
       return String(value);
     case "boolean":
       return value ? "Yes" : "No";
+    case "date":
+      return isoDateText(value);
     default:
-      // "string" | "date" | "enum" — and any kind a future, wider union adds.
+      // "string" | "text" | "enum" — and any kind a future, wider union adds.
       return String(value);
   }
 }
