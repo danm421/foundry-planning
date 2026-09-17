@@ -6,6 +6,8 @@ import { auth } from "@clerk/nextjs/server";
 import { ForbiddenError } from "@/lib/authz";
 import { resolveVisibleAdvisorIds, VISIBLE_ALL } from "@/lib/visibility";
 import { STAFF_ROLES } from "@/lib/capabilities";
+import type { Principal } from "@/lib/clients/authz";
+import { callerMaySeeAdvisor } from "@/lib/clients/authz";
 
 /**
  * Org-scoped accessor for a CRM household. Mirrors the pattern in
@@ -63,4 +65,35 @@ export async function requireCrmTaskAccess(taskId: string) {
     throw new Error(`CRM task not found or access denied: ${taskId}`);
   }
   return { task, orgId };
+}
+
+/**
+ * Principal-taking CRM household check — the MCP doorway's equivalent of
+ * `verifyClientAccessFor`.
+ *
+ * `requireCrmHouseholdAccess` above CANNOT serve this path, for two reasons
+ * that both matter: it reads the web session (`requireOrgId()` / `auth()`),
+ * which an MCP caller does not have, and it is firm-wide with no advisor
+ * narrowing — so it would grant notes on households whose *plans* the same
+ * connector refuses to open. That is a weaker gate on more sensitive text.
+ *
+ * Deliberately NOT mirrored from `verifyClientAccessFor`: the fall-through to
+ * `resolveSharedClientAccess`. A cross-firm share is a planning-data concept;
+ * a shared client therefore has a readable plan and unreadable notes. Filed in
+ * future-work/security-hardening.md rather than decided silently here.
+ */
+export async function verifyCrmHouseholdAccessFor(
+  p: Principal,
+  householdId: string,
+): Promise<{ ok: false } | { ok: true; firmId: string; advisorId: string }> {
+  const household = await db.query.crmHouseholds.findFirst({
+    where: eq(crmHouseholds.id, householdId),
+    columns: { firmId: true, advisorId: true, deletedAt: true },
+  });
+  // Non-existent, trashed, and wrong-firm all return the SAME shape, so a
+  // caller cannot tell them apart and existence never leaks.
+  if (!household || household.deletedAt) return { ok: false };
+  if (!p.orgId || household.firmId !== p.orgId) return { ok: false };
+  if (!(await callerMaySeeAdvisor(p, household.advisorId, household.firmId))) return { ok: false };
+  return { ok: true, firmId: household.firmId, advisorId: household.advisorId };
 }

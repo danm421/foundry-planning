@@ -22,7 +22,7 @@ async function principalFromSession(): Promise<Principal | null> {
 
 // Can this principal see this advisor's client? Admin/owner → always.
 // Staff → their mapped set. Advisor in a siloed firm → only their own advisorId.
-async function callerMaySeeAdvisor(
+export async function callerMaySeeAdvisor(
   p: Principal,
   advisorId: string,
   firmId: string,
