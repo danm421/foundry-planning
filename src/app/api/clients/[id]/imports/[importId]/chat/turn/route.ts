@@ -282,8 +282,16 @@ export async function POST(request: Request, { params }: Params) {
   // was computed from the STALE snapshot read at the top of this request and
   // would silently erase a `linkCreated` stamp from a commit that landed
   // while this turn's model calls were in flight. `writeChatState` only ever
-  // touches `chat`, so `payload` is set alongside it explicitly. Shape stays
-  // `{ accounts }` only (this surface never persists any other section).
+  // touches `chat`, so `payload` is set alongside it explicitly.
+  //
+  // Fix round 1, Finding 1 (self-correction of Ruling 40, which wrongly
+  // claimed this data was safe): `payload` is a single top-level key, so
+  // setting it to `{ accounts: responseAccounts }` alone REPLACES it
+  // wholesale — the exact shallow-merge hazard Task 11 exists to close,
+  // reopened from this route. `payload.liabilities` rides along as a
+  // PASSTHROUGH of the fresh read, not a rebase — no liability tool exists
+  // yet for a mutating turn to have changed it (Task 12 owns rebasing one
+  // the way `mergeAccountsByRowId` does for accounts).
   const freshAccounts = (freshPayloadJson.payload?.accounts ?? []) as AccountRow[];
   const responseAccounts = turnResult.payloadMutated
     ? mergeAccountsByRowId(
@@ -298,7 +306,10 @@ export async function POST(request: Request, { params }: Params) {
     excludedRows: nextExcludedRows,
   });
   if (turnResult.payloadMutated) {
-    nextPayloadJson.payload = { accounts: responseAccounts };
+    nextPayloadJson.payload = {
+      accounts: responseAccounts,
+      liabilities: freshPayloadJson.payload?.liabilities ?? [],
+    };
   }
 
   await db

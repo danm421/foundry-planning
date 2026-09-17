@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderHook, act } from "@testing-library/react";
+import { renderHook, act, waitFor } from "@testing-library/react";
 import { useChatCommit } from "../use-chat-commit";
 
 /** The response the mount-hydration GET expects. */
@@ -41,6 +41,7 @@ describe("useChatCommit — commit serialization (round 1 review, Important 1, s
         summary: "x",
         caveats: [],
         excluded: [],
+        liabilities: [],
         rows: [
           { name: "IRA", custodian: "Schwab", value: 100, __rowId: "r1" },
           { name: "Brokerage", custodian: "Schwab", value: 200, __rowId: "r2" },
@@ -172,6 +173,7 @@ describe("useChatCommit — the fresh-read merge must not discard a local edit (
         summary: "x",
         caveats: [],
         excluded: [],
+        liabilities: [],
         rows: [
           { name: "IRA", custodian: "Schwab", value: 100, __rowId: "r1" },
           { name: "Brokerage", custodian: "Schwab", value: 200, __rowId: "r2" },
@@ -239,6 +241,7 @@ describe("useChatCommit — editing and dropping one position (Task 6)", () => {
         summary: "",
         caveats: [],
         excluded: [],
+        liabilities: [],
         rows: [
           {
             __rowId: "r1",
@@ -268,6 +271,7 @@ describe("useChatCommit — editing and dropping one position (Task 6)", () => {
         summary: "",
         caveats: [],
         excluded: [],
+        liabilities: [],
         rows: [
           {
             __rowId: "r1",
@@ -320,6 +324,7 @@ describe("useChatCommit — matching extracted accounts against the plan", () =>
     summary: "x",
     caveats: [],
     excluded: [],
+    liabilities: [],
     rows: [baseRow] as never,
   };
 
@@ -413,5 +418,166 @@ describe("useChatCommit — matching extracted accounts against the plan", () =>
       }),
     );
     expect(result.current.result?.rows[0].match).toEqual({ kind: "new" });
+  });
+});
+
+describe("useChatCommit — commits both tabs together, and PATCHes both keys (Task 11)", () => {
+  // Ruling: sending both row ids in ONE POST is what lets a synthesized
+  // property commit before `matchMortgageToProperty` looks for it (the
+  // orchestrator applies tabs in canonical order regardless of array order).
+  it("posts both tabs so a synthesized property commits with its mortgage, PATCHes payload.liabilities alongside payload.accounts, and adopts the commit response's liabilities", async () => {
+    const { result } = renderHook(() => useChatCommit("c1", "i1"));
+
+    act(() => {
+      result.current.applyExtractionResult({
+        summary: "x",
+        caveats: [],
+        excluded: [],
+        rows: [
+          { name: "Hudson St", value: 500_000, __rowId: "account:hudson#f1:0" },
+        ] as never,
+        liabilities: [
+          { name: "Mortgage", balance: 412_000, __rowId: "liability:mortgage#f1:0" },
+        ] as never,
+      });
+    });
+
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(importGetResponse({})) // fresh GET before the payload PATCH
+      .mockResolvedValueOnce(jsonResponse({})) // PATCH payload
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ok: true,
+          payload: {
+            accounts: [
+              {
+                name: "Hudson St",
+                value: 500_000,
+                __rowId: "account:hudson#f1:0",
+                match: { kind: "exact", existingId: "acct-1" },
+              },
+            ],
+            liabilities: [
+              {
+                name: "Mortgage",
+                balance: 412_000,
+                __rowId: "liability:mortgage#f1:0",
+                match: { kind: "exact", existingId: "liab-1" },
+              },
+            ],
+          },
+        }),
+      ) // POST commit
+      .mockResolvedValueOnce(importGetResponse({})) // fresh GET for chat
+      .mockResolvedValueOnce(jsonResponse({})); // PATCH chat
+
+    await act(async () => {
+      await result.current.handleCommitRows([
+        "account:hudson#f1:0",
+        "liability:mortgage#f1:0",
+      ]);
+    });
+
+    const commitCall = vi
+      .mocked(fetch)
+      .mock.calls.find(([url]) => String(url).includes("/commit"));
+    expect(commitCall).toBeDefined();
+    expect(JSON.parse(commitCall![1]!.body as string)).toEqual({
+      tabs: ["accounts", "liabilities"],
+      rowIds: ["account:hudson#f1:0", "liability:mortgage#f1:0"],
+    });
+
+    // Load-bearing: the PATCH route shallow-merges `payloadJson` at the TOP
+    // level only, so a `payload` key that names `accounts` but not
+    // `liabilities` REPLACES the whole `payload` object and drops every
+    // reviewed liability. Mutation this catches: reverting the pre-commit
+    // PATCH body to `{ accounts: mergedAccounts }`.
+    const payloadPatchCall = vi.mocked(fetch).mock.calls.find(([url, init]) => {
+      if (!String(url).endsWith("/imports/i1") || init?.method !== "PATCH") return false;
+      const body = JSON.parse(init.body as string);
+      return Boolean(body.payloadJson?.payload);
+    });
+    expect(payloadPatchCall).toBeDefined();
+    const patchedPayload = JSON.parse(payloadPatchCall![1]!.body as string).payloadJson.payload;
+    expect(patchedPayload.accounts).toHaveLength(1);
+    expect(patchedPayload.liabilities).toHaveLength(1);
+    expect(patchedPayload.liabilities[0].__rowId).toBe("liability:mortgage#f1:0");
+
+    // And the commit response's own `payload.liabilities` — carrying
+    // `commitLiabilities`' `linkCreated` stamp — is adopted into local
+    // state. Mutation this catches: reading only `body.payload?.accounts`
+    // at the `:409` cast site and never touching `result.liabilities`.
+    expect(result.current.result?.liabilities[0].match).toEqual({
+      kind: "exact",
+      existingId: "liab-1",
+    });
+  });
+});
+
+describe("useChatCommit — editing a liability cell (Task 11, Ruling 37)", () => {
+  // `LiabilitiesTable`'s `onPick` calls `onEditCell(row.__rowId, "match",
+  // next)` then `onEditCell(row.__rowId, "matchLocked", true)`. Passing the
+  // ACCOUNTS `handleEditCell` there (the brief's defect) maps over
+  // `result.rows` — an array with no liability row ids in it — so the pick
+  // silently evaporates. `handleEditLiabilityCell` must map over
+  // `result.liabilities` instead.
+  it("maps a match pick over result.liabilities, not result.rows", () => {
+    const { result } = renderHook(() => useChatCommit("c1", "i1"));
+    act(() => {
+      result.current.applyExtractionResult({
+        summary: "x",
+        caveats: [],
+        excluded: [],
+        rows: [],
+        liabilities: [
+          { name: "Mortgage", balance: 412_000, __rowId: "liability:mortgage#f1:0" },
+        ] as never,
+      });
+    });
+
+    act(() => {
+      result.current.handleEditLiabilityCell(
+        "liability:mortgage#f1:0",
+        "match",
+        { kind: "exact", existingId: "liab-1" },
+      );
+      result.current.handleEditLiabilityCell("liability:mortgage#f1:0", "matchLocked", true);
+    });
+
+    const row = result.current.result?.liabilities[0];
+    // Mutation this catches: aliasing `handleEditLiabilityCell` to
+    // `handleEditCell` — `result.rows` is `[]`, so the map has nothing to
+    // update and this row's `match` would stay `undefined`.
+    expect(row?.match).toEqual({ kind: "exact", existingId: "liab-1" });
+    expect(row?.matchLocked).toBe(true);
+    expect(result.current.result?.rows).toEqual([]);
+  });
+});
+
+describe("useChatCommit — mount hydration includes liabilities (Task 11)", () => {
+  // Ruling 41's counterpart at mount time: a resumed draft with zero
+  // accounts and zero excluded rows but one persisted liability must still
+  // populate `result`, or a mortgage-only import reopened later shows
+  // nothing at all — the same hazard the extraction-time gate exists to
+  // close, reachable from the other side (a reload instead of a fresh run).
+  it("hydrates result.liabilities from the persisted payload on mount, even with zero accounts", async () => {
+    vi.mocked(fetch).mockReset();
+    vi.mocked(fetch).mockResolvedValueOnce(
+      importGetResponse({
+        payload: {
+          accounts: [],
+          liabilities: [
+            { name: "Mortgage", balance: 412_000, __rowId: "liability:mortgage#f1:0" },
+          ],
+        },
+      }),
+    );
+
+    const { result } = renderHook(() => useChatCommit("c1", "i1"));
+
+    await waitFor(() => {
+      expect(result.current.result?.liabilities).toHaveLength(1);
+    });
+    expect(result.current.result?.liabilities[0].name).toBe("Mortgage");
   });
 });

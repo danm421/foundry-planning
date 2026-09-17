@@ -78,7 +78,9 @@ describe("ChatSurface", () => {
     render(<ChatSurface clientId="c1" importId="i1" initialFiles={initialFiles} />);
     fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
 
-    expect(await screen.findByText("No accounts found in these statements.")).toBeInTheDocument();
+    expect(
+      await screen.findByText("No accounts or debts found in these statements."),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 
@@ -100,7 +102,9 @@ describe("ChatSurface", () => {
 
     expect(await screen.findByRole("table")).toBeInTheDocument();
     expect(screen.getByText("IRA")).toBeInTheDocument();
-    expect(screen.queryByText("No accounts found in these statements.")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("No accounts or debts found in these statements."),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -201,12 +205,14 @@ async function renderAfterExtraction(opts?: { excluded?: boolean }) {
 }
 
 describe("ChatSurface — wiring the table in (Task 10b)", () => {
-  // Ruling 38 / Task 7 C3: `rowIds` is honoured only by `commitAccounts`,
-  // and is applied UNFILTERED to any other tab named in the same request —
-  // so the posted body must always carry `tabs: ["accounts"]` alongside it.
-  // A single-line mutation this catches: dropping `tabs` from the POST body,
-  // or swapping in `rowIds: []`.
-  it("posts tabs:['accounts'] alongside rowIds to the commit route", async () => {
+  // Task 11: `commitLiabilities` now honours `rowIds` too (Task 6), so the
+  // commit POST always names BOTH tabs alongside `rowIds` — sending them in
+  // one request also matters, since the orchestrator applies tabs in
+  // canonical order (accounts before liabilities), which is what lets a
+  // synthesized property commit before `matchMortgageToProperty` looks for
+  // it. A single-line mutation this catches: dropping `tabs` from the POST
+  // body, dropping the `"liabilities"` entry, or swapping in `rowIds: []`.
+  it("posts both tabs alongside rowIds to the commit route", async () => {
     await renderAfterExtraction();
     vi.mocked(fetch)
       .mockResolvedValueOnce(importGetResponse({})) // fresh GET before the payload.accounts PATCH
@@ -245,7 +251,10 @@ describe("ChatSurface — wiring the table in (Task 10b)", () => {
       .mock.calls.find(([url]) => String(url).includes("/commit"));
     expect(commitCall).toBeDefined();
     const [, init] = commitCall!;
-    expect(JSON.parse(init!.body as string)).toEqual({ tabs: ["accounts"], rowIds: ["r1"] });
+    expect(JSON.parse(init!.body as string)).toEqual({
+      tabs: ["accounts", "liabilities"],
+      rowIds: ["r1"],
+    });
   });
 
   it("locks the row after a successful commit (disabled Committed button)", async () => {
@@ -557,6 +566,183 @@ describe("ChatSurface — wiring the table in (Task 10b)", () => {
     expect(
       screen.getByText(/1 row in .Policies and other details. below has not been committed/i),
     ).toBeInTheDocument();
+  });
+});
+
+/** A "done" frame carrying no accounts and one liability — the mortgage-only
+ *  upload shape Ruling 41 exists for. Built through the same
+ *  `makeFramedResponse`/`data: ...\n\n` idiom every other frame in this file
+ *  uses (Ruling 38), not the brief's nonexistent `renderSurface({ result })`. */
+function liabilityOnlyDoneFrame(): string {
+  return `data: ${JSON.stringify({
+    type: "done",
+    summary: "Read 1 statement covering 1 debt.",
+    caveats: [],
+    rows: [],
+    excluded: [],
+    liabilities: [
+      { name: "Mortgage", balance: 412_000, __rowId: "liability:mortgage#f1:0" },
+    ],
+  })}\n\n`;
+}
+
+describe("ChatSurface — renders and commits the liabilities table (Task 11)", () => {
+  it("renders a Liabilities section when the extraction found debts", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeFramedResponse([liabilityOnlyDoneFrame()]));
+
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={initialFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+
+    expect(await screen.findByRole("heading", { name: /liabilities/i })).toBeInTheDocument();
+    // `getByText`, not `getAllByText`: with one row, `EntityTable`'s own
+    // Balance total footer repeats the same figure, so this is scoped to
+    // the row itself.
+    const row = screen.getByRole("row", { name: /Mortgage/i });
+    expect(within(row).getByText("$412,000")).toBeInTheDocument();
+  });
+
+  it("renders no Liabilities section when there are none", async () => {
+    // `oneRowDoneFrame()` carries no `liabilities` key at all — the runtime
+    // shape the five pre-existing done-frame fixtures in this file use, and
+    // exactly what an unchecked `JSON.parse(...) as ChatExtractEvent` cast
+    // can hand back even though `ChatCommitResult.liabilities` is required
+    // at the type level.
+    await renderAfterExtraction();
+    expect(screen.queryByRole("heading", { name: /liabilities/i })).not.toBeInTheDocument();
+  });
+
+  // Ruling 41: a mortgage-only upload has zero accounts and one liability,
+  // so the empty-state condition must require ALL THREE lists to be empty —
+  // otherwise this exact scenario reads "No accounts or debts found" over a
+  // table full of debts, and (worse) the Finish import card that gate also
+  // hides would be unreachable, leaving the import stuck in "review" forever.
+  it("does not show the empty state for a mortgage-only upload (zero accounts, one liability)", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeFramedResponse([liabilityOnlyDoneFrame()]));
+
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={initialFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+
+    await screen.findByRole("heading", { name: /liabilities/i });
+    expect(
+      screen.queryByText("No accounts or debts found in these statements."),
+    ).not.toBeInTheDocument();
+    // Ruling 41's other half: gating the Accounts card on `rows.length > 0
+    // || excluded.length > 0` (not widening it to include liabilities) means
+    // no EMPTY accounts table renders above the liabilities one.
+    expect(screen.getAllByRole("table")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: /finish import/i })).toBeInTheDocument();
+  });
+
+  it("shows the empty state when there are neither accounts, excluded rows, nor liabilities", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      makeFramedResponse([
+        `data: ${JSON.stringify({
+          type: "done",
+          summary: "Read 1 statement covering 0 accounts.",
+          caveats: [],
+          rows: [],
+          excluded: [],
+          liabilities: [],
+        })}\n\n`,
+      ]),
+    );
+
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={initialFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+
+    expect(
+      await screen.findByText("No accounts or debts found in these statements."),
+    ).toBeInTheDocument();
+  });
+
+  // Commits both a synthesized property and its mortgage in one request — the
+  // component-level half of the hook test in use-chat-commit.test.tsx.
+  it("commits a liability row via its own Commit button, posting both tabs", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeFramedResponse([liabilityOnlyDoneFrame()]));
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={initialFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+    await screen.findByRole("heading", { name: /liabilities/i });
+
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(importGetResponse({})) // fresh GET before the payload PATCH
+      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 })) // PATCH payload
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            payload: {
+              accounts: [],
+              liabilities: [
+                {
+                  name: "Mortgage",
+                  balance: 412_000,
+                  __rowId: "liability:mortgage#f1:0",
+                  match: { kind: "exact", existingId: "liab-1" },
+                },
+              ],
+            },
+          }),
+          { status: 200 },
+        ),
+      ) // POST commit
+      .mockResolvedValueOnce(importGetResponse({})) // fresh GET before writeChatState
+      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 })); // PATCH chat
+
+    const row = screen.getByRole("row", { name: /Mortgage/ });
+    await userEvent.click(within(row).getByRole("button", { name: /commit/i }));
+    await screen.findByRole("button", { name: /committed/i });
+
+    const commitCall = vi.mocked(fetch).mock.calls.find(([url]) => String(url).includes("/commit"));
+    expect(commitCall).toBeDefined();
+    expect(JSON.parse(commitCall![1]!.body as string)).toEqual({
+      tabs: ["accounts", "liabilities"],
+      rowIds: ["liability:mortgage#f1:0"],
+    });
+  });
+});
+
+describe("ChatSurface — warns about uncommitted liabilities beside Finish import (Task 11 fix round 1, Finding 2)", () => {
+  // Mirrors `uncommittedMapRows`'s own pair of tests. Before Task 11 a
+  // liability could not be committed at all, so this gap was unreachable;
+  // Task 11's own wiring is what opened it. Mutation this catches: dropping
+  // the `uncommittedLiabilities > 0 &&` block (or the count itself) from
+  // `chat-surface.tsx`.
+  it("warns beside Finish import when a liability is still uncommitted", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeFramedResponse([liabilityOnlyDoneFrame()]));
+
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={initialFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+
+    await screen.findByRole("heading", { name: /liabilities/i });
+    expect(screen.getByRole("button", { name: /finish import/i })).toBeInTheDocument();
+    expect(
+      screen.getByText(/1 row in .Liabilities. below has not been committed/i),
+    ).toBeInTheDocument();
+  });
+
+  // The negative half: without it, a hardcoded-true warning would pass the
+  // test above too. `committedRowIds` hydrated from `chat.committedRowIds`
+  // already contains the liability's own row id, so the count must read 0.
+  it("says nothing beside Finish import when the liability is already committed", async () => {
+    vi.mocked(fetch).mockReset();
+    vi.mocked(fetch).mockResolvedValue(
+      importGetResponse({
+        payload: {
+          accounts: [],
+          liabilities: [
+            { name: "Mortgage", balance: 412_000, __rowId: "liability:mortgage#f1:0" },
+          ],
+        },
+        chat: { committedRowIds: ["liability:mortgage#f1:0"] },
+      }),
+    );
+
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={initialFiles} />);
+
+    expect(await screen.findByRole("button", { name: /finish import/i })).toBeInTheDocument();
+    expect(
+      screen.queryByText(/row in .Liabilities. below has not been committed/i),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -1609,7 +1795,7 @@ describe("ChatSurface — the map-driven review tables (Task 14b)", () => {
     expect(screen.getByText("Policy f1")).toBeInTheDocument();
     expect(screen.getByText("Policy f2")).toBeInTheDocument();
     // And it renders even though this statement produced no ACCOUNTS at all.
-    expect(screen.getByText("No accounts found in these statements.")).toBeInTheDocument();
+    expect(screen.getByText("No accounts or debts found in these statements.")).toBeInTheDocument();
   });
 
   // Finding 5: the test above asserts the table renders, NOT where. This one

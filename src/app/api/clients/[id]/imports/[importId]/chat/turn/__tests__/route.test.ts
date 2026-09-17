@@ -426,10 +426,15 @@ describe("chat turn route behavior", () => {
     expect(updateCalls).toHaveLength(1);
     const written = updateCalls[0].values.payloadJson as ImportPayloadJson;
     // The mutated payload landed in the SAME write as the transcript...
-    expect(written.payload).toEqual({ accounts: [{ __rowId: "r1", name: "IRA", value: 1, basis: 5 }] });
-    // ...on the shape this surface actually persists: `accounts` only, never
-    // widened to any other section.
-    expect(Object.keys(written.payload as object)).toEqual(["accounts"]);
+    expect(written.payload).toEqual({
+      accounts: [{ __rowId: "r1", name: "IRA", value: 1, basis: 5 }],
+      // Fix round 1, Finding 1: `liabilities` rides along as a PASSTHROUGH
+      // of the fresh read (empty here — `CHAT_PAYLOAD` carries none) — never
+      // dropped, or a mutating turn would silently delete every reviewed
+      // liability from the database (see the dedicated Finding 1 test below
+      // for the non-empty case).
+      liabilities: [],
+    });
   });
 
   // The other half of the same correction: a tool that only PROPOSES
@@ -625,6 +630,58 @@ describe("chat turn route behavior", () => {
       kind: "exact",
       existingId: "acct-99",
     });
+  });
+
+  // Task 11 fix round 1, Finding 1 — THE test that matters: the route used
+  // to build `nextPayloadJson.payload` as `{ accounts: responseAccounts }`
+  // only when a mutating tool ran, and `writeChatState` never touches
+  // `payload` at all — so that assignment REPLACES the persisted `payload`
+  // key wholesale (the same shallow-merge hazard Task 11 exists to close)
+  // and silently deletes every reviewed liability from the database. The
+  // mutating tool here edits an ACCOUNT, never the liability — this is a
+  // PASSTHROUGH, not a rebase (Task 12 owns rebasing a liability tool would
+  // mutate). Mutation this catches: reverting `nextPayloadJson.payload` to
+  // `{ accounts: responseAccounts }`.
+  it("carries payload.liabilities through untouched when a mutating turn runs (Finding 1)", async () => {
+    freshRow = {
+      id: "i1",
+      payloadJson: {
+        chat: {
+          surface: "chat",
+          transcript: [],
+          decisions: [],
+          excludedRows: [],
+          committedRowIds: [],
+        },
+        payload: {
+          accounts: [{ __rowId: "r1", name: "IRA", value: 1 }],
+          liabilities: [
+            { __rowId: "liability:mortgage#f1:0", name: "Mortgage", balance: 412_000 },
+          ],
+        } as never,
+        fileResults: {},
+      } satisfies ImportPayloadJson,
+    };
+    runTurn.mockResolvedValue({
+      payload: { accounts: [{ __rowId: "r1", name: "IRA", value: 1, basis: 5 }] },
+      payloadMutated: true,
+      turnEntries: [
+        { role: "user", text: "fix the basis", at: "t1" },
+        { role: "tool", tool: "edit_row", summary: "Set basis to 5.", at: "t1" },
+        { role: "assistant", text: "Done.", at: "t1" },
+      ],
+      newExcludedRows: [],
+      summary: "Done.",
+    });
+
+    const res = await POST(req({ message: "fix the basis" }), params);
+    expect(res.status).toBe(200);
+
+    expect(updateCalls).toHaveLength(1);
+    const written = updateCalls[0].values.payloadJson as ImportPayloadJson;
+    expect(written.payload?.liabilities).toEqual([
+      { __rowId: "liability:mortgage#f1:0", name: "Mortgage", balance: 412_000 },
+    ]);
   });
 
   it("maps an ai_not_configured error from runTurn to a readable 503", async () => {
