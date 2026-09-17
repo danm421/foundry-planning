@@ -34,7 +34,13 @@ function fakeTx() {
     }),
     update: () => ({
       set: (v: Record<string, unknown>) => ({
-        where: async () => { updated.push(v); },
+        // `.returning()` is required: commitAccounts awaits it (as the
+        // tenancy gate for a 529 owner-clear this suite never exercises).
+        where: () => {
+          updated.push(v);
+          const rows = [{ id: "existing-account-1" }];
+          return Object.assign(Promise.resolve(), { returning: async () => rows });
+        },
       }),
     }),
     select: () => ({
@@ -75,5 +81,70 @@ describe("commitAccounts", () => {
     );
     expect(inserted[0].propertyAddress).toBe("5304 Hudson Avenue");
     expect(inserted[0].annualPropertyTax).toBe("7500");
+  });
+
+  it("omits annualPropertyTax on insert when the import derived none, leaving the DB default in place", async () => {
+    const { tx, inserted } = fakeTx();
+    await commitAccounts(
+      tx,
+      payloadWith([
+        {
+          name: "5304 Hudson Avenue",
+          category: "real_estate",
+          subType: "primary_residence",
+          propertyAddress: "5304 Hudson Avenue",
+          // No annualPropertyTax — this statement carried no escrow figure.
+          __rowId: "account:hudson#f1:0",
+          match: { kind: "new" },
+        },
+      ]),
+      CTX,
+    );
+    // The KEY must be absent, not "0" — an explicit "0" would assert this
+    // property has no tax, a claim no document made. Omitting the key keeps
+    // the column's notNull().default("0").
+    expect(inserted[0]).not.toHaveProperty("annualPropertyTax");
+  });
+
+  it("writes propertyAddress and annualPropertyTax on an updated real-estate account", async () => {
+    const { tx, updated } = fakeTx();
+    await commitAccounts(
+      tx,
+      payloadWith([
+        {
+          name: "5304 Hudson Avenue",
+          category: "real_estate",
+          subType: "primary_residence",
+          propertyAddress: "5304 Hudson Avenue",
+          annualPropertyTax: 7_500,
+          __rowId: "account:hudson#f1:0",
+          match: { kind: "exact", existingId: "existing-account-1" },
+        },
+      ]),
+      CTX,
+    );
+    expect(updated[0].propertyAddress).toBe("5304 Hudson Avenue");
+    expect(updated[0].annualPropertyTax).toBe("7500");
+  });
+
+  it("leaves an existing propertyAddress and annualPropertyTax alone when the import derived neither", async () => {
+    const { tx, updated } = fakeTx();
+    await commitAccounts(
+      tx,
+      payloadWith([
+        {
+          name: "5304 Hudson Avenue",
+          category: "real_estate",
+          subType: "primary_residence",
+          // No propertyAddress, no annualPropertyTax — this re-import spoke
+          // to neither, so an advisor-entered figure must survive untouched.
+          __rowId: "account:hudson#f1:0",
+          match: { kind: "exact", existingId: "existing-account-1" },
+        },
+      ]),
+      CTX,
+    );
+    expect(updated[0]).not.toHaveProperty("propertyAddress");
+    expect(updated[0]).not.toHaveProperty("annualPropertyTax");
   });
 });
