@@ -2,7 +2,12 @@
 
 import { useState } from "react";
 import type { FirmBilling } from "@/lib/ops/billing-admin";
-import { openPortalAction, extendTrialAction, compToFounderAction } from "./actions";
+import {
+  openPortalAction,
+  extendTrialAction,
+  compToFounderAction,
+  endCompAction,
+} from "./actions";
 
 const STATE_STYLE: Record<string, string> = {
   active: "bg-emerald-500/15 text-emerald-300",
@@ -14,6 +19,7 @@ const STATE_STYLE: Record<string, string> = {
   canceled_grace: "bg-amber-500/15 text-amber-300",
   canceled_locked: "bg-red-500/15 text-red-300",
   founder: "bg-violet-500/15 text-violet-300",
+  comp_ended: "bg-amber-500/15 text-amber-300",
   missing: "bg-ink-4/15 text-ink-2",
 };
 
@@ -39,6 +45,63 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
+
+/**
+ * The two irreversible-ish billing levers (comp a firm, end its comp) are the
+ * same form: a reason recorded in the audit log, an explicit acknowledgement,
+ * and a submit that stays dead until both are given. One component so the gate
+ * logic and the a11y wiring cannot diverge between them.
+ */
+function DangerActionForm({
+  action,
+  firmId,
+  title,
+  children,
+  ackLabel,
+  submitLabel,
+}: {
+  action: (formData: FormData) => void | Promise<void>;
+  firmId: string;
+  title: string;
+  children: React.ReactNode;
+  ackLabel: string;
+  submitLabel: string;
+}) {
+  const [reason, setReason] = useState("");
+  const [ack, setAck] = useState(false);
+  return (
+    <form action={action} className="space-y-3 rounded border border-warn/40 p-4">
+      <input type="hidden" name="firmId" value={firmId} />
+      <div className="text-sm font-medium text-ink-2">{title}</div>
+      <p className="text-xs text-ink-3">{children}</p>
+      <input
+        required
+        name="reason"
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        placeholder="Reason (required — recorded in the audit log)"
+        className="w-full rounded border border-hair-2 bg-card-2 px-3 py-1.5 text-sm text-ink placeholder:text-ink-4 focus:border-accent focus:outline-none"
+      />
+      <label className="flex items-center gap-2 text-xs text-ink-2">
+        <input
+          type="checkbox"
+          checked={ack}
+          onChange={(e) => setAck(e.target.checked)}
+          className="accent-warn"
+        />
+        {ackLabel}
+      </label>
+      <button
+        type="submit"
+        disabled={!reason.trim() || !ack}
+        className="rounded bg-warn/15 px-3 py-1.5 text-sm text-warn hover:bg-warn/25 disabled:opacity-40"
+      >
+        {submitLabel}
+      </button>
+    </form>
+  );
+}
+
 export default function BillingClient({
   firmId,
   isFounder,
@@ -51,8 +114,6 @@ export default function BillingClient({
   const { state, subscription, invoices, dashboardUrl, canExtendTrial } = billing;
   const [reason, setReason] = useState("");
   const [days, setDays] = useState(14);
-  const [compReason, setCompReason] = useState("");
-  const [compAck, setCompAck] = useState(false);
 
   return (
     <section className="space-y-6">
@@ -151,42 +212,40 @@ export default function BillingClient({
 
       {/* Comp to Founder — hidden once the firm already is one */}
       {!isFounder && (
-        <form action={compToFounderAction} className="space-y-3 rounded border border-warn/40 p-4">
-          <input type="hidden" name="firmId" value={firmId} />
-          <div className="text-sm font-medium text-ink-2">Comp to Founder</div>
-          <p className="text-xs text-ink-3">
-            Grants permanent full access and cancels{" "}
-            {subscription ? "the subscription above" : "any live subscription"}, so the firm is
-            never billed again. Their data is protected from the purge cron once comped.{" "}
-            <span className="text-warn">
-              There is no undo — restoring billing means sending them through checkout again.
-            </span>
-          </p>
-          <input
-            required
-            name="reason"
-            value={compReason}
-            onChange={(e) => setCompReason(e.target.value)}
-            placeholder="Reason (required — recorded in the audit log)"
-            className="w-full rounded border border-hair-2 bg-card-2 px-3 py-1.5 text-sm text-ink placeholder:text-ink-4 focus:border-accent focus:outline-none"
-          />
-          <label className="flex items-center gap-2 text-xs text-ink-2">
-            <input
-              type="checkbox"
-              checked={compAck}
-              onChange={(e) => setCompAck(e.target.checked)}
-              className="accent-warn"
-            />
-            I understand this cancels their subscription and cannot be undone.
-          </label>
-          <button
-            type="submit"
-            disabled={!compReason.trim() || !compAck}
-            className="rounded bg-warn/15 px-3 py-1.5 text-sm text-warn hover:bg-warn/25 disabled:opacity-40"
-          >
-            Comp to Founder
-          </button>
-        </form>
+        <DangerActionForm
+          action={compToFounderAction}
+          firmId={firmId}
+          title="Comp to Founder"
+          ackLabel="I understand this cancels their subscription for good."
+          submitLabel="Comp to Founder"
+        >
+          Grants permanent full access and cancels{" "}
+          {subscription ? "the subscription above" : "any live subscription"}, so the firm is
+          never billed again. Their data is protected from the purge cron once comped.{" "}
+          <span className="text-warn">
+            Reversible with &ldquo;End Founder comp&rdquo; below, which puts them into
+            read-only and prompts them through checkout — but the subscription
+            cancelled here is gone for good, so coming back means a new one at
+            today&rsquo;s prices.
+          </span>
+        </DangerActionForm>
+      )}
+
+      {/* End Founder comp — the reverse of the above; only for a founder firm */}
+      {isFounder && (
+        <DangerActionForm
+          action={endCompAction}
+          firmId={firmId}
+          title="End Founder comp"
+          ackLabel="I understand they lose editing until they subscribe."
+          submitLabel="End Founder comp"
+        >
+          Takes the firm off the Founder plan. They keep read access to
+          everything and are prompted to subscribe — a banner on every page
+          plus a real checkout button on their billing settings. Nothing is
+          archived and nothing is deleted; their data stays put for as long as
+          they take to decide. Reversible with Comp to Founder.
+        </DangerActionForm>
       )}
 
       {/* Recent invoices */}

@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { decideAccess, type AccessDecision } from "../access-policy";
+import { describe, it, expect, afterEach } from "vitest";
+import { decideAccess, isEnforced, type AccessDecision } from "../access-policy";
 import type { SubscriptionState } from "../subscription-state";
 
 // One representative instance of every SubscriptionState kind.
@@ -20,6 +20,7 @@ const states: Record<string, SubscriptionState> = {
     mutationsAllowed: false,
   },
   canceled_locked: { kind: "canceled_locked" },
+  comp_ended: { kind: "comp_ended" },
   missing: { kind: "missing", reason: "no_metadata" },
 };
 
@@ -111,5 +112,81 @@ describe("decideAccess truth table", () => {
     expect(decideAccess(states.canceled_grace, "post", MUTATE_PATH)).toBe<AccessDecision>(
       "block_mutation",
     );
+  });
+});
+
+describe("comp_ended access", () => {
+  // A firm whose comp was ended is a BUSINESS decision, not a broken account.
+  // It gets the same read-only treatment as a firm whose card lapsed
+  // (canceled_grace) — anything harsher would give a de-comped firm LESS
+  // access than one that simply stopped paying, which is backwards.
+  it("GET → allow (they can still read their book while they decide)", () => {
+    expect(decideAccess(states.comp_ended, "GET", PAGE_PATH)).toBe<AccessDecision>("allow");
+  });
+
+  for (const method of ["POST", "PUT", "PATCH", "DELETE"] as const) {
+    it(`${method} → block_mutation`, () => {
+      expect(decideAccess(states.comp_ended, method, MUTATE_PATH)).toBe<AccessDecision>(
+        "block_mutation",
+      );
+    });
+  }
+
+  it("never locks out reads the way `missing` does", () => {
+    for (const method of METHODS) {
+      expect(decideAccess(states.comp_ended, method, MUTATE_PATH)).not.toBe<AccessDecision>(
+        "lock_out",
+      );
+    }
+  });
+
+  it("honours the read-POST allowlist, like every other read-only state", () => {
+    expect(decideAccess(states.comp_ended, "POST", READ_POST_PATH)).toBe<AccessDecision>("allow");
+    expect(decideAccess(states.comp_ended, "POST", FORGE_READ_POST_PATH)).toBe<AccessDecision>(
+      "allow",
+    );
+  });
+});
+
+describe("isEnforced — the rollout-flag override, shared by proxy.ts and MCP", () => {
+  const saved = process.env.BILLING_ENFORCEMENT_MODE;
+  afterEach(() => {
+    if (saved === undefined) delete process.env.BILLING_ENFORCEMENT_MODE;
+    else process.env.BILLING_ENFORCEMENT_MODE = saved;
+  });
+
+  it("never enforces an `allow` decision", () => {
+    process.env.BILLING_ENFORCEMENT_MODE = "enforce";
+    expect(isEnforced(states.active, "allow")).toBe(false);
+  });
+
+  it("blocks missing and comp_ended even in log mode", () => {
+    process.env.BILLING_ENFORCEMENT_MODE = "log";
+    expect(isEnforced(states.missing, "lock_out")).toBe(true);
+    expect(isEnforced(states.comp_ended, "block_mutation")).toBe(true);
+  });
+
+  it("defers to the flag for every OTHER state", () => {
+    process.env.BILLING_ENFORCEMENT_MODE = "log";
+    for (const key of ["canceled_grace", "canceled_locked", "unpaid", "paused"]) {
+      expect(isEnforced(states[key], "lock_out")).toBe(false);
+    }
+    process.env.BILLING_ENFORCEMENT_MODE = "enforce";
+    for (const key of ["canceled_grace", "canceled_locked", "unpaid", "paused"]) {
+      expect(isEnforced(states[key], "lock_out")).toBe(true);
+    }
+  });
+
+  it("is the expression BOTH enforcement callers use — no second copy", async () => {
+    // The drift this exists to prevent: `src/lib/mcp/principal.ts` used to
+    // spell the override out inline, under a comment promising it could never
+    // diverge from `src/proxy.ts`. Adding a second flag-ignoring state to the
+    // proxy falsified that silently. Neither file may re-implement it.
+    const { readFile } = await import("node:fs/promises");
+    for (const f of ["src/proxy.ts", "src/lib/mcp/principal.ts"]) {
+      const src = await readFile(f, "utf8");
+      expect(src).toContain("isEnforced");
+      expect(src).not.toMatch(/enforcementMode\(\)\s*===\s*"enforce"/);
+    }
   });
 });

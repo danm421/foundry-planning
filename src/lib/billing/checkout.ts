@@ -62,10 +62,22 @@ export function buildCheckoutSessionParams(args: {
    * yet — that path keeps the Stripe custom field + invitation.
    */
   clientReferenceId?: string;
+  /**
+   * RE-CHECKOUT: the Clerk org this Checkout must attach to, for a firm that
+   * ALREADY exists — today, one whose Founder comp ops ended.
+   *
+   * Binding is not optional decoration, it is the data-stranding guard — see
+   * `handleCheckoutSessionCompleted`, which reads it, for the full reasoning.
+   *
+   * Omitted on the signup path, which has no org yet — that is the whole
+   * difference between the two flows.
+   */
+  existingFirmId?: string;
 }): SessionCreateParams {
   const catalog = getPriceCatalog();
   const priceId = catalog[args.priceKey];
   const line_items: SessionLineItem[] = [{ price: priceId, quantity: 1 }];
+  const existingFirmId = args.existingFirmId;
   // Stripe's consent_collection.terms_of_service is intentionally NOT used.
   // Our app-side acceptance trail is stronger: /legal/tos page + per-checkout
   // tos_acceptances row (userId, firmId, version, IP, timestamp). The
@@ -77,7 +89,15 @@ export function buildCheckoutSessionParams(args: {
   return {
     mode: "subscription",
     line_items,
-    subscription_data: { trial_period_days: 14 },
+    subscription_data: existingFirmId
+      ? // No second trial: a de-comped firm has already had the product free,
+        // and re-granting 14 days would undo the point of ending the comp.
+        // The firm id rides on the subscription as well as the session so
+        // `customer.subscription.*` webhooks resolve it immediately, rather
+        // than waiting for checkout-session-completed to stamp it.
+        { metadata: { firm_id: existingFirmId } }
+      : { trial_period_days: 14 },
+    ...(existingFirmId ? { metadata: { firm_id: existingFirmId } } : {}),
     ...(args.clientReferenceId
       ? { client_reference_id: args.clientReferenceId }
       : {}),
@@ -101,8 +121,18 @@ export function buildCheckoutSessionParams(args: {
     // /admin/promo-codes mints Stripe promotion codes for buyers to type here.
     // Without this the field never renders and every code ops issues is dead.
     allow_promotion_codes: true,
-    success_url: `${args.origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: STOREFRONT_PRICING_URL,
+    // The signup path lands on /checkout/success, which polls for an org that
+    // does not exist yet. A re-checkout's org already exists and the buyer is
+    // already signed into it, so that page has nothing to wait for — send them
+    // straight back to billing. /settings/billing is billing-exempt in
+    // src/proxy.ts, so it is reachable even before their session token picks
+    // up the new status.
+    success_url: existingFirmId
+      ? `${args.origin}/settings/billing?resubscribed=1`
+      : `${args.origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
+    // Cancelling out of a re-checkout must land back in the app they are
+    // already signed into, not on the public storefront's pricing page.
+    cancel_url: existingFirmId ? `${args.origin}/settings/billing` : STOREFRONT_PRICING_URL,
     // Pinned on purpose, and pinning is the only lever there is: Stripe has no
     // deny-list. Naming payment_method_types OVERRIDES dynamic payment methods —
     // Checkout offers exactly this list and ignores every other method the

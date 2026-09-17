@@ -28,7 +28,9 @@ const LIVE_SUBSCRIPTION_STATUSES = ["trialing", "active", "past_due", "unpaid"];
  * webhook in exchange for ordering-safety.
  *
  * Founder org bypass is NOT here; founder orgs have no Stripe subscription
- * mapped, so this handler simply isn't fired for them.
+ * mapped, so this handler simply isn't fired for them — EXCEPT once, when a
+ * de-comped firm re-subscribes. That case is handled by the `isLive` lift
+ * below, which retires the comp.
  */
 export async function handleSubscriptionUpsert(event: Stripe.Event): Promise<void> {
   const stripe = getStripe();
@@ -195,17 +197,35 @@ export async function handleSubscriptionUpsert(event: Stripe.Event): Promise<voi
           : null,
         // Clear any prior cancellation shadow when the firm is live again so a
         // stale archived_at can't influence enforcement or shadow the state.
-        ...(isLive ? { archived_at: null } : {}),
+        // The same goes for the Founder comp: a firm with a LIVE subscription
+        // is paying, so it is not comped any more, whichever route the payment
+        // arrived by. `stateFromMeta` reads is_founder ahead of any status, so
+        // a stale `true` would beat a real paid subscription and keep giving
+        // the product away — and Clerk MERGES publicMetadata, so the key has
+        // to be written, not omitted.
+        //
+        // Scoped to live statuses on purpose: `compFirmToFounder` applies
+        // founder state and THEN cancels Stripe, so the events that comping
+        // itself produces are all dead statuses. Lifting on those would undo
+        // the comp that had just been applied.
+        ...(isLive ? { archived_at: null, is_founder: false } : {}),
         entitlements,
       },
     }),
     // When the firm is live again, lift the cancellation archive so the purge
-    // cron never deletes a paying customer (see purge-eligibility guard).
+    // cron never deletes a paying customer (see purge-eligibility guard), and
+    // lift the Founder comp for the reason above — this column, not Clerk, is
+    // what the purge cron and the ops console read.
     ...(isLive
       ? [
           db
             .update(firms)
-            .set({ archivedAt: null, dataRetentionUntil: null, updatedAt: new Date() })
+            .set({
+              archivedAt: null,
+              dataRetentionUntil: null,
+              isFounder: false,
+              updatedAt: new Date(),
+            })
             .where(eq(firms.firmId, firmId)),
         ]
       : []),

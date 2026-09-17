@@ -158,3 +158,55 @@ describe("proxy access enforcement", () => {
     expect(recordAudit).not.toHaveBeenCalled();
   });
 });
+
+describe("comp_ended blocks regardless of the rollout flag", () => {
+  const compEnded = { subscription_status: "comp_ended", entitlements: ["ai_import"] };
+
+  it("LOG mode: still 403s a mutating API call", async () => {
+    // The whole feature turns on this. Every other billing state only blocks
+    // once BILLING_ENFORCEMENT_MODE is "enforce"; if comp_ended waited for that
+    // flag, ending a comp would change nothing the firm could see.
+    process.env.BILLING_ENFORCEMENT_MODE = "log";
+    const res = await captured.handler!(
+      authWith(compEnded) as never,
+      makeReq("/api/clients/abc/accounts", "POST"),
+    );
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "subscription_inactive" });
+  });
+
+  it("LOG mode: leaves READS alone — they keep their book while they decide", async () => {
+    process.env.BILLING_ENFORCEMENT_MODE = "log";
+    const res = await captured.handler!(
+      authWith(compEnded) as never,
+      makeReq("/clients/abc", "GET"),
+    );
+    expect(res.status).not.toBe(307);
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("records the denial as comp_ended, not missing", async () => {
+    process.env.BILLING_ENFORCEMENT_MODE = "log";
+    await captured.handler!(
+      authWith(compEnded) as never,
+      makeReq("/api/clients/abc/accounts", "POST"),
+    );
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          decision: "block_mutation",
+          status: "comp_ended",
+        }),
+      }),
+    );
+  });
+
+  it("still reaches /settings/billing — the one surface that can fix it", async () => {
+    process.env.BILLING_ENFORCEMENT_MODE = "enforce";
+    const res = await captured.handler!(
+      authWith(compEnded) as never,
+      makeReq("/settings/billing", "GET"),
+    );
+    expect(res.status).not.toBe(307);
+  });
+});

@@ -119,3 +119,18 @@ export function deriveUserEntitlements(input: {
   }
   return Array.from(set).sort();
 }
+
+/**
+ * The `entitlements` array out of a Clerk org's publicMetadata, coerced.
+ * Clerk hands metadata back as `unknown`, so every reader has to widen it the
+ * same way; this is that one place. (Pre-existing copies remain in
+ * `founder-init.ts` and the reconcile cron — worth folding in separately.)
+ */
+export function readEntitlementsFromMeta(
+  // Clerk types publicMetadata as a nullable branded object, so accept the
+  // shapes callers actually hold rather than making each one cast.
+  meta: Record<string, unknown> | null | undefined,
+): string[] {
+  const raw = meta?.entitlements;
+  return Array.isArray(raw) ? (raw as unknown[]).map(String) : [];
+}

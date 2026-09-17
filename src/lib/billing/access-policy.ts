@@ -49,8 +49,9 @@ function isReadPost(pathname: string): boolean {
  *
  *  - `lock_out`        canceled_locked / unpaid / paused / missing — block
  *                      reads too.
- *  - `block_mutation`  canceled_grace and late past_due — GET (+ read-POST
- *                      allowlist) allowed, mutating methods blocked.
+ *  - `block_mutation`  canceled_grace, comp_ended and late past_due — GET
+ *                      (+ read-POST allowlist) allowed, mutating methods
+ *                      blocked.
  *  - `allow`           founder / trialing / active / active_canceling, and
  *                      past_due within its cutoff.
  *
@@ -84,6 +85,12 @@ export function decideAccess(
       return mutationDecision(method, pathname);
     }
 
+    // A comp ending is a business decision, not a broken account: the firm
+    // keeps reading its own book while it decides, and is prompted to
+    // subscribe. Identical treatment to canceled_grace on purpose — anything
+    // harsher would give a de-comped firm LESS access than one that simply
+    // stopped paying.
+    case "comp_ended":
     case "canceled_grace":
       return mutationDecision(method, pathname);
 
@@ -97,6 +104,50 @@ function mutationDecision(method: string, pathname: string): AccessDecision {
   if (!MUTATING_METHODS.has(m)) return "allow";
   if (m === "POST" && isReadPost(pathname)) return "allow";
   return "block_mutation";
+}
+
+/**
+ * Does a non-"allow" decision actually BLOCK, or only get logged?
+ *
+ * Single source of truth for the rollout-flag override, shared by `src/proxy.ts`
+ * (the web) and `src/lib/mcp/principal.ts` (the MCP connector) — the same R74/R85
+ * rule that put `enforcementMode` itself here. Both previously spelled the
+ * override out inline, and adding `comp_ended` to one of them broke the other's
+ * promise that they "can never drift apart"; this is that promise made
+ * structural instead of aspirational.
+ *
+ * Two states ignore the flag, because neither is a billing-rollout judgment
+ * call — one is a broken account, the other a decision ops already took:
+ *
+ *   `missing`     unprovisioned / broken (no readable subscription metadata).
+ *   `comp_ended`  ops ended this firm's Founder comp. Gated on the flag it
+ *                 would do nothing visible while the rollout is in "log" mode,
+ *                 i.e. the de-comp would silently not work.
+ *
+ * Written as an exhaustive switch rather than a Set or a `default:` — a new
+ * SubscriptionState then fails to compile here until someone decides which
+ * side it falls on, which a `default` clause would silently answer for them.
+ */
+export function isEnforced(
+  state: SubscriptionState,
+  decision: AccessDecision,
+): boolean {
+  if (decision === "allow") return false;
+  switch (state.kind) {
+    case "missing":
+    case "comp_ended":
+      return true;
+    case "founder":
+    case "trialing":
+    case "active":
+    case "active_canceling":
+    case "past_due":
+    case "canceled_grace":
+    case "canceled_locked":
+    case "unpaid":
+    case "paused":
+      return enforcementMode() === "enforce";
+  }
 }
 
 export type BillingEnforcementMode = "log" | "enforce";

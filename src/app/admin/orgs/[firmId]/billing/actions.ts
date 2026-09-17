@@ -7,6 +7,7 @@ import {
   createPortalSessionForFirm,
   extendTrialForFirm,
   compFirmToFounder,
+  endFounderComp,
 } from "@/lib/ops/billing-admin";
 
 export async function openPortalAction(formData: FormData): Promise<void> {
@@ -45,6 +46,22 @@ export async function compToFounderAction(formData: FormData): Promise<void> {
   if (!firmId) throw new Error("Missing firmId");
   if (!reason) throw new Error("A reason is required to comp a firm to founder");
   await compFirmToFounder({ firmId, reason, setBy: admin.clerkUserId });
+  revalidatePath(`/admin/orgs/${firmId}/billing`);
+  revalidatePath(`/admin/orgs/${firmId}`);
+}
+
+/**
+ * Superadmin-only, matching `compToFounderAction`: the same lever in reverse.
+ * It takes a firm off the Founder plan and puts it into `comp_ended` —
+ * read-only, banner-prompted, with a real checkout button on its billing page.
+ */
+export async function endCompAction(formData: FormData): Promise<void> {
+  const admin = await requireOpsAdmin("superadmin");
+  const firmId = String(formData.get("firmId") ?? "");
+  const reason = String(formData.get("reason") ?? "").trim();
+  if (!firmId) throw new Error("Missing firmId");
+  if (!reason) throw new Error("A reason is required to end a firm's comp");
+  await endFounderComp({ firmId, reason, setBy: admin.clerkUserId });
   revalidatePath(`/admin/orgs/${firmId}/billing`);
   revalidatePath(`/admin/orgs/${firmId}`);
 }

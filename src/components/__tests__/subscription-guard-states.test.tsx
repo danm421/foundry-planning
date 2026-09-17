@@ -23,3 +23,24 @@ describe("SubscriptionGuard new terminal states", () => {
     expect(html.toLowerCase()).toContain("paused");
   });
 });
+
+describe("SubscriptionGuard comp_ended", () => {
+  it("renders an urgent, undismissable banner pointing at checkout", async () => {
+    const html = await renderState({ kind: "comp_ended" });
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("/settings/billing");
+    expect(html).toContain("Subscribe");
+  });
+
+  it("carries no dismiss control — the banner IS the prompt", async () => {
+    // A dismissed banner would leave the firm editing-blocked with nothing on
+    // screen explaining why.
+    const html = await renderState({ kind: "comp_ended" });
+    expect(html.toLowerCase()).not.toContain("dismiss");
+  });
+
+  it("tells them their data is still readable rather than that they are locked out", async () => {
+    const html = await renderState({ kind: "comp_ended" });
+    expect(html.toLowerCase()).toContain("readable");
+  });
+});

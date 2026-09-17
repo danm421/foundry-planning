@@ -5,10 +5,12 @@ import { subscriptions, invoices, firms } from "@/db/schema";
 import { getStripe } from "@/lib/billing/stripe-client";
 import {
   stateFromMeta,
+  COMP_ENDED_STATUS,
   type OrgMeta,
   type SubscriptionState,
 } from "@/lib/billing/subscription-state";
 import { applyFounderState } from "@/lib/billing/founder-init";
+import { readEntitlementsFromMeta } from "@/lib/billing/entitlements";
 import { resolveBillingContactUserId } from "@/lib/billing/billing-contact";
 import { recordAudit } from "@/lib/audit";
 
@@ -192,8 +194,8 @@ export async function createPortalSessionForFirm(args: {
  * `canceled_grace` (mutations blocked) and gets an archive stamp nothing
  * clears. That window is why this is a button and not a runbook.
  *
- * Near one-way: founders carry no subscription, so undoing a comp means
- * sending the firm through checkout again, not flipping this back.
+ * Reversible: `endFounderComp` below takes a firm back off the plan and
+ * prompts it through checkout.
  */
 export async function compFirmToFounder(args: {
   firmId: string;
@@ -218,9 +220,7 @@ export async function compFirmToFounder(args: {
   // Carry forward whatever entitlements the org already holds. `client_portal`
   // isn't in the base set and isn't implied by any Stripe price, so deriving
   // from scratch would silently strip it from a firm that had been granted it.
-  const existingEntitlements = Array.isArray(org.publicMetadata?.entitlements)
-    ? (org.publicMetadata.entitlements as unknown[]).map(String)
-    : [];
+  const existingEntitlements = readEntitlementsFromMeta(org.publicMetadata);
 
   await applyFounderState({
     firmId,
@@ -266,6 +266,85 @@ export async function compFirmToFounder(args: {
   });
 
   return { canceledSubscriptionId: live?.stripeSubscriptionId ?? null };
+}
+
+/**
+ * End a firm's Founder comp: they stop being comped and are prompted through
+ * checkout the next time they use the app.
+ *
+ * Deliberately NOT a bare "clear the flag". Clearing is_founder alone leaves
+ * the firm reading as `missing` — an unprovisioned/broken account, which
+ * `decideAccess` locks out of READS as well, and which /settings/billing
+ * answers with "contact support". That is a lockout with a dead end, not a
+ * prompt. So this writes a distinguishable `comp_ended` status instead, which:
+ *
+ *   - decides to `block_mutation`, not `lock_out` — they keep reading their
+ *     own book while they decide, the same deal a firm gets when its card
+ *     lapses (anything harsher would punish a de-comped firm MORE than one
+ *     that simply stopped paying);
+ *   - renders a persistent "Subscribe" banner and a real checkout button on
+ *     /settings/billing, bound to THIS org (see `existingFirmId` in
+ *     checkout.ts — the binding is what stops checkout minting a second org
+ *     and stranding their clients);
+ *   - stays legible in the ops console and the audit trail, where `missing`
+ *     would be indistinguishable from a provisioning bug.
+ *
+ * Both flags are cleared because both are read: `stateFromMeta` reads Clerk's
+ * is_founder ahead of any subscription status, while the purge cron and the
+ * ops console read `firms.is_founder`.
+ *
+ * The firm is NOT archived and gets no retention deadline — `isFirmPurgeable`
+ * demands an archive stamp, so their data stays untouchable by the purge cron
+ * for as long as they take to decide.
+ */
+export async function endFounderComp(args: {
+  firmId: string;
+  reason: string;
+  setBy: string; // ops clerk_user_id
+}): Promise<void> {
+  const { firmId, reason, setBy } = args;
+  if (!reason.trim()) throw new Error("A reason is required to end a firm's comp.");
+
+  const cc = await clerkClient();
+  const org = await cc.organizations.getOrganization({ organizationId: firmId });
+  const meta = (org.publicMetadata ?? {}) as Record<string, unknown>;
+  if (meta.is_founder !== true) {
+    throw new Error(`Org ${firmId} is not on the Founder plan — there is no comp to end.`);
+  }
+
+  // Carry entitlements forward untouched: read-only access still has to render
+  // the surfaces they hold (client_portal isn't in the base set and no Stripe
+  // price implies it, so re-deriving would strip it). A real checkout
+  // recomputes them from the subscription items anyway.
+  const entitlements = readEntitlementsFromMeta(meta);
+
+  // DB first, Clerk last. Clerk is enforcement truth, so it is the committing
+  // step; the half-done state the other order would leave (app restricts them
+  // while ops tooling still reads "founder") is the more confusing one. Either
+  // way the firm is never purgeable, because nothing here sets an archive
+  // stamp.
+  await db
+    .update(firms)
+    .set({ isFounder: false, updatedAt: new Date() })
+    .where(eq(firms.firmId, firmId));
+
+  await cc.organizations.updateOrganizationMetadata(firmId, {
+    publicMetadata: {
+      ...meta,
+      is_founder: false,
+      subscription_status: COMP_ENDED_STATUS,
+      entitlements,
+    },
+  });
+
+  await recordAudit({
+    action: "ops.billing.comp_ended",
+    resourceType: "firm",
+    resourceId: firmId,
+    firmId,
+    actorId: setBy,
+    metadata: { reason, entitlements },
+  });
 }
 
 /** Extend the target firm's trial via Stripe. Webhooks sync DB + Clerk. Audited. */

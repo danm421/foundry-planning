@@ -167,3 +167,64 @@ describe("buildCheckoutSessionParams", () => {
     });
   });
 });
+
+describe("buildCheckoutSessionParams — re-checkout for an EXISTING org", () => {
+  let saved: Record<string, string | undefined>;
+  beforeEach(() => {
+    saved = Object.fromEntries(Object.keys(ENV).map((k) => [k, process.env[k]]));
+    Object.assign(process.env, ENV);
+    __resetPriceCatalogForTests();
+  });
+  afterEach(() => {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    __resetPriceCatalogForTests();
+  });
+
+  const ORG = "org_3GunIfnXQ7DQRQsfjlrha36CgDh";
+  const build = () =>
+    buildCheckoutSessionParams({
+      priceKey: "seatAnnual",
+      origin: "https://app.foundryplanning.com",
+      clientReferenceId: "user_abc",
+      existingFirmId: ORG,
+    });
+
+  // THE data-stranding guard — see handleCheckoutSessionCompleted for why the
+  // customer-id lookup cannot cover a firm that never subscribed.
+  it("stamps firm_id on the session so the webhook reuses the existing org", () => {
+    expect(build().metadata?.firm_id).toBe(ORG);
+  });
+
+  it("stamps firm_id on the subscription too, so later webhooks resolve it", () => {
+    expect(build().subscription_data?.metadata?.firm_id).toBe(ORG);
+  });
+
+  it("grants NO second free trial — they have already had the product free", () => {
+    expect(build().subscription_data?.trial_period_days).toBeUndefined();
+  });
+
+  it("returns them to billing, not the org-less signup success page", () => {
+    expect(build().success_url).toBe(
+      "https://app.foundryplanning.com/settings/billing?resubscribed=1",
+    );
+  });
+
+  it("cancels back into the app, not the public storefront", () => {
+    expect(build().cancel_url).toBe("https://app.foundryplanning.com/settings/billing");
+  });
+
+  it("leaves the signup path untouched — no firm_id, trial intact", () => {
+    const signup = buildCheckoutSessionParams({
+      priceKey: "seatAnnual",
+      origin: "https://app.foundryplanning.com",
+      clientReferenceId: "user_abc",
+    });
+    expect(signup.metadata?.firm_id).toBeUndefined();
+    expect(signup.subscription_data?.metadata?.firm_id).toBeUndefined();
+    expect(signup.subscription_data?.trial_period_days).toBe(14);
+    expect(signup.success_url).toContain("/checkout/success");
+  });
+});

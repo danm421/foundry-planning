@@ -302,6 +302,9 @@ export type AuditAction =
   | "ops.billing.portal_opened"
   | "ops.billing.trial_extended"
   | "ops.billing.comped_to_founder"
+  // The reverse: a firm taken back OFF the Founder plan, which puts it into
+  // `comp_ended` (read-only + prompted through checkout).
+  | "ops.billing.comp_ended"
   | "ops.impersonation.started"
   | "ops.impersonation.ended"
   // Who holds ops access (firmId = "system"; these are not scoped to a firm)

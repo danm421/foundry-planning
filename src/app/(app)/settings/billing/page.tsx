@@ -12,6 +12,7 @@ import {
 } from "@/lib/billing/subscription-state";
 import Forbidden from "../forbidden";
 import ManageBillingButton from "./manage-billing-button";
+import ResubscribeButton from "./resubscribe-button";
 
 function FounderBillingPanel(): ReactElement {
   return (
@@ -39,6 +40,40 @@ function FounderBillingPanel(): ReactElement {
       >
         No subscription to manage
       </button>
+    </div>
+  );
+}
+
+/**
+ * A firm whose Founder comp ops ended. Deliberately NOT the panel below:
+ * `missing` means an unprovisioned or broken account, where "contact support"
+ * is the right answer and checkout is the wrong one. This firm is fine — it
+ * simply has to start paying, and until it does it keeps read access to
+ * everything (see `decideAccess`), so the copy leads with that rather than
+ * with a scare.
+ */
+function CompEndedPanel(): ReactElement {
+  return (
+    <div className="flex flex-col gap-4">
+      <header className="flex flex-col gap-1">
+        <h1 className="text-base font-medium text-ink">Your complimentary access has ended</h1>
+        <p className="text-sm text-ink-3">
+          Everything you have built is still here and still readable. Subscribe
+          to start editing again — your clients, plans and settings carry over
+          exactly as they are.
+        </p>
+      </header>
+      <ResubscribeButton />
+    </div>
+  );
+}
+
+/** Stripe sends a completed re-checkout back here. */
+function ResubscribedNotice(): ReactElement {
+  return (
+    <div role="status" className="rounded border border-hair bg-card p-4 text-sm text-ink-2">
+      Payment received — thank you. Your subscription is being activated; it can
+      take a moment to show up here.
     </div>
   );
 }
@@ -100,6 +135,7 @@ const STATUS_LABEL: Record<SubscriptionState["kind"], string> = {
   paused: "Paused",
   canceled_grace: "Canceled — read-only grace",
   canceled_locked: "Canceled — locked",
+  comp_ended: "Complimentary access ended",
   missing: "Unknown",
 };
 
@@ -211,6 +247,13 @@ const INVOICE_PAGE_LIMIT = 24; // ~2 years of monthly invoices
 export async function NonFounderBillingPanel(): Promise<ReactElement> {
   const [{ orgId }, state] = await Promise.all([auth(), getSubscriptionState()]);
 
+  // An ops-ended comp. Checked before `missing` because the two must never be
+  // answered the same way: this firm needs a checkout button, a `missing` one
+  // needs support.
+  if (state.kind === "comp_ended") {
+    return <CompEndedPanel />;
+  }
+
   // No readable subscription metadata → unprovisioned / broken account. The
   // middleware locks these out of the app; billing is the one surface they can
   // still reach, so show a clear recovery path instead of a dead-end "Unknown".
@@ -253,7 +296,11 @@ export async function NonFounderBillingPanel(): Promise<ReactElement> {
   );
 }
 
-export default async function BillingSettingsPage(): Promise<ReactElement> {
+export default async function BillingSettingsPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ resubscribed?: string | string[] }>;
+}): Promise<ReactElement> {
   try {
     await requireBillingContact();
   } catch (err) {
@@ -269,5 +316,19 @@ export default async function BillingSettingsPage(): Promise<ReactElement> {
       ?.org_public_metadata ?? {};
   const isFounder = meta.is_founder === true;
 
-  return isFounder ? <FounderBillingPanel /> : <NonFounderBillingPanel />;
+  // Stripe's success_url for a re-checkout lands here. Driven by the redirect
+  // rather than by the state, because the session token lags: for up to a
+  // token refresh after checkout it can still carry `is_founder: true`, which
+  // routes to FounderBillingPanel. Rendering the notice ABOVE that branch is
+  // what stops it being dropped on exactly the visit it exists for.
+  const sp = await searchParams;
+  const rawFlag = sp?.resubscribed;
+  const resubscribed = (Array.isArray(rawFlag) ? rawFlag[0] : rawFlag) === "1";
+
+  return (
+    <div className="flex flex-col gap-4">
+      {resubscribed ? <ResubscribedNotice /> : null}
+      {isFounder ? <FounderBillingPanel /> : <NonFounderBillingPanel />}
+    </div>
+  );
 }

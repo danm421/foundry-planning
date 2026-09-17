@@ -10,9 +10,25 @@ export type SubscriptionState =
   | { kind: "paused" }
   | { kind: "canceled_grace"; archivedAt: Date; mutationsAllowed: false }
   | { kind: "canceled_locked" }
+  /**
+   * An ops-ended Founder comp. Deliberately NOT `missing`: `missing` means
+   * unprovisioned/broken, where checkout is the wrong remedy and a Subscribe
+   * button could mint a duplicate subscription for a firm whose metadata
+   * merely failed to write. This firm is fine — it just has to start paying.
+   */
+  | { kind: "comp_ended" }
   | { kind: "missing"; reason: "no_metadata" };
 
 export const GRACE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * The `subscription_status` an ops-ended comp writes into Clerk. Ours, not
+ * Stripe's. Lives here, beside the `stateFromMeta` branch that READS it, so
+ * the writer (`endFounderComp`) and the reader cannot drift — as bare literals
+ * on both sides, a typo in either would silently drop a de-comped firm into
+ * `missing` and lock it out of reads.
+ */
+export const COMP_ENDED_STATUS = "comp_ended";
 
 export type OrgMeta = {
   is_founder?: boolean;
@@ -38,6 +54,7 @@ function parseDate(s: string | undefined): Date | null {
  *
  * `incomplete_expired` is treated exactly like `canceled` (a sub that never
  * activated and is dead). `unpaid` and `paused` are terminal → caller locks.
+ * `comp_ended` is ours, not Stripe's — written only by the ops de-comp action.
  */
 export function stateFromMeta(meta: OrgMeta | undefined): SubscriptionState {
   if (!meta || Object.keys(meta).length === 0) {
@@ -46,6 +63,11 @@ export function stateFromMeta(meta: OrgMeta | undefined): SubscriptionState {
   if (meta.is_founder === true) return { kind: "founder" };
 
   const status = meta.subscription_status;
+  // Checked before every Stripe status, but AFTER is_founder — re-comping a
+  // firm must beat a stale comp_ended stamp. Nothing else writes this value;
+  // a real checkout overwrites it with the live Stripe status, so the state
+  // self-heals the moment they pay.
+  if (status === COMP_ENDED_STATUS) return { kind: "comp_ended" };
   if (status === "trialing") {
     const trialEndsAt = parseDate(meta.trial_ends_at);
     if (trialEndsAt) {

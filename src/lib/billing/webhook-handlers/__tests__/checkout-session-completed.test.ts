@@ -47,9 +47,11 @@ const mockSubsInsert = vi.fn();
 const mockItemsInsert = vi.fn();
 const mockTosInsert = vi.fn();
 const mockSubLookup = vi.fn(); // SELECT existing sub by stripeCustomerId
+const mockFirmUpdate = vi.fn(); // UPDATE firms SET is_founder = false
 vi.mock("@/db", () => ({
   db: {
     select: () => ({ from: () => ({ where: () => mockSubLookup() }) }),
+    update: () => ({ set: (v: unknown) => ({ where: () => mockFirmUpdate(v) }) }),
     insert: (table: unknown) => ({
       values: (v: unknown) => ({
         onConflictDoNothing: () => ({
@@ -103,6 +105,8 @@ beforeEach(() => {
   mockTosInsert.mockReset();
   mockRecordAudit.mockReset();
   mockSubLookup.mockReset();
+  mockFirmUpdate.mockReset();
+  mockFirmUpdate.mockResolvedValue(undefined);
   mockSubLookup.mockResolvedValue([]); // default: brand-new firm
 });
 
@@ -638,6 +642,124 @@ describe("sales path (no client_reference_id) — unchanged", () => {
     expect(mockUpdateUserMetadata).not.toHaveBeenCalled();
     expect(mockFirmInsert).toHaveBeenCalledWith(
       expect.objectContaining({ logoUrl: null, primaryColor: null }),
+    );
+  });
+});
+
+describe("re-checkout bound to an existing org (session.metadata.firm_id)", () => {
+  const BOUND_ORG = "org_3GunIfnXQ7DQRQsfjlrha36CgDh";
+
+  function arrange() {
+    mockSessionsRetrieve.mockResolvedValue({
+      id: "cs_recheckout",
+      customer: "cus_new",
+      subscription: "sub_re",
+      customer_details: { email: "owner@maltin.example" },
+      custom_fields: [],
+      client_reference_id: "user_owner",
+      metadata: { firm_id: BOUND_ORG },
+    });
+    mockSubsRetrieve.mockResolvedValue({
+      id: "sub_re",
+      customer: "cus_new",
+      status: "active",
+      cancel_at_period_end: false,
+      trial_start: null,
+      trial_end: null,
+      items: {
+        data: [
+          {
+            id: "si_seat",
+            price: { id: "price_seat", unit_amount: 9900, currency: "usd", metadata: { kind: "seat" } },
+            quantity: 1,
+            metadata: {},
+            current_period_start: 1690000000,
+            current_period_end: 1692592000,
+          },
+        ],
+      },
+      metadata: { firm_id: BOUND_ORG },
+    });
+    mockFirmInsert.mockResolvedValue([]);
+    mockSubsInsert.mockResolvedValue([{ id: "internal-sub" }]);
+    mockItemsInsert.mockResolvedValue([]);
+    mockTosInsert.mockResolvedValue([]);
+    // THE shape that strands data: a firm comped before it ever subscribed has
+    // NO subscriptions row, so the stripeCustomerId lookup finds nothing.
+    mockSubLookup.mockResolvedValue([]);
+  }
+
+  const fire = () =>
+    handleCheckoutSessionCompleted({
+      id: "evt_re",
+      type: "checkout.session.completed",
+      data: { object: { id: "cs_recheckout" } },
+    } as never);
+
+  it("NEVER mints a second org, even though the customer lookup misses", async () => {
+    arrange();
+    await fire();
+    // Without the binding this call is what strands the firm's clients in the
+    // org they are already in.
+    expect(mockCreateOrg).not.toHaveBeenCalled();
+  });
+
+  it("attaches the subscription to the bound org", async () => {
+    arrange();
+    await fire();
+    expect(mockSubsUpdate).toHaveBeenCalledWith(
+      "sub_re",
+      expect.objectContaining({ metadata: expect.objectContaining({ firm_id: BOUND_ORG }) }),
+    );
+    expect(mockSubsInsert).toHaveBeenCalledWith(
+      expect.objectContaining({ firmId: BOUND_ORG }),
+    );
+  });
+
+  it("sends no invitation — the buyer is already a member of this org", async () => {
+    arrange();
+    await fire();
+    expect(mockCreateInvite).not.toHaveBeenCalled();
+  });
+
+  it("does not touch membership roles in an org that already has them", async () => {
+    arrange();
+    await fire();
+    expect(mockCreateMembership).not.toHaveBeenCalled();
+    expect(mockUpdateMembership).not.toHaveBeenCalled();
+  });
+
+  it("clears is_founder in Clerk — stateFromMeta reads it BEFORE any status", async () => {
+    arrange();
+    await fire();
+    // A stale is_founder beats a real paid subscription in stateFromMeta, so a
+    // firm that just paid would still read as comped. Clerk merges metadata,
+    // so omitting the key leaves the old `true` in place — it has to be
+    // written explicitly.
+    expect(mockUpdateOrgMeta).toHaveBeenCalledWith(
+      BOUND_ORG,
+      expect.objectContaining({
+        publicMetadata: expect.objectContaining({
+          is_founder: false,
+          subscription_status: "active",
+        }),
+      }),
+    );
+  });
+
+  it("clears firms.is_founder in the DB too — the insert is onConflictDoNothing", async () => {
+    arrange();
+    await fire();
+    expect(mockFirmUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ isFounder: false }),
+    );
+  });
+
+  it("still records the ToS acceptance against the bound firm", async () => {
+    arrange();
+    await fire();
+    expect(mockTosInsert).toHaveBeenCalledWith(
+      expect.objectContaining({ firmId: BOUND_ORG, userId: "user_owner" }),
     );
   });
 });

@@ -3,7 +3,7 @@ import { createRemoteJWKSet, jwtVerify } from "jose";
 import type { Principal } from "@/lib/clients/authz";
 import { STAFF_ROLES } from "@/lib/capabilities";
 import { stateFromMeta, type OrgMeta } from "@/lib/billing/subscription-state";
-import { decideAccess, enforcementMode } from "@/lib/billing/access-policy";
+import { decideAccess, isEnforced } from "@/lib/billing/access-policy";
 
 /**
  * A verified MCP caller. `orgId` is non-nullable on purpose: Foundry's tenant
@@ -242,13 +242,16 @@ export async function resolveMcpPrincipal(bearerToken: string): Promise<McpPrinc
   // "POST" — every MCP tool is read-only by construction (`defineTool`
   // hard-codes `readOnlyHint: true`), and `decideAccess` only blocks
   // mutating methods for a grace-period firm, so "POST" would wrongly
-  // 401 a firm the web still lets read. `enforcementMode()` and the
-  // `state.kind === "missing"` override are the exact shape
-  // `src/proxy.ts` uses, imported from one place (R85) so the two can
-  // never drift apart.
+  // 401 a firm the web still lets read.
+  //
+  // `isEnforced` is the rollout-flag override itself, not a copy of it — the
+  // one place both this and `src/proxy.ts` read (R85). It used to be spelled
+  // out inline here AND there; adding a second flag-ignoring state to the
+  // proxy silently falsified this comment's old promise that they could never
+  // drift, which is why the expression now lives in access-policy.ts.
   const billingState = stateFromMeta(orgMeta ?? undefined);
   const billingDecision = decideAccess(billingState, "GET", "/api/mcp");
-  if (billingDecision === "lock_out" && (enforcementMode() === "enforce" || billingState.kind === "missing")) {
+  if (billingDecision === "lock_out" && isEnforced(billingState, billingDecision)) {
     console.error(`MCP: denied connector access — billing state "${billingState.kind}"`);
     throw new McpUnauthorizedError(
       "this firm's Foundry subscription is inactive — restore billing in the web app to reconnect",

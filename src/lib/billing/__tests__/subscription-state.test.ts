@@ -203,3 +203,31 @@ describe("stateFromMeta (pure)", () => {
     ).toEqual({ kind: "past_due", pastDueSince: new Date(periodEnd) });
   });
 });
+
+describe("comp_ended", () => {
+  it("maps subscription_status=comp_ended to its own kind", () => {
+    expect(stateFromMeta({ subscription_status: "comp_ended" })).toEqual({
+      kind: "comp_ended",
+    });
+  });
+
+  it("is distinguishable from missing — the whole point of the state", () => {
+    // `missing` means unprovisioned/broken, where checkout is the WRONG
+    // remedy; `comp_ended` means a deliberate ops act, where it is the only
+    // remedy. Collapsing them would offer a Subscribe button to a firm whose
+    // metadata merely failed to write.
+    expect(stateFromMeta({ subscription_status: "comp_ended" }).kind).not.toBe("missing");
+  });
+
+  it("loses to is_founder — re-comping a firm beats a stale comp_ended status", () => {
+    expect(
+      stateFromMeta({ is_founder: true, subscription_status: "comp_ended" }),
+    ).toEqual({ kind: "founder" });
+  });
+
+  it("is overwritten by a real subscription status once they subscribe", () => {
+    // The checkout webhook writes subscription_status: sub.status over the
+    // top, so the state self-heals with no extra clean-up step.
+    expect(stateFromMeta({ subscription_status: "active" })).toEqual({ kind: "active" });
+  });
+});

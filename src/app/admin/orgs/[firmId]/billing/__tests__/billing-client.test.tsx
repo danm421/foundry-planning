@@ -8,6 +8,7 @@ vi.mock("../actions", () => ({
   openPortalAction: vi.fn(),
   extendTrialAction: vi.fn(),
   compToFounderAction: vi.fn(),
+  endCompAction: vi.fn(),
 }));
 
 import type { ComponentProps } from "react";
@@ -59,9 +60,15 @@ describe("<BillingClient> comp-to-founder form", () => {
     expect(screen.queryByRole("button", { name: /comp to founder/i })).toBeNull();
   });
 
-  it("warns that the comp cannot be undone", () => {
+  it("no longer claims the comp is irreversible — it is not", () => {
     renderClient();
-    expect(screen.getByText(/no undo/i)).toBeTruthy();
+    expect(screen.queryByText(/no undo/i)).toBeNull();
+    expect(screen.getByText(/reversible/i)).toBeTruthy();
+  });
+
+  it("still warns about the part that IS one-way: the cancelled subscription", () => {
+    renderClient();
+    expect(screen.getByText(/gone for good/i)).toBeTruthy();
   });
 
   it("stays disabled until BOTH a reason and the acknowledgement are given", async () => {
@@ -93,6 +100,61 @@ describe("<BillingClient> comp-to-founder form", () => {
 
   it("carries the firm id so the action targets the right org", () => {
     const { container } = renderClient();
+    const hidden = container.querySelector<HTMLInputElement>('input[name="firmId"][type="hidden"]');
+    expect(hidden?.value).toBe("org_1");
+  });
+});
+
+describe("<BillingClient> end-comp form", () => {
+  const endButton = () => screen.getByRole("button", { name: /end founder comp/i });
+  const endReason = () => screen.getByPlaceholderText(/recorded in the audit log/i);
+
+  it("offers ending the comp on a founder firm", () => {
+    renderClient({ isFounder: true });
+    expect(endButton()).toBeTruthy();
+  });
+
+  it("is hidden on a firm that is not comped — there is nothing to end", () => {
+    renderClient({ isFounder: false });
+    expect(screen.queryByRole("button", { name: /end founder comp/i })).toBeNull();
+  });
+
+  it("says they keep read access, so ops is not told they are locking anyone out", () => {
+    renderClient({ isFounder: true });
+    expect(screen.getByText(/read access/i)).toBeTruthy();
+  });
+
+  it("says nothing is archived or deleted", () => {
+    renderClient({ isFounder: true });
+    expect(screen.getByText(/nothing is archived/i)).toBeTruthy();
+  });
+
+  it("stays disabled until BOTH a reason and the acknowledgement are given", async () => {
+    const user = userEvent.setup();
+    renderClient({ isFounder: true });
+    expect(endButton()).toHaveProperty("disabled", true);
+
+    await user.type(endReason(), "moving to paid");
+    expect(endButton()).toHaveProperty("disabled", true);
+
+    await user.clear(endReason());
+    await user.click(screen.getByRole("checkbox"));
+    expect(endButton()).toHaveProperty("disabled", true);
+
+    await user.type(endReason(), "moving to paid");
+    expect(endButton()).toHaveProperty("disabled", false);
+  });
+
+  it("does not accept whitespace as a reason", async () => {
+    const user = userEvent.setup();
+    renderClient({ isFounder: true });
+    await user.click(screen.getByRole("checkbox"));
+    await user.type(endReason(), "   ");
+    expect(endButton()).toHaveProperty("disabled", true);
+  });
+
+  it("carries the firm id so the action targets the right org", () => {
+    const { container } = renderClient({ isFounder: true });
     const hidden = container.querySelector<HTMLInputElement>('input[name="firmId"][type="hidden"]');
     expect(hidden?.value).toBe("org_1");
   });

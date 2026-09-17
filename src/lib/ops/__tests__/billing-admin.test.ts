@@ -9,6 +9,7 @@ const h = vi.hoisted(() => ({
   billingContact: vi.fn(),
   orgMeta: {} as Record<string, unknown>,
   orgName: "Acme Wealth",
+  updateOrgMeta: vi.fn(),
   audits: [] as Array<Record<string, unknown>>,
   /** Ordered log of the writes whose sequence is load-bearing. */
   calls: [] as string[],
@@ -73,6 +74,10 @@ vi.mock("@clerk/nextjs/server", () => ({
   clerkClient: async () => ({
     organizations: {
       getOrganization: async () => ({ name: h.orgName, publicMetadata: h.orgMeta }),
+      updateOrganizationMetadata: (...a: unknown[]) => {
+        h.calls.push("clerk.updateOrgMeta");
+        return h.updateOrgMeta(...a);
+      },
     },
   }),
 }));
@@ -90,6 +95,7 @@ import {
   createPortalSessionForFirm,
   extendTrialForFirm,
   compFirmToFounder,
+  endFounderComp,
 } from "../billing-admin";
 
 beforeEach(() => {
@@ -99,6 +105,7 @@ beforeEach(() => {
   h.subCancel.mockReset().mockResolvedValue({});
   h.applyFounder.mockReset().mockResolvedValue(undefined);
   h.billingContact.mockReset().mockResolvedValue("user_owner");
+  h.updateOrgMeta.mockReset().mockResolvedValue(undefined);
   h.orgMeta = {};
   h.orgName = "Acme Wealth";
   h.audits = [];
@@ -295,5 +302,101 @@ describe("compFirmToFounder — comping a firm that already churned", () => {
       compFirmToFounder({ firmId: "org_1", reason: "", setBy: "user_op" }),
     ).rejects.toThrow(/reason is required/i);
     expect(h.firmUpdates).toEqual([]);
+  });
+});
+
+describe("endFounderComp", () => {
+  const FIRM = "org_3GunIfnXQ7DQRQsfjlrha36CgDh";
+  const args = { firmId: FIRM, reason: "moving to paid", setBy: "user_ops" };
+
+  beforeEach(() => {
+    h.orgMeta = {
+      is_founder: true,
+      subscription_status: "founder",
+      entitlements: ["ai_import", "forge", "client_portal"],
+      billing_contact_userId: "user_owner",
+    };
+  });
+
+  it("requires a reason", async () => {
+    await expect(endFounderComp({ ...args, reason: "  " })).rejects.toThrow(/reason/i);
+  });
+
+  it("refuses a firm that is not comped — there is no comp to end", async () => {
+    h.orgMeta = { subscription_status: "active" };
+    await expect(endFounderComp(args)).rejects.toThrow(/not.*founder|not comped/i);
+  });
+
+  it("clears firms.is_founder", async () => {
+    await endFounderComp(args);
+    expect(h.firmUpdates).toContainEqual(expect.objectContaining({ isFounder: false }));
+  });
+
+  it("stamps comp_ended in Clerk and clears is_founder there too", async () => {
+    await endFounderComp(args);
+    expect(h.updateOrgMeta).toHaveBeenCalledWith(
+      FIRM,
+      expect.objectContaining({
+        publicMetadata: expect.objectContaining({
+          is_founder: false,
+          subscription_status: "comp_ended",
+        }),
+      }),
+    );
+  });
+
+  it("carries entitlements forward — read-only access still has to render", async () => {
+    await endFounderComp(args);
+    const meta = h.updateOrgMeta.mock.calls[0][1] as {
+      publicMetadata: { entitlements: string[] };
+    };
+    expect(meta.publicMetadata.entitlements).toEqual([
+      "ai_import",
+      "forge",
+      "client_portal",
+    ]);
+  });
+
+  it("never archives the firm — that would start the 90-day deletion clock", async () => {
+    await endFounderComp(args);
+    // isFirmPurgeable requires archivedAt !== null, so leaving it null is what
+    // keeps a de-comped firm's data out of the purge cron's reach while they
+    // decide whether to subscribe.
+    for (const u of h.firmUpdates) {
+      expect(u).not.toHaveProperty("archivedAt", expect.anything());
+      expect(u.dataRetentionUntil).toBeUndefined();
+    }
+    const meta = h.updateOrgMeta.mock.calls[0][1] as {
+      publicMetadata: Record<string, unknown>;
+    };
+    expect(meta.publicMetadata.archived_at).toBeUndefined();
+  });
+
+  it("writes the DB flag BEFORE flipping Clerk", async () => {
+    await endFounderComp(args);
+    // Clerk is enforcement truth, so it commits last. The half-done state that
+    // order leaves (DB says not-comped, Clerk still says founder) is the safe
+    // one: the firm keeps access and nothing is purgeable, because
+    // isFirmPurgeable also demands an archive stamp that is never set here.
+    expect(h.calls.indexOf("firms.update")).toBeLessThan(
+      h.calls.indexOf("clerk.updateOrgMeta"),
+    );
+  });
+
+  it("audits with the reason", async () => {
+    await endFounderComp(args);
+    expect(h.audits).toContainEqual(
+      expect.objectContaining({
+        action: "ops.billing.comp_ended",
+        firmId: FIRM,
+        actorId: "user_ops",
+        metadata: expect.objectContaining({ reason: "moving to paid" }),
+      }),
+    );
+  });
+
+  it("cancels nothing in Stripe — a comped firm has no subscription to cancel", async () => {
+    await endFounderComp(args);
+    expect(h.subCancel).not.toHaveBeenCalled();
   });
 });

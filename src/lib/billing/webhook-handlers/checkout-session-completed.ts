@@ -21,8 +21,16 @@ import { recordAudit } from "@/lib/audit";
 const TOS_VERSION_DEFAULT = "v1";
 
 /**
- * checkout.session.completed — the entry point for new firms. It serves two
- * populations, told apart by `client_reference_id`:
+ * checkout.session.completed — the entry point for new firms. It serves three
+ * populations:
+ *
+ *   RE-CHECKOUT (`session.metadata.firm_id`). A firm that ALREADY exists is
+ *   starting to pay — today, one whose Founder comp ops ended. Everything
+ *   about provisioning is skipped: no org is created, no invitation is sent,
+ *   no membership is touched. The binding is checked FIRST because the
+ *   customer-id reuse lookup below cannot see a firm that never subscribed.
+ *
+ * The other two are told apart by `client_reference_id`:
  *
  *   PROFILE-FIRST (self-serve, /welcome). The buyer already has a Clerk account
  *   and already told us their firm name and branding. We create the org with
@@ -82,25 +90,40 @@ export async function handleCheckoutSessionCompleted(
 
   const cc = await clerkClient();
 
-  // 1. Idempotency: a redelivery after a partial failure must converge on the
-  //    original firm, not mint a second Clerk org. Look up any subscription we
-  //    already recorded for this Stripe customer; reuse its firmId if present.
-  const existingSub = await db
-    .select({ firmId: subscriptions.firmId })
-    .from(subscriptions)
-    .where(eq(subscriptions.stripeCustomerId, customerId))
-    .then((r) => r[0]);
+  // RE-CHECKOUT: an org that already exists bound itself to this session (see
+  // `existingFirmId` in checkout.ts). THE data-stranding guard, and the one
+  // full statement of why — everywhere else points here.
+  //
+  // The idempotency lookup below reuses a firm by its Stripe customer id. A
+  // firm comped before it ever subscribed has no subscriptions row at all, so
+  // that lookup misses and this handler mints a SECOND Clerk org, stranding
+  // every client in the first one. Measured against prod 2026-09-16: all six
+  // founder orgs are exactly that shape, 31 clients between them. So the firm
+  // id travels on the session and is keyed ahead of the lookup.
+  const boundFirmId =
+    typeof session.metadata?.firm_id === "string" ? session.metadata.firm_id : null;
 
   let firmId: string;
-  if (existingSub?.firmId) {
-    firmId = existingSub.firmId;
+  if (boundFirmId) {
+    firmId = boundFirmId;
   } else {
-    const org = await cc.organizations.createOrganization(
-      buyerUserId
-        ? { name: resolvedFirmName, createdBy: buyerUserId }
-        : { name: resolvedFirmName },
-    );
-    firmId = org.id;
+    // 1. Idempotency: a redelivery after a partial failure must converge on the
+    //    original firm, not mint a second Clerk org. Look up any subscription we
+    //    already recorded for this Stripe customer; reuse its firmId if present.
+    const existingSub = await db
+      .select({ firmId: subscriptions.firmId })
+      .from(subscriptions)
+      .where(eq(subscriptions.stripeCustomerId, customerId))
+      .then((r) => r[0]);
+    firmId =
+      existingSub?.firmId ??
+      (
+        await cc.organizations.createOrganization(
+          buyerUserId
+            ? { name: resolvedFirmName, createdBy: buyerUserId }
+            : { name: resolvedFirmName },
+        )
+      ).id;
   }
 
   // 2. Stamp Stripe subscription with the firm_id so future webhooks resolve.
@@ -113,66 +136,74 @@ export async function handleCheckoutSessionCompleted(
     expand: ["items.data.price"],
   });
 
-  // 4. Get the buyer into the org.
-  if (buyerUserId) {
-    // `createdBy` already put them in the org. This ensure covers the one path
-    // that could leave them out — a redelivery that reused an existing firm
-    // whose membership never landed. Clerk throws when they are already a
-    // member, which is the normal case, so the throw is expected and ignored.
-    try {
-      await cc.organizations.createOrganizationMembership({
+  // 4. Get the buyer into the org — but NOT on the re-checkout path, where the
+  //    org already exists with established memberships and roles and the buyer
+  //    is signed into it (they reached Subscribe through `requireBillingContact`).
+  //    Creating a membership there would throw, and pinning a role would
+  //    silently re-grade an existing member. This guard is load-bearing, not
+  //    belt-and-braces: `startResubscribeCheckout` DOES send a
+  //    client_reference_id, so `buyerUserId` is set on that path too.
+  if (!boundFirmId) {
+    if (buyerUserId) {
+      // `createdBy` already put them in the org. This ensure covers the one path
+      // that could leave them out — a redelivery that reused an existing firm
+      // whose membership never landed. Clerk throws when they are already a
+      // member, which is the normal case, so the throw is expected and ignored.
+      try {
+        await cc.organizations.createOrganizationMembership({
+          organizationId: firmId,
+          userId: buyerUserId,
+          role: "org:admin",
+        });
+      } catch {
+        /* already a member — the role is pinned below regardless */
+      }
+      // Pin the role. `createdBy` grants the instance's configured creatorRole,
+      // which on our Clerk instance is org:owner — a role authz.ts retired, and
+      // one requireOrgAdminOrOwner() rejects, so a buyer left at org:owner is
+      // 403'd on firm config, team invites and CMA edits: the first surfaces a
+      // new admin touches. The ensure above cannot fix it (they are already a
+      // member, so it throws). Same call applyFounderState uses; idempotent, and
+      // correct under either creatorRole setting. Best-effort — a Clerk hiccup
+      // must not fail an otherwise-successful provision.
+      try {
+        await cc.organizations.updateOrganizationMembership({
+          organizationId: firmId,
+          userId: buyerUserId,
+          role: "org:admin",
+        });
+      } catch (err) {
+        // Deliberately NOT re-thrown: the provision itself succeeded, and turning
+        // a non-fatal condition into a non-200 would put this whole handler into
+        // repeated Stripe redelivery. But a log line alone would strand a paying
+        // buyer at org:owner — 403'd on firm config and team invites — with no
+        // trace outside the logs, so the condition is recorded where this app
+        // already looks. recordAudit swallows its own failures (audit.ts), so it
+        // cannot itself break the provision.
+        console.error(
+          "[checkout.session.completed] pinning buyer to org:admin failed:",
+          err,
+        );
+        await recordAudit({
+          action: "billing.org_role_pin_failed",
+          resourceType: "firm",
+          resourceId: firmId,
+          firmId,
+          actorId: `stripe:webhook:${event.id}`,
+          metadata: {
+            buyer_user_id: buyerUserId,
+            error: err instanceof Error ? err.message : String(err),
+          },
+        });
+      }
+    } else {
+      // Sales path: no Clerk user exists yet, so the invitation is the only way in.
+      await cc.organizations.createOrganizationInvitation({
         organizationId: firmId,
-        userId: buyerUserId,
+        emailAddress: buyerEmail,
         role: "org:admin",
       });
-    } catch {
-      /* already a member — the role is pinned below regardless */
     }
-    // Pin the role. `createdBy` grants the instance's configured creatorRole,
-    // which on our Clerk instance is org:owner — a role authz.ts retired, and
-    // one requireOrgAdminOrOwner() rejects, so a buyer left at org:owner is
-    // 403'd on firm config, team invites and CMA edits: the first surfaces a
-    // new admin touches. The ensure above cannot fix it (they are already a
-    // member, so it throws). Same call applyFounderState uses; idempotent, and
-    // correct under either creatorRole setting. Best-effort — a Clerk hiccup
-    // must not fail an otherwise-successful provision.
-    try {
-      await cc.organizations.updateOrganizationMembership({
-        organizationId: firmId,
-        userId: buyerUserId,
-        role: "org:admin",
-      });
-    } catch (err) {
-      // Deliberately NOT re-thrown: the provision itself succeeded, and turning
-      // a non-fatal condition into a non-200 would put this whole handler into
-      // repeated Stripe redelivery. But a log line alone would strand a paying
-      // buyer at org:owner — 403'd on firm config and team invites — with no
-      // trace outside the logs, so the condition is recorded where this app
-      // already looks. recordAudit swallows its own failures (audit.ts), so it
-      // cannot itself break the provision.
-      console.error(
-        "[checkout.session.completed] pinning buyer to org:admin failed:",
-        err,
-      );
-      await recordAudit({
-        action: "billing.org_role_pin_failed",
-        resourceType: "firm",
-        resourceId: firmId,
-        firmId,
-        actorId: `stripe:webhook:${event.id}`,
-        metadata: {
-          buyer_user_id: buyerUserId,
-          error: err instanceof Error ? err.message : String(err),
-        },
-      });
-    }
-  } else {
-    // Sales path: no Clerk user exists yet, so the invitation is the only way in.
-    await cc.organizations.createOrganizationInvitation({
-      organizationId: firmId,
-      emailAddress: buyerEmail,
-      role: "org:admin",
-    });
   }
 
   // Stripe API v22 moved current_period_* off Subscription onto each
@@ -203,6 +234,19 @@ export async function handleCheckoutSessionCompleted(
     })
     .onConflictDoNothing()
     .returning({ firmId: firms.firmId });
+
+  // Same clear, DB side, as its own statement. The firms INSERT above carries
+  // isFounder: false but sits under .onConflictDoNothing(), so for a firm whose
+  // row already exists — every re-checkout — it is skipped. Folding this into
+  // an .onConflictDoUpdate() would save one round trip on a path that runs a
+  // handful of times a year, at the cost of branching the insert builder; not
+  // worth it. The purge cron and the ops console read THIS column, not Clerk.
+  if (boundFirmId) {
+    await db
+      .update(firms)
+      .set({ isFounder: false, updatedAt: new Date() })
+      .where(eq(firms.firmId, firmId));
+  }
 
   const subRows = await db
     .insert(subscriptions)
@@ -276,8 +320,18 @@ export async function handleCheckoutSessionCompleted(
       trial_ends_at: sub.trial_end
         ? new Date(sub.trial_end * 1000).toISOString()
         : null,
+      // A re-checkout means a previously comped firm is now paying, so the
+      // comp is over. This must be written EXPLICITLY: `stateFromMeta` reads
+      // is_founder ahead of any subscription status, so a stale `true` beats
+      // a real paid subscription — and Clerk MERGES publicMetadata, so simply
+      // omitting the key leaves the old value in place. Only on the bound
+      // path: a brand-new org has no flag to clear, and clearing
+      // unconditionally would let a stale redelivery un-comp a firm that ops
+      // has since comped.
+      ...(boundFirmId ? { is_founder: false } : {}),
     },
   });
+
 
   // 8. Audit.
   await recordAudit({

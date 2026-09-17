@@ -2,7 +2,7 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { OAuthError, OAuthErrorCode, bearerAuthChallengeResponse } from "@modelcontextprotocol/server";
 import { stateFromMeta, type OrgMeta } from "@/lib/billing/subscription-state";
-import { decideAccess, enforcementMode } from "@/lib/billing/access-policy";
+import { decideAccess, enforcementMode, isEnforced } from "@/lib/billing/access-policy";
 import { recordAudit } from "@/lib/audit";
 import { operationsBlocked } from "@/lib/operations-route-guard";
 import { getPortalClientId } from "@/lib/portal/get-portal-client";
@@ -236,13 +236,13 @@ const clerkAuthMiddleware = clerkMiddleware(async (auth, request) => {
         metadata: { decision, mode, method, path, status: state.kind },
       });
 
-      // A `missing` state (signed-in, has an active org, but zero readable
-      // subscription metadata) is an unprovisioned / broken account, not a
-      // billing-rollout judgment call — block it regardless of mode. With
-      // Clerk auto-org-creation disabled no real org reaches this state, so
-      // this can never lock out a legitimately-provisioned firm. Other states
-      // only block once BILLING_ENFORCEMENT_MODE is flipped to "enforce".
-      const shouldBlock = mode === "enforce" || state.kind === "missing";
+      // Which states ignore the rollout flag lives in access-policy.ts beside
+      // `decideAccess`, so this and the MCP connector cannot drift (R74/R85).
+      // Note `comp_ended` decides to `block_mutation`, never `lock_out`, so it
+      // only ever blocks WRITES — a GET returns "allow" above and never reaches
+      // here. Those firms keep reading their book, and /settings/billing is
+      // billing-exempt, so the route to checkout stays open.
+      const shouldBlock = isEnforced(state, decision);
       if (shouldBlock) {
         if (path.startsWith("/api/")) {
           return NextResponse.json(

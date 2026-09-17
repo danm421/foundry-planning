@@ -95,6 +95,19 @@ function bannerFor(state: SubscriptionState): Banner | null {
         dismissible: false,
         dismissKey: "paused:persistent",
       };
+    case "comp_ended":
+      return {
+        severity: "urgent-red",
+        message:
+          "Your complimentary access has ended. Your data is all here and readable — subscribe to start editing again.",
+        actionHref: "/settings/billing",
+        actionLabel: "Subscribe",
+        // Never dismissible: this banner IS the prompt-through-checkout, and a
+        // firm that dismissed it would be left editing-blocked with nothing on
+        // screen explaining why.
+        dismissible: false,
+        dismissKey: "comp_ended:persistent",
+      };
     case "missing":
       return {
         severity: "info-yellow",
@@ -125,6 +138,7 @@ const PREVIEW_STATES: Record<string, (date?: string) => SubscriptionState> = {
     mutationsAllowed: false,
   }),
   canceled_locked: () => ({ kind: "canceled_locked" }),
+  comp_ended: () => ({ kind: "comp_ended" }),
   missing: () => ({ kind: "missing", reason: "no_metadata" }),
 };
 

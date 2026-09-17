@@ -432,3 +432,75 @@ describe("handleSubscriptionUpsert", () => {
     expect(mockUpdateOrgMeta).toHaveBeenCalled();
   });
 });
+
+describe("a live subscription lifts the Founder comp (symmetric auto-lift)", () => {
+  function arrangeLive(status: string) {
+    mockSubsRetrieve.mockResolvedValue({
+      id: "sub_lift",
+      customer: "cus_lift",
+      status,
+      cancel_at_period_end: false,
+      canceled_at: null,
+      trial_start: null,
+      trial_end: null,
+      metadata: { firm_id: "org_lift" },
+      items: { data: [] },
+    });
+    mockSelectFirms.mockResolvedValue([{ firmId: "org_lift", isFounder: true }]);
+    mockSubsUpsert.mockResolvedValue([{ id: "internal-sub-lift" }]);
+    mockItemsUpsert.mockResolvedValue([]);
+  }
+
+  const fire = () =>
+    handleSubscriptionUpsert({
+      id: "evt_lift",
+      type: "customer.subscription.created",
+      data: { object: { id: "sub_lift" } },
+    } as never);
+
+  it("clears is_founder in Clerk when the firm is live again", async () => {
+    // Belt and braces with the checkout handler's own clear: whichever path a
+    // payment arrives through, a firm that is paying must stop reading as
+    // comped. stateFromMeta checks is_founder BEFORE status, so leaving it set
+    // would let a paying firm keep free access indefinitely.
+    arrangeLive("active");
+    await fire();
+    expect(mockUpdateOrgMeta).toHaveBeenCalledWith(
+      "org_lift",
+      expect.objectContaining({
+        publicMetadata: expect.objectContaining({ is_founder: false }),
+      }),
+    );
+  });
+
+  it("clears firms.is_founder in the DB alongside the archive stamp", async () => {
+    arrangeLive("active");
+    await fire();
+    expect(mockUpdateFirms).toHaveBeenCalledWith(
+      expect.objectContaining({ isFounder: false }),
+    );
+  });
+
+  it("lifts on trialing too, not just active", async () => {
+    arrangeLive("trialing");
+    await fire();
+    expect(mockUpdateFirms).toHaveBeenCalledWith(
+      expect.objectContaining({ isFounder: false }),
+    );
+  });
+
+  it("does NOT lift on a dead status — comping cancels a sub, and that must not un-comp the firm", async () => {
+    // compFirmToFounder sets founder state FIRST, then cancels Stripe. The
+    // resulting events carry a canceled status; if those lifted the flag they
+    // would undo the comp that had just been applied.
+    arrangeLive("canceled");
+    await fire();
+    expect(mockUpdateFirms).not.toHaveBeenCalled();
+    expect(mockUpdateOrgMeta).toHaveBeenCalledWith(
+      "org_lift",
+      expect.objectContaining({
+        publicMetadata: expect.not.objectContaining({ is_founder: false }),
+      }),
+    );
+  });
+});
