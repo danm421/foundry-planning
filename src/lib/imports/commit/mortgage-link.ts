@@ -1,6 +1,22 @@
 export interface PropertyRef {
   id: string;
   name: string;
+  /** `accounts.property_address`, when the row has one. */
+  propertyAddress?: string | null;
+}
+
+/** Normalize an address for equality: case, punctuation and runs of space. */
+function normalizeAddress(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/** True when two addresses name the same place, ignoring case and punctuation. */
+export function propertyAddressMatches(a: string | undefined, b: string | undefined): boolean {
+  if (!a || !b) return false;
+  return normalizeAddress(a) === normalizeAddress(b);
 }
 
 // Words that describe the liability instrument rather than the property.
@@ -19,16 +35,33 @@ function tokenize(name: string): Set<string> {
 }
 
 /**
- * Match a mortgage / loan liability to a real-estate account by name-token
- * overlap. Liability-instrument words ("mortgage", "loan", …) are dropped from
- * the liability tokens before scoring, so "Mortgage - Austin Home" scores on
- * {austin, home}. The property with the strictly-highest overlap (>= 1) wins;
- * zero overlap or a tie returns null (left unlinked for the advisor).
+ * Match a mortgage / loan liability to a real-estate account. One property
+ * whose address equals the secured address wins outright; otherwise (no
+ * address, or two properties claiming the same one) it falls to name-token
+ * overlap. Liability-instrument words ("mortgage", "loan", …) are dropped
+ * from the liability tokens before scoring, so "Mortgage - Austin Home" is
+ * scored on {austin, home}. The property with the strictly-highest overlap
+ * (>= 1) wins; zero overlap or a tie returns null (left unlinked for the
+ * advisor).
  */
 export function matchMortgageToProperty(
   liabilityName: string,
   properties: PropertyRef[],
+  /**
+   * The liability's own `propertyAddress`. An exact address is a fact the
+   * document stated; token overlap is a guess. So when both sides carry an
+   * address and they agree, that wins outright — and a tie between two
+   * same-named properties stops being unresolvable.
+   */
+  liabilityAddress?: string,
 ): string | null {
+  if (liabilityAddress) {
+    const exact = properties.filter((p) =>
+      propertyAddressMatches(p.propertyAddress ?? undefined, liabilityAddress),
+    );
+    if (exact.length === 1) return exact[0].id;
+  }
+
   const liabTokens = new Set(
     [...tokenize(liabilityName)].filter((t) => !LIABILITY_TYPE_WORDS.has(t)),
   );

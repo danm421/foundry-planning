@@ -20,7 +20,8 @@ import {
   type Provenance,
 } from "../types";
 import type { MergeDecision } from "./decisions";
-import { propertyAddressMatches, splitMortgageEscrow } from "./mortgage-escrow";
+import { splitMortgageEscrow } from "./mortgage-escrow";
+import { propertyAddressMatches } from "@/lib/imports/commit/mortgage-link";
 import { custodianMatches, normalizeCustodian } from "../normalize-custodian";
 import { nameSimilarity } from "../match-keys/account";
 

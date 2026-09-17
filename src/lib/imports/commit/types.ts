@@ -66,11 +66,11 @@ export interface CommitContext {
    * Task 6 started assigning ids.
    *
    * This field lives on the shared `CommitContext`, so it is visible to all
-   * twelve `COMMIT_TABS` — but today only `commitAccounts` honours it. Every
-   * other tab ignores it and commits its section unfiltered, so the chat
-   * surface (the only caller that sets this) must always pair `rowIds` with
-   * `tabs: ["accounts"]`; pairing it with a second tab commits that tab's
-   * rows unfiltered. Phase 2 widens `rowIds` support to more entity types.
+   * twelve `COMMIT_TABS` — but only `commitAccounts` and `commitLiabilities`
+   * honour it. The other ten tabs ignore it and commit their section
+   * unfiltered, so the chat surface (the only caller that sets this) must name
+   * only honouring tabs alongside `rowIds`; pairing it with any other tab
+   * commits that tab's rows unfiltered.
    *
    * Residual from Task 6: a row whose dedupe key was null gets an id keyed by
    * its position, so it is deterministic but not stable across a

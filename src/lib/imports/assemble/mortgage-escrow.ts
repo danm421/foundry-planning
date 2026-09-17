@@ -1,5 +1,8 @@
 import type { ExtractedAccount, ExtractedLiability } from "@/lib/extraction/types";
-import { matchMortgageToProperty } from "@/lib/imports/commit/mortgage-link";
+import {
+  matchMortgageToProperty,
+  propertyAddressMatches,
+} from "@/lib/imports/commit/mortgage-link";
 
 /**
  * A mortgage statement states three things about a house and only one of them
@@ -21,20 +24,6 @@ import { matchMortgageToProperty } from "@/lib/imports/commit/mortgage-link";
  * Framework-free by construction (engine-purity rule): no Next, no DB, no
  * React. `matchMortgageToProperty` is likewise pure.
  */
-
-/** Normalize an address for equality: case, punctuation and runs of space. */
-function normalizeAddress(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
-
-/** True when two addresses name the same place, ignoring case and punctuation. */
-export function propertyAddressMatches(a: string | undefined, b: string | undefined): boolean {
-  if (!a || !b) return false;
-  return normalizeAddress(a) === normalizeAddress(b);
-}
 
 /**
  * The escrow portion of a scheduled payment, annualized — or undefined when
