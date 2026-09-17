@@ -233,6 +233,14 @@ describe("householdId is guarded from the schema, like clientId", () => {
     });
     await tool.run({ householdId: "hh1" }, principal);
     expect(assertHouseholdReadable).toHaveBeenCalledWith(principal, "hh1");
+    // Unlike clientId (also carried in the audit row's top-level `clientId`
+    // column), householdId exists ONLY in metadata — this is the one place
+    // that attribution is pinned. A dropped spread here would ship silently.
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({ householdId: "hh1" }),
+      }),
+    );
   });
 
   it("refuses when the schema declares householdId but the value is not a string", async () => {
@@ -259,5 +267,16 @@ describe("householdId is guarded from the schema, like clientId", () => {
     });
     await tool.run({ query: "x" }, principal);
     expect(assertHouseholdReadable).not.toHaveBeenCalled();
+    // Pins the conditional spread's OTHER branch: a tool with no declared
+    // householdId must produce a metadata object with no householdId key at
+    // all — not an undefined one — so the spread can't be made unconditional
+    // and stay green.
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.not.objectContaining({ householdId: expect.anything() }),
+      }),
+    );
+    const metadata = recordAudit.mock.calls[0]![0].metadata as Record<string, unknown>;
+    expect(metadata).not.toHaveProperty("householdId");
   });
 });
