@@ -65,7 +65,54 @@ describe("mergeAcrossFiles + mortgage escrow", () => {
     expect(larkspur!.__provenance?.sourceFileId).toBe("fileB");
 
     const hudson = payload.accounts.find((a) => a.propertyAddress === "5304 Hudson Avenue");
+    expect(hudson).toBeDefined();
     expect(hudson!.__provenance?.sourceFileId).toBe("fileA");
+  });
+
+  /**
+   * THE POSITIONAL INVARIANT, pinned. Every other synthesis test starts from an
+   * EMPTY accounts array, and with no prior rows a reorder inside
+   * `splitMortgageEscrow` is structurally invisible — there is no index that
+   * could move. This is the one shape that catches it: a real annotated row
+   * that must keep its own id, plus a synthesized row that must land AFTER it.
+   *
+   * The existing row is deliberately NOT real estate, so it is filtered out of
+   * the match candidates and the mortgage is forced to synthesize rather than
+   * link.
+   */
+  it("keeps an existing row's id when a property is appended beside it", () => {
+    const checking = {
+      name: "Checking x1234",
+      custodian: "Citizens Bank",
+      category: "cash",
+      value: 8_412.19,
+    } satisfies ExtractedAccount;
+    const mortgage = {
+      name: "Mortgage",
+      balance: 412_000,
+      propertyAddress: "5304 Hudson Avenue",
+    } satisfies ExtractedLiability;
+
+    // The id the merge gives that row on its own, read off a control run
+    // rather than hardcoded — the shape of a `__rowId` is not this test's
+    // business, only that the escrow split leaves it alone.
+    const control = mergeAcrossFiles({ f1: er("bank.pdf", { accounts: [checking] }) });
+    const idWithoutTheMortgage = control.payload.accounts[0].__rowId;
+    expect(idWithoutTheMortgage).toBeTruthy();
+
+    const { payload } = mergeAcrossFiles({
+      f1: er("bank.pdf", { accounts: [checking], liabilities: [mortgage] }),
+    });
+
+    expect(payload.accounts).toHaveLength(2);
+    // The pre-existing row is untouched and still FIRST.
+    expect(payload.accounts[0].name).toBe("Checking x1234");
+    expect(payload.accounts[0].__rowId).toBe(idWithoutTheMortgage);
+    // The synthesized property is LAST, and is the one wearing the minted id.
+    const last = payload.accounts[payload.accounts.length - 1];
+    expect(last.propertyAddress).toBe("5304 Hudson Avenue");
+    expect(last.__rowId).toMatch(/^account:synthesized:/);
+    expect(payload.accounts[0].__rowId).not.toMatch(/^account:synthesized:/);
   });
 
   it("warns when a debt-named account row survives with no matching liability", () => {

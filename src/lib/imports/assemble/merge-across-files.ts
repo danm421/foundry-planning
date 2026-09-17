@@ -2019,6 +2019,17 @@ export function mergeAcrossFiles(
   // row it is given, in order, and may only ever APPEND (see its POSITIONAL
   // INVARIANT comment). If it ever reordered or filtered, this would stamp the
   // wrong `__rowId`s onto the wrong rows and silently commit them.
+  //
+  // The map below is driven by the RETURNED array, so a split that dropped a
+  // row would drop it from the payload too — an account vanishing from the
+  // review table with no error anywhere. Refuse instead: this can only ever be
+  // an edit to `mortgage-escrow.ts`, never anything a document said.
+  if (escrow.accounts.length < payload.accounts.length) {
+    throw new Error(
+      `splitMortgageEscrow returned ${escrow.accounts.length} accounts for ` +
+        `${payload.accounts.length} — it may only append. See its POSITIONAL INVARIANT comment.`,
+    );
+  }
   payload.accounts = escrow.accounts.map((next, i) => {
     const prior = payload.accounts[i];
     return prior
