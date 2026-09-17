@@ -1438,6 +1438,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           accountLedgers,
           year,
           defaultCheckingId: defaultChecking?.id ?? "",
+          // An entity-owned business deposits its proceeds into that entity's
+          // own checking, not the household's.
+          entityCheckingByEntityId,
         });
 
         if (businessSaleResult.removedAccountIds.length > 0) {
@@ -2999,6 +3002,40 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       taxDetail.ordinaryIncome += annuityOrdinaryIncome;
     }
 
+    // Every consumer below routes a sale's gain by who owned the SOURCE. An
+    // account sale's source is the account; a business sale's source is the
+    // business, because `applyBusinessSales` cascades the accounts the business
+    // owns, so the whole `totalCapitalGain` — operating value plus every
+    // cascaded child — belongs to the business' owners. Both spellings are
+    // normalized here so entity routing has ONE definition instead of one per
+    // consumer: before this existed, the three loops read
+    // `saleResult.breakdown` alone and a trust-owned business sold through the
+    // sell picker (which writes `businessAccountId`) put the trust's gain on
+    // the household 1040 and its proceeds in household checking.
+    // Neither §121 nor §165(c) reaches a business, so its raw and taxable gains
+    // are the same figure.
+    const entityRoutableSales: Array<{
+      transactionId: string;
+      sourceAccountId: string;
+      /** Post-§121 / post-§165(c) — the figure the household ADD booked. */
+      taxableGain: number;
+      /** Raw signed gain, before those adjustments. */
+      rawGain: number;
+    }> = [
+      ...saleResult.breakdown.map((i) => ({
+        transactionId: i.transactionId,
+        sourceAccountId: i.accountId,
+        taxableGain: i.taxableCapitalGain,
+        rawGain: i.capitalGain,
+      })),
+      ...businessSaleResult.breakdown.map((i) => ({
+        transactionId: i.transactionId,
+        sourceAccountId: i.businessAccountId,
+        taxableGain: i.totalCapitalGain,
+        rawGain: i.totalCapitalGain,
+      })),
+    ];
+
     // §664(c): net each CRT's share of this year's sale gains OUT of the
     // household 1040. (F1)
     //
@@ -3009,8 +3046,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // 1040. Netting here is also independent of the grantor fork, which is what
     // §664(c) requires — the trust is exempt in EITHER isGrantor config.
     const crtSaleGainByTxn = new Map<string, number>();
-    for (const item of saleResult.breakdown) {
-      const sold = accountById.get(item.accountId);
+    for (const item of entityRoutableSales) {
+      const sold = accountById.get(item.sourceAccountId);
       if (!sold) continue;
       const saleYearOwners = ownersForYear(sold, data.giftEvents, year, planSettings.planStartYear);
       let crtShare = 0;
@@ -3031,7 +3068,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         // same phantom gain and made the contradiction self-consistent.
         crtSaleGainByTxn.set(
           item.transactionId,
-          (crtSaleGainByTxn.get(item.transactionId) ?? 0) + item.taxableCapitalGain * crtShare,
+          (crtSaleGainByTxn.get(item.transactionId) ?? 0) + item.taxableGain * crtShare,
         );
       }
     }
@@ -3105,10 +3142,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
     for (const item of businessSaleResult.breakdown) {
-      if (item.totalCapitalGain !== 0) {
+      // Same reconciliation rule as the `sale:` rows above: itemize only the
+      // non-CRT share, or the drill-down contradicts the netted total it sits
+      // under. (F1)
+      const householdGain =
+        item.totalCapitalGain - (crtSaleGainByTxn.get(item.transactionId) ?? 0);
+      if (householdGain !== 0) {
         taxDetail.bySource[`business_sale:${item.transactionId}`] = {
           type: "capital_gains",
-          amount: item.totalCapitalGain,
+          amount: householdGain,
         };
       }
     }
@@ -3186,8 +3228,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // T8: use ownersForYear so gift events that transferred ownership before
       // the sale year are reflected in the cap-gain split (Phase 3).
       const assetTransactionGains: AssetTransactionGain[] = [];
-      for (const item of saleResult.breakdown) {
-        const sold = accountById.get(item.accountId);
+      for (const item of entityRoutableSales) {
+        const sold = accountById.get(item.sourceAccountId);
         if (!sold) continue;
         const saleYearOwners = ownersForYear(sold, data.giftEvents, year, planSettings.planStartYear);
         for (const owner of saleYearOwners) {
@@ -3211,7 +3253,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           // household was never charged for. See the note on that subtraction.
           assetTransactionGains.push({
             ownerEntityId: owner.entityId,
-            gain: item.taxableCapitalGain * owner.percent,
+            gain: item.taxableGain * owner.percent,
           });
         }
       }
@@ -3428,8 +3470,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // `workingAccounts` no longer contains sold accounts at this point in
       // the year loop, so we resolve ownership against the invariant
       // `accountById` map.
-      for (const item of saleResult.breakdown) {
-        const sold = accountById.get(item.accountId);
+      for (const item of entityRoutableSales) {
+        const sold = accountById.get(item.sourceAccountId);
         if (!sold) continue;
         const grantorSaleYearOwners = ownersForYear(
           sold,
@@ -3441,7 +3483,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           if (owner.kind !== "entity") continue;
           if (!effectiveIsGrantor(owner.entityId, year)) continue;
           const bucket = grantorTrustIncomeByEntity.get(owner.entityId);
-          if (bucket) bucket.recognizedCapGains += item.capitalGain * owner.percent;
+          if (bucket) bucket.recognizedCapGains += item.rawGain * owner.percent;
         }
       }
 
@@ -7906,8 +7948,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // ownership against the invariant `accountById` (sold accounts are gone from
     // workingAccounts by now); a missing account (synthetic technique source)
     // falls back to household, matching the router's default-checking fallback.
-    // `controllingEntity` is the SAME 100%-single-entity predicate the router
-    // uses, so the two stay in sync — split-owned sales (controllingEntity null)
+    // `controllingEntity` is the SAME 100%-single-entity predicate the ACCOUNT
+    // router uses. Business sales route through `applyBusinessSales`, whose
+    // proceeds never enter this list at all (pre-existing) — so this loop sees
+    // one of the two routers. Split-owned sales (controllingEntity null)
     // surface as household income, matching the router routing 100% of their
     // proceeds to the household default checking.
     const householdSales = saleResult.breakdown.filter((item) => {
@@ -8462,9 +8506,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // Resolve ownership against the invariant accountById (sold accounts are gone
     // from workingAccounts by now) and use the entity's CURRENT-year grantor status.
     const grantorCapGainsByEntity = new Map<string, number>();
-    for (const item of saleResult.breakdown) {
-      if (item.capitalGain <= 0) continue;
-      const sold = accountById.get(item.accountId);
+    for (const item of entityRoutableSales) {
+      if (item.rawGain <= 0) continue;
+      const sold = accountById.get(item.sourceAccountId);
       if (!sold) continue;
       const owners = ownersForYear(sold, data.giftEvents, year, planSettings.planStartYear);
       for (const owner of owners) {
@@ -8472,7 +8516,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         if (!effectiveIsGrantor(owner.entityId, year)) continue;
         grantorCapGainsByEntity.set(
           owner.entityId,
-          (grantorCapGainsByEntity.get(owner.entityId) ?? 0) + item.capitalGain * owner.percent,
+          (grantorCapGainsByEntity.get(owner.entityId) ?? 0) + item.rawGain * owner.percent,
         );
       }
     }

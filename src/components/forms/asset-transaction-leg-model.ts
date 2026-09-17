@@ -119,7 +119,9 @@ export function patchForSource(
       sellAmountMode: currentAmountMode === "dollar" ? "full" : currentAmountMode,
       // §121 is a personal-residence exclusion; it can't ride along on a business.
       qualifiesForHomeSaleExclusion: false,
-      // Business proceeds always land in household default checking.
+      // The engine routes business proceeds itself — to the owning entity's
+      // checking when one entity owns the business outright, else household
+      // default — so this leg carries no explicit destination.
       proceedsAccountId: "",
     };
   }

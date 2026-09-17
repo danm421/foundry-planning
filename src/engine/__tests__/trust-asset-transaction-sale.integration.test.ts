@@ -89,7 +89,13 @@ const trustChecking: Account = {
 
 // Trust-owned business — held flat at $5M (growthRate 0) so the only gain
 // in 2030 comes from the asset-transaction sale, not ambient growth.
-const trustBusiness: Account = {
+//
+// A factory, not a shared literal, for the same reason `makeSlat` is one — and
+// a sharper one: `applyBusinessSales` sets `business.value` and `business.basis`
+// to 0 on a full sale, mutating the caller's own account object. Shared, the
+// first test down the `businessAccountId` path leaves every later test selling
+// a $0 business for $0 of gain, which passes whatever it asserts.
+const makeTrustBusiness = (over: Partial<Account> = {}): Account => ({
   id: "slat-business",
   name: "SLAT Business",
   category: "business",
@@ -100,7 +106,8 @@ const trustBusiness: Account = {
   growthRate: 0,
   rmdEnabled: false,
   owners: [{ kind: "entity", entityId: "slat-3", percent: 1 }],
-};
+  ...over,
+});
 
 // Full-position sale of the business in 2030.
 const sale2030: AssetTransaction = {
@@ -201,7 +208,7 @@ describe("Trust-owned business sale", () => {
 
     const data: ClientData = {
       client,
-      accounts: [hhChecking, trustChecking, trustBusiness],
+      accounts: [hhChecking, trustChecking, makeTrustBusiness()],
       incomes: [],
       expenses: [],
       liabilities: [],
@@ -237,11 +244,10 @@ describe("Trust-owned business sale", () => {
     const slat = makeSlat();
 
     // Same business, underwater: $1M value against a $5M basis → −$4M.
-    const underwaterBusiness: Account = {
-      ...trustBusiness,
+    const underwaterBusiness = makeTrustBusiness({
       value: 1_000_000,
       basis: 5_000_000,
-    };
+    });
     const data: ClientData = {
       client,
       accounts: [hhChecking, trustChecking, underwaterBusiness],
@@ -277,5 +283,133 @@ describe("Trust-owned business sale", () => {
     expect(trustTax!.federalCapGainsTax).toBe(0);
     expect(trustTax!.stateTax).toBeGreaterThanOrEqual(0);
     expect(trustTax!.total).toBeGreaterThanOrEqual(0);
+  });
+
+  /**
+   * The same sale as the first test, written the way the sell picker writes it.
+   *
+   * Both fields can name a business. `accountId` runs the sale through
+   * `applyAssetSales`, which routes the gain to the owning trust's 1041 and the
+   * proceeds to that trust's checking. `businessAccountId` runs it through
+   * `applyBusinessSales`, which cascades the accounts the business owns — and
+   * that is the ONLY field the Businesses group in the sell picker writes, so
+   * it is the only path an advisor can actually reach.
+   *
+   * Measured before the fix, on this exact fixture with only the field name
+   * changed: the household 1040 booked the trust's $4,000,000 gain, the 1041
+   * recognized $0, and the $5,000,000 of proceeds landed in HOUSEHOLD checking
+   * while the trust's own checking stayed at its opening $50,000.
+   */
+  it("sold through the Businesses picker (businessAccountId) routes gain and cash to the trust, not the household", () => {
+    // `entityCheckingByEntityId` is keyed off default-checking accounts the
+    // entity FULLY owns, so the shared `trustChecking` fixture (family-member
+    // titled) would never be a proceeds destination for either path. Own it by
+    // the trust so the cash assertion can tell the two paths apart.
+    const entityOwnedTrustChecking: Account = {
+      ...trustChecking,
+      owners: [{ kind: "entity", entityId: "slat-3", percent: 1 }],
+    };
+    const pickerSale2030: AssetTransaction = {
+      id: "tx-slat-business-sale",
+      name: "Sell SLAT Business",
+      type: "sell",
+      year: 2030,
+      businessAccountId: "slat-business",
+    };
+
+    const data: ClientData = {
+      client,
+      accounts: [hhChecking, entityOwnedTrustChecking, makeTrustBusiness()],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings,
+      familyMembers: [],
+      entities: [makeSlat()],
+      assetTransactions: [pickerSale2030],
+      taxYearRows: [taxYearRow],
+      giftEvents: [],
+    };
+
+    const year2030 = runProjection(data).find((y) => y.year === 2030)!;
+
+    // The gain belongs on the 1041.
+    expect(
+      year2030.taxDetail!.capitalGains,
+      "the trust's $4M gain stayed on the household 1040",
+    ).toBeCloseTo(0, 6);
+    const trustTax = year2030.trustTaxByEntity?.get("slat-3");
+    expect(trustTax).toBeDefined();
+    expect(trustTax!.recognizedCapGains).toBeGreaterThan(3_900_000);
+    expect(trustTax!.federalCapGainsTax).toBeGreaterThan(700_000);
+
+    // And so does the cash. The trust opened the year with $50,000; the sale
+    // adds $5,000,000 of proceeds, out of which the trust pays its own tax.
+    const trustCash = year2030.accountLedgers["slat-3-checking"]?.endingValue ?? 0;
+    const householdCash = year2030.accountLedgers["hh-checking"]?.endingValue ?? 0;
+    expect(
+      trustCash,
+      "the trust's sale proceeds never reached the trust's own checking",
+    ).toBeGreaterThan(3_000_000);
+    expect(
+      householdCash,
+      "the trust's sale proceeds landed on the household balance sheet",
+    ).toBeLessThan(1_000_000);
+  });
+
+  /**
+   * §664(c) for the same picker path. A CRT is never in `nonGrantorTrusts`, so
+   * its share is netted out of the household 1040 at the ADD rather than by the
+   * non-grantor take-back — a separate code path from the test above, and one a
+   * business sale reaches only because its gain is now routed by ownership too.
+   * The drill-down row has to net the same share, or it contradicts the total
+   * it sits under. (F1)
+   */
+  it("a CRT-owned business sold through the Businesses picker is exempt, and its drill-down row agrees", () => {
+    const crt: EntitySummary = { ...makeSlat(), id: "crt-1", trustSubType: "crt" };
+    const crtBusiness = makeTrustBusiness({
+      owners: [{ kind: "entity", entityId: "crt-1", percent: 1 }],
+    });
+    const crtChecking: Account = {
+      ...trustChecking,
+      id: "crt-1-checking",
+      owners: [{ kind: "entity", entityId: "crt-1", percent: 1 }],
+    };
+    const data: ClientData = {
+      client,
+      accounts: [hhChecking, crtChecking, crtBusiness],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings,
+      familyMembers: [],
+      entities: [crt],
+      assetTransactions: [{
+        id: "tx-crt-business-sale",
+        name: "Sell CRT Business",
+        type: "sell",
+        year: 2030,
+        businessAccountId: "slat-business",
+      }],
+      taxYearRows: [taxYearRow],
+      giftEvents: [],
+    };
+
+    const year2030 = runProjection(data).find((y) => y.year === 2030)!;
+
+    expect(
+      year2030.taxDetail!.capitalGains,
+      "the CRT's $4M gain stayed on the household 1040",
+    ).toBeCloseTo(0, 6);
+    // The itemization must reconcile to the netted total, not re-assert the
+    // exempt slice: a fully exempt sale emits no row at all.
+    expect(
+      year2030.taxDetail!.bySource["business_sale:tx-crt-business-sale"],
+      "the drill-down itemized a gain the total had already netted out",
+    ).toBeUndefined();
   });
 });

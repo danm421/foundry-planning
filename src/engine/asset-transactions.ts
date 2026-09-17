@@ -720,6 +720,10 @@ export interface ApplyBusinessSalesInput {
   accountLedgers: Record<string, AccountLedger>;
   year: number;
   defaultCheckingId: string;
+  /** Entity id → that entity's default-checking account id. Same contract as
+   *  {@link ApplyAssetSalesInput.entityCheckingByEntityId}; a missing entity
+   *  falls back to `defaultCheckingId`. */
+  entityCheckingByEntityId?: Record<string, string>;
 }
 
 /** Process all business-account-source asset sales for `year`.
@@ -747,6 +751,7 @@ export function applyBusinessSales(input: ApplyBusinessSalesInput): BusinessSale
     accountLedgers,
     year,
     defaultCheckingId,
+    entityCheckingByEntityId,
   } = input;
 
   let totalCapitalGains = 0;
@@ -875,20 +880,42 @@ export function applyBusinessSales(input: ApplyBusinessSalesInput): BusinessSale
     totalCapitalGains += totalCapitalGain;
     totalLiabilityPaydown += cascadedPaydown;
 
-    // Route proceeds to household default checking. If routing fails the
-    // cap gain is still recognized but cash isn't deposited; emit a
-    // diagnostic so the advisor wires up a default checking account.
-    if (defaultCheckingId && accountBalances[defaultCheckingId] !== undefined) {
-      accountBalances[defaultCheckingId] += netProceeds;
-      basisMap[defaultCheckingId] = (basisMap[defaultCheckingId] ?? 0) + netProceeds;
-      if (accountLedgers[defaultCheckingId]) {
-        accountLedgers[defaultCheckingId].contributions += netProceeds;
-        accountLedgers[defaultCheckingId].endingValue += netProceeds;
-        accountLedgers[defaultCheckingId].entries.push({
+    // Same rungs as `applyAssetSales`: an explicit destination wins, then the
+    // owning entity's own checking when one entity owns the business outright,
+    // then household default. Without the entity rung a trust's sale proceeds
+    // land on the household balance sheet while its gain is taxed on the
+    // trust's own 1041.
+    //
+    // Each rung has to be CREDITABLE, not merely named — resolving to an
+    // entity checking that is absent from `accountBalances` would drop the
+    // proceeds and report `no-default-checking` with a usable household
+    // account sitting right there.
+    const owningEntityId = controllingEntity(business);
+    const entityChecking =
+      owningEntityId != null ? entityCheckingByEntityId?.[owningEntityId] : undefined;
+    const proceedsAccountId = [sale.proceedsAccountId, entityChecking, defaultCheckingId].find(
+      (id) => id && accountBalances[id] !== undefined,
+    );
+
+    // If nothing is creditable the cap gain is still recognized but cash isn't
+    // deposited; emit a diagnostic so the advisor wires up a checking account.
+    if (proceedsAccountId) {
+      accountBalances[proceedsAccountId] += netProceeds;
+      basisMap[proceedsAccountId] = (basisMap[proceedsAccountId] ?? 0) + netProceeds;
+      if (accountLedgers[proceedsAccountId]) {
+        accountLedgers[proceedsAccountId].contributions += netProceeds;
+        accountLedgers[proceedsAccountId].endingValue += netProceeds;
+        accountLedgers[proceedsAccountId].entries.push({
           category: "income",
           label: `Business sale proceeds: ${business.name}`,
           amount: netProceeds,
           sourceId: sale.id,
+          // Asset→cash conversion, not operating income. `entity-cashflow.ts`
+          // skips flagged entries so a trust's income column isn't inflated by
+          // gross proceeds; the taxable gain is recognized separately. Inert
+          // while these deposits only ever reached household checking — load
+          // bearing now that an entity-owned business credits the entity's own.
+          isSaleProceeds: true,
           basis: netProceeds, // cash deposit: basis == amount (mirrors basisMap += netProceeds)
         });
       }
