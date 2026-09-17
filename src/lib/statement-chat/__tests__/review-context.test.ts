@@ -8,6 +8,7 @@ import {
   crmHouseholdContacts,
   entities,
   familyMembers,
+  liabilities,
   scenarios,
 } from "@/db/schema";
 
@@ -26,6 +27,7 @@ const TABLES = [
   crmHouseholdContacts,
   entities,
   familyMembers,
+  liabilities,
   scenarios,
 ];
 
@@ -96,7 +98,7 @@ vi.mock("@/db", () => ({
   },
 }));
 
-import { loadChatReviewContext } from "../review-context";
+import { EMPTY_CHAT_REVIEW_CONTEXT, loadChatReviewContext } from "../review-context";
 
 beforeEach(() => {
   state.rows = {
@@ -187,6 +189,33 @@ beforeEach(() => {
     entities: [],
     accounts: [],
     account_owners: [],
+    liabilities: [
+      // ADVERSARIAL ORDER, same reasoning as the fixtures above: a row that
+      // matches on only ONE scoping leg sits FIRST, so a read that dropped
+      // either `clientId` or `scenarioId` picks it up and the single-element
+      // assertion below actually pins both legs.
+      {
+        id: "liab-wrong-client",
+        clientId: "client-2",
+        scenarioId: "s1",
+        name: "Nobody Else's Mortgage",
+        balance: "999000.00",
+      },
+      {
+        id: "liab-wrong-scenario",
+        clientId: "client-1",
+        scenarioId: "s-other",
+        name: "Old Scenario Mortgage",
+        balance: "888000.00",
+      },
+      {
+        id: "liab-1",
+        clientId: "client-1",
+        scenarioId: "s1",
+        name: "Mortgage",
+        balance: "412000.00",
+      },
+    ],
   };
 });
 
@@ -232,5 +261,19 @@ describe("loadChatReviewContext — the household's current values", () => {
   it("answers an empty record for a client that does not resolve", async () => {
     const ctx = await loadChatReviewContext("client-missing", null);
     expect(ctx.household).toEqual({});
+  });
+});
+
+describe("loadChatReviewContext — existing liabilities as match candidates", () => {
+  it("loads the client's existing liabilities as match candidates", async () => {
+    const ctx = await loadChatReviewContext("client-1", null);
+    // The wrong-client and wrong-scenario rows sit FIRST in the fixture
+    // (see beforeEach); a read that lost either scoping leg would pull one
+    // of them in too, so this single-element assertion pins BOTH legs.
+    expect(ctx.liabilities).toEqual([{ id: "liab-1", name: "Mortgage", balance: 412000 }]);
+  });
+
+  it("returns an empty liabilities list for a plan with none", async () => {
+    expect(EMPTY_CHAT_REVIEW_CONTEXT.liabilities).toEqual([]);
   });
 });
