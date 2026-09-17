@@ -49,17 +49,9 @@ export default function EmailSettingsEditor({ initial, advisorName, advisorEmail
   const previewFrom = buildIntakeFromHeader(fromName || undefined, firmName || undefined);
   const previewSubject = resolveSubject(subject || undefined);
 
-  // buildIntakeEmailHtml returns a bare <div> fragment. Wrap it in a real
-  // document so the frame has a charset and no default body margin.
-  const previewDoc = useMemo(
-    () =>
-      `<!doctype html><html><head><meta charset="utf-8">` +
-      // `white`, not a brand token: this frame simulates an email client's
-      // canvas, which is white regardless of our theme.
-      `<style>html,body{margin:0;padding:12px;background:white}</style>` +
-      `</head><body>${previewHtml}</body></html>`,
-    [previewHtml],
-  );
+  // buildIntakeEmailHtml returns a complete document — charset, viewport, and
+  // its own page background — so it goes into the frame as-is. No wrapper of
+  // ours, which also means the preview can't disagree with what we send.
 
   // The frame has no intrinsic height, so grow it to its content. The template
   // has no images or webfonts, so one measurement at load is final; srcDoc
@@ -160,7 +152,7 @@ export default function EmailSettingsEditor({ initial, advisorName, advisorEmail
           data-testid="email-preview"
           title="Intake email preview"
           sandbox="allow-same-origin"
-          srcDoc={previewDoc}
+          srcDoc={previewHtml}
           onLoad={measurePreview}
           style={{ height: previewHeight }}
           className="w-full rounded-[var(--radius-sm)] border-0 bg-white"

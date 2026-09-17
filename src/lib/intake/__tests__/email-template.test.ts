@@ -99,8 +99,10 @@ describe("buildIntakeEmailHtml", () => {
   });
   it("preserves paragraph breaks in a multi-paragraph intro", () => {
     const html = buildIntakeEmailHtml({ ...base, introBody: "First paragraph.\n\nSecond paragraph." });
-    expect(html).toContain("<p>First paragraph.</p>");
-    expect(html).toContain("<p>Second paragraph.</p>");
+    // Each paragraph lands in its own styled <p> — assert the split, not the
+    // presentation, so a restyle of the shell doesn't read as a regression.
+    expect(html).toContain(">First paragraph.</p>");
+    expect(html).toContain(">Second paragraph.</p>");
   });
 
   it("renders a single newline within a paragraph as a line break", () => {
@@ -151,5 +153,49 @@ describe("buildIntakeEmailHtml", () => {
     const html = buildIntakeEmailHtml({ ...base, ctaLabel: '"><script>x</script>' });
     expect(html).not.toContain("<script>");
     expect(html).toContain("&lt;script&gt;");
+  });
+
+  // The shell is a full document on purpose: a mail client only reads the
+  // colour-scheme hints from the head, and the advisor preview feeds the
+  // return value straight into an iframe srcDoc with no wrapper of its own
+  // (components/intake/admin/email-settings-editor.tsx).
+  it("returns a complete document with the head-level colour-scheme hints", () => {
+    const html = buildIntakeEmailHtml(base);
+    expect(html.startsWith("<!doctype html>")).toBe(true);
+    expect(html).toContain('<meta name="color-scheme" content="light"/>');
+    expect(html).toContain('<meta name="supported-color-schemes" content="light"/>');
+    expect(html.trimEnd().endsWith("</html>")).toBe(true);
+  });
+
+  // Outlook's Word renderer drops max-width and CSS background on a <div>, so
+  // the centred card depends on a table shell carrying bgcolor attributes.
+  // Easy to "simplify" back into divs later, which is why it's pinned.
+  it("lays the shell out as tables with bgcolor, not divs", () => {
+    const html = buildIntakeEmailHtml(base);
+    expect(html).toContain('<table role="presentation"');
+    // Page canvas and card each paint via attribute, not CSS alone.
+    expect(html).toMatch(/<table[^>]*bgcolor="#f3f1ea"/);
+    expect(html).toMatch(/<table[^>]*bgcolor="#ffffff"/);
+    // The CTA is a table-wrapped cell so Outlook paints the button rectangle.
+    expect(html).toMatch(/<td bgcolor="#1a1d27"[^>]*>\s*<a href=/);
+  });
+
+  it("attributes the send to the firm, and says the link is personal", () => {
+    const html = buildIntakeEmailHtml(base);
+    expect(html).toContain("Sent by Acme Wealth through Foundry Planning.");
+    expect(html).toContain("This link is personal to you");
+  });
+
+  // Without the unbranded branch this reads "Sent by Foundry Planning through
+  // Foundry Planning" — the firm name falls back to the Foundry default.
+  it("drops the 'Sent by' clause when no firm name resolved", () => {
+    const html = buildIntakeEmailHtml({ link: base.link, clientName: "Sam Client" });
+    expect(html).toContain("Sent through Foundry Planning.");
+    expect(html).not.toContain("Sent by");
+  });
+
+  it("escapes the firm name in the attribution line", () => {
+    const html = buildIntakeEmailHtml({ ...base, firmName: 'Acme " <b>Co</b>' });
+    expect(html).toContain("Sent by Acme &quot; &lt;b&gt;Co&lt;/b&gt; through Foundry Planning.");
   });
 });
