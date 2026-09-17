@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ExcludedRow } from "@/components/statement-chat/excluded-rows";
 import type { ExtractedAccount, ExtractedHolding, ExtractedLiability } from "@/lib/extraction/types";
-import type { Annotated, MatchAnnotation } from "@/lib/imports/types";
+import {
+  isLiabilityRowId,
+  type Annotated,
+  type ExcludedChatRow,
+  type MatchAnnotation,
+} from "@/lib/imports/types";
 import { readChatState, writeChatState, type ChatTurn } from "@/lib/statement-chat/state";
 import { resolveOwnersFromHint, type OwnerMatchFamilyMember } from "@/lib/imports/owner-match";
 import { reannotateAccountRows } from "@/lib/imports/annotate-accounts";
@@ -15,7 +20,17 @@ export interface ChatCommitResult {
   summary: string;
   caveats: string[];
   rows: Row[];
-  excluded: ExcludedRow<Row>[];
+  /**
+   * MIXED as of Task 12 — `drop_row`/`merge_rows` retire debt rows into the
+   * same list, and the mount hydration copies `chat.excludedRows` straight
+   * in. Named at `ExcludedChatRow` so the type says so; it does NOT make the
+   * union discriminable, because `ExtractedAccount` requires only `name` and
+   * the two row types are assignable in BOTH directions. Anything that has
+   * to know which table an entry came from narrows on the `__rowId` prefix
+   * (`isLiabilityRowId`) — see `handleRestore` below and `chat-surface.tsx`'s
+   * split of this same list.
+   */
+  excluded: ExcludedRow<ExcludedChatRow>[];
   liabilities: LiabilityRow[];
 }
 
@@ -587,6 +602,20 @@ export function useChatCommit(
   // `onRestore` — lifts an excluded (rollup-detected) row into the working
   // set WITHOUT committing it (Task 10 review, CRITICAL). The advisor still
   // has to click Commit on it afterward.
+  //
+  // Task 12b, Finding 1 (CRITICAL): routed by TABLE. Task 12 let `drop_row`
+  // retire a LIABILITY into the same `excludedRows` list, and this pushed
+  // every restored row into `prev.rows` with no check at all — so one click
+  // on "Include anyway" filed a dropped debt as an ASSET, inverting the sign
+  // of a number on the balance sheet. That is verbatim the defect
+  // `dropDebtsFiledAsAssets` exists to undo.
+  //
+  // The discriminator is `isLiabilityRowId` — the `__rowId` PREFIX, shared
+  // with `chat-surface.tsx`'s split of the same list so the two can never
+  // disagree about which card a row belongs to. It cannot be a field check
+  // and the compiler cannot help: `ExtractedAccount` requires only `name`,
+  // so an account row and a debt row are assignable in BOTH directions.
+  //
   // Idempotent by `__rowId` (Ruling 100, Task 11b fix round 2, clause 2): a
   // row already in the working set is never appended twice, whatever the
   // excluded list says. The row can legitimately reappear in `excluded` a
@@ -596,15 +625,25 @@ export function useChatCommit(
   // and without this guard a second "Include anyway" click on the SAME row
   // would insert a second copy that later commits as a duplicate account.
   const handleRestore = useCallback(
-    (row: Row) => {
+    (row: ExcludedChatRow) => {
       updateResult((prev) => {
         if (!prev) return prev;
+        const excluded = prev.excluded.filter((x) => x.row.__rowId !== row.__rowId);
+        if (isLiabilityRowId(row.__rowId)) {
+          const alreadyWorking =
+            row.__rowId != null && prev.liabilities.some((r) => r.__rowId === row.__rowId);
+          return {
+            ...prev,
+            liabilities: alreadyWorking ? prev.liabilities : [...prev.liabilities, row],
+            excluded,
+          };
+        }
         const alreadyWorking =
           row.__rowId != null && prev.rows.some((r) => r.__rowId === row.__rowId);
         return {
           ...prev,
           rows: alreadyWorking ? prev.rows : [...prev.rows, row],
-          excluded: prev.excluded.filter((x) => x.row.__rowId !== row.__rowId),
+          excluded,
         };
       });
     },
@@ -677,8 +716,17 @@ export function useChatCommit(
       );
 
       const freshChat = readChatState(freshPayloadJson);
+      // BOTH tables (Task 12b, Finding 2 — leg 6 of the loop). Built from
+      // `current.rows` alone, a liability exclusion never cleared
+      // server-side: the turn route kept echoing it back while
+      // `mergedLiabilities` above kept writing the row into the table, so a
+      // dropped debt sat in the table AND in "Not included" for the life of
+      // the import. An account id and a liability id can never collide —
+      // they carry different section prefixes — so one set covers both.
       const restoredIds = new Set(
-        current.rows.map((r) => r.__rowId).filter((id): id is string => Boolean(id)),
+        [...current.rows, ...current.liabilities]
+          .map((r) => r.__rowId)
+          .filter((id): id is string => Boolean(id)),
       );
       const nextExcludedRows = freshChat.excludedRows.filter(
         (x) => !(x.row.__rowId && restoredIds.has(x.row.__rowId)),
@@ -705,6 +753,22 @@ export function useChatCommit(
   // server's complete, authoritative sets (Step 0 + the flush above + the
   // route's own fresh-read merge), not deltas.
   //
+  // `liabilities` (Ruling 51/54, Task 12b) replaces wholesale for exactly the
+  // same reason, and Ruling 95's argument for the accounts replace transfers
+  // unchanged: `flushRowsToServer` runs before every turn, so the server
+  // genuinely holds everything the advisor sees by the time the route reads
+  // it. Its preconditions hold identically here — the flush writes
+  // `payload.liabilities` in the same PATCH, and `chat-surface.tsx` disables
+  // every commit affordance for the whole `turnStatus === "sending"` window.
+  //
+  // But `undefined` PRESERVES rather than clearing. Ruling 39 set `?? []` at
+  // the SSE boundary, where absence really does mean "no liabilities"; here
+  // absence can also mean an OLDER route answered a NEWER client mid-deploy,
+  // and `?? []` would wipe the advisor's reviewed debts off the screen. An
+  // empty ARRAY still clears — that is the route saying there are none left,
+  // e.g. the advisor just dropped the last debt. One check, correct in both
+  // directions.
+  //
   // When `prev` is null — a resumed draft with no extraction run THIS
   // session (C3) — this is the first thing to populate `result` at all, so
   // the extracted-state panel (table, Finish import) appears for the first
@@ -714,12 +778,22 @@ export function useChatCommit(
   // stuck there permanently (every later call takes the `prev` branch, which
   // preserves whatever `summary` was set here once).
   const adoptTurnPayload = useCallback(
-    (accounts: Row[], excluded: ExcludedRow<Row>[]): Promise<void> =>
+    (
+      accounts: Row[],
+      excluded: ExcludedRow<ExcludedChatRow>[],
+      liabilities: LiabilityRow[] | undefined,
+    ): Promise<void> =>
       enqueue(commitQueueRef, () => {
         updateResult((prev) =>
           prev
-            ? { ...prev, rows: accounts, excluded }
-            : { summary: "", caveats: [], rows: accounts, excluded, liabilities: [] },
+            ? { ...prev, rows: accounts, excluded, liabilities: liabilities ?? prev.liabilities }
+            : {
+                summary: "",
+                caveats: [],
+                rows: accounts,
+                excluded,
+                liabilities: liabilities ?? [],
+              },
         );
       }),
     [updateResult],

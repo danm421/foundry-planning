@@ -17,6 +17,7 @@ import type {
   AccountSubType,
   ExtractedAccount,
   ExtractedHolding,
+  ExtractedLiability,
   ExtractionResult,
 } from "@/lib/extraction/types";
 
@@ -30,12 +31,19 @@ import type {
  * Direction rule, same as `narrate.ts`/`rollups.ts`: this module reads from
  * `@/lib/imports/` and `@/lib/extraction/`, never the reverse.
  *
- * `payload` here is always the accounts-only `PersistedImportPayload` this
- * surface persists (C13) — every function below reads `payload.accounts`
- * defensively (`?? []`) rather than assuming it is populated.
+ * `payload` here is the `PersistedImportPayload` this surface persists (C13)
+ * — every function below reads `payload.accounts` / `payload.liabilities`
+ * defensively (`?? []`) rather than assuming either is populated.
+ *
+ * Task 12: the row tools (`edit_row`/`merge_rows`/`drop_row`) and `explain`
+ * reach BOTH tables, resolving which one by the row id's own section prefix
+ * (`locateRow` below). The three HOLDINGS tools deliberately do not: a
+ * position is an account concept and a debt has none, so they keep resolving
+ * against `payload.accounts` alone.
  */
 
 type AccountRow = Annotated<ExtractedAccount>;
+type LiabilityRow = Annotated<ExtractedLiability>;
 
 /**
  * The holdings allowlist and its validators live in `holding-fields.ts`,
@@ -176,6 +184,96 @@ function isValidFieldValue(field: EditableAccountField, value: unknown): boolean
 }
 
 /**
+ * Ruling 50 applies here unchanged: an ALLOWLIST, never a denylist. These are
+ * the editable columns of `liabilities-columns.ts`, minus the derived escrow
+ * cell (which is computed from `totalPayment` and `monthlyPayment`, both of
+ * which ARE editable — editing the derived figure directly would have nowhere
+ * to write) and minus `match` (an annotation, ruled on in the link picker,
+ * never a value the model writes). `propertyAddress` is editable because it is
+ * the key the commit links the mortgage to its property by.
+ *
+ * `lender` is deliberately NOT here (Ruling 56, Task 12b) — reversing both
+ * the plan and this docblock's own earlier claim that "allowing it costs
+ * nothing a column would have". It costs a FALSE CONFIRMATION. The field is
+ * extracted (`extraction/types.ts`, and the account-statement prompt asks for
+ * it), but it has no review column, and it appears in NEITHER
+ * `commit/liabilities.ts` NOR `db/schema.ts` — so it never reaches the
+ * database. An accepted edit to it would report success, in the transcript,
+ * for a write the advisor cannot see and the plan never stores: the same
+ * lying-transcript defect the rest of this fix round exists to close. Giving
+ * it a real column is the other way to fix that, and is out of scope here.
+ */
+export const EDITABLE_LIABILITY_FIELDS = [
+  "name",
+  "balance",
+  "interestRate",
+  "monthlyPayment",
+  "totalPayment",
+  "balanceAsOfDate",
+  "maturityDate",
+  "propertyAddress",
+] as const;
+
+export type EditableLiabilityField = (typeof EDITABLE_LIABILITY_FIELDS)[number];
+
+function isEditableLiabilityField(field: string): field is EditableLiabilityField {
+  return (EDITABLE_LIABILITY_FIELDS as readonly string[]).includes(field);
+}
+
+/** Dates in an extraction payload are absolute ISO `YYYY-MM-DD` strings,
+ *  never relative and never a locale rendering — the same rule the commit
+ *  path's own date parsing assumes. */
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Human-readable domain description for an error message. Mirrors
+ *  `fieldDomainDescription` above — the model self-corrects from it. */
+function liabilityFieldDomainDescription(field: EditableLiabilityField): string {
+  switch (field) {
+    case "balance":
+    case "monthlyPayment":
+    case "totalPayment":
+      return "a finite number";
+    case "interestRate":
+      return "a decimal fraction between 0 and 1 (0.0625 is 6.25%, never 6.25)";
+    case "balanceAsOfDate":
+    case "maturityDate":
+      return "a date in YYYY-MM-DD form";
+    case "name":
+    case "propertyAddress":
+      return "a non-empty string";
+  }
+}
+
+/**
+ * Per-field domain validation for a debt row. Exhaustive over
+ * `EditableLiabilityField` by construction, the same as its account twin: a
+ * field missing a `case` is a compile error, not a runtime gap.
+ *
+ * `interestRate`'s range check is the load-bearing one. A rate is a DECIMAL
+ * FRACTION everywhere in this codebase, so a model writing the `6.25` it read
+ * off the statement — the obvious mistake — would otherwise be stored and
+ * amortized as 625%. Refusing sends the model back with the shape it needs
+ * (see the description above); storing it is a 100x error nothing downstream
+ * can detect.
+ */
+function isValidLiabilityValue(field: EditableLiabilityField, value: unknown): boolean {
+  switch (field) {
+    case "balance":
+    case "monthlyPayment":
+    case "totalPayment":
+      return typeof value === "number" && Number.isFinite(value);
+    case "interestRate":
+      return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
+    case "balanceAsOfDate":
+    case "maturityDate":
+      return typeof value === "string" && ISO_DATE.test(value);
+    case "name":
+    case "propertyAddress":
+      return typeof value === "string" && value.trim().length > 0;
+  }
+}
+
+/**
  * ONE result type with optional members (Ruling 49 / C4) — not three ad-hoc
  * shapes. `payload` and `summary` are on every result (C13: the route can't
  * ship a turn with either missing); `excludedRows` is present only for the
@@ -223,18 +321,65 @@ const MAX_LISTED_IDS = 20;
  * `resolveSourceFileId` below already lists what the import DOES have for
  * exactly this reason; this is the same pattern for rows.
  */
-function findRowIndex(accounts: AccountRow[], rowId: string): number {
-  const idx = accounts.findIndex((r) => r.__rowId === rowId);
-  if (idx !== -1) return idx;
-
-  const known = accounts.map((r) => r.__rowId).filter((id): id is string => Boolean(id));
+function unknownRowIdError(rowId: string, rows: Array<{ __rowId?: string }>): Error {
+  const known = rows.map((r) => r.__rowId).filter((id): id is string => Boolean(id));
   if (known.length === 0) {
-    throw new Error(`Unknown row id "${rowId}". This import has no rows to work on.`);
+    return new Error(`Unknown row id "${rowId}". This import has no rows to work on.`);
   }
   const listed = known.slice(0, MAX_LISTED_IDS).join(", ");
   const more =
     known.length > MAX_LISTED_IDS ? `, and ${known.length - MAX_LISTED_IDS} more` : "";
-  throw new Error(`Unknown row id "${rowId}". The rows in this import are: ${listed}${more}.`);
+  return new Error(`Unknown row id "${rowId}". The rows in this import are: ${listed}${more}.`);
+}
+
+/**
+ * Accounts-only row lookup — the THREE holdings tools and nothing else.
+ *
+ * Ruling 49: a position belongs to an account and a debt has none, so these
+ * correctly refuse a liability id, and their error correctly lists only
+ * account ids. Everything that DOES span both tables goes through `locateRow`
+ * below; both share `unknownRowIdError` so the two lists can't grow two
+ * different grammars for the model to read.
+ */
+function findRowIndex(accounts: AccountRow[], rowId: string): number {
+  const idx = accounts.findIndex((r) => r.__rowId === rowId);
+  if (idx !== -1) return idx;
+  throw unknownRowIdError(rowId, accounts);
+}
+
+/**
+ * Which array a row id belongs to, and where in it.
+ *
+ * Resolving by id alone — rather than taking a `table` argument from the
+ * model — is safe because ids are already section-prefixed: `keyedRowId`
+ * (`merge-across-files.ts`) mints every id as
+ * `${label}:${key}#${fileId}:${index}`, so an account id starts with
+ * "account:" and a liability id with "liability:". The id already says which
+ * table it is in; an argument would only add a second way to be wrong about
+ * it.
+ *
+ * It matches on the ARRAY, not on the prefix string, so a row whose id
+ * predates that scheme (or the synthesized-property id
+ * `account:synthesized:<slug>`, which has no `#fileId:index` half) resolves by
+ * where it actually lives rather than by how its id happens to be spelled.
+ */
+type Located =
+  | { table: "accounts"; index: number; row: AccountRow }
+  | { table: "liabilities"; index: number; row: LiabilityRow };
+
+function locateRow(payload: PersistedImportPayload, rowId: string): Located {
+  const accounts = payload.accounts ?? [];
+  const ai = accounts.findIndex((r) => r.__rowId === rowId);
+  if (ai !== -1) return { table: "accounts", index: ai, row: accounts[ai] };
+
+  const liabilities = payload.liabilities ?? [];
+  const li = liabilities.findIndex((r) => r.__rowId === rowId);
+  if (li !== -1) return { table: "liabilities", index: li, row: liabilities[li] };
+
+  // The unknown-id error must list ids from BOTH tables, or the model retries
+  // against a list that cannot contain the row it wants — I5's retry loop,
+  // one table over.
+  throw unknownRowIdError(rowId, [...accounts, ...liabilities]);
 }
 
 /**
@@ -268,8 +413,16 @@ export type CommittedRowIds = ReadonlySet<string>;
  * Error style follows `resolveSourceFileId` below — it tells the model what
  * to do next instead of dead-ending, so the turn ends in an explanation the
  * advisor can act on rather than a retry loop that burns the tool budget.
+ *
+ * Takes the two fields it reads rather than a row type (Task 12): the rule and
+ * its message are already table-neutral — `commitLiabilities` honours `rowIds`
+ * exactly as `commitAccounts` does — so a debt row needs the same guard, not a
+ * second copy of it.
  */
-function assertNotCommitted(row: AccountRow, committedRowIds: CommittedRowIds): void {
+function assertNotCommitted(
+  row: { name: string; __rowId?: string },
+  committedRowIds: CommittedRowIds,
+): void {
   if (!row.__rowId || !committedRowIds.has(row.__rowId)) return;
   throw new Error(
     `"${row.name}" (row ${row.__rowId}) has already been committed to the client's plan, so it ` +
@@ -295,21 +448,49 @@ export interface EditRowArgs {
 }
 
 /**
- * Writes ONE field on ONE row. Ruling 50: `field` must be on the
- * `EDITABLE_ACCOUNT_FIELDS` allowlist or this throws `/not editable/i` — a
- * denylist would silently permit `__provenance`/`match`/`reconciliation` and
- * anything added to `ExtractedAccount` later. `value` must additionally pass
- * that field's own domain check (Important 5) — the allowlist says WHICH
+ * Writes ONE field on ONE row, in whichever table its id names. Ruling 50:
+ * `field` must be on that table's own allowlist or this throws
+ * `/not editable/i` — a denylist would silently permit
+ * `__provenance`/`match`/`reconciliation` and anything added to
+ * `ExtractedAccount`/`ExtractedLiability` later. `value` must additionally
+ * pass that field's own domain check (Important 5) — the allowlist says WHICH
  * columns are writable, not that any scalar is a legal value for them.
+ *
+ * The two allowlists are deliberately separate rather than one union: they
+ * barely overlap (`name` alone), the domain rules differ where they do share a
+ * shape, and a merged list would let the model write `custodian` onto a debt
+ * or `balance` onto an account — a field neither table's commit path reads,
+ * silently kept in the payload.
  */
 export function editRow(
   payload: PersistedImportPayload,
   args: EditRowArgs,
   committedRowIds: CommittedRowIds,
 ): ToolResult {
-  const accounts = accountsOf(payload);
-  const idx = findRowIndex(accounts, args.rowId);
-  assertNotCommitted(accounts[idx], committedRowIds);
+  const located = locateRow(payload, args.rowId);
+  assertNotCommitted(located.row, committedRowIds);
+
+  if (located.table === "liabilities") {
+    if (!isEditableLiabilityField(args.field)) {
+      throw new Error(
+        `Field "${args.field}" is not editable on a debt. Editable fields: ${EDITABLE_LIABILITY_FIELDS.join(", ")}.`,
+      );
+    }
+    if (!isValidLiabilityValue(args.field, args.value)) {
+      throw new Error(
+        `Value for "${args.field}" must be ${liabilityFieldDomainDescription(args.field)}.`,
+      );
+    }
+    const liabilities = payload.liabilities ?? [];
+    const nextLiabilities = liabilities.map((r, i) =>
+      i === located.index ? { ...r, [args.field]: args.value } : r,
+    );
+    return {
+      payload: { ...payload, liabilities: nextLiabilities },
+      summary: `Set ${args.field} to ${describeValue(args.value)} on "${located.row.name}".`,
+    };
+  }
+
   if (!isEditableField(args.field)) {
     throw new Error(
       `Field "${args.field}" is not editable. Editable fields: ${EDITABLE_ACCOUNT_FIELDS.join(", ")}.`,
@@ -318,13 +499,13 @@ export function editRow(
   if (!isValidFieldValue(args.field, args.value)) {
     throw new Error(`Value for "${args.field}" must be ${fieldDomainDescription(args.field)}.`);
   }
-  const row = accounts[idx];
+  const accounts = accountsOf(payload);
   const nextAccounts = accounts.map((r, i) =>
-    i === idx ? { ...r, [args.field]: args.value } : r,
+    i === located.index ? { ...r, [args.field]: args.value } : r,
   );
   return {
     payload: { ...payload, accounts: nextAccounts },
-    summary: `Set ${args.field} to ${describeValue(args.value)} on "${row.name}".`,
+    summary: `Set ${args.field} to ${describeValue(args.value)} on "${located.row.name}".`,
   };
 }
 
@@ -385,21 +566,33 @@ const ROW_ANNOTATION_KEYS: Record<keyof Annotated<object>, true> = {
  * `__provenance` is skipped by the loop and handled explicitly: it isn't
  * advisor-editable data, but knowing where a merged row came from is still
  * useful to `explain`, so it backfills ONLY when `base` has none at all.
+ *
+ * Generic over the row type (Task 12) rather than copied per table: "everything
+ * but the annotations carries over" is a statement about `Annotated`, not about
+ * accounts, so a debt merge needs the same rule and not a second version of it.
  */
-function unionAccountFields(base: AccountRow, other: AccountRow): AccountRow {
-  const merged: AccountRow = { ...base };
-  for (const key of Object.keys(other) as Array<keyof AccountRow>) {
+function unionRowFields<T extends Annotated<object>>(base: T, other: T): T {
+  const merged: T = { ...base };
+  // ONE string-keyed view of each row, rather than a cast per write: a
+  // generic's `keyof T` can be a symbol, so it cannot index a
+  // `Record<string, unknown>` at all, and reading and writing through the same
+  // view keeps the two halves of every comparison on the same key type.
+  const mergedFields = merged as unknown as Record<string, unknown>;
+  const otherFields = other as unknown as Record<string, unknown>;
+  for (const key of Object.keys(otherFields)) {
     // `Object.hasOwn`, not `key in` — `in` also matches Object.prototype's
     // own keys, so a row carrying a field called "toString" would be skipped.
     if (Object.hasOwn(ROW_ANNOTATION_KEYS, key)) continue;
-    const baseValue = merged[key];
-    const otherValue = other[key];
+    const baseValue = mergedFields[key];
+    const otherValue = otherFields[key];
     if ((baseValue === undefined || baseValue === null) && otherValue !== undefined && otherValue !== null) {
-      (merged as unknown as Record<string, unknown>)[key] = otherValue;
+      mergedFields[key] = otherValue;
     }
   }
+  // Written here, not in the loop, because `__provenance` is an annotation and
+  // the loop deliberately skips every one of those.
   if (!merged.__provenance && other.__provenance) {
-    merged.__provenance = other.__provenance;
+    mergedFields.__provenance = other.__provenance;
   }
   return merged;
 }
@@ -421,20 +614,41 @@ export function mergeRows(
   if (args.keepRowId === args.mergeRowId) {
     throw new Error("Cannot merge a row into itself.");
   }
-  const accounts = accountsOf(payload);
-  const keepIdx = findRowIndex(accounts, args.keepRowId);
-  const mergeIdx = findRowIndex(accounts, args.mergeRowId);
-  const keep = accounts[keepIdx];
-  const merge = accounts[mergeIdx];
+  const keep = locateRow(payload, args.keepRowId);
+  const merge = locateRow(payload, args.mergeRowId);
   // BOTH sides, not just the retired one. Retiring a committed row leaves
   // its account in the plan while the survivor commits as a second copy of
   // the same account; folding into a committed SURVIVOR changes fields whose
   // committed figure this surface can no longer update.
-  assertNotCommitted(keep, committedRowIds);
-  assertNotCommitted(merge, committedRowIds);
-  const merged = unionAccountFields(keep, merge);
+  assertNotCommitted(keep.row, committedRowIds);
+  assertNotCommitted(merge.row, committedRowIds);
+
+  if (keep.table === "accounts" && merge.table === "accounts") {
+    return mergeAccountRows(payload, keep, merge);
+  }
+  if (keep.table === "liabilities" && merge.table === "liabilities") {
+    return mergeLiabilityRows(payload, keep, merge);
+  }
+  // Task 12. Falling through means the two ids named different tables — the
+  // one combination that is never a duplicate to fold. Refused by NAME so the
+  // advisor reading the transcript can see which two rows the model thought
+  // were one thing; blending them would put a debt's balance on the asset
+  // side, which is the defect `dropDebtsFiledAsAssets` exists to undo.
+  throw new Error(
+    `Cannot merge "${keep.row.name}" and "${merge.row.name}": one is an account and the ` +
+      "other is a debt. They are different things and belong in different tables.",
+  );
+}
+
+function mergeAccountRows(
+  payload: PersistedImportPayload,
+  keep: { index: number; row: AccountRow },
+  merge: { index: number; row: AccountRow },
+): ToolResult {
+  const accounts = accountsOf(payload);
+  const merged = unionRowFields(keep.row, merge.row);
   // `merged.holdings` is still the SAME array (and same holding objects) as
-  // whichever of `keep`/`merge` donated it — `unionAccountFields` only
+  // whichever of `keep`/`merge` donated it — `unionRowFields` only
   // spreads the row shallowly, never the arrays it carries. Clone before
   // stamping so the mutation lands on `merged`'s own copy, not on a holding
   // object also reachable from `payload.accounts` or (for the retired row)
@@ -448,35 +662,64 @@ export function mergeRows(
   // idempotent for positions that already had a correct id.
   stampAccountHoldingIds(merged);
   const nextAccounts = accounts
-    .map((r, i) => (i === keepIdx ? merged : r))
-    .filter((_, i) => i !== mergeIdx);
-  // `unionAccountFields` backfills only where the base has nothing, so when
+    .map((r, i) => (i === keep.index ? merged : r))
+    .filter((_, i) => i !== merge.index);
+  // `unionRowFields` backfills only where the base has nothing, so when
   // BOTH rows carry positions the merged row keeps `keep`'s and `merge`'s are
   // gone — and the retired row is `irreversible: true`, so there is no way
   // back to them. That was inert while chat imports never extracted holdings;
   // it is not any more. Silence here is the same failure the holdings caveat
   // exists to prevent, so the summary says it outright.
-  // `keep.holdings != null` reads as a null check but is really asking "did
-  // keep's array WIN the union?" — `unionAccountFields` backfills only where
+  // `keep.row.holdings != null` reads as a null check but is really asking "did
+  // keep's array WIN the union?" — `unionRowFields` backfills only where
   // the base has nothing. If that backfill rule ever changes, this is the
   // predicate that silently stops matching.
-  const discardedPositions = keep.holdings != null ? livingHoldings(merge).length : 0;
+  const discardedPositions = keep.row.holdings != null ? livingHoldings(merge.row).length : 0;
   const noun = discardedPositions === 1 ? "position" : "positions";
   const was = discardedPositions === 1 ? "was" : "were";
   const positionsNote =
     discardedPositions === 0
       ? ""
-      : ` The ${discardedPositions} ${noun} on "${merge.name}" ${was} not carried over` +
-        ` — "${keep.name}"'s ${livingHoldings(keep).length} were kept.`;
+      : ` The ${discardedPositions} ${noun} on "${merge.row.name}" ${was} not carried over` +
+        ` — "${keep.row.name}"'s ${livingHoldings(keep.row).length} were kept.`;
   return {
     payload: { ...payload, accounts: nextAccounts },
-    summary: `Merged "${merge.name}" into "${keep.name}".${positionsNote}`,
+    summary: `Merged "${merge.row.name}" into "${keep.row.name}".${positionsNote}`,
     // `irreversible: true` (Ruling 96): the retired row's own fields were
     // folded into `keep` above — restoring it would re-add the pre-merge
     // row alongside the merged one and double-count the account. The
     // discriminator is set HERE, at the producer, so the surface never has
     // to infer it from `reason`'s prose.
-    excludedRows: [{ row: merge, reason: `merged into "${keep.name}"`, irreversible: true }],
+    excludedRows: [
+      { row: merge.row, reason: `merged into "${keep.row.name}"`, irreversible: true },
+    ],
+  };
+}
+
+/**
+ * The debt half. Same rule, minus everything that is an account concept: a
+ * liability carries no positions, so there is no holdings clone, no id
+ * re-stamp and no discarded-positions note — the three things that make up
+ * most of the accounts path above. Writing them out as a second function is
+ * what keeps that difference visible instead of hiding it behind branches in
+ * one body.
+ */
+function mergeLiabilityRows(
+  payload: PersistedImportPayload,
+  keep: { index: number; row: LiabilityRow },
+  merge: { index: number; row: LiabilityRow },
+): ToolResult {
+  const liabilities = payload.liabilities ?? [];
+  const merged = unionRowFields(keep.row, merge.row);
+  const nextLiabilities = liabilities
+    .map((r, i) => (i === keep.index ? merged : r))
+    .filter((_, i) => i !== merge.index);
+  return {
+    payload: { ...payload, liabilities: nextLiabilities },
+    summary: `Merged "${merge.row.name}" into "${keep.row.name}".`,
+    excludedRows: [
+      { row: merge.row, reason: `merged into "${keep.row.name}"`, irreversible: true },
+    ],
   };
 }
 
@@ -507,15 +750,24 @@ export function dropRow(
   if (args.reason.trim().length === 0) {
     throw new Error("A reason is required to drop a row.");
   }
-  const accounts = accountsOf(payload);
-  const idx = findRowIndex(accounts, args.rowId);
-  const dropped = accounts[idx];
+  const located = locateRow(payload, args.rowId);
+  const dropped = located.row;
   assertNotCommitted(dropped, committedRowIds);
-  const nextAccounts = accounts.filter((_, i) => i !== idx);
+  const summary = `Dropped "${dropped.name}" — ${args.reason}.`;
+  const excludedRows: ToolResult["excludedRows"] = [{ row: dropped, reason: args.reason }];
+  if (located.table === "liabilities") {
+    const liabilities = payload.liabilities ?? [];
+    return {
+      payload: { ...payload, liabilities: liabilities.filter((_, i) => i !== located.index) },
+      summary,
+      excludedRows,
+    };
+  }
+  const accounts = accountsOf(payload);
   return {
-    payload: { ...payload, accounts: nextAccounts },
-    summary: `Dropped "${dropped.name}" — ${args.reason}.`,
-    excludedRows: [{ row: dropped, reason: args.reason }],
+    payload: { ...payload, accounts: accounts.filter((_, i) => i !== located.index) },
+    summary,
+    excludedRows,
   };
 }
 
@@ -744,15 +996,19 @@ export interface ExplainArgs {
  * `sourceFileId` is an id, not a filename (C1) — `fileNames` is the caller's
  * map from `payloadJson.fileResults[id].fileName`, since this is a lib
  * function and cannot read `SourceFilesContext` (React context).
+ *
+ * Ruling 49: this reaches BOTH tables. It resolves by row id, writes nothing,
+ * and a debt carries `__provenance` exactly like an account — so "where did
+ * the mortgage balance come from?" answers with the document instead of
+ * dead-ending on `Unknown row id` listing only account ids, which is verbatim
+ * the retry loop `findRowIndex`'s own docblock was written to prevent.
  */
 export function explain(
   payload: PersistedImportPayload,
   args: ExplainArgs,
   fileNames: Record<string, string>,
 ): ToolResult {
-  const accounts = accountsOf(payload);
-  const idx = findRowIndex(accounts, args.rowId);
-  const row = accounts[idx];
+  const row = locateRow(payload, args.rowId).row;
   const prov = row.__provenance;
   if (!prov) {
     return { payload, summary: `"${row.name}" has no recorded source document.` };

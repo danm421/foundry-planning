@@ -343,8 +343,13 @@ describe("chat turn route behavior", () => {
     const res = await POST(req({ message: "fix the basis" }), params);
     expect(res.status).toBe(200);
     const body = await res.json();
+    // Ruling 51 (Task 12b) OVERTURNED Ruling 44's accounts-only body: the
+    // response now carries `payload.liabilities` too, because the surface has
+    // to learn about a persisted DEBT edit or its next pre-turn flush writes
+    // its stale local copy back over the server's corrected set. `[]` here is
+    // the correct value — this fixture's import holds no debts.
     expect(body).toEqual({
-      payload: { accounts: [{ __rowId: "r1", name: "IRA", value: 1, basis: 5 }] },
+      payload: { accounts: [{ __rowId: "r1", name: "IRA", value: 1, basis: 5 }], liabilities: [] },
       summary: "Done.",
       excludedRows: [],
       turnEntries: [
@@ -573,7 +578,7 @@ describe("chat turn route behavior", () => {
     // behave (they create a new object only for the row(s) they touch and
     // preserve the exact same reference for every row they don't). A test
     // that instead re-declares an identical-looking-but-distinct r2 literal
-    // in `turnResult.payload` would make `mergeAccountsByRowId`'s reference
+    // in `turnResult.payload` would make `mergeRowsByRowId`'s reference
     // check see r2 as "changed" too, which is not what a real turn produces
     // and would make this test prove nothing.
     const startR2 = { __rowId: "r2", name: "Brokerage", value: 2 };
@@ -682,6 +687,240 @@ describe("chat turn route behavior", () => {
     expect(written.payload?.liabilities).toEqual([
       { __rowId: "liability:mortgage#f1:0", name: "Mortgage", balance: 412_000 },
     ]);
+  });
+
+  // --- Task 12b, Finding 2 -------------------------------------------------
+
+  /** The two debts the fresh read holds, named once so an assertion can
+   *  compare against them without re-spelling the literal. */
+  const FRESH_DEBTS = [
+    { __rowId: "liability:mortgage#f1:0", name: "Mortgage", balance: 412_000, interestRate: 0.0525 },
+    { __rowId: "liability:heloc#f1:0", name: "HELOC", balance: 40_000 },
+  ];
+
+  /** The fresh read for a household with one account and two debts. */
+  function freshWithDebts() {
+    return {
+      id: "i1",
+      payloadJson: {
+        chat: {
+          surface: "chat",
+          transcript: [],
+          decisions: [],
+          excludedRows: [],
+          committedRowIds: [],
+        },
+        payload: {
+          accounts: [{ __rowId: "r1", name: "IRA", value: 1 }],
+          liabilities: FRESH_DEBTS,
+        } as never,
+        fileResults: {},
+      } satisfies ImportPayloadJson,
+    };
+  }
+
+  // Half of Task 12 was INERT: `payload.liabilities` was a PASSTHROUGH of the
+  // fresh read, so `edit_row` on a debt wrote nothing at all while the
+  // transcript told the advisor it had. Task 13's browser criterion 7 ("ask
+  // the chat to change the mortgage rate") cannot pass until this lands.
+  //
+  // Mutation this catches: reverting the assignment to
+  // `liabilities: freshPayloadJson.payload?.liabilities ?? []` — the written
+  // rate stays 0.0525.
+  it("persists a liability edit by rebasing turnResult.payload.liabilities (Finding 2)", async () => {
+    // ONE shared reference for the row the turn did NOT touch, exactly as
+    // `editRow` behaves — a re-declared identical literal would read as
+    // "changed" to the reference check and prove nothing.
+    const startHeloc = { __rowId: "liability:heloc#f1:0", name: "HELOC", balance: 40_000 };
+    const startMortgage = {
+      __rowId: "liability:mortgage#f1:0",
+      name: "Mortgage",
+      balance: 412_000,
+      interestRate: 0.0525,
+    };
+    vi.mocked(requireImportAccess).mockResolvedValue(
+      importRow({
+        chat: { surface: "chat", transcript: [], decisions: [], excludedRows: [], committedRowIds: [] },
+        payload: {
+          accounts: [{ __rowId: "r1", name: "IRA", value: 1 }],
+          liabilities: [startMortgage, startHeloc],
+        } as never,
+        fileResults: {},
+      }) as never,
+    );
+    freshRow = freshWithDebts();
+    runTurn.mockResolvedValue({
+      payload: {
+        accounts: [{ __rowId: "r1", name: "IRA", value: 1 }],
+        liabilities: [{ ...startMortgage, interestRate: 0.0625 }, startHeloc],
+      },
+      payloadMutated: true,
+      turnEntries: [
+        { role: "user", text: "the rate is 6.25%", at: "t1" },
+        { role: "tool", tool: "edit_row", summary: "Set interestRate to 0.0625.", at: "t1" },
+        { role: "assistant", text: "Done.", at: "t1" },
+      ],
+      newExcludedRows: [],
+      summary: "Done.",
+    });
+
+    const res = await POST(req({ message: "the rate is 6.25%" }), params);
+    expect(res.status).toBe(200);
+
+    const written = updateCalls[0].values.payloadJson as ImportPayloadJson;
+    const writtenLiabilities = written.payload?.liabilities as Array<{
+      __rowId: string;
+      interestRate?: number;
+    }>;
+    expect(writtenLiabilities.find((r) => r.__rowId === "liability:mortgage#f1:0")?.interestRate).toBe(
+      0.0625,
+    );
+    // The untouched debt survives, and the accounts table is not disturbed.
+    expect(writtenLiabilities.map((r) => r.__rowId)).toEqual([
+      "liability:mortgage#f1:0",
+      "liability:heloc#f1:0",
+    ]);
+    expect(written.payload?.accounts).toHaveLength(1);
+
+    // Ruling 51 — the RESPONSE BODY carries the debts too. This overturns
+    // Ruling 44 (body stays accounts-only because nothing consumed it):
+    // Task 12 made liabilities mutable, so the surface must learn about the
+    // edit or the next `flushRowsToServer` writes its stale copy back.
+    // Mutation this catches: reverting the body to
+    // `payload: { accounts: responseAccounts }`.
+    const body = (await res.json()) as { payload?: { liabilities?: Array<{ interestRate?: number }> } };
+    expect(body.payload?.liabilities?.[0]?.interestRate).toBe(0.0625);
+  });
+
+  // `drop_row` was the worst of the three: the exclusion persisted while the
+  // row itself kept being written back by the passthrough, so the debt sat in
+  // the table AND in "Not included" for the life of the import.
+  //
+  // Mutation this catches: the same passthrough revert — the HELOC would
+  // still be in the written array.
+  it("removes a debt the turn dropped, rather than writing the fresh read back (Finding 2)", async () => {
+    const startMortgage = { __rowId: "liability:mortgage#f1:0", name: "Mortgage", balance: 412_000, interestRate: 0.0525 };
+    const startHeloc = { __rowId: "liability:heloc#f1:0", name: "HELOC", balance: 40_000 };
+    vi.mocked(requireImportAccess).mockResolvedValue(
+      importRow({
+        chat: { surface: "chat", transcript: [], decisions: [], excludedRows: [], committedRowIds: [] },
+        payload: {
+          accounts: [{ __rowId: "r1", name: "IRA", value: 1 }],
+          liabilities: [startMortgage, startHeloc],
+        } as never,
+        fileResults: {},
+      }) as never,
+    );
+    freshRow = freshWithDebts();
+    runTurn.mockResolvedValue({
+      payload: {
+        accounts: [{ __rowId: "r1", name: "IRA", value: 1 }],
+        liabilities: [startMortgage],
+      },
+      payloadMutated: true,
+      turnEntries: [
+        { role: "user", text: "drop the HELOC", at: "t1" },
+        { role: "tool", tool: "drop_row", summary: "Dropped HELOC.", at: "t1" },
+        { role: "assistant", text: "Dropped it.", at: "t1" },
+      ],
+      newExcludedRows: [{ row: startHeloc, reason: "it was paid off" }],
+      summary: "Dropped it.",
+    });
+
+    const res = await POST(req({ message: "drop the HELOC" }), params);
+    expect(res.status).toBe(200);
+
+    const written = updateCalls[0].values.payloadJson as ImportPayloadJson;
+    expect((written.payload?.liabilities as Array<{ __rowId: string }>).map((r) => r.__rowId)).toEqual([
+      "liability:mortgage#f1:0",
+    ]);
+    expect(written.chat?.excludedRows).toHaveLength(1);
+    expect(written.chat?.excludedRows?.[0].row.__rowId).toBe("liability:heloc#f1:0");
+  });
+
+  // A concurrent commit's `linkCreated` stamp on a debt must survive the
+  // rebase, exactly as it does for accounts (Important 1, one table over) —
+  // that is the whole reason this is `mergeRowsByRowId` and not a wholesale
+  // replace of `turnResult.payload.liabilities`.
+  //
+  // Mutation this catches: `liabilities: turnResult.payload.liabilities ?? []`.
+  it("preserves a concurrent commit's match stamp on a debt this turn never touched", async () => {
+    const startMortgage = { __rowId: "liability:mortgage#f1:0", name: "Mortgage", balance: 412_000, interestRate: 0.0525 };
+    const startHeloc = { __rowId: "liability:heloc#f1:0", name: "HELOC", balance: 40_000 };
+    vi.mocked(requireImportAccess).mockResolvedValue(
+      importRow({
+        chat: { surface: "chat", transcript: [], decisions: [], excludedRows: [], committedRowIds: [] },
+        payload: {
+          accounts: [{ __rowId: "r1", name: "IRA", value: 1 }],
+          liabilities: [startMortgage, startHeloc],
+        } as never,
+        fileResults: {},
+      }) as never,
+    );
+    freshRow = {
+      id: "i1",
+      payloadJson: {
+        chat: { surface: "chat", transcript: [], decisions: [], excludedRows: [], committedRowIds: ["liability:heloc#f1:0"] },
+        payload: {
+          accounts: [{ __rowId: "r1", name: "IRA", value: 1 }],
+          liabilities: [
+            startMortgage,
+            { ...startHeloc, match: { kind: "exact", existingId: "liab-99" } },
+          ],
+        } as never,
+        fileResults: {},
+      } satisfies ImportPayloadJson,
+    };
+    runTurn.mockResolvedValue({
+      payload: {
+        accounts: [{ __rowId: "r1", name: "IRA", value: 1 }],
+        liabilities: [{ ...startMortgage, interestRate: 0.0625 }, startHeloc],
+      },
+      payloadMutated: true,
+      turnEntries: [
+        { role: "user", text: "the rate is 6.25%", at: "t1" },
+        { role: "tool", tool: "edit_row", summary: "Set interestRate to 0.0625.", at: "t1" },
+        { role: "assistant", text: "Done.", at: "t1" },
+      ],
+      newExcludedRows: [],
+      summary: "Done.",
+    });
+
+    const res = await POST(req({ message: "the rate is 6.25%" }), params);
+    expect(res.status).toBe(200);
+
+    const written = updateCalls[0].values.payloadJson as ImportPayloadJson;
+    const writtenLiabilities = written.payload?.liabilities as Array<{
+      __rowId: string;
+      interestRate?: number;
+      match?: unknown;
+    }>;
+    expect(writtenLiabilities.find((r) => r.__rowId === "liability:mortgage#f1:0")?.interestRate).toBe(0.0625);
+    expect(writtenLiabilities.find((r) => r.__rowId === "liability:heloc#f1:0")?.match).toEqual({
+      kind: "exact",
+      existingId: "liab-99",
+    });
+  });
+
+  // Ruling 51's other half: a READ-ONLY turn returns the debts too, so the
+  // surface's wholesale adoption never has to guess. `payloadMutated` is
+  // false here, so the body carries the FRESH READ — which, because
+  // `flushRowsToServer` ran first, is exactly what the advisor sees.
+  it("returns payload.liabilities on a turn that mutated nothing (Ruling 51)", async () => {
+    freshRow = freshWithDebts();
+    runTurn.mockResolvedValue(defaultTurnResult());
+
+    const res = await POST(req({ message: "what do they owe?" }), params);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { payload?: { liabilities?: Array<{ __rowId: string }> } };
+    expect(body.payload?.liabilities?.map((r) => r.__rowId)).toEqual([
+      "liability:mortgage#f1:0",
+      "liability:heloc#f1:0",
+    ]);
+    // Nothing mutated, so the fresh read's `payload` is carried through
+    // untouched (`writeChatState` spreads it) — the route never assigns one.
+    const written = updateCalls[0].values.payloadJson as ImportPayloadJson;
+    expect(written.payload?.liabilities).toEqual(FRESH_DEBTS);
   });
 
   it("maps an ai_not_configured error from runTurn to a readable 503", async () => {

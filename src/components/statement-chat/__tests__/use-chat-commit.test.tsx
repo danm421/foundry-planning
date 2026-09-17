@@ -581,3 +581,223 @@ describe("useChatCommit — mount hydration includes liabilities (Task 11)", () 
     expect(result.current.result?.liabilities[0].name).toBe("Mortgage");
   });
 });
+
+// --- Task 12b ---------------------------------------------------------------
+
+const HELOC_ID = "liability:heloc#f1:0";
+const MORTGAGE_ID = "liability:mortgage#f1:0";
+
+describe("useChatCommit — restoring a row goes back to the table it came from (Task 12b, Finding 1)", () => {
+  // `handleRestore` pushed to `prev.rows` with NO table check, so one click
+  // on "Include anyway" filed a debt as an asset — the sign of a number on
+  // the balance sheet, inverted. tsc cannot catch it: `ExtractedAccount`
+  // requires only `name`, so the two row types are assignable in BOTH
+  // directions. The `__rowId` prefix is the only discriminator there is.
+  //
+  // Mutation this catches: reverting the body to
+  // `rows: [...prev.rows, row]` — `result.liabilities` stays at 1 and
+  // `result.rows` grows to 2.
+  it("restores a dropped DEBT into result.liabilities, never result.rows", () => {
+    const { result } = renderHook(() => useChatCommit("c1", "i1"));
+    // The state a chat `drop_row` on a debt leaves behind: one debt still in
+    // the table, one retired into `excluded`, one unrelated account row.
+    act(() => {
+      result.current.applyExtractionResult({
+        summary: "x",
+        caveats: [],
+        rows: [{ name: "IRA", value: 100, __rowId: "account:ira#f1:0" }] as never,
+        excluded: [
+          { row: { name: "HELOC", balance: 40_000, __rowId: HELOC_ID }, reason: "dropped" },
+        ] as never,
+        liabilities: [{ name: "Mortgage", balance: 412_000, __rowId: MORTGAGE_ID }] as never,
+      });
+    });
+
+    act(() => {
+      result.current.handleRestore({ name: "HELOC", balance: 40_000, __rowId: HELOC_ID } as never);
+    });
+
+    expect(result.current.result?.liabilities.map((r) => r.__rowId)).toEqual([
+      MORTGAGE_ID,
+      HELOC_ID,
+    ]);
+    expect(result.current.result?.rows.map((r) => r.__rowId)).toEqual(["account:ira#f1:0"]);
+    expect(result.current.result?.excluded).toEqual([]);
+  });
+
+  // The negative half — a rule that routed EVERYTHING to `liabilities`
+  // would pass the test above. An account restore must still land in
+  // `rows`, which is also what every already-persisted exclusion is: they
+  // predate liability drops entirely.
+  it("still restores an ACCOUNT into result.rows", () => {
+    const { result } = renderHook(() => useChatCommit("c1", "i1"));
+    act(() => {
+      result.current.applyExtractionResult({
+        summary: "x",
+        caveats: [],
+        rows: [] as never,
+        excluded: [
+          { row: { name: "All Accounts", value: 300, __rowId: "account:all#f1:0" }, reason: "rollup" },
+        ] as never,
+        liabilities: [] as never,
+      });
+    });
+
+    act(() => {
+      result.current.handleRestore({ name: "All Accounts", value: 300, __rowId: "account:all#f1:0" } as never);
+    });
+
+    expect(result.current.result?.rows.map((r) => r.__rowId)).toEqual(["account:all#f1:0"]);
+    expect(result.current.result?.liabilities).toEqual([]);
+  });
+
+  // A legacy id (minted before the section prefix existed) and an absent one
+  // must both read as an ACCOUNT — today's behaviour, and what every
+  // exclusion already sitting in a persisted draft actually is. Failing the
+  // OTHER way would move a real account onto the debt table.
+  it("reads a prefix-less legacy id as an account", () => {
+    const { result } = renderHook(() => useChatCommit("c1", "i1"));
+    act(() => {
+      result.current.applyExtractionResult({
+        summary: "x",
+        caveats: [],
+        rows: [] as never,
+        excluded: [{ row: { name: "Old Row", value: 5, __rowId: "r2" }, reason: "rollup" }] as never,
+        liabilities: [] as never,
+      });
+    });
+
+    act(() => {
+      result.current.handleRestore({ name: "Old Row", value: 5, __rowId: "r2" } as never);
+    });
+
+    expect(result.current.result?.rows.map((r) => r.__rowId)).toEqual(["r2"]);
+    expect(result.current.result?.liabilities).toEqual([]);
+  });
+
+  // Ruling 100's idempotence guard, on the debt side: a row already in the
+  // working set is never appended twice, whatever the excluded list says.
+  it("does not append a duplicate when the debt is already in the liabilities table", () => {
+    const { result } = renderHook(() => useChatCommit("c1", "i1"));
+    act(() => {
+      result.current.applyExtractionResult({
+        summary: "x",
+        caveats: [],
+        rows: [] as never,
+        excluded: [
+          { row: { name: "HELOC", balance: 40_000, __rowId: HELOC_ID }, reason: "dropped" },
+        ] as never,
+        liabilities: [{ name: "HELOC", balance: 40_000, __rowId: HELOC_ID }] as never,
+      });
+    });
+
+    act(() => {
+      result.current.handleRestore({ name: "HELOC", balance: 40_000, __rowId: HELOC_ID } as never);
+    });
+
+    expect(result.current.result?.liabilities).toHaveLength(1);
+    // And it did not quietly land in the OTHER table instead — without this
+    // clause the assertion above passes on the pre-fix code too.
+    expect(result.current.result?.rows).toEqual([]);
+    expect(result.current.result?.excluded).toEqual([]);
+  });
+});
+
+describe("useChatCommit — the pre-turn flush clears a LIABILITY exclusion (Task 12b, leg 6)", () => {
+  // `restoredIds` was built from `current.rows` only, so a liability
+  // exclusion never cleared server-side: the turn route kept echoing it back
+  // while `mergedLiabilities` kept writing the row into the table. The debt
+  // sat in the table AND in "Not included" for the life of the import.
+  //
+  // Mutation this catches: dropping `current.liabilities` from
+  // `restoredIds` — the PATCH's `chat.excludedRows` would still hold the
+  // HELOC entry.
+  it("strips a restored debt's id from chat.excludedRows in the flush's PATCH", async () => {
+    const { result } = renderHook(() => useChatCommit("c1", "i1"));
+    act(() => {
+      result.current.applyExtractionResult({
+        summary: "x",
+        caveats: [],
+        rows: [] as never,
+        excluded: [] as never,
+        // The post-restore local state: the debt is back in the table.
+        liabilities: [{ name: "HELOC", balance: 40_000, __rowId: HELOC_ID }] as never,
+      });
+    });
+
+    // The server has NOT caught up — it still lists the HELOC as excluded,
+    // alongside an account exclusion nothing has restored (which must
+    // SURVIVE: this is a merge against the fresh read, not a blind replace).
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        importGetResponse({
+          payload: { accounts: [], liabilities: [] },
+          chat: {
+            surface: "chat",
+            transcript: [],
+            decisions: [],
+            excludedRows: [
+              { row: { name: "HELOC", balance: 40_000, __rowId: HELOC_ID }, reason: "dropped" },
+              { row: { name: "All Accounts", value: 300, __rowId: "account:all#f1:0" }, reason: "rollup" },
+            ],
+            committedRowIds: [],
+          },
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse({}));
+
+    await act(async () => {
+      await result.current.flushRowsToServer();
+    });
+
+    const patchCall = vi
+      .mocked(fetch)
+      .mock.calls.find(([url, init]) => String(url).endsWith("/imports/i1") && init?.method === "PATCH");
+    expect(patchCall).toBeDefined();
+    const body = JSON.parse(patchCall![1]!.body as string).payloadJson;
+    expect(
+      (body.chat.excludedRows as Array<{ row: { __rowId: string } }>).map((x) => x.row.__rowId),
+    ).toEqual(["account:all#f1:0"]);
+  });
+});
+
+describe("useChatCommit — adoptTurnPayload's liabilities argument (Task 12b, Ruling 54)", () => {
+  function seeded() {
+    const { result } = renderHook(() => useChatCommit("c1", "i1"));
+    act(() => {
+      result.current.applyExtractionResult({
+        summary: "x",
+        caveats: [],
+        rows: [] as never,
+        excluded: [] as never,
+        liabilities: [{ name: "Mortgage", balance: 412_000, __rowId: MORTGAGE_ID }] as never,
+      });
+    });
+    return result;
+  }
+
+  // Ruling 39 set `?? []` at the SSE boundary, where absence really does
+  // mean "no liabilities". Here absence can also mean an OLDER route
+  // answered a NEWER client mid-deploy — and `?? []` would wipe the
+  // advisor's reviewed debts off the screen.
+  //
+  // Mutation this catches: `liabilities: liabilities ?? []`.
+  it("PRESERVES the reviewed debts when the argument is undefined", async () => {
+    const result = seeded();
+    await act(async () => {
+      await result.current.adoptTurnPayload([], [], undefined);
+    });
+    expect(result.current.result?.liabilities.map((r) => r.__rowId)).toEqual([MORTGAGE_ID]);
+  });
+
+  // The other direction of the SAME one check: `[]` is the route saying
+  // there are none left (the advisor dropped the last debt) and must clear.
+  // Mutation this catches: `liabilities: liabilities?.length ? liabilities : prev.liabilities`.
+  it("CLEARS the table when the argument is an empty array", async () => {
+    const result = seeded();
+    await act(async () => {
+      await result.current.adoptTurnPayload([], [], []);
+    });
+    expect(result.current.result?.liabilities).toEqual([]);
+  });
+});

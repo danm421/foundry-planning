@@ -239,35 +239,45 @@ function sameInstitution(standing: AccountRow, fresh: AccountRow): boolean {
  * reference than what that row started as — `editRow`/`mergeRows`/`dropRow`
  * in `tools.ts` always create a new object for a row they touch and preserve
  * the exact same reference for every row they don't, so reference inequality
- * is an exact signal, not a heuristic. A row present in `startAccounts` but
- * absent from `changedAccounts` was retired (dropped, or merged away) and is
+ * is an exact signal, not a heuristic. A row present in `startRows` but
+ * absent from `changedRows` was retired (dropped, or merged away) and is
  * removed from the fresh array too. Every other fresh row is left exactly as
  * read — a concurrent write's stamps on it survive untouched.
+ *
+ * Ruling 53 (Task 12b): GENERIC, and named for rows rather than accounts.
+ * Task 12 made the debt rows mutable too, and the body here touches only
+ * `__rowId` — no holdings, no custodian, no `plausiblySameAccount` — so a
+ * type parameter generalizes it with no behaviour change at all. The rename
+ * off its old name (`mergeAccountsByRowId`) is load-bearing, not cosmetic: a
+ * function called that while merging liabilities would sit directly beside
+ * the DIFFERENT, already-existing `mergeLiabilitiesByRowId` below (the
+ * extract path's bucket-matching rebase with `retiredRows`), and the two mean
+ * different things.
  */
-export function mergeAccountsByRowId(
-  freshAccounts: AccountRow[],
-  startAccounts: AccountRow[],
-  changedAccounts: AccountRow[],
-): AccountRow[] {
+export function mergeRowsByRowId<T extends { __rowId?: string }>(
+  freshRows: T[],
+  startRows: T[],
+  changedRows: T[],
+): T[] {
   const startByRowId = new Map(
-    startAccounts.filter((r) => r.__rowId).map((r) => [r.__rowId as string, r]),
+    startRows.filter((r) => r.__rowId).map((r) => [r.__rowId as string, r]),
   );
   const changedByRowId = new Map(
-    changedAccounts.filter((r) => r.__rowId).map((r) => [r.__rowId as string, r]),
+    changedRows.filter((r) => r.__rowId).map((r) => [r.__rowId as string, r]),
   );
 
-  const changed = new Map<string, AccountRow>();
+  const changed = new Map<string, T>();
   for (const [id, row] of changedByRowId) {
     if (startByRowId.get(id) !== row) changed.set(id, row);
   }
   const retired = new Set([...startByRowId.keys()].filter((id) => !changedByRowId.has(id)));
 
-  const merged: AccountRow[] = [];
-  for (const row of freshAccounts) {
+  const merged: T[] = [];
+  for (const row of freshRows) {
     const id = row.__rowId;
     if (id && retired.has(id)) continue;
     if (id && changed.has(id)) {
-      merged.push(changed.get(id) as AccountRow);
+      merged.push(changed.get(id) as T);
       continue;
     }
     merged.push(row);
@@ -284,7 +294,7 @@ export function mergeAccountsByRowId(
 type LiabilityClaim = { id: string; standing?: LiabilityRow };
 
 /**
- * The liabilities twin of `mergeAccountsByRowId`, deliberately much smaller.
+ * The liabilities twin of `mergeRowsByRowId`, deliberately much smaller.
  *
  * `rebaseOntoFreshMerge` is account-shaped throughout — holdings identity,
  * value-conflict overrides, per-holding refusals — and none of it applies to a
@@ -537,7 +547,7 @@ function reattachOrphans(
  * `edit_row` correction and every `linkCreated` stamp — and the UI actively
  * advertises that path ("You can still upload another statement first").
  *
- * The mapping onto `mergeAccountsByRowId` is exact once you name the three
+ * The mapping onto `mergeRowsByRowId` is exact once you name the three
  * arguments honestly:
  *   - `freshMerged` is the base, so it is the "fresh" array — a row only this
  *     extraction produced (a genuinely new account off the new statement) is
@@ -633,7 +643,7 @@ export function rebaseOntoFreshMerge(
   );
 
   // Ruling 146: the guard runs HERE, at the rebase boundary, and NOT inside
-  // `mergeAccountsByRowId`. That function is shared with the turn route,
+  // `mergeRowsByRowId`. That function is shared with the turn route,
   // where both arrays come from the SAME extraction — no id can have been
   // recycled there, `__rowId` is a valid identity, and that path has no
   // defect to fix. It must not absorb this one's risk.
@@ -642,7 +652,7 @@ export function rebaseOntoFreshMerge(
   // row's fresh counterpart keeps its own slot, so it is claimed either way.
   const claimed = new Set<string>();
   // Keyed by id, so two standing rows sharing one (jsonb carries whatever was
-  // written) collapse the same way `mergeAccountsByRowId`'s own Map collapses
+  // written) collapse the same way `mergeRowsByRowId`'s own Map collapses
   // them, and an id can never be carried forward twice.
   const orphans = new Map<string, AccountRow>();
   for (const held of standing) {
@@ -703,7 +713,7 @@ export function rebaseOntoFreshMerge(
     // is "no id" in both places rather than a row that is silently neither.
     const id = row.__rowId || undefined;
     // For an id, the row this function treats as standing for it is the LAST
-    // one written under it — matching `orphans` and `mergeAccountsByRowId`.
+    // one written under it — matching `orphans` and `mergeRowsByRowId`.
     // An id-less row is never in `orphans` at all, and is the M-A case.
     const held = id === undefined ? row : orphans.get(id);
     if (!held) continue; // matched a fresh row by id, so it did not leave
@@ -735,11 +745,11 @@ export function rebaseOntoFreshMerge(
   // would be the duplicate half of the same failure.
   const refused = new Set(refusals.map((r) => r.__rowId));
   const adopted = standing.filter((r) => !(r.__rowId && refused.has(r.__rowId)));
-  const rows = mergeAccountsByRowId(base, [], adopted);
+  const rows = mergeRowsByRowId(base, [], adopted);
 
   // Computed HERE, against the ADOPTED standing rows and `base`
   // directly, rather than
-  // inside `mergeAccountsByRowId` — that function is the shared mechanism the
+  // inside `mergeRowsByRowId` — that function is the shared mechanism the
   // turn route also depends on, where "changed" means reference inequality
   // against a real start snapshot and carries no figure to report.
   const standingByRowId = new Map(

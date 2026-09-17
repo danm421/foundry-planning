@@ -15,6 +15,7 @@ import {
 } from "@/components/statement-chat/household-diff";
 import { commitMapRow } from "@/components/statement-chat/commit-map-row";
 import { findEntity } from "@/domain/forge/detail-fields";
+import { isLiabilityRowId } from "@/lib/imports/types";
 import { PEOPLE_ENTITY_IDS } from "@/lib/entity-extraction/people-pass";
 import type { CandidateRow } from "@/lib/entity-extraction/types";
 import { ChatTranscript } from "@/components/statement-chat/chat-transcript";
@@ -406,6 +407,21 @@ export function ChatSurface({
     (row) => !row.__rowId || !committedRowIds.includes(row.__rowId),
   ).length;
 
+  // Task 12b, Ruling 55. `result.excluded` is ONE mixed list — Task 12 let
+  // `drop_row`/`merge_rows` retire a debt into it — and the two cards each
+  // render their own "Not included" section, so it is split once here and
+  // never read unsplit again. The discriminator is `isLiabilityRowId`, the
+  // SAME helper `handleRestore` routes a restore by, so the card a row is
+  // listed in and the table a restore puts it back into can never disagree.
+  // Plain filters rather than `useMemo`: both lists are a handful of entries
+  // and the arrays feed tables that re-render on any row change anyway.
+  const excludedAccounts = (result?.excluded ?? []).filter(
+    (x) => !isLiabilityRowId(x.row.__rowId),
+  );
+  const excludedLiabilities = (result?.excluded ?? []).filter((x) =>
+    isLiabilityRowId(x.row.__rowId),
+  );
+
   return (
     <div className="flex flex-col gap-6">
       <Card>
@@ -596,8 +612,13 @@ export function ChatSurface({
                 EMPTY accounts table above the liabilities one. `excluded`
                 is included because that list (and its "Include anyway"
                 restore action) renders inside this same card.
+
+                Ruling 55 (Task 12b): the clause reads the SPLIT list. Left
+                on the unsplit one, a debt-only import with a chat-dropped
+                debt renders an EMPTY accounts card again — the exact defect
+                Ruling 41 fixed, reintroduced from the other side.
               */}
-              {(result.rows.length > 0 || result.excluded.length > 0) && (
+              {(result.rows.length > 0 || excludedAccounts.length > 0) && (
                 <Card>
                   <CardHeader>
                     <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-2">
@@ -607,7 +628,7 @@ export function ChatSurface({
                   <CardBody className="p-0">
                     <AccountsTable
                       rows={result.rows}
-                      excluded={result.excluded}
+                      excluded={excludedAccounts}
                       committedRowIds={committedRowIds}
                       onCommitRows={handleCommitRows}
                       onEditCell={handleEditCell}
@@ -634,7 +655,10 @@ export function ChatSurface({
                 </Card>
               )}
 
-              {result.liabilities.length > 0 && (
+              {/* Ruling 55's other half: the debts card owns its own excluded
+                  list, so a dropped debt renders where it belongs — and the
+                  card still appears when the ONLY thing left is that list. */}
+              {(result.liabilities.length > 0 || excludedLiabilities.length > 0) && (
                 <Card>
                   <CardHeader>
                     <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-2">
@@ -644,10 +668,15 @@ export function ChatSurface({
                   <CardBody className="p-0">
                     <LiabilitiesTable
                       rows={result.liabilities}
-                      excluded={[]}
+                      excluded={excludedLiabilities}
                       committedRowIds={committedRowIds}
                       onCommitRows={handleCommitRows}
                       onEditCell={handleEditLiabilityCell}
+                      // The SAME `handleRestore` the accounts table gets — it
+                      // routes by `__rowId` prefix, so a debt restored from
+                      // here goes back into `result.liabilities`, never
+                      // `result.rows` (Task 12b, Finding 1).
+                      onRestore={handleRestore}
                       disableCommit={turnStatus === "sending"}
                       // The SAME list the review context loaded, so the
                       // picker's options can never disagree with what

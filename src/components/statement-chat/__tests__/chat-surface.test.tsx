@@ -746,6 +746,229 @@ describe("ChatSurface — warns about uncommitted liabilities beside Finish impo
   });
 });
 
+// --- Task 12b, Finding 1: a chat-dropped debt is a DEBT ---------------------
+
+/**
+ * A mortgage-only import where the advisor has already dropped a HELOC in
+ * the chat: zero accounts, one debt still in the table, one debt retired
+ * into `excluded`.
+ *
+ * Reachable end to end as of Task 12 — `drop_row` resolves a liability id,
+ * `dropRow` retires the row into `chat.excludedRows`, and the turn route
+ * echoes that list straight back into `result.excluded`. There is nothing
+ * on the row saying which table it came from, and there cannot be: an
+ * `ExtractedAccount` requires only `name`, so a debt row is structurally
+ * ASSIGNABLE to an account row and tsc is blind to the mix-up. The
+ * `__rowId` PREFIX is the only discriminator.
+ */
+function droppedDebtDoneFrame(): string {
+  return `data: ${JSON.stringify({
+    type: "done",
+    summary: "Read 1 statement covering 2 debts.",
+    caveats: [],
+    rows: [],
+    excluded: [
+      {
+        row: { name: "HELOC", balance: 40_000, __rowId: "liability:heloc#f1:0" },
+        reason: "the advisor asked to drop it",
+      },
+    ],
+    liabilities: [{ name: "Mortgage", balance: 412_000, __rowId: "liability:mortgage#f1:0" }],
+  })}\n\n`;
+}
+
+async function renderAfterDroppedDebt() {
+  vi.mocked(fetch).mockResolvedValueOnce(makeFramedResponse([droppedDebtDoneFrame()]));
+  render(<ChatSurface clientId="c1" importId="i1" initialFiles={initialFiles} />);
+  fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+  await screen.findByRole("heading", { name: /^liabilities$/i });
+}
+
+/** The `<section>` a `Card` renders, found by its own heading. */
+function cardFor(heading: RegExp): HTMLElement {
+  const section = screen.getByRole("heading", { name: heading }).closest("section");
+  if (!section) throw new Error(`No card section for ${heading}`);
+  return section as HTMLElement;
+}
+
+describe("ChatSurface — a chat-dropped debt renders as a DEBT (Task 12b, Finding 1)", () => {
+  // THE test that matters for Finding 1. Before the split, `excluded` was
+  // handed UNFILTERED to `AccountsTable` and `LiabilitiesTable` got a
+  // hardcoded `excluded={[]}` — so a dropped HELOC rendered under "Not
+  // included" inside the ACCOUNTS card, with a live "Include anyway" that
+  // filed it as an asset. That inverts the sign of a number on the balance
+  // sheet.
+  //
+  // Mutation this catches: making `isLiabilityRowId` return `false`
+  // always — the HELOC moves back into the Accounts card and the
+  // `queryByRole("heading", /^accounts$/)` assertion below reds.
+  it("puts the dropped debt under Not included inside the Liabilities card, never the Accounts one", async () => {
+    await renderAfterDroppedDebt();
+
+    const liabilitiesCard = cardFor(/^liabilities$/i);
+    expect(within(liabilitiesCard).getByText(/HELOC/)).toBeInTheDocument();
+    expect(within(liabilitiesCard).getByText("Not included")).toBeInTheDocument();
+    expect(
+      within(liabilitiesCard).getByRole("button", { name: /include anyway/i }),
+    ).toBeEnabled();
+  });
+
+  // Ruling 55: Ruling 41 gated the Accounts card on `|| excluded.length > 0`
+  // because the restore list renders inside it. Leaving that clause on the
+  // UNSPLIT list means a debt-only import with a dropped debt renders an
+  // EMPTY accounts table again — the exact defect Ruling 41 fixed,
+  // reintroduced from the other side.
+  it("renders no Accounts card at all when the only excluded row is a debt", async () => {
+    await renderAfterDroppedDebt();
+
+    expect(screen.queryByRole("heading", { name: /^accounts$/i })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("table")).toHaveLength(1);
+    // And the empty state stays away — there IS something here to review.
+    expect(
+      screen.queryByText("No accounts or debts found in these statements."),
+    ).not.toBeInTheDocument();
+  });
+
+  // Leg 5 of the loop. `handleRestore` pushed to `prev.rows` with no table
+  // check, so "Include anyway" on a debt committed it as an ACCOUNT —
+  // verbatim the defect `dropDebtsFiledAsAssets` exists to undo.
+  //
+  // Mutation this catches: reverting `handleRestore`'s body to
+  // `rows: alreadyWorking ? prev.rows : [...prev.rows, row]` — the HELOC
+  // would appear in a newly-rendered ACCOUNTS table and the liabilities
+  // table would still hold one row.
+  it("restores the dropped debt into the liabilities table, not the accounts one", async () => {
+    await renderAfterDroppedDebt();
+
+    await userEvent.click(screen.getByRole("button", { name: /include anyway/i }));
+
+    expect(screen.queryByRole("heading", { name: /^accounts$/i })).not.toBeInTheDocument();
+    const liabilitiesCard = cardFor(/^liabilities$/i);
+    expect(within(liabilitiesCard).getByRole("row", { name: /HELOC/ })).toBeInTheDocument();
+    expect(within(liabilitiesCard).getByRole("row", { name: /Mortgage/ })).toBeInTheDocument();
+    // It left "Not included" in the same click.
+    expect(screen.queryByText("Not included")).not.toBeInTheDocument();
+  });
+});
+
+describe("ChatSurface — a turn's liabilities reach the surface (Task 12b, Rulings 51/54)", () => {
+  // Leg 3 of the loop, and the reason a route-only fix is WORSE than none:
+  // `adoptTurnPayload` replaces `rows`/`excluded` wholesale but PRESERVES
+  // `prev.liabilities`. If the route persists a liability edit the surface
+  // never learns about, the next `flushRowsToServer` overlays the STALE
+  // local array onto the server's corrected set and writes the old row
+  // straight back.
+  //
+  // Mutation this catches: dropping `body.payload?.liabilities` from
+  // `use-chat-turn.ts`'s `adoptTurnPayload` call — the table would still
+  // read $412,000.
+  it("adopts payload.liabilities from the turn response into the liabilities table", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeFramedResponse([liabilityOnlyDoneFrame()]));
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={initialFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+    await screen.findByRole("heading", { name: /^liabilities$/i });
+
+    mockFlush();
+    vi.mocked(fetch).mockResolvedValueOnce(
+      turnResponse({
+        accounts: [],
+        liabilities: [
+          { name: "Mortgage", balance: 399_000, __rowId: "liability:mortgage#f1:0" },
+        ],
+        summary: "Corrected the balance to $399,000.",
+        turnEntries: [
+          { role: "user", text: "the balance is 399000", at: "t1" },
+          { role: "tool", tool: "edit_row", summary: "Set balance to 399000.", at: "t1" },
+          { role: "assistant", text: "Corrected the balance to $399,000.", at: "t1" },
+        ],
+      }),
+    );
+
+    await userEvent.type(composerTextbox(), "the balance is 399000");
+    await userEvent.click(sendButton());
+    await screen.findByText("Corrected the balance to $399,000.");
+
+    const row = screen.getByRole("row", { name: /Mortgage/ });
+    expect(within(row).getByText("$399,000")).toBeInTheDocument();
+  });
+
+  // Ruling 54: absence must PRESERVE, not wipe. Ruling 39 set `?? []` at the
+  // SSE boundary, where absence genuinely means "no liabilities" — here it
+  // can also mean an OLDER route answered a NEWER client mid-deploy, and
+  // `?? []` would delete the advisor's reviewed debts off the screen.
+  //
+  // Mutation this catches: `liabilities: liabilities ?? []` in
+  // `adoptTurnPayload` — the Liabilities card would vanish entirely.
+  it("keeps the reviewed debts when a turn response carries no payload.liabilities at all", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeFramedResponse([liabilityOnlyDoneFrame()]));
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={initialFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+    await screen.findByRole("heading", { name: /^liabilities$/i });
+
+    mockFlush();
+    vi.mocked(fetch).mockResolvedValueOnce(
+      turnResponse({
+        accounts: [],
+        // No `liabilities` key at all — `turnResponse` omits it.
+        summary: "Nothing to change.",
+        turnEntries: [
+          { role: "user", text: "anything odd?", at: "t1" },
+          { role: "assistant", text: "Nothing to change.", at: "t1" },
+        ],
+      }),
+    );
+
+    await userEvent.type(composerTextbox(), "anything odd?");
+    await userEvent.click(sendButton());
+    await screen.findByText("Nothing to change.");
+
+    expect(screen.getByRole("heading", { name: /^liabilities$/i })).toBeInTheDocument();
+    expect(screen.getByRole("row", { name: /Mortgage/ })).toBeInTheDocument();
+  });
+
+  // The other direction of the same one check: `[]` really does mean "the
+  // route says there are none" — the advisor dropped the last debt — and
+  // must still clear. A `?? prev.liabilities` that ignored `[]` would leave
+  // the dropped row on screen forever.
+  it("clears the table when a turn response says there are no liabilities left", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeFramedResponse([liabilityOnlyDoneFrame()]));
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={initialFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+    await screen.findByRole("heading", { name: /^liabilities$/i });
+
+    mockFlush();
+    vi.mocked(fetch).mockResolvedValueOnce(
+      turnResponse({
+        accounts: [],
+        liabilities: [],
+        summary: "Dropped the mortgage.",
+        excludedRows: [
+          {
+            row: { name: "Mortgage", balance: 412_000, __rowId: "liability:mortgage#f1:0" },
+            reason: "it belongs to the other household",
+          },
+        ],
+        turnEntries: [
+          { role: "user", text: "drop the mortgage", at: "t1" },
+          { role: "tool", tool: "drop_row", summary: "Dropped Mortgage.", at: "t1" },
+          { role: "assistant", text: "Dropped the mortgage.", at: "t1" },
+        ],
+      }),
+    );
+
+    await userEvent.type(composerTextbox(), "drop the mortgage");
+    await userEvent.click(sendButton());
+    await screen.findByText("Dropped the mortgage.");
+
+    // The row is gone from the TABLE and sits in the Liabilities card's own
+    // "Not included" list — not the Accounts card's, which does not exist.
+    expect(screen.queryByRole("heading", { name: /^accounts$/i })).not.toBeInTheDocument();
+    const liabilitiesCard = cardFor(/^liabilities$/i);
+    expect(within(liabilitiesCard).getByText("Not included")).toBeInTheDocument();
+    expect(within(liabilitiesCard).queryAllByRole("row", { name: /Mortgage/ })).toHaveLength(0);
+  });
+});
+
 describe("ChatSurface — committedRowIds mount hydration (round 1 review, Important 3)", () => {
   // Every OTHER test in this file queues `importGetResponse()` with an
   // EMPTY payloadJson for the mount-hydration GET, so none of them can
@@ -893,10 +1116,19 @@ function turnResponse(overrides: {
   summary: string;
   turnEntries: Array<Record<string, unknown>>;
   excludedRows?: unknown[];
+  /** Task 12b / Ruling 51: the body now carries the debts too. OMITTED
+   *  entirely when this is absent — that is the Ruling 54 shape (an older
+   *  route answering a newer client), which must PRESERVE the surface's
+   *  liabilities rather than wipe them. Pass `[]` for "the route says there
+   *  are none left". */
+  liabilities?: Array<Record<string, unknown>>;
 }): Response {
   return new Response(
     JSON.stringify({
-      payload: { accounts: overrides.accounts },
+      payload: {
+        accounts: overrides.accounts,
+        ...(overrides.liabilities === undefined ? {} : { liabilities: overrides.liabilities }),
+      },
       summary: overrides.summary,
       excludedRows: overrides.excludedRows ?? [],
       turnEntries: overrides.turnEntries,

@@ -366,12 +366,12 @@ export async function POST(request: Request, { params }: Params) {
         // The `chatExcludedIds` subtraction is then the SAME one the accounts
         // line above makes, for the same reason: a retired row is still sitting
         // in `fileResults`, so it comes straight back out of the fresh merge and
-        // "drop it" would undo itself on the next upload. Nothing puts a
-        // LIABILITY id into `chat.excludedRows` until the chat tools address
-        // liability rows, so this removes nothing today — but it is the line
-        // that has to already be here when they do, or that first `drop_row`
-        // is inert across an extraction. That is verbatim the defect fix wave
-        // 3 recorded for accounts, and for a `merge_rows` exclusion it would
+        // "drop it" would undo itself on the next upload. As of Task 12 this
+        // is LIVE, not anticipatory: `drop_row` and `merge_rows` both resolve
+        // a liability id now, so a real debt id reaches `chat.excludedRows`
+        // and this subtraction is what keeps that drop from undoing itself
+        // across an extraction. That is verbatim the defect fix wave 3
+        // recorded for accounts, and for a `merge_rows` exclusion it would
         // put one real debt on the table twice.
         const rebasedLiabilities = mergeLiabilitiesByRowId(
           payload.liabilities,
