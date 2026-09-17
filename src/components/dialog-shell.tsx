@@ -99,11 +99,16 @@ export default function DialogShell({
 }: DialogShellProps) {
   const surfaceRef = useRef<HTMLDivElement | null>(null);
 
-  // Esc-to-close
+  // Esc-to-close. A dialog opened from *inside* another (the holdings row's
+  // asset-class editor lives in the account form) puts a second listener on
+  // `window`, so one Esc would close both and throw away the account form.
+  // Only the innermost surface answers; unnested siblings are unaffected.
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onOpenChange(false);
+      if (e.key !== "Escape") return;
+      if (surfaceRef.current?.querySelector("[data-dialog-surface]")) return;
+      onOpenChange(false);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -174,6 +179,10 @@ export default function DialogShell({
       />
       <div
         ref={surfaceRef}
+        // Load-bearing for the Esc rule above: it finds a nested dialog by
+        // looking inside this surface. Portaling the surface to <body> would
+        // flatten that nesting and quietly restore the close-both behaviour.
+        data-dialog-surface=""
         role="dialog"
         aria-modal="true"
         aria-label={title}

@@ -1,7 +1,7 @@
 // src/components/forms/holdings-tab.tsx
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AssetClassOption } from "./asset-mix-tab";
 import { HoldingOverrideEditor } from "./holding-override-editor";
 import { fieldLabelBaseClassName, inputBaseClassName, inputCompactClassName } from "./input-styles";
@@ -266,6 +266,7 @@ export function HoldingsTab({
   }
 
   const driving = deriveFromHoldings && rows.length > 0;
+  const editingRow = rows.find((r) => r.id === editingOverride) ?? null;
 
   return (
     <div className="space-y-4">
@@ -354,8 +355,7 @@ export function HoldingsTab({
                   price: parseFloat(r.price),
                 });
                 return (
-                  <Fragment key={r.id}>
-                    <tr className="text-ink-2">
+                    <tr key={r.id} className="text-ink-2">
                       <td className="whitespace-nowrap px-2 py-2 font-medium text-ink">{r.displayTicker ?? "—"}</td>
                       <td className="min-w-[12rem] px-2 py-2">
                         <CellInput defaultValue={r.displayName ?? ""} align="left"
@@ -401,24 +401,22 @@ export function HoldingsTab({
                           className="text-ink-4 hover:text-crit" aria-label="Delete holding">✕</button>
                       </td>
                     </tr>
-                    {editingOverride === r.id && (
-                      <tr>
-                        <td colSpan={8} className="px-3 pb-3">
-                          <HoldingOverrideEditor
-                            holding={r}
-                            assetClasses={assetClasses}
-                            onSave={(ov) => handleOverrideSave(r.id, ov)}
-                            onClose={() => setEditingOverride(null)}
-                          />
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
                 );
               })}
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* Asset-class editor — a compact dialog so the whole class list can be
+          scrolled and typed through without the table row growing under it. */}
+      {editingRow && (
+        <HoldingOverrideEditor
+          holding={editingRow}
+          assetClasses={assetClasses}
+          onSave={(ov) => handleOverrideSave(editingRow.id, ov)}
+          onClose={() => setEditingOverride(null)}
+        />
       )}
 
       {/* Derived totals strip */}

@@ -1,9 +1,10 @@
 // src/components/forms/holding-override-editor.tsx
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { AssetClassOption } from "./asset-mix-tab";
 import type { HoldingRow } from "@/lib/investments/holdings-client";
+import DialogShell from "@/components/dialog-shell";
 import { inputCompactClassName } from "./input-styles";
 import {
   pulledBlend,
@@ -40,12 +41,13 @@ export function HoldingOverrideEditor({ holding, assetClasses, onSave, onClose }
 
   const [texts, setTexts] = useState<Map<string, string>>(initial);
   const [saving, setSaving] = useState(false);
-  const [hideZero, setHideZero] = useState(true);
+  const listRef = useRef<HTMLDivElement | null>(null);
 
   const weightOf = (assetClassId: string) => parsePercent(texts.get(assetClassId));
 
   const total = assetClasses.reduce((s, ac) => s + weightOf(ac.id), 0);
   const over = total > 1.0001;
+  const remaining = Math.max(0, 1 - total);
 
   const current = blendFromEntries(
     assetClasses.map((ac) => ({ assetClassId: ac.id, weight: weightOf(ac.id) })),
@@ -83,6 +85,19 @@ export function HoldingOverrideEditor({ holding, assetClasses, onSave, onClose }
     });
   }
 
+  /** Enter walks down the list instead of submitting: this dialog renders inside
+   *  the account form's DOM, so a bare Enter would submit that form. These
+   *  inputs are the only reachable submit path while the dialog is up — its
+   *  overlay and focus trap put the form's own Save out of reach — so no
+   *  form-level guard is needed the way an inline sub-editor needs one. */
+  function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    const inputs = [...(listRef.current?.querySelectorAll<HTMLInputElement>("input") ?? [])];
+    const next = inputs[inputs.indexOf(e.currentTarget) + 1];
+    if (next) { next.focus(); next.select(); } else e.currentTarget.blur();
+  }
+
   function resetToPulled() {
     const m = new Map<string, string>();
     for (const [id, w] of pulled) m.set(id, formatPercent(w));
@@ -113,94 +128,86 @@ export function HoldingOverrideEditor({ holding, assetClasses, onSave, onClose }
     );
   }
 
-  const visible = hideZero
-    ? assetClasses.filter((ac) => weightOf(ac.id) > 0)
-    : assetClasses;
-
   return (
-    <div className="space-y-3 rounded-md border border-hair-2 bg-card p-3">
-      <div className="flex items-center justify-between">
-        <span className="text-sm font-medium text-ink">
-          Asset classes — {holding.displayTicker ?? holding.displayName ?? "holding"}
-        </span>
-        <label className="flex items-center gap-2 text-xs text-ink-3">
-          <input
-            type="checkbox"
-            checked={hideZero}
-            onChange={(e) => setHideZero(e.target.checked)}
-            className="h-3.5 w-3.5 rounded border-hair-2 bg-paper text-accent focus:ring-accent"
-          />
-          Hide 0%
-        </label>
-      </div>
+    <DialogShell
+      open
+      onOpenChange={(next) => { if (!next && !saving) onClose(); }}
+      title={`Asset classes — ${holding.displayTicker ?? holding.displayName ?? "holding"}`}
+      size="sm"
+      primaryAction={{ label: "Save", onClick: handleSave, disabled: over, loading: saving }}
+      secondaryAction={{ label: "Cancel", onClick: onClose, disabled: saving }}
+    >
+      <div className="space-y-3">
+        <div className="flex items-start justify-between gap-3 text-xs">
+          <p className="text-ink-3">
+            {hasPulled ? (
+              <>Pulled from holding: <span className="text-ink-2">{pulledText}</span></>
+            ) : (
+              <>No pulled classification — set the asset classes below.</>
+            )}
+          </p>
+          <span className={customized ? "shrink-0 text-warn" : "shrink-0 text-ink-4"}>{status}</span>
+        </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs">
-        <p className="text-ink-3">
-          {hasPulled ? (
-            <>
-              Pulled from holding: <span className="text-ink-2">{pulledText}</span>. Adjust any
-              row to customize.
-            </>
-          ) : (
-            <>No pulled classification — set the asset classes manually below.</>
-          )}
-        </p>
-        <span className={customized ? "shrink-0 text-warn" : "shrink-0 text-ink-4"}>
-          {status}
-        </span>
-      </div>
+        {/* Every class, one per row, so a percentage can be typed straight down
+            the list without hunting for the right field. */}
+        <div
+          ref={listRef}
+          data-testid="asset-class-list"
+          className="max-h-[min(50vh,420px)] divide-y divide-hair overflow-y-auto rounded-md border border-hair"
+        >
+          {assetClasses.map((ac, i) => {
+            const set = weightOf(ac.id) > 0;
+            return (
+              <label
+                key={ac.id}
+                className="flex items-center justify-between gap-3 px-3 py-1.5 hover:bg-card-hover"
+              >
+                <span className={`flex-1 truncate text-sm ${set ? "text-ink" : "text-ink-2"}`}>
+                  {ac.name}
+                </span>
+                <span className="flex w-[4.5rem] shrink-0 items-center gap-1">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    aria-label={`${ac.name} percent`}
+                    data-autofocus={i === 0 ? "" : undefined}
+                    value={texts.get(ac.id) ?? ""}
+                    placeholder="0"
+                    onChange={(e) => setWeight(ac.id, e.target.value)}
+                    onFocus={(e) => e.currentTarget.select()}
+                    onKeyDown={handleKeyDown}
+                    className={`${inputCompactClassName} tabular text-right`}
+                  />
+                  <span className="text-sm text-ink-3">%</span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
 
-      <div className="grid grid-cols-2 gap-x-6 gap-y-1">
-        {visible.map((ac) => (
-          <div key={ac.id} className="flex items-center justify-between gap-2">
-            <span className="flex-1 truncate text-sm text-ink-2">{ac.name}</span>
-            <div className="flex w-20 shrink-0 items-center gap-1">
-              <input
-                type="text"
-                inputMode="decimal"
-                value={texts.get(ac.id) ?? ""}
-                placeholder="0"
-                onChange={(e) => setWeight(ac.id, e.target.value)}
-                className={`${inputCompactClassName} tabular text-right`}
-              />
-              <span className="text-sm text-ink-3">%</span>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="flex items-center justify-between border-t border-hair pt-2 text-sm">
-        <span className={over ? "text-crit" : "text-ink-2"}>
-          Total {(total * 100).toFixed(1)}%
-          {over ? " — exceeds 100%" : ""}
-        </span>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between gap-3 text-sm">
+          <span className={over ? "text-crit" : "text-ink-2"}>
+            Total <span className="tabular">{(total * 100).toFixed(1)}%</span>
+            {/* Mutually exclusive by construction: `remaining` floors at 0, so
+                it is 0 exactly when the blend is over. */}
+            {over && " — exceeds 100%"}
+            {remaining > 0.0001 && (
+              <span className="text-ink-3">
+                {" · "}<span className="tabular">{(remaining * 100).toFixed(1)}%</span> unclassified
+              </span>
+            )}
+          </span>
           <button
             type="button"
             onClick={resetToPulled}
             disabled={saving || !hasPulled || !customized}
-            className="rounded-[var(--radius-sm)] border border-hair-2 px-3 py-1 text-xs text-ink-2 hover:bg-card-hover disabled:opacity-50"
+            className="shrink-0 rounded-[var(--radius-sm)] border border-hair-2 px-3 py-1 text-xs text-ink-2 hover:bg-card-hover disabled:opacity-50"
           >
             Reset to pulled
           </button>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={saving}
-            className="rounded-[var(--radius-sm)] border border-hair-2 px-3 py-1 text-xs text-ink-2 hover:bg-card-hover disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving || over}
-            className="rounded-[var(--radius-sm)] bg-accent px-3 py-1 text-xs font-medium text-accent-on hover:opacity-90 disabled:opacity-50"
-          >
-            {saving ? "Saving…" : "Save"}
-          </button>
         </div>
       </div>
-    </div>
+    </DialogShell>
   );
 }

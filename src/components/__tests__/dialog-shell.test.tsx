@@ -285,3 +285,66 @@ describe("DialogShell body scroll lock", () => {
     expect(document.body.style.overflow).toBe("");
   });
 });
+
+describe("DialogShell Esc with a dialog opened from inside another", () => {
+  afterEach(cleanup);
+
+  function Stacked({ outer, inner }: { outer: () => void; inner: () => void }) {
+    return (
+      <DialogShell open onOpenChange={(o) => { if (!o) outer(); }} title="Account">
+        <DialogShell open onOpenChange={(o) => { if (!o) inner(); }} title="Asset classes">
+          <p>inner body</p>
+        </DialogShell>
+      </DialogShell>
+    );
+  }
+
+  it("closes only the inner dialog, leaving the outer form open", () => {
+    const outer = vi.fn();
+    const inner = vi.fn();
+    render(<Stacked outer={outer} inner={inner} />);
+
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    expect(inner).toHaveBeenCalledWith();
+    expect(outer).not.toHaveBeenCalled();
+  });
+
+  // The other half of the rule: two dialogs that are not nested (the edit +
+  // delete pair in balance-sheet-view) must keep closing together.
+  it("still closes both when the two dialogs are siblings rather than nested", () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    render(
+      <>
+        <DialogShell open onOpenChange={(o) => { if (!o) first(); }} title="Edit Account">
+          edit body
+        </DialogShell>
+        <DialogShell open onOpenChange={(o) => { if (!o) second(); }} title="Delete Account">
+          delete body
+        </DialogShell>
+      </>
+    );
+
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).toHaveBeenCalledTimes(1);
+  });
+
+  it("hands Esc back to the outer dialog once the inner one unmounts", () => {
+    const outer = vi.fn();
+    const inner = vi.fn();
+    const { rerender } = render(<Stacked outer={outer} inner={inner} />);
+
+    rerender(
+      <DialogShell open onOpenChange={(o) => { if (!o) outer(); }} title="Account">
+        <p>no inner dialog</p>
+      </DialogShell>
+    );
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    expect(outer).toHaveBeenCalledTimes(1);
+    expect(inner).not.toHaveBeenCalled();
+  });
+});
