@@ -1,6 +1,6 @@
 import { db } from "@/db";
-import { clients, crmHouseholdContacts } from "@/db/schema";
-import { and, eq, ilike, inArray, or, sql } from "drizzle-orm";
+import { clients, crmHouseholdContacts, crmHouseholds } from "@/db/schema";
+import { and, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import { advisorScopeCondition, resolveVisibleAdvisorIds } from "@/lib/visibility";
 import { containsPattern } from "@/lib/like-pattern";
 import { uuidRegex } from "@/lib/schemas/common";
@@ -198,4 +198,70 @@ export async function countClientsForFirm(firmId: string): Promise<number> {
     .from(clients)
     .where(eq(clients.firmId, firmId));
   return row?.count ?? 0;
+}
+
+export interface HouseholdSearchResult {
+  householdId: string;
+  /** The planning client, when one exists. null for a prospect. */
+  clientId: string | null;
+  householdTitle: string;
+  /** False means the planning tools will refuse this household. */
+  hasPlan: boolean;
+}
+
+/**
+ * Household-first search for the MCP connector. `searchClients` above searches
+ * from `clients` and therefore cannot see a CRM household that has no planning
+ * client — exactly the prospect an advisor has the richest notes on. This
+ * searches from `crm_households` and left-joins the planning client.
+ *
+ * Kept separate rather than widening `searchClients`: that function's shape is
+ * consumed by the web typeahead (src/app/api/clients/search/route.ts) and by
+ * Forge (src/domain/forge/tools/read.ts), neither of which wants prospects.
+ */
+export async function searchHouseholds(
+  query: string,
+  firmId: string,
+  opts: { userId: string; orgRole?: string },
+): Promise<HouseholdSearchResult[]> {
+  const visible = await resolveVisibleAdvisorIds(opts.userId, opts.orgRole, firmId);
+  const scope = advisorScopeCondition(crmHouseholds.advisorId, visible);
+  const pattern = containsPattern(query);
+
+  const rows = await db
+    .select({
+      householdId: crmHouseholds.id,
+      clientId: clients.id,
+      householdName: crmHouseholds.name,
+    })
+    .from(crmHouseholds)
+    .leftJoin(clients, eq(clients.crmHouseholdId, crmHouseholds.id))
+    .leftJoin(crmHouseholdContacts, eq(crmHouseholdContacts.householdId, crmHouseholds.id))
+    .where(
+      and(
+        eq(crmHouseholds.firmId, firmId),
+        isNull(crmHouseholds.deletedAt),
+        scope,
+        or(
+          ilike(crmHouseholds.name, pattern),
+          ilike(crmHouseholdContacts.firstName, pattern),
+          ilike(crmHouseholdContacts.lastName, pattern),
+        ),
+      ),
+    )
+    .limit(MAX_RESULTS * 2);
+
+  // The contacts join multiplies rows per household (primary + spouse); collapse
+  // to one entry each, first occurrence wins, then cap at MAX_RESULTS.
+  const seen = new Map<string, HouseholdSearchResult>();
+  for (const r of rows) {
+    if (seen.has(r.householdId)) continue;
+    seen.set(r.householdId, {
+      householdId: r.householdId,
+      clientId: r.clientId,
+      householdTitle: r.householdName,
+      hasPlan: r.clientId !== null,
+    });
+  }
+  return [...seen.values()].slice(0, MAX_RESULTS);
 }

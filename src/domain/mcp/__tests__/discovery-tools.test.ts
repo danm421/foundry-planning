@@ -3,15 +3,15 @@ import { ZodError } from "zod";
 
 // vi.hoisted, not a bare top-level const: `vi.mock` factories run during ESM
 // import evaluation, before this file's own top-level statements — a plain
-// `const searchClients = vi.fn()` referenced inside the mock factory below
+// `const searchHouseholds = vi.fn()` referenced inside the mock factory below
 // throws "Cannot access before initialization" (TDZ). vi.hoisted() runs
 // ahead of the vi.mock calls, so the references are ready in time.
-const { searchClients, scanBook } = vi.hoisted(() => ({
-  searchClients: vi.fn(),
+const { searchHouseholds, scanBook } = vi.hoisted(() => ({
+  searchHouseholds: vi.fn(),
   scanBook: vi.fn(),
 }));
 
-vi.mock("@/lib/client-search", () => ({ searchClients }));
+vi.mock("@/lib/client-search", () => ({ searchHouseholds }));
 // F9: the three constants below used to be hardcoded literals here, so a
 // rename in scan.ts (SIGNAL_KEYS/DEFAULT_LIMIT/MAX_LIMIT) would leave this
 // suite green against a vocabulary the real z.enum would reject.
@@ -41,26 +41,38 @@ const principal: McpPrincipal = {
 const byName = (n: string) => discoveryTools.find((t) => t.name === n)!;
 
 beforeEach(() => {
-  searchClients.mockReset();
+  searchHouseholds.mockReset();
   scanBook.mockReset();
 });
 
 describe("search_clients", () => {
-  it("returns only id and household title, never contact PII", async () => {
-    searchClients.mockResolvedValue([
-      { id: "c1", householdTitle: "Mueller", primaryFirstName: "Dan", primaryLastName: "Mueller", primaryEmail: "dan@example.com" },
+  it("returns the household shape unchanged, never contact PII", async () => {
+    searchHouseholds.mockResolvedValue([
+      { householdId: "hh1", clientId: "c1", householdTitle: "Mueller", hasPlan: true },
     ]);
     const out = await byName("search_clients").run({ query: "mue" }, principal);
     // Asserts the whole payload, not just out.households: a leak into a
     // sibling key (e.g. {households: projected, contacts: rows}) or a stray
     // foundryUrl would pass a narrower `out.households`-only assertion.
-    expect(out).toEqual({ households: [{ id: "c1", householdTitle: "Mueller" }] });
+    expect(out).toEqual({
+      households: [{ householdId: "hh1", clientId: "c1", householdTitle: "Mueller", hasPlan: true }],
+    });
+  });
+
+  it("returns a prospect with hasPlan: false and clientId null", async () => {
+    searchHouseholds.mockResolvedValue([
+      { householdId: "hh2", clientId: null, householdTitle: "Okafor", hasPlan: false },
+    ]);
+    const out = await byName("search_clients").run({ query: "oka" }, principal);
+    expect(out).toEqual({
+      households: [{ householdId: "hh2", clientId: null, householdTitle: "Okafor", hasPlan: false }],
+    });
   });
 
   it("scopes the search to the token's firm and user", async () => {
-    searchClients.mockResolvedValue([]);
+    searchHouseholds.mockResolvedValue([]);
     await byName("search_clients").run({ query: "x" }, principal);
-    expect(searchClients).toHaveBeenCalledWith("x", "org_1", {
+    expect(searchHouseholds).toHaveBeenCalledWith("x", "org_1", {
       userId: "user_1",
       orgRole: "org:member",
     });
@@ -88,26 +100,26 @@ describe("search_clients", () => {
   // the specific error class AND message, matching this suite's own
   // convention elsewhere of asserting a specific message, not "it threw".
   it("rejects an empty query with a ZodError naming the constraint, instead of forwarding it", async () => {
-    searchClients.mockResolvedValue([]);
+    searchHouseholds.mockResolvedValue([]);
     const result = byName("search_clients").run({ query: "" }, principal);
     await expect(result).rejects.toBeInstanceOf(ZodError);
     await expect(result).rejects.toThrow(/too small|expected string to have/i);
-    expect(searchClients).not.toHaveBeenCalled();
+    expect(searchHouseholds).not.toHaveBeenCalled();
   });
 
   // R38.5 / R42 — the scope-override proof: a conflicting firmId/userId in
-  // the tool ARGS must never reach searchClients. Scope comes only from the
+  // the tool ARGS must never reach searchHouseholds. Scope comes only from the
   // token. This guards define-tool.ts:95/114 (schema parse + ctx derivation),
   // not this file — kept per controller ruling even though no mutation
   // confined to discovery.ts alone can redden it independently of the case
   // above.
   it("ignores a conflicting firmId/userId passed as tool arguments — scope comes only from the token", async () => {
-    searchClients.mockResolvedValue([]);
+    searchHouseholds.mockResolvedValue([]);
     await byName("search_clients").run(
       { query: "x", firmId: "org_ATTACKER", userId: "user_ATTACKER" },
       principal,
     );
-    expect(searchClients).toHaveBeenCalledWith("x", "org_1", {
+    expect(searchHouseholds).toHaveBeenCalledWith("x", "org_1", {
       userId: "user_1",
       orgRole: "org:member",
     });

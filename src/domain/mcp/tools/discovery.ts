@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { searchClients } from "@/lib/client-search";
+import { searchHouseholds } from "@/lib/client-search";
 import { scanBook, SIGNAL_KEYS, DEFAULT_LIMIT, MAX_LIMIT } from "@/lib/book-scan/scan";
 import { defineTool, type McpTool } from "../define-tool";
 
@@ -8,20 +8,23 @@ const searchClientsTool = defineTool({
   title: "Search households",
   description:
     "Search the households this advisor may see — their own book, or the firm's whole book if " +
-    "their role allows it — by free-text name, and return matching households (id and title). " +
-    "A household is one client record and may include a spouse. Call this first to turn a name " +
-    "into the household id every other Foundry tool needs. Returns at most 8 matches.",
+    "their role allows it — by free-text name, and return matching households. A household is " +
+    "one client record and may include a spouse. Call this first to turn a name into the ids " +
+    "every other Foundry tool needs. Each result carries householdId (always) and clientId " +
+    "(only when a financial plan exists). PROSPECTS come back with hasPlan: false and clientId " +
+    "null — the notes tools work on them, and every planning tool will refuse them. Returns at " +
+    "most 8 matches.",
   inputSchema: z.object({
     query: z.string().min(1).describe("Name fragment to search for, e.g. 'mueller'."),
   }),
   handler: async ({ query }, { principal, firmId }) => {
-    const rows = await searchClients(query, firmId, {
+    const rows = await searchHouseholds(query, firmId, {
       userId: principal.userId,
       orgRole: principal.orgRole,
     });
-    // Project to id + title only: searchClients also carries primary-contact
-    // name and email for UI prefill, and none of that belongs in a model prompt.
-    return { households: rows.map((r) => ({ id: r.id, householdTitle: r.householdTitle })) };
+    // Already projected to ids + title + hasPlan by searchHouseholds; no
+    // contact name or email is selected at all, so none can leak.
+    return { households: rows };
   },
 });
 
