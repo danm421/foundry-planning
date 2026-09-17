@@ -20,6 +20,7 @@ import {
   type Provenance,
 } from "../types";
 import type { MergeDecision } from "./decisions";
+import { splitMortgageEscrow } from "./mortgage-escrow";
 import { custodianMatches, normalizeCustodian } from "../normalize-custodian";
 import { nameSimilarity } from "../match-keys/account";
 
@@ -779,11 +780,26 @@ function dropDebtsFiledAsAssets(
   sourceName: string,
   warnings: string[],
 ): ExtractedAccount[] {
-  if (liabilities.length === 0) return rows;
-
+  // No early return on an empty `liabilities`: the warn-and-keep leg below has
+  // to run for a file that reported a debt-named row and NO debts at all,
+  // which is the very case worth naming. With nothing to match, `some(...)` is
+  // false and the row is kept — identical behaviour, warning gained.
   return rows.filter((row) => {
     if (!DEBT_NAME.test(row.name)) return true;
-    if (!liabilities.some((debt) => withinTolerance(debt.balance, row.value))) return true;
+    if (!liabilities.some((debt) => withinTolerance(debt.balance, row.value))) {
+      // KEPT ON PURPOSE. Without a matching liability this row is the only
+      // record of the money, and a note RECEIVABLE ("Loan to Smith Family
+      // Trust") is a genuine asset that `DEBT_NAME` also matches. But a
+      // mortgage the model filed as property and forgot to report as a debt
+      // looks exactly the same from here, so it is named rather than passed
+      // over in silence.
+      warnings.push(
+        `${sourceName} listed "${row.name}" as an account but reported no matching debt. ` +
+          "If it is money the household OWES, drop the row and add it as a liability; if it is " +
+          "money owed TO them, leave it.",
+      );
+      return true;
+    }
     warnings.push(
       `${sourceName} listed "${row.name}" as an account as well as a debt of the same ` +
         `${formatMoney(row.value)}. It is recorded as a debt only, so the balance sheet does not ` +
@@ -1988,6 +2004,32 @@ export function mergeAcrossFiles(
   concatSection(payload.lifePolicies, lifePolicyRows);
   concatSection(payload.wills, willRows);
   concatSection(payload.savings, savingsRows);
+
+  // AFTER every section has merged — the split needs the whole import's
+  // accounts and liabilities in one place to link a mortgage to its property.
+  // Row ids were already stamped inside each `mergeSection` above, so a
+  // property this split SYNTHESIZES has missed that pass and must be annotated
+  // by hand below, or it reaches the review table uncommittable.
+  const escrow = splitMortgageEscrow({
+    accounts: payload.accounts,
+    liabilities: payload.liabilities,
+  });
+  payload.warnings.push(...escrow.warnings);
+  // PAIRED BY INDEX, which `splitMortgageEscrow` guarantees: it copies every
+  // row it is given, in order, and may only ever APPEND (see its POSITIONAL
+  // INVARIANT comment). If it ever reordered or filtered, this would stamp the
+  // wrong `__rowId`s onto the wrong rows and silently commit them.
+  payload.accounts = escrow.accounts.map((next, i) => {
+    const prior = payload.accounts[i];
+    return prior
+      ? ({ ...prior, ...next } as (typeof payload.accounts)[number])
+      : ({
+          ...next,
+          __provenance: payload.liabilities[0]?.__provenance,
+          __rowId: `account:synthesized:${next.name.toLowerCase().trim().replace(/\s+/g, "-")}`,
+          match: { kind: "new" as const },
+        } as (typeof payload.accounts)[number]);
+  });
 
   stampHoldingIds(payload.accounts);
   return { payload, mergedFileCount: Object.keys(fileResults).length, decisions };
