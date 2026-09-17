@@ -2342,6 +2342,13 @@ export const accounts = pgTable("accounts", {
   overridePctLtCg: decimal("override_pct_lt_cg", { precision: 5, scale: 4 }),
   overridePctQdiv: decimal("override_pct_qdiv", { precision: 5, scale: 4 }),
   overridePctTaxExempt: decimal("override_pct_tax_exempt", { precision: 5, scale: 4 }),
+  // ── real_estate only ──────────────────────────────────────────────────────
+  // The property's street address as the source document printed it. Nullable
+  // because every non-real-estate account has none, and because it is only
+  // populated by paths that actually read one (statement-chat mortgage import
+  // today). It is also the exact key `matchMortgageToProperty` prefers over
+  // name-token scoring when linking a mortgage to the property it secures.
+  propertyAddress: text("property_address"),
   annualPropertyTax: decimal("annual_property_tax", { precision: 15, scale: 2 }).notNull().default("0"),
   propertyTaxGrowthRate: decimal("property_tax_growth_rate", { precision: 5, scale: 4 }).notNull().default("0.03"),
   // Source for `propertyTaxGrowthRate`. When "inflation", the engine

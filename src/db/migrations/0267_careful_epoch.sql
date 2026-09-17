@@ -1,0 +1,1 @@
+ALTER TABLE "accounts" ADD COLUMN "property_address" text;

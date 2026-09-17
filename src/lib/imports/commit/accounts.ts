@@ -204,6 +204,14 @@ export async function commitAccounts(
           externalProvider: row.externalProvider ?? null,
           externalId: row.externalId ?? null,
           lastSyncedAt: row.externalProvider ? now : null,
+          propertyAddress: row.propertyAddress ?? null,
+          // Spread conditionally rather than defaulted to "0": the column is
+          // notNull().default("0"), so omitting the key keeps the DB default,
+          // whereas writing "0" explicitly would assert this property has no
+          // tax — a claim no document made.
+          ...(row.annualPropertyTax != null
+            ? { annualPropertyTax: String(row.annualPropertyTax) }
+            : {}),
         })
         .returning({ id: accounts.id });
 
@@ -268,6 +276,12 @@ export async function commitAccounts(
     if (row.modelPortfolioId !== undefined) updates.modelPortfolioId = row.modelPortfolioId;
     if (row.tickerPortfolioId !== undefined) updates.tickerPortfolioId = row.tickerPortfolioId;
     if (row.rmdEnabled != null) updates.rmdEnabled = row.rmdEnabled;
+    if (row.propertyAddress != null) updates.propertyAddress = row.propertyAddress;
+    // Never blank a figure the advisor typed on the account form: an import
+    // that derived nothing from an escrow must leave the existing value alone.
+    if (row.annualPropertyTax != null) {
+      updates.annualPropertyTax = String(row.annualPropertyTax);
+    }
     // The incoming row is the ONLY evidence here — `before` isn't loaded — so
     // the 529 columns are written only when the incoming row itself says 529.
     // A non-529 row must not null them out: it would strip the beneficiary off
