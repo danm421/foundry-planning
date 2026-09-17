@@ -35,6 +35,39 @@ describe("mergeAcrossFiles + mortgage escrow", () => {
     expect(property!.match).toEqual({ kind: "new" });
   });
 
+  it("attributes each synthesized property to the file its OWN mortgage came from", () => {
+    // Provenance is an ASSERTION about which document a row came from, so the
+    // second property may not claim the first mortgage's statement. Two
+    // mortgages, two addresses with no token in common, two files.
+    const { payload } = mergeAcrossFiles({
+      fileA: er("hudson-mortgage.pdf", {
+        liabilities: [
+          {
+            name: "Mortgage A",
+            balance: 412_000,
+            propertyAddress: "5304 Hudson Avenue",
+          } satisfies ExtractedLiability,
+        ],
+      }),
+      fileB: er("larkspur-mortgage.pdf", {
+        liabilities: [
+          {
+            name: "Mortgage B",
+            balance: 288_000,
+            propertyAddress: "19 Larkspur Lane",
+          } satisfies ExtractedLiability,
+        ],
+      }),
+    });
+
+    const larkspur = payload.accounts.find((a) => a.propertyAddress === "19 Larkspur Lane");
+    expect(larkspur).toBeDefined();
+    expect(larkspur!.__provenance?.sourceFileId).toBe("fileB");
+
+    const hudson = payload.accounts.find((a) => a.propertyAddress === "5304 Hudson Avenue");
+    expect(hudson!.__provenance?.sourceFileId).toBe("fileA");
+  });
+
   it("warns when a debt-named account row survives with no matching liability", () => {
     const { payload } = mergeAcrossFiles({
       f1: er("mortgage.pdf", {

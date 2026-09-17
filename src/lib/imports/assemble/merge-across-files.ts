@@ -20,7 +20,7 @@ import {
   type Provenance,
 } from "../types";
 import type { MergeDecision } from "./decisions";
-import { splitMortgageEscrow } from "./mortgage-escrow";
+import { propertyAddressMatches, splitMortgageEscrow } from "./mortgage-escrow";
 import { custodianMatches, normalizeCustodian } from "../normalize-custodian";
 import { nameSimilarity } from "../match-keys/account";
 
@@ -2025,7 +2025,17 @@ export function mergeAcrossFiles(
       ? ({ ...prior, ...next } as (typeof payload.accounts)[number])
       : ({
           ...next,
-          __provenance: payload.liabilities[0]?.__provenance,
+          // The provenance of the mortgage that CAUSED this row, found by the
+          // address the split copied onto it — not `liabilities[0]`, which
+          // would tell an advisor the second property came from the first
+          // mortgage's statement. Provenance is an assertion about which
+          // document a row came from; asserting the wrong one is the same
+          // defect as inventing a figure. Falls back to the first liability so
+          // a row that somehow matches nothing is still annotated.
+          __provenance:
+            payload.liabilities.find((debt) =>
+              propertyAddressMatches(debt.propertyAddress, next.propertyAddress),
+            )?.__provenance ?? payload.liabilities[0]?.__provenance,
           __rowId: `account:synthesized:${next.name.toLowerCase().trim().replace(/\s+/g, "-")}`,
           match: { kind: "new" as const },
         } as (typeof payload.accounts)[number]);

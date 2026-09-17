@@ -38,6 +38,7 @@ const baseRow: typeof accounts.$inferSelect = {
   overridePctLtCg: null,
   overridePctQdiv: null,
   overridePctTaxExempt: null,
+  propertyAddress: null,
   annualPropertyTax: "0",
   propertyTaxGrowthRate: "0.03",
   propertyTaxGrowthSource: "custom",
