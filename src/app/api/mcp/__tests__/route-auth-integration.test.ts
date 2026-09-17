@@ -19,7 +19,7 @@ import { SignJWT, createLocalJWKSet, exportJWK, generateKeyPair, type JWK } from
  *    so F1's and F2's gates (which live inside `resolveMcpPrincipal`) run
  *    for real and a deletion of either is reddened here, not simulated by a
  *    mock that already assumes the gate fired;
- *  - the REAL `ALL_MCP_TOOLS` registry (all 17 tools) for `tools/list`;
+ *  - the REAL `ALL_MCP_TOOLS` registry (all 19 tools) for `tools/list`;
  *  - one REAL tool (`search_clients`) for `tools/call`, with only its own
  *    DB dependency (`@/lib/client-search`) mocked — proving the WIRING
  *    (auth → dispatch → tool.run → response), not re-testing that tool's
