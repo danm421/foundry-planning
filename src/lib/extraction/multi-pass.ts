@@ -1,4 +1,5 @@
 import { callAIExtraction } from "./azure-client";
+import { usageStage } from "@/lib/ai/usage";
 import { parseAIResponse } from "./parse-response";
 import {
     classifyFactFinder,
@@ -87,7 +88,7 @@ async function runPromptForSection(
 
     let raw: string;
     try {
-        raw = await callAIExtraction(prompt, safeUser, model);
+        raw = await usageStage("sections", () => callAIExtraction(prompt, safeUser, model));
     } catch (err) {
         console.warn(
             `[multi-pass] section "${section}" AI call failed: ${err instanceof Error ? err.message : "unknown"}`

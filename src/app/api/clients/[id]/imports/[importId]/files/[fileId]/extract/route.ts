@@ -16,6 +16,7 @@ import {
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
+import { formatUsage, inUsageScope, newUsageReport, totalTokensOf } from "@/lib/ai/usage";
 import { extractDocument } from "@/lib/extraction/extract";
 import type { DocumentType, ExtractionResult } from "@/lib/extraction/types";
 import type { UploadKind } from "@/lib/extraction/validate-upload";
@@ -153,20 +154,30 @@ export async function POST(request: NextRequest, { params }: Params) {
             metadata: { importId, model, documentType, reextract: true },
         });
 
+        // Same accounting as the bulk path (`run-extraction.ts`): a re-extract
+        // of one file is billed exactly like reading it the first time, so it
+        // must land in the same columns or the totals under-report every file
+        // an advisor re-read.
+        const usage = newUsageReport();
+
         try {
             const buffer = await downloadImportFile(file.blobUrl);
             if (!buffer) {
                 throw new Error("Blob fetch failed");
             }
 
-            const result = await extractDocument(
-                buffer,
-                file.originalFilename,
-                documentType,
-                model,
-                file.detectedKind as UploadKind,
-                extractHoldings,
+            const result = await inUsageScope(usage, () =>
+                extractDocument(
+                    buffer,
+                    file.originalFilename,
+                    documentType,
+                    model,
+                    file.detectedKind as UploadKind,
+                    extractHoldings,
+                ),
             );
+
+            console.log(`[import-extract] file ${fileId} (re-extract): ${formatUsage(usage)}`);
 
             await db
                 .update(clientImportExtractions)
@@ -175,6 +186,8 @@ export async function POST(request: NextRequest, { params }: Params) {
                     promptVersion: result.promptVersion,
                     rawResponseJson: result as unknown as Record<string, unknown>,
                     warnings: result.warnings,
+                    totalTokens: totalTokensOf(usage),
+                    usageJson: usage,
                     finishedAt: new Date(),
                 })
                 .where(eq(clientImportExtractions.id, extractionId));
@@ -224,6 +237,8 @@ export async function POST(request: NextRequest, { params }: Params) {
                 .set({
                     status: "failed",
                     errorMessage: safeMessage,
+                    totalTokens: totalTokensOf(usage),
+                    usageJson: usage,
                     finishedAt: new Date(),
                 })
                 .where(eq(clientImportExtractions.id, extractionId));

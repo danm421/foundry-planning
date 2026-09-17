@@ -1,6 +1,7 @@
 // src/lib/entity-extraction/orchestrator.ts
 import { createHash } from "node:crypto";
 import { callAIExtraction } from "@/lib/extraction/azure-client";
+import { usageStage } from "@/lib/ai/usage";
 import { parseAIResponse } from "@/lib/extraction/parse-response";
 import { buildPageOutline } from "@/lib/extraction/page-outline";
 import { redactSsns } from "@/lib/extraction/redact-ssn";
@@ -93,7 +94,7 @@ async function readRegion(
   // exception that escapes this function and rejects the enclosing
   // `Promise.all`, which would discard every OTHER entity's rows too.
   try {
-    const raw = await callAIExtraction(prompt, userPrompt, "full");
+    const raw = await usageStage("map-read", () => callAIExtraction(prompt, userPrompt, "full"));
     const parsed = parseAIResponse(raw);
     const rawRows = Array.isArray(parsed.rows) ? (parsed.rows as RawObservationRow[]) : [];
 

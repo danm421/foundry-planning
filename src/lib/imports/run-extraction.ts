@@ -6,6 +6,12 @@ import {
     clientImportExtractions,
 } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
+import {
+    formatUsage,
+    inUsageScope,
+    newUsageReport,
+    totalTokensOf,
+} from "@/lib/ai/usage";
 import { extractDocument } from "@/lib/extraction/extract";
 import type { DocumentType, ExtractionResult } from "@/lib/extraction/types";
 import type { UploadKind } from "@/lib/extraction/validate-upload";
@@ -170,6 +176,10 @@ export async function runImportExtraction(
         file: (typeof files)[number],
     ): Promise<FileOutcome> => {
         const startedAt = new Date();
+        // Held by THIS function, not returned by the scope, so a file that
+        // throws halfway still reports what it spent getting there — which is
+        // exactly the case worth seeing.
+        const usage = newUsageReport();
         const [extraction] = await db
             .insert(clientImportExtractions)
             .values({
@@ -201,31 +211,39 @@ export async function runImportExtraction(
             if (!buffer) {
                 throw new Error("Blob fetch failed");
             }
-            const result = await extractDocument(
-                buffer,
-                file.originalFilename,
-                file.documentType as DocumentType | "auto",
-                model,
-                file.detectedKind as UploadKind,
-                extractHoldings,
-                comprehensive,
+            const result = await inUsageScope(usage, () =>
+                extractDocument(
+                    buffer,
+                    file.originalFilename,
+                    file.documentType as DocumentType | "auto",
+                    model,
+                    file.detectedKind as UploadKind,
+                    extractHoldings,
+                    comprehensive,
+                ),
             );
 
             // A tax return also goes to the tax_returns store — the generic
             // extractor has no tax block, so plan-basics derivation would
             // otherwise have nothing to read.
             if (result.documentType === "tax_return") {
-                const bridged = await bridgeTaxReturn({
-                    buffer,
-                    filename: file.originalFilename,
-                    clientId,
-                    kind: file.detectedKind as UploadKind,
-                    model,
-                });
+                const bridged = await inUsageScope(usage, () =>
+                    bridgeTaxReturn({
+                        buffer,
+                        filename: file.originalFilename,
+                        clientId,
+                        kind: file.detectedKind as UploadKind,
+                        model,
+                    }),
+                );
                 if (!bridged.ok && bridged.warning) {
                     result.warnings.push(bridged.warning);
                 }
             }
+
+            console.log(
+                `[import-extract] file ${file.id}: ${formatUsage(usage)}`,
+            );
 
             await db
                 .update(clientImportExtractions)
@@ -234,6 +252,8 @@ export async function runImportExtraction(
                     promptVersion: result.promptVersion,
                     rawResponseJson: result as unknown as Record<string, unknown>,
                     warnings: result.warnings,
+                    totalTokens: totalTokensOf(usage),
+                    usageJson: usage,
                     finishedAt: new Date(),
                 })
                 .where(eq(clientImportExtractions.id, extractionId));
@@ -267,11 +287,16 @@ export async function runImportExtraction(
                 `[import-extract] file ${file.id} (${file.originalFilename}) failed:`,
                 safeMessage,
             );
+            // Recorded on the failure path too: a file that died on its third
+            // holdings continuation pass spent real tokens, and leaving that
+            // out would make the measurement flatter the worst cases.
             await db
                 .update(clientImportExtractions)
                 .set({
                     status: "failed",
                     errorMessage: safeMessage,
+                    totalTokens: totalTokensOf(usage),
+                    usageJson: usage,
                     finishedAt: new Date(),
                 })
                 .where(eq(clientImportExtractions.id, extractionId));

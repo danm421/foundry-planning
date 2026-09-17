@@ -1,10 +1,29 @@
 import { callAIExtractionWithMeta, type AIExtractionResult } from "./azure-client";
 import { parseAIResponse } from "./parse-response";
+import { usageStage } from "@/lib/ai/usage";
 import { holdingKey, holdingsReconciliation, materiallyUndershoots } from "./normalize-holdings";
 import { buildHoldingsContinuationPrompt } from "./prompts/account-statement";
 import type { ExtractedAccount, ExtractedHolding } from "./types";
 
 const MAX_CONTINUATION_PASSES = 3;
+
+/**
+ * Which deployment the continuation passes run on.
+ *
+ * This was `"full"` — the reasoning-heavy, expensive deployment — while the
+ * FIRST read of the same document runs on `"mini"`. That is backwards on cost:
+ * the first pass does the hard part (find the holdings table, understand its
+ * columns, produce the schema), and each continuation does the easy part
+ * (keep reading the same table, skip what's already listed). The expensive
+ * half also runs up to `MAX_CONTINUATION_PASSES` times PER ACCOUNT, each pass
+ * re-sending the whole document, so it dominates the token bill for any
+ * statement with positions.
+ *
+ * Pinned as a named constant rather than inlined so a comparison run can flip
+ * one line, and so the next person sees that the asymmetry with the first
+ * read is deliberate rather than an oversight.
+ */
+const CONTINUATION_MODEL: "mini" | "full" = "mini";
 
 export interface AccountHoldingsCompletion {
   holdings: ExtractedHolding[];
@@ -104,7 +123,7 @@ export async function completeAccountHoldings(args: {
 
     let result: AIExtractionResult;
     try {
-      result = await call(prompt, user, "full");
+      result = await usageStage("holdings", () => call(prompt, user, CONTINUATION_MODEL));
     } catch {
       errored = true; // distinct from a genuinely-short document
       break; // this pass contributes nothing; preserve what we have

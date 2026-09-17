@@ -1,6 +1,7 @@
 import { AIMessage, HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
 import type { BaseMessage } from "@langchain/core/messages";
 import { chatModel } from "@/domain/forge/llm";
+import { recordAiUsage } from "@/lib/ai/usage";
 import type { Annotated, ChatState, ChatTurn, PersistedImportPayload } from "@/lib/imports/types";
 import type { ExtractedAccount, ExtractionResult } from "@/lib/extraction/types";
 import { livingHoldings } from "@/lib/imports/living-rows";
@@ -472,6 +473,30 @@ function nowIso(): string {
 }
 
 /**
+ * Bill one LangChain round trip to whatever usage scope the route opened.
+ *
+ * The chat does NOT go through `@/lib/extraction/azure-client` (it uses
+ * LangChain's own client), so it is the one AI path that records itself
+ * rather than being recorded for it. `usage_metadata` is populated on
+ * `.invoke()` because `chatModel` builds the model with `streaming: true` and
+ * `streamUsage` defaults on — verified against the real deployment, not
+ * inferred, because a silent `undefined` here would read as "the chat is
+ * free" rather than "the chat is unmeasured".
+ *
+ * `model_name` is what the deployment answered with, which is the closest
+ * thing to the resolved deployment name available on this path.
+ */
+function recordTurnUsage(response: AIMessage): void {
+  const usage = response.usage_metadata;
+  recordAiUsage({
+    model: String(response.response_metadata?.model_name ?? "chat"),
+    promptTokens: usage?.input_tokens,
+    completionTokens: usage?.output_tokens,
+    cachedPromptTokens: usage?.input_token_details?.cache_read,
+  });
+}
+
+/**
  * Run one conversational turn against the tool-calling loop. Capped at
  * `MAX_TOOL_CALLS_PER_TURN` tool calls (C11) — once the cap is hit, any
  * further requested call is refused with a tool-error message instead of
@@ -493,7 +518,13 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
     invoke: async (prompt: string) => {
       if (!rereadModelInstance) {
         const m = await chatModel("mini");
-        rereadModelInstance = { invoke: async (p: string) => ({ content: (await m.invoke(p)).content }) };
+        rereadModelInstance = {
+          invoke: async (p: string) => {
+            const res = await m.invoke(p);
+            recordTurnUsage(res);
+            return { content: res.content };
+          },
+        };
       }
       return rereadModelInstance.invoke(prompt);
     },
@@ -522,6 +553,7 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
     messages[0] = new SystemMessage(systemPrompt(payload, fileNames, committedRowIds));
 
     const response = await model.invoke(messages);
+    recordTurnUsage(response);
     messages.push(response);
     const calls = response.tool_calls ?? [];
 

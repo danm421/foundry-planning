@@ -7,6 +7,7 @@ import type {
     ExtractionResult,
 } from "./types";
 import { callAIExtraction } from "./azure-client";
+import { usageStage } from "@/lib/ai/usage";
 import { parseAIResponse } from "./parse-response";
 import { extractPdfText, extractPdfPages } from "./pdf-parser";
 import { extractExcelText } from "./excel-parser";
@@ -557,7 +558,7 @@ export async function extractDocument(
         text +
         "\n</document>";
     console.log(`[extract] ${logName}: calling AI (${model}) for type ${documentType}, text length ${text.length}`);
-    const raw = await callAIExtraction(prompt, safeUser, model);
+    const raw = await usageStage("read", () => callAIExtraction(prompt, safeUser, model));
     console.log(`[extract] ${logName}: AI returned ${raw.length} chars`);
 
     // 7. Parse response and validate against strict schema. Unknown

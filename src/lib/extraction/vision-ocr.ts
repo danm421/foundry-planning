@@ -1,5 +1,6 @@
 // src/lib/extraction/vision-ocr.ts
 import { callAIVisionTranscription, type VisionImage } from "./azure-client";
+import { usageStage } from "@/lib/ai/usage";
 
 const DEFAULT_BATCH = 4;
 const DEFAULT_CONCURRENCY = 3;
@@ -108,7 +109,7 @@ export async function visionOcrPdf(
     for (let p = start; p <= end; p++) batch.push(await renderPage(p));
 
     const index = batchIndex++;
-    const task = callAIVisionTranscription(batch, opts.model).then((text) => {
+    const task = usageStage("ocr", () => callAIVisionTranscription(batch, opts.model)).then((text) => {
       transcripts[index] = text;
       return index;
     });
@@ -162,8 +163,7 @@ export async function visionOcrImage(
     })
     .jpeg({ quality: JPEG_QUALITY })
     .toBuffer();
-  return callAIVisionTranscription(
-    [{ b64: jpeg.toString("base64"), mime: "image/jpeg" }],
-    opts.model,
+  return usageStage("ocr", () =>
+    callAIVisionTranscription([{ b64: jpeg.toString("base64"), mime: "image/jpeg" }], opts.model),
   );
 }

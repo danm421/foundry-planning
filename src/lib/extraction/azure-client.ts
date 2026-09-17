@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { resolveAiCredentials } from "@/lib/ai/resolve";
 import { azureClientOptions } from "@/lib/ai/client";
 import { isAzureAuthFailure, markAiConnectionError } from "@/lib/ai/connection-status";
+import { recordAiUsage } from "@/lib/ai/usage";
 import type { AiCredentials } from "@/lib/ai/credentials";
 
 /** One cached client per distinct tenant+key, so a firm's client is reused
@@ -73,6 +74,40 @@ async function reportingAuthFailures<T>(
   }
 }
 
+/**
+ * Report one call's token spend to whatever usage scope the caller opened
+ * (`@/lib/ai/usage`). A no-op outside one, so nothing here changes behaviour
+ * for a caller that never asked to measure.
+ *
+ * Every AI call in the app funnels through this file, so recording HERE — not
+ * at the twenty-odd call sites upstream — is what makes the accounting
+ * complete by construction. `cached_tokens` is the provider's own count of
+ * prompt prefix it served from cache; it is a subset of `prompt_tokens`, and
+ * `UsageTotals` documents that it must never be added to it.
+ *
+ * Deliberately records the RESOLVED deployment name, not the "mini"/"full"
+ * alias: a firm on its own Azure resource names its deployments whatever it
+ * likes, and a report saying "mini" would hide which one actually ran.
+ */
+function reportUsage(
+  model: string,
+  usage:
+    | {
+        prompt_tokens?: number;
+        completion_tokens?: number;
+        prompt_tokens_details?: { cached_tokens?: number } | null;
+      }
+    | null
+    | undefined,
+): void {
+  recordAiUsage({
+    model,
+    promptTokens: usage?.prompt_tokens,
+    completionTokens: usage?.completion_tokens,
+    cachedPromptTokens: usage?.prompt_tokens_details?.cached_tokens,
+  });
+}
+
 /** Resolve the "mini"/"full" aliases against the caller's deployments. An
  *  explicit deployment name passes through untouched. */
 function deploymentFor(creds: AiCredentials, model: "mini" | "full" | (string & {})): string {
@@ -127,6 +162,12 @@ export async function callAIExtractionWithMeta(
     }),
   );
 
+  // Recorded BEFORE the empty-content guard below: a completion that came
+  // back blank still burned every prompt token that produced it, and a
+  // measurement that hides the failures flatters exactly the calls worth
+  // cutting.
+  reportUsage(modelName, response.usage);
+
   const choice = response.choices[0];
   const content = choice?.message?.content;
   if (!content) {
@@ -162,6 +203,10 @@ export async function callAIEmbedding(input: string): Promise<number[]> {
   const response = await reportingAuthFailures(creds, () =>
     client.embeddings.create({ model, input }),
   );
+  // An embeddings response carries no completion half — `reportUsage` counts
+  // the absent field as 0 rather than NaN.
+  reportUsage(model, response.usage);
+
   const vec = response.data[0]?.embedding;
   if (!vec || vec.length !== 1536) {
     throw new Error("embedding_dim_mismatch");
@@ -209,6 +254,8 @@ export async function callAIVisionTranscription(
       max_completion_tokens: 16000,
     }),
   );
+
+  reportUsage(modelName, response.usage);
 
   const out = response.choices[0]?.message?.content;
   if (!out) {

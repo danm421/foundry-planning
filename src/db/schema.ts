@@ -5378,6 +5378,21 @@ export const clientImportExtractions = pgTable("client_import_extractions", {
   promptVersion: text("prompt_version").notNull(),
   status: extractionStatusEnum("status").notNull().default("queued"),
   rawResponseJson: jsonb("raw_response_json"),
+  /**
+   * What this file's extraction cost, in tokens. Null on every row written
+   * before the accounting existed, and on any row whose provider response
+   * carried no usage block — never 0 for those, so "not measured" stays
+   * distinguishable from "measured, and free".
+   *
+   * `totalTokens` is prompt + completion, denormalised out of `usageJson` so
+   * the ordinary question ("which imports are expensive") is a plain column
+   * scan. `usageJson` is the `UsageReport` from `@/lib/ai/usage`: the same
+   * total, split by pipeline stage and by the deployment actually called —
+   * one file spans BOTH deployments, so the `model` column above cannot
+   * describe its spend on its own.
+   */
+  totalTokens: integer("total_tokens"),
+  usageJson: jsonb("usage_json"),
   warnings: jsonb("warnings"),
   errorMessage: text("error_message"),
   startedAt: timestamp("started_at"),

@@ -12,6 +12,7 @@ import {
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
+import { formatUsage, inUsageScope, newUsageReport, totalTokensOf } from "@/lib/ai/usage";
 import { readChatState, writeChatState } from "@/lib/statement-chat/state";
 import { runTurn } from "@/lib/statement-chat/turn";
 // Shared with chat/extract/route.ts (final review, I1) — one rebase
@@ -236,9 +237,16 @@ export async function POST(request: Request, { params }: Params) {
   const payload = payloadJson.payload ?? {};
   const fileResults = payloadJson.fileResults ?? {};
 
+  // A turn is up to five model round trips, each re-sending every row, the
+  // inlined positions and the whole transcript — the other half of the import's
+  // token bill, and the half with no extraction row to hang a column off. It
+  // rides in the audit entry this route already writes.
+  const usage = newUsageReport();
   let turnResult: Awaited<ReturnType<typeof runTurn>>;
   try {
-    turnResult = await runTurn({ chat, payload, fileResults, message, importId });
+    turnResult = await inUsageScope(usage, () =>
+      runTurn({ chat, payload, fileResults, message, importId }),
+    );
   } catch (err) {
     const safeMessage = err instanceof Error ? err.message : "unknown error";
     if (safeMessage === "ai_not_configured") {
@@ -301,6 +309,8 @@ export async function POST(request: Request, { params }: Params) {
     })
     .where(eq(clientImports.id, importId));
 
+  console.log(`[chat-turn] import ${importId}: ${formatUsage(usage)}`);
+
   await recordAudit({
     action: "import.chat.turn",
     resourceType: "client_import",
@@ -309,6 +319,8 @@ export async function POST(request: Request, { params }: Params) {
     firmId,
     metadata: {
       toolCallCount: turnResult.turnEntries.filter((t) => t.role === "tool").length,
+      totalTokens: totalTokensOf(usage),
+      usage,
     },
   });
 

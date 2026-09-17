@@ -379,7 +379,21 @@ describe("chat turn route behavior", () => {
       expect.objectContaining({
         action: "import.chat.turn",
         resourceId: "i1",
-        metadata: { toolCallCount: 1 },
+        metadata: {
+          toolCallCount: 1,
+          // `runTurn` is a double here, so no model call was ever billed.
+          // `null` rather than 0 is the point: "not measured" and "measured,
+          // and free" must not collapse into the same value (see
+          // `totalTokensOf`). The literal shape is written out rather than
+          // built from `newUsageReport()` so this cannot pass vacuously if
+          // that shape changes.
+          totalTokens: null,
+          usage: {
+            total: { calls: 0, promptTokens: 0, cachedPromptTokens: 0, completionTokens: 0 },
+            byStage: {},
+            byModel: {},
+          },
+        },
       }),
     );
   });

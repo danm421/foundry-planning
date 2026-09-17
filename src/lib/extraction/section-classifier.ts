@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { callAIExtraction } from "./azure-client";
+import { usageStage } from "@/lib/ai/usage";
 import { parseAIResponse } from "./parse-response";
 import { FACT_FINDER_CLASSIFIER_PROMPT } from "./prompts/fact-finder-classifier";
 
@@ -70,10 +71,8 @@ export async function classifyFactFinder(
 
     let raw: string;
     try {
-        raw = await callAIExtraction(
-            FACT_FINDER_CLASSIFIER_PROMPT,
-            userPrompt,
-            "full"
+        raw = await usageStage("classify", () =>
+            callAIExtraction(FACT_FINDER_CLASSIFIER_PROMPT, userPrompt, "full")
         );
     } catch (err) {
         console.warn(

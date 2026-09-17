@@ -11,6 +11,7 @@ const chatModel = vi.fn(async () => ({
 vi.mock("@/domain/forge/llm", () => ({ chatModel: (...a: unknown[]) => chatModel(...(a as [])) }));
 
 import { runTurn, MAX_TOOL_CALLS_PER_TURN, TOOL_DEFS, type TurnModel } from "@/lib/statement-chat/turn";
+import { inUsageScope, newUsageReport, totalTokensOf } from "@/lib/ai/usage";
 
 /** The shape a tool def has once you only care about its parameter schema. */
 type ToolDef = {
@@ -763,5 +764,95 @@ describe("describeRows — positions", () => {
     const prompt = await systemPromptForTest(payloadMissingId);
     expect(prompt).not.toMatch(/undefined/);
     expect(prompt).toMatch(/not correctable/i);
+  });
+});
+
+/**
+ * The chat is the one AI path that does NOT go through
+ * `@/lib/extraction/azure-client`, so it is the one that has to bill itself.
+ * Without these, the turn loop reports zero and the surface that re-sends
+ * every row, every inlined position and the whole transcript up to five times
+ * per message looks free next to extraction.
+ */
+describe("token accounting", () => {
+  function billed(input: number, output: number, cacheRead = 0): AIMessage {
+    return new AIMessage({
+      content: "Done.",
+      usage_metadata: {
+        input_tokens: input,
+        output_tokens: output,
+        total_tokens: input + output,
+        input_token_details: { cache_read: cacheRead },
+      },
+      response_metadata: { model_name: "gpt-5.4-mini" },
+    });
+  }
+
+  it("bills every round trip a turn makes, not just the last", async () => {
+    const toolCall = new AIMessage({
+      content: "",
+      tool_calls: [{ id: "c1", name: "edit_row", args: { rowId: "r1", field: "basis", value: 7 } }],
+      usage_metadata: { input_tokens: 1200, output_tokens: 30, total_tokens: 1230 },
+      response_metadata: { model_name: "gpt-5.4-mini" },
+    });
+
+    const usage = newUsageReport();
+    await inUsageScope(usage, () =>
+      runTurn({
+        chat: emptyChat(),
+        payload: payload(),
+        fileResults,
+        message: "fix the basis",
+        importId: "i1",
+        model: modelReturning(toolCall, billed(1400, 20)),
+      }),
+    );
+
+    // Two invokes: the one that asked for the tool, and the closing reply.
+    // Mutation this catches: recording usage after the loop instead of inside
+    // it, which would report a four-tool-call turn as a single round trip.
+    expect(usage.total.calls).toBe(2);
+    expect(usage.total.promptTokens).toBe(2600);
+    expect(usage.total.completionTokens).toBe(50);
+    expect(usage.byModel["gpt-5.4-mini"].calls).toBe(2);
+  });
+
+  it("records the cached half of the prompt, so a stable prefix is visible", async () => {
+    const usage = newUsageReport();
+    await inUsageScope(usage, () =>
+      runTurn({
+        chat: emptyChat(),
+        payload: payload(),
+        fileResults,
+        message: "hello",
+        importId: "i1",
+        model: modelReturning(billed(1200, 10, 1024)),
+      }),
+    );
+
+    expect(usage.total.cachedPromptTokens).toBe(1024);
+    // Cached tokens are a SUBSET of the prompt, never an addition to it.
+    expect(usage.total.promptTokens).toBe(1200);
+  });
+
+  it("still counts a round trip whose response carried no usage block", async () => {
+    const usage = newUsageReport();
+    await inUsageScope(usage, () =>
+      runTurn({
+        chat: emptyChat(),
+        payload: payload(),
+        fileResults,
+        message: "hello",
+        importId: "i1",
+        model: modelReturning(new AIMessage("Done.")),
+      }),
+    );
+
+    // The CALL COUNT is what stays truthful when the provider says nothing
+    // about tokens — one round trip that reported no numbers, rather than a
+    // turn that never happened. `totalTokensOf` reserves `null` for the
+    // latter (no calls at all), which is what the route audits.
+    expect(usage.total.calls).toBe(1);
+    expect(totalTokensOf(usage)).toBe(0);
   });
 });

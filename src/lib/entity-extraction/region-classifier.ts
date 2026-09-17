@@ -1,6 +1,7 @@
 // src/lib/entity-extraction/region-classifier.ts
 import { z } from "zod";
 import { callAIExtraction } from "@/lib/extraction/azure-client";
+import { usageStage } from "@/lib/ai/usage";
 import { parseAIResponse } from "@/lib/extraction/parse-response";
 import type { DetailEntity } from "@/domain/forge/detail-fields";
 
@@ -71,7 +72,9 @@ export async function classifyRegions(args: {
 
   let raw: string;
   try {
-    raw = await callAIExtraction(buildRegionClassifierPrompt(entities), userPrompt, "full");
+    raw = await usageStage("map-classify", () =>
+      callAIExtraction(buildRegionClassifierPrompt(entities), userPrompt, "full"),
+    );
   } catch (err) {
     console.warn(`[region-classifier] AI call failed: ${err instanceof Error ? err.message : "unknown"}`);
     return null;
