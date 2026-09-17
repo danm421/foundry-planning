@@ -18,6 +18,7 @@ import { detectRollups } from "@/lib/statement-chat/rollups";
 import { advisorRetiredRows, readChatState } from "@/lib/statement-chat/state";
 import { rebaseOntoFreshMerge } from "@/lib/statement-chat/rebase";
 import { markTabsCommitted } from "@/lib/imports/commit/orchestrator";
+import type { CommitTab } from "@/lib/imports/commit/types";
 import { normalizeImportPayload, type ImportPayloadJson } from "@/lib/imports/types";
 
 export const dynamic = "force-dynamic";
@@ -38,12 +39,12 @@ function jsonResponse(
 /**
  * Closes a statement-chat import.
  *
- * Statement chat is accounts-only — there is no plan-basics/incomes/etc.
- * wizard tab for it to walk through — and `persistPartialCommit`
- * (`commit/orchestrator.ts`) deliberately never flips `status` on a
- * row-filtered commit (Ruling 61): the other rows might still be pending,
- * and this dispatcher has no visibility into `committedRowIds` to know
- * otherwise. So an import committed entirely row-by-row stays `review`
+ * Statement chat reviews accounts and liabilities — there is no
+ * plan-basics/incomes/etc. wizard tab for it to walk through — and
+ * `persistPartialCommit` (`commit/orchestrator.ts`) deliberately never flips
+ * `status` on a row-filtered commit (Ruling 61): the other rows might still
+ * be pending, and this dispatcher has no visibility into `committedRowIds` to
+ * know otherwise. So an import committed entirely row-by-row stays `review`
  * forever unless something else closes it. This is that something (Ruling
  * 70) — a dedicated route that VERIFIES the claim server-side rather than
  * trusting the client, so a false "everything is committed" can never
@@ -251,8 +252,24 @@ export async function POST(request: Request, { params }: Params) {
   // only stamps a timestamp — it never invokes `commitPlanBasics` — so
   // stamping "plan-basics" here alongside "accounts" is bookkeeping, not a
   // data write.
+  //
+  // `requiredCommitTabs` (`lib/imports/required-tabs.ts`) derives the rest of
+  // the required set from PAYLOAD PRESENCE, so one liability row makes the
+  // "liabilities" tab mandatory. Stamping only accounts + plan-basics would
+  // leave every chat import carrying a mortgage permanently short of status
+  // "committed" — the same trap the plan-basics paragraph above records being
+  // caught by once, and with no other route able to close the import.
+  //
+  // The predicate reads `persistedPayload` — the SAME object handed to
+  // `markTabsCommitted`, which is what `presenceFromPayload` will read inside
+  // it. Any other source (a fresh merge, the reconciled `current`) lets the
+  // stamp and the completeness check disagree and reopens the trap from the
+  // other side. `normalizeImportPayload` guarantees the array exists.
+  const tabs: CommitTab[] = ["accounts", "plan-basics"];
+  if (persistedPayload.liabilities.length > 0) tabs.push("liabilities");
+
   const { allTabsCommitted } = await db.transaction((tx) =>
-    markTabsCommitted(tx, importId, ["accounts", "plan-basics"], persistedPayload),
+    markTabsCommitted(tx, importId, tabs, persistedPayload),
   );
 
   await recordAudit({

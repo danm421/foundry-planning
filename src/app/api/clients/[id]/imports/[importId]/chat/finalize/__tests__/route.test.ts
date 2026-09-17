@@ -30,6 +30,19 @@ vi.mock("@/lib/clients/authz", () => ({
 vi.mock("@/lib/rate-limit", () => ({ checkImportRateLimit: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 
+// A SPY, not a replacement: the real `markTabsCommitted` still runs (every
+// status assertion in this file depends on its real completeness predicate),
+// but the tab list it was handed is recorded so the liabilities tests can
+// assert on it directly. Which tabs get stamped is the whole subject of the
+// finalize landmine — a status assertion alone cannot tell a correct stamp
+// from an unconditional one.
+vi.mock("@/lib/imports/commit/orchestrator", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/imports/commit/orchestrator")>(
+    "@/lib/imports/commit/orchestrator",
+  );
+  return { ...actual, markTabsCommitted: vi.fn(actual.markTabsCommitted) };
+});
+
 // --- @/db mock — only ever reached by markTabsCommitted, on the happy path.
 // A stateful `existingRow` models `client_imports.perTabCommittedAt` /
 // `committedAt` at the moment markTabsCommitted reads it; `updateCalls`
@@ -69,6 +82,7 @@ import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { mergeAcrossFiles } from "@/lib/imports/assemble/merge-across-files";
 import { detectRollups } from "@/lib/statement-chat/rollups";
+import { markTabsCommitted } from "@/lib/imports/commit/orchestrator";
 import { dropRow, mergeRows } from "@/lib/statement-chat/tools";
 import type { ExtractionResult } from "@/lib/extraction/types";
 import type { ImportPayloadJson } from "@/lib/imports/types";
@@ -617,6 +631,98 @@ describe("chat finalize verification (Ruling 70)", () => {
     expect(res.status).toBe(409);
     expect((await res.json()).error).toContain("1 account row");
     expect(updateCalls).toHaveLength(0);
+  });
+});
+
+/**
+ * ── Task 10: THE FINALIZE LANDMINE ──────────────────────────────────────
+ *
+ * `requiredCommitTabs` derives the tabs an import must commit from what the
+ * PAYLOAD holds (`required-tabs.ts:46,85`): one liability row makes the
+ * "liabilities" tab mandatory. This route used to stamp exactly
+ * `["accounts", "plan-basics"]` — so the moment the chat surface started
+ * carrying liabilities, every import with a mortgage on it would stamp two
+ * of the three tabs it needs and `markTabsCommitted` would never flip the
+ * status: `review` forever, with no other route able to close it.
+ */
+describe("chat finalize stamps the liabilities tab (Task 10)", () => {
+  /** One persisted, already-linked mortgage — what the per-row commits leave
+   *  on `payload.liabilities` before finalize runs. */
+  const MORTGAGE = {
+    name: "Mortgage",
+    balance: 412_000,
+    interestRate: 0.0625,
+    __rowId: "liability:mortgage#f1:0",
+    match: { kind: "exact", existingId: "liab-1" },
+  };
+
+  function withLiabilities(liabilities: unknown[]) {
+    return importRow({
+      fileResults: CLEAN_FILE_RESULTS,
+      chat: {
+        surface: "chat",
+        transcript: [],
+        decisions: [],
+        excludedRows: [],
+        committedRowIds: keptRowIds(CLEAN_FILE_RESULTS),
+      },
+      payload: {
+        accounts: persistedAccounts(CLEAN_FILE_RESULTS) as never,
+        liabilities: liabilities as never,
+      },
+    }) as never;
+  }
+
+  it("reaches status 'committed' for an import carrying a liability row", async () => {
+    vi.mocked(requireImportAccess).mockResolvedValue(withLiabilities([MORTGAGE]));
+
+    const res = await POST(req(), params);
+    expect(res.status).toBe(200);
+    // The behaviour that matters: WITHOUT the stamp `requiredCommitTabs`
+    // demands a "liabilities" entry nothing ever writes, so this reads
+    // "review" and the import is stuck for good.
+    expect(await res.json()).toEqual({ ok: true, status: "committed" });
+    expect(updateCalls[0].values.status).toBe("committed");
+
+    expect(markTabsCommitted).toHaveBeenCalledWith(
+      expect.anything(),
+      "i1",
+      ["accounts", "plan-basics", "liabilities"],
+      expect.objectContaining({ liabilities: [MORTGAGE] }),
+    );
+  });
+
+  // The other direction. An unconditional stamp would pass the test above
+  // and still be wrong: it would record a "liabilities" tab as committed on
+  // an import that has no liabilities and for which `commitLiabilities`
+  // never ran — the same class of lie the wizard-import guard below exists
+  // to prevent.
+  it("does not stamp the liabilities tab for an import with no liabilities", async () => {
+    const res = await POST(req(), params);
+    expect(res.status).toBe(200);
+    expect(markTabsCommitted).toHaveBeenCalledWith(
+      expect.anything(),
+      "i1",
+      ["accounts", "plan-basics"],
+      expect.anything(),
+    );
+  });
+
+  // The predicate must read the SAME object `markTabsCommitted` hands to
+  // `presenceFromPayload`, or the stamp and the completeness check can
+  // disagree. An empty array is presence-false on both sides.
+  it("does not stamp the liabilities tab for an empty liabilities array", async () => {
+    vi.mocked(requireImportAccess).mockResolvedValue(withLiabilities([]));
+
+    const res = await POST(req(), params);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, status: "committed" });
+    expect(markTabsCommitted).toHaveBeenCalledWith(
+      expect.anything(),
+      "i1",
+      ["accounts", "plan-basics"],
+      expect.anything(),
+    );
   });
 });
 

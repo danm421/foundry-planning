@@ -4,7 +4,11 @@ import { livingHoldings, tombstonedHoldings } from "@/lib/imports/living-rows";
 import { holdingMarketValue } from "@/lib/extraction/normalize-holdings";
 import { holdingKey } from "@/lib/extraction/normalize-holdings";
 import type { Annotated } from "@/lib/imports/types";
-import type { ExtractedAccount, ExtractedHolding } from "@/lib/extraction/types";
+import type {
+  ExtractedAccount,
+  ExtractedHolding,
+  ExtractedLiability,
+} from "@/lib/extraction/types";
 
 /**
  * Rebasing account rows onto a freshly-read set.
@@ -16,6 +20,7 @@ import type { ExtractedAccount, ExtractedHolding } from "@/lib/extraction/types"
  */
 
 type AccountRow = Annotated<ExtractedAccount>;
+type LiabilityRow = Annotated<ExtractedLiability>;
 
 /**
  * One row whose freshly-merged figure the rebase held back in favour of the
@@ -268,6 +273,162 @@ export function mergeAccountsByRowId(
     merged.push(row);
   }
   return merged;
+}
+
+/**
+ * One persisted identity competing to be re-attached to a fresh row whose id
+ * moved. `standing` is present for a row off `payload.liabilities` — the
+ * advisor's working copy, applied wholesale — and absent for one the advisor
+ * RETIRED, which contributes its id and nothing else (see below).
+ */
+type LiabilityClaim = { id: string; standing?: LiabilityRow };
+
+/**
+ * The liabilities twin of `mergeAccountsByRowId`, deliberately much smaller.
+ *
+ * `rebaseOntoFreshMerge` is account-shaped throughout — holdings identity,
+ * value-conflict overrides, per-holding refusals — and none of it applies to a
+ * debt row. So rather than generalize that function over two shapes, this is
+ * the whole rule: the FRESH merge is the base (a genuinely new debt off a new
+ * statement comes through), and a standing row the advisor has already worked
+ * on wins over its freshly-merged counterpart. A standing row the new
+ * extraction no longer produces disappears, exactly as an account would.
+ *
+ * The standing row wins FIELD BY FIELD, not wholesale: a field only the fresh
+ * statement carries (a maturity date the earlier read never printed) still
+ * arrives, while every field the advisor's copy holds — their corrections and
+ * their `linkCreated` stamp — overrides the fresh one.
+ *
+ * ── WHY A WHOLE-ID MATCH IS NOT ENOUGH ─────────────────────────────────────
+ *
+ * `__rowId` is DERIVED: the dedupe key plus the entry's MINIMUM
+ * `(sourceFileId, index)` coordinate. Uploading a second statement for the
+ * same debt merges into that entry, and if the new file's id sorts lower the
+ * minimum — and so the id — MOVES (`merge-across-files.ts:1088-1091`, which
+ * names this file as the consumer that has to cope). File ids are UUIDs, so
+ * it is a coin flip on every second upload. Measured against the real merge:
+ * `{zzz-9: Mortgage}` alone mints `liability:mortgage#zzz-9:0`; adding
+ * `{aaa-1: Mortgage}` for the same debt mints `liability:mortgage#aaa-1:0`.
+ *
+ * So the match falls back to the BUCKET half of the id (`keyedRowIdBucket`) —
+ * the dedupe key, the one part a new file cannot move — with an exact id
+ * match always preferred. The re-attached row carries the PERSISTED id
+ * forward, which is what keeps `committedRowIds` and the caller's
+ * `chat.excludedRows` subtraction pointing at the right rows.
+ *
+ * ── WHY RETIRED ROWS ARE A SEPARATE INPUT ──────────────────────────────────
+ *
+ * A debt the advisor DROPPED is not in `payload.liabilities` at all — it lives
+ * only in `chat.excludedRows` — so it can never arrive as a `standing` row.
+ * Without `opts.retiredRows` its id would be the one identity NOT carried
+ * forward: the fresh row would keep its new id, the caller's `chatExcludedIds`
+ * would still hold the old one, and the dropped debt would come back on the
+ * table. Same problem the accounts pass solves the same way (fix wave 3, I-A).
+ * Only its `__rowId` is needed, hence the minimal parameter type — a retired
+ * row's CONTENT is a row the advisor threw away and must never overwrite the
+ * fresh figures.
+ *
+ * ── AMBIGUITY ──────────────────────────────────────────────────────────────
+ *
+ * Two fresh rows CAN share a bucket: the liability dedupe key is the lowercased
+ * name, and `mergeSection` splits one bucket into two entries when the rows are
+ * not judged the same entity (for liabilities: balances more than 1% apart).
+ * Measured — one file holding "Mortgage" at 412,000 and "Mortgage" at 180,000
+ * emits `liability:mortgage#f1:0` and `#f1:1`, one bucket. So a bucket match
+ * applies ONLY when the bucket has exactly one unmatched fresh row AND exactly
+ * one persisted claimant; anything else keeps its own identity. That is
+ * order-independent in both directions, so the result is a function of the row
+ * SET. It deliberately does NOT port the accounts pass's `sameInstitution`
+ * test (a debt row has no custodian) or its candidate reporting.
+ *
+ * A NULL-KEY id (`liability:null:<fileId>:<index>:<name>`) returns `null` from
+ * `keyedRowIdBucket` and is never re-attached. It does not need to be: that id
+ * is already scoped to its own file and index, so adding a file cannot move it.
+ *
+ * A row with no `__rowId` at all is skipped rather than keyed on `undefined`,
+ * or every id-less standing row would share one bucket.
+ */
+export function mergeLiabilitiesByRowId(
+  fresh: LiabilityRow[],
+  standing: LiabilityRow[],
+  opts?: {
+    /**
+     * The rows the ADVISOR retired (`advisorRetiredRows`). Only `__rowId` is
+     * read — see the docblock. Typed at exactly that, so the caller can pass
+     * the chat's mixed `excludedRows` list without a cast.
+     */
+    retiredRows?: readonly { __rowId?: string }[];
+  },
+): LiabilityRow[] {
+  const freshIds = new Set(
+    fresh.map((r) => r.__rowId).filter((id): id is string => typeof id === "string"),
+  );
+  const byId = new Map<string, LiabilityRow>();
+  for (const row of standing) {
+    if (typeof row.__rowId === "string") byId.set(row.__rowId, row);
+  }
+
+  // Persisted identities with no counterpart in the fresh set — the ones whose
+  // id may have moved, and the only ones a bucket match considers.
+  const orphans: LiabilityClaim[] = [];
+  // Fresh rows an exclusion ALREADY names correctly. That row is spoken for:
+  // a standing orphan re-attaching onto it would stamp a different id over the
+  // excluded one, the caller's subtraction would miss, and a row the advisor
+  // dropped would come back wearing the advisor's own figures.
+  const claimed = new Set<string>();
+  for (const row of standing) {
+    const id = row.__rowId;
+    if (typeof id === "string" && !freshIds.has(id)) orphans.push({ id, standing: row });
+  }
+  for (const retired of opts?.retiredRows ?? []) {
+    const id = retired.__rowId;
+    if (typeof id !== "string") continue;
+    if (freshIds.has(id)) {
+      claimed.add(id);
+      continue;
+    }
+    // jsonb carries whatever was written, so one id could in principle appear
+    // on both lists. The standing row is the one on screen; it wins.
+    if (!byId.has(id)) orphans.push({ id });
+  }
+
+  const claimByBucket = new Map<string, LiabilityClaim>();
+  const ambiguousBuckets = new Set<string>();
+  for (const claim of orphans) {
+    const bucket = keyedRowIdBucket(claim.id);
+    if (bucket === null) continue;
+    if (claimByBucket.has(bucket)) ambiguousBuckets.add(bucket);
+    else claimByBucket.set(bucket, claim);
+  }
+
+  // How many fresh rows could each bucket's claim land on. Rows that already
+  // matched exactly, or that an exclusion already names, are not in the running.
+  const freshPerBucket = new Map<string, number>();
+  for (const row of fresh) {
+    const id = row.__rowId;
+    if (typeof id !== "string" || byId.has(id) || claimed.has(id)) continue;
+    const bucket = keyedRowIdBucket(id);
+    if (bucket === null) continue;
+    freshPerBucket.set(bucket, (freshPerBucket.get(bucket) ?? 0) + 1);
+  }
+
+  return fresh.map((row) => {
+    const id = row.__rowId;
+    if (typeof id !== "string") return row;
+    const exact = byId.get(id);
+    if (exact) return { ...row, ...exact };
+    if (claimed.has(id)) return row;
+
+    const bucket = keyedRowIdBucket(id);
+    if (bucket === null || ambiguousBuckets.has(bucket)) return row;
+    if (freshPerBucket.get(bucket) !== 1) return row;
+    const claim = claimByBucket.get(bucket);
+    if (!claim) return row;
+    // A standing claim brings the advisor's whole working copy (its `__rowId`
+    // included, so the identity travels with it). A retired one brings only
+    // the identity.
+    return claim.standing ? { ...row, ...claim.standing } : { ...row, __rowId: claim.id };
+  });
 }
 
 /**

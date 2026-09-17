@@ -118,6 +118,7 @@ import { requireActiveSubscription, ForbiddenError } from "@/lib/authz";
 import { requireImportAccess } from "@/lib/imports/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { extractDocument } from "@/lib/extraction/extract";
+import { mergeAcrossFiles } from "@/lib/imports/assemble/merge-across-files";
 import type { ImportPayloadJson } from "@/lib/imports/types";
 
 function req(signal?: AbortSignal) {
@@ -408,9 +409,9 @@ describe("chat extract route gates", () => {
     const persistedPayload = (currentImportRow.payloadJson as ImportPayloadJson).payload;
     expect(persistedPayload?.accounts).toHaveLength(1);
     expect(persistedPayload?.accounts?.[0]).toMatchObject({ name: "IRA", value: 100 });
-    // Shape stays narrow — only `accounts`, matching what `use-chat-commit.ts`
-    // writes at commit time (brief: "Keep the shape narrow").
-    expect(Object.keys(persistedPayload as object)).toEqual(["accounts"]);
+    // Shape stays narrow — the two sections this surface actually reviews
+    // (Task 10 adds `liabilities`), never a wholesale merge result.
+    expect(Object.keys(persistedPayload as object)).toEqual(["accounts", "liabilities"]);
     // `payload` lands in the SAME write as this route's own chat-state
     // update (Ruling 63 — no THIRD write after that one). Two total updates
     // carry a `payloadJson` key in this flow: `runImportExtraction`'s own
@@ -1365,5 +1366,327 @@ describe("chat extract route gates", () => {
 
     // Only the first chunk ran — the 6th file's chunk never started.
     expect(extractDocument).toHaveBeenCalledTimes(5);
+  });
+});
+
+/**
+ * ── Task 10: the route carries LIABILITIES, not just accounts ───────────
+ *
+ * `mergeAcrossFiles` has always produced `payload.liabilities`; this route
+ * computed them on every run and threw them away — the persisted payload
+ * carried an `accounts` key and nothing else, so a mortgage read off a
+ * statement never reached the review table or the chat.
+ */
+describe("chat extract route liabilities (Task 10)", () => {
+  /** A plain mortgage: no `propertyAddress`, so `splitMortgageEscrow` has
+   *  nothing to link and synthesizes no property row — this fixture is about
+   *  the debt travelling, not the escrow split (which Task 5 pins). */
+  function fileWith(
+    fileName: string,
+    accounts: unknown[],
+    liabilities: unknown[],
+  ) {
+    return {
+      documentType: "other",
+      fileName,
+      extracted: {
+        accounts,
+        incomes: [],
+        expenses: [],
+        liabilities,
+        entities: [],
+        lifePolicies: [],
+        wills: [],
+        savings: [],
+      },
+      warnings: [],
+      promptVersion: "v",
+    };
+  }
+
+  const MORTGAGE = { name: "Mortgage", balance: 412_000, interestRate: 0.0625 };
+  const AUTO_LOAN = { name: "Auto Loan", balance: 18_400 };
+
+  /** The `__rowId`s the merge actually mints for a fixture — derived the same
+   *  way the route does, never guessed, so a change to the id scheme reddens
+   *  this instead of silently desyncing the fixture from the assertion. */
+  function liabilityRowIds(fileResults: Record<string, unknown>) {
+    const { payload } = mergeAcrossFiles(fileResults as never);
+    return payload.liabilities.map((r) => r.__rowId as string);
+  }
+
+  // Mutation this catches: dropping `liabilities: rebasedLiabilities` from
+  // either the `db.update` payload or the `done` frame. The persisted key
+  // would be absent (so `toMatchObject` on it throws) and `done.liabilities`
+  // would be `undefined`.
+  it("persists and streams the liability rows the merge produced", async () => {
+    filesResult = [fileRow("f1", "mortgage.pdf")];
+    vi.mocked(extractDocument).mockResolvedValue(
+      fileWith("mortgage.pdf", [{ name: "IRA", custodian: "Schwab", value: 100 }], [MORTGAGE]) as never,
+    );
+
+    const events = await readSse(await POST(req(), params));
+
+    const persisted = (currentImportRow.payloadJson as ImportPayloadJson).payload;
+    expect(persisted?.liabilities).toHaveLength(1);
+    expect(persisted?.liabilities?.[0]).toMatchObject({
+      name: "Mortgage",
+      balance: 412_000,
+      interestRate: 0.0625,
+    });
+    // Row-id stamped by the merge, which is what every chat tool and the
+    // commit path address a row by.
+    expect(persisted?.liabilities?.[0].__rowId).toBe("liability:mortgage#f1:0");
+
+    // The surface adopts the `done` frame wholesale, so it must carry exactly
+    // what was persisted.
+    const done = events.at(-1) as { liabilities: Array<{ name: string }> };
+    expect(done.liabilities).toEqual(persisted?.liabilities);
+  });
+
+  // Mutation this catches: persisting `payload.liabilities` straight off the
+  // fresh merge instead of `mergeLiabilitiesByRowId(...)` — the advisor's
+  // corrected balance and their commit stamp would both revert.
+  it("rebases a standing liability onto the fresh merge when a file is added", async () => {
+    const already = fileWith("already.pdf", [], [MORTGAGE]);
+    const MORTGAGE_ROW_ID = liabilityRowIds({ f1: already })[0];
+
+    currentImportRow = {
+      id: "i1",
+      payloadJson: {
+        fileResults: { f1: already },
+        payload: {
+          accounts: [],
+          // What the advisor has been working on: the balance corrected and
+          // the row already committed (`match: exact` is the linkCreated stamp).
+          liabilities: [
+            {
+              ...MORTGAGE,
+              balance: 410_000,
+              __rowId: MORTGAGE_ROW_ID,
+              match: { kind: "exact", existingId: "liab-1" },
+            },
+          ],
+        },
+        chat: {
+          surface: "chat",
+          transcript: [],
+          decisions: [],
+          excludedRows: [],
+          committedRowIds: [MORTGAGE_ROW_ID],
+        },
+      },
+      extractHoldings: false,
+      status: "review",
+    };
+    filesResult = [fileRow("f1", "already.pdf"), fileRow("f2", "car.pdf")];
+    vi.mocked(extractDocument).mockResolvedValue(fileWith("car.pdf", [], [AUTO_LOAN]) as never);
+
+    const events = await readSse(await POST(req(), params));
+
+    const persisted =
+      (currentImportRow.payloadJson as ImportPayloadJson).payload?.liabilities ?? [];
+    // 1. The advisor's correction and their commit stamp both survived.
+    expect(persisted.find((r) => r.name === "Mortgage")).toMatchObject({
+      balance: 410_000,
+      match: { kind: "exact", existingId: "liab-1" },
+    });
+    // 2. The genuinely new debt off the new statement came through.
+    expect(persisted.map((r) => r.name).sort()).toEqual(["Auto Loan", "Mortgage"]);
+
+    const done = events.at(-1) as { liabilities: Array<{ name: string }> };
+    expect(done.liabilities).toEqual(persisted);
+  });
+
+  /**
+   * The `chatExcludedIds` subtraction, which the accounts side has carried
+   * since fix wave 3: a row the advisor retired is still sitting in
+   * `fileResults`, so it comes straight back out of the fresh merge and has
+   * to be subtracted, or "drop it" undoes itself on the next upload. Nothing
+   * puts a LIABILITY id into `chat.excludedRows` until Task 12 wires the
+   * tools — this fixture seeds one directly, so the filter is pinned the
+   * moment it becomes reachable rather than a wave later.
+   *
+   * Mutation this catches: persisting `rebasedLiabilities` without the
+   * `chatExcludedIds` filter — the dropped auto loan reappears in both the
+   * persisted payload and the `done` frame.
+   */
+  it("keeps a liability the advisor dropped out of the fresh merge", async () => {
+    const already = fileWith("already.pdf", [], [MORTGAGE, AUTO_LOAN]);
+    const [MORTGAGE_ROW_ID, AUTO_ROW_ID] = liabilityRowIds({ f1: already });
+
+    currentImportRow = {
+      id: "i1",
+      payloadJson: {
+        fileResults: { f1: already },
+        payload: {
+          accounts: [],
+          liabilities: [{ ...MORTGAGE, __rowId: MORTGAGE_ROW_ID, match: { kind: "new" } }],
+        },
+        chat: {
+          surface: "chat",
+          transcript: [],
+          decisions: [],
+          excludedRows: [
+            { row: { name: "Auto Loan", __rowId: AUTO_ROW_ID }, reason: "already paid off" },
+          ],
+          committedRowIds: [],
+        },
+      },
+      extractHoldings: false,
+      status: "review",
+    };
+    filesResult = [fileRow("f1", "already.pdf"), fileRow("f2", "new.pdf")];
+    vi.mocked(extractDocument).mockResolvedValue(
+      fileWith("new.pdf", [{ name: "IRA", custodian: "Schwab", value: 100 }], []) as never,
+    );
+
+    const events = await readSse(await POST(req(), params));
+
+    const persisted =
+      (currentImportRow.payloadJson as ImportPayloadJson).payload?.liabilities ?? [];
+    expect(persisted.map((r) => r.name)).toEqual(["Mortgage"]);
+
+    const done = events.at(-1) as { liabilities: Array<{ name: string }> };
+    expect(done.liabilities.map((r) => r.name)).toEqual(["Mortgage"]);
+  });
+
+  /**
+   * ── Fix round 1, Finding 1: THE LIABILITY ID MOVES ─────────────────────
+   *
+   * A keyed `__rowId`'s coordinate half is the entry's MINIMUM
+   * `(sourceFileId, index)`, so uploading a second statement for the same debt
+   * whose file id sorts lower MOVES the id (`merge-across-files.ts:1088-1091`).
+   * File ids are UUIDs, so it is a coin flip on every second upload.
+   *
+   * Both halves break at once when it moves, and this pins both end to end:
+   *  - the standing row matches nothing, so the advisor's corrected balance
+   *    and their `linkCreated` stamp are discarded, the row reverts to
+   *    `{ kind: "new" }` and committing it INSERTS A SECOND liability;
+   *  - `chat.excludedRows` still holds the OLD id, so the dropped debt is no
+   *    longer filtered and comes back on the table.
+   *
+   * Mutation this catches: reverting `mergeLiabilitiesByRowId` to a whole-id
+   * match (assertions 2 and 3 both go red), or dropping the route's
+   * `retiredRows` argument (assertion 3 alone).
+   */
+  it("re-attaches a standing liability and keeps a dropped one dropped when a newer file moves their ids", async () => {
+    // Real-shaped ids; the ADDED file sorts bytewise AHEAD of the existing one.
+    const OLD_FILE = "9c3f1a02-4f7b-4c0e-9a11-2d5b8e7f6a31";
+    const NEW_FILE = "0b7e4d19-8a2c-4f31-b6d0-1e9c3a5f2b84";
+
+    const already = fileWith("jun.pdf", [], [MORTGAGE, AUTO_LOAN]);
+    // Same two debts, a quarter later: each moved by well under the merge's
+    // 1% tolerance, so both collapse into the existing entries rather than
+    // becoming new rows — which is what lets the coordinate move at all.
+    const newer = fileWith("sep.pdf", [], [
+      { ...MORTGAGE, balance: 410_500 },
+      { ...AUTO_LOAN, balance: 18_300 },
+    ]);
+
+    const [OLD_MORTGAGE_ID, OLD_AUTO_ID] = liabilityRowIds({ [OLD_FILE]: already });
+    // Proof the fixture is the drifted case and not a tautology: the ids this
+    // merge will mint are NOT the ids the advisor's session holds.
+    expect(liabilityRowIds({ [OLD_FILE]: already, [NEW_FILE]: newer })).not.toContain(
+      OLD_MORTGAGE_ID,
+    );
+
+    currentImportRow = {
+      id: "i1",
+      payloadJson: {
+        fileResults: { [OLD_FILE]: already },
+        payload: {
+          accounts: [],
+          // The mortgage corrected and committed. The auto loan is NOT here —
+          // a dropped row leaves the payload entirely and lives only in
+          // `chat.excludedRows`, which is why identity has to be carried
+          // forward for it separately.
+          liabilities: [
+            {
+              ...MORTGAGE,
+              balance: 409_000,
+              __rowId: OLD_MORTGAGE_ID,
+              match: { kind: "exact", existingId: "liab-1" },
+            },
+          ],
+        },
+        chat: {
+          surface: "chat",
+          transcript: [],
+          decisions: [],
+          excludedRows: [
+            { row: { name: "Auto Loan", __rowId: OLD_AUTO_ID }, reason: "already paid off" },
+          ],
+          committedRowIds: [OLD_MORTGAGE_ID],
+        },
+      },
+      extractHoldings: false,
+      status: "review",
+    };
+    filesResult = [fileRow(OLD_FILE, "jun.pdf"), fileRow(NEW_FILE, "sep.pdf")];
+    vi.mocked(extractDocument).mockResolvedValue(newer as never);
+
+    const events = await readSse(await POST(req(), params));
+
+    const persisted =
+      (currentImportRow.payloadJson as ImportPayloadJson).payload?.liabilities ?? [];
+    // 1. Only the mortgage is on the table.
+    expect(persisted.map((r) => r.name)).toEqual(["Mortgage"]);
+    // 2. The advisor's correction and their commit stamp both survived the
+    //    id move — and the row still answers to the id their session holds,
+    //    which is what `committedRowIds` is compared against.
+    expect(persisted[0]).toMatchObject({
+      balance: 409_000,
+      match: { kind: "exact", existingId: "liab-1" },
+      __rowId: OLD_MORTGAGE_ID,
+    });
+    // 3. The dropped debt did NOT come back, even though the fresh merge
+    //    re-derives it under a brand-new id.
+    expect(persisted.some((r) => r.name === "Auto Loan")).toBe(false);
+
+    const done = events.at(-1) as { liabilities: Array<{ name: string }> };
+    expect(done.liabilities).toEqual(persisted);
+  });
+
+  // The early "no new statements" return re-reads the standing state rather
+  // than re-deriving it (Ruling 97), so it has its own `liabilities` source.
+  // Mutation this catches: dropping the field from THAT frame — the surface
+  // would blank the liabilities table on a re-run with no new files.
+  it("carries the standing liabilities into the 'no new statements' done frame", async () => {
+    const already = fileWith("already.pdf", [{ name: "IRA", custodian: "Schwab", value: 100 }], [MORTGAGE]);
+    const standingLiabilities = [
+      { ...MORTGAGE, balance: 410_000, __rowId: "liability:mortgage#f1:0" },
+    ];
+    currentImportRow = {
+      id: "i1",
+      payloadJson: {
+        fileResults: { f1: already },
+        payload: {
+          accounts: [{ name: "IRA", custodian: "Schwab", value: 100, __rowId: "account:null:f1:0:ira" }],
+          liabilities: standingLiabilities,
+        },
+        chat: {
+          surface: "chat",
+          transcript: [],
+          decisions: [],
+          excludedRows: [],
+          committedRowIds: [],
+        },
+      },
+      extractHoldings: false,
+      status: "review",
+    };
+    filesResult = [fileRow("f1", "already.pdf")]; // no new files at all
+
+    const events = await readSse(await POST(req(), params));
+    expect(extractDocument).not.toHaveBeenCalled();
+
+    const done = events.at(-1) as { summary: string; liabilities: unknown[] };
+    expect(done.summary).toBe("No new statements to read.");
+    // The STANDING rows — the advisor's corrected 410,000, not the 412,000
+    // still sitting in `fileResults`.
+    expect(done.liabilities).toEqual(standingLiabilities);
+    // Still a pure re-read: nothing was written.
+    expect(payloadJsonUpdateCount).toBe(0);
   });
 });

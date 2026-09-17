@@ -19,9 +19,9 @@ import { narrate } from "@/lib/statement-chat/narrate";
 import { advisorRetiredRows, readChatState, writeChatState } from "@/lib/statement-chat/state";
 // Shared with chat/turn/route.ts (final review, I1) — one rebase
 // mechanism, not two similar ones.
-import { rebaseOntoFreshMerge } from "@/lib/statement-chat/rebase";
+import { mergeLiabilitiesByRowId, rebaseOntoFreshMerge } from "@/lib/statement-chat/rebase";
 import type { Annotated, ImportPayloadJson } from "@/lib/imports/types";
-import type { ExtractedAccount } from "@/lib/extraction/types";
+import type { ExtractedAccount, ExtractedLiability } from "@/lib/extraction/types";
 
 // SSE route: extraction can run for minutes across several files, so this
 // mirrors the wizard extract route's (and Forge stream's) directives.
@@ -140,13 +140,18 @@ export async function POST(request: Request, { params }: Params) {
   // `payloadJson: { fileResults, ...chat }` write (`run-extraction.ts:350`)
   // that deliberately drops `payload`, so the fresh post-extraction read
   // below can never see them. The `chat` slice DOES survive that write, so
-  // exclusions are still read fresh afterwards; only `payload.accounts` has
-  // to be carried across by hand.
+  // exclusions are still read fresh afterwards; only the payload's own rows
+  // have to be carried across by hand.
   let priorAccounts: Annotated<ExtractedAccount>[] = [];
+  // Task 10: the debt rows are lost by the same wholesale write, for the same
+  // reason, so they are captured at the same moment.
+  let priorLiabilities: Annotated<ExtractedLiability>[] = [];
   try {
     const imp = await requireImportAccess({ importId, clientId, firmId, userId });
     extractHoldingsDefault = imp.extractHoldings === true;
-    priorAccounts = ((imp.payloadJson ?? {}) as ImportPayloadJson).payload?.accounts ?? [];
+    const priorPayload = ((imp.payloadJson ?? {}) as ImportPayloadJson).payload;
+    priorAccounts = priorPayload?.accounts ?? [];
+    priorLiabilities = priorPayload?.liabilities ?? [];
   } catch (err) {
     if (err instanceof ForbiddenError) {
       return jsonResponse(403, { error: "Forbidden" });
@@ -266,6 +271,10 @@ export async function POST(request: Request, { params }: Params) {
               summary: "No new statements to read.",
               caveats: [],
               rows: standingAccounts,
+              // Read straight off the standing payload, like `rows` above —
+              // this branch is a pure re-read of what is on disk and must not
+              // re-derive anything (Ruling 97).
+              liabilities: payloadJson.payload?.liabilities ?? [],
               excluded: standingChat.excludedRows,
             });
           }
@@ -342,6 +351,33 @@ export async function POST(request: Request, { params }: Params) {
         const rebasedAccounts = rebasedAll.filter(
           (row) => !(row.__rowId && chatExcludedIds.has(row.__rowId)),
         );
+        // Task 10: the same two steps for the debt rows, in the same order.
+        // `mergeLiabilitiesByRowId` is the liabilities twin of the rebase
+        // above — none of `rebaseOntoFreshMerge`'s account machinery (holdings
+        // identity, value-conflict overrides, per-holding refusals) has a debt
+        // analogue, so this is the whole rule: fresh merge as the base, the
+        // advisor's standing row winning on `__rowId`.
+        //
+        // `retiredRows` is the same input the accounts rebase takes two blocks
+        // up, for the same reason (fix wave 3, I-A): a dropped debt is not in
+        // `payload.liabilities` at all, so its id is the one identity nothing
+        // else can carry forward when a newer file moves it.
+        //
+        // The `chatExcludedIds` subtraction is then the SAME one the accounts
+        // line above makes, for the same reason: a retired row is still sitting
+        // in `fileResults`, so it comes straight back out of the fresh merge and
+        // "drop it" would undo itself on the next upload. Nothing puts a
+        // LIABILITY id into `chat.excludedRows` until the chat tools address
+        // liability rows, so this removes nothing today — but it is the line
+        // that has to already be here when they do, or that first `drop_row`
+        // is inert across an extraction. That is verbatim the defect fix wave
+        // 3 recorded for accounts, and for a `merge_rows` exclusion it would
+        // put one real debt on the table twice.
+        const rebasedLiabilities = mergeLiabilitiesByRowId(
+          payload.liabilities,
+          priorLiabilities,
+          { retiredRows: advisorRetiredRows(standingChat) },
+        ).filter((row) => !(row.__rowId && chatExcludedIds.has(row.__rowId)));
         // Ruling 117: an override is only worth telling the advisor about for
         // a row they can actually see. A row they dropped in the chat is
         // subtracted from the table one line above, so its override is
@@ -390,9 +426,10 @@ export async function POST(request: Request, { params }: Params) {
         // Ruling 89 (Step 0) / Ruling 101 (fix round 2): persist
         // `payload.accounts = kept` in the SAME write as the chat slice —
         // `writeChatState` only ever touches `chat`, so `payload` is set
-        // alongside it explicitly, narrow to `{ accounts }` (matching what
-        // `use-chat-commit.ts` writes) — but ONLY when this run actually
-        // re-derived rows (`filesProcessed > 0`) OR there was no standing
+        // alongside it explicitly, narrow to the two sections this surface
+        // actually reviews (Task 10 adds `liabilities`) rather than the whole
+        // merge result — but ONLY when this run actually re-derived rows
+        // (`filesProcessed > 0`) OR there was no standing
         // payload to clobber (`!standingAccounts`, the legacy-import rescue
         // above). Skipping the write on the "no new files, has a standing
         // payload" path is Ruling 97; this OR-clause is what Ruling 101
@@ -403,7 +440,7 @@ export async function POST(request: Request, { params }: Params) {
             .set({
               payloadJson: {
                 ...writeChatState(payloadJson, { decisions, excludedRows: nextExcludedRows }),
-                payload: { accounts: rebasedAccounts },
+                payload: { accounts: rebasedAccounts, liabilities: rebasedLiabilities },
               },
               updatedAt: new Date(),
             })
@@ -419,6 +456,7 @@ export async function POST(request: Request, { params }: Params) {
             // wholesale, so streaming the raw merge instead would leave the
             // screen disagreeing with the database from the first frame.
             rows: rebasedAccounts,
+            liabilities: rebasedLiabilities,
             excluded: nextExcludedRows,
           });
         }
