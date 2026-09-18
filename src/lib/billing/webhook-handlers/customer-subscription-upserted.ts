@@ -174,7 +174,16 @@ export async function handleSubscriptionUpsert(event: Stripe.Event): Promise<voi
         // here would compile to `SET quantity = quantity`, a no-op that freezes
         // the seat-count mirror at its first-insert value (reconcile then reads
         // stale seats). Stripe is source of truth; mirror its new quantity.
-        set: { quantity: sql`excluded.quantity`, updatedAt: new Date() },
+        set: {
+          stripePriceId: sql`excluded.stripe_price_id`,
+          kind: sql`excluded.kind`,
+          addonKey: sql`excluded.addon_key`,
+          quantity: sql`excluded.quantity`,
+          unitAmount: sql`excluded.unit_amount`,
+          currency: sql`excluded.currency`,
+          removedAt: null,
+          updatedAt: new Date(),
+        },
       })
       .returning({ id: subscriptionItems.id });
   }

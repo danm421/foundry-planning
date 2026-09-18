@@ -5,6 +5,7 @@ import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { invoices } from "@/db/schema";
 import { ForbiddenError, requireBillingContact } from "@/lib/authz";
+import { getFirmBillingPlan } from "@/lib/billing/billing-plan";
 import {
   getSubscriptionState,
   GRACE_WINDOW_MS,
@@ -74,6 +75,14 @@ function ResubscribedNotice(): ReactElement {
     <div role="status" className="rounded border border-hair bg-card p-4 text-sm text-ink-2">
       Payment received — thank you. Your subscription is being activated; it can
       take a moment to show up here.
+    </div>
+  );
+}
+
+function PlanChangedNotice(): ReactElement {
+  return (
+    <div role="status" className="rounded border border-hair bg-card p-4 text-sm text-ink-2">
+      Billing cycle updated. It can take a moment for the new cycle to appear here.
     </div>
   );
 }
@@ -262,8 +271,9 @@ export async function NonFounderBillingPanel(): Promise<ReactElement> {
   }
 
   // firmId === Clerk org id. Skip the query entirely if there's no org.
-  const rows: InvoiceRow[] = orgId
-    ? await db
+  const [rows, currentPlan]: [InvoiceRow[], Awaited<ReturnType<typeof getFirmBillingPlan>>] = orgId
+    ? await Promise.all([
+        db
         .select({
           stripeInvoiceId: invoices.stripeInvoiceId,
           amountPaid: invoices.amountPaid,
@@ -278,8 +288,10 @@ export async function NonFounderBillingPanel(): Promise<ReactElement> {
         .from(invoices)
         .where(eq(invoices.firmId, orgId))
         .orderBy(desc(invoices.createdAt))
-        .limit(INVOICE_PAGE_LIMIT)
-    : [];
+        .limit(INVOICE_PAGE_LIMIT),
+        getFirmBillingPlan(orgId),
+      ])
+    : [[], null];
 
   return (
     <div className="flex flex-col gap-4">
@@ -290,7 +302,10 @@ export async function NonFounderBillingPanel(): Promise<ReactElement> {
         </p>
       </header>
       <StateSummary state={state} />
-      <ManageBillingButton />
+      <ManageBillingButton
+        currentPlan={currentPlan}
+        canSwitch={state.kind === "trialing" || state.kind === "active"}
+      />
       <InvoiceList rows={rows} />
     </div>
   );
@@ -299,7 +314,10 @@ export async function NonFounderBillingPanel(): Promise<ReactElement> {
 export default async function BillingSettingsPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ resubscribed?: string | string[] }>;
+  searchParams?: Promise<{
+    resubscribed?: string | string[];
+    plan_changed?: string | string[];
+  }>;
 }): Promise<ReactElement> {
   try {
     await requireBillingContact();
@@ -324,10 +342,14 @@ export default async function BillingSettingsPage({
   const sp = await searchParams;
   const rawFlag = sp?.resubscribed;
   const resubscribed = (Array.isArray(rawFlag) ? rawFlag[0] : rawFlag) === "1";
+  const rawPlanChanged = sp?.plan_changed;
+  const planChanged =
+    (Array.isArray(rawPlanChanged) ? rawPlanChanged[0] : rawPlanChanged) === "1";
 
   return (
     <div className="flex flex-col gap-4">
       {resubscribed ? <ResubscribedNotice /> : null}
+      {planChanged ? <PlanChangedNotice /> : null}
       {isFounder ? <FounderBillingPanel /> : <NonFounderBillingPanel />}
     </div>
   );
