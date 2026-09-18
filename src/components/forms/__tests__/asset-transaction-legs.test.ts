@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { emptySellLeg, emptyBuyLeg } from "../asset-transaction-leg-model";
-import { legToBody, combinedNet, mergeEditBody } from "../use-asset-transaction-legs";
+import type { SellLegDraft, BuyLegDraft } from "../asset-transaction-leg-model";
+import {
+  legToBody, combinedNet, mergeEditBody, applySettlement, settlementFromLegs, legSettles,
+} from "../use-asset-transaction-legs";
 import { emptySellLeg as mkSell, emptyBuyLeg as mkBuy } from "../asset-transaction-leg-model";
 
 describe("leg factories", () => {
@@ -160,5 +163,94 @@ describe("mergeEditBody", () => {
     expect(body.annualPropertyTax).toBe("16500");
     expect(body.propertyTaxGrowthRate).toBe("0.03");
     expect(body.propertyTaxGrowthSource).toBe("custom");
+  });
+});
+
+describe("applySettlement — one bundle-level routing control", () => {
+  it("stamps the chosen account on BOTH sides so the net lands there", () => {
+    const sell = { ...mkSell("s"), sellAccountId: "acc-1" };
+    const buy = { ...mkBuy("b"), assetName: "Condo", purchasePrice: "800000" };
+    const [settledSell, settledBuy] = [sell, buy].map((l) =>
+      applySettlement(l, "acc-brokerage"),
+    );
+    expect((settledSell as SellLegDraft).proceedsAccountId).toBe("acc-brokerage");
+    expect((settledBuy as BuyLegDraft).fundingAccountId).toBe("acc-brokerage");
+  });
+
+  it("the default ('') clears both sides, which is what routes a deficit to the withdrawal strategy", () => {
+    // A purchase funded from `null` debits default checking; checking goes
+    // negative and phase 12's gap-fill refills it from the withdrawal order.
+    // So "" is not an absent value — it IS the Withdrawals selection.
+    const sell = { ...mkSell("s"), sellAccountId: "acc-1", proceedsAccountId: "acc-stale" };
+    const buy = { ...mkBuy("b"), assetName: "Condo", fundingAccountId: "acc-stale" };
+    expect((applySettlement(sell, "") as SellLegDraft).proceedsAccountId).toBe("");
+    expect((applySettlement(buy, "") as BuyLegDraft).fundingAccountId).toBe("");
+    expect(legToBody(applySettlement(buy, ""), 2030, { isRealEstate: false }).fundingAccountId)
+      .toBeNull();
+    expect(legToBody(applySettlement(sell, ""), 2030, { isRealEstate: false }).proceedsAccountId)
+      .toBeNull();
+  });
+
+  it("leaves a BUSINESS sell alone — the engine routes those proceeds itself", () => {
+    const leg = { ...mkSell("s"), sellMode: "business" as const, sellBusinessAccountId: "biz-1" };
+    const settled = applySettlement(leg, "acc-brokerage") as SellLegDraft;
+    expect(settled.proceedsAccountId).toBe("");
+    expect(legToBody(settled, 2030, { isRealEstate: false }).proceedsAccountId).toBeNull();
+  });
+});
+
+describe("settlementFromLegs — edit mode seeding", () => {
+  it("reads a sell leg's saved proceeds account", () => {
+    const sell = { ...mkSell("s"), sellAccountId: "acc-1", proceedsAccountId: "acc-brokerage" };
+    const buy = { ...mkBuy("b"), assetName: "Condo" };
+    expect(settlementFromLegs([sell, buy])).toBe("acc-brokerage");
+  });
+
+  it("falls back to a buy leg's funding account on a buy-only bundle", () => {
+    const buy = { ...mkBuy("b"), assetName: "Condo", fundingAccountId: "acc-savings" };
+    expect(settlementFromLegs([buy])).toBe("acc-savings");
+  });
+
+  it("prefers the sell side when legacy legs disagree", () => {
+    const sell = { ...mkSell("s"), sellAccountId: "acc-1", proceedsAccountId: "acc-brokerage" };
+    const buy = { ...mkBuy("b"), assetName: "Condo", fundingAccountId: "acc-savings" };
+    expect(settlementFromLegs([sell, buy])).toBe("acc-brokerage");
+  });
+
+  it("ignores a business sell leg's (always empty) destination", () => {
+    const biz = { ...mkSell("s"), sellMode: "business" as const, sellBusinessAccountId: "biz-1" };
+    const buy = { ...mkBuy("b"), assetName: "Condo", fundingAccountId: "acc-savings" };
+    expect(settlementFromLegs([biz, buy])).toBe("acc-savings");
+  });
+
+  it("never seeds the sale-proceeds sentinel — it is not an account", () => {
+    const buy = { ...mkBuy("b"), assetName: "Condo", fundingAccountId: "__from_sale_proceeds__" };
+    expect(settlementFromLegs([buy])).toBe("");
+  });
+
+  it("defaults to '' when nothing was routed", () => {
+    expect(settlementFromLegs([mkSell("s"), mkBuy("b")])).toBe("");
+  });
+});
+
+describe("legSettles — one statement of the business-sell exception", () => {
+  it("governs every buy and every account sell", () => {
+    expect(legSettles(mkBuy("b"))).toBe(true);
+    expect(legSettles({ ...mkSell("s"), sellAccountId: "acc-1" })).toBe(true);
+  });
+
+  it("does NOT govern a business sell — the engine routes those proceeds", () => {
+    expect(legSettles({
+      ...mkSell("s"), sellMode: "business" as const, sellBusinessAccountId: "biz-1",
+    })).toBe(false);
+  });
+
+  // The footer gates its own visibility on this, so a bundle of nothing but
+  // business sells offers no routing choice rather than promising a
+  // destination no leg would ever carry.
+  it("a business-only bundle has nothing the control can route", () => {
+    const biz = { ...mkSell("s"), sellMode: "business" as const, sellBusinessAccountId: "biz-1" };
+    expect([biz].some(legSettles)).toBe(false);
+    expect([biz, mkBuy("b")].some(legSettles)).toBe(true);
   });
 });

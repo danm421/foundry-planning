@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { CommitRowsOptions } from "@/components/statement-chat/entity-table";
 import type { ExcludedRow } from "@/components/statement-chat/excluded-rows";
 import type { ExtractedAccount, ExtractedHolding, ExtractedLiability } from "@/lib/extraction/types";
 import {
@@ -409,7 +410,7 @@ export function useChatCommit(
   // previous queued commit persisted has already landed by the time this
   // read happens.
   const commitRowsNow = useCallback(
-    async (rowIds: string[]) => {
+    async (rowIds: string[], overrideAll: boolean) => {
       const current = resultRef.current;
       if (!current) return;
 
@@ -443,12 +444,23 @@ export function useChatCommit(
         // Both tabs, always. `commitLiabilities` now honours `rowIds` (Task
         // 6), so naming the second tab can no longer commit its rows
         // unfiltered — which is exactly what `commit/types.ts`'s own
-        // `rowIds` doc comment warns about. Sending both in ONE request also
-        // matters: the orchestrator applies tabs in canonical order
-        // (accounts before liabilities) regardless of array order, which is
-        // what lets a synthesized property commit before
+        // `rowIds` doc comment warns about, and why the pre-liabilities
+        // version of this comment said to send "accounts" alone. Sending
+        // both in ONE request also matters: the orchestrator applies tabs in
+        // canonical order (accounts before liabilities) regardless of array
+        // order, which is what lets a synthesized property commit before
         // `matchMortgageToProperty` looks for it.
-        body: JSON.stringify({ tabs: ["accounts", "liabilities"], rowIds }),
+        //
+        // `overrideRowIds` is sent only when the box is ticked — the route
+        // refuses an empty array, and omitting the key is what "no override"
+        // means there. It is read by `commitAccounts` ALONE, so it is inert
+        // for the liabilities tab; and only the accounts table offers the
+        // box, so the liabilities co-post never sets it.
+        body: JSON.stringify({
+          tabs: ["accounts", "liabilities"],
+          rowIds,
+          ...(overrideAll ? { overrideRowIds: rowIds } : {}),
+        }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}) as { error?: string });
@@ -505,7 +517,8 @@ export function useChatCommit(
   // one is ever running `commitRowsNow` at a time — see that function's
   // docstring and the queue's own comment above for why.
   const handleCommitRows = useCallback(
-    (rowIds: string[]): Promise<void> => enqueue(commitQueueRef, () => commitRowsNow(rowIds)),
+    (rowIds: string[], opts?: CommitRowsOptions): Promise<void> =>
+      enqueue(commitQueueRef, () => commitRowsNow(rowIds, opts?.overrideAll ?? false)),
     [commitRowsNow],
   );
 

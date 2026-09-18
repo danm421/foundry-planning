@@ -6,6 +6,9 @@ vi.mock("@clerk/nextjs/server", () => ({ auth: vi.fn() }));
 vi.mock("@/lib/billing/subscription-state", () => ({
   getSubscriptionState: vi.fn(),
 }));
+vi.mock("@/lib/billing/billing-plan", () => ({
+  getFirmBillingPlan: vi.fn(),
+}));
 vi.mock("@/db", () => ({ db: { select: vi.fn() } }));
 // The panel pulls in the resubscribe client component, which imports the
 // server action (clerk/db/Stripe). Stub the action module, not the component —
@@ -15,6 +18,7 @@ vi.mock("../actions", () => ({ startResubscribeCheckout: vi.fn() }));
 import { NonFounderBillingPanel, type InvoiceRow } from "../page";
 import { auth } from "@clerk/nextjs/server";
 import { getSubscriptionState } from "@/lib/billing/subscription-state";
+import { getFirmBillingPlan } from "@/lib/billing/billing-plan";
 import { db } from "@/db";
 
 function mockInvoices(rows: InvoiceRow[]) {
@@ -34,6 +38,7 @@ describe("<NonFounderBillingPanel>", () => {
     vi.clearAllMocks();
     vi.mocked(auth).mockResolvedValue({ orgId: "org_abc" } as never);
     vi.mocked(getSubscriptionState).mockResolvedValue({ kind: "active" });
+    vi.mocked(getFirmBillingPlan).mockResolvedValue("annual");
   });
 
   it("renders the subscription status and the Manage billing form", async () => {
@@ -43,7 +48,7 @@ describe("<NonFounderBillingPanel>", () => {
 
     expect(screen.getAllByText(/billing/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/active/i)).not.toBeNull();
-    const button = screen.getByRole("button", { name: /manage billing/i });
+    const button = screen.getByRole("button", { name: /switch to monthly/i });
     expect(button.getAttribute("type")).toBe("submit");
   });
 

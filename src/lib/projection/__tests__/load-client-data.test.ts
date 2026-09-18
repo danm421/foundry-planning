@@ -678,3 +678,78 @@ describe("loadClientData", () => {
     expect(trust!.notes).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Asset transactions — the business-sale dispatch field
+// ---------------------------------------------------------------------------
+
+describe("loadClientData — business sales", () => {
+  const sellBusinessRow = {
+    id: "at-biz-1",
+    clientId: FIXTURE_CLIENT_ID,
+    scenarioId: null,
+    name: "Sell the LLC",
+    type: "sell",
+    year: 2030,
+    accountId: null,
+    businessAccountId: "acct-business-1",
+    overrideSaleValue: null,
+    overrideBasis: null,
+    transactionCostPct: null,
+    transactionCostFlat: null,
+    proceedsAccountId: null,
+    qualifiesForHomeSaleExclusion: false,
+    purchaseTransactionId: null,
+    fractionSold: null,
+    bundleId: null,
+    assetName: null,
+    assetCategory: null,
+    assetSubType: null,
+    purchasePrice: null,
+    growthRate: null,
+    assetGrowthSource: null,
+    assetModelPortfolioId: null,
+    basis: null,
+    fundingAccountId: null,
+    mortgageAmount: null,
+    mortgageRate: null,
+    mortgageTermMonths: null,
+    annualPropertyTax: null,
+    propertyTaxGrowthRate: null,
+    propertyTaxGrowthSource: null,
+    createdAt: new Date("2026-01-01T00:00:00Z"),
+    updatedAt: new Date("2026-01-01T00:00:00Z"),
+  };
+
+  /** `applyBusinessSales` dispatches on `businessAccountId`; a sell that loses
+   *  it on the way out of the DB has NO source at all, so the whole sale —
+   *  business, the accounts it owns, its liabilities — silently never happens. */
+  it("carries businessAccountId through to the engine's ClientData", async () => {
+    seedValidFixture();
+    dbState.assetTransactions = [sellBusinessRow];
+
+    const data = await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
+    const sale = data.assetTransactions?.find((t) => t.id === "at-biz-1");
+
+    expect(sale).toBeDefined();
+    expect(sale!.businessAccountId).toBe("acct-business-1");
+    // Control: a business sale names the business in `businessAccountId` ONLY.
+    // If this leaked into `accountId` the sale would run down applyAssetSales
+    // and dispose of the shell alone.
+    expect(sale!.accountId).toBeUndefined();
+  });
+
+  it("leaves businessAccountId undefined for an ordinary account sale", async () => {
+    seedValidFixture();
+    dbState.assetTransactions = [
+      { ...sellBusinessRow, id: "at-acct-1", accountId: "acct-1", businessAccountId: null },
+    ];
+
+    const data = await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
+    const sale = data.assetTransactions?.find((t) => t.id === "at-acct-1");
+
+    expect(sale).toBeDefined();
+    expect(sale!.businessAccountId).toBeUndefined();
+    expect(sale!.accountId).toBe("acct-1");
+  });
+});

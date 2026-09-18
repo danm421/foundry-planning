@@ -47,11 +47,17 @@
      `PDF_THEME.paper`. src/brand/index.test.ts fails if the two ever drift. */
   --color-letterhead: #fefdf8;
 
-  /* Ink — high-contrast on near-black */
+  /* Ink — high-contrast on near-black.
+
+     `ink-4` is the quietest tier and is documented as "disabled text", but it
+     carries ~540 live uses (helper copy, notes, icon buttons). It holds AA on
+     every resting surface as content, not as a disabled state — disabled
+     controls dim with `opacity-50` on top. Contract C10/C11, spec
+     2026-09-16-theme-contrast-and-layering-design. */
   --color-ink: #f4f5f7;
   --color-ink-2: #d4d7de;
   --color-ink-3: #aab0bc;
-  --color-ink-4: #848a98;
+  --color-ink-4: #9096a0;
 
   /* Hairlines */
   --color-hair: #2b2f3a;
@@ -262,11 +268,16 @@
   --color-card-hover: #232932;
   --color-card-active: #292f38;
 
-  /* Ink — warm ivory, never #fff. */
+  /* Ink — warm ivory, never #fff.
+
+     `ink-3` moves in lockstep with `ink-4` here: lifting ink-4 to clear AA
+     (it was 2.79:1 on card, below the floor, shipped) pushes it past the old
+     ink-3, which would invert the tiers — the quietest ink louder than the one
+     above it. C11 keeps them apart AND in order. */
   --color-ink: #f1f0e7;
   --color-ink-2: #b8bcc0;
-  --color-ink-3: #858b91;
-  --color-ink-4: #60666d;
+  --color-ink-3: #adb0b3;
+  --color-ink-4: #92989e;
 
   /* Hairlines — structure is carried by lines, not shadows. */
   --color-hair: #303741;

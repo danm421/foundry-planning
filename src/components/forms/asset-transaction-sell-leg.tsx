@@ -7,8 +7,14 @@ import type { ProjectionYear } from "@/engine/types";
 import { inputClassName, selectClassName, fieldLabelClassName } from "./input-styles";
 import { FieldTooltip } from "./field-tooltip";
 import type { SellLegDraft } from "./asset-transaction-leg-model";
-import { parseNum, formatCurrency } from "./asset-transaction-leg-model";
-import type { BusinessSaleOption } from "./add-asset-transaction-form";
+import { parseNum, formatCurrency, patchForSource } from "./asset-transaction-leg-model";
+import {
+  type BusinessSaleOption,
+  type SellSourceAccount,
+  businessTotalAssetValue,
+  businessTotalDebt,
+  sellableAccounts,
+} from "@/lib/techniques/sell-source-options";
 
 // ── Local icon (only used by §121 checkbox in this component) ─────────────────
 
@@ -44,7 +50,7 @@ export interface SellLegEditorProps {
   leg: SellLegDraft;
   year: number;
   onChange: (patch: Partial<SellLegDraft>) => void;
-  accounts: { id: string; name: string; category: string; subType: string }[];
+  accounts: SellSourceAccount[];
   liabilities: { id: string; name: string; linkedPropertyId: string | null; balance: string }[];
   businesses: BusinessSaleOption[];
   pastBuys: { id: string; name: string; assetName: string | null; year: number; assetCategory: string | null }[];
@@ -103,6 +109,21 @@ export default function SellLegEditor({
   // Selected business for cascade preview card
   const selectedBusiness = businesses.find((b) => b.id === leg.sellBusinessAccountId);
 
+  // Sources the advisor may point this leg at. Top-level businesses and the
+  // auto-provisioned cash buckets of businesses/trusts are dropped — see
+  // lib/techniques/sell-source-options.
+  const accountOptions = useMemo(() => sellableAccounts(accounts), [accounts]);
+  const sellablePastBuys = useMemo(
+    () => pastBuys.filter((b) => b.year < year),
+    [pastBuys, year],
+  );
+
+  // One dropdown drives three fields, so the option values are namespaced.
+  const selectedSourceValue = leg.sellBusinessAccountId
+    ? `biz:${leg.sellBusinessAccountId}`
+    : leg.sellAccountId ||
+      (leg.sellPurchaseTransactionId ? `buy:${leg.sellPurchaseTransactionId}` : "");
+
   // The synthetic id used by the engine when a sell points at a prior buy is
   // `technique-acct-${buy.id}`. Liabilities can be linked to those ids.
   const selectedAccountId =
@@ -112,17 +133,18 @@ export default function SellLegEditor({
     !!selectedAccountId &&
     liabilities.some((l) => l.linkedPropertyId === selectedAccountId);
 
-  // Proceeds accounts: only cash or taxable
-  const proceedsAccountOptions = useMemo(
-    () => accounts.filter((a) => a.category === "cash" || a.category === "taxable"),
-    [accounts],
-  );
-
   // Pre-fill the value/basis fields with the projected figures for the sale
   // year (rounded to whole dollars). The stored override stays empty until the
   // user types over it, so an untouched field still uses the exact projection.
-  const projValue = projectedSellInfo?.projectedValue ?? null;
-  const projBasis = projectedSellInfo?.projectedBasis ?? null;
+  // A business shows its OPERATING value, not the total — the engine sells the
+  // accounts it owns separately and adds them on top, so typing the whole
+  // enterprise value here would count them twice.
+  const projValue = selectedBusiness
+    ? selectedBusiness.value
+    : projectedSellInfo?.projectedValue ?? null;
+  const projBasis = selectedBusiness
+    ? selectedBusiness.basis
+    : projectedSellInfo?.projectedBasis ?? null;
   const saleValueDisplay =
     leg.overrideSaleValue !== ""
       ? leg.overrideSaleValue
@@ -151,178 +173,110 @@ export default function SellLegEditor({
         </p>
       )}
 
-      {/* Sell-source picker: account vs business. Hidden when no sellable businesses exist. */}
-      {businesses.length > 0 && (
-        <div>
-          <label className={fieldLabelClassName}>Sell source</label>
-          <div className="flex gap-1.5">
-            {(
-              [
-                { id: "account", label: "Account" },
-                { id: "business", label: "Business" },
-              ] as const
-            ).map((opt) => {
-              const active = leg.sellMode === opt.id;
-              return (
-                <button
-                  key={opt.id}
-                  type="button"
-                  onClick={() => {
-                    if (opt.id === "business") {
-                      onChange({
-                        sellMode: "business",
-                        sellAccountId: "",
-                        sellPurchaseTransactionId: "",
-                        // $-amount mode doesn't apply to business sales
-                        sellAmountMode: leg.sellAmountMode === "dollar" ? "full" : leg.sellAmountMode,
-                      });
-                    } else {
-                      onChange({ sellMode: "account", sellBusinessAccountId: "" });
-                    }
-                  }}
-                  aria-pressed={active}
-                  className={segmentClass(active)}
-                >
-                  {opt.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Business select + cascade preview card */}
-      {leg.sellMode === "business" && (
-        <div className="space-y-3">
-          <div>
-            <label className={fieldLabelClassName} htmlFor="sellBusinessAccountId">
-              Business to Sell
-            </label>
-            <select
-              id="sellBusinessAccountId"
-              value={leg.sellBusinessAccountId}
-              onChange={(e) => onChange({ sellBusinessAccountId: e.target.value })}
-              className={selectClassName}
-            >
-              <option value="">-- Select business --</option>
+      {/* One source dropdown: accounts, businesses, and prior buys. Picking a
+          business writes `sellBusinessAccountId`, which routes the sale through
+          the engine's cascade so everything the business owns goes with it. */}
+      <div>
+        <label className={fieldLabelClassName} htmlFor="sellAccountId">
+          Asset to Sell
+        </label>
+        <select
+          id="sellAccountId"
+          value={selectedSourceValue}
+          onChange={(e) => onChange(patchForSource(e.target.value, leg.sellAmountMode))}
+          className={selectClassName}
+        >
+          <option value="">-- Select asset --</option>
+          {businesses.length > 0 && (
+            <optgroup label="Businesses (sells everything it owns)">
               {businesses.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name} ({b.businessTypeLabel})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {selectedBusiness && (
-            <div className="rounded-[var(--radius-sm)] border border-hair bg-card-2/40 p-3 text-[12px] space-y-2">
-              <div className="flex justify-between font-medium">
-                <span>
-                  {selectedBusiness.name} ({selectedBusiness.businessTypeLabel})
-                </span>
-                <span className="tabular-nums">
-                  Value {formatCurrency(selectedBusiness.value)}
-                </span>
-              </div>
-              <div className="text-ink-2">
-                Basis{" "}
-                <span className="tabular-nums">
-                  {formatCurrency(selectedBusiness.basis)}
-                </span>
-              </div>
-              {selectedBusiness.owners.length > 0 && (
-                <div>
-                  <div className="font-semibold text-ink-3 mb-1">Owners</div>
-                  <ul className="space-y-0.5">
-                    {selectedBusiness.owners.map((o) => (
-                      <li key={o.familyMemberId}>
-                        {o.familyMemberName} —{" "}
-                        {(o.percent * 100).toFixed(1)}%
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {selectedBusiness.childAccounts.length > 0 && (
-                <div>
-                  <div className="font-semibold text-ink-3 mb-1">
-                    Cascades to child accounts
-                  </div>
-                  <ul className="space-y-0.5">
-                    {selectedBusiness.childAccounts.map((a) => (
-                      <li key={a.id} className="tabular-nums">
-                        {a.name} — {formatCurrency(a.currentValue)}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {selectedBusiness.childLiabilities.length > 0 && (
-                <div>
-                  <div className="font-semibold text-ink-3 mb-1">
-                    Cascades to child liabilities
-                  </div>
-                  <ul className="space-y-0.5">
-                    {selectedBusiness.childLiabilities.map((l) => (
-                      <li key={l.id} className="tabular-nums">
-                        {l.name} — {formatCurrency(l.currentBalance)}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              <div className="text-ink-3 italic">
-                Net proceeds will be deposited to the household default
-                checking account.
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Account / past-buy select (account mode only) */}
-      {leg.sellMode === "account" && (
-        <div>
-          <label className={fieldLabelClassName} htmlFor="sellAccountId">
-            Account to Sell
-          </label>
-          <select
-            id="sellAccountId"
-            value={
-              leg.sellAccountId ||
-              (leg.sellPurchaseTransactionId
-                ? `buy:${leg.sellPurchaseTransactionId}`
-                : "")
-            }
-            onChange={(e) => {
-              const v = e.target.value;
-              if (v.startsWith("buy:")) {
-                onChange({ sellPurchaseTransactionId: v.slice(4), sellAccountId: "" });
-              } else {
-                onChange({ sellAccountId: v, sellPurchaseTransactionId: "" });
-              }
-            }}
-            className={selectClassName}
-          >
-            <option value="">-- Select source --</option>
-            <optgroup label="Existing accounts">
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
+                <option key={b.id} value={`biz:${b.id}`}>
+                  {b.name} ({b.businessTypeLabel}) — {formatCurrency(businessTotalAssetValue(b))}
                 </option>
               ))}
             </optgroup>
-            {pastBuys.filter((b) => b.year < year).length > 0 && (
-              <optgroup label="Bought via transaction">
-                {pastBuys
-                  .filter((b) => b.year < year)
-                  .map((b) => (
-                    <option key={b.id} value={`buy:${b.id}`}>
-                      {b.assetName ?? b.name} (buy {b.year})
-                    </option>
-                  ))}
-              </optgroup>
-            )}
-          </select>
+          )}
+          <optgroup label="Accounts">
+            {accountOptions.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+                {a.value != null ? ` — ${formatCurrency(a.value)}` : ""}
+              </option>
+            ))}
+          </optgroup>
+          {sellablePastBuys.length > 0 && (
+            <optgroup label="Bought via transaction">
+              {sellablePastBuys.map((b) => (
+                <option key={b.id} value={`buy:${b.id}`}>
+                  {b.assetName ?? b.name} (buy {b.year})
+                </option>
+              ))}
+            </optgroup>
+          )}
+        </select>
+      </div>
+
+      {/* Cascade preview — what a business sale actually disposes of. */}
+      {selectedBusiness && (
+        <div className="rounded-[var(--radius-sm)] border border-hair bg-card-2/40 p-3 text-[12px] space-y-2">
+          <div className="flex justify-between font-medium">
+            <span>
+              {selectedBusiness.name} ({selectedBusiness.businessTypeLabel})
+            </span>
+            <span className="tabular-nums">
+              Total assets {formatCurrency(businessTotalAssetValue(selectedBusiness))}
+            </span>
+          </div>
+          <div className="flex justify-between text-ink-2">
+            <span>Business itself (operating value)</span>
+            <span className="tabular-nums">{formatCurrency(selectedBusiness.value)}</span>
+          </div>
+          {selectedBusiness.childAccounts.map((a) => (
+            <div key={a.id} className="flex justify-between text-ink-2">
+              <span>{a.name}</span>
+              <span className="tabular-nums">{formatCurrency(a.currentValue)}</span>
+            </div>
+          ))}
+          {selectedBusiness.childLiabilities.map((l) => (
+            <div key={l.id} className="flex justify-between text-warn">
+              <span>{l.name} (paid off)</span>
+              <span className="tabular-nums">
+                −{formatCurrency(l.currentBalance)}
+              </span>
+            </div>
+          ))}
+          {businessTotalDebt(selectedBusiness) > 0 && (
+            <div className="flex justify-between border-t border-hair pt-1.5 font-medium">
+              <span>Net of debt</span>
+              <span className="tabular-nums">
+                {formatCurrency(
+                  businessTotalAssetValue(selectedBusiness) -
+                    businessTotalDebt(selectedBusiness),
+                )}
+              </span>
+            </div>
+          )}
+          {selectedBusiness.owners.length > 0 ? (
+            <div>
+              <div className="font-semibold text-ink-3 mb-1">Owners</div>
+              <ul className="space-y-0.5">
+                {selectedBusiness.owners.map((o) => (
+                  <li key={o.familyMemberId}>
+                    {o.familyMemberName} — {(o.percent * 100).toFixed(1)}%
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <p className="rounded-[var(--radius-sm)] border border-crit/40 bg-crit/10 px-2 py-1.5 text-crit">
+              No owner is recorded on this business, so the sale will not run.
+              Add an owner on the Balance Sheet first.
+            </p>
+          )}
+          <div className="text-ink-3 italic">
+            Net proceeds will be deposited to the household default checking
+            account.
+          </div>
         </div>
       )}
 
@@ -377,7 +331,11 @@ export default function SellLegEditor({
           <label className={tooltipLabelClass} htmlFor="overrideBasis">
             Basis ($)
             <FieldTooltip
-              text={`Cost basis in ${year}, pre-filled from the projection. Type to override; used to compute the capital gain.`}
+              text={
+                selectedBusiness
+                  ? "Cost basis in the business itself. Each account it owns carries its own basis and is taxed separately."
+                  : `Cost basis in ${year}, pre-filled from the projection. Type to override; used to compute the capital gain.`
+              }
             />
           </label>
           <CurrencyInput
@@ -392,12 +350,18 @@ export default function SellLegEditor({
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className={tooltipLabelClass} htmlFor="overrideSaleValue">
-              {leg.sellAmountMode === "dollar" ? "Amount to sell ($)" : "Sale value ($)"}
+              {selectedBusiness
+                ? "Business value ($)"
+                : leg.sellAmountMode === "dollar"
+                  ? "Amount to sell ($)"
+                  : "Sale value ($)"}
               <FieldTooltip
                 text={
-                  leg.sellAmountMode === "dollar"
-                    ? `Dollar amount to sell from this asset in ${year}.`
-                    : `Value realized in ${year}, pre-filled from the projection. Type to override; clear to use the projection.`
+                  selectedBusiness
+                    ? "The business on its own — goodwill and enterprise value. The accounts it owns are sold on top of this, so don't add them in here."
+                    : leg.sellAmountMode === "dollar"
+                      ? `Dollar amount to sell from this asset in ${year}.`
+                      : `Value realized in ${year}, pre-filled from the projection. Type to override; clear to use the projection.`
                 }
               />
             </label>
@@ -413,7 +377,11 @@ export default function SellLegEditor({
             <label className={tooltipLabelClass} htmlFor="overrideBasis">
               Basis ($)
               <FieldTooltip
-                text={`Cost basis in ${year}, pre-filled from the projection. Type to override; used to compute the capital gain.`}
+                text={
+                  selectedBusiness
+                    ? "Cost basis in the business itself. Each account it owns carries its own basis and is taxed separately."
+                    : `Cost basis in ${year}, pre-filled from the projection. Type to override; used to compute the capital gain.`
+                }
               />
             </label>
             <CurrencyInput
@@ -494,29 +462,6 @@ export default function SellLegEditor({
             </span>
           </label>
           <FieldTooltip text="Excludes up to $250k single / $500k married-joint of capital gain on this sale. Advisor confirms 2-of-5-year eligibility." />
-        </div>
-      )}
-
-      {/* Proceeds destination — hidden in business mode */}
-      {/* Always shown in account mode; the ledger shell (parent) may suppress when proceeds fund a buy leg. */}
-      {leg.sellMode !== "business" && (
-        <div>
-          <label className={fieldLabelClassName} htmlFor="proceedsAccountId">
-            Proceeds Destination
-          </label>
-          <select
-            id="proceedsAccountId"
-            value={leg.proceedsAccountId}
-            onChange={(e) => onChange({ proceedsAccountId: e.target.value })}
-            className={selectClassName}
-          >
-            <option value="">Default Checking</option>
-            {proceedsAccountOptions.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </select>
         </div>
       )}
     </div>

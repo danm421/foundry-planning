@@ -184,10 +184,18 @@ describe("handleSubscriptionUpsert", () => {
     } as never);
 
     expect(mockItemsConflictSet).toHaveBeenCalledTimes(1);
-    const set = mockItemsConflictSet.mock.calls[0][0] as { quantity: unknown };
+    const set = mockItemsConflictSet.mock.calls[0][0] as {
+      quantity: unknown;
+      stripePriceId: unknown;
+      unitAmount: unknown;
+      currency: unknown;
+    };
     // Must be `sql`excluded.quantity`` (the incoming row), NOT the column
     // self-reference `subscriptionItems.quantity` (which is `SET q = q`, a no-op).
     expect(set.quantity).toEqual(sql`excluded.quantity`);
+    expect(set.stripePriceId).toEqual(sql`excluded.stripe_price_id`);
+    expect(set.unitAmount).toEqual(sql`excluded.unit_amount`);
+    expect(set.currency).toEqual(sql`excluded.currency`);
   });
 
   it("grants the seat-bundled entitlements and mirrors add-on taxonomy to the DB", async () => {

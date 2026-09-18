@@ -262,3 +262,92 @@ describe("last-day fallback for symbols the real-time feed can't price", () => {
     }
   });
 });
+
+// Third tier. EODHD's `/search` rows carry their own `previousClose` + date,
+// and `/search` sits on a different entitlement than the two price feeds above
+// it — which is exactly the live failure this tier answers: since 11 Sep the
+// account's `/real-time`, `/eod` and `/eod-bulk-last-day` all return HTTP 403
+// while `/search` answers 200 with the close in it.
+const searchRow = (
+  Code: string, Exchange: string, previousClose: unknown, previousCloseDate: unknown,
+) => ({ Code, Exchange, Name: `${Code} Fund`, Type: "FUND", previousClose, previousCloseDate });
+const yieldsSearch = (
+  byCode: Record<string, unknown>, calls?: string[],
+): QuoteDeps["fetchSearch"] =>
+  (code) => {
+    calls?.push(code);
+    return Promise.resolve(byCode[code] ?? []);
+  };
+
+describe("search-row fallback for when the price feeds refuse outright", () => {
+  it("prices a ticker from the search row's own previous close", async () => {
+    const res = await fetchEodClose("VSGIX", {
+      fetchRealtime: () => Promise.reject(new Error("HTTP 403")),
+      fetchSearch: yieldsSearch({ VSGIX: [searchRow("VSGIX", "US", 94.31, "2026-09-16")] }),
+    });
+    expect(res).toEqual({ price: 94.31, asOf: "2026-09-16" });
+  });
+
+  it("matches on exchange too, so a foreign same-code line can't price a US holding", async () => {
+    // `search/IBM` answers with every exchange IBM trades on; row order is not
+    // a promise, so trusting it would hang a Buenos Aires price on a US row.
+    const res = await fetchEodClose("IBM", {
+      fetchRealtime: () => Promise.reject(new Error("HTTP 403")),
+      fetchSearch: yieldsSearch({ IBM: [searchRow("IBM", "BA", 1_200_000, "2026-09-16")] }),
+    });
+    expect(res).toBeNull();
+  });
+
+  it("prices a foreign listing under the exchange that was asked for", async () => {
+    const res = await fetchEodClose("BMW.XETRA", {
+      fetchRealtime: () => Promise.reject(new Error("HTTP 403")),
+      fetchSearch: yieldsSearch({ BMW: [searchRow("BMW", "XETRA", 88.2, "2026-09-16")] }),
+    });
+    expect(res).toEqual({ price: 88.2, asOf: "2026-09-16" });
+  });
+
+  it("drops a row with no usable close or date rather than pricing it at zero", async () => {
+    const res = await fetchEodCloses(["AAA", "BBB"], {
+      fetchRealtime: () => Promise.reject(new Error("HTTP 403")),
+      fetchSearch: yieldsSearch({
+        AAA: [searchRow("AAA", "US", 0, "2026-09-16")],
+        BBB: [searchRow("BBB", "US", 12.5, null)],
+      }),
+    });
+    expect(res.size).toBe(0);
+  });
+
+  it("asks only about what the tiers above it couldn't price, one call each", async () => {
+    const calls: string[] = [];
+    const res = await fetchEodCloses(["IBM", "SWCGX", "VSGIX"], {
+      fetchRealtime: yields([row("IBM.US", "2026-09-10", 234.02)]),
+      fetchLastDay: yieldsLastDay([lastDayRow("SWCGX", "2026-09-09", 16.32)]),
+      fetchSearch: yieldsSearch({ VSGIX: [searchRow("VSGIX", "US", 94.31, "2026-09-16")] }, calls),
+    });
+    expect(calls).toEqual(["VSGIX"]);
+    expect(res.get("IBM.US")).toEqual({ price: 234.02, asOf: "2026-09-10" });
+    expect(res.get("SWCGX.US")).toEqual({ price: 16.32, asOf: "2026-09-09" });
+    expect(res.get("VSGIX.US")).toEqual({ price: 94.31, asOf: "2026-09-16" });
+  });
+
+  it("is not consulted at all when the feeds above it answered", async () => {
+    const calls: string[] = [];
+    await fetchEodCloses(["IBM"], {
+      fetchRealtime: yields([row("IBM.US", "2026-09-10", 234.02)]),
+      fetchSearch: yieldsSearch({}, calls),
+    });
+    expect(calls).toEqual([]);
+  });
+
+  it("keeps the other symbols when one search call throws", async () => {
+    const res = await fetchEodCloses(["AAA", "VSGIX"], {
+      fetchRealtime: () => Promise.reject(new Error("HTTP 403")),
+      fetchSearch: (code) =>
+        code === "AAA"
+          ? Promise.reject(new Error("HTTP 500"))
+          : Promise.resolve([searchRow("VSGIX", "US", 94.31, "2026-09-16")]),
+    });
+    expect(res.get("VSGIX.US")).toEqual({ price: 94.31, asOf: "2026-09-16" });
+    expect(res.size).toBe(1);
+  });
+});

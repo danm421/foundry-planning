@@ -110,6 +110,7 @@ import {
   applyAssetSales,
   applyAssetPurchases,
   applyBusinessSales,
+  normalizeBusinessSales,
   _resetSyntheticIdCounter,
   DEFAULT_PROPERTY_TAX_GROWTH,
 } from "./asset-transactions";
@@ -162,6 +163,7 @@ import type { TrustLiquidityPool, TrustIncomeBuckets, TrustWarning, Distribution
 import { computeDistribution } from "./trust-tax/compute-distribution";
 import {
   normalizeOwners,
+  type AccountOwner,
   ownedByHouseholdAtYear,
   ownedByEntityAtYear,
   ownersForYear,
@@ -507,6 +509,17 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     accounts: data.accounts.map(normalizeOwners),
     liabilities: data.liabilities.map(normalizeOwners),
   };
+
+  // Selling a business must take everything the business owns with it. A sell
+  // that names one through `accountId` instead of `businessAccountId` would
+  // otherwise dispose of the shell alone — see normalizeBusinessSales. Run
+  // against the entry account list, before any year's cascade removes rows.
+  if (data.assetTransactions?.length) {
+    data = {
+      ...data,
+      assetTransactions: normalizeBusinessSales(data.assetTransactions, data.accounts),
+    };
+  }
 
   // Stress test "Higher inflation": pin living-expense growth at the override
   // rate. Scoped to `type === "living"` on purpose — insurance/other expenses,
@@ -1426,6 +1439,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           accountLedgers,
           year,
           defaultCheckingId: defaultChecking?.id ?? "",
+          // An entity-owned business deposits its proceeds into that entity's
+          // own checking, not the household's.
+          entityCheckingByEntityId,
         });
 
         if (businessSaleResult.removedAccountIds.length > 0) {
@@ -2987,6 +3003,63 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       taxDetail.ordinaryIncome += annuityOrdinaryIncome;
     }
 
+    // Every consumer below routes a sale's gain by who owned the SOURCE. An
+    // account sale's source is the account; a business sale's source is the
+    // business, because `applyBusinessSales` cascades the accounts the business
+    // owns, so the whole `totalCapitalGain` — operating value plus every
+    // cascaded child — belongs to the business' owners. Both spellings are
+    // normalized here — row AND sale-year owners — so entity routing has ONE
+    // definition instead of one per consumer: before this existed, the loops read
+    // `saleResult.breakdown` alone and a trust-owned business sold through the
+    // sell picker (which writes `businessAccountId`) put the trust's gain on
+    // the household 1040 and its proceeds in household checking.
+    // Neither §121 nor §165(c) reaches a business, so its raw and taxable gains
+    // are the same figure.
+    //
+    // Ownership is resolved against the invariant `accountById` (built from
+    // `data.accounts` outside the year loop) because the BoY sale step removes
+    // sold accounts from `workingAccounts` before any consumer runs —
+    // `workingAccounts` would silently miss every sold trust account. T8: via
+    // `ownersForYear`, so a gift that transferred ownership before the sale year
+    // is reflected in the split.
+    const ownersOfSource = (sourceAccountId: string): AccountOwner[] => {
+      const sold = accountById.get(sourceAccountId);
+      if (!sold) return [];
+      return ownersForYear(sold, data.giftEvents, year, planSettings.planStartYear);
+    };
+    type EntityRoutableSale = {
+      transactionId: string;
+      /** `bySource` drill-down prefix — the two spellings stay distinguishable. */
+      kind: "sale" | "business_sale";
+      /** Post-§121 / post-§165(c) — the figure the household ADD booked. */
+      taxableGain: number;
+      /** Raw signed gain, before those adjustments. */
+      rawGain: number;
+      /**
+       * Sale-year ownership of the SOURCE. Empty when the source is gone from
+       * `accountById` — every consumer filters for entity rows, so an empty list
+       * contributes nothing, exactly as the per-consumer `if (!sold) continue`
+       * it replaces did.
+       */
+      owners: AccountOwner[];
+    };
+    const entityRoutableSales: EntityRoutableSale[] = [
+      ...saleResult.breakdown.map((i) => ({
+        transactionId: i.transactionId,
+        kind: "sale" as const,
+        taxableGain: i.taxableCapitalGain,
+        rawGain: i.capitalGain,
+        owners: ownersOfSource(i.accountId),
+      })),
+      ...businessSaleResult.breakdown.map((i) => ({
+        transactionId: i.transactionId,
+        kind: "business_sale" as const,
+        taxableGain: i.totalCapitalGain,
+        rawGain: i.totalCapitalGain,
+        owners: ownersOfSource(i.businessAccountId),
+      })),
+    ];
+
     // §664(c): net each CRT's share of this year's sale gains OUT of the
     // household 1040. (F1)
     //
@@ -2997,12 +3070,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // 1040. Netting here is also independent of the grantor fork, which is what
     // §664(c) requires — the trust is exempt in EITHER isGrantor config.
     const crtSaleGainByTxn = new Map<string, number>();
-    for (const item of saleResult.breakdown) {
-      const sold = accountById.get(item.accountId);
-      if (!sold) continue;
-      const saleYearOwners = ownersForYear(sold, data.giftEvents, year, planSettings.planStartYear);
+    for (const item of entityRoutableSales) {
       let crtShare = 0;
-      for (const owner of saleYearOwners) {
+      for (const owner of item.owners) {
         if (owner.kind !== "entity") continue;
         if (!isTaxExemptTrust(owner.entityId)) continue;
         crtShare += owner.percent;
@@ -3019,7 +3089,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         // same phantom gain and made the contradiction self-consistent.
         crtSaleGainByTxn.set(
           item.transactionId,
-          (crtSaleGainByTxn.get(item.transactionId) ?? 0) + item.taxableCapitalGain * crtShare,
+          (crtSaleGainByTxn.get(item.transactionId) ?? 0) + item.taxableGain * crtShare,
         );
       }
     }
@@ -3073,30 +3143,31 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         taxDetail.bySource[`roth_conversion:${cid}`] = { type: "ordinary_income", amount: info.taxable };
       }
     }
-    // The three capital-gain itemization loops below gate on `!== 0`, not `> 0`:
+    // The capital-gain itemization loops below gate on `!== 0`, not `> 0`:
     // a loss row omitted from the drill-down doesn't merely hide detail, it makes
     // the itemization CONTRADICT the signed total it sits under. `!== 0` is also
     // the -0 guard — `-0 !== 0` is false, so a negative zero is skipped.
-    for (const item of saleResult.breakdown) {
+    //
+    // `sale:` and `business_sale:` rows itemize identically, so they share one
+    // loop over the normalized list; `entityRoutableSales` is built sale-rows-
+    // first, so the emitted key order is the same as the two loops it replaces.
+    for (const item of entityRoutableSales) {
       // §664(c): itemize only the non-CRT share — the drill-down must reconcile
       // to the capitalGains total netted above, not re-assert the exempt slice. (F1)
       //
-      // i3: itemize `taxableCapitalGain`, NOT the raw `capitalGain`. The total
-      // this row sits under sums `saleResult.capitalGains`, which is
-      // Σ taxableCapitalGain (post-§121, post-§165(c)). Using the raw figure
-      // emitted a −$200,000 row under a $0 total for a residence sold below
-      // basis, and a +$200,000 row under a $0 total for a §121-excluded gain.
+      // i3: itemize the POST-§121 / post-§165(c) `taxableGain`, NOT the raw
+      // signed gain. These rows sit under `saleResult.capitalGains` +
+      // `businessSaleResult.capitalGains` — the first is Σ taxableCapitalGain, so
+      // the raw figure emitted a −$200,000 row under a $0 total for a residence
+      // sold below basis, and a +$200,000 row under a $0 total for a
+      // §121-excluded gain. The second needs no such care: a business sale's raw
+      // and taxable gains are equal, since neither §121 nor §165(c) reaches one.
       const householdGain =
-        item.taxableCapitalGain - (crtSaleGainByTxn.get(item.transactionId) ?? 0);
+        item.taxableGain - (crtSaleGainByTxn.get(item.transactionId) ?? 0);
       if (householdGain !== 0) {
-        taxDetail.bySource[`sale:${item.transactionId}`] = { type: "capital_gains", amount: householdGain };
-      }
-    }
-    for (const item of businessSaleResult.breakdown) {
-      if (item.totalCapitalGain !== 0) {
-        taxDetail.bySource[`business_sale:${item.transactionId}`] = {
+        taxDetail.bySource[`${item.kind}:${item.transactionId}`] = {
           type: "capital_gains",
-          amount: item.totalCapitalGain,
+          amount: householdGain,
         };
       }
     }
@@ -3110,7 +3181,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       if (eq.ordinaryIncome > 0) {
         taxDetail.bySource[`equity-vest:${planId}`] = { type: "earned_income", amount: eq.ordinaryIncome };
       }
-      // i4: `!== 0`, same reason as the three loops above — `:2001-2002` folds
+      // i4: `!== 0`, same reason as the loops above — `:2001-2002` folds
       // these into taxDetail.capitalGains / .stCapitalGains UNCONDITIONALLY, so
       // a `> 0` gate drops the row while the total keeps the loss. Task 6 made
       // the LT leg newly negative-reachable (equity/tax-events.ts, a qualifying
@@ -3165,20 +3236,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     //   (c) cash debits for tax + distributions → applied to accountBalances
     let trustPassResult: ReturnType<typeof applyTrustAnnualPass> | null = null;
     if (nonGrantorTrusts.length > 0) {
-      // Build AssetTransactionGain[] from sale breakdown, pro-rating each gain
-      // by the sold account's ownership at the sale year. Source from the
-      // invariant `accountById` (built from `data.accounts` outside the year
-      // loop) because the BoY sale step removes sold accounts from
-      // `workingAccounts` BEFORE this lookup runs — `workingAccounts` would
-      // silently miss every sold trust account.
-      // T8: use ownersForYear so gift events that transferred ownership before
-      // the sale year are reflected in the cap-gain split (Phase 3).
+      // Build AssetTransactionGain[] from the normalized sale list, pro-rating
+      // each gain by the source's sale-year ownership (resolved once on the row
+      // — see `ownersOfSource`).
       const assetTransactionGains: AssetTransactionGain[] = [];
-      for (const item of saleResult.breakdown) {
-        const sold = accountById.get(item.accountId);
-        if (!sold) continue;
-        const saleYearOwners = ownersForYear(sold, data.giftEvents, year, planSettings.planStartYear);
-        for (const owner of saleYearOwners) {
+      for (const item of entityRoutableSales) {
+        for (const owner of item.owners) {
           if (owner.kind !== "entity") continue;
           // §664(c): CRT gains are exempt — they were already netted out of the
           // household ADD above and must not reach the 1041 pass either. This
@@ -3199,7 +3262,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           // household was never charged for. See the note on that subtraction.
           assetTransactionGains.push({
             ownerEntityId: owner.entityId,
-            gain: item.taxableCapitalGain * owner.percent,
+            gain: item.taxableGain * owner.percent,
           });
         }
       }
@@ -3412,24 +3475,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     if (grantorTrusts.length > 0) {
       // Collect asset-transaction gains for grantor entities (needed for
       // pct_income mode), pro-rated by each grantor entity's share of the
-      // sold account. Same caveat as the non-grantor lookup above:
-      // `workingAccounts` no longer contains sold accounts at this point in
-      // the year loop, so we resolve ownership against the invariant
-      // `accountById` map.
-      for (const item of saleResult.breakdown) {
-        const sold = accountById.get(item.accountId);
-        if (!sold) continue;
-        const grantorSaleYearOwners = ownersForYear(
-          sold,
-          data.giftEvents,
-          year,
-          planSettings.planStartYear,
-        );
-        for (const owner of grantorSaleYearOwners) {
+      // source at the sale year (resolved once on the row — `ownersOfSource`).
+      for (const item of entityRoutableSales) {
+        for (const owner of item.owners) {
           if (owner.kind !== "entity") continue;
           if (!effectiveIsGrantor(owner.entityId, year)) continue;
           const bucket = grantorTrustIncomeByEntity.get(owner.entityId);
-          if (bucket) bucket.recognizedCapGains += item.capitalGain * owner.percent;
+          if (bucket) bucket.recognizedCapGains += item.rawGain * owner.percent;
         }
       }
 
@@ -7894,8 +7946,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // ownership against the invariant `accountById` (sold accounts are gone from
     // workingAccounts by now); a missing account (synthetic technique source)
     // falls back to household, matching the router's default-checking fallback.
-    // `controllingEntity` is the SAME 100%-single-entity predicate the router
-    // uses, so the two stay in sync — split-owned sales (controllingEntity null)
+    // `controllingEntity` is the SAME 100%-single-entity predicate the ACCOUNT
+    // router uses. Business sales route through `applyBusinessSales`, whose
+    // proceeds never enter this list at all (pre-existing) — so this loop sees
+    // one of the two routers. Split-owned sales (controllingEntity null)
     // surface as household income, matching the router routing 100% of their
     // proceeds to the household default checking.
     const householdSales = saleResult.breakdown.filter((item) => {
@@ -8447,20 +8501,17 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // already taxed on the household 1040 via taxDetail.capitalGains; this is the
     // display value. Independent of the grantor distribution pass — a pure
     // grantor trust with no distribution policy still realizes (and shows) gains.
-    // Resolve ownership against the invariant accountById (sold accounts are gone
-    // from workingAccounts by now) and use the entity's CURRENT-year grantor status.
+    // Ownership comes off the normalized row (`ownersOfSource`); grantor status
+    // is the entity's CURRENT-year one.
     const grantorCapGainsByEntity = new Map<string, number>();
-    for (const item of saleResult.breakdown) {
-      if (item.capitalGain <= 0) continue;
-      const sold = accountById.get(item.accountId);
-      if (!sold) continue;
-      const owners = ownersForYear(sold, data.giftEvents, year, planSettings.planStartYear);
-      for (const owner of owners) {
+    for (const item of entityRoutableSales) {
+      if (item.rawGain <= 0) continue;
+      for (const owner of item.owners) {
         if (owner.kind !== "entity") continue;
         if (!effectiveIsGrantor(owner.entityId, year)) continue;
         grantorCapGainsByEntity.set(
           owner.entityId,
-          (grantorCapGainsByEntity.get(owner.entityId) ?? 0) + item.capitalGain * owner.percent,
+          (grantorCapGainsByEntity.get(owner.entityId) ?? 0) + item.rawGain * owner.percent,
         );
       }
     }

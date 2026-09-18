@@ -49,9 +49,10 @@ function emptyPayload(): ImportPayload {
 }
 
 /**
- * Normalizes a recorded account_owners insert to an array of rows. The synthesis
- * path inserts a single object (client/spouse) or an array (joint); the owners[]
- * path inserts an array. Tests assert on the flattened rows regardless of shape.
+ * Normalizes a recorded account_owners insert to an array of rows. Both the
+ * synthesis path and the owners[] path insert an array today (they share
+ * `accountOwnerRowsFor`), but the single-object shape is still accepted so a
+ * caller that inserts one row directly does not need its own assertion style.
  */
 function ownerRows(call: FakeTxCall): Record<string, unknown>[] {
   const v = (call as { values: unknown }).values;
@@ -355,7 +356,10 @@ describe("commitAccounts", () => {
     expect(accountInserts).toHaveLength(1);
     const ownerInserts = callsForTable(calls, "account_owners").filter((c) => c.op === "insert");
     expect(ownerInserts).toHaveLength(1);
-    const ownerVal = (ownerInserts[0] as { values: Record<string, unknown> }).values;
+    // Through the file's own normalizer: the synthesis path inserts an array
+    // of rows, and reading `.values` raw only ever worked for the one-row
+    // shape it used to special-case.
+    const [ownerVal] = ownerRows(ownerInserts[0]);
     expect(ownerVal.familyMemberId).toBe("fm-client");
     expect(ownerVal.percent).toBe("1.0000");
   });

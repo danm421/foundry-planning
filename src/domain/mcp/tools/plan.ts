@@ -19,7 +19,12 @@ import type { HypotheticalEstateTaxOrdering } from "@/engine/types";
 import { compactYear } from "@/lib/projection/compact-year";
 import { defineTool, type McpTool } from "../define-tool";
 
-const clientIdArg = z.string().describe("Household id from search_clients.");
+const clientIdArg = z
+  .string()
+  .describe(
+    "Planning client id from search_clients (the clientId field, present only when " +
+      "hasPlan is true). NOT a CRM household id.",
+  );
 const scenarioArg = z.string().optional().describe("Scenario id, or omit for the base case.");
 
 /** Tax figures are only bracket-grounded when bracket mode is on AND year rows loaded. */

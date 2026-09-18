@@ -624,6 +624,54 @@ export function applyAssetPurchases(input: ApplyAssetPurchasesInput): AssetPurch
   return { newAccounts, newLiabilities, breakdown };
 }
 
+// ── normalizeBusinessSales ────────────────────────────────────────────────────
+
+/** Re-point any sell that names a top-level business through `accountId` at
+ *  `businessAccountId`, which is the field `applyBusinessSales` dispatches on.
+ *
+ *  Both fields can name a business: `businessAccountId` is what the sell picker
+ *  writes today, but rows saved before it did — and any writer that treats a
+ *  business as an ordinary account — land in `accountId`. Those fall through to
+ *  `applyAssetSales`, which sells the business shell alone and leaves every
+ *  account and liability the business owns sitting on the balance sheet. One
+ *  normalization at the top of the projection puts both spellings on the
+ *  cascade. Child accounts of a business stay sellable on their own; only the
+ *  top-level row (`parentAccountId == null`) is the whole company.
+ *
+ *  A business an entity holds a slice of is deliberately left alone. Its sale
+ *  runs through `applyAssetSales`, which routes the gain to the owning trust's
+ *  1041 and the proceeds to that trust's checking — routing `applyBusinessSales`
+ *  has no equivalent of (it attributes gain to family-member owners and deposits
+ *  into household checking). Re-pointing one would quietly move a trust's gain
+ *  onto the household return.
+ *
+ *  Returns the input array untouched when nothing needs re-pointing. */
+export function normalizeBusinessSales(
+  transactions: AssetTransaction[],
+  accounts: Account[],
+): AssetTransaction[] {
+  const businessIds = new Set(
+    accounts
+      .filter(
+        (a) =>
+          a.category === "business" &&
+          a.parentAccountId == null &&
+          a.owners.length > 0 &&
+          a.owners.every((o) => o.kind === "family_member"),
+      )
+      .map((a) => a.id),
+  );
+  if (businessIds.size === 0) return transactions;
+
+  const needsRepoint = (t: AssetTransaction): boolean =>
+    t.type === "sell" && !t.businessAccountId && !!t.accountId && businessIds.has(t.accountId);
+
+  if (!transactions.some(needsRepoint)) return transactions;
+  return transactions.map((t) =>
+    needsRepoint(t) ? { ...t, businessAccountId: t.accountId!, accountId: undefined } : t,
+  );
+}
+
 // ── applyBusinessSales ────────────────────────────────────────────────────────
 
 export interface BusinessSaleBreakdown {
@@ -672,6 +720,10 @@ export interface ApplyBusinessSalesInput {
   accountLedgers: Record<string, AccountLedger>;
   year: number;
   defaultCheckingId: string;
+  /** Entity id → that entity's default-checking account id. Same contract as
+   *  {@link ApplyAssetSalesInput.entityCheckingByEntityId}; a missing entity
+   *  falls back to `defaultCheckingId`. */
+  entityCheckingByEntityId?: Record<string, string>;
 }
 
 /** Process all business-account-source asset sales for `year`.
@@ -699,6 +751,7 @@ export function applyBusinessSales(input: ApplyBusinessSalesInput): BusinessSale
     accountLedgers,
     year,
     defaultCheckingId,
+    entityCheckingByEntityId,
   } = input;
 
   let totalCapitalGains = 0;
@@ -827,20 +880,42 @@ export function applyBusinessSales(input: ApplyBusinessSalesInput): BusinessSale
     totalCapitalGains += totalCapitalGain;
     totalLiabilityPaydown += cascadedPaydown;
 
-    // Route proceeds to household default checking. If routing fails the
-    // cap gain is still recognized but cash isn't deposited; emit a
-    // diagnostic so the advisor wires up a default checking account.
-    if (defaultCheckingId && accountBalances[defaultCheckingId] !== undefined) {
-      accountBalances[defaultCheckingId] += netProceeds;
-      basisMap[defaultCheckingId] = (basisMap[defaultCheckingId] ?? 0) + netProceeds;
-      if (accountLedgers[defaultCheckingId]) {
-        accountLedgers[defaultCheckingId].contributions += netProceeds;
-        accountLedgers[defaultCheckingId].endingValue += netProceeds;
-        accountLedgers[defaultCheckingId].entries.push({
+    // Same rungs as `applyAssetSales`: an explicit destination wins, then the
+    // owning entity's own checking when one entity owns the business outright,
+    // then household default. Without the entity rung a trust's sale proceeds
+    // land on the household balance sheet while its gain is taxed on the
+    // trust's own 1041.
+    //
+    // Each rung has to be CREDITABLE, not merely named — resolving to an
+    // entity checking that is absent from `accountBalances` would drop the
+    // proceeds and report `no-default-checking` with a usable household
+    // account sitting right there.
+    const owningEntityId = controllingEntity(business);
+    const entityChecking =
+      owningEntityId != null ? entityCheckingByEntityId?.[owningEntityId] : undefined;
+    const proceedsAccountId = [sale.proceedsAccountId, entityChecking, defaultCheckingId].find(
+      (id) => id && accountBalances[id] !== undefined,
+    );
+
+    // If nothing is creditable the cap gain is still recognized but cash isn't
+    // deposited; emit a diagnostic so the advisor wires up a checking account.
+    if (proceedsAccountId) {
+      accountBalances[proceedsAccountId] += netProceeds;
+      basisMap[proceedsAccountId] = (basisMap[proceedsAccountId] ?? 0) + netProceeds;
+      if (accountLedgers[proceedsAccountId]) {
+        accountLedgers[proceedsAccountId].contributions += netProceeds;
+        accountLedgers[proceedsAccountId].endingValue += netProceeds;
+        accountLedgers[proceedsAccountId].entries.push({
           category: "income",
           label: `Business sale proceeds: ${business.name}`,
           amount: netProceeds,
           sourceId: sale.id,
+          // Asset→cash conversion, not operating income. `entity-cashflow.ts`
+          // skips flagged entries so a trust's income column isn't inflated by
+          // gross proceeds; the taxable gain is recognized separately. Inert
+          // while these deposits only ever reached household checking — load
+          // bearing now that an entity-owned business credits the entity's own.
+          isSaleProceeds: true,
           basis: netProceeds, // cash deposit: basis == amount (mirrors basisMap += netProceeds)
         });
       }

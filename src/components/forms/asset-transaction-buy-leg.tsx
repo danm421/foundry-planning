@@ -61,11 +61,20 @@ export interface BuyLegEditorProps {
    * to a value from the wrong category's list.
    */
   categories?: AssetCategory[];
+  /**
+   * Whether to render the Funding Source select. Defaults to true, so the
+   * Goals import step — where a down payment can legitimately come from any
+   * account — is unaffected. `add-asset-transaction-form.tsx` passes false:
+   * there, ONE settlement dropdown on the combined-net footer routes both
+   * sides of the whole bundle, and a second per-leg control could disagree
+   * with it.
+   */
+  showFundingSource?: boolean;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function BuyLegEditor({ leg, onChange, accounts, idPrefix = "", categories }: BuyLegEditorProps) {
+export default function BuyLegEditor({ leg, onChange, accounts, idPrefix = "", categories, showFundingSource = true }: BuyLegEditorProps) {
   const fieldId = (name: string) => `${idPrefix}${name}`;
   const categoryOptions = categories ?? (Object.keys(CATEGORY_LABELS) as AssetCategory[]);
   return (
@@ -172,7 +181,9 @@ export default function BuyLegEditor({ leg, onChange, accounts, idPrefix = "", c
         </div>
       </div>
 
-      {/* Basis + Funding Source */}
+      {/* Basis, paired with Funding Source when this mount owns one. Basis
+          keeps the left column either way, so the field does not jump width
+          between the two mount sites. */}
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className={fieldLabelClassName} htmlFor={fieldId("basis")}>
@@ -186,28 +197,30 @@ export default function BuyLegEditor({ leg, onChange, accounts, idPrefix = "", c
             className={inputClassName.replace("px-3", "pr-3")}
           />
         </div>
-        <div>
-          <label className={fieldLabelClassName} htmlFor={fieldId("fundingAccountId")}>
-            Funding Source
-          </label>
-          <select
-            id={fieldId("fundingAccountId")}
-            value={leg.fundingAccountId}
-            onChange={(e) => onChange({ fundingAccountId: e.target.value })}
-            className={selectClassName}
-          >
-            {FUNDING_SPECIAL_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        {showFundingSource && (
+          <div>
+            <label className={fieldLabelClassName} htmlFor={fieldId("fundingAccountId")}>
+              Funding Source
+            </label>
+            <select
+              id={fieldId("fundingAccountId")}
+              value={leg.fundingAccountId}
+              onChange={(e) => onChange({ fundingAccountId: e.target.value })}
+              className={selectClassName}
+            >
+              {FUNDING_SPECIAL_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       {leg.assetCategory === "real_estate" && (

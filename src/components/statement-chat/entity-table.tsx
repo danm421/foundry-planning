@@ -79,12 +79,22 @@ export interface EntityRow {
   __rowId?: string;
 }
 
+/** How one Commit click should behave, beyond which rows it covers. */
+export interface CommitRowsOptions {
+  /**
+   * The advisor ticked this row's override box: the commit may replace fields
+   * the default field map protects. Which fields those are is the committer's
+   * business, not this table's — see `commitAccounts`.
+   */
+  overrideAll?: boolean;
+}
+
 export interface EntityTableProps<Row extends EntityRow> {
   rows: Row[];
   columns: ColumnSpec<Row>[];
   excluded: ExcludedRow<Row>[];
   committedRowIds: string[];
-  onCommitRows: (rowIds: string[]) => Promise<void>;
+  onCommitRows: (rowIds: string[], opts?: CommitRowsOptions) => Promise<void>;
   onEditCell: (rowId: string, field: string, value: unknown) => void;
   /**
    * Accessible name for the `<table>` element. Optional because Phase 1's
@@ -117,6 +127,18 @@ export interface EntityTableProps<Row extends EntityRow> {
    * made visible and the click is withheld until the advisor resolves it.
    */
   commitBlockedReason?: (row: Row) => string | null;
+  /**
+   * This row's override checkbox, or null for a row that gets none. Absent
+   * prop = no row gets one, which is what every table but Accounts wants.
+   *
+   * The caller supplies the wording rather than a bare boolean because only
+   * it knows what the override does to ITS entity, and a checkbox whose label
+   * doesn't name the consequence is one nobody ticks on purpose. `title` is
+   * where the exceptions go — the fields the override still won't touch.
+   *
+   * The ticked state lives here, beside `pending` and the button it modifies.
+   */
+  overrideLabel?: (row: Row) => { label: string; title?: string } | null;
   /**
    * Optional child content for a row. A row this returns a non-null node for
    * gets a leading disclosure button; open, the node renders in its own
@@ -275,6 +297,7 @@ export default function EntityTable<Row extends EntityRow>({
   onRestore,
   disableCommit,
   commitBlockedReason,
+  overrideLabel,
   expand,
   expandLabel,
   ariaLabel,
@@ -295,6 +318,16 @@ export default function EntityTable<Row extends EntityRow>({
   // committing one row never blocks another.
   const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
   const [commitError, setCommitError] = useState<{ rowId: string; message: string } | null>(null);
+  // Which rows the advisor ticked the override box on. Read at click time
+  // rather than sent on tick: the box is a modifier for the Commit button
+  // beneath it, so ticking it alone must change nothing.
+  const [overrides, setOverrides] = useState<ReadonlySet<string>>(new Set());
+  const toggleOverride = (rowId: string) =>
+    setOverrides((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(rowId)) next.add(rowId);
+      return next;
+    });
 
   const commit = (rowId: string | undefined) => {
     if (!rowId || pending.has(rowId)) return;
@@ -303,7 +336,7 @@ export default function EntityTable<Row extends EntityRow>({
     // `Promise.resolve(...)` normalizes a mock that returns `undefined`
     // (every brief test's `onCommitRows`) as well as a real promise — both
     // need `.catch`/`.finally` to be safe here.
-    Promise.resolve(onCommitRows([rowId]))
+    Promise.resolve(onCommitRows([rowId], { overrideAll: overrides.has(rowId) }))
       .catch((err: unknown) => {
         setCommitError({
           rowId,
@@ -403,6 +436,7 @@ export default function EntityTable<Row extends EntityRow>({
             const isPending = rowId != null && pending.has(rowId);
             const child = expand?.(row, { isCommitted });
             const blockedReason = isCommitted ? null : (commitBlockedReason?.(row) ?? null);
+            const override = rowId ? (overrideLabel?.(row) ?? null) : null;
             // Neither field here blocks the commit — a row can need review AND
             // still be committable — so this is computed independently of
             // `blockedReason`, and withheld once committed for the same reason
@@ -519,6 +553,24 @@ export default function EntityTable<Row extends EntityRow>({
                     >
                       {isCommitted ? "Committed" : isPending ? "Committing…" : "Commit"}
                     </button>
+                    {/* Only under a button that can actually be clicked: a
+                        modifier for a committed, blocked or disabled Commit
+                        changes nothing, and it would sit between the disabled
+                        button and the reason explaining it. */}
+                    {override && rowId && !isCommitted && !disableCommit && !blockedReason && (
+                      <label
+                        title={override.title}
+                        className="mt-1.5 flex items-center justify-end gap-1.5 text-xs font-normal normal-case text-ink-3"
+                      >
+                        <input
+                          type="checkbox"
+                          className="h-3.5 w-3.5 rounded accent-accent"
+                          checked={overrides.has(rowId)}
+                          onChange={() => toggleOverride(rowId)}
+                        />
+                        {override.label}
+                      </label>
+                    )}
                     {blockedReason && (
                       <div className="mt-1 text-xs font-normal normal-case text-ink-3">
                         {blockedReason}

@@ -12,6 +12,7 @@ vi.mock("@/lib/billing/subscription-state", async (orig) => ({
   ...((await orig()) as object),
   getSubscriptionState: vi.fn().mockResolvedValue({ kind: "comp_ended" }),
 }));
+vi.mock("@/lib/billing/billing-plan", () => ({ getFirmBillingPlan: vi.fn() }));
 vi.mock("@/db", () => ({ db: { select: vi.fn() } }));
 vi.mock("../actions", () => ({ startResubscribeCheckout: vi.fn() }));
 
@@ -52,5 +53,33 @@ describe("the ?resubscribed=1 confirmation", () => {
     // the way a bare queryBy(...).toBeNull() would.
     expect(screen.getByText(/Founder Plan/i)).not.toBeNull();
     expect(screen.queryByText(/payment received/i)).toBeNull();
+  });
+});
+
+describe("the ?plan_changed=1 confirmation", () => {
+  it("shows after Stripe confirms a billing-cycle change", async () => {
+    withStaleFounderToken();
+    render(
+      await BillingSettingsPage({ searchParams: Promise.resolve({ plan_changed: "1" }) }),
+    );
+    expect(screen.getByRole("status")).not.toBeNull();
+    expect(screen.getByText(/billing cycle updated/i)).not.toBeNull();
+  });
+
+  /**
+   * Stripe schedules a downgrade that has a paid period left to run, so the
+   * cycle on screen will not move for weeks or months. Saying "updated" here
+   * is what sent the customer back to the button to try again.
+   */
+  it("says the change is scheduled when Stripe deferred it", async () => {
+    withStaleFounderToken();
+    render(
+      await BillingSettingsPage({
+        searchParams: Promise.resolve({ plan_changed: "scheduled" }),
+      }),
+    );
+    expect(screen.getByRole("status")).not.toBeNull();
+    expect(screen.getByText(/takes effect at the end of/i)).not.toBeNull();
+    expect(screen.queryByText(/billing cycle updated/i)).toBeNull();
   });
 });

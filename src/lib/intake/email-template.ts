@@ -1,8 +1,17 @@
 /* Pure intake-email rendering. MUST NOT import resend or any server-only
- * module — this file is imported by the live-preview client component. */
+ * module — this file is imported by the live-preview client component.
+ *
+ * buildIntakeEmailHtml returns a COMPLETE HTML document, not a fragment: the
+ * head is where a mail client reads the colour-scheme hints, and where the
+ * advisor preview gets its charset without wrapping our output in markup of
+ * its own. Three emails render through it — the intake invitation, the risk
+ * questionnaire, and the portal sign-in link. */
 import {
   DEFAULT_INTAKE_INTRO,
+  DEFAULT_INTAKE_LINK_NOTICE,
+  DEFAULT_INTAKE_SENT_BY_UNBRANDED,
   DEFAULT_INTAKE_SUBJECT,
+  formatSentBy,
 } from "@/lib/intake/defaults";
 
 const INTAKE_FROM_ADDRESS = "noreply@foundryplanning.com";
@@ -75,19 +84,34 @@ function substituteTokens(
     .replaceAll("{{clientName}}", esc(ctx.clientName ?? ""));
 }
 
+/* The palette and type stack live in the shared email token module — the one
+ * file that carries the raw-hex exemption for mail, and the one place a rebrand
+ * of email chrome has to look. `EMAIL_LETTER` documents why a client letter
+ * takes the white-label neutrals rather than the Foundry accent.
+ *
+ * Aliased short because these values appear ~20 times across one dense
+ * template literal below, where `EMAIL_LETTER.ink3` would bury the markup. */
+import { EMAIL_LETTER as C, EMAIL_LETTER_FONT as FONT } from "@/lib/email/tokens";
+
+/** One body-paragraph style, inked per role: the greeting sits a shade darker
+ *  than the copy beneath it. */
+const bodyP = (color: string) =>
+  `margin:0 0 14px;font-size:15px;line-height:1.65;color:${color}`;
+
 function renderIntroHtml(
   rawIntro: string,
   ctx: { advisorName?: string; firmName?: string; clientName?: string },
 ): string {
   const substituted = substituteTokens(esc(rawIntro), ctx);
-  // Blank-line-separated paragraphs; single newlines → <br/>.
+  // Blank-line-separated paragraphs; single newlines → <br/>. Each paragraph
+  // carries its own inline style because a bare <p>'s default margin and size
+  // differ per mail client — nothing here may inherit.
   return substituted
     .split(/\n\s*\n/)
-    .map((p) => `<p>${p.replace(/\n/g, "<br/>")}</p>`)
-    .join("\n    ");
+    .map((p) => `<p style="${bodyP(C.ink2)}">${p.replace(/\n/g, "<br/>")}</p>`)
+    .join("\n");
 }
 
-/* eslint-disable brand/no-raw-hex -- email HTML requires inline hex; email clients can't resolve CSS brand tokens */
 function buildSignatureHtml(args: {
   advisorName?: string;
   firmName?: string;
@@ -95,17 +119,19 @@ function buildSignatureHtml(args: {
 }): string {
   const lines: string[] = [];
   if (args.advisorName)
-    lines.push(`<p style="margin:0;font-weight:600;color:#111">${esc(args.advisorName)}</p>`);
+    lines.push(
+      `<p style="margin:0;font-size:14px;font-weight:600;color:${C.ink}">${esc(args.advisorName)}</p>`,
+    );
   if (args.firmName)
-    lines.push(`<p style="margin:0;color:#6b7280">${esc(args.firmName)}</p>`);
+    lines.push(
+      `<p style="margin:3px 0 0;font-size:13px;line-height:1.5;color:${C.ink3}">${esc(args.firmName)}</p>`,
+    );
   if (args.advisorEmail)
     lines.push(
-      `<p style="margin:0"><a href="mailto:${esc(args.advisorEmail)}" style="color:#1e3a5f">${esc(args.advisorEmail)}</a></p>`,
+      `<p style="margin:3px 0 0;font-size:13px;line-height:1.5"><a href="mailto:${esc(args.advisorEmail)}" style="color:${C.ink2};text-decoration:none">${esc(args.advisorEmail)}</a></p>`,
     );
   if (lines.length === 0) return "";
-  return `<div style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:13px">
-      ${lines.join("\n      ")}
-    </div>`;
+  return `<div style="margin-top:32px;padding-top:20px;border-top:1px solid ${C.hair}">${lines.join("\n")}</div>`;
 }
 
 export function buildIntakeEmailHtml(args: {
@@ -123,30 +149,75 @@ export function buildIntakeEmailHtml(args: {
   const { link, introBody, advisorName, advisorEmail, firmName, clientName } = args;
   const ctx = { advisorName, firmName, clientName };
 
-  const brand = sanitizeDisplayName(firmName) ?? "Foundry Planning";
+  const firm = sanitizeDisplayName(firmName);
+  const brand = firm ?? "Foundry Planning";
   const cta = sanitizeDisplayName(args.ctaLabel) ?? "Open My Form";
-  const greeting = clientName ? `<p>Hello ${esc(clientName)},</p>` : `<p>Hello,</p>`;
+  const greeting = clientName ? `Hello ${esc(clientName)},` : "Hello,";
   const introHtml = renderIntroHtml(
     sanitizeIntroBody(introBody) ?? DEFAULT_INTAKE_INTRO,
     ctx,
   );
   const signature = buildSignatureHtml({ advisorName, firmName, advisorEmail });
+  // Says who actually sent this. MITIGATION, not a fix: Outlook's "You don't
+  // often get email from…" banner is unfamiliar-SENDER reputation — no body
+  // copy moves it, only per-firm verified sending domains in Resend will. What
+  // the line does earn is the reader's trust once the banner is already there,
+  // since the From address is on Foundry's domain under the firm's name.
+  const sentBy = firm
+    ? formatSentBy(esc(firm))
+    : DEFAULT_INTAKE_SENT_BY_UNBRANDED;
 
-  return `<div style="font-family:system-ui,sans-serif;font-size:14px;color:#111;max-width:560px;margin:0 auto">
-  <div style="background:#1e3a5f;padding:20px 24px;border-radius:6px 6px 0 0">
-    <span style="color:#fff;font-size:18px;font-weight:600">${esc(brand)}</span>
-  </div>
-  <div style="padding:24px;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 6px 6px">
-    ${greeting}
-    ${introHtml}
-    <p style="margin:24px 0">
-      <a href="${esc(link)}" style="background:#1e3a5f;color:#fff;padding:10px 20px;border-radius:4px;text-decoration:none;font-weight:500;display:inline-block">
-        ${esc(cta)}
-      </a>
-    </p>
-    <p style="color:#6b7280;font-size:12px">Or copy this link into your browser:<br/>${esc(link)}</p>
-    ${signature}
-  </div>
-</div>`;
+  // A full document, not a fragment: the colour-scheme hints below only work
+  // as head-level <meta> (a :root rule in body content is stripped or ignored),
+  // and Resend sends a whole document happily — portal-access-request-email.ts
+  // already does. Table shell with bgcolor attributes because Outlook's Word
+  // renderer drops max-width and CSS background on a plain <div>, which is how
+  // a centred card ends up full-bleed. Everything load-bearing is inline; the
+  // <style> block only narrows phone padding, and the email is still correct
+  // when a client strips it.
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta name="color-scheme" content="light"/>
+<meta name="supported-color-schemes" content="light"/>
+<style>
+  @media (max-width:480px) {
+    .fp-x { padding-left:22px !important; padding-right:22px !important; }
+  }
+</style>
+</head>
+<body style="margin:0;padding:0;background:${C.canvas}">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.canvas}" style="width:100%;border-collapse:collapse;background:${C.canvas}">
+  <tr>
+    <td align="center" style="padding:32px 16px;font-family:${FONT}">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.card}" style="width:100%;max-width:600px;border-collapse:separate;background:${C.card};border:1px solid ${C.hair};border-radius:10px">
+        <tr>
+          <td class="fp-x" style="padding:20px 32px;border-bottom:1px solid ${C.hair}">
+            <span style="font-family:${FONT};font-size:12px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:${C.ink3}">${esc(brand)}</span>
+          </td>
+        </tr>
+        <tr>
+          <td class="fp-x" align="left" style="padding:32px;font-family:${FONT}">
+            <p style="${bodyP(C.ink)}">${greeting}</p>
+            ${introHtml}
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:22px 0 24px;border-collapse:separate">
+              <tr>
+                <td bgcolor="${C.ink}" style="background:${C.ink};border-radius:6px">
+                  <a href="${esc(link)}" style="display:inline-block;padding:13px 26px;font-family:${FONT};font-size:15px;font-weight:600;line-height:1;color:${C.card};text-decoration:none">${esc(cta)}</a>
+                </td>
+              </tr>
+            </table>
+            <p style="margin:0;font-size:12px;line-height:1.6;color:${C.ink4}">If the button doesn't work, paste this link into your browser:<br/><span style="color:${C.ink2};word-break:break-all">${esc(link)}</span></p>
+            ${signature}
+          </td>
+        </tr>
+      </table>
+      <p style="margin:18px 0 0;max-width:600px;font-family:${FONT};font-size:11px;line-height:1.6;color:${C.ink4};text-align:center">${sentBy} ${DEFAULT_INTAKE_LINK_NOTICE}</p>
+    </td>
+  </tr>
+</table>
+</body>
+</html>`;
 }
-/* eslint-enable brand/no-raw-hex */

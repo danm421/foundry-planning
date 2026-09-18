@@ -38,3 +38,12 @@ function appOrigin(): string {
 export function foundryUrl(clientId: string, page: FoundryPage): string {
   return `${appOrigin()}/clients/${clientId}/${PAGE_PATHS[page]}`;
 }
+
+/**
+ * Absolute deep link to a CRM household's Notes tab. Separate from
+ * `foundryUrl` on purpose: that one builds `/clients/{clientId}/...`, and a
+ * prospect household has no planning client to put in that path.
+ */
+export function foundryCrmNotesUrl(householdId: string): string {
+  return `${appOrigin()}/crm/households/${householdId}?tab=notes`;
+}

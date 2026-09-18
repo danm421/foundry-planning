@@ -72,10 +72,34 @@ export const SUB_TYPE_LABELS: Record<string, string> = {
   term: "Term Life", whole_life: "Whole Life", universal_life: "Universal Life",
   variable_life: "Variable Life",
 };
+/** Non-account sentinel the standalone BuyLegEditor offers (Goals import).
+ *  Never reaches the wire — `buyLegToBody` maps it to null. */
+export const FROM_SALE_PROCEEDS = "__from_sale_proceeds__";
+
 export const FUNDING_SPECIAL_OPTIONS = [
   { value: "", label: "Withdrawal Strategy" },
-  { value: "__from_sale_proceeds__", label: "From Sale Proceeds" },
+  { value: FROM_SALE_PROCEEDS, label: "From Sale Proceeds" },
 ];
+
+/** Every word on the asset-transaction dialog's settlement dropdown.
+ *  The STORED value is the same in both directions ("" = default, else an
+ *  account id) — only the sign of the bundle's net decides which name is true,
+ *  so all four strings move together and are decided in one place. */
+export function settlementCopy(
+  net: number,
+  settlementAccountId: string,
+): { field: string; defaultOption: string; help: string } {
+  const deficit = net < 0;
+  return {
+    field: deficit ? "Deficit paid from" : "Surplus goes to",
+    defaultOption: deficit ? "Withdrawals" : "Default Checking",
+    help: settlementAccountId
+      ? "Sale proceeds land here and purchases are paid from here, so the net stays in this account."
+      : deficit
+        ? "The shortfall is drawn using the plan's withdrawal strategy, grossed up for tax."
+        : "The surplus lands in checking, where the plan's surplus spend and save rules apply to it.",
+  };
+}
 
 export function formatCurrency(value: string | number): string {
   const num = typeof value === "string" ? parseFloat(value) : value;
@@ -100,6 +124,47 @@ export function emptySellLeg(key: string): SellLegDraft {
     proceedsAccountId: "", qualifiesForHomeSaleExclusion: false,
   };
 }
+/** Translate a pick from the unified sell-source dropdown into a leg patch.
+ *  The three source fields are mutually exclusive — exactly one is set and the
+ *  other two are cleared, or the engine would see an ambiguous sale.
+ *  Namespaces: `biz:` a business, `buy:` a prior buy transaction, bare an
+ *  existing account. A business sale has no $-amount mode, so `dollar` falls
+ *  back to a full sale. */
+export function patchForSource(
+  value: string,
+  currentAmountMode: SellAmountMode,
+): Partial<SellLegDraft> {
+  if (value.startsWith("biz:")) {
+    return {
+      sellMode: "business",
+      sellBusinessAccountId: value.slice(4),
+      sellAccountId: "",
+      sellPurchaseTransactionId: "",
+      sellAmountMode: currentAmountMode === "dollar" ? "full" : currentAmountMode,
+      // §121 is a personal-residence exclusion; it can't ride along on a business.
+      qualifiesForHomeSaleExclusion: false,
+      // The engine routes business proceeds itself — to the owning entity's
+      // checking when one entity owns the business outright, else household
+      // default — so this leg carries no explicit destination.
+      proceedsAccountId: "",
+    };
+  }
+  if (value.startsWith("buy:")) {
+    return {
+      sellMode: "account",
+      sellPurchaseTransactionId: value.slice(4),
+      sellAccountId: "",
+      sellBusinessAccountId: "",
+    };
+  }
+  return {
+    sellMode: "account",
+    sellAccountId: value,
+    sellPurchaseTransactionId: "",
+    sellBusinessAccountId: "",
+  };
+}
+
 export function emptyBuyLeg(key: string): BuyLegDraft {
   return {
     key, kind: "buy", name: "", assetName: "",

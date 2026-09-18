@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { parseRowIds } from "../route";
+import { parseOverrideRowIds, parseRowIds } from "../route";
 
 describe("parseRowIds", () => {
   it("accepts an absent rowIds as 'no filter'", () => {
@@ -43,5 +43,45 @@ describe("parseRowIds", () => {
     const result = parseRowIds(["r1", 2]);
     expect(Array.isArray(result)).toBe(false);
     expect(result).toHaveProperty("error");
+  });
+});
+
+/**
+ * `overrideRowIds` widens which fields a matched row may overwrite, so the
+ * subset rule is the whole point of the parser: without it a body could name
+ * rows it never asked to commit, and — paired with an ABSENT `rowIds`, the
+ * wizard's commit-everything shape — escalate every matched row in the
+ * payload to an override of `name` and ownership.
+ */
+describe("parseOverrideRowIds", () => {
+  it("accepts an absent value as 'no override'", () => {
+    expect(parseOverrideRowIds(undefined, ["r1"])).toBeUndefined();
+  });
+
+  it("accepts a subset of the rows being committed", () => {
+    expect(parseOverrideRowIds(["r1"], ["r1", "r2"])).toEqual(["r1"]);
+  });
+
+  it("rejects a row that is not being committed", () => {
+    const result = parseOverrideRowIds(["r3"], ["r1", "r2"]);
+    expect(Array.isArray(result)).toBe(false);
+    expect(result).toHaveProperty("error");
+  });
+
+  it("rejects an override with no rowIds at all — that would widen every row", () => {
+    const result = parseOverrideRowIds(["r1"], undefined);
+    expect(Array.isArray(result)).toBe(false);
+    expect(result).toHaveProperty("error");
+  });
+
+  it("rejects an empty array, the same dead-button shape parseRowIds refuses", () => {
+    const result = parseOverrideRowIds([], ["r1"]);
+    expect(Array.isArray(result)).toBe(false);
+    expect(result).toHaveProperty("error");
+  });
+
+  it("rejects a non-array and a non-string element", () => {
+    expect(parseOverrideRowIds("r1", ["r1"])).toHaveProperty("error");
+    expect(parseOverrideRowIds(["r1", 2], ["r1"])).toHaveProperty("error");
   });
 });

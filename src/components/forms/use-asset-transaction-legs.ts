@@ -5,7 +5,7 @@ import type { ClientData, ProjectionYear } from "@/engine/types";
 import type { AssetTransactionInitialData } from "./add-asset-transaction-form";
 import {
   type LegDraft, type SellLegDraft, type BuyLegDraft, type AssetCategory,
-  emptySellLeg, emptyBuyLeg,
+  emptySellLeg, emptyBuyLeg, FROM_SALE_PROCEEDS,
 } from "./asset-transaction-leg-model";
 
 const optStr = (v: string | null | undefined): string | null =>
@@ -51,7 +51,7 @@ function sellLegToBody(leg: SellLegDraft, year: number, isRealEstate: boolean): 
 }
 
 function buyLegToBody(leg: BuyLegDraft, year: number): Record<string, unknown> {
-  const funding = leg.fundingAccountId === "__from_sale_proceeds__"
+  const funding = leg.fundingAccountId === FROM_SALE_PROCEEDS
     ? null : (optStr(leg.fundingAccountId) || null);
   // Real-estate only; the API rejects these on a sell and they are
   // meaningless on any other category. Computed once so the amount and its
@@ -172,6 +172,63 @@ export function mergeEditBody(
   }
   body.name = name; body.year = year;
   return body;
+}
+
+/** Whether the footer's settlement pick governs this leg at all.
+ *
+ *  A BUSINESS sell is the one leg it does not: `applyBusinessSales` deposits
+ *  into the owning entity's own checking (or the household default when no
+ *  single entity owns it), so the leg carries no destination the dialog could
+ *  set. The footer gates its own visibility on this too — a bundle of nothing
+ *  but business sells has no routing choice to offer, and rendering the
+ *  dropdown there would promise a destination that is never written.
+ */
+export function legSettles(leg: LegDraft): boolean {
+  return leg.kind === "buy" || leg.sellMode !== "business";
+}
+
+/** The bundle's ONE routing control. `settlementAccountId` is either "" — the
+ *  default — or a real cash/taxable account id.
+ *
+ *  "" is a selection, not an absent value. It clears both sides, and what the
+ *  engine then does depends only on the sign of the bundle's net:
+ *    · surplus — proceeds land in default checking, where the plan's own
+ *      surplus spend/save rules pick them up like any other cash;
+ *    · deficit — the purchase debits default checking, checking ends the BoY
+ *      negative, and projection.ts phase 12's gap-fill refills it from the
+ *      household withdrawal strategy, grossed up for tax. That is the
+ *      "Withdrawals" option, and it is why a deficit needs no account id.
+ *
+ *  A named account is stamped on BOTH sides — it receives every sale's proceeds
+ *  AND pays for every purchase. Sales run before purchases within a projection
+ *  year, so the proceeds are there to spend and only the net stays behind.
+ *
+ *  A BUSINESS sell is left alone: `applyBusinessSales` deposits into the owning
+ *  entity's own checking (or the household default when no single entity owns
+ *  it), so the leg carries no destination of its own.
+ */
+export function applySettlement(leg: LegDraft, settlementAccountId: string): LegDraft {
+  if (!legSettles(leg)) return leg;
+  return leg.kind === "buy"
+    ? { ...leg, fundingAccountId: settlementAccountId }
+    : { ...leg, proceedsAccountId: settlementAccountId };
+}
+
+/** Edit mode: recover the footer's selection from the bundle's saved legs.
+ *  The sell side wins when legacy per-leg routing disagrees — that collapse to
+ *  a single value is the point of having one control. */
+export function settlementFromLegs(legs: LegDraft[]): string {
+  for (const l of legs) {
+    if (l.kind === "sell" && legSettles(l) && l.proceedsAccountId) return l.proceedsAccountId;
+  }
+  for (const l of legs) {
+    // The sale-proceeds sentinel is not an account, so it can never be the
+    // footer's value; it reads as the default.
+    if (l.kind === "buy" && l.fundingAccountId && l.fundingAccountId !== FROM_SALE_PROCEEDS) {
+      return l.fundingAccountId;
+    }
+  }
+  return "";
 }
 
 export function combinedNet(sellNets: number[], buyCosts: number[]) {

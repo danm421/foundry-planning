@@ -19,11 +19,12 @@ import { SignJWT, createLocalJWKSet, exportJWK, generateKeyPair, type JWK } from
  *    so F1's and F2's gates (which live inside `resolveMcpPrincipal`) run
  *    for real and a deletion of either is reddened here, not simulated by a
  *    mock that already assumes the gate fired;
- *  - the REAL `ALL_MCP_TOOLS` registry (all 17 tools) for `tools/list`;
+ *  - the REAL `ALL_MCP_TOOLS` registry (all 19 tools) for `tools/list`;
  *  - one REAL tool (`search_clients`) for `tools/call`, with only its own
- *    DB dependency (`@/lib/client-search`) mocked — proving the WIRING
- *    (auth → dispatch → tool.run → response), not re-testing that tool's
- *    business logic (already covered by discovery-tools.test.ts).
+ *    DB dependency (`@/lib/client-search`'s `searchHouseholds`) mocked —
+ *    proving the WIRING (auth → dispatch → tool.run → response), not
+ *    re-testing that tool's business logic (already covered by
+ *    discovery-tools.test.ts).
  *
  * Only Clerk's org-membership lookup and the JWKS *fetch* are doubled
  * (`@clerk/nextjs/server`, and `createRemoteJWKSet` inside `jose` — every
@@ -55,8 +56,8 @@ vi.mock("@clerk/nextjs/server", () => ({
 // search_clients's one DB dependency. Its schema declares no `clientId`, so
 // `defineTool`'s per-client check never runs for it — the simplest real
 // tool for proving the wiring without also needing to mock authz.
-const { searchClients } = vi.hoisted(() => ({ searchClients: vi.fn() }));
-vi.mock("@/lib/client-search", () => ({ searchClients }));
+const { searchHouseholds } = vi.hoisted(() => ({ searchHouseholds: vi.fn() }));
+vi.mock("@/lib/client-search", () => ({ searchHouseholds }));
 vi.mock("@/lib/rate-limit", () => ({
   checkMcpRateLimit: vi.fn().mockResolvedValue({ allowed: true, remaining: 1, reset: 0 }),
 }));
@@ -162,7 +163,9 @@ async function readMcpResponse(
 beforeEach(() => {
   h.getOrganizationMembershipList.mockReset();
   h.getOrganizationMembershipList.mockResolvedValue(membership("org:member"));
-  searchClients.mockReset().mockResolvedValue([{ id: "c1", householdTitle: "Smith" }]);
+  searchHouseholds.mockReset().mockResolvedValue([
+    { householdId: "hh1", clientId: "c1", householdTitle: "Smith", hasPlan: true },
+  ]);
 });
 
 describe("route.ts auth/wiring boundary, driven over the real authHandler (F3, Critical C2)", () => {
@@ -177,7 +180,7 @@ describe("route.ts auth/wiring boundary, driven over the real authHandler (F3, C
     );
     expect(res.status).toBe(401);
     expect(res.headers.get("www-authenticate")).toMatch(/bearer/i);
-    expect(searchClients).not.toHaveBeenCalled();
+    expect(searchHouseholds).not.toHaveBeenCalled();
   });
 
   it("an authenticated tools/list returns every real registered tool, not an empty catalogue", async () => {
@@ -209,10 +212,10 @@ describe("route.ts auth/wiring boundary, driven over the real authHandler (F3, C
     );
     const { status, json } = await readMcpResponse(res);
     expect(status).toBe(200);
-    expect(searchClients).toHaveBeenCalledTimes(1);
+    expect(searchHouseholds).toHaveBeenCalledTimes(1);
     expect(json?.result?.isError).toBeFalsy();
     expect(json?.result?.structuredContent).toEqual({
-      households: [{ id: "c1", householdTitle: "Smith" }],
+      households: [{ householdId: "hh1", clientId: "c1", householdTitle: "Smith", hasPlan: true }],
     });
   });
 
@@ -233,7 +236,7 @@ describe("route.ts auth/wiring boundary, driven over the real authHandler (F3, C
       ),
     );
     await readMcpResponse(res);
-    expect(searchClients).toHaveBeenCalledWith(
+    expect(searchHouseholds).toHaveBeenCalledWith(
       "smith",
       ORG_ID,
       expect.objectContaining({ userId: USER_ID }),
@@ -255,7 +258,7 @@ describe("route.ts auth/wiring boundary, driven over the real authHandler (F3, C
         ),
       );
       expect(res.status).toBe(401);
-      expect(searchClients).not.toHaveBeenCalled();
+      expect(searchHouseholds).not.toHaveBeenCalled();
     });
   });
 
@@ -274,7 +277,7 @@ describe("route.ts auth/wiring boundary, driven over the real authHandler (F3, C
         ),
       );
       expect(res.status).toBe(401);
-      expect(searchClients).not.toHaveBeenCalled();
+      expect(searchHouseholds).not.toHaveBeenCalled();
     });
   });
 

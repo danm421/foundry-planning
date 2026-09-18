@@ -17,6 +17,7 @@
 // flagged as unclassified.
 import { eodhdSymbol } from "@/lib/investments/quote";
 import { mapSecurityType } from "./eodhd-adapter";
+import { eodhdSearch, type EodhdSearch, type EodhdSearchRow } from "./eodhd-search";
 import type { SecurityType } from "./types";
 
 export interface SecurityNameHit {
@@ -27,27 +28,7 @@ export interface SecurityNameHit {
 export interface LookupNameDeps {
   /** Injectable transport: takes an EODHD code and returns the parsed
    *  `/search` JSON. Defaults to the live call. */
-  search?: (query: string) => Promise<unknown>;
-}
-
-const EODHD_SEARCH_BASE = "https://eodhd.com/api/search";
-
-interface SearchRow {
-  Code?: unknown;
-  Exchange?: unknown;
-  Type?: unknown;
-  Name?: unknown;
-}
-
-/** Live EODHD search. Throws on misconfig / HTTP error; the caller fails soft. */
-async function searchLive(query: string): Promise<unknown> {
-  const key = process.env.EODHD_API_KEY ?? "";
-  if (!key) throw new Error("EODHD_API_KEY is not configured.");
-  const res = await fetch(
-    `${EODHD_SEARCH_BASE}/${encodeURIComponent(query)}?api_token=${key}&fmt=json`,
-  );
-  if (!res.ok) throw new Error(`EODHD search ${query}: HTTP ${res.status}`);
-  return res.json();
+  search?: EodhdSearch;
 }
 
 /**
@@ -69,9 +50,9 @@ export async function lookupSecurityName(
     const code = symbol.slice(0, cut);
     const exchange = symbol.slice(cut + 1);
 
-    const raw = await (deps.search ?? searchLive)(code);
+    const raw = await (deps.search ?? eodhdSearch)(code);
     if (!Array.isArray(raw)) return null;
-    for (const r of raw as SearchRow[]) {
+    for (const r of raw as EodhdSearchRow[]) {
       if (!r || typeof r.Code !== "string" || typeof r.Exchange !== "string") continue;
       if (r.Code.toUpperCase() !== code || r.Exchange.toUpperCase() !== exchange) continue;
       const name = typeof r.Name === "string" ? r.Name.trim() : "";

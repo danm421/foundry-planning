@@ -13,10 +13,22 @@ const PROPS = {
   onTotalsChange: () => {},
 };
 
+/** What the ticker picker's search returns. */
+const SEARCH_HITS = [
+  {
+    ticker: "VTSAX",
+    name: "Vanguard Total Stock Market Index Fund Admiral Shares",
+    exchange: "US",
+    securityType: "mutual_fund",
+  },
+];
+
 /** Captured bodies of the POST that creates a holding. */
 let created: Record<string, unknown>[];
 /** Every /quote URL requested — quotes are a paid call, so the count matters. */
 let quoteCalls: string[];
+/** Every /search URL requested — EODHD search is a paid call too. */
+let searchCalls: string[];
 let fetchMock: ReturnType<typeof vi.fn>;
 
 /** Routes the four endpoints the tab talks to. `quote` decides what the price
@@ -24,8 +36,10 @@ let fetchMock: ReturnType<typeof vi.fn>;
 function stubFetch(quote: { price: number; asOf: string } | { price: null }) {
   created = [];
   quoteCalls = [];
+  searchCalls = [];
   fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     const u = String(url);
+    if (u.includes("/search?")) { searchCalls.push(u); return { ok: true, json: async () => ({ results: SEARCH_HITS }) }; }
     if (u.includes("/quote")) { quoteCalls.push(u); return { ok: true, json: async () => quote }; }
     if (u.includes("/classify")) {
       return { ok: true, json: async () => ({ security: null, displayName: null, weights: [] }) };
@@ -115,5 +129,190 @@ describe("HoldingsTab add row", () => {
     render(<HoldingsTab {...PROPS} />);
     // "VTI" used to sit here as a placeholder and read as a real holding.
     expect((screen.getByLabelText("Ticker") as HTMLInputElement).placeholder).toBe("");
+  });
+});
+
+describe("HoldingsTab ticker picker", () => {
+  /** A saved holding the advisor typed a NAME into and never had a ticker for —
+   *  the row the search icon exists to repair. */
+  const nameOnlyRow = {
+    id: "h-9",
+    accountId: "acct-1",
+    securityId: null,
+    displayTicker: null,
+    displayName: "Vanguard Total Stock Market Index",
+    shares: "100",
+    price: "0",
+    priceAsOf: null,
+    costBasis: "5000",
+    marketValue: null,
+    sortOrder: 0,
+    notes: null,
+    securityWeights: [],
+    overrides: [],
+    needsReview: true,
+  };
+
+  /** Bodies of every PUT that patched a holding. */
+  let updated: Record<string, unknown>[];
+
+  function stubRowFetch(row: Record<string, unknown>) {
+    updated = [];
+    quoteCalls = [];
+    searchCalls = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      const u = String(url);
+      if (u.includes("/search?")) { searchCalls.push(u); return { ok: true, json: async () => ({ results: SEARCH_HITS }) }; }
+      if (u.includes("/quote")) {
+        quoteCalls.push(u);
+        return { ok: true, json: async () => ({ price: 142.11, asOf: "2026-09-16" }) };
+      }
+      if (u.includes("/classify")) {
+        return { ok: true, json: async () => ({ security: null, displayName: null, weights: [] }) };
+      }
+      if (init?.method === "PUT") {
+        updated.push(JSON.parse(String(init.body)));
+        return { ok: true, json: async () => ({}) };
+      }
+      return { ok: true, json: async () => [row] }; // GET list
+    }));
+  }
+
+  it("fills the add row's Ticker box from a name search, and prices it", async () => {
+    stubFetch({ price: 312.45, asOf: "2026-09-15" });
+    render(<HoldingsTab {...PROPS} />);
+
+    // The advisor has the fund's name and no symbol — so it goes in the only
+    // box there is, and the magnifier next to it takes it from there.
+    fireEvent.change(screen.getByLabelText("Ticker"), { target: { value: "vanguard total stock" } });
+    fireEvent.click(screen.getByRole("button", { name: "Search for a security by name" }));
+
+    const box = await screen.findByLabelText("Security name or ticker");
+    expect((box as HTMLInputElement).value).toBe("vanguard total stock");
+
+    fireEvent.click(await screen.findByRole("option", { name: /VTSAX/ }));
+
+    await waitFor(() =>
+      expect((screen.getByLabelText("Ticker") as HTMLInputElement).value).toBe("VTSAX"));
+    await waitFor(() =>
+      expect((screen.getByLabelText("Price") as HTMLInputElement).value).toBe("312.45"));
+
+    // Reference data, not account data: the lookup must not be account-scoped,
+    // or every other surface that wants it has to invent an account id.
+    expect(searchCalls).toEqual([
+      "/api/clients/client-1/holdings/search?q=vanguard%20total%20stock",
+    ]);
+  });
+
+  it("attaches the ticker to a name-only row and prices it", async () => {
+    stubRowFetch(nameOnlyRow);
+    render(<HoldingsTab {...PROPS} />);
+
+    fireEvent.click(await screen.findByRole("button", {
+      name: /Search for a security by name to match Vanguard Total Stock Market Index/,
+    }));
+
+    // Seeded from the row's name, so there is nothing to retype.
+    const box = await screen.findByLabelText("Security name or ticker");
+    expect((box as HTMLInputElement).value).toBe("Vanguard Total Stock Market Index");
+
+    fireEvent.click(await screen.findByRole("option", { name: /VTSAX/ }));
+
+    await waitFor(() => expect(updated).toHaveLength(1));
+    expect(updated[0]).toMatchObject({
+      displayTicker: "VTSAX",
+      displayName: "Vanguard Total Stock Market Index Fund Admiral Shares",
+      price: 142.11,
+      priceAsOf: "2026-09-16",
+    });
+  });
+
+  it("reprices a row that came off a statement, because the market close is newer", async () => {
+    // A statement price is as old as the statement. Once the row names a real
+    // ticker there is a better number available, and attaching one is the
+    // moment to go get it.
+    stubRowFetch({ ...nameOnlyRow, price: "98.76" });
+    render(<HoldingsTab {...PROPS} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Search for a security by name to match/ }));
+    fireEvent.click(await screen.findByRole("option", { name: /VTSAX/ }));
+
+    await waitFor(() => expect(updated).toHaveLength(1));
+    expect(updated[0]).toMatchObject({
+      displayTicker: "VTSAX",
+      price: 142.11,
+      priceAsOf: "2026-09-16",
+    });
+  });
+
+  it("hands the value back to shares x price once the row is priced", async () => {
+    // The import's own rule: a tickered row lets the live price drive its value,
+    // and only an untickered one keeps the statement's market value. A ticker
+    // plus a quote is exactly that transition, so the override goes.
+    stubRowFetch({ ...nameOnlyRow, price: "98.76", marketValue: "9876.00" });
+    render(<HoldingsTab {...PROPS} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Search for a security by name to match/ }));
+    fireEvent.click(await screen.findByRole("option", { name: /VTSAX/ }));
+
+    await waitFor(() => expect(updated).toHaveLength(1));
+    expect(updated[0]).toMatchObject({ price: 142.11, marketValue: null });
+  });
+
+  it("keeps a stated value the price can't reproduce, when there are no shares", async () => {
+    // A statement that gives a dollar value and no share count: shares x price
+    // would be $0, so the stated value has to stay.
+    stubRowFetch({ ...nameOnlyRow, shares: "0", price: "0", marketValue: "9876.00" });
+    render(<HoldingsTab {...PROPS} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Search for a security by name to match/ }));
+    fireEvent.click(await screen.findByRole("option", { name: /VTSAX/ }));
+
+    await waitFor(() => expect(updated).toHaveLength(1));
+    expect(updated[0]).toMatchObject({ price: 142.11 });
+    expect(updated[0]).not.toHaveProperty("marketValue");
+  });
+
+  it("keeps the price it had when the feed can't price the ticker", async () => {
+    // The row still gains its ticker and name — losing a statement price to a
+    // feed outage would be strictly worse than keeping a stale one.
+    updated = [];
+    quoteCalls = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      const u = String(url);
+      if (u.includes("/search?")) return { ok: true, json: async () => ({ results: SEARCH_HITS }) };
+      if (u.includes("/quote")) { quoteCalls.push(u); return { ok: true, json: async () => ({ price: null }) }; }
+      if (u.includes("/classify")) {
+        return { ok: true, json: async () => ({ security: null, displayName: null, weights: [] }) };
+      }
+      if (init?.method === "PUT") { updated.push(JSON.parse(String(init.body))); return { ok: true, json: async () => ({}) }; }
+      return { ok: true, json: async () => [{ ...nameOnlyRow, price: "98.76" }] };
+    }));
+    render(<HoldingsTab {...PROPS} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Search for a security by name to match/ }));
+    fireEvent.click(await screen.findByRole("option", { name: /VTSAX/ }));
+
+    await waitFor(() => expect(updated).toHaveLength(1));
+    expect(quoteCalls).toHaveLength(1);
+    expect(updated[0]).toMatchObject({ displayTicker: "VTSAX" });
+    expect(updated[0]).not.toHaveProperty("price");
+  });
+
+  it("says the search is down rather than showing it as 'no matches'", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes("/search?")) {
+        return { ok: false, status: 503, json: async () => ({ error: "Security search is unavailable right now." }) };
+      }
+      return { ok: true, json: async () => [] };
+    }));
+    render(<HoldingsTab {...PROPS} />);
+
+    fireEvent.change(screen.getByLabelText("Ticker"), { target: { value: "vanguard" } });
+    fireEvent.click(screen.getByRole("button", { name: "Search for a security by name" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/unavailable right now/);
+    expect(screen.queryByText(/Nothing matches/)).toBeNull();
   });
 });

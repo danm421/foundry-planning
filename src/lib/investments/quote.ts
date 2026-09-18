@@ -1,8 +1,13 @@
-// Latest daily close prices via EODHD's real-time multi-ticker endpoint.
+// Latest daily close prices via EODHD's real-time multi-ticker endpoint, with
+// two fallbacks under it: the bulk end-of-day feed (a mutual fund has no
+// real-time close until its NAV strikes), and then the `/search` row's own
+// dated previousClose — which is a DIFFERENT entitlement from the two price
+// feeds, and the only one this account has had since 11 Sep.
 // Replaces the retired Stooq `q/l/` quote endpoint (which now 404s / is behind a
 // browser challenge). Fail-soft throughout: unresolved symbols are simply absent
 // from the returned map and nothing throws to the caller — the refresh summary
 // (tickersMissing) surfaces what couldn't be priced.
+import { eodhdSearch, type EodhdSearchRow } from "./classification/eodhd-search";
 import type { LiveQuote } from "@/lib/portal/contracts";
 
 export type { LiveQuote } from "@/lib/portal/contracts";
@@ -19,6 +24,11 @@ export interface QuoteDeps {
    *  but ONLY when `fetchRealtime` is left at its default, so an injected
    *  transport can never leak a live request. */
   fetchLastDay?: (codes: string[]) => Promise<unknown>;
+  /** Injectable `/search` transport for the last-resort price tier: takes one
+   *  EODHD code (e.g. "VSGIX") and returns the parsed search JSON. Guarded the
+   *  same way `fetchLastDay` is — consulted by default only when
+   *  `fetchRealtime` is, so an injected transport can never leak a live call. */
+  fetchSearch?: (code: string) => Promise<unknown>;
 }
 
 const EODHD_REALTIME_BASE = "https://eodhd.com/api/real-time";
@@ -26,6 +36,8 @@ const EODHD_BULK_EOD_BASE = "https://eodhd.com/api/eod-bulk-last-day";
 // EODHD takes one primary symbol in the path plus a comma list in `s=`. Keep
 // chunks modest so one failing chunk can't sink a large refresh.
 const BATCH_SIZE = 50;
+// The `/search` price tier has no batch form — see fetchSearchCloses.
+const SEARCH_CONCURRENCY = 8;
 
 /**
  * Bare tickers whose primary listing is NOT in the US, mapped to their
@@ -206,6 +218,85 @@ async function fetchLastDayFor(
   return out;
 }
 
+/** Resolve the `/search` price tier's transport, or null when it must not run
+ *  — the same reasoning as `resolveLastDay`. */
+function resolveSearch(deps: QuoteDeps): ((code: string) => Promise<unknown>) | null {
+  if (deps.fetchSearch) return deps.fetchSearch;
+  if (deps.fetchRealtime) return null;
+  const apiKey = resolveApiKey(deps);
+  if (!apiKey) return null;
+  return (code) => eodhdSearch(code, apiKey);
+}
+
+/**
+ * Last-resort close for symbols neither price feed would price, read off the
+ * `/search` rows themselves. Never throws — an unresolvable symbol is absent.
+ *
+ * Why this tier exists: `/real-time`, `/eod` and `/eod-bulk-last-day` all sit
+ * on a price entitlement this account lost on 11 Sep — they answer HTTP 403
+ * for every symbol, VTI included — while `/search` answers 200 and carries
+ * `previousClose` with `previousCloseDate` beside it. Without this, every
+ * holding in the book reads as unpriced. It costs one call per unpriced symbol
+ * (no batch form exists), so it only ever sees what the batched tiers missed.
+ *
+ * Matching is exact on code AND exchange, for the reason `lookup-name.ts`
+ * spells out: `search/IBM` answers with every exchange IBM trades on, and row
+ * order is not a promise.
+ */
+async function fetchSearchCloses(
+  unpriced: readonly string[],
+  deps: QuoteDeps,
+): Promise<Map<string, LiveQuote>> {
+  const out = new Map<string, LiveQuote>();
+  const search = resolveSearch(deps);
+  if (!search || unpriced.length === 0) return out;
+  const priceOne = async (symbol: string) => {
+    const cut = symbol.lastIndexOf(".");
+    if (cut <= 0) return;
+    const code = symbol.slice(0, cut);
+    const exchange = symbol.slice(cut + 1);
+    try {
+      const raw = await search(code);
+      if (!Array.isArray(raw)) return;
+      for (const r of raw as EodhdSearchRow[]) {
+        if (!r || typeof r.Code !== "string" || typeof r.Exchange !== "string") continue;
+        if (r.Code.toUpperCase() !== code || r.Exchange.toUpperCase() !== exchange) continue;
+        const price = typeof r.previousClose === "number" ? r.previousClose : Number(r.previousClose);
+        const asOf =
+          typeof r.previousCloseDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(r.previousCloseDate)
+            ? r.previousCloseDate
+            : null;
+        if (!Number.isFinite(price) || price <= 0 || !asOf) continue;
+        // No daily change on a search row: absent, not a fabricated 0%.
+        out.set(symbol, { price, asOf, changePct: null });
+        return;
+      }
+    } catch {
+      // fail-soft: this symbol stays unpriced, the rest of the map survives
+    }
+  };
+  // One call per symbol, so a whole-book refresh is hundreds of them — kept to
+  // a few at a time rather than fired at once, which is what a nightly run over
+  // the book would otherwise do to the feed.
+  for (let i = 0; i < unpriced.length; i += SEARCH_CONCURRENCY) {
+    await Promise.all(unpriced.slice(i, i + SEARCH_CONCURRENCY).map(priceOne));
+  }
+  return out;
+}
+
+/** Everything the real-time feed couldn't price: the bulk end-of-day tier
+ *  first, then the `/search` rows for whatever is still unpriced. */
+async function fillUnpriced(
+  unpriced: readonly string[],
+  deps: QuoteDeps,
+): Promise<Map<string, LiveQuote>> {
+  const out = await fetchLastDayFor(unpriced, deps);
+  for (const [sym, q] of await fetchSearchCloses(unpriced.filter((s) => !out.has(s)), deps)) {
+    out.set(sym, q);
+  }
+  return out;
+}
+
 /** Resolve the transport: an injected fetcher wins; otherwise the live EODHD
  *  call bound to the configured key. Throws if neither is available — callers
  *  decide whether to swallow (fail-soft) or surface. */
@@ -285,8 +376,8 @@ export async function fetchEodQuotes(
     // fail-soft: missing symbols simply absent; cached hits preserved
   }
   // Mutual funds show no real-time close until their NAV strikes — fall back to
-  // the last daily close so they aren't blank all session.
-  for (const [sym, q] of await fetchLastDayFor(miss.filter((s) => !out.has(s)), deps)) {
+  // the last daily close, then to the search row, so they aren't blank all session.
+  for (const [sym, q] of await fillUnpriced(miss.filter((s) => !out.has(s)), deps)) {
     out.set(sym, q);
     if (useCache) quoteCache.set(sym, { q, at: now });
   }
@@ -323,7 +414,7 @@ export async function fetchEodCloses(
     }
     if (ok) collectRows(raw, out);
   }
-  for (const [sym, hit] of await fetchLastDayFor(symbols.filter((s) => !out.has(s)), deps)) {
+  for (const [sym, hit] of await fillUnpriced(symbols.filter((s) => !out.has(s)), deps)) {
     out.set(sym, { price: hit.price, asOf: hit.asOf });
   }
   return out;

@@ -38,7 +38,11 @@ const csp = [
   "worker-src 'self' blob:",
   "frame-ancestors 'none'",
   "base-uri 'self'",
-  "form-action 'self'",
+  // Stripe's hosted pages are reached by SUBMITTING a form to our own route
+  // and letting it 303 onward, and form-action follows redirects — so 'self'
+  // alone reports (and, once enforced, would block) every Manage-billing and
+  // billing-cycle switch. Production has been emitting these on /settings/billing.
+  "form-action 'self' https://billing.stripe.com https://checkout.stripe.com",
   "object-src 'none'",
   "upgrade-insecure-requests",
   // Legacy reporting — still the most-supported browser API.

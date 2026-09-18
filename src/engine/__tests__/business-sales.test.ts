@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { applyBusinessSales } from "../asset-transactions";
+import { applyBusinessSales, normalizeBusinessSales } from "../asset-transactions";
 import type { Account, AccountLedger, AssetTransaction, Liability } from "../types";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -410,5 +410,123 @@ describe("applyBusinessSales — no-op cases", () => {
       defaultCheckingId: "acct-cash",
     });
     expect(result.removedBusinessAccountIds).toEqual([]);
+  });
+});
+
+// ── normalizeBusinessSales ────────────────────────────────────────────────────
+//
+// A sell can name a business through `accountId` — rows saved before the sell
+// picker routed businesses to `businessAccountId`, and any writer that treats a
+// business as an ordinary account. Left alone, `applyAssetSales` sells the
+// shell and leaves every account the business owns behind.
+
+describe("normalizeBusinessSales", () => {
+  it("re-points a sell that names a top-level business through accountId", () => {
+    const [sale] = normalizeBusinessSales(
+      [makeSale({ businessAccountId: undefined, accountId: "biz" })],
+      [makeBusiness()],
+    );
+    expect(sale.businessAccountId).toBe("biz");
+    expect(sale.accountId).toBeUndefined();
+  });
+
+  it("leaves an ordinary account sale alone", () => {
+    const checking = makeChecking("acct-cash", 1_000);
+    const [sale] = normalizeBusinessSales(
+      [makeSale({ businessAccountId: undefined, accountId: "acct-cash" })],
+      [checking, makeBusiness()],
+    );
+    expect(sale.businessAccountId).toBeUndefined();
+    expect(sale.accountId).toBe("acct-cash");
+  });
+
+  it("leaves a child account of a business sellable on its own", () => {
+    const child = makeChild({ id: "child-prop", category: "real_estate", value: 800_000 });
+    const [sale] = normalizeBusinessSales(
+      [makeSale({ businessAccountId: undefined, accountId: "child-prop" })],
+      [makeBusiness(), child],
+    );
+    expect(sale.businessAccountId).toBeUndefined();
+    expect(sale.accountId).toBe("child-prop");
+  });
+
+  it("leaves a trust-owned business alone — applyAssetSales routes its gain to the 1041", () => {
+    const trustOwned = makeBusiness({
+      owners: [{ kind: "entity", entityId: "slat-3", percent: 1 }],
+    });
+    const [sale] = normalizeBusinessSales(
+      [makeSale({ businessAccountId: undefined, accountId: "biz" })],
+      [trustOwned],
+    );
+    expect(sale.businessAccountId).toBeUndefined();
+    expect(sale.accountId).toBe("biz");
+  });
+
+  it("leaves a part-trust-owned business alone", () => {
+    const split = makeBusiness({
+      owners: [
+        { kind: "family_member", familyMemberId: "B", percent: 0.5 },
+        { kind: "entity", entityId: "slat-3", percent: 0.5 },
+      ],
+    });
+    const [sale] = normalizeBusinessSales(
+      [makeSale({ businessAccountId: undefined, accountId: "biz" })],
+      [split],
+    );
+    expect(sale.businessAccountId).toBeUndefined();
+  });
+
+  it("leaves an owner-less business alone — applyBusinessSales would refuse it anyway", () => {
+    const [sale] = normalizeBusinessSales(
+      [makeSale({ businessAccountId: undefined, accountId: "biz" })],
+      [makeBusiness({ owners: [] })],
+    );
+    expect(sale.businessAccountId).toBeUndefined();
+  });
+
+  it("leaves a buy alone even when it names a business", () => {
+    const [txn] = normalizeBusinessSales(
+      [makeSale({ type: "buy", businessAccountId: undefined, accountId: "biz" })],
+      [makeBusiness()],
+    );
+    expect(txn.businessAccountId).toBeUndefined();
+  });
+
+  it("returns the same array when nothing needs re-pointing", () => {
+    const input = [makeSale()];
+    expect(normalizeBusinessSales(input, [makeBusiness()])).toBe(input);
+  });
+
+  it("makes the cascade reach the children of a business named through accountId", () => {
+    const checking = makeChecking("acct-cash", 0);
+    const business = makeBusiness({ value: 500_000, basis: 100_000 });
+    const child = makeChild({ id: "child-prop", category: "real_estate", value: 800_000, basis: 600_000 });
+    const accountBalances: Record<string, number> = { "acct-cash": 0, "child-prop": 800_000 };
+    const basisMap: Record<string, number> = { "acct-cash": 0, "child-prop": 600_000 };
+    const accountLedgers: Record<string, AccountLedger> = {
+      "acct-cash": makeLedger(0),
+      "child-prop": makeLedger(800_000),
+    };
+
+    const result = applyBusinessSales({
+      sales: normalizeBusinessSales(
+        [makeSale({ businessAccountId: undefined, accountId: "biz" })],
+        [checking, business, child],
+      ),
+      accounts: [checking, business, child],
+      liabilities: [],
+      accountBalances,
+      basisMap,
+      accountLedgers,
+      year: 2030,
+      defaultCheckingId: "acct-cash",
+    });
+
+    expect(result.breakdown[0].cascadedAccountIds).toEqual(["child-prop"]);
+    // 500k operating + 800k warehouse.
+    expect(accountBalances["acct-cash"]).toBe(1_300_000);
+    expect(accountBalances["child-prop"]).toBe(0);
+    // 400k operating gain + 200k on the warehouse.
+    expect(result.capitalGains).toBe(600_000);
   });
 });

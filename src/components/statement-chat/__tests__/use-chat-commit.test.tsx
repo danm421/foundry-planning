@@ -233,6 +233,72 @@ describe("useChatCommit — the fresh-read merge must not discard a local edit (
   });
 });
 
+/**
+ * The override box's state has to survive the whole hop from the checkbox to
+ * the commit route's body, and `overrideRowIds` is the only thing that carries
+ * it — the payload PATCH deliberately does not, because which fields ONE click
+ * may overwrite is not a fact read off the statement.
+ */
+describe("useChatCommit — the override reaches the commit request", () => {
+  /** Drives one commit through the hook and hands back the POST's body. */
+  async function commitBody(opts?: { overrideAll: boolean }) {
+    const { result } = renderHook(() => useChatCommit("c1", "i1"));
+    act(() => {
+      result.current.applyExtractionResult({
+        summary: "x",
+        caveats: [],
+        excluded: [],
+        rows: [{ name: "IRA", value: 100, __rowId: "r1" }] as never,
+        // `liabilities` is REQUIRED on `ChatCommitResult` (Ruling 39) so tsc
+        // gates every typed construction site. This test arrived from main's
+        // override-box work, which predates the field; the override path is
+        // accounts-only, so an empty array is the right value here.
+        liabilities: [],
+      });
+    });
+
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(importGetResponse({ payload: { accounts: [] } })) // fresh GET
+      .mockResolvedValueOnce(jsonResponse({})) // PATCH payload.accounts
+      .mockResolvedValueOnce(jsonResponse({ ok: true })) // POST commit
+      .mockResolvedValueOnce(importGetResponse({})) // fresh GET for chat
+      .mockResolvedValueOnce(jsonResponse({})); // PATCH chat
+
+    await act(async () => {
+      await result.current.handleCommitRows(["r1"], opts);
+    });
+
+    const post = vi
+      .mocked(fetch)
+      .mock.calls.find(([url, init]) => String(url).endsWith("/commit") && init?.method === "POST");
+    expect(post).toBeDefined();
+    return JSON.parse(post![1]!.body as string) as Record<string, unknown>;
+  }
+
+  // `tabs` is BOTH tabs since the liabilities work: `commitLiabilities` honours
+  // `rowIds` (Task 6), so naming the second tab no longer commits it unfiltered.
+  // These two assertions arrived from main pinning the accounts-only shape; the
+  // override itself is untouched by that change, because `overrideRowIds` is
+  // read by `commitAccounts` alone.
+  it("names the row in overrideRowIds when the box was ticked", async () => {
+    expect(await commitBody({ overrideAll: true })).toEqual({
+      tabs: ["accounts", "liabilities"],
+      rowIds: ["r1"],
+      overrideRowIds: ["r1"],
+    });
+  });
+
+  it("omits the key entirely on a plain Commit — the route refuses an empty array", async () => {
+    const body = await commitBody({ overrideAll: false });
+    expect(body).not.toHaveProperty("overrideRowIds");
+    expect(body).toEqual({ tabs: ["accounts", "liabilities"], rowIds: ["r1"] });
+  });
+
+  it("omits it for a caller that passes no options at all", async () => {
+    expect(await commitBody()).not.toHaveProperty("overrideRowIds");
+  });
+});
+
 describe("useChatCommit — editing and dropping one position (Task 6)", () => {
   it("edits one position by (rowId, holdingId) and leaves its siblings alone", () => {
     const { result } = renderHook(() => useChatCommit("c1", "i1"));

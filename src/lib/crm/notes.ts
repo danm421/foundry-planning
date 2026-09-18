@@ -4,6 +4,11 @@ import { db } from "@/db";
 import { crmActivity, crmHouseholds } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
 
+import {
+  clampNoteLimit,
+  filterNotesWindow,
+  type NoteWindowOptions,
+} from "./notes-window";
 import type { CreateCrmNoteInput, UpdateCrmNoteInput } from "./schemas";
 
 /**
@@ -91,6 +96,47 @@ export async function listHouseholdNotes(
     )
     .orderBy(desc(crmActivity.occurredAt), desc(crmActivity.createdAt));
   return rows.map(toNoteRow);
+}
+
+/**
+ * Bounded read for the MCP notes tools. `listHouseholdNotes` above stays as it
+ * is — the Notes tab wants every row and a bare array.
+ *
+ * Filtering happens in memory on purpose: the whole production corpus is 54
+ * rows across 38 households (~8 KB), so a WHERE clause per option would add
+ * query surface for no measurable gain, and `filterNotesWindow` is testable
+ * without a database. Revisit if a single household ever holds thousands.
+ */
+export async function listHouseholdNotesPage(
+  householdId: string,
+  firmId: string,
+  opts: NoteWindowOptions & { limit?: number } = {},
+): Promise<{ notes: NoteRow[]; totalCount: number }> {
+  const all = await listHouseholdNotes(householdId, firmId);
+  const matching = filterNotesWindow(all, opts);
+  return {
+    notes: matching.slice(0, clampNoteLimit(opts.limit)),
+    totalCount: matching.length,
+  };
+}
+
+/**
+ * The single free-text `notes` column on the household record — standing
+ * context ("golfs with the CFO, hates paperwork"), not a dated entry. Separate
+ * from the timeline above because it is a different thing, not an older one.
+ *
+ * Empty on production today (0 of 38 households have filled it in), so expect
+ * null in practice; it costs one column on a query the caller makes anyway.
+ */
+export async function getHouseholdNotesField(
+  householdId: string,
+  firmId: string,
+): Promise<string | null> {
+  const row = await db.query.crmHouseholds.findFirst({
+    where: and(eq(crmHouseholds.id, householdId), eq(crmHouseholds.firmId, firmId)),
+    columns: { notes: true },
+  });
+  return row?.notes ?? null;
 }
 
 export async function createNote(
