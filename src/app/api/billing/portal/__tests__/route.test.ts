@@ -35,6 +35,7 @@ import { UnauthorizedError } from "@/lib/db-helpers";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { getPlanSwitchPortalConfigurationId } from "@/lib/billing/portal-plan-switch";
+import { recordAudit } from "@/lib/audit";
 
 // db.select().from().where().orderBy() resolves to an array of rows.
 function mockSubscriptionRows(rows: {
@@ -52,9 +53,10 @@ function mockSubscriptionRows(rows: {
   } as never);
 }
 
-function portalRequest(plan?: string): Request {
+function portalRequest(plan?: string, replaceSchedule?: string): Request {
   const body = new URLSearchParams();
   if (plan) body.set("plan", plan);
+  if (replaceSchedule) body.set("replace_schedule", replaceSchedule);
   return new Request("https://app.foundryplanning.com/api/billing/portal", {
     method: "POST",
     body,
@@ -94,7 +96,7 @@ describe("POST /api/billing/portal", () => {
     });
   });
 
-  it("400s with no_subscription when the firm has no Stripe customer", async () => {
+  it("sends a firm with no Stripe customer back to the billing page", async () => {
     mockSubscriptionRows([]);
     const create = vi.fn();
     vi.mocked(getStripe).mockReturnValue({
@@ -103,8 +105,10 @@ describe("POST /api/billing/portal", () => {
 
     const res = await POST(portalRequest());
 
-    expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: "no_subscription" });
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe(
+      "https://app.foundryplanning.com/settings/billing?billing_error=no_subscription",
+    );
     expect(create).not.toHaveBeenCalled();
   });
 
@@ -126,11 +130,13 @@ describe("POST /api/billing/portal", () => {
     expect(await res.json()).toEqual({ error: "Unauthorized" });
   });
 
-  it("400s with no_subscription when the org id is missing", async () => {
+  it("sends a request with no org id back to the billing page", async () => {
     vi.mocked(auth).mockResolvedValue({ orgId: null } as never);
     const res = await POST(portalRequest());
-    expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: "no_subscription" });
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe(
+      "https://app.foundryplanning.com/settings/billing?billing_error=no_subscription",
+    );
   });
 
   // The handler takes no Request at all, so the caller's Origin header cannot
@@ -173,7 +179,12 @@ describe("POST /api/billing/portal", () => {
     });
   });
 
-  it("500s when Stripe throws creating the session", async () => {
+  /**
+   * A native form POST is the only caller, so a JSON error body is not an API
+   * response — it is a blank page reading `{"error":"portal_unavailable"}`,
+   * which is exactly how the schedule bug below reached a customer.
+   */
+  it("sends a Stripe failure back to the billing page, not to a JSON body", async () => {
     mockSubscriptionRows([{ stripeCustomerId: "cus_123" }]);
     vi.mocked(getStripe).mockReturnValue({
       billingPortal: {
@@ -182,8 +193,10 @@ describe("POST /api/billing/portal", () => {
     } as never);
 
     const res = await POST(portalRequest());
-    expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({ error: "portal_unavailable" });
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe(
+      "https://app.foundryplanning.com/settings/billing?billing_error=portal_unavailable",
+    );
   });
 
   it("opens a Stripe confirmation to switch an annual trial to monthly", async () => {
@@ -290,8 +303,10 @@ describe("POST /api/billing/portal", () => {
     } as never);
     const res = await POST(portalRequest("weekly"));
 
-    expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: "invalid_plan" });
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe(
+      "https://app.foundryplanning.com/settings/billing?billing_error=invalid_plan",
+    );
     expect(create).not.toHaveBeenCalled();
   });
 
@@ -311,9 +326,188 @@ describe("POST /api/billing/portal", () => {
 
     const res = await POST(portalRequest("monthly"));
 
-    expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: "plan_change_unavailable" });
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe(
+      "https://app.foundryplanning.com/settings/billing?billing_error=plan_change_unavailable",
+    );
     expect(retrieve).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  // Stripe refuses plan-switch sessions while a schedule owns the subscription.
+  it("releases a confirmed trial schedule before opening Stripe", async () => {
+    mockSubscriptionRows([{
+      stripeCustomerId: "cus_123",
+      stripeSubscriptionId: "sub_123",
+      status: "trialing",
+      cancelAtPeriodEnd: false,
+    }]);
+    const create = vi
+      .fn()
+      .mockResolvedValue({ url: "https://billing.stripe.com/session/switch" });
+    const release = vi.fn().mockResolvedValue({ id: "sub_sched_1", status: "released" });
+    const retrieve = vi.fn().mockResolvedValue({
+      id: "sub_123",
+      status: "trialing",
+      schedule: "sub_sched_1",
+      items: {
+        data: [{ id: "si_seat", price: { id: "price_annual" }, quantity: 1 }],
+      },
+    });
+    vi.mocked(getStripe).mockReturnValue({
+      subscriptions: { retrieve },
+      subscriptionSchedules: { release },
+      billingPortal: { sessions: { create } },
+    } as never);
+
+    const res = await POST(portalRequest("monthly", "sub_sched_1"));
+
+    expect(release).toHaveBeenCalledWith("sub_sched_1", { preserve_cancel_date: true });
+    // Order is the whole point: releasing after the session is created would
+    // leave the session refused and the release pointless.
+    expect(release.mock.invocationCallOrder[0]).toBeLessThan(
+      create.mock.invocationCallOrder[0],
+    );
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe(
+      "https://billing.stripe.com/session/switch",
+    );
+    expect(vi.mocked(recordAudit).mock.calls[0][0].metadata).toMatchObject({
+      released_schedule: "sub_sched_1",
+    });
+    expect(vi.mocked(recordAudit).mock.invocationCallOrder[0]).toBeLessThan(
+      create.mock.invocationCallOrder[0],
+    );
+    expect(create.mock.calls[0][0].return_url).toBe(
+      "https://app.foundryplanning.com/settings/billing?billing_error=plan_change_incomplete",
+    );
+  });
+
+  describe("recovering a trial with an existing schedule", () => {
+    const release = vi.fn();
+    const create = vi.fn();
+    const retrieve = vi.fn();
+
+    beforeEach(() => {
+      mockSubscriptionRows([{
+        stripeCustomerId: "cus_123",
+        stripeSubscriptionId: "sub_123",
+        status: "trialing",
+        cancelAtPeriodEnd: false,
+      }]);
+      retrieve.mockResolvedValue({
+        id: "sub_123",
+        status: "trialing",
+        schedule: { id: "sub_sched_1" },
+        items: { data: [{ id: "si_seat", price: { id: "price_annual" }, quantity: 1 }] },
+      });
+      release.mockResolvedValue({ id: "sub_sched_1", status: "released" });
+      create.mockResolvedValue({ url: "https://billing.stripe.com/session/switch" });
+      vi.mocked(getStripe).mockReturnValue({
+        subscriptions: { retrieve },
+        subscriptionSchedules: { release },
+        billingPortal: { sessions: { create } },
+      } as never);
+    });
+
+    it.each([undefined, "sub_sched_outdated"])(
+      "preserves the schedule until the customer confirms replacing this exact change (%s)",
+      async (confirmation) => {
+        const res = await POST(portalRequest("monthly", confirmation));
+        const location = new URL(res.headers.get("location")!);
+
+        expect(res.status).toBe(303);
+        expect(location.searchParams.get("billing_error")).toBe("trial_change_scheduled");
+        expect(location.searchParams.get("plan")).toBe("monthly");
+        expect(location.searchParams.get("schedule")).toBe("sub_sched_1");
+        expect(release).not.toHaveBeenCalled();
+        expect(create).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([
+      { status: "canceled" },
+      { status: "past_due" },
+      { status: "trialing", cancel_at_period_end: true },
+      { status: "trialing", cancel_at: 1900000000 },
+    ])("checks Stripe's current state before releasing a schedule: %j", async (state) => {
+      retrieve.mockResolvedValue({
+        ...await retrieve(),
+        ...state,
+      });
+
+      const res = await POST(portalRequest("monthly", "sub_sched_1"));
+
+      expect(res.headers.get("location")).toContain("billing_error=plan_change_unavailable");
+      expect(release).not.toHaveBeenCalled();
+      expect(create).not.toHaveBeenCalled();
+    });
+
+    it("preserves the schedule when preparing Stripe's configuration fails", async () => {
+      vi.mocked(getPlanSwitchPortalConfigurationId).mockRejectedValueOnce(new Error("configuration failed"));
+
+      const res = await POST(portalRequest("monthly", "sub_sched_1"));
+
+      expect(res.headers.get("location")).toContain("billing_error=portal_unavailable");
+      expect(release).not.toHaveBeenCalled();
+      expect(create).not.toHaveBeenCalled();
+    });
+
+    it("records the removed schedule even when opening Stripe fails afterward", async () => {
+      create.mockRejectedValueOnce(new Error("session failed"));
+
+      const res = await POST(portalRequest("monthly", "sub_sched_1"));
+
+      expect(res.headers.get("location")).toContain("billing_error=plan_change_incomplete");
+      expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({
+        action: "billing.subscription_updated",
+        firmId: "org_abc",
+        resourceId: "sub_123",
+        metadata: expect.objectContaining({ released_schedule: "sub_sched_1" }),
+      }));
+    });
+
+    it("does not open Stripe when releasing the schedule fails", async () => {
+      release.mockRejectedValueOnce(new Error("release failed"));
+
+      const res = await POST(portalRequest("monthly", "sub_sched_1"));
+
+      expect(res.headers.get("location")).toContain("billing_error=portal_unavailable");
+      expect(create).not.toHaveBeenCalled();
+      expect(recordAudit).not.toHaveBeenCalled();
+    });
+  });
+
+  it.each(["active", "trialing"])("protects a paid schedule even if the local status is %s", async (status) => {
+    mockSubscriptionRows([{
+      stripeCustomerId: "cus_123",
+      stripeSubscriptionId: "sub_123",
+      status,
+      cancelAtPeriodEnd: false,
+    }]);
+    const create = vi.fn();
+    const release = vi.fn();
+    const retrieve = vi.fn().mockResolvedValue({
+      id: "sub_123",
+      status: "active",
+      schedule: "sub_sched_2",
+      items: {
+        data: [{ id: "si_seat", price: { id: "price_annual" }, quantity: 1 }],
+      },
+    });
+    vi.mocked(getStripe).mockReturnValue({
+      subscriptions: { retrieve },
+      subscriptionSchedules: { release },
+      billingPortal: { sessions: { create } },
+    } as never);
+
+    const res = await POST(portalRequest("monthly", "sub_sched_2"));
+
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe(
+      "https://app.foundryplanning.com/settings/billing?billing_error=plan_change_scheduled",
+    );
+    expect(release).not.toHaveBeenCalled();
     expect(create).not.toHaveBeenCalled();
   });
 });
