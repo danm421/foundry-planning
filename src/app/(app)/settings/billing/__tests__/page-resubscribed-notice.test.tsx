@@ -65,4 +65,21 @@ describe("the ?plan_changed=1 confirmation", () => {
     expect(screen.getByRole("status")).not.toBeNull();
     expect(screen.getByText(/billing cycle updated/i)).not.toBeNull();
   });
+
+  /**
+   * Stripe schedules a downgrade that has a paid period left to run, so the
+   * cycle on screen will not move for weeks or months. Saying "updated" here
+   * is what sent the customer back to the button to try again.
+   */
+  it("says the change is scheduled when Stripe deferred it", async () => {
+    withStaleFounderToken();
+    render(
+      await BillingSettingsPage({
+        searchParams: Promise.resolve({ plan_changed: "scheduled" }),
+      }),
+    );
+    expect(screen.getByRole("status")).not.toBeNull();
+    expect(screen.getByText(/takes effect at the end of/i)).not.toBeNull();
+    expect(screen.queryByText(/billing cycle updated/i)).toBeNull();
+  });
 });

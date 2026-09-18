@@ -34,6 +34,7 @@ import { requireBillingContact, ForbiddenError } from "@/lib/authz";
 import { UnauthorizedError } from "@/lib/db-helpers";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
+import { getPlanSwitchPortalConfigurationId } from "@/lib/billing/portal-plan-switch";
 
 // db.select().from().where().orderBy() resolves to an array of rows.
 function mockSubscriptionRows(rows: {
@@ -197,6 +198,7 @@ describe("POST /api/billing/portal", () => {
       .mockResolvedValue({ url: "https://billing.stripe.com/session/switch" });
     const retrieve = vi.fn().mockResolvedValue({
       id: "sub_123",
+      status: "trialing",
       items: {
         data: [{
           id: "si_seat",
@@ -213,6 +215,10 @@ describe("POST /api/billing/portal", () => {
 
     expect(res.status).toBe(303);
     expect(retrieve).toHaveBeenCalledWith("sub_123");
+    expect(getPlanSwitchPortalConfigurationId).toHaveBeenCalledWith(
+      expect.anything(),
+      { deferToPeriodEnd: false },
+    );
     expect(create).toHaveBeenCalledWith({
       customer: "cus_123",
       return_url: "https://app.foundryplanning.com/settings/billing",
@@ -231,6 +237,44 @@ describe("POST /api/billing/portal", () => {
         },
       },
     });
+  });
+
+  /**
+   * The mirror of the trial case. A paid year cannot be re-anchored a month
+   * out, so Stripe schedules this one — and the page has to say so, because
+   * the cycle on screen legitimately will not move until the period ends.
+   */
+  it("schedules an annual downgrade that has already been paid for", async () => {
+    mockSubscriptionRows([{
+      stripeCustomerId: "cus_123",
+      stripeSubscriptionId: "sub_123",
+      status: "active",
+      cancelAtPeriodEnd: false,
+    }]);
+    const create = vi
+      .fn()
+      .mockResolvedValue({ url: "https://billing.stripe.com/session/switch" });
+    const retrieve = vi.fn().mockResolvedValue({
+      id: "sub_123",
+      status: "active",
+      items: {
+        data: [{ id: "si_seat", price: { id: "price_annual" }, quantity: 1 }],
+      },
+    });
+    vi.mocked(getStripe).mockReturnValue({
+      subscriptions: { retrieve },
+      billingPortal: { sessions: { create } },
+    } as never);
+
+    const res = await POST(portalRequest("monthly"));
+
+    expect(res.status).toBe(303);
+    expect(getPlanSwitchPortalConfigurationId).toHaveBeenCalledWith(
+      expect.anything(),
+      { deferToPeriodEnd: true },
+    );
+    expect(create.mock.calls[0][0].flow_data.after_completion.redirect.return_url)
+      .toBe("https://app.foundryplanning.com/settings/billing?plan_changed=scheduled");
   });
 
   it("rejects a forged billing-cycle value", async () => {

@@ -87,6 +87,21 @@ function PlanChangedNotice(): ReactElement {
   );
 }
 
+/**
+ * Stripe defers a downgrade that still has a paid period left to run, so the
+ * cycle below will keep reading the old one — for months, if they are a year
+ * in. Promising an update that the page cannot show is what sent people back
+ * to the button to press it again.
+ */
+function PlanChangeScheduledNotice(): ReactElement {
+  return (
+    <div role="status" className="rounded border border-hair bg-card p-4 text-sm text-ink-2">
+      Billing cycle change confirmed. It takes effect at the end of the period
+      you have already paid for, so your current cycle is shown below until then.
+    </div>
+  );
+}
+
 function InactiveAccountPanel(): ReactElement {
   return (
     <div className="flex flex-col gap-4">
@@ -343,13 +358,13 @@ export default async function BillingSettingsPage({
   const rawFlag = sp?.resubscribed;
   const resubscribed = (Array.isArray(rawFlag) ? rawFlag[0] : rawFlag) === "1";
   const rawPlanChanged = sp?.plan_changed;
-  const planChanged =
-    (Array.isArray(rawPlanChanged) ? rawPlanChanged[0] : rawPlanChanged) === "1";
+  const planChanged = Array.isArray(rawPlanChanged) ? rawPlanChanged[0] : rawPlanChanged;
 
   return (
     <div className="flex flex-col gap-4">
       {resubscribed ? <ResubscribedNotice /> : null}
-      {planChanged ? <PlanChangedNotice /> : null}
+      {planChanged === "1" ? <PlanChangedNotice /> : null}
+      {planChanged === "scheduled" ? <PlanChangeScheduledNotice /> : null}
       {isFounder ? <FounderBillingPanel /> : <NonFounderBillingPanel />}
     </div>
   );

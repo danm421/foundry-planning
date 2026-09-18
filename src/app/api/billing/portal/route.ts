@@ -70,6 +70,7 @@ export async function POST(request: Request): Promise<Response> {
     };
 
     let currentPlan: BillingPlan | null = null;
+    let planSwitchEffective: "immediately" | "at_period_end" | null = null;
     if (targetPlan) {
       if (
         !row ||
@@ -93,8 +94,21 @@ export async function POST(request: Request): Promise<Response> {
         return NextResponse.json({ error: "already_on_plan" }, { status: 400 });
       }
       const catalog = getPriceCatalog();
-      const configuration = await getPlanSwitchPortalConfigurationId(stripe);
-      const returnUrl = `${appOrigin()}/settings/billing?plan_changed=1`;
+      // Stripe's own status, not the mirror's: the mirror can lag a webhook,
+      // and getting this wrong in the "trialing" direction would re-anchor a
+      // renewal the customer has already paid for. An unreadable status falls
+      // through to deferring, which is the side that cannot cost them money.
+      const deferToPeriodEnd = subscription.status !== "trialing";
+      planSwitchEffective = deferToPeriodEnd ? "at_period_end" : "immediately";
+      const configuration = await getPlanSwitchPortalConfigurationId(stripe, {
+        deferToPeriodEnd,
+      });
+      // A deferred switch leaves the cycle on screen unchanged until the paid
+      // period runs out, so the page has to greet them with that and not with
+      // a confirmation that nothing on the page will bear out.
+      const returnUrl = `${appOrigin()}/settings/billing?plan_changed=${
+        deferToPeriodEnd ? "scheduled" : "1"
+      }`;
       sessionParams = {
         ...sessionParams,
         configuration,
@@ -123,7 +137,12 @@ export async function POST(request: Request): Promise<Response> {
       resourceId: customer,
       firmId: orgId,
       metadata: targetPlan
-        ? { flow: "plan_switch", from_plan: currentPlan, to_plan: targetPlan }
+        ? {
+            flow: "plan_switch",
+            from_plan: currentPlan,
+            to_plan: targetPlan,
+            effective: planSwitchEffective,
+          }
         : { flow: "portal_home" },
     });
     return NextResponse.redirect(session.url, 303);
