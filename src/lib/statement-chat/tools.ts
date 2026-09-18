@@ -11,6 +11,8 @@ import {
   holdingFieldDomainDescription,
 } from "@/lib/statement-chat/holding-fields";
 import { isDroppedHolding, livingHoldings } from "@/lib/imports/living-rows";
+import { annualEscrow } from "@/lib/imports/assemble/mortgage-escrow";
+import { propertyAddressMatches } from "@/lib/imports/commit/mortgage-link";
 import type { Annotated, ChatState, PersistedImportPayload } from "@/lib/imports/types";
 import type {
   AccountCategory,
@@ -462,6 +464,74 @@ export interface EditRowArgs {
  * or `balance` onto an account — a field neither table's commit path reads,
  * silently kept in the payload.
  */
+/**
+ * The two liability fields the property tax is DERIVED from. `propertyAddress`
+ * is deliberately absent (Ruling 71): `splitMortgageEscrow` SYNTHESIZES a
+ * property when it finds none, and a row synthesized at chat time would carry
+ * no `__rowId`/`match`/`__provenance` — those are stamped by hand in
+ * `merge-across-files.ts` — so it would reach the advisor's table
+ * uncommittable. An address edit also changes WHICH property is the target, so
+ * "recompute the derived figure" has no well-defined row to recompute onto.
+ */
+const ESCROW_INPUT_FIELDS: ReadonlySet<string> = new Set(["monthlyPayment", "totalPayment"]);
+
+/**
+ * Keep the property's `annualPropertyTax` in step with the payment it was
+ * derived from.
+ *
+ * `splitMortgageEscrow` runs ONCE, inside `mergeAcrossFiles`, and nothing
+ * re-runs it after a chat edit — but the liabilities table's "Escrow →
+ * property tax" column recomputes LIVE. So correcting P&I in the chat moved
+ * the COLUMN while the account row kept the OLD figure, and `commitAccounts`
+ * wrote that old one onto the house (final review I3).
+ *
+ * Re-running `splitMortgageEscrow` does NOT fix it, and this is the measured
+ * reason why (Ruling 70): its guard is `target.annualPropertyTax ??= annual`
+ * (`mortgage-escrow.ts:116`), so on any run after the first the property
+ * already carries a figure and the assignment is skipped entirely.
+ *
+ * Overwritten here instead, and ONLY when the stored figure equals what the
+ * PRE-EDIT payment derived. That equality is the proof the figure was derived
+ * by the split rather than asserted by a document, so the branch's
+ * derived-vs-asserted rule is honoured without inventing a provenance field:
+ * a tax the statement itself stated survives the edit, and a hole
+ * (`undefined === undefined`) is filled.
+ *
+ * Only ever maps over the accounts it was given — never appends, never
+ * reorders (Ruling 71).
+ */
+function syncDerivedPropertyTax(
+  accounts: AccountRow[],
+  before: LiabilityRow,
+  after: LiabilityRow,
+  committedRowIds: CommittedRowIds,
+): AccountRow[] {
+  const address = after.propertyAddress?.trim();
+  if (!address) return accounts;
+
+  const priorDerived = annualEscrow(before).annual;
+  const nextDerived = annualEscrow(after).annual;
+  if (priorDerived === nextDerived) return accounts;
+
+  // The same two tests `splitMortgageEscrow` applies when it picks its target,
+  // so this can only ever land on the row the split actually wrote to.
+  const index = accounts.findIndex(
+    (a) => a.category === "real_estate" && propertyAddressMatches(a.propertyAddress, address),
+  );
+  if (index === -1) return accounts;
+
+  const target = accounts[index];
+  // A committed property is already in the client's plan and nothing on this
+  // surface can update it — `assertNotCommitted` refuses a direct edit for
+  // exactly that reason. Rewriting its payload figure here would only make the
+  // table disagree with the database, which is the defect this fix closes, one
+  // row over.
+  if (target.__rowId != null && committedRowIds.has(target.__rowId)) return accounts;
+  if (target.annualPropertyTax !== priorDerived) return accounts;
+
+  return accounts.map((a, i) => (i === index ? { ...a, annualPropertyTax: nextDerived } : a));
+}
+
 export function editRow(
   payload: PersistedImportPayload,
   args: EditRowArgs,
@@ -485,8 +555,25 @@ export function editRow(
     const nextLiabilities = liabilities.map((r, i) =>
       i === located.index ? { ...r, [args.field]: args.value } : r,
     );
+    // An edit to a payment moves the escrow, and the escrow is where the
+    // property's annual tax came from — see `syncDerivedPropertyTax`. It
+    // returns the array it was GIVEN when there is nothing to change, so
+    // `accounts` is left out of the payload entirely in that case rather than
+    // seeding an `accounts: []` key onto a debt-only import.
+    const accounts = accountsOf(payload);
+    const nextAccounts = ESCROW_INPUT_FIELDS.has(args.field)
+      ? syncDerivedPropertyTax(
+          accounts,
+          located.row as LiabilityRow,
+          nextLiabilities[located.index],
+          committedRowIds,
+        )
+      : accounts;
     return {
-      payload: { ...payload, liabilities: nextLiabilities },
+      payload:
+        nextAccounts === accounts
+          ? { ...payload, liabilities: nextLiabilities }
+          : { ...payload, accounts: nextAccounts, liabilities: nextLiabilities },
       summary: `Set ${args.field} to ${describeValue(args.value)} on "${located.row.name}".`,
     };
   }

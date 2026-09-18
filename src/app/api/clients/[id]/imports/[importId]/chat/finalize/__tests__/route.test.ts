@@ -656,15 +656,18 @@ describe("chat finalize stamps the liabilities tab (Task 10)", () => {
     match: { kind: "exact", existingId: "liab-1" },
   };
 
-  function withLiabilities(liabilities: unknown[]) {
+  function withLiabilities(
+    liabilities: unknown[],
+    chatOver: { committedRowIds?: string[]; excludedRows?: unknown[] } = {},
+  ) {
     return importRow({
       fileResults: CLEAN_FILE_RESULTS,
       chat: {
         surface: "chat",
         transcript: [],
         decisions: [],
-        excludedRows: [],
-        committedRowIds: keptRowIds(CLEAN_FILE_RESULTS),
+        excludedRows: (chatOver.excludedRows ?? []) as never,
+        committedRowIds: chatOver.committedRowIds ?? keptRowIds(CLEAN_FILE_RESULTS),
       },
       payload: {
         accounts: persistedAccounts(CLEAN_FILE_RESULTS) as never,
@@ -673,8 +676,15 @@ describe("chat finalize stamps the liabilities tab (Task 10)", () => {
     }) as never;
   }
 
-  it("reaches status 'committed' for an import carrying a liability row", async () => {
-    vi.mocked(requireImportAccess).mockResolvedValue(withLiabilities([MORTGAGE]));
+  /** The accounts-only committed set, plus the mortgage's own row id. */
+  function alsoCommitted(rowId: string) {
+    return [...keptRowIds(CLEAN_FILE_RESULTS), rowId];
+  }
+
+  it("reaches status 'committed' once the liability row has actually been committed", async () => {
+    vi.mocked(requireImportAccess).mockResolvedValue(
+      withLiabilities([MORTGAGE], { committedRowIds: alsoCommitted(MORTGAGE.__rowId) }),
+    );
 
     const res = await POST(req(), params);
     expect(res.status).toBe(200);
@@ -689,6 +699,99 @@ describe("chat finalize stamps the liabilities tab (Task 10)", () => {
       "i1",
       ["accounts", "plan-basics", "liabilities"],
       expect.objectContaining({ liabilities: [MORTGAGE] }),
+    );
+  });
+
+  /**
+   * ── Final review I2 ────────────────────────────────────────────────────
+   *
+   * This test previously asserted the OPPOSITE, and encoded the defect: it
+   * seeded accounts-only `committedRowIds` with the mortgage uncommitted and
+   * demanded `status: "committed"`. So the advisor closed the import, the
+   * record said every tab was done, and the mortgage had never been written
+   * to the plan — the exact user-visible failure this branch exists to remove.
+   *
+   * The 409 gate above reconciles ACCOUNT rows only and deliberately still
+   * does: Task 8 disables Commit on an unresolvable fuzzy liability, so
+   * folding debts into `missing` would make that row a permanent 409 with no
+   * way out. This is the stamp side instead — always a 200, the import simply
+   * stays `review` until the advisor commits the row or drops it in the chat.
+   *
+   * Mutation this catches: restoring the presence-only stamp
+   * (`if (persistedPayload.liabilities.length > 0)`).
+   */
+  it("does NOT stamp the liabilities tab while a liability row is still uncommitted", async () => {
+    vi.mocked(requireImportAccess).mockResolvedValue(withLiabilities([MORTGAGE]));
+
+    const res = await POST(req(), params);
+    // A 200, not a 409: the advisor is never locked out of their own import.
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, status: "review" });
+    expect(markTabsCommitted).toHaveBeenCalledWith(
+      expect.anything(),
+      "i1",
+      ["accounts", "plan-basics"],
+      expect.anything(),
+    );
+  });
+
+  /**
+   * EVERY non-excluded row, not just one. A predicate written with `.some()`
+   * would pass the positive test above and still close an import whose second
+   * mortgage never committed.
+   *
+   * Mutation this catches: `.every(` → `.some(`.
+   */
+  it("does NOT stamp the tab when only one of two liability rows is committed", async () => {
+    const heloc = { ...MORTGAGE, name: "HELOC", __rowId: "liability:heloc#f1:1" };
+    vi.mocked(requireImportAccess).mockResolvedValue(
+      withLiabilities([MORTGAGE, heloc], {
+        committedRowIds: alsoCommitted(MORTGAGE.__rowId),
+      }),
+    );
+
+    const res = await POST(req(), params);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, status: "review" });
+    expect(markTabsCommitted).toHaveBeenCalledWith(
+      expect.anything(),
+      "i1",
+      ["accounts", "plan-basics"],
+      expect.anything(),
+    );
+  });
+
+  /**
+   * "Excluded" has to mean ONE thing in this route — the same
+   * `chat.excludedRows` set the accounts gate already reads — or a row can be
+   * demanded by one half and forgiven by the other.
+   *
+   * Measured honestly: today `drop_row` also removes the debt from
+   * `payload.liabilities` (`tools.ts:845-852`) and the extract route subtracts
+   * the same ids from its rebase, so this leg is a SAFETY NET rather than a
+   * path the surface can currently reach. It is kept because the accounts side
+   * needs exactly this leg (a dropped account DOES come back out of the fresh
+   * recompute), and a second, divergent notion of "excluded" here is how the
+   * two halves drift apart. The state below is representable; it is simply not
+   * one the chat tools produce today.
+   *
+   * Mutation this catches: dropping the `chatExcluded.has(...)` clause.
+   */
+  it("treats a chat-excluded liability row as not owed", async () => {
+    vi.mocked(requireImportAccess).mockResolvedValue(
+      withLiabilities([MORTGAGE], {
+        excludedRows: [{ row: MORTGAGE, reason: "Already on the plan" }],
+      }),
+    );
+
+    const res = await POST(req(), params);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, status: "committed" });
+    expect(markTabsCommitted).toHaveBeenCalledWith(
+      expect.anything(),
+      "i1",
+      ["accounts", "plan-basics", "liabilities"],
+      expect.anything(),
     );
   });
 

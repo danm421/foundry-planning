@@ -14,6 +14,8 @@ const CTX: CommitContext = {
 };
 
 type PropertyRow = { id: string; name: string; propertyAddress?: string | null };
+/** What the DB already holds for a debt — only the link is read (Task 13 fix wave). */
+type StoredLiability = { id: string; linkedPropertyId: string | null };
 
 /**
  * Minimal tx double, mirroring commit/__tests__/savings.test.ts's `fakeTx`:
@@ -26,7 +28,7 @@ type PropertyRow = { id: string; name: string; propertyAddress?: string | null }
  * masquerade as a family member and pull a liability_owners insert into
  * `inserted`, which the row-count assertions below would then miscount.
  */
-function fakeTx(properties: PropertyRow[] = []) {
+function fakeTx(properties: PropertyRow[] = [], storedLiabilities: StoredLiability[] = []) {
   const inserted: Record<string, unknown>[] = [];
   const updated: Record<string, unknown>[] = [];
   let nextId = 0;
@@ -56,7 +58,14 @@ function fakeTx(properties: PropertyRow[] = []) {
     }),
     select: () => ({
       from: (table: unknown) => ({
-        where: async () => (table === accounts ? properties : []),
+        where: async () => {
+          if (table === accounts) return properties;
+          // The stored debts, for the UPDATE branch's fill-only-a-hole link
+          // read. Still discriminated BY TABLE: pooling these with the
+          // properties would let a debt answer the property lookup.
+          if (table === liabilities) return storedLiabilities;
+          return [];
+        },
       }),
     }),
   };
@@ -281,5 +290,70 @@ describe("commitLiabilities — a re-read only writes the schedule cells its dat
     expect(updated[0].balanceAsOfYear).toBe(2026);
     expect(updated[0].balanceAsOfMonth).toBe(8);
     expect(updated[0].termMonths).toBe(180);
+  });
+});
+
+/**
+ * ── Final review I1(b): re-commit as a working recovery ─────────────────
+ *
+ * Spec §7 has the review surface commit a synthesized property in the SAME
+ * post as its mortgage. When that did not happen — the debt was committed
+ * first, or from an older draft — the INSERT ran with no property to match and
+ * `linked_property_id` landed NULL. The advisor's natural recovery is to
+ * commit the house and hit Commit on the mortgage again, and until now that
+ * wrote nothing at all and reported success: `render-rows.ts` still partitions
+ * the debt into the unlinked bucket and the techniques screens will not retire
+ * it when the house is sold.
+ *
+ * Filling only a HOLE is the whole rule. The Linked property dropdown on the
+ * liability form is an advisor decision, including the decision to clear it.
+ */
+describe("commitLiabilities — a re-commit repairs a missing property link", () => {
+  const EXISTING = { kind: "exact", existingId: "liability-existing-1" } as const;
+  const HUDSON: PropertyRow = {
+    id: "prop-hudson",
+    name: "Hudson Avenue Home",
+    propertyAddress: "5304 Hudson Avenue",
+  };
+
+  function reCommit(stored: StoredLiability[], properties: PropertyRow[] = [HUDSON]) {
+    const { tx, updated } = fakeTx(properties, stored);
+    return commitLiabilities(
+      tx,
+      payloadWith([
+        {
+          name: "Mortgage",
+          balance: 400_000,
+          propertyAddress: "5304 Hudson Avenue",
+          __rowId: "liability:mortgage#f1:0",
+          match: EXISTING,
+        },
+      ]),
+      CTX,
+    ).then(() => updated);
+  }
+
+  it("fills the link when the stored one is null", async () => {
+    const updated = await reCommit([{ id: "liability-existing-1", linkedPropertyId: null }]);
+    expect(updated[0].linkedPropertyId).toBe("prop-hudson");
+  });
+
+  /**
+   * The KEY must be absent, not null and not the same id written again — an
+   * advisor who moved this mortgage to another property owns that choice, and
+   * a re-read of the same statement may not quietly undo it. Absence is also
+   * what makes a second re-commit a no-op.
+   */
+  it("leaves a link the advisor already set completely alone", async () => {
+    const updated = await reCommit([
+      { id: "liability-existing-1", linkedPropertyId: "prop-somewhere-else" },
+    ]);
+    expect(updated[0]).not.toHaveProperty("linkedPropertyId");
+  });
+
+  /** Nothing to link to: the key stays out rather than writing an explicit null. */
+  it("writes no link when no property matches", async () => {
+    const updated = await reCommit([{ id: "liability-existing-1", linkedPropertyId: null }], []);
+    expect(updated[0]).not.toHaveProperty("linkedPropertyId");
   });
 });

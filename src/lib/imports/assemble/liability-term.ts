@@ -72,6 +72,15 @@ export function deriveLiabilityTerm(
     termMonths: FALLBACK_TERM_MONTHS,
   };
 
+  // ⚠️ INVARIANT, RELIED ON BY `commit/liabilities.ts`. A `warning` is
+  // returned at exactly the two FALLBACK returns below and NEVER at the
+  // measured return at the end, so `!warning` is that module's proxy for
+  // "`termMonths` is the 360-month placeholder". Its UPDATE gate
+  // (`row.maturityDate !== undefined && !warning`) is what stops a re-read
+  // re-amortizing a stored 180-month loan over 360 and moving its payoff date
+  // by fifteen years. A third warning added here for a MEASURED term would
+  // silently stop that UPDATE writing a real term, with no test to catch it —
+  // so a new warning belongs in a separate field, not this one.
   if (!maturity) {
     return {
       term: base,
@@ -92,5 +101,6 @@ export function deriveLiabilityTerm(
     };
   }
 
+  // The MEASURED return: no warning, by the invariant above.
   return { term: { ...base, termMonths: months } };
 }

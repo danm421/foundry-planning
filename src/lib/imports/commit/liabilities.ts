@@ -60,6 +60,24 @@ export async function commitLiabilities(
       ),
     )) as PropertyRef[];
 
+  // Every stored debt's CURRENT link, read once here beside the property rows
+  // above rather than per row inside the loop — one query either way, and no
+  // N+1 inside a commit transaction. The UPDATE branch reads it to fill a
+  // link that is missing without ever overwriting one that is not.
+  const storedLinks = new Map(
+    (
+      await tx
+        .select({ id: liabilities.id, linkedPropertyId: liabilities.linkedPropertyId })
+        .from(liabilities)
+        .where(
+          and(
+            eq(liabilities.clientId, ctx.clientId),
+            eq(liabilities.scenarioId, ctx.scenarioId),
+          ),
+        )
+    ).map((r) => [r.id, r.linkedPropertyId] as const),
+  );
+
   // Built once outside the loop rather than `ctx.rowIds.includes(...)` per
   // row, which would be O(n^2) over the payload.
   const rowIdFilter = ctx.rowIds ? new Set(ctx.rowIds) : null;
@@ -167,6 +185,21 @@ export async function commitLiabilities(
       updates.startYear = term.startYear;
       updates.startMonth = term.startMonth;
       updates.termMonths = term.termMonths;
+    }
+
+    // Re-committing the mortgage is the advisor's natural recovery when it was
+    // committed BEFORE its property existed — the INSERT above ran with no
+    // property to match, so `linked_property_id` landed NULL and nothing on
+    // this path ever repaired it (final review I1). Now it does.
+    //
+    // Gated on the STORED value being null, not on the row's: an advisor who
+    // set — or deliberately UNSET — the link on the liability form owns that
+    // decision, and a re-read of the same statement must not quietly undo it.
+    // So this only ever fills a hole, which also makes it idempotent: the
+    // second re-commit finds the link it wrote and leaves the key out.
+    if (storedLinks.get(existingId) == null) {
+      const link = matchMortgageToProperty(row.name, propertyRows, row.propertyAddress);
+      if (link) updates.linkedPropertyId = link;
     }
 
     // The as-of pair records WHEN the balance was measured. A re-read that

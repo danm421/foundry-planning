@@ -422,10 +422,27 @@ describe("useChatCommit — matching extracted accounts against the plan", () =>
 });
 
 describe("useChatCommit — commits both tabs together, and PATCHes both keys (Task 11)", () => {
-  // Ruling: sending both row ids in ONE POST is what lets a synthesized
-  // property commit before `matchMortgageToProperty` looks for it (the
-  // orchestrator applies tabs in canonical order regardless of array order).
-  it("posts both tabs so a synthesized property commits with its mortgage, PATCHes payload.liabilities alongside payload.accounts, and adopts the commit response's liabilities", async () => {
+  /**
+   * ⚠️ RENAMED, final review I1(c). This test used to be titled "posts both
+   * tabs so a synthesized property commits with its mortgage" — a claim about
+   * a PRODUCT behaviour it does not test and that did not exist. It hands
+   * `handleCommitRows` a two-element array built by hand, so it pins the HOOK
+   * and never the UI that has to build that array; `EntityTable`'s Commit
+   * button called `onCommitRows([rowId])`, a singleton, and spec §7's
+   * commit-ordering clause was never implemented at all. It went green anyway,
+   * which is worse than no test.
+   *
+   * ⭐ The lesson, recorded here because this is where it bit: A TEST THAT
+   * CALLS THE HOOK CANNOT PIN THE UI THAT FEEDS IT. When a spec clause is
+   * about what the INTERFACE sends, the test has to start at the interface.
+   *
+   * The product clause now lives where it can actually be observed —
+   * `liabilities-table.test.tsx`, "LiabilitiesTable co-commits the property a
+   * mortgage is secured on". What THIS test proves is the hook's half: given
+   * two row ids, one POST naming both tabs, both payload keys PATCHed, and the
+   * response's liabilities adopted.
+   */
+  it("turns a two-row commit into ONE post naming both tabs, PATCHes payload.liabilities alongside payload.accounts, and adopts the commit response's liabilities", async () => {
     const { result } = renderHook(() => useChatCommit("c1", "i1"));
 
     act(() => {
@@ -511,6 +528,86 @@ describe("useChatCommit — commits both tabs together, and PATCHes both keys (T
       kind: "exact",
       existingId: "liab-1",
     });
+  });
+});
+
+/**
+ * ── T11-a: `overlayFreshMatch`'s liabilities wiring ─────────────────────
+ *
+ * Task 11 declined this test on the ground that `overlayFreshMatch` is now one
+ * generic function serving both callers, so a second test exercises an
+ * identical code path. True of the BODY; the risk was never the body.
+ *
+ * The signature is `overlayFreshMatch<T extends {__rowId?: string; match?:
+ * MatchAnnotation}>(fresh: T[], local: T[])`, and because an account row and a
+ * debt row are MUTUALLY ASSIGNABLE — each requires only `name` — calling
+ * `overlayFreshMatch(fresh.payload.accounts, current.liabilities)` compiles
+ * clean with zero tsc errors and silently blanks every liability match. Four
+ * call sites take that shape (`use-chat-commit.ts:427,431,709,713`), and
+ * nothing else on this branch would catch it: it is the `ExcludedChatRow`
+ * mutual-assignability hazard in the one place discipline left uncovered.
+ *
+ * Mutation this catches: swapping the two arguments at the liabilities call
+ * site, or pointing it at `payload.accounts`.
+ */
+describe("useChatCommit — a fresh server liability's match survives the pre-commit PATCH", () => {
+  it("keeps the local debt row and stamps the server's exact match onto it", async () => {
+    const { result } = renderHook(() => useChatCommit("c1", "i1"));
+
+    act(() => {
+      result.current.applyExtractionResult({
+        summary: "x",
+        caveats: [],
+        excluded: [],
+        rows: [],
+        liabilities: [
+          // The advisor's own correction, which must NOT be discarded: the
+          // server still holds 412,000.
+          { name: "Mortgage", balance: 410_000, __rowId: "liability:mortgage#f1:0" },
+        ] as never,
+      });
+    });
+
+    vi.mocked(fetch)
+      // The fresh GET before the payload PATCH: the server already shows this
+      // debt as `exact` from a prior commit whose bookkeeping PATCH failed.
+      .mockResolvedValueOnce(
+        importGetResponse({
+          payload: {
+            accounts: [],
+            liabilities: [
+              {
+                name: "Mortgage",
+                balance: 412_000,
+                __rowId: "liability:mortgage#f1:0",
+                match: { kind: "exact", existingId: "liab-1" },
+              },
+            ],
+          },
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse({})) // PATCH payload
+      .mockResolvedValueOnce(jsonResponse({ ok: true })) // POST commit
+      .mockResolvedValueOnce(importGetResponse({})) // fresh GET for chat
+      .mockResolvedValueOnce(jsonResponse({})); // PATCH chat
+
+    await act(async () => {
+      await result.current.handleCommitRows(["liability:mortgage#f1:0"]);
+    });
+
+    const payloadPatchCall = vi.mocked(fetch).mock.calls.find(([url, init]) => {
+      if (!String(url).endsWith("/imports/i1") || init?.method !== "PATCH") return false;
+      return Boolean(JSON.parse(init.body as string).payloadJson?.payload);
+    });
+    const patched = JSON.parse(payloadPatchCall![1]!.body as string).payloadJson.payload;
+
+    // The row SURVIVES — overlaying the accounts array over the liabilities
+    // one would leave this empty.
+    expect(patched.liabilities).toHaveLength(1);
+    // ...carrying the LOCAL edit, not the server's stale figure.
+    expect(patched.liabilities[0].balance).toBe(410_000);
+    // ...and the server's stamp, which is the one field the overlay may move.
+    expect(patched.liabilities[0].match).toEqual({ kind: "exact", existingId: "liab-1" });
   });
 });
 

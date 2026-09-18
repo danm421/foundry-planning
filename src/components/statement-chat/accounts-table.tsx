@@ -6,6 +6,7 @@ import type { Annotated, MatchAnnotation } from "@/lib/imports/types";
 import { livingHoldings } from "@/lib/imports/living-rows";
 import { candidatesForRow } from "@/lib/imports/candidates-for-row";
 import { isAmbiguousMatch } from "@/lib/imports/commit/ambiguous-rows";
+import { isUnpricedProperty } from "@/lib/imports/commit/account-category";
 import type { AccountCandidate } from "@/lib/imports/match-keys/account";
 import { formatAccountCategory } from "@/lib/accounts/category-labels";
 import { rollupExclusionReason } from "@/lib/statement-chat/rollups";
@@ -88,9 +89,18 @@ function pickerOption(a: AccountCandidate): MatchCandidate {
  * block the click rather than report a success that never happened. The test
  * itself comes from `isAmbiguousMatch`, beside the commit code that enforces
  * it, so this cannot drift from what the server actually does.
+ *
+ * The second reason is the opposite failure: `commitAccounts` does NOT skip a
+ * value-less property, it writes `"0"` — so the house this import synthesized
+ * from a mortgage statement lands on the balance sheet worth nothing, with a
+ * real mortgage against it (final review I5). Same source discipline:
+ * `isUnpricedProperty` sits beside `resolveAccountCategory`, the function that
+ * decides what actually commits.
  */
 export function accountCommitBlockedReason(row: Row): string | null {
-  return isAmbiguousMatch(row) ? "Pick a match first" : null;
+  if (isAmbiguousMatch(row)) return "Pick a match first";
+  if (isUnpricedProperty(row)) return "Enter a value first";
+  return null;
 }
 
 /**

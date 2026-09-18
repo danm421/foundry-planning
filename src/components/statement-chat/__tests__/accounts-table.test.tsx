@@ -565,3 +565,67 @@ describe("accounts table — totals", () => {
     expect(screen.getAllByRole("row")).toHaveLength(5);
   });
 });
+
+/**
+ * ── Final review I5 ─────────────────────────────────────────────────────
+ *
+ * `splitMortgageEscrow` deliberately synthesizes its property with NO value —
+ * "a mortgage statement never says what the home is worth, and a 0 would
+ * render as a worthless house". `commit/accounts.ts:186` then writes an
+ * absent value as `"0"`, so the house lands on the balance sheet worth
+ * nothing with a real mortgage against it, and the projection grows a $0
+ * asset forever. The Value cell is read-only on this surface, so committing
+ * the $0 was the path of least resistance.
+ */
+describe("accounts table withholds Commit for a property with no value", () => {
+  const props = {
+    excluded: [],
+    committedRowIds: [],
+    onCommitRows: vi.fn(),
+    onEditCell: vi.fn(),
+    onEditHolding: vi.fn(),
+    onDropHolding: vi.fn(),
+  };
+  const synthesized = {
+    __rowId: "account:synthesized:5304-hudson-avenue",
+    name: "5304 Hudson Avenue",
+    category: "real_estate",
+    subType: "primary_residence",
+    propertyAddress: "5304 Hudson Avenue",
+  };
+
+  it("disables Commit and says what to do about it", () => {
+    render(<AccountsTable rows={[synthesized] as never} {...props} />);
+    expect(screen.getByRole("button", { name: /commit/i })).toBeDisabled();
+    expect(screen.getByText(/enter a value first/i)).toBeInTheDocument();
+  });
+
+  it("allows Commit once the value is set", () => {
+    render(<AccountsTable rows={[{ ...synthesized, value: 850_000 }] as never} {...props} />);
+    expect(screen.getByRole("button", { name: /commit/i })).toBeEnabled();
+  });
+
+  /**
+   * A value of ZERO is an assertion, not a hole: an advisor who typed 0 meant
+   * 0. `value == null` is the test, not falsiness.
+   */
+  it("allows Commit for a property explicitly valued at zero", () => {
+    render(<AccountsTable rows={[{ ...synthesized, value: 0 }] as never} {...props} />);
+    expect(screen.getByRole("button", { name: /commit/i })).toBeEnabled();
+  });
+
+  /**
+   * Scoped to real estate. Every other category commits fine without a value
+   * — an account whose balance the statement did not print is an ordinary
+   * extraction outcome, and blocking those would strand real imports.
+   */
+  it("does not block a value-less account of any other category", () => {
+    render(
+      <AccountsTable
+        rows={[{ __rowId: "r9", name: "Roth IRA", category: "retirement" }] as never}
+        {...props}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /commit/i })).toBeEnabled();
+  });
+});

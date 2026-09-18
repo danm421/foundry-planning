@@ -289,7 +289,12 @@ export async function POST(request: Request, { params }: Params) {
         // kept rows (C10) — never the full merged set, or the summary's
         // account count double-counts every rollup the very next caveat
         // says was excluded.
-        const { payload, mergedFileCount, decisions: mergeDecisions } = mergeAcrossFiles(fileResults);
+        const {
+          payload,
+          mergedFileCount,
+          decisions: mergeDecisions,
+          escrowWarnings,
+        } = mergeAcrossFiles(fileResults);
         const { kept, excluded } = detectRollups(payload.accounts);
         // `detectRollups` runs AFTER `mergeAcrossFiles` and produces its own
         // "rollup-excluded" MergeDecision per dropped row — narrate()'s
@@ -451,7 +456,18 @@ export async function POST(request: Request, { params }: Params) {
           send({
             type: "done",
             summary: narration.summary,
-            caveats: narration.caveats,
+            // Spec Risk 3: the synthesized property has to be explained, or it
+            // reads as an extraction error — and `payload.warnings`, where
+            // `splitMortgageEscrow` puts that explanation, is rendered nowhere
+            // on this surface (final review I4). `caveats` is the channel that
+            // IS rendered (`chat-surface.tsx`), so the escrow warnings join it.
+            //
+            // Appended, not merged in: they describe rows rather than merge
+            // decisions, so `narrate` emits nothing like them and a dedupe
+            // against `narration.caveats` could never fire. They go LAST
+            // because a caveat about a row the advisor has to act on reads
+            // better after the summary of what was read.
+            caveats: [...narration.caveats, ...escrowWarnings],
             // Exactly what was just persisted — the surface adopts this
             // wholesale, so streaming the raw merge instead would leave the
             // screen disagreeing with the database from the first frame.

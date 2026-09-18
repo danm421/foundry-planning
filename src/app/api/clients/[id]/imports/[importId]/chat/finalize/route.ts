@@ -265,8 +265,31 @@ export async function POST(request: Request, { params }: Params) {
   // it. Any other source (a fresh merge, the reconciled `current`) lets the
   // stamp and the completeness check disagree and reopens the trap from the
   // other side. `normalizeImportPayload` guarantees the array exists.
+  //
+  // PRESENCE IS NOT ENOUGH ON ITS OWN (final review I2). The `missing` gate
+  // above reconciles ACCOUNT rows only, so a mortgage the advisor never
+  // committed does not block Finish import — and stamping the tab on presence
+  // then flipped the import to `committed` with that debt never written to the
+  // plan. The record said every tab was done; the mortgage was not in it.
+  //
+  // Gated on COMPLETENESS, deliberately NOT folded into `missing`: Task 8
+  // disables Commit on an unresolvable fuzzy liability, so such a row can
+  // never be committed and a 409 on it would be permanent — the dead end this
+  // route's own comments record being bitten by twice. This stays a 200; the
+  // import simply reads `review` until the advisor commits the row or drops it
+  // in the chat.
+  //
+  // `chatExcluded` is the SAME set the accounts path built above, not a second
+  // one: "excluded" has to mean one thing here. A row with no `__rowId` cannot
+  // be committed and so cannot satisfy this, exactly as it cannot satisfy the
+  // accounts gate above.
+  const liabilitiesAllCommitted = persistedPayload.liabilities.every(
+    (row) => !!row.__rowId && (committed.has(row.__rowId) || chatExcluded.has(row.__rowId)),
+  );
   const tabs: CommitTab[] = ["accounts", "plan-basics"];
-  if (persistedPayload.liabilities.length > 0) tabs.push("liabilities");
+  if (persistedPayload.liabilities.length > 0 && liabilitiesAllCommitted) {
+    tabs.push("liabilities");
+  }
 
   const { allTabsCommitted } = await db.transaction((tx) =>
     markTabsCommitted(tx, importId, tabs, persistedPayload),

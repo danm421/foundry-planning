@@ -306,3 +306,192 @@ describe("the holdings tools stay accounts-only", () => {
     expect(message).not.toContain(HELOC_ID);
   });
 });
+
+/**
+ * ── Final review I3 ─────────────────────────────────────────────────────
+ *
+ * `splitMortgageEscrow` runs ONCE, inside `mergeAcrossFiles`. Nothing re-ran
+ * it after a chat edit — but the liabilities table's "Escrow → property tax"
+ * column recomputes LIVE from the debt row on every render, and its docblock
+ * promised the advisor "the figure the import will actually write onto the
+ * property". So correcting P&I in the chat moved the COLUMN while the account
+ * row kept the OLD `annualPropertyTax`, and `commitAccounts` wrote that one.
+ * The column became a lie in exactly the direction this branch exists to
+ * close, and it is the ONLY correction path for the extractor's P&I misread.
+ *
+ * ⚠️ Ruling 70: the obvious fix — re-run `splitMortgageEscrow` — is INERT.
+ * Its guard is `target.annualPropertyTax ??= annual`, so after the first merge
+ * the property already carries a figure and the re-run assigns nothing at all.
+ *
+ * The rule implemented instead: overwrite only when the stored figure equals
+ * what the PRE-EDIT payment derived. That equality proves the figure was
+ * derived by the split rather than asserted by a document.
+ */
+describe("edit_row keeps the derived property tax in step with the payment", () => {
+  const PROPERTY_ID = "account:oak#f1:0";
+  const DEBT_ID = "liability:oak-mortgage#f1:0";
+
+  /** $2,600 PITI − $2,100 P&I = $500/mo escrow = $6,000/yr, the stored figure. */
+  const escrowPayload = (over: {
+    annualPropertyTax?: number;
+    totalPayment?: number;
+    monthlyPayment?: number;
+  } = {}): PersistedImportPayload =>
+    ({
+      accounts: [
+        {
+          __rowId: PROPERTY_ID,
+          name: "12 Oak Street",
+          category: "real_estate",
+          subType: "primary_residence",
+          propertyAddress: "12 Oak Street",
+          value: 640_000,
+          ...("annualPropertyTax" in over
+            ? { annualPropertyTax: over.annualPropertyTax }
+            : { annualPropertyTax: 6_000 }),
+        },
+      ],
+      liabilities: [
+        {
+          __rowId: DEBT_ID,
+          name: "Mortgage",
+          balance: 412_000,
+          monthlyPayment: "monthlyPayment" in over ? over.monthlyPayment : 2_100,
+          totalPayment: "totalPayment" in over ? over.totalPayment : 2_600,
+          propertyAddress: "12 Oak Street",
+        },
+      ],
+    }) as unknown as PersistedImportPayload;
+
+  it("moves the property's tax when the P&I is corrected", () => {
+    // $2,600 − $2,000 = $600/mo → $7,200/yr.
+    const out = editRow(
+      escrowPayload(),
+      { rowId: DEBT_ID, field: "monthlyPayment", value: 2_000 },
+      NONE_COMMITTED,
+    );
+    expect(out.payload.accounts![0].annualPropertyTax).toBe(7_200);
+  });
+
+  it("moves it when the total payment is corrected", () => {
+    // $2,800 − $2,100 = $700/mo → $8,400/yr.
+    const out = editRow(
+      escrowPayload(),
+      { rowId: DEBT_ID, field: "totalPayment", value: 2_800 },
+      NONE_COMMITTED,
+    );
+    expect(out.payload.accounts![0].annualPropertyTax).toBe(8_400);
+  });
+
+  /**
+   * Direction one of the derived-vs-asserted rule. $9,999 is not what the
+   * pre-edit payment derived ($6,000), which is the proof a document asserted
+   * it — so the advisor's payment correction must not overwrite it.
+   */
+  it("leaves a tax the document asserted alone", () => {
+    const out = editRow(
+      escrowPayload({ annualPropertyTax: 9_999 }),
+      { rowId: DEBT_ID, field: "monthlyPayment", value: 2_000 },
+      NONE_COMMITTED,
+    );
+    expect(out.payload.accounts![0].annualPropertyTax).toBe(9_999);
+  });
+
+  /**
+   * Direction two. `undefined === undefined` — nothing derived a figure
+   * before, so nothing is being overwritten, and the hole is filled.
+   */
+  it("fills a hole when the statement first becomes able to support a figure", () => {
+    const out = editRow(
+      escrowPayload({ annualPropertyTax: undefined, totalPayment: undefined }),
+      { rowId: DEBT_ID, field: "totalPayment", value: 2_600 },
+      NONE_COMMITTED,
+    );
+    expect(out.payload.accounts![0].annualPropertyTax).toBe(6_000);
+  });
+
+  /**
+   * The same rule read backwards: once the corrected payments no longer
+   * support ANY escrow, the derived figure has to go. A guard that only ever
+   * wrote a defined number would leave $6,000 of property tax on a house whose
+   * mortgage says the payment is all principal and interest.
+   */
+  it("clears the derived figure when the corrected payments no longer support one", () => {
+    const out = editRow(
+      escrowPayload(),
+      { rowId: DEBT_ID, field: "totalPayment", value: 2_100 },
+      NONE_COMMITTED,
+    );
+    expect(out.payload.accounts![0].annualPropertyTax).toBeUndefined();
+  });
+
+  /**
+   * ── Ruling 71: `propertyAddress` is EXCLUDED, and M8 is filed ─────────
+   *
+   * `splitMortgageEscrow` SYNTHESIZES and pushes a property when it finds
+   * none, carrying no `__rowId`/`match`/`__provenance` — those are stamped by
+   * hand in `merge-across-files.ts`. A chat-time recompute that appended would
+   * put an UNCOMMITTABLE row on the advisor's table, a new defect of exactly
+   * the class this branch closes. An address edit also changes WHICH property
+   * is the target, so the recompute has no well-defined row.
+   */
+  it("appends no property when a payment edit finds none to update", () => {
+    const orphaned = escrowPayload();
+    (orphaned.accounts as unknown[])!.length = 0;
+    const out = editRow(
+      orphaned,
+      { rowId: DEBT_ID, field: "monthlyPayment", value: 2_000 },
+      NONE_COMMITTED,
+    );
+    expect(out.payload.accounts).toEqual([]);
+  });
+
+  /**
+   * ⚠️ A REGRESSION GUARD that does NOT discriminate `ESCROW_INPUT_FIELDS`,
+   * and is kept anyway — stated here rather than left for a reader to
+   * discover. Measured: an address edit leaves both payments untouched, so
+   * `annualEscrow(before).annual === annualEscrow(after).annual` and the
+   * recompute early-returns before it reaches the property lookup at all.
+   * Adding "propertyAddress" back to the allowlist is therefore a NO-OP and
+   * this test would stay green through it. What it does pin is the OUTCOME
+   * Ruling 71 cares about — an address edit leaves the accounts array exactly
+   * as it was, and in particular does not grow an uncommittable synthesized
+   * row. The test above is the one that discriminates the append.
+   */
+  it("leaves the accounts array untouched on a propertyAddress edit", () => {
+    const before = escrowPayload();
+    const out = editRow(
+      before,
+      { rowId: DEBT_ID, field: "propertyAddress", value: "99 Elm Street" },
+      NONE_COMMITTED,
+    );
+    expect(out.payload.accounts).toHaveLength(1);
+    expect(out.payload.accounts).toEqual(before.accounts);
+  });
+
+  /**
+   * A committed property is already in the client's plan and nothing on this
+   * surface can update it — `assertNotCommitted` refuses a direct edit for
+   * exactly that reason. Rewriting its payload figure here would only make the
+   * table disagree with the database, which is this finding's own defect one
+   * row over.
+   */
+  it("leaves a property that is already committed alone", () => {
+    const out = editRow(
+      escrowPayload(),
+      { rowId: DEBT_ID, field: "monthlyPayment", value: 2_000 },
+      new Set([PROPERTY_ID]),
+    );
+    expect(out.payload.accounts![0].annualPropertyTax).toBe(6_000);
+  });
+
+  /** The debt's own edit still lands, whatever the property did. */
+  it("still writes the edited field on the debt itself", () => {
+    const out = editRow(
+      escrowPayload(),
+      { rowId: DEBT_ID, field: "monthlyPayment", value: 2_000 },
+      NONE_COMMITTED,
+    );
+    expect(out.payload.liabilities![0].monthlyPayment).toBe(2_000);
+  });
+});

@@ -3,7 +3,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { accountOwners, accounts, lifeInsurancePolicies, sourceEnum } from "@/db/schema";
 import { isRmdEligibleSubType } from "@/engine/rmd";
 import { is529Account } from "@/lib/accounts/is-529";
-import type { AccountCategory, AccountSubType, ExtractedAccount } from "@/lib/extraction/types";
+import type { ExtractedAccount } from "@/lib/extraction/types";
 import {
   RETIREMENT_SUBTYPES,
   validateOwnersShape,
@@ -19,6 +19,7 @@ import {
 } from "./family-resolver";
 import { writeAccountHoldings } from "./holdings";
 import { accountHoldingsGuardrail } from "./holdings-guardrail";
+import { resolveAccountCategory } from "./account-category";
 import { emptyResult, type CommitContext, type CommitResult, type Tx } from "./types";
 
 type SourceValue = (typeof sourceEnum.enumValues)[number];
@@ -42,19 +43,12 @@ const POLICY_TYPE_BY_SUBTYPE: Record<string, "term" | "whole" | "universal" | "v
 };
 
 /**
- * The account category to persist. Extraction historically classified 529s as
- * `taxable` + `subType: "529"` because `education_savings` was not in its
- * category union at all (fixed in the prompt, but old payloads persist and the
- * model can still ignore the rule). A 529 left as `taxable` is spendable in the
- * withdrawal waterfall and invisible to the dedicated-funding picker, so the
- * subType wins here.
+ * Moved to `account-category.ts` and re-exported here (final review I5): the
+ * review table has to ask what the commit will actually write, and it cannot
+ * import this file without pulling `@/db/schema` into the browser bundle.
+ * One definition, two safe import paths.
  */
-export function resolveAccountCategory(
-  row: { name?: string; category?: AccountCategory; subType?: AccountSubType },
-): AccountCategory {
-  if (is529Account(row)) return "education_savings";
-  return row.category ?? "taxable";
-}
+export { resolveAccountCategory };
 
 /**
  * The 529-only columns for a row, resolved against the household roster.

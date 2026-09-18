@@ -27,19 +27,29 @@ export interface LiabilityColumnsContext {
 export const EMPTY_LIABILITY_COLUMNS_CONTEXT: LiabilityColumnsContext = {};
 
 /**
- * Annualized escrow for display: what `splitMortgageEscrow` will move onto
- * the secured property as `annualPropertyTax`, or undefined.
+ * The annualized escrow this cell prints: what the import will write onto the
+ * secured property as `annualPropertyTax`, or undefined.
  *
- * Delegates to `annualEscrow` (`mortgage-escrow.ts`) rather than
- * re-implementing the arithmetic: this column is headed "Escrow → property
- * tax", promising the advisor the figure the import will actually write onto
- * the property, and two copies of that computation could drift. Delegating
- * still counts as RE-DERIVED for the reason this column exists — it computes
- * from the liability's own fields, not by reading the answer back off the
- * property row `splitMortgageEscrow` writes, which would make the two agree
- * by construction even when the split never ran.
+ * Named for the CELL, not for the arithmetic (final review M6): `annualEscrow`
+ * in `mortgage-escrow.ts` is a transposition of the old name that returns a
+ * different shape (`{annual?, warning?}`), and the two sat one import apart.
+ *
+ * Delegates to `annualEscrow` rather than re-implementing the arithmetic:
+ * two copies of that computation could drift. Delegating still counts as
+ * RE-DERIVED for the reason this column exists — it computes from the
+ * liability's own fields, not by reading the answer back off the property row
+ * `splitMortgageEscrow` writes, which would make the two agree by construction
+ * even when the split never ran.
+ *
+ * The promise this docblock used to make — "the figure the import will
+ * actually write" — is now true rather than aspirational: correcting P&I or
+ * the total payment in the chat moves the property's stored
+ * `annualPropertyTax` with it (`tools.ts`'s `syncDerivedPropertyTax`, final
+ * review I3). It stays honest in the one case that fix deliberately excludes:
+ * a tax the DOCUMENT asserted is left alone, and this cell then shows the
+ * derivation rather than the stored figure.
  */
-export function escrowAnnual(row: Row): number | undefined {
+export function escrowCellValue(row: Row): number | undefined {
   return annualEscrow(row).annual;
 }
 
@@ -61,11 +71,15 @@ export function liabilityColumns(ctx: LiabilityColumnsContext): ColumnSpec<Row>[
       // property as annual property tax, and the raw PITI sits under it as
       // the evidence. A column headed "Total payment" showing an annual
       // figure would be a third thing neither of them.
+      //
+      // "will write" is load-bearing and now holds on the edit path too — see
+      // `escrowCellValue` — except where the document asserted a property tax
+      // of its own, which the import keeps.
       key: "totalPayment",
       header: "Escrow → property tax",
       kind: "money",
       render: (row) => {
-        const annual = escrowAnnual(row);
+        const annual = escrowCellValue(row);
         if (annual === undefined) {
           return row.totalPayment != null
             ? createElement(

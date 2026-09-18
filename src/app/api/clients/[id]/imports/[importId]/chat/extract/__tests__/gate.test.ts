@@ -1690,3 +1690,118 @@ describe("chat extract route liabilities (Task 10)", () => {
     expect(payloadJsonUpdateCount).toBe(0);
   });
 });
+
+/**
+ * ── Final review I4 ─────────────────────────────────────────────────────
+ *
+ * `splitMortgageEscrow` pushes "Added <address> as a property so its mortgage
+ * has something to link to. The statement does not say what it is worth — set
+ * its value before committing." into `payload.warnings`. Nothing on the chat
+ * surface renders `payload.warnings` — `summarizeMapWarnings` is the map-rows
+ * channel — and the chat routes persist `payload: { accounts, liabilities }`
+ * only, so the warning was not even stored. Spec Risk 3 ("the synthesized
+ * property must be visually distinguishable, or it reads as an extraction
+ * error") was the one acceptance-adjacent requirement the branch did not meet:
+ * the row rendered with a `New` badge like any other and an empty Value cell,
+ * with no explanation anywhere on screen.
+ *
+ * Routed through `caveats`, which `chat-surface.tsx` already renders — and
+ * through a DEDICATED `escrowWarnings` channel rather than the whole
+ * `payload.warnings` list. Measured over this repo's own 307 merge calls:
+ * `payload.warnings` holds 160 entries, 134 of them "Merged duplicate account
+ * …", which `narrate` already says in different words. Surfacing the lot would
+ * print each merge twice and bury the warning that is actually dead.
+ */
+describe("chat extract route surfaces the escrow split's warnings (final review I4)", () => {
+  function mortgageFile(fileName: string, liabilities: unknown[]) {
+    return {
+      documentType: "other",
+      fileName,
+      extracted: {
+        accounts: [],
+        incomes: [],
+        expenses: [],
+        liabilities,
+        entities: [],
+        lifePolicies: [],
+        wills: [],
+        savings: [],
+      },
+      warnings: [],
+      promptVersion: "v",
+    };
+  }
+
+  it("tells the advisor to price the property it just synthesized", async () => {
+    filesResult = [fileRow("f1", "mortgage.pdf")];
+    vi.mocked(extractDocument).mockResolvedValue(
+      mortgageFile("mortgage.pdf", [
+        {
+          name: "Mortgage",
+          balance: 412_000,
+          monthlyPayment: 2_538,
+          totalPayment: 3_163,
+          propertyAddress: "5304 Hudson Avenue",
+        },
+      ]) as never,
+    );
+
+    const events = await readSse(await POST(req(), params));
+    const done = events.at(-1) as { caveats: string[]; rows: Array<{ name: string }> };
+
+    // The row exists and carries no value — which is exactly why the sentence
+    // has to be on screen.
+    expect(done.rows.map((r) => r.name)).toContain("5304 Hudson Avenue");
+    expect(done.caveats.join(" ")).toContain(
+      'Added "5304 Hudson Avenue" as a property so its mortgage has something to link to',
+    );
+    expect(done.caveats.join(" ")).toContain("set its value before committing");
+  });
+
+  /**
+   * The narrow channel, not the whole warnings list. A mortgage with an
+   * address the import ALREADY has a property for synthesizes nothing, so
+   * there is no escrow warning — and none of the merge's other warnings may
+   * arrive in its place, or the caveats card fills with restatements of what
+   * the summary above it already said.
+   */
+  it("adds nothing when the split synthesized no property", async () => {
+    filesResult = [fileRow("f1", "mortgage.pdf")];
+    vi.mocked(extractDocument).mockResolvedValue({
+      documentType: "other",
+      fileName: "mortgage.pdf",
+      extracted: {
+        accounts: [
+          {
+            name: "Hudson Avenue Home",
+            category: "real_estate",
+            subType: "primary_residence",
+            value: 850_000,
+            propertyAddress: "5304 Hudson Avenue",
+          },
+        ],
+        incomes: [],
+        expenses: [],
+        liabilities: [
+          {
+            name: "Mortgage",
+            balance: 412_000,
+            monthlyPayment: 2_538,
+            totalPayment: 3_163,
+            propertyAddress: "5304 Hudson Avenue",
+          },
+        ],
+        entities: [],
+        lifePolicies: [],
+        wills: [],
+        savings: [],
+      },
+      warnings: [],
+      promptVersion: "v",
+    } as never);
+
+    const events = await readSse(await POST(req(), params));
+    const done = events.at(-1) as { caveats: string[] };
+    expect(done.caveats.join(" ")).not.toContain("as a property so its mortgage");
+  });
+});

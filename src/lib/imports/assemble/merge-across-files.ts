@@ -36,6 +36,16 @@ export interface MergeAcrossFilesResult {
    * mergedFileCount }` and are unaffected.
    */
   decisions: MergeDecision[];
+  /**
+   * Just the warnings `splitMortgageEscrow` produced — a synthesized property
+   * with no value, or a total payment below its own P&I. Also in
+   * `payload.warnings`, like every other merge warning; this narrow channel
+   * exists because the statement-chat surface renders NONE of those (final
+   * review I4) and the measured volume makes surfacing the whole list a flood
+   * of restatements rather than a fix. See the return statement for the
+   * numbers. Additive: every existing caller destructures around it.
+   */
+  escrowWarnings: string[];
 }
 
 /** Two amounts are "the same" if they're within this fraction of each other. */
@@ -2054,5 +2064,25 @@ export function mergeAcrossFiles(
   });
 
   stampHoldingIds(payload.accounts);
-  return { payload, mergedFileCount: Object.keys(fileResults).length, decisions };
+  // `escrowWarnings` is returned SEPARATELY as well as pushed into
+  // `payload.warnings` above, for the statement-chat surface (final review I4).
+  // That surface renders `narration.caveats` and has never rendered
+  // `payload.warnings` at all, so every escrow warning — including "set its
+  // value before committing" on a property this split just synthesized — has
+  // been invisible there.
+  //
+  // MEASURED, and the reason this is its own field rather than the whole list:
+  // across the 307 merges this repo's own suite performs, `payload.warnings`
+  // holds 160 warnings and 134 of them are "Merged duplicate account …", which
+  // `narrate`'s `valueConflictCaveat`/`supersededSentence` ALREADY say in
+  // different words. Surfacing the whole list would print each of those merge
+  // events twice, worded differently, and bury the four escrow warnings that
+  // are actually dead. The wizard and the `/match` surfaces keep reading
+  // `payload.warnings`, where the same warnings are already visible.
+  return {
+    payload,
+    mergedFileCount: Object.keys(fileResults).length,
+    decisions,
+    escrowWarnings: escrow.warnings,
+  };
 }

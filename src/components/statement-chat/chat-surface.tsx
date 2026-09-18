@@ -682,6 +682,13 @@ export function ChatSurface({
                       // picker's options can never disagree with what
                       // actually exists on the plan.
                       matchCandidates={reviewContext.liabilities}
+                      // Spec §7: a mortgage's Commit has to carry the property
+                      // this import synthesized for it in the SAME post, or the
+                      // debt commits against a house that does not exist yet
+                      // and `linked_property_id` lands NULL. These are the very
+                      // rows the accounts card above is showing, so the two
+                      // cards can never disagree about what is uncommitted.
+                      accounts={result.rows}
                     />
                   </CardBody>
                 </Card>
