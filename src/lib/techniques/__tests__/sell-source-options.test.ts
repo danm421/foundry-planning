@@ -6,6 +6,7 @@ import {
   businessTotalDebt,
   isLockedEntityCash,
   sellableAccounts,
+  settlementAccounts,
   type SellSourceAccount,
 } from "../sell-source-options";
 
@@ -196,5 +197,35 @@ describe("business totals", () => {
 
   it("totals the debt the cascade settles", () => {
     expect(businessTotalDebt(biz)).toBe(400_000);
+  });
+});
+
+// ── settlementAccounts ──────────────────────────────────────────────────────
+
+describe("settlementAccounts", () => {
+  const rows: SellSourceAccount[] = [
+    { id: "chk", name: "Joint Checking", category: "cash", subType: "checking" },
+    { id: "brk", name: "Brokerage", category: "taxable", subType: "brokerage", value: 500_000 },
+    { id: "ira", name: "Rollover IRA", category: "retirement", subType: "traditional_ira" },
+    { id: "home", name: "45 Oak Ave", category: "real_estate", subType: "primary_residence" },
+    { id: "biz1", name: "Friends Inc.", category: "business", subType: "llc", value: 1_000_000 },
+    { id: "bizcash", name: "Friends Inc. — Cash", category: "cash", subType: "checking",
+      isDefaultChecking: true, parentAccountId: "biz1" },
+    { id: "trustcash", name: "Trust — Cash", category: "cash", subType: "checking",
+      isDefaultChecking: true, isEntityOwned: true },
+  ];
+
+  it("keeps household cash and taxable — the pick must work as source AND destination", () => {
+    expect(settlementAccounts(rows).map((a) => a.id)).toEqual(["chk", "brk"]);
+  });
+
+  it("drops retirement: the purchase path debits a balance without recognizing income", () => {
+    expect(settlementAccounts(rows).map((a) => a.id)).not.toContain("ira");
+  });
+
+  it("drops an entity's own operating cash — that plumbing is not the household's", () => {
+    const ids = settlementAccounts(rows).map((a) => a.id);
+    expect(ids).not.toContain("bizcash");
+    expect(ids).not.toContain("trustcash");
   });
 });

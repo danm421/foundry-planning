@@ -662,3 +662,241 @@ describe("AddAssetTransactionForm — buy-leg property tax", () => {
     expect(buy.propertyTaxGrowthRate).toBe(0.03);
   });
 });
+
+describe("AddAssetTransactionForm — settlement dropdown", () => {
+  /** Source the starting sell leg to the brokerage and give it a sale value,
+   *  so the combined net is a real number rather than 0 from the (absent)
+   *  projection. */
+  function fillSellLeg(saleValue: string) {
+    const sellColumn = screen.getByTestId("sell-column");
+    fireEvent.click(within(sellColumn).getByRole("button", { name: /^New sale/i }));
+    fireEvent.change(screen.getByLabelText(/Asset to Sell/i), {
+      target: { value: "acc-brokerage" },
+    });
+    fireEvent.change(document.getElementById("overrideSaleValue") as HTMLInputElement, {
+      target: { value: saleValue },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Done$/i }));
+  }
+
+  function fillBuyLeg(price: string) {
+    fireEvent.click(screen.getByRole("button", { name: /Add buy/i }));
+    const buyColumn = screen.getByTestId("buy-column");
+    fireEvent.click(within(buyColumn).getByRole("button", { name: /^New purchase/i }));
+    fireEvent.change(screen.getByLabelText(/Asset Name/i), { target: { value: "Condo" } });
+    fireEvent.change(document.getElementById("purchasePrice") as HTMLInputElement, {
+      target: { value: price },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Done$/i }));
+  }
+
+  function renderForm(onSubmitDraft = vi.fn()) {
+    render(
+      <AddAssetTransactionForm
+        clientId="client-123"
+        accounts={ACCOUNTS}
+        liabilities={LIABILITIES}
+        onClose={() => {}}
+        onSaved={() => {}}
+        onSubmitDraft={onSubmitDraft}
+      />,
+    );
+    return onSubmitDraft;
+  }
+
+  it("names the surplus direction when the bundle nets positive", () => {
+    renderForm();
+    fillSellLeg("1000000");
+    fillBuyLeg("400000");
+
+    const select = screen.getByLabelText(/Surplus goes to/i) as HTMLSelectElement;
+    expect(select.value).toBe("");
+    expect(within(select).getByRole("option", { name: "Default Checking" })).toBeTruthy();
+    expect(screen.queryByLabelText(/Deficit paid from/i)).toBeNull();
+  });
+
+  it("flips to the deficit direction — defaulting to Withdrawals — when it nets negative", () => {
+    renderForm();
+    fillSellLeg("300000");
+    fillBuyLeg("800000");
+
+    const select = screen.getByLabelText(/Deficit paid from/i) as HTMLSelectElement;
+    expect(select.value).toBe("");
+    expect(within(select).getByRole("option", { name: "Withdrawals" })).toBeTruthy();
+    expect(screen.queryByLabelText(/Surplus goes to/i)).toBeNull();
+  });
+
+  it("offers only cash and taxable accounts — the pick has to work as BOTH a source and a destination", () => {
+    render(
+      <AddAssetTransactionForm
+        clientId="client-123"
+        accounts={[
+          ...ACCOUNTS,
+          { id: "acc-ira", name: "Rollover IRA", category: "retirement", subType: "traditional_ira" },
+          { id: "acc-home", name: "45 Oak Ave", category: "real_estate", subType: "primary_residence" },
+        ]}
+        liabilities={LIABILITIES}
+        onClose={() => {}}
+        onSaved={() => {}}
+        onSubmitDraft={vi.fn()}
+      />,
+    );
+    fillSellLeg("1000000");
+
+    const select = screen.getByLabelText(/Surplus goes to/i);
+    expect(within(select).getByRole("option", { name: "Brokerage" })).toBeTruthy();
+    expect(within(select).queryByRole("option", { name: "Rollover IRA" })).toBeNull();
+    expect(within(select).queryByRole("option", { name: "45 Oak Ave" })).toBeNull();
+  });
+
+  it("stamps the chosen account on every leg of the bundle, both sides", async () => {
+    const drafts: unknown[] = [];
+    const onSubmitDraft = renderForm(vi.fn((t) => drafts.push(t)));
+    fillSellLeg("1000000");
+    fillBuyLeg("400000");
+
+    fireEvent.change(screen.getByLabelText(/Surplus goes to/i), {
+      target: { value: "acc-brokerage" },
+    });
+    fireEvent.submit(document.getElementById("asset-transaction-form")!);
+
+    await waitFor(() => expect(onSubmitDraft).toHaveBeenCalledTimes(2));
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const sell = (drafts as any[]).find((d) => d.type === "sell");
+    const buy = (drafts as any[]).find((d) => d.type === "buy");
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+    expect(sell.proceedsAccountId).toBe("acc-brokerage");
+    expect(buy.fundingAccountId).toBe("acc-brokerage");
+  });
+
+  it("leaving the default sends null on both sides — the withdrawal-strategy route", async () => {
+    const drafts: unknown[] = [];
+    const onSubmitDraft = renderForm(vi.fn((t) => drafts.push(t)));
+    fillSellLeg("300000");
+    fillBuyLeg("800000");
+
+    fireEvent.submit(document.getElementById("asset-transaction-form")!);
+
+    await waitFor(() => expect(onSubmitDraft).toHaveBeenCalledTimes(2));
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const sell = (drafts as any[]).find((d) => d.type === "sell");
+    const buy = (drafts as any[]).find((d) => d.type === "buy");
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+    // `coerceAssetTransactionDraft` drops nulls so optional engine fields stay
+    // undefined — the wire body's own `null` is pinned in the legToBody tests.
+    expect(sell.proceedsAccountId).toBeUndefined();
+    expect(buy.fundingAccountId).toBeUndefined();
+  });
+
+  it("seeds from the saved record when editing", () => {
+    render(
+      <AddAssetTransactionForm
+        clientId="client-123"
+        accounts={ACCOUNTS}
+        liabilities={LIABILITIES}
+        onClose={() => {}}
+        onSaved={() => {}}
+        onSubmitDraft={vi.fn()}
+        initialData={{
+          id: "rec-1", name: "Sell Brokerage", type: "sell", year: 2031,
+          accountId: "acc-brokerage", purchaseTransactionId: null, businessAccountId: null,
+          fractionSold: null, overrideSaleValue: "500000", overrideBasis: null,
+          transactionCostPct: null, transactionCostFlat: null,
+          proceedsAccountId: "acc-brokerage",
+          qualifiesForHomeSaleExclusion: null, assetName: null, assetCategory: null,
+          assetSubType: null, purchasePrice: null, growthRate: null, basis: null,
+          fundingAccountId: null, mortgageAmount: null, mortgageRate: null,
+          mortgageTermMonths: null,
+        }}
+      />,
+    );
+    expect((screen.getByLabelText(/Surplus goes to/i) as HTMLSelectElement).value)
+      .toBe("acc-brokerage");
+  });
+
+  it("the buy-leg editor no longer carries its own Funding Source", () => {
+    renderForm();
+    fireEvent.click(screen.getByRole("button", { name: /Add buy/i }));
+    const buyColumn = screen.getByTestId("buy-column");
+    fireEvent.click(within(buyColumn).getByRole("button", { name: /^New purchase/i }));
+    // Anchor: the editor really is on screen, so the absence below is real.
+    expect(screen.getByLabelText(/Asset Name/i)).toBeTruthy();
+    expect(screen.getByLabelText(/^Basis/i)).toBeTruthy();
+    expect(screen.queryByLabelText(/Funding Source/i)).toBeNull();
+  });
+
+  it("the sell-leg editor no longer carries its own Proceeds Destination", () => {
+    renderForm();
+    fillSellLeg("500000");
+    const sellColumn = screen.getByTestId("sell-column");
+    fireEvent.click(within(sellColumn).getAllByRole("button")[0]);
+    // Anchor: the sell editor really is on screen, so the absence below is real.
+    expect(screen.getByLabelText(/Asset to Sell/i)).toBeTruthy();
+    expect(screen.queryByLabelText(/Proceeds Destination/i)).toBeNull();
+  });
+});
+
+describe("AddAssetTransactionForm — a business-only bundle has nothing to route", () => {
+  const BUSINESS = {
+    id: "biz-1", name: "Friends Inc.", businessTypeLabel: "LLC",
+    value: 1_000_000, basis: 200_000,
+    owners: [{ familyMemberId: "fm-client", familyMemberName: "Dana", percent: 1 }],
+    childAccounts: [], childLiabilities: [],
+  };
+
+  it("hides the settlement dropdown — the engine routes business proceeds itself", () => {
+    render(
+      <AddAssetTransactionForm
+        clientId="client-123"
+        accounts={ACCOUNTS}
+        liabilities={LIABILITIES}
+        businesses={[BUSINESS]}
+        onClose={() => {}}
+        onSaved={() => {}}
+        onSubmitDraft={vi.fn()}
+      />,
+    );
+    const sellColumn = screen.getByTestId("sell-column");
+    fireEvent.click(within(sellColumn).getByRole("button", { name: /^New sale/i }));
+    fireEvent.change(screen.getByLabelText(/Asset to Sell/i), {
+      target: { value: "biz:biz-1" },
+    });
+
+    // ANCHOR: the combined-net footer itself DID render, so the absence below
+    // is the gate working and not an unrendered footer.
+    expect(screen.getByText(/Combined net/i)).toBeTruthy();
+    expect(screen.queryByLabelText(/Surplus goes to/i)).toBeNull();
+    expect(screen.queryByLabelText(/Deficit paid from/i)).toBeNull();
+  });
+
+  it("shows it again as soon as one buy leg joins the bundle", () => {
+    render(
+      <AddAssetTransactionForm
+        clientId="client-123"
+        accounts={ACCOUNTS}
+        liabilities={LIABILITIES}
+        businesses={[BUSINESS]}
+        onClose={() => {}}
+        onSaved={() => {}}
+        onSubmitDraft={vi.fn()}
+      />,
+    );
+    const sellColumn = screen.getByTestId("sell-column");
+    fireEvent.click(within(sellColumn).getByRole("button", { name: /^New sale/i }));
+    fireEvent.change(screen.getByLabelText(/Asset to Sell/i), {
+      target: { value: "biz:biz-1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Done$/i }));
+
+    fireEvent.click(screen.getByRole("button", { name: /Add buy/i }));
+    const buyColumn = screen.getByTestId("buy-column");
+    fireEvent.click(within(buyColumn).getByRole("button", { name: /^New purchase/i }));
+    fireEvent.change(screen.getByLabelText(/Asset Name/i), { target: { value: "Condo" } });
+    fireEvent.change(document.getElementById("purchasePrice") as HTMLInputElement, {
+      target: { value: "800000" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Done$/i }));
+
+    expect(screen.getByLabelText(/Deficit paid from|Surplus goes to/i)).toBeTruthy();
+  });
+});

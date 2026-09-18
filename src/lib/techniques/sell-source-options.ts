@@ -92,6 +92,22 @@ export function sellableAccounts<T extends SellSourceAccount>(accounts: T[]): T[
   return accounts.filter((a) => !isLockedEntityCash(a) && !isTopLevelBusiness(a));
 }
 
+/** The accounts a whole asset-transaction bundle may settle through — the
+ *  dialog's "Surplus goes to" / "Deficit paid from" pick.
+ *
+ *  The choice lands on BOTH sides of the bundle, so it has to work as a
+ *  destination for sale proceeds AND as a source for purchases. That rules out
+ *  a retirement account, whose drawdown would need the ordinary-income
+ *  recognition the purchase path does not model, and every illiquid category.
+ *  `isLockedEntityCash` matters here for the same reason it does on the sell
+ *  side: a business' or trust's auto-provisioned operating checking is `cash`,
+ *  and it is that entity's plumbing, never the household's settlement account. */
+export function settlementAccounts<T extends SellSourceAccount>(accounts: T[]): T[] {
+  return accounts.filter(
+    (a) => (a.category === "cash" || a.category === "taxable") && !isLockedEntityCash(a),
+  );
+}
+
 // ── Totals ───────────────────────────────────────────────────────────────────
 
 /** The accounts the business owns, which the cascade sells alongside it. */

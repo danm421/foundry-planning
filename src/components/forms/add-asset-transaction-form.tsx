@@ -6,7 +6,7 @@ import { useScenarioState } from "@/hooks/use-scenario-state";
 import type { AssetTransaction } from "@/engine/types";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
 import DialogShell from "@/components/dialog-shell";
-import { inputClassName, fieldLabelClassName } from "./input-styles";
+import { inputClassName, selectClassName, fieldLabelClassName } from "./input-styles";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { coerceAssetTransactionDraft } from "@/lib/solver/technique-form-data";
 import { bundleNameFromLegs } from "@/lib/solver/asset-transaction-bundles";
@@ -20,12 +20,14 @@ import {
   emptyBuyLeg,
   formatCurrency,
   parseNum,
+  settlementCopy,
 } from "./asset-transaction-leg-model";
 import {
   type BusinessSaleOption,
   type SellSourceAccount,
   businessChildAssetValue,
   businessTotalDebt,
+  settlementAccounts,
 } from "@/lib/techniques/sell-source-options";
 import {
   legToBody,
@@ -33,6 +35,9 @@ import {
   legsFromInitialData,
   mergeEditBody,
   combinedNet,
+  applySettlement,
+  settlementFromLegs,
+  legSettles,
   useProjectionYears,
 } from "./use-asset-transaction-legs";
 
@@ -195,6 +200,11 @@ export default function AddAssetTransactionForm({
   );
   const [activeLegKey, setActiveLegKey] = useState<string | null>(
     () => initialLegs[0]?.key ?? null,
+  );
+  // Where the bundle's net surplus lands, or its net deficit is paid from.
+  // "" is the default selection, NOT an empty one — see `applySettlement`.
+  const [settlementAccountId, setSettlementAccountId] = useState<string>(
+    () => settlementFromLegs(initialLegs),
   );
 
   const sellLegs = useMemo(
@@ -359,6 +369,13 @@ export default function AddAssetTransactionForm({
 
   const showNet = sellLegs.some(sellHasData) || buyLegs.some(buyHasData);
 
+  const settlementOptions = useMemo(() => settlementAccounts(accounts), [accounts]);
+  const settlement = settlementCopy(combined.net, settlementAccountId);
+  // A bundle of nothing but business sells has no routing choice to offer —
+  // the engine owns where those proceeds land. Offering the dropdown there
+  // would promise a destination no leg would ever carry.
+  const showSettlement = legs.some(legSettles);
+
   // ── Submit ────────────────────────────────────────────────────────────────
   /** Write ONE new record for a leg — the create path add mode and a grown
    *  bundle share. The callers differ only in the name and bundle id. */
@@ -393,13 +410,17 @@ export default function AddAssetTransactionForm({
     setError(null);
 
     try {
+      // One control, applied once: the footer's pick is stamped onto every
+      // leg's proceeds destination / funding source on the way out.
+      const settledLegs = legs.map((l) => applySettlement(l, settlementAccountId));
+
       if (isEdit && records.length > 0) {
         // One record per surviving recordId (a legacy swap row keeps BOTH of its
         // legs and merges back into itself), plus creates for new legs and
         // deletes for records whose leg was dropped.
         const byRecord = new Map<string, LegDraft[]>();
         const created: LegDraft[] = [];
-        for (const leg of legs) {
+        for (const leg of settledLegs) {
           if (leg.recordId) {
             const list = byRecord.get(leg.recordId);
             if (list) list.push(leg);
@@ -492,7 +513,7 @@ export default function AddAssetTransactionForm({
         // Add mode — fan out to N records that share ONE bundle id, so the
         // Techniques list can render them as a single technique.
         const bundleId = crypto.randomUUID();
-        for (const leg of legs) {
+        for (const leg of settledLegs) {
           await createLegRecord(
             leg,
             deriveLegName(leg, name, { assetLabel: assetLabelFor(leg) }),
@@ -665,6 +686,7 @@ export default function AddAssetTransactionForm({
                     leg={activeLeg}
                     onChange={(patch) => updateLeg(activeLeg.key, patch)}
                     accounts={accounts}
+                    showFundingSource={false}
                   />
                 )}
               </>
@@ -701,7 +723,7 @@ export default function AddAssetTransactionForm({
           />
         </div>
 
-        {/* ── Combined-net footer (informational) ────────────────────────── */}
+        {/* ── Combined net + where it settles ────────────────────────────── */}
         {showNet && (
           <div className="rounded-[var(--radius-sm)] border border-hair bg-card-2 px-4 py-3">
             <div className="flex items-center justify-between text-[13px]">
@@ -722,6 +744,31 @@ export default function AddAssetTransactionForm({
               <span className="tabular-nums">{formatCurrency(combined.purchases)}</span>
               . Pre-tax estimate.
             </p>
+
+            {/* One routing control for the whole bundle. The stored value is the
+                same in both directions ("" = default), so only the label and
+                the first option's name follow the sign of the net. */}
+            {showSettlement && (
+            <div className="mt-3 border-t border-hair pt-3">
+              <label className={fieldLabelClassName} htmlFor="settlementAccountId">
+                {settlement.field}
+              </label>
+              <select
+                id="settlementAccountId"
+                value={settlementAccountId}
+                onChange={(e) => setSettlementAccountId(e.target.value)}
+                className={selectClassName}
+              >
+                <option value="">{settlement.defaultOption}</option>
+                {settlementOptions.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-[12px] text-ink-3">{settlement.help}</p>
+            </div>
+            )}
           </div>
         )}
       </form>

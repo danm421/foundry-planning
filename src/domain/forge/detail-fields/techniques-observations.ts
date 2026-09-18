@@ -369,11 +369,11 @@ const assetTransactionEntity: DetailEntity = {
     { key: "transactionCostFlat", label: "Transaction Cost ($)", kind: "money", required: false, nullable: true },
     {
       key: "proceedsAccountId",
-      label: "Proceeds Destination",
+      label: "Surplus goes to / Deficit paid from",
       kind: "uuid",
       required: false,
       nullable: true,
-      notes: "Blank selects the household's default checking account — sent as null, not a real account id.",
+      notes: "No longer a per-leg field. ONE settlement dropdown on the dialog's combined-net footer writes this AND fundingAccountId to the same value for every leg in the bundle, so the net settles in one place. Blank selects the household's default checking account — sent as null, not a real account id. A business sell keeps null regardless: the engine routes those proceeds to the owning entity's own checking.",
     },
     {
       key: "qualifiesForHomeSaleExclusion",
@@ -426,12 +426,12 @@ const assetTransactionEntity: DetailEntity = {
     { key: "basis", label: "Basis ($)", kind: "money", required: false, nullable: true, notes: "Buy-side." },
     {
       key: "fundingAccountId",
-      label: "Funding Source",
+      label: "Surplus goes to / Deficit paid from",
       kind: "uuid",
       required: false,
       nullable: true,
       notes:
-        "The form offers two special non-account choices — blank (\"Withdrawal Strategy\") and \"__from_sale_proceeds__\" (\"From Sale Proceeds\") — both converted to null on the wire. A real value is an account uuid.",
+        "No longer a per-leg field in the Techniques dialog — the combined-net footer's settlement dropdown writes it alongside proceedsAccountId (see that entry). Blank is the default selection, not an absent one: the purchase debits default checking, which ends the BoY negative, and the projection's gap-fill refills it from the household withdrawal strategy. The standalone Buy-leg editor the Goals import mounts DOES still show its own Funding Source, with two special non-account choices — blank (\"Withdrawal Strategy\") and \"__from_sale_proceeds__\" (\"From Sale Proceeds\") — both converted to null on the wire. A real value is an account uuid.",
     },
     {
       key: "mortgageAmount",

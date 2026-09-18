@@ -133,12 +133,6 @@ export default function SellLegEditor({
     !!selectedAccountId &&
     liabilities.some((l) => l.linkedPropertyId === selectedAccountId);
 
-  // Proceeds accounts: only cash or taxable
-  const proceedsAccountOptions = useMemo(
-    () => accounts.filter((a) => a.category === "cash" || a.category === "taxable"),
-    [accounts],
-  );
-
   // Pre-fill the value/basis fields with the projected figures for the sale
   // year (rounded to whole dollars). The stored override stays empty until the
   // user types over it, so an untouched field still uses the exact projection.
@@ -468,29 +462,6 @@ export default function SellLegEditor({
             </span>
           </label>
           <FieldTooltip text="Excludes up to $250k single / $500k married-joint of capital gain on this sale. Advisor confirms 2-of-5-year eligibility." />
-        </div>
-      )}
-
-      {/* Proceeds destination — hidden in business mode */}
-      {/* Always shown in account mode; the ledger shell (parent) may suppress when proceeds fund a buy leg. */}
-      {leg.sellMode !== "business" && (
-        <div>
-          <label className={fieldLabelClassName} htmlFor="proceedsAccountId">
-            Proceeds Destination
-          </label>
-          <select
-            id="proceedsAccountId"
-            value={leg.proceedsAccountId}
-            onChange={(e) => onChange({ proceedsAccountId: e.target.value })}
-            className={selectClassName}
-          >
-            <option value="">Default Checking</option>
-            {proceedsAccountOptions.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </select>
         </div>
       )}
     </div>
