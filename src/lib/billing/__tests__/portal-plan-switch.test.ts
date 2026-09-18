@@ -39,6 +39,7 @@ describe("getPlanSwitchPortalConfigurationId", () => {
     expect(create).toHaveBeenCalledWith(expect.objectContaining({
       metadata: { purpose: "foundry_plan_switch_v1" },
       features: {
+        payment_method_update: { enabled: true },
         subscription_update: expect.objectContaining({
           enabled: true,
           default_allowed_updates: ["price"],

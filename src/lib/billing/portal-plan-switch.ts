@@ -43,6 +43,9 @@ export async function getPlanSwitchPortalConfigurationId(
     (configuration) => configuration.metadata?.purpose === CONFIG_PURPOSE,
   );
   const features = {
+    payment_method_update: {
+      enabled: true,
+    },
     subscription_update: {
       enabled: true,
       default_allowed_updates: ["price"],
