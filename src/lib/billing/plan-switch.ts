@@ -2,6 +2,7 @@ import type Stripe from "stripe";
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { subscriptions } from "@/db/schema";
+import { recordAudit } from "@/lib/audit";
 import { getStripe } from "./stripe-client";
 import { getPriceCatalog } from "./price-catalog";
 import { billingPlanForPriceId, type BillingPlan } from "./billing-plan";
@@ -175,6 +176,145 @@ export async function readPlanSwitchPreview(
     };
   } catch (err) {
     console.error("[billing/plan-switch] could not read preview:", err);
+    return { ok: false, reason: "unavailable" };
+  }
+}
+
+export type PlanSwitchResult =
+  | { ok: true; mode: "scheduled"; plan: BillingPlan; effectiveAt: Date; scheduleId: string }
+  | { ok: true; mode: "immediate"; plan: BillingPlan; effectiveAt: Date | null }
+  | {
+      ok: false;
+      reason: "unavailable" | "already_on_plan" | "pending_exists" | "not_switchable";
+    };
+
+/**
+ * Apply a cycle change. Paid subscribers get an app-owned schedule so the paid
+ * period finishes first; trials get a direct item swap because they have paid
+ * for nothing and `trial_end` is left untouched.
+ *
+ * Both branches re-read from Stripe and report what Stripe says. Nothing here
+ * returns or audits the request that was sent — that is exactly the bug this
+ * replaces, where the copy said "at the end of the period you have already
+ * paid for" while the price had already moved.
+ */
+export async function commitPlanSwitch(
+  firmId: string,
+  targetPlan: BillingPlan,
+): Promise<PlanSwitchResult> {
+  try {
+    const subject = await loadSubject(firmId);
+    if (!subject) return { ok: false, reason: "unavailable" };
+    if (subject.currentPlan === targetPlan) return { ok: false, reason: "already_on_plan" };
+    if (
+      !["trialing", "active"].includes(subject.subscription.status) ||
+      subject.subscription.cancel_at_period_end ||
+      subject.subscription.cancel_at
+    ) {
+      return { ok: false, reason: "not_switchable" };
+    }
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    if (futurePhaseOf(subject.schedule, nowSeconds)) {
+      return { ok: false, reason: "pending_exists" };
+    }
+
+    const stripe = getStripe();
+    const catalog = getPriceCatalog();
+    const targetPriceId = targetPlan === "monthly" ? catalog.seatMonthly : catalog.seatAnnual;
+    const targetPrice = await stripe.prices.retrieve(targetPriceId);
+    const quantity = subject.seatItem.quantity ?? 1;
+
+    if (subject.subscription.status === "trialing") {
+      const updated = await stripe.subscriptions.update(subject.subscription.id, {
+        items: [{ id: subject.seatItem.id, price: targetPriceId, quantity }],
+        proration_behavior: "none",
+      });
+      const landedPlan = billingPlanForPriceId(priceIdOf(updated.items.data[0].price));
+      const firstBill = updated.trial_end ? new Date(updated.trial_end * 1000) : null;
+      await recordAudit({
+        action: "billing.subscription_updated",
+        resourceType: "subscription",
+        resourceId: subject.subscription.id,
+        firmId,
+        metadata: {
+          flow: "plan_switch_immediate",
+          from_plan: subject.currentPlan,
+          to_plan: landedPlan,
+          effective_at: firstBill?.toISOString() ?? null,
+        },
+      });
+      return {
+        ok: true,
+        mode: "immediate",
+        plan: landedPlan ?? targetPlan,
+        effectiveAt: firstBill,
+      };
+    }
+
+    // A schedule whose future phase already landed still owns the subscription.
+    // Releasing it is free and lossless (measured), and it is the only way to
+    // build a fresh one.
+    if (subject.schedule) {
+      await stripe.subscriptionSchedules.release(subject.schedule.id);
+    }
+
+    const created = await stripe.subscriptionSchedules.create({
+      from_subscription: subject.subscription.id,
+    });
+    const running = created.phases[0];
+    const landed = await stripe.subscriptionSchedules.update(created.id, {
+      end_behavior: "release",
+      proration_behavior: "none",
+      phases: [
+        {
+          items: running.items.map((item) => ({
+            price: priceIdOf(item.price as string | { id: string }),
+            quantity: item.quantity ?? 1,
+          })),
+          start_date: running.start_date,
+          end_date: running.end_date,
+        },
+        {
+          items: [{ price: targetPriceId, quantity }],
+          // NOT `iterations` — removed from schedule phases; passing it returns
+          // "Received unknown parameter: phases[iterations]".
+          duration: {
+            interval: targetPrice.recurring?.interval ?? "month",
+            interval_count: targetPrice.recurring?.interval_count ?? 1,
+          },
+        },
+      ],
+    });
+
+    const future = futurePhaseOf(landed, nowSeconds);
+    if (!future) {
+      console.error("[billing/plan-switch] schedule created without a future phase", landed.id);
+      return { ok: false, reason: "unavailable" };
+    }
+    const landedPlan = billingPlanForPriceId(priceIdOf(future.items[0].price));
+    const effectiveAt = new Date(future.start_date * 1000);
+    await recordAudit({
+      action: "billing.subscription_updated",
+      resourceType: "subscription",
+      resourceId: subject.subscription.id,
+      firmId,
+      metadata: {
+        flow: "plan_switch_scheduled",
+        from_plan: subject.currentPlan,
+        to_plan: landedPlan,
+        effective_at: effectiveAt.toISOString(),
+        schedule_id: landed.id,
+      },
+    });
+    return {
+      ok: true,
+      mode: "scheduled",
+      plan: landedPlan ?? targetPlan,
+      effectiveAt,
+      scheduleId: landed.id,
+    };
+  } catch (err) {
+    console.error("[billing/plan-switch] could not commit switch:", err);
     return { ok: false, reason: "unavailable" };
   }
 }
