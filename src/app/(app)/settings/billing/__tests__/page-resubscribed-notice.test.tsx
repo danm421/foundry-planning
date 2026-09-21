@@ -12,9 +12,13 @@ vi.mock("@/lib/billing/subscription-state", async (orig) => ({
   ...((await orig()) as object),
   getSubscriptionState: vi.fn().mockResolvedValue({ kind: "comp_ended" }),
 }));
-vi.mock("@/lib/billing/billing-plan", () => ({ getFirmBillingPlan: vi.fn() }));
+vi.mock("@/lib/billing/plan-switch", () => ({ readPlanSwitchState: vi.fn() }));
 vi.mock("@/db", () => ({ db: { select: vi.fn() } }));
-vi.mock("../actions", () => ({ startResubscribeCheckout: vi.fn() }));
+vi.mock("../actions", () => ({
+  startResubscribeCheckout: vi.fn(),
+  confirmPlanSwitchAction: vi.fn(),
+  cancelPlanSwitchAction: vi.fn(),
+}));
 
 import BillingSettingsPage from "../page";
 import { auth } from "@clerk/nextjs/server";
@@ -56,34 +60,6 @@ describe("the ?resubscribed=1 confirmation", () => {
   });
 });
 
-describe("the ?plan_changed=1 confirmation", () => {
-  it("shows after Stripe confirms a billing-cycle change", async () => {
-    withStaleFounderToken();
-    render(
-      await BillingSettingsPage({ searchParams: Promise.resolve({ plan_changed: "1" }) }),
-    );
-    expect(screen.getByRole("status")).not.toBeNull();
-    expect(screen.getByText(/billing cycle updated/i)).not.toBeNull();
-  });
-
-  /**
-   * Stripe schedules a downgrade that has a paid period left to run, so the
-   * cycle on screen will not move for weeks or months. Saying "updated" here
-   * is what sent the customer back to the button to try again.
-   */
-  it("says the change is scheduled when Stripe deferred it", async () => {
-    withStaleFounderToken();
-    render(
-      await BillingSettingsPage({
-        searchParams: Promise.resolve({ plan_changed: "scheduled" }),
-      }),
-    );
-    expect(screen.getByRole("status")).not.toBeNull();
-    expect(screen.getByText(/takes effect at the end of/i)).not.toBeNull();
-    expect(screen.queryByText(/billing cycle updated/i)).toBeNull();
-  });
-});
-
 /**
  * The portal route answers a native form POST, so every refusal it returns is
  * a page the customer lands on. Before this, they landed on the raw JSON body
@@ -104,18 +80,29 @@ describe("the ?billing_error= explanation", () => {
   /**
    * Not an error and deliberately not styled as one: the change the customer
    * asked for is already coming, and the only thing wrong is that they cannot
-   * queue a second one on top of it.
+   * queue a second one on top of it. They can cancel it themselves on the
+   * billing page — "contact support" was our policy, never Stripe's.
    */
   it("reads as information, not failure, when a change is already pending", async () => {
     withStaleFounderToken();
     render(
       await BillingSettingsPage({
-        searchParams: Promise.resolve({ billing_error: "plan_change_scheduled" }),
+        searchParams: Promise.resolve({ billing_error: "plan_change_pending_exists" }),
       }),
     );
     expect(screen.getByRole("status")).not.toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
-    expect(screen.getByText(/already scheduled/i)).not.toBeNull();
+    expect(screen.getByText(/already have a change scheduled/i)).not.toBeNull();
+  });
+
+  it("says nothing was altered when a cancellation fails", async () => {
+    withStaleFounderToken();
+    render(
+      await BillingSettingsPage({
+        searchParams: Promise.resolve({ billing_error: "cancel_failed" }),
+      }),
+    );
+    expect(screen.getByRole("alert").textContent).toMatch(/nothing was altered/i);
   });
 
   it.each(["<script>", "constructor", "toString", "__proto__"])("ignores an unknown code: %s", async (code) => {
@@ -131,38 +118,4 @@ describe("the ?billing_error= explanation", () => {
     expect(screen.queryByRole("status")).toBeNull();
   });
 
-  it("explains the pending change before offering to replace it", async () => {
-    withStaleFounderToken();
-    render(await BillingSettingsPage({ searchParams: Promise.resolve({
-      billing_error: "trial_change_scheduled", plan: "monthly", schedule: "sub_sched_1",
-    }) }));
-
-    expect(screen.getByText(/if you leave Stripe without confirming/i)).not.toBeNull();
-    const button = screen.getByRole("button", { name: /replace scheduled change/i });
-    const form = button.closest("form")!;
-    expect(form.getAttribute("method")).toBe("post");
-    expect(form.getAttribute("action")).toBe("/api/billing/portal");
-    const data = new FormData(form);
-    expect(data.get("plan")).toBe("monthly");
-    expect(data.get("replace_schedule")).toBe("sub_sched_1");
-    expect(screen.getByRole("link", { name: /keep scheduled change/i }).getAttribute("href"))
-      .toBe("/settings/billing");
-  });
-
-  it("offers no replacement for an invalid target plan", async () => {
-    withStaleFounderToken();
-    render(await BillingSettingsPage({ searchParams: Promise.resolve({
-      billing_error: "trial_change_scheduled", plan: "weekly", schedule: "sub_sched_1",
-    }) }));
-    expect(screen.queryByRole("button", { name: /replace scheduled change/i })).toBeNull();
-  });
-
-  it("explains when a removed schedule still needs a replacement", async () => {
-    withStaleFounderToken();
-    render(await BillingSettingsPage({ searchParams: Promise.resolve({
-      billing_error: "plan_change_incomplete",
-    }) }));
-    expect(screen.getByRole("alert").textContent).toMatch(/previous scheduled change was removed/i);
-    expect(screen.queryByText(/nothing changed/i)).toBeNull();
-  });
 });

@@ -5,7 +5,7 @@ import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { invoices } from "@/db/schema";
 import { ForbiddenError, requireBillingContact } from "@/lib/authz";
-import { getFirmBillingPlan } from "@/lib/billing/billing-plan";
+import { readPlanSwitchState, type PlanSwitchState } from "@/lib/billing/plan-switch";
 import {
   getSubscriptionState,
   GRACE_WINDOW_MS,
@@ -79,35 +79,17 @@ function ResubscribedNotice(): ReactElement {
   );
 }
 
-function PlanChangedNotice(): ReactElement {
-  return (
-    <div role="status" className="rounded border border-hair bg-card p-4 text-sm text-ink-2">
-      Billing cycle updated. It can take a moment for the new cycle to appear here.
-    </div>
-  );
-}
-
-/**
- * Stripe defers a downgrade that still has a paid period left to run, so the
- * cycle below will keep reading the old one — for months, if they are a year
- * in. Promising an update that the page cannot show is what sent people back
- * to the button to press it again.
- */
-function PlanChangeScheduledNotice(): ReactElement {
-  return (
-    <div role="status" className="rounded border border-hair bg-card p-4 text-sm text-ink-2">
-      Billing cycle change confirmed. It takes effect at the end of the period
-      you have already paid for, so your current cycle is shown below until then.
-    </div>
-  );
-}
-
 // The portal form redirects here so refusals stay within the billing page.
 const BILLING_NOTICES: Record<string, { tone: "info" | "error"; message: string }> = {
-  plan_change_scheduled: {
+  plan_change_pending_exists: {
     tone: "info",
     message:
-      "A subscription change is already scheduled. Contact support if you need to change it before it takes effect.",
+      "You already have a change scheduled. Cancel it below if you want a different one.",
+  },
+  cancel_failed: {
+    tone: "error",
+    message:
+      "We couldn't cancel your scheduled change. Nothing was altered — please try again, or contact support if it keeps happening.",
   },
   plan_change_unavailable: {
     tone: "error",
@@ -131,41 +113,9 @@ const BILLING_NOTICES: Record<string, { tone: "info" | "error"; message: string 
     message:
       "We couldn't open Stripe. Please try again, or contact support if it keeps happening.",
   },
-  plan_change_incomplete: {
-    tone: "error",
-    message:
-      "Your previous scheduled change was removed. If you haven't confirmed a replacement in Stripe, your current billing cycle still applies. Use Switch below to finish changing it, or contact support for help.",
-  },
 };
 
-function BillingActionNotice({ code, plan, schedule }: {
-  code: string;
-  plan?: string;
-  schedule?: string;
-}): ReactElement | null {
-  if (code === "trial_change_scheduled" && (plan === "monthly" || plan === "annual") && schedule) {
-    return (
-      <div className="flex flex-col gap-3 rounded border border-hair bg-card p-4 text-sm text-ink-2">
-        <p role="status">
-          You already have a change scheduled for this subscription. To switch to {plan} now,
-          first remove that change, then confirm the replacement in Stripe. If you leave Stripe
-          without confirming, your current billing cycle will still apply. Your trial end date stays the same.
-        </p>
-        <div className="flex flex-wrap items-center gap-2">
-          <form method="post" action="/api/billing/portal">
-            <input type="hidden" name="plan" value={plan} />
-            <input type="hidden" name="replace_schedule" value={schedule} />
-            <button type="submit" className="btn-primary min-h-11 cursor-pointer px-3 text-sm">
-              Replace scheduled change
-            </button>
-          </form>
-          <a href="/settings/billing" className="btn-ghost min-h-11 px-3 text-sm">
-            Keep scheduled change
-          </a>
-        </div>
-      </div>
-    );
-  }
+function BillingActionNotice({ code }: { code: string }): ReactElement | null {
   if (!Object.hasOwn(BILLING_NOTICES, code)) return null;
   const notice = BILLING_NOTICES[code];
   return notice.tone === "error" ? (
@@ -363,7 +313,7 @@ export async function NonFounderBillingPanel(): Promise<ReactElement> {
   }
 
   // firmId === Clerk org id. Skip the query entirely if there's no org.
-  const [rows, currentPlan]: [InvoiceRow[], Awaited<ReturnType<typeof getFirmBillingPlan>>] = orgId
+  const [rows, switchState]: [InvoiceRow[], PlanSwitchState] = orgId
     ? await Promise.all([
         db
         .select({
@@ -381,9 +331,9 @@ export async function NonFounderBillingPanel(): Promise<ReactElement> {
         .where(eq(invoices.firmId, orgId))
         .orderBy(desc(invoices.createdAt))
         .limit(INVOICE_PAGE_LIMIT),
-        getFirmBillingPlan(orgId),
+        readPlanSwitchState(orgId),
       ])
-    : [[], null];
+    : [[], { kind: "unavailable" }];
 
   return (
     <div className="flex flex-col gap-4">
@@ -395,7 +345,7 @@ export async function NonFounderBillingPanel(): Promise<ReactElement> {
       </header>
       <StateSummary state={state} />
       <ManageBillingButton
-        currentPlan={currentPlan}
+        switchState={switchState}
         canSwitch={state.kind === "trialing" || state.kind === "active"}
       />
       <InvoiceList rows={rows} />
@@ -408,10 +358,7 @@ export default async function BillingSettingsPage({
 }: {
   searchParams?: Promise<{
     resubscribed?: string | string[];
-    plan_changed?: string | string[];
     billing_error?: string | string[];
-    plan?: string | string[];
-    schedule?: string | string[];
   }>;
 }): Promise<ReactElement> {
   try {
@@ -437,8 +384,6 @@ export default async function BillingSettingsPage({
   const sp = await searchParams;
   const rawFlag = sp?.resubscribed;
   const resubscribed = (Array.isArray(rawFlag) ? rawFlag[0] : rawFlag) === "1";
-  const rawPlanChanged = sp?.plan_changed;
-  const planChanged = Array.isArray(rawPlanChanged) ? rawPlanChanged[0] : rawPlanChanged;
   const rawBillingError = sp?.billing_error;
   const billingErrorCode = Array.isArray(rawBillingError)
     ? rawBillingError[0]
@@ -447,13 +392,7 @@ export default async function BillingSettingsPage({
   return (
     <div className="flex flex-col gap-4">
       {resubscribed ? <ResubscribedNotice /> : null}
-      {planChanged === "1" ? <PlanChangedNotice /> : null}
-      {planChanged === "scheduled" ? <PlanChangeScheduledNotice /> : null}
-      {billingErrorCode ? <BillingActionNotice
-        code={billingErrorCode}
-        plan={Array.isArray(sp?.plan) ? sp.plan[0] : sp?.plan}
-        schedule={Array.isArray(sp?.schedule) ? sp.schedule[0] : sp?.schedule}
-      /> : null}
+      {billingErrorCode ? <BillingActionNotice code={billingErrorCode} /> : null}
       {isFounder ? <FounderBillingPanel /> : <NonFounderBillingPanel />}
     </div>
   );

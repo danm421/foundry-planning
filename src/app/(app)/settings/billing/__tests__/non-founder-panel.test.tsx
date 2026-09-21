@@ -6,19 +6,23 @@ vi.mock("@clerk/nextjs/server", () => ({ auth: vi.fn() }));
 vi.mock("@/lib/billing/subscription-state", () => ({
   getSubscriptionState: vi.fn(),
 }));
-vi.mock("@/lib/billing/billing-plan", () => ({
-  getFirmBillingPlan: vi.fn(),
+vi.mock("@/lib/billing/plan-switch", () => ({
+  readPlanSwitchState: vi.fn(),
 }));
 vi.mock("@/db", () => ({ db: { select: vi.fn() } }));
 // The panel pulls in the resubscribe client component, which imports the
 // server action (clerk/db/Stripe). Stub the action module, not the component —
 // the component IS what we want to assert renders.
-vi.mock("../actions", () => ({ startResubscribeCheckout: vi.fn() }));
+vi.mock("../actions", () => ({
+  startResubscribeCheckout: vi.fn(),
+  confirmPlanSwitchAction: vi.fn(),
+  cancelPlanSwitchAction: vi.fn(),
+}));
 
 import { NonFounderBillingPanel, type InvoiceRow } from "../page";
 import { auth } from "@clerk/nextjs/server";
 import { getSubscriptionState } from "@/lib/billing/subscription-state";
-import { getFirmBillingPlan } from "@/lib/billing/billing-plan";
+import { readPlanSwitchState } from "@/lib/billing/plan-switch";
 import { db } from "@/db";
 
 function mockInvoices(rows: InvoiceRow[]) {
@@ -38,7 +42,7 @@ describe("<NonFounderBillingPanel>", () => {
     vi.clearAllMocks();
     vi.mocked(auth).mockResolvedValue({ orgId: "org_abc" } as never);
     vi.mocked(getSubscriptionState).mockResolvedValue({ kind: "active" });
-    vi.mocked(getFirmBillingPlan).mockResolvedValue("annual");
+    vi.mocked(readPlanSwitchState).mockResolvedValue({ kind: "none", currentPlan: "annual" });
   });
 
   it("renders the subscription status and the Manage billing form", async () => {
@@ -48,8 +52,9 @@ describe("<NonFounderBillingPanel>", () => {
 
     expect(screen.getAllByText(/billing/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/active/i)).not.toBeNull();
-    const button = screen.getByRole("button", { name: /switch to monthly/i });
-    expect(button.getAttribute("type")).toBe("submit");
+    // The switch is a link to the in-app confirm screen now, not a POST to Stripe.
+    const link = screen.getByRole("link", { name: /switch to monthly/i });
+    expect(link.getAttribute("href")).toBe("/settings/billing/switch?plan=monthly");
   });
 
   it("lists invoices with a link to the Stripe-hosted invoice", async () => {

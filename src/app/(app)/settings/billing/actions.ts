@@ -107,7 +107,8 @@ export async function confirmPlanSwitchAction(formData: FormData): Promise<void>
       unavailable: "plan_change_unavailable",
       already_on_plan: "already_on_plan",
       pending_exists: "plan_change_pending_exists",
-      not_switchable: "plan_change_not_switchable",
+      // Same answer to the customer as an unreachable Stripe: not now.
+      not_switchable: "plan_change_unavailable",
     };
     redirect(`/settings/billing?billing_error=${NOTICE[result.reason]}`);
   }
