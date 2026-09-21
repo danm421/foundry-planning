@@ -1,5 +1,6 @@
 "use server";
 
+import { redirect } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
 import { requireBillingContact } from "@/lib/authz";
 import {
@@ -10,6 +11,8 @@ import {
 import { getStripe } from "@/lib/billing/stripe-client";
 import { getSubscriptionState } from "@/lib/billing/subscription-state";
 import { checkCheckoutSessionRateLimit } from "@/lib/rate-limit";
+import { commitPlanSwitch, cancelPendingPlanSwitch } from "@/lib/billing/plan-switch";
+import type { BillingPlan } from "@/lib/billing/billing-plan";
 
 type ActionResult = { ok: true; url: string } | { ok: false; error: string };
 
@@ -78,4 +81,45 @@ export async function startResubscribeCheckout(
     console.error("[billing] could not start re-subscribe Checkout:", err);
     return { ok: false, error: "We couldn't reach payments. Please try again in a moment." };
   }
+}
+
+/**
+ * Confirm a cycle change from the in-app screen. Nothing is due today on any
+ * switch, so there is no payment to collect and no reason to hand the customer
+ * to Stripe's hosted portal — which is also the surface that applies a paid
+ * downgrade immediately and destroys the paid remainder.
+ */
+export async function confirmPlanSwitchAction(formData: FormData): Promise<void> {
+  await requireBillingContact();
+  const { orgId } = await auth();
+  if (!orgId) redirect("/settings/billing?billing_error=no_subscription");
+
+  const raw = String(formData.get("plan") ?? "");
+  if (raw !== "monthly" && raw !== "annual") {
+    redirect("/settings/billing?billing_error=invalid_plan");
+  }
+  const result = await commitPlanSwitch(orgId, raw as BillingPlan);
+  if (!result.ok) {
+    // Explicit map, not string interpolation: every code here must have an
+    // entry in BILLING_NOTICES on the billing page, or the customer gets a
+    // silent redirect with no explanation.
+    const NOTICE: Record<typeof result.reason, string> = {
+      unavailable: "plan_change_unavailable",
+      already_on_plan: "already_on_plan",
+      pending_exists: "plan_change_pending_exists",
+      not_switchable: "plan_change_not_switchable",
+    };
+    redirect(`/settings/billing?billing_error=${NOTICE[result.reason]}`);
+  }
+  // No outcome is encoded in this redirect: the billing page re-reads the live
+  // state from Stripe and renders whatever actually happened.
+  redirect("/settings/billing");
+}
+
+export async function cancelPlanSwitchAction(): Promise<void> {
+  await requireBillingContact();
+  const { orgId } = await auth();
+  if (!orgId) redirect("/settings/billing?billing_error=no_subscription");
+  const result = await cancelPendingPlanSwitch(orgId);
+  redirect(result.ok ? "/settings/billing" : "/settings/billing?billing_error=cancel_failed");
 }
