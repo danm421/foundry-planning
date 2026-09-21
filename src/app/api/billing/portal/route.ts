@@ -12,14 +12,18 @@ import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
-// Origin used solely as Stripe's `return_url` (the "return to merchant" link
-// inside Stripe's hosted portal). This never was a server-controlled redirect,
-// so reading the caller's Origin header could not have caused an open redirect
-// — but taking it from configuration instead means that argument doesn't have
-// to be re-derived on every read, and it matches the convention every other
-// redirect and mailer in the app already uses.
+// Keep all return URLs on the configured app origin.
 function appOrigin(): string {
   return process.env.NEXT_PUBLIC_APP_URL ?? "https://app.foundryplanning.com";
+}
+
+// Native form submissions need a page with an explanation, not a JSON body.
+function billingError(code: string, details: Record<string, string> = {}): Response {
+  const query = new URLSearchParams({ billing_error: code, ...details });
+  return NextResponse.redirect(
+    `${appOrigin()}/settings/billing?${query}`,
+    303,
+  );
 }
 
 export async function POST(request: Request): Promise<Response> {
@@ -34,7 +38,7 @@ export async function POST(request: Request): Promise<Response> {
   // firmId === Clerk org id.
   const { orgId } = await auth();
   if (!orgId) {
-    return NextResponse.json({ error: "no_subscription" }, { status: 400 });
+    return billingError("no_subscription");
   }
 
   const row = await db
@@ -52,16 +56,18 @@ export async function POST(request: Request): Promise<Response> {
   const customer = row?.stripeCustomerId;
   if (!customer) {
     // Founder / never-purchased: no Stripe customer to manage.
-    return NextResponse.json({ error: "no_subscription" }, { status: 400 });
+    return billingError("no_subscription");
   }
 
+  let releasedSchedule: string | null = null;
   try {
     const stripe = getStripe();
-    const rawPlan = String((await request.formData()).get("plan") ?? "");
+    const form = await request.formData();
+    const rawPlan = String(form.get("plan") ?? "");
     const targetPlan: BillingPlan | null =
       rawPlan === "monthly" || rawPlan === "annual" ? rawPlan : null;
     if (rawPlan && !targetPlan) {
-      return NextResponse.json({ error: "invalid_plan" }, { status: 400 });
+      return billingError("invalid_plan");
     }
 
     let sessionParams: Parameters<typeof stripe.billingPortal.sessions.create>[0] = {
@@ -77,32 +83,73 @@ export async function POST(request: Request): Promise<Response> {
         !["trialing", "active"].includes(row.status) ||
         row.cancelAtPeriodEnd
       ) {
-        return NextResponse.json({ error: "plan_change_unavailable" }, { status: 400 });
+        return billingError("plan_change_unavailable");
       }
       const subscription = await stripe.subscriptions.retrieve(row.stripeSubscriptionId);
+      // The local mirror can lag cancellation or payment-status webhooks.
+      if (
+        !["trialing", "active"].includes(subscription.status) ||
+        subscription.cancel_at_period_end || subscription.cancel_at
+      ) {
+        return billingError("plan_change_unavailable");
+      }
       const seatItem = subscription.items.data.find((item) => {
         const priceId = typeof item.price === "string" ? item.price : item.price.id;
         return billingPlanForPriceId(priceId) !== null;
       });
       if (!seatItem) {
-        return NextResponse.json({ error: "plan_change_unavailable" }, { status: 400 });
+        return billingError("plan_change_unavailable");
       }
       const currentPriceId =
         typeof seatItem.price === "string" ? seatItem.price : seatItem.price.id;
       currentPlan = billingPlanForPriceId(currentPriceId);
       if (currentPlan === targetPlan) {
-        return NextResponse.json({ error: "already_on_plan" }, { status: 400 });
+        return billingError("already_on_plan");
       }
       const catalog = getPriceCatalog();
-      // Stripe's own status, not the mirror's: the mirror can lag a webhook,
-      // and getting this wrong in the "trialing" direction would re-anchor a
-      // renewal the customer has already paid for. An unreadable status falls
-      // through to deferring, which is the side that cannot cost them money.
+      // Paid periods must finish before shortening the billing interval.
       const deferToPeriodEnd = subscription.status !== "trialing";
       planSwitchEffective = deferToPeriodEnd ? "at_period_end" : "immediately";
+
+      // Stripe won't open a plan-switch session while a schedule owns the subscription.
+      const scheduleId =
+        typeof subscription.schedule === "string"
+          ? subscription.schedule
+          : (subscription.schedule?.id ?? null);
+      if (scheduleId) {
+        if (deferToPeriodEnd) {
+          return billingError("plan_change_scheduled");
+        }
+        // Releasing drops the customer's queued choice even if they abandon
+        // Stripe. Require an explicit confirmation tied to the current schedule.
+        if (form.get("replace_schedule") !== scheduleId) {
+          return billingError("trial_change_scheduled", {
+            plan: targetPlan,
+            schedule: scheduleId,
+          });
+        }
+      }
+
       const configuration = await getPlanSwitchPortalConfigurationId(stripe, {
         deferToPeriodEnd,
       });
+      if (scheduleId) {
+        await stripe.subscriptionSchedules.release(scheduleId, { preserve_cancel_date: true });
+        releasedSchedule = scheduleId;
+        // Record this mutation before session creation, which can still fail.
+        await recordAudit({
+          action: "billing.subscription_updated",
+          resourceType: "subscription",
+          resourceId: row.stripeSubscriptionId,
+          firmId: orgId,
+          metadata: {
+            flow: "plan_switch_schedule_released",
+            released_schedule: scheduleId,
+            from_plan: currentPlan,
+            to_plan: targetPlan,
+          },
+        });
+      }
       // A deferred switch leaves the cycle on screen unchanged until the paid
       // period runs out, so the page has to greet them with that and not with
       // a confirmation that nothing on the page will bear out.
@@ -111,6 +158,9 @@ export async function POST(request: Request): Promise<Response> {
       }`;
       sessionParams = {
         ...sessionParams,
+        ...(releasedSchedule ? {
+          return_url: `${appOrigin()}/settings/billing?billing_error=plan_change_incomplete`,
+        } : {}),
         configuration,
         flow_data: {
           type: "subscription_update_confirm",
@@ -142,12 +192,13 @@ export async function POST(request: Request): Promise<Response> {
             from_plan: currentPlan,
             to_plan: targetPlan,
             effective: planSwitchEffective,
+            released_schedule: releasedSchedule,
           }
         : { flow: "portal_home" },
     });
     return NextResponse.redirect(session.url, 303);
   } catch (err) {
     console.error("[billing/portal] stripe error:", err);
-    return NextResponse.json({ error: "portal_unavailable" }, { status: 500 });
+    return billingError(releasedSchedule ? "plan_change_incomplete" : "portal_unavailable");
   }
 }

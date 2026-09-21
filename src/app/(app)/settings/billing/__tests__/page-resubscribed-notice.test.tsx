@@ -83,3 +83,86 @@ describe("the ?plan_changed=1 confirmation", () => {
     expect(screen.queryByText(/billing cycle updated/i)).toBeNull();
   });
 });
+
+/**
+ * The portal route answers a native form POST, so every refusal it returns is
+ * a page the customer lands on. Before this, they landed on the raw JSON body
+ * — `{"error":"portal_unavailable"}` on a blank white page.
+ */
+describe("the ?billing_error= explanation", () => {
+  it("explains a switch that Stripe would not open", async () => {
+    withStaleFounderToken();
+    render(
+      await BillingSettingsPage({
+        searchParams: Promise.resolve({ billing_error: "portal_unavailable" }),
+      }),
+    );
+    expect(screen.getByRole("alert")).not.toBeNull();
+    expect(screen.getByText(/couldn.t open Stripe/i)).not.toBeNull();
+  });
+
+  /**
+   * Not an error and deliberately not styled as one: the change the customer
+   * asked for is already coming, and the only thing wrong is that they cannot
+   * queue a second one on top of it.
+   */
+  it("reads as information, not failure, when a change is already pending", async () => {
+    withStaleFounderToken();
+    render(
+      await BillingSettingsPage({
+        searchParams: Promise.resolve({ billing_error: "plan_change_scheduled" }),
+      }),
+    );
+    expect(screen.getByRole("status")).not.toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByText(/already scheduled/i)).not.toBeNull();
+  });
+
+  it.each(["<script>", "constructor", "toString", "__proto__"])("ignores an unknown code: %s", async (code) => {
+    withStaleFounderToken();
+    render(
+      await BillingSettingsPage({
+        searchParams: Promise.resolve({ billing_error: code }),
+      }),
+    );
+    // Anchored on something that DID render, so an empty tree cannot pass.
+    expect(screen.getByText(/Founder Plan/i)).not.toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("explains the pending change before offering to replace it", async () => {
+    withStaleFounderToken();
+    render(await BillingSettingsPage({ searchParams: Promise.resolve({
+      billing_error: "trial_change_scheduled", plan: "monthly", schedule: "sub_sched_1",
+    }) }));
+
+    expect(screen.getByText(/if you leave Stripe without confirming/i)).not.toBeNull();
+    const button = screen.getByRole("button", { name: /replace scheduled change/i });
+    const form = button.closest("form")!;
+    expect(form.getAttribute("method")).toBe("post");
+    expect(form.getAttribute("action")).toBe("/api/billing/portal");
+    const data = new FormData(form);
+    expect(data.get("plan")).toBe("monthly");
+    expect(data.get("replace_schedule")).toBe("sub_sched_1");
+    expect(screen.getByRole("link", { name: /keep scheduled change/i }).getAttribute("href"))
+      .toBe("/settings/billing");
+  });
+
+  it("offers no replacement for an invalid target plan", async () => {
+    withStaleFounderToken();
+    render(await BillingSettingsPage({ searchParams: Promise.resolve({
+      billing_error: "trial_change_scheduled", plan: "weekly", schedule: "sub_sched_1",
+    }) }));
+    expect(screen.queryByRole("button", { name: /replace scheduled change/i })).toBeNull();
+  });
+
+  it("explains when a removed schedule still needs a replacement", async () => {
+    withStaleFounderToken();
+    render(await BillingSettingsPage({ searchParams: Promise.resolve({
+      billing_error: "plan_change_incomplete",
+    }) }));
+    expect(screen.getByRole("alert").textContent).toMatch(/previous scheduled change was removed/i);
+    expect(screen.queryByText(/nothing changed/i)).toBeNull();
+  });
+});
