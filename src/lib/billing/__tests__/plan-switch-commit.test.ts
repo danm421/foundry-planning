@@ -231,3 +231,107 @@ describe("commitPlanSwitch — trial", () => {
     expect(create).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * The whole point of this module is that it reports what Stripe did. If Stripe
+ * comes back with something we cannot name, saying "you're on monthly now"
+ * because monthly is what we asked for is the original bug in miniature.
+ */
+describe("commitPlanSwitch — never reports what it cannot read back", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockRow();
+  });
+
+  it("refuses when the landed schedule phase carries an unrecognised price", async () => {
+    vi.mocked(getStripe).mockReturnValue({
+      subscriptions: {
+        retrieve: vi.fn().mockResolvedValue({
+          id: "sub_1",
+          status: "active",
+          items: { data: [seat("price_annual")] },
+          schedule: null,
+          trial_end: null,
+        }),
+      },
+      prices: { retrieve: vi.fn().mockResolvedValue(MONTHLY_PRICE) },
+      subscriptionSchedules: {
+        create: vi.fn().mockResolvedValue({
+          id: "sub_sched_1",
+          phases: [
+            { start_date: 1789000000, end_date: PERIOD_END, items: [{ price: "price_annual", quantity: 1 }] },
+          ],
+        }),
+        update: vi.fn().mockResolvedValue({
+          id: "sub_sched_1",
+          end_behavior: "release",
+          phases: [
+            { start_date: 1789000000, end_date: PERIOD_END, items: [{ price: "price_annual", quantity: 1 }] },
+            { start_date: PERIOD_END, end_date: 1823214400, items: [{ price: "price_something_else", quantity: 1 }] },
+          ],
+        }),
+        release: vi.fn(),
+      },
+    } as never);
+
+    expect(await commitPlanSwitch("org_1", "monthly")).toEqual({
+      ok: false,
+      reason: "unavailable",
+    });
+    expect(vi.mocked(recordAudit)).not.toHaveBeenCalled();
+  });
+
+  it("refuses a trial swap that did not land on the price we asked for", async () => {
+    vi.mocked(getStripe).mockReturnValue({
+      subscriptions: {
+        retrieve: vi.fn().mockResolvedValue({
+          id: "sub_1",
+          status: "trialing",
+          trial_end: 1791000000,
+          items: { data: [seat("price_annual")] },
+          schedule: null,
+        }),
+        update: vi.fn().mockResolvedValue({
+          status: "trialing",
+          trial_end: 1791000000,
+          items: { data: [seat("price_something_else")] },
+          schedule: null,
+        }),
+      },
+      prices: { retrieve: vi.fn().mockResolvedValue(MONTHLY_PRICE) },
+      subscriptionSchedules: { create: vi.fn(), update: vi.fn(), release: vi.fn() },
+    } as never);
+
+    expect(await commitPlanSwitch("org_1", "monthly")).toEqual({
+      ok: false,
+      reason: "unavailable",
+    });
+  });
+
+  it("refuses a target price with no recurring interval instead of guessing monthly", async () => {
+    const create = vi.fn();
+    vi.mocked(getStripe).mockReturnValue({
+      subscriptions: {
+        retrieve: vi.fn().mockResolvedValue({
+          id: "sub_1",
+          status: "active",
+          items: { data: [seat("price_annual")] },
+          schedule: null,
+          trial_end: null,
+        }),
+      },
+      prices: {
+        retrieve: vi
+          .fn()
+          .mockResolvedValue({ id: "price_monthly", unit_amount: 19900, currency: "usd", recurring: null }),
+      },
+      subscriptionSchedules: { create, update: vi.fn(), release: vi.fn() },
+    } as never);
+
+    expect(await commitPlanSwitch("org_1", "monthly")).toEqual({
+      ok: false,
+      reason: "unavailable",
+    });
+    expect(create).not.toHaveBeenCalled();
+  });
+});

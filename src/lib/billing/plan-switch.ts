@@ -223,6 +223,10 @@ export async function commitPlanSwitch(
     const targetPriceId = targetPlan === "monthly" ? catalog.seatMonthly : catalog.seatAnnual;
     const targetPrice = await stripe.prices.retrieve(targetPriceId);
     const quantity = subject.seatItem.quantity ?? 1;
+    if (!targetPrice.recurring) {
+      console.error("[billing/plan-switch] target price has no recurring interval", targetPriceId);
+      return { ok: false, reason: "unavailable" };
+    }
 
     if (subject.subscription.status === "trialing") {
       const updated = await stripe.subscriptions.update(subject.subscription.id, {
@@ -230,6 +234,10 @@ export async function commitPlanSwitch(
         proration_behavior: "none",
       });
       const landedPlan = billingPlanForPriceId(priceIdOf(updated.items.data[0].price));
+      if (!landedPlan) {
+        console.error("[billing/plan-switch] trial landed on an unrecognised price", updated.id);
+        return { ok: false, reason: "unavailable" };
+      }
       const firstBill = updated.trial_end ? new Date(updated.trial_end * 1000) : null;
       await recordAudit({
         action: "billing.subscription_updated",
@@ -243,12 +251,7 @@ export async function commitPlanSwitch(
           effective_at: firstBill?.toISOString() ?? null,
         },
       });
-      return {
-        ok: true,
-        mode: "immediate",
-        plan: landedPlan ?? targetPlan,
-        effectiveAt: firstBill,
-      };
+      return { ok: true, mode: "immediate", plan: landedPlan, effectiveAt: firstBill };
     }
 
     // A schedule whose future phase already landed still owns the subscription.
@@ -279,8 +282,8 @@ export async function commitPlanSwitch(
           // NOT `iterations` — removed from schedule phases; passing it returns
           // "Received unknown parameter: phases[iterations]".
           duration: {
-            interval: targetPrice.recurring?.interval ?? "month",
-            interval_count: targetPrice.recurring?.interval_count ?? 1,
+            interval: targetPrice.recurring.interval,
+            interval_count: targetPrice.recurring.interval_count ?? 1,
           },
         },
       ],
@@ -292,6 +295,10 @@ export async function commitPlanSwitch(
       return { ok: false, reason: "unavailable" };
     }
     const landedPlan = billingPlanForPriceId(priceIdOf(future.items[0].price));
+    if (!landedPlan) {
+      console.error("[billing/plan-switch] scheduled phase carries an unrecognised price", landed.id);
+      return { ok: false, reason: "unavailable" };
+    }
     const effectiveAt = new Date(future.start_date * 1000);
     await recordAudit({
       action: "billing.subscription_updated",
@@ -306,13 +313,7 @@ export async function commitPlanSwitch(
         schedule_id: landed.id,
       },
     });
-    return {
-      ok: true,
-      mode: "scheduled",
-      plan: landedPlan ?? targetPlan,
-      effectiveAt,
-      scheduleId: landed.id,
-    };
+    return { ok: true, mode: "scheduled", plan: landedPlan, effectiveAt, scheduleId: landed.id };
   } catch (err) {
     console.error("[billing/plan-switch] could not commit switch:", err);
     return { ok: false, reason: "unavailable" };
