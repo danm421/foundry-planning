@@ -167,6 +167,73 @@ describe("LiabilitiesTable co-commits the property a mortgage is secured on", ()
   });
 
   /**
+   * ── Ruling 77: the OTHER half of Ruling 73's seam ────────────────────
+   *
+   * `commitAccounts` SKIPS a fuzzy row — bumps `skipped`, `continue`s, writes
+   * nothing — while `useChatCommit` marks every POSTED id committed regardless
+   * of what the server did. So co-posting an unresolved property makes BOTH
+   * rows read "Committed" while the house is never written and the debt lands
+   * with `linked_property_id` NULL.
+   *
+   * Priced deliberately: the value block (Ruling 73) cannot catch this one,
+   * because the row's value is fine — it is the MATCH that is unresolved.
+   *
+   * Before the co-post existed a fuzzy account row's id could not be posted
+   * at all: its own Commit button is withheld by
+   * `accountCommitBlockedReason` ("Pick a match first"). This
+   * door is what made it reachable, so this door has to re-ask the same
+   * question the old one asked.
+   */
+  it("leaves a property with an unresolved fuzzy match out of the post", async () => {
+    const onCommitRows = vi.fn();
+    render(
+      <LiabilitiesTable
+        {...base}
+        onCommitRows={onCommitRows}
+        rows={[securedMortgage]}
+        accounts={[
+          {
+            ...pricedProperty,
+            match: {
+              kind: "fuzzy" as const,
+              candidates: [
+                { id: "a", score: 0.9 },
+                { id: "b", score: 0.8 },
+              ],
+            },
+          },
+        ]}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: /commit/i }));
+    expect(onCommitRows).toHaveBeenCalledWith(["r1"]);
+  });
+
+  /**
+   * The CONTROL for the test above: the clause must exclude `fuzzy` ALONE,
+   * not every row that carries a match. An EXACT match is the ordinary case —
+   * the statement's house is already on the plan — and `commitAccounts`
+   * writes it, so withholding it here would strand the mortgage's link for
+   * the exact rows the co-post exists to serve. Identical fixture, one field
+   * changed.
+   */
+  it("still posts a property whose match is exact", async () => {
+    const onCommitRows = vi.fn();
+    render(
+      <LiabilitiesTable
+        {...base}
+        onCommitRows={onCommitRows}
+        rows={[securedMortgage]}
+        accounts={[
+          { ...pricedProperty, match: { kind: "exact" as const, existingId: "acct-1" } },
+        ]}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: /commit/i }));
+    expect(onCommitRows).toHaveBeenCalledWith(["r1", "account:synthesized:5304-hudson-avenue"]);
+  });
+
+  /**
    * ── Ruling 73: the seam between I1(a) and I5 ──────────────────────────
    *
    * The co-post above is a new door onto `commitAccounts`, which writes an

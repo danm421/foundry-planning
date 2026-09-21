@@ -85,6 +85,19 @@ function pickerOption(l: LiabilityCandidate): MatchCandidate {
  * An ALREADY-COMMITTED property is deliberately not returned. It is on the
  * plan, so the debt's own commit will link to it through the server's
  * `matchMortgageToProperty` with no help from here.
+ *
+ * An AMBIGUOUS (`match.kind === "fuzzy"`) property is not returned either.
+ * `commitAccounts` bumps `skipped` and `continue`s on a fuzzy row, writing
+ * nothing, while `useChatCommit` marks every POSTED id committed regardless of
+ * the server's answer — so co-posting one would make both rows read
+ * "Committed" with no house written and `linked_property_id` NULL. A fuzzy
+ * row's own Commit button is already withheld for this exact reason
+ * (`accountCommitBlockedReason` → "Pick a match first"); this co-post is a
+ * second door onto the same write, so it asks the same question. The debt
+ * still commits — an unresolvable house is simply not dragged along with it.
+ *
+ * Cited by SYMBOL, not line: both line references this rule was first written
+ * against had already drifted by the time it was implemented.
  */
 export function coCommitProperty(
   row: Row,
@@ -98,6 +111,7 @@ export function coCommitProperty(
       (a) =>
         !!a.__rowId &&
         !committedRowIds.includes(a.__rowId) &&
+        !isAmbiguousMatch(a) &&
         a.category === "real_estate" &&
         propertyAddressMatches(a.propertyAddress, address),
     ) ?? null
