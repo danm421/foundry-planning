@@ -318,3 +318,45 @@ export async function commitPlanSwitch(
     return { ok: false, reason: "unavailable" };
   }
 }
+
+/**
+ * Undo a pending change. Releasing a schedule on a paid subscription is free
+ * and restores the status quo exactly — measured: price, period and invoices
+ * unchanged, $0 moved. "Contact support" was our own policy, never Stripe's.
+ *
+ * The release is confirmed by re-reading the subscription, because a release
+ * that silently failed would leave the page telling them it is gone.
+ */
+export async function cancelPendingPlanSwitch(firmId: string): Promise<{ ok: boolean }> {
+  try {
+    const subject = await loadSubject(firmId);
+    if (!subject) return { ok: false };
+    const future = futurePhaseOf(subject.schedule, Math.floor(Date.now() / 1000));
+    if (!future || !subject.schedule) return { ok: true };
+
+    const scheduleId = subject.schedule.id;
+    const targetPlan = billingPlanForPriceId(priceIdOf(future.items[0].price));
+    await getStripe().subscriptionSchedules.release(scheduleId);
+
+    const after = await loadSubject(firmId);
+    if (!after) return { ok: false };
+    if (futurePhaseOf(after.schedule, Math.floor(Date.now() / 1000))) return { ok: false };
+
+    await recordAudit({
+      action: "billing.subscription_updated",
+      resourceType: "subscription",
+      resourceId: subject.subscription.id,
+      firmId,
+      metadata: {
+        flow: "plan_switch_canceled",
+        released_schedule: scheduleId,
+        from_plan: subject.currentPlan,
+        to_plan: targetPlan,
+      },
+    });
+    return { ok: true };
+  } catch (err) {
+    console.error("[billing/plan-switch] could not cancel pending switch:", err);
+    return { ok: false };
+  }
+}
