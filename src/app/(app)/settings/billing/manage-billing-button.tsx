@@ -3,6 +3,7 @@
 import type { ReactElement } from "react";
 import { useFormStatus } from "react-dom";
 import type { PlanSwitchState } from "@/lib/billing/plan-switch";
+import { formatPlanDate } from "@/lib/billing/plan-switch-preview";
 import { cancelPlanSwitchAction } from "./actions";
 
 function SubmitButton({ label, pendingLabel, primary = false }: {
@@ -20,15 +21,6 @@ function SubmitButton({ label, pendingLabel, primary = false }: {
       {pending ? pendingLabel : label}
     </button>
   );
-}
-
-function fmtDate(d: Date): string {
-  return d.toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  });
 }
 
 /**
@@ -71,7 +63,7 @@ export default function ManageBillingButton({
             <span className="font-medium capitalize text-ink">{switchState.currentPlan}</span>,
             switching to{" "}
             <span className="font-medium capitalize text-ink">{switchState.targetPlan}</span> on{" "}
-            <span className="tabular text-ink">{fmtDate(switchState.effectiveAt)}</span>.
+            <span className="tabular text-ink">{formatPlanDate(switchState.effectiveAt)}</span>.
           </p>
         ) : null}
         {switchState.kind === "unavailable" ? (

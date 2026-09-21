@@ -72,11 +72,21 @@ export function formatPlanDate(d: Date, locale?: string): string {
   });
 }
 
+/**
+ * Which way a switch is applied. Exported so the module that MUTATES Stripe
+ * branches on the same rule the screen promises — two independent copies of
+ * this decision would be the original bug moved inside our own code, where no
+ * Stripe read-back would catch the drift.
+ */
+export function planSwitchMode(subject: PlanSwitchSubject): PlanSwitchPreview["mode"] {
+  return subject.status === "trialing" ? "immediate" : "scheduled";
+}
+
 export function previewPlanSwitch(
   subject: PlanSwitchSubject,
   target: PlanSwitchTarget,
 ): PlanSwitchPreview {
-  const immediate = subject.status === "trialing";
+  const immediate = planSwitchMode(subject) === "immediate";
   return {
     mode: immediate ? "immediate" : "scheduled",
     currentPlan: subject.currentPlan,
