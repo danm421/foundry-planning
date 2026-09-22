@@ -8,9 +8,11 @@ import {
   crmHouseholdContacts,
   entities,
   familyMembers,
+  liabilities,
   scenarios,
 } from "@/db/schema";
 import type { AccountCandidate } from "@/lib/imports/match-keys/account";
+import type { LiabilityCandidate } from "@/lib/imports/match-keys/liability";
 import type { OwnerMatchFamilyMember } from "@/lib/imports/owner-match";
 import { familyMemberName } from "./owner-options";
 
@@ -32,6 +34,12 @@ export interface ChatReviewContext {
   /** Existing accounts in the scenario this import commits to. */
   accounts: AccountCandidate[];
   /**
+   * The liabilities already on the plan this import commits into — the Match
+   * column's option list on the liabilities table. Empty leaves every row
+   * reading "New", the honest answer for a plan with nothing to match.
+   */
+  liabilities: LiabilityCandidate[];
+  /**
    * What the plan already says about the client and spouse, keyed by the SAME
    * `client_household` field keys the Details map declares — the LEFT column of
    * the household diff (`household-diff.ts`).
@@ -49,6 +57,7 @@ export const EMPTY_CHAT_REVIEW_CONTEXT: ChatReviewContext = {
   familyMembers: [],
   entities: [],
   accounts: [],
+  liabilities: [],
   household: {},
 };
 
@@ -178,72 +187,87 @@ export async function loadChatReviewContext(
       .where(eq(clients.id, clientId)),
   ]);
 
-  const [familyRows, entityRows, accountRows, ownerRows, contactRows] = await Promise.all([
-    db
-      .select({
-        id: familyMembers.id,
-        role: familyMembers.role,
-        firstName: familyMembers.firstName,
-        lastName: familyMembers.lastName,
-      })
-      .from(familyMembers)
-      .where(eq(familyMembers.clientId, clientId)),
-    db
-      .select({ id: entities.id, name: entities.name })
-      .from(entities)
-      .where(eq(entities.clientId, clientId)),
-    resolvedScenarioId
-      ? db
-          .select({
-            id: accounts.id,
-            name: accounts.name,
-            category: accounts.category,
-            accountNumberLast4: accounts.accountNumberLast4,
-            custodian: accounts.custodian,
-            value: accounts.value,
-          })
-          .from(accounts)
-          .where(
-            and(eq(accounts.clientId, clientId), eq(accounts.scenarioId, resolvedScenarioId)),
-          )
-      : Promise.resolve([]),
-    resolvedScenarioId
-      ? db
-          .select({
-            accountId: accountOwners.accountId,
-            familyMemberId: accountOwners.familyMemberId,
-            entityId: accountOwners.entityId,
-          })
-          .from(accountOwners)
-          .innerJoin(accounts, eq(accounts.id, accountOwners.accountId))
-          .where(
-            and(eq(accounts.clientId, clientId), eq(accounts.scenarioId, resolvedScenarioId)),
-          )
-      : Promise.resolve([]),
-    // The identity half of the household, scoped to THIS client's own CRM
-    // household — the id came from the clients row above, so there is no path
-    // from here to another household's contacts.
-    clientRow
-      ? db
-          .select({
-            role: crmHouseholdContacts.role,
-            firstName: crmHouseholdContacts.firstName,
-            lastName: crmHouseholdContacts.lastName,
-            dateOfBirth: crmHouseholdContacts.dateOfBirth,
-            email: crmHouseholdContacts.email,
-            phone: crmHouseholdContacts.phone,
-            mobile: crmHouseholdContacts.mobile,
-            addressLine1: crmHouseholdContacts.addressLine1,
-            addressLine2: crmHouseholdContacts.addressLine2,
-            city: crmHouseholdContacts.city,
-            state: crmHouseholdContacts.state,
-            postalCode: crmHouseholdContacts.postalCode,
-            country: crmHouseholdContacts.country,
-          })
-          .from(crmHouseholdContacts)
-          .where(eq(crmHouseholdContacts.householdId, clientRow.crmHouseholdId))
-      : Promise.resolve([]),
-  ]);
+  const [familyRows, entityRows, accountRows, liabilityRows, ownerRows, contactRows] =
+    await Promise.all([
+      db
+        .select({
+          id: familyMembers.id,
+          role: familyMembers.role,
+          firstName: familyMembers.firstName,
+          lastName: familyMembers.lastName,
+        })
+        .from(familyMembers)
+        .where(eq(familyMembers.clientId, clientId)),
+      db
+        .select({ id: entities.id, name: entities.name })
+        .from(entities)
+        .where(eq(entities.clientId, clientId)),
+      resolvedScenarioId
+        ? db
+            .select({
+              id: accounts.id,
+              name: accounts.name,
+              category: accounts.category,
+              accountNumberLast4: accounts.accountNumberLast4,
+              custodian: accounts.custodian,
+              value: accounts.value,
+            })
+            .from(accounts)
+            .where(
+              and(eq(accounts.clientId, clientId), eq(accounts.scenarioId, resolvedScenarioId)),
+            )
+        : Promise.resolve([]),
+      // Same client+scenario scoping as the account query above — an import
+      // with no scenario (`resolveScenarioId` found no base case) must not
+      // build `eq(liabilities.scenarioId, null)` against a NOT NULL column.
+      resolvedScenarioId
+        ? db
+            .select({ id: liabilities.id, name: liabilities.name, balance: liabilities.balance })
+            .from(liabilities)
+            .where(
+              and(
+                eq(liabilities.clientId, clientId),
+                eq(liabilities.scenarioId, resolvedScenarioId),
+              ),
+            )
+        : Promise.resolve([]),
+      resolvedScenarioId
+        ? db
+            .select({
+              accountId: accountOwners.accountId,
+              familyMemberId: accountOwners.familyMemberId,
+              entityId: accountOwners.entityId,
+            })
+            .from(accountOwners)
+            .innerJoin(accounts, eq(accounts.id, accountOwners.accountId))
+            .where(
+              and(eq(accounts.clientId, clientId), eq(accounts.scenarioId, resolvedScenarioId)),
+            )
+        : Promise.resolve([]),
+      // The identity half of the household, scoped to THIS client's own CRM
+      // household — the id came from the clients row above, so there is no path
+      // from here to another household's contacts.
+      clientRow
+        ? db
+            .select({
+              role: crmHouseholdContacts.role,
+              firstName: crmHouseholdContacts.firstName,
+              lastName: crmHouseholdContacts.lastName,
+              dateOfBirth: crmHouseholdContacts.dateOfBirth,
+              email: crmHouseholdContacts.email,
+              phone: crmHouseholdContacts.phone,
+              mobile: crmHouseholdContacts.mobile,
+              addressLine1: crmHouseholdContacts.addressLine1,
+              addressLine2: crmHouseholdContacts.addressLine2,
+              city: crmHouseholdContacts.city,
+              state: crmHouseholdContacts.state,
+              postalCode: crmHouseholdContacts.postalCode,
+              country: crmHouseholdContacts.country,
+            })
+            .from(crmHouseholdContacts)
+            .where(eq(crmHouseholdContacts.householdId, clientRow.crmHouseholdId))
+        : Promise.resolve([]),
+    ]);
 
   // Ownership read twice out of one pass: `ownerIds` are what `ownerAgreement`
   // SCORES, and they cover family members alone; `ownerNames` are what the link
@@ -284,6 +308,11 @@ export async function loadChatReviewContext(
       value: Number(r.value),
       ownerIds: ownerIdsByAccount.get(r.id) ?? [],
       ownerNames: ownerNamesByAccount.get(r.id) ?? [],
+    })),
+    liabilities: liabilityRows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      balance: Number(r.balance),
     })),
     household: buildHouseholdRecord(clientRow, contactRows),
   };

@@ -3,7 +3,11 @@ import type { BaseMessage } from "@langchain/core/messages";
 import { chatModel } from "@/domain/forge/llm";
 import { recordAiUsage } from "@/lib/ai/usage";
 import type { Annotated, ChatState, ChatTurn, PersistedImportPayload } from "@/lib/imports/types";
-import type { ExtractedAccount, ExtractionResult } from "@/lib/extraction/types";
+import type {
+  ExtractedAccount,
+  ExtractedLiability,
+  ExtractionResult,
+} from "@/lib/extraction/types";
 import { livingHoldings } from "@/lib/imports/living-rows";
 import { holdingMarketValue } from "@/lib/extraction/normalize-holdings";
 import {
@@ -18,6 +22,7 @@ import {
   rereadDocument,
   EDITABLE_ACCOUNT_FIELDS,
   EDITABLE_HOLDING_FIELDS,
+  EDITABLE_LIABILITY_FIELDS,
   type ToolResult,
   type RereadModel,
 } from "./tools";
@@ -34,6 +39,22 @@ import {
  */
 
 export const MAX_TOOL_CALLS_PER_TURN = 4;
+
+/**
+ * What `edit_row`'s `field` enum offers the model: the union of both tables'
+ * allowlists, deduped (`name` is on both).
+ *
+ * It has to be the union, not the accounts list, because the enum is a HARD
+ * constraint on what the model may emit — leaving it accounts-only would make
+ * `edit_row` structurally unable to name `balance` or `interestRate`, and the
+ * whole of Task 12 would be unreachable with every unit test green. The
+ * per-table allowlist in `tools.ts` is still what decides whether a given
+ * field is legal on the row the id names; this only decides what the model can
+ * ASK for.
+ */
+const EDITABLE_ROW_FIELDS = [
+  ...new Set<string>([...EDITABLE_ACCOUNT_FIELDS, ...EDITABLE_LIABILITY_FIELDS]),
+];
 
 /**
  * OpenAI-style function-calling defs, bound directly via `bindTools` — no
@@ -54,13 +75,19 @@ export const TOOL_DEFS = [
     type: "function" as const,
     function: {
       name: "edit_row",
-      description: "Change one field on one account row the advisor is reviewing.",
+      description:
+        "Change one field on one row the advisor is reviewing — an account or a debt. The row id " +
+        "says which table it is in, and each table accepts its own fields.",
       parameters: {
         type: "object",
         properties: {
           rowId: { type: "string", description: "The row's __rowId." },
-          field: { type: "string", enum: [...EDITABLE_ACCOUNT_FIELDS] },
-          value: { description: "The corrected value for the field." },
+          field: { type: "string", enum: EDITABLE_ROW_FIELDS },
+          value: {
+            description:
+              "The corrected value for the field. A rate is a decimal fraction (0.0625 is 6.25%); " +
+              "a date is YYYY-MM-DD.",
+          },
         },
         required: ["rowId", "field", "value"],
       },
@@ -71,8 +98,9 @@ export const TOOL_DEFS = [
     function: {
       name: "merge_rows",
       description:
-        "Combine two rows that are the same account seen twice. The kept row's fields win on a " +
-        "conflict; the merged row's unique fields backfill. The merged row is removed.",
+        "Combine two rows in the SAME table that are the same account (or the same debt) seen " +
+        "twice. The kept row's fields win on a conflict; the merged row's unique fields backfill. " +
+        "The merged row is removed. An account and a debt can never be merged.",
       parameters: {
         type: "object",
         properties: {
@@ -203,6 +231,7 @@ function fileNameMap(fileResults: Record<string, ExtractionResult>): Record<stri
 }
 
 type AccountRow = Annotated<ExtractedAccount>;
+type LiabilityRow = Annotated<ExtractedLiability>;
 
 /**
  * Positions are inlined while the whole block fits this many characters,
@@ -286,42 +315,94 @@ function describeRows(
   committedRowIds: ReadonlySet<string>,
 ): string {
   const accounts = payload.accounts ?? [];
-  if (accounts.length === 0) return "(no rows)";
-  const rows = accounts
-    .map((r) => {
-      const source = r.__provenance
-        ? (fileNames[r.__provenance.sourceFileId] ?? r.__provenance.sourceFileId)
-        : "unknown source";
-      // C3: mark what the mutating tools will refuse. The refusal itself is
-      // enforced server-side in `tools.ts` and does not depend on the model
-      // reading this — but every refused call still burns one of the four
-      // tool calls this turn is allowed, so saying it up front is the
-      // difference between one clear answer and a retry loop.
-      //
-      // Ruling 118: this MARKER is all that is left of that. The prompt used
-      // to carry a matching instruction ("...will refuse it. Do not try —
-      // say that the row is already committed and has to be corrected on the
-      // client's accounts instead"), and the real model applied it to rows
-      // that had no marker at all: with `committedRowIds` empty and every
-      // row still showing a live Commit button, it refused two different
-      // edit requests without calling `edit_row` once. The instruction is
-      // gone; `assertNotCommitted`'s own error message already tells the
-      // model what to say on the rows that genuinely are committed.
-      const committed = r.__rowId && committedRowIds.has(r.__rowId) ? " committed=yes" : "";
-      // M1: `name` is `JSON.stringify`'d for the same reason `source` is —
-      // it is model-extracted text from a client's document, and the
-      // hand-rolled `"${r.name}"` it replaces let an account name carrying a
-      // literal `"` break out of its own quoting.
-      return (
-        `- ${r.__rowId}: ${JSON.stringify(r.name)} value=${r.value ?? "?"} basis=${r.basis ?? "?"} ` +
-        `custodian=${r.custodian ?? "?"} source=${JSON.stringify(source)}${committed}`
-      );
-    })
-    .join("\n");
+  const liabilities = payload.liabilities ?? [];
+  // Task 12: BOTH tables, not accounts alone. This used to return early on
+  // `accounts.length === 0`, which told the model a debt-only import (a car
+  // loan, or a mortgage whose statement prints no property address, so no
+  // property account is synthesized for it) was EMPTY — and no amount of
+  // tool wiring can reach a row the model was told does not exist.
+  if (accounts.length === 0 && liabilities.length === 0) return "(no rows)";
+
+  /**
+   * The tail every row line carries, whichever table it is in: where it came
+   * from, and whether the mutating tools will refuse it. ONE definition, so
+   * the two blocks can't drift into two grammars for the same two facts.
+   *
+   * C3: mark what the mutating tools will refuse. The refusal itself is
+   * enforced server-side in `tools.ts` and does not depend on the model
+   * reading this — but every refused call still burns one of the four tool
+   * calls this turn is allowed, so saying it up front is the difference
+   * between one clear answer and a retry loop.
+   *
+   * Ruling 118: the MARKER is all that is left of that. The prompt used to
+   * carry a matching instruction ("...will refuse it. Do not try — say that
+   * the row is already committed and has to be corrected on the client's
+   * accounts instead"), and the real model applied it to rows that had no
+   * marker at all: with `committedRowIds` empty and every row still showing a
+   * live Commit button, it refused two different edit requests without calling
+   * `edit_row` once. The instruction is gone; `assertNotCommitted`'s own error
+   * message already tells the model what to say on the rows that genuinely
+   * are committed.
+   */
+  const rowTail = (r: { __rowId?: string; __provenance?: { sourceFileId: string } }): string => {
+    const source = r.__provenance
+      ? (fileNames[r.__provenance.sourceFileId] ?? r.__provenance.sourceFileId)
+      : "unknown source";
+    const committed = r.__rowId && committedRowIds.has(r.__rowId) ? " committed=yes" : "";
+    return `source=${JSON.stringify(source)}${committed}`;
+  };
+
+  // M1: `name` is `JSON.stringify`'d for the same reason `source` is — it is
+  // model-extracted text from a client's document, and the hand-rolled
+  // `"${r.name}"` it replaces let an account name carrying a literal `"` break
+  // out of its own quoting.
+  const accountLines = accounts.map(
+    (r: AccountRow) =>
+      `- ${r.__rowId}: ${JSON.stringify(r.name)} value=${r.value ?? "?"} basis=${r.basis ?? "?"} ` +
+      `custodian=${r.custodian ?? "?"} ${rowTail(r)}`,
+  );
+  // Same row-line grammar. Ruling 57(b), Task 12b: THE MODEL SEES EVERY FIELD
+  // IT MAY WRITE. This used to show balance/rate/P&I only — "the figures an
+  // advisor reconciles against the statement" — on the grounds that a longer
+  // line is re-sent on every turn. That does not outweigh what it cost: the
+  // model could overwrite `propertyAddress`, the key the COMMIT links a
+  // mortgage to its property by, and `balanceAsOfDate`, without ever having
+  // seen their current values. Debts are few per import, so the tokens are
+  // cheap and the blind overwrite is not.
+  //
+  // Every key here is the field name `edit_row` takes, so nothing has to be
+  // translated: the old `rate=`/`payment=` aliases are spelled out for the
+  // same reason, which also keeps `monthlyPayment` (P&I) from reading as the
+  // monthly half of `totalPayment` (PITI) now that both are on the line. The
+  // derived escrow cell stays off it — it is computed from the two payment
+  // figures and has nowhere to write.
+  //
+  // `propertyAddress` is `JSON.stringify`'d for the same reason `name` is
+  // (M1): it is model-extracted free text, and an unquoted address would read
+  // as several more `key=value` pairs. The two dates are ISO
+  // `YYYY-MM-DD`, which carries no spaces to break the grammar.
+  const liabilityLines = liabilities.map(
+    (r: LiabilityRow) =>
+      `- ${r.__rowId}: ${JSON.stringify(r.name)} balance=${r.balance ?? "?"} ` +
+      `interestRate=${r.interestRate ?? "?"} monthlyPayment=${r.monthlyPayment ?? "?"} ` +
+      `totalPayment=${r.totalPayment ?? "?"} balanceAsOfDate=${r.balanceAsOfDate ?? "?"} ` +
+      `maturityDate=${r.maturityDate ?? "?"} ` +
+      `propertyAddress=${r.propertyAddress === undefined ? "?" : JSON.stringify(r.propertyAddress)} ` +
+      `${rowTail(r)}`,
+  );
+
   const holdings = describeHoldings(accounts);
+  // The accounts block carries NO header, deliberately: the opening fence is
+  // immediately followed by a row line, which is what the prompt-injection
+  // boundary test asserts positionally. The sub-blocks that follow it are
+  // labelled, exactly as HOLDINGS already was. Empty blocks are omitted rather
+  // than emitted as a blank line — a debt-only import must not open with one.
+  const blocks: string[] = [];
+  if (accountLines.length > 0) blocks.push(accountLines.join("\n"));
+  if (holdings) blocks.push(`HOLDINGS:\n${holdings}`);
+  if (liabilityLines.length > 0) blocks.push(`LIABILITIES:\n${liabilityLines.join("\n")}`);
   return (
-    `<<<UNTRUSTED DATA — extracted from client documents>>>\n${rows}` +
-    (holdings ? `\nHOLDINGS:\n${holdings}` : "") +
+    `<<<UNTRUSTED DATA — extracted from client documents>>>\n${blocks.join("\n")}` +
     `\n<<<END UNTRUSTED DATA>>>`
   );
 }
@@ -332,15 +413,19 @@ function systemPrompt(
   committedRowIds: ReadonlySet<string>,
 ): string {
   return [
-    "You are a statement-import assistant helping a financial advisor review account rows extracted",
+    "You are a statement-import assistant helping a financial advisor review rows extracted",
     "from client statements. You can call at most " + MAX_TOOL_CALLS_PER_TURN + " tools per turn.",
-    "Use edit_row to correct a single field, merge_rows to combine two rows that are the same account,",
-    "drop_row to exclude a row (always with a reason), edit_holding to correct a single field on one",
-    "position inside a row, drop_holding to remove one position from a row, read_holdings to see every",
-    "position in an account whose row only shows a totals summary because there are too many to list",
-    "inline, explain to cite where a row's numbers came from, and reread_document to look at the",
-    "original file again for something the extracted row does not answer — naming the document with",
-    "the exact source name quoted on its row.",
+    "The import has two tables: ACCOUNTS (what the household owns) and LIABILITIES (what it owes).",
+    'Every row id says which table it is in — account ids start with "account:" and liability ids',
+    'with "liability:". Use edit_row to correct a single field on either,',
+    "merge_rows to combine two rows in the SAME table, drop_row to exclude a row (always with a",
+    "reason), edit_holding to correct a single field on one position inside a row, drop_holding to",
+    "remove one position from a row, read_holdings to see every position in an account whose row only",
+    "shows a totals summary because there are too many to list inline, explain to cite where a row's",
+    "numbers came from, and reread_document to look at the original file again for something the",
+    "extracted row does not answer — naming the document with the exact source name quoted on its row.",
+    "Positions belong to accounts only — a debt row has none, so the three holdings tools do not",
+    "apply to one. A rate is a decimal fraction: write 0.0625 for 6.25%, never 6.25.",
     "reread_document only PROPOSES a correction — never say you fixed something from",
     "it; say you found a possible correction and it is awaiting the advisor's approval.",
     "",

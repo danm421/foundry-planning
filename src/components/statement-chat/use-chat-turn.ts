@@ -1,16 +1,31 @@
 import { useCallback, useState } from "react";
 import type { ExcludedRow } from "@/components/statement-chat/excluded-rows";
-import type { ExtractedAccount } from "@/lib/extraction/types";
-import type { Annotated } from "@/lib/imports/types";
+import type { ExtractedAccount, ExtractedLiability } from "@/lib/extraction/types";
+import type { Annotated, ExcludedChatRow } from "@/lib/imports/types";
 import type { ChatTurn } from "@/lib/statement-chat/state";
 
 type Row = Annotated<ExtractedAccount>;
+type LiabilityRow = Annotated<ExtractedLiability>;
 
 export type TurnStatus = "idle" | "sending" | "error";
 
 interface TurnResponseBody {
-  payload?: { accounts?: Row[] };
-  excludedRows?: ExcludedRow<Row>[];
+  /**
+   * Ruling 51 (Task 12b) widened this to carry the DEBTS too, overturning
+   * standing Ruling 44 ("the body stays accounts-only because nothing
+   * consumes it") — true when it was measured at Task 11, falsified by Task
+   * 12 making liability rows mutable. `liabilities` is optional on purpose,
+   * and its absence is NOT "there are none": see `adoptTurnPayload`'s own
+   * contract below.
+   */
+  payload?: { accounts?: Row[]; liabilities?: LiabilityRow[] };
+  /** MIXED as of Task 12 — `drop_row`/`merge_rows` retire debt rows into the
+   *  same list. Naming the union says so, but does NOT make it
+   *  discriminable: `ExtractedAccount` requires only `name`, so the two row
+   *  types are assignable in BOTH directions and no static type here can
+   *  tell them apart. The surface narrows on the `__rowId` prefix via
+   *  `isLiabilityRowId`. */
+  excludedRows?: ExcludedRow<ExcludedChatRow>[];
   turnEntries?: ChatTurn[];
 }
 
@@ -33,8 +48,16 @@ export interface UseChatTurnArgs {
    *  `adoptTurnPayload`, which is routed through its commit queue so a
    *  commit clicked right after can never read the pre-turn snapshot. Now
    *  correct rather than merely safe, since `flushRowsToServer` above ran
-   *  first (Ruling 95). */
-  adoptTurnPayload: (accounts: Row[], excluded: ExcludedRow<Row>[]) => Promise<void>;
+   *  first (Ruling 95).
+   *
+   *  `liabilities` is `undefined` when the response carried no
+   *  `payload.liabilities` key at all, which the hook must PRESERVE on
+   *  rather than treat as empty (Ruling 54). */
+  adoptTurnPayload: (
+    accounts: Row[],
+    excluded: ExcludedRow<ExcludedChatRow>[],
+    liabilities: LiabilityRow[] | undefined,
+  ) => Promise<void>;
   /** Fired once adoption lands on a successful turn, so the caller can bring
    *  the extracted-state panel into view even when this is the very first
    *  thing this session has to show (a resumed draft's first follow-up). */
@@ -109,7 +132,18 @@ export function useChatTurn({
         // Step 2, the load-bearing requirement: adopt BEFORE this resolves,
         // so a commit clicked the instant `sendTurn` returns can never read
         // a pre-turn row.
-        await adoptTurnPayload(body.payload?.accounts ?? [], body.excludedRows ?? []);
+        //
+        // `body.payload?.liabilities` is passed through RAW — no `?? []`
+        // (Ruling 54). Ruling 39 set that default at the SSE boundary, where
+        // absence genuinely means "no liabilities"; here it can also mean an
+        // OLDER route answered a NEWER client mid-deploy, and defaulting
+        // would wipe the advisor's reviewed debts. The hook makes the one
+        // check that is correct in both directions.
+        await adoptTurnPayload(
+          body.payload?.accounts ?? [],
+          body.excludedRows ?? [],
+          body.payload?.liabilities,
+        );
         onAdopted();
         // C1: append EXACTLY what the route returned. `turnEntries` already
         // carries the user's own message as its first element — never add it

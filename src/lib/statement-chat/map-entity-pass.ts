@@ -162,7 +162,7 @@ export async function annotateMatches(args: {
  * two files of the same import extracting concurrently can interleave and the
  * later write drops the earlier file's rows. Closing it properly needs a
  * transaction or a jsonb-level `||` merge (as `imports/commit/orchestrator.ts`
- * uses) rather than an in-memory spread. `rebase.ts`'s `mergeAccountsByRowId`
+ * uses) rather than an in-memory spread. `rebase.ts`'s `mergeRowsByRowId`
  * is the same hazard already met once on this feature and the shape a fix would
  * take: merge the changed rows onto a FRESH read by row id, never write back a
  * whole array computed from a stale one.

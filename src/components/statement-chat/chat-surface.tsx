@@ -5,6 +5,7 @@ import { Card, CardBody, CardHeader } from "@/components/card";
 import UploadZone, { type InitialUploadedFile } from "@/components/import/upload-zone";
 import { StepLine } from "@/components/statement-chat/step-line";
 import AccountsTable from "@/components/statement-chat/accounts-table";
+import LiabilitiesTable from "@/components/statement-chat/liabilities-table";
 import EntityTables from "@/components/statement-chat/entity-tables";
 import { useMapRows, type RowsByEntity } from "@/components/statement-chat/use-map-rows";
 import HouseholdDiffTable from "@/components/statement-chat/household-diff-table";
@@ -14,6 +15,7 @@ import {
 } from "@/components/statement-chat/household-diff";
 import { commitMapRow } from "@/components/statement-chat/commit-map-row";
 import { findEntity } from "@/domain/forge/detail-fields";
+import { isLiabilityRowId } from "@/lib/imports/types";
 import { PEOPLE_ENTITY_IDS } from "@/lib/entity-extraction/people-pass";
 import type { CandidateRow } from "@/lib/entity-extraction/types";
 import { ChatTranscript } from "@/components/statement-chat/chat-transcript";
@@ -154,6 +156,7 @@ export function ChatSurface({
     adoptTurnPayload,
     handleCommitRows,
     handleEditCell,
+    handleEditLiabilityCell,
     handleEditHolding,
     handleDropHolding,
     handleRestore,
@@ -389,6 +392,36 @@ export function ChatSurface({
         !mapCommittedRowIds.includes(row.rowId),
     ).length;
 
+  // Task 11 fix round 1, Finding 2: the same gap as `uncommittedMapRows`
+  // above, opened by this task rather than pre-existing — before Task 11 a
+  // liability could not be committed at all, so it could not be left
+  // uncommitted either. `chat/finalize` counts ACCOUNT rows only, so an
+  // advisor can close an import with every reviewed liability still
+  // uncommitted and get a 200 — the mortgage silently never reaches the
+  // client's plan. No `updateSemantics`-style filter is needed here: unlike
+  // a map row, every liability (`new` or `exact`) commits when its Commit
+  // button is clicked, so a fuzzy row correctly stays counted too — it
+  // genuinely needs the advisor's attention before Finish import would
+  // silently skip it.
+  const uncommittedLiabilities = (result?.liabilities ?? []).filter(
+    (row) => !row.__rowId || !committedRowIds.includes(row.__rowId),
+  ).length;
+
+  // Task 12b, Ruling 55. `result.excluded` is ONE mixed list — Task 12 let
+  // `drop_row`/`merge_rows` retire a debt into it — and the two cards each
+  // render their own "Not included" section, so it is split once here and
+  // never read unsplit again. The discriminator is `isLiabilityRowId`, the
+  // SAME helper `handleRestore` routes a restore by, so the card a row is
+  // listed in and the table a restore puts it back into can never disagree.
+  // Plain filters rather than `useMemo`: both lists are a handful of entries
+  // and the arrays feed tables that re-render on any row change anyway.
+  const excludedAccounts = (result?.excluded ?? []).filter(
+    (x) => !isLiabilityRowId(x.row.__rowId),
+  );
+  const excludedLiabilities = (result?.excluded ?? []).filter((x) =>
+    isLiabilityRowId(x.row.__rowId),
+  );
+
   return (
     <div className="flex flex-col gap-6">
       <Card>
@@ -558,11 +591,13 @@ export function ChatSurface({
             </Card>
           )}
 
-          {result.rows.length === 0 && result.excluded.length === 0 ? (
+          {result.rows.length === 0 &&
+          result.excluded.length === 0 &&
+          result.liabilities.length === 0 ? (
             <Card>
               <CardBody className="flex flex-col items-center gap-2 py-8 text-center">
                 <p className="text-sm font-medium text-ink">
-                  No accounts found in these statements.
+                  No accounts or debts found in these statements.
                 </p>
                 <p className="text-sm text-ink-3">
                   Try a different file, or upload another statement above.
@@ -571,40 +606,93 @@ export function ChatSurface({
             </Card>
           ) : (
             <>
-              <Card>
-                <CardHeader>
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-2">
-                    Accounts
-                  </h2>
-                </CardHeader>
-                <CardBody className="p-0">
-                  <AccountsTable
-                    rows={result.rows}
-                    excluded={result.excluded}
-                    committedRowIds={committedRowIds}
-                    onCommitRows={handleCommitRows}
-                    onEditCell={handleEditCell}
-                    onEditHolding={handleEditHolding}
-                    onDropHolding={handleDropHolding}
-                    onRestore={handleRestore}
-                    // Ruling 95 / Finding 4: while a turn is sending, nothing
-                    // may enqueue onto the same commit queue `flushRowsToServer`
-                    // and `adoptTurnPayload` use — a commit that snuck in
-                    // between the flush landing and the response coming back
-                    // would lock in pre-turn values and desync the screen from
-                    // the client's plan.
-                    disableCommit={turnStatus === "sending"}
-                    columnsContext={{
-                      family: reviewContext.familyMembers,
-                      entities: reviewContext.entities,
-                    }}
-                    // The SAME list the hook annotates against, so the badge
-                    // the matcher produced and the options the picker offers
-                    // can never disagree about what exists.
-                    matchCandidates={reviewContext.accounts}
-                  />
-                </CardBody>
-              </Card>
+              {/*
+                Ruling 41: gated on rows OR excluded, NOT on liabilities —
+                a mortgage-only upload (zero accounts) must not render an
+                EMPTY accounts table above the liabilities one. `excluded`
+                is included because that list (and its "Include anyway"
+                restore action) renders inside this same card.
+
+                Ruling 55 (Task 12b): the clause reads the SPLIT list. Left
+                on the unsplit one, a debt-only import with a chat-dropped
+                debt renders an EMPTY accounts card again — the exact defect
+                Ruling 41 fixed, reintroduced from the other side.
+              */}
+              {(result.rows.length > 0 || excludedAccounts.length > 0) && (
+                <Card>
+                  <CardHeader>
+                    <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-2">
+                      Accounts
+                    </h2>
+                  </CardHeader>
+                  <CardBody className="p-0">
+                    <AccountsTable
+                      rows={result.rows}
+                      excluded={excludedAccounts}
+                      committedRowIds={committedRowIds}
+                      onCommitRows={handleCommitRows}
+                      onEditCell={handleEditCell}
+                      onEditHolding={handleEditHolding}
+                      onDropHolding={handleDropHolding}
+                      onRestore={handleRestore}
+                      // Ruling 95 / Finding 4: while a turn is sending, nothing
+                      // may enqueue onto the same commit queue `flushRowsToServer`
+                      // and `adoptTurnPayload` use — a commit that snuck in
+                      // between the flush landing and the response coming back
+                      // would lock in pre-turn values and desync the screen from
+                      // the client's plan.
+                      disableCommit={turnStatus === "sending"}
+                      columnsContext={{
+                        family: reviewContext.familyMembers,
+                        entities: reviewContext.entities,
+                      }}
+                      // The SAME list the hook annotates against, so the badge
+                      // the matcher produced and the options the picker offers
+                      // can never disagree about what exists.
+                      matchCandidates={reviewContext.accounts}
+                    />
+                  </CardBody>
+                </Card>
+              )}
+
+              {/* Ruling 55's other half: the debts card owns its own excluded
+                  list, so a dropped debt renders where it belongs — and the
+                  card still appears when the ONLY thing left is that list. */}
+              {(result.liabilities.length > 0 || excludedLiabilities.length > 0) && (
+                <Card>
+                  <CardHeader>
+                    <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-2">
+                      Liabilities
+                    </h2>
+                  </CardHeader>
+                  <CardBody className="p-0">
+                    <LiabilitiesTable
+                      rows={result.liabilities}
+                      excluded={excludedLiabilities}
+                      committedRowIds={committedRowIds}
+                      onCommitRows={handleCommitRows}
+                      onEditCell={handleEditLiabilityCell}
+                      // The SAME `handleRestore` the accounts table gets — it
+                      // routes by `__rowId` prefix, so a debt restored from
+                      // here goes back into `result.liabilities`, never
+                      // `result.rows` (Task 12b, Finding 1).
+                      onRestore={handleRestore}
+                      disableCommit={turnStatus === "sending"}
+                      // The SAME list the review context loaded, so the
+                      // picker's options can never disagree with what
+                      // actually exists on the plan.
+                      matchCandidates={reviewContext.liabilities}
+                      // Spec §7: a mortgage's Commit has to carry the property
+                      // this import synthesized for it in the SAME post, or the
+                      // debt commits against a house that does not exist yet
+                      // and `linked_property_id` lands NULL. These are the very
+                      // rows the accounts card above is showing, so the two
+                      // cards can never disagree about what is uncommitted.
+                      accounts={result.rows}
+                    />
+                  </CardBody>
+                </Card>
+              )}
 
               <Card>
                 <CardBody className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -627,6 +715,15 @@ export function ChatSurface({
                           : `${uncommittedMapRows} rows in “Policies and other details” below have not been committed`}
                         {" "}— closing the import leaves{" "}
                         {uncommittedMapRows === 1 ? "it" : "them"} out of the plan.
+                      </p>
+                    )}
+                    {finalizeStatus !== "done" && uncommittedLiabilities > 0 && (
+                      <p className="mt-1 text-sm text-warn">
+                        {uncommittedLiabilities === 1
+                          ? "1 row in “Liabilities” below has not been committed"
+                          : `${uncommittedLiabilities} rows in “Liabilities” below have not been committed`}
+                        {" "}— closing the import leaves{" "}
+                        {uncommittedLiabilities === 1 ? "it" : "them"} out of the plan.
                       </p>
                     )}
                   </div>

@@ -1,4 +1,4 @@
-export const ACCOUNT_STATEMENT_VERSION = "2026-09-09.1-statement-date";
+export const ACCOUNT_STATEMENT_VERSION = "2026-09-17.1-liabilities";
 export const ACCOUNT_STATEMENT_HOLDINGS_VERSION = "2026-08-04.1-grouped-holdings-report";
 
 const HOLDINGS_FIELD = `,
@@ -34,7 +34,7 @@ Return a JSON object with this exact structure:
   "accounts": [
     {
       "name": "SHORT display name: the ACCOUNT TYPE only, Title Case, max ~40 chars. e.g. 'Rollover IRA', 'Joint Brokerage', 'Checking'. Do NOT include the custodian/institution, account numbers, or the registration/owner names.",
-      "category": "one of: taxable, cash, retirement, annuity, real_estate, business, education_savings",
+      "category": "one of: taxable, cash, retirement, annuity, real_estate, business, notes_receivable, education_savings",
       "subType": "one of: brokerage, savings, checking, traditional_ira, roth_ira, 401k, 403b, 529, trust, primary_residence, rental_property, commercial_property, other",
       "owner": "one of: client, spouse, joint (infer from account title or registration)",
       "ownerNameHint": "The exact account registration / title as written, e.g. 'John A. Smith & Jane B. Smith JTWROS'. Copy verbatim; do not normalize.",
@@ -61,10 +61,15 @@ Return a JSON object with this exact structure:
   ],
   "liabilities": [
     {
-      "name": "Liability description (e.g. 'Mortgage - Austin Home', 'Margin Balance')",
+      "name": "SHORT description of the debt (e.g. 'Mortgage', 'HELOC', 'Auto Loan', 'Margin Balance'). Do NOT include the lender or the address — both have their own fields.",
       "balance": 0,
       "interestRate": 0,
-      "monthlyPayment": 0
+      "monthlyPayment": 0,
+      "totalPayment": 0,
+      "balanceAsOfDate": "The statement's own 'as of' / balance date, ISO YYYY-MM-DD. Omit if none is legible — never guess.",
+      "maturityDate": "The loan's maturity / final scheduled payment date, ISO YYYY-MM-DD. Omit if not shown.",
+      "propertyAddress": "For a mortgage or HELOC: the secured property's street address, copied verbatim. Omit for unsecured debt.",
+      "lender": "Lender / servicer name as printed (e.g. 'Rocket Mortgage')."
     }
   ]
 }
@@ -79,17 +84,21 @@ Extraction rules:
   - Bank / cash accounts -> category "cash", subType "checking" or "savings"
   - Annuities (e.g. "Prudential Annuity", or anything under an "Annuities" section) -> category "annuity", subType "other"
   - 529 plans, Coverdell ESAs, and any account described as a college / education savings account -> category "education_savings", subType "529"
+  - Real estate (homes, condos, land, or anything under a "Real Estate" / "Real Estate Assets" section) -> category "real_estate". Use subType "primary_residence" for a home/condo the household lives in, "rental_property" for rentals, "commercial_property" for commercial real estate; default to "primary_residence" if unclear. When the document is a MORTGAGE statement rather than a property valuation, the debt belongs in "liabilities" (see the DEBTS vs. ASSETS rule below) — do not create a real_estate account from a loan balance.
 - 529 / EDUCATION STATEMENTS. These name TWO people and the distinction matters — never collapse them into one:
   - The DESIGNATED BENEFICIARY (also printed as "Beneficiary", "Student", or "Designated Beneficiary") is who the money is for. Put that name in "beneficiaryNameHint", verbatim.
   - The ACCOUNT OWNER (also printed as "Participant", "Account Owner", or "Custodian") is who funds and controls it — often a parent, sometimes a grandparent. Put that name in "grantorNameHint", verbatim.
   - Still fill "ownerNameHint" with the registration line as written, and still set the coarse "owner" enum from the account owner (NOT the beneficiary).
   - A 529 has no required minimum distributions, so never claim one.
   - When the statement only names one person, fill the field it actually labels and omit the other — do not guess the second name.
-  - Real estate (homes, condos, land, or anything under a "Real Estate" / "Real Estate Assets" section) -> category "real_estate". Use subType "primary_residence" for a home/condo the household lives in, "rental_property" for rentals, "commercial_property" for commercial real estate; default to "primary_residence" if unclear.
 - Life-insurance policies (whole, universal, variable, or term) go ONLY in the "lifePolicies" array, NOT in "accounts". Capture the death benefit as "faceValue" and the cash / surrender value as "cashValue" when both appear. Example: "Brighthouse ($3mm Face to Maggie) $588,000" -> faceValue 3000000, cashValue 588000, insuredPerson "spouse". Set policyType to "whole", "universal", or "variable" for cash-value policies (default "universal" if unspecified) and "term" only when clearly a term policy.
 - Use the total market value for "value", not individual position values
 - Extract cost basis if shown as the "basis" field
-- If a margin balance or loan appears, add it to "liabilities"
+- DEBTS vs. ASSETS. A mortgage, HELOC, home-equity loan, auto loan, student loan, personal loan, margin balance or credit-card balance is a DEBT. Every one of them goes in "liabilities" and NEVER in "accounts".
+  - A mortgage statement is a statement ABOUT a property, but the money it reports is owed, not owned. Read it as both: the property is an asset, the loan against it is a liability, and one statement can state both. Put the property in "accounts" (category "real_estate") ONLY if the document states what the property is WORTH. If it states only the debt, emit the liability alone and no account.
+  - The one exception is a note RECEIVABLE — money owed TO the household (e.g. "Note Receivable - Smith Family Trust", a seller-financed note). That is an asset: category "notes_receivable" in "accounts", never a liability.
+- LIABILITY PAYMENT FIELDS. Mortgage statements print a payment breakdown. "monthlyPayment" is the PRINCIPAL AND INTEREST portion only. "totalPayment" is the full scheduled payment including escrow (taxes and insurance). When the breakdown is shown, capture BOTH. When only one payment figure is printed and it is not broken down, put it in "totalPayment" and omit "monthlyPayment".
+- LIABILITY DATES. "balanceAsOfDate" is the statement's own balance / as-of date. "maturityDate" is the final scheduled payment date, often printed as "Maturity date" or "Final payment". Both ISO YYYY-MM-DD; omit either if the document does not print it.
 - DO NOT extract the full account number. Capture only the last 4 characters in "accountNumberLast4". If the statement only shows masked digits like "****5678", use "5678".
 - "custodian" is the institution that holds the account. Use a clean, normalized name without LLC/Inc suffixes. Only fill it when the document actually NAMES the institution — never guess or infer one. Fact finders routinely list accounts with no institution at all; omit "custodian" entirely for those.
 - STATEMENT DATE. Set "statementDate" to the statement's period END date, or its

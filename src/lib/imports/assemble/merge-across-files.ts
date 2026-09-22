@@ -20,6 +20,8 @@ import {
   type Provenance,
 } from "../types";
 import type { MergeDecision } from "./decisions";
+import { splitMortgageEscrow } from "./mortgage-escrow";
+import { propertyAddressMatches } from "@/lib/imports/commit/mortgage-link";
 import { custodianMatches, normalizeCustodian } from "../normalize-custodian";
 import { nameSimilarity } from "../match-keys/account";
 
@@ -34,6 +36,16 @@ export interface MergeAcrossFilesResult {
    * mergedFileCount }` and are unaffected.
    */
   decisions: MergeDecision[];
+  /**
+   * Just the warnings `splitMortgageEscrow` produced — a synthesized property
+   * with no value, or a total payment below its own P&I. Also in
+   * `payload.warnings`, like every other merge warning; this narrow channel
+   * exists because the statement-chat surface renders NONE of those (final
+   * review I4) and the measured volume makes surfacing the whole list a flood
+   * of restatements rather than a fix. See the return statement for the
+   * numbers. Additive: every existing caller destructures around it.
+   */
+  escrowWarnings: string[];
 }
 
 /** Two amounts are "the same" if they're within this fraction of each other. */
@@ -779,11 +791,26 @@ function dropDebtsFiledAsAssets(
   sourceName: string,
   warnings: string[],
 ): ExtractedAccount[] {
-  if (liabilities.length === 0) return rows;
-
+  // No early return on an empty `liabilities`: the warn-and-keep leg below has
+  // to run for a file that reported a debt-named row and NO debts at all,
+  // which is the very case worth naming. With nothing to match, `some(...)` is
+  // false and the row is kept — identical behaviour, warning gained.
   return rows.filter((row) => {
     if (!DEBT_NAME.test(row.name)) return true;
-    if (!liabilities.some((debt) => withinTolerance(debt.balance, row.value))) return true;
+    if (!liabilities.some((debt) => withinTolerance(debt.balance, row.value))) {
+      // KEPT ON PURPOSE. Without a matching liability this row is the only
+      // record of the money, and a note RECEIVABLE ("Loan to Smith Family
+      // Trust") is a genuine asset that `DEBT_NAME` also matches. But a
+      // mortgage the model filed as property and forgot to report as a debt
+      // looks exactly the same from here, so it is named rather than passed
+      // over in silence.
+      warnings.push(
+        `${sourceName} listed "${row.name}" as an account but reported no matching debt. ` +
+          "If it is money the household OWES, drop the row and add it as a liability; if it is " +
+          "money owed TO them, leave it.",
+      );
+      return true;
+    }
     warnings.push(
       `${sourceName} listed "${row.name}" as an account as well as a debt of the same ` +
         `${formatMoney(row.value)}. It is recorded as a debt only, so the balance sheet does not ` +
@@ -1989,6 +2016,73 @@ export function mergeAcrossFiles(
   concatSection(payload.wills, willRows);
   concatSection(payload.savings, savingsRows);
 
+  // AFTER every section has merged — the split needs the whole import's
+  // accounts and liabilities in one place to link a mortgage to its property.
+  // Row ids were already stamped inside each `mergeSection` above, so a
+  // property this split SYNTHESIZES has missed that pass and must be annotated
+  // by hand below, or it reaches the review table uncommittable.
+  const escrow = splitMortgageEscrow({
+    accounts: payload.accounts,
+    liabilities: payload.liabilities,
+  });
+  payload.warnings.push(...escrow.warnings);
+  // PAIRED BY INDEX, which `splitMortgageEscrow` guarantees: it copies every
+  // row it is given, in order, and may only ever APPEND (see its POSITIONAL
+  // INVARIANT comment). If it ever reordered or filtered, this would stamp the
+  // wrong `__rowId`s onto the wrong rows and silently commit them.
+  //
+  // The map below is driven by the RETURNED array, so a split that dropped a
+  // row would drop it from the payload too — an account vanishing from the
+  // review table with no error anywhere. Refuse instead: this can only ever be
+  // an edit to `mortgage-escrow.ts`, never anything a document said.
+  if (escrow.accounts.length < payload.accounts.length) {
+    throw new Error(
+      `splitMortgageEscrow returned ${escrow.accounts.length} accounts for ` +
+        `${payload.accounts.length} — it may only append. See its POSITIONAL INVARIANT comment.`,
+    );
+  }
+  payload.accounts = escrow.accounts.map((next, i) => {
+    const prior = payload.accounts[i];
+    return prior
+      ? ({ ...prior, ...next } as (typeof payload.accounts)[number])
+      : ({
+          ...next,
+          // The provenance of the mortgage that CAUSED this row, found by the
+          // address the split copied onto it — not `liabilities[0]`, which
+          // would tell an advisor the second property came from the first
+          // mortgage's statement. Provenance is an assertion about which
+          // document a row came from; asserting the wrong one is the same
+          // defect as inventing a figure. Falls back to the first liability so
+          // a row that somehow matches nothing is still annotated.
+          __provenance:
+            payload.liabilities.find((debt) =>
+              propertyAddressMatches(debt.propertyAddress, next.propertyAddress),
+            )?.__provenance ?? payload.liabilities[0]?.__provenance,
+          __rowId: `account:synthesized:${next.name.toLowerCase().trim().replace(/\s+/g, "-")}`,
+          match: { kind: "new" as const },
+        } as (typeof payload.accounts)[number]);
+  });
+
   stampHoldingIds(payload.accounts);
-  return { payload, mergedFileCount: Object.keys(fileResults).length, decisions };
+  // `escrowWarnings` is returned SEPARATELY as well as pushed into
+  // `payload.warnings` above, for the statement-chat surface (final review I4).
+  // That surface renders `narration.caveats` and has never rendered
+  // `payload.warnings` at all, so every escrow warning — including "set its
+  // value before committing" on a property this split just synthesized — has
+  // been invisible there.
+  //
+  // MEASURED, and the reason this is its own field rather than the whole list:
+  // across the 307 merges this repo's own suite performs, `payload.warnings`
+  // holds 160 warnings and 134 of them are "Merged duplicate account …", which
+  // `narrate`'s `valueConflictCaveat`/`supersededSentence` ALREADY say in
+  // different words. Surfacing the whole list would print each of those merge
+  // events twice, worded differently, and bury the four escrow warnings that
+  // are actually dead. The wizard and the `/match` surfaces keep reading
+  // `payload.warnings`, where the same warnings are already visible.
+  return {
+    payload,
+    mergedFileCount: Object.keys(fileResults).length,
+    decisions,
+    escrowWarnings: escrow.warnings,
+  };
 }

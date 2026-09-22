@@ -29,7 +29,7 @@ describe("ACCOUNT_STATEMENT_PROMPT", () => {
     expect(ACCOUNT_STATEMENT_PROMPT).toContain("annuity");
     expect(ACCOUNT_STATEMENT_PROMPT).toContain("lifePolicies");
     expect(ACCOUNT_STATEMENT_PROMPT).toContain("cashValue");
-    expect(ACCOUNT_STATEMENT_VERSION).toBe("2026-09-09.1-statement-date");
+    expect(ACCOUNT_STATEMENT_VERSION).toBe("2026-09-17.1-liabilities");
   });
 
   it("instructs a short account-TYPE name with no custodian, not the registration header", () => {
@@ -191,7 +191,10 @@ describe("account statement prompt — statement date", () => {
   });
 
   it("carries a version that postdates the date change", () => {
-    expect(ACCOUNT_STATEMENT_VERSION).toContain("statement-date");
+    // Was pinned to the literal "statement-date" slug. The slug names the
+    // change that bumped it, so every later bump would break this; compare
+    // against the date-change version instead, which is what "postdates" means.
+    expect(ACCOUNT_STATEMENT_VERSION >= "2026-09-09.1-statement-date").toBe(true);
   });
 });
 
@@ -213,5 +216,84 @@ describe("buildHoldingsContinuationPrompt", () => {
     const p = buildHoldingsContinuationPrompt({ name: "Acct", value: 100 }, []);
     expect(p).toContain("(none yet)");
     expect(p).toContain('"holdings"');
+  });
+});
+
+// A mortgage statement is a statement ABOUT a property, so the prompt's
+// real-estate rule pulled one way and its one-line liability rule pulled the
+// other. The model filed the debt as a real_estate account and the balance
+// sheet counted it as property — $99,802.55 of phantom assets on a measured
+// production import. These assertions pin the routing rule, the property/loan
+// pair that keeps the real-estate rule from swallowing a mortgage, and the
+// five fields a mortgage statement prints that the prompt never asked for.
+describe("debt routing", () => {
+  it("routes every debt instrument to liabilities and never to accounts", () => {
+    expect(ACCOUNT_STATEMENT_PROMPT).toMatch(
+      /NEVER in "accounts"|never in "accounts"/,
+    );
+    for (const word of ["mortgage", "HELOC", "auto loan", "student loan", "margin"]) {
+      expect(ACCOUNT_STATEMENT_PROMPT.toLowerCase()).toContain(word.toLowerCase());
+    }
+  });
+
+  it("states the property/loan pair so the real-estate rule cannot swallow a mortgage", () => {
+    expect(ACCOUNT_STATEMENT_PROMPT).toMatch(
+      /the property is an asset, the loan against it is a liability/i,
+    );
+  });
+
+  it("asks for the five new liability fields", () => {
+    for (const field of [
+      "balanceAsOfDate",
+      "maturityDate",
+      "totalPayment",
+      "propertyAddress",
+      "lender",
+    ]) {
+      expect(ACCOUNT_STATEMENT_PROMPT).toContain(field);
+    }
+  });
+
+  it("distinguishes P&I from the total payment", () => {
+    expect(ACCOUNT_STATEMENT_PROMPT).toMatch(/principal and interest/i);
+    expect(ACCOUNT_STATEMENT_PROMPT).toMatch(/escrow/i);
+  });
+
+  // Tightening debt routing could sweep a genuine asset the other way: a
+  // seller-financed note is money owed TO the household, not by it.
+  it("keeps a note receivable on the asset side", () => {
+    expect(ACCOUNT_STATEMENT_PROMPT).toContain("notes_receivable");
+    expect(ACCOUNT_STATEMENT_PROMPT).toMatch(/owed TO the household/i);
+  });
+});
+
+// The property rule and the debt rule only work as a PAIR. Two structural
+// things kept breaking that pairing: the real-estate bullet sat nested under a
+// heading that says "529 / EDUCATION STATEMENTS" (so the model could scope a
+// property rule to college accounts), and the category list the model is handed
+// omitted the one value the note-receivable carve-out tells it to use.
+describe("classification structure the debt rules depend on", () => {
+  const prompt = ACCOUNT_STATEMENT_PROMPT;
+
+  it("offers notes_receivable in the category list, not only in the carve-out rule", () => {
+    const enumLine = prompt
+      .split("\n")
+      .find((l) => l.includes('"category": "one of:'));
+    expect(enumLine).toBeDefined();
+    expect(enumLine).toContain("notes_receivable");
+  });
+
+  it("points the real-estate rule forward at the debt rule", () => {
+    expect(prompt).toMatch(/see the DEBTS vs\. ASSETS rule below/);
+  });
+
+  it("classifies real estate alongside the other categories, not inside the 529 block", () => {
+    const realEstate = prompt.indexOf('- Real estate (homes, condos, land');
+    const classifyList = prompt.indexOf("- Classify each account into the correct category");
+    const educationBlock = prompt.indexOf("- 529 / EDUCATION STATEMENTS");
+    expect(classifyList).toBeGreaterThan(-1);
+    expect(educationBlock).toBeGreaterThan(-1);
+    expect(realEstate).toBeGreaterThan(classifyList);
+    expect(realEstate).toBeLessThan(educationBlock);
   });
 });

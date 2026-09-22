@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CommitRowsOptions } from "@/components/statement-chat/entity-table";
 import type { ExcludedRow } from "@/components/statement-chat/excluded-rows";
-import type { ExtractedAccount, ExtractedHolding } from "@/lib/extraction/types";
-import type { Annotated } from "@/lib/imports/types";
+import type { ExtractedAccount, ExtractedHolding, ExtractedLiability } from "@/lib/extraction/types";
+import {
+  isLiabilityRowId,
+  type Annotated,
+  type ExcludedChatRow,
+  type MatchAnnotation,
+} from "@/lib/imports/types";
 import { readChatState, writeChatState, type ChatTurn } from "@/lib/statement-chat/state";
 import { resolveOwnersFromHint, type OwnerMatchFamilyMember } from "@/lib/imports/owner-match";
 import { reannotateAccountRows } from "@/lib/imports/annotate-accounts";
@@ -10,12 +15,24 @@ import type { AccountCandidate } from "@/lib/imports/match-keys/account";
 import { is529Account } from "@/lib/accounts/is-529";
 
 type Row = Annotated<ExtractedAccount>;
+type LiabilityRow = Annotated<ExtractedLiability>;
 
 export interface ChatCommitResult {
   summary: string;
   caveats: string[];
   rows: Row[];
-  excluded: ExcludedRow<Row>[];
+  /**
+   * MIXED as of Task 12 — `drop_row`/`merge_rows` retire debt rows into the
+   * same list, and the mount hydration copies `chat.excludedRows` straight
+   * in. Named at `ExcludedChatRow` so the type says so; it does NOT make the
+   * union discriminable, because `ExtractedAccount` requires only `name` and
+   * the two row types are assignable in BOTH directions. Anything that has
+   * to know which table an entry came from narrows on the `__rowId` prefix
+   * (`isLiabilityRowId`) — see `handleRestore` below and `chat-surface.tsx`'s
+   * split of this same list.
+   */
+  excluded: ExcludedRow<ExcludedChatRow>[];
+  liabilities: LiabilityRow[];
 }
 
 export type FinalizeStatus = "idle" | "pending" | "done" | "error";
@@ -63,17 +80,26 @@ async function patchImportPayloadJson(
 }
 
 /**
- * Overlays ONLY the `match` stamp from `freshAccounts` onto each of
- * `localRows` — never any other field (round 2 review, item 3): taking
- * `fresh` wholesale would silently discard a local field edit on a row the
- * server shows as `exact` but the caller's own state doesn't yet know is
- * committed. Pure — no fetch — so `commitRowsNow` (Task 10b) and
- * `flushRowsToServer` (Task 11b fix round 1/2, Ruling 95/100) can each read
- * their OWN fresh snapshot (the latter needs `chat.excludedRows` from the
- * SAME read too) and share only this merge step.
+ * Overlays ONLY the `match` stamp from `freshRows` onto each of `localRows`
+ * — never any other field (round 2 review, item 3): taking `fresh` wholesale
+ * would silently discard a local field edit on a row the server shows as
+ * `exact` but the caller's own state doesn't yet know is committed. Pure —
+ * no fetch — so `commitRowsNow` (Task 10b) and `flushRowsToServer` (Task 11b
+ * fix round 1/2, Ruling 95/100) can each read their OWN fresh snapshot (the
+ * latter needs `chat.excludedRows` from the SAME read too) and share only
+ * this merge step.
+ *
+ * Generic over any `Annotated<T>` (Task 11, Ruling 42): the hazard is
+ * identical on liabilities — a fresh server read can show `match: exact`
+ * from a prior commit that this surface's PATCH must not overwrite — and the
+ * body only ever touches `__rowId`/`match`, so it generalizes with no
+ * behaviour change rather than needing a second, liabilities-only copy.
  */
-function overlayFreshMatch(freshAccounts: Row[], localRows: Row[]): Row[] {
-  const freshByRowId = new Map(freshAccounts.map((r) => [r.__rowId, r] as const));
+function overlayFreshMatch<T extends { __rowId?: string; match?: MatchAnnotation }>(
+  freshRows: T[],
+  localRows: T[],
+): T[] {
+  const freshByRowId = new Map(freshRows.map((r) => [r.__rowId, r] as const));
   return localRows.map((row) => {
     const fresh = row.__rowId ? freshByRowId.get(row.__rowId) : undefined;
     return fresh?.match?.kind === "exact" ? { ...row, match: fresh.match } : row;
@@ -244,12 +270,21 @@ export function useChatCommit(
           setCommittedRowIds(chat.committedRowIds);
           setTranscript(chat.transcript);
 
-          const accounts =
-            (payloadJson as { payload?: { accounts?: Row[] } } | undefined)?.payload?.accounts ?? [];
+          const persisted = payloadJson as
+            | { payload?: { accounts?: Row[]; liabilities?: LiabilityRow[] } }
+            | undefined;
+          const accounts = persisted?.payload?.accounts ?? [];
+          const liabilities = persisted?.payload?.liabilities ?? [];
           // Only when there is genuinely something to show. A brand-new
           // import that has never been extracted must keep rendering nothing
-          // at all, not the "No accounts found in these statements" empty
-          // state, which would be a claim about statements nobody has read.
+          // at all, not the "No accounts or debts found in these statements"
+          // empty state, which would be a claim about statements nobody has
+          // read.
+          //
+          // `liabilities.length > 0` (Task 11) covers a mortgage-only draft
+          // reopened later: zero accounts and zero excluded rows would
+          // otherwise leave this gate closed forever, even though a real
+          // liability is sitting in the persisted payload.
           //
           // And only when nothing has populated `result` already: this fetch
           // is async, so an advisor who clicks Extract immediately can have
@@ -257,12 +292,16 @@ export function useChatCommit(
           // first, and a late hydration must never overwrite it with the
           // pre-extraction rows. `summary: ""` skips the summary card the
           // same way `adoptTurnPayload` does (Minor 8).
-          if (resultRef.current === null && (accounts.length > 0 || chat.excludedRows.length > 0)) {
+          if (
+            resultRef.current === null &&
+            (accounts.length > 0 || chat.excludedRows.length > 0 || liabilities.length > 0)
+          ) {
             updateResult(() => ({
               summary: "",
               caveats: [],
               rows: accounts,
               excluded: chat.excludedRows,
+              liabilities,
             }));
           }
         }
@@ -321,6 +360,14 @@ export function useChatCommit(
         const priorByRowId = new Map(priorRows.map((r) => [r.__rowId, r]));
         return {
           ...ev,
+          // Defensive, not redundant with the required type above: the SSE
+          // frame is parsed with an UNCHECKED `JSON.parse(...) as
+          // ChatExtractEvent` cast (`chat-surface.tsx`), so a `done` frame
+          // that predates Task 11 (or a test fixture that never added the
+          // key) hands back `undefined` at runtime regardless of what the
+          // type claims — this file's own idiom for exactly that gap
+          // (`?? []` on `payload.accounts` elsewhere in this file).
+          liabilities: ev.liabilities ?? [],
           rows: ev.rows.map((row) => {
             const prior = row.__rowId ? priorByRowId.get(row.__rowId) : undefined;
             // A locked row carries BOTH halves of the ruling. The server never
@@ -376,28 +423,41 @@ export function useChatCommit(
       // editable-until-locked row, since `committedRowIds`, not `match`, is
       // what disables editing in `entity-table.tsx`).
       const freshPayloadJsonForCommit = (await readImportPayloadJson(clientId, importId)) as
-        | { payload?: { accounts?: Row[] } }
+        | { payload?: { accounts?: Row[]; liabilities?: LiabilityRow[] } }
         | undefined;
       const mergedAccounts = overlayFreshMatch(
         freshPayloadJsonForCommit?.payload?.accounts ?? [],
         current.rows,
       );
+      const mergedLiabilities = overlayFreshMatch(
+        freshPayloadJsonForCommit?.payload?.liabilities ?? [],
+        current.liabilities,
+      );
 
       await patchImportPayloadJson(clientId, importId, {
-        payload: { accounts: mergedAccounts },
+        payload: { accounts: mergedAccounts, liabilities: mergedLiabilities },
       });
 
       const res = await fetch(`/api/clients/${clientId}/imports/${importId}/commit`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        // `tabs` MUST be present alongside `rowIds` — `rowIds` is honoured
-        // only by `commitAccounts`, so naming any tab besides "accounts"
-        // here would commit that other tab completely unfiltered.
+        // Both tabs, always. `commitLiabilities` now honours `rowIds` (Task
+        // 6), so naming the second tab can no longer commit its rows
+        // unfiltered — which is exactly what `commit/types.ts`'s own
+        // `rowIds` doc comment warns about, and why the pre-liabilities
+        // version of this comment said to send "accounts" alone. Sending
+        // both in ONE request also matters: the orchestrator applies tabs in
+        // canonical order (accounts before liabilities) regardless of array
+        // order, which is what lets a synthesized property commit before
+        // `matchMortgageToProperty` looks for it.
+        //
         // `overrideRowIds` is sent only when the box is ticked — the route
         // refuses an empty array, and omitting the key is what "no override"
-        // means there.
+        // means there. It is read by `commitAccounts` ALONE, so it is inert
+        // for the liabilities tab; and only the accounts table offers the
+        // box, so the liabilities co-post never sets it.
         body: JSON.stringify({
-          tabs: ["accounts"],
+          tabs: ["accounts", "liabilities"],
           rowIds,
           ...(overrideAll ? { overrideRowIds: rowIds } : {}),
         }),
@@ -412,12 +472,24 @@ export function useChatCommit(
       }
 
       // Adopt the mutated payload the commit route just persisted — it
-      // carries the `linkCreated` stamp `commitAccounts` made for the row(s)
-      // just committed, so the local view stays in step with the server's.
-      const body = (await res.json()) as { payload?: { accounts?: Row[] } };
+      // carries the `linkCreated` stamp `commitAccounts`/`commitLiabilities`
+      // made for the row(s) just committed, so the local view stays in step
+      // with the server's.
+      const body = (await res.json()) as {
+        payload?: { accounts?: Row[]; liabilities?: LiabilityRow[] };
+      };
       const nextRows = body.payload?.accounts;
-      if (nextRows) {
-        updateResult((prev) => (prev ? { ...prev, rows: nextRows } : prev));
+      const nextLiabilities = body.payload?.liabilities;
+      if (nextRows || nextLiabilities) {
+        updateResult((prev) =>
+          prev
+            ? {
+                ...prev,
+                rows: nextRows ?? prev.rows,
+                liabilities: nextLiabilities ?? prev.liabilities,
+              }
+            : prev,
+        );
       }
 
       // Lock the row in the UI regardless of whether the bookkeeping write
@@ -461,6 +533,30 @@ export function useChatCommit(
         return {
           ...prev,
           rows: prev.rows.map((row) => (row.__rowId === rowId ? { ...row, [field]: value } : row)),
+        };
+      });
+    },
+    [updateResult],
+  );
+
+  // `onEditCell` for `LiabilitiesTable` — Task 11, Ruling 37. Its `onPick`
+  // calls `onEditCell(row.__rowId, "match", next)` then
+  // `onEditCell(row.__rowId, "matchLocked", true)`, exactly like
+  // `AccountsTable`'s. Passing the accounts `handleEditCell` above there
+  // would map over `result.rows` — an array with no liability row ids in
+  // it — so a picked match would silently evaporate and, combined with a
+  // fuzzy liability's Commit button reading "Pick a match first", the row
+  // could never be committed. Mirrors `handleEditCell` exactly, mapping over
+  // `result.liabilities` instead of `result.rows`.
+  const handleEditLiabilityCell = useCallback(
+    (rowId: string, field: string, value: unknown) => {
+      updateResult((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          liabilities: prev.liabilities.map((row) =>
+            row.__rowId === rowId ? { ...row, [field]: value } : row,
+          ),
         };
       });
     },
@@ -519,6 +615,20 @@ export function useChatCommit(
   // `onRestore` — lifts an excluded (rollup-detected) row into the working
   // set WITHOUT committing it (Task 10 review, CRITICAL). The advisor still
   // has to click Commit on it afterward.
+  //
+  // Task 12b, Finding 1 (CRITICAL): routed by TABLE. Task 12 let `drop_row`
+  // retire a LIABILITY into the same `excludedRows` list, and this pushed
+  // every restored row into `prev.rows` with no check at all — so one click
+  // on "Include anyway" filed a dropped debt as an ASSET, inverting the sign
+  // of a number on the balance sheet. That is verbatim the defect
+  // `dropDebtsFiledAsAssets` exists to undo.
+  //
+  // The discriminator is `isLiabilityRowId` — the `__rowId` PREFIX, shared
+  // with `chat-surface.tsx`'s split of the same list so the two can never
+  // disagree about which card a row belongs to. It cannot be a field check
+  // and the compiler cannot help: `ExtractedAccount` requires only `name`,
+  // so an account row and a debt row are assignable in BOTH directions.
+  //
   // Idempotent by `__rowId` (Ruling 100, Task 11b fix round 2, clause 2): a
   // row already in the working set is never appended twice, whatever the
   // excluded list says. The row can legitimately reappear in `excluded` a
@@ -528,15 +638,25 @@ export function useChatCommit(
   // and without this guard a second "Include anyway" click on the SAME row
   // would insert a second copy that later commits as a duplicate account.
   const handleRestore = useCallback(
-    (row: Row) => {
+    (row: ExcludedChatRow) => {
       updateResult((prev) => {
         if (!prev) return prev;
+        const excluded = prev.excluded.filter((x) => x.row.__rowId !== row.__rowId);
+        if (isLiabilityRowId(row.__rowId)) {
+          const alreadyWorking =
+            row.__rowId != null && prev.liabilities.some((r) => r.__rowId === row.__rowId);
+          return {
+            ...prev,
+            liabilities: alreadyWorking ? prev.liabilities : [...prev.liabilities, row],
+            excluded,
+          };
+        }
         const alreadyWorking =
           row.__rowId != null && prev.rows.some((r) => r.__rowId === row.__rowId);
         return {
           ...prev,
           rows: alreadyWorking ? prev.rows : [...prev.rows, row],
-          excluded: prev.excluded.filter((x) => x.row.__rowId !== row.__rowId),
+          excluded,
         };
       });
     },
@@ -596,20 +716,37 @@ export function useChatCommit(
       if (!current) return;
 
       const freshPayloadJson = await readImportPayloadJson(clientId, importId);
-      const freshAccounts =
-        (freshPayloadJson as { payload?: { accounts?: Row[] } } | undefined)?.payload?.accounts ?? [];
-      const mergedAccounts = overlayFreshMatch(freshAccounts, current.rows);
+      const freshPersisted = freshPayloadJson as
+        | { payload?: { accounts?: Row[]; liabilities?: LiabilityRow[] } }
+        | undefined;
+      const mergedAccounts = overlayFreshMatch(
+        freshPersisted?.payload?.accounts ?? [],
+        current.rows,
+      );
+      const mergedLiabilities = overlayFreshMatch(
+        freshPersisted?.payload?.liabilities ?? [],
+        current.liabilities,
+      );
 
       const freshChat = readChatState(freshPayloadJson);
+      // BOTH tables (Task 12b, Finding 2 — leg 6 of the loop). Built from
+      // `current.rows` alone, a liability exclusion never cleared
+      // server-side: the turn route kept echoing it back while
+      // `mergedLiabilities` above kept writing the row into the table, so a
+      // dropped debt sat in the table AND in "Not included" for the life of
+      // the import. An account id and a liability id can never collide —
+      // they carry different section prefixes — so one set covers both.
       const restoredIds = new Set(
-        current.rows.map((r) => r.__rowId).filter((id): id is string => Boolean(id)),
+        [...current.rows, ...current.liabilities]
+          .map((r) => r.__rowId)
+          .filter((id): id is string => Boolean(id)),
       );
       const nextExcludedRows = freshChat.excludedRows.filter(
         (x) => !(x.row.__rowId && restoredIds.has(x.row.__rowId)),
       );
 
       await patchImportPayloadJson(clientId, importId, {
-        payload: { accounts: mergedAccounts },
+        payload: { accounts: mergedAccounts, liabilities: mergedLiabilities },
         chat: writeChatState(freshPayloadJson, { excludedRows: nextExcludedRows }).chat,
       });
     };
@@ -629,6 +766,22 @@ export function useChatCommit(
   // server's complete, authoritative sets (Step 0 + the flush above + the
   // route's own fresh-read merge), not deltas.
   //
+  // `liabilities` (Ruling 51/54, Task 12b) replaces wholesale for exactly the
+  // same reason, and Ruling 95's argument for the accounts replace transfers
+  // unchanged: `flushRowsToServer` runs before every turn, so the server
+  // genuinely holds everything the advisor sees by the time the route reads
+  // it. Its preconditions hold identically here — the flush writes
+  // `payload.liabilities` in the same PATCH, and `chat-surface.tsx` disables
+  // every commit affordance for the whole `turnStatus === "sending"` window.
+  //
+  // But `undefined` PRESERVES rather than clearing. Ruling 39 set `?? []` at
+  // the SSE boundary, where absence really does mean "no liabilities"; here
+  // absence can also mean an OLDER route answered a NEWER client mid-deploy,
+  // and `?? []` would wipe the advisor's reviewed debts off the screen. An
+  // empty ARRAY still clears — that is the route saying there are none left,
+  // e.g. the advisor just dropped the last debt. One check, correct in both
+  // directions.
+  //
   // When `prev` is null — a resumed draft with no extraction run THIS
   // session (C3) — this is the first thing to populate `result` at all, so
   // the extracted-state panel (table, Finish import) appears for the first
@@ -638,10 +791,22 @@ export function useChatCommit(
   // stuck there permanently (every later call takes the `prev` branch, which
   // preserves whatever `summary` was set here once).
   const adoptTurnPayload = useCallback(
-    (accounts: Row[], excluded: ExcludedRow<Row>[]): Promise<void> =>
+    (
+      accounts: Row[],
+      excluded: ExcludedRow<ExcludedChatRow>[],
+      liabilities: LiabilityRow[] | undefined,
+    ): Promise<void> =>
       enqueue(commitQueueRef, () => {
         updateResult((prev) =>
-          prev ? { ...prev, rows: accounts, excluded } : { summary: "", caveats: [], rows: accounts, excluded },
+          prev
+            ? { ...prev, rows: accounts, excluded, liabilities: liabilities ?? prev.liabilities }
+            : {
+                summary: "",
+                caveats: [],
+                rows: accounts,
+                excluded,
+                liabilities: liabilities ?? [],
+              },
         );
       }),
     [updateResult],
@@ -691,6 +856,7 @@ export function useChatCommit(
     adoptTurnPayload,
     handleCommitRows,
     handleEditCell,
+    handleEditLiabilityCell,
     handleEditHolding,
     handleDropHolding,
     handleRestore,

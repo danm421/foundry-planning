@@ -3,7 +3,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { accountOwners, accounts, lifeInsurancePolicies, sourceEnum } from "@/db/schema";
 import { isRmdEligibleSubType } from "@/engine/rmd";
 import { is529Account } from "@/lib/accounts/is-529";
-import type { AccountCategory, AccountSubType, ExtractedAccount } from "@/lib/extraction/types";
+import type { ExtractedAccount } from "@/lib/extraction/types";
 import {
   RETIREMENT_SUBTYPES,
   validateOwnersShape,
@@ -20,6 +20,7 @@ import {
 } from "./family-resolver";
 import { writeAccountHoldings } from "./holdings";
 import { accountHoldingsGuardrail } from "./holdings-guardrail";
+import { resolveAccountCategory } from "./account-category";
 import { emptyResult, type CommitContext, type CommitResult, type Tx } from "./types";
 
 type SourceValue = (typeof sourceEnum.enumValues)[number];
@@ -43,19 +44,12 @@ const POLICY_TYPE_BY_SUBTYPE: Record<string, "term" | "whole" | "universal" | "v
 };
 
 /**
- * The account category to persist. Extraction historically classified 529s as
- * `taxable` + `subType: "529"` because `education_savings` was not in its
- * category union at all (fixed in the prompt, but old payloads persist and the
- * model can still ignore the rule). A 529 left as `taxable` is spendable in the
- * withdrawal waterfall and invisible to the dedicated-funding picker, so the
- * subType wins here.
+ * Moved to `account-category.ts` and re-exported here (final review I5): the
+ * review table has to ask what the commit will actually write, and it cannot
+ * import this file without pulling `@/db/schema` into the browser bundle.
+ * One definition, two safe import paths.
  */
-export function resolveAccountCategory(
-  row: { name?: string; category?: AccountCategory; subType?: AccountSubType },
-): AccountCategory {
-  if (is529Account(row)) return "education_savings";
-  return row.category ?? "taxable";
-}
+export { resolveAccountCategory };
 
 /**
  * The 529-only columns for a row, resolved against the household roster.
@@ -213,6 +207,14 @@ export async function commitAccounts(
           externalProvider: row.externalProvider ?? null,
           externalId: row.externalId ?? null,
           lastSyncedAt: row.externalProvider ? now : null,
+          propertyAddress: row.propertyAddress ?? null,
+          // Spread conditionally rather than defaulted to "0": the column is
+          // notNull().default("0"), so omitting the key keeps the DB default,
+          // whereas writing "0" explicitly would assert this property has no
+          // tax — a claim no document made.
+          ...(row.annualPropertyTax != null
+            ? { annualPropertyTax: String(row.annualPropertyTax) }
+            : {}),
         })
         .returning({ id: accounts.id });
 
@@ -285,6 +287,12 @@ export async function commitAccounts(
     if (row.modelPortfolioId !== undefined) updates.modelPortfolioId = row.modelPortfolioId;
     if (row.tickerPortfolioId !== undefined) updates.tickerPortfolioId = row.tickerPortfolioId;
     if (row.rmdEnabled != null) updates.rmdEnabled = row.rmdEnabled;
+    if (row.propertyAddress != null) updates.propertyAddress = row.propertyAddress;
+    // Never blank a figure the advisor typed on the account form: an import
+    // that derived nothing from an escrow must leave the existing value alone.
+    if (row.annualPropertyTax != null) {
+      updates.annualPropertyTax = String(row.annualPropertyTax);
+    }
     // The incoming row is the ONLY evidence here — `before` isn't loaded — so
     // the 529 columns are written only when the incoming row itself says 529.
     // A non-529 row must not null them out: it would strip the beneficiary off

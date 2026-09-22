@@ -18,9 +18,9 @@ import { runTurn } from "@/lib/statement-chat/turn";
 // Shared with chat/extract/route.ts (final review, I1) — one rebase
 // mechanism, not two similar ones. See its own docstring for why
 // reference inequality is an exact "this row changed" signal.
-import { mergeAccountsByRowId } from "@/lib/statement-chat/rebase";
+import { mergeRowsByRowId } from "@/lib/statement-chat/rebase";
 import type { Annotated, ImportPayloadJson } from "@/lib/imports/types";
-import type { ExtractedAccount } from "@/lib/extraction/types";
+import type { ExtractedAccount, ExtractedLiability } from "@/lib/extraction/types";
 
 export const dynamic = "force-dynamic";
 // A turn can make up to 4 tool calls plus the closing reply — generous but
@@ -45,6 +45,7 @@ const MAX_MESSAGE_LENGTH = 4_000;
 const EXTRACTION_STALE_AFTER_MS = 10 * 60 * 1000;
 
 type AccountRow = Annotated<ExtractedAccount>;
+type LiabilityRow = Annotated<ExtractedLiability>;
 
 function jsonResponse(
   status: number,
@@ -74,8 +75,9 @@ function jsonResponse(
  *     `chat/extract/route.ts` (outside this task's file list; see the task
  *     report for the residual TOCTOU window this does not close).
  *
- * `payload.accounts` IS written back here, in the SAME write as the chat
- * slice (task-review correction — see the task report's "Concern 2"
+ * `payload.accounts` AND `payload.liabilities` are both written back here
+ * (Task 12b — Task 12 made the debt rows mutable), in the SAME write as the
+ * chat slice (task-review correction — see the task report's "Concern 2"
  * addendum) — but ONLY when a mutating tool actually ran this turn
  * (`turnResult.payloadMutated`), and merged onto the FRESH read `by __rowId`
  * (review round 1, Important 1) rather than replacing the array wholesale.
@@ -86,7 +88,7 @@ function jsonResponse(
  * replace built from the STALE snapshot read at the top of this request
  * would erase a `linkCreated` stamp from a commit that landed (via the
  * separate accounts-PATCH route) while this turn's model calls were still
- * running — `mergeAccountsByRowId` (`lib/statement-chat/rebase.ts`, shared
+ * running — `mergeRowsByRowId` (`lib/statement-chat/rebase.ts`, shared
  * with the re-extraction route since I1) is what keeps both true at once.
  */
 export async function POST(request: Request, { params }: Params) {
@@ -277,28 +279,56 @@ export async function POST(request: Request, { params }: Params) {
   // turn that edits a row but is never committed would otherwise leave a
   // transcript claiming an edit the payload never reflects. But the `payload`
   // key is set ONLY when a mutating tool actually ran (`payloadMutated`), and
-  // even then it's `mergeAccountsByRowId`'s output — the turn's changes
+  // even then it's `mergeRowsByRowId`'s output — the turn's changes
   // rebased onto the FRESH read — never `turnResult.payload` wholesale, which
   // was computed from the STALE snapshot read at the top of this request and
   // would silently erase a `linkCreated` stamp from a commit that landed
   // while this turn's model calls were in flight. `writeChatState` only ever
-  // touches `chat`, so `payload` is set alongside it explicitly. Shape stays
-  // `{ accounts }` only (this surface never persists any other section).
+  // touches `chat`, so `payload` is set alongside it explicitly.
+  //
+  // Fix round 1, Finding 1 (self-correction of Ruling 40, which wrongly
+  // claimed this data was safe): `payload` is a single top-level key, so
+  // setting it to `{ accounts: responseAccounts }` alone REPLACES it
+  // wholesale — the exact shallow-merge hazard Task 11 exists to close,
+  // reopened from this route.
+  //
+  // Task 12b, Finding 2: `payload.liabilities` was a PASSTHROUGH of the fresh
+  // read here, on the (then true) grounds that no liability tool existed.
+  // Task 12 falsified that — `edit_row`, `merge_rows` and `drop_row` all
+  // resolve a liability id now — and a passthrough made half of Task 12
+  // INERT: an `edit_row` on a debt wrote nothing at all while the transcript
+  // told the advisor it had. `drop_row` was worse than inert, because the
+  // exclusion persisted while the row itself kept being written back, so the
+  // debt sat in the table AND in "Not included" for the life of the import.
+  // Both tables now go through the SAME rebase, for the same reason: a
+  // wholesale replace built from the STALE start-of-request snapshot would
+  // erase a `linkCreated` stamp a commit landed while the model calls ran.
   const freshAccounts = (freshPayloadJson.payload?.accounts ?? []) as AccountRow[];
   const responseAccounts = turnResult.payloadMutated
-    ? mergeAccountsByRowId(
+    ? mergeRowsByRowId(
         freshAccounts,
         (payload.accounts ?? []) as AccountRow[],
         (turnResult.payload.accounts ?? []) as AccountRow[],
       )
     : freshAccounts;
+  const freshLiabilities = (freshPayloadJson.payload?.liabilities ?? []) as LiabilityRow[];
+  const responseLiabilities = turnResult.payloadMutated
+    ? mergeRowsByRowId(
+        freshLiabilities,
+        (payload.liabilities ?? []) as LiabilityRow[],
+        (turnResult.payload.liabilities ?? []) as LiabilityRow[],
+      )
+    : freshLiabilities;
 
   const nextPayloadJson: ImportPayloadJson = writeChatState(freshPayloadJson, {
     transcript: nextTranscript,
     excludedRows: nextExcludedRows,
   });
   if (turnResult.payloadMutated) {
-    nextPayloadJson.payload = { accounts: responseAccounts };
+    nextPayloadJson.payload = {
+      accounts: responseAccounts,
+      liabilities: responseLiabilities,
+    };
   }
 
   await db
@@ -342,8 +372,16 @@ export async function POST(request: Request, { params }: Params) {
   // this array verbatim rather than composing its own user/assistant
   // entries — otherwise the in-session transcript would disagree with the
   // one that reads back after a reload.
+  //
+  // Ruling 51 (Task 12b) OVERTURNS standing Ruling 44, which held the body
+  // stays accounts-only because nothing consumed the debts. That was measured
+  // and true at Task 11; Task 12 falsified it by making liabilities mutable.
+  // The surface has to learn about a persisted debt edit here, or its own
+  // `flushRowsToServer` overlays the STALE local array onto the server's
+  // corrected set on the very next turn and writes the old row back — which
+  // is why a route-only fix would be worse than none.
   return jsonResponse(200, {
-    payload: { accounts: responseAccounts },
+    payload: { accounts: responseAccounts, liabilities: responseLiabilities },
     summary: turnResult.summary,
     excludedRows: nextExcludedRows,
     turnEntries: turnResult.turnEntries,

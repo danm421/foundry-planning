@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderHook, act } from "@testing-library/react";
+import { renderHook, act, waitFor } from "@testing-library/react";
 import { useChatCommit } from "../use-chat-commit";
 
 /** The response the mount-hydration GET expects. */
@@ -41,6 +41,7 @@ describe("useChatCommit — commit serialization (round 1 review, Important 1, s
         summary: "x",
         caveats: [],
         excluded: [],
+        liabilities: [],
         rows: [
           { name: "IRA", custodian: "Schwab", value: 100, __rowId: "r1" },
           { name: "Brokerage", custodian: "Schwab", value: 200, __rowId: "r2" },
@@ -172,6 +173,7 @@ describe("useChatCommit — the fresh-read merge must not discard a local edit (
         summary: "x",
         caveats: [],
         excluded: [],
+        liabilities: [],
         rows: [
           { name: "IRA", custodian: "Schwab", value: 100, __rowId: "r1" },
           { name: "Brokerage", custodian: "Schwab", value: 200, __rowId: "r2" },
@@ -247,6 +249,11 @@ describe("useChatCommit — the override reaches the commit request", () => {
         caveats: [],
         excluded: [],
         rows: [{ name: "IRA", value: 100, __rowId: "r1" }] as never,
+        // `liabilities` is REQUIRED on `ChatCommitResult` (Ruling 39) so tsc
+        // gates every typed construction site. This test arrived from main's
+        // override-box work, which predates the field; the override path is
+        // accounts-only, so an empty array is the right value here.
+        liabilities: [],
       });
     });
 
@@ -268,9 +275,14 @@ describe("useChatCommit — the override reaches the commit request", () => {
     return JSON.parse(post![1]!.body as string) as Record<string, unknown>;
   }
 
+  // `tabs` is BOTH tabs since the liabilities work: `commitLiabilities` honours
+  // `rowIds` (Task 6), so naming the second tab no longer commits it unfiltered.
+  // These two assertions arrived from main pinning the accounts-only shape; the
+  // override itself is untouched by that change, because `overrideRowIds` is
+  // read by `commitAccounts` alone.
   it("names the row in overrideRowIds when the box was ticked", async () => {
     expect(await commitBody({ overrideAll: true })).toEqual({
-      tabs: ["accounts"],
+      tabs: ["accounts", "liabilities"],
       rowIds: ["r1"],
       overrideRowIds: ["r1"],
     });
@@ -279,7 +291,7 @@ describe("useChatCommit — the override reaches the commit request", () => {
   it("omits the key entirely on a plain Commit — the route refuses an empty array", async () => {
     const body = await commitBody({ overrideAll: false });
     expect(body).not.toHaveProperty("overrideRowIds");
-    expect(body).toEqual({ tabs: ["accounts"], rowIds: ["r1"] });
+    expect(body).toEqual({ tabs: ["accounts", "liabilities"], rowIds: ["r1"] });
   });
 
   it("omits it for a caller that passes no options at all", async () => {
@@ -295,6 +307,7 @@ describe("useChatCommit — editing and dropping one position (Task 6)", () => {
         summary: "",
         caveats: [],
         excluded: [],
+        liabilities: [],
         rows: [
           {
             __rowId: "r1",
@@ -324,6 +337,7 @@ describe("useChatCommit — editing and dropping one position (Task 6)", () => {
         summary: "",
         caveats: [],
         excluded: [],
+        liabilities: [],
         rows: [
           {
             __rowId: "r1",
@@ -376,6 +390,7 @@ describe("useChatCommit — matching extracted accounts against the plan", () =>
     summary: "x",
     caveats: [],
     excluded: [],
+    liabilities: [],
     rows: [baseRow] as never,
   };
 
@@ -469,5 +484,483 @@ describe("useChatCommit — matching extracted accounts against the plan", () =>
       }),
     );
     expect(result.current.result?.rows[0].match).toEqual({ kind: "new" });
+  });
+});
+
+describe("useChatCommit — commits both tabs together, and PATCHes both keys (Task 11)", () => {
+  /**
+   * ⚠️ RENAMED, final review I1(c). This test used to be titled "posts both
+   * tabs so a synthesized property commits with its mortgage" — a claim about
+   * a PRODUCT behaviour it does not test and that did not exist. It hands
+   * `handleCommitRows` a two-element array built by hand, so it pins the HOOK
+   * and never the UI that has to build that array; `EntityTable`'s Commit
+   * button called `onCommitRows([rowId])`, a singleton, and spec §7's
+   * commit-ordering clause was never implemented at all. It went green anyway,
+   * which is worse than no test.
+   *
+   * ⭐ The lesson, recorded here because this is where it bit: A TEST THAT
+   * CALLS THE HOOK CANNOT PIN THE UI THAT FEEDS IT. When a spec clause is
+   * about what the INTERFACE sends, the test has to start at the interface.
+   *
+   * The product clause now lives where it can actually be observed —
+   * `liabilities-table.test.tsx`, "LiabilitiesTable co-commits the property a
+   * mortgage is secured on". What THIS test proves is the hook's half: given
+   * two row ids, one POST naming both tabs, both payload keys PATCHed, and the
+   * response's liabilities adopted.
+   */
+  it("turns a two-row commit into ONE post naming both tabs, PATCHes payload.liabilities alongside payload.accounts, and adopts the commit response's liabilities", async () => {
+    const { result } = renderHook(() => useChatCommit("c1", "i1"));
+
+    act(() => {
+      result.current.applyExtractionResult({
+        summary: "x",
+        caveats: [],
+        excluded: [],
+        rows: [
+          { name: "Hudson St", value: 500_000, __rowId: "account:hudson#f1:0" },
+        ] as never,
+        liabilities: [
+          { name: "Mortgage", balance: 412_000, __rowId: "liability:mortgage#f1:0" },
+        ] as never,
+      });
+    });
+
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(importGetResponse({})) // fresh GET before the payload PATCH
+      .mockResolvedValueOnce(jsonResponse({})) // PATCH payload
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ok: true,
+          payload: {
+            accounts: [
+              {
+                name: "Hudson St",
+                value: 500_000,
+                __rowId: "account:hudson#f1:0",
+                match: { kind: "exact", existingId: "acct-1" },
+              },
+            ],
+            liabilities: [
+              {
+                name: "Mortgage",
+                balance: 412_000,
+                __rowId: "liability:mortgage#f1:0",
+                match: { kind: "exact", existingId: "liab-1" },
+              },
+            ],
+          },
+        }),
+      ) // POST commit
+      .mockResolvedValueOnce(importGetResponse({})) // fresh GET for chat
+      .mockResolvedValueOnce(jsonResponse({})); // PATCH chat
+
+    await act(async () => {
+      await result.current.handleCommitRows([
+        "account:hudson#f1:0",
+        "liability:mortgage#f1:0",
+      ]);
+    });
+
+    const commitCall = vi
+      .mocked(fetch)
+      .mock.calls.find(([url]) => String(url).includes("/commit"));
+    expect(commitCall).toBeDefined();
+    expect(JSON.parse(commitCall![1]!.body as string)).toEqual({
+      tabs: ["accounts", "liabilities"],
+      rowIds: ["account:hudson#f1:0", "liability:mortgage#f1:0"],
+    });
+
+    // Load-bearing: the PATCH route shallow-merges `payloadJson` at the TOP
+    // level only, so a `payload` key that names `accounts` but not
+    // `liabilities` REPLACES the whole `payload` object and drops every
+    // reviewed liability. Mutation this catches: reverting the pre-commit
+    // PATCH body to `{ accounts: mergedAccounts }`.
+    const payloadPatchCall = vi.mocked(fetch).mock.calls.find(([url, init]) => {
+      if (!String(url).endsWith("/imports/i1") || init?.method !== "PATCH") return false;
+      const body = JSON.parse(init.body as string);
+      return Boolean(body.payloadJson?.payload);
+    });
+    expect(payloadPatchCall).toBeDefined();
+    const patchedPayload = JSON.parse(payloadPatchCall![1]!.body as string).payloadJson.payload;
+    expect(patchedPayload.accounts).toHaveLength(1);
+    expect(patchedPayload.liabilities).toHaveLength(1);
+    expect(patchedPayload.liabilities[0].__rowId).toBe("liability:mortgage#f1:0");
+
+    // And the commit response's own `payload.liabilities` — carrying
+    // `commitLiabilities`' `linkCreated` stamp — is adopted into local
+    // state. Mutation this catches: reading only `body.payload?.accounts`
+    // at the `:409` cast site and never touching `result.liabilities`.
+    expect(result.current.result?.liabilities[0].match).toEqual({
+      kind: "exact",
+      existingId: "liab-1",
+    });
+  });
+});
+
+/**
+ * ── T11-a: `overlayFreshMatch`'s liabilities wiring ─────────────────────
+ *
+ * Task 11 declined this test on the ground that `overlayFreshMatch` is now one
+ * generic function serving both callers, so a second test exercises an
+ * identical code path. True of the BODY; the risk was never the body.
+ *
+ * The signature is `overlayFreshMatch<T extends {__rowId?: string; match?:
+ * MatchAnnotation}>(fresh: T[], local: T[])`, and because an account row and a
+ * debt row are MUTUALLY ASSIGNABLE — each requires only `name` — calling
+ * `overlayFreshMatch(fresh.payload.accounts, current.liabilities)` compiles
+ * clean with zero tsc errors and silently blanks every liability match. Four
+ * call sites take that shape (`use-chat-commit.ts:427,431,709,713`), and
+ * nothing else on this branch would catch it: it is the `ExcludedChatRow`
+ * mutual-assignability hazard in the one place discipline left uncovered.
+ *
+ * Mutation this catches: swapping the two arguments at the liabilities call
+ * site, or pointing it at `payload.accounts`.
+ */
+describe("useChatCommit — a fresh server liability's match survives the pre-commit PATCH", () => {
+  it("keeps the local debt row and stamps the server's exact match onto it", async () => {
+    const { result } = renderHook(() => useChatCommit("c1", "i1"));
+
+    act(() => {
+      result.current.applyExtractionResult({
+        summary: "x",
+        caveats: [],
+        excluded: [],
+        rows: [],
+        liabilities: [
+          // The advisor's own correction, which must NOT be discarded: the
+          // server still holds 412,000.
+          { name: "Mortgage", balance: 410_000, __rowId: "liability:mortgage#f1:0" },
+        ] as never,
+      });
+    });
+
+    vi.mocked(fetch)
+      // The fresh GET before the payload PATCH: the server already shows this
+      // debt as `exact` from a prior commit whose bookkeeping PATCH failed.
+      .mockResolvedValueOnce(
+        importGetResponse({
+          payload: {
+            accounts: [],
+            liabilities: [
+              {
+                name: "Mortgage",
+                balance: 412_000,
+                __rowId: "liability:mortgage#f1:0",
+                match: { kind: "exact", existingId: "liab-1" },
+              },
+            ],
+          },
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse({})) // PATCH payload
+      .mockResolvedValueOnce(jsonResponse({ ok: true })) // POST commit
+      .mockResolvedValueOnce(importGetResponse({})) // fresh GET for chat
+      .mockResolvedValueOnce(jsonResponse({})); // PATCH chat
+
+    await act(async () => {
+      await result.current.handleCommitRows(["liability:mortgage#f1:0"]);
+    });
+
+    const payloadPatchCall = vi.mocked(fetch).mock.calls.find(([url, init]) => {
+      if (!String(url).endsWith("/imports/i1") || init?.method !== "PATCH") return false;
+      return Boolean(JSON.parse(init.body as string).payloadJson?.payload);
+    });
+    const patched = JSON.parse(payloadPatchCall![1]!.body as string).payloadJson.payload;
+
+    // The row SURVIVES — overlaying the accounts array over the liabilities
+    // one would leave this empty.
+    expect(patched.liabilities).toHaveLength(1);
+    // ...carrying the LOCAL edit, not the server's stale figure.
+    expect(patched.liabilities[0].balance).toBe(410_000);
+    // ...and the server's stamp, which is the one field the overlay may move.
+    expect(patched.liabilities[0].match).toEqual({ kind: "exact", existingId: "liab-1" });
+  });
+});
+
+describe("useChatCommit — editing a liability cell (Task 11, Ruling 37)", () => {
+  // `LiabilitiesTable`'s `onPick` calls `onEditCell(row.__rowId, "match",
+  // next)` then `onEditCell(row.__rowId, "matchLocked", true)`. Passing the
+  // ACCOUNTS `handleEditCell` there (the brief's defect) maps over
+  // `result.rows` — an array with no liability row ids in it — so the pick
+  // silently evaporates. `handleEditLiabilityCell` must map over
+  // `result.liabilities` instead.
+  it("maps a match pick over result.liabilities, not result.rows", () => {
+    const { result } = renderHook(() => useChatCommit("c1", "i1"));
+    act(() => {
+      result.current.applyExtractionResult({
+        summary: "x",
+        caveats: [],
+        excluded: [],
+        rows: [],
+        liabilities: [
+          { name: "Mortgage", balance: 412_000, __rowId: "liability:mortgage#f1:0" },
+        ] as never,
+      });
+    });
+
+    act(() => {
+      result.current.handleEditLiabilityCell(
+        "liability:mortgage#f1:0",
+        "match",
+        { kind: "exact", existingId: "liab-1" },
+      );
+      result.current.handleEditLiabilityCell("liability:mortgage#f1:0", "matchLocked", true);
+    });
+
+    const row = result.current.result?.liabilities[0];
+    // Mutation this catches: aliasing `handleEditLiabilityCell` to
+    // `handleEditCell` — `result.rows` is `[]`, so the map has nothing to
+    // update and this row's `match` would stay `undefined`.
+    expect(row?.match).toEqual({ kind: "exact", existingId: "liab-1" });
+    expect(row?.matchLocked).toBe(true);
+    expect(result.current.result?.rows).toEqual([]);
+  });
+});
+
+describe("useChatCommit — mount hydration includes liabilities (Task 11)", () => {
+  // Ruling 41's counterpart at mount time: a resumed draft with zero
+  // accounts and zero excluded rows but one persisted liability must still
+  // populate `result`, or a mortgage-only import reopened later shows
+  // nothing at all — the same hazard the extraction-time gate exists to
+  // close, reachable from the other side (a reload instead of a fresh run).
+  it("hydrates result.liabilities from the persisted payload on mount, even with zero accounts", async () => {
+    vi.mocked(fetch).mockReset();
+    vi.mocked(fetch).mockResolvedValueOnce(
+      importGetResponse({
+        payload: {
+          accounts: [],
+          liabilities: [
+            { name: "Mortgage", balance: 412_000, __rowId: "liability:mortgage#f1:0" },
+          ],
+        },
+      }),
+    );
+
+    const { result } = renderHook(() => useChatCommit("c1", "i1"));
+
+    await waitFor(() => {
+      expect(result.current.result?.liabilities).toHaveLength(1);
+    });
+    expect(result.current.result?.liabilities[0].name).toBe("Mortgage");
+  });
+});
+
+// --- Task 12b ---------------------------------------------------------------
+
+const HELOC_ID = "liability:heloc#f1:0";
+const MORTGAGE_ID = "liability:mortgage#f1:0";
+
+describe("useChatCommit — restoring a row goes back to the table it came from (Task 12b, Finding 1)", () => {
+  // `handleRestore` pushed to `prev.rows` with NO table check, so one click
+  // on "Include anyway" filed a debt as an asset — the sign of a number on
+  // the balance sheet, inverted. tsc cannot catch it: `ExtractedAccount`
+  // requires only `name`, so the two row types are assignable in BOTH
+  // directions. The `__rowId` prefix is the only discriminator there is.
+  //
+  // Mutation this catches: reverting the body to
+  // `rows: [...prev.rows, row]` — `result.liabilities` stays at 1 and
+  // `result.rows` grows to 2.
+  it("restores a dropped DEBT into result.liabilities, never result.rows", () => {
+    const { result } = renderHook(() => useChatCommit("c1", "i1"));
+    // The state a chat `drop_row` on a debt leaves behind: one debt still in
+    // the table, one retired into `excluded`, one unrelated account row.
+    act(() => {
+      result.current.applyExtractionResult({
+        summary: "x",
+        caveats: [],
+        rows: [{ name: "IRA", value: 100, __rowId: "account:ira#f1:0" }] as never,
+        excluded: [
+          { row: { name: "HELOC", balance: 40_000, __rowId: HELOC_ID }, reason: "dropped" },
+        ] as never,
+        liabilities: [{ name: "Mortgage", balance: 412_000, __rowId: MORTGAGE_ID }] as never,
+      });
+    });
+
+    act(() => {
+      result.current.handleRestore({ name: "HELOC", balance: 40_000, __rowId: HELOC_ID } as never);
+    });
+
+    expect(result.current.result?.liabilities.map((r) => r.__rowId)).toEqual([
+      MORTGAGE_ID,
+      HELOC_ID,
+    ]);
+    expect(result.current.result?.rows.map((r) => r.__rowId)).toEqual(["account:ira#f1:0"]);
+    expect(result.current.result?.excluded).toEqual([]);
+  });
+
+  // The negative half — a rule that routed EVERYTHING to `liabilities`
+  // would pass the test above. An account restore must still land in
+  // `rows`, which is also what every already-persisted exclusion is: they
+  // predate liability drops entirely.
+  it("still restores an ACCOUNT into result.rows", () => {
+    const { result } = renderHook(() => useChatCommit("c1", "i1"));
+    act(() => {
+      result.current.applyExtractionResult({
+        summary: "x",
+        caveats: [],
+        rows: [] as never,
+        excluded: [
+          { row: { name: "All Accounts", value: 300, __rowId: "account:all#f1:0" }, reason: "rollup" },
+        ] as never,
+        liabilities: [] as never,
+      });
+    });
+
+    act(() => {
+      result.current.handleRestore({ name: "All Accounts", value: 300, __rowId: "account:all#f1:0" } as never);
+    });
+
+    expect(result.current.result?.rows.map((r) => r.__rowId)).toEqual(["account:all#f1:0"]);
+    expect(result.current.result?.liabilities).toEqual([]);
+  });
+
+  // A legacy id (minted before the section prefix existed) and an absent one
+  // must both read as an ACCOUNT — today's behaviour, and what every
+  // exclusion already sitting in a persisted draft actually is. Failing the
+  // OTHER way would move a real account onto the debt table.
+  it("reads a prefix-less legacy id as an account", () => {
+    const { result } = renderHook(() => useChatCommit("c1", "i1"));
+    act(() => {
+      result.current.applyExtractionResult({
+        summary: "x",
+        caveats: [],
+        rows: [] as never,
+        excluded: [{ row: { name: "Old Row", value: 5, __rowId: "r2" }, reason: "rollup" }] as never,
+        liabilities: [] as never,
+      });
+    });
+
+    act(() => {
+      result.current.handleRestore({ name: "Old Row", value: 5, __rowId: "r2" } as never);
+    });
+
+    expect(result.current.result?.rows.map((r) => r.__rowId)).toEqual(["r2"]);
+    expect(result.current.result?.liabilities).toEqual([]);
+  });
+
+  // Ruling 100's idempotence guard, on the debt side: a row already in the
+  // working set is never appended twice, whatever the excluded list says.
+  it("does not append a duplicate when the debt is already in the liabilities table", () => {
+    const { result } = renderHook(() => useChatCommit("c1", "i1"));
+    act(() => {
+      result.current.applyExtractionResult({
+        summary: "x",
+        caveats: [],
+        rows: [] as never,
+        excluded: [
+          { row: { name: "HELOC", balance: 40_000, __rowId: HELOC_ID }, reason: "dropped" },
+        ] as never,
+        liabilities: [{ name: "HELOC", balance: 40_000, __rowId: HELOC_ID }] as never,
+      });
+    });
+
+    act(() => {
+      result.current.handleRestore({ name: "HELOC", balance: 40_000, __rowId: HELOC_ID } as never);
+    });
+
+    expect(result.current.result?.liabilities).toHaveLength(1);
+    // And it did not quietly land in the OTHER table instead — without this
+    // clause the assertion above passes on the pre-fix code too.
+    expect(result.current.result?.rows).toEqual([]);
+    expect(result.current.result?.excluded).toEqual([]);
+  });
+});
+
+describe("useChatCommit — the pre-turn flush clears a LIABILITY exclusion (Task 12b, leg 6)", () => {
+  // `restoredIds` was built from `current.rows` only, so a liability
+  // exclusion never cleared server-side: the turn route kept echoing it back
+  // while `mergedLiabilities` kept writing the row into the table. The debt
+  // sat in the table AND in "Not included" for the life of the import.
+  //
+  // Mutation this catches: dropping `current.liabilities` from
+  // `restoredIds` — the PATCH's `chat.excludedRows` would still hold the
+  // HELOC entry.
+  it("strips a restored debt's id from chat.excludedRows in the flush's PATCH", async () => {
+    const { result } = renderHook(() => useChatCommit("c1", "i1"));
+    act(() => {
+      result.current.applyExtractionResult({
+        summary: "x",
+        caveats: [],
+        rows: [] as never,
+        excluded: [] as never,
+        // The post-restore local state: the debt is back in the table.
+        liabilities: [{ name: "HELOC", balance: 40_000, __rowId: HELOC_ID }] as never,
+      });
+    });
+
+    // The server has NOT caught up — it still lists the HELOC as excluded,
+    // alongside an account exclusion nothing has restored (which must
+    // SURVIVE: this is a merge against the fresh read, not a blind replace).
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        importGetResponse({
+          payload: { accounts: [], liabilities: [] },
+          chat: {
+            surface: "chat",
+            transcript: [],
+            decisions: [],
+            excludedRows: [
+              { row: { name: "HELOC", balance: 40_000, __rowId: HELOC_ID }, reason: "dropped" },
+              { row: { name: "All Accounts", value: 300, __rowId: "account:all#f1:0" }, reason: "rollup" },
+            ],
+            committedRowIds: [],
+          },
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse({}));
+
+    await act(async () => {
+      await result.current.flushRowsToServer();
+    });
+
+    const patchCall = vi
+      .mocked(fetch)
+      .mock.calls.find(([url, init]) => String(url).endsWith("/imports/i1") && init?.method === "PATCH");
+    expect(patchCall).toBeDefined();
+    const body = JSON.parse(patchCall![1]!.body as string).payloadJson;
+    expect(
+      (body.chat.excludedRows as Array<{ row: { __rowId: string } }>).map((x) => x.row.__rowId),
+    ).toEqual(["account:all#f1:0"]);
+  });
+});
+
+describe("useChatCommit — adoptTurnPayload's liabilities argument (Task 12b, Ruling 54)", () => {
+  function seeded() {
+    const { result } = renderHook(() => useChatCommit("c1", "i1"));
+    act(() => {
+      result.current.applyExtractionResult({
+        summary: "x",
+        caveats: [],
+        rows: [] as never,
+        excluded: [] as never,
+        liabilities: [{ name: "Mortgage", balance: 412_000, __rowId: MORTGAGE_ID }] as never,
+      });
+    });
+    return result;
+  }
+
+  // Ruling 39 set `?? []` at the SSE boundary, where absence really does
+  // mean "no liabilities". Here absence can also mean an OLDER route
+  // answered a NEWER client mid-deploy — and `?? []` would wipe the
+  // advisor's reviewed debts off the screen.
+  //
+  // Mutation this catches: `liabilities: liabilities ?? []`.
+  it("PRESERVES the reviewed debts when the argument is undefined", async () => {
+    const result = seeded();
+    await act(async () => {
+      await result.current.adoptTurnPayload([], [], undefined);
+    });
+    expect(result.current.result?.liabilities.map((r) => r.__rowId)).toEqual([MORTGAGE_ID]);
+  });
+
+  // The other direction of the SAME one check: `[]` is the route saying
+  // there are none left (the advisor dropped the last debt) and must clear.
+  // Mutation this catches: `liabilities: liabilities?.length ? liabilities : prev.liabilities`.
+  it("CLEARS the table when the argument is an empty array", async () => {
+    const result = seeded();
+    await act(async () => {
+      await result.current.adoptTurnPayload([], [], []);
+    });
+    expect(result.current.result?.liabilities).toEqual([]);
   });
 });

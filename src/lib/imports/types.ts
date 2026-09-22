@@ -150,6 +150,58 @@ export type ChatTurn =
   | { role: "tool"; tool: string; summary: string; at: string };
 
 /**
+ * A row the statement-chat surface can EXCLUDE — an account or a debt.
+ *
+ * Task 12: `drop_row`/`merge_rows` reach the liabilities table, so the row
+ * they retire into `ChatState.excludedRows` is no longer always an account.
+ * Named once here, rather than spelled inline, because the persisted list is
+ * read back by four surfaces (`advisorRetiredRows`, both rebase passes, the
+ * commit hook) and a second spelling of the same union is how the two halves
+ * drift apart.
+ *
+ * ⚠️ This union does NOT behave like a discriminated one, and tsc will not
+ * tell you: `ExtractedAccount` requires only `name`, and the two interfaces'
+ * shared members (`name`, `propertyAddress`) have identical types — so a debt
+ * row is structurally ASSIGNABLE to an account row. Widening this broke
+ * nothing at the type level precisely because of that. Anything that has to
+ * know which table a row came from must narrow on the `__rowId` PREFIX
+ * (`account:` / `liability:`), which `keyedRowId` mints and which is the
+ * discriminator `tools.ts`'s `locateRow` resolves by — never on the presence
+ * of a field, and never on the compiler having checked it.
+ */
+export type ExcludedChatRow = Annotated<ExtractedAccount> | Annotated<ExtractedLiability>;
+
+/**
+ * Which table an excluded row came from — the `__rowId` PREFIX narrowing the
+ * docblock above MANDATES, in ONE place so the two surfaces that act on it
+ * (the "Not included" split and `handleRestore`'s routing) cannot drift into
+ * two spellings of the same test.
+ *
+ * Ruling 52 (Task 12b). Before it, `handleRestore` pushed every restored row
+ * into `payload.accounts` with no table check, so one click on "Include
+ * anyway" filed a chat-dropped debt as an ASSET — the sign of a number on the
+ * balance sheet, inverted, and verbatim the defect `dropDebtsFiledAsAssets`
+ * exists to undo.
+ *
+ * Both id shapes `merge-across-files.ts` mints start with the section label —
+ * `${label}:${key}#${fileId}:${index}` for a keyed row and
+ * `${label}:null:${fileId}:${index}:${name}` for a null-key one — so the
+ * prefix is the part of an id that survives a re-extraction moving the
+ * coordinate half.
+ *
+ * FAILS SAFE. A legacy id, the synthesized-property id
+ * (`account:synthesized:<slug>`), and an absent one all read as an ACCOUNT:
+ * today's behaviour, and what every exclusion already sitting in a persisted
+ * draft actually is. That is also why no `table` field is stamped onto
+ * `ExcludedChatRow` — every persisted draft predates it, so this fallback
+ * would be needed anyway and the stamp would only buy a second way to be
+ * wrong.
+ */
+export function isLiabilityRowId(rowId: string | undefined): boolean {
+  return rowId?.startsWith("liability:") ?? false;
+}
+
+/**
  * Persisted state for the statement-chat import surface (Task 8+).
  *
  * Declared here rather than in `src/lib/statement-chat/state.ts` (R55):
@@ -172,7 +224,8 @@ export interface ChatState {
   /**
    * Wide by design (Ruling 3 / C5), not narrowed to any one producer's
    * shape: Task 4's rollup detector always sets `decision`, but Task 11's
-   * advisor-initiated `drop_row` has none, so it must stay optional.
+   * advisor-initiated `drop_row` has none, so it must stay optional. Task 12
+   * widened `row` for the same reason — see `ExcludedChatRow` above.
    *
    * `irreversible` (Ruling 96, Task 11b fix round 1): set ONLY by
    * `merge_rows` (`tools.ts`), on the row it retires. That row's data was
@@ -184,7 +237,7 @@ export interface ChatState {
    * consuming surface never has to string-match `reason` to decide.
    */
   excludedRows: Array<{
-    row: Annotated<ExtractedAccount>;
+    row: ExcludedChatRow;
     reason: string;
     decision?: MergeDecision;
     irreversible?: true;

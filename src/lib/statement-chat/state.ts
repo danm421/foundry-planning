@@ -1,5 +1,9 @@
-import type { Annotated, ChatState, ChatTurn, ImportPayloadJson } from "@/lib/imports/types";
-import type { ExtractedAccount } from "@/lib/extraction/types";
+import type {
+  ChatState,
+  ChatTurn,
+  ExcludedChatRow,
+  ImportPayloadJson,
+} from "@/lib/imports/types";
 
 /**
  * `ChatTurn` and `ChatState` are declared in `@/lib/imports/types` (R55),
@@ -90,7 +94,16 @@ export function writeChatState(payloadJson: unknown, next: Partial<ChatState>): 
  * Lives here, next to `readChatState`, so the two routes that need it
  * (`chat/extract` and `chat/finalize`) share one definition of which
  * exclusions are the advisor's rather than each re-deciding.
+ *
+ * Task 12: the list is MIXED — `drop_row` now retires debts too — so this
+ * returns `ExcludedChatRow`, not accounts. It is deliberately NOT split per
+ * table: both rebase passes key on the `__rowId` a row was retired under, and
+ * every id carries its section prefix (`account:` / `liability:`), which is
+ * also the BUCKET half `keyedRowIdBucket` compares. So a debt's id can never
+ * re-attach onto an account's fresh row (or the reverse) — the wrong-table
+ * entries are inert in each pass rather than something the caller has to
+ * filter out, and one list means one place for an id to be carried forward.
  */
-export function advisorRetiredRows(chat: ChatState): Annotated<ExtractedAccount>[] {
+export function advisorRetiredRows(chat: ChatState): ExcludedChatRow[] {
   return chat.excludedRows.filter((x) => x.decision === undefined).map((x) => x.row);
 }

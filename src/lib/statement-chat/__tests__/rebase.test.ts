@@ -1,9 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { mergeAccountsByRowId, rebaseOntoFreshMerge } from "@/lib/statement-chat/rebase";
+import { mergeRowsByRowId, rebaseOntoFreshMerge } from "@/lib/statement-chat/rebase";
 import type { Annotated } from "@/lib/imports/types";
-import type { ExtractedAccount } from "@/lib/extraction/types";
+import type { ExtractedAccount, ExtractedLiability } from "@/lib/extraction/types";
 
 type Row = Annotated<ExtractedAccount>;
+type LiabilityRow = Annotated<ExtractedLiability>;
 
 function row(rowId: string, name: string, value: number | undefined): Row {
   return { __rowId: rowId, name, value } as Row;
@@ -1048,7 +1049,7 @@ describe("rebaseOntoFreshMerge", () => {
    * The suite had the STRUCTURAL half of this (`rows[0].holdings` keeps its
    * length) but nothing asserted a FIELD, so the one thing the advisor
    * actually cares about was unpinned. Survival is currently structural —
-   * `mergeAccountsByRowId` takes the standing row wholesale — and that is
+   * `mergeRowsByRowId` takes the standing row wholesale — and that is
    * exactly the line a plausible-looking "improvement" would touch: overlay
    * the fresh figures onto the standing positions by `__holdingId`, now that
    * the ids match across both sides, and the array length never moves while
@@ -1174,14 +1175,21 @@ describe("rebaseOntoFreshMerge", () => {
 });
 
 /**
- * `mergeAccountsByRowId` is the SHARED mechanism the turn route depends on
- * (`chat/turn/route.ts:281`). Ruling 117 changes `rebaseOntoFreshMerge`'s
+ * `mergeRowsByRowId` is the SHARED mechanism the turn route depends on
+ * (`chat/turn/route.ts`). Ruling 117 changes `rebaseOntoFreshMerge`'s
  * signature only — this stays byte-compatible, and these pin that.
+ *
+ * Ruling 53 (Task 12b) renamed it from `mergeAccountsByRowId` and gave it a
+ * type parameter: its body touches ONLY `__rowId`, so it generalizes with no
+ * behaviour change, and the turn route now rebases the DEBT rows through the
+ * same mechanism. The old name would have sat directly beside a different,
+ * already-existing `mergeLiabilitiesByRowId` (the extract path's
+ * bucket-matching rebase) and the two mean different things.
  */
-describe("mergeAccountsByRowId (unchanged by Ruling 117)", () => {
+describe("mergeRowsByRowId (unchanged by Ruling 117, generalized by Ruling 53)", () => {
   it("still returns a bare array", () => {
     const fresh = [row("account:1", "IRA", 100)];
-    expect(Array.isArray(mergeAccountsByRowId(fresh, [], fresh))).toBe(true);
+    expect(Array.isArray(mergeRowsByRowId(fresh, [], fresh))).toBe(true);
   });
 
   it("still treats reference inequality against a non-empty start as the changed signal", () => {
@@ -1189,13 +1197,13 @@ describe("mergeAccountsByRowId (unchanged by Ruling 117)", () => {
     const untouched = [start];
     // Same reference in both start and changed => NOT changed => the fresh
     // row (a concurrent write's stamps and all) survives.
-    const merged = mergeAccountsByRowId([row("account:1", "IRA", 999)], untouched, untouched);
+    const merged = mergeRowsByRowId([row("account:1", "IRA", 999)], untouched, untouched);
     expect(merged.map((r) => r.value)).toEqual([999]);
   });
 
   it("still retires a row present in start but absent from changed", () => {
     const start = [row("account:1", "IRA", 100), row("account:2", "Dropped", 5)];
-    const merged = mergeAccountsByRowId(start, start, [start[0]]);
+    const merged = mergeRowsByRowId(start, start, [start[0]]);
     expect(merged.map((r) => r.name)).toEqual(["IRA"]);
   });
 
@@ -1210,7 +1218,7 @@ describe("mergeAccountsByRowId (unchanged by Ruling 117)", () => {
    * provenance differs from the fresh read's.
    *
    * Mutation this catches: moving the `plausiblySameAccount` test out of
-   * `rebaseOntoFreshMerge` and into `mergeAccountsByRowId`. The edit below
+   * `rebaseOntoFreshMerge` and into `mergeRowsByRowId`. The edit below
    * stops landing and `value` falls back to 100.
    */
   it("adopts a changed row regardless of provenance — the guard is NOT here", () => {
@@ -1223,6 +1231,41 @@ describe("mergeAccountsByRowId (unchanged by Ruling 117)", () => {
     const changed = [
       { __rowId: "account:1", name: "IRA", value: 999, __provenance: { sourceFileId: "file-b", section: "accounts" } } as Row,
     ];
-    expect(mergeAccountsByRowId(fresh, start, changed).map((r) => r.value)).toEqual([999]);
+    expect(mergeRowsByRowId(fresh, start, changed).map((r) => r.value)).toEqual([999]);
+  });
+
+  /**
+   * Ruling 53: the same three rules on LIABILITY rows, which is what the turn
+   * route now calls it with. Nothing in the body is account-shaped — no
+   * holdings, no custodian, no `plausiblySameAccount` — so this is the whole
+   * proof that generalizing beat copying.
+   *
+   * Mutation this catches: re-narrowing the signature to `AccountRow` (this
+   * file stops compiling) or adding any account-only field access to the body.
+   */
+  it("applies the same three rules to debt rows", () => {
+    const heloc: LiabilityRow = { __rowId: "liability:heloc#f1:0", name: "HELOC", balance: 40_000 };
+    const mortgage: LiabilityRow = {
+      __rowId: "liability:mortgage#f1:0",
+      name: "Mortgage",
+      balance: 412_000,
+    };
+    const gone: LiabilityRow = { __rowId: "liability:auto#f1:0", name: "Auto Loan", balance: 18_000 };
+
+    const merged = mergeRowsByRowId<LiabilityRow>(
+      // FRESH: the HELOC carries a stamp a concurrent commit wrote.
+      [{ ...heloc, match: { kind: "exact", existingId: "liab-9" } }, mortgage, gone],
+      // START: what the turn was handed.
+      [heloc, mortgage, gone],
+      // CHANGED: the mortgage rate was edited; the auto loan was dropped.
+      [heloc, { ...mortgage, interestRate: 0.0625 }],
+    );
+
+    expect(merged.map((r) => r.__rowId)).toEqual([
+      "liability:heloc#f1:0",
+      "liability:mortgage#f1:0",
+    ]);
+    expect(merged[0].match).toEqual({ kind: "exact", existingId: "liab-9" });
+    expect(merged[1].interestRate).toBe(0.0625);
   });
 });

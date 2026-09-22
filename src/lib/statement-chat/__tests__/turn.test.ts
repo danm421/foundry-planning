@@ -11,6 +11,7 @@ const chatModel = vi.fn(async () => ({
 vi.mock("@/domain/forge/llm", () => ({ chatModel: (...a: unknown[]) => chatModel(...(a as [])) }));
 
 import { runTurn, MAX_TOOL_CALLS_PER_TURN, TOOL_DEFS, type TurnModel } from "@/lib/statement-chat/turn";
+import { EDITABLE_LIABILITY_FIELDS } from "@/lib/statement-chat/tools";
 import { inUsageScope, newUsageReport, totalTokensOf } from "@/lib/ai/usage";
 
 /** The shape a tool def has once you only care about its parameter schema. */
@@ -18,7 +19,10 @@ type ToolDef = {
   function: {
     name: string;
     description: string;
-    parameters: { properties: Record<string, { description?: string }>; required: string[] };
+    parameters: {
+      properties: Record<string, { description?: string; enum?: string[] }>;
+      required: string[];
+    };
   };
 };
 
@@ -538,6 +542,43 @@ describe("runTurn", () => {
     expect(properties.fileName.description).toMatch(/as shown for a row/i);
   });
 
+  /**
+   * Task 12, and the SAME scar as the test above. `edit_row`'s `field` enum is
+   * a hard constraint on what the model may emit, so an accounts-only enum
+   * makes `edit_row` structurally unable to name `balance` or `interestRate` —
+   * every liability tool test still green, and correcting a mortgage rate dead
+   * in production. Nothing else in this suite looks at the enum: every tools
+   * test calls `editRow()` directly with a hand-built field name, which
+   * bypasses the schema entirely.
+   *
+   * Asserted on what `bindTools` RECEIVED, not on `TOOL_DEFS`, for the reason
+   * the test above records.
+   *
+   * Mutation this catches: reverting the enum to `[...EDITABLE_ACCOUNT_FIELDS]`.
+   */
+  it("offers both tables' editable columns in edit_row's field enum", async () => {
+    const bindTools = vi.fn(() => ({ invoke: vi.fn(async () => new AIMessage("ok")) }));
+    await runTurn({
+      chat: emptyChat(),
+      importId: "i1",
+      payload: payload(),
+      fileResults,
+      message: "hi",
+      model: { bindTools } as unknown as TurnModel,
+    });
+    const bound = (bindTools.mock.calls[0] as unknown as [ToolDef[]])[0];
+    const enumValues =
+      bound.find((d) => d.function.name === "edit_row")!.function.parameters.properties.field.enum;
+
+    // The debt columns, which an accounts-only enum cannot express…
+    expect(enumValues).toEqual(expect.arrayContaining(["balance", "interestRate", "maturityDate"]));
+    // …without losing the account ones, which a straight swap would.
+    expect(enumValues).toEqual(expect.arrayContaining(["value", "basis", "custodian"]));
+    // `name` is on both allowlists and must appear ONCE — a duplicated enum
+    // entry is a malformed JSON schema.
+    expect(enumValues!.filter((f) => f === "name")).toHaveLength(1);
+  });
+
   // The other half: pinning the constant proves nothing if the model is
   // never handed it. `bindTools` is stubbed everywhere else in this file, so
   // this is the one place that looks at what it actually received.
@@ -854,5 +895,131 @@ describe("token accounting", () => {
     // latter (no calls at all), which is what the route audits.
     expect(usage.total.calls).toBe(1);
     expect(totalTokensOf(usage)).toBe(0);
+  });
+});
+
+/**
+ * Task 12. The tools can reach a liability row, but the model only ever calls
+ * a tool with an id it was SHOWN — so the prompt has to carry the debt rows
+ * too, or `edit_row` on a mortgage is unreachable however well the locator
+ * works. Worse, `describeRows` used to early-return "(no rows)" on
+ * `accounts.length === 0`, which told the model a mortgage-only import was
+ * EMPTY.
+ */
+describe("describeRows — liabilities", () => {
+  const OPEN = "<<<UNTRUSTED DATA — extracted from client documents>>>";
+  const CLOSE = "<<<END UNTRUSTED DATA>>>";
+
+  function mixedPayload(): PersistedImportPayload {
+    return {
+      accounts: [{ __rowId: "account:ira#f1:0", name: "IRA", value: 10_000 }],
+      liabilities: [
+        {
+          __rowId: "liability:mortgage#f1:0",
+          name: "Mortgage",
+          balance: 412_000,
+          interestRate: 0.0525,
+          monthlyPayment: 2_100,
+          __provenance: { sourceFileId: "f1", section: "liabilities" },
+        },
+      ],
+    } as unknown as PersistedImportPayload;
+  }
+
+  // Mutation this catches: dropping the liability block from `describeRows`
+  // (or appending it OUTSIDE the fence, which would hand a client-authored
+  // debt name to the model as trusted text).
+  it("renders debt rows in the same row-line format, inside the SAME single fence", async () => {
+    const prompt = await systemPromptForTest(mixedPayload());
+    const openIdx = prompt.indexOf(OPEN);
+    const closeIdx = prompt.indexOf(CLOSE, openIdx + OPEN.length);
+    const debtIdx = prompt.indexOf("liability:mortgage#f1:0");
+
+    expect(debtIdx).toBeGreaterThan(openIdx);
+    expect(debtIdx).toBeLessThan(closeIdx);
+    expect(prompt.indexOf(OPEN, openIdx + 1)).toBe(-1);
+    // Same grammar as an account line: `- <id>: "<name>" k=v … source="…"`.
+    // Ruling 57(b), Task 12b: every key is the FIELD NAME `edit_row` takes,
+    // and every editable field is on the line — see the dedicated test below.
+    expect(prompt).toMatch(
+      /- liability:mortgage#f1:0: "Mortgage" balance=412000 interestRate=0\.0525 monthlyPayment=2100 .*source="f1"/,
+    );
+    // The accounts table is still there — a rewrite that replaced one block
+    // with the other would satisfy every assertion above.
+    expect(prompt).toContain('- account:ira#f1:0: "IRA"');
+  });
+
+  /**
+   * Ruling 57(b), Task 12b: THE MODEL SEES EVERY FIELD IT MAY WRITE.
+   *
+   * The debt line used to show `balance`/`rate`/`payment` only, while the
+   * advisor's table shows eight columns — so `edit_row` could overwrite
+   * `propertyAddress` (the key the commit links a mortgage to its property
+   * by, Tasks 3/5/6) and `balanceAsOfDate` without the model ever having
+   * seen their current values. A blind overwrite of a LINKING KEY outweighs
+   * the line-length argument the old comment made; debts are few per import.
+   *
+   * Mutation this catches: dropping any one of the four added fields from
+   * `liabilityLines`.
+   */
+  it("shows every editable debt field, keyed by the name edit_row takes", async () => {
+    const prompt = await systemPromptForTest({
+      liabilities: [
+        {
+          __rowId: "liability:mortgage#f1:0",
+          name: "Mortgage",
+          balance: 412_000,
+          interestRate: 0.0525,
+          monthlyPayment: 2_100,
+          totalPayment: 2_600,
+          balanceAsOfDate: "2026-06-30",
+          maturityDate: "2049-08-01",
+          propertyAddress: "12 Oak Street",
+        },
+      ],
+    } as unknown as PersistedImportPayload);
+
+    const line = prompt.split("\n").find((l) => l.startsWith("- liability:mortgage#f1:0"));
+    expect(line).toBeDefined();
+    for (const field of EDITABLE_LIABILITY_FIELDS) {
+      if (field === "name") continue; // the quoted identity, already first on the line
+      expect(line).toContain(`${field}=`);
+    }
+    expect(line).toContain("totalPayment=2600");
+    expect(line).toContain("balanceAsOfDate=2026-06-30");
+    expect(line).toContain("maturityDate=2049-08-01");
+    // Quoted for the same reason `name` is (M1): a free-text address carries
+    // spaces, and an unquoted one would read as three more `key=value` pairs.
+    expect(line).toContain('propertyAddress="12 Oak Street"');
+  });
+
+  // Mutation this catches: keeping `if (accounts.length === 0) return "(no
+  // rows)"`. A mortgage statement with no address synthesizes no property
+  // account at all, so this is a real import shape, not a contrived one.
+  it("does not call a debt-only import empty", async () => {
+    const prompt = await systemPromptForTest({
+      liabilities: [
+        { __rowId: "liability:auto-loan#f1:0", name: "Auto Loan", balance: 18_000 },
+      ],
+    } as unknown as PersistedImportPayload);
+    expect(prompt).not.toContain("(no rows)");
+    expect(prompt).toContain("liability:auto-loan#f1:0");
+    expect(prompt).not.toMatch(/undefined/);
+  });
+
+  it("still reports a genuinely empty import as (no rows)", async () => {
+    const prompt = await systemPromptForTest({ accounts: [], liabilities: [] });
+    expect(prompt).toContain("(no rows)");
+  });
+
+  // Mutation this catches: leaving the tool-usage prose at its accounts-only
+  // wording. The id prefix is the whole reason no tool takes a `table`
+  // argument — if the model is never told it, it cannot use it.
+  it("tells the model there are two tables and how an id names one", async () => {
+    const prompt = await systemPromptForTest(mixedPayload());
+    expect(prompt).toMatch(/two tables/i);
+    expect(prompt).toMatch(/account ids start with/i);
+    expect(prompt).toContain('"liability:"');
+    expect(prompt).toMatch(/merge_rows to combine two rows in the SAME table/);
   });
 });

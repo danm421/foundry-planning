@@ -78,7 +78,9 @@ describe("ChatSurface", () => {
     render(<ChatSurface clientId="c1" importId="i1" initialFiles={initialFiles} />);
     fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
 
-    expect(await screen.findByText("No accounts found in these statements.")).toBeInTheDocument();
+    expect(
+      await screen.findByText("No accounts or debts found in these statements."),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 
@@ -100,7 +102,9 @@ describe("ChatSurface", () => {
 
     expect(await screen.findByRole("table")).toBeInTheDocument();
     expect(screen.getByText("IRA")).toBeInTheDocument();
-    expect(screen.queryByText("No accounts found in these statements.")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("No accounts or debts found in these statements."),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -201,12 +205,14 @@ async function renderAfterExtraction(opts?: { excluded?: boolean }) {
 }
 
 describe("ChatSurface — wiring the table in (Task 10b)", () => {
-  // Ruling 38 / Task 7 C3: `rowIds` is honoured only by `commitAccounts`,
-  // and is applied UNFILTERED to any other tab named in the same request —
-  // so the posted body must always carry `tabs: ["accounts"]` alongside it.
-  // A single-line mutation this catches: dropping `tabs` from the POST body,
-  // or swapping in `rowIds: []`.
-  it("posts tabs:['accounts'] alongside rowIds to the commit route", async () => {
+  // Task 11: `commitLiabilities` now honours `rowIds` too (Task 6), so the
+  // commit POST always names BOTH tabs alongside `rowIds` — sending them in
+  // one request also matters, since the orchestrator applies tabs in
+  // canonical order (accounts before liabilities), which is what lets a
+  // synthesized property commit before `matchMortgageToProperty` looks for
+  // it. A single-line mutation this catches: dropping `tabs` from the POST
+  // body, dropping the `"liabilities"` entry, or swapping in `rowIds: []`.
+  it("posts both tabs alongside rowIds to the commit route", async () => {
     await renderAfterExtraction();
     vi.mocked(fetch)
       .mockResolvedValueOnce(importGetResponse({})) // fresh GET before the payload.accounts PATCH
@@ -245,7 +251,10 @@ describe("ChatSurface — wiring the table in (Task 10b)", () => {
       .mock.calls.find(([url]) => String(url).includes("/commit"));
     expect(commitCall).toBeDefined();
     const [, init] = commitCall!;
-    expect(JSON.parse(init!.body as string)).toEqual({ tabs: ["accounts"], rowIds: ["r1"] });
+    expect(JSON.parse(init!.body as string)).toEqual({
+      tabs: ["accounts", "liabilities"],
+      rowIds: ["r1"],
+    });
   });
 
   it("locks the row after a successful commit (disabled Committed button)", async () => {
@@ -560,6 +569,406 @@ describe("ChatSurface — wiring the table in (Task 10b)", () => {
   });
 });
 
+/** A "done" frame carrying no accounts and one liability — the mortgage-only
+ *  upload shape Ruling 41 exists for. Built through the same
+ *  `makeFramedResponse`/`data: ...\n\n` idiom every other frame in this file
+ *  uses (Ruling 38), not the brief's nonexistent `renderSurface({ result })`. */
+function liabilityOnlyDoneFrame(): string {
+  return `data: ${JSON.stringify({
+    type: "done",
+    summary: "Read 1 statement covering 1 debt.",
+    caveats: [],
+    rows: [],
+    excluded: [],
+    liabilities: [
+      { name: "Mortgage", balance: 412_000, __rowId: "liability:mortgage#f1:0" },
+    ],
+  })}\n\n`;
+}
+
+describe("ChatSurface — renders and commits the liabilities table (Task 11)", () => {
+  it("renders a Liabilities section when the extraction found debts", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeFramedResponse([liabilityOnlyDoneFrame()]));
+
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={initialFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+
+    expect(await screen.findByRole("heading", { name: /liabilities/i })).toBeInTheDocument();
+    // `getByText`, not `getAllByText`: with one row, `EntityTable`'s own
+    // Balance total footer repeats the same figure, so this is scoped to
+    // the row itself.
+    const row = screen.getByRole("row", { name: /Mortgage/i });
+    expect(within(row).getByText("$412,000")).toBeInTheDocument();
+  });
+
+  it("renders no Liabilities section when there are none", async () => {
+    // `oneRowDoneFrame()` carries no `liabilities` key at all — the runtime
+    // shape the five pre-existing done-frame fixtures in this file use, and
+    // exactly what an unchecked `JSON.parse(...) as ChatExtractEvent` cast
+    // can hand back even though `ChatCommitResult.liabilities` is required
+    // at the type level.
+    await renderAfterExtraction();
+    expect(screen.queryByRole("heading", { name: /liabilities/i })).not.toBeInTheDocument();
+  });
+
+  // Ruling 41: a mortgage-only upload has zero accounts and one liability,
+  // so the empty-state condition must require ALL THREE lists to be empty —
+  // otherwise this exact scenario reads "No accounts or debts found" over a
+  // table full of debts, and (worse) the Finish import card that gate also
+  // hides would be unreachable, leaving the import stuck in "review" forever.
+  it("does not show the empty state for a mortgage-only upload (zero accounts, one liability)", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeFramedResponse([liabilityOnlyDoneFrame()]));
+
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={initialFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+
+    await screen.findByRole("heading", { name: /liabilities/i });
+    expect(
+      screen.queryByText("No accounts or debts found in these statements."),
+    ).not.toBeInTheDocument();
+    // Ruling 41's other half: gating the Accounts card on `rows.length > 0
+    // || excluded.length > 0` (not widening it to include liabilities) means
+    // no EMPTY accounts table renders above the liabilities one.
+    expect(screen.getAllByRole("table")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: /finish import/i })).toBeInTheDocument();
+  });
+
+  it("shows the empty state when there are neither accounts, excluded rows, nor liabilities", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      makeFramedResponse([
+        `data: ${JSON.stringify({
+          type: "done",
+          summary: "Read 1 statement covering 0 accounts.",
+          caveats: [],
+          rows: [],
+          excluded: [],
+          liabilities: [],
+        })}\n\n`,
+      ]),
+    );
+
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={initialFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+
+    expect(
+      await screen.findByText("No accounts or debts found in these statements."),
+    ).toBeInTheDocument();
+  });
+
+  // Commits both a synthesized property and its mortgage in one request — the
+  // component-level half of the hook test in use-chat-commit.test.tsx.
+  it("commits a liability row via its own Commit button, posting both tabs", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeFramedResponse([liabilityOnlyDoneFrame()]));
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={initialFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+    await screen.findByRole("heading", { name: /liabilities/i });
+
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(importGetResponse({})) // fresh GET before the payload PATCH
+      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 })) // PATCH payload
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            payload: {
+              accounts: [],
+              liabilities: [
+                {
+                  name: "Mortgage",
+                  balance: 412_000,
+                  __rowId: "liability:mortgage#f1:0",
+                  match: { kind: "exact", existingId: "liab-1" },
+                },
+              ],
+            },
+          }),
+          { status: 200 },
+        ),
+      ) // POST commit
+      .mockResolvedValueOnce(importGetResponse({})) // fresh GET before writeChatState
+      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 })); // PATCH chat
+
+    const row = screen.getByRole("row", { name: /Mortgage/ });
+    await userEvent.click(within(row).getByRole("button", { name: /commit/i }));
+    await screen.findByRole("button", { name: /committed/i });
+
+    const commitCall = vi.mocked(fetch).mock.calls.find(([url]) => String(url).includes("/commit"));
+    expect(commitCall).toBeDefined();
+    expect(JSON.parse(commitCall![1]!.body as string)).toEqual({
+      tabs: ["accounts", "liabilities"],
+      rowIds: ["liability:mortgage#f1:0"],
+    });
+  });
+});
+
+describe("ChatSurface — warns about uncommitted liabilities beside Finish import (Task 11 fix round 1, Finding 2)", () => {
+  // Mirrors `uncommittedMapRows`'s own pair of tests. Before Task 11 a
+  // liability could not be committed at all, so this gap was unreachable;
+  // Task 11's own wiring is what opened it. Mutation this catches: dropping
+  // the `uncommittedLiabilities > 0 &&` block (or the count itself) from
+  // `chat-surface.tsx`.
+  it("warns beside Finish import when a liability is still uncommitted", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeFramedResponse([liabilityOnlyDoneFrame()]));
+
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={initialFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+
+    await screen.findByRole("heading", { name: /liabilities/i });
+    expect(screen.getByRole("button", { name: /finish import/i })).toBeInTheDocument();
+    expect(
+      screen.getByText(/1 row in .Liabilities. below has not been committed/i),
+    ).toBeInTheDocument();
+  });
+
+  // The negative half: without it, a hardcoded-true warning would pass the
+  // test above too. `committedRowIds` hydrated from `chat.committedRowIds`
+  // already contains the liability's own row id, so the count must read 0.
+  it("says nothing beside Finish import when the liability is already committed", async () => {
+    vi.mocked(fetch).mockReset();
+    vi.mocked(fetch).mockResolvedValue(
+      importGetResponse({
+        payload: {
+          accounts: [],
+          liabilities: [
+            { name: "Mortgage", balance: 412_000, __rowId: "liability:mortgage#f1:0" },
+          ],
+        },
+        chat: { committedRowIds: ["liability:mortgage#f1:0"] },
+      }),
+    );
+
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={initialFiles} />);
+
+    expect(await screen.findByRole("button", { name: /finish import/i })).toBeInTheDocument();
+    expect(
+      screen.queryByText(/row in .Liabilities. below has not been committed/i),
+    ).not.toBeInTheDocument();
+  });
+});
+
+// --- Task 12b, Finding 1: a chat-dropped debt is a DEBT ---------------------
+
+/**
+ * A mortgage-only import where the advisor has already dropped a HELOC in
+ * the chat: zero accounts, one debt still in the table, one debt retired
+ * into `excluded`.
+ *
+ * Reachable end to end as of Task 12 — `drop_row` resolves a liability id,
+ * `dropRow` retires the row into `chat.excludedRows`, and the turn route
+ * echoes that list straight back into `result.excluded`. There is nothing
+ * on the row saying which table it came from, and there cannot be: an
+ * `ExtractedAccount` requires only `name`, so a debt row is structurally
+ * ASSIGNABLE to an account row and tsc is blind to the mix-up. The
+ * `__rowId` PREFIX is the only discriminator.
+ */
+function droppedDebtDoneFrame(): string {
+  return `data: ${JSON.stringify({
+    type: "done",
+    summary: "Read 1 statement covering 2 debts.",
+    caveats: [],
+    rows: [],
+    excluded: [
+      {
+        row: { name: "HELOC", balance: 40_000, __rowId: "liability:heloc#f1:0" },
+        reason: "the advisor asked to drop it",
+      },
+    ],
+    liabilities: [{ name: "Mortgage", balance: 412_000, __rowId: "liability:mortgage#f1:0" }],
+  })}\n\n`;
+}
+
+async function renderAfterDroppedDebt() {
+  vi.mocked(fetch).mockResolvedValueOnce(makeFramedResponse([droppedDebtDoneFrame()]));
+  render(<ChatSurface clientId="c1" importId="i1" initialFiles={initialFiles} />);
+  fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+  await screen.findByRole("heading", { name: /^liabilities$/i });
+}
+
+/** The `<section>` a `Card` renders, found by its own heading. */
+function cardFor(heading: RegExp): HTMLElement {
+  const section = screen.getByRole("heading", { name: heading }).closest("section");
+  if (!section) throw new Error(`No card section for ${heading}`);
+  return section as HTMLElement;
+}
+
+describe("ChatSurface — a chat-dropped debt renders as a DEBT (Task 12b, Finding 1)", () => {
+  // THE test that matters for Finding 1. Before the split, `excluded` was
+  // handed UNFILTERED to `AccountsTable` and `LiabilitiesTable` got a
+  // hardcoded `excluded={[]}` — so a dropped HELOC rendered under "Not
+  // included" inside the ACCOUNTS card, with a live "Include anyway" that
+  // filed it as an asset. That inverts the sign of a number on the balance
+  // sheet.
+  //
+  // Mutation this catches: making `isLiabilityRowId` return `false`
+  // always — the HELOC moves back into the Accounts card and the
+  // `queryByRole("heading", /^accounts$/)` assertion below reds.
+  it("puts the dropped debt under Not included inside the Liabilities card, never the Accounts one", async () => {
+    await renderAfterDroppedDebt();
+
+    const liabilitiesCard = cardFor(/^liabilities$/i);
+    expect(within(liabilitiesCard).getByText(/HELOC/)).toBeInTheDocument();
+    expect(within(liabilitiesCard).getByText("Not included")).toBeInTheDocument();
+    expect(
+      within(liabilitiesCard).getByRole("button", { name: /include anyway/i }),
+    ).toBeEnabled();
+  });
+
+  // Ruling 55: Ruling 41 gated the Accounts card on `|| excluded.length > 0`
+  // because the restore list renders inside it. Leaving that clause on the
+  // UNSPLIT list means a debt-only import with a dropped debt renders an
+  // EMPTY accounts table again — the exact defect Ruling 41 fixed,
+  // reintroduced from the other side.
+  it("renders no Accounts card at all when the only excluded row is a debt", async () => {
+    await renderAfterDroppedDebt();
+
+    expect(screen.queryByRole("heading", { name: /^accounts$/i })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("table")).toHaveLength(1);
+    // And the empty state stays away — there IS something here to review.
+    expect(
+      screen.queryByText("No accounts or debts found in these statements."),
+    ).not.toBeInTheDocument();
+  });
+
+  // Leg 5 of the loop. `handleRestore` pushed to `prev.rows` with no table
+  // check, so "Include anyway" on a debt committed it as an ACCOUNT —
+  // verbatim the defect `dropDebtsFiledAsAssets` exists to undo.
+  //
+  // Mutation this catches: reverting `handleRestore`'s body to
+  // `rows: alreadyWorking ? prev.rows : [...prev.rows, row]` — the HELOC
+  // would appear in a newly-rendered ACCOUNTS table and the liabilities
+  // table would still hold one row.
+  it("restores the dropped debt into the liabilities table, not the accounts one", async () => {
+    await renderAfterDroppedDebt();
+
+    await userEvent.click(screen.getByRole("button", { name: /include anyway/i }));
+
+    expect(screen.queryByRole("heading", { name: /^accounts$/i })).not.toBeInTheDocument();
+    const liabilitiesCard = cardFor(/^liabilities$/i);
+    expect(within(liabilitiesCard).getByRole("row", { name: /HELOC/ })).toBeInTheDocument();
+    expect(within(liabilitiesCard).getByRole("row", { name: /Mortgage/ })).toBeInTheDocument();
+    // It left "Not included" in the same click.
+    expect(screen.queryByText("Not included")).not.toBeInTheDocument();
+  });
+});
+
+describe("ChatSurface — a turn's liabilities reach the surface (Task 12b, Rulings 51/54)", () => {
+  // Leg 3 of the loop, and the reason a route-only fix is WORSE than none:
+  // `adoptTurnPayload` replaces `rows`/`excluded` wholesale but PRESERVES
+  // `prev.liabilities`. If the route persists a liability edit the surface
+  // never learns about, the next `flushRowsToServer` overlays the STALE
+  // local array onto the server's corrected set and writes the old row
+  // straight back.
+  //
+  // Mutation this catches: dropping `body.payload?.liabilities` from
+  // `use-chat-turn.ts`'s `adoptTurnPayload` call — the table would still
+  // read $412,000.
+  it("adopts payload.liabilities from the turn response into the liabilities table", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeFramedResponse([liabilityOnlyDoneFrame()]));
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={initialFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+    await screen.findByRole("heading", { name: /^liabilities$/i });
+
+    mockFlush();
+    vi.mocked(fetch).mockResolvedValueOnce(
+      turnResponse({
+        accounts: [],
+        liabilities: [
+          { name: "Mortgage", balance: 399_000, __rowId: "liability:mortgage#f1:0" },
+        ],
+        summary: "Corrected the balance to $399,000.",
+        turnEntries: [
+          { role: "user", text: "the balance is 399000", at: "t1" },
+          { role: "tool", tool: "edit_row", summary: "Set balance to 399000.", at: "t1" },
+          { role: "assistant", text: "Corrected the balance to $399,000.", at: "t1" },
+        ],
+      }),
+    );
+
+    await userEvent.type(composerTextbox(), "the balance is 399000");
+    await userEvent.click(sendButton());
+    await screen.findByText("Corrected the balance to $399,000.");
+
+    const row = screen.getByRole("row", { name: /Mortgage/ });
+    expect(within(row).getByText("$399,000")).toBeInTheDocument();
+  });
+
+  // Ruling 54: absence must PRESERVE, not wipe. Ruling 39 set `?? []` at the
+  // SSE boundary, where absence genuinely means "no liabilities" — here it
+  // can also mean an OLDER route answered a NEWER client mid-deploy, and
+  // `?? []` would delete the advisor's reviewed debts off the screen.
+  //
+  // Mutation this catches: `liabilities: liabilities ?? []` in
+  // `adoptTurnPayload` — the Liabilities card would vanish entirely.
+  it("keeps the reviewed debts when a turn response carries no payload.liabilities at all", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeFramedResponse([liabilityOnlyDoneFrame()]));
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={initialFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+    await screen.findByRole("heading", { name: /^liabilities$/i });
+
+    mockFlush();
+    vi.mocked(fetch).mockResolvedValueOnce(
+      turnResponse({
+        accounts: [],
+        // No `liabilities` key at all — `turnResponse` omits it.
+        summary: "Nothing to change.",
+        turnEntries: [
+          { role: "user", text: "anything odd?", at: "t1" },
+          { role: "assistant", text: "Nothing to change.", at: "t1" },
+        ],
+      }),
+    );
+
+    await userEvent.type(composerTextbox(), "anything odd?");
+    await userEvent.click(sendButton());
+    await screen.findByText("Nothing to change.");
+
+    expect(screen.getByRole("heading", { name: /^liabilities$/i })).toBeInTheDocument();
+    expect(screen.getByRole("row", { name: /Mortgage/ })).toBeInTheDocument();
+  });
+
+  // The other direction of the same one check: `[]` really does mean "the
+  // route says there are none" — the advisor dropped the last debt — and
+  // must still clear. A `?? prev.liabilities` that ignored `[]` would leave
+  // the dropped row on screen forever.
+  it("clears the table when a turn response says there are no liabilities left", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeFramedResponse([liabilityOnlyDoneFrame()]));
+    render(<ChatSurface clientId="c1" importId="i1" initialFiles={initialFiles} />);
+    fireEvent.click(screen.getByRole("button", { name: /extract statements/i }));
+    await screen.findByRole("heading", { name: /^liabilities$/i });
+
+    mockFlush();
+    vi.mocked(fetch).mockResolvedValueOnce(
+      turnResponse({
+        accounts: [],
+        liabilities: [],
+        summary: "Dropped the mortgage.",
+        excludedRows: [
+          {
+            row: { name: "Mortgage", balance: 412_000, __rowId: "liability:mortgage#f1:0" },
+            reason: "it belongs to the other household",
+          },
+        ],
+        turnEntries: [
+          { role: "user", text: "drop the mortgage", at: "t1" },
+          { role: "tool", tool: "drop_row", summary: "Dropped Mortgage.", at: "t1" },
+          { role: "assistant", text: "Dropped the mortgage.", at: "t1" },
+        ],
+      }),
+    );
+
+    await userEvent.type(composerTextbox(), "drop the mortgage");
+    await userEvent.click(sendButton());
+    await screen.findByText("Dropped the mortgage.");
+
+    // The row is gone from the TABLE and sits in the Liabilities card's own
+    // "Not included" list — not the Accounts card's, which does not exist.
+    expect(screen.queryByRole("heading", { name: /^accounts$/i })).not.toBeInTheDocument();
+    const liabilitiesCard = cardFor(/^liabilities$/i);
+    expect(within(liabilitiesCard).getByText("Not included")).toBeInTheDocument();
+    expect(within(liabilitiesCard).queryAllByRole("row", { name: /Mortgage/ })).toHaveLength(0);
+  });
+});
+
 describe("ChatSurface — committedRowIds mount hydration (round 1 review, Important 3)", () => {
   // Every OTHER test in this file queues `importGetResponse()` with an
   // EMPTY payloadJson for the mount-hydration GET, so none of them can
@@ -707,10 +1116,19 @@ function turnResponse(overrides: {
   summary: string;
   turnEntries: Array<Record<string, unknown>>;
   excludedRows?: unknown[];
+  /** Task 12b / Ruling 51: the body now carries the debts too. OMITTED
+   *  entirely when this is absent — that is the Ruling 54 shape (an older
+   *  route answering a newer client), which must PRESERVE the surface's
+   *  liabilities rather than wipe them. Pass `[]` for "the route says there
+   *  are none left". */
+  liabilities?: Array<Record<string, unknown>>;
 }): Response {
   return new Response(
     JSON.stringify({
-      payload: { accounts: overrides.accounts },
+      payload: {
+        accounts: overrides.accounts,
+        ...(overrides.liabilities === undefined ? {} : { liabilities: overrides.liabilities }),
+      },
       summary: overrides.summary,
       excludedRows: overrides.excludedRows ?? [],
       turnEntries: overrides.turnEntries,
@@ -1609,7 +2027,7 @@ describe("ChatSurface — the map-driven review tables (Task 14b)", () => {
     expect(screen.getByText("Policy f1")).toBeInTheDocument();
     expect(screen.getByText("Policy f2")).toBeInTheDocument();
     // And it renders even though this statement produced no ACCOUNTS at all.
-    expect(screen.getByText("No accounts found in these statements.")).toBeInTheDocument();
+    expect(screen.getByText("No accounts or debts found in these statements.")).toBeInTheDocument();
   });
 
   // Finding 5: the test above asserts the table renders, NOT where. This one
