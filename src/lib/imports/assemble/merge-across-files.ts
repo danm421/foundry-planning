@@ -1628,6 +1628,10 @@ function mergeSection<T extends { name: string }>(
           values: entry.conflictValues,
           asOf: survivorDate,
           kept,
+          // The same list the `undated` decision above carries, and deduped
+          // by `recordSource` for the same reason: one file listing an
+          // account twice is one statement, not two.
+          fileNames: entry.fileNames,
         });
       }
     }

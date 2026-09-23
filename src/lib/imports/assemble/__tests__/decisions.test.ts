@@ -74,6 +74,8 @@ describe("merge decision log", () => {
       // survivor `chooseBase` picks — the winning figure is $12,000, not
       // $10,000.
       kept: 12_000,
+      // Two real documents, so the caveat's "other statements" is true here.
+      fileNames: ["undated.pdf", "dated.pdf"],
     });
   });
 
@@ -130,6 +132,7 @@ describe("merge decision log", () => {
       asOf: "2026-03-31",
       // mar.pdf is both the newest date AND the survivor here.
       kept: 300_000,
+      fileNames: ["jan.pdf", "feb.pdf", "mar.pdf"],
     });
   });
 
@@ -162,6 +165,7 @@ describe("merge decision log", () => {
       // $10,000 survives even though b.pdf's $12,000 is not chronologically
       // earlier. The winner is NOT "whichever file is listed last".
       kept: 10_000,
+      fileNames: ["a.pdf", "b.pdf"],
     });
   });
 

@@ -40,6 +40,23 @@ export type MergeDecision =
        * no ambiguity about which row it is.
        */
       kept: number;
+      /**
+       * Distinct source file names behind `values`, in read order.
+       *
+       * Here so the caveat can stop asserting a plural it never checked: it
+       * said "other statements reported $390,609 and $633,226" about four
+       * accounts read off ONE UBS statement, inventing documents the import
+       * never had. Only the COUNT is read — `narrate.ts` still never names a
+       * file (C2).
+       *
+       * OPTIONAL because `ChatState` is persisted to
+       * `client_imports.payloadJson`: decisions written before this field
+       * existed are still read back and re-narrated, and they cannot be
+       * made to know their own provenance. Absent means UNKNOWN, not "one
+       * file" — a caveat that treated it as one would start asserting the
+       * SINGULAR it never checked, which is the same defect mirrored.
+       */
+      fileNames?: string[];
     }
   | {
       kind: "undated";

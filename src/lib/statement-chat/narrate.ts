@@ -103,10 +103,22 @@ function undatedCaveat(d: Extract<MergeDecision, { kind: "undated" }>): string {
  */
 function valueConflictCaveat(d: Extract<MergeDecision, { kind: "value-conflict" }>): string {
   const others = d.values.filter((v) => v !== d.kept);
+  const figures = joinWithAnd(others.map(money));
+  // How many DOCUMENTS the losing figures came from, which this sentence used
+  // to assert without ever checking. Measured on a four-account UBS statement:
+  // three accounts folded into one row and the caveat read "other statements
+  // reported $390,609 and $633,226" — there was exactly ONE statement, so the
+  // sentence sent the advisor looking for documents that do not exist.
+  //
+  // `undefined` is UNKNOWN (a decision persisted before the field existed),
+  // and it keeps the plural wording rather than borrowing the singular. The
+  // count is all that is read: naming the file is what C2 forbade.
   const othersClause =
-    others.length === 1
-      ? `another statement reported ${money(others[0])}`
-      : `other statements reported ${joinWithAnd(others.map(money))}`;
+    d.fileNames?.length === 1
+      ? `the same statement also reported ${figures}`
+      : others.length === 1
+        ? `another statement reported ${figures}`
+        : `other statements reported ${figures}`;
   return `"${d.account}" is recorded at ${money(d.kept)} from the ${usDate(d.asOf)} statement; ${othersClause}.`;
 }
 

@@ -144,6 +144,22 @@ describe("a number several accounts share is a plan number, not an account numbe
     expect(kept[0].accountNumberLast4).toBeUndefined();
     expect(kept[0].name).toBe("401(k) Savings Plan");
   });
+
+  it("clears a suffix that was never DIGITS, on a statement holding one account", () => {
+    // The sibling of the test above, for the other way the field goes wrong:
+    // UBS prints "Account number: IJ 58621 FI" and the extractor keeps the
+    // trailing token. ONE account here on purpose — the four-account shape
+    // further down is also caught by the rule that distrusts a number several
+    // accounts SHARE, so it cannot tell whether the SHAPE rule still works.
+    // A single "FI" has nothing to share with, so only shape can clear it.
+    const kept = accountsOf({
+      "ubs.pdf": [
+        onPages([1, 4], { name: "Traditional IRA x FI", accountNumberLast4: "FI", custodian: "UBS", value: 390609 }),
+      ],
+    });
+
+    expect(kept[0].accountNumberLast4).toBeUndefined();
+  });
 });
 
 describe("two quarters of one plan that carries no usable number", () => {
@@ -205,6 +221,55 @@ describe("two quarters of one plan that carries no usable number", () => {
     });
 
     expect(kept).toHaveLength(2);
+  });
+
+  it("keeps four accounts a UBS statement masked with a BRANCH SUFFIX, not digits", () => {
+    // Measured live 2026-09-11 on the real four-account Garner statement. UBS
+    // prints "Account number: IJ 58621 FI", and the extractor took the
+    // trailing token `FI` as the last-4 for three of the four accounts and the
+    // digits `4042` for the fourth — the derivation is not even
+    // self-consistent. Keyed on the RAW field, the three `FI` rows shared one
+    // bucket and collapsed into the largest: 2 accounts, $1,023,835 and 194
+    // positions gone, and two Traditional IRAs folded into a Taxable Brokerage
+    // row, so the TAX CHARACTER was wrong and not merely the value.
+    //
+    // This pins the OUTCOME, and THREE independent guards hold it: the shape
+    // rule clears "FI", the rule above clears a number several accounts share,
+    // and the unnumbered path then refuses a merge between two rows carrying
+    // one statement's single date. Measured by mutation — breaking any ONE of
+    // them leaves this test green, so it is a regression pin for the money,
+    // not evidence about which rule is load-bearing. The shape rule is pinned
+    // on its own in `extraction/__tests__/account-number.test.ts` and by the
+    // single-account test above.
+    const kept = accountsOf({
+      "ubs.pdf": [
+        onPages([1, 4], { name: "Taxable Brokerage", accountNumberLast4: "4042", custodian: "UBS", category: "taxable", owner: "client", statementDate: "2026-04-30", value: 604756, holdings: position }),
+        onPages([5, 9], { name: "Traditional IRA", accountNumberLast4: "FI", custodian: "UBS", category: "retirement", owner: "client", statementDate: "2026-04-30", value: 390609, holdings: position }),
+        onPages([10, 14], { name: "Taxable Brokerage", accountNumberLast4: "FI", custodian: "UBS", category: "taxable", owner: "client", statementDate: "2026-04-30", value: 1583103, holdings: position }),
+        onPages([15, 19], { name: "Traditional IRA", accountNumberLast4: "FI", custodian: "UBS", category: "retirement", owner: "client", statementDate: "2026-04-30", value: 633226, holdings: position }),
+      ],
+    });
+
+    // Category is asserted alongside the value because the money and the tax
+    // character were lost together: a row count alone would still pass if the
+    // two IRAs came back as brokerage.
+    expect(kept.map((a) => [a.category, a.value])).toEqual([
+      ["taxable", 604756],
+      ["retirement", 390609],
+      ["taxable", 1583103],
+      ["retirement", 633226],
+    ]);
+    // The branch suffix is not a number, so it is cleared rather than shown as
+    // "••••FI". The one real four-digit number is left alone — this rule
+    // refuses non-numbers, it does not distrust numbering as such.
+    expect(kept.map((a) => a.accountNumberLast4)).toEqual([
+      "4042",
+      undefined,
+      undefined,
+      undefined,
+    ]);
+    // 194 positions were the other half of what went missing.
+    expect(kept.map((a) => a.holdings?.length)).toEqual([1, 1, 1, 1]);
   });
 
   it("never joins two accounts at one custodian in different CATEGORIES", () => {

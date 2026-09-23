@@ -167,6 +167,43 @@ describe("documentVouchesForLast4 — the numbers that must be cleared", () => {
   });
 });
 
+describe("accountLast4 — a masked account number is four DIGITS", () => {
+  it("refuses UBS's branch suffix, which is not a number at all", () => {
+    // Measured 2026-09-11 on a real four-account UBS statement. UBS prints
+    // "Account number: IJ 58621 FI" — branch prefix, number, suffix — and the
+    // extractor took the trailing token as the last-4 for three of the four
+    // accounts (and the digits "4042" for the fourth, so the derivation is not
+    // even self-consistent). Keyed on that, three accounts shared one identity.
+    //
+    // This is the SHAPE half of the defence, and it is the half that stands
+    // alone: the merge's other guard clears a number several accounts SHARE,
+    // which happens to cover this statement because three rows carried "FI" —
+    // but it would not cover a UBS statement holding a single account, and it
+    // is not the rule that makes "FI" wrong.
+    expect(accountLast4("FI")).toBeNull();
+    expect(accountLast4("IJ 58621 FI")).toBeNull();
+  });
+
+  it("refuses the other shapes the model copies into the field", () => {
+    expect(accountLast4("433350")).toBeNull(); // six-digit plan group number
+    expect(accountLast4("58621")).toBeNull(); // five-digit contract number
+    expect(accountLast4("042")).toBeNull(); // three-digit sub-plan id
+    expect(accountLast4("")).toBeNull();
+    expect(accountLast4(undefined)).toBeNull();
+    expect(accountLast4(null)).toBeNull();
+  });
+
+  it("still forgives the packaging around a number read correctly", () => {
+    // The rule refuses non-numbers; it does not distrust numbering as such.
+    // Widening it the other way is how a correctly-read number gets thrown
+    // away over a stray mask character.
+    expect(accountLast4("4042")).toBe("4042");
+    expect(accountLast4(" 4042")).toBe("4042");
+    expect(accountLast4("x4042")).toBe("4042");
+    expect(accountLast4("****4042")).toBe("4042");
+  });
+});
+
 describe("documentVouchesForLast4 — the window is what keeps the rule honest", () => {
   it("does not reach across a whole paragraph for a label", () => {
     // The failure this guards: "account" appears SOMEWHERE in every statement

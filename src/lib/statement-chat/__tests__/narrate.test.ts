@@ -265,6 +265,68 @@ describe("narrate", () => {
       );
     });
 
+    // Measured 2026-09-11 on a real four-account UBS statement: three accounts
+    // collapsed into one row and this caveat read "other statements reported
+    // $390,609 and $633,226" when the import held exactly ONE document. The
+    // sentence sent the advisor looking for statements that do not exist, and
+    // it was the only place the loss was disclosed at all.
+    it("does not invent statements the import never had", () => {
+      const { caveats } = narrate({
+        fileCount: 1,
+        decisions: [
+          {
+            kind: "value-conflict",
+            account: "Taxable Brokerage",
+            values: [1_583_103, 390_609, 633_226],
+            asOf: "2026-04-30",
+            kept: 1_583_103,
+            fileNames: ["ubs.pdf"],
+          },
+        ],
+        rows: [] as never,
+      });
+      expect(caveats).toContain(
+        '"Taxable Brokerage" is recorded at $1,583,103 from the 04/30/2026 statement; the same statement also reported $390,609 and $633,226.',
+      );
+    });
+
+    it("still says OTHER statements when the figures really came from two", () => {
+      const { caveats } = narrate({
+        fileCount: 2,
+        decisions: [
+          {
+            kind: "value-conflict",
+            account: "IRA",
+            values: [10_000, 12_000, 14_000],
+            asOf: "2026-06-30",
+            kept: 10_000,
+            fileNames: ["q1.pdf", "q2.pdf"],
+          },
+        ],
+        rows: [] as never,
+      });
+      expect(caveats).toContain(
+        '"IRA" is recorded at $10,000 from the 06/30/2026 statement; other statements reported $12,000 and $14,000.',
+      );
+    });
+
+    // `ChatState` is persisted to `client_imports.payloadJson`, so decisions
+    // written before `fileNames` existed are still read back and re-narrated.
+    // Absent means UNKNOWN. Treating it as one file would start asserting the
+    // SINGULAR it never checked — the same defect, mirrored.
+    it("does not claim ONE statement for a decision that never recorded its files", () => {
+      const { caveats } = narrate({
+        fileCount: 2,
+        decisions: [
+          { kind: "value-conflict", account: "IRA", values: [10_000, 12_000, 14_000], asOf: "2026-06-30", kept: 10_000 },
+        ],
+        rows: [] as never,
+      });
+      expect(caveats).toContain(
+        '"IRA" is recorded at $10,000 from the 06/30/2026 statement; other statements reported $12,000 and $14,000.',
+      );
+    });
+
     // Regression test for the Important finding introduced by fix round 1:
     // an earlier version looked the winner up via `rows.find(r => r.name ===
     // d.account)`, which returns the FIRST name match — wrong whenever two
