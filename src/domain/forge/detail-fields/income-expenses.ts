@@ -81,7 +81,7 @@ export const INCOME_EXPENSE_ENTITIES: readonly DetailEntity[] = [
       },
       {
         key: "owner",
-        label: "Owner (pill toggle: client / spouse / Joint 50/50)",
+        label: "Owner (pill toggle: {client first name} / {co-client first name} / Joint 50/50)",
         kind: "enum",
         enumValues: ["client", "spouse", "joint"],
         required: false,
@@ -351,7 +351,7 @@ export const INCOME_EXPENSE_ENTITIES: readonly DetailEntity[] = [
       },
       {
         key: "endsAtMedicareEligibilityOwner",
-        label: "This expense ends at Medicare eligibility (checkbox) + Client/Spouse select",
+        label: "This expense ends at Medicare eligibility (checkbox) + Client/Co-client select",
         kind: "enum",
         enumValues: ["client", "spouse"],
         nullable: true,
@@ -476,7 +476,7 @@ export const INCOME_EXPENSE_ENTITIES: readonly DetailEntity[] = [
     fields: [
       {
         key: "owner",
-        label: "(implicit — determined by which person's Social Security dialog is open, or the Client/Spouse toggle in the standalone setup dialog)",
+        label: "(implicit — determined by which person's Social Security dialog is open, or the Client/Co-client toggle in the standalone setup dialog)",
         kind: "enum",
         enumValues: ["client", "spouse"],
         required: true,

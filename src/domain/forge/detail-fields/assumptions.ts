@@ -93,7 +93,7 @@ export const ASSUMPTIONS_ENTITIES: readonly DetailEntity[] = [
       },
       {
         key: "spouseCoveredByWorkplacePlan",
-        label: "{spouse first name} covered by workplace plan",
+        label: "{co-client first name} covered by workplace plan",
         kind: "enum",
         enumValues: ["auto", "yes", "no"],
         defaultValue: "auto",
@@ -167,7 +167,7 @@ export const ASSUMPTIONS_ENTITIES: readonly DetailEntity[] = [
       },
       {
         key: "priorTaxableGiftsSpouse",
-        label: "{spouse first name}",
+        label: "{co-client first name}",
         kind: "money",
         defaultValue: 0,
         range: { min: 0 },
