@@ -54,61 +54,171 @@ export function resolveEffectiveToggleState(
   return effective;
 }
 
-/**
- * Map from TargetKind to the ClientData property holding that entity's array.
- * Add new entries here whenever a new TargetKind is added.
- */
 // Forms send decimal fields as strings (matching the base POST shape that
 // round-trips through Drizzle decimal columns and gets `parseFloat`'d in
 // `loadClientData`). Scenario `add`/`edit` payloads bypass that loader, so
 // applyChanges has to coerce or numeric-string values reach the engine and
-// poison every `+` reduction. Keep aligned with `loadClientData`.
+// poison every `+` reduction — a string `purchasePrice` turns
+// `currentBalance + growth` into `"1500000" + 45000 = "150000045000"`.
+//
+// THE CONTRACT: list EVERY scalar field the engine types as `number` for that
+// kind. The scenario writer route validates nothing
+// (`desiredFields: z.record(z.string(), z.unknown())`, and `add` stores
+// `entity: { id, ...body }` verbatim), so this table is the only defence.
+// `resolveAddPayload` in `lib/scenario/loader.ts` re-resolves `account` /
+// `income` / `expense` / `savings_rule` ADDs through their raw resolvers, but
+// every other kind — and every kind's EDIT path — lands here and nowhere else.
+//
+// Coercion is a no-op on a value that is already a number, so over-listing is
+// free and under-listing is a money bug. Nested/record-shaped fields
+// (`scheduleOverrides`, `soldFractionByAccount`, `schedules`) are NOT listed —
+// this table only walks scalars. Keep aligned with `loadClientData`.
+//
+// ONE DOCUMENTED EXCEPTION: income's and expense's month-of-payment field is
+// numeric but deliberately absent, and is not named here on purpose. It is
+// presentation-only — the solver's month view renders it and engine math must
+// never see it, a contract that
+// `lib/solver/__tests__/payment-month-is-presentation-only.test.ts` enforces by
+// asserting `types.ts` is the ONLY file under `src/engine` that so much as
+// mentions the identifier (a comment counts). Listing it would trip that
+// ratchet and buy nothing: both forms hold it as `useState<number | null>`, so
+// no write path can post a string, and no `+` ever reads it.
 const NUMERIC_FIELDS_BY_KIND: Partial<Record<TargetKind, readonly string[]>> = {
   account: [
     "value",
     "basis",
+    "rothValue",
     "growthRate",
+    "priorYearEndValue",
+    "activationYear",
     "annualPropertyTax",
     "propertyTaxGrowthRate",
+    "distributionPolicyPercent",
+    // Flat form fields the account resolver folds into `realization`.
     "turnoverPct",
     "overridePctOi",
     "overridePctLtCg",
     "overridePctQdiv",
     "overridePctTaxExempt",
   ],
-  income: ["annualAmount", "growthRate", "piaMonthly"],
-  expense: ["annualAmount", "growthRate"],
-  liability: ["balance", "interestRate", "monthlyPayment"],
+  income: [
+    "annualAmount",
+    "startYear",
+    "endYear",
+    "growthRate",
+    "inflationStartYear",
+    "claimingAge",
+    "claimingAgeMonths",
+    "piaMonthly",
+    "survivorshipPct",
+  ],
+  expense: [
+    "annualAmount",
+    "startYear",
+    "endYear",
+    "growthRate",
+    "inflationStartYear",
+  ],
+  liability: [
+    "balance",
+    "interestRate",
+    "monthlyPayment",
+    "startYear",
+    "startMonth",
+    "termMonths",
+    "balanceAsOfMonth",
+    "balanceAsOfYear",
+  ],
   savings_rule: [
     "annualAmount",
     "annualPercent",
+    "rothPercent",
+    "startYear",
+    "endYear",
     "growthRate",
     "employerMatchPct",
     "employerMatchCap",
     "employerMatchAmount",
   ],
-  client_deduction: ["annualAmount", "growthRate"],
-  client_tax_adjustment: ["annualAmount", "growthRate", "withheldValue"],
-  roth_conversion: ["fixedAmount", "fillUpBracket", "indexingRate"],
-  asset_transaction: ["fractionSold", "annualPropertyTax", "propertyTaxGrowthRate"],
+  // `schedules` is an array of `{ year, amount }` — out of reach of this flat
+  // table. The transfer form posts those numerically (`parseFloat`).
+  transfer: ["amount", "growthRate", "startYear", "endYear"],
+  client_deduction: ["annualAmount", "growthRate", "startYear", "endYear"],
+  client_tax_adjustment: [
+    "annualAmount",
+    "growthRate",
+    "startYear",
+    "endYear",
+    "withheldValue",
+  ],
+  roth_conversion: [
+    "fixedAmount",
+    "fillUpBracket",
+    "indexingRate",
+    "startYear",
+    "endYear",
+    "inflationStartYear",
+    "irmaaCapTier",
+  ],
+  // The asset-transaction dialog emits EVERY dollar and rate field as a string
+  // (`optStr` / `optDec` in `use-asset-transaction-legs.ts`) and this kind is
+  // absent from `resolveAddPayload`'s switch, so nothing else coerces it.
+  // Mirrors `NUMERIC_FIELDS` in `lib/solver/technique-form-data.ts`, which
+  // does the same job for the solver's draft path.
+  asset_transaction: [
+    "year",
+    "purchasePrice",
+    "growthRate",
+    "basis",
+    "mortgageAmount",
+    "mortgageRate",
+    "mortgageTermMonths",
+    "annualPropertyTax",
+    "propertyTaxGrowthRate",
+    "overrideSaleValue",
+    "overrideBasis",
+    "transactionCostPct",
+    "transactionCostFlat",
+    "fractionSold",
+  ],
   // Scenario reinvestment payloads are RAW-shaped (the engine `Reinvestment`
-  // type carries the raw resolution inputs). `year` is an integer, so it is
-  // omitted — consistent with how `roth_conversion` omits `startYear`.
+  // type carries the raw resolution inputs). `newGrowthRate` is resolved, not
+  // posted, but the loader re-resolves reinvestments after this runs, so
+  // listing it is inert and keeps the rule uniform.
   reinvestment: [
+    "year",
+    "newGrowthRate",
     "customGrowthRate",
     "customPctOrdinaryIncome",
     "customPctLtCapitalGains",
     "customPctQualifiedDividends",
     "customPctTaxExempt",
   ],
-  // Relocation overlays carry a `year` (integer) the form may post as a string.
   relocation: ["year"],
   // Solver gift overlays carry an EstateFlowGift draft with these flat numeric
   // fields. The reload path now applies gift changes via apply-gift-overlays.ts
   // (they're partitioned out before this generic replay runs), so this entry is
   // dead for gifts — kept harmless for parity with TARGET_KIND_TO_FIELD.gift.
-  gift: ["year", "amount", "percent", "amountOverride", "startYear", "endYear", "annualAmount"],
-  entity: ["value", "basis", "valueGrowthRate", "distributionAmount", "distributionPercent", "exemptionConsumed", "grantorStatusEndYear"],
+  gift: [
+    "year",
+    "amount",
+    "valuationDiscount",
+    "percent",
+    "amountOverride",
+    "startYear",
+    "endYear",
+    "annualAmount",
+  ],
+  entity: [
+    "value",
+    "basis",
+    "valueGrowthRate",
+    "distributionAmount",
+    "distributionPercent",
+    "distributionPolicyPercent",
+    "exemptionConsumed",
+    "grantorStatusEndYear",
+  ],
   // The withdrawal-strategy form posts startYear/endYear as strings
   // (String(...) in withdrawal-strategy-section.tsx), so coerce them before the
   // engine's year-window filter (year >= s.startYear && year <= s.endYear) and
@@ -146,6 +256,10 @@ function coerceEditValue(
   return toNumberIfNumericString(v);
 }
 
+/**
+ * Map from TargetKind to the ClientData property holding that entity's array.
+ * Add new entries here whenever a new TargetKind is added.
+ */
 export const TARGET_KIND_TO_FIELD: Record<TargetKind, keyof ClientData | null> = {
   account: "accounts",
   income: "incomes",

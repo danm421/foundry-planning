@@ -15,7 +15,15 @@ function numToString(value: number | undefined): string | null {
   return value != null ? String(value) : null;
 }
 
-/** Numeric fields the asset-transaction form emits as strings. */
+/** Numeric fields the asset-transaction form emits as strings.
+ *
+ *  SIBLING: `NUMERIC_FIELDS_BY_KIND.asset_transaction` in
+ *  `src/engine/scenario/applyChanges.ts` does the same job for the SCENARIO
+ *  overlay path. The two lists drifted once — the scenario table carried 3 of
+ *  these 12 and the engine concatenated the rest as strings — so change both
+ *  together. (This list is "what the form emits"; that one is "what the engine
+ *  types as number", which is a superset: it also carries `year` and
+ *  `fractionSold`, which the form already emits numerically.) */
 const NUMERIC_FIELDS = [
   "purchasePrice",
   "growthRate",
