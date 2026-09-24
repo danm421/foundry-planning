@@ -1,17 +1,20 @@
 /**
  * Synthesizes a "no-plan" counterfactual ClientData by:
  *   1. Reassigning every trust-owned account_owners slice back to the trust's grantor family member
- *   2. Dropping all gift events targeting trusts
+ *   2. Dropping all gift events targeting trusts — BOTH `gifts` (authored rows)
+ *      and `giftEvents` (what the engine consumes)
  *   3. Dropping all bequests targeting trusts (filtering nested recipients)
  *
  * Gifts to people and gifts to charities are preserved — those happen in any plan.
  *
- * Post-condition: a trust whose `grantor` field does not resolve to a `FamilyMember` (e.g. a
- * third-party-grantor trust) has its ownership slice dropped silently, so the resulting
- * `account.owners` and `liability.owners` percents may sum to less than 1.0. This is acceptable
- * for the current Plan 3a counterfactual use because no third-party-grantor trusts appear in the
- * Cooper-Sample test scenario; downstream consumers that need complete percent normalization should
- * re-normalize explicitly (deferred decision).
+ * Third-party-grantor trusts: a trust whose `grantor` does not resolve to a
+ * `FamilyMember` keeps its authored owner row unchanged, and we warn. We do NOT
+ * drop the slice (that left percents summing to <1 and threw on the next
+ * `ownersForYear` read — the whole page 500'd) and we do NOT re-normalize the
+ * survivors (that silently reassigns a third party's slice to the household).
+ * The counterfactual's job is to remove the PLAN, not to invent ownership. The
+ * cost is that such a slice stays out-of-estate in a no-trust scenario, which
+ * the warning makes visible.
  */
 
 import type { AccountOwner } from "@/engine/ownership";
@@ -35,28 +38,57 @@ export function synthesizeNoPlanClientData(tree: ClientData): ClientData {
     }
   }
 
-  const newAccounts = tree.accounts.map((account) => {
-    const newOwners: AccountOwner[] = [];
-    for (const owner of account.owners) {
+  // Trusts we could not resolve a grantor for. Their slices stay ON the
+  // account exactly as authored — see the note in the docblock.
+  const unresolvedTrusts = new Set<string>();
+
+  const remapOwners = (owners: AccountOwner[]): AccountOwner[] => {
+    const next: AccountOwner[] = [];
+    for (const owner of owners) {
       if (owner.kind === "entity" && trustIds.has(owner.entityId)) {
         const grantorFmId = trustToGrantorFm.get(owner.entityId);
         if (grantorFmId) {
-          newOwners.push({
+          next.push({
             kind: "family_member",
             familyMemberId: grantorFmId,
             percent: owner.percent,
           });
+        } else {
+          // Third-party-grantor trust: keep the authored row. Dropping it left
+          // percents summing to <1 and threw on the next ownersForYear read;
+          // re-normalizing would hand a third party's slice to the household.
+          unresolvedTrusts.add(owner.entityId);
+          next.push(owner);
         }
-        // Trust without a grantor (third-party-grantor) — drop the slice silently.
       } else {
-        newOwners.push(owner);
+        next.push(owner);
       }
     }
-    return { ...account, owners: collapseOwners(newOwners) };
-  });
+    return collapseOwners(next);
+  };
+
+  const newAccounts = tree.accounts.map((account) => ({
+    ...account,
+    owners: remapOwners(account.owners),
+  }));
+
+  const newLiabilities = tree.liabilities.map((liab) => ({
+    ...liab,
+    owners: remapOwners(liab.owners ?? []),
+  }));
 
   const newGifts = (tree.gifts ?? []).filter(
     (g) => !(g.recipientEntityId && trustIds.has(g.recipientEntityId)),
+  );
+
+  // `giftEvents` is the field the ENGINE consumes; `gifts` above is the
+  // authored row list. Filtering only `gifts` left the trust-directed event in
+  // place, and it re-applied the very slice this function just handed back to
+  // the grantor — so the "no plan" baseline reproduced the plan exactly and
+  // every delta read ~$0. Same predicate as `gifts`: trust-directed only. Gifts
+  // to people and charities are preserved; those happen in any plan.
+  const newGiftEvents = (tree.giftEvents ?? []).filter(
+    (e) => !(e.recipientEntityId && trustIds.has(e.recipientEntityId)),
   );
 
   // WillBequest holds an array of recipients with { recipientKind, recipientId }.
@@ -79,31 +111,19 @@ export function synthesizeNoPlanClientData(tree: ClientData): ClientData {
       .filter((bequest) => bequest.recipients.length > 0),
   }));
 
-  const newLiabilities = tree.liabilities.map((liab) => {
-    const newOwners: AccountOwner[] = [];
-    for (const owner of liab.owners ?? []) {
-      if (owner.kind === "entity" && trustIds.has(owner.entityId)) {
-        const grantorFmId = trustToGrantorFm.get(owner.entityId);
-        if (grantorFmId) {
-          newOwners.push({
-            kind: "family_member",
-            familyMemberId: grantorFmId,
-            percent: owner.percent,
-          });
-        }
-        // Trust without a grantor (third-party-grantor) — drop the slice silently.
-      } else {
-        newOwners.push(owner);
-      }
-    }
-    return { ...liab, owners: collapseOwners(newOwners) };
-  });
+  for (const entityId of unresolvedTrusts) {
+    console.warn(
+      `synthesizeNoPlanClientData: trust ${entityId} has no resolvable grantor; ` +
+        `its ownership slice stays out-of-estate in the no-plan baseline.`,
+    );
+  }
 
   return {
     ...tree,
     accounts: newAccounts,
     liabilities: newLiabilities,
     gifts: newGifts,
+    giftEvents: newGiftEvents,
     wills: newWills,
   };
 }

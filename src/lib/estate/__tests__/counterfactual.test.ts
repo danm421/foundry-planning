@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { synthesizeNoPlanClientData } from "../counterfactual";
 import { runProjection } from "@/engine/projection";
 import type { ClientData, ClientInfo, FamilyMember, EntitySummary, Gift } from "@/engine/types";
@@ -154,5 +154,97 @@ describe("synthesizeNoPlanClientData — round-trip with runProjection", () => {
       }
     }
     expect(offendingWarnings).toEqual([]);
+  });
+});
+
+describe("synthesizeNoPlanClientData — giftEvents", () => {
+  it("drops giftEvents targeting trusts", () => {
+    const tree = fixture();
+    tree.giftEvents = [
+      { kind: "asset", year: 2027, accountId: "acc-1", percent: 0.4,
+        grantor: "client", recipientEntityId: TRUST_SLAT },
+      { kind: "asset", year: 2027, accountId: "acc-1", percent: 0.1,
+        grantor: "client", recipientFamilyMemberId: FM_CHILD },
+    ] as ClientData["giftEvents"];
+    const result = synthesizeNoPlanClientData(tree);
+    // The trust-directed event is gone; the gift to a person survives, exactly
+    // as `gifts` already behaves — those happen in any plan.
+    expect(result.giftEvents).toHaveLength(1);
+    expect(result.giftEvents[0]).toMatchObject({ recipientFamilyMemberId: FM_CHILD });
+  });
+
+  it("keeps cash giftEvents to people and charities", () => {
+    const tree = fixture();
+    tree.giftEvents = [
+      { kind: "cash", year: 2027, amount: 20_000, grantor: "client",
+        recipientFamilyMemberId: FM_CHILD, useCrummeyPowers: false },
+      { kind: "cash", year: 2027, amount: 30_000, grantor: "client",
+        recipientEntityId: TRUST_SLAT, useCrummeyPowers: true },
+    ] as ClientData["giftEvents"];
+    const result = synthesizeNoPlanClientData(tree);
+    expect(result.giftEvents).toHaveLength(1);
+    expect(result.giftEvents[0]).toMatchObject({ amount: 20_000 });
+  });
+
+  it("drops a business_interest event whose recipient is a trust", () => {
+    const tree = fixture();
+    tree.giftEvents = [
+      { kind: "business_interest", year: 2027, entityId: "biz-1", percent: 0.3,
+        grantor: "client", recipientEntityId: TRUST_SLAT },
+    ] as ClientData["giftEvents"];
+    expect(synthesizeNoPlanClientData(tree).giftEvents).toEqual([]);
+  });
+});
+
+describe("synthesizeNoPlanClientData — third-party-grantor trust", () => {
+  function thirdPartyFixture(): ClientData {
+    const tree = fixture();
+    // A trust with no resolvable grantor — `grantor` is nullable in the schema.
+    tree.entities = [
+      { id: TRUST_SLAT, name: "Third-party SLAT", entityType: "trust",
+        isIrrevocable: true, isGrantor: false, includeInPortfolio: false,
+        grantor: null } as unknown as NonNullable<ClientData["entities"]>[number],
+    ];
+    return tree;
+  }
+
+  it("keeps the authored entity owner row instead of dropping the slice", () => {
+    const result = synthesizeNoPlanClientData(thirdPartyFixture());
+    expect(result.accounts[0].owners).toEqual([
+      { kind: "family_member", familyMemberId: FM_CLIENT, percent: 0.6 },
+      { kind: "entity", entityId: TRUST_SLAT, percent: 0.4 },
+    ]);
+  });
+
+  it("leaves owners summing to exactly 1 so downstream reads cannot throw", () => {
+    const result = synthesizeNoPlanClientData(thirdPartyFixture());
+    const total = result.accounts[0].owners.reduce((s, o) => s + o.percent, 0);
+    expect(total).toBeCloseTo(1, 9);
+  });
+
+  it("does NOT re-normalize the surviving owners to 1", () => {
+    // Re-normalizing would push the client to 1.0 and silently hand a third
+    // party's slice to the household. The client's authored 0.6 must stand.
+    const result = synthesizeNoPlanClientData(thirdPartyFixture());
+    const client = result.accounts[0].owners.find(
+      (o) => o.kind === "family_member",
+    );
+    expect(client?.percent).toBe(0.6);
+  });
+
+  it("warns once per unresolved trust", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    synthesizeNoPlanClientData(thirdPartyFixture());
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toContain(TRUST_SLAT);
+    warn.mockRestore();
+  });
+
+  it("still reassigns a trust whose grantor DOES resolve", () => {
+    // The existing behavior must not regress — this is the happy path.
+    const result = synthesizeNoPlanClientData(fixture());
+    expect(result.accounts[0].owners).toEqual([
+      { kind: "family_member", familyMemberId: FM_CLIENT, percent: 1.0 },
+    ]);
   });
 });
