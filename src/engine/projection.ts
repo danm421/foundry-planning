@@ -37,6 +37,7 @@ import {
 } from "./entity-cashflow";
 import { computeBusinessYearFlow } from "./business/year-flow";
 import { accrueLockedEntityShare } from "./locked-shares";
+import { buildOwnershipSnapshot } from "./ownership-snapshot";
 import { computeFamilyAccountShares } from "./family-cashflow";
 import { computeGiftLedger, type GiftLedgerYear } from "./gift-ledger";
 import { computeIncome, applyDisabilityEvent } from "./income";
@@ -1206,6 +1207,21 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   // a second `runProjection` (Monte Carlo runs thousands) inherit a warm
   // counter and silently deny the credit from trial 2 onward.
   const aotcClaimedYearsByStudent = new Map<string, number>();
+
+  // One per-year ownership resolution for every site that turns ownership into
+  // dollars. See src/engine/ownership-snapshot.ts for why this is a snapshot
+  // and not gift-awareness threaded into each call site. Built from the
+  // normalized `data.accounts` and the loop's own horizon — the `years` output
+  // array is still empty here, so it cannot supply the year list.
+  const ownershipSnapshot = buildOwnershipSnapshot(
+    data.accounts,
+    data.giftEvents,
+    Array.from(
+      { length: planSettings.planEndYear - planSettings.planStartYear + 1 },
+      (_, i) => planSettings.planStartYear + i,
+    ),
+    planSettings.planStartYear,
+  );
 
   for (
     let year = planSettings.planStartYear;
@@ -4912,7 +4928,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // raw balance every year and progressively spends trust principal.
       const wLedger = accountLedgers[acct.id];
       let lockedTotal = 0;
-      for (const o of acct.owners) {
+      // Year-resolved owners, not `acct.owners`. An account gifted into a trust
+      // mid-horizon has no AUTHORED entity row, so lockedTotal stayed 0 while
+      // ownedByHouseholdAtYear above already returned 0.85 — the cap then
+      // re-derived balance x 0.85 against a SHRINKING balance every year and
+      // decayed the trust's slice geometrically toward zero.
+      for (const o of ownershipSnapshot.ownersAt(acct.id, year)) {
         if (o.kind !== "entity" || o.percent >= 1) continue;
         lockedTotal += accrueLockedEntityShare({
           carriedBoY: lockedEntityShareCarry.get(o.entityId)?.get(acct.id),
@@ -8375,7 +8396,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     for (const acct of workingAccounts) {
       const ledger = accountLedgers[acct.id];
       if (!ledger) continue;
-      for (const o of acct.owners) {
+      // Year-resolved owners — same reason as the withdraw-balance cap above.
+      // Without this an account gifted to a trust never accrues a carry, so the
+      // balance sheet's locked share and the entity's own cash flow disagree.
+      for (const o of ownershipSnapshot.ownersAt(acct.id, year)) {
         if (o.kind !== "entity") continue;
         if (o.percent >= 1) continue; // 100%-entity needs no carry — full ledger is the share
         const carried = lockedEntityShareCarry.get(o.entityId)?.get(acct.id);
