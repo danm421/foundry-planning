@@ -24,6 +24,7 @@ import {
   giftScenarioAdd,
   giftScenarioRemove,
 } from "@/lib/gifts/gift-write";
+import { buildRecipientPatchFields } from "@/lib/gifts/recipient-patch-fields";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 
 export interface GiftDialogProps {
@@ -230,9 +231,15 @@ export default function GiftDialog(props: GiftDialogProps) {
           useCrummeyPowers: draft.crummey,
         };
         if (discountToSend !== undefined) body.valuationDiscount = discountToSend;
-        if (draft.recipient.kind === "entity") body.recipientEntityId = draft.recipient.id;
-        if (draft.recipient.kind === "family_member") body.recipientFamilyMemberId = draft.recipient.id;
-        if (draft.recipient.kind === "external_beneficiary") body.recipientExternalBeneficiaryId = draft.recipient.id;
+        // PATCH: send all three recipient fields (with nulls) to clear stale recipients.
+        // POST: send only the matching recipient field.
+        if (inPlace) {
+          Object.assign(body, buildRecipientPatchFields(draft.recipient));
+        } else {
+          if (draft.recipient.kind === "entity") body.recipientEntityId = draft.recipient.id;
+          if (draft.recipient.kind === "family_member") body.recipientFamilyMemberId = draft.recipient.id;
+          if (draft.recipient.kind === "external_beneficiary") body.recipientExternalBeneficiaryId = draft.recipient.id;
+        }
         const url = inPlace
           ? `/api/clients/${props.clientId}/gifts/series/${props.editingSeries!.id}?scenario=${props.scenarioId}`
           : `/api/clients/${props.clientId}/gifts/series?scenario=${props.scenarioId}`;
@@ -270,9 +277,15 @@ export default function GiftDialog(props: GiftDialogProps) {
 
       // One-time gift (cash-once or asset-once)
       const body: Record<string, unknown> = { year: draft.year, grantor: draft.grantor };
-      if (draft.recipient.kind === "entity") body.recipientEntityId = draft.recipient.id;
-      if (draft.recipient.kind === "family_member") body.recipientFamilyMemberId = draft.recipient.id;
-      if (draft.recipient.kind === "external_beneficiary") body.recipientExternalBeneficiaryId = draft.recipient.id;
+      // PATCH: send all three recipient fields (with nulls) to clear stale recipients.
+      // POST: send only the matching recipient field.
+      if (inPlace) {
+        Object.assign(body, buildRecipientPatchFields(draft.recipient));
+      } else {
+        if (draft.recipient.kind === "entity") body.recipientEntityId = draft.recipient.id;
+        if (draft.recipient.kind === "family_member") body.recipientFamilyMemberId = draft.recipient.id;
+        if (draft.recipient.kind === "external_beneficiary") body.recipientExternalBeneficiaryId = draft.recipient.id;
+      }
 
       if (draft.kind === "cash-once") {
         body.amount = draft.amount;
