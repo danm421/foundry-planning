@@ -173,6 +173,75 @@ export function controllingEntity(a: OwnedThing): string | null {
   return (entityRows[0] as { entityId: string }).entityId;
 }
 
+/** Shared body of `ownersForYear` and `liabilityOwnersForYear` (and, from the
+ *  business-interest work, `entityOwnersForYear`). The three differ ONLY in
+ *  which events they select and what noun their errors use, so the composition
+ *  rules — proportional household shrink, recipient merge, sum-to-1 validation
+ *  — live here once. */
+function composeOwnersForYear(
+  staticOwners: AccountOwner[],
+  events: Array<{ year: number; percent: number } & Parameters<typeof recipientOwnerRow>[0]>,
+  year: number,
+  fn: string,
+  noun: string,
+): AccountOwner[] {
+  let owners: AccountOwner[] = staticOwners.map((o) => ({ ...o }));
+  const sorted = [...events].sort((a, b) => a.year - b.year);
+
+  for (const e of sorted) {
+    const householdShare = owners
+      .filter((o) => o.kind === "family_member")
+      .reduce((s, o) => s + o.percent, 0);
+
+    // Guard against divide-by-zero when household has been fully drained.
+    // Without this, a small e.percent (or 0) slips past the overdraw check
+    // below and produces NaN downstream.
+    if (householdShare <= 1e-9) {
+      throw new Error(
+        `${fn}: no household share remaining on ${noun} at year ${e.year} (requested ${e.percent})`,
+      );
+    }
+    if (e.percent > householdShare + 1e-9) {
+      throw new Error(
+        `${fn}: gift event would overdraw household share on ${noun} at year ${e.year} (requested ${e.percent}, available ${householdShare})`,
+      );
+    }
+
+    // Shrink each household row proportionally to free e.percent.
+    const factor = (householdShare - e.percent) / householdShare;
+    owners = owners.map((o) =>
+      o.kind === "family_member" ? { ...o, percent: o.percent * factor } : o,
+    );
+    // Drop any household rows that rounded to ~0.
+    owners = owners.filter((o) => o.kind !== "family_member" || o.percent > 1e-9);
+
+    // Add or merge the recipient row (entity for trusts, gifted_away for people).
+    const row = recipientOwnerRow(e, e.percent);
+    if (row.kind === "entity") {
+      const i = owners.findIndex((o) => o.kind === "entity" && o.entityId === row.entityId);
+      if (i >= 0) owners[i] = { ...owners[i], percent: owners[i].percent + e.percent };
+      else owners.push(row);
+    } else {
+      const i = owners.findIndex(
+        (o) =>
+          o.kind === "gifted_away" &&
+          o.recipient.kind === row.recipient.kind &&
+          o.recipient.id === row.recipient.id,
+      );
+      if (i >= 0) owners[i] = { ...owners[i], percent: owners[i].percent + e.percent };
+      else owners.push(row);
+    }
+  }
+
+  const total = owners.reduce((s, o) => s + o.percent, 0);
+  if (Math.abs(total - 1) > 1e-6) {
+    throw new Error(
+      `${fn}: composed owners for ${noun} at year ${year} sum to ${total}, expected 1`,
+    );
+  }
+  return owners;
+}
+
 /**
  * Compose static account_owners + asset-transfer gift events into the ownership
  * snapshot at a given projection year. Events with year < projectionStartYear are
@@ -184,78 +253,16 @@ export function ownersForYear(
   year: number,
   projectionStartYear: number,
 ): AccountOwner[] {
-  // Start from a deep clone of static owners so we don't mutate input.
-  let owners: AccountOwner[] = account.owners.map((o) => ({ ...o }));
-
-  const events = giftEvents
-    .filter(
-      (e) =>
-        e.kind === "asset" &&
-        e.accountId === account.id &&
-        e.year >= projectionStartYear &&
-        e.year <= year,
-    )
-    .sort((a, b) => a.year - b.year) as Array<Extract<GiftEvent, { kind: "asset" }>>;
-
-  for (const e of events) {
-    const householdShare = owners
-      .filter((o) => o.kind === "family_member")
-      .reduce((s, o) => s + o.percent, 0);
-
-    // Guard against divide-by-zero when household has been fully drained.
-    // Without this, a small e.percent (or 0) slips past the overdraw check
-    // below and produces NaN downstream.
-    if (householdShare <= 1e-9) {
-      throw new Error(
-        `ownersForYear: no household share remaining on account ${account.id} at year ${e.year} (requested ${e.percent})`,
-      );
-    }
-
-    if (e.percent > householdShare + 1e-9) {
-      throw new Error(
-        `ownersForYear: gift event would overdraw household share on account ${account.id} at year ${e.year} (requested ${e.percent}, available ${householdShare})`,
-      );
-    }
-
-    // Shrink each household row proportionally to free e.percent.
-    const factor = (householdShare - e.percent) / householdShare;
-    owners = owners.map((o) =>
-      o.kind === "family_member" ? { ...o, percent: o.percent * factor } : o,
-    );
-
-    // Drop any household rows that rounded to ~0.
-    owners = owners.filter((o) => o.kind !== "family_member" || o.percent > 1e-9);
-
-    // Add or merge the recipient row (entity for trusts, gifted_away for people).
-    const row = recipientOwnerRow(e, e.percent);
-    if (row.kind === "entity") {
-      const existing = owners.findIndex((o) => o.kind === "entity" && o.entityId === row.entityId);
-      if (existing >= 0) {
-        owners[existing] = { ...owners[existing], percent: owners[existing].percent + e.percent };
-      } else {
-        owners.push(row);
-      }
-    } else {
-      const existing = owners.findIndex(
-        (o) => o.kind === "gifted_away" && o.recipient.kind === row.recipient.kind && o.recipient.id === row.recipient.id,
-      );
-      if (existing >= 0) {
-        owners[existing] = { ...owners[existing], percent: owners[existing].percent + e.percent };
-      } else {
-        owners.push(row);
-      }
-    }
-  }
-
-  // Validate sum-to-1 within tolerance.
-  const total = owners.reduce((s, o) => s + o.percent, 0);
-  if (Math.abs(total - 1) > 1e-6) {
-    throw new Error(
-      `ownersForYear: composed owners for account ${account.id} at year ${year} sum to ${total}, expected 1`,
-    );
-  }
-
-  return owners;
+  const events = giftEvents.filter(
+    (e) =>
+      e.kind === "asset" &&
+      e.accountId === account.id &&
+      e.year >= projectionStartYear &&
+      e.year <= year,
+  ) as Array<Extract<GiftEvent, { kind: "asset" }>>;
+  return composeOwnersForYear(
+    account.owners, events, year, "ownersForYear", `account ${account.id}`,
+  );
 }
 
 export function ownedByEntityAtYear(
@@ -331,71 +338,16 @@ export function liabilityOwnersForYear(
   year: number,
   projectionStartYear: number,
 ): LiabilityOwner[] {
-  let owners: LiabilityOwner[] = liability.owners.map((o) => ({ ...o }));
-
-  const events = giftEvents
-    .filter(
-      (e) =>
-        e.kind === "liability" &&
-        e.liabilityId === liability.id &&
-        e.year >= projectionStartYear &&
-        e.year <= year,
-    )
-    .sort((a, b) => a.year - b.year) as Array<Extract<GiftEvent, { kind: "liability" }>>;
-
-  for (const e of events) {
-    const householdShare = owners
-      .filter((o) => o.kind === "family_member")
-      .reduce((s, o) => s + o.percent, 0);
-
-    // Guard against divide-by-zero when household has been fully drained.
-    // Without this, a small e.percent (or 0) slips past the overdraw check
-    // below and produces NaN downstream.
-    if (householdShare <= 1e-9) {
-      throw new Error(
-        `liabilityOwnersForYear: no household share remaining on liability ${liability.id} at year ${e.year} (requested ${e.percent})`,
-      );
-    }
-
-    if (e.percent > householdShare + 1e-9) {
-      throw new Error(
-        `liabilityOwnersForYear: would overdraw household share on liability ${liability.id} at year ${e.year} (requested ${e.percent}, available ${householdShare})`,
-      );
-    }
-
-    const factor = (householdShare - e.percent) / householdShare;
-    owners = owners.map((o) =>
-      o.kind === "family_member" ? { ...o, percent: o.percent * factor } : o,
-    );
-    owners = owners.filter((o) => o.kind !== "family_member" || o.percent > 1e-9);
-    // Add or merge the recipient row (entity for trusts, gifted_away for people).
-    const row = recipientOwnerRow(e, e.percent);
-    if (row.kind === "entity") {
-      const existing = owners.findIndex((o) => o.kind === "entity" && o.entityId === row.entityId);
-      if (existing >= 0) {
-        owners[existing] = { ...owners[existing], percent: owners[existing].percent + e.percent };
-      } else {
-        owners.push(row);
-      }
-    } else {
-      const existing = owners.findIndex(
-        (o) => o.kind === "gifted_away" && o.recipient.kind === row.recipient.kind && o.recipient.id === row.recipient.id,
-      );
-      if (existing >= 0) {
-        owners[existing] = { ...owners[existing], percent: owners[existing].percent + e.percent };
-      } else {
-        owners.push(row);
-      }
-    }
-  }
-
-  const total = owners.reduce((s, o) => s + o.percent, 0);
-  if (Math.abs(total - 1) > 1e-6) {
-    throw new Error(
-      `liabilityOwnersForYear: composed owners for liability ${liability.id} at year ${year} sum to ${total}, expected 1`,
-    );
-  }
-  return owners;
+  const events = giftEvents.filter(
+    (e) =>
+      e.kind === "liability" &&
+      e.liabilityId === liability.id &&
+      e.year >= projectionStartYear &&
+      e.year <= year,
+  ) as Array<Extract<GiftEvent, { kind: "liability" }>>;
+  return composeOwnersForYear(
+    liability.owners, events, year, "liabilityOwnersForYear", `liability ${liability.id}`,
+  );
 }
 
 export function liabilityOwnedByEntityAtYear(
