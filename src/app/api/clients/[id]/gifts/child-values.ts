@@ -48,3 +48,38 @@ export function buildBundledChildValues(
     notes: `Auto-bundled with asset transfer of account ${input.accountId}`,
   };
 }
+
+/** Fields a bundled liability child mirrors from its parent on PATCH.
+ *
+ *  `percent` and the three recipient columns only. `amount` is always null on a
+ *  child, and `valuationDiscount` is deliberately never mirrored (see
+ *  `buildBundledChildValues`). Returns null when the patch touches none of
+ *  them, so the caller can skip the UPDATE entirely.
+ *
+ *  Every recipient key PRESENT in the patch is written, including explicit
+ *  nulls — that is what clears the stale recipient when the parent moves from
+ *  one recipient kind to another. Writing only the new kind would leave the
+ *  child with two recipients and trip `gifts_recipient_exactly_one`. */
+export function buildChildPatchValues(patch: {
+  percent?: number | null;
+  recipientEntityId?: string | null;
+  recipientFamilyMemberId?: string | null;
+  recipientExternalBeneficiaryId?: string | null;
+  [k: string]: unknown;
+}): Record<string, string | null> | null {
+  const out: Record<string, string | null> = {};
+  if (patch.percent !== undefined) {
+    out.percent = patch.percent != null ? String(patch.percent) : null;
+  }
+  if (patch.recipientEntityId !== undefined) {
+    out.recipientEntityId = patch.recipientEntityId ?? null;
+  }
+  if (patch.recipientFamilyMemberId !== undefined) {
+    out.recipientFamilyMemberId = patch.recipientFamilyMemberId ?? null;
+  }
+  if (patch.recipientExternalBeneficiaryId !== undefined) {
+    out.recipientExternalBeneficiaryId =
+      patch.recipientExternalBeneficiaryId ?? null;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}

@@ -15,6 +15,7 @@ import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 import { giftUpdateSchema } from "@/lib/schemas/gifts";
+import { buildChildPatchValues } from "../child-values";
 
 export const dynamic = "force-dynamic";
 
@@ -151,16 +152,18 @@ export async function PATCH(
 
       if (!updated) return undefined;
 
-      // If percent was updated and this is a parent gift (no parentGiftId),
-      // propagate the new percent to all bundled child gifts.
-      if (patch.percent !== undefined && updated.parentGiftId === null) {
-        await tx
-          .update(gifts)
-          .set({
-            percent: patch.percent != null ? String(patch.percent) : null,
-            updatedAt: new Date(),
-          })
-          .where(eq(gifts.parentGiftId, giftId));
+      // Propagate to bundled children. `percent` AND the recipient columns —
+      // a parent that moves from a trust to a person leaves the child pointing
+      // at a stale `recipientEntityId` otherwise, and the child then fans a
+      // liability transfer to a party the parent no longer names.
+      if (updated.parentGiftId === null) {
+        const childPatch = buildChildPatchValues(patch);
+        if (childPatch) {
+          await tx
+            .update(gifts)
+            .set({ ...childPatch, updatedAt: new Date() })
+            .where(eq(gifts.parentGiftId, giftId));
+        }
       }
 
       return updated;
