@@ -127,21 +127,6 @@ describe("buildOwnershipSnapshot", () => {
     expect(snap.ownersAt(stranger, 2027)).toBe(stranger.owners);
   });
 
-  it("serves LIVE owners once the account has been rebuilt under the same id", () => {
-    // partitionMixedAccount hands the family pool back under the ORIGINAL id
-    // with the entity rows stripped, and an in-place bequest replaces `owners`
-    // outright. Resolving those ids against the snapshot's entry rows revives
-    // an entity share the projection has already moved elsewhere.
-    const a = acct("acc-1", [{ kind: "family_member", familyMemberId: "fm-c", percent: 1 }]);
-    const g: GiftEvent[] = [{ kind: "asset", year: 2027, accountId: "acc-1",
-      percent: 0.3, grantor: "client", recipientEntityId: "trust-1" }];
-    const snap = buildOwnershipSnapshot([a], g, YEARS, 2026);
-    expect(snap.ownersAt(a, 2028)).toHaveLength(2); // the snapshot does resolve it
-
-    const rebuilt = acct("acc-1", [{ kind: "family_member", familyMemberId: "fm-s", percent: 1 }]);
-    expect(snap.ownersAt(rebuilt, 2028)).toBe(rebuilt.owners);
-  });
-
   it("gives a year BELOW the horizon the authored baseline, never the post-gift state", () => {
     // Clamping downward would hand a pre-horizon year ownership that has not
     // happened yet from that year's point of view. The horizon deliberately
@@ -183,6 +168,71 @@ describe("buildOwnershipSnapshot", () => {
     expect(snap.ownersAt(a, 2099)).toEqual(atHorizon);
   });
 
+  it("does not let a 0% gift discard the real gifts that follow it", () => {
+    // `giftAwareOwners` returns the authored array BY REFERENCE for a gifted
+    // total of 0, and the build loop reads a by-reference return as the
+    // canFundGifts fallback and stops. A 0% row is a gift being PRESENT but
+    // moving nothing — the invariant the loop needs is non-zero, so the row has
+    // to be filtered out or it silently swallows every later gift.
+    const a = acct("acc-1", [{ kind: "family_member", familyMemberId: "fm-c", percent: 1 }]);
+    const g: GiftEvent[] = [
+      { kind: "asset", year: 2027, accountId: "acc-1",
+        percent: 0, grantor: "client", recipientEntityId: "trust-1" },
+      { kind: "asset", year: 2028, accountId: "acc-1",
+        percent: 0.2, grantor: "client", recipientEntityId: "trust-2" },
+    ];
+    const snap = buildOwnershipSnapshot([a], g, YEARS, 2026);
+    expect(snap.ownersAt(a, 2027)).toBe(a.owners);
+    // trust-2's 20% survives — that is the whole point. The inert
+    // `trust-1 @ 0` row is composeOwnersForYear's own doing (it merges every
+    // event it is handed, including a zero one) and predates this task; both
+    // locked-share loops and every household sum treat a 0 percent as 0.
+    expect(snap.ownersAt(a, 2029)).toEqual([
+      { kind: "family_member", familyMemberId: "fm-c", percent: 0.8 },
+      { kind: "entity", entityId: "trust-1", percent: 0 },
+      { kind: "entity", entityId: "trust-2", percent: 0.2 },
+    ]);
+  });
+
+  it("keeps the overlay on an account rebuilt with household share left", () => {
+    // The death path retitles from AUTHORED owners and never applies the
+    // overlay, so the rebuilt rows arrive gift-blind. Re-resolving them is what
+    // keeps this half of the call site agreeing with ownedByHouseholdAtYear,
+    // which reads the live account and still matches the gift by id.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const a = acct("acc-1", [{ kind: "family_member", familyMemberId: "fm-c", percent: 1 }]);
+    const g: GiftEvent[] = [{ kind: "asset", year: 2027, accountId: "acc-1",
+      percent: 0.4, grantor: "client", recipientEntityId: "trust-1" }];
+    const snap = buildOwnershipSnapshot([a], g, YEARS, 2026);
+
+    // The family pool the death path hands back: same id, family rows only.
+    const pool = acct("acc-1", [{ kind: "family_member", familyMemberId: "fm-s", percent: 1 }]);
+    expect(snap.ownersAt(pool, 2026)).toBe(pool.owners); // before the gift
+    expect(snap.ownersAt(pool, 2028)).toEqual([
+      { kind: "family_member", familyMemberId: "fm-s", percent: 0.6 },
+      { kind: "entity", entityId: "trust-1", percent: 0.4 },
+    ]);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("warns at most ONCE for a rebuilt account the gift can no longer be funded from", () => {
+    // A wholesale entity bequest leaves zero household share, so every
+    // re-resolution hits the canFundGifts fallback. Unbounded that is one line
+    // per READ — measured at 6 for the 8 reads below, and a Monte Carlo run
+    // multiplies it by the trial count.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const a = acct("acc-1", [{ kind: "family_member", familyMemberId: "fm-c", percent: 1 }]);
+    const g: GiftEvent[] = [{ kind: "asset", year: 2027, accountId: "acc-1",
+      percent: 0.4, grantor: "client", recipientEntityId: "trust-1" }];
+    const snap = buildOwnershipSnapshot([a], g, YEARS, 2026);
+
+    const bequeathed = acct("acc-1", [{ kind: "entity", entityId: "trust-9", percent: 1 }]);
+    for (const y of YEARS) for (let i = 0; i < 2; i++) {
+      expect(snap.ownersAt(bequeathed, y)).toBe(bequeathed.owners);
+    }
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
   it("warns at most ONCE per account when the authored rows already encode the transfer", () => {
     // The ILIT / §2035 shape canFundGifts exists for: a policy modeled as
     // entity-owned with a redundant gift event. Resolving per projection year
@@ -216,25 +266,31 @@ describe("ownership snapshot — regression: the locked-share cap after a death 
   // The shipped death-event-locked-shares integration test runs 2026-2026, so
   // the year after the death never executes — which is why this shipped green.
   const ENT = "ent-non-iip-locked";
+  const TRUST_A = "ent-trust-a";
+  const TRUST_B = "ent-trust-b";
+
+  const trust = (id: string, name: string): EntitySummary => ({
+    id, name, entityType: "trust", trustSubType: "irrevocable", isIrrevocable: true,
+    isGrantor: false, includeInPortfolio: false, accessibleToClient: false,
+    grantor: "client",
+  });
+  const FAMILY: FamilyMember[] = [
+    { id: LEGACY_FM_CLIENT, role: "client", relationship: "other",
+      firstName: "Test", lastName: "Client", dateOfBirth: "1960-01-01" },
+    { id: LEGACY_FM_SPOUSE, role: "spouse", relationship: "other",
+      firstName: "Test", lastName: "Spouse", dateOfBirth: "1972-06-15" },
+  ];
+  const checkingAccount = (): Account => ({
+    id: "acct-checking", name: "Checking", category: "cash", subType: "checking",
+    titlingType: "jtwros", value: 1000, basis: 1000, growthRate: 0,
+    rmdEnabled: false, isDefaultChecking: true,
+    owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+  });
 
   const buildPlan = (planEndYear: number) => {
-    const entities: EntitySummary[] = [{
-      id: ENT, name: "Locked SLAT", entityType: "trust", trustSubType: "irrevocable",
-      isIrrevocable: true, isGrantor: false, includeInPortfolio: false,
-      accessibleToClient: false, grantor: "client",
-    }];
-    const familyMembers: FamilyMember[] = [
-      { id: LEGACY_FM_CLIENT, role: "client", relationship: "other",
-        firstName: "Test", lastName: "Client", dateOfBirth: "1960-01-01" },
-      { id: LEGACY_FM_SPOUSE, role: "spouse", relationship: "other",
-        firstName: "Test", lastName: "Spouse", dateOfBirth: "1972-06-15" },
-    ];
-    const checking: Account = {
-      id: "acct-checking", name: "Checking", category: "cash", subType: "checking",
-      titlingType: "jtwros", value: 1000, basis: 1000, growthRate: 0,
-      rmdEnabled: false, isDefaultChecking: true,
-      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
-    };
+    const entities: EntitySummary[] = [trust(ENT, "Locked SLAT")];
+    const familyMembers = FAMILY;
+    const checking = checkingAccount();
     const mixed: Account = {
       id: "acct-mixed", name: "Joint+SLAT Brokerage", category: "taxable",
       subType: "brokerage", titlingType: "jtwros", value: 1_000_000,
@@ -283,6 +339,90 @@ describe("ownership snapshot — regression: the locked-share cap after a death 
     // The shortfall lands in checking: $1,000 opening + $300k drawn − $400k
     // spent. The stale-owners bug leaves it $300k worse, at −$399,000.
     expect(y2027.accountLedgers["acct-checking"].endingValue).toBeCloseTo(-99_000, 6);
+  });
+
+  it("holds the trust's slice for a gifted account — the wiring, not just the builder", () => {
+    // This is the only test that can see the two projection call sites at all.
+    // The snapshot's own unit tests cannot: for an account no gift touches,
+    // `ownersAt` returns `acct.owners` BY CONSTRUCTION, so reverting both sites
+    // to `acct.owners` leaves every one of them green.
+    //
+    // Authored owners are 100% household — the trust's 30% exists only as the
+    // gift overlay, which is exactly the shape the brief's Context describes:
+    // lockedTotal stays 0 off the authored rows while ownedByHouseholdAtYear
+    // already returns 0.7, so the cap re-derives balance x 0.7 against a
+    // SHRINKING balance and decays the trust's slice by 0.3 every year:
+    //   unwired  601,000 -> 201,000 -> 60,300 -> 18,090 -> 5,427
+    // Wired, the $300k slice holds from the year the gift lands.
+    const gifted: Account = {
+      id: "acct-gifted", name: "Brokerage", category: "taxable", subType: "brokerage",
+      titlingType: "jtwros", value: 1_000_000, basis: 1_000_000, growthRate: 0,
+      rmdEnabled: false,
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+    };
+    const data = buildClientData({
+      client: { ...baseClient, dateOfBirth: "1960-01-01", spouseDob: "1972-06-15",
+        lifeExpectancy: 95, spouseLifeExpectancy: 95 },
+      familyMembers: FAMILY, accounts: [checkingAccount(), gifted],
+      entities: [trust(TRUST_A, "Trust One")],
+      incomes: [], liabilities: [], savingsRules: [],
+      expenses: [{ id: "exp", name: "Living", type: "living", annualAmount: 400_000,
+        growthRate: 0, startYear: 2026, endYear: 2030 }],
+      withdrawalStrategy: [{ accountId: "acct-gifted", priorityOrder: 1,
+        startYear: 2026, endYear: 2030 }],
+      giftEvents: [{ kind: "asset", year: 2026, accountId: "acct-gifted",
+        percent: 0.3, grantor: "client", recipientEntityId: TRUST_A }],
+      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2030 },
+    });
+    const balances = runProjection(data).map(
+      (y) => y.accountLedgers["acct-gifted"].endingValue,
+    );
+    expect(balances).toEqual([601_000, 300_000, 300_000, 300_000, 300_000]);
+  });
+
+  it("stops the decay on a gifted account a death has rebuilt", () => {
+    // The death path retitles from AUTHORED owners, so the rebuilt family pool
+    // arrives gift-blind — while `ownedByHouseholdAtYear` at the same call site
+    // reads the live account, and the pool keeps the ORIGINAL id, so the gift
+    // still matches there. Household 0.75 against locked 0 is the decay
+    // signature all over again:
+    //   dies 2026, unfixed  801,000 -> 301,000 -> 101,000 -> 25,250 -> 6,312.50
+    //                       -> 1,578.13 -> 394.53 -> 98.63 -> 24.66
+    // Re-resolving the rebuilt rows holds the second trust's 25% slice instead.
+    const mixed: Account = {
+      id: "acct-mixed", name: "Joint+SLAT Brokerage", category: "taxable",
+      subType: "brokerage", titlingType: "jtwros", value: 1_000_000,
+      basis: 1_000_000, growthRate: 0, rmdEnabled: false,
+      owners: [
+        { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.7 },
+        { kind: "entity", entityId: ENT, percent: 0.3 },
+      ],
+    };
+    const plan = (lifeExpectancy: number) => buildClientData({
+      client: { ...baseClient, dateOfBirth: "1960-01-01", spouseDob: "1972-06-15",
+        lifeExpectancy, spouseLifeExpectancy: undefined },
+      familyMembers: FAMILY, accounts: [checkingAccount(), mixed],
+      entities: [trust(ENT, "Locked SLAT"), trust(TRUST_B, "Trust Two")],
+      incomes: [], liabilities: [], savingsRules: [],
+      expenses: [{ id: "exp", name: "Living", type: "living", annualAmount: 200_000,
+        growthRate: 0, startYear: 2026, endYear: 2034 }],
+      withdrawalStrategy: [{ accountId: "acct-mixed", priorityOrder: 1,
+        startYear: 2026, endYear: 2034 }],
+      giftEvents: [{ kind: "asset", year: 2028, accountId: "acct-mixed",
+        percent: 0.25, grantor: "client", recipientEntityId: TRUST_B }],
+      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2034 },
+    });
+    const tail = (lifeExpectancy: number) =>
+      runProjection(plan(lifeExpectancy))
+        .filter((y) => y.year >= 2029)
+        .map((y) => y.accountLedgers["acct-mixed"].endingValue);
+
+    // Nobody dies in the horizon: the second trust's slice holds, flat.
+    expect(new Set(tail(95))).toEqual(new Set([450_250]));
+
+    // Client dies 2026. The pool is smaller, but it must still go FLAT rather
+    // than decaying toward zero — 24.66 by 2034 was the measured failure.
+    expect(new Set(tail(66))).toEqual(new Set([75_250]));
   });
 
   it("keeps the pre-death year identical to the shipped single-year fixture", () => {

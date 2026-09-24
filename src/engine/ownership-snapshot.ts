@@ -70,6 +70,11 @@ export function buildOwnershipSnapshot(
     // above the horizon resolves to the last projected year — so it never
     // takes effect at all. Recording it would let one leak into such a read.
     if (e.year > last) continue;
+    // A 0% gift moves nothing, and `giftAwareOwners` early-outs on a gifted
+    // total of 0 by returning the authored array BY REFERENCE — which the
+    // evaluation loop below reads as the canFundGifts fallback and stops on.
+    // One such row would silently discard every later gift on the account.
+    if (e.percent <= 0) continue;
     // A gift dated before the first projected year still takes effect at that
     // first year — it is in-window for every year the snapshot can be asked for.
     const from = e.year < first ? first : e.year;
@@ -105,14 +110,42 @@ export function buildOwnershipSnapshot(
     if (steps.length > 0) resolved.set(account.id, { authored: account.owners, steps });
   }
 
+  // Live owner arrays whose gifts `canFundGifts` has already declined to fund.
+  // The verdict depends on a gifted total that never shrinks as the year
+  // advances and on a household share fixed by the array, so once it declines
+  // for an array it declines for every later year — the same reasoning that
+  // lets the build loop above stop. Without this the re-resolution below would
+  // reprint the warning on every read: measured at 6 for 8 reads of one
+  // wholesale-entity-bequest account, which across a horizon and a Monte Carlo
+  // run is tens of thousands of lines.
+  const declined = new WeakSet<AccountOwner[]>();
+
   return {
     ownersAt(account: AccountWithOwners, year: number): AccountOwner[] {
       const entry = resolved.get(account.id);
       if (!entry) return account.owners;
       // Rebuilt since the snapshot was taken (death bequest, family-pool
       // partition, business succession): those rows are authored anew and
-      // post-date us, so they win.
-      if (entry.authored !== account.owners) return account.owners;
+      // post-date us, so the steps above are stale for them. Re-resolve against
+      // the live rows rather than handing them back raw — the death path
+      // retitles from AUTHORED owners and never applies the overlay, so raw
+      // rows would drop the gift here while `ownedByHouseholdAtYear` at the
+      // same call site keeps it (the family pool keeps the original account
+      // id, so the gift still matches there). Two halves of one site
+      // disagreeing is exactly the decay this snapshot exists to delete.
+      //
+      // Cold path — post-death, owners-changed accounts only — and it cannot
+      // throw: `canFundGifts` warns and falls back to the live rows.
+      if (entry.authored !== account.owners) {
+        // A gift is only in window from the first recorded step onward; before
+        // that `giftAwareOwners` returns by reference because there is nothing
+        // to apply yet, which must not be mistaken for a declined fallback.
+        const gifted = year >= entry.steps[0].from;
+        if (gifted && declined.has(account.owners)) return account.owners;
+        const live = giftAwareOwners(account, giftEvents, year, planStartYear);
+        if (gifted && live === account.owners) declined.add(account.owners);
+        return live;
+      }
       // Years outside the horizon need no special case. No step is recorded
       // before the first projected year or after the last, so a year below the
       // horizon falls through every step to the authored baseline, and a year

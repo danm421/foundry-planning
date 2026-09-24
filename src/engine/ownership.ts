@@ -1,4 +1,4 @@
-import type { Account, GiftEvent } from "./types";
+import type { GiftEvent } from "./types";
 
 export type AccountOwner =
   | { kind: "family_member"; familyMemberId: string; percent: number }
@@ -426,7 +426,7 @@ function canFundGifts(
  * `ownersForYear` would over-draw the zero household share and throw.
  */
 export function giftAwareOwners(
-  account: Account,
+  account: AccountWithOwners,
   giftEvents: GiftEvent[] | undefined,
   deathYear: number | undefined,
   planStartYear: number | undefined,
