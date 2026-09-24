@@ -1,4 +1,4 @@
-import type { GiftEvent } from "./types";
+import type { Account, GiftEvent } from "./types";
 
 export type AccountOwner =
   | { kind: "family_member"; familyMemberId: string; percent: number }
@@ -371,6 +371,107 @@ export function liabilityOwnedByHouseholdAtYear(
   return liabilityOwnersForYear(liability, events, year, projectionStartYear)
     .filter((o) => o.kind === "family_member")
     .reduce((s, o) => s + o.percent, 0);
+}
+
+/** One shared aggregate guard for both gift-aware wrappers.
+ *
+ *  `composeOwnersForYear` draws each gift from the (shrinking) household share
+ *  and throws once the cumulative draw exceeds it — so the throw condition is
+ *  precisely `Σ giftedPercent > householdShare`. Guarding on the aggregate lets
+ *  us fall back to the static owners in the one legitimate case (the gifts
+ *  already encode the transfer, e.g. an ILIT policy modeled as entity-owned
+ *  with a redundant §2035 event) without an exception, while still letting a
+ *  genuine integrity throw surface for valid-household inputs.
+ *
+ *  The fallback WARNS. It is otherwise indistinguishable from a correct
+ *  resolution, and that silence is how a double-applied overlay hides: a caller
+ *  that hands us already-overlaid owners plus the raw events lands here every
+ *  time and quietly reverts to gift-blind numbers. */
+function canFundGifts(
+  owners: AccountOwner[],
+  giftedPercent: number,
+  fn: string,
+  noun: string,
+  year: number,
+): boolean {
+  const householdShare = owners
+    .filter((o) => o.kind === "family_member")
+    .reduce((s, o) => s + o.percent, 0);
+  if (giftedPercent > householdShare + 1e-9) {
+    console.warn(
+      `${fn}: ${noun} at year ${year} has gifts totalling ${giftedPercent} but only ` +
+        `${householdShare} household share — falling back to authored owners. If this ` +
+        `is not an already-encoded transfer (e.g. an ILIT policy), the caller is ` +
+        `passing owners that ALREADY have the overlay applied.`,
+    );
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Year-aware owners for a death-time computation. A lifetime `kind:"asset"`
+ * GiftEvent retitles ownership (`ownersForYear`) — a person/charity gift becomes
+ * a `gifted_away` owner (out of estate) and an (irrevocable) trust gift becomes
+ * an `entity` owner (`deceasedEntityShare` = 0) — so the gifted asset leaves the
+ * gross estate. Without this the death path read static `account.owners` and
+ * double-counted gifted assets (in the gross estate AND in adjusted taxable
+ * gifts).
+ *
+ * Returns `account.owners` unchanged when gift context is absent (every existing
+ * direct caller of `computeGrossEstate`) or when no in-window asset gift targets
+ * this account. The household-share guard (`canFundGifts`) skips retitling when
+ * the static owners already encode the transfer (e.g. an ILIT-gifted policy
+ * modeled as entity-owned with a redundant gift event for §2035 / ATG) — there
+ * `ownersForYear` would over-draw the zero household share and throw.
+ */
+export function giftAwareOwners(
+  account: Account,
+  giftEvents: GiftEvent[] | undefined,
+  deathYear: number | undefined,
+  planStartYear: number | undefined,
+): AccountOwner[] {
+  if (!giftEvents || deathYear == null || planStartYear == null) return account.owners;
+  let giftedPercent = 0;
+  for (const e of giftEvents) {
+    if (e.kind !== "asset") continue;
+    if (e.accountId !== account.id) continue;
+    if (e.year < planStartYear || e.year > deathYear) continue;
+    giftedPercent += e.percent;
+  }
+  if (giftedPercent <= 0) return account.owners;
+  if (!canFundGifts(account.owners, giftedPercent, "giftAwareOwners", `account ${account.id}`, deathYear)) {
+    return account.owners;
+  }
+  return ownersForYear(account, giftEvents, deathYear, planStartYear);
+}
+
+/** Liability twin of {@link giftAwareOwners}.
+ *
+ *  The `giftedPercent <= 0` early-out is not an optimization here — it is the
+ *  whole point. Unlinked household debts routinely carry `owners: []`, and a
+ *  bare `liabilityOwnersForYear` on those sums to 0 and throws "expected 1".
+ *  Every death-path liability flows through this, so without the early-out the
+ *  first unlinked debt takes down the projection. */
+export function giftAwareLiabilityOwners(
+  liability: LiabilityWithOwners,
+  giftEvents: GiftEvent[] | undefined,
+  year: number | undefined,
+  planStartYear: number | undefined,
+): LiabilityOwner[] {
+  if (!giftEvents || year == null || planStartYear == null) return liability.owners;
+  let giftedPercent = 0;
+  for (const e of giftEvents) {
+    if (e.kind !== "liability") continue;
+    if (e.liabilityId !== liability.id) continue;
+    if (e.year < planStartYear || e.year > year) continue;
+    giftedPercent += e.percent;
+  }
+  if (giftedPercent <= 0) return liability.owners;
+  if (!canFundGifts(liability.owners, giftedPercent, "giftAwareLiabilityOwners", `liability ${liability.id}`, year)) {
+    return liability.owners;
+  }
+  return liabilityOwnersForYear(liability, giftEvents, year, planStartYear);
 }
 
 /** Compute the new owners[] after an entity disposes of fraction `f` (0 < f ≤ 1)

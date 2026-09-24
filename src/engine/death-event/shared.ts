@@ -2,7 +2,7 @@ import type { ClientInfo, Account, Liability, DeathTransfer, EstateTaxResult, Fa
 import { nextSyntheticId } from "../asset-transactions";
 import type { FilingStatus } from "../../lib/tax/types";
 import type { AccountOwner } from "../ownership";
-import { controllingEntity, controllingFamilyMember, isFullyEntityOwned, ownedByHousehold, ownersForYear } from "../ownership";
+import { controllingEntity, controllingFamilyMember, isFullyEntityOwned, ownedByHousehold } from "../ownership";
 
 /** Compute the year of the first-death event. Returns null when there is no
  *  spouse, when no lifeExpectancy is set, or when the earliest death falls
@@ -736,52 +736,12 @@ export function applyBeneficiaryDesignations(
   };
 }
 
-/**
- * Year-aware owners for a death-time computation. A lifetime `kind:"asset"`
- * GiftEvent retitles ownership (`ownersForYear`) — a person/charity gift becomes
- * a `gifted_away` owner (out of estate) and an (irrevocable) trust gift becomes
- * an `entity` owner (`deceasedEntityShare` = 0) — so the gifted asset leaves the
- * gross estate. Without this the death path read static `account.owners` and
- * double-counted gifted assets (in the gross estate AND in adjusted taxable
- * gifts).
- *
- * Returns `account.owners` unchanged when gift context is absent (every existing
- * direct caller of `computeGrossEstate`) or when no in-window asset gift targets
- * this account. The household-share guard skips retitling when the static owners
- * already encode the transfer (e.g. an ILIT-gifted policy modeled as entity-owned
- * with a redundant gift event for §2035 / ATG) — there `ownersForYear` would
- * over-draw the zero household share and throw.
- */
-export function giftAwareOwners(
-  account: Account,
-  giftEvents: GiftEvent[] | undefined,
-  deathYear: number | undefined,
-  planStartYear: number | undefined,
-): AccountOwner[] {
-  if (!giftEvents || deathYear == null || planStartYear == null) return account.owners;
-  let giftedPercent = 0;
-  for (const e of giftEvents) {
-    if (e.kind !== "asset") continue;
-    if (e.accountId !== account.id) continue;
-    if (e.year < planStartYear || e.year > deathYear) continue;
-    giftedPercent += e.percent;
-  }
-  if (giftedPercent <= 0) return account.owners;
-  const householdShare = account.owners
-    .filter((o) => o.kind === "family_member")
-    .reduce((s, o) => s + o.percent, 0);
-  // `ownersForYear` draws each gift sequentially from the (shrinking) household
-  // share, reducing it by exactly each gift's percent, and throws once the
-  // cumulative draw would exceed it. That throw condition is therefore precisely
-  // `Σ giftedPercent > householdShare`. Guarding on the aggregate here lets us
-  // fall back to the static owners in the one legitimate case where the gifts
-  // can't be drawn from the household — they already encode the transfer (e.g. an
-  // ILIT policy modeled as entity-owned with a redundant §2035 gift event) —
-  // without an exception, while still letting a genuine sum-to-1 integrity throw
-  // inside `ownersForYear` surface for valid-household inputs.
-  if (giftedPercent > householdShare + 1e-9) return account.owners;
-  return ownersForYear(account, giftEvents, deathYear, planStartYear);
-}
+// `giftAwareOwners` now lives in the ownership spine alongside its liability
+// twin and the composer they share. Re-exported here so the death-event call
+// sites (estate-tax.ts, business-succession.ts) keep their existing imports —
+// an import churn in the same commit as a behavior change makes the diff
+// unreadable.
+export { giftAwareOwners, giftAwareLiabilityOwners } from "../ownership";
 
 /** Deceased's family-member ownership share of a business account, from
  *  already-resolved owners. Accounts always carry an owners array (possibly
