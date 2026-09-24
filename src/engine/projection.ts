@@ -4933,7 +4933,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // ownedByHouseholdAtYear above already returned 0.85 — the cap then
       // re-derived balance x 0.85 against a SHRINKING balance every year and
       // decayed the trust's slice geometrically toward zero.
-      for (const o of ownershipSnapshot.ownersAt(acct.id, year)) {
+      for (const o of ownershipSnapshot.ownersAt(acct, year)) {
         if (o.kind !== "entity" || o.percent >= 1) continue;
         lockedTotal += accrueLockedEntityShare({
           carriedBoY: lockedEntityShareCarry.get(o.entityId)?.get(acct.id),
@@ -8399,7 +8399,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // Year-resolved owners — same reason as the withdraw-balance cap above.
       // Without this an account gifted to a trust never accrues a carry, so the
       // balance sheet's locked share and the entity's own cash flow disagree.
-      for (const o of ownershipSnapshot.ownersAt(acct.id, year)) {
+      for (const o of ownershipSnapshot.ownersAt(acct, year)) {
         if (o.kind !== "entity") continue;
         if (o.percent >= 1) continue; // 100%-entity needs no carry — full ledger is the share
         const carried = lockedEntityShareCarry.get(o.entityId)?.get(acct.id);
