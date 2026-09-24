@@ -30,6 +30,7 @@ import { loadActiveGiftChanges } from "@/lib/scenario/changes";
 import { partitionGiftChanges } from "@/lib/scenario/apply-gift-overlays";
 import { giftDraftToRow } from "@/lib/gifts/scenario-rows";
 import type { Gift } from "@/components/family-view";
+import { buildBundledChildValues } from "./child-values";
 
 /**
  * Adapt a scenario-added `Gift` (numbers, from `giftDraftToRow`) to the same
@@ -286,27 +287,22 @@ export async function POST(
         });
         if (linked) {
           linkedLiabilityId = linked.id;
-          await tx.insert(gifts).values({
-            clientId: id,
-            year: data.year,
-            yearRef: data.yearRef ?? null,
-            amount: null,
-            grantor: data.grantor,
-            recipientEntityId: data.recipientEntityId ?? null,
-            recipientFamilyMemberId: null,
-            recipientExternalBeneficiaryId: null,
-            accountId: null,
-            liabilityId: linked.id,
-            percent: data.percent != null ? String(data.percent) : null,
-            // valuationDiscount is deliberately absent. A liability transfer
-            // contributes $0 to the gift ledger and the normalizer skips these
-            // rows outright, so a discount here would be dead data — and, if the
-            // normalizer ever stopped skipping them, a double count against the
-            // parent's discount. Do not "fix" this by mirroring the parent.
-            parentGiftId: parent.id,
-            useCrummeyPowers: false,
-            notes: `Auto-bundled with asset transfer of account ${data.accountId}`,
-          });
+          await tx.insert(gifts).values(
+            buildBundledChildValues({
+              clientId: id,
+              year: data.year,
+              yearRef: data.yearRef ?? null,
+              grantor: data.grantor,
+              accountId: data.accountId,
+              linkedLiabilityId: linked.id,
+              percent: data.percent ?? null,
+              parentGiftId: parent.id,
+              recipientEntityId: data.recipientEntityId ?? null,
+              recipientFamilyMemberId: data.recipientFamilyMemberId ?? null,
+              recipientExternalBeneficiaryId:
+                data.recipientExternalBeneficiaryId ?? null,
+            }),
+          );
         }
       }
 
