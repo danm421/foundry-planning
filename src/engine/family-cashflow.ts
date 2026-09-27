@@ -11,8 +11,11 @@
 //   - Cash gifts (kind: "cash") → debit the grantor's share first, then
 //     pull pro-rata from co-owners if grantor is exhausted.
 //   - Asset gifts → at BoY, the drop in the resolved family percent × the
-//     account's beginning value leaves the household pro-rata, exactly as
-//     `composeOwnersForYear` shrinks the household percents.
+//     account's beginning value is debited pro-rata, exactly as
+//     `composeOwnersForYear` shrinks the household percents. A gift to an
+//     ENTITY leaves the family pool for good (the entity's locked share is
+//     subtracted at settle). A gift to a PERSON is debited and then
+//     re-inflated by the settle step, by design — see the settle comment.
 //   - Death event → at next BoY, surviving owners absorb deceased's share
 //     pro-rata to their pre-death shares.
 //
@@ -193,27 +196,6 @@ export function computeFamilyAccountShares(input: ComputeFamilyAccountSharesInpu
         }
       };
 
-      // Cash gifts: take `amount` out of the grantor's share first; if that
-      // runs dry, pull the remainder pro-rata from the co-owners. A grantor not
-      // on this account pays nothing directly — the whole amount goes pro-rata.
-      const drawFromGrantor = (grantor: "client" | "spouse" | "joint", amount: number) => {
-        const grantorFmId = resolveOwnerToFm(grantor);
-        if (!grantorFmId || !ownerFmIds.has(grantorFmId)) {
-          distributeProRata(-amount);
-          return;
-        }
-        const fromGrantor = Math.min(amount, Math.max(0, shares[grantorFmId]));
-        shares[grantorFmId] -= fromGrantor;
-        const remainder = amount - fromGrantor;
-        if (remainder <= 0) return;
-        const coOwners = owners.filter((o) => o.familyMemberId !== grantorFmId);
-        const coTotal = coOwners.reduce((s, o) => s + Math.max(0, shares[o.familyMemberId]), 0);
-        if (coTotal <= 0) return;
-        for (const o of coOwners) {
-          shares[o.familyMemberId] -= remainder * (Math.max(0, shares[o.familyMemberId]) / coTotal);
-        }
-      };
-
       // Asset gifts: read off the resolver, not the gift list. The household's
       // resolved percent falls by exactly what this year's gifts moved out —
       // to a trust (entity row) or a person (`gifted_away` row) alike — and
@@ -263,13 +245,49 @@ export function computeFamilyAccountShares(input: ComputeFamilyAccountSharesInpu
       // Apply cash gifts targeting this account this year. Draw from grantor's
       // share first; if exhausted, pull remainder pro-rata from co-owners.
       const giftsThisYear = cashGiftsByAccountYear.get(giftKey(accountId, year.year)) ?? [];
-      for (const g of giftsThisYear) drawFromGrantor(g.grantor, g.amount);
+      for (const g of giftsThisYear) {
+        const grantorFmId = resolveOwnerToFm(g.grantor);
+        if (!grantorFmId || !ownerFmIds.has(grantorFmId)) {
+          // Grantor isn't on this account — apply pro-rata.
+          distributeProRata(-g.amount);
+          continue;
+        }
+        const want = g.amount;
+        const available = Math.max(0, shares[grantorFmId]);
+        const fromGrantor = Math.min(want, available);
+        shares[grantorFmId] -= fromGrantor;
+        const remainder = want - fromGrantor;
+        if (remainder > 0) {
+          const coOwners = owners.filter((o) => o.familyMemberId !== grantorFmId);
+          const coTotal = coOwners.reduce(
+            (s, o) => s + Math.max(0, shares[o.familyMemberId]),
+            0,
+          );
+          if (coTotal > 0) {
+            for (const o of coOwners) {
+              shares[o.familyMemberId] -=
+                remainder * (Math.max(0, shares[o.familyMemberId]) / coTotal);
+            }
+          }
+        }
+      }
 
       // Settle: scale shares so they sum to the actual family-pool EoY. This
       // reconciles any rounding drift from the per-entry walk, and (more
       // importantly) collapses overdrafts by clamping negatives to 0 first
       // before normalizing. Mixed-ownership accounts: pool = ledger.endingValue
       // − Σ entity-locked shares for this account.
+      //
+      // CONTRACT: the pool subtracts entity locks ONLY. A `gifted_away` slice
+      // (an asset gift to a person) stays inside it, so familyAccountSharesEoY
+      // describes the family pool INCLUDING what was gifted to people, and
+      // consumers must take that slice out through `resolveOwnerSlices`
+      // (src/lib/estate/account-owner-slices.ts), which rescales locked family
+      // shares by familyPool / familyPoolPreGift. Do NOT subtract gifted_away
+      // here: it would double-subtract (balance sheet 320k instead of 400k per
+      // spouse after a 20% gift of a joint $1M account to a child) and turns
+      // red in-estate-at-year's "honors the gift on a joint account whose
+      // locked family shares are gift-blind".
       const familyPoolEoY = Math.max(0, ledger.endingValue - entityLockedTotalForAccount(year, accountId));
       let positiveSum = 0;
       for (const o of owners) {

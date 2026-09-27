@@ -24,9 +24,11 @@ export interface OwnerSlice {
  * `engine/death-event/estate-tax.ts`, which subtracts `totalGiftedAway` from
  * its family pool for the same reason.
  *
- * Locked family shares are gift-blind: `computeFamilyAccountShares` seeds them
- * from the account's *authored* owners, so they still carry the pre-gift family
- * pool. They are scaled by `familyPool / familyPoolPreGift` — both dollar
+ * Locked family shares are gift-blind toward `gifted_away`: `computeFamilyAccountShares`
+ * resolves owners per year and debits every asset gift, but its settle step
+ * rescales the shares to `endingValue − Σ entity locks`, a pool that still
+ * INCLUDES any slice gifted to a person. So they carry the pre-gift family
+ * pool with respect to gifted-away rows. They are scaled by `familyPool / familyPoolPreGift` — both dollar
  * figures, so the rescale stays consistent with an entity slice that has
  * drifted from its authored percent. With no gifted-away rows the two pools are
  * equal, the factor is 1, and locked shares pass through untouched.

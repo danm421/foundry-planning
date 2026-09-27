@@ -749,6 +749,8 @@ describe("family account shares via runProjection — asset gifts", () => {
   const awayTo = (id: string) => (o: AccountOwner) => o.kind === "gifted_away" && o.recipient.id === id;
 
   it("splits a 20% trust gift of a joint 50/50 account the way the composer does", () => {
+    // Guards the settle contract (pool = account − entity lock), NOT the debit:
+    // it stays green with the debit removed. The growth test is the debit's pin.
     const data = scenario(joint(), [giftOf({ recipientEntityId: "t-gift" })]);
     const [y2026, y2027, y2028] = runProjection(data);
     expect(fmShare(y2026, LEGACY_FM_CLIENT)).toBeCloseTo(500_000, 2);
@@ -785,6 +787,8 @@ describe("family account shares via runProjection — asset gifts", () => {
   it("a 20% gift to a child who is not an owner: 400k/400k and 200k gifted away", () => {
     // A gift to a person composes to a `gifted_away` row, never a
     // family_member one, so nobody in the family is credited.
+    // Guards R-f and the settle contract, NOT the debit: it stays green with
+    // the debit removed. The growth test is the debit's pin.
     const data = scenario(joint(), [giftOf({ recipientFamilyMemberId: FM_KID })]);
     const y2027 = runProjection(data)[1];
     const s = slices(data, y2027);
