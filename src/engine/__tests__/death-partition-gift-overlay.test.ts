@@ -293,6 +293,64 @@ describe("death partition — a fully gifted JOINT account", () => {
   }
 });
 
+describe("death partition — a wholly gifted account that ALSO has an authored trust row", () => {
+  // Authored 70% client / 30% trust; the client gives their whole 70% to the
+  // child in 2027, so nothing of the household is left: 30% trust, 70% child.
+  // The first death moves only the decedent's own authored row to the
+  // survivor. Replacing EVERY row with the survivor erased the trust's row,
+  // and the overlay then resolved the account to 30% spouse / 70% child —
+  // the survivor spent the trust's money and was taxed on it.
+  const MIXED: Account["owners"] = [
+    { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.7 },
+    { kind: "entity", entityId: TRUST, percent: 0.3 },
+  ];
+
+  it("gives the survivor none of the trust's 30% to spend", () => {
+    // $400k need in 2030: with the trust's row erased the survivor drew its
+    // $300k (checking −99,000).
+    const years = runProjection(plan({ owners: MIXED, gifts: [toKid(2027, 0.7)],
+      endYear: 2031, needs: [{ year: 2030, amount: 400_000 }] }));
+    const y2030 = at(years, 2030);
+    expect(y2030.accountLedgers[ACC].endingValue).toBeCloseTo(1_000_000, 2);
+    expect(y2030.accountLedgers["acct-checking"].endingValue).toBeCloseTo(-399_000, 2);
+  });
+
+  it("keeps it out of the survivor's estate — hypothetical and real", () => {
+    const years = runProjection(plan({ owners: MIXED, gifts: [toKid(2027, 0.7)], spouseDies: true }));
+    // The hypothetical runs both deaths in 2028; the erased row put 300k of the
+    // trust's share in the survivor's estate.
+    const hypLine = at(years, 2028).hypotheticalEstateTax.primaryFirst.finalDeath
+      ?.grossEstateLines.find((l) => l.accountId === ACC);
+    expect(hypLine?.amount ?? 0).toBe(0);
+    expect(routedFrom(at(years, 2029), 1)).toBe(0);
+    const y2031 = at(years, 2031);
+    expect(estateLine(y2031)).toBe(0);
+    expect(routedFrom(y2031, 2)).toBe(0);
+  });
+});
+
+describe("death partition — a fully gifted joint account with no spouse family member", () => {
+  // Legacy shape: the plan has a spouse (so there are two deaths) but
+  // `familyMembers` names no spouse — or nobody at all. There is no survivor
+  // to retitle to, so the account reaches the final death with its authored
+  // JOINT rows, and only the pre-check's wholly-gifted exemption stops the
+  // "no joint accounts survive the first death" throw.
+  const shapes = [
+    ["no spouse entry", FAMILY.filter((f) => f.role !== "spouse")],
+    ["no family members at all", [] as FamilyMember[]],
+  ] as const;
+  for (const [label, familyMembers] of shapes) {
+    it(`${label}: runs to the final death and routes $0`, () => {
+      const data = plan({ owners: JOINT, gifts: [toTrust(2027, 1)], spouseDies: true });
+      data.familyMembers = [...familyMembers];
+      const years = runProjection(data);
+      expect(at(years, 2031).estateTax?.deathOrder).toBe(2);
+      expect(routedFrom(at(years, 2029), 1)).toBe(0);
+      expect(routedFrom(at(years, 2031), 2)).toBe(0);
+    });
+  }
+});
+
 describe("death partition — estate costs are not paid out of a fully gifted account", () => {
   it("leaves a 100%-gifted account whole when the first death owes $50k of admin expenses", () => {
     // The skip leaves the account's AUTHORED rows naming the decedent, and the

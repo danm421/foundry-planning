@@ -55,6 +55,32 @@ interface FirstDeathChainResult {
   warnings: string[];
 }
 
+/** Hands the decedent's authored family row to the survivor — merged into
+ *  the survivor's own row when the account has one — and leaves every other
+ *  row exactly as authored. Only the decedent's share changes hands: a
+ *  trust's or a child's authored row must survive, or the gift overlay (which
+ *  shrinks household rows to free each gift) resolves the account against
+ *  the wrong baseline and hands the trust's share to the survivor. Same shape
+ *  as `applyBusinessOwnerSuccession`. */
+function moveDecedentRowToSurvivor(
+  acct: Account,
+  deceasedFmId: string | null,
+  survivorFmId: string | null,
+): Account {
+  if (deceasedFmId == null || survivorFmId == null) return acct;
+  const decedentRow = acct.owners.find(
+    (o) => o.kind === "family_member" && o.familyMemberId === deceasedFmId,
+  );
+  if (!decedentRow) return acct;
+  const owners = acct.owners.filter((o) => o !== decedentRow);
+  const i = owners.findIndex(
+    (o) => o.kind === "family_member" && o.familyMemberId === survivorFmId,
+  );
+  if (i >= 0) owners[i] = { ...owners[i], percent: owners[i].percent + decedentRow.percent };
+  else owners.push({ kind: "family_member", familyMemberId: survivorFmId, percent: decedentRow.percent });
+  return { ...acct, owners };
+}
+
 /** Phase 1 — the 4b precedence chain (titling → bene-designations → will →
  *  fallback) run against every account touched by the deceased. Returns the
  *  raw post-chain state; the 4d orchestrator layers gross-estate, tax, drain,
@@ -144,16 +170,12 @@ function runFirstDeathPrecedenceChain(input: DeathEventInput): FirstDeathChainRe
       // Nothing of the decedent's is in it, but its AUTHORED rows still name
       // them — and the readers that ask WHICH principal owns an account read
       // authored rows: the RMD age and routing, the IRA basis pool, transfer
-      // and Roth-conversion owner ages, contribution limits. Retitle the rows
-      // to the survivor, as the chain always did, but route no money and set
-      // no marker: the gift overlay still resolves the account wholly to its
-      // recipients on every gift-aware read. (The final death needs none of
-      // this — no survivor, and the projection ends there.)
-      nextAccounts.push(
-        survivorFmId != null
-          ? { ...acct, owners: [{ kind: "family_member", familyMemberId: survivorFmId, percent: 1 }] }
-          : acct,
-      );
+      // and Roth-conversion owner ages, contribution limits. Move the
+      // decedent's row to the survivor, but route no money and set no marker:
+      // the gift overlay still resolves the account wholly to its recipients
+      // on every gift-aware read. (The final death needs none of this — no
+      // survivor, and the projection ends there.)
+      nextAccounts.push(moveDecedentRowToSurvivor(acct, deceasedFmId, survivorFmId));
       continue;
     }
     for (const slice of route.entitySlices) {
