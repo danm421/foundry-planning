@@ -7,6 +7,11 @@ import {
 import { flatBusinessValueAt } from "@/engine/entity-cashflow";
 import type { FamilyMember, GiftEvent } from "@/engine/types";
 import { ownersAsOf } from "./view-model";
+import {
+  foldPartitionedAccount,
+  isPartitionedAt,
+  type AccountSlicesYear,
+} from "@/lib/estate/account-owner-slices";
 import type { AccountLike, LiabilityLike, EntityInfo, AsOfMode } from "./view-model";
 import type { NoteLike } from "@/lib/balance-sheet/build-view-model-inputs";
 import { CATEGORY_LABELS, CATEGORY_ORDER, type AssetCategoryKey } from "./tokens";
@@ -66,7 +71,7 @@ export interface HouseholdColumnsModel {
   netWorth: OwnerColumns;
 }
 
-export interface HouseholdProjYear {
+export interface HouseholdProjYear extends AccountSlicesYear {
   year: number;
   accountLedgers: Record<string, { endingValue: number; beginningValue: number }>;
   liabilityBalancesBoY: Record<string, number>;
@@ -187,15 +192,29 @@ export function buildHouseholdColumns(input: BuildHouseholdColumnsInput): Househ
   for (const acct of accounts) {
     const cat = DB_TO_KEY[acct.category];
     if (!cat) continue;
-    const ledger = yearData.accountLedgers[acct.id];
-    const value = (asOfMode === "today" ? ledger?.beginningValue : ledger?.endingValue) ?? 0;
-    if (value <= 0) continue;
+    const valueOf = (id: string) => {
+      const l = yearData.accountLedgers[id];
+      return (asOfMode === "today" ? l?.beginningValue : l?.endingValue) ?? 0;
+    };
     // Ownership as of the valuation year: a lifetime gift retitles the
     // gifted share to the recipient trust (or `gifted_away` for a person),
     // both of which `attributeToColumns` keeps out of the household columns.
     // Shares the resolver with the slice-based view-model so the two tabs of
-    // one report can never disagree about who owns what in a given year.
-    const owners = ownersAsOf(acct, giftEvents, valuationYear, planStartYear, asOfMode);
+    // one report can never disagree about who owns what in a given year —
+    // including after a first-death partition, where the account is its pool
+    // (the survivor's) plus the slices carved out of it, not its authored rows.
+    const folded =
+      asOfMode !== "today" && isPartitionedAt(yearData, acct.id)
+        ? foldPartitionedAccount({
+            account: acct,
+            yearRow: yearData,
+            valueOf,
+            fallbackOwners: () => ownersAsOf(acct, giftEvents, valuationYear, planStartYear, asOfMode),
+          })
+        : null;
+    const value = folded ? folded.value : valueOf(acct.id);
+    if (value <= 0) continue;
+    const owners = folded ? folded.owners : ownersAsOf(acct, giftEvents, valuationYear, planStartYear, asOfMode);
     const cols = splitToColumns(attributeToColumns({ id: acct.id, value, owners }, ctx));
     if (cols.total <= 0) continue; // entirely OOE / held back
     pushRow(cat, {

@@ -106,6 +106,17 @@ export interface AccountSlicesYear {
   familyAccountSharesEoY?: Map<string, Map<string, number>>;
 }
 
+/** A first-death partition rebuilt this authored account in this year: its
+ *  pool carries the `giftsReflectedThrough` marker, or accounts the death
+ *  carved out of it carry `sliceOf`. */
+export function isPartitionedAt(yearRow: AccountSlicesYear, accountId: string): boolean {
+  if (yearRow.accountOwners?.get(accountId)?.giftsReflectedThrough != null) return true;
+  for (const rec of yearRow.accountOwners?.values() ?? []) {
+    if (rec.sliceOf === accountId) return true;
+  }
+  return false;
+}
+
 /** Same owner, for folding a carved-out account's slice into its origin's. */
 function sameOwner(a: AccountOwner, b: AccountOwner): boolean {
   if (a.kind === "entity" && b.kind === "entity") return a.entityId === b.entityId;
@@ -160,4 +171,23 @@ export function accountSlicesAtYear(args: {
     else slices.push(c);
   }
   return slices;
+}
+
+/**
+ * A partitioned account (see {@link isPartitionedAt}) as ONE account: the
+ * pool plus every account carved out of it, valued together, with one owner
+ * row per owner giving that owner's share of the whole. For readers that
+ * work in `value × owner.percent` rather than in slices (the estate canvas,
+ * the Balance Sheet's household columns).
+ */
+export function foldPartitionedAccount(args: {
+  account: { id: string };
+  yearRow: AccountSlicesYear;
+  valueOf: (accountId: string) => number;
+  fallbackOwners: () => AccountOwner[];
+}): { value: number; owners: AccountOwner[] } {
+  const slices = accountSlicesAtYear(args);
+  const value = slices.reduce((sum, sl) => sum + sl.value, 0);
+  if (value <= 0) return { value: 0, owners: [] };
+  return { value, owners: slices.map((sl) => ({ ...sl.owner, percent: sl.value / value })) };
 }

@@ -26,8 +26,11 @@ import type {
 import { computeInEstateAtYear, computeOutOfEstateAtYear } from "../in-estate-at-year";
 import { rankTrustsByContribution } from "../strategy-attribution";
 import { buildYearlyLiquidityReport } from "../yearly-liquidity-report";
+import { buildEstateFlowSummary } from "../estate-flow-summary";
+import { buildOwnershipColumn } from "../estate-flow-ownership";
 import { buildBalanceSheetReportProps } from "@/lib/balance-sheet/build-report-props";
 import { buildViewModel } from "@/components/balance-sheet-report/view-model";
+import { buildHouseholdColumns } from "@/components/balance-sheet-report/household-columns";
 import { treeAsOfYear } from "@/app/(app)/clients/[id]/estate-planning/lib/tree-as-of-year";
 
 const ACC = "acct-x";
@@ -259,5 +262,66 @@ describe("reports after a first-death partition — a drained pool with a revoca
     // (The overdrawn checking contributes nothing: an owner slice floors at 0.)
     expect(y2030.accountLedgers["acct-checking"].endingValue).toBeLessThan(0);
     expect(row.totalPortfolioAssets).toBeCloseTo(300_000, 2);
+  });
+});
+
+describe("reports after a first-death partition — the Balance Sheet's household tab", () => {
+  const data = plan({ gifts: [toTrust(2027, 0.3)] });
+  const years = runProjection(data);
+
+  it("puts the whole 700k pool under the survivor and agrees with the consolidated view", () => {
+    const props = buildBalanceSheetReportProps(data, years, { clientLabel: "Client", spouseName: "Spouse" });
+    const household = buildHouseholdColumns({
+      accounts: props.accounts, liabilities: props.liabilities, entities: props.entities,
+      notesReceivable: props.notesReceivable, familyMembers: props.familyMembers,
+      projectionYears: props.projectionYears, selectedYear: 2030, asOfMode: "eoy",
+      giftEvents: props.giftEvents,
+    });
+    const row = household.assetCategories.flatMap((c) => c.rows).find((r) => r.key === ACC)!;
+    // Was client 490,000 / spouse 0: the dead client holding a re-gifted share
+    // of a pool that is wholly the survivor's.
+    expect(row.client).toBeCloseTo(0, 2);
+    expect(row.spouse).toBeCloseTo(700_000, 2);
+    expect(household.totalAssets.total).toBeCloseTo(balanceSheetAt(data, years, 2030).totalAssets, 2);
+    expect(household.totalAssets.total).toBeCloseTo(701_000, 2);
+  });
+});
+
+describe("reports after a first-death partition — Estate Flow, after a later gift of the pool", () => {
+  // 30% to the trust in 2027 (its 300k slice at the 2029 death), then 20% of
+  // the 700k pool to the SAME trust in 2031 — one owner, 440k.
+  const data = plan({ gifts: [toTrust(2027, 0.3), toTrust(2031, 0.2, "spouse")] });
+  const years = runProjection(data);
+  const projection = { years } as unknown as ProjectionResult;
+
+  it("shows the trust once, at 440k, in the out-of-estate trust box", () => {
+    const summary = buildEstateFlowSummary({
+      reportData: {
+        ordering: "primaryFirst", asOfLabel: "2031", firstDeath: null, secondDeath: null,
+        aggregateRecipientTotals: [], isEmpty: false,
+      },
+      clientData: data, gifts: [], ownerNames: { clientName: "Client", spouseName: "Spouse" },
+      asOfYear: 2031, projection,
+    })!;
+    const box = summary.outOfEstate.irrevTrusts.entities.find((e) => e.entityId === TRUST)!;
+    // Was 140,000: the trust's slice was invisible.
+    expect(box.assets.filter((a) => a.label === "Brokerage")).toHaveLength(1);
+    expect(box.amount).toBeCloseTo(440_000, 2);
+  });
+
+  it("gives the trust ONE ownership-column row of the account, at its 44%", () => {
+    const column = buildOwnershipColumn(data, { projection, asOfYear: 2031, todayYear: 2026 });
+    const rowsOf = (key: string) =>
+      column.groups.find((g) => g.key === key)?.assets.filter((a) => a.accountId === ACC) ?? [];
+    const trustRows = rowsOf(`entity:${TRUST}`);
+    // Two rows (the 300k slice at "100%" and the 140k pool share) collided on
+    // the column's `${accountId}-${group.key}` React key.
+    expect(trustRows).toHaveLength(1);
+    expect(trustRows[0].value).toBeCloseTo(440_000, 2);
+    expect(trustRows[0].percent).toBeCloseTo(0.44, 9);
+    const survivorRows = column.groups.flatMap((g) => g.key === `entity:${TRUST}` ? [] : g.assets)
+      .filter((a) => a.accountId === ACC);
+    expect(survivorRows).toHaveLength(1);
+    expect(survivorRows[0].value).toBeCloseTo(560_000, 2);
   });
 });

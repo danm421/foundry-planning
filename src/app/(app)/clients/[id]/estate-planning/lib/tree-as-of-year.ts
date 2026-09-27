@@ -1,7 +1,7 @@
 import type { Account, ClientData } from "@/engine/types";
 import type { ProjectionResult } from "@/engine";
 import { isPolicyInForce } from "@/lib/estate/insurance-in-force";
-import { accountSlicesAtYear } from "@/lib/estate/account-owner-slices";
+import { foldPartitionedAccount, isPartitionedAt } from "@/lib/estate/account-owner-slices";
 
 export type BalanceMode = "boy" | "eoy";
 
@@ -41,7 +41,7 @@ export function treeAsOfYear(
   if (!yearRow) return overlayLifeInsuranceFaceValue(tree, year);
 
   const accounts = tree.accounts.map((a) => {
-    if (mode === "eoy" && isPartitioned(yearRow, a.id)) return partitionedAsOf(a, yearRow);
+    if (mode === "eoy" && isPartitionedAt(yearRow, a.id)) return partitionedAsOf(a, yearRow);
     const ledger = yearRow.accountLedgers[a.id];
     if (!ledger) return { ...a, value: 0 };
     const value = mode === "boy" ? ledger.beginningValue : ledger.endingValue;
@@ -112,16 +112,6 @@ export function treeAsOfYear(
 
 type YearRow = ProjectionResult["years"][number];
 
-/** A first-death partition rebuilt this account: its pool carries the marker,
- *  or accounts the death carved out of it carry `sliceOf`. */
-function isPartitioned(yearRow: YearRow, accountId: string): boolean {
-  if (yearRow.accountOwners?.get(accountId)?.giftsReflectedThrough != null) return true;
-  for (const rec of yearRow.accountOwners?.values() ?? []) {
-    if (rec.sliceOf === accountId) return true;
-  }
-  return false;
-}
-
 /** EoY view of a partitioned account: the pool plus every account carved out
  *  of it, as ONE account whose rows are each owner's share of that whole. The
  *  authored rows describe none of it — after the death the pool is the
@@ -130,20 +120,14 @@ function isPartitioned(yearRow: YearRow, accountId: string): boolean {
  *  (`giftsReflectedThrough`): a gift-aware reader downstream (the spine's
  *  gross estate) must not apply those gifts to them again. */
 function partitionedAsOf(a: Account, yearRow: YearRow): Account {
-  const slices = accountSlicesAtYear({
+  const folded = foldPartitionedAccount({
     account: a,
     yearRow,
     valueOf: (id) => yearRow.accountLedgers[id]?.endingValue ?? 0,
     fallbackOwners: () => a.owners,
   });
-  const value = slices.reduce((sum, sl) => sum + sl.value, 0);
-  if (value <= 0) return { ...a, value: 0 };
-  return {
-    ...a,
-    value,
-    owners: slices.map((sl) => ({ ...sl.owner, percent: sl.value / value })),
-    giftsReflectedThrough: yearRow.year,
-  };
+  if (folded.value <= 0) return { ...a, value: 0 };
+  return { ...a, value: folded.value, owners: folded.owners, giftsReflectedThrough: yearRow.year };
 }
 
 /** For every in-force life-insurance policy, swap the account's cash-surrender

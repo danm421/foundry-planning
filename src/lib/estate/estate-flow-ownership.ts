@@ -10,7 +10,7 @@ import {
 import { ownersForYearSafe } from "./owners-or-household";
 import { consolidatedBusinessValue } from "@/engine/business/business-tree";
 import type { EstateFlowGift } from "./estate-flow-gifts";
-import { resolveOwnerSlices } from "./account-owner-slices";
+import { accountSlicesAtYear, isPartitionedAt, resolveOwnerSlices } from "./account-owner-slices";
 import {
   isPolicyInForce,
   insuredRetirementYearFor,
@@ -358,34 +358,65 @@ export function buildOwnershipColumn(
     // when the account is a parented child with no direct owners.
     // (Top-level business accounts have their own owners, so this no-ops
     // for them.)
-    // After a death partition the pool's owners are the engine's published
-    // ones (already net of every gift through the death), and every account the
+    // After a first-death partition the account is the family pool (original
+    // id, already net of every gift through the death) plus every account the
     // death carved out of it (`sliceOf`: an entity slice, a will's split of the
-    // pool) is a row of THIS account in its owner's group. A pool the will split
-    // away leaves only those rows. See `accountSlicesAtYear` for the model.
-    const published = yearState?.accountOwners?.get(accountId);
-    const carved = [...(yearState?.accountOwners ?? [])].filter(([, r]) => r.sliceOf === accountId);
-    for (const [carvedId, rec] of carved) {
-      const carvedValue = yearState?.accountLedgers[carvedId]?.endingValue ?? 0;
-      for (const owner of rec.owners) {
-        const group =
-          owner.kind === "entity" ? entityGroups.get(owner.entityId)
-          : owner.kind === "family_member" && owner.familyMemberId === clientFmId ? clientGroup
-          : owner.kind === "family_member" && owner.familyMemberId === spouseFmId ? spouseGroup
-          : undefined;
+    // pool). Its authored rows describe none of that: one row per OWNER, off
+    // the same resolver the other estate reports use (`accountSlicesAtYear`,
+    // which folds the carved accounts in and merges a repeat owner — a trust
+    // holding a slice and a later gift of the pool is one row).
+    if (yearState && isPartitionedAt(yearState, accountId)) {
+      const allSlices = accountSlicesAtYear({
+        account,
+        yearRow: yearState,
+        valueOf: (id) => (id === accountId ? resolvedBaseValue : yearState.accountLedgers[id]?.endingValue ?? 0),
+        fallbackOwners: () => effectiveOwners(account),
+      });
+      // The whole account, gifted-away shares included; those carry no column.
+      const whole = allSlices.reduce((sum, sl) => sum + sl.value, 0);
+      const slices = allSlices.filter((sl) => sl.owner.kind === "entity" || sl.owner.kind === "family_member");
+      const futureGifts = futureGiftsFor(accountId);
+      for (const { owner, value } of slices) {
+        let group: OwnershipGroup | null | undefined;
+        let ownerKind: "entity" | "family_member";
+        let ownerId: string;
+        if (owner.kind === "entity") {
+          ownerKind = "entity";
+          ownerId = owner.entityId;
+          group = entityGroups.get(owner.entityId);
+          if (!group) {
+            group = { key: `entity:${owner.entityId}`, kind: "trust", label: "Unknown entity", assets: [], subtotal: 0 };
+            entityGroups.set(owner.entityId, group);
+          }
+        } else if (owner.kind === "family_member") {
+          ownerKind = "family_member";
+          ownerId = owner.familyMemberId;
+          group = owner.familyMemberId === clientFmId ? clientGroup
+            : owner.familyMemberId === spouseFmId ? spouseGroup
+            : null;
+        } else continue;
         if (!group) continue;
-        const value = carvedValue * owner.percent;
+        const linkedLiabilities = buildLinkedLiabilities(data, accountId, ownerKind, ownerId);
+        const liabilityTotal = linkedLiabilities.reduce((sum, l) => sum + l.balance, 0);
         group.assets.push({
-          accountId, rowKind: "account", isDefaultCash: false, name: account.name,
-          accountType: account.category, value, percent: owner.percent, isSplit: true,
-          linkedLiabilities: [], netValue: value, hasBeneficiaries, hasConflict,
+          accountId,
+          rowKind: "account",
+          isDefaultCash: account.isDefaultChecking === true,
+          name: account.name,
+          accountType: account.category,
+          value,
+          percent: whole > 0 ? value / whole : 0,
+          isSplit: slices.length > 1,
+          linkedLiabilities,
+          netValue: value - liabilityTotal,
+          hasBeneficiaries,
+          hasConflict,
+          ...(futureGifts.length > 0 ? { futureGifts } : {}),
         });
       }
+      continue;
     }
-    if (carved.length > 0 && !published) continue;
-    const ownersForResolution = published?.giftsReflectedThrough != null
-      ? published.owners
-      : effectiveOwners(account);
+    const ownersForResolution = effectiveOwners(account);
     const accountForResolution: Account = ownersForResolution === account.owners
       ? account
       : { ...account, owners: ownersForResolution };
