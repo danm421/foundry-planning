@@ -2,7 +2,7 @@ import type { ClientInfo, Account, Liability, DeathTransfer, EstateTaxResult, Fa
 import { nextSyntheticId } from "../asset-transactions";
 import type { FilingStatus } from "../../lib/tax/types";
 import type { AccountOwner } from "../ownership";
-import { controllingEntity, controllingFamilyMember, isFullyEntityOwned, ownedByHousehold } from "../ownership";
+import { controllingEntity, controllingFamilyMember, giftAwareOwners, isFullyEntityOwned, ownedByHousehold } from "../ownership";
 
 /** Compute the year of the first-death event. Returns null when there is no
  *  spouse, when no lifeExpectancy is set, or when the earliest death falls
@@ -166,8 +166,8 @@ export function partitionMixedAccount(
    *  That loses nothing: the composer frees a gift by shrinking every
    *  household row by one factor, so renormalized authored and renormalized
    *  resolved family rows are the same. Because the pool keeps the original
-   *  id, the CALLER must mark it (`giftsReflectedThrough`) or every later
-   *  gift-aware read applies the same gifts to it a second time. Omitted →
+   *  id it must be marked `giftsReflectedThrough` (`routeAtDeath` does), or
+   *  every later gift-aware read applies the same gifts to it again. Omitted →
    *  `account.owners`, i.e. exactly the pre-gift behavior. */
   resolvedOwners?: AccountOwner[],
 ): MixedAccountPartition {
@@ -221,6 +221,66 @@ export function partitionMixedAccount(
   };
 
   return { entitySlices, familyPool };
+}
+
+/** Owners of `a` at this death with the lifetime gift overlay applied. */
+function ownersAtDeath(a: Account, input: DeathEventInput): AccountOwner[] {
+  return giftAwareOwners(a, input.giftEvents, input.year, input.planSettings.planStartYear);
+}
+
+/** True when lifetime gifts have moved EVERY household share of `a` out — to
+ *  trusts, people or charities. Nothing of the decedent's is left in it, yet
+ *  its AUTHORED rows still name the household, so any death-time reader of
+ *  `a.owners` has to ask this first: the chain must not route it, the estate
+ *  drains must not spend it, and it is neither a joint account nor an orphan.
+ *  A `canFundGifts` decline — and an account no gift touches, including an
+ *  authored trust account — hands back the authored rows BY REFERENCE, so it
+ *  is never wholly gifted. */
+export function isWhollyGiftedAway(a: Account, input: DeathEventInput): boolean {
+  return noFamilyLeft(a, ownersAtDeath(a, input));
+}
+
+function noFamilyLeft(a: Account, resolved: AccountOwner[]): boolean {
+  return resolved !== a.owners && !resolved.some((o) => o.kind === "family_member");
+}
+
+/** How the precedence chain routes one account the decedent touched.
+ *
+ *  `null` — wholly gifted away ({@link isWhollyGiftedAway}): the caller keeps
+ *  the account exactly as it is and routes nothing.
+ *
+ *  Otherwise `account` / `balance` / `basis` are what the chain routes. When
+ *  the gift-resolved owners hold an entity or `gifted_away` row, the account is
+ *  partitioned: `entitySlices` are retained as their own accounts, a gifted-away
+ *  share leaves altogether, and `account` is the family pool — under the
+ *  ORIGINAL id and already net of every gift through this death, so it is
+ *  marked `giftsReflectedThrough` or every later gift-aware read (the
+ *  ownership snapshot, the withdraw cap, the portfolio, a later death) takes
+ *  the same gifts out of it a second time. */
+export function routeAtDeath(
+  acct: Account,
+  balance: number,
+  basis: number,
+  input: DeathEventInput,
+): { account: Account; balance: number; basis: number; entitySlices: Account[] } | null {
+  const resolved = ownersAtDeath(acct, input);
+  if (noFamilyLeft(acct, resolved)) return null;
+  // The gate asks the RESOLVED owners. Reading the authored array, an account
+  // 100% client on paper with 30% gifted to a trust looked unmixed and the
+  // chain swept the trust's slice into the transfer. The family row is a given
+  // here: the account survived the wholly-gifted return above.
+  if (!resolved.some((o) => o.kind === "entity" || o.kind === "gifted_away")) {
+    return { account: acct, balance, basis, entitySlices: [] };
+  }
+  const part = partitionMixedAccount(
+    acct, balance, basis, input.entityAccountSharesEoY, resolved,
+  );
+  return {
+    account: { ...part.familyPool, giftsReflectedThrough: input.year },
+    balance: part.familyPool.value,
+    basis: part.familyPool.basis,
+    entitySlices: part.entitySlices,
+  };
 }
 
 /** §1014 basis step-up at death. Returns the post-death basis for an

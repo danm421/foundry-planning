@@ -54,21 +54,34 @@ const toKid = (year: number, percent: number): GiftEvent => ({
   kind: "asset", year, accountId: ACC, percent, grantor: "client", recipientFamilyMemberId: KID,
 });
 
+const CLIENT_ONLY: Account["owners"] = [
+  { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 },
+];
+const JOINT: Account["owners"] = [
+  { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+  { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+];
+
 /** Client dies 2029 (1960 + 69). The spouse dies 2031 when `spouseDies`, else
  *  outlives the horizon. `needs` are one-year living expenses drawn from the
- *  gifted account — the only way to observe the household withdraw cap. */
+ *  gifted account — the only way to observe the household withdraw cap.
+ *  `owners` defaults to the CLIENT ALONE; pass `JOINT` for a joint account. */
 function plan(opts: {
   gifts: GiftEvent[];
+  owners?: Account["owners"];
   spouseDies?: boolean;
   endYear?: number;
   needs?: Array<{ year: number; amount: number }>;
+  estateAdminExpenses?: number;
 }) {
   const endYear = opts.endYear ?? 2033;
   const acct: Account = {
     id: ACC, name: "Brokerage", category: "taxable", subType: "brokerage",
-    titlingType: "jtwros", value: 1_000_000, basis: 400_000, growthRate: 0,
-    rmdEnabled: false,
-    owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+    // Required by the type, read only for a JOINT account (half vs full
+    // step-up). The owners decide jointness — `CLIENT_ONLY` is not joint.
+    titlingType: "jtwros",
+    value: 1_000_000, basis: 400_000, growthRate: 0, rmdEnabled: false,
+    owners: opts.owners ?? CLIENT_ONLY,
   };
   const checking: Account = {
     id: "acct-checking", name: "Checking", category: "cash", subType: "checking",
@@ -91,7 +104,8 @@ function plan(opts: {
     withdrawalStrategy: [{ accountId: ACC, priorityOrder: 1, startYear: 2026, endYear }],
     giftEvents: opts.gifts,
     planSettings: { ...basePlanSettings, flatFederalRate: 0, flatStateRate: 0,
-      planStartYear: 2026, planEndYear: endYear },
+      planStartYear: 2026, planEndYear: endYear,
+      estateAdminExpenses: opts.estateAdminExpenses ?? 0 },
   });
 }
 
@@ -222,5 +236,111 @@ describe("death partition — a gift of the pool AFTER the death still lands", (
     }));
     expect(at(years, 2031).accountLedgers[ACC].endingValue).toBeCloseTo(140_000, 2);
     expect(at(years, 2032).accountLedgers[ACC].endingValue).toBeCloseTo(140_000, 2);
+  });
+});
+
+describe("death partition — a gift dated IN the death year is already in the pool", () => {
+  it("does not take a death-year gift out of the pool again (≤, not <)", () => {
+    // The 30% gift lands in 2029, the year the client dies. The partition
+    // resolves owners through 2029 inclusive, so the pool (700k) is already
+    // net of it; the marker must skip it too. Skipping only gifts BEFORE 2029
+    // re-applies it: cap min(700k × 0.7, 700k − 210k) = 490k → −309,000.
+    const years = runProjection(plan({ gifts: [toTrust(2029, 0.3)],
+      endYear: 2031, needs: [{ year: 2030, amount: 800_000 }] }));
+    expect(routedFrom(at(years, 2029), 1)).toBeCloseTo(700_000, 2);
+    const y2030 = at(years, 2030);
+    expect(y2030.accountLedgers[ACC].endingValue).toBeCloseTo(0, 2);
+    expect(y2030.accountLedgers["acct-checking"].endingValue).toBeCloseTo(-99_000, 2);
+  });
+});
+
+describe("death partition — a fully gifted JOINT account", () => {
+  // A joint account the household gave away entirely. Nothing of either
+  // spouse's is left in it, so neither death may route it — and the account
+  // must not look joint to the final death's "no joint accounts survive the
+  // first death" check. The hypothetical estate tax runs BOTH deaths in every
+  // year, so that check fires from the gift year even when the spouse
+  // outlives the plan.
+  const cases = [
+    ["100% to a trust", [toTrust(2027, 1)]],
+    ["100% to a child", [toKid(2027, 1)]],
+    ["gift-split: each spouse gives half to the trust", [toTrust(2027, 0.5, "client"), toTrust(2027, 0.5, "spouse")]],
+  ] as const;
+
+  for (const [label, gifts] of cases) {
+    it(`${label}: runs to the survivor's death and routes $0 at both deaths`, () => {
+      const years = runProjection(plan({ owners: JOINT, gifts: [...gifts], spouseDies: true }));
+      const y2029 = at(years, 2029);
+      expect(y2029.estateTax?.deathOrder).toBe(1);
+      expect(routedFrom(y2029, 1)).toBe(0);
+      const y2031 = at(years, 2031);
+      expect(y2031.estateTax?.deathOrder).toBe(2);
+      expect(routedFrom(y2031, 2)).toBe(0);
+      expect(y2031.accountLedgers[ACC].endingValue).toBeCloseTo(1_000_000, 2);
+    });
+
+    it(`${label}: runs when the spouse outlives the plan, and the hypothetical routes $0`, () => {
+      const years = runProjection(plan({ owners: JOINT, gifts: [...gifts] }));
+      expect(routedFrom(at(years, 2029), 1)).toBe(0);
+      for (const year of [2027, 2030]) {
+        const hyp = at(years, year).hypotheticalEstateTax.primaryFirst;
+        const hypRouted = [...hyp.firstDeathTransfers, ...(hyp.finalDeathTransfers ?? [])]
+          .filter((t) => t.sourceAccountId === ACC)
+          .reduce((s, t) => s + t.amount, 0);
+        expect(hypRouted).toBe(0);
+      }
+    });
+  }
+});
+
+describe("death partition — estate costs are not paid out of a fully gifted account", () => {
+  it("leaves a 100%-gifted account whole when the first death owes $50k of admin expenses", () => {
+    // The skip leaves the account's AUTHORED rows naming the decedent, and the
+    // estate drain read them: it took the $50k from the child's account.
+    const years = runProjection(plan({ gifts: [toKid(2027, 1)], estateAdminExpenses: 50_000 }));
+    expect(at(years, 2029).estateTax?.estateAdminExpenses).toBeCloseTo(50_000, 2);
+    expect(at(years, 2030).accountLedgers[ACC].endingValue).toBeCloseTo(1_000_000, 2);
+  });
+
+  it("leaves it whole at the survivor's death too, when the survivor made the gift", () => {
+    // The spouse's own account, 100% given to the child in 2027. The final
+    // death drains its costs BEFORE the chain, from the authored rows — which
+    // still name the spouse.
+    const spouseOnly: Account["owners"] = [
+      { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 1 },
+    ];
+    const years = runProjection(plan({
+      owners: spouseOnly, spouseDies: true, estateAdminExpenses: 50_000,
+      gifts: [{ kind: "asset", year: 2027, accountId: ACC, percent: 1,
+        grantor: "spouse", recipientFamilyMemberId: KID }],
+    }));
+    const y2031 = at(years, 2031);
+    expect(y2031.estateTax?.deathOrder).toBe(2);
+    expect(y2031.estateTax?.estateTaxDebits.some((d) => d.accountId === ACC)).toBe(false);
+  });
+});
+
+describe("death partition — a wholly gifted account keeps its authored rows", () => {
+  it("runs past the owner's death for a 100%-gifted IRA with RMDs due", () => {
+    // Why the chain leaves a wholly gifted account's rows alone instead of
+    // retitling them to the resolved `gifted_away` row: every authored-owner
+    // reader would then see an owner that is neither a family member nor an
+    // entity, and the RMD block throws "must have a single owner" the first
+    // year an RMD falls due. (A gift of an IRA is not legal, but nothing stops
+    // one being entered.)
+    const ira: Account = {
+      id: "ira", name: "IRA", category: "retirement", subType: "traditional_ira",
+      titlingType: "jtwros", value: 500_000, basis: 0, growthRate: 0, rmdEnabled: true,
+      owners: CLIENT_ONLY,
+    };
+    const data = plan({ gifts: [] });
+    data.client = { ...data.client, dateOfBirth: "1955-01-01", lifeExpectancy: 74 };
+    data.familyMembers = FAMILY.map((f) => f.role === "client" ? { ...f, dateOfBirth: "1955-01-01" } : f);
+    data.accounts = [...data.accounts, ira];
+    data.giftEvents = [{ kind: "asset", year: 2027, accountId: "ira", percent: 1,
+      grantor: "client", recipientFamilyMemberId: KID }];
+    const years = runProjection(data);
+    expect(at(years, 2029).estateTax?.deathOrder).toBe(1);
+    expect(at(years, 2033).accountLedgers["ira"]).toBeDefined();
   });
 });

@@ -11,8 +11,8 @@ import {
   applyWillSpecificBequests,
   computeSteppedUpBasis,
   distributeUnlinkedLiabilities,
-  giftAwareOwners,
-  partitionMixedAccount,
+  isWhollyGiftedAway,
+  routeAtDeath,
   selectResiduaryTier,
   runPourOut,
   type DeathEventInput,
@@ -89,7 +89,11 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
   // (ownerFamilyMemberId heir-distribution) accounts are exempt. Mixed
   // family+entity accounts (e.g. client 80% + LLC 20%) are also NOT joint —
   // they'll be partitioned in the loop below — so exclude them from this guard.
+  // A wholly gifted account is exempt too: its authored rows can still read
+  // joint (the chain leaves it untouched at the first death), but lifetime
+  // gifts moved every household share out of it.
   for (const a of accounts) {
+    if (isWhollyGiftedAway(a, input)) continue;
     const cfm = controllingFamilyMember(a);
     const hasMixedEntityFm =
       a.owners.some((o) => o.kind === "entity") &&
@@ -158,49 +162,21 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
     // unchanged) and route only the family pool. Without this the chain
     // treats the account as joint and sweeps the entity's slice into the
     // transfer — double-counting it against the consolidated business line.
-    //
-    // Gift-resolved ownership. The gate asked the AUTHORED array, so an account
-    // that is 100% client on paper with 30% gifted to a trust looked unmixed,
-    // the partition never ran, and the chain swept the trust's slice into the
-    // transfer. A `gifted_away` row (a gift to a person) is peeled the same
-    // way — it leaves the pool rather than becoming a slice.
-    const resolvedOwners = giftAwareOwners(
-      acct, input.giftEvents, input.year, input.planSettings.planStartYear,
-    );
-    // Wholly gifted away: the resolved owners hold no family row, so nothing
-    // of the decedent's is left to route. Leave the account exactly as it is —
-    // its owners array stays the authored one, so every later read keeps
-    // resolving it to the recipient. A `canFundGifts` decline never lands here:
-    // it hands back the authored rows, and an account the decedent touches
-    // always has a family row among those.
-    if (!resolvedOwners.some((o) => o.kind === "family_member")) {
+    // Gift-resolved (see `routeAtDeath`): a wholly gifted account stays as it
+    // is; a partly gifted one is partitioned like any other mixed account.
+    const route = routeAtDeath(acct, balance, originalBasis, input);
+    if (route == null) {
       nextAccounts.push(acct);
       continue;
     }
-    let routedAcct = acct;
-    let routedBalance = balance;
-    let routedBasis = originalBasis;
-    const hasEntityOwner = resolvedOwners.some(
-      (o) => o.kind === "entity" || o.kind === "gifted_away",
-    );
-    const hasFamilyOwner = resolvedOwners.some((o) => o.kind === "family_member");
-    if (hasEntityOwner && hasFamilyOwner) {
-      const part = partitionMixedAccount(
-        acct, balance, originalBasis, input.entityAccountSharesEoY, resolvedOwners,
-      );
-      for (const slice of part.entitySlices) {
-        nextAccounts.push(slice);
-        nextAccountBalances[slice.id] = slice.value;
-        nextBasisMap[slice.id] = slice.basis;
-      }
-      // The pool keeps this account's id and its value is already net of every
-      // gift so far. Mark it, or each gift-aware read (the ownership snapshot,
-      // the withdraw cap, the portfolio, a later death) takes the same gifts
-      // out of it a second time.
-      routedAcct = { ...part.familyPool, giftsReflectedThrough: input.year };
-      routedBalance = part.familyPool.value;
-      routedBasis = part.familyPool.basis;
+    for (const slice of route.entitySlices) {
+      nextAccounts.push(slice);
+      nextAccountBalances[slice.id] = slice.value;
+      nextBasisMap[slice.id] = slice.basis;
     }
+    const routedAcct = route.account;
+    const routedBalance = route.balance;
+    const routedBasis = route.basis;
 
     // §1014 step-up. No joint accounts survive into final-death (first-
     // death titling consumed them), so isJointAtFirstDeath is always false.
@@ -510,6 +486,8 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     accounts: prepared.accounts,
     accountBalances: drainTargetBalances,
     eligibilityFilter: (a) => {
+      // Its authored rows can still name the decedent, but it is its recipients'.
+      if (isWhollyGiftedAway(a, input)) return false;
       // Exclude accounts already distributed to a non-principal heir FM
       const cfmA = controllingFamilyMember(a);
       if (cfmA != null && cfmA !== deceasedFmId) return false;
@@ -644,6 +622,8 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     accounts: prepared.accounts,
     accountBalances: drainTargetBalances,
     eligibilityFilter: (a) => {
+      // Its authored rows can still name the decedent, but it is its recipients'.
+      if (isWhollyGiftedAway(a, input)) return false;
       // Exclude accounts already distributed to a non-principal heir FM
       const cfmA = controllingFamilyMember(a);
       if (cfmA != null && cfmA !== deceasedFmId) return false;

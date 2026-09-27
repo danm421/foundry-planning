@@ -9,6 +9,7 @@ import {
   controllingEntity,
   rebalanceOwnersAfterEntityDisposition,
   ownersForYear,
+  giftAwareOwners,
   sortOwners,
   type AccountOwner,
 } from "../ownership";
@@ -212,5 +213,46 @@ describe("ownersForYear — asset gift to a non-entity recipient", () => {
     ];
     const owners = ownersForYear(giftAccount, events, 2027, 2026);
     expect(owners.find((o) => o.kind === "entity")).toMatchObject({ entityId: "trust-1", percent: 0.5 });
+  });
+});
+
+describe("giftsReflectedThrough — a death-partitioned pool is not gifted again", () => {
+  const pool = (owners: AccountOwner[], reflected?: number) => ({
+    id: "acc-1", owners, ...(reflected != null ? { giftsReflectedThrough: reflected } : {}),
+  });
+  const spouse: AccountOwner[] = [{ kind: "family_member", familyMemberId: "fm-s", percent: 1 }];
+  const gifts: GiftEvent[] = [
+    { kind: "asset", year: 2027, accountId: "acc-1", percent: 0.3, grantor: "client", recipientEntityId: "t-1" },
+    { kind: "asset", year: 2029, accountId: "acc-1", percent: 0.1, grantor: "client", recipientEntityId: "t-1" },
+    { kind: "asset", year: 2031, accountId: "acc-1", percent: 0.2, grantor: "spouse", recipientEntityId: "t-1" },
+  ];
+
+  it("ownersForYear skips every gift at or before the marker, including one IN the marker year", () => {
+    expect(ownersForYear(pool(spouse, 2029), gifts, 2030, 2026)).toEqual(spouse);
+  });
+
+  it("ownersForYear still composes a gift dated after the marker", () => {
+    expect(ownersForYear(pool(spouse, 2029), gifts, 2031, 2026)).toEqual([
+      { kind: "family_member", familyMemberId: "fm-s", percent: 0.8 },
+      { kind: "entity", entityId: "t-1", percent: 0.2 },
+    ]);
+  });
+
+  it("the marker's boundary is inclusive: a marker one year earlier leaves the 2029 gift live", () => {
+    const owners = ownersForYear(pool(spouse, 2028), gifts, 2030, 2026);
+    expect(owners.find((o) => o.kind === "entity")?.percent).toBeCloseTo(0.1, 12);
+  });
+
+  it("giftAwareOwners hands back the pool's own rows BY REFERENCE when every gift is reflected", () => {
+    const p = pool(spouse, 2029);
+    expect(giftAwareOwners(p, gifts, 2030, 2026)).toBe(p.owners);
+  });
+
+  it("an unmarked account composes exactly as before", () => {
+    const client: AccountOwner[] = [{ kind: "family_member", familyMemberId: "fm-c", percent: 1 }];
+    expect(ownersForYear(pool(client), gifts, 2030, 2026)).toEqual([
+      { kind: "family_member", familyMemberId: "fm-c", percent: 0.6 },
+      { kind: "entity", entityId: "t-1", percent: 0.4 },
+    ]);
   });
 });

@@ -254,6 +254,34 @@ describe("buildOwnershipSnapshot", () => {
   });
 });
 
+describe("ownership snapshot — a death-partitioned pool (giftsReflectedThrough)", () => {
+  // The death partition hands the family pool back under the original id with
+  // rebuilt rows, already net of every gift through the death year, and marks
+  // it. The staleness branch must neither re-apply those gifts nor let their
+  // by-reference "nothing to apply" answer poison the decline cache — or a gift
+  // made AFTER the death never lands.
+  const authored = acct("acc-1", [{ kind: "family_member", familyMemberId: "fm-c", percent: 1 }]);
+  const gifts: GiftEvent[] = [
+    { kind: "asset", year: 2027, accountId: "acc-1", percent: 0.3, grantor: "client", recipientEntityId: "t-1" },
+    { kind: "asset", year: 2031, accountId: "acc-1", percent: 0.2, grantor: "spouse", recipientEntityId: "t-1" },
+  ];
+  const years = [2026, 2027, 2028, 2029, 2030, 2031, 2032];
+
+  it("returns the pool's own rows until a post-death gift, then composes that gift alone", () => {
+    const snap = buildOwnershipSnapshot([authored], gifts, years, 2026);
+    const pool = { id: "acc-1", owners: [{ kind: "family_member" as const, familyMemberId: "fm-s", percent: 1 }],
+      giftsReflectedThrough: 2029 };
+    // Ask 2030 FIRST: its by-reference answer is "nothing to apply yet", not a
+    // canFundGifts decline, and must not be cached as one.
+    expect(snap.ownersAt(pool, 2030)).toBe(pool.owners);
+    expect(snap.ownersAt(pool, 2031)).toEqual([
+      { kind: "family_member", familyMemberId: "fm-s", percent: 0.8 },
+      { kind: "entity", entityId: "t-1", percent: 0.2 },
+    ]);
+    expect(snap.ownersAt(pool, 2032)).toEqual(snap.ownersAt(pool, 2031));
+  });
+});
+
 describe("ownership snapshot — regression: the locked-share cap after a death event", () => {
   // Fix round 1, Critical 1. `partitionMixedAccount` splits a mixed account
   // into a synthetic 100%-entity slice PLUS a family pool that keeps the

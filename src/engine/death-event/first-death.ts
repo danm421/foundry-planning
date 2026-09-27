@@ -13,7 +13,8 @@ import {
   computeSteppedUpBasis,
   distributeFirstDeathUnlinkedLiabilities,
   giftAwareOwners,
-  partitionMixedAccount,
+  isWhollyGiftedAway,
+  routeAtDeath,
   runPourOut,
   type DeathEventInput,
   type DeathEventResult,
@@ -135,49 +136,21 @@ function runFirstDeathPrecedenceChain(input: DeathEventInput): FirstDeathChainRe
     // unchanged) and route only the family pool. Without this the chain
     // treats the account as joint and sweeps the entity's slice into the
     // transfer — double-counting it against the consolidated business line.
-    //
-    // Gift-resolved ownership. The gate asked the AUTHORED array, so an account
-    // that is 100% client on paper with 30% gifted to a trust looked unmixed,
-    // the partition never ran, and the chain swept the trust's slice into the
-    // transfer. A `gifted_away` row (a gift to a person) is peeled the same
-    // way — it leaves the pool rather than becoming a slice.
-    const resolvedOwners = giftAwareOwners(
-      acct, input.giftEvents, input.year, input.planSettings.planStartYear,
-    );
-    // Wholly gifted away: the resolved owners hold no family row, so nothing
-    // of the decedent's is left to route. Leave the account exactly as it is —
-    // its owners array stays the authored one, so every later read keeps
-    // resolving it to the recipient. A `canFundGifts` decline never lands here:
-    // it hands back the authored rows, and an account the decedent touches
-    // always has a family row among those.
-    if (!resolvedOwners.some((o) => o.kind === "family_member")) {
+    // Gift-resolved (see `routeAtDeath`): a wholly gifted account stays as it
+    // is; a partly gifted one is partitioned like any other mixed account.
+    const route = routeAtDeath(acct, balance, originalBasis, input);
+    if (route == null) {
       nextAccounts.push(acct);
       continue;
     }
-    let routedAcct = acct;
-    let routedBalance = balance;
-    let routedBasis = originalBasis;
-    const hasEntityOwner = resolvedOwners.some(
-      (o) => o.kind === "entity" || o.kind === "gifted_away",
-    );
-    const hasFamilyOwner = resolvedOwners.some((o) => o.kind === "family_member");
-    if (hasEntityOwner && hasFamilyOwner) {
-      const part = partitionMixedAccount(
-        acct, balance, originalBasis, input.entityAccountSharesEoY, resolvedOwners,
-      );
-      for (const slice of part.entitySlices) {
-        nextAccounts.push(slice);
-        nextAccountBalances[slice.id] = slice.value;
-        nextBasisMap[slice.id] = slice.basis;
-      }
-      // The pool keeps this account's id and its value is already net of every
-      // gift so far. Mark it, or each gift-aware read (the ownership snapshot,
-      // the withdraw cap, the portfolio, a later death) takes the same gifts
-      // out of it a second time.
-      routedAcct = { ...part.familyPool, giftsReflectedThrough: input.year };
-      routedBalance = part.familyPool.value;
-      routedBasis = part.familyPool.basis;
+    for (const slice of route.entitySlices) {
+      nextAccounts.push(slice);
+      nextAccountBalances[slice.id] = slice.value;
+      nextBasisMap[slice.id] = slice.basis;
     }
+    const routedAcct = route.account;
+    const routedBalance = route.balance;
+    const routedBasis = route.basis;
 
     // Recompute isJoint on the family pool (entity rows have been peeled off,
     // so a formerly mixed account may now be sole-FM-owned, not joint).
@@ -591,6 +564,8 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     accountBalances,
     eligibilityFilter: (a) => {
       if (maritalAccountIds.has(a.id)) return false;
+      // Its authored rows still name the decedent, but it is its recipients'.
+      if (isWhollyGiftedAway(a, input)) return false;
       // Exclude accounts distributed to a non-principal heir FM
       const cfmA = controllingFamilyMember(a);
       if (cfmA != null && cfmA !== deceasedFmId && cfmA !== survivorFmId) return false;
@@ -838,17 +813,15 @@ function assertPrecedenceChainInvariants(
     }
   }
   // 2. No deceased-owner orphan accounts (sole FM owner = deceased, not entity-owned).
-  //    Gift-resolved: a wholly gifted account is left untouched by the chain with
-  //    its authored rows (still naming the decedent), but it resolves to the
-  //    recipient — it is not an orphan.
+  //    A wholly gifted account is left untouched by the chain with its authored
+  //    rows (still naming the decedent), but it belongs to its recipients — it
+  //    is not an orphan.
   for (const a of chain.accounts) {
-    const owned = {
-      owners: giftAwareOwners(a, input.giftEvents, input.year, input.planSettings.planStartYear),
-    };
+    if (isWhollyGiftedAway(a, input)) continue;
     if (
-      !isFullyEntityOwned(owned) &&
+      !isFullyEntityOwned(a) &&
       deceasedFmId != null &&
-      controllingFamilyMember(owned) === deceasedFmId
+      controllingFamilyMember(a) === deceasedFmId
     ) {
       throw new Error(
         `applyFirstDeath invariant: account ${a.id} still has deceased as sole owner`,
