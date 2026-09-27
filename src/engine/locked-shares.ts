@@ -1,6 +1,11 @@
 export interface AccrueLockedEntityShareInput {
   /** Carried locked EoY share from the prior year, or undefined for year 0. */
   carriedBoY: number | undefined;
+  /** The percent `carriedBoY` was locked at. When this year's `percent` is
+   *  HIGHER — a later gift raised the entity's share — the newly gifted slice
+   *  is added on top of the carry. Omitted, or a flat/falling percent, keeps
+   *  the carry as-is. */
+  carriedPercent?: number;
   /** This year's account ledger snapshot — only `beginningValue`, `growth`,
    *  and `endingValue` are read; all flow entries are treated as
    *  household-attributable. */
@@ -26,8 +31,16 @@ export interface AccrueLockedEntityShareOutput {
 export function accrueLockedEntityShare(
   input: AccrueLockedEntityShareInput,
 ): AccrueLockedEntityShareOutput {
-  const { carriedBoY, ledger, percent } = input;
-  const lockedBoY = carriedBoY ?? ledger.beginningValue * percent;
+  const { carriedBoY, carriedPercent, ledger, percent } = input;
+  // A second gift of the same account: the carry holds only the FIRST slice,
+  // so without the top-up the entity stays at its old share forever while
+  // growth accrues at the new percent on that stale base.
+  const topUp =
+    carriedPercent !== undefined && percent > carriedPercent
+      ? (percent - carriedPercent) * ledger.beginningValue
+      : 0;
+  const lockedBoY =
+    carriedBoY === undefined ? ledger.beginningValue * percent : carriedBoY + topUp;
   const lockedGrowth = ledger.growth * percent;
   const lockedEoY = Math.min(
     lockedBoY + lockedGrowth,

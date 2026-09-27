@@ -128,18 +128,18 @@ export interface ComputeEntityCashFlowInput {
   years: ProjectionYear[];
   /** Entity metadata indexed by id. */
   entitiesById: Map<string, EntityMetadata>;
-  /** Account → entity owner, resolved AT A GIVEN YEAR. Split ownership is
-   *  supported: the account contributes to the entity rollup proportionally to
-   *  `percent`. Was a year-invariant Map, which is precisely why a trust that
-   *  received an account by gift never appeared: the account has no AUTHORED
-   *  entity row, so it never entered the map and every balance summed to 0 —
-   *  while the balance sheet, reading the same account through the overlay,
-   *  showed the trust holding it. Returns undefined when no entity owns the
-   *  account in that year. */
+  /** Account → EVERY entity owner, resolved AT A GIVEN YEAR (empty when no
+   *  entity owns it). Split ownership is supported, including an account split
+   *  between two entities: each contributes to its own rollup proportionally
+   *  to its `percent`. Was a year-invariant Map, which is precisely why a trust
+   *  that received an account by gift never appeared: the account has no
+   *  AUTHORED entity row, so it never entered the map and every balance summed
+   *  to 0 — while the balance sheet, reading the same account through the
+   *  overlay, showed the trust holding it. */
   accountEntityOwnersAt: (
     accountId: string,
     year: number,
-  ) => { entityId: string; percent: number } | undefined;
+  ) => Array<{ entityId: string; percent: number }>;
   /** Every account id any entity could own in any year. The function above
    *  cannot be enumerated, so the caller supplies the candidate set. */
   candidateAccountIds: string[];
@@ -207,11 +207,11 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
   const accountsByEntity = new Map<string, string[]>();
   for (const year of years) {
     for (const accountId of candidateAccountIds) {
-      const owner = accountEntityOwnersAt(accountId, year.year);
-      if (!owner) continue;
-      const list = accountsByEntity.get(owner.entityId) ?? [];
-      if (!list.includes(accountId)) list.push(accountId);
-      accountsByEntity.set(owner.entityId, list);
+      for (const owner of accountEntityOwnersAt(accountId, year.year)) {
+        const list = accountsByEntity.get(owner.entityId) ?? [];
+        if (!list.includes(accountId)) list.push(accountId);
+        accountsByEntity.set(owner.entityId, list);
+      }
     }
   }
 
@@ -220,7 +220,9 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
   // Per-entity per-account locked EoY share for split-owned accounts. Carries
   // year-over-year so household-driven flows on the joint account never bleed
   // into the entity's reported share.
-  const lockedShareByEntityAccount = new Map<string, Map<string, number>>();
+  // The percent each carry was locked at rides along, so a later gift that
+  // raises the share tops the carry up instead of being ignored.
+  const lockedShareByEntityAccount = new Map<string, Map<string, { eoy: number; percent: number }>>();
 
   for (const year of years) {
     for (const [entityId, entity] of entitiesById) {
@@ -237,15 +239,18 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
       for (const aid of accountIds) {
         const ledger = year.accountLedgers[aid];
         if (!ledger) continue;
-        const owner = accountEntityOwnersAt(aid, year.year);
+        const owner = accountEntityOwnersAt(aid, year.year).find((o) => o.entityId === entityId);
         // 0, not 1. An account in `accountsByEntity` but not owned by THIS
         // entity in THIS year is one it does not own YET — a later gift put it
         // in the union. The old `?? 1` was unreachable (the union and the map
         // were the same object) and would now book the whole pre-gift balance.
-        const share = owner?.entityId === entityId ? owner.percent : 0;
+        const share = owner?.percent ?? 0;
         if (share <= 0) continue;
         accountBasis += (year.accountBasisBoY?.[aid] ?? 0) * share;
-        if (share === 1) {
+        // Tolerance, not `=== 1`: gift percents are summed, and a composed
+        // 0.9999999… would otherwise fall into the split branch and drop the
+        // account's income and expenses from the entity row.
+        if (share >= 1 - 1e-9) {
           // Fully entity-owned — the account's full activity belongs to the entity.
           beginningBalance += ledger.beginningValue;
           endingBalance += ledger.endingValue;
@@ -267,7 +272,8 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
           // entries on the account are treated as household-attributable.
           const carried = lockedShareByEntityAccount.get(entityId)?.get(aid);
           const acc = accrueLockedEntityShare({
-            carriedBoY: carried,
+            carriedBoY: carried?.eoy,
+            carriedPercent: carried?.percent,
             ledger: {
               beginningValue: ledger.beginningValue,
               growth: ledger.growth,
@@ -281,7 +287,7 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
           if (!lockedShareByEntityAccount.has(entityId)) {
             lockedShareByEntityAccount.set(entityId, new Map());
           }
-          lockedShareByEntityAccount.get(entityId)!.set(aid, acc.lockedEoY);
+          lockedShareByEntityAccount.get(entityId)!.set(aid, { eoy: acc.lockedEoY, percent: share });
           // Expose to consumers (balance sheet, reports) so they can render
           // the same locked share rather than ledger.endingValue × percent.
           if (!year.entityAccountSharesEoY) {

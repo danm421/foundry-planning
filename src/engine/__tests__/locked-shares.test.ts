@@ -67,6 +67,33 @@ describe("accrueLockedEntityShare", () => {
     expect(r.lockedEoY).toBe(0);
   });
 
+  it("tops the carry up by the NEW slice when a later gift raises the percent", () => {
+    // 15% locked last year, a second 15% gift lands this year: the entity now
+    // owns 30%, and the extra 15% is 15% of the account as it stands at BoY.
+    // Carrying the old lock alone left the trust at $150k forever.
+    const r = accrueLockedEntityShare({
+      carriedBoY: 150_000,
+      carriedPercent: 0.15,
+      ledger: { beginningValue: 1_000_000, growth: 50_000, endingValue: 1_050_000 },
+      percent: 0.3,
+    });
+    expect(r.lockedBoY).toBeCloseTo(300_000, 6);
+    expect(r.lockedGrowth).toBeCloseTo(15_000, 6);
+    expect(r.lockedEoY).toBeCloseTo(315_000, 6);
+  });
+
+  it("keeps today's carry when the percent is unchanged or falls", () => {
+    for (const carriedPercent of [0.3, 0.5]) {
+      const r = accrueLockedEntityShare({
+        carriedBoY: 200_000,
+        carriedPercent,
+        ledger: { beginningValue: 1_000_000, growth: 0, endingValue: 1_000_000 },
+        percent: 0.3,
+      });
+      expect(r.lockedBoY).toBe(200_000);
+    }
+  });
+
   it("F3: a negative ending balance clamps to 0, never negative", () => {
     const r = accrueLockedEntityShare({
       carriedBoY: 100_000,

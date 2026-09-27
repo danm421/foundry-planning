@@ -1154,6 +1154,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   // produced. Carry persists year-over-year; passive growth accrues
   // proportionally, household flows do not erode it.
   const lockedEntityShareCarry = new Map<string, Map<string, number>>();
+  // The percent each carry above was locked at, same keys. Kept beside it, not
+  // inside it, because the carry map is handed to the death-event pipeline as
+  // `entityAccountSharesEoY` and must stay number-valued. A later gift that
+  // raises the share tops the carry up (see accrueLockedEntityShare).
+  const lockedEntityPercentCarry = new Map<string, Map<string, number>>();
   // Reserved for per-FM gross-estate attribution. Threaded through the
   // death-event pipeline alongside the entity carry but not yet populated —
   // computeGrossEstate doesn't consume the family-member side today.
@@ -4937,6 +4942,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         if (o.kind !== "entity" || o.percent >= 1) continue;
         lockedTotal += accrueLockedEntityShare({
           carriedBoY: lockedEntityShareCarry.get(o.entityId)?.get(acct.id),
+          carriedPercent: lockedEntityPercentCarry.get(o.entityId)?.get(acct.id),
           ledger: {
             beginningValue: wLedger?.beginningValue ?? balance,
             growth: wLedger?.growth ?? 0,
@@ -8405,6 +8411,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         const carried = lockedEntityShareCarry.get(o.entityId)?.get(acct.id);
         const acc = accrueLockedEntityShare({
           carriedBoY: carried,
+          carriedPercent: lockedEntityPercentCarry.get(o.entityId)?.get(acct.id),
           ledger: {
             beginningValue: ledger.beginningValue,
             growth: ledger.growth,
@@ -8416,6 +8423,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           lockedEntityShareCarry.set(o.entityId, new Map());
         }
         lockedEntityShareCarry.get(o.entityId)!.set(acct.id, acc.lockedEoY);
+        if (!lockedEntityPercentCarry.has(o.entityId)) {
+          lockedEntityPercentCarry.set(o.entityId, new Map());
+        }
+        lockedEntityPercentCarry.get(o.entityId)!.set(acct.id, o.percent);
       }
     }
     // F3: sweep carry entries for accounts no longer in the projection (BoY
@@ -8985,21 +8996,18 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   }
   // Account → entity-owner, resolved PER YEAR from the ownership snapshot, so
   // an account gifted into a trust mid-horizon reaches that trust's row from
-  // the gift year on. Split ownership with a family member is supported;
-  // accounts split between multiple entities are not yet modeled — the first
-  // entity-owner wins, same as the authored map this replaces. Reads the
+  // the gift year on. Returns EVERY entity owner, so a gift to a second trust
+  // of an account a first trust already part-owns reaches both rows. Reads the
   // `data.accounts` objects deliberately: their owner arrays are the ones the
   // snapshot was built from, so every read takes its resolved-step path.
   const accountsById = new Map(data.accounts.map((a) => [a.id, a]));
   const accountEntityOwnersAt = (accountId: string, year: number) => {
     const acct = accountsById.get(accountId);
-    if (!acct) return undefined;
-    const entityOwner = ownershipSnapshot
+    if (!acct) return [];
+    return ownershipSnapshot
       .ownersAt(acct, year)
-      .find((o): o is Extract<typeof o, { kind: "entity" }> => o.kind === "entity");
-    return entityOwner
-      ? { entityId: entityOwner.entityId, percent: entityOwner.percent }
-      : undefined;
+      .filter((o): o is Extract<typeof o, { kind: "entity" }> => o.kind === "entity")
+      .map((o) => ({ entityId: o.entityId, percent: o.percent }));
   };
   // Gifts to entities, grouped by recipient entity id and year. Only cash gifts
   // carry a numeric `amount` field; asset/liability gifts use the same value

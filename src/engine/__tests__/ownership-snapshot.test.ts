@@ -380,6 +380,44 @@ describe("ownership snapshot — regression: the locked-share cap after a death 
     expect(balances).toEqual([601_000, 300_000, 300_000, 300_000, 300_000]);
   });
 
+  it("locks a SECOND partial gift of the same account on the household side too", () => {
+    // 15% in 2026, another 15% in 2027, $400k/yr need drawn from the account.
+    // The withdraw cap and the carry roll share accrueLockedEntityShare, which
+    // used to keep the 2026 lock ($150k) after the second gift:
+    //   carry-only  601,000 -> 201,000 -> 150,000 -> 150,000
+    // Topped up by 15% of the 2027 BoY balance ($90,150), the trust's 30% holds
+    // at $240,150 — and the trust's own cash-flow row reports the same figure.
+    const gifted: Account = {
+      id: "acct-gifted", name: "Brokerage", category: "taxable", subType: "brokerage",
+      titlingType: "jtwros", value: 1_000_000, basis: 1_000_000, growthRate: 0,
+      rmdEnabled: false,
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+    };
+    const gift = (year: number): GiftEvent => ({ kind: "asset", year, accountId: "acct-gifted",
+      percent: 0.15, grantor: "client", recipientEntityId: TRUST_A });
+    const data = buildClientData({
+      client: { ...baseClient, dateOfBirth: "1960-01-01", spouseDob: "1972-06-15",
+        lifeExpectancy: 95, spouseLifeExpectancy: 95 },
+      familyMembers: FAMILY, accounts: [checkingAccount(), gifted],
+      entities: [trust(TRUST_A, "Trust One")],
+      incomes: [], liabilities: [], savingsRules: [],
+      expenses: [{ id: "exp", name: "Living", type: "living", annualAmount: 400_000,
+        growthRate: 0, startYear: 2026, endYear: 2029 }],
+      withdrawalStrategy: [{ accountId: "acct-gifted", priorityOrder: 1,
+        startYear: 2026, endYear: 2029 }],
+      giftEvents: [gift(2026), gift(2027)],
+      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2029 },
+    });
+    const years = runProjection(data);
+    const balances = years.map((y) => y.accountLedgers["acct-gifted"].endingValue);
+    expect(balances.map((b) => Math.round(b))).toEqual([601_000, 240_150, 240_150, 240_150]);
+    const trustEnding = years.map((y) => {
+      const row = y.entityCashFlow.get(TRUST_A);
+      return row?.kind === "trust" ? Math.round(row.endingBalance) : NaN;
+    });
+    expect(trustEnding).toEqual([150_000, 240_150, 240_150, 240_150]);
+  });
+
   it("stops the decay on a gifted account a death has rebuilt", () => {
     // The death path retitles from AUTHORED owners, so the rebuilt family pool
     // arrives gift-blind — while `ownedByHouseholdAtYear` at the same call site

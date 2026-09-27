@@ -6,7 +6,13 @@ import type { ProjectionYear } from "@/engine/types";
 
 /** Adapts a year-invariant owner Map to computeEntityCashFlow's per-year resolver. */
 function ownersFrom(map: Map<string, { entityId: string; percent: number }>) {
-  return { accountEntityOwnersAt: (id: string) => map.get(id), candidateAccountIds: [...map.keys()] };
+  return {
+    accountEntityOwnersAt: (id: string) => {
+      const owner = map.get(id);
+      return owner ? [owner] : [];
+    },
+    candidateAccountIds: [...map.keys()],
+  };
 }
 
 function makeYear(year: number): ProjectionYear {
