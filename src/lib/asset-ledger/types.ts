@@ -68,7 +68,8 @@ export interface AssetLedger {
   sections: AssetOwnerSection[];
 }
 
-/** Name/owner lookup context the report assembles from ClientData + projection. */
+/** Name/kind lookup context the report assembles from ClientData + projection.
+ *  Which entity owns an account comes from `year.entityAccountOwners`. */
 export interface AssetLedgerContext {
   /** account id → display name (includes synthetic equity-comp accounts). */
   accountNames: Record<string, string>;
@@ -78,6 +79,4 @@ export interface AssetLedgerContext {
   entityNames: Record<string, string>;
   /** entity id → section kind. */
   entityKinds: Record<string, OwnerKind>;
-  /** account id → entity owner. Absent ⇒ household-owned. */
-  accountEntityOwners: Map<string, { entityId: string; percent: number }>;
 }

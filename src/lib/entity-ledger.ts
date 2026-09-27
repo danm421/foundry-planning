@@ -59,9 +59,6 @@ export interface EntityLedgerContext {
   planStartYear: number;
   entitiesById: Map<string, EntityMetadata>;
   accountNamesById: Map<string, string>;
-  /** Account → entity-owner mapping; same shape the engine consumes. The
-   *  aggregator iterates this to find the entity's owned accounts. */
-  accountEntityOwners: Map<string, { entityId: string; percent: number }>;
   /** Top-level business-account metadata, keyed by account id. When the
    *  selected dropdown id matches a key here (and not an entity), the
    *  ledger routes through the account branch instead. */
@@ -102,15 +99,16 @@ export function getEntityLedger(
   const expenses: LedgerSourceRow[] = [];
   const ending: LedgerSourceRow[] = [];
 
-  // Pre-filter the household-wide ownership map once. Each section below
-  // consumes this same list rather than re-scanning the full map.
-  const ownedAccounts: Array<{ accountId: string; share: number; name: string; suffix: string }> = [];
-  for (const [accountId, owner] of ctx.accountEntityOwners) {
-    if (owner.entityId !== entityId) continue;
-    const share = owner.percent;
+  // The accounts this entity owns THIS year, as the engine resolved them for
+  // the entity's own row — gift-aware, so an account gifted in mid-horizon is
+  // here from the gift year on. Never re-derive this from authored owners.
+  // `full` uses the engine's tolerance: a gift-composed 0.9999999 is full.
+  const ownedAccounts: Array<{ accountId: string; share: number; full: boolean; name: string; suffix: string }> = [];
+  for (const [accountId, share] of ctx.year.entityAccountOwners?.get(entityId) ?? []) {
+    const full = share >= 1 - 1e-9;
     const name = ctx.accountNamesById.get(accountId) ?? accountId;
-    const suffix = share === 1 ? "" : ` (${(share * 100).toFixed(0)}%)`;
-    ownedAccounts.push({ accountId, share, name, suffix });
+    const suffix = full ? "" : ` (${(share * 100).toFixed(0)}%)`;
+    ownedAccounts.push({ accountId, share, full, name, suffix });
   }
 
   const isBusiness = entity.entityType !== "trust";
@@ -145,7 +143,7 @@ export function getEntityLedger(
     );
   }
 
-  for (const { accountId, share, name, suffix } of ownedAccounts) {
+  for (const { accountId, share, full, name, suffix } of ownedAccounts) {
     const ledger = ctx.year.accountLedgers[accountId];
     if (!ledger) continue;
 
@@ -162,7 +160,7 @@ export function getEntityLedger(
     // Account-entry flow contributions are only attributable to the entity
     // when it owns the account fully. On split-owned accounts, flows are
     // household-driven (the engine locks the entity's share to BoY + growth).
-    if (share !== 1) continue;
+    if (!full) continue;
     for (const entry of ledger.entries ?? []) {
       if (entry.isInternalTransfer) continue;
       if (entry.category !== "income" && entry.category !== "expense") continue;
@@ -245,18 +243,18 @@ export function getEntityLedger(
     // The trust's row income/expenses/taxes/distributions are descriptive
     // rollups that already net through the account ledgers — surfacing them
     // again as walk deltas would double-count. Show the snapshot instead.
-    for (const { accountId, share, name, suffix } of ownedAccounts) {
+    for (const { accountId, share, full, name, suffix } of ownedAccounts) {
       const ledger = ctx.year.accountLedgers[accountId];
       if (!ledger) continue;
       // H2: for split-owned accounts the engine locks the entity's EoY share
       // (BoY share + its share of growth, ignoring household withdrawals) into
       // entityAccountSharesEoY and sums THAT into row.endingBalance. Mirror it
       // here so the modal reconciles to the trust-table cell; fully-owned
-      // accounts (share === 1) keep ledger.endingValue. Fall back to the
+      // accounts keep ledger.endingValue. Fall back to the
       // proportional value if the locked share is unavailable.
       const lockedEoY = ctx.year.entityAccountSharesEoY?.get(entityId)?.get(accountId);
       const contribution =
-        share < 1 ? lockedEoY ?? ledger.endingValue * share : ledger.endingValue;
+        full ? ledger.endingValue : lockedEoY ?? ledger.endingValue * share;
       if (contribution === 0) continue;
       ending.push({
         label: `${name}${suffix} — ending`,

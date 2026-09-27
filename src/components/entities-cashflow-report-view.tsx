@@ -135,14 +135,6 @@ export default function EntitiesCashFlowReportView({ clientId, entities }: Props
       ]),
     );
     const accountNamesById = new Map(apiData.accounts.map((a) => [a.id, a.name]));
-    const accountEntityOwners = new Map<string, { entityId: string; percent: number }>();
-    for (const a of apiData.accounts) {
-      for (const o of a.owners ?? []) {
-        if (o.kind === "entity") {
-          accountEntityOwners.set(a.id, { entityId: o.entityId, percent: o.percent });
-        }
-      }
-    }
     // Top-level business accounts feed the report alongside trusts/entities.
     // The ledger modal reads from this map when the selected dropdown id is
     // an account id rather than an entity id.
@@ -158,7 +150,7 @@ export default function EntitiesCashFlowReportView({ clientId, entities }: Props
         distributionPolicyPercent: a.distributionPolicyPercent,
       });
     }
-    return { entitiesById, accountNamesById, accountEntityOwners, businessAccountsById };
+    return { entitiesById, accountNamesById, businessAccountsById };
   }, [apiData]);
 
   const ledger = useMemo<EntityLedger | null>(() => {
@@ -170,7 +162,6 @@ export default function EntitiesCashFlowReportView({ clientId, entities }: Props
       planStartYear: years[0]?.year ?? openLedger.year,
       entitiesById: ledgerLookups.entitiesById,
       accountNamesById: ledgerLookups.accountNamesById,
-      accountEntityOwners: ledgerLookups.accountEntityOwners,
       businessAccountsById: ledgerLookups.businessAccountsById,
       accounts: apiData.accounts,
       incomes: apiData.incomes,

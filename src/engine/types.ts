@@ -1948,6 +1948,15 @@ export interface ProjectionYear {
    *  this in place of `ledger.endingValue × ownerPercent` to keep the entity
    *  view consistent with the cash-flow report. */
   entityAccountSharesEoY?: Map<string, Map<string, number>>;
+  /** Per-year, gift-aware entity ownership: entityId → accountId → the
+   *  entity's ownership percent (0–1] in THIS year. Holds every account the
+   *  entity owns that year, full AND split (unlike `entityAccountSharesEoY`,
+   *  which holds split-owned locked dollars only), so an account gifted into
+   *  a trust mid-horizon appears from the gift year on. Written by
+   *  computeEntityCashFlow from the same resolution the trust row uses.
+   *  Report surfaces must read this, not the authored `account.owners`, to
+   *  decide which accounts an entity holds in a year. */
+  entityAccountOwners?: Map<string, Map<string, number>>;
   /** End-of-year locked share for jointly-held family-member accounts:
    *  familyMemberId → accountId → that member's EoY dollar share. Populated
    *  only for accounts with ≥2 distinct family-member owners. Attributed

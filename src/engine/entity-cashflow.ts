@@ -237,8 +237,6 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
       // scaled by the entity's ownership percent.
       let accountBasis = 0;
       for (const aid of accountIds) {
-        const ledger = year.accountLedgers[aid];
-        if (!ledger) continue;
         const owner = accountEntityOwnersAt(aid, year.year).find((o) => o.entityId === entityId);
         // 0, not 1. An account in `accountsByEntity` but not owned by THIS
         // entity in THIS year is one it does not own YET — a later gift put it
@@ -246,6 +244,17 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
         // were the same object) and would now book the whole pre-gift balance.
         const share = owner?.percent ?? 0;
         if (share <= 0) continue;
+        // Publish this year's resolved ownership so report surfaces (trust
+        // drill-down, asset ledger) read the same answer this row books.
+        if (!year.entityAccountOwners) year.entityAccountOwners = new Map();
+        let owned = year.entityAccountOwners.get(entityId);
+        if (!owned) {
+          owned = new Map();
+          year.entityAccountOwners.set(entityId, owned);
+        }
+        owned.set(aid, share);
+        const ledger = year.accountLedgers[aid];
+        if (!ledger) continue;
         accountBasis += (year.accountBasisBoY?.[aid] ?? 0) * share;
         // Tolerance, not `=== 1`: gift percents are summed, and a composed
         // 0.9999999… would otherwise fall into the split branch and drop the

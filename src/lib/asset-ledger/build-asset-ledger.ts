@@ -120,18 +120,30 @@ export function buildAssetLedger(year: ProjectionYear, ctx: AssetLedgerContext):
   // Preserve first-seen entity order for stable section ordering.
   const byEntity = new Map<string, AssetAccountBlock[]>();
 
+  // Account → owning entity THIS year, inverted from the engine's per-year,
+  // gift-aware map — so an account gifted into a trust files under the trust
+  // from the gift year on, and under the household before it. An account two
+  // entities share keeps first-entity-wins filing: it is one block (the
+  // account's own ledger), so it lives in exactly one section.
+  const entityOf = new Map<string, string>();
+  for (const [entityId, accounts] of year.entityAccountOwners ?? []) {
+    for (const accountId of accounts.keys()) {
+      if (!entityOf.has(accountId)) entityOf.set(accountId, entityId);
+    }
+  }
+
   for (const [accountId, ledger] of Object.entries(year.accountLedgers)) {
     if (isEmpty(ledger)) continue;
     const block = buildBlock(accountId, ledger, ctx);
-    const owner = ctx.accountEntityOwners.get(accountId);
-    if (owner) {
+    const entityId = entityOf.get(accountId);
+    if (entityId) {
       // Partial ownership (percent < 1): the account still lives under its entity
       // section; flows show at full ledger value (the ledger is the account's own,
       // not the owner's pro-rata share). Unknown entity ids fall through to a
       // section labeled with the raw id below — never silently dropped.
-      const list = byEntity.get(owner.entityId) ?? [];
+      const list = byEntity.get(entityId) ?? [];
       list.push(block);
-      byEntity.set(owner.entityId, list);
+      byEntity.set(entityId, list);
     } else {
       household.push(block);
     }

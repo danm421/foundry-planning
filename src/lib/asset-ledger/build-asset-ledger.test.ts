@@ -23,12 +23,14 @@ function mkLedger(p: Partial<AccountLedger>): AccountLedger {
   };
 }
 
-/** Minimal ProjectionYear — buildAssetLedger reads only year/ages/accountLedgers. */
+/** Minimal ProjectionYear — buildAssetLedger reads only
+ *  year/ages/accountLedgers/entityAccountOwners. `trustAcct` is ent1's. */
 function mkYear(accountLedgers: Record<string, AccountLedger>): ProjectionYear {
   return {
     year: 2031,
     ages: { client: 64, spouse: 62 },
     accountLedgers,
+    entityAccountOwners: new Map([["ent1", new Map([["trustAcct", 1]])]]),
   } as unknown as ProjectionYear;
 }
 
@@ -37,7 +39,6 @@ const ctx: AssetLedgerContext = {
   accountCategories: { brokerage: "taxable", ira: "retirement", trustAcct: "taxable" },
   entityNames: { ent1: "Smith Family Trust" },
   entityKinds: { ent1: "trust" },
-  accountEntityOwners: new Map([["trustAcct", { entityId: "ent1", percent: 1 }]]),
 };
 
 describe("buildAssetLedger", () => {
@@ -147,9 +148,9 @@ describe("buildAssetLedger", () => {
       ...ctx,
       entityNames: {}, // entity not in the map
       entityKinds: {},
-      accountEntityOwners: new Map([["brokerage", { entityId: "ghost", percent: 1 }]]),
     };
     const y = mkYear({ brokerage: mkLedger({ beginningValue: 10, endingValue: 10, entries: [{ category: "growth", label: "Growth", amount: 0 }] }) });
+    y.entityAccountOwners = new Map([["ghost", new Map([["brokerage", 1]])]]);
     const ledger = buildAssetLedger(y, orphanCtx);
     expect(ledger.sections.map((s) => s.label)).toEqual(["ghost"]);
     expect(ledger.sections[0].kind).toBe("business"); // default kind
@@ -311,5 +312,40 @@ describe("buildAssetLedger", () => {
     expect(acct.residual).toBe(0); // amount balances
     expect(acct.basisResidual).toBe(-20); // basis off by 20
     expect(acct.reconciles).toBe(false);
+  });
+});
+
+describe("buildAssetLedger — files by the engine's per-year entity ownership", () => {
+  const giftedLedgers = () => ({
+    brokerage: mkLedger({ beginningValue: 100, endingValue: 100, entries: [{ category: "growth", label: "Growth", amount: 0 }] }),
+  });
+  it("files an account gifted into a trust under the trust's section in the gift year", () => {
+    const y = mkYear(giftedLedgers());
+    y.entityAccountOwners = new Map([["ent1", new Map([["brokerage", 0.4]])]]);
+    const ledger = buildAssetLedger(y, ctx);
+    expect(ledger.sections.map((s) => [s.label, s.accounts.map((a) => a.name)])).toEqual([
+      ["Smith Family Trust", ["Joint Brokerage"]],
+    ]);
+  });
+
+  it("files the same account under the household the year before the gift", () => {
+    const y = mkYear(giftedLedgers());
+    y.entityAccountOwners = new Map();
+    const ledger = buildAssetLedger(y, ctx);
+    expect(ledger.sections.map((s) => [s.label, s.accounts.map((a) => a.name)])).toEqual([
+      ["Household", ["Joint Brokerage"]],
+    ]);
+  });
+
+  it("files an account two entities share under the first entity only", () => {
+    const y = mkYear(giftedLedgers());
+    y.entityAccountOwners = new Map([
+      ["ent1", new Map([["brokerage", 0.4]])],
+      ["ent2", new Map([["brokerage", 0.2]])],
+    ]);
+    const ledger = buildAssetLedger(y, ctx);
+    expect(ledger.sections.map((s) => [s.label, s.accounts.length])).toEqual([
+      ["Smith Family Trust", 1],
+    ]);
   });
 });

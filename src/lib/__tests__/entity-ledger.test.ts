@@ -3,6 +3,9 @@ import { describe, it, expect } from "vitest";
 import { getEntityLedger, type EntityLedgerContext } from "../entity-ledger";
 import { computeEntityCashFlow, type EntityMetadata } from "@/engine/entity-cashflow";
 import type { ProjectionYear } from "@/engine/types";
+import { runProjection } from "@/engine/projection";
+import { LEGACY_FM_CLIENT } from "@/engine/ownership";
+import { basePlanSettings, buildClientData } from "@/engine/__tests__/fixtures";
 
 /** Adapts a year-invariant owner Map to computeEntityCashFlow's per-year resolver. */
 function ownersFrom(map: Map<string, { entityId: string; percent: number }>) {
@@ -125,7 +128,6 @@ function buildBusinessWithIncomeFixture() {
     planStartYear: 2026,
     entitiesById,
     accountNamesById: new Map(),
-    accountEntityOwners: new Map(),
     incomes,
     expenses: [],
     entityFlowOverrides: [],
@@ -178,7 +180,6 @@ function buildBusinessWithExpenseFixture() {
     planStartYear: 2026,
     entitiesById,
     accountNamesById: new Map(),
-    accountEntityOwners: new Map(),
     incomes: [],
     expenses,
     entityFlowOverrides: [],
@@ -239,7 +240,6 @@ function buildTrustFixture() {
     planStartYear: 2026,
     entitiesById,
     accountNamesById: new Map([["acct-trust", "Trust Brokerage"]]),
-    accountEntityOwners,
     incomes: [],
     expenses: [],
     entityFlowOverrides: [],
@@ -305,7 +305,6 @@ function buildSplitOwnedTrustFixture() {
     planStartYear: 2026,
     entitiesById,
     accountNamesById: new Map([["acct-trust", "Joint+Trust Brokerage"]]),
-    accountEntityOwners,
     incomes: [],
     expenses: [],
     entityFlowOverrides: [],
@@ -364,7 +363,6 @@ function buildBusinessFixture() {
     planStartYear: 2026,
     entitiesById,
     accountNamesById: new Map([["acct-biz", "Acme Brokerage"]]),
-    accountEntityOwners,
     incomes: [],
     expenses: [],
     entityFlowOverrides: [],
@@ -475,5 +473,193 @@ describe("getEntityLedger", () => {
     const sum = ledger.ending.reduce((a, r) => a + r.amount, 0);
     expect(Math.abs(sum - row.endingBalance)).toBeLessThan(0.5);
     expect(sum).toBeCloseTo(315_000, 2);
+  });
+});
+
+// An account the trust owns ONLY by a mid-horizon gift: no authored entity
+// owner at all. The drill-down must still find it — from the engine's
+// per-year map — and book it at the value the trust table books.
+function buildGiftedIntoTrustFixture(percent: number) {
+  const years = [2026, 2027].map((y) => {
+    const year = makeYear(y);
+    year.accountLedgers["acct-gifted"] = {
+      beginningValue: 500_000,
+      // A household withdrawal on the split account: the trust's locked share
+      // ignores it, so endingValue × percent is NOT the trust-table value.
+      endingValue: 425_000,
+      growth: 25_000,
+      contributions: 0,
+      distributions: 100_000,
+      internalContributions: 0,
+      internalDistributions: 0,
+      rmdAmount: 0,
+      fees: 0,
+      entries: [
+        { category: "withdrawal", amount: -100_000, label: "Household withdrawal", sourceId: "wd" },
+      ],
+    };
+    return year;
+  });
+  const entitiesById = new Map<string, EntityMetadata>([
+    [
+      "ent-trust",
+      {
+        id: "ent-trust",
+        name: "Family Trust",
+        entityType: "trust",
+        trustSubType: "irrevocable",
+        isGrantor: false,
+        initialValue: 0,
+        initialBasis: 0,
+        valueGrowthRate: 0,
+      },
+    ],
+  ]);
+  computeEntityCashFlow({
+    years,
+    entitiesById,
+    accountEntityOwnersAt: (id, y) =>
+      id === "acct-gifted" && y >= 2027 ? [{ entityId: "ent-trust", percent }] : [],
+    candidateAccountIds: ["acct-gifted"],
+    giftsByEntityYear: new Map(),
+    incomes: [],
+    expenses: [],
+    entityFlowOverrides: [],
+  });
+  const ctxFor = (year: ProjectionYear): EntityLedgerContext => ({
+    year,
+    planStartYear: 2026,
+    entitiesById,
+    accountNamesById: new Map([["acct-gifted", "Gifted Brokerage"]]),
+    incomes: [],
+    expenses: [],
+    entityFlowOverrides: [],
+  });
+  return { years, ctxFor };
+}
+
+describe("getEntityLedger — an account gifted into the trust mid-horizon", () => {
+  const endingSum = (rows: { amount: number }[]) => rows.reduce((a, r) => a + r.amount, 0);
+
+  it("shows a 100% gifted account in the ending rows at the trust-table value", () => {
+    const { years, ctxFor } = buildGiftedIntoTrustFixture(1);
+    const row = years[1].entityCashFlow.get("ent-trust");
+    if (row?.kind !== "trust") throw new Error("no trust row");
+    const ledger = getEntityLedger("ent-trust", ctxFor(years[1]));
+    expect(ledger.ending.map((r) => r.sourceId)).toEqual(["acct-gifted"]);
+    expect(endingSum(ledger.ending)).toBeCloseTo(425_000, 2);
+    expect(endingSum(ledger.ending)).toBeCloseTo(row.endingBalance, 2);
+  });
+
+  it("shows a split gifted account at the locked share the trust table books", () => {
+    const { years, ctxFor } = buildGiftedIntoTrustFixture(0.6);
+    const row = years[1].entityCashFlow.get("ent-trust");
+    if (row?.kind !== "trust") throw new Error("no trust row");
+    const ledger = getEntityLedger("ent-trust", ctxFor(years[1]));
+    // Locked = (500k + 25k growth) × 0.6 = 315k, not 425k × 0.6 = 255k.
+    expect(endingSum(ledger.ending)).toBeCloseTo(315_000, 2);
+    expect(endingSum(ledger.ending)).toBeCloseTo(row.endingBalance, 2);
+    expect(ledger.growth.map((r) => r.amount)).toEqual([15_000]);
+  });
+
+  it("treats a gift-composed share a hair under 1 as full ownership, as the trust row does", () => {
+    const { years, ctxFor } = buildGiftedIntoTrustFixture(1 - 1e-12);
+    const row = years[1].entityCashFlow.get("ent-trust");
+    if (row?.kind !== "trust") throw new Error("no trust row");
+    const ledger = getEntityLedger("ent-trust", ctxFor(years[1]));
+    expect(ledger.ending.map((r) => r.label)).toEqual(["Gifted Brokerage — ending"]);
+    expect(endingSum(ledger.ending)).toBeCloseTo(row.endingBalance, 2);
+  });
+
+  it("does not show the account the year before the gift", () => {
+    const { years, ctxFor } = buildGiftedIntoTrustFixture(0.6);
+    const ledger = getEntityLedger("ent-trust", ctxFor(years[0]));
+    expect(ledger.ending).toEqual([]);
+    expect(ledger.growth).toEqual([]);
+  });
+});
+
+describe("getEntityLedger — runProjection integration", () => {
+  it("drill-down ending rows sum to the trust row's endingBalance after a 50% gift in 2027", () => {
+    const data = buildClientData({
+      accounts: [
+        {
+          id: "hh-checking",
+          name: "Household Checking",
+          category: "cash",
+          subType: "checking",
+          titlingType: "jtwros",
+          value: 100_000,
+          basis: 100_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+          isDefaultChecking: true,
+        },
+        {
+          id: "acc-gifted",
+          name: "Gifted Brokerage",
+          category: "taxable",
+          subType: "brokerage",
+          titlingType: "jtwros",
+          value: 1_000_000,
+          basis: 1_000_000,
+          growthRate: 0.05,
+          rmdEnabled: false,
+          owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+        },
+      ],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: { ...basePlanSettings, planEndYear: 2028 },
+      entities: [
+        {
+          id: "t-gift",
+          name: "Gift Trust",
+          includeInPortfolio: false,
+          isGrantor: false,
+          entityType: "trust",
+          isIrrevocable: true,
+          grantor: "client",
+        },
+      ],
+      giftEvents: [
+        { kind: "asset", year: 2027, accountId: "acc-gifted", percent: 0.5, grantor: "client", recipientEntityId: "t-gift" },
+      ],
+    });
+    const years = runProjection(data);
+    const y2027 = years.find((y) => y.year === 2027)!;
+    const row = y2027.entityCashFlow.get("t-gift");
+    if (row?.kind !== "trust") throw new Error("no trust row in 2027");
+    expect(row.endingBalance).toBeGreaterThan(0);
+
+    const entitiesById = new Map<string, EntityMetadata>([
+      [
+        "t-gift",
+        {
+          id: "t-gift",
+          name: "Gift Trust",
+          entityType: "trust",
+          trustSubType: "irrevocable",
+          isGrantor: false,
+          initialValue: 0,
+          initialBasis: 0,
+        },
+      ],
+    ]);
+    const ledger = getEntityLedger("t-gift", {
+      year: y2027,
+      planStartYear: 2026,
+      entitiesById,
+      accountNamesById: new Map(data.accounts.map((a) => [a.id, a.name])),
+      incomes: [],
+      expenses: [],
+      entityFlowOverrides: [],
+    });
+    const sum = ledger.ending.reduce((a, r) => a + r.amount, 0);
+    expect(sum).toBeCloseTo(row.endingBalance, 2);
   });
 });

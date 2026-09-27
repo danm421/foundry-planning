@@ -1064,6 +1064,18 @@ describe("entity cash flow — an account gifted into a trust mid-horizon", () =
     expect(row.endingBalance).toBeCloseTo(500_000, 2);
     expect(years[0].entityAccountSharesEoY?.get("trust-1")?.get("acc-1")).toBeUndefined();
   });
+
+  it("publishes each year's entity → account → percent on entityAccountOwners, from the gift year on", () => {
+    // The report surfaces (trust drill-down, asset ledger) read this map
+    // instead of the authored owners. Full AND split ownership both appear.
+    for (const percent of [1, 0.4]) {
+      const years = flatYears([2026, 2027, 2028], 500_000);
+      run(years, (id, y) => (id === "acc-1" && y >= 2027 ? trust1(percent) : []));
+      expect(years[0].entityAccountOwners?.get("trust-1")?.get("acc-1")).toBeUndefined();
+      expect(years[1].entityAccountOwners?.get("trust-1")?.get("acc-1")).toBe(percent);
+      expect(years[2].entityAccountOwners?.get("trust-1")?.get("acc-1")).toBe(percent);
+    }
+  });
 });
 
 // ── Integration: runProjection wires computeEntityCashFlow ──────────────────

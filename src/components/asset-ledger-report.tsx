@@ -82,14 +82,7 @@ export default function AssetLedgerReport({ clientId }: Props) {
       if (e.name) entityNames[e.id] = e.name;
       entityKinds[e.id] = entityKind(e.entityType);
     }
-    const accountEntityOwners = new Map<string, { entityId: string; percent: number }>();
-    for (const acc of clientData?.accounts ?? []) {
-      const owner = acc.owners.find((o) => o.kind === "entity");
-      if (owner && owner.kind === "entity") {
-        accountEntityOwners.set(acc.id, { entityId: owner.entityId, percent: owner.percent });
-      }
-    }
-    return { accountNames, accountCategories, entityNames, entityKinds, accountEntityOwners };
+    return { accountNames, accountCategories, entityNames, entityKinds };
   }, [clientData, years]);
 
   const ledger = useMemo(() => {
