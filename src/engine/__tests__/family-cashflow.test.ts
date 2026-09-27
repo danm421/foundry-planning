@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { computeFamilyAccountShares } from "../family-cashflow";
-import type { ProjectionYear, AccountLedger, Income, GiftEvent } from "../types";
+import { runProjection } from "../projection";
+import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE, ownersForYear, type AccountOwner } from "../ownership";
+import { resolveOwnerSlices } from "@/lib/estate/account-owner-slices";
+import { buildClientData, basePlanSettings, sampleFamilyMembers } from "./fixtures";
+import type {
+  ProjectionYear, AccountLedger, Income, GiftEvent, Account, ClientData, FamilyMember,
+} from "../types";
 
 function makeYear(year: number, accountLedgers: Record<string, Partial<AccountLedger>>): ProjectionYear {
   // Cast — tests only consume fields the pass actually reads.
@@ -13,6 +19,16 @@ function makeYear(year: number, accountLedgers: Record<string, Partial<AccountLe
   } as unknown as ProjectionYear;
 }
 
+type FamilyOwners = Array<{ familyMemberId: string; percent: number }>;
+/** Year-invariant resolver over a fixed owner map — the shape every case
+ *  below the asset-gift block was written against. */
+function ownersFrom(map: Map<string, FamilyOwners>) {
+  return {
+    accountFamilyOwnersAt: (id: string) => map.get(id) ?? [],
+    candidateAccountIds: [...map.keys()],
+  };
+}
+
 describe("computeFamilyAccountShares — year-0 init + passive growth", () => {
   it("initializes locked shares from account.value × ownerPercent in year 0", () => {
     const year0 = makeYear(2026, {
@@ -20,7 +36,7 @@ describe("computeFamilyAccountShares — year-0 init + passive growth", () => {
     });
     computeFamilyAccountShares({
       years: [year0],
-      accountFamilyOwners: new Map([
+      ...ownersFrom(new Map([
         [
           "acctA",
           [
@@ -28,7 +44,8 @@ describe("computeFamilyAccountShares — year-0 init + passive growth", () => {
             { familyMemberId: "fm-spouse", percent: 0.5 },
           ],
         ],
-      ]),
+      ])),
+      planStartYear: 2026,
       clientFamilyMemberId: "fm-client",
       spouseFamilyMemberId: "fm-spouse",
       incomes: [],
@@ -49,7 +66,7 @@ describe("computeFamilyAccountShares — year-0 init + passive growth", () => {
     });
     computeFamilyAccountShares({
       years: [year0, year1],
-      accountFamilyOwners: new Map([
+      ...ownersFrom(new Map([
         [
           "acctA",
           [
@@ -57,7 +74,8 @@ describe("computeFamilyAccountShares — year-0 init + passive growth", () => {
             { familyMemberId: "fm-spouse", percent: 0.4 },
           ],
         ],
-      ]),
+      ])),
+      planStartYear: 2026,
       clientFamilyMemberId: "fm-client",
       spouseFamilyMemberId: "fm-spouse",
       incomes: [],
@@ -98,7 +116,7 @@ describe("computeFamilyAccountShares — year-0 init + passive growth", () => {
     ];
     computeFamilyAccountShares({
       years: [year0],
-      accountFamilyOwners: new Map([
+      ...ownersFrom(new Map([
         [
           "acctA",
           [
@@ -106,7 +124,8 @@ describe("computeFamilyAccountShares — year-0 init + passive growth", () => {
             { familyMemberId: "fm-spouse", percent: 0.5 },
           ],
         ],
-      ]),
+      ])),
+      planStartYear: 2026,
       clientFamilyMemberId: "fm-client",
       spouseFamilyMemberId: "fm-spouse",
       incomes,
@@ -145,7 +164,7 @@ describe("computeFamilyAccountShares — year-0 init + passive growth", () => {
     ];
     computeFamilyAccountShares({
       years: [year0],
-      accountFamilyOwners: new Map([
+      ...ownersFrom(new Map([
         [
           "acctA",
           [
@@ -153,7 +172,8 @@ describe("computeFamilyAccountShares — year-0 init + passive growth", () => {
             { familyMemberId: "fm-spouse", percent: 0.4 },
           ],
         ],
-      ]),
+      ])),
+      planStartYear: 2026,
       clientFamilyMemberId: "fm-client",
       spouseFamilyMemberId: "fm-spouse",
       incomes,
@@ -172,7 +192,8 @@ describe("computeFamilyAccountShares — year-0 init + passive growth", () => {
     });
     computeFamilyAccountShares({
       years: [year0],
-      accountFamilyOwners: new Map(), // no entries → no ledger
+      ...ownersFrom(new Map()), // no entries → no ledger
+      planStartYear: 2026,
       clientFamilyMemberId: "fm-client",
       spouseFamilyMemberId: "fm-spouse",
       incomes: [],
@@ -199,7 +220,7 @@ describe("computeFamilyAccountShares — mixed entity + family ownership", () =>
     year0.entityAccountSharesEoY = new Map([["ent-trust", new Map([["acctA", 70_000]])]]);
     computeFamilyAccountShares({
       years: [year0],
-      accountFamilyOwners: new Map([
+      ...ownersFrom(new Map([
         [
           "acctA",
           [
@@ -207,7 +228,8 @@ describe("computeFamilyAccountShares — mixed entity + family ownership", () =>
             { familyMemberId: "fm-spouse", percent: 0.15 },
           ],
         ],
-      ]),
+      ])),
+      planStartYear: 2026,
       clientFamilyMemberId: "fm-client",
       spouseFamilyMemberId: "fm-spouse",
       incomes: [],
@@ -236,7 +258,7 @@ describe("computeFamilyAccountShares — mixed entity + family ownership", () =>
     year1.entityAccountSharesEoY = new Map([["ent-trust", new Map([["acctA", 77_175]])]]);
     computeFamilyAccountShares({
       years: [year0, year1],
-      accountFamilyOwners: new Map([
+      ...ownersFrom(new Map([
         [
           "acctA",
           [
@@ -244,7 +266,8 @@ describe("computeFamilyAccountShares — mixed entity + family ownership", () =>
             { familyMemberId: "fm-spouse", percent: 0.15 },
           ],
         ],
-      ]),
+      ])),
+      planStartYear: 2026,
       clientFamilyMemberId: "fm-client",
       spouseFamilyMemberId: "fm-spouse",
       incomes: [],
@@ -315,7 +338,7 @@ describe("computeFamilyAccountShares — death event", () => {
     ];
     computeFamilyAccountShares({
       years: [year0, year1, year2],
-      accountFamilyOwners: new Map([
+      ...ownersFrom(new Map([
         [
           "acctA",
           [
@@ -323,7 +346,8 @@ describe("computeFamilyAccountShares — death event", () => {
             { familyMemberId: "fm-spouse", percent: 0.5 },
           ],
         ],
-      ]),
+      ])),
+      planStartYear: 2026,
       clientFamilyMemberId: "fm-client",
       spouseFamilyMemberId: "fm-spouse",
       incomes,
@@ -375,7 +399,7 @@ describe("computeFamilyAccountShares — invariants", () => {
     ];
     computeFamilyAccountShares({
       years: [year0, year1],
-      accountFamilyOwners: new Map([
+      ...ownersFrom(new Map([
         [
           "acctA",
           [
@@ -383,7 +407,8 @@ describe("computeFamilyAccountShares — invariants", () => {
             { familyMemberId: "fm-spouse", percent: 0.5 },
           ],
         ],
-      ]),
+      ])),
+      planStartYear: 2026,
       clientFamilyMemberId: "fm-client",
       spouseFamilyMemberId: "fm-spouse",
       incomes,
@@ -436,7 +461,7 @@ describe("computeFamilyAccountShares — invariants", () => {
     ];
     computeFamilyAccountShares({
       years: [year0, year1],
-      accountFamilyOwners: new Map([
+      ...ownersFrom(new Map([
         [
           "acctA",
           [
@@ -444,7 +469,8 @@ describe("computeFamilyAccountShares — invariants", () => {
             { familyMemberId: "fm-spouse", percent: 0.5 },
           ],
         ],
-      ]),
+      ])),
+      planStartYear: 2026,
       clientFamilyMemberId: "fm-client",
       spouseFamilyMemberId: "fm-spouse",
       incomes,
@@ -485,7 +511,7 @@ describe("computeFamilyAccountShares — cash gift attribution", () => {
     ];
     computeFamilyAccountShares({
       years: [year0],
-      accountFamilyOwners: new Map([
+      ...ownersFrom(new Map([
         [
           "acctA",
           [
@@ -493,7 +519,8 @@ describe("computeFamilyAccountShares — cash gift attribution", () => {
             { familyMemberId: "fm-spouse", percent: 0.5 },
           ],
         ],
-      ]),
+      ])),
+      planStartYear: 2026,
       clientFamilyMemberId: "fm-client",
       spouseFamilyMemberId: "fm-spouse",
       incomes: [],
@@ -530,7 +557,7 @@ describe("computeFamilyAccountShares — cash gift attribution", () => {
     ];
     computeFamilyAccountShares({
       years: [year0],
-      accountFamilyOwners: new Map([
+      ...ownersFrom(new Map([
         [
           "acctA",
           [
@@ -538,7 +565,8 @@ describe("computeFamilyAccountShares — cash gift attribution", () => {
             { familyMemberId: "fm-spouse", percent: 0.2 },
           ],
         ],
-      ]),
+      ])),
+      planStartYear: 2026,
       clientFamilyMemberId: "fm-client",
       spouseFamilyMemberId: "fm-spouse",
       incomes: [],
@@ -550,5 +578,260 @@ describe("computeFamilyAccountShares — cash gift attribution", () => {
     // remaining 10k pulls from client.
     expect(year0.familyAccountSharesEoY!.get("fm-spouse")!.get("acctA")!).toBeCloseTo(0);
     expect(year0.familyAccountSharesEoY!.get("fm-client")!.get("acctA")!).toBeCloseTo(70_000);
+  });
+});
+
+describe("family account shares — asset gifts", () => {
+  /** Flat $1M `acc-1` rows: no growth, no flows. */
+  const flatYears = (yrs: number[]) =>
+    yrs.map((y) =>
+      makeYear(y, {
+        "acc-1": { beginningValue: 1_000_000, endingValue: 1_000_000, growth: 0, entries: [] },
+      }),
+    );
+  /** The ownership snapshot's real answer for a joint 50/50 account after a
+   *  20% gift to a trust: `composeOwnersForYear` shrinks EVERY household row
+   *  proportionally (0.5 → 0.4 each). The ledger — not the percent — is what
+   *  says the client funded it. */
+  const jointThenGift = (giftYear: number) => (_id: string, year: number) =>
+    year >= giftYear
+      ? [
+          { familyMemberId: "fm-c", percent: 0.4 },
+          { familyMemberId: "fm-s", percent: 0.4 },
+        ]
+      : [
+          { familyMemberId: "fm-c", percent: 0.5 },
+          { familyMemberId: "fm-s", percent: 0.5 },
+        ];
+  const trustLock = (years: ProjectionYear[], from: number) => {
+    for (const y of years) {
+      if (y.year >= from) y.entityAccountSharesEoY = new Map([["trust-1", new Map([["acc-1", 200_000]])]]);
+    }
+  };
+  const base = {
+    candidateAccountIds: ["acc-1"],
+    planStartYear: 2026,
+    clientFamilyMemberId: "fm-c",
+    spouseFamilyMemberId: "fm-s",
+    incomes: [],
+    familyMembers: [],
+  };
+  const share = (y: ProjectionYear, fm: string) => y.familyAccountSharesEoY?.get(fm)?.get("acc-1");
+
+  it("debits the grantor's share when an asset gift leaves the household", () => {
+    // `gifts` was already an input here; every kind !== "cash" event was
+    // dropped on the floor, so an asset gift moved no family share at all and
+    // the settle step split the post-gift pool 400k/400k.
+    const years = flatYears([2026, 2027]);
+    trustLock(years, 2027);
+    computeFamilyAccountShares({
+      ...base,
+      years,
+      accountFamilyOwnersAt: jointThenGift(2027),
+      gifts: [{ kind: "asset", year: 2027, accountId: "acc-1", percent: 0.2,
+        grantor: "client", recipientEntityId: "trust-1" }],
+    });
+    expect(share(years[0], "fm-c")).toBeCloseTo(500_000, 2);
+    expect(share(years[0], "fm-s")).toBeCloseTo(500_000, 2);
+    // The client funded the whole gift: 500k → 300k of a $1M account.
+    expect(share(years[1], "fm-c")).toBeCloseTo(300_000, 2);
+    expect(share(years[1], "fm-s")).toBeCloseTo(500_000, 2);
+  });
+
+  it("debits the grantor for a gift in the plan's first year (the seed is pre-gift)", () => {
+    // In the first year there is no carry: the shares are SEEDED. The resolver
+    // already answers post-gift (0.4/0.4) for that year, so seeding from it and
+    // then debiting would take the gift twice (200k/400k → 267k/533k).
+    const years = flatYears([2026, 2027]);
+    trustLock(years, 2026);
+    computeFamilyAccountShares({
+      ...base,
+      years,
+      accountFamilyOwnersAt: jointThenGift(2026),
+      gifts: [{ kind: "asset", year: 2026, accountId: "acc-1", percent: 0.2,
+        grantor: "client", recipientEntityId: "trust-1" }],
+    });
+    for (const y of years) {
+      expect(share(y, "fm-c")).toBeCloseTo(300_000, 2);
+      expect(share(y, "fm-s")).toBeCloseTo(500_000, 2);
+    }
+  });
+
+  it("leaves family shares alone for a gift dated before planStartYear", () => {
+    // Review Focus #3 — the ownership snapshot treats a pre-plan gift as
+    // already inside the authored owners and never moves them for it. The
+    // debit index mirrors the snapshot's window (skip < planStartYear, clamp
+    // the rest to the first projected year), so without the guard this gift
+    // would clamp into 2026 and debit the client a second time.
+    const years = flatYears([2026, 2027]);
+    computeFamilyAccountShares({
+      ...base,
+      years,
+      accountFamilyOwnersAt: () => [
+        { familyMemberId: "fm-c", percent: 0.5 },
+        { familyMemberId: "fm-s", percent: 0.5 },
+      ],
+      gifts: [{ kind: "asset", year: 2024, accountId: "acc-1", percent: 0.2,
+        grantor: "client", recipientEntityId: "trust-1" }],
+    });
+    for (const y of years) {
+      expect(share(y, "fm-c")).toBeCloseTo(500_000, 2);
+      expect(share(y, "fm-s")).toBeCloseTo(500_000, 2);
+    }
+  });
+
+  it("still attributes a cash gift to its grantor (the pre-existing behavior)", () => {
+    const years = [
+      makeYear(2026, { "acc-1": { beginningValue: 1_000_000, endingValue: 1_000_000, growth: 0, entries: [] } }),
+      makeYear(2027, { "acc-1": { beginningValue: 1_000_000, endingValue: 900_000, growth: 0, entries: [] } }),
+    ];
+    computeFamilyAccountShares({
+      ...base,
+      years,
+      accountFamilyOwnersAt: () => [
+        { familyMemberId: "fm-c", percent: 0.5 },
+        { familyMemberId: "fm-s", percent: 0.5 },
+      ],
+      gifts: [{ kind: "cash", year: 2027, amount: 100_000, grantor: "client",
+        sourceAccountId: "acc-1", useCrummeyPowers: false }],
+    });
+    expect(share(years[1], "fm-c")).toBeCloseTo(400_000, 2);
+    expect(share(years[1], "fm-s")).toBeCloseTo(500_000, 2);
+  });
+});
+
+// ── Integration: runProjection wires computeFamilyAccountShares ──────────────
+
+describe("family account shares via runProjection — asset gifts", () => {
+  const FM_KID = "fm-kid";
+  const joint = (owners?: Account["owners"]): Account => ({
+    id: "acc-joint",
+    name: "Joint Brokerage",
+    category: "taxable",
+    subType: "brokerage",
+    titlingType: "jtwros",
+    value: 1_000_000,
+    basis: 1_000_000,
+    growthRate: 0,
+    rmdEnabled: false,
+    owners: owners ?? [
+      { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+      { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+    ],
+  });
+  /** Married household, one flat $1M account, no income, no expenses, no tax:
+   *  only the gift can move a share. */
+  const scenario = (account: Account, giftEvents: GiftEvent[]): ClientData =>
+    buildClientData({
+      accounts: [account],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: { ...basePlanSettings, flatFederalRate: 0, flatStateRate: 0, planEndYear: 2028 },
+      familyMembers: [
+        ...sampleFamilyMembers,
+        { id: FM_KID, role: "other", relationship: "child", firstName: "Kid",
+          lastName: "Smith", dateOfBirth: "2000-01-01" } as FamilyMember,
+      ],
+      entities: [{ id: "t-gift", name: "Gift Trust", includeInPortfolio: false, isGrantor: false,
+        entityType: "trust", isIrrevocable: true, grantor: "client" }],
+      giftEvents,
+    });
+  const giftOf = (recipient: Partial<Extract<GiftEvent, { kind: "asset" }>>): GiftEvent => ({
+    kind: "asset", year: 2027, accountId: "acc-joint", percent: 0.2, grantor: "client", ...recipient,
+  });
+  const fmShare = (y: ProjectionYear, fm: string) =>
+    y.familyAccountSharesEoY?.get(fm)?.get("acc-joint");
+  /** What the balance sheet shows: gift-aware owners through the locked shares. */
+  const slices = (data: ClientData, y: ProjectionYear) =>
+    resolveOwnerSlices(
+      "acc-joint",
+      ownersForYear(data.accounts[0], data.giftEvents ?? [], y.year, 2026),
+      y.accountLedgers["acc-joint"].endingValue,
+      y.entityAccountSharesEoY,
+      y.familyAccountSharesEoY,
+    );
+  const sliceOf = (s: ReturnType<typeof slices>, pick: (o: AccountOwner) => boolean) =>
+    s.filter((x) => pick(x.owner)).reduce((t, x) => t + x.value, 0);
+  const fm = (id: string) => (o: AccountOwner) => o.kind === "family_member" && o.familyMemberId === id;
+  const awayTo = (id: string) => (o: AccountOwner) => o.kind === "gifted_away" && o.recipient.id === id;
+
+  it("debits the client's share when the client gifts 20% of a joint account to a trust", () => {
+    // WIRING PIN: the unit cases stub the resolver and hand `gifts` in directly.
+    const data = scenario(joint(), [giftOf({ recipientEntityId: "t-gift" })]);
+    const [y2026, y2027, y2028] = runProjection(data);
+    expect(fmShare(y2026, LEGACY_FM_CLIENT)).toBeCloseTo(500_000, 2);
+    expect(fmShare(y2026, LEGACY_FM_SPOUSE)).toBeCloseTo(500_000, 2);
+    for (const y of [y2027, y2028]) {
+      const c = fmShare(y, LEGACY_FM_CLIENT)!;
+      const s = fmShare(y, LEGACY_FM_SPOUSE)!;
+      const trust = y.entityAccountSharesEoY?.get("t-gift")?.get("acc-joint") ?? 0;
+      expect(c).toBeCloseTo(300_000, 2);
+      expect(s).toBeCloseTo(500_000, 2);
+      expect(trust).toBeCloseTo(200_000, 2);
+      expect(c + s + trust).toBeCloseTo(y.accountLedgers["acc-joint"].endingValue, 2);
+    }
+  });
+
+  it("grows and debits the post-gift shares, not the authored ones", () => {
+    // WIRING PIN for the per-year resolver. With 10% growth the family pool's
+    // share of growth is BoY × Σ family percents — 80% after the gift, not the
+    // authored 100% — and a same-year cash gift the client funds is one-sided,
+    // so an overstated growth credit leaves a different split behind.
+    //   2026: 500k/500k → 550k/550k
+    //   2027: BoY 1.1M; asset gift 220k from client → 330k/550k; growth 88k
+    //         pro-rata → 363k/605k; cash gift 100k from client → 263k/605k.
+    //         Trust locked 220k + 22k = 242k. Account 1.11M.
+    const data = scenario(
+      { ...joint(), growthRate: 0.1 },
+      [
+        giftOf({ recipientEntityId: "t-gift" }),
+        { kind: "cash", year: 2027, amount: 100_000, grantor: "client",
+          sourceAccountId: "acc-joint", recipientFamilyMemberId: FM_KID, useCrummeyPowers: false },
+      ],
+    );
+    const y2027 = runProjection(data)[1];
+    const trust = y2027.entityAccountSharesEoY?.get("t-gift")?.get("acc-joint") ?? 0;
+    expect(y2027.accountLedgers["acc-joint"].endingValue).toBeCloseTo(1_110_000, 2);
+    expect(trust).toBeCloseTo(242_000, 2);
+    expect(fmShare(y2027, LEGACY_FM_CLIENT)).toBeCloseTo(263_000, 2);
+    expect(fmShare(y2027, LEGACY_FM_SPOUSE)).toBeCloseTo(605_000, 2);
+  });
+
+  it("a gift to a child who is not an owner leaves the child's share gifted away, not re-absorbed", () => {
+    // A gift to a person becomes a `gifted_away` owner row, never a
+    // family_member one, so the recipient has no ledger to credit. The
+    // balance sheet subtracts the gifted-away slice from the family pool; the
+    // ledger decides who that pool belongs to.
+    const data = scenario(joint(), [giftOf({ recipientFamilyMemberId: FM_KID })]);
+    const y2027 = runProjection(data)[1];
+    const s = slices(data, y2027);
+    expect(sliceOf(s, fm(LEGACY_FM_CLIENT))).toBeCloseTo(300_000, 2);
+    expect(sliceOf(s, fm(LEGACY_FM_SPOUSE))).toBeCloseTo(500_000, 2);
+    expect(sliceOf(s, awayTo(FM_KID))).toBeCloseTo(200_000, 2);
+    expect(sliceOf(s, () => true)).toBeCloseTo(1_000_000, 2);
+  });
+
+  it("a gift to a child who already co-owns the account is not counted twice", () => {
+    // Authored 40/40/20. The child keeps its own 200k AND receives 200k as a
+    // gifted-away slice. Crediting the child's ledger as well would book the
+    // gift twice (the child would show 520k of a $1M account).
+    const data = scenario(
+      joint([
+        { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.4 },
+        { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.4 },
+        { kind: "family_member", familyMemberId: FM_KID, percent: 0.2 },
+      ]),
+      [giftOf({ recipientFamilyMemberId: FM_KID })],
+    );
+    const y2027 = runProjection(data)[1];
+    const s = slices(data, y2027);
+    expect(sliceOf(s, fm(LEGACY_FM_CLIENT))).toBeCloseTo(200_000, 2);
+    expect(sliceOf(s, fm(LEGACY_FM_SPOUSE))).toBeCloseTo(400_000, 2);
+    expect(sliceOf(s, fm(FM_KID))).toBeCloseTo(200_000, 2);
+    expect(sliceOf(s, awayTo(FM_KID))).toBeCloseTo(200_000, 2);
+    expect(sliceOf(s, () => true)).toBeCloseTo(1_000_000, 2);
   });
 });

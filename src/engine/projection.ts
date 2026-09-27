@@ -9077,20 +9077,23 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     }
   }
 
-  // Per-family-member locked-share ledger for jointly-held accounts. Only
-  // accounts with ≥2 distinct family-member owners get a per-member ledger.
-  const accountFamilyOwners = new Map<string, Array<{ familyMemberId: string; percent: number }>>();
-  for (const acct of data.accounts ?? []) {
-    const fmOwners = (acct.owners ?? [])
-      .filter((o) => o.kind === "family_member")
+  // Per-family-member locked-share ledger for jointly-held accounts, resolved
+  // per year from the same snapshot (and the same `accountsById`) as the
+  // entity rollup above, so a gift that moves a share out of the household is
+  // visible here in the year it lands.
+  const accountFamilyOwnersAt = (accountId: string, year: number) => {
+    const acct = accountsById.get(accountId);
+    if (!acct) return [];
+    return ownershipSnapshot
+      .ownersAt(acct, year)
+      .filter((o): o is Extract<typeof o, { kind: "family_member" }> => o.kind === "family_member")
       .map((o) => ({ familyMemberId: o.familyMemberId, percent: o.percent }));
-    if (fmOwners.length >= 2) {
-      accountFamilyOwners.set(acct.id, fmOwners);
-    }
-  }
+  };
   computeFamilyAccountShares({
     years,
-    accountFamilyOwners,
+    accountFamilyOwnersAt,
+    candidateAccountIds: data.accounts.map((a) => a.id),
+    planStartYear: planSettings.planStartYear,
     clientFamilyMemberId: clientFmId,
     spouseFamilyMemberId: spouseFmId,
     incomes: currentIncomes,
