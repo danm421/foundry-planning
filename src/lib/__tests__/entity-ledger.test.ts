@@ -4,6 +4,11 @@ import { getEntityLedger, type EntityLedgerContext } from "../entity-ledger";
 import { computeEntityCashFlow, type EntityMetadata } from "@/engine/entity-cashflow";
 import type { ProjectionYear } from "@/engine/types";
 
+/** Adapts a year-invariant owner Map to computeEntityCashFlow's per-year resolver. */
+function ownersFrom(map: Map<string, { entityId: string; percent: number }>) {
+  return { accountEntityOwnersAt: (id: string) => map.get(id), candidateAccountIds: [...map.keys()] };
+}
+
 function makeYear(year: number): ProjectionYear {
   return {
     year,
@@ -102,7 +107,7 @@ function buildBusinessWithIncomeFixture() {
   computeEntityCashFlow({
     years: [year],
     entitiesById,
-    accountEntityOwners: new Map(),
+    ...ownersFrom(new Map()),
     giftsByEntityYear: new Map(),
     incomes,
     expenses: [],
@@ -156,7 +161,7 @@ function buildBusinessWithExpenseFixture() {
   computeEntityCashFlow({
     years: [year],
     entitiesById,
-    accountEntityOwners: new Map(),
+    ...ownersFrom(new Map()),
     giftsByEntityYear: new Map(),
     incomes: [],
     expenses,
@@ -216,7 +221,7 @@ function buildTrustFixture() {
   computeEntityCashFlow({
     years: [year],
     entitiesById,
-    accountEntityOwners,
+    ...ownersFrom(accountEntityOwners),
     giftsByEntityYear: new Map(),
     incomes: [],
     expenses: [],
@@ -282,7 +287,7 @@ function buildSplitOwnedTrustFixture() {
   computeEntityCashFlow({
     years: [year],
     entitiesById,
-    accountEntityOwners,
+    ...ownersFrom(accountEntityOwners),
     giftsByEntityYear: new Map(),
     incomes: [],
     expenses: [],
@@ -341,7 +346,7 @@ function buildBusinessFixture() {
   computeEntityCashFlow({
     years: [year],
     entitiesById,
-    accountEntityOwners,
+    ...ownersFrom(accountEntityOwners),
     giftsByEntityYear: new Map(),
     incomes: [],
     expenses: [],

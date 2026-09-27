@@ -8983,22 +8983,24 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       valueGrowthRate: entity.valueGrowthRate ?? null,
     });
   }
-  // Account → entity-owner map. Any account with an entity-owner row
-  // contributes to that entity's rollup at its share percent (split
-  // ownership with a family member is supported). Accounts split between
-  // multiple entities are not yet modeled — the first entity-owner wins.
-  const accountEntityOwners = new Map<string, { entityId: string; percent: number }>();
-  for (const acct of data.accounts) {
-    const entityOwner = acct.owners.find((o) => o.kind === "entity") as
-      | { kind: "entity"; entityId: string; percent: number }
-      | undefined;
-    if (entityOwner) {
-      accountEntityOwners.set(acct.id, {
-        entityId: entityOwner.entityId,
-        percent: entityOwner.percent,
-      });
-    }
-  }
+  // Account → entity-owner, resolved PER YEAR from the ownership snapshot, so
+  // an account gifted into a trust mid-horizon reaches that trust's row from
+  // the gift year on. Split ownership with a family member is supported;
+  // accounts split between multiple entities are not yet modeled — the first
+  // entity-owner wins, same as the authored map this replaces. Reads the
+  // `data.accounts` objects deliberately: their owner arrays are the ones the
+  // snapshot was built from, so every read takes its resolved-step path.
+  const accountsById = new Map(data.accounts.map((a) => [a.id, a]));
+  const accountEntityOwnersAt = (accountId: string, year: number) => {
+    const acct = accountsById.get(accountId);
+    if (!acct) return undefined;
+    const entityOwner = ownershipSnapshot
+      .ownersAt(acct, year)
+      .find((o): o is Extract<typeof o, { kind: "entity" }> => o.kind === "entity");
+    return entityOwner
+      ? { entityId: entityOwner.entityId, percent: entityOwner.percent }
+      : undefined;
+  };
   // Gifts to entities, grouped by recipient entity id and year. Only cash gifts
   // carry a numeric `amount` field; asset/liability gifts use the same value
   // model elsewhere and are surfaced via account ledgers, so they are not
@@ -9014,7 +9016,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   computeEntityCashFlow({
     years,
     entitiesById,
-    accountEntityOwners,
+    accountEntityOwnersAt,
+    candidateAccountIds: data.accounts.map((a) => a.id),
     giftsByEntityYear,
     incomes: currentIncomes,
     expenses: lastAllExpenses,

@@ -27,6 +27,11 @@ function trustRow(y: ProjectionYear, entityId: string): TrustCashFlowRow {
   if (row?.kind !== "trust") throw new Error(`no trust row for ${entityId} in ${y.year}`);
   return row;
 }
+/** Adapts a year-invariant owner Map to the per-year resolver input — for the
+ *  cases that predate per-year ownership and own the same share every year. */
+function ownersFrom(map: Map<string, { entityId: string; percent: number }>) {
+  return { accountEntityOwnersAt: (id: string) => map.get(id), candidateAccountIds: [...map.keys()] };
+}
 /** The columns the Trust table adds up. beginning + in − out must equal ending. */
 const rowIdentityGap = (r: TrustCashFlowRow) =>
   r.beginningBalance + r.transfersIn + r.growth + r.income
@@ -102,7 +107,7 @@ describe("computeEntityCashFlow", () => {
     computeEntityCashFlow({
       years,
       entitiesById: new Map(),
-      accountEntityOwners: new Map(),
+      ...ownersFrom(new Map()),
       giftsByEntityYear: new Map(),
       incomes: [],
       expenses: [],
@@ -164,10 +169,10 @@ describe("computeEntityCashFlow", () => {
     computeEntityCashFlow({
       years: [y],
       entitiesById: new Map([["trust-1", trust]]),
-      accountEntityOwners: new Map([
+      ...ownersFrom(new Map([
         ["acc-1", { entityId: "trust-1", percent: 1 }],
         ["acc-2", { entityId: "trust-1", percent: 1 }],
-      ]),
+      ])),
       giftsByEntityYear: new Map(),
       incomes: [],
       expenses: [],
@@ -212,7 +217,7 @@ describe("computeEntityCashFlow", () => {
     computeEntityCashFlow({
       years: [y],
       entitiesById: new Map([["trust-1", trust]]),
-      accountEntityOwners: new Map([["trust-cash", { entityId: "trust-1", percent: 1 }]]),
+      ...ownersFrom(new Map([["trust-cash", { entityId: "trust-1", percent: 1 }]])),
       giftsByEntityYear: new Map(),
       incomes: [],
       expenses: [],
@@ -261,7 +266,7 @@ describe("computeEntityCashFlow", () => {
     computeEntityCashFlow({
       years: [y],
       entitiesById: new Map([["trust-1", trust]]),
-      accountEntityOwners: new Map([["trust-cash", { entityId: "trust-1", percent: 1 }]]),
+      ...ownersFrom(new Map([["trust-cash", { entityId: "trust-1", percent: 1 }]])),
       giftsByEntityYear: new Map(),
       incomes: [],
       expenses: [],
@@ -308,7 +313,7 @@ describe("computeEntityCashFlow", () => {
     computeEntityCashFlow({
       years: [y],
       entitiesById: new Map([["trust-1", trust]]),
-      accountEntityOwners: new Map([["trust-cash", { entityId: "trust-1", percent: 1 }]]),
+      ...ownersFrom(new Map([["trust-cash", { entityId: "trust-1", percent: 1 }]])),
       giftsByEntityYear: new Map(),
       incomes: [],
       expenses: [],
@@ -389,7 +394,7 @@ describe("computeEntityCashFlow", () => {
     computeEntityCashFlow({
       years: [y2026, y2027],
       entitiesById: new Map([["trust-1", trust]]),
-      accountEntityOwners: new Map(),
+      ...ownersFrom(new Map()),
       giftsByEntityYear: new Map([["trust-1", new Map([[2026, 100_000]])]]),
       incomes: [],
       expenses: [],
@@ -432,7 +437,7 @@ describe("computeEntityCashFlow", () => {
         ["ng-1", nongrantor],
         ["g-1", grantor],
       ]),
-      accountEntityOwners: new Map(),
+      ...ownersFrom(new Map()),
       giftsByEntityYear: new Map(),
       incomes: [],
       expenses: [],
@@ -476,7 +481,7 @@ describe("computeEntityCashFlow", () => {
     computeEntityCashFlow({
       years: [y],
       entitiesById: new Map([["clut-1", trust]]),
-      accountEntityOwners: new Map(),
+      ...ownersFrom(new Map()),
       giftsByEntityYear: new Map(),
       incomes: [],
       expenses: [],
@@ -507,7 +512,7 @@ describe("computeEntityCashFlow", () => {
     computeEntityCashFlow({
       years: [y],
       entitiesById: new Map([["llc-1", llc]]),
-      accountEntityOwners: new Map([["biz-cash", { entityId: "llc-1", percent: 1 }]]),
+      ...ownersFrom(new Map([["biz-cash", { entityId: "llc-1", percent: 1 }]])),
       giftsByEntityYear: new Map(),
       incomes,
       expenses,
@@ -549,10 +554,10 @@ describe("computeEntityCashFlow", () => {
     computeEntityCashFlow({
       years: [y],
       entitiesById: new Map([["llc-1", llc]]),
-      accountEntityOwners: new Map([
+      ...ownersFrom(new Map([
         ["biz-cash", { entityId: "llc-1", percent: 1 }],
         ["shared-inv", { entityId: "llc-1", percent: 0.2 }],
-      ]),
+      ])),
       giftsByEntityYear: new Map(),
       incomes: [],
       expenses: [],
@@ -598,7 +603,7 @@ describe("computeEntityCashFlow", () => {
     computeEntityCashFlow({
       years: [y],
       entitiesById: new Map([["llc-1", llc]]),
-      accountEntityOwners: new Map([["biz-cash", { entityId: "llc-1", percent: 1 }]]),
+      ...ownersFrom(new Map([["biz-cash", { entityId: "llc-1", percent: 1 }]])),
       giftsByEntityYear: new Map(),
       incomes,
       expenses,
@@ -637,7 +642,7 @@ describe("computeEntityCashFlow", () => {
     computeEntityCashFlow({
       years: [y],
       entitiesById: new Map([["cc-1", ccorp]]),
-      accountEntityOwners: new Map([["cc-cash", { entityId: "cc-1", percent: 1 }]]),
+      ...ownersFrom(new Map([["cc-cash", { entityId: "cc-1", percent: 1 }]])),
       giftsByEntityYear: new Map(),
       incomes,
       expenses,
@@ -665,7 +670,7 @@ describe("computeEntityCashFlow", () => {
     computeEntityCashFlow({
       years,
       entitiesById: new Map([["llc-1", llc]]),
-      accountEntityOwners: new Map(),
+      ...ownersFrom(new Map()),
       giftsByEntityYear: new Map(),
       incomes: [],
       expenses: [],
@@ -710,7 +715,7 @@ describe("computeEntityCashFlow", () => {
     computeEntityCashFlow({
       years: [y],
       entitiesById: new Map([["llc-1", llc]]),
-      accountEntityOwners: new Map(),
+      ...ownersFrom(new Map()),
       giftsByEntityYear: new Map(),
       // No base rows — schedule grid is the source of truth.
       incomes: [],
@@ -740,7 +745,7 @@ describe("computeEntityCashFlow", () => {
     computeEntityCashFlow({
       years,
       entitiesById: new Map([["llc-1", llc]]),
-      accountEntityOwners: new Map(),
+      ...ownersFrom(new Map()),
       giftsByEntityYear: new Map(),
       incomes: [],
       expenses: [],
@@ -793,7 +798,7 @@ describe("computeEntityCashFlow", () => {
     computeEntityCashFlow({
       years: [year],
       entitiesById,
-      accountEntityOwners,
+      ...ownersFrom(accountEntityOwners),
       giftsByEntityYear: new Map(),
       incomes: [],
       expenses: [],
@@ -860,7 +865,7 @@ describe("computeEntityCashFlow", () => {
     computeEntityCashFlow({
       years: [y1, y2],
       entitiesById,
-      accountEntityOwners,
+      ...ownersFrom(accountEntityOwners),
       giftsByEntityYear: new Map(),
       incomes: [],
       expenses: [],
@@ -916,7 +921,7 @@ describe("computeEntityCashFlow", () => {
     computeEntityCashFlow({
       years: [year],
       entitiesById,
-      accountEntityOwners,
+      ...ownersFrom(accountEntityOwners),
       giftsByEntityYear: new Map(),
       incomes: [],
       expenses: [],
@@ -929,6 +934,99 @@ describe("computeEntityCashFlow", () => {
     expect(row.beginningTotalValue).toBeCloseTo(60_000, 2);
     expect(row.growth).toBeCloseTo(3_000, 2);
     expect(row.endingTotalValue).toBeCloseTo(63_000, 2);
+  });
+});
+
+describe("entity cash flow — an account gifted into a trust mid-horizon", () => {
+  const slat: EntityMetadata = {
+    id: "trust-1",
+    name: "Smith SLAT",
+    entityType: "trust",
+    trustSubType: "irrevocable",
+    isGrantor: false,
+    initialValue: 0,
+    initialBasis: 0,
+  };
+  /** Years whose `acc-1` ledger is flat at `value` — no growth, no flows. */
+  const flatYears = (yrs: number[], value: number) =>
+    yrs.map((y) => {
+      const year = makeYear(y);
+      year.accountLedgers["acc-1"] = {
+        beginningValue: value,
+        endingValue: value,
+        growth: 0,
+        contributions: 0,
+        distributions: 0,
+        internalContributions: 0,
+        internalDistributions: 0,
+        rmdAmount: 0,
+        fees: 0,
+        entries: [],
+      };
+      return year;
+    });
+  const run = (
+    years: ProjectionYear[],
+    accountEntityOwnersAt: (id: string, y: number) => { entityId: string; percent: number } | undefined,
+  ) =>
+    computeEntityCashFlow({
+      years,
+      entitiesById: new Map([["trust-1", slat]]),
+      accountEntityOwnersAt,
+      candidateAccountIds: ["acc-1"],
+      giftsByEntityYear: new Map(),
+      incomes: [],
+      expenses: [],
+      entityFlowOverrides: [],
+    });
+
+  it("reports $0 before the gift year and the gifted share after", () => {
+    // The headline defect: the balance sheet showed the trust holding this
+    // account while the trust's own cash-flow page showed $0, because the
+    // owner map was built once from the AUTHORED owners.
+    const years = flatYears([2026, 2027, 2028], 1_000_000);
+    run(years, (id, y) =>
+      id === "acc-1" && y >= 2027 ? { entityId: "trust-1", percent: 0.15 } : undefined,
+    );
+    expect(trustRow(years[0], "trust-1").endingBalance).toBe(0);
+    expect(trustRow(years[1], "trust-1").endingBalance).toBeCloseTo(150_000, 2);
+    expect(trustRow(years[2], "trust-1").endingBalance).toBeCloseTo(150_000, 2);
+    // A split (<100%) share is also published for the balance sheet — from the
+    // gift year on, and never before it.
+    expect(years[0].entityAccountSharesEoY?.get("trust-1")?.get("acc-1")).toBeUndefined();
+    expect(years[1].entityAccountSharesEoY?.get("trust-1")?.get("acc-1")).toBeCloseTo(150_000, 2);
+    expect(years[2].entityAccountSharesEoY?.get("trust-1")?.get("acc-1")).toBeCloseTo(150_000, 2);
+  });
+
+  it("visits an account the entity owns in NO year of the authored baseline", () => {
+    // accountsByEntity must be built from the union across years, or a
+    // mid-horizon gift's account is never even looked at. 100% → the
+    // full-ownership branch.
+    const years = flatYears([2026, 2027], 500_000);
+    run(years, (id, y) =>
+      id === "acc-1" && y === 2027 ? { entityId: "trust-1", percent: 1 } : undefined,
+    );
+    expect(trustRow(years[0], "trust-1").endingBalance).toBe(0);
+    expect(trustRow(years[1], "trust-1").endingBalance).toBeCloseTo(500_000, 2);
+  });
+
+  it("ignores a gift dated before planStartYear", () => {
+    // The snapshot already resolved this: a pre-plan gift is baked into the
+    // authored owners, so it reports the AUTHORED entity share every year —
+    // it must not be applied a second time on top.
+    const years = flatYears([2026, 2027], 800_000);
+    run(years, () => ({ entityId: "trust-1", percent: 0.2 }));
+    expect(trustRow(years[0], "trust-1").endingBalance).toBeCloseTo(160_000, 2);
+  });
+
+  it("treats an account absent from THIS year's map as 0%, not 100%", () => {
+    // The `?? 1` default was unreachable before and is reachable now.
+    const years = flatYears([2026, 2027], 800_000);
+    run(years, (id, y) =>
+      id === "acc-1" && y === 2027 ? { entityId: "trust-1", percent: 0.4 } : undefined,
+    );
+    expect(trustRow(years[0], "trust-1").endingBalance).toBe(0);
+    expect(trustRow(years[1], "trust-1").endingBalance).toBeCloseTo(320_000, 2);
   });
 });
 
@@ -1162,6 +1260,82 @@ describe("computeEntityCashFlow integration via runProjection", () => {
     expect(row.totalDistributions).toBe(25_000);
     expect(row.endingBalance).toBeCloseTo(85_000, 2);
     expect(rowIdentityGap(row)).toBeCloseTo(0, 2);
+  });
+
+  /** Married household + one non-grantor trust with no distribution policy,
+   *  receiving asset gifts. Every account is flat (0% growth, no flows). */
+  const giftScenario = (accounts: Account[], giftEvents: ClientData["giftEvents"]): ClientData => ({
+    client,
+    accounts: [hhChecking, ...accounts],
+    incomes: [],
+    expenses: [],
+    liabilities: [],
+    savingsRules: [],
+    withdrawalStrategy: [],
+    planSettings,
+    familyMembers: [spouseFm],
+    entities: [
+      {
+        id: "t-gift",
+        name: "Gift Trust",
+        includeInPortfolio: false,
+        isGrantor: false,
+        entityType: "trust",
+        isIrrevocable: true,
+        grantor: "client",
+      },
+    ],
+    taxYearRows: [taxYearRow],
+    giftEvents,
+  });
+  const clientBrokerage = (id: string, value: number, owners?: Account["owners"]): Account => ({
+    id,
+    name: id,
+    category: "taxable",
+    subType: "brokerage",
+    titlingType: "jtwros",
+    value,
+    basis: value,
+    growthRate: 0,
+    rmdEnabled: false,
+    owners: owners ?? [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+  });
+
+  it("books an account gifted into a trust mid-horizon to the trust's row from the gift year", () => {
+    // WIRING PIN for the projection's per-year resolver. The unit tests above
+    // stub the resolver and cannot see projection.ts; this one can. A 30% gift
+    // (split branch) and a 100% gift (full branch), both landing in 2027.
+    const years = runProjection(
+      giftScenario(
+        [clientBrokerage("acc-part", 1_000_000), clientBrokerage("acc-whole", 200_000)],
+        [
+          { kind: "asset", year: 2027, accountId: "acc-part", percent: 0.3, grantor: "client", recipientEntityId: "t-gift" },
+          { kind: "asset", year: 2027, accountId: "acc-whole", percent: 1, grantor: "client", recipientEntityId: "t-gift" },
+        ],
+      ),
+    );
+    const [y2026, y2027] = years;
+    expect(trustRow(y2026, "t-gift").endingBalance).toBe(0);
+    expect(trustRow(y2027, "t-gift").endingBalance).toBeCloseTo(500_000, 2);
+    expect(y2026.entityAccountSharesEoY?.get("t-gift")?.get("acc-part")).toBeUndefined();
+    expect(y2027.entityAccountSharesEoY?.get("t-gift")?.get("acc-part")).toBeCloseTo(300_000, 2);
+  });
+
+  it("does not re-apply an asset gift dated before planStartYear on top of the authored rows", () => {
+    // The authored owners already carry the 2025 gift (80/20). Applying it
+    // again would book 36% or 40% to the trust instead of 20%.
+    const years = runProjection(
+      giftScenario(
+        [
+          clientBrokerage("acc-pre", 500_000, [
+            { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.8 },
+            { kind: "entity", entityId: "t-gift", percent: 0.2 },
+          ]),
+        ],
+        [{ kind: "asset", year: 2025, accountId: "acc-pre", percent: 0.2, grantor: "client", recipientEntityId: "t-gift" }],
+      ),
+    );
+    for (const y of years) expect(trustRow(y, "t-gift").endingBalance).toBeCloseTo(100_000, 2);
   });
 });
 

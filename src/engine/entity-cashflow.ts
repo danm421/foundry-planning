@@ -128,9 +128,21 @@ export interface ComputeEntityCashFlowInput {
   years: ProjectionYear[];
   /** Entity metadata indexed by id. */
   entitiesById: Map<string, EntityMetadata>;
-  /** Account → entity-owner mapping. Split ownership is supported: the
-   *  account contributes to the entity rollup proportionally to `percent`. */
-  accountEntityOwners: Map<string, { entityId: string; percent: number }>;
+  /** Account → entity owner, resolved AT A GIVEN YEAR. Split ownership is
+   *  supported: the account contributes to the entity rollup proportionally to
+   *  `percent`. Was a year-invariant Map, which is precisely why a trust that
+   *  received an account by gift never appeared: the account has no AUTHORED
+   *  entity row, so it never entered the map and every balance summed to 0 —
+   *  while the balance sheet, reading the same account through the overlay,
+   *  showed the trust holding it. Returns undefined when no entity owns the
+   *  account in that year. */
+  accountEntityOwnersAt: (
+    accountId: string,
+    year: number,
+  ) => { entityId: string; percent: number } | undefined;
+  /** Every account id any entity could own in any year. The function above
+   *  cannot be enumerated, so the caller supplies the candidate set. */
+  candidateAccountIds: string[];
   /** Gifts to entities, grouped by recipient entity id and year. */
   giftsByEntityYear: Map<string, Map<number, number>>;
   /** The same resolved currentIncomes array runProjection built. Used by
@@ -186,16 +198,21 @@ export interface ComputeBusinessAccountCashFlowInput {
  * has no presence).
  */
 export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
-  const { years, entitiesById, accountEntityOwners } = input;
+  const { years, entitiesById, accountEntityOwnersAt, candidateAccountIds } = input;
 
-  // Build entity → account list. Split ownership is allowed; share is applied
-  // during the rollup so a 60/40 entity/personal account contributes 60% to
-  // the entity row.
+  // Entity → account list, unioned across EVERY year. Split ownership is
+  // allowed; the share is applied per year during the rollup. Built from one
+  // year only (or from the authored owners) this misses exactly the accounts
+  // an entity does not own until a mid-horizon gift.
   const accountsByEntity = new Map<string, string[]>();
-  for (const [accountId, owner] of accountEntityOwners) {
-    const list = accountsByEntity.get(owner.entityId) ?? [];
-    list.push(accountId);
-    accountsByEntity.set(owner.entityId, list);
+  for (const year of years) {
+    for (const accountId of candidateAccountIds) {
+      const owner = accountEntityOwnersAt(accountId, year.year);
+      if (!owner) continue;
+      const list = accountsByEntity.get(owner.entityId) ?? [];
+      if (!list.includes(accountId)) list.push(accountId);
+      accountsByEntity.set(owner.entityId, list);
+    }
   }
 
   const planStart = years[0]?.year ?? 0;
@@ -220,8 +237,13 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
       for (const aid of accountIds) {
         const ledger = year.accountLedgers[aid];
         if (!ledger) continue;
-        const owner = accountEntityOwners.get(aid);
-        const share = owner?.percent ?? 1;
+        const owner = accountEntityOwnersAt(aid, year.year);
+        // 0, not 1. An account in `accountsByEntity` but not owned by THIS
+        // entity in THIS year is one it does not own YET — a later gift put it
+        // in the union. The old `?? 1` was unreachable (the union and the map
+        // were the same object) and would now book the whole pre-gift balance.
+        const share = owner?.entityId === entityId ? owner.percent : 0;
+        if (share <= 0) continue;
         accountBasis += (year.accountBasisBoY?.[aid] ?? 0) * share;
         if (share === 1) {
           // Fully entity-owned — the account's full activity belongs to the entity.
