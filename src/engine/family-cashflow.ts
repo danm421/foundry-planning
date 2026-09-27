@@ -10,8 +10,9 @@
 //   - Attributed income deposits → credit the income's owner share.
 //   - Cash gifts (kind: "cash") → debit the grantor's share first, then
 //     pull pro-rata from co-owners if grantor is exhausted.
-//   - Asset gifts (kind: "asset") → the same grantor-first debit, at BoY, of
-//     percent × the account's beginning value.
+//   - Asset gifts → at BoY, the drop in the resolved family percent × the
+//     account's beginning value leaves the household pro-rata, exactly as
+//     `composeOwnersForYear` shrinks the household percents.
 //   - Death event → at next BoY, surviving owners absorb deceased's share
 //     pro-rata to their pre-death shares.
 //
@@ -33,9 +34,6 @@ export interface ComputeFamilyAccountSharesInput {
   ) => Array<{ familyMemberId: string; percent: number }>;
   /** Candidate account ids — the resolver cannot be enumerated. */
   candidateAccountIds: string[];
-  /** The plan's first year. An asset gift dated before it is already in the
-   *  authored owners, so it must not debit anyone again. */
-  planStartYear: number;
   /** Resolves "client" → familyMemberId for the household principal. */
   clientFamilyMemberId: string | null;
   /** Resolves "spouse" → familyMemberId. Null in single-filer plans. */
@@ -56,7 +54,6 @@ export function computeFamilyAccountShares(input: ComputeFamilyAccountSharesInpu
     years,
     accountFamilyOwnersAt,
     candidateAccountIds,
-    planStartYear,
     incomes,
     gifts,
     clientFamilyMemberId,
@@ -87,26 +84,6 @@ export function computeFamilyAccountShares(input: ComputeFamilyAccountSharesInpu
     const list = cashGiftsByAccountYear.get(k) ?? [];
     list.push({ grantor: g.grantor, amount: g.amount });
     cashGiftsByAccountYear.set(k, list);
-  }
-
-  // Asset gifts by (account, year). These move OWNERSHIP, not cash: the
-  // account's balance is unchanged and the grantor's share of it shrinks.
-  // `gifts` used to be filtered to kind === "cash" and nothing else, so an
-  // asset gift moved no family share at all.
-  //
-  // The window mirrors buildOwnershipSnapshot's, so the debit lands in exactly
-  // the year the resolver's owners change: a gift before planStartYear is
-  // already in the authored owners (skip it), and one before the first
-  // projected year takes effect in that first year.
-  const firstYear = years[0]?.year ?? planStartYear;
-  const assetGiftsByAccountYear = new Map<string, Array<{ grantor: "client" | "spouse"; percent: number }>>();
-  for (const g of gifts) {
-    if (g.kind !== "asset") continue;
-    if (g.year < planStartYear) continue;
-    const k = giftKey(g.accountId, Math.max(g.year, firstYear));
-    const list = assetGiftsByAccountYear.get(k) ?? [];
-    list.push({ grantor: g.grantor, percent: g.percent });
-    assetGiftsByAccountYear.set(k, list);
   }
 
   // Resolve "client" | "spouse" → familyMemberId. Returns null if the role
@@ -188,26 +165,22 @@ export function computeFamilyAccountShares(input: ComputeFamilyAccountSharesInpu
       if (!ledger) continue;
       const owners = accountFamilyOwnersAt(accountId, year.year);
       const ownerFmIds = new Set(owners.map((o) => o.familyMemberId));
-      const assetGiftsThisYear = assetGiftsByAccountYear.get(giftKey(accountId, year.year)) ?? [];
+      // The owners in force BEFORE this year's gifts land — the resolver's
+      // prior year (below the horizon it answers the authored baseline).
+      const priorOwners = accountFamilyOwnersAt(accountId, year.year - 1);
+      const priorPercent = new Map(priorOwners.map((o) => [o.familyMemberId, o.percent]));
 
       // BoY shares: carried from prior year, or seeded at beginningValue ×
       // percent on year 0 — each owner's slice of the WHOLE account, so a mixed
       // account (70% trust + 15%/15% family) seeds 15k each on a $100k account.
-      // The seed reads the owners in force BEFORE this year's gifts (the
-      // resolver's prior year): this year's asset gifts are debited below, and
-      // a seed from the post-gift owners would take them a second time.
+      // The seed reads the pre-gift owners: this year's gifts are debited
+      // below, and a seed from the post-gift owners would take them twice.
       const familyPercentTotal = owners.reduce((s, o) => s + o.percent, 0);
       const familyPoolBoY = ledger.beginningValue * familyPercentTotal;
-      const preGiftPercent =
-        assetGiftsThisYear.length > 0
-          ? new Map(
-              accountFamilyOwnersAt(accountId, year.year - 1).map((o) => [o.familyMemberId, o.percent]),
-            )
-          : undefined;
       const shares: Record<string, number> = {};
       for (const o of owners) {
         const carried = getLocked(o.familyMemberId, accountId);
-        const seedPercent = preGiftPercent?.get(o.familyMemberId) ?? o.percent;
+        const seedPercent = priorPercent.get(o.familyMemberId) ?? o.percent;
         shares[o.familyMemberId] = carried ?? ledger.beginningValue * seedPercent;
       }
 
@@ -220,9 +193,9 @@ export function computeFamilyAccountShares(input: ComputeFamilyAccountSharesInpu
         }
       };
 
-      // Take `amount` out of the grantor's share first; if that runs dry, pull
-      // the remainder pro-rata from the co-owners. A grantor not on this
-      // account pays nothing directly — the whole amount goes pro-rata.
+      // Cash gifts: take `amount` out of the grantor's share first; if that
+      // runs dry, pull the remainder pro-rata from the co-owners. A grantor not
+      // on this account pays nothing directly — the whole amount goes pro-rata.
       const drawFromGrantor = (grantor: "client" | "spouse" | "joint", amount: number) => {
         const grantorFmId = resolveOwnerToFm(grantor);
         if (!grantorFmId || !ownerFmIds.has(grantorFmId)) {
@@ -241,15 +214,19 @@ export function computeFamilyAccountShares(input: ComputeFamilyAccountSharesInpu
         }
       };
 
-      // Asset gifts land at BoY, valued at percent × the whole account's BoY —
-      // the same valuation the recipient trust's locked share is topped up by
-      // (locked-shares.ts), so the family debit and the entity credit match to
-      // the dollar. Nobody in the family is credited: a gift to a person is a
-      // `gifted_away` owner row, which the balance sheet values and subtracts
-      // from the family pool itself (account-owner-slices.ts).
-      for (const g of assetGiftsThisYear) {
-        drawFromGrantor(g.grantor, g.percent * ledger.beginningValue);
-      }
+      // Asset gifts: read off the resolver, not the gift list. The household's
+      // resolved percent falls by exactly what this year's gifts moved out —
+      // to a trust (entity row) or a person (`gifted_away` row) alike — and
+      // `composeOwnersForYear` frees it by shrinking every household row by
+      // one factor, i.e. pro-rata. Valued at the whole account's BoY, the
+      // valuation the recipient trust's locked share is topped up by
+      // (locked-shares.ts). Nobody in the family is credited: a recipient
+      // person is a `gifted_away` row, never a family_member one. A gift the
+      // snapshot does not apply (dated before the plan, or declined by
+      // `canFundGifts`) moves no percent, so it debits nothing.
+      const priorPercentTotal = priorOwners.reduce((s, o) => s + o.percent, 0);
+      const giftedOut = (priorPercentTotal - familyPercentTotal) * ledger.beginningValue;
+      if (giftedOut > 0) distributeProRata(-giftedOut);
 
       // Passive growth: distribute the family pool's share of growth pro-rata.
       // For non-mixed accounts (no entity owners) this equals ledger.growth.

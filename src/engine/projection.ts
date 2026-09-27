@@ -9093,7 +9093,6 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     years,
     accountFamilyOwnersAt,
     candidateAccountIds: data.accounts.map((a) => a.id),
-    planStartYear: planSettings.planStartYear,
     clientFamilyMemberId: clientFmId,
     spouseFamilyMemberId: spouseFmId,
     incomes: currentIncomes,
