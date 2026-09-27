@@ -2,6 +2,7 @@ import type {
   AccountFlowOverride,
   ClientData,
   ProjectionYear,
+  PublishedAccountOwnership,
   AccountLedger,
   AccountLedgerEntry,
   Liability,
@@ -8399,13 +8400,23 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // locked shares (not year N-1's). Recomputed every year (not just death
     // years) because accrueLockedEntityShare needs the prior EoY present for
     // every split-owned account.
+    const accountOwners = new Map<string, PublishedAccountOwnership>();
     for (const acct of workingAccounts) {
       const ledger = accountLedgers[acct.id];
       if (!ledger) continue;
       // Year-resolved owners — same reason as the withdraw-balance cap above.
       // Without this an account gifted to a trust never accrues a carry, so the
       // balance sheet's locked share and the entity's own cash flow disagree.
-      for (const o of ownershipSnapshot.ownersAt(acct, year)) {
+      const liveOwners = ownershipSnapshot.ownersAt(acct, year);
+      // Published as `accountOwners`: the ownership this year's ledger was
+      // booked under, which after a death partition no re-resolution of
+      // `data.accounts` can reproduce.
+      accountOwners.set(acct.id, {
+        owners: liveOwners,
+        ...(acct.giftsReflectedThrough != null ? { giftsReflectedThrough: acct.giftsReflectedThrough } : {}),
+        ...(acct.sliceOf != null ? { sliceOf: acct.sliceOf } : {}),
+      });
+      for (const o of liveOwners) {
         if (o.kind !== "entity") continue;
         if (o.percent >= 1) continue; // 100%-entity needs no carry — full ledger is the share
         const carried = lockedEntityShareCarry.get(o.entityId)?.get(acct.id);
@@ -8683,6 +8694,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       netCashFlow,
       portfolioAssets,
       accountLedgers,
+      accountOwners,
       accountBasisBoY,
       liabilityBalancesBoY,
       ...(Object.keys(notesReceivableByNote).length > 0

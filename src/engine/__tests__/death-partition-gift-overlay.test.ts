@@ -26,6 +26,7 @@ import type {
   FamilyMember,
   GiftEvent,
   ProjectionYear,
+  Will,
 } from "../types";
 
 const ACC = "acct-x";
@@ -73,6 +74,7 @@ function plan(opts: {
   endYear?: number;
   needs?: Array<{ year: number; amount: number }>;
   estateAdminExpenses?: number;
+  wills?: Will[];
 }) {
   const endYear = opts.endYear ?? 2033;
   const acct: Account = {
@@ -103,6 +105,7 @@ function plan(opts: {
     incomes: [], liabilities: [], savingsRules: [], expenses,
     withdrawalStrategy: [{ accountId: ACC, priorityOrder: 1, startYear: 2026, endYear }],
     giftEvents: opts.gifts,
+    wills: opts.wills ?? [],
     planSettings: { ...basePlanSettings, flatFederalRate: 0, flatStateRate: 0,
       planStartYear: 2026, planEndYear: endYear,
       estateAdminExpenses: opts.estateAdminExpenses ?? 0 },
@@ -449,5 +452,65 @@ describe("death partition — a wholly gifted IRA after its owner's death", () =
     expect(rmd).toBeDefined();
     expect(rmd!.label).toBe("RMD distribution (age 80)");
     expect(rmd!.basis).toBe(0);
+  });
+});
+
+/** The client's will: everything to the spouse and the kid, half each — so the
+ *  first death SPLITS what it routes into two new accounts. */
+const SPLIT_WILL: Will = {
+  id: "will-c", grantor: "client",
+  bequests: [{
+    id: "beq", name: "Split", kind: "asset", assetMode: "all_assets",
+    accountId: null, liabilityId: null, entityId: null,
+    percentage: 100, condition: "always", sortOrder: 0,
+    recipients: [
+      { recipientKind: "spouse", recipientId: null, percentage: 50, sortOrder: 0 },
+      { recipientKind: "family_member", recipientId: KID, percentage: 50, sortOrder: 1 },
+    ],
+  }],
+} as unknown as Will;
+
+describe("death partition — the projection publishes the ownership each ledger was booked under", () => {
+  it("publishes the pre-death owners in the death year, then the marked pool and its slice", () => {
+    const years = runProjection(plan({ gifts: [toTrust(2027, 0.3)] }));
+
+    // Death year: the ledgers are pre-death, and so is the published ownership.
+    const y2029 = at(years, 2029).accountOwners!;
+    expect(y2029.get(ACC)!.owners).toEqual([
+      { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: expect.closeTo(0.7, 9) },
+      { kind: "entity", entityId: TRUST, percent: expect.closeTo(0.3, 9) },
+    ]);
+    expect(y2029.get(ACC)!.giftsReflectedThrough).toBeUndefined();
+    expect([...y2029.keys()].some((id) => id.startsWith("entity-slice"))).toBe(false);
+
+    // After it: the pool under the original id, already net of the gift…
+    const y2030 = at(years, 2030).accountOwners!;
+    expect(y2030.get(ACC)).toEqual({
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 1 }],
+      giftsReflectedThrough: 2029,
+    });
+    // …and the trust's 300k as its own 100% account, tagged with its origin.
+    const slices = [...y2030].filter(([id]) => id.startsWith("entity-slice"));
+    expect(slices).toHaveLength(1);
+    expect(slices[0][1]).toEqual({
+      owners: [{ kind: "entity", entityId: TRUST, percent: 1 }],
+      sliceOf: ACC,
+    });
+    expect(at(years, 2030).accountLedgers[slices[0][0]].endingValue).toBeCloseTo(300_000, 2);
+  });
+
+  it("tags a will's split of a partitioned pool with the account it came from — and leaves a plain split untagged", () => {
+    const gifted = runProjection(plan({ gifts: [toTrust(2027, 0.3)], wills: [SPLIT_WILL] }));
+    const shares = [...at(gifted, 2030).accountOwners!].filter(([id]) => id.startsWith("death-acct"));
+    // The checking account is not partitioned — its split is not tagged.
+    const tagged = shares.filter(([, rec]) => rec.sliceOf === ACC);
+    expect(tagged).toHaveLength(2);
+    const ledgers = at(gifted, 2030).accountLedgers;
+    expect(tagged.reduce((s, [id]) => s + ledgers[id].endingValue, 0)).toBeCloseTo(700_000, 2);
+
+    const plain = runProjection(plan({ gifts: [], wills: [SPLIT_WILL] }));
+    const plainShares = [...at(plain, 2030).accountOwners!].filter(([id]) => id.startsWith("death-acct"));
+    expect(plainShares.length).toBeGreaterThan(0);
+    expect(plainShares.every(([, rec]) => rec.sliceOf === undefined)).toBe(true);
   });
 });

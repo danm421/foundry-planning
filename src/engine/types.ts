@@ -941,6 +941,11 @@ export interface Account {
    *  gift-aware resolvers skip them, exactly as they skip gifts dated before
    *  the plan start. Later gifts still overlay. Never set on authored data. */
   giftsReflectedThrough?: number;
+  /** On an account a death partition carved out of another — an entity slice
+   *  (`partitionMixedAccount`), or a share of a partitioned family pool a will
+   *  split (`splitAccount`) — the id of the authored account it came from.
+   *  Reports fold it back into that account's row. Never set on authored data. */
+  sliceOf?: string;
   /** Set when this account is tagged into a revocable trust (the trust's name).
    *  Null/undefined = not in a revocable trust. Drives probate exclusion in
    *  isNonProbateAccount and the report badge. Does NOT change ownership,
@@ -1964,6 +1969,14 @@ export interface ProjectionYear {
    *  Report surfaces must read this, not the authored `account.owners`, to
    *  decide which accounts an entity holds in a year. */
   entityAccountOwners?: Map<string, Map<string, number>>;
+  /** Per-year LIVE ownership of every account the projection booked a ledger
+   *  for this year, death-minted ones included: the gift-resolved owners the
+   *  year's ledger was booked under. In a death year it is the PRE-death
+   *  ownership, matching the pre-death ledgers. After a first-death
+   *  partition the family pool (original id) carries its marker and the
+   *  accounts carved out of it carry `sliceOf`. Re-resolving `data.accounts`
+   *  cannot see a partition — post-loop passes and reports read this. */
+  accountOwners?: Map<string, PublishedAccountOwnership>;
   /** End-of-year locked share for jointly-held family-member accounts:
    *  familyMemberId → accountId → that member's EoY dollar share. Populated
    *  only for accounts with ≥2 distinct family-member owners. Attributed
@@ -2162,3 +2175,13 @@ export function emptyCharityCarryforward(): CharityCarryforward {
 
 export type { EntityCashFlowRow, TrustCashFlowRow, BusinessCashFlowRow } from "./entity-cashflow";
 export type { NoteReceivable, NoteExtraPayment, NotePaymentType as NoteReceivablePaymentType, NoteYearResult, NotesReceivableResult, NoteScheduleMap, NoteScheduleRow } from "./notes-receivable/types";
+
+/** One account's published ownership for one projection year
+ *  (`ProjectionYear.accountOwners`). */
+export interface PublishedAccountOwnership {
+  owners: AccountOwner[];
+  /** The live account's `giftsReflectedThrough` — a partitioned family pool. */
+  giftsReflectedThrough?: number;
+  /** The live account's `sliceOf` — carved out of that authored account. */
+  sliceOf?: string;
+}

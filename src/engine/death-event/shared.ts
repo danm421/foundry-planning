@@ -201,6 +201,7 @@ export function partitionMixedAccount(
     entitySlices.push({
       ...account,
       id: nextSyntheticId("entity-slice"),
+      sliceOf: account.sliceOf ?? account.id,
       value: sliceValue,
       basis: sliceBasis,
       owners: [{ kind: "entity", entityId: o.entityId, percent: 1 }],
@@ -419,6 +420,10 @@ export function splitAccount(
       newAccount = {
         ...source,
         id: nextSyntheticId("death-acct"),
+        // A share of a partitioned pool is still part of the authored account
+        // the partition came from (see `Account.sliceOf`). A plain account's
+        // split is not tagged: reports keep treating it as they always have.
+        ...(source.giftsReflectedThrough != null ? { sliceOf: source.sliceOf ?? source.id } : {}),
         name: `${source.name} — to ${share.ledgerMeta.recipientLabel}`,
         value: amount,
         basis: basisShare,
