@@ -136,11 +136,24 @@ function runFirstDeathPrecedenceChain(input: DeathEventInput): FirstDeathChainRe
     // unchanged) and route only the family pool. Without this the chain
     // treats the account as joint and sweeps the entity's slice into the
     // transfer — double-counting it against the consolidated business line.
-    // Gift-resolved (see `routeAtDeath`): a wholly gifted account stays as it
-    // is; a partly gifted one is partitioned like any other mixed account.
+    // Gift-resolved (see `routeAtDeath`): a partly gifted account is
+    // partitioned like any other mixed account; a wholly gifted one routes
+    // nothing.
     const route = routeAtDeath(acct, balance, originalBasis, input);
     if (route == null) {
-      nextAccounts.push(acct);
+      // Nothing of the decedent's is in it, but its AUTHORED rows still name
+      // them — and the readers that ask WHICH principal owns an account read
+      // authored rows: the RMD age and routing, the IRA basis pool, transfer
+      // and Roth-conversion owner ages, contribution limits. Retitle the rows
+      // to the survivor, as the chain always did, but route no money and set
+      // no marker: the gift overlay still resolves the account wholly to its
+      // recipients on every gift-aware read. (The final death needs none of
+      // this — no survivor, and the projection ends there.)
+      nextAccounts.push(
+        survivorFmId != null
+          ? { ...acct, owners: [{ kind: "family_member", familyMemberId: survivorFmId, percent: 1 }] }
+          : acct,
+      );
       continue;
     }
     for (const slice of route.entitySlices) {

@@ -302,6 +302,20 @@ describe("death partition — estate costs are not paid out of a fully gifted ac
     expect(at(years, 2030).accountLedgers[ACC].endingValue).toBeCloseTo(1_000_000, 2);
   });
 
+  it("leaves it whole in a single filer's hypothetical death, where there is no survivor to retitle it to", () => {
+    // A single filer's hypothetical estate tax runs the FIRST-death pipeline
+    // with no survivor, so the account keeps its authored rows (naming the
+    // decedent) and only the drain's own wholly-gifted check keeps the $50k
+    // off it.
+    const data = plan({ gifts: [toKid(2027, 1)], estateAdminExpenses: 50_000, endYear: 2028 });
+    data.client = { ...data.client, filingStatus: "single", spouseDob: undefined,
+      spouseLifeExpectancy: undefined, lifeExpectancy: 95 };
+    data.familyMembers = FAMILY.filter((f) => f.role !== "spouse");
+    const hyp = at(runProjection(data), 2028).hypotheticalEstateTax.primaryFirst;
+    expect(hyp.firstDeath.estateAdminExpenses).toBeCloseTo(50_000, 2);
+    expect(hyp.firstDeath.estateTaxDebits.some((d) => d.accountId === ACC)).toBe(false);
+  });
+
   it("leaves it whole at the survivor's death too, when the survivor made the gift", () => {
     // The spouse's own account, 100% given to the child in 2027. The final
     // death drains its costs BEFORE the chain, from the authored rows — which
@@ -320,27 +334,62 @@ describe("death partition — estate costs are not paid out of a fully gifted ac
   });
 });
 
-describe("death partition — a wholly gifted account keeps its authored rows", () => {
-  it("runs past the owner's death for a 100%-gifted IRA with RMDs due", () => {
-    // Why the chain leaves a wholly gifted account's rows alone instead of
-    // retitling them to the resolved `gifted_away` row: every authored-owner
-    // reader would then see an owner that is neither a family member nor an
-    // entity, and the RMD block throws "must have a single owner" the first
-    // year an RMD falls due. (A gift of an IRA is not legal, but nothing stops
-    // one being entered.)
+describe("death partition — a wholly gifted IRA after its owner's death", () => {
+  // The chain routes nothing out of a wholly gifted account, but it still
+  // retitles its AUTHORED rows to the survivor: the readers that ask WHICH
+  // principal owns an account read authored rows, and left naming the dead
+  // client they sized the IRA's RMD on the dead client's age (18,791 in 2030)
+  // and drew it on the dead client's IRA basis pool.
+  //
+  // (Why not retitle the rows to the resolved `gifted_away` owner instead?
+  // Every authored reader would then see an owner that is neither a family
+  // member nor an entity, and the RMD block throws "must have a single owner"
+  // the first year an RMD falls due. A gift of an IRA is not legal, but
+  // nothing stops one being entered.)
+  const giftedIra = (spouseDob: string, basis = 0) => {
     const ira: Account = {
       id: "ira", name: "IRA", category: "retirement", subType: "traditional_ira",
-      titlingType: "jtwros", value: 500_000, basis: 0, growthRate: 0, rmdEnabled: true,
+      titlingType: "jtwros", value: 500_000, basis, growthRate: 0, rmdEnabled: true,
       owners: CLIENT_ONLY,
     };
     const data = plan({ gifts: [] });
-    data.client = { ...data.client, dateOfBirth: "1955-01-01", lifeExpectancy: 74 };
-    data.familyMembers = FAMILY.map((f) => f.role === "client" ? { ...f, dateOfBirth: "1955-01-01" } : f);
+    // Client b.1955 dies in 2029 at 74 — already at RMD age.
+    data.client = { ...data.client, dateOfBirth: "1955-01-01", lifeExpectancy: 74,
+      spouseDob, spouseLifeExpectancy: 95 };
+    data.familyMembers = FAMILY.map((f) =>
+      f.role === "client" ? { ...f, dateOfBirth: "1955-01-01" }
+        : f.role === "spouse" ? { ...f, dateOfBirth: spouseDob } : f);
     data.accounts = [...data.accounts, ira];
     data.giftEvents = [{ kind: "asset", year: 2027, accountId: "ira", percent: 1,
       grantor: "client", recipientFamilyMemberId: KID }];
-    const years = runProjection(data);
-    expect(at(years, 2029).estateTax?.deathOrder).toBe(1);
+    return runProjection(data);
+  };
+
+  it("takes no RMD on the survivor's behalf, routes nothing, and stays the child's", () => {
+    // Spouse b.1958 is 72 in 2030 — under RMD age.
+    const years = giftedIra("1958-01-01");
+    const y2029 = at(years, 2029);
+    expect(y2029.estateTax?.deathOrder).toBe(1);
+    expect((y2029.deathTransfers ?? []).filter((t) => t.sourceAccountId === "ira")).toHaveLength(0);
+    const y2030 = at(years, 2030);
+    expect(y2030.accountLedgers["ira"].rmdAmount ?? 0).toBe(0);
+    // Still wholly the child's: off the household portfolio, and out of the
+    // survivor's hypothetical estate.
+    expect(y2030.portfolioAssets.retirement["ira"]).toBeUndefined();
+    const survivorDeath = y2030.hypotheticalEstateTax.primaryFirst.finalDeath;
+    expect(survivorDeath?.grossEstateLines.some((l) => l.accountId === "ira")).toBe(false);
     expect(at(years, 2033).accountLedgers["ira"]).toBeDefined();
+  });
+
+  it("draws a later RMD on the SURVIVOR's IRA basis pool, not the dead client's", () => {
+    // Spouse b.1950 is 80 in 2030, so an RMD falls due either way. The IRA
+    // carries $100k of post-tax basis in the CLIENT's §408(d)(2) pool; the
+    // spouse has none. Attributed to the survivor, the RMD returns no basis
+    // and is sized on the spouse's age.
+    const years = giftedIra("1950-01-01", 100_000);
+    const rmd = at(years, 2030).accountLedgers["ira"].entries.find((e) => e.category === "rmd");
+    expect(rmd).toBeDefined();
+    expect(rmd!.label).toBe("RMD distribution (age 80)");
+    expect(rmd!.basis).toBe(0);
   });
 });

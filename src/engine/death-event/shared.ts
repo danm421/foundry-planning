@@ -246,8 +246,9 @@ function noFamilyLeft(a: Account, resolved: AccountOwner[]): boolean {
 
 /** How the precedence chain routes one account the decedent touched.
  *
- *  `null` — wholly gifted away ({@link isWhollyGiftedAway}): the caller keeps
- *  the account exactly as it is and routes nothing.
+ *  `null` — wholly gifted away ({@link isWhollyGiftedAway}): the caller routes
+ *  nothing (the first death retitles its authored rows to the survivor, with
+ *  no money moved; the final death leaves it as it is).
  *
  *  Otherwise `account` / `balance` / `basis` are what the chain routes. When
  *  the gift-resolved owners hold an entity or `gifted_away` row, the account is
