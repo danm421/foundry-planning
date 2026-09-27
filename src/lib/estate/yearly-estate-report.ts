@@ -211,6 +211,7 @@ function buildYearlyRow(args: RowBuilderArgs): YearlyEstateRow {
     accountBalances,
     entityAccountSharesEoY: yearRow.entityAccountSharesEoY,
     familyAccountSharesEoY: yearRow.familyAccountSharesEoY,
+    accountOwners: yearRow.accountOwners,
   };
   const grossEstate = computeInEstateAtYear(balanceArgs);
   const heirsAssets = computeOutOfEstateAtYear(balanceArgs);

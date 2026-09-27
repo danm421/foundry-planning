@@ -103,11 +103,25 @@ function compoundedTrustValueAtFinalYear(
   const lastYear = withResult[withResult.length - 1];
   if (!lastYear) return 0;
   let total = 0;
+  // An entity slice a death partition carved off an account is the entity's
+  // own 100% account: its whole ledger is the entity's value.
+  for (const [id, rec] of lastYear.accountOwners ?? []) {
+    if (rec.sliceOf == null) continue;
+    if (!rec.owners.some((o) => o.kind === "entity" && o.entityId === entityId)) continue;
+    total += lastYear.accountLedgers?.[id]?.endingValue ?? 0;
+  }
   for (const account of tree.accounts) {
     const slice = account.owners.find(
       (o) => o.kind === "entity" && o.entityId === entityId,
     );
     if (!slice) continue;
+    const published = lastYear.accountOwners?.get(account.id);
+    // A partitioned pool: the entity's share left as the slice above; it owns
+    // only what the pool's published owners still give it.
+    if (published?.giftsReflectedThrough != null) {
+      const p = published.owners.find((o) => o.kind === "entity" && o.entityId === entityId);
+      if (!p) continue;
+    }
     const ledger = lastYear.accountLedgers?.[account.id];
     if (!ledger) continue;
     // Prefer the engine's locked entity share so household withdrawals on a

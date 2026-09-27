@@ -16,7 +16,7 @@ import {
   ownedByFamilyMember,
 } from "@/engine/ownership";
 import { ownersForYearSafe } from "@/lib/estate/owners-or-household";
-import { resolveOwnerSlices } from "@/lib/estate/account-owner-slices";
+import { accountSlicesAtYear } from "@/lib/estate/account-owner-slices";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import {
   isPolicyInForce,
@@ -562,15 +562,13 @@ function computeOutOfEstate(
     { label: string; amount: number; gifts: { label: string; amount: number }[] }
   >();
   for (const account of accounts) {
-    const owners = ownersAt(account);
-    const value = balanceAt(account.id, account);
-    const slices = resolveOwnerSlices(
-      account.id,
-      owners,
-      value,
-      yearRow?.entityAccountSharesEoY,
-      yearRow?.familyAccountSharesEoY,
-    );
+    const slices = accountSlicesAtYear({
+      account,
+      yearRow,
+      valueOf: (id) => (id === account.id ? balanceAt(account.id, account) : yearRow?.accountLedgers?.[id]?.endingValue ?? 0),
+      fallbackOwners: () => ownersAt(account),
+    });
+    const owners = slices.map((sl) => sl.owner);
     const sliceByEntity = new Map<string, number>();
     for (const s of slices) {
       if (s.owner.kind !== "entity") continue;

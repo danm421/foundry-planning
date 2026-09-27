@@ -21,6 +21,7 @@ import { buildClientData, basePlanSettings, baseClient } from "./fixtures";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../ownership";
 import type {
   Account,
+  AssetTransaction,
   EntitySummary,
   Expense,
   FamilyMember,
@@ -75,6 +76,7 @@ function plan(opts: {
   needs?: Array<{ year: number; amount: number }>;
   estateAdminExpenses?: number;
   wills?: Will[];
+  assetTransactions?: AssetTransaction[];
 }) {
   const endYear = opts.endYear ?? 2033;
   const acct: Account = {
@@ -106,6 +108,7 @@ function plan(opts: {
     withdrawalStrategy: [{ accountId: ACC, priorityOrder: 1, startYear: 2026, endYear }],
     giftEvents: opts.gifts,
     wills: opts.wills ?? [],
+    assetTransactions: opts.assetTransactions ?? [],
     planSettings: { ...basePlanSettings, flatFederalRate: 0, flatStateRate: 0,
       planStartYear: 2026, planEndYear: endYear,
       estateAdminExpenses: opts.estateAdminExpenses ?? 0 },
@@ -512,5 +515,90 @@ describe("death partition — the projection publishes the ownership each ledger
     const plainShares = [...at(plain, 2030).accountOwners!].filter(([id]) => id.startsWith("death-acct"));
     expect(plainShares.length).toBeGreaterThan(0);
     expect(plainShares.every(([, rec]) => rec.sliceOf === undefined)).toBe(true);
+  });
+});
+
+/** Authored 70% client / 30% trust — the pre-gift precedent the gift overlay
+ *  is measured against: partitioned at the death exactly like a 30% gift. */
+const CLIENT_AND_TRUST: Account["owners"] = [
+  { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.7 },
+  { kind: "entity", entityId: TRUST, percent: 0.3 },
+];
+
+const trustRow = (y: ProjectionYear) => {
+  const row = y.entityCashFlow.get(TRUST);
+  if (row?.kind !== "trust") throw new Error(`no trust row in ${y.year}`);
+  return row;
+};
+
+// After the first death the account is a family pool (original id) plus the
+// trust's own slice. The passes that run AFTER the year loop — the trust's
+// cash-flow row, the family share ledger, the portfolio re-bucket, the sales
+// split — used to re-resolve the AUTHORED account against the pool's ledger
+// and never saw the slice. They now read the ownership the loop published.
+describe("death partition — the post-loop passes read the published ownership", () => {
+  it("keeps the trust's 300k on its row when the survivor spends the whole pool", () => {
+    const years = runProjection(plan({
+      gifts: [toTrust(2027, 0.3)], endYear: 2031, needs: [{ year: 2030, amount: 800_000 }],
+    }));
+    expect(at(years, 2030).accountLedgers[ACC].endingValue).toBeCloseTo(0, 2);
+    // The row used to read the trust's lock off the drained pool: $0.
+    expect(trustRow(at(years, 2030)).endingBalance).toBeCloseTo(300_000, 2);
+    expect(trustRow(at(years, 2031)).endingBalance).toBeCloseTo(300_000, 2);
+  });
+
+  it("locks a post-death gift of the pool fresh — the pre-death lock went into the slice", () => {
+    // 20% of the 700k pool to the same trust the year right after the death.
+    const years = runProjection(plan({
+      gifts: [toTrust(2027, 0.3), toTrust(2030, 0.2, "spouse")], endYear: 2032,
+    }));
+    const y = at(years, 2030);
+    // 300k slice + 20% × 700k. Resuming the 300k pre-death lock on the pool
+    // (a lock only tops UP; 0.2 < 0.3) booked 600k.
+    expect(y.entityAccountSharesEoY?.get(TRUST)?.get(ACC)).toBeCloseTo(140_000, 2);
+    expect(trustRow(y).endingBalance).toBeCloseTo(440_000, 2);
+  });
+
+  it("gives the surviving joint owner the whole 700k pool in the family share ledger", () => {
+    const years = runProjection(plan({ gifts: [toTrust(2027, 0.3)], owners: JOINT, spouseDies: true }));
+    const shares = at(years, 2030).familyAccountSharesEoY!;
+    // Was 400k: settled against the trust's stale 300k lock on the pool.
+    expect(shares.get(LEGACY_FM_SPOUSE)?.get(ACC)).toBeCloseTo(700_000, 2);
+  });
+
+  it("leaves an account the death did not partition on its authored rows", () => {
+    // The joint checking is retitled to the spouse at the death but not
+    // partitioned. The reports read its AUTHORED rows, so the family ledger
+    // must too: resolved off the retitled rows it dropped the client's entry,
+    // and a report then handed the client a pro-rata slice on top of the
+    // spouse's locked share.
+    const years = runProjection(plan({ gifts: [toTrust(2027, 0.3)] }));
+    const shares = at(years, 2030).familyAccountSharesEoY!;
+    expect(shares.get(LEGACY_FM_CLIENT)?.get("acct-checking")).toBe(0);
+    expect(shares.get(LEGACY_FM_SPOUSE)?.get("acct-checking")).toBeCloseTo(1000, 2);
+  });
+
+  it("does not split an authored-mixed account a second time on the portfolio", () => {
+    const years = runProjection(plan({ gifts: [], owners: CLIENT_AND_TRUST }));
+    // Death year: the snapshot already holds the slice; re-splitting the
+    // pre-death ledger added the trust's 300k again (600k).
+    expect(at(years, 2029).portfolioAssets.trustsAndBusinessesTotal).toBeCloseTo(300_000, 2);
+    // After it the pool is wholly the survivor's — it read 1M-ledger thinking,
+    // 700k pool − the trust's stale 300k lock = 400k.
+    expect(at(years, 2030).portfolioAssets.taxable[ACC]).toBeCloseTo(700_000, 2);
+    expect(at(years, 2030).portfolioAssets.trustsAndBusinessesTotal).toBeCloseTo(300_000, 2);
+  });
+
+  it("puts a post-death sale of the pool's gain wholly on the household", () => {
+    const years = runProjection(plan({
+      gifts: [toTrust(2027, 0.3)], endYear: 2032,
+      assetTransactions: [{ id: "sell", name: "Sell", type: "sell", year: 2031,
+        accountId: ACC, overrideSaleValue: 900_000 }],
+    }));
+    const y = at(years, 2031);
+    // Pool basis stepped up to 700k at the death: gain 200k, all the survivor's.
+    // Resolving the authored account sent 30% (60k) to the trust's 1041.
+    expect(y.trustTaxByEntity?.get(TRUST)?.recognizedCapGains ?? 0).toBeCloseTo(0, 2);
+    expect(y.taxDetail?.capitalGains).toBeCloseTo(200_000, 2);
   });
 });

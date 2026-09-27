@@ -1427,6 +1427,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       liab.balance = boy;
     }
 
+    // The accounts as they stand before this year's sales remove any. A sold
+    // account's sale-year owners are resolved off THIS object (`ownersOfSource`):
+    // after a death partition it is the rebuilt family pool, which its
+    // `data.accounts` original no longer describes.
+    const boyAccountById = new Map(workingAccounts.map((a) => [a.id, a]));
+
     // ── BoY: Business Sales ─────────────────────────────────────────────────
     // Selling a business cascades to liquidate every child account and
     // liability (accounts whose parentAccountId points at the business).
@@ -3038,14 +3044,18 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // Neither §121 nor §165(c) reaches a business, so its raw and taxable gains
     // are the same figure.
     //
-    // Ownership is resolved against the invariant `accountById` (built from
-    // `data.accounts` outside the year loop) because the BoY sale step removes
-    // sold accounts from `workingAccounts` before any consumer runs —
-    // `workingAccounts` would silently miss every sold trust account. T8: via
-    // `ownersForYear`, so a gift that transferred ownership before the sale year
-    // is reflected in the split.
+    // Ownership is resolved against the account as it stood at BoY
+    // (`boyAccountById`, captured before the sale steps) because the BoY sale
+    // step removes sold accounts from `workingAccounts` before any consumer
+    // runs — `workingAccounts` would silently miss every sold trust account.
+    // The live object, not the `data.accounts` one: after a death partition the
+    // pool under the original id is wholly the family's, and resolving its
+    // authored original would hand the trust its pre-death share of the gain.
+    // `accountById` stays the fallback for an id that was not live at BoY. T8:
+    // via `ownersForYear`, so a gift that transferred ownership before the sale
+    // year is reflected in the split.
     const ownersOfSource = (sourceAccountId: string): AccountOwner[] => {
-      const sold = accountById.get(sourceAccountId);
+      const sold = boyAccountById.get(sourceAccountId) ?? accountById.get(sourceAccountId);
       if (!sold) return [];
       return ownersForYear(sold, data.giftEvents, year, planSettings.planStartYear);
     };
@@ -9015,21 +9025,38 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       valueGrowthRate: entity.valueGrowthRate ?? null,
     });
   }
-  // Account → entity-owner, resolved PER YEAR from the ownership snapshot, so
-  // an account gifted into a trust mid-horizon reaches that trust's row from
-  // the gift year on. Returns EVERY entity owner, so a gift to a second trust
-  // of an account a first trust already part-owns reaches both rows. Reads the
-  // `data.accounts` objects deliberately: their owner arrays are the ones the
-  // snapshot was built from, so every read takes its resolved-step path.
+  // Account → owners, per year. A family pool a death partition rebuilt
+  // (published with its `giftsReflectedThrough` marker) and every account the
+  // death minted (entity slices, a will's split — ids `data.accounts` does not
+  // have) read the ownership the loop PUBLISHED (`accountOwners`): the pool is
+  // net of every gift through the death, and re-resolving its `data.accounts`
+  // original re-applies the gifts to the pool's ledger and never meets the
+  // slice. Every other account keeps the snapshot's answer on its
+  // `data.accounts` rows — the same rule the report layer applies
+  // (`accountSlicesAtYear`), so the two cannot disagree about who owns it.
   const accountsById = new Map(data.accounts.map((a) => [a.id, a]));
-  const accountEntityOwnersAt = (accountId: string, year: number) => {
+  const yearRowByYear = new Map(years.map((y) => [y.year, y]));
+  const publishedAt = (accountId: string, year: number) =>
+    yearRowByYear.get(year)?.accountOwners?.get(accountId);
+  const liveOwnersAt = (accountId: string, year: number) => {
+    const published = publishedAt(accountId, year);
     const acct = accountsById.get(accountId);
-    if (!acct) return [];
-    return ownershipSnapshot
-      .ownersAt(acct, year)
+    if (!acct) return published?.owners ?? [];
+    if (published?.giftsReflectedThrough != null) return published.owners;
+    return ownershipSnapshot.ownersAt(acct, year);
+  };
+  // Every id any year booked a ledger under — the death-minted accounts
+  // (entity slices, bequest splits) included, or their owners' rows never see them.
+  const liveCandidateIds = [...new Set([
+    ...data.accounts.map((a) => a.id),
+    ...years.flatMap((y) => [...(y.accountOwners?.keys() ?? [])]),
+  ])];
+  // EVERY entity owner, so a gift to a second trust of an account a first
+  // trust already part-owns reaches both rows.
+  const accountEntityOwnersAt = (accountId: string, year: number) =>
+    liveOwnersAt(accountId, year)
       .filter((o): o is Extract<typeof o, { kind: "entity" }> => o.kind === "entity")
       .map((o) => ({ entityId: o.entityId, percent: o.percent }));
-  };
   // Gifts to entities, grouped by recipient entity id and year. Only cash gifts
   // carry a numeric `amount` field; asset/liability gifts use the same value
   // model elsewhere and are surfaced via account ledgers, so they are not
@@ -9046,7 +9073,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     years,
     entitiesById,
     accountEntityOwnersAt,
-    candidateAccountIds: data.accounts.map((a) => a.id),
+    candidateAccountIds: liveCandidateIds,
+    giftsReflectedThroughAt: (accountId, year) => publishedAt(accountId, year)?.giftsReflectedThrough,
     giftsByEntityYear,
     incomes: currentIncomes,
     expenses: lastAllExpenses,
@@ -9099,21 +9127,17 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   }
 
   // Per-family-member locked-share ledger for jointly-held accounts, resolved
-  // per year from the same snapshot (and the same `accountsById`) as the
-  // entity rollup above, so a gift that moves a share out of the household is
-  // visible here in the year it lands.
-  const accountFamilyOwnersAt = (accountId: string, year: number) => {
-    const acct = accountsById.get(accountId);
-    if (!acct) return [];
-    return ownershipSnapshot
-      .ownersAt(acct, year)
+  // per year by the same rule as the entity rollup above, so a gift that moves
+  // a share out of the household is visible here in the year it lands, and a
+  // partitioned pool is the survivor's alone.
+  const accountFamilyOwnersAt = (accountId: string, year: number) =>
+    liveOwnersAt(accountId, year)
       .filter((o): o is Extract<typeof o, { kind: "family_member" }> => o.kind === "family_member")
       .map((o) => ({ familyMemberId: o.familyMemberId, percent: o.percent }));
-  };
   computeFamilyAccountShares({
     years,
     accountFamilyOwnersAt,
-    candidateAccountIds: data.accounts.map((a) => a.id),
+    candidateAccountIds: liveCandidateIds,
     clientFamilyMemberId: clientFmId,
     spouseFamilyMemberId: spouseFmId,
     incomes: currentIncomes,
@@ -9134,7 +9158,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   for (const e of data.entities ?? []) stableEntityById[e.id] = e;
   for (const year of years) {
     let mutated = false;
+    // The death year's snapshot was recomputed from the POST-death accounts
+    // (the pool and its slices), while its ledgers are pre-death: an account
+    // the death routed is already right there and must not be re-split.
+    const routedAtDeath = new Set((year.deathTransfers ?? []).map((t) => t.sourceAccountId));
     for (const acct of data.accounts ?? []) {
+      if (routedAtDeath.has(acct.id)) continue;
       const entityOwner = acct.owners.find((o) => o.kind === "entity") as
         | { kind: "entity"; entityId: string; percent: number }
         | undefined;

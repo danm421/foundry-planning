@@ -1,4 +1,5 @@
 import type { AccountOwner } from "@/engine/ownership";
+import type { PublishedAccountOwnership } from "@/engine/types";
 
 export interface OwnerSlice {
   owner: AccountOwner;
@@ -96,4 +97,67 @@ export function resolveOwnerSlices(
           : value * owner.percent,
     };
   });
+}
+
+/** The projection-year fields `accountSlicesAtYear` reads. */
+export interface AccountSlicesYear {
+  accountOwners?: Map<string, PublishedAccountOwnership>;
+  entityAccountSharesEoY?: Map<string, Map<string, number>>;
+  familyAccountSharesEoY?: Map<string, Map<string, number>>;
+}
+
+/** Same owner, for folding a carved-out account's slice into its origin's. */
+function sameOwner(a: AccountOwner, b: AccountOwner): boolean {
+  if (a.kind === "entity" && b.kind === "entity") return a.entityId === b.entityId;
+  if (a.kind === "family_member" && b.kind === "family_member") return a.familyMemberId === b.familyMemberId;
+  return false;
+}
+
+/**
+ * Per-owner dollar slices of an AUTHORED account in a projection year,
+ * death-aware. Unless a death partitioned the account this is exactly
+ * `resolveOwnerSlices(account.id, fallbackOwners(), value, …)`.
+ *
+ * A first-death partition leaves the account as several engine accounts: the
+ * family pool under the ORIGINAL id — already net of every gift through the
+ * death (`giftsReflectedThrough`) — plus one 100% entity slice per entity
+ * owner, and possibly a will's split of the pool, each tagged `sliceOf` = this
+ * account. The authored rows plus the gift overlay describe none of them: they
+ * re-apply the gifts to the pool's ledger and never see the slices. So a
+ * partitioned pool takes its owners from the engine's published ownership,
+ * and every account carved out of it is folded back in as its owner's slice
+ * of this account. A pool that did not survive the death (a will split it)
+ * contributes only what was carved out of it.
+ */
+export function accountSlicesAtYear(args: {
+  account: { id: string };
+  yearRow: AccountSlicesYear | undefined;
+  /** The caller's value for any account id — the pool and every carved-out one. */
+  valueOf: (accountId: string) => number;
+  /** The caller's own resolution of the authored rows (gift overlay applied). */
+  fallbackOwners: () => AccountOwner[];
+  /** `account.id`'s value when the caller's differs from `valueOf` (e.g. a
+   *  consolidated business). Defaults to `valueOf(account.id)`. */
+  value?: number;
+}): OwnerSlice[] {
+  const { account, yearRow, valueOf, fallbackOwners } = args;
+  const ent = yearRow?.entityAccountSharesEoY;
+  const fam = yearRow?.familyAccountSharesEoY;
+  const carved: OwnerSlice[] = [];
+  for (const [id, rec] of yearRow?.accountOwners ?? []) {
+    if (rec.sliceOf !== account.id) continue;
+    carved.push(...resolveOwnerSlices(id, rec.owners, valueOf(id), ent, fam));
+  }
+  const published = yearRow?.accountOwners?.get(account.id);
+  if (carved.length > 0 && !published) return carved;
+  const owners = published?.giftsReflectedThrough != null ? published.owners : fallbackOwners();
+  const slices = resolveOwnerSlices(account.id, owners, args.value ?? valueOf(account.id), ent, fam);
+  // One owner, one slice: a post-death gift of the pool to a trust that
+  // already holds a slice of it adds to that trust's slice.
+  for (const c of carved) {
+    const same = slices.find((s) => sameOwner(s.owner, c.owner));
+    if (same) same.value += c.value;
+    else slices.push(c);
+  }
+  return slices;
 }

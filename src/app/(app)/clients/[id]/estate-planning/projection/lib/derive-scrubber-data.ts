@@ -245,6 +245,7 @@ function sumInOutAtYear(
     accountBalances,
     entityAccountSharesEoY: py.entityAccountSharesEoY,
     familyAccountSharesEoY: py.familyAccountSharesEoY,
+    accountOwners: py.accountOwners,
   });
 }
 

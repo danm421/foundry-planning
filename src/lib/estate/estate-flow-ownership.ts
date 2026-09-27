@@ -358,7 +358,34 @@ export function buildOwnershipColumn(
     // when the account is a parented child with no direct owners.
     // (Top-level business accounts have their own owners, so this no-ops
     // for them.)
-    const ownersForResolution = effectiveOwners(account);
+    // After a death partition the pool's owners are the engine's published
+    // ones (already net of every gift through the death), and every account the
+    // death carved out of it (`sliceOf`: an entity slice, a will's split of the
+    // pool) is a row of THIS account in its owner's group. A pool the will split
+    // away leaves only those rows. See `accountSlicesAtYear` for the model.
+    const published = yearState?.accountOwners?.get(accountId);
+    const carved = [...(yearState?.accountOwners ?? [])].filter(([, r]) => r.sliceOf === accountId);
+    for (const [carvedId, rec] of carved) {
+      const carvedValue = yearState?.accountLedgers[carvedId]?.endingValue ?? 0;
+      for (const owner of rec.owners) {
+        const group =
+          owner.kind === "entity" ? entityGroups.get(owner.entityId)
+          : owner.kind === "family_member" && owner.familyMemberId === clientFmId ? clientGroup
+          : owner.kind === "family_member" && owner.familyMemberId === spouseFmId ? spouseGroup
+          : undefined;
+        if (!group) continue;
+        const value = carvedValue * owner.percent;
+        group.assets.push({
+          accountId, rowKind: "account", isDefaultCash: false, name: account.name,
+          accountType: account.category, value, percent: owner.percent, isSplit: true,
+          linkedLiabilities: [], netValue: value, hasBeneficiaries, hasConflict,
+        });
+      }
+    }
+    if (carved.length > 0 && !published) continue;
+    const ownersForResolution = published?.giftsReflectedThrough != null
+      ? published.owners
+      : effectiveOwners(account);
     const accountForResolution: Account = ownersForResolution === account.owners
       ? account
       : { ...account, owners: ownersForResolution };

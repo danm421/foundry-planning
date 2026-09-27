@@ -106,7 +106,10 @@ export function getEntityLedger(
   const ownedAccounts: Array<{ accountId: string; share: number; full: boolean; name: string; suffix: string }> = [];
   for (const [accountId, share] of ctx.year.entityAccountOwners?.get(entityId) ?? []) {
     const full = share >= 1 - 1e-9;
-    const name = ctx.accountNamesById.get(accountId) ?? accountId;
+    const sliceOf = ctx.year.accountOwners?.get(accountId)?.sliceOf;
+    const name = ctx.accountNamesById.get(accountId)
+      ?? (sliceOf != null ? ctx.accountNamesById.get(sliceOf) : undefined)
+      ?? accountId;
     const suffix = full ? "" : ` (${(share * 100).toFixed(0)}%)`;
     ownedAccounts.push({ accountId, share, full, name, suffix });
   }

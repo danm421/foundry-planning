@@ -143,6 +143,11 @@ export interface ComputeEntityCashFlowInput {
   /** Every account id any entity could own in any year. The function above
    *  cannot be enumerated, so the caller supplies the candidate set. */
   candidateAccountIds: string[];
+  /** The account's `giftsReflectedThrough` in a year, when it is a family pool
+   *  a death partition rebuilt. A lock carried from a year at or before it
+   *  belonged to the account BEFORE the partition — those dollars left as the
+   *  entity's own slice — so it is dropped, never resumed on the pool. */
+  giftsReflectedThroughAt?: (accountId: string, year: number) => number | undefined;
   /** Gifts to entities, grouped by recipient entity id and year. */
   giftsByEntityYear: Map<string, Map<number, number>>;
   /** The same resolved currentIncomes array runProjection built. Used by
@@ -222,7 +227,8 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
   // into the entity's reported share.
   // The percent each carry was locked at rides along, so a later gift that
   // raises the share tops the carry up instead of being ignored.
-  const lockedShareByEntityAccount = new Map<string, Map<string, { eoy: number; percent: number }>>();
+  // …and the year it was locked in, for the partition reset below.
+  const lockedShareByEntityAccount = new Map<string, Map<string, { eoy: number; percent: number; year: number }>>();
 
   for (const year of years) {
     for (const [entityId, entity] of entitiesById) {
@@ -279,7 +285,9 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
           // Split-owned — entity's share is locked to (carried EoY share or
           // initial BoY × percent) plus its share of passive growth. Flow
           // entries on the account are treated as household-attributable.
-          const carried = lockedShareByEntityAccount.get(entityId)?.get(aid);
+          let carried = lockedShareByEntityAccount.get(entityId)?.get(aid);
+          const reflected = input.giftsReflectedThroughAt?.(aid, year.year);
+          if (carried && reflected != null && carried.year <= reflected) carried = undefined;
           const acc = accrueLockedEntityShare({
             carriedBoY: carried?.eoy,
             carriedPercent: carried?.percent,
@@ -296,7 +304,7 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
           if (!lockedShareByEntityAccount.has(entityId)) {
             lockedShareByEntityAccount.set(entityId, new Map());
           }
-          lockedShareByEntityAccount.get(entityId)!.set(aid, { eoy: acc.lockedEoY, percent: share });
+          lockedShareByEntityAccount.get(entityId)!.set(aid, { eoy: acc.lockedEoY, percent: share, year: year.year });
           // Expose to consumers (balance sheet, reports) so they can render
           // the same locked share rather than ledger.endingValue × percent.
           if (!year.entityAccountSharesEoY) {

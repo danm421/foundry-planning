@@ -45,6 +45,9 @@ export function buildBalanceSheetReportProps(
     notesReceivableByNote: y.notesReceivableByNote,
     entityAccountSharesEoY: y.entityAccountSharesEoY,
     familyAccountSharesEoY: y.familyAccountSharesEoY,
+    // After a death partition the pool's owners and the slices carved out of
+    // it live only here — without it the report re-resolves the authored rows.
+    accountOwners: y.accountOwners,
   })) satisfies BalanceSheetProjYear[];
 
   const agesByYear: Record<number, { client: number; spouse?: number }> = {};

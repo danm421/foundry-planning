@@ -15,7 +15,7 @@
 
 import type { AccountOwner } from "@/engine/ownership";
 import type { ClientData, GiftEvent } from "@/engine/types";
-import { resolveOwnerSlices } from "./account-owner-slices";
+import { accountSlicesAtYear, type AccountSlicesYear } from "./account-owner-slices";
 import { ownersForYearOrHousehold } from "./owners-or-household";
 import {
   inEstateWeight,
@@ -37,6 +37,9 @@ export interface ComputeAtYearArgs {
   /** Engine-published locked family-member slice EoY (fmId → accountId → dollars).
    *  Used for jointly-held family accounts where ownership drifts year-to-year. */
   familyAccountSharesEoY?: Map<string, Map<string, number>>;
+  /** Engine-published live ownership for the year (`yearRow.accountOwners`).
+   *  Pass it so an account a death partitioned reads its pool and slices. */
+  accountOwners?: AccountSlicesYear["accountOwners"];
 }
 
 function sumAccountsWhere(
@@ -74,13 +77,6 @@ function sumAccountsWhere(
       continue;
     }
 
-    const owners = ownersForYearOrHousehold(
-      account,
-      giftEvents,
-      year,
-      projectionStartYear,
-    );
-
     // For top-level business accounts, value = parent flat value + every
     // descendant's balance (the canonical "one business = one value" rule).
     // For everything else, value = the account's own year-resolved balance.
@@ -93,13 +89,13 @@ function sumAccountsWhere(
     // Locked-share slice resolution (entity slice = locked EoY share; family
     // members absorb the residual) — shared with the Estate Flow ownership
     // column; mirrors the balance-sheet view-model's own copy.
-    const slices = resolveOwnerSlices(
-      account.id,
-      owners,
+    const slices = accountSlicesAtYear({
+      account,
+      yearRow: { accountOwners: args.accountOwners, entityAccountSharesEoY, familyAccountSharesEoY },
+      valueOf: (id) => accountBalances.get(id) ?? 0,
       value,
-      entityAccountSharesEoY,
-      familyAccountSharesEoY,
-    );
+      fallbackOwners: () => ownersForYearOrHousehold(account, giftEvents, year, projectionStartYear),
+    });
     for (const { owner, value: sliceValue } of slices) {
       const w = ownerWeight(owner);
       if (w <= 0) continue;

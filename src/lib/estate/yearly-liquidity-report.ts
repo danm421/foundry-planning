@@ -1,5 +1,5 @@
 import { ownersForYearOrHousehold } from "./owners-or-household";
-import { resolveOwnerSlices } from "./account-owner-slices";
+import { accountSlicesAtYear } from "./account-owner-slices";
 import type {
   Account,
   ClientData,
@@ -251,27 +251,25 @@ function computePortfolioAssets(args: PortfolioArgs): number {
     if (!LIQUID_CATEGORIES.has(account.category)) continue;
     const ledger = yearRow.accountLedgers?.[account.id];
     const balance = ledger?.endingValue ?? 0;
-    if (balance === 0) continue;
-    const owners = ownersForYearOrHousehold(
-      account,
-      giftEvents,
-      yearRow.year,
-      projectionStartYear,
+    // A drained (or will-split) pool can still have slices a death carved out
+    // of it; only an account with neither has nothing to count.
+    const hasCarved = [...(yearRow.accountOwners?.values() ?? [])].some(
+      (rec) => rec.sliceOf === account.id,
     );
-
+    if (balance === 0 && !hasCarved) continue;
     // Locked-share resolution: entity slices come from the engine's
     // entityAccountSharesEoY (untouched by household withdrawals), family
     // slices come from familyAccountSharesEoY when populated, else the
     // family pool (balance − Σ entity locked − gifted-away) split by
     // authored percent. Shared with the gross-estate and balance-sheet
     // reports so all three agree on the same dollars.
-    const slices = resolveOwnerSlices(
-      account.id,
-      owners,
-      balance,
-      yearRow.entityAccountSharesEoY,
-      yearRow.familyAccountSharesEoY,
-    );
+    const slices = accountSlicesAtYear({
+      account,
+      yearRow,
+      valueOf: (id) => yearRow.accountLedgers?.[id]?.endingValue ?? 0,
+      fallbackOwners: () =>
+        ownersForYearOrHousehold(account, giftEvents, yearRow.year, projectionStartYear),
+    });
 
     for (const { owner, value: sliceValue } of slices) {
       const w = inEstateWeight(clientData, owner);

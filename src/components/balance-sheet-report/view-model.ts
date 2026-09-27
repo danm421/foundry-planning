@@ -11,7 +11,7 @@ import type { FamilyMember, GiftEvent } from "@/engine/types";
 import { flatBusinessValueAt } from "@/engine/entity-cashflow";
 import { collectBusinessTree, consolidatedBusinessValue } from "@/engine/business/business-tree";
 import { formatCurrency } from "@/lib/cell-drill/format";
-import { resolveOwnerSlices } from "@/lib/estate/account-owner-slices";
+import { accountSlicesAtYear, type AccountSlicesYear } from "@/lib/estate/account-owner-slices";
 import { ownersForYearSafe } from "@/lib/estate/owners-or-household";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import type { OwnershipView } from "./ownership-filter";
@@ -78,6 +78,8 @@ export interface ProjectionYearLike {
    *  of `value × authored ownerPercent` so projected percentages reflect drift
    *  from the original split. */
   familyAccountSharesEoY?: Map<string, Map<string, number>>;
+  /** Engine-published live ownership (see ProjectionYear.accountOwners). */
+  accountOwners?: AccountSlicesYear["accountOwners"];
 }
 
 export interface EntityInfo {
@@ -505,27 +507,38 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
     // (both already handled by `classifySlice` below), while the household
     // rows shrink by the gifted percent. Reading `acct.owners` here left a
     // gifted asset on the household's balance sheet at its full value forever.
-    const owners = ownersAsOf(acct, giftEvents, selectedYear, planStartYear, asOfMode);
+    // For EoY views: use the engine's locked entity/family shares (so
+    // household drains on a joint account don't bleed into the entity's
+    // portion). BoY / today views fall back to authored percent × value.
+    const useLockedShares = asOfMode === "eoy";
+    const ownerSlices = accountSlicesAtYear({
+      account: acct,
+      yearRow: asOfMode === "today" ? undefined : {
+        accountOwners: yearData.accountOwners,
+        entityAccountSharesEoY: useLockedShares ? yearData.entityAccountSharesEoY : undefined,
+        familyAccountSharesEoY: useLockedShares ? yearData.familyAccountSharesEoY : undefined,
+      },
+      valueOf: (id) => accountValueForYear(yearData, id, asOfMode),
+      value,
+      fallbackOwners: () => ownersAsOf(acct, giftEvents, selectedYear, planStartYear, asOfMode),
+    });
     // Keep entity-owned accounts even at $0 so an entity's default-cash
     // account stays visible under its entity card — consistent with the
     // entity cash flow report. Zero-value family accounts are still dropped.
+    const owners = ownerSlices.map((sl) => sl.owner);
+    // The whole the percents are taken of: after a death partition the
+    // account's ledger holds only the family pool; its slices ride outside it.
+    let wholeValue = value;
+    if (asOfMode !== "today") {
+      for (const [id, rec] of yearData.accountOwners ?? []) {
+        if (rec.sliceOf === acct.id) wholeValue += accountValueForYear(yearData, id, asOfMode);
+      }
+    }
     const isEntityOwned = owners.some((o) => o.kind === "entity");
     if (value <= 0 && !isEntityOwned) continue;
     const hasLinkedMortgage =
       categoryKey === "realEstate" &&
       (mortgagesByPropertyId.get(acct.id)?.length ?? 0) > 0;
-
-    // For EoY views: use the engine's locked entity/family shares (so
-    // household drains on a joint account don't bleed into the entity's
-    // portion). BoY / today views fall back to authored percent × value.
-    const useLockedShares = asOfMode === "eoy";
-    const ownerSlices = resolveOwnerSlices(
-      acct.id,
-      owners,
-      value,
-      useLockedShares ? yearData.entityAccountSharesEoY : undefined,
-      useLockedShares ? yearData.familyAccountSharesEoY : undefined,
-    );
 
     for (const { owner, value: sliceValue } of ownerSlices) {
       // A $0 entity slice (e.g. an empty default-cash account) still emits a
@@ -581,7 +594,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
       if (sliceValue <= 0 && owner.kind !== "entity") continue;
       // Derive percent from slice / account so multi-owner accounts surface
       // the projected (drifted) ownership rather than the static authored split.
-      const derivedPercent = value > 0 ? sliceValue / value : owner.percent;
+      const derivedPercent = wholeValue > 0 ? sliceValue / wholeValue : owner.percent;
       const common: SliceCommon = {
         rowKey:
           owner.kind === "family_member"
@@ -1372,20 +1385,16 @@ function computeYearTotals(
   for (const acct of accounts) {
     const categoryKey = DB_TO_KEY[acct.category];
     if (!categoryKey) continue;
-    const ledger = yearData.accountLedgers[acct.id];
-    if (!ledger) continue;
-    const value = ledger.endingValue;
-    if (value <= 0) continue;
-    const ownerSlices = resolveOwnerSlices(
-      acct.id,
+    const ownerSlices = accountSlicesAtYear({
+      account: acct,
+      yearRow: yearData,
+      valueOf: (id) => yearData.accountLedgers[id]?.endingValue ?? 0,
       // Year-aware owners, resolved at THIS row's year — computeYearTotals is
       // called for the prior year too (YoY) and for every bar-chart point.
       // Always end-of-year here, so never the "today" snapshot.
-      ownersAsOf(acct, input.giftEvents ?? [], yearData.year, planStartYear, "eoy"),
-      value,
-      yearData.entityAccountSharesEoY,
-      yearData.familyAccountSharesEoY,
-    );
+      fallbackOwners: () =>
+        ownersAsOf(acct, input.giftEvents ?? [], yearData.year, planStartYear, "eoy"),
+    });
     for (const { owner, value: sliceValue } of ownerSlices) {
       if (sliceValue <= 0) continue;
       let inEstateValue = 0;

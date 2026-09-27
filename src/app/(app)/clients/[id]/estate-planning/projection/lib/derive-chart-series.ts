@@ -60,6 +60,7 @@ export function deriveChartSeries(args: {
       const lockedArgs = {
         entityAccountSharesEoY: py.entityAccountSharesEoY,
         familyAccountSharesEoY: py.familyAccountSharesEoY,
+        accountOwners: py.accountOwners,
       };
       const inE = computeInEstateAtYear({
         tree,

@@ -10,7 +10,9 @@ function isEmpty(ledger: AccountLedger): boolean {
   return ledger.beginningValue === 0 && ledger.endingValue === 0 && ledger.entries.length === 0;
 }
 
-function buildBlock(id: string, ledger: AccountLedger, ctx: AssetLedgerContext): AssetAccountBlock {
+/** `sliceOf`: the authored account a death carved this one out of — a
+ *  synthetic id has no name of its own, so it takes its origin's. */
+function buildBlock(id: string, ledger: AccountLedger, ctx: AssetLedgerContext, sliceOf?: string): AssetAccountBlock {
   const basisBoY = ledger.basisBoY ?? 0;
   const basisEoY = ledger.basisEoY ?? 0;
 
@@ -83,7 +85,7 @@ function buildBlock(id: string, ledger: AccountLedger, ctx: AssetLedgerContext):
 
   return {
     id,
-    name: ctx.accountNames[id] ?? id,
+    name: ctx.accountNames[id] ?? (sliceOf != null ? ctx.accountNames[sliceOf] : undefined) ?? id,
     category: ctx.accountCategories[id] ?? "—",
     beginningValue: ledger.beginningValue,
     endingValue: ledger.endingValue,
@@ -134,7 +136,7 @@ export function buildAssetLedger(year: ProjectionYear, ctx: AssetLedgerContext):
 
   for (const [accountId, ledger] of Object.entries(year.accountLedgers)) {
     if (isEmpty(ledger)) continue;
-    const block = buildBlock(accountId, ledger, ctx);
+    const block = buildBlock(accountId, ledger, ctx, year.accountOwners?.get(accountId)?.sliceOf);
     const entityId = entityOf.get(accountId);
     if (entityId) {
       // Partial ownership (percent < 1): the account still lives under its entity
