@@ -8832,6 +8832,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // legacy ownership fields populated but `owners[]` empty. Normalize so
       // subsequent year iterations read fractional ownership consistently.
       workingAccounts = deathResult.accounts.map(normalizeOwners);
+      // A partitioned pool's entity rows all left as their own 100% slices, so
+      // its in-loop locks are spent. Left in place, a later gift of the pool to
+      // the same trust would resume the pre-death lock instead of locking its
+      // own slice (`accrueLockedEntityShare` only tops a carry UP).
+      for (const a of workingAccounts) {
+        if (a.giftsReflectedThrough !== year) continue;
+        for (const byAccount of lockedEntityShareCarry.values()) byAccount.delete(a.id);
+        for (const byAccount of lockedEntityPercentCarry.values()) byAccount.delete(a.id);
+      }
       // Reassign the mutable balance / basis maps in place so later years see the new state.
       for (const key of Object.keys(accountBalances)) delete (accountBalances as Record<string, number>)[key];
       Object.assign(accountBalances, deathResult.accountBalances);

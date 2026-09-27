@@ -11,6 +11,7 @@ import {
   applyWillSpecificBequests,
   computeSteppedUpBasis,
   distributeUnlinkedLiabilities,
+  giftAwareOwners,
   partitionMixedAccount,
   selectResiduaryTier,
   runPourOut,
@@ -157,21 +158,46 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
     // unchanged) and route only the family pool. Without this the chain
     // treats the account as joint and sweeps the entity's slice into the
     // transfer — double-counting it against the consolidated business line.
+    //
+    // Gift-resolved ownership. The gate asked the AUTHORED array, so an account
+    // that is 100% client on paper with 30% gifted to a trust looked unmixed,
+    // the partition never ran, and the chain swept the trust's slice into the
+    // transfer. A `gifted_away` row (a gift to a person) is peeled the same
+    // way — it leaves the pool rather than becoming a slice.
+    const resolvedOwners = giftAwareOwners(
+      acct, input.giftEvents, input.year, input.planSettings.planStartYear,
+    );
+    // Wholly gifted away: the resolved owners hold no family row, so nothing
+    // of the decedent's is left to route. Leave the account exactly as it is —
+    // its owners array stays the authored one, so every later read keeps
+    // resolving it to the recipient. A `canFundGifts` decline never lands here:
+    // it hands back the authored rows, and an account the decedent touches
+    // always has a family row among those.
+    if (!resolvedOwners.some((o) => o.kind === "family_member")) {
+      nextAccounts.push(acct);
+      continue;
+    }
     let routedAcct = acct;
     let routedBalance = balance;
     let routedBasis = originalBasis;
-    const hasEntityOwner = acct.owners.some((o) => o.kind === "entity");
-    const hasFamilyOwner = acct.owners.some((o) => o.kind === "family_member");
+    const hasEntityOwner = resolvedOwners.some(
+      (o) => o.kind === "entity" || o.kind === "gifted_away",
+    );
+    const hasFamilyOwner = resolvedOwners.some((o) => o.kind === "family_member");
     if (hasEntityOwner && hasFamilyOwner) {
       const part = partitionMixedAccount(
-        acct, balance, originalBasis, input.entityAccountSharesEoY,
+        acct, balance, originalBasis, input.entityAccountSharesEoY, resolvedOwners,
       );
       for (const slice of part.entitySlices) {
         nextAccounts.push(slice);
         nextAccountBalances[slice.id] = slice.value;
         nextBasisMap[slice.id] = slice.basis;
       }
-      routedAcct = part.familyPool;
+      // The pool keeps this account's id and its value is already net of every
+      // gift so far. Mark it, or each gift-aware read (the ownership snapshot,
+      // the withdraw cap, the portfolio, a later death) takes the same gifts
+      // out of it a second time.
+      routedAcct = { ...part.familyPool, giftsReflectedThrough: input.year };
       routedBalance = part.familyPool.value;
       routedBasis = part.familyPool.basis;
     }

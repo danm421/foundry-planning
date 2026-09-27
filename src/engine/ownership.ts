@@ -27,6 +27,15 @@ export type EntityOwner =
 export interface AccountWithOwners {
   id: string;
   owners: AccountOwner[];
+  /** See `Account.giftsReflectedThrough`: asset gifts dated at or before it are
+   *  already in `owners` (and the account's value), so they do not compose. */
+  giftsReflectedThrough?: number;
+}
+
+/** True when a gift dated `year` is already baked into this account's rows:
+ *  set by a death partition, which routes the pool net of every gift so far. */
+function giftAlreadyReflected(account: AccountWithOwners, year: number): boolean {
+  return account.giftsReflectedThrough != null && year <= account.giftsReflectedThrough;
 }
 
 export interface OwnedThing {
@@ -245,7 +254,9 @@ function composeOwnersForYear(
 /**
  * Compose static account_owners + asset-transfer gift events into the ownership
  * snapshot at a given projection year. Events with year < projectionStartYear are
- * historical and assumed to be already reflected in the static owners.
+ * historical and assumed to be already reflected in the static owners — and so
+ * are events at or before `account.giftsReflectedThrough`, for a family pool a
+ * death partition rebuilt.
  */
 export function ownersForYear(
   account: AccountWithOwners,
@@ -258,7 +269,8 @@ export function ownersForYear(
       e.kind === "asset" &&
       e.accountId === account.id &&
       e.year >= projectionStartYear &&
-      e.year <= year,
+      e.year <= year &&
+      !giftAlreadyReflected(account, e.year),
   ) as Array<Extract<GiftEvent, { kind: "asset" }>>;
   return composeOwnersForYear(
     account.owners, events, year, "ownersForYear", `account ${account.id}`,
@@ -437,6 +449,7 @@ export function giftAwareOwners(
     if (e.kind !== "asset") continue;
     if (e.accountId !== account.id) continue;
     if (e.year < planStartYear || e.year > deathYear) continue;
+    if (giftAlreadyReflected(account, e.year)) continue;
     giftedPercent += e.percent;
   }
   if (giftedPercent <= 0) return account.owners;

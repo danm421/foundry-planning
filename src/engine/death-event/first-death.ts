@@ -12,6 +12,7 @@ import {
   applyWillSpecificBequests,
   computeSteppedUpBasis,
   distributeFirstDeathUnlinkedLiabilities,
+  giftAwareOwners,
   partitionMixedAccount,
   runPourOut,
   type DeathEventInput,
@@ -134,21 +135,46 @@ function runFirstDeathPrecedenceChain(input: DeathEventInput): FirstDeathChainRe
     // unchanged) and route only the family pool. Without this the chain
     // treats the account as joint and sweeps the entity's slice into the
     // transfer — double-counting it against the consolidated business line.
+    //
+    // Gift-resolved ownership. The gate asked the AUTHORED array, so an account
+    // that is 100% client on paper with 30% gifted to a trust looked unmixed,
+    // the partition never ran, and the chain swept the trust's slice into the
+    // transfer. A `gifted_away` row (a gift to a person) is peeled the same
+    // way — it leaves the pool rather than becoming a slice.
+    const resolvedOwners = giftAwareOwners(
+      acct, input.giftEvents, input.year, input.planSettings.planStartYear,
+    );
+    // Wholly gifted away: the resolved owners hold no family row, so nothing
+    // of the decedent's is left to route. Leave the account exactly as it is —
+    // its owners array stays the authored one, so every later read keeps
+    // resolving it to the recipient. A `canFundGifts` decline never lands here:
+    // it hands back the authored rows, and an account the decedent touches
+    // always has a family row among those.
+    if (!resolvedOwners.some((o) => o.kind === "family_member")) {
+      nextAccounts.push(acct);
+      continue;
+    }
     let routedAcct = acct;
     let routedBalance = balance;
     let routedBasis = originalBasis;
-    const hasEntityOwner = acct.owners.some((o) => o.kind === "entity");
-    const hasFamilyOwner = acct.owners.some((o) => o.kind === "family_member");
+    const hasEntityOwner = resolvedOwners.some(
+      (o) => o.kind === "entity" || o.kind === "gifted_away",
+    );
+    const hasFamilyOwner = resolvedOwners.some((o) => o.kind === "family_member");
     if (hasEntityOwner && hasFamilyOwner) {
       const part = partitionMixedAccount(
-        acct, balance, originalBasis, input.entityAccountSharesEoY,
+        acct, balance, originalBasis, input.entityAccountSharesEoY, resolvedOwners,
       );
       for (const slice of part.entitySlices) {
         nextAccounts.push(slice);
         nextAccountBalances[slice.id] = slice.value;
         nextBasisMap[slice.id] = slice.basis;
       }
-      routedAcct = part.familyPool;
+      // The pool keeps this account's id and its value is already net of every
+      // gift so far. Mark it, or each gift-aware read (the ownership snapshot,
+      // the withdraw cap, the portfolio, a later death) takes the same gifts
+      // out of it a second time.
+      routedAcct = { ...part.familyPool, giftsReflectedThrough: input.year };
       routedBalance = part.familyPool.value;
       routedBasis = part.familyPool.basis;
     }
@@ -773,8 +799,10 @@ function assertPrecedenceChainInvariants(
   //    (skip liability-only transfers which have null sourceAccountId).
   //    Exception: mixed family+entity accounts are partitioned — the chain only
   //    routes the family pool (ledger sum = routedBalance), the entity slices are
-  //    retained in nextAccounts without ledger entries. So for a source account
-  //    that had entity owners, ledger sum ≤ originalBalance is acceptable.
+  //    retained in nextAccounts without ledger entries, and a gifted-away slice
+  //    is not routed at all. So for a source account that is mixed AS RESOLVED
+  //    (authored rows plus the gift overlay), ledger sum ≤ originalBalance is
+  //    acceptable.
   const bySource = new Map<string, number>();
   for (const t of chain.transfers) {
     if (t.sourceAccountId == null) continue;
@@ -785,9 +813,16 @@ function assertPrecedenceChainInvariants(
     const originalBalance = input.accountBalances[sourceId];
     if (originalBalance == null) continue;
     const sourceAcct = sourceAccountMap.get(sourceId);
-    const isMixed = sourceAcct != null
-      && sourceAcct.owners.some((o) => o.kind === "entity")
-      && sourceAcct.owners.some((o) => o.kind === "family_member");
+    // Gift-resolved, not authored. An account that is 100% client on paper with
+    // a slice gifted to a trust or a person is MIXED for routing: the chain
+    // correctly routes less than the full balance, and the authored read took
+    // the strict-equality branch below and threw.
+    const sourceOwners = sourceAcct
+      ? giftAwareOwners(sourceAcct, input.giftEvents, input.year, input.planSettings.planStartYear)
+      : [];
+    const isMixed =
+      sourceOwners.some((o) => o.kind === "entity" || o.kind === "gifted_away") &&
+      sourceOwners.some((o) => o.kind === "family_member");
     if (isMixed) {
       // Mixed account: ledger sum covers only the family pool; entity slices
       // are retained without ledger entries. Allow summed ≤ originalBalance.
@@ -802,12 +837,18 @@ function assertPrecedenceChainInvariants(
       );
     }
   }
-  // 2. No deceased-owner orphan accounts (sole FM owner = deceased, not entity-owned)
+  // 2. No deceased-owner orphan accounts (sole FM owner = deceased, not entity-owned).
+  //    Gift-resolved: a wholly gifted account is left untouched by the chain with
+  //    its authored rows (still naming the decedent), but it resolves to the
+  //    recipient — it is not an orphan.
   for (const a of chain.accounts) {
+    const owned = {
+      owners: giftAwareOwners(a, input.giftEvents, input.year, input.planSettings.planStartYear),
+    };
     if (
-      !isFullyEntityOwned(a) &&
+      !isFullyEntityOwned(owned) &&
       deceasedFmId != null &&
-      controllingFamilyMember(a) === deceasedFmId
+      controllingFamilyMember(owned) === deceasedFmId
     ) {
       throw new Error(
         `applyFirstDeath invariant: account ${a.id} still has deceased as sole owner`,

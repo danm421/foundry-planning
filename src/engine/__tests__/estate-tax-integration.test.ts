@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { applyFirstDeath, applyFinalDeath } from "../death-event";
 import type { DeathEventInput } from "../death-event";
 import { runProjection } from "../projection";
@@ -7,6 +7,7 @@ import type {
   BeneficiaryRef,
   ClientData,
   ClientInfo,
+  DeathTransfer,
   EntitySummary,
   FamilyMember,
   GiftEvent,
@@ -1506,6 +1507,13 @@ function assetGiftTo(
   };
 }
 
+/** Dollars the precedence chain routed out of `brokerage` (the transfer ledger). */
+function routedFromBrokerage(transfers: DeathTransfer[]): number {
+  return transfers
+    .filter((t) => t.sourceAccountId === "brokerage")
+    .reduce((s, t) => s + t.amount, 0);
+}
+
 describe("gross-estate gift-awareness — asset gift leaves the gross estate", () => {
   it("no-gift baseline: the account IS in the gross estate at death", () => {
     const result = applyFinalDeath(
@@ -1581,6 +1589,9 @@ describe("gross-estate gift-awareness — asset gift leaves the gross estate", (
     expect(line).toBeDefined();
     expect(line!.amount).toBeCloseTo(600_000, 0);
     expect(line!.percentage).toBeCloseTo(0.6, 4);
+    // The ledger must route the same 60% the estate taxes. It routed the whole
+    // $1M, and with no assertion on the ledger nothing noticed.
+    expect(routedFromBrokerage(result.transfers)).toBeCloseTo(600_000, 0);
   });
 
   it("two separate gifts summing within the household retitle correctly (aggregate guard)", () => {
@@ -1614,6 +1625,35 @@ describe("gross-estate gift-awareness — asset gift leaves the gross estate", (
     );
     const line = result.estateTax.grossEstateLines.find((l) => l.accountId === "brokerage");
     expect(line === undefined || line.amount === 0).toBe(true);
+    // BOTH sides. The gross estate was already $0 while the chain routed the
+    // full $1M to the spouse — the invariant only passed because it did.
+    expect(result.estateTax.grossEstate).toBeCloseTo(0, 0);
+    expect(routedFromBrokerage(result.transfers)).toBe(0);
+  });
+
+  it("first death: gifts the household cannot fund fall back to the authored owners and route the whole account", () => {
+    // 70% + 70% of a 100% household share: canFundGifts declines (and warns)
+    // and giftAwareOwners hands back the AUTHORED rows. That is a decline, not
+    // a 100% gift — the account must still route through the chain in full,
+    // not be skipped as if nothing of the decedent's were left in it.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const result = applyFirstDeath(
+        mkFirstDeathInput({
+          accounts: [brokerage1M],
+          familyMembers: [kidA],
+          giftEvents: [
+            assetGiftTo({ recipientFamilyMemberId: "kid-a" }, 0.7),
+            assetGiftTo({ recipientFamilyMemberId: "kid-a" }, 0.7),
+          ],
+        }),
+      );
+      expect(warn).toHaveBeenCalled();
+      expect(routedFromBrokerage(result.transfers)).toBeCloseTo(1_000_000, 0);
+      expect(result.estateTax.grossEstate).toBeCloseTo(1_000_000, 0);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
 

@@ -934,6 +934,13 @@ export interface Account {
    */
   titlingType: "jtwros" | "community_property";
   owners: AccountOwner[];
+  /** Set by the death-event precedence chain on the family pool it routes
+   *  after peeling gifted slices off an account (`partitionMixedAccount`). The
+   *  pool keeps the account's id, so every asset gift on that id dated at or
+   *  before this year is ALREADY reflected in its value and owners — the
+   *  gift-aware resolvers skip them, exactly as they skip gifts dated before
+   *  the plan start. Later gifts still overlay. Never set on authored data. */
+  giftsReflectedThrough?: number;
   /** Set when this account is tagged into a revocable trust (the trust's name).
    *  Null/undefined = not in a revocable trust. Drives probate exclusion in
    *  isNonProbateAccount and the report badge. Does NOT change ownership,

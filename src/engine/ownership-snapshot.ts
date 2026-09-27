@@ -17,7 +17,8 @@
 // an id alone cannot say whether the rows this snapshot resolved from are still
 // the live ones. Holding the account lets every unresolvable case fall back to
 // the rows the caller is actually holding, which is what the call sites read
-// before this snapshot existed.
+// before this snapshot existed. It also carries `giftsReflectedThrough`, which
+// is how a partitioned pool says which gifts it has already had taken out.
 
 import { giftAwareOwners, type AccountOwner, type AccountWithOwners } from "./ownership";
 import type { Account, GiftEvent } from "./types";
@@ -127,20 +128,28 @@ export function buildOwnershipSnapshot(
       // Rebuilt since the snapshot was taken (death bequest, family-pool
       // partition, business succession): those rows are authored anew and
       // post-date us, so the steps above are stale for them. Re-resolve against
-      // the live rows rather than handing them back raw — the death path
-      // retitles from AUTHORED owners and never applies the overlay, so raw
-      // rows would drop the gift here while `ownedByHouseholdAtYear` at the
-      // same call site keeps it (the family pool keeps the original account
-      // id, so the gift still matches there). Two halves of one site
-      // disagreeing is exactly the decay this snapshot exists to delete.
+      // the live rows with the same resolver `ownedByHouseholdAtYear` uses at
+      // the same call sites, so the two halves of one site cannot disagree —
+      // that disagreement is exactly the decay this snapshot exists to delete.
+      //
+      // The live rows decide which gifts still apply. A family pool the death
+      // partition routed is already net of every gift up to the death and is
+      // marked `giftsReflectedThrough`; the resolver skips those, so only later
+      // gifts compose. Rows rebuilt WITHOUT a partition (a business-succession
+      // update, an account no gift had touched by the death) carry no marker
+      // and take the overlay as usual.
       //
       // Cold path — post-death, owners-changed accounts only — and it cannot
       // throw: `canFundGifts` warns and falls back to the live rows.
       if (entry.authored !== account.owners) {
-        // A gift is only in window from the first recorded step onward; before
-        // that `giftAwareOwners` returns by reference because there is nothing
-        // to apply yet, which must not be mistaken for a declined fallback.
-        const gifted = year >= entry.steps[0].from;
+        // A gift is only in window from the first recorded step the live rows
+        // have NOT already absorbed; before that `giftAwareOwners` returns by
+        // reference because there is nothing to apply yet, which must not be
+        // mistaken for a declined fallback — the cache below would then
+        // swallow every later gift on the account.
+        const reflected = account.giftsReflectedThrough ?? -Infinity;
+        const firstLive = entry.steps.find((s) => s.from > reflected);
+        const gifted = firstLive != null && year >= firstLive.from;
         if (gifted && declined.has(account.owners)) return account.owners;
         const live = giftAwareOwners(account, giftEvents, year, planStartYear);
         if (gifted && live === account.owners) declined.add(account.owners);

@@ -161,12 +161,32 @@ export function partitionMixedAccount(
   balance: number,
   basis: number,
   entityAccountSharesEoY: Map<string, Map<string, number>> | undefined,
+  /** Gift-resolved owners, when the caller has them. Drives the DOLLAR split
+   *  only — `familyPool.owners` stays the authored family rows, renormalized.
+   *  That loses nothing: the composer frees a gift by shrinking every
+   *  household row by one factor, so renormalized authored and renormalized
+   *  resolved family rows are the same. Because the pool keeps the original
+   *  id, the CALLER must mark it (`giftsReflectedThrough`) or every later
+   *  gift-aware read applies the same gifts to it a second time. Omitted →
+   *  `account.owners`, i.e. exactly the pre-gift behavior. */
+  resolvedOwners?: AccountOwner[],
 ): MixedAccountPartition {
   const entitySlices: Account[] = [];
   let entityValueTotal = 0;
   let entityBasisTotal = 0;
+  let awayValueTotal = 0;
+  let awayBasisTotal = 0;
 
-  for (const o of account.owners) {
+  for (const o of resolvedOwners ?? account.owners) {
+    if (o.kind === "gifted_away") {
+      // Gifted to a person or charity: the slice has LEFT the household. It is
+      // not a retained entity slice — nothing to push onto nextAccounts — but
+      // its value must come out of the family pool, or a gifted-away share is
+      // routed through the chain and lands back in the estate.
+      awayValueTotal += balance * o.percent;
+      awayBasisTotal += basis * o.percent;
+      continue;
+    }
     if (o.kind !== "entity") continue;
     const locked = entityAccountSharesEoY?.get(o.entityId)?.get(account.id);
     const sliceValue = locked ?? balance * o.percent;
@@ -187,12 +207,13 @@ export function partitionMixedAccount(
     });
   }
 
+  // Owners stay AUTHORED — see the parameter docblock.
   const familyRows = account.owners.filter((o) => o.kind === "family_member");
   const familySum = familyRows.reduce((s, o) => s + o.percent, 0);
   const familyPool: Account = {
     ...account,
-    value: Math.max(0, balance - entityValueTotal),
-    basis: Math.max(0, basis - entityBasisTotal),
+    value: Math.max(0, balance - entityValueTotal - awayValueTotal),
+    basis: Math.max(0, basis - entityBasisTotal - awayBasisTotal),
     owners: familyRows.map((o) => ({
       ...o,
       percent: familySum > 0 ? o.percent / familySum : 0,
