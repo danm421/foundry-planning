@@ -141,8 +141,8 @@ import { resolveCashValueForYear } from "./life-insurance-schedule";
 import { computeTermEndYear } from "./life-insurance-expiry";
 import {
   computePortfolioSnapshot,
+  householdPortfolioShare,
   LIQUID_PORTFOLIO_BUCKETS,
-  PORTFOLIO_CATEGORY_TO_BUCKET,
 } from "./portfolio-snapshot";
 import { applyTrustAnnualPass, type NonGrantorTrustInput } from "./trust-tax/index";
 import {
@@ -9189,13 +9189,20 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       );
       if (entityOwners.length === 0) continue;
       if (entityOwners.some((o) => o.percent >= 1)) continue; // 100%-entity-owned: snapshot already correct
-      const entityLocked = entityOwners.map((o) =>
-        year.entityAccountSharesEoY?.get(o.entityId)?.get(acct.id),
-      );
-      if (entityLocked.some((v) => v == null)) continue;
+      // Each entity's lock as the entity cash flow booked it; with one missing,
+      // the snapshot's answer stands.
+      const entityLocks = entityOwners.flatMap((owner) => {
+        const locked = year.entityAccountSharesEoY?.get(owner.entityId)?.get(acct.id);
+        return locked == null ? [] : [{ owner, locked }];
+      });
+      if (entityLocks.length < entityOwners.length) continue;
       const ledger = year.accountLedgers[acct.id];
       if (!ledger) continue;
-      const primaryKey = PORTFOLIO_CATEGORY_TO_BUCKET[acct.category] ?? "taxable";
+      // The snapshot's own household rule. A category with no bucket (a note
+      // receivable, a 529) is not portfolio: the snapshot's answer stands.
+      const household = householdPortfolioShare(acct.category, owners, principalFmIds);
+      const primaryKey = household.bucket;
+      if (!primaryKey) continue;
 
       // Clear stale per-account entries so we can write the locked-share split fresh.
       delete year.portfolioAssets[primaryKey][acct.id];
@@ -9206,39 +9213,37 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // household in the primary bucket; any other routes by accessibleToClient.
       let lockedTotal = 0;
       let inPortfolioVal = 0;
-      entityOwners.forEach((o, i) => {
-        const locked = entityLocked[i]!;
+      for (const { owner, locked } of entityLocks) {
         lockedTotal += locked;
-        const entity = stableEntityById[o.entityId];
+        const entity = stableEntityById[owner.entityId];
         if (entity?.includeInPortfolio) {
           inPortfolioVal += locked;
-          return;
+          continue;
         }
-        if (locked <= 0) return;
+        if (locked <= 0) continue;
         const entityBucket = entity?.accessibleToClient
           ? "accessibleTrustAssets"
           : "trustsAndBusinesses";
         year.portfolioAssets[entityBucket][acct.id] =
           (year.portfolioAssets[entityBucket][acct.id] ?? 0) + locked;
-      });
+      }
       // The rest splits as the balance sheet splits it (`resolveOwnerSlices`):
       // a gifted-away share holds `value × percent`, the family members share
-      // what is left by percent — and only the principals' part of that is
-      // household portfolio (`computePortfolioSnapshot`), not a child's row.
+      // what is left by percent — and the household holds the principals'
+      // part of that, not a child's row.
       let familyPercent = 0;
-      let principalPercent = 0;
       let giftedAwayPercent = 0;
       for (const o of owners) {
+        if (o.kind === "family_member") familyPercent += o.percent;
         if (o.kind === "gifted_away") giftedAwayPercent += o.percent;
-        if (o.kind !== "family_member") continue;
-        familyPercent += o.percent;
-        if (principalFmIds.has(o.familyMemberId)) principalPercent += o.percent;
       }
       const familyPool = Math.max(
         0,
         ledger.endingValue - lockedTotal - ledger.endingValue * giftedAwayPercent,
       );
-      if (familyPercent > 0) inPortfolioVal += familyPool * (principalPercent / familyPercent);
+      if (familyPercent > 0) {
+        inPortfolioVal += familyPool * (household.principalPercent / familyPercent);
+      }
       if (inPortfolioVal > 0) {
         year.portfolioAssets[primaryKey][acct.id] = inPortfolioVal;
         // Mirror household + IIP business shares → t&b.

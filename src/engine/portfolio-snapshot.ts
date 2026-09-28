@@ -1,5 +1,5 @@
 import type { Account, AccountLedger, GiftEvent, ProjectionYear } from "./types";
-import { ownersForYear } from "./ownership";
+import { ownersForYear, type AccountOwner } from "./ownership";
 
 /** Minimal entity metadata the portfolio snapshot needs. The projection's
  *  entityMap rows (EntitySummary) are wider and always populate both fields;
@@ -67,11 +67,13 @@ export const TOTAL_PORTFOLIO_BUCKETS = [
 ] as const satisfies readonly PortfolioCategoryBucket[];
 
 /**
- * Account category → portfolio bucket. Exported because the post-withdrawal
- * entity-share re-bucket pass in `projection.ts` needs the identical mapping;
- * a second copy there is how `annuity` silently became `taxable` on split-owned
- * accounts. Categories deliberately absent (`notes_receivable`,
- * `education_savings`) are handled by the guard in `computePortfolioSnapshot`.
+ * Account category → portfolio bucket. The snapshot and the projection's
+ * locked-share post-pass both read it through `householdPortfolioShare`: a
+ * second copy is how `annuity` silently became `taxable` on split-owned
+ * accounts, and a `?? "taxable"` fallback is how a gifted note receivable
+ * landed in the liquid portfolio. Categories deliberately absent
+ * (`notes_receivable`, `education_savings`) have no bucket, and callers leave
+ * such an account out.
  */
 export const PORTFOLIO_CATEGORY_TO_BUCKET: Record<string, PortfolioCategoryBucket> = {
   taxable: "taxable",
@@ -96,6 +98,30 @@ export const LIQUID_PORTFOLIO_CATEGORIES: ReadonlySet<string> = new Set(
     .filter(([, bucket]) => LIQUID_PORTFOLIO_BUCKET_SET.has(bucket))
     .map(([category]) => category),
 );
+
+/**
+ * The portfolio's household rule for one account's owners. Only the principals
+ * (client and spouse) are household — a child's row or a share given away is
+ * not portfolio. And an account whose category has no bucket (notes
+ * receivable, 529s) is not portfolio at all: `bucket` is undefined and the
+ * caller leaves the account out.
+ *
+ * Shared by `computePortfolioSnapshot` and the projection's locked-share
+ * post-pass, so the two cannot drift on either rule.
+ */
+export function householdPortfolioShare(
+  category: string,
+  owners: readonly AccountOwner[],
+  principalFmIds: ReadonlySet<string>,
+): { bucket: PortfolioCategoryBucket | undefined; principalPercent: number } {
+  let principalPercent = 0;
+  for (const owner of owners) {
+    if (owner.kind === "family_member" && principalFmIds.has(owner.familyMemberId)) {
+      principalPercent += owner.percent;
+    }
+  }
+  return { bucket: PORTFOLIO_CATEGORY_TO_BUCKET[category], principalPercent };
+}
 
 /**
  * Portfolio snapshot for one projection year. An account is included if it has
@@ -152,12 +178,8 @@ export function computePortfolioSnapshot(args: {
     // household portfolio. Accounts owned by children or other non-principal
     // family members — e.g. assets distributed to heirs after both spouses
     // die — are deliberately excluded.
-    let inPortfolioFraction = 0;
-    for (const owner of portfolioYearOwners) {
-      if (owner.kind === "family_member" && principalFmIds.has(owner.familyMemberId)) {
-        inPortfolioFraction += owner.percent;
-      }
-    }
+    const household = householdPortfolioShare(acct.category, portfolioYearOwners, principalFmIds);
+    let inPortfolioFraction = household.principalPercent;
     for (const owner of portfolioYearOwners) {
       if (owner.kind !== "entity") continue;
       const entity = entityMap[owner.entityId];
@@ -168,11 +190,10 @@ export function computePortfolioSnapshot(args: {
       // Notes receivable amortize on a fixed schedule and aren't fungible liquid
       // wealth. They appear under "Notes Receivable" on the balance sheet UI and
       // are tracked in accountLedgers, but they don't belong in any
-      // portfolioAssets bucket.
-      if (acct.category === "notes_receivable" || acct.category === "education_savings") continue;
-      // Use an explicit null-guard so future unknown categories fail loud rather
-      // than silently bucketing into taxable.
-      const key = PORTFOLIO_CATEGORY_TO_BUCKET[acct.category];
+      // portfolioAssets bucket — nor does a 529. Neither has a bucket, and an
+      // explicit null-guard keeps a future unknown category out too, rather
+      // than silently bucketing it into taxable.
+      const key = household.bucket;
       if (!key) continue;
       portfolioAssets[key][acct.id] = inPortfolioVal;
       const totalKey = `${key}Total` as keyof typeof portfolioAssets;

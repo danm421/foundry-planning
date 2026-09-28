@@ -185,6 +185,17 @@ const yearOf = (years: ProjectionYear[], year: number) => {
 };
 
 describe("gift overlay — every surface reports the same number", () => {
+  // The brief's checks, on a fixture where nothing is drawn. Here the in-loop
+  // snapshot's `balance × 40%` IS the lock, so these cannot tell surface 5
+  // from a post-pass that ignores the gift: the spending arm below carries the
+  // surface-5 discrimination. What each check here does catch (measured):
+  //   - "the year AFTER" and "does not decay": flipping the post-loop
+  //     resolver's snapshot read (`liveOwnersAt`) to `acct.owners` reds
+  //     surfaces 2, 3 and 4 and the no-decay lock (0, not > 0);
+  //   - "the year BEFORE": a snapshot that answers the gift in every year
+  //     (the step lookup ignoring `from <= year`) reds surfaces 2, 3, 4 and 5.
+  // The two portfolio lines of "does not decay" are controls here: 4M comes
+  // out of the in-loop snapshot with or without the post-pass.
   const data = fixture();
   const years = runProjection(data);
 
@@ -372,14 +383,58 @@ describe("gift overlay — a gift to a second trust of an account a first trust 
   });
   const years = runProjection(data);
 
+  // Trust 2's row, and the household total in 2029, are CONTROLS: no mutation
+  // we know of reds them; they hold the fixture's shape. Trust 2's share is
+  // authored, and in the death year the post-pass skips the account the death
+  // routed — deleting that skip reds 2029's trusts total (1,000,000: the
+  // slices plus a re-split of the pre-death ledger).
   for (const year of [2027, 2028, 2029]) {
     it(`${year}: shows 500k household and 500k in trusts on the $1M account`, () => {
       const y = yearOf(years, year);
       expect.soft(trustRow(y, T1), "2 trust 1 cash flow").toBeCloseTo(300_000, 2);
-      expect.soft(trustRow(y, T2), "2 trust 2 cash flow").toBeCloseTo(200_000, 2);
+      expect.soft(trustRow(y, T2), "2 trust 2 cash flow (control)").toBeCloseTo(200_000, 2);
       expect.soft(y.portfolioAssets.taxableTotal, "5 portfolio — taxable").toBeCloseTo(500_000, 2);
       expect.soft(y.portfolioAssets.trustsAndBusinessesTotal, "5 portfolio — trustsAndBusinesses")
         .toBeCloseTo(500_000, 2);
+    });
+  }
+});
+
+describe("gift overlay — a partly gifted note receivable or 529 stays out of the portfolio", () => {
+  // Neither category has a portfolio bucket: the snapshot leaves the account
+  // out of every bucket. Re-splitting a gifted one around its lock fell back to
+  // `taxable` for a category with no bucket, which put the household's 60% of
+  // a $1M note — $600k — into the liquid portfolio from the gift year on.
+  // Control: the same plan without the account. Adding it must not move the
+  // portfolio.
+  const OTHER = "acc-not-portfolio";
+  const control = fixture();
+  const controlYears = runProjection(control);
+
+  for (const [category, subType] of [["notes_receivable", "other"], ["education_savings", "529"]] as const) {
+    it(`${category}: no household bucket in any year, and the liquid total the control has`, () => {
+      const data: ClientData = {
+        ...control,
+        accounts: [...control.accounts, {
+          id: OTHER, name: category, category, subType, titlingType: "jtwros",
+          value: 1_000_000, basis: 1_000_000, growthRate: 0, rmdEnabled: false,
+          owners: [{ kind: "family_member", familyMemberId: FM_CLIENT, percent: 1 }],
+        }],
+        giftEvents: [...(control.giftEvents ?? []), {
+          kind: "asset", year: GIFT_YEAR, accountId: OTHER, percent: GIFT_PCT,
+          grantor: "client", recipientEntityId: TRUST,
+        }],
+      };
+      const years = runProjection(data);
+      // Not vacuous: the gift landed — the trust holds a $400k lock on it.
+      expect(yearOf(years, GIFT_YEAR + 1).entityAccountSharesEoY?.get(TRUST)?.get(OTHER))
+        .toBeCloseTo(400_000, 2);
+      for (const y of years) {
+        const c = yearOf(controlYears, y.year);
+        expect.soft(y.portfolioAssets.taxable[OTHER], `${y.year} 5 portfolio — taxable`).toBeUndefined();
+        expect.soft(y.portfolioAssets.liquidTotal, `${y.year} 5 portfolio — liquidTotal`)
+          .toBeCloseTo(c.portfolioAssets.liquidTotal, 2);
+      }
     });
   }
 });
