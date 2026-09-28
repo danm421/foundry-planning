@@ -15,6 +15,7 @@ import type {
 import type {
   AssetsTabAccount,
   AssetsTabBusiness,
+  AssetsTabBusinessGift,
   AssetsTabExpense,
   AssetsTabFamilyMember,
   AssetsTabIncome,
@@ -133,6 +134,17 @@ export function toAssetsTabBusinesses(d: ClientData): AssetsTabBusiness[] {
       value: e.value ?? 0,
       owners: e.owners ?? [],
     }));
+}
+
+/** `AssetsTab.businessGifts` — the working tree's business-interest gifts. A
+ *  gift of a business interest writes no owner row, so without these a
+ *  business the trust holds by gift is missing from its Assets tab. */
+export function toAssetsTabBusinessGifts(d: ClientData): AssetsTabBusinessGift[] {
+  return (d.giftEvents ?? []).flatMap((e) =>
+    e.kind === "business_interest"
+      ? [{ businessEntityId: e.entityId, recipientEntityId: e.recipientEntityId, percent: e.percent }]
+      : [],
+  );
 }
 
 /** `AssetsTab.familyMembers`, and the `applyAssetTabOp` context that decides

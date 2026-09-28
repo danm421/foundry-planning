@@ -15,8 +15,6 @@
  *   2. Otherwise, scale all existing owner rows proportionally by
  *      `(othersSum - delta) / othersSum` so the total stays at `othersSum`
  *      (≤ 1.0), then add a new trust row at `delta`.
- *   3. Track per-family-member loss as `oldPercent - newPercent` so the
- *      caller can emit per-grantor gift rows.
  *
  * The trust's "gain" is capped at the available family share (`othersSum`) —
  * we never let the total exceed 1.0. If the caller requests more than is
@@ -34,8 +32,6 @@ export type EntityOwnersOp =
 
 export interface ApplyEntityOwnersOpResult {
   newOwners: EntityOwner[];
-  /** Family-member-only losses, in case the caller wants gift events. */
-  familyLosses: { familyMemberId: string; lost: number }[];
   /** Total amount the trust actually absorbed in this op. May be less than
    *  the requested percent if family share was insufficient. */
   appliedDebit: number;
@@ -53,10 +49,7 @@ function sumPct(owners: EntityOwner[]): number {
 
 /**
  * Takes the current `owners[]` of a business entity and applies `op`,
- * returning the new `owners[]` + per-owner loss data.
- *
- * Loss is reported only for rows that EXISTED in `currentOwners` (i.e. the
- * family members who were on the cap table before the op).
+ * returning the new `owners[]` and the share the trust actually absorbed.
  */
 export function applyEntityOwnersOp(
   currentOwners: EntityOwner[],
@@ -96,7 +89,7 @@ function opAdd(
   // Cap debit at available share — never let the total exceed 1.0.
   const debit = Math.min(percent, othersSum);
   if (debit <= EPSILON) {
-    return { newOwners: owners, familyLosses: [], appliedDebit: 0 };
+    return { newOwners: owners, appliedDebit: 0 };
   }
 
   const scale = othersSum > EPSILON ? (othersSum - debit) / othersSum : 0;
@@ -114,9 +107,7 @@ function opAdd(
     (r) => r.percent > EPSILON,
   );
 
-  const familyLosses = computeFamilyLosses(owners, scaledOthers);
-
-  return { newOwners, familyLosses, appliedDebit: debit };
+  return { newOwners, appliedDebit: debit };
 }
 
 // ── set-percent ───────────────────────────────────────────────────────────────
@@ -148,7 +139,7 @@ function opSetPercent(
   const debit = Math.max(0, delta);
 
   if (Math.abs(delta) < EPSILON) {
-    return { newOwners: owners, familyLosses: [], appliedDebit: 0 };
+    return { newOwners: owners, appliedDebit: 0 };
   }
 
   // Scale others to absorb the delta. If othersSum is ~0 and delta > 0,
@@ -170,9 +161,7 @@ function opSetPercent(
     (r) => r.percent > EPSILON,
   );
 
-  const familyLosses = computeFamilyLosses(owners, scaledOthers);
-
-  return { newOwners, familyLosses, appliedDebit: debit };
+  return { newOwners, appliedDebit: debit };
 }
 
 // ── remove ────────────────────────────────────────────────────────────────────
@@ -198,7 +187,7 @@ function opRemove(
   );
 
   if (Math.abs(freedPct) < EPSILON) {
-    return { newOwners: remaining, familyLosses: [], appliedDebit: 0 };
+    return { newOwners: remaining, appliedDebit: 0 };
   }
 
   // Distribute freedPct proportionally across existing FM rows when any have
@@ -218,7 +207,6 @@ function opRemove(
     }));
     return {
       newOwners: [...nonFmRows, ...grownFm].filter((r) => r.percent > EPSILON),
-      familyLosses: [],
       appliedDebit: 0,
     };
   }
@@ -229,14 +217,12 @@ function opRemove(
   if (!ctx) {
     return {
       newOwners: nonFmRows.filter((r) => r.percent > EPSILON),
-      familyLosses: [],
       appliedDebit: 0,
     };
   }
   const fallback = defaultHouseholdRows(freedPct, ctx);
   return {
     newOwners: [...nonFmRows, ...fallback].filter((r) => r.percent > EPSILON),
-    familyLosses: [],
     appliedDebit: 0,
   };
 }
@@ -261,34 +247,4 @@ function defaultHouseholdRows(
     return [{ kind: "family_member", familyMemberId: spouseFm.id, percent: freedPct }];
   }
   return [];
-}
-
-// ── shared ────────────────────────────────────────────────────────────────────
-
-/**
- * Diff the original owners against the post-scale owners (which still hold
- * the same row identity — same familyMemberId / entityId) and emit one
- * loss entry per family member whose percent decreased.
- *
- * `scaledOthers` excludes the trust row. Owners that are entity rows other
- * than the trust are intentionally ignored — only family-member losses
- * generate §709 gift events.
- */
-function computeFamilyLosses(
-  before: EntityOwner[],
-  scaledOthers: EntityOwner[],
-): { familyMemberId: string; lost: number }[] {
-  const losses: { familyMemberId: string; lost: number }[] = [];
-  for (const oldRow of before) {
-    if (oldRow.kind !== "family_member") continue;
-    const newRow = scaledOthers.find(
-      (o) => o.kind === "family_member" && o.familyMemberId === oldRow.familyMemberId,
-    );
-    const newPct = newRow ? newRow.percent : 0;
-    const lost = oldRow.percent - newPct;
-    if (lost > EPSILON) {
-      losses.push({ familyMemberId: oldRow.familyMemberId, lost });
-    }
-  }
-  return losses;
 }

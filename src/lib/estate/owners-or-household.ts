@@ -1,4 +1,4 @@
-import { ownersForYear } from "@/engine/ownership";
+import { entityOwnersForYear, ownersForYear } from "@/engine/ownership";
 import type { AccountOwner, AccountWithOwners } from "@/engine/ownership";
 import type { GiftEvent } from "@/engine/types";
 
@@ -50,5 +50,29 @@ export function ownersForYearSafe(
     return ownersForYearOrHousehold(account, giftEvents, year, projectionStartYear);
   } catch {
     return account.owners ?? HOUSEHOLD_OWNER_FALLBACK;
+  }
+}
+
+/**
+ * `entityOwnersForYear`, but malformed gift events (a business-interest gift
+ * that overdraws the household share) fall back to the entity's authored
+ * owners instead of throwing. Report surfaces prefer a slightly stale
+ * ownership split over a blank screen.
+ *
+ * The entity twin of `ownersForYearSafe`. There is no household fallback: an
+ * entity's owner rows carry no sum-to-1 rule, and an owner-less entity with no
+ * gift already resolves to `[]` without throwing — each caller keeps its own
+ * "no rows" convention.
+ */
+export function entityOwnersForYearSafe(
+  entity: { id: string; owners: AccountOwner[] },
+  giftEvents: GiftEvent[],
+  year: number,
+  projectionStartYear: number,
+): AccountOwner[] {
+  try {
+    return entityOwnersForYear(entity, giftEvents, year, projectionStartYear);
+  } catch {
+    return entity.owners;
   }
 }

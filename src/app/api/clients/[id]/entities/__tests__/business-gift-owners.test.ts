@@ -143,6 +143,13 @@ describe("planEntityGiftWrites — a gift to an irrevocable trust", () => {
     expect(plan.error).toMatch(/household share/i);
   });
 
+  it("rethrows a resolver error that is not an overdraw, rather than blaming the household share", () => {
+    // A recorded gift with no recipient is corrupt data, not an overdraw — the
+    // advisor must not be told to give less.
+    const existingGifts = [{ id: "g-1", year: 2028, percent: 0.1, recipientEntityId: "", grantor: "client" as const }];
+    expect(() => addGift({}, { existingGifts })).toThrow(/no recipient/);
+  });
+
   it("can give exactly the household share that is left", () => {
     const existingGifts = [{ id: "g-1", year: 2028, percent: 0.4, recipientEntityId: "trust-2", grantor: "client" as const }];
     const plan = addGift({ percent: 0.6 }, { existingGifts });

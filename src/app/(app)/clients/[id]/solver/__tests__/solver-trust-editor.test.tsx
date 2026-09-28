@@ -413,6 +413,29 @@ describe("SolverTrustEditor — Assets tab", () => {
     expect(screen.queryByLabelText("Select Smith Holdings LLC")).toBeNull();
   });
 
+  it("lists a business the trust holds only by GIFT, at its gifted share", async () => {
+    // A business-interest gift writes a gift row and no owner row, so the
+    // authored cap table alone says the trust holds none of it.
+    renderEditor({
+      clientData: tree({
+        entities: [
+          ilit,
+          { ...business, owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }] },
+        ],
+        giftEvents: [{
+          kind: "business_interest", year: 2026, entityId: "e-llc", percent: 0.3,
+          grantor: "client", recipientEntityId: "e-ilit",
+        }],
+      }),
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Assets" }));
+
+    expect(
+      screen.getByRole("button", { name: "Remove Smith Holdings LLC from trust" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("30%")).toBeInTheDocument();
+  });
+
   it("says nothing about business assignment when the plan holds no businesses", async () => {
     // Paired with the test above, which proves the copy IS present when a
     // business exists. An absence-only assertion would pass on a

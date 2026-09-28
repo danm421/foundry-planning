@@ -777,6 +777,46 @@ describe("computeGrossEstate", () => {
     expect(r.total).toBeCloseTo(100_000 - 30_000, 2);
   });
 
+  it("lowers the decedent's share of a business-owned liability by a gift of the business", () => {
+    // Authored 60/40, then 30% of the LLC to a trust in 2027: the client's
+    // share resolves to 0.6 × 0.7 = 0.42, so 42% of the $50k debt is theirs.
+    // A gift writes no entity_owners row, so the authored 60% overstated it.
+    const llc: EntitySummary = {
+      id: "llc",
+      includeInPortfolio: true,
+      isGrantor: false,
+      entityType: "llc",
+      owners: [
+        { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.6 },
+        { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.4 },
+      ],
+    };
+    const gift: GiftEvent = {
+      kind: "business_interest", year: 2027, entityId: "llc", percent: 0.3,
+      grantor: "client", recipientEntityId: "slat",
+    };
+    const gross = (deathYear: number) =>
+      computeGrossEstate({
+        deceased: "client",
+        deathOrder: 1,
+        accounts: [],
+        accountBalances: {},
+        liabilities: [liab("llc-debt", 50_000, {
+          owners: [{ kind: "entity", entityId: "llc", percent: 1 }],
+        })],
+        entities: [llc],
+        deceasedFmId: LEGACY_FM_CLIENT,
+        survivorFmId: LEGACY_FM_SPOUSE,
+        giftEvents: [gift],
+        deathYear,
+        planStartYear: 2026,
+      }).lines.find((l) => l.liabilityId === "llc-debt");
+    expect(gross(2030)?.amount).toBeCloseTo(-21_000, 2);
+    expect(gross(2030)?.percentage).toBeCloseTo(0.42, 6);
+    // A death before the gift still carries the authored 60%.
+    expect(gross(2026)?.amount).toBeCloseTo(-30_000, 2);
+  });
+
   // The "legacy business with no owners[] → joint convention" path applied to
   // EntitySummary fixtures. Under the account-based business model, business
   // accounts always carry an `owners` array (possibly empty). A business

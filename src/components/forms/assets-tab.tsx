@@ -78,8 +78,9 @@ export interface AssetsTabBusiness {
 export interface AssetsTabBusinessGift {
   businessEntityId: string | null;
   recipientEntityId: string | null;
-  /** numeric(6,4) as a string. */
-  percent: string | null;
+  /** A fraction: numeric(6,4) as a string from the gifts API, or a number from
+   *  an engine `business_interest` GiftEvent. */
+  percent: string | number | null;
 }
 
 /** `entityId`'s share of business `b`: its authored `entity_owners` rows plus

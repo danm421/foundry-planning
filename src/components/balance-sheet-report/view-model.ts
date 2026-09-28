@@ -12,7 +12,7 @@ import { flatBusinessValueAt } from "@/engine/entity-cashflow";
 import { collectBusinessTree, consolidatedBusinessValue } from "@/engine/business/business-tree";
 import { formatCurrency } from "@/lib/cell-drill/format";
 import { accountSlicesAtYear, type AccountSlicesYear } from "@/lib/estate/account-owner-slices";
-import { ownersForYearSafe } from "@/lib/estate/owners-or-household";
+import { entityOwnersForYearSafe, ownersForYearSafe } from "@/lib/estate/owners-or-household";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import type { OwnershipView } from "./ownership-filter";
 import { yoyPct, sliceBarAnchors, type YoyResult } from "./yoy";
@@ -440,6 +440,28 @@ export function ownersAsOf(
   return ownersForYearSafe(account, giftEvents, year, planStartYear);
 }
 
+/** `ownersAsOf` for a business entity's `entity_owners` rows. A gift of a
+ *  business interest writes no owner row — the rows are the authored, pre-gift
+ *  baseline — so the gifted share is re-applied here, at the report's year
+ *  against the PLAN start year, exactly as `ownersAsOf` does for an account.
+ *  `undefined` (a legacy entity with no owner rows) stays `undefined`: callers
+ *  read it as fully family-owned. */
+export function entityOwnersAsOf(
+  entity: EntityInfo,
+  giftEvents: GiftEvent[],
+  year: number,
+  planStartYear: number,
+  asOfMode: AsOfMode,
+): AccountOwner[] | undefined {
+  if (asOfMode === "today" || entity.owners == null) return entity.owners;
+  return entityOwnersForYearSafe(
+    { id: entity.id, owners: entity.owners },
+    giftEvents,
+    year,
+    planStartYear,
+  );
+}
+
 // ── Builder ──────────────────────────────────────────────────────────────────
 
 export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewModel {
@@ -812,8 +834,10 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
       // Personal views — credit each family member with their share of the
       // flat valuation under the Business category. Entity-owners of the
       // business (e.g. a trust holding it) are excluded here; they surface
-      // in the entities-view rollup instead.
-      for (const fmRow of e.owners ?? []) {
+      // in the entities-view rollup instead. Shares are resolved as of the
+      // selected year, so a gifted share has left its giver.
+      const owners = entityOwnersAsOf(e, giftEvents, selectedYear, planStartYear, asOfMode);
+      for (const fmRow of owners ?? []) {
         if (fmRow.kind !== "family_member") continue;
         const fm = familyMemberById.get(fmRow.familyMemberId);
         if (!fm) continue;

@@ -15,6 +15,7 @@ import {
 import { computeInheritanceForDeathEvent, inheritanceCodeFor } from "./inheritance-tax";
 import {
   controllingEntity, ownedByHousehold, controllingFamilyMember, giftAwareLiabilityOwners,
+  entityOwnersForYear,
 } from "../ownership";
 
 // Local helper: legacy business-entity gate. After Task 1.7 purges non-trust
@@ -92,17 +93,44 @@ export interface GrossEstateOutput {
  * They are treated as fully family-owned with no per-person split, so the joint
  * convention applies: 50% at first death, 100% at final death — identical to an
  * unattributed jointly-titled household account.
+ *
+ * With gift context the owners are resolved at the death year
+ * (`entityOwnersForYear`): a gift of a business interest writes no owner row —
+ * `entity.owners` is the authored, pre-gift baseline — so the authored rows
+ * would leave the gifted share with its giver. Without gift context (a bare
+ * compute-only caller) the authored rows are read, as `giftAwareOwners` does
+ * for an account.
  */
 function deceasedBusinessShare(
   entity: EntitySummary,
-  deceasedFmId: string | null,
-  deathOrder: 1 | 2,
+  ctx: DeceasedShareContext,
 ): number {
-  if (entity.owners == null) return deathOrder === 1 ? 0.5 : 1;
-  if (deceasedFmId == null) return 0;
-  return entity.owners
-    .filter((o) => o.kind === "family_member" && o.familyMemberId === deceasedFmId)
+  if (entity.owners == null) return ctx.deathOrder === 1 ? 0.5 : 1;
+  if (ctx.deceasedFmId == null) return 0;
+  const owners =
+    ctx.giftEvents != null && ctx.deathYear != null && ctx.planStartYear != null
+      ? entityOwnersForYear(
+          { id: entity.id, owners: entity.owners },
+          ctx.giftEvents,
+          ctx.deathYear,
+          ctx.planStartYear,
+        )
+      : entity.owners;
+  return owners
+    .filter((o) => o.kind === "family_member" && o.familyMemberId === ctx.deceasedFmId)
     .reduce((s, o) => s + (o.percent ?? 0), 0);
+}
+
+/** What the decedent-share helpers read: who died, and (optionally) the gift
+ *  context that resolves an entity's owners as of the death. `computeGrossEstate`'s
+ *  input satisfies it structurally. */
+interface DeceasedShareContext {
+  deceased: "client" | "spouse";
+  deceasedFmId: string | null;
+  deathOrder: 1 | 2;
+  giftEvents?: GiftEvent[];
+  deathYear?: number;
+  planStartYear?: number;
 }
 
 /**
@@ -113,14 +141,10 @@ function deceasedBusinessShare(
  */
 function deceasedEntityShare(
   entity: EntitySummary,
-  ctx: {
-    deceased: "client" | "spouse";
-    deceasedFmId: string | null;
-    deathOrder: 1 | 2;
-  },
+  ctx: DeceasedShareContext,
 ): number {
   if (isBusinessEntity(entity)) {
-    return deceasedBusinessShare(entity, ctx.deceasedFmId, ctx.deathOrder);
+    return deceasedBusinessShare(entity, ctx);
   }
   if (entity.isIrrevocable) return 0;
   return entity.grantor === ctx.deceased ? 1 : 0;

@@ -17,13 +17,14 @@
  * When the trust is IRREVOCABLE, an `add` is a GIFT: the route inserts a
  * §709-style gift row for every client/spouse the gift draws share from — one
  * row per grantor, with `business_entity_id`, `percent`, the gift `year` (the
- * body's, else this calendar year), and a denormalized `amount` snapshot
+ * body's, else the later of this calendar year and the base plan's start year),
+ * and a denormalized `amount` snapshot
  * (= business.value × lostPct) so the report doesn't need to re-multiply.
  * The advisor's `valuation_discount` rides along as a fraction; `amount` stays
  * the FULL undiscounted value and the normalizer applies the discount to it.
  * A gift writes NO `entity_owners` rows — those are the authored baseline, and
  * the engine re-applies gifts on every read (see ./gift-writes). A `remove`
- * deletes the trust's gift rows. Only a REVOCABLE trust's `add`, and a `remove`
+ * deletes the trust's gift rows (and the scenario changes aimed at them). Only a REVOCABLE trust's `add`, and a `remove`
  * of an authored trust row, retitle `entity_owners`.
  *
  * NOT IDEMPOTENT: calling POST twice with the same body gives the share twice
@@ -50,6 +51,7 @@ import { recordAudit } from "@/lib/audit";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
+import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 import { baseCaseScenarioId } from "@/lib/clients/base-case";
 import type { EntityOwner } from "@/engine/ownership";
 import { planEntityGiftWrites } from "./gift-writes";
@@ -253,6 +255,11 @@ export async function POST(
               inArray(gifts.id, plan.giftRowIdsToDelete),
             ),
           );
+        // As every base-row delete does: a scenario change aimed at a deleted
+        // row would point at an id that no longer exists.
+        for (const giftId of plan.giftRowIdsToDelete) {
+          await pruneOrphanScenarioChanges(tx, giftId);
+        }
       }
     });
 
@@ -278,6 +285,7 @@ export async function POST(
         giftYear: plan.giftRows[0]?.year ?? null,
         giftRowsWritten: plan.giftRows.length,
         giftRowsDeleted: plan.giftRowIdsToDelete.length,
+        giftRowIdsDeleted: plan.giftRowIdsToDelete,
         ownersRewritten: plan.ownerRowsToWrite !== null,
       }),
     });

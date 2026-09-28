@@ -30,6 +30,7 @@ import { showNotesAndSalesTab } from "@/components/entity-dialog";
 import { useSolverTrustEdits } from "./use-solver-trust-edits";
 import {
   toAssetsTabAccounts,
+  toAssetsTabBusinessGifts,
   toAssetsTabBusinesses,
   toAssetsTabExpenses,
   toAssetsTabFamilyMembers,
@@ -106,6 +107,7 @@ function TrustEditorBody({
       incomes: toAssetsTabIncomes(clientData),
       expenses: toAssetsTabExpenses(clientData),
       businesses: toAssetsTabBusinesses(clientData),
+      businessGifts: toAssetsTabBusinessGifts(clientData),
       members: toBeneficiaryMembers(clientData),
       externals: toBeneficiaryExternals(clientData),
       entityOptions: toEntityOptions(clientData),
@@ -436,6 +438,8 @@ function TrustEditorBody({
             familyMembers={view.familyMembers}
             entities={view.entityOptions}
             businesses={view.businesses}
+            // A business given to this trust has a gift row and no owner row.
+            businessGifts={view.businessGifts}
             // Assigning a business moves its value out of the taxable estate,
             // and the §709 gift row that pays for it is written by the details
             // page's route — which the solver has no equivalent of, because

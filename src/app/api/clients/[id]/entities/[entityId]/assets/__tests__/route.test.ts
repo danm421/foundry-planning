@@ -24,6 +24,8 @@
  *  13. No year on a plan that starts NEXT year → the gift lands in the plan's
  *      first projection year.
  *  14. An explicit year before the plan start year → 400; nothing written.
+ *  15. Remove prunes the scenario changes that targeted the deleted gift rows,
+ *      and audits which rows it deleted.
  */
 
 import { readFileSync } from "node:fs";
@@ -796,6 +798,48 @@ d("POST /api/clients/[id]/entities/[entityId]/assets", () => {
       .where(drizzleOrm.eq(gifts.businessEntityId, businessId));
     expect(giftRows).toHaveLength(0);
     expect(await ownersOf(businessId)).toEqual([[members[0].id, 1]]);
+  });
+
+  it("15. Remove prunes scenario changes aimed at the deleted gift rows, and audits their ids", async () => {
+    // Every other base-row delete prunes the scenario changes that target the
+    // row; a change left behind points at an id that no longer exists.
+    const { clientId, trustId, businessId, scenarioId } = await setup({
+      members: [{ role: "client", firstName: "Alice" }],
+      trustIrrevocable: true,
+      businessValue: "1000000",
+      businessOwners: [{ memberIdx: 0, percent: 1.0 }],
+    });
+    const { db } = dbMod;
+    const { gifts, scenarioChanges } = schema;
+    const post = (body: object) =>
+      POST(
+        makeReq(clientId, trustId, { assetType: "entity", assetId: businessId, ...body }) as never,
+        { params: Promise.resolve({ id: clientId, entityId: trustId }) },
+      );
+
+    expect((await post({ op: "add", percent: 30 })).status).toBe(200);
+    const [gift] = await db
+      .select()
+      .from(gifts)
+      .where(drizzleOrm.eq(gifts.businessEntityId, businessId));
+    await db.insert(scenarioChanges).values({
+      scenarioId, opType: "edit", targetKind: "gift", targetId: gift.id, payload: {},
+    });
+
+    const { recordAudit } = await import("@/lib/audit");
+    vi.mocked(recordAudit).mockClear();
+    expect((await post({ op: "remove" })).status).toBe(200);
+
+    const left = await db
+      .select()
+      .from(scenarioChanges)
+      .where(drizzleOrm.eq(scenarioChanges.targetId, gift.id));
+    expect(left).toHaveLength(0);
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({ giftRowIdsDeleted: [gift.id] }),
+      }),
+    );
   });
 
   it("8. Non-entity asset type returns 400 (handled by per-asset PUT endpoints)", async () => {

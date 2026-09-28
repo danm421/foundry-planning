@@ -36,10 +36,6 @@ describe("applyEntityOwnersOp — add", () => {
     expect(trustPct(result.newOwners)).toBeCloseTo(1.0, 4);
     expect(fmPct(result.newOwners, "fm-c")).toBeCloseTo(0, 4);
     expect(Math.abs(sum(result.newOwners) - 1)).toBeLessThan(EPSILON);
-    expect(result.familyLosses).toEqual([
-      { familyMemberId: "fm-c", lost: expect.any(Number) },
-    ]);
-    expect(result.familyLosses[0].lost).toBeCloseTo(1.0, 4);
     expect(result.appliedDebit).toBeCloseTo(1.0, 4);
   });
 
@@ -55,11 +51,10 @@ describe("applyEntityOwnersOp — add", () => {
 
     expect(trustPct(result.newOwners)).toBeCloseTo(0.5, 4);
     expect(fmPct(result.newOwners, "fm-c")).toBeCloseTo(0.5, 4);
-    expect(result.familyLosses[0].lost).toBeCloseTo(0.5, 4);
     expect(result.appliedDebit).toBeCloseTo(0.5, 4);
   });
 
-  it("adds 100% trust ownership to a business owned 50/50 by client+spouse — each loses 50%", () => {
+  it("adds 100% trust ownership to a business owned 50/50 by client+spouse", () => {
     const owners: EntityOwner[] = [
       { kind: "family_member", familyMemberId: "fm-c", percent: 0.5 },
       { kind: "family_member", familyMemberId: "fm-s", percent: 0.5 },
@@ -73,16 +68,9 @@ describe("applyEntityOwnersOp — add", () => {
     expect(trustPct(result.newOwners)).toBeCloseTo(1.0, 4);
     expect(fmPct(result.newOwners, "fm-c")).toBeCloseTo(0, 4);
     expect(fmPct(result.newOwners, "fm-s")).toBeCloseTo(0, 4);
-
-    // Should produce two losses, each 0.5
-    expect(result.familyLosses).toHaveLength(2);
-    const clientLoss = result.familyLosses.find((l) => l.familyMemberId === "fm-c");
-    const spouseLoss = result.familyLosses.find((l) => l.familyMemberId === "fm-s");
-    expect(clientLoss?.lost).toBeCloseTo(0.5, 4);
-    expect(spouseLoss?.lost).toBeCloseTo(0.5, 4);
   });
 
-  it("adds 30% trust ownership to a 70/30 client/spouse business — each loses proportionally", () => {
+  it("adds 30% trust ownership to a 70/30 client/spouse business — each shrinks proportionally", () => {
     const owners: EntityOwner[] = [
       { kind: "family_member", familyMemberId: "fm-c", percent: 0.7 },
       { kind: "family_member", familyMemberId: "fm-s", percent: 0.3 },
@@ -98,12 +86,6 @@ describe("applyEntityOwnersOp — add", () => {
     expect(fmPct(result.newOwners, "fm-c")).toBeCloseTo(0.49, 4);
     // Spouse: 0.3 * (1.0 - 0.3) / 1.0 = 0.21
     expect(fmPct(result.newOwners, "fm-s")).toBeCloseTo(0.21, 4);
-
-    expect(result.familyLosses).toHaveLength(2);
-    const clientLoss = result.familyLosses.find((l) => l.familyMemberId === "fm-c");
-    const spouseLoss = result.familyLosses.find((l) => l.familyMemberId === "fm-s");
-    expect(clientLoss?.lost).toBeCloseTo(0.21, 4);
-    expect(spouseLoss?.lost).toBeCloseTo(0.09, 4);
   });
 
   it("combines trust shares when the trust already owns part of the business", () => {
@@ -119,9 +101,6 @@ describe("applyEntityOwnersOp — add", () => {
 
     expect(trustPct(result.newOwners)).toBeCloseTo(0.5, 4);
     expect(fmPct(result.newOwners, "fm-c")).toBeCloseTo(0.5, 4);
-    // The family-member loss is the change from 0.8 to 0.5 = 0.3.
-    expect(result.familyLosses[0].familyMemberId).toBe("fm-c");
-    expect(result.familyLosses[0].lost).toBeCloseTo(0.3, 4);
     expect(result.appliedDebit).toBeCloseTo(0.3, 4);
   });
 
@@ -142,10 +121,6 @@ describe("applyEntityOwnersOp — add", () => {
     expect(Math.abs(sum(result.newOwners) - 1)).toBeLessThan(EPSILON);
     expect(result.appliedDebit).toBeCloseTo(1.0, 4);
     expect(trustPct(result.newOwners)).toBeCloseTo(1.0, 4);
-    // The family member's loss is just their old percent (0.5) — only family
-    // losses produce gifts.
-    const clientLoss = result.familyLosses.find((l) => l.familyMemberId === "fm-c");
-    expect(clientLoss?.lost).toBeCloseTo(0.5, 4);
   });
 
   it("returns no-op when adding 0%", () => {
@@ -158,7 +133,6 @@ describe("applyEntityOwnersOp — add", () => {
       percent: 0,
     });
     expect(result.appliedDebit).toBe(0);
-    expect(result.familyLosses).toHaveLength(0);
   });
 
   it("returns no-op (appliedDebit=0) when there is no family/other share to take", () => {
@@ -169,7 +143,6 @@ describe("applyEntityOwnersOp — add", () => {
       percent: 0.5,
     });
     expect(result.appliedDebit).toBe(0);
-    expect(result.familyLosses).toHaveLength(0);
   });
 });
 
@@ -244,6 +217,5 @@ describe("applyEntityOwnersOp — set-percent", () => {
     expect(fmPct(result.newOwners, "fm-c")).toBeCloseTo(0.3, 4);
     expect(fmPct(result.newOwners, "fm-s")).toBeCloseTo(0.2, 4);
     expect(Math.abs(sum(result.newOwners) - 1)).toBeLessThan(EPSILON);
-    expect(result.familyLosses).toHaveLength(2);
   });
 });

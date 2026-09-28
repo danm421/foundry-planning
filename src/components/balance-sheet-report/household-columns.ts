@@ -6,7 +6,7 @@ import {
 } from "@/lib/balance-sheet/attribute";
 import { flatBusinessValueAt } from "@/engine/entity-cashflow";
 import type { FamilyMember, GiftEvent } from "@/engine/types";
-import { ownersAsOf } from "./view-model";
+import { entityOwnersAsOf, ownersAsOf } from "./view-model";
 import {
   foldPartitionedAccount,
   isPartitionedAt,
@@ -233,7 +233,9 @@ export function buildHouseholdColumns(input: BuildHouseholdColumnsInput): Househ
     // "Today" = beginning-of-year (prior) value at plan start; "eoy" = end-of-year (now).
     const flat = asOfMode === "today" ? flatCalc.prior : flatCalc.now;
     if (flat <= 0) continue;
-    const familyOwners = (e.owners ?? [])
+    // Owners as of the valuation year: a gift of a business interest writes no
+    // owner row, so the gifted share must be re-applied or it stays household.
+    const familyOwners = (entityOwnersAsOf(e, giftEvents, valuationYear, planStartYear, asOfMode) ?? [])
       .filter((o) => o.kind === "family_member")
       .map((o) => ({ familyMemberId: o.familyMemberId, percent: o.percent }));
     // A business with explicit owners but no family-member share belongs to the

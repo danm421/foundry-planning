@@ -99,9 +99,13 @@ export function planEntityGiftWrites(input: EntityGiftWritesInput): EntityGiftWr
 type AddOp = Extract<EntityGiftWritesInput["op"], { op: "add" }>;
 type HouseholdRow = Extract<AccountOwner, { kind: "family_member" }>;
 
+/** The resolver's two overdraw messages (see `composeOwnersForYear`). */
+const OVERDRAW = /no household share remaining|would overdraw household share/;
+
 /**
  * The household's owner rows once EVERY recorded gift has left them, or null
- * when the recorded gifts already overdraw the household.
+ * when the recorded gifts already overdraw the household. Any other resolver
+ * error is rethrown.
  *
  * Resolved with no projection window — projectionStartYear 0 and no upper year —
  * so every gift counts at write time, whatever its date. The engine composes a
@@ -125,9 +129,12 @@ function householdAfterGifts(
   try {
     return entityOwnersForYear({ id: businessId, owners }, events, Number.MAX_SAFE_INTEGER, 0)
       .filter((o): o is HouseholdRow => o.kind === "family_member");
-  } catch {
-    // The resolver throws only when the gifts overdraw the household share.
-    return null;
+  } catch (err) {
+    // Only an overdraw means "too little household share". The resolver's
+    // other throws (a gift with no recipient, a conservation breach) are
+    // corrupt data, and blaming the household share would hide them.
+    if (err instanceof Error && OVERDRAW.test(err.message)) return null;
+    throw err;
   }
 }
 
