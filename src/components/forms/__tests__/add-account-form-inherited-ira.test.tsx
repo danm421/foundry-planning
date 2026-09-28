@@ -166,4 +166,42 @@ describe("AddAccountForm — inherited IRA on the RMD tab", () => {
     expect(box.disabled).toBe(true);
     expect(screen.getByText(/owned by the client or spouse/)).toBeTruthy();
   });
+
+  // A ticked IRA re-owned to a child or a trust must not save as inherited:
+  // the engine ignores the fields for an entity (and, with "Subject to RMDs"
+  // hidden, takes no RMDs at all), and would use the CLIENT's birth year for a
+  // child. The fields stay as typed — the advisor unticks or changes the owner.
+  it.each([
+    ["a child", [{ kind: "family_member" as const, familyMemberId: "fm-child", percent: 1 }]],
+    ["a trust", [{ kind: "entity" as const, entityId: "trust-1", percent: 1 }]],
+  ])("blocks saving a ticked IRA owned by %s", async (_, owners) => {
+    const onAutoSaveStateChange = vi.fn();
+    renderForm({ ...INHERITED, owners }, {
+      onAutoSaveStateChange,
+      familyMembers: [...FAMILY, { id: "fm-child", role: "child", firstName: "Cara" }],
+      entities: [{ id: "trust-1", name: "Family Trust" }],
+    });
+    fireEvent.click(screen.getByRole("button", { name: "RMD" }));
+    await waitFor(() => expect(onAutoSaveStateChange).toHaveBeenLastCalledWith(expect.objectContaining({ canSave: false })));
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Only an IRA owned by the client or spouse can be inherited — untick the box or change the owner back.",
+    );
+    expect((screen.getByLabelText("Inherited from someone other than a spouse") as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByLabelText("Year of death") as HTMLInputElement).value).toBe("2022");
+  });
+
+  it("uses the SPOUSE's birth year as the heir's for a spouse-owned inherited IRA", () => {
+    // Owner born 1945. The spouse (1950) is 5 years younger → stretch; the
+    // client (1975) is 30 years younger → 10-year rule. Spouse heir LE:
+    // SLT[73] 16.4 in 2023 → 13.4 in 2026 (beats the owner's 13.3 − 4 = 9.3).
+    renderForm(
+      { ...INHERITED, owners: [{ kind: "family_member", familyMemberId: "fm-spouse", percent: 1 }] },
+      { milestones: { ...MILESTONES, spouseBirthYear: 1950 } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "RMD" }));
+    const summary = screen.getByTestId("inherited-rule-summary").textContent!;
+    expect(summary).toContain("Stretch — yearly RMDs over life expectancy because the heir is no more than 10 years younger");
+    expect(summary).toContain("Divisor 13.4 in 2026");
+    expect(summary).not.toContain("10-year rule");
+  });
 });

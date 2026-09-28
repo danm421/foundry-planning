@@ -869,11 +869,17 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     [inheritedState, category, subType],
   );
   const inheritedActive = inheritedIra && canBeInheritedIra(category, subType);
-  const inheritedError = inheritedIraFormError(inheritedState, category, subType, new Date().getFullYear());
   // savingsRuleOwnerForAccount is declared further down this component (as
   // savingsRuleOwner) — called directly here so the RMD tab's heir-role lookup
   // doesn't have to wait for that later declaration.
   const inheritedHeirRole = savingsRuleOwnerForAccount({ owners }, familyMembers); // "client" | "spouse" | "joint"
+  // A ticked box on an IRA since re-owned to a child or an entity blocks the
+  // save rather than clearing the typed years: the engine would ignore them for
+  // an entity (taking no RMDs at all) and use the client's age for a child.
+  const inheritedError =
+    inheritedActive && inheritedHeirRole === "joint"
+      ? "Only an IRA owned by the client or spouse can be inherited — untick the box or change the owner back."
+      : inheritedIraFormError(inheritedState, category, subType, new Date().getFullYear());
   const inheritedHeirBirthYear =
     inheritedHeirRole === "client" ? milestones?.clientBirthYear ?? null
     : inheritedHeirRole === "spouse" ? milestones?.spouseBirthYear ?? null

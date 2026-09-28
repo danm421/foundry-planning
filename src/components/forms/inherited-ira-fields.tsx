@@ -17,7 +17,7 @@ export interface InheritedIraFieldsProps {
   onOwnerBirthYearChange: (value: string) => void;
   heirDisabled: boolean;
   onHeirDisabledChange: (value: boolean) => void;
-  /** The account owner's (heir's) birth year; null when unknown. */
+  /** The heir's birth year (the client or spouse holding the account); null when unknown. */
   heirBirthYear: number | null;
   /** First plan year — the year the summary quotes a stretch divisor for. */
   referenceYear: number;
