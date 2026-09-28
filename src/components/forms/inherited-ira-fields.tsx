@@ -73,7 +73,7 @@ export function InheritedIraFields(props: InheritedIraFieldsProps) {
           <span className="text-sm font-medium text-ink-3">Inherited from someone other than a spouse</span>
         </label>
         <p className="mt-1 ml-6 text-xs text-ink-3">
-          {props.unavailableReason ?? "Uses the beneficiary payout rules instead of the owner's own RMDs."}
+          {props.unavailableReason ?? "Uses the beneficiary payout rules instead of the heir's own RMDs."}
         </p>
       </div>
 
@@ -129,7 +129,7 @@ export function InheritedIraFields(props: InheritedIraFieldsProps) {
               data-testid="inherited-rule-summary"
               className="rounded-[var(--radius-sm)] border border-hair-3 bg-card-2 px-3 py-2 text-[13px] text-ink-2"
             >
-              {summary ?? "Add the owner's date of birth to preview the payout rule."}
+              {summary ?? "Add the heir's date of birth to preview the payout rule."}
             </p>
           )}
         </div>

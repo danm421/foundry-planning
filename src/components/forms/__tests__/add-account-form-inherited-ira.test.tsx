@@ -79,6 +79,21 @@ describe("AddAccountForm — inherited IRA on the RMD tab", () => {
     expect(body).toMatchObject({ inheritedDeathYear: null, inheritedOwnerBirthYear: null, inheritedHeirDisabled: false });
   });
 
+  // Ride-along (Fix round 1, finding 3): Review Focus #1 names "the form PUT
+  // body" without restricting it to the submit path — before this, only the
+  // submit-path body builder's null-out was pinned; the saveAsyncImpl body
+  // builder has its own separate `...inheritedFields` spread that could
+  // regress independently.
+  it("un-ticking writes nulls via the saveAsync (autosave) path too", async () => {
+    const ref = createRef<AccountFormAutoSaveHandle>();
+    renderForm(INHERITED, { ref });
+    fireEvent.click(screen.getByRole("button", { name: "RMD" }));
+    fireEvent.click(screen.getByLabelText("Inherited from someone other than a spouse"));
+    await act(async () => { await ref.current!.saveAsync(); });
+    const body = await putBody();
+    expect(body).toMatchObject({ inheritedDeathYear: null, inheritedOwnerBirthYear: null, inheritedHeirDisabled: false });
+  });
+
   it("the tab-switch autosave path (imperative saveAsync) carries the fields too", async () => {
     const ref = createRef<AccountFormAutoSaveHandle>();
     renderForm(INHERITED, { ref });
@@ -96,15 +111,39 @@ describe("AddAccountForm — inherited IRA on the RMD tab", () => {
     expect(screen.getByRole("alert").textContent).toContain("Enter the year of death");
   });
 
-  // Pins the `(rmdEnabled || inheritedActive)` OR in both body builders and the
-  // tab panel's prior-balance condition — INHERITED has rmdEnabled: false, so
-  // if that condition regressed back to plain `rmdEnabled`, the field (and the
-  // Year-1 RMD balance override it carries) would silently disappear for every
-  // inherited IRA.
+  // Pins only that the tab panel RENDERS the Prior Dec 31 Balance field for an
+  // inherited IRA with `rmdEnabled: false` — i.e. the `(rmdEnabled ||
+  // inheritedActive)` condition guarding the tab-panel block. It does NOT pin
+  // that a typed value reaches either PUT body's `...inheritedFields`-adjacent
+  // `priorYearEndValue` line — see the two tests below for that half.
   it("shows the Prior Dec 31 Balance field for an inherited IRA even though 'Subject to RMDs' is off", () => {
     renderForm(INHERITED);
     fireEvent.click(screen.getByRole("button", { name: "RMD" }));
     expect(screen.getByLabelText("Prior Dec 31 Balance")).toBeTruthy();
+  });
+
+  // Fix round 1, finding 2: the VALUE was unpinned — this and the next test
+  // pin the `(rmdEnabled || inheritedActive)` OR in each body builder's own
+  // `priorYearEndValue: … ? priorYearEndValue : null` line. INHERITED has
+  // `rmdEnabled: false`, so if either builder reverted to plain `rmdEnabled`,
+  // a typed Year-1 balance override would silently become null on save.
+  it("sends a typed prior Dec 31 balance for an inherited IRA via the submit path", async () => {
+    renderForm(INHERITED);
+    fireEvent.click(screen.getByRole("button", { name: "RMD" }));
+    fireEvent.change(screen.getByLabelText("Prior Dec 31 Balance"), { target: { value: "410000" } });
+    fireEvent.submit(document.getElementById("add-account-form")!);
+    const body = await putBody();
+    expect(body.priorYearEndValue).toBe("410000");
+  });
+
+  it("sends a typed prior Dec 31 balance for an inherited IRA via the saveAsync path", async () => {
+    const ref = createRef<AccountFormAutoSaveHandle>();
+    renderForm(INHERITED, { ref });
+    fireEvent.click(screen.getByRole("button", { name: "RMD" }));
+    fireEvent.change(screen.getByLabelText("Prior Dec 31 Balance"), { target: { value: "410000" } });
+    await act(async () => { await ref.current!.saveAsync(); });
+    const body = await putBody();
+    expect(body.priorYearEndValue).toBe("410000");
   });
 
   // Pins the add-account-form-level WIRING from owners/familyMembers to

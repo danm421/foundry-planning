@@ -26,7 +26,7 @@ describe("InheritedIraFields", () => {
   });
   it("prompts for a date of birth when the heir's birth year is unknown", () => {
     renderFields({ heirBirthYear: null });
-    expect(screen.getByTestId("inherited-rule-summary").textContent).toContain("Add the owner's date of birth");
+    expect(screen.getByTestId("inherited-rule-summary").textContent).toContain("Add the heir's date of birth");
   });
   it("offers the disability checkbox only for deaths in 2020 or later", () => {
     renderFields({ deathYear: "2015", ownerBirthYear: "1940" });
