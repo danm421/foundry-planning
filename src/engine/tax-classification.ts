@@ -45,15 +45,18 @@ export interface TransferTaxInput {
 }
 
 /**
- * An inherited IRA moved into a retirement account that is not itself
- * inherited is paid out: a distribution, then a contribution. A non-spouse heir
- * can neither roll it into their own IRA nor convert it. A trustee-to-trustee
- * move between inherited IRAs keeps the rollover treatment.
+ * An inherited IRA moved into any other retirement account is paid out: a
+ * distribution, then a contribution. A non-spouse heir can neither roll it into
+ * their own IRA nor convert it. Only a trustee-to-trustee move into another
+ * inherited IRA of the SAME kind keeps the rollover treatment — so an inherited
+ * source never reaches the Roth-conversion branch.
  */
 export function isInheritedPayout(
-  input: Pick<TransferTaxInput, "sourceIsInherited" | "targetIsInherited" | "targetCategory">,
+  input: Pick<TransferTaxInput, "sourceIsInherited" | "targetIsInherited" | "targetCategory" | "sourceSubType" | "targetSubType">,
 ): boolean {
-  return input.sourceIsInherited === true && input.targetIsInherited !== true && input.targetCategory === "retirement";
+  if (input.sourceIsInherited !== true || input.targetCategory !== "retirement") return false;
+  const likeForLike = input.targetIsInherited === true && input.sourceSubType === input.targetSubType;
+  return !likeForLike;
 }
 
 export interface TransferTaxResult {

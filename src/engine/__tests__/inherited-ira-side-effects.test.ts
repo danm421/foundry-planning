@@ -221,7 +221,28 @@ describe("Transfers technique: an inherited IRA keeps its own tax treatment", ()
     expect(r.basisMap.roth).toBe(20_000);
   });
 
-  it("inherited → inherited (trustee-to-trustee) stays a tax-free rollover", () => {
+  it("inherited Traditional → an inherited Roth is a distribution, not a conversion priced on the heir's pool", () => {
+    // The heir's own 20% basis must neither shelter this move nor be spent by it.
+    const own = ira("own", "traditional_ira");
+    const r = runTransfer(
+      ira("inh", "traditional_ira", INHERITED), ira("inh-roth", "roth_ira", INHERITED),
+      50_000, { inh: 300_000, own: 100_000 }, { own: 20_000 }, [own],
+    );
+    expect(r.label).not.toBe("roth_conversion");
+    expect(r.taxableOrdinaryIncome).toBe(50_000);
+    expect(r.penalty).toBe(0);
+    expect(r.basisMap.own).toBe(20_000);
+    expect(r.basisMap["inh-roth"]).toBe(50_000);
+  });
+
+  it("inherited Roth → an inherited Traditional IRA is tax-free, and all of it becomes the target's basis", () => {
+    const r = runTransfer(ira("inh-roth", "roth_ira", INHERITED), ira("inh", "traditional_ira", INHERITED), 20_000, { "inh-roth": 100_000 });
+    expect(r.taxableOrdinaryIncome).toBe(0);
+    expect(r.penalty).toBe(0);
+    expect(r.basisMap.inh).toBe(20_000);
+  });
+
+  it("inherited → inherited of the same kind (trustee-to-trustee) stays a tax-free rollover", () => {
     const r = runTransfer(
       ira("inh", "traditional_ira", INHERITED), ira("inh2", "traditional_ira", INHERITED),
       20_000, { inh: 100_000 }, { inh: 10_000 },

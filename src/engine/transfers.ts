@@ -171,7 +171,13 @@ export function applyTransfers(input: TransfersInput): TransfersResult {
     // Task 6 lands if needed—the asymmetry is acceptable if source-side ledger
     // "what left for target" semantics is preferable to "raw basis shed".
     let basisMoved: number;
-    const inheritedPayout = isInheritedPayout({ sourceIsInherited, targetIsInherited, targetCategory: targetAccount.category });
+    const inheritedPayout = isInheritedPayout({
+      sourceIsInherited,
+      targetIsInherited,
+      targetCategory: targetAccount.category,
+      sourceSubType: sourceAccount.subType,
+      targetSubType: targetAccount.subType,
+    });
     if (sourceAccount.category === "taxable" || sourceAccount.category === "cash") {
       const srcBasisBefore = basisMap[transfer.sourceAccountId] ?? 0;
       basisMap[transfer.sourceAccountId] = Math.max(0, srcBasisBefore - taxResult.basisReturn);
