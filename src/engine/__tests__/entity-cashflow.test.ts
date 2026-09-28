@@ -1,6 +1,7 @@
 // src/engine/__tests__/entity-cashflow.test.ts
 import { describe, it, expect } from "vitest";
 import {
+  buildEntityValueAtYear,
   computeBusinessAccountCashFlow,
   computeEntityCashFlow,
   type BusinessAccountMetadata,
@@ -1706,5 +1707,36 @@ describe("computeBusinessAccountCashFlow", () => {
       accountFlowOverrides: [],
     });
     expect(y.entityCashFlow.size).toBe(0);
+  });
+});
+
+describe("buildEntityValueAtYear", () => {
+  // Synthetic rows: only the fields the reader touches. The business values
+  // differ by year so a reader keyed to the wrong year cannot pass, and the
+  // trust row has no `endingTotalValue` so the kind branch is load-bearing.
+  const years = [
+    { year: 2026, entityCashFlow: new Map([
+      ["biz-1", { kind: "business", endingTotalValue: 1_000_000 }],
+    ]) },
+    { year: 2027, entityCashFlow: new Map([
+      ["biz-1", { kind: "business", endingTotalValue: 1_250_000 }],
+      ["trust-1", { kind: "trust", endingBalance: 400_000 }],
+    ]) },
+  ] as unknown as ProjectionYear[];
+  const valueAt = buildEntityValueAtYear(years);
+
+  it("reads each year's own business endingTotalValue", () => {
+    expect(valueAt("biz-1", 2026)).toBe(1_000_000);
+    expect(valueAt("biz-1", 2027)).toBe(1_250_000);
+  });
+
+  it("reads a trust row's endingBalance", () => {
+    expect(valueAt("trust-1", 2027)).toBe(400_000);
+  });
+
+  it("is 0 for an unknown entity or a year with no row", () => {
+    expect(valueAt("nope", 2027)).toBe(0);
+    expect(valueAt("trust-1", 2026)).toBe(0);
+    expect(valueAt("biz-1", 2030)).toBe(0);
   });
 });

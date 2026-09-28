@@ -95,8 +95,11 @@ export type EntityCashFlowRow = TrustCashFlowRow | BusinessCashFlowRow;
 /** An entity's end-of-year value, read off its cash-flow row: a business row's
  *  `endingTotalValue`, a trust row's `endingBalance`; 0 when the projection has
  *  no row for it that year. A `business_interest` gift with no explicit amount
- *  values at this × its percent, so the gift ledger and every surface that
- *  re-values the same gift read it through here. */
+ *  values at this × its percent. Three surfaces read it through here so they
+ *  agree: the projection's gift ledger (`runProjectionWithEvents`), the trust
+ *  dialog's exemption summary (`/api/clients/[id]/gifts/ledger`), and the Gift
+ *  Tax report's recipient drilldown. The death-event adjusted-taxable-gifts
+ *  path (`lib/estate/adjusted-taxable-gifts.ts`) does not supply it yet. */
 export function buildEntityValueAtYear(
   years: ProjectionYear[],
 ): (entityId: string, year: number) => number {

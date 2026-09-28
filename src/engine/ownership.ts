@@ -182,17 +182,20 @@ export function controllingEntity(a: OwnedThing): string | null {
   return (entityRows[0] as { entityId: string }).entityId;
 }
 
-/** Shared body of `ownersForYear` and `liabilityOwnersForYear` (and, from the
- *  business-interest work, `entityOwnersForYear`). The three differ ONLY in
- *  which events they select and what noun their errors use, so the composition
- *  rules — proportional household shrink, recipient merge, sum-to-1 validation
- *  — live here once. */
+/** Shared body of `ownersForYear`, `liabilityOwnersForYear` and
+ *  `entityOwnersForYear`. The three differ ONLY in which events they select,
+ *  what noun their errors use, and the total their owners must keep, so the
+ *  composition rules — proportional household shrink, recipient merge, and the
+ *  conservation check (a gift moves share; it never creates or destroys it, so
+ *  the composed owners sum to `expectedTotal`: 1 for an account or liability,
+ *  the authored sum for an entity) — live here once. */
 function composeOwnersForYear(
   staticOwners: AccountOwner[],
   events: Array<{ year: number; percent: number } & Parameters<typeof recipientOwnerRow>[0]>,
   year: number,
   fn: string,
   noun: string,
+  expectedTotal = 1,
 ): AccountOwner[] {
   let owners: AccountOwner[] = staticOwners.map((o) => ({ ...o }));
   const sorted = [...events].sort((a, b) => a.year - b.year);
@@ -243,9 +246,9 @@ function composeOwnersForYear(
   }
 
   const total = owners.reduce((s, o) => s + o.percent, 0);
-  if (Math.abs(total - 1) > 1e-6) {
+  if (Math.abs(total - expectedTotal) > 1e-6) {
     throw new Error(
-      `${fn}: composed owners for ${noun} at year ${year} sum to ${total}, expected 1`,
+      `${fn}: composed owners for ${noun} at year ${year} sum to ${total}, expected ${expectedTotal}`,
     );
   }
   return owners;
@@ -281,7 +284,12 @@ export function ownersForYear(
  *  `entity_owners` table rather than `account_owners`, and the gift event names
  *  `entityId` rather than `accountId` — otherwise the composition rules are
  *  identical, which is why all three share one composer. An entity has no
- *  death-partition marker, so there is no `giftAlreadyReflected` clause. */
+ *  death-partition marker, so there is no `giftAlreadyReflected` clause.
+ *
+ *  Unlike an account's, an entity's owner rows need not sum to 1: a business
+ *  can be created with none, a foundation never gets any, and an unmodelled
+ *  outside partner leaves the household's rows short (e.g. one member at 0.5).
+ *  So the composer checks conservation against the AUTHORED sum, not 1. */
 export function entityOwnersForYear(
   entity: { id: string; owners: AccountOwner[] },
   giftEvents: GiftEvent[],
@@ -295,8 +303,9 @@ export function entityOwnersForYear(
       e.year >= projectionStartYear &&
       e.year <= year,
   ) as Array<Extract<GiftEvent, { kind: "business_interest" }>>;
+  const authoredTotal = entity.owners.reduce((s, o) => s + o.percent, 0);
   return composeOwnersForYear(
-    entity.owners, events, year, "entityOwnersForYear", `entity ${entity.id}`,
+    entity.owners, events, year, "entityOwnersForYear", `entity ${entity.id}`, authoredTotal,
   );
 }
 

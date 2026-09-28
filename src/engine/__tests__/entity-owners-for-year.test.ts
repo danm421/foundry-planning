@@ -48,6 +48,33 @@ describe("entityOwnersForYear", () => {
       percent: 0.3, grantor: "client", recipientEntityId: "trust-1" }];
     expect(entityOwnersForYear(ENT, g, 2030, 2026)).toEqual(ENT.owners);
   });
+
+  // Entity owners carry no sum-to-1 rule — a business can be created with no
+  // owner rows, and an unmodelled outside partner leaves the household's rows
+  // short of 1. The resolver's invariant is conservation: a gift moves share,
+  // it never creates or destroys it.
+  it("returns [] for an owner-less entity with no gifts — no throw", () => {
+    expect(entityOwnersForYear({ id: "biz-1", owners: [] }, [], 2030, 2026)).toEqual([]);
+  });
+
+  it("gifts from a household that owns only half the business — no throw", () => {
+    const half = { id: "biz-1", owners: [
+      { kind: "family_member" as const, familyMemberId: "fm-c", percent: 0.5 },
+    ]};
+    const g: GiftEvent[] = [{ kind: "business_interest", year: 2028, entityId: "biz-1",
+      percent: 0.1, grantor: "client", recipientEntityId: "trust-1" }];
+    expect(entityOwnersForYear(half, g, 2030, 2026)).toEqual([
+      { kind: "family_member", familyMemberId: "fm-c", percent: 0.4 },
+      { kind: "entity", entityId: "trust-1", percent: 0.1 },
+    ]);
+  });
+
+  it("still refuses a gift from an owner-less entity — there is no household share to give", () => {
+    const g: GiftEvent[] = [{ kind: "business_interest", year: 2028, entityId: "biz-1",
+      percent: 0.1, grantor: "client", recipientEntityId: "trust-1" }];
+    expect(() => entityOwnersForYear({ id: "biz-1", owners: [] }, g, 2030, 2026))
+      .toThrow(/no household share remaining/);
+  });
 });
 
 describe("a business_interest gift with no explicit amount values at the business's worth", () => {
