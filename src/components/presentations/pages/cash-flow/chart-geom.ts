@@ -14,7 +14,11 @@ import type { ChartSpec } from "@/lib/presentations/charts/types";
  * on a bar centre, and a test that recomputed that centre from its own copy of
  * these numbers would go on passing after the chart's changed underneath it.
  */
-export function bandScale(spec: ChartSpec) {
+export function bandScale(spec: {
+  width: number;
+  margin: { left: number; right: number };
+  xAxis: { domain: number[] };
+}) {
   return scaleBand<number>()
     .domain(spec.xAxis.domain)
     .range([0, spec.width - spec.margin.left - spec.margin.right])

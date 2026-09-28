@@ -29,8 +29,9 @@ export function PlanStoryChapterChartPdf({ chart }: { chart: PlanStoryChart }) {
         />
       );
     case "taxBars":
-      // 440pt, hard-coded and inside 478 — no prop to pass.
-      return <TaxSummaryChartPdf bars={chart.bars} />;
+      // 440pt, the size it was tuned at before the Tax Summary sheet sized it
+      // to its own panel — inside 478.
+      return <TaxSummaryChartPdf bars={chart.bars} width={440} height={150} />;
     case "estateBars":
       // 300pt, hard-coded and inside 478. `totals` is what makes the money under
       // its bars read in the same spelling as the prose beside it — see the

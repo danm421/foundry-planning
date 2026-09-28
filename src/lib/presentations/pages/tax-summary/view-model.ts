@@ -15,6 +15,9 @@ import {
   type CapGainsEventRow,
 } from "./aggregate";
 import { buildTaxNarrative } from "./narrative";
+import { BRACKET_CHART_FRAME } from "./layout";
+import { buildBracketChartSpec } from "../../charts/bracket-chart-spec";
+import type { ChartSpec } from "../../charts/types";
 
 /** One field per rendered tile. The four amounts are disjoint and sum to
  *  `lifetimeTotal`; the whole federal bill (gains included) is deliberately not
@@ -36,6 +39,8 @@ export interface TaxSummaryPageData {
   kpis: TaxSummaryKpis;
   chart: TaxYearBar[];
   bracket: BracketExposure | null;
+  /** The Tax Bracket chart — bracket mode only; a flat-tax plan has no floors. */
+  bracketChart: ChartSpec | null;
   composition: RetirementComposition | null;
   narrative: string[];
 }
@@ -54,6 +59,9 @@ export function buildTaxSummaryData(
   const bracketRows = buildTaxBracketRows(years);
   const bracket = bracketMode
     ? computeBracketExposure(bracketRows, options.lowThreshold, options.highThreshold)
+    : null;
+  const bracketChart = bracketMode && !isEmpty
+    ? buildBracketChartSpec(years, [], BRACKET_CHART_FRAME)
     : null;
 
   const composition = computeRetirementComposition(years, clientData);
@@ -109,6 +117,7 @@ export function buildTaxSummaryData(
     },
     chart: bars,
     bracket,
+    bracketChart,
     composition,
     narrative,
   };

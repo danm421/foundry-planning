@@ -2,6 +2,7 @@ import { View, Svg, G, Rect, Text as SvgText, Text } from "@react-pdf/renderer";
 import { PRESENTATION_THEME as T } from "@/lib/presentations/theme";
 import type { TaxYearBar } from "@/lib/presentations/pages/tax-summary/aggregate";
 import { bandLabelIndices } from "@/lib/presentations/charts/axis";
+import { bandScale } from "../cash-flow/chart-geom";
 
 const SEGMENTS: Array<{ key: keyof TaxYearBar; label: string; color: string }> = [
   { key: "federalOrdinary", label: "Federal (ordinary)", color: T.crit },
@@ -10,13 +11,21 @@ const SEGMENTS: Array<{ key: keyof TaxYearBar; label: string; color: string }> =
   { key: "payroll", label: "Payroll", color: T.ink3 },
 ];
 
-export function TaxSummaryChartPdf({ bars }: { bars: TaxYearBar[] }) {
-  const width = 440;
-  const height = 150;
-  const leftPad = 6;
+export function TaxSummaryChartPdf({
+  bars, width, height, inset = { left: 6, right: 0 },
+}: {
+  bars: TaxYearBar[];
+  width: number;
+  height: number;
+  /** Where the bars start and stop. The sheet passes the bracket chart's plot
+   *  margins when that chart sits underneath: both lay their bars on the same
+   *  `bandScale`, so each year's bar stands over the same year below it. */
+  inset?: { left: number; right: number };
+}) {
   const plotH = height - 22; // room for x labels
   const n = Math.max(1, bars.length);
-  const slot = (width - leftPad) / n;
+  const band = bandScale({ width, margin: inset, xAxis: { domain: bars.map((b) => b.year) } });
+  const slot = band.step();
   const barWidth = Math.max(2, Math.min(18, slot * 0.7));
   const maxTotal = Math.max(1, ...bars.map((b) => b.total));
   // Show ~8 evenly spaced year labels regardless of horizon length.
@@ -32,7 +41,7 @@ export function TaxSummaryChartPdf({ bars }: { bars: TaxYearBar[] }) {
     <View>
       <Svg width={width} height={height}>
         {bars.map((b, i) => {
-          const x = leftPad + i * slot + (slot - barWidth) / 2;
+          const x = inset.left + (band(b.year) ?? 0) + (band.bandwidth() - barWidth) / 2;
           let yCursor = plotH;
           return (
             <G key={b.year}>

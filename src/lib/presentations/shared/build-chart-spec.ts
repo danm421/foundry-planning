@@ -35,16 +35,22 @@ export interface BuildDrillChartSpecInput {
    *  caller is responsible for the data fitting under it. Omitted → sized
    *  from the data. */
   yMax?: number;
+  /** Canvas size and margins, for a chart that shares its sheet with other
+   *  panels. Omitted → the full-width drill chart. */
+  frame?: Pick<ChartSpec, "width" | "height" | "margin">;
 }
+
+const DRILL_FRAME: Pick<ChartSpec, "width" | "height" | "margin"> = {
+  width: 540,
+  height: 260,
+  margin: { top: 24, right: 16, bottom: 56, left: 64 },
+};
 
 export function buildDrillChartSpec(
   input: BuildDrillChartSpecInput,
 ): ChartSpec {
   const { years, stacks, lines = [], markers } = input;
-
-  const width = 540;
-  const height = 260;
-  const margin = { top: 24, right: 16, bottom: 56, left: 64 };
+  const { width, height, margin } = input.frame ?? DRILL_FRAME;
 
   const xDomain = years;
   const xExtent = extent(years) as [number, number];
