@@ -3,6 +3,7 @@ import { runProjection } from "../projection";
 import { buildClientData, basePlanSettings, baseClient } from "./fixtures";
 import { TAX_YEAR_2026 } from "./_fixtures/tax-year-2026";
 import { LEGACY_FM_CLIENT } from "../ownership";
+import { describeInheritedRule, resolveInheritedRule } from "../inherited-ira";
 import type { Account, Expense, FamilyMember, RothConversion } from "../types";
 
 // Spec example 2: owner born 1945 died 2022 (had started RMDs); heir (the
@@ -239,6 +240,36 @@ describe("projection — inherited Roth payout is reported as non-taxable income
     const y = year2032({ withChecking: false, expense2032: 450_000 });
     expect(y.withdrawals.byAccount["acct-brokerage"]).toBeGreaterThan(0);
     expect(y.taxResult!.income.nonTaxableIncome).toBeCloseTo(400_000, 6);
+  });
+});
+
+describe("projection — a stretch IRA empties when life expectancy runs out (spec example 7)", () => {
+  // Owner born 1940 died 2015 (had started RMDs); heir born 1935. The divisor is
+  // the owner's remaining life expectancy, 14.8 − (Y − 2015): 3.8 in 2026, 0.8 in 2029.
+  it("pays out the remaining balance in 2029, the year the RMD tab names", () => {
+    const heirDob = "1935-01-01";
+    const data = buildClientData({
+      client: { ...baseClient, dateOfBirth: heirDob, planEndAge: 100, lifeExpectancy: 100, spouseName: undefined, spouseDob: undefined },
+      familyMembers: [{ ...soloClient[0], dateOfBirth: heirDob }],
+      accounts: [checking, inheritedIra({ value: 100_000, inheritedDeathYear: 2015, inheritedOwnerBirthYear: 1940 })],
+      incomes: [], expenses: [], liabilities: [], savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2031 },
+    });
+    const years = runProjection(data);
+    const at = (y: number) => years.find((r) => r.year === y)!.accountLedgers["acct-inh"];
+
+    // At 0% growth: 2026–2028 remove 1/3.8, 1/2.8, 1/1.8 of the opening balance.
+    expect(at(2028).rmdAmount).toBeGreaterThan(0);
+    expect(at(2028).endingValue).toBeGreaterThan(0);
+    const final = at(2029);
+    expect(final.rmdAmount).toBeCloseTo(100_000 * (2.8 / 3.8) * (1.8 / 2.8) * (0.8 / 1.8), 6);
+    expect(final.endingValue).toBe(0);
+    expect(final.entries.some((e) => e.label === "Inherited IRA RMD (life expectancy exhausted, final payout)")).toBe(true);
+    expect(at(2030).endingValue).toBe(0);
+
+    const input = { deathYear: 2015, ownerBirthYear: 1940, heirBirthYear: 1935, heirDisabled: false, isRoth: false };
+    expect(describeInheritedRule(input, resolveInheritedRule(input), 2026)).toContain("Life expectancy runs out in 2029");
   });
 });
 

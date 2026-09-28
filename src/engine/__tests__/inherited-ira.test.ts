@@ -193,13 +193,57 @@ describe("describeInheritedRule", () => {
     expect(say(EX4)).toContain("Roth IRA owners never start RMDs");
     expect(say(EX4)).toContain("tax-free");
   });
-  it("stretch by age gap quotes the divisor for the reference year", () => {
-    expect(say(EX5)).toContain("no more than 10 years younger");
-    expect(say(EX5)).toContain("Divisor 19.7 in 2026");
+  it("stretch by age gap quotes the divisor for the reference year and the year life expectancy runs out", () => {
+    // Heir LE 23.7 in 2022, 1 less each year → 0.7 in 2045 (2022 + 23).
+    expect(say(EX5)).toBe(
+      "Stretch — yearly RMDs over life expectancy because the heir is no more than 10 years younger than the original owner. " +
+        "Divisor 19.7 in 2026, then 1 less each year. Life expectancy runs out in 2045, when the remaining balance comes out.",
+    );
   });
   it("pre-SECURE stretch", () => {
     expect(say(EX1)).toContain("before 2020");
     expect(say(EX1)).toContain("Divisor 25.3 in 2026");
+    // Heir LE 35.3 in 2016 → 0.3 in 2051; the owner's 14.8 from 2015 ran out long before.
+    expect(say(EX1)).toContain("Life expectancy runs out in 2051");
+  });
+  it("stretch by disability names the reason", () => {
+    expect(say(EX6)).toContain("because the heir is disabled or chronically ill.");
+    expect(say(EX6)).toContain("Divisor 49.5 in 2026");
+  });
+  it("'greater of' runs out on the owner's life expectancy: EX7 empties in 2029", () => {
+    // Owner LE 14.8 in 2015 → 0.8 in 2029; the heir's 10.5 from 2016 is lower every year.
+    expect(say(EX7)).toContain("Divisor 3.8 in 2026, then 1 less each year. Life expectancy runs out in 2029, when the remaining balance comes out.");
+  });
+  it("never quotes a divisor once life expectancy has already run out", () => {
+    // EX7 in 2030: max(10.5 − 14, 14.8 − 15) = −0.2.
+    const text = describeInheritedRule(EX7, resolveInheritedRule(EX7), 2030);
+    expect(text).toBe(
+      "Stretch — life expectancy has run out, so the full balance comes out in 2030. " +
+        "The stretch applies because the original owner died before 2020 (pre-SECURE Act).",
+    );
+  });
+  it("keeps the Roth tax-free note in both stretch sentences", () => {
+    const roth5: InheritedIraInput = { ...EX5, isRoth: true };
+    expect(describeInheritedRule(roth5, resolveInheritedRule(roth5), 2026)).toMatch(/runs out in 2045, when the remaining balance comes out\. Distributions are tax-free\.$/);
+    // A Roth owner never started RMDs, so EX7's divisor is the heir's alone: 10.5 − 10 = 0.5 in 2026.
+    const roth7: InheritedIraInput = { ...EX7, isRoth: true };
+    expect(describeInheritedRule(roth7, resolveInheritedRule(roth7), 2026)).toMatch(/full balance comes out in 2026\. .* Distributions are tax-free\.$/);
+  });
+  it("quotes the first distribution year when the reference year is the year of death", () => {
+    // Death 2026 with a 2026 plan start: the first RMD year is 2027, heir age 69 → SLT 19.6.
+    const died2026: InheritedIraInput = { ...EX5, deathYear: 2026 };
+    expect(say(died2026)).toContain("Divisor 19.6 in 2027");
+  });
+  it.each([
+    ["EX1", EX1],
+    ["EX5", EX5],
+    ["EX6", EX6],
+    ["EX7", EX7],
+  ])("%s: the year the text names is the year the RMD step pays out the whole balance", (_, input) => {
+    const named = Number(/runs out in (\d{4})/.exec(say(input))![1]);
+    let payoutYear = 2026;
+    while (payoutYear < 2200 && !run(input, payoutYear, 100_000).r.fullPayout) payoutYear++;
+    expect(named).toBe(payoutYear);
   });
 });
 

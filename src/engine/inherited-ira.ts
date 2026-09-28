@@ -174,8 +174,21 @@ export function describeInheritedRule(input: InheritedIraInput, rule: InheritedI
     : rule.stretchReason === "age_gap" ? "the heir is no more than 10 years younger than the original owner"
     : "the heir is disabled or chronically ill";
   const year = Math.max(input.deathYear + 1, referenceYear);
+  const runsOut = lifeExpectancyRunsOutYear(input, rule, year);
+  if (runsOut === year) {
+    return `Stretch — life expectancy has run out, so the full balance comes out in ${year}. The stretch applies because ${why}.${taxNote}`;
+  }
   const divisor = inheritedDivisor(input, rule, year);
-  return `Stretch — yearly RMDs over life expectancy because ${why}. Divisor ${divisor.toFixed(1)} in ${year}, then 1 less each year. No deadline to empty the account.${taxNote}`;
+  return `Stretch — yearly RMDs over life expectancy because ${why}. Divisor ${divisor.toFixed(1)} in ${year}, then 1 less each year. Life expectancy runs out in ${runsOut}, when the remaining balance comes out.${taxNote}`;
+}
+
+/** First year from `fromYear` whose divisor is ≤ 1 — the year `inheritedRmdForYear`
+ *  pays out the whole balance. The divisor falls by exactly 1 a year and starts
+ *  no higher than the table's top entry, so the table's length bounds the loop. */
+function lifeExpectancyRunsOutYear(input: InheritedIraInput, rule: InheritedIraRule, fromYear: number): number {
+  let year = fromYear;
+  while (year < fromYear + SINGLE_LIFE_TABLE.length && inheritedDivisor(input, rule, year) > 1) year++;
+  return year;
 }
 
 /** Ledger label for one year's inherited RMD. */
