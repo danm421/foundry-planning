@@ -64,6 +64,15 @@ export interface ClientMilestones {
   spouseSS70?: number;
 }
 
+/** The year of a `YYYY-MM-DD` date, read off the string exactly as the
+ *  projection reads a birth year. `new Date(dob).getFullYear()` parses a
+ *  date-only string as UTC midnight, so a Jan-1 date reads as the prior year
+ *  west of UTC. Only the exposed birth years use this; the milestone years
+ *  below still go through `Date` (moving them is future work). */
+function yearOfDateString(date: string): number {
+  return parseInt(date.slice(0, 4), 10);
+}
+
 /**
  * Build ClientMilestones from client + plan settings data.
  * FRA defaults to 67 (born 1960+).
@@ -80,7 +89,7 @@ export function buildClientMilestones(client: {
   const milestones: ClientMilestones = {
     planStart: planStartYear,
     planEnd: planEndYear,
-    clientBirthYear,
+    clientBirthYear: yearOfDateString(client.dateOfBirth),
     clientRetirement: clientBirthYear + client.retirementAge,
     clientEnd: clientBirthYear + client.planEndAge,
     clientSS62: clientBirthYear + 62,
@@ -89,7 +98,7 @@ export function buildClientMilestones(client: {
   };
 
   if (client.spouseDob) {
-    milestones.spouseBirthYear = new Date(client.spouseDob).getFullYear();
+    milestones.spouseBirthYear = yearOfDateString(client.spouseDob);
   }
 
   if (client.spouseDob && client.spouseRetirementAge != null) {
