@@ -3,6 +3,7 @@ import { categorizeDraw } from "../withdrawal";
 import { classifyTransferTax } from "../tax-classification";
 import { computeTradIraPool, iraPoolKey } from "../ira-basis";
 import { applyRothConversions } from "../roth-conversions";
+import { applyTransfers } from "../transfers";
 import type { Account, AccountLedger, RothConversion } from "../types";
 
 const OWNER = [{ kind: "family_member" as const, familyMemberId: "fm-client", percent: 1 }];
@@ -49,6 +50,23 @@ describe("early-withdrawal penalty does not apply to an inherited IRA (§72(t)(2
     expect(classifyTransferTax({ ...input, sourceIsInherited: true }).earlyWithdrawalPenalty).toBe(0);
     expect(classifyTransferTax(input).earlyWithdrawalPenalty).toBe(1_000);
   });
+  it("applyTransfers hands the inherited flag to the classifier", () => {
+    const brokerage: Account = { ...ira("brk", "brokerage"), category: "taxable", value: 0 };
+    const penaltyFrom = (source: Account) =>
+      applyTransfers({
+        transfers: [{
+          id: "t", name: "Move out", sourceAccountId: source.id, targetAccountId: "brk",
+          amount: 10_000, mode: "one_time", startYear: 2026, growthRate: 0, schedules: [],
+        }],
+        accounts: [source, brokerage],
+        accountBalances: { [source.id]: 100_000, brk: 0 },
+        basisMap: { [source.id]: 0, brk: 0 },
+        accountLedgers: { [source.id]: ledger(100_000), brk: ledger(0) },
+        year: 2026, ownerAges: { client: 45 },
+      }).earlyWithdrawalPenalty;
+    expect(penaltyFrom(ira("inh", "traditional_ira", INHERITED))).toBe(0);
+    expect(penaltyFrom(ira("own", "traditional_ira"))).toBe(1_000);
+  });
 });
 
 describe("an inherited Traditional IRA is its own Form 8606 pool", () => {
@@ -85,5 +103,26 @@ describe("an inherited IRA is never a Roth-conversion source", () => {
     expect(r.taxableOrdinaryIncome).toBe(100_000);
     expect(accountBalances.inh).toBe(50_000);
     expect(accountBalances.own).toBe(0);
+  });
+  it("the inherited IRA's basis neither shelters nor funds the heir's own conversion", () => {
+    const own = ira("own", "traditional_ira");
+    const inh = ira("inh", "traditional_ira", INHERITED);
+    const roth = ira("roth", "roth_ira", { value: 0 });
+    const conv: RothConversion = {
+      id: "rc", name: "Convert own", destinationAccountId: "roth",
+      sourceAccountIds: ["own"], conversionType: "full_account",
+      fixedAmount: 0, startYear: 2026, indexingRate: 0,
+    };
+    // The inherited IRA is all post-tax basis. Pooled with the heir's $0-basis
+    // IRA it would make a third of the conversion tax-free and lose basis.
+    const basisMap: Record<string, number> = { own: 0, inh: 50_000, roth: 0 };
+    const r = applyRothConversions({
+      conversions: [conv], accounts: [own, inh, roth],
+      accountBalances: { own: 100_000, inh: 50_000, roth: 0 }, basisMap,
+      accountLedgers: { own: ledger(100_000), inh: ledger(50_000), roth: ledger(0) },
+      year: 2026, ownerAges: { client: 51 },
+    });
+    expect(r.taxableOrdinaryIncome).toBe(100_000);
+    expect(basisMap.inh).toBe(50_000);
   });
 });

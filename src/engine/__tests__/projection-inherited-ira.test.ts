@@ -248,3 +248,84 @@ describe("projection — a non-inherited IRA is unchanged", () => {
     expect(year.accountLedgers["acct-inh"].rmdAmount).toBe(0);
   });
 });
+
+describe("projection — a pre-59½ voluntary draw from an inherited Traditional IRA (§72(t)(2)(A)(ii))", () => {
+  // The heir is 51 in 2026. The inherited RMD (~11,396) and $5,000 of checking
+  // cannot cover a $100,000 expense, so the withdrawal strategy draws the rest
+  // from the same IRA, beyond its RMD.
+  function year2026(acct: Account) {
+    const data = buildClientData({
+      client: { ...baseClient, dateOfBirth: `${HEIR_BIRTH_YEAR}-01-01`, spouseName: undefined, spouseDob: undefined },
+      familyMembers: soloClient,
+      accounts: [checking, acct],
+      incomes: [], liabilities: [], savingsRules: [],
+      expenses: [{ id: "exp-2026", name: "One-off", type: "living", annualAmount: 100_000, growthRate: 0, startYear: 2026, endYear: 2026 }],
+      withdrawalStrategy: [{ accountId: "acct-inh", priorityOrder: 1, startYear: 2026, endYear: 2034 }],
+      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2027, taxEngineMode: "bracket" },
+      taxYearRows: [TAX_YEAR_2026],
+    });
+    return runProjection(data).find((r) => r.year === 2026)!;
+  }
+
+  it("is ordinary income with no early-withdrawal penalty", () => {
+    const y = year2026(inheritedIra());
+    const draw = y.withdrawals.byAccount["acct-inh"] ?? 0;
+    expect(draw).toBeGreaterThan(50_000);
+    expect(y.taxDetail!.bySource["withdrawal:acct-inh"]).toEqual({ type: "ordinary_income", amount: draw });
+    expect(y.taxResult!.flow.earlyWithdrawalPenalty).toBe(0);
+    expect(y.expenses.bySource["withdrawal_penalty:acct-inh"]).toBeUndefined();
+  });
+
+  it("control: the same draw from the heir's own IRA is penalized 10%", () => {
+    const y = year2026(inheritedIra({ inheritedDeathYear: null, inheritedOwnerBirthYear: null }));
+    const draw = y.withdrawals.byAccount["acct-inh"] ?? 0;
+    expect(draw).toBeGreaterThan(50_000);
+    expect(y.taxResult!.flow.earlyWithdrawalPenalty).toBeCloseTo(draw * 0.1, 6);
+    expect(y.expenses.bySource["withdrawal_penalty:acct-inh"]).toBeCloseTo(draw * 0.1, 6);
+  });
+});
+
+describe("projection — a Roth conversion never draws from an inherited IRA", () => {
+  const ownRoth: Account = {
+    id: "acct-own-roth", name: "Own Roth", category: "retirement", subType: "roth_ira",
+    titlingType: "jtwros", value: 0, basis: 0, growthRate: 0, rmdEnabled: false,
+    owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+  };
+
+  // Checking is large enough to pay the conversion's tax without a draw.
+  function year2026(acct: Account) {
+    const data = buildClientData({
+      client: { ...baseClient, dateOfBirth: `${HEIR_BIRTH_YEAR}-01-01`, spouseName: undefined, spouseDob: undefined },
+      familyMembers: soloClient,
+      accounts: [{ ...checking, value: 200_000, basis: 200_000 }, acct, ownRoth],
+      incomes: [], expenses: [], liabilities: [], savingsRules: [],
+      withdrawalStrategy: [],
+      rothConversions: [{
+        id: "rc", name: "Convert 50k", destinationAccountId: ownRoth.id, sourceAccountIds: ["acct-inh"],
+        conversionType: "fixed_amount", fixedAmount: 50_000, startYear: 2026, endYear: 2026, indexingRate: 0,
+      }],
+      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2027 },
+    });
+    return runProjection(data).find((r) => r.year === 2026)!;
+  }
+
+  it("converts nothing: no conversion outflow, no Roth inflow, no conversion income", () => {
+    const y = year2026(inheritedIra());
+    const inh = y.accountLedgers["acct-inh"];
+    expect(inh.entries.filter((e) => e.sourceId === "rc")).toEqual([]);
+    // Only the inherited RMD left the account.
+    expect(inh.distributions).toBeCloseTo(400_000 / 35.1, 6);
+    expect(inh.endingValue).toBeCloseTo(400_000 - 400_000 / 35.1, 6);
+    expect(y.accountLedgers["acct-own-roth"].endingValue).toBe(0);
+    expect(y.taxDetail!.bySource["roth_conversion:rc"]).toBeUndefined();
+    expect((y.rothConversions ?? []).filter((c) => c.gross > 0)).toEqual([]);
+  });
+
+  it("control: without the inherited fields the same conversion moves $50,000", () => {
+    const y = year2026(inheritedIra({ inheritedDeathYear: null, inheritedOwnerBirthYear: null }));
+    const out = y.accountLedgers["acct-inh"].entries.filter((e) => e.sourceId === "rc");
+    expect(out.map((e) => e.amount)).toEqual([-50_000]);
+    expect(y.accountLedgers["acct-own-roth"].endingValue).toBe(50_000);
+    expect(y.taxDetail!.bySource["roth_conversion:rc"]?.amount).toBe(50_000);
+  });
+});
