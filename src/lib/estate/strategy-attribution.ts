@@ -6,7 +6,8 @@
  *   - Procrastination card: top trust gift's value gap if delayed by N years
  */
 
-import type { ClientData, ProjectionYear } from "@/engine/types";
+import type { Account, ClientData, ProjectionYear } from "@/engine/types";
+import { ownersForYearSafe } from "@/lib/estate/owners-or-household";
 
 /** Fallback annual growth rate when an account has no explicit growthRate. */
 const DEFAULT_TRUST_GROWTH_RATE = 0.06;
@@ -30,13 +31,13 @@ export function rankTrustsByContribution(
 
     const isIlit =
       entity.trustSubType === "ilit" ||
-      hasLifeInsurancePolicy(tree, entity.id);
+      hasLifeInsurancePolicy(tree, entity.id, withResult);
 
     if (isIlit) {
       // ILIT classification is exclusive: non-insurance accounts owned by an ILIT
       // (e.g. cash to cover premium shortfalls) are intentionally excluded from
       // primaryAmount. The card is meant to surface the death benefit headline.
-      const faceValue = totalIlitFaceValue(tree, entity.id);
+      const faceValue = totalIlitFaceValue(tree, entity.id, withResult);
       ranked.push({
         trustId: entity.id,
         trustName: entity.name ?? "ILIT",
@@ -45,7 +46,6 @@ export function rankTrustsByContribution(
         cardKind: "ilit",
       });
     } else {
-      const giftAmount = totalGiftsToEntity(tree, entity.id);
       const compoundedValue = compoundedTrustValueAtFinalYear(
         entity.id,
         tree,
@@ -55,10 +55,7 @@ export function rankTrustsByContribution(
         trustId: entity.id,
         trustName: entity.name ?? "Trust",
         trustSubType: entity.trustSubType,
-        // Floor: if the projection produced $0 (e.g. trust fully distributed by final
-        // year, or no ledger entry), fall back to total gifts contributed. We never
-        // want $0 on a strategy card if the trust was actually funded.
-        primaryAmount: compoundedValue > 0 ? compoundedValue : giftAmount,
+        primaryAmount: compoundedValue,
         cardKind: "gifting",
       });
     }
@@ -67,24 +64,63 @@ export function rankTrustsByContribution(
   return ranked.sort((a, b) => b.primaryAmount - a.primaryAmount);
 }
 
-function hasLifeInsurancePolicy(tree: ClientData, entityId: string): boolean {
+/**
+ * Gift-aware ownership resolver shared by every "does this entity hold a
+ * slice of this account, and how much" read below. `account.owners` is only
+ * the pre-gift baseline — a trust funded purely by an asset-gift event has
+ * no authored entity row at all, so a caller that reads
+ * `account.owners.find(...)` directly never sees it. Resolve through the
+ * overlay instead.
+ */
+function entityPctAt(
+  account: Account,
+  entityId: string,
+  lastYear: ProjectionYear | undefined,
+  tree: ClientData,
+): number {
+  const published = lastYear?.accountOwners?.get(account.id);
+  // A partitioned pool is already net of every gift up to the death that
+  // partitioned it (9C) — re-applying the overlay on top would double-subtract.
+  const owners =
+    published?.giftsReflectedThrough != null
+      ? published.owners
+      : ownersForYearSafe(
+          account,
+          tree.giftEvents ?? [],
+          lastYear?.year ?? tree.planSettings.planEndYear,
+          tree.planSettings.planStartYear,
+        );
+  return owners
+    .filter((o) => o.kind === "entity" && o.entityId === entityId)
+    .reduce((sum, o) => sum + o.percent, 0);
+}
+
+function hasLifeInsurancePolicy(
+  tree: ClientData,
+  entityId: string,
+  withResult: ProjectionYear[],
+): boolean {
+  const lastYear = withResult[withResult.length - 1];
   return tree.accounts.some(
     (a) =>
       a.category === "life_insurance" &&
-      a.owners.some((o) => o.kind === "entity" && o.entityId === entityId),
+      entityPctAt(a, entityId, lastYear, tree) > 0,
   );
 }
 
-function totalIlitFaceValue(tree: ClientData, entityId: string): number {
+function totalIlitFaceValue(
+  tree: ClientData,
+  entityId: string,
+  withResult: ProjectionYear[],
+): number {
+  const lastYear = withResult[withResult.length - 1];
   let total = 0;
   for (const account of tree.accounts) {
     if (account.category !== "life_insurance") continue;
-    const slice = account.owners.find(
-      (o) => o.kind === "entity" && o.entityId === entityId,
-    );
-    if (!slice) continue;
+    const pct = entityPctAt(account, entityId, lastYear, tree);
+    if (pct <= 0) continue;
     const face = account.lifeInsurance?.faceValue ?? 0;
-    total += face * slice.percent;
+    total += face * pct;
   }
   return total;
 }
@@ -111,25 +147,20 @@ function compoundedTrustValueAtFinalYear(
     total += lastYear.accountLedgers?.[id]?.endingValue ?? 0;
   }
   for (const account of tree.accounts) {
-    const slice = account.owners.find(
-      (o) => o.kind === "entity" && o.entityId === entityId,
-    );
-    if (!slice) continue;
-    const published = lastYear.accountOwners?.get(account.id);
-    // A partitioned pool: the entity's share left as the slice above; it owns
-    // only what the pool's published owners still give it.
-    if (published?.giftsReflectedThrough != null) {
-      const p = published.owners.find((o) => o.kind === "entity" && o.entityId === entityId);
-      if (!p) continue;
-    }
+    // Year-resolved: a trust funded purely by an asset-gift event has no
+    // authored entity row, so selecting off `account.owners` directly would
+    // skip it entirely and fall through to a fabricated floor. (Partitioned
+    // pools are handled inside the resolver — see `entityPctAt`.)
+    const pct = entityPctAt(account, entityId, lastYear, tree);
+    if (pct <= 0) continue;
     const ledger = lastYear.accountLedgers?.[account.id];
     if (!ledger) continue;
     // Prefer the engine's locked entity share so household withdrawals on a
     // split-owned account don't drain the trust slice. Falls back to the
-    // authored percent for 100%-trust accounts (where the engine doesn't
-    // publish a locked share — slice.percent === 1 makes the math identical).
+    // resolved percent for 100%-trust accounts (where the engine doesn't
+    // publish a locked share — pct === 1 makes the math identical).
     const locked = lastYear.entityAccountSharesEoY?.get(entityId)?.get(account.id);
-    total += locked ?? (ledger.endingValue ?? 0) * slice.percent;
+    total += locked ?? (ledger.endingValue ?? 0) * pct;
   }
   return total;
 }
@@ -167,7 +198,7 @@ export function computeTrustCardData(args: ComputeTrustCardArgs): TrustCard {
   const giftYear = giftEvent?.year ?? withResult[0]?.year ?? finalDeathYear;
   const yearsRaw = finalDeathYear - giftYear;
   const years = Math.max(1, yearsRaw);
-  const growthRate = inferGrowthRateFromTrust(tree, ranked.trustId);
+  const growthRate = inferGrowthRateFromTrust(tree, ranked.trustId, withResult);
 
   const subTypeLabel = (ranked.trustSubType ?? "TRUST").toUpperCase();
 
@@ -179,14 +210,17 @@ export function computeTrustCardData(args: ComputeTrustCardArgs): TrustCard {
   };
 }
 
-function inferGrowthRateFromTrust(tree: ClientData, entityId: string): number {
+function inferGrowthRateFromTrust(
+  tree: ClientData,
+  entityId: string,
+  withResult: ProjectionYear[],
+): number {
+  const lastYear = withResult[withResult.length - 1];
   let topAccount: { value: number; growthRate: number } | null = null;
   for (const a of tree.accounts) {
-    const slice = a.owners.find(
-      (o) => o.kind === "entity" && o.entityId === entityId,
-    );
-    if (!slice) continue;
-    const sliceValue = a.value * slice.percent;
+    const pct = entityPctAt(a, entityId, lastYear, tree);
+    if (pct <= 0) continue;
+    const sliceValue = a.value * pct;
     if (!topAccount || sliceValue > topAccount.value) {
       topAccount = { value: sliceValue, growthRate: a.growthRate ?? DEFAULT_TRUST_GROWTH_RATE };
     }

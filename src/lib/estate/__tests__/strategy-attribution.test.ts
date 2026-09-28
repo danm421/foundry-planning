@@ -6,6 +6,8 @@ import {
   synthesizeDelayedTopGift,
 } from "../strategy-attribution";
 import type { ClientData, ProjectionYear } from "@/engine/types";
+import { runProjection } from "@/engine";
+import { buildClientData, baseClient, basePlanSettings } from "@/engine/__tests__/fixtures";
 
 const ILIT_ID = "trust-ilit";
 const SLAT_ID = "trust-slat";
@@ -145,6 +147,23 @@ describe("strategy-attribution — locked entity shares for split-owned trust ac
   // Bug parity with the cash-flow drilldown / estate-planning cards: when a
   // trust co-owns an account with the household, a household-side withdrawal
   // must NOT reduce the trust's compounded slice on the strategy card.
+  //
+  // Real-data shape: the SLAT's 30% comes ONLY from a gift event — there is
+  // no authored `entity` owner row on the account (the original fixture
+  // double-represented the gift with both an authored row AND a gifts row,
+  // so the authored (pre-Task-21) selection gave the right answer by
+  // coincidence). Carried once, the way real data carries it:
+  //   - At BASE (floor present, authored selection): the account has no
+  //     authored entity row, so `account.owners.find` finds nothing, the
+  //     account is skipped, compoundedValue = 0, and the floor substitutes
+  //     `totalGiftsToEntity` = $300k — which happens to equal the locked
+  //     share below, so this case was GREEN at BASE for the wrong reason.
+  //   - With the floor deleted but the authored selection left in place:
+  //     compoundedValue stays 0 and there is no floor to catch it — RED (0).
+  //   - With the gift-aware resolver restoring the selection: the account IS
+  //     visited (resolved pct = 0.3 from the gift event), and the engine's
+  //     locked share wins — GREEN on the same $300k number, now for the
+  //     right reason.
   it("compoundedTrustValueAtFinalYear uses entityAccountSharesEoY for split-owned trust accounts", () => {
     const tree = {
       entities: [
@@ -164,12 +183,22 @@ describe("strategy-attribution — locked entity shares for split-owned trust ac
           category: "taxable",
           value: 1_000_000,
           growthRate: 0,
-          owners: [
-            { kind: "family_member", familyMemberId: "fm-client", percent: 0.7 },
-            { kind: "entity", entityId: SLAT_ID, percent: 0.3 },
-          ],
+          // No authored entity row — the SLAT's slice comes only from the
+          // gift event below, exactly as real gift-overlay data carries it.
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
         },
       ],
+      giftEvents: [
+        {
+          kind: "asset",
+          year: 2026,
+          accountId: "mixed-acc",
+          percent: 0.3,
+          grantor: "client",
+          recipientEntityId: SLAT_ID,
+        },
+      ],
+      // Kept: feeds computeTrustCardData's tag line, not ownership.
       gifts: [
         {
           id: "g-mixed",
@@ -199,6 +228,255 @@ describe("strategy-attribution — locked entity shares for split-owned trust ac
     expect(slatRanked).toBeDefined();
     // $300k locked, NOT $921k × 0.3 = $276.3k.
     expect(slatRanked!.primaryAmount).toBeCloseTo(300_000, 6);
+  });
+});
+
+describe("rankTrustsByContribution — gift-resolved", () => {
+  const GIFT_SLAT_ID = "trust-slat-gift-only";
+  const GIFT_ILIT_ID = "trust-ilit-gift-only";
+
+  it("values a trust funded ONLY by an asset gift at its projected share", () => {
+    const tree = {
+      entities: [
+        {
+          id: GIFT_SLAT_ID,
+          name: "SLAT",
+          entityType: "trust",
+          isIrrevocable: true,
+          trustSubType: "irrevocable",
+          grantor: "client",
+        },
+      ],
+      accounts: [
+        {
+          id: "acc",
+          name: "Brokerage",
+          category: "taxable",
+          value: 10_000_000,
+          growthRate: 0,
+          // No authored entity row: the trust holds nothing until the gift
+          // event resolves it.
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+        },
+      ],
+      giftEvents: [
+        {
+          kind: "asset",
+          year: 2027,
+          accountId: "acc",
+          percent: 0.3,
+          grantor: "client",
+          recipientEntityId: GIFT_SLAT_ID,
+        },
+      ],
+      gifts: [],
+      planSettings: { planStartYear: 2026, planEndYear: 2054 },
+    } as unknown as ClientData;
+
+    const withResult = [
+      { year: 2054, accountLedgers: { acc: { endingValue: 10_000_000 } } },
+    ] as unknown as ProjectionYear[];
+
+    const ranked = rankTrustsByContribution(tree, withResult);
+    expect(ranked[0].primaryAmount).toBeCloseTo(3_000_000, 2);
+  });
+
+  it("does not fall back to the nominal gift total when a projection exists", () => {
+    const tree = {
+      entities: [
+        {
+          id: GIFT_SLAT_ID,
+          name: "SLAT",
+          entityType: "trust",
+          isIrrevocable: true,
+          trustSubType: "irrevocable",
+          grantor: "client",
+        },
+      ],
+      accounts: [
+        {
+          id: "acc",
+          name: "Brokerage",
+          category: "taxable",
+          value: 10_000_000,
+          growthRate: 0.07,
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+        },
+      ],
+      giftEvents: [
+        {
+          kind: "asset",
+          year: 2027,
+          accountId: "acc",
+          percent: 0.3,
+          grantor: "client",
+          recipientEntityId: GIFT_SLAT_ID,
+        },
+      ],
+      // Nominal gift total at the gift year — the value the floor used to
+      // report unconditionally, mislabeled as "compounded".
+      gifts: [
+        {
+          id: "g-real",
+          year: 2027,
+          amount: 3_000_000,
+          grantor: "client",
+          recipientEntityId: GIFT_SLAT_ID,
+          useCrummeyPowers: false,
+        },
+      ],
+      planSettings: { planStartYear: 2026, planEndYear: 2054 },
+    } as unknown as ClientData;
+
+    // 27 years of 7% growth on the $10M account by the final year — the
+    // trust's 30% share is well above the $3M nominal gift.
+    const withResult = [
+      { year: 2054, accountLedgers: { acc: { endingValue: 30_000_000 } } },
+    ] as unknown as ProjectionYear[];
+
+    const ranked = rankTrustsByContribution(tree, withResult);
+    expect(ranked[0].primaryAmount).toBeGreaterThan(3_000_000);
+  });
+
+  it("classifies an ILIT funded by an asset-gift event as life insurance", () => {
+    const tree = {
+      entities: [
+        {
+          id: GIFT_ILIT_ID,
+          name: "Gift ILIT",
+          entityType: "trust",
+          isIrrevocable: true,
+          // Deliberately NOT "ilit" — the subtype check must not be the
+          // thing that decides this; the resolver has to actually classify
+          // the account via the gift-resolved ownership.
+          trustSubType: "irrevocable",
+          grantor: "client",
+        },
+      ],
+      accounts: [
+        {
+          id: "policy-gift",
+          name: "Term policy",
+          category: "life_insurance",
+          value: 0,
+          growthRate: 0,
+          lifeInsurance: { faceValue: 2_000_000 },
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+        },
+      ],
+      giftEvents: [
+        {
+          kind: "asset",
+          year: 2027,
+          accountId: "policy-gift",
+          percent: 1,
+          grantor: "client",
+          recipientEntityId: GIFT_ILIT_ID,
+        },
+      ],
+      gifts: [],
+      planSettings: { planStartYear: 2026, planEndYear: 2054 },
+    } as unknown as ClientData;
+
+    const withResult = [
+      { year: 2054, accountLedgers: { "policy-gift": { endingValue: 0 } } },
+    ] as unknown as ProjectionYear[];
+
+    const ranked = rankTrustsByContribution(tree, withResult);
+    expect(ranked[0].cardKind).toBe("ilit");
+    expect(ranked[0].primaryAmount).toBe(2_000_000);
+  });
+
+  // REQUIRED real-projection case: proves the resolver reads the fields the
+  // engine actually publishes, not just hand-built fixture shapes. No
+  // growth, no income/expenses, no death — the gift is the only thing that
+  // can move the number.
+  it("reads a real runProjection() result end-to-end", () => {
+    const REAL_SLAT_ID = "trust-real-slat";
+    const ACCOUNT_ID = "acc-real-brokerage";
+    const FM_CLIENT = "fm-real-client";
+    const FM_SPOUSE = "fm-real-spouse";
+
+    const data = buildClientData({
+      client: { ...baseClient, dateOfBirth: "1970-01-01" },
+      familyMembers: [
+        {
+          id: FM_CLIENT,
+          role: "client",
+          relationship: "other",
+          firstName: "Real",
+          lastName: "Client",
+          dateOfBirth: "1970-01-01",
+        },
+        {
+          id: FM_SPOUSE,
+          role: "spouse",
+          relationship: "other",
+          firstName: "Real",
+          lastName: "Spouse",
+          dateOfBirth: "1972-06-15",
+        },
+      ],
+      accounts: [
+        {
+          id: ACCOUNT_ID,
+          name: "Brokerage",
+          category: "taxable",
+          subType: "brokerage",
+          titlingType: "jtwros",
+          value: 10_000_000,
+          basis: 10_000_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          owners: [
+            { kind: "family_member", familyMemberId: FM_CLIENT, percent: 0.5 },
+            { kind: "family_member", familyMemberId: FM_SPOUSE, percent: 0.5 },
+          ],
+        },
+      ],
+      entities: [
+        {
+          id: REAL_SLAT_ID,
+          name: "SLAT",
+          entityType: "trust",
+          trustSubType: "irrevocable",
+          isIrrevocable: true,
+          isGrantor: false,
+          includeInPortfolio: false,
+          accessibleToClient: false,
+          grantor: "client",
+        },
+      ],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [
+        { accountId: ACCOUNT_ID, priorityOrder: 1, startYear: 2026, endYear: 2030 },
+      ],
+      giftEvents: [
+        {
+          kind: "asset",
+          year: 2027,
+          accountId: ACCOUNT_ID,
+          percent: 0.3,
+          grantor: "client",
+          recipientEntityId: REAL_SLAT_ID,
+        },
+      ],
+      planSettings: {
+        ...basePlanSettings,
+        flatFederalRate: 0,
+        flatStateRate: 0,
+        inflationRate: 0,
+        planStartYear: 2026,
+        planEndYear: 2030,
+      },
+    });
+
+    const withResult = runProjection(data);
+    const ranked = rankTrustsByContribution(data, withResult);
+    expect(ranked[0].primaryAmount).toBeCloseTo(3_000_000, 2);
   });
 });
 
