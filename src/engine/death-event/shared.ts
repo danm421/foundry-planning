@@ -316,7 +316,8 @@ export function routeAtDeath(
  *  property's (a gifted house whose debt was not gifted still owes it all):
  *
  *   - each entity row → its own `[entity 1]` row under a synthetic id, unlinked
- *     (it must not sit on the property the household pool still routes);
+ *     and off any parent business (it must not sit on the property or the
+ *     business the household pool still routes, sells or pays down);
  *   - a `gifted_away` row → nothing: that share of the debt left with its
  *     recipient, as the gifted-away share of an account does;
  *   - the household rows → a pool under the ORIGINAL id (linked as authored),
@@ -353,6 +354,9 @@ export function partitionGiftedLiabilities(
       out.push(cut(o.percent, {
         id: nextSyntheticId("liab-slice"),
         linkedPropertyId: undefined,
+        // Nor under the business the household's pool still hangs off: a
+        // business sale pays down every child liability from household proceeds.
+        parentAccountId: undefined,
         owners: [{ kind: "entity", entityId: o.entityId, percent: 1 }],
       }));
     }

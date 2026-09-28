@@ -298,6 +298,24 @@ export function computeGrossEstate(input: {
 
   // Liabilities (negative entries)
   const accountById = new Map(input.accounts.map((a) => [a.id, a]));
+  // How much of a debt with no controlling family member is the decedent's, by
+  // the debt's SHAPE: a linked debt follows its property's AUTHORED owner (the
+  // decedent's own property → all of it; the survivor's → none, `null`; jointly
+  // held → half at a first death, all at a final death); an unlinked household
+  // debt takes the joint convention. The authored read is deliberate: a house
+  // gifted without its debt leaves the whole debt the decedent's.
+  const debtShareByShape = (l: Liability): number | null => {
+    if (l.linkedPropertyId) {
+      const linked = accountById.get(l.linkedPropertyId);
+      if (!linked) return null;
+      const linkedCfm = controllingFamilyMember(linked);
+      if (linkedCfm === input.deceasedFmId) return 1;
+      if (linkedCfm === input.survivorFmId) return null; // linked to survivor
+      return input.deathOrder === 1 ? 0.5 : 1; // joint linked property: split by death order
+    }
+    // Unlinked household debt: 50/50 at first death; 100% at final death.
+    return input.deathOrder === 1 ? 0.5 : 1;
+  };
   for (const l of input.liabilities) {
     if (l.balance <= 0) continue;
     // Skip liabilities already distributed to a non-household heir (ownerFamilyMemberId semantics kept)
@@ -336,39 +354,34 @@ export function computeGrossEstate(input: {
         // A gift split this debt. The twin returns `l.owners` BY REFERENCE on
         // every no-gift path and a fresh array only when it composed, so `!==`
         // reads "a gift was applied" — keying on "has a family row" instead
-        // would pull every ungifted JOINT debt off the linked-property / 50-50
-        // defaults below.
+        // would pull every ungifted JOINT debt off the shape defaults below.
         //
-        // What is left of the household's share is booked by the SAME rule the
-        // two later readers of this debt apply: the death's liability partition
-        // keeps that share as a pool, and the unlinked-debt distribution and the
-        // §2056(b)(4)(B) encumbrance netting both give the decedent the joint
-        // convention's half of a jointly held pool at a first death (all of it
-        // at a final death) — as the assets loop does. Three readers, one
-        // convention, so the marital deduction nets exactly what this line
-        // subtracted: a 70/30 debt booked at the decedent's own 70% here
-        // overshot the marital deduction by the difference. A lone family row
-        // is the decedent's own share or nobody's; 0 (e.g. wholly gifted to a
-        // person) is a real answer and drops the line.
+        // The gifted rung uses the ungifted rung's fraction for the debt's
+        // shape × the household's RESOLVED share. That is what the two later
+        // readers apply to the household's pool the death's liability partition
+        // keeps: the unlinked-debt distribution takes the joint convention's
+        // half, and the §2056(b)(4)(B) encumbrance netting scales a linked pool
+        // by its property's includible share. So Schedule K, the distribution
+        // and the encumbrance agree, and the marital deduction nets exactly
+        // what this line subtracted. Only the debt's OWN resolved rows supply
+        // the share; the property is read authored (see `debtShareByShape`).
+        // A lone family row is the decedent's own share or nobody's — the
+        // liability's own family member is the source of truth, as ungifted;
+        // 0 (e.g. wholly gifted to a person) is a real answer and drops the line.
         const family = lOwners.filter((o) => o.kind === "family_member");
-        pct = family.length > 1
-          ? (input.deathOrder === 1 ? 0.5 : 1) * family.reduce((s, o) => s + o.percent, 0)
-          : lOwners
-              .filter((o) => o.kind === "family_member" && o.familyMemberId === input.deceasedFmId)
-              .reduce((s, o) => s + o.percent, 0);
-      } else if (l.linkedPropertyId) {
-        const linked = accountById.get(l.linkedPropertyId);
-        if (!linked) continue;
-        const linkedCfm = controllingFamilyMember(linked);
-        if (linkedCfm === input.deceasedFmId) pct = 1;
-        else if (linkedCfm === input.survivorFmId) continue; // linked to survivor
-        else {
-          // Joint linked property: split by death order
-          pct = input.deathOrder === 1 ? 0.5 : 1;
+        if (family.length > 1) {
+          const byShape = debtShareByShape(l);
+          if (byShape == null) continue;
+          pct = byShape * family.reduce((s, o) => s + o.percent, 0);
+        } else {
+          pct = lOwners
+            .filter((o) => o.kind === "family_member" && o.familyMemberId === input.deceasedFmId)
+            .reduce((s, o) => s + o.percent, 0);
         }
       } else {
-        // Unlinked household debt: 50/50 at first death; 100% at final death.
-        pct = input.deathOrder === 1 ? 0.5 : 1;
+        const byShape = debtShareByShape(l);
+        if (byShape == null) continue;
+        pct = byShape;
       }
     }
 

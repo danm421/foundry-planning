@@ -2528,6 +2528,29 @@ describe("partitionGiftedLiabilities — a gifted debt is cut once at the death"
     );
     expect(rows.find((r) => r.id === "note")!.linkedPropertyId).toBe("house");
     expect(rows.find((r) => r.id !== "note")!.linkedPropertyId).toBeUndefined();
+    everyRowSumsToOne(rows);
+  });
+
+  it("keeps a business debt's pool under its business and takes the trust's row off it", () => {
+    // A business sale pays down every liability hanging off the business from
+    // HOUSEHOLD proceeds (applyBusinessSales) — the trust's share must not be one.
+    const rows = partitionGiftedLiabilities([note({ parentAccountId: "biz" })], at2029([gift(0.4)]));
+    expect(rows.find((r) => r.id === "note")!.parentAccountId).toBe("biz");
+    expect(rows.find((r) => r.id !== "note")!.parentAccountId).toBeUndefined();
+  });
+
+  it("never touches the rows it is handed — the hypothetical deaths run it on the projection's live state", () => {
+    const inputs = [
+      note(),
+      note({ id: "joint", owners: JOINT }),
+      note({ id: "card", balance: 20_000 }),
+    ];
+    const events = [gift(0.4), { ...gift(0.3), liabilityId: "joint" } as GiftEvent];
+    const before = structuredClone(inputs);
+    const rows = partitionGiftedLiabilities(inputs, at2029(events));
+    expect(rows).toHaveLength(5);
+    expect(inputs).toEqual(before);
+    for (const l of inputs) expect(l.giftsReflectedThrough).toBeUndefined();
   });
 
   it("hands back the SAME row on every no-gift path", () => {

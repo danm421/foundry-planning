@@ -115,8 +115,8 @@ const TO_KID: Recipient = { recipientFamilyMemberId: KID };
 const liabGift = (liabilityId: string, percent: number, to: Recipient = TO_TRUST,
   year = 2027, grantor: "client" | "spouse" = "client"): GiftEvent =>
   ({ kind: "liability", year, liabilityId, percent, grantor, parentGiftId: "g", ...to }) as GiftEvent;
-const houseGift = (percent: number, to: Recipient = TO_TRUST): GiftEvent =>
-  ({ kind: "asset", year: 2027, accountId: "house", percent, grantor: "client", ...to }) as GiftEvent;
+const houseGift = (percent: number, to: Recipient = TO_TRUST, grantor: "client" | "spouse" = "client"): GiftEvent =>
+  ({ kind: "asset", year: 2027, accountId: "house", percent, grantor, ...to }) as GiftEvent;
 
 const withHouse = (o: Omit<Parameters<typeof plan>[0], "extraAccounts">, owners = JOINT) =>
   plan({ ...o, extraAccounts: [house(owners)] });
@@ -143,6 +143,11 @@ const boy = (years: ProjectionYear[], year: number, id: string) =>
 const creditorPaid = (e: EstateTaxResult) => e.creditorPayoffDebits.reduce((s, d) => s + d.amount, 0);
 const liabilityTransfers = (years: ProjectionYear[], via: string) =>
   years.flatMap((y) => y.deathTransfers ?? []).filter((t) => t.sourceLiabilityId != null && t.via === via);
+/** The debt the spouse assumed at the first death — what the marital deduction nets. */
+const assumedBySpouse = (years: ProjectionYear[]) =>
+  liabilityTransfers(years, "unlinked_liability_proportional")
+    .filter((t) => t.deathOrder === 1 && t.recipientKind === "spouse")
+    .reduce((s, t) => s + t.amount, 0);
 
 describe("death — an unlinked note, 40% gifted to a trust", () => {
   it("the survivor keeps her own 150k of a joint note, assumes the decedent's 150k, and the trust keeps 200k", () => {
@@ -151,8 +156,7 @@ describe("death — an unlinked note, 40% gifted to a trust", () => {
     }));
     const first = death(years, 1);
     expect(first.taxableEstate).toBeCloseTo(0, 2);
-    const toSpouse = liabilityTransfers(years, "unlinked_liability_proportional");
-    expect(toSpouse.reduce((s, t) => s + t.amount, 0)).toBeCloseTo(-150_000, 2);
+    expect(assumedBySpouse(years)).toBeCloseTo(-150_000, 2);
     expect(boy(years, 2030, "note")).toBeCloseTo(150_000, 2);
     expect(boy(years, 2030, "death-liab")).toBeCloseTo(150_000, 2);
     expect(boy(years, 2030, "liab-slice")).toBeCloseTo(200_000, 2);
@@ -299,18 +303,17 @@ describe("death — the split keys on the DEBT's own gift, not the house's", () 
   });
 });
 
-describe("death — a 70/30 joint debt, gifted: Schedule K, distribution and encumbrance agree", () => {
+describe("death — a gifted 70/30 joint note, and a 70/30 mortgage on a JOINT house: Schedule K books the joint half", () => {
   // The composer shrinks both rows pro rata: [c .42, s .18, trust .4]. The
-  // unlinked distribution and the encumbrance netting apply the joint
-  // convention to the household's pool (half of it at the first death); the
-  // gross estate books the same half, so the marital deduction nets exactly
-  // what Schedule K subtracted.
+  // unlinked distribution, and the encumbrance netting on a JOINTLY held house,
+  // take half of the household's pool at the first death; the gross estate
+  // books the same half, so the marital deduction nets exactly what Schedule K
+  // subtracted. (A house held by ONE spouse: the next describe.)
   it("a note: the decedent's half of the 300k pool on both sides", () => {
     const years = runProjection(plan({ gifts: [liabGift("note", 0.4)], liabilities: [note(JOINT_70_30)] }));
     const first = death(years, 1);
     expect(liabLine(first, "note")).toBeCloseTo(-150_000, 2);
-    const toSpouse = liabilityTransfers(years, "unlinked_liability_proportional");
-    expect(toSpouse.reduce((s, t) => s + t.amount, 0)).toBeCloseTo(-150_000, 2);
+    expect(assumedBySpouse(years)).toBeCloseTo(-150_000, 2);
     expect(first.maritalDeduction).toBeCloseTo(first.grossEstate, 2);
     expect(first.taxableEstate).toBeCloseTo(0, 2);
   });
@@ -324,5 +327,46 @@ describe("death — a 70/30 joint debt, gifted: Schedule K, distribution and enc
     expect(first.maritalDeduction).toBeCloseTo(first.grossEstate, 2);
     // Spouse first, in a year both are alive: the same pool, the same half.
     expect(at(years, 2029).hypotheticalEstateTax.spouseFirst?.firstDeath.taxableEstate).toBeCloseTo(0, 2);
+  });
+});
+
+describe("death — a gifted JOINT mortgage on a house ONE spouse owns: the property decides, as it does ungifted", () => {
+  // A joint $300k mortgage on a $600k house one spouse holds alone; the house's
+  // owner gifts 40% of both to the trust. The mortgage composes to
+  // [c .3, s .3, trust .4] — the household keeps 60% (180k). Ungifted, a debt
+  // linked to the decedent's own house is wholly the decedent's and one linked
+  // to the survivor's house is not the decedent's at all; the gifted rung takes
+  // that same fraction of the household's 60%. The encumbrance netting reads
+  // the house's includible share the same way (1 or 0), so the two agree.
+  it("the decedent's house: Schedule K books the household's whole 180k, which the spouse assumes with the house", () => {
+    const years = runProjection(withHouse({
+      gifts: [houseGift(0.4), liabGift("mortgage", 0.4)], liabilities: [mortgage(JOINT)],
+    }, CLIENT));
+    const first = death(years, 1);
+    // −(1 × 0.6 × 300,000). The joint half (0.3) booked −90,000 against a 180,000 encumbrance.
+    expect(liabLine(first, "mortgage")).toBeCloseTo(-180_000, 2);
+    // 1,000,000 brokerage + 500 checking + 360,000 house pool − 180,000.
+    expect(first.grossEstate).toBeCloseTo(1_180_500, 2);
+    // Everything to the spouse; the house pool nets its 180,000 encumbrance.
+    expect(first.maritalDeduction).toBeCloseTo(1_180_500, 2);
+    expect(first.taxableEstate).toBeCloseTo(0, 2);
+  });
+
+  it("the survivor's house: the decedent's death books none of it; her own first death books her 180k", () => {
+    const years = runProjection(withHouse({
+      gifts: [houseGift(0.4, TO_TRUST, "spouse"), liabGift("mortgage", 0.4, TO_TRUST, 2027, "spouse")],
+      liabilities: [mortgage(JOINT)],
+    }, [{ kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 1 }]));
+    // The client's real death: a debt against the survivor's house is not his
+    // (the ungifted twin books nothing either). The joint half booked −90,000.
+    const first = death(years, 1);
+    expect(liabLine(first, "mortgage")).toBe(0);
+    expect(first.grossEstate).toBeCloseTo(1_000_500, 2);
+    // Spouse first, in a year both are alive: 500 checking + 360,000 house pool
+    // − 180,000, all to the client with its encumbrance.
+    const spouseFirst = at(years, 2029).hypotheticalEstateTax.spouseFirst!.firstDeath;
+    expect(liabLine(spouseFirst, "mortgage")).toBeCloseTo(-180_000, 2);
+    expect(spouseFirst.grossEstate).toBeCloseTo(180_500, 2);
+    expect(spouseFirst.taxableEstate).toBeCloseTo(0, 2);
   });
 });
