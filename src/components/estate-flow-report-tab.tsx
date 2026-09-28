@@ -92,8 +92,8 @@ export function EstateFlowReportTab({
   // projection window; the form then falls back to the account's current value
   // and labels the preview accordingly.
   const accountValueAtYear = useMemo(
-    () => buildAccountValueAtYear(projection.years),
-    [projection.years],
+    () => buildAccountValueAtYear(projection.years, engineData.accounts),
+    [projection.years, engineData.accounts],
   );
 
   // Human label for each gift recipient, keyed by recipient id. Built from the

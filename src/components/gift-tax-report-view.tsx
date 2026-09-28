@@ -124,7 +124,7 @@ export default function GiftTaxReportView({
 
     // Engine parity: an unresolved year/account is $0 to the projection, so
     // this reporting surface reads it the same way.
-    const valueAtYear = buildAccountValueAtYear(projection.years);
+    const valueAtYear = buildAccountValueAtYear(projection.years, tree.accounts);
     const accountValueAtYear = (accountId: string, year: number): number =>
       valueAtYear(accountId, year) ?? 0;
     const entityValueAtYear = buildEntityValueAtYear(projection.years);

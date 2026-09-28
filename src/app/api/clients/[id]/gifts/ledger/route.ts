@@ -43,7 +43,7 @@ export async function GET(
 
     // Same resolver runProjectionWithEvents uses internally, so the trust
     // dialog's exemption bar agrees with the gift ledger it sits beside.
-    const valueAtYear = buildAccountValueAtYear(result.years);
+    const valueAtYear = buildAccountValueAtYear(result.years, data.accounts);
 
     // Rebuild the §2503(b) annual-exclusion map the SAME way the projection
     // does internally (same helper + inputs) so the per-trust exemption math
