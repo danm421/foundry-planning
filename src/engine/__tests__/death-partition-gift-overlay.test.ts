@@ -656,4 +656,69 @@ describe("death — the 40% of a note gifted to a trust leaves the decedent's Sc
       warn.mockRestore();
     }
   });
+
+  // SENTINEL — passes while its body FAILS. Correct: taxable estate 0. Gross is
+  // 700,500 (1M + 500 checking − 300k retained note) and all of it passes to the
+  // spouse, who assumes the retained 300k: marital 700,500. HEAD: 200,000 — the
+  // unlinked-debt distribution still hands the spouse the WHOLE 500k note, and
+  // the marital deduction nets all 500k (marital 500,500). Before this loop was
+  // gift-aware both sides read 500k and cancelled to 0.
+  // Flip `it.fails` → `it` in Task 13, when the first-death chain distributes /
+  // partitions liabilities gift-aware. (The pin above runs this same fixture
+  // green, so a throw cannot be what makes this pass.)
+  it.fails("taxes nothing at the first death when everything passes to the spouse", () => {
+    const years = runProjection({ ...plan({ gifts: [noteToTrust] }), liabilities: [note] });
+    expect(at(years, 2029).estateTax?.taxableEstate).toBeCloseTo(0, 2);
+  });
+});
+
+describe("death — a joint house gifted 40% with its bundled mortgage", () => {
+  // The brief's motivating shape: a $600k joint house with a linked $300k joint
+  // mortgage; 40% of the house goes to the trust in 2027 with its bundled 40%
+  // mortgage child. Both compose to [client .3, spouse .3, trust .4]. The
+  // client dies in 2029; the spouse survives. Flat balances, growth 0.
+  const HOUSE = "house";
+  const MORTGAGE = "mortgage";
+  const house: Account = {
+    id: HOUSE, name: "House", category: "real_estate", subType: "primary_residence",
+    titlingType: "jtwros", value: 600_000, basis: 300_000, growthRate: 0, rmdEnabled: false,
+    owners: JOINT,
+  };
+  const mortgage: Liability = {
+    id: MORTGAGE, name: "Mortgage", balance: 300_000, interestRate: 0, monthlyPayment: 0,
+    startYear: 2026, startMonth: 1, termMonths: 0, extraPayments: [],
+    linkedPropertyId: HOUSE, owners: JOINT,
+  };
+  const houseGift: GiftEvent[] = [
+    { kind: "asset", year: 2027, accountId: HOUSE, percent: 0.4, grantor: "client",
+      recipientEntityId: TRUST },
+    { kind: "liability", year: 2027, liabilityId: MORTGAGE, percent: 0.4, grantor: "client",
+      recipientEntityId: TRUST, parentGiftId: "gift-house" },
+  ];
+  const run = () => {
+    const base = plan({ gifts: houseGift });
+    return runProjection({ ...base, accounts: [...base.accounts, house], liabilities: [mortgage] });
+  };
+
+  it("books the decedent's retained 30% of the mortgage on the first death's Schedule K", () => {
+    // −(1 − 0.4) × the decedent's 0.5 × 300k. The authored joint read booked the
+    // linked-property 50% default: −150,000.
+    const line = at(run(), 2029).estateTax?.grossEstateLines.find((l) => l.liabilityId === MORTGAGE);
+    expect(line?.percentage).toBeCloseTo(0.3, 9);
+    expect(line?.amount).toBeCloseTo(-90_000, 2);
+  });
+
+  // SENTINEL — passes while its body FAILS. Correct: taxable estate 0. Gross is
+  // 1,090,500 (1M + 500 checking + 180k house pool − 90k mortgage) and all of it
+  // passes to the spouse, who assumes the decedent's 90k: marital 1,090,500.
+  // HEAD: 60,000 — the partition never splits the linked mortgage, so the whole
+  // mortgage follows the pool to the spouse and the encumbrance netting takes
+  // 150k (marital 1,030,500). Before this loop was gift-aware both sides read
+  // 150k and cancelled to 0.
+  // Flip `it.fails` → `it` in Task 13, when the first-death chain distributes /
+  // partitions liabilities gift-aware. (The case above runs this same fixture
+  // green, so a throw cannot be what makes this pass.)
+  it.fails("taxes nothing at the first death when everything passes to the spouse", () => {
+    expect(at(run(), 2029).estateTax?.taxableEstate).toBeCloseTo(0, 2);
+  });
 });

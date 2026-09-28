@@ -465,9 +465,15 @@ export function giftAwareOwners(
  *  whole point. Unlinked household debts routinely carry `owners: []`, and a
  *  bare `liabilityOwnersForYear` on those sums to 0 and throws "expected 1".
  *  Every death-path liability flows through this, so without the early-out the
- *  first unlinked debt takes down the projection. Its id / year-window filters are
- *  not selection (`liabilityOwnersForYear` re-filters) — they feed the `canFundGifts`
- *  aggregate guard, so the duplication is load-bearing. */
+ *  first unlinked debt takes down the projection.
+ *
+ *  Every no-gift path (no context, no in-window gift for this id, a zero-percent
+ *  gift, a declined gift) returns `liability.owners` BY REFERENCE, and callers rely
+ *  on it: `computeGrossEstate` reads `!==` as "a gift was applied", so a copy on any
+ *  of them would pull ungifted joint debts off their linked-property / 50-50
+ *  defaults. That is why the id / year-window filters below are not redundant with
+ *  `liabilityOwnersForYear`'s own — they decide the by-reference early-out as well
+ *  as feeding the `canFundGifts` aggregate guard. */
 export function giftAwareLiabilityOwners(
   liability: LiabilityWithOwners,
   giftEvents: GiftEvent[] | undefined,

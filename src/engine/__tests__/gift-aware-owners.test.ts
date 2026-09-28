@@ -115,4 +115,25 @@ describe("giftAwareLiabilityOwners", () => {
     expect(giftAwareLiabilityOwners(l, g, undefined, 2026)).toBe(l.owners);
     expect(giftAwareLiabilityOwners(l, g, 2030, undefined)).toBe(l.owners);
   });
+
+  // The last two no-gift paths. `computeGrossEstate` reads `!==` against the
+  // authored array as "a gift was applied", so these must be identity too.
+  it("returns authored owners for an in-window gift of ZERO percent", () => {
+    const l = liab(household());
+    expect(giftAwareLiabilityOwners(l, [liabGift(2027, 0)], 2030, 2026)).toBe(l.owners);
+  });
+
+  it("falls back to authored owners when the gift cannot be drawn — AND warns", () => {
+    // Mirror of the account twin's ILIT case: the debt is already modeled
+    // trust-owned and still carries the gift event.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const l = liab([{ kind: "entity", entityId: "trust-1", percent: 1 }]);
+      expect(giftAwareLiabilityOwners(l, [liabGift(2027, 1)], 2030, 2026)).toBe(l.owners);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0][0]).toContain("liab-1");
+    } finally {
+      warn.mockRestore();
+    }
+  });
 });
