@@ -166,6 +166,18 @@ describe("drainLiquidAssets — fractional drains", () => {
     expect(byId.a2).toBeCloseTo(75_000, 2);
   });
 
+  it("never drains more than the whole balance, whatever the fraction", () => {
+    const r = drainLiquidAssets({
+      amountNeeded: 1_000_000,
+      accounts: [acct("a1", "cash", 500_000)],
+      accountBalances: { a1: 500_000 },
+      eligibilityFilter: always,
+      drainableFraction: () => 1.2,
+    });
+    expect(r.drainedTotal).toBeCloseTo(500_000, 2);
+    expect(r.residual).toBeCloseTo(500_000, 2);
+  });
+
   it("defaults to whole-balance draining when the fraction is omitted", () => {
     const r = drainLiquidAssets({
       amountNeeded: 1_000_000,

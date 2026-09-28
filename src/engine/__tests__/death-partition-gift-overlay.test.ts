@@ -411,7 +411,7 @@ describe("death partition — the survivor's estate drains leave the trust's sli
   //   residual  = 600k − 490k      = 110k
   // Gift-blind, each drain took the full 600k from the pool — 110k of it the
   // trust's. Re-applying the 2027 gift on top of the marker would drain only
-  // 700k × 0.7 × 0.7 = 343k.
+  // 280k: the overlay takes gifts out as ABSOLUTE shares, 1 − 0.3 − 0.3 = 0.4.
   const run = (owed: { debt?: number; estateAdminExpenses?: number }) => {
     const base = plan({
       gifts: [toTrust(2027, 0.3), toTrust(2030, 0.3, "spouse")], spouseDies: true,
@@ -460,6 +460,26 @@ describe("death partition — the survivor's estate drains leave the trust's sli
     const debits = y2032.estateTax!.estateTaxDebits;
     expect(debits.find((d) => d.accountId === ACC)?.amount).toBeCloseTo(0.7 * 700_000, 2);
     expect(debits.reduce((s, d) => s + d.amount, 0)).toBeCloseTo(490_000, 2);
+  });
+
+  it("pays the estate costs out of only the household's share the creditors LEFT", () => {
+    // Both drains hit the pool. The creditors take 400k, all of it household
+    // money, so 490k − 400k = 90k of the household's share is left for the
+    // 200k of admin expenses: 110k goes unpaid and the trust's 210k is never
+    // touched. Applying the 0.7 to the post-creditor 300k instead let the
+    // estate drain take 210k — the full 200k, 110k of it the trust's.
+    const y2032 = at(run({ debt: 400_000, estateAdminExpenses: 200_000 }), 2032);
+    const tax = y2032.estateTax!;
+    expect(tax.creditorPayoffDebits.find((d) => d.accountId === ACC)?.amount).toBeCloseTo(400_000, 2);
+    expect(tax.creditorPayoffResidual).toBeCloseTo(0, 2);
+    expect(tax.totalTaxesAndExpenses).toBeCloseTo(200_000, 2);
+    expect(tax.estateTaxDebits.find((d) => d.accountId === ACC)?.amount).toBeCloseTo(90_000, 2);
+    expect(y2032.deathWarnings).toContain("estate_tax_insufficient_liquid: 110000.00");
+    // Everything both drains took from the pool is the household's 490k.
+    const fromPool = [...tax.creditorPayoffDebits, ...tax.estateTaxDebits]
+      .filter((d) => d.accountId === ACC)
+      .reduce((s, d) => s + d.amount, 0);
+    expect(700_000 - fromPool).toBeCloseTo(210_000, 2);
   });
 
   it("still pays the estate's costs out of the decedent's revocable trust", () => {

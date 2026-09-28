@@ -486,8 +486,9 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     amountNeeded: unlinkedDebt,
     accounts: prepared.accounts,
     accountBalances: drainTargetBalances,
-    // These are PRE-chain accounts: a gift dated after the first death's marker
-    // is not partitioned out of the pool yet, so its slice sits in the balance.
+    // These are PRE-chain accounts: every in-window gift not already behind a
+    // `giftsReflectedThrough` marker (all of them at a single filer's death, or
+    // on any unmarked account) is still unsplit, its slice inside the balance.
     drainableFraction: (a) => drainableShareAtDeath(a, input),
     eligibilityFilter: (a) => {
       // Its authored rows can still name the decedent, but it is its recipients'.
@@ -508,6 +509,7 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
   });
 
   // Apply to drainTargetBalances only — chain/pour-out continue to see gross.
+  const creditorPaid = new Map(creditorDrain.debits.map((d) => [d.accountId, d.amount]));
   for (const debit of creditorDrain.debits) {
     drainTargetBalances[debit.accountId] = (drainTargetBalances[debit.accountId] ?? 0) - debit.amount;
     const a = prepared.accounts.find((x) => x.id === debit.accountId);
@@ -625,9 +627,19 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     amountNeeded: previewResult.totalTaxesAndExpenses,
     accounts: prepared.accounts,
     accountBalances: drainTargetBalances,
-    // These are PRE-chain accounts: a gift dated after the first death's marker
-    // is not partitioned out of the pool yet, so its slice sits in the balance.
-    drainableFraction: (a) => drainableShareAtDeath(a, input),
+    // Same pre-chain accounts as the creditor drain — and that drain has already
+    // spent HOUSEHOLD dollars out of these balances. What is drainable now is the
+    // household's share LEFT (share × gross − paid), not the share of the
+    // post-creditor balance: that overstates it by paid × (1 − share), all of it
+    // the gift recipient's.
+    drainableFraction: (a) => {
+      const left = drainTargetBalances[a.id] ?? 0;
+      if (left <= 0) return 0;
+      const householdLeft =
+        drainableShareAtDeath(a, input) * (prepared.accountBalances[a.id] ?? 0) -
+        (creditorPaid.get(a.id) ?? 0);
+      return Math.max(0, householdLeft) / left;
+    },
     eligibilityFilter: (a) => {
       // Its authored rows can still name the decedent, but it is its recipients'.
       if (isWhollyGiftedAway(a, input)) return false;

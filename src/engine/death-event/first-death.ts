@@ -598,8 +598,10 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     amountNeeded: preview.totalTaxesAndExpenses,
     accounts: accountsAfterBiz,
     accountBalances,
-    // Only the household's own share: a gifted slice is the trust's or has
-    // left the household.
+    // Wired for consistency with the final-death drains; it always resolves to
+    // 1 here. The chain has already partitioned every decedent-touched gifted
+    // account (the pool is marked through this death), and a gifted account it
+    // passed through untouched (the survivor's own) fails the filter's last line.
     drainableFraction: (a) => drainableShareAtDeath(a, input),
     eligibilityFilter: (a) => {
       if (maritalAccountIds.has(a.id)) return false;
