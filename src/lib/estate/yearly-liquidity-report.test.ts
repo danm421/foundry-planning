@@ -245,6 +245,7 @@ function whole(opts: {
   faceValue: number;
   owners: Account["owners"];
   insuredPerson?: "client" | "spouse" | "joint";
+  parentAccountId?: string | null;
 }): Account {
   return {
     id: opts.id,
@@ -258,6 +259,7 @@ function whole(opts: {
     rmdEnabled: false,
     insuredPerson: opts.insuredPerson ?? "client",
     owners: opts.owners,
+    parentAccountId: opts.parentAccountId ?? null,
     lifeInsurance: {
       faceValue: opts.faceValue,
       costBasis: 0,
@@ -472,6 +474,7 @@ function plainAccount(opts: {
   category: Account["category"];
   value: number;
   owners?: Account["owners"];
+  parentAccountId?: string | null;
 }): Account {
   return {
     id: opts.id,
@@ -486,6 +489,7 @@ function plainAccount(opts: {
     owners: opts.owners ?? [
       { kind: "family_member", familyMemberId: "fm-client", percent: 1 },
     ],
+    parentAccountId: opts.parentAccountId ?? null,
   };
 }
 
@@ -612,6 +616,124 @@ describe("buildYearlyLiquidityReport — portfolio assets", () => {
     });
     // Family pool $621k → only family slice is in-estate (SLAT is OOE).
     expect(report.rows[0].totalPortfolioAssets).toBeCloseTo(621_000, 6);
+  });
+});
+
+describe("buildYearlyLiquidityReport — business rollup", () => {
+  it("keeps a trust-owned business's cash child OUT of the household portfolio total", () => {
+    // The child carries no account_owners rows (by design), so before the fix
+    // the household ownership fallback claimed its $1M cash balance in full —
+    // while its business parent was entirely the trust's.
+    const data = emptyClientData();
+    data.entities = [ILIT];
+    data.accounts = [
+      plainAccount({
+        id: "biz-1",
+        category: "business",
+        value: 5_000_000,
+        owners: [{ kind: "entity", entityId: "ilit-1", percent: 1 }],
+      }),
+      plainAccount({
+        id: "biz-1-cash",
+        category: "cash",
+        value: 1_000_000,
+        owners: [],
+        parentAccountId: "biz-1",
+      }),
+    ];
+    const projection = {
+      years: [
+        projectionYear({
+          year: 2026,
+          hypothetical: htMarried({ firstTax: 0, finalTax: 0 }),
+          ledgers: {
+            "biz-1": { endingValue: 5_000_000 },
+            "biz-1-cash": { endingValue: 1_000_000 },
+          },
+        }),
+      ],
+    } as unknown as ProjectionResult;
+
+    const report = buildYearlyLiquidityReport({
+      projection,
+      clientData: data,
+      ownerNames: NAMES,
+      ownerDobs: DOBS,
+    });
+    expect(report.rows[0].totalPortfolioAssets).toBe(0);
+  });
+
+  it("a family-owned business's cash child stays 0, not 6,000,000 — a business is not a liquid category, even consolidated", () => {
+    const data = emptyClientData();
+    data.accounts = [
+      plainAccount({
+        id: "biz-2",
+        category: "business",
+        value: 5_000_000,
+        owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+      }),
+      plainAccount({
+        id: "biz-2-cash",
+        category: "cash",
+        value: 1_000_000,
+        owners: [],
+        parentAccountId: "biz-2",
+      }),
+    ];
+    const projection = {
+      years: [
+        projectionYear({
+          year: 2026,
+          hypothetical: htMarried({ firstTax: 0, finalTax: 0 }),
+          ledgers: {
+            "biz-2": { endingValue: 5_000_000 },
+            "biz-2-cash": { endingValue: 1_000_000 },
+          },
+        }),
+      ],
+    } as unknown as ProjectionResult;
+
+    const report = buildYearlyLiquidityReport({
+      projection,
+      clientData: data,
+      ownerNames: NAMES,
+      ownerDobs: DOBS,
+    });
+    // NOT 6,000,000 (business + child naively summed) and NOT 1,000,000 (the
+    // child leaking in on its own) — the child rolls into its non-liquid
+    // parent, which `LIQUID_CATEGORIES` excludes.
+    expect(report.rows[0].totalPortfolioAssets).toBe(0);
+  });
+
+  it("resolves a business child's life-insurance face value through its top-level business owner", () => {
+    const data = emptyClientData();
+    data.entities = [ILIT];
+    data.accounts = [
+      plainAccount({
+        id: "biz-3",
+        category: "business",
+        value: 5_000_000,
+        owners: [{ kind: "entity", entityId: "ilit-1", percent: 1 }],
+      }),
+      whole({
+        id: "biz-3-policy",
+        faceValue: 250_000,
+        owners: [],
+        parentAccountId: "biz-3",
+      }),
+    ];
+    const projection = {
+      years: [projectionYear({ year: 2026, hypothetical: htMarried({ firstTax: 0, finalTax: 0 }) })],
+    } as unknown as ProjectionResult;
+
+    const report = buildYearlyLiquidityReport({
+      projection,
+      clientData: data,
+      ownerNames: NAMES,
+      ownerDobs: DOBS,
+    });
+    expect(report.rows[0].insuranceInEstate).toBe(0);
+    expect(report.rows[0].insuranceOutOfEstate).toBe(250_000);
   });
 });
 

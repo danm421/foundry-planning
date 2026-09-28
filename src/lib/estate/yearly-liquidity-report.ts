@@ -189,6 +189,21 @@ interface InsuranceArgs {
   spouseRetirementYear: number | null;
 }
 
+/** Walks `parentAccountId` up from `account` to its top-level ancestor (the
+ *  account itself when it has no parent). Cycle-safe via a visited set. */
+function topLevelOwnerAccount(account: Account, accounts: Account[]): Account {
+  const byId = new Map(accounts.map((a) => [a.id, a]));
+  const seen = new Set<string>();
+  let cur = account;
+  while (cur.parentAccountId != null && !seen.has(cur.id)) {
+    seen.add(cur.id);
+    const parent = byId.get(cur.parentAccountId);
+    if (!parent) break;
+    cur = parent;
+  }
+  return cur;
+}
+
 function computeInsurance(args: InsuranceArgs): {
   insuranceInEstate: number;
   insuranceOutOfEstate: number;
@@ -215,8 +230,18 @@ function computeInsurance(args: InsuranceArgs): {
     );
     if (!isPolicyInForce(account, yearRow.year, insuredRetirementYear)) continue;
 
+    // A life-insurance account that is a business CHILD carries no
+    // account_owners rows by design, so reading its own owners would hit the
+    // household fallback and book a trust-owned business's policy as 100%
+    // household — its face value is real death benefit, so it isn't skipped
+    // like a cash/taxable child; instead it's re-owned from its top-level
+    // business parent. A top-level policy is unaffected (walk is a no-op).
+    const ownerAccount =
+      account.parentAccountId != null
+        ? topLevelOwnerAccount(account, clientData.accounts)
+        : account;
     const owners = ownersForYearOrHousehold(
-      account,
+      ownerAccount,
       giftEvents,
       yearRow.year,
       projectionStartYear,
@@ -248,6 +273,14 @@ function computePortfolioAssets(args: PortfolioArgs): number {
   const { yearRow, clientData, giftEvents, projectionStartYear } = args;
   let total = 0;
   for (const account of clientData.accounts) {
+    // Business child accounts roll into their parent — skip them so their
+    // value isn't counted twice. They also carry NO account_owners rows by
+    // design, so left in place they'd hit the household ownership fallback
+    // and book a trust-owned business's operating cash as 100% household
+    // liquid. `LIQUID_CATEGORIES` excludes `business` itself (a business is
+    // not a liquid asset either way), but a `cash`/`taxable` child sails
+    // straight through that filter without this guard.
+    if (account.parentAccountId != null) continue;
     if (!LIQUID_CATEGORIES.has(account.category)) continue;
     const ledger = yearRow.accountLedgers?.[account.id];
     const balance = ledger?.endingValue ?? 0;

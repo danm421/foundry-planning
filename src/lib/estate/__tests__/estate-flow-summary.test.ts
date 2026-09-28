@@ -726,6 +726,59 @@ describe("buildEstateFlowSummary — out of estate", () => {
     expect(summary.outOfEstate.heirs).toEqual({ total: 0, entities: [] });
     expect(summary.outOfEstate.irrevTrusts).toEqual({ total: 0, entities: [] });
   });
+
+  it("rolls a business child into its parent — a trust-owned business's cash counts once, out of the estate", () => {
+    // The child carries no account_owners rows (by design), so before the fix
+    // the household ownership fallback claimed its $1M cash balance in full —
+    // while its business parent was entirely the trust's.
+    const clientData = emptyClientData();
+    clientData.entities = [
+      {
+        id: "trust-1",
+        entityType: "trust",
+        isIrrevocable: true,
+        name: "Cooper Irrevocable Trust",
+      },
+    ] as ClientData["entities"];
+    clientData.accounts = [
+      {
+        id: "biz-1",
+        name: "Cooper Consulting LLC",
+        category: "business",
+        subType: "llc",
+        value: 5_000_000,
+        owners: [{ kind: "entity", entityId: "trust-1", percent: 1 }],
+      },
+      {
+        id: "biz-1-checking",
+        name: "Cooper Consulting LLC Checking",
+        category: "cash",
+        subType: "checking",
+        value: 1_000_000,
+        parentAccountId: "biz-1",
+        owners: [],
+      },
+    ] as unknown as ClientData["accounts"];
+
+    const summary = buildEstateFlowSummary({
+      ...baseInput({}),
+      clientData,
+    })!;
+
+    // 6,000,000 — the business + its child consolidated, counted once (not
+    // 7,000,000 double-counting the child, and not 5,000,000 dropping it).
+    expect(summary.outOfEstate.irrevTrusts.total).toBe(6_000_000);
+    expect(summary.outOfEstate.irrevTrusts.entities).toEqual([
+      expect.objectContaining({
+        entityId: "trust-1",
+        entityLabel: "Cooper Irrevocable Trust",
+        amount: 6_000_000,
+      }),
+    ]);
+    expect(summary.outOfEstate.irrevTrusts.entities[0].assets).toEqual([
+      { label: "Cooper Consulting LLC", amount: 6_000_000 },
+    ]);
+  });
 });
 
 describe("buildEstateFlowSummary — heir composition rule 1: at-death receipts", () => {

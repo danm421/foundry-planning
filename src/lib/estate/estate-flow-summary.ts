@@ -24,6 +24,7 @@ import {
   insuredRetirementYearFor,
   resolveOwnerRetirementYears,
 } from "@/lib/estate/insurance-in-force";
+import { consolidatedBusinessValue } from "@/engine/business/business-tree";
 
 // Account subTypes that the estate-flow Overview treats as already
 // out-of-estate for the household (assets earmarked for heirs that bypass
@@ -482,11 +483,16 @@ function asOfYearResolver(
     yearRow ? ledgerValue(account.id) : accountAmount(account);
   return {
     balanceAt,
-    slicesOf: (account: Account): OwnerSlice[] =>
+    /** `valueOverride` lets a caller price `account` at something other than
+     *  its own ledger/authored balance — e.g. a top-level business consolidated
+     *  across its child accounts. Omitted, this resolves exactly as before
+     *  (`accountSlicesAtYear`'s own `value ?? valueOf(account.id)` fallback). */
+    slicesOf: (account: Account, valueOverride?: number): OwnerSlice[] =>
       accountSlicesAtYear({
         account,
         yearRow,
         valueOf: (id) => (id === account.id ? balanceAt(account) : ledgerValue(id)),
+        value: valueOverride,
         fallbackOwners: () =>
           yearRow
             ? ownersForYearSafe(account, giftEvents, asOfYear, projectionStartYear)
@@ -635,6 +641,13 @@ function computeOutOfEstate(
     ? resolveOwnerRetirementYears(clientData.client)
     : { clientRetirementYear: null, spouseRetirementYear: null };
 
+  // Every account's as-of-year balance, keyed by id — feeds
+  // `consolidatedBusinessValue`'s tree walk below. Goes THROUGH the shared
+  // `balanceAt` resolver (not around it) so a business's descendants use the
+  // same year-row / ledger-missing-means-0 rule as everything else here.
+  const balancesRecord: Record<string, number> = {};
+  for (const account of accounts) balancesRecord[account.id] = balanceAt(account);
+
   // Build a per-account slice map keyed by (accountId → entityId → dollars).
   // `resolveOwnerSlices` distributes the year-aware balance across all owners
   // using the engine's locked-share carry-forward so household drawdowns on a
@@ -649,7 +662,21 @@ function computeOutOfEstate(
     { label: string; amount: number; gifts: { label: string; amount: number }[] }
   >();
   for (const account of accounts) {
-    const slices = slicesOf(account);
+    // Business child accounts roll into their parent — skip them so their
+    // value isn't counted twice (once via the parent's consolidated tree and
+    // once on its own row). They also carry NO account_owners rows by design,
+    // so left in place they'd hit the household ownership fallback and book a
+    // trust-owned business's operating cash as 100% household / in-estate.
+    // A business-owned life-insurance CHILD is skipped here too — its death
+    // benefit is not captured by the ILIT face-value swap below, which only
+    // ever sees the top-level business account (a known gap, not this task).
+    if (account.parentAccountId != null) continue;
+
+    const isTopLevelBusiness =
+      account.category === "business" && account.parentAccountId == null;
+    const slices = isTopLevelBusiness
+      ? slicesOf(account, consolidatedBusinessValue(account.id, accounts, balancesRecord))
+      : slicesOf(account);
     const owners = slices.map((sl) => sl.owner);
     const sliceByEntity = new Map<string, number>();
     for (const s of slices) {
