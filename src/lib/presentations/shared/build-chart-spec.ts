@@ -29,6 +29,12 @@ export interface BuildDrillChartSpecInput {
   stacks: DrillStackSeries[];
   lines?: DrillLineSeries[];
   markers: TableMarker[];
+  /** An explicit axis ceiling, when the page's own model already chose one
+   *  (the Tax Bracket sheet shares the screen chart's, so a reference line
+   *  that runs off the top of one chart runs off the top of the other). The
+   *  caller is responsible for the data fitting under it. Omitted → sized
+   *  from the data. */
+  yMax?: number;
 }
 
 export function buildDrillChartSpec(
@@ -76,12 +82,16 @@ export function buildDrillChartSpec(
   const negTotals = years.map((_, i) =>
     stacks.reduce((sum, s) => sum + Math.min(0, s.values[i] ?? 0), 0),
   );
-  const allLineValues = specLines.flatMap((ln) => ln.values);
+  // A NaN in a line is a gap (ChartSpec.lines), not a value; it must not poison
+  // the axis.
+  const allLineValues = specLines.flatMap((ln) => ln.values).filter(Number.isFinite);
 
   const candidateMax = Math.max(0, ...posTotals, ...allLineValues, 1);
   const candidateMin = Math.min(0, ...negTotals, ...allLineValues);
 
-  const yDomainMax = niceAxisMax(candidateMax * 1.05);
+  const yDomainMax = input.yMax != null && input.yMax > 0
+    ? input.yMax
+    : niceAxisMax(candidateMax * 1.05);
   const yDomainMin = candidateMin < 0 ? -niceAxisMax(-candidateMin * 1.05) : 0;
   const yTicks = ticks(yDomainMin, yDomainMax, 6);
 
