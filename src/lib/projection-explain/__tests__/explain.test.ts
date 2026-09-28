@@ -528,6 +528,29 @@ describe("explainChange", () => {
   });
 });
 
+describe("explainChange — a tax-free inherited Roth payout", () => {
+  it("attributes no ordinary income and no estimated tax to it", () => {
+    // Tax is flat across the payout year, so the blended rate falls back to the
+    // 22% marginal rate — a gross-based RMD cause would claim ~$88,000 of impact.
+    const ctx: DrillContext = { ...DRILL_CTX, accountNames: { inh: "Inherited Roth IRA" } };
+    const flat = { totalTax: 20_000, totalFederalTax: 20_000, taxableIncome: 80_000 };
+    const prev = makeYear({ year: 2031, taxResult: makeTaxResult({ flow: flat }) });
+    const next = makeYear({
+      year: 2032,
+      accountLedgers: { inh: makeLedger({ beginningValue: 400_000, rmdAmount: 400_000 }) },
+      taxDetail: makeTaxDetail({ "inherited_roth_tax_free:inh": { type: "tax_free", amount: 400_000 } }),
+      taxResult: makeTaxResult({ flow: flat }),
+    });
+    const out = explainChange({ adapter: taxAdapter, years: [prev, next], firstDeathYear: null, secondDeathYear: null, year: 2032, ctx });
+    expect(out.available).toBe(true);
+    if (!out.available || out.degraded) throw new Error("expected a full explanation");
+    const causes = out.causes ?? [];
+    expect(causes.filter((c) => c.kind === "rmd")).toEqual([]);
+    expect(causes.some((c) => c.summary.includes("became ordinary income"))).toBe(false);
+    expect(causes.reduce((s, c) => s + c.estimatedImpact, 0)).toBe(0);
+  });
+});
+
 describe("buildDrillContext", () => {
   it("maps account, entity, roth-conversion, and note names from the tree", () => {
     const tree = {

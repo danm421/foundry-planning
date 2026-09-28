@@ -221,22 +221,58 @@ describe("detectFundingCharacterShift", () => {
 });
 
 describe("detectRmdChange", () => {
+  // The engine writes a Traditional RMD's taxable slice as `<id>:rmd`, and an
+  // inherited Roth payout as `inherited_roth_tax_free:<id>` — never `<id>:rmd`.
+  const ctx = ctxWith([
+    { id: "ira", name: "Dan IRA", category: "retirement", subType: "traditional_ira" },
+    { id: "inh", name: "Inherited Roth IRA", category: "retirement", subType: "roth_ira" },
+  ]);
+  const tradRmd = (amount: number) => ({
+    accountLedgers: { ira: makeLedger({ rmdAmount: amount }) },
+    bySource: { "ira:rmd": { type: "ordinary_income", amount } },
+  });
+  const rothPayout = {
+    ledger: makeLedger({ rmdAmount: 400_000 }),
+    bySource: { "inherited_roth_tax_free:inh": { type: "tax_free", amount: 400_000 } },
+  };
+
   it("flags RMD onset with per-account detail", () => {
     const prev = makeYear({ year: 2062 });
-    const next = makeYear({
-      year: 2063,
-      accountLedgers: { ira: makeLedger({ rmdAmount: 42_000 }) },
-    });
-    const f = detectRmdChange(args(prev, next));
+    const t = tradRmd(42_000);
+    const next = makeYear({ year: 2063, accountLedgers: t.accountLedgers, taxDetail: makeTaxDetail(t.bySource) });
+    const f = detectRmdChange(argsWithCtx(prev, next, ctx));
     expect(f?.kind).toBe("rmd");
     expect(f?.incomeDelta).toBe(42_000);
-    expect(f?.summary).toContain("began");
-    expect(f?.summary).toContain("Dan IRA");
+    expect(f?.summary).toBe("Required minimum distributions began in 2063: $42,000 (Dan IRA $42,000) became ordinary income.");
   });
   it("returns null when RMDs are flat", () => {
-    const y = (year: number) =>
-      makeYear({ year, accountLedgers: { ira: makeLedger({ rmdAmount: 40_000 }) } });
-    expect(detectRmdChange(args(y(2062), y(2063)))).toBeNull();
+    const y = (year: number) => {
+      const t = tradRmd(40_000);
+      return makeYear({ year, accountLedgers: t.accountLedgers, taxDetail: makeTaxDetail(t.bySource) });
+    };
+    expect(detectRmdChange(argsWithCtx(y(2062), y(2063), ctx))).toBeNull();
+  });
+  it("does not narrate a tax-free inherited Roth payout as ordinary income", () => {
+    const prev = makeYear({ year: 2031 });
+    const next = makeYear({
+      year: 2032,
+      accountLedgers: { inh: rothPayout.ledger },
+      taxDetail: makeTaxDetail(rothPayout.bySource),
+    });
+    expect(detectRmdChange(argsWithCtx(prev, next, ctx))).toBeNull();
+  });
+  it("counts only the taxable Traditional RMD when an inherited Roth pays out the same year", () => {
+    const prev = makeYear({ year: 2062 });
+    const t = tradRmd(42_000);
+    const next = makeYear({
+      year: 2063,
+      accountLedgers: { ...t.accountLedgers, inh: rothPayout.ledger },
+      taxDetail: makeTaxDetail({ ...t.bySource, ...rothPayout.bySource }),
+    });
+    const f = detectRmdChange(argsWithCtx(prev, next, ctx))!;
+    expect(f.incomeDelta).toBe(42_000);
+    expect(f.summary).toBe("Required minimum distributions began in 2063: $42,000 (Dan IRA $42,000) became ordinary income.");
+    expect(f.evidence).toMatchObject({ rmdPriorYear: 0, rmdYear: 42_000 });
   });
 });
 
