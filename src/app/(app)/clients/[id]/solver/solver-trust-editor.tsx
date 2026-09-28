@@ -439,7 +439,10 @@ function TrustEditorBody({
             entities={view.entityOptions}
             businesses={view.businesses}
             // A business given to this trust has a gift row and no owner row.
+            // The solver cannot delete that gift (see below), so a business
+            // held only by gift is listed without Remove.
             businessGifts={view.businessGifts}
+            businessGiftsReadOnly
             // Assigning a business moves its value out of the taxable estate,
             // and the §709 gift row that pays for it is written by the details
             // page's route — which the solver has no equivalent of, because

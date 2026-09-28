@@ -326,6 +326,42 @@ describe("AssetsTab", () => {
     expect(screen.getAllByText("$84,000")).toHaveLength(2);
   });
 
+  it("with businessGiftsReadOnly, lists a gift-only business without Remove, and keeps Remove on a titled one", () => {
+    // A caller that cannot delete a business-interest gift (the solver) must
+    // not offer a Remove that would leave the gift — and the listed share — in
+    // place. A business also held by title keeps Remove: it releases that part.
+    render(
+      <AssetsTab
+        entityId={TRUST_ID}
+        accounts={[]}
+        liabilities={[]}
+        incomes={[]}
+        expenses={[]}
+        familyMembers={familyMembers}
+        entities={entities}
+        businesses={[
+          { id: "biz-1", name: "Gifted Co", value: 280_000,
+            owners: [{ kind: "family_member", familyMemberId: "fm-c", percent: 1 }] },
+          { id: "biz-2", name: "Titled Co", value: 100_000,
+            owners: [
+              { kind: "entity", entityId: TRUST_ID, percent: 0.2 },
+              { kind: "family_member", familyMemberId: "fm-c", percent: 0.8 },
+            ] },
+        ]}
+        businessGifts={[
+          { businessEntityId: "biz-1", recipientEntityId: TRUST_ID, percent: "0.3000" },
+          { businessEntityId: "biz-2", recipientEntityId: TRUST_ID, percent: "0.1000" },
+        ]}
+        businessGiftsReadOnly
+        onChange={vi.fn()}
+      />
+    );
+    expect(screen.getByText("Gifted Co")).toBeInTheDocument();
+    expect(screen.getByText("$84,000")).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Remove Gifted Co from trust/i)).toBeNull();
+    expect(screen.getByLabelText(/Remove Titled Co from trust/i)).toBeInTheDocument();
+  });
+
   // ── Business assignment seam (C1) ──────────────────────────────────────────
   //
   // Assigning a business to a trust moves value out of the taxable estate, and

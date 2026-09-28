@@ -430,10 +430,38 @@ describe("SolverTrustEditor — Assets tab", () => {
     });
     await userEvent.click(screen.getByRole("button", { name: "Assets" }));
 
+    const assets = within(document.querySelector<HTMLElement>('[data-tab-panel="assets"]')!);
+    expect(assets.getByText("Smith Holdings LLC")).toBeInTheDocument();
+    expect(assets.getByText("30%")).toBeInTheDocument();
+    // The solver cannot delete a business-interest gift (`gift-upsert` cannot
+    // carry one), so a Remove here would only rewrite the unchanged owner rows
+    // and leave the gift in place. The row stays; its Remove does not.
     expect(
+      screen.queryByRole("button", { name: "Remove Smith Holdings LLC from trust" }),
+    ).toBeNull();
+  });
+
+  it("keeps Remove on a business the trust holds by title AND by gift — it releases the titled part", async () => {
+    const { onChange } = renderEditor({
+      clientData: tree({
+        giftEvents: [{
+          kind: "business_interest", year: 2026, entityId: "e-llc", percent: 0.1,
+          grantor: "client", recipientEntityId: "e-ilit",
+        }],
+      }),
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Assets" }));
+
+    const assets = within(document.querySelector<HTMLElement>('[data-tab-panel="assets"]')!);
+    // Titled 60% + gifted 10%.
+    expect(assets.getByText("70%")).toBeInTheDocument();
+    await userEvent.click(
       screen.getByRole("button", { name: "Remove Smith Holdings LLC from trust" }),
-    ).toBeInTheDocument();
-    expect(screen.getByText("30%")).toBeInTheDocument();
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Remove" }));
+    expect(lastOf(onChange, "entity-upsert")?.value?.owners).toEqual([
+      { kind: "family_member", familyMemberId: "fm-client", percent: 1 },
+    ]);
   });
 
   it("says nothing about business assignment when the plan holds no businesses", async () => {

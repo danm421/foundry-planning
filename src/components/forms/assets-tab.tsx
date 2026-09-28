@@ -83,22 +83,23 @@ export interface AssetsTabBusinessGift {
   percent: string | number | null;
 }
 
-/** `entityId`'s share of business `b`: its authored `entity_owners` rows plus
- *  its business-interest gift rows. A gift of a business interest writes a
- *  gift row and NO owner row — owner rows are the authored, pre-gift baseline
- *  — so the owner rows alone miss every gifted share. */
-function entitySharePercent(
+/** `entityId`'s share of business `b`, in its two parts: `titled` from its
+ *  authored `entity_owners` rows and `gifted` from its business-interest gift
+ *  rows. A gift of a business interest writes a gift row and NO owner row —
+ *  owner rows are the authored, pre-gift baseline — so the owner rows alone
+ *  miss every gifted share. */
+function entityShares(
   b: AssetsTabBusiness,
   entityId: string,
   businessGifts: AssetsTabBusinessGift[],
-): number {
+): { titled: number; gifted: number } {
   const titled = b.owners
     .filter((o) => o.kind === "entity" && o.entityId === entityId)
     .reduce((s, o) => s + o.percent, 0);
   const gifted = businessGifts
     .filter((g) => g.businessEntityId === b.id && g.recipientEntityId === entityId)
     .reduce((s, g) => s + Number(g.percent ?? 0), 0);
-  return titled + gifted;
+  return { titled, gifted };
 }
 
 /** Total ("balance sheet") value of a business: flat valuation + held
@@ -139,8 +140,15 @@ interface AssetsTabProps {
   businesses?: AssetsTabBusiness[];
   /** The client's gift rows (any kind, any recipient). A business this entity
    *  holds by GIFT has no owner row, so its share is read from these — see
-   *  `entitySharePercent`. Absent → the authored owner rows alone. */
+   *  `entityShares`. Absent → the authored owner rows alone. */
   businessGifts?: AssetsTabBusinessGift[];
+  /** The caller cannot delete a business-interest gift. A business this entity
+   *  holds ONLY by gift is then listed without its Remove control: removing it
+   *  would rewrite the (unchanged) owner rows and leave the gift — and the
+   *  listed share — in place. A business also held by title keeps Remove,
+   *  which releases the titled part. Defaults to false: the details page's
+   *  route deletes the gift rows. */
+  businessGiftsReadOnly?: boolean;
   /** Most-recent discount per source, keyed `entity:<id>`. Forwarded to the picker. */
   priorDiscounts?: Record<string, number>;
   /** Is this entity irrevocable? Forwarded to the picker, where it gates the
@@ -283,6 +291,7 @@ export default function AssetsTab({
   expenses,
   businesses,
   businessGifts = [],
+  businessGiftsReadOnly = false,
   priorDiscounts,
   entityIsIrrevocable,
   hideBusinessAssignment = false,
@@ -299,7 +308,13 @@ export default function AssetsTab({
   // Filter to entity-owned items
   const ownedAccounts = accounts.filter((a) => ownedByEntity(a, entityId) > 0);
   const ownedLiabilities = liabilities.filter((l) => ownedByEntity(l, entityId) > 0);
-  const businessShare = (b: AssetsTabBusiness) => entitySharePercent(b, entityId, businessGifts);
+  const businessShare = (b: AssetsTabBusiness) => {
+    const { titled, gifted } = entityShares(b, entityId, businessGifts);
+    return titled + gifted;
+  };
+  /** Held by gift alone — no titled row for Remove to release. */
+  const heldOnlyByGift = (b: AssetsTabBusiness) =>
+    entityShares(b, entityId, businessGifts).titled < EPSILON;
   const ownedBusinesses = (businesses ?? []).filter((b) => businessShare(b) > 0);
 
   // Entity-asset id set for income/expense lookup
@@ -385,16 +400,18 @@ export default function AssetsTab({
                   <span className="inline-flex items-center justify-end w-20 text-[12px] tabular text-ink-3">
                     {(ownerPct * 100).toFixed(0)}%
                   </span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setRemovingItem({ kind: "entity", id: b.id, name: b.name })
-                    }
-                    className="text-white hover:text-white text-[13px] ml-1"
-                    aria-label={`Remove ${b.name} from ${entityLabel}`}
-                  >
-                    ✕
-                  </button>
+                  {!(businessGiftsReadOnly && heldOnlyByGift(b)) && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setRemovingItem({ kind: "entity", id: b.id, name: b.name })
+                      }
+                      className="text-white hover:text-white text-[13px] ml-1"
+                      aria-label={`Remove ${b.name} from ${entityLabel}`}
+                    >
+                      ✕
+                    </button>
+                  )}
                 </li>
               );
             })}
