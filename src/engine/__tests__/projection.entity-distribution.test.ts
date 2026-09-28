@@ -950,6 +950,21 @@ describe("business distributions — pro-rating across gift-resolved owners", ()
     expect(creditedTo(y, TRUST_CHECKING)).toBeCloseTo(300_000, 2);
   });
 
+  it("reports only the household's slice in the Cash Flow Business income column", () => {
+    // The column is "cash the household received". The trust's $300k still
+    // reaches the trust's checking; it just is not household income.
+    const data = distFixture({ netIncome: 1_000_000, distPercent: 1 });
+    data.giftEvents = [{ kind: "asset", year: 2027, accountId: BIZ_ID, percent: 0.3,
+      grantor: "client", recipientEntityId: TRUST_ID }];
+    const y = readYear(data);
+    expect(y.income.business).toBeCloseTo(700_000, 2);
+    expect(y.income.bySource[BIZ_ID]).toBeCloseTo(700_000, 2);
+    // Net Cash Flow reads the same sum: $700k less the 29% flat tax on the
+    // household's $700k K-1 share — what household checking actually gains.
+    expect(y.netCashFlow).toBeCloseTo(497_000, 2);
+    expect(creditedTo(y, TRUST_CHECKING)).toBeCloseTo(300_000, 2);
+  });
+
   it("falls back to household checking when the trust has no creditable account", () => {
     // Rule 2. A trust with no checking must not swallow its slice.
     const data = distFixture({ netIncome: 1_000_000, distPercent: 1, trustChecking: false });

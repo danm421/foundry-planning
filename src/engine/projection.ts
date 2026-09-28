@@ -8198,14 +8198,16 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
     // Cash Flow > Income, Business column: show actual cash received by the
     // household from entity distributions, not gross entity income. Sum every
-    // positive (= credit) entity_distribution ledger entry — only destination
-    // accounts (household / family-member checking) get a positive entry; the
-    // entity-side debit is negative and excluded by the > 0 filter. Per-entity
-    // bySource is keyed by entity.id so the drill-down can label rows by
-    // entity name.
+    // positive (= credit) entity_distribution entry on a HOUSEHOLD account; the
+    // entity-side debit is negative and excluded by the > 0 filter. Entity
+    // accounts are skipped: a distribution pro-rates across the business's
+    // owners, so a trust owner's slice is credited to the trust's own checking —
+    // cash the household never received. Per-entity bySource is keyed by
+    // entity.id so the drill-down can label rows by entity name.
     let businessDistributions = 0;
     const businessDistributionsBySource: Record<string, number> = {};
     for (const acct of workingAccounts) {
+      if (isFullyEntityOwned(acct)) continue;
       const ledger = accountLedgers[acct.id];
       if (!ledger) continue;
       for (const entry of ledger.entries) {
