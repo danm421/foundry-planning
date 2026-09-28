@@ -2652,4 +2652,97 @@ describe("buildEstateFlowSummary — survivor net worth resolves at the as-of ye
       { label: "Mortgage", amount: expect.closeTo(-300_000, 2) },
     ]);
   });
+
+  // ── A linked debt: its own owners decide HOW MUCH the household owes, the
+  // property decides WHICH family member owes it. A trust's slice of the home
+  // takes none of a mortgage the liability rows keep on the household.
+  const SUSAN_AND_TRUST: Account["owners"] = [
+    { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.7 },
+    { kind: "entity", entityId: TRUST, percent: 0.3 },
+  ];
+  const COOPER_AND_TRUST: Account["owners"] = [
+    { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.7 },
+    { kind: "entity", entityId: TRUST, percent: 0.3 },
+  ];
+  const homeAndMortgage = (data: ClientData, projection: ProjectionResult, asOfYear: number) =>
+    summaryAt(data, projection, asOfYear).survivorNetWorth!.lines.filter(
+      (l) => l.label === "Home" || l.label === "Mortgage",
+    );
+
+  it("keeps the whole mortgage on the survivor when a trust holds part of the home", () => {
+    // Home 70% Susan / 30% trust; the mortgage is Susan's alone. Before and
+    // after Cooper's 2029 death (the trust's 240k is peeled into its own slice)
+    // she owes all 300k — the engine, and the Balance Sheet, both say so.
+    const data = realPlan({
+      owners: JOINT, otherAccounts: [home(SUSAN_AND_TRUST)], liabilities: [mortgage(SUSAN_ONLY)],
+    });
+    const projection = runProjectionWithEvents(data);
+    for (const year of [2028, 2030]) {
+      expect(homeAndMortgage(data, projection, year)).toEqual([
+        { label: "Home", amount: expect.closeTo(560_000, 2) },
+        { label: "Mortgage", amount: expect.closeTo(-300_000, 2) },
+      ]);
+    }
+  });
+
+  it("hands the survivor the decedent's whole mortgage with the family pool of a part-trust home", () => {
+    // Home 70% Cooper / 30% trust; the mortgage is Cooper's alone. At his 2029
+    // death the partition keeps the trust's 240k slice and the WHOLE mortgage
+    // follows the 560k family pool to Susan.
+    const data = realPlan({
+      owners: JOINT, otherAccounts: [home(COOPER_AND_TRUST)], liabilities: [mortgage(COOPER_ONLY)],
+    });
+    const projection = runProjectionWithEvents(data);
+    expect(yearOf(projection, 2030).liabilityBalancesBoY.mortgage).toBeCloseTo(300_000, 2);
+    expect(homeAndMortgage(data, projection, 2030)).toEqual([
+      { label: "Home", amount: expect.closeTo(560_000, 2) },
+      { label: "Mortgage", amount: expect.closeTo(-300_000, 2) },
+    ]);
+  });
+
+  /** Joint home and joint mortgage, 40% of BOTH given to the trust in 2027. */
+  function giftedJointHome(): ClientData {
+    const data = realPlan({
+      owners: JOINT, otherAccounts: [home(JOINT)], liabilities: [mortgage(JOINT)],
+    });
+    data.giftEvents = [
+      { kind: "asset", year: 2027, accountId: "home", percent: 0.4, grantor: "client",
+        recipientEntityId: TRUST },
+      { kind: "liability", year: 2027, liabilityId: "mortgage", percent: 0.4, grantor: "client",
+        recipientEntityId: TRUST, parentGiftId: "gift-home" },
+    ];
+    return data;
+  }
+
+  it("nets a gifted mortgage share out of the survivor's debt before a death", () => {
+    // The mortgage's own owners leave the household 60% of it; the home's
+    // family slices (Cooper 240k, Susan 240k) give Susan half of that: 90k.
+    const data = giftedJointHome();
+    const projection = runProjectionWithEvents(data);
+    expect(homeAndMortgage(data, projection, 2028)).toEqual([
+      { label: "Home", amount: expect.closeTo(240_000, 2) },
+      { label: "Mortgage", amount: expect.closeTo(-90_000, 2) },
+    ]);
+  });
+
+  // characterization — documented blind spot, future-work
+  it("takes a gifted mortgage share out of the survivor's debt twice after a death partition", () => {
+    // At Cooper's 2029 death the engine partitions the mortgage: a 120k
+    // `liab-slice-*` row for the trust, and the household pool — 180k, wholly
+    // Susan's — under the ORIGINAL id. The projection publishes no liability
+    // ownership (no twin of `accountOwners` carrying the pool's
+    // `giftsReflectedThrough`), so the overlay takes the 40% gift out of the
+    // 180k pool again: 180k × 0.6 = 108k, where the engine has 180k.
+    const data = giftedJointHome();
+    const projection = runProjectionWithEvents(data);
+    const boy2030 = yearOf(projection, 2030).liabilityBalancesBoY;
+    expect(boy2030.mortgage).toBeCloseTo(180_000, 2);
+    expect(Object.entries(boy2030).filter(([id]) => id.startsWith("liab-slice"))).toEqual([
+      [expect.any(String), expect.closeTo(120_000, 2)],
+    ]);
+    expect(homeAndMortgage(data, projection, 2030)).toEqual([
+      { label: "Home", amount: expect.closeTo(480_000, 2) },
+      { label: "Mortgage", amount: expect.closeTo(-108_000, 2) },
+    ]);
+  });
 });

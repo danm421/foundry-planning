@@ -513,16 +513,23 @@ function asOfYearResolver(
  * `grossEstateDollarsByAccount`. Returns null when there's no surviving spouse
  * (single-filer household).
  *
- * A LINKED debt follows its property, as the engine moves a mortgage with its
- * house (a gift bundles the debt with the property's percent; a death retitles
- * or splits both together): the survivor owes the fraction of the debt that
- * their slices are of the property's value. An unlinked debt — or a linked one
- * whose property is gone or worth 0 that year — takes the survivor's percent
- * of the liability's own gift-resolved owners.
+ * A debt's own gift-resolved owners (`liabilityOwnersForYearSafe`) decide how
+ * much of it the household owes. For a LINKED debt the property decides WHICH
+ * family member owes that share, as the engine moves a mortgage with its house
+ * at a death: the survivor's fraction is their value among the property's
+ * FAMILY-member slices. A trust's or a gifted-away slice of the property is
+ * left out — it takes none of a debt the liability rows keep on the household,
+ * as the engine's death partition (`partitionGiftedLiabilities`, keyed on the
+ * liability's own owners) leaves it. An unlinked debt, or a linked one whose
+ * property is gone or holds no family value that year, takes the survivor's
+ * percent of the debt's owners directly.
  *
- * Debts are DEATH-blind beyond that: the projection publishes no liability
- * ownership, so a gifted liability the engine partitions at a death is
- * re-resolved from its authored rows here.
+ * Debts are DEATH-blind beyond that (characterized in the tests, future-work):
+ * the projection publishes no liability ownership — there is no liability twin
+ * of `ProjectionYear.accountOwners` carrying the partitioned pool's
+ * `giftsReflectedThrough` marker. After a death partitions a gifted liability,
+ * its household pool keeps the original id with a balance already net of the
+ * gift, and the overlay here takes the gift out of that balance again.
  *
  * Blind spot (characterized in the tests, future-work): `clientData.accounts`
  * is the authored data. A death that retitles an account IN PLACE without a
@@ -561,19 +568,25 @@ function computeSurvivorNetWorth(
     if (amount === 0) continue;
     lines.push({ label: account.name, amount });
   }
-  /** The survivor's fraction of a linked debt's property, or null when the
-   *  debt is unlinked or its property is gone / worth 0 this year. */
-  const propertyFraction = (liability: Liability): number | null => {
-    const slices = liability.linkedPropertyId
-      ? slicesByAccount.get(liability.linkedPropertyId)
+  /** The survivor's value among a linked debt's property's family-member
+   *  slices, or null when the debt is unlinked or its property is gone / holds
+   *  no family value this year. */
+  const familyFractionOfProperty = (liability: Liability): number | null => {
+    const family = liability.linkedPropertyId
+      ? slicesByAccount.get(liability.linkedPropertyId)?.filter((sl) => sl.owner.kind === "family_member")
       : undefined;
-    const total = slices?.reduce((s, sl) => s + sl.value, 0) ?? 0;
-    return slices && total > 0 ? survivorValue(slices) / total : null;
+    const total = family?.reduce((s, sl) => s + sl.value, 0) ?? 0;
+    return family && total > 0 ? survivorValue(family) / total : null;
   };
+  const percentOf = (owners: AccountOwner[], keep: (o: AccountOwner) => boolean) =>
+    owners.filter(keep).reduce((s, o) => s + o.percent, 0);
   for (const liability of clientData.liabilities ?? []) {
+    const owners = at.liabilityOwnersAt(liability);
+    const fraction = familyFractionOfProperty(liability);
     const pct =
-      propertyFraction(liability) ??
-      at.liabilityOwnersAt(liability).filter(isSurvivor).reduce((s, o) => s + o.percent, 0);
+      fraction != null
+        ? percentOf(owners, (o) => o.kind === "family_member") * fraction
+        : percentOf(owners, isSurvivor);
     if (pct <= 0) continue;
     const amount = -at.liabilityBalanceAt(liability) * pct;
     if (amount === 0) continue;
