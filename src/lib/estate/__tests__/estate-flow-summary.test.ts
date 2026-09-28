@@ -13,6 +13,7 @@ import type {
   ClientData,
   EntitySummary,
   FamilyMember,
+  Liability,
   ProjectionYear,
   Will,
 } from "@/engine/types";
@@ -2449,11 +2450,29 @@ describe("buildEstateFlowSummary — survivor net worth resolves at the as-of ye
   const COOPER_ONLY: Account["owners"] = [
     { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 },
   ];
+  const SUSAN_ONLY: Account["owners"] = [
+    { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 1 },
+  ];
+  const TRUST_ONLY: Account["owners"] = [{ kind: "entity", entityId: TRUST, percent: 1 }];
+  /** An $800k home (growth 0) and its linked $300k mortgage (interest and
+   *  payment 0, so every beginning-of-year balance is 300k). */
+  const home = (owners: Account["owners"]): Account => ({
+    id: "home", name: "Home", category: "real_estate", subType: "primary_residence",
+    titlingType: "jtwros", value: 800_000, basis: 800_000, growthRate: 0,
+    rmdEnabled: false, owners,
+  });
+  const mortgage = (owners: Account["owners"]): Liability => ({
+    id: "mortgage", name: "Mortgage", balance: 300_000, interestRate: 0, monthlyPayment: 0,
+    startYear: 2026, startMonth: 1, termMonths: 0, extraPayments: [],
+    linkedPropertyId: "home", owners,
+  });
   /** A $1M brokerage (basis 400k, growth 0) beside $1k of joint checking and
    *  the trust's own empty checking; no income, spending or tax, so every
    *  figure is one the death explains. */
   function realPlan(opts: {
     owners: Account["owners"];
+    otherAccounts?: Account[];
+    liabilities?: Liability[];
     wills?: Will[];
     assetTransactions?: AssetTransaction[];
   }): ClientData {
@@ -2472,9 +2491,11 @@ describe("buildEstateFlowSummary — survivor net worth resolves at the as-of ye
         { id: "acc-1", name: "Brokerage", category: "taxable", subType: "brokerage",
           titlingType: "jtwros", value: 1_000_000, basis: 400_000, growthRate: 0,
           rmdEnabled: false, owners: opts.owners },
+        ...(opts.otherAccounts ?? []),
       ],
       entities: [trust],
-      incomes: [], liabilities: [], savingsRules: [], expenses: [], withdrawalStrategy: [],
+      incomes: [], liabilities: opts.liabilities ?? [], savingsRules: [], expenses: [],
+      withdrawalStrategy: [],
       giftEvents: [],
       wills: opts.wills ?? [],
       assetTransactions: opts.assetTransactions ?? [],
@@ -2565,5 +2586,70 @@ describe("buildEstateFlowSummary — survivor net worth resolves at the as-of ye
     expect(y2031.trustTaxByEntity?.get(TRUST)?.recognizedCapGains).toBeCloseTo(200_000, 2);
     expect(y2031.taxDetail?.capitalGains).toBeCloseTo(0, 2);
     expect(trustRow(2031).assetSaleCapitalGain).toBe(0);
+  });
+
+  // ── A sale ends an account (and pays off its linked mortgage). The row no
+  // longer lists it, so it is worth 0 there — not its entered value.
+  const SELL_IN_2028 = (accountId: string, value: number): AssetTransaction => ({
+    id: `sell-${accountId}`, name: "Sell", type: "sell", year: 2028,
+    accountId, overrideSaleValue: value,
+  });
+
+  it("drops an account the projection sold", () => {
+    // Susan's own brokerage sold in 2028 for 1M; the proceeds land in the joint
+    // checking, wholly Susan's after Cooper's 2029 death. The brokerage has no
+    // 2030 ledger — read at its entered 1M it was counted a second time.
+    const data = realPlan({ owners: SUSAN_ONLY, assetTransactions: [SELL_IN_2028("acc-1", 1_000_000)] });
+    const projection = runProjectionWithEvents(data);
+    expect(yearOf(projection, 2030).accountLedgers["acc-1"]).toBeUndefined();
+    expect(summaryAt(data, projection, 2030).survivorNetWorth!.lines).toEqual([
+      { label: "Checking", amount: expect.closeTo(1_001_000, 2) },
+    ]);
+  });
+
+  it("drops the mortgage a sale of its home paid off", () => {
+    // Susan's home sold in 2028 for 800k pays off its 300k mortgage; 500k lands
+    // in the checking. Neither the home nor the mortgage is in the 2030 row.
+    const data = realPlan({
+      owners: SUSAN_ONLY,
+      otherAccounts: [home(SUSAN_ONLY)],
+      liabilities: [mortgage(SUSAN_ONLY)],
+      assetTransactions: [SELL_IN_2028("home", 800_000)],
+    });
+    const projection = runProjectionWithEvents(data);
+    expect(yearOf(projection, 2030).liabilityBalancesBoY.mortgage).toBeUndefined();
+    expect(summaryAt(data, projection, 2030).survivorNetWorth!.lines).toEqual([
+      { label: "Checking", amount: expect.closeTo(501_000, 2) },
+      { label: "Brokerage", amount: expect.closeTo(1_000_000, 2) },
+    ]);
+  });
+
+  it("drops a trust account the projection sold from the Irrev Trusts box", () => {
+    // The trust's brokerage sold in 2028 for 1M: the proceeds sit in the
+    // trust's checking (no tax at these rates), and the brokerage is gone from
+    // the 2030 row — read at its entered 1M the trust held 2M.
+    const data = realPlan({ owners: TRUST_ONLY, assetTransactions: [SELL_IN_2028("acc-1", 1_000_000)] });
+    const projection = runProjectionWithEvents(data);
+    expect(yearOf(projection, 2030).accountLedgers["acc-1"]).toBeUndefined();
+    expect(summaryAt(data, projection, 2030).outOfEstate.irrevTrusts.entities).toEqual([
+      { entityId: TRUST, entityLabel: "Family Trust", amount: expect.closeTo(1_000_000, 2),
+        assets: [{ label: "Trust Checking", amount: expect.closeTo(1_000_000, 2) }] },
+    ]);
+  });
+
+  it("gives the survivor the whole joint mortgage with the whole joint home after the first death", () => {
+    // The engine moves a linked mortgage with its property: Cooper's half of
+    // both passes to Susan in 2029. The survivor's share of the debt follows
+    // her share of the home — 100% — not the authored 50/50 debt rows.
+    const data = realPlan({
+      owners: JOINT, otherAccounts: [home(JOINT)], liabilities: [mortgage(JOINT)],
+    });
+    const projection = runProjectionWithEvents(data);
+    expect(summaryAt(data, projection, 2030).survivorNetWorth!.lines).toEqual([
+      { label: "Checking", amount: expect.closeTo(1_000, 2) },
+      { label: "Brokerage", amount: expect.closeTo(1_000_000, 2) },
+      { label: "Home", amount: expect.closeTo(800_000, 2) },
+      { label: "Mortgage", amount: expect.closeTo(-300_000, 2) },
+    ]);
   });
 });

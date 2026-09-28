@@ -8,7 +8,7 @@ import type {
 import type {
   Account,
   ClientData,
-  ProjectionYear,
+  Liability,
   RemainderBeneficiaryRef,
 } from "@/engine/types";
 import type { ProjectionResult } from "@/engine/projection";
@@ -17,7 +17,7 @@ import {
   liabilityOwnersForYearSafe,
   ownersForYearSafe,
 } from "@/lib/estate/owners-or-household";
-import { accountSlicesAtYear } from "@/lib/estate/account-owner-slices";
+import { accountSlicesAtYear, type OwnerSlice } from "@/lib/estate/account-owner-slices";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import {
   isPolicyInForce,
@@ -448,35 +448,90 @@ function consolidateBySource(
 }
 
 /**
+ * One as-of-year resolution for every box that splits accounts and debts
+ * among their owners — the survivor's box and the Out-of-Estate box.
+ *
+ * With a projection row for `asOfYear`: an account is its ledger's
+ * `endingValue`, split by `accountSlicesAtYear` over the gift-resolved owners
+ * (`ownersForYearSafe`) — a death partition's published pool and slices, and
+ * the engine's locked entity/family shares, included. A debt is its
+ * beginning-of-year balance (`liabilityBalancesBoY`) under the liability gift
+ * overlay (`liabilityOwnersForYearSafe`). The row lists everything the
+ * projection holds that year, so an account or debt missing from it — sold,
+ * paid off at a sale, or ended at a death — is worth 0 there.
+ *
+ * With no row (no projection, or the chart's "today", `planStartYear − 1`):
+ * the authored values and owners.
+ *
+ * The slices come from `resolveOwnerSlices`, which clamps the family pool at
+ * 0 — an overdrawn (negative) account gives its family owners 0, not a debt —
+ * and values an `external_beneficiary` owner row at 0, so the family owners
+ * share the whole pool: a half-survivor / half-external-beneficiary account is
+ * wholly the survivor's.
+ */
+function asOfYearResolver(
+  clientData: ClientData,
+  asOfYear: number,
+  projection: ProjectionResult | null | undefined,
+) {
+  const giftEvents = clientData.giftEvents ?? [];
+  const yearRow = projection?.years.find((y) => y.year === asOfYear);
+  const projectionStartYear = projection?.years[0]?.year ?? asOfYear;
+  const ledgerValue = (id: string) => yearRow?.accountLedgers?.[id]?.endingValue ?? 0;
+  const balanceAt = (account: Account) =>
+    yearRow ? ledgerValue(account.id) : accountAmount(account);
+  return {
+    balanceAt,
+    slicesOf: (account: Account): OwnerSlice[] =>
+      accountSlicesAtYear({
+        account,
+        yearRow,
+        valueOf: (id) => (id === account.id ? balanceAt(account) : ledgerValue(id)),
+        fallbackOwners: () =>
+          yearRow
+            ? ownersForYearSafe(account, giftEvents, asOfYear, projectionStartYear)
+            : account.owners ?? [],
+      }),
+    liabilityBalanceAt: (liability: Liability) =>
+      yearRow
+        ? yearRow.liabilityBalancesBoY?.[liability.id] ?? 0
+        : typeof liability.balance === "number" ? liability.balance : 0,
+    liabilityOwnersAt: (liability: Liability) =>
+      yearRow
+        ? liabilityOwnersForYearSafe(liability, giftEvents, asOfYear, projectionStartYear)
+        : liability.owners ?? [],
+  };
+}
+
+/**
  * Survivor's net-worth box on the left rail of the chart at `asOfYear` — the
  * survivor's slice of every account in which they hold any household-side
- * ownership, minus their percent-weighted share of every liability. Joint
+ * ownership, minus their share of every liability, both resolved by
+ * `asOfYearResolver` exactly as the Out-of-Estate box resolves them. Joint
  * accounts thus contribute their share (e.g. 50% of a JTWROS home), matching
  * how the first-death stage box already scales decedent transfers by
  * `grossEstateDollarsByAccount`. Returns null when there's no surviving spouse
  * (single-filer household).
  *
- * Accounts resolve exactly as `computeOutOfEstate` does. With a projection row
- * for `asOfYear`: the ledger's `endingValue`, split by `accountSlicesAtYear`
- * over the gift-resolved owners (`ownersForYearSafe`) — a death partition's
- * published pool and slices, and the locked entity/family shares, included.
- * With no row (no projection, or the "today" view's `planStartYear − 1`): the
- * authored value and owners.
+ * A LINKED debt follows its property, as the engine moves a mortgage with its
+ * house (a gift bundles the debt with the property's percent; a death retitles
+ * or splits both together): the survivor owes the fraction of the debt that
+ * their slices are of the property's value. An unlinked debt — or a linked one
+ * whose property is gone or worth 0 that year — takes the survivor's percent
+ * of the liability's own gift-resolved owners.
  *
- * Liabilities: the survivor's percent of `liabilityOwnersForYearSafe` (the
- * liability gift overlay) times the row's beginning-of-year balance
- * (`liabilityBalancesBoY`); with no row, the authored balance and owners.
- * They are gift-aware but DEATH-blind: the projection publishes no liability
+ * Debts are DEATH-blind beyond that: the projection publishes no liability
  * ownership, so a gifted liability the engine partitions at a death is
  * re-resolved from its authored rows here.
  *
  * Blind spot (characterized in the tests, future-work): `clientData.accounts`
  * is the authored data. A death that retitles an account IN PLACE without a
  * partition publishes no marker or slice, so an as-of year after the death
- * still reads the authored rows. A joint account survives this — the locked
- * family shares hand the survivor the decedent's half — but a SOLE account
- * the survivor inherits, or a whole account a will leaves to a trust, stays
- * with its authored (dead) owner.
+ * still reads the authored rows. A joint account and its linked debt survive
+ * this — the locked family shares hand the survivor the decedent's half of the
+ * property, and the debt follows it — but a SOLE account the survivor
+ * inherits, or a whole account a will leaves to a trust, stays with its
+ * authored (dead) owner.
  */
 function computeSurvivorNetWorth(
   clientData: ClientData,
@@ -493,47 +548,34 @@ function computeSurvivorNetWorth(
   }
   const isSurvivor = (o: AccountOwner) =>
     o.kind === "family_member" && o.familyMemberId === survivorFmId;
-  const giftEvents = clientData.giftEvents ?? [];
-  const yearRow: ProjectionYear | undefined = projection?.years.find(
-    (y) => y.year === asOfYear,
-  );
-  const projectionStartYear = projection?.years[0]?.year ?? asOfYear;
-
-  const balanceAt = (accountId: string, account: Account): number => {
-    if (yearRow) {
-      const ledger = yearRow.accountLedgers?.[accountId];
-      if (ledger) return ledger.endingValue;
-    }
-    return accountAmount(account);
-  };
+  const survivorValue = (slices: OwnerSlice[]) =>
+    slices.filter((sl) => isSurvivor(sl.owner)).reduce((s, sl) => s + sl.value, 0);
+  const at = asOfYearResolver(clientData, asOfYear, projection);
 
   const lines: { label: string; amount: number }[] = [];
+  const slicesByAccount = new Map<string, OwnerSlice[]>();
   for (const account of clientData.accounts ?? []) {
-    const slices = accountSlicesAtYear({
-      account,
-      yearRow,
-      valueOf: (id) => (id === account.id ? balanceAt(account.id, account) : yearRow?.accountLedgers?.[id]?.endingValue ?? 0),
-      fallbackOwners: () =>
-        yearRow
-          ? ownersForYearSafe(account, giftEvents, asOfYear, projectionStartYear)
-          : account.owners ?? [],
-    });
-    const amount = slices
-      .filter((sl) => isSurvivor(sl.owner))
-      .reduce((s, sl) => s + sl.value, 0);
+    const slices = at.slicesOf(account);
+    slicesByAccount.set(account.id, slices);
+    const amount = survivorValue(slices);
     if (amount === 0) continue;
     lines.push({ label: account.name, amount });
   }
+  /** The survivor's fraction of a linked debt's property, or null when the
+   *  debt is unlinked or its property is gone / worth 0 this year. */
+  const propertyFraction = (liability: Liability): number | null => {
+    const slices = liability.linkedPropertyId
+      ? slicesByAccount.get(liability.linkedPropertyId)
+      : undefined;
+    const total = slices?.reduce((s, sl) => s + sl.value, 0) ?? 0;
+    return slices && total > 0 ? survivorValue(slices) / total : null;
+  };
   for (const liability of clientData.liabilities ?? []) {
-    const owners = yearRow
-      ? liabilityOwnersForYearSafe(liability, giftEvents, asOfYear, projectionStartYear)
-      : liability.owners ?? [];
-    const pct = owners.filter(isSurvivor).reduce((s, o) => s + o.percent, 0);
+    const pct =
+      propertyFraction(liability) ??
+      at.liabilityOwnersAt(liability).filter(isSurvivor).reduce((s, o) => s + o.percent, 0);
     if (pct <= 0) continue;
-    const balance =
-      yearRow?.liabilityBalancesBoY?.[liability.id] ??
-      (typeof liability.balance === "number" ? liability.balance : 0);
-    const amount = -balance * pct;
+    const amount = -at.liabilityBalanceAt(liability) * pct;
     if (amount === 0) continue;
     lines.push({ label: liability.name, amount });
   }
@@ -561,11 +603,10 @@ function accountAmount(a: Account): number {
  *    recipient side); cash gifts to trusts already flow through the trust's
  *    own account slices via the projection.
  *
- * `projection` is optional: when omitted, the function falls back to static
- * account values + authored ownership (the pre-projection behavior, used by
- * fixture tests). With a projection, ownership is composed via
- * `ownersForYearSafe`, balances are read from `accountLedgers.endingValue`
- * at the matching year row, and `resolveOwnerSlices` distributes locked shares.
+ * Balances and ownership resolve through `asOfYearResolver`: the projection's
+ * row for `asOfYear` when there is one (an account missing from it is worth
+ * 0), else the static account values + authored ownership (the pre-projection
+ * behavior, used by fixture tests).
  */
 function computeOutOfEstate(
   clientData: ClientData,
@@ -575,28 +616,7 @@ function computeOutOfEstate(
 ): EstateFlowSummary["outOfEstate"] {
   const accounts = clientData.accounts ?? [];
   const entities = clientData.entities ?? [];
-  const giftEvents = clientData.giftEvents ?? [];
-
-  // Locate the projection year row for `asOfYear`. When the projection doesn't
-  // cover that year (e.g. a fixture without a projection, or an AsOf selection
-  // past plan-end), fall back to static account values and authored ownership.
-  const yearRow: ProjectionYear | undefined = projection?.years.find(
-    (y) => y.year === asOfYear,
-  );
-  const projectionStartYear = projection?.years[0]?.year ?? asOfYear;
-
-  const balanceAt = (accountId: string, account: Account): number => {
-    if (yearRow) {
-      const ledger = yearRow.accountLedgers?.[accountId];
-      if (ledger) return ledger.endingValue;
-    }
-    return accountAmount(account);
-  };
-
-  const ownersAt = (account: Account) => {
-    if (!yearRow) return account.owners ?? [];
-    return ownersForYearSafe(account, giftEvents, asOfYear, projectionStartYear);
-  };
+  const { balanceAt, slicesOf } = asOfYearResolver(clientData, asOfYear, projection);
 
   const { clientRetirementYear, spouseRetirementYear } = clientData.client
     ? resolveOwnerRetirementYears(clientData.client)
@@ -616,12 +636,7 @@ function computeOutOfEstate(
     { label: string; amount: number; gifts: { label: string; amount: number }[] }
   >();
   for (const account of accounts) {
-    const slices = accountSlicesAtYear({
-      account,
-      yearRow,
-      valueOf: (id) => (id === account.id ? balanceAt(account.id, account) : yearRow?.accountLedgers?.[id]?.endingValue ?? 0),
-      fallbackOwners: () => ownersAt(account),
-    });
+    const slices = slicesOf(account);
     const owners = slices.map((sl) => sl.owner);
     const sliceByEntity = new Map<string, number>();
     for (const s of slices) {
@@ -735,7 +750,7 @@ function computeOutOfEstate(
   const heirEntities: OoeEntity[] = [];
   for (const account of accounts) {
     if (!OOE_PERSON_ACCOUNT_SUBTYPES.has(account.subType)) continue;
-    const amount = balanceAt(account.id, account);
+    const amount = balanceAt(account);
     if (amount <= 0) continue;
     heirEntities.push({
       entityId: account.id,
