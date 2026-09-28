@@ -396,10 +396,18 @@ export function liabilityOwnedByHouseholdAtYear(
  *  `composeOwnersForYear` draws each gift from the (shrinking) household share
  *  and throws once the cumulative draw exceeds it — so the throw condition is
  *  precisely `Σ giftedPercent > householdShare`. Guarding on the aggregate lets
- *  us fall back to the static owners in the one legitimate case (the gifts
- *  already encode the transfer, e.g. an ILIT policy modeled as entity-owned
- *  with a redundant §2035 event) without an exception, while still letting a
- *  genuine integrity throw surface for valid-household inputs.
+ *  a wrapper fall back to the static owners without an exception when the gifts
+ *  already encode the transfer (e.g. an ILIT policy modeled as entity-owned
+ *  with a redundant §2035 event), while still letting a genuine integrity throw
+ *  surface for valid-household inputs.
+ *
+ *  That fallback keeps a DIRECT caller of the death-event functions
+ *  (`computeGrossEstate` and its siblings) alive on such a shape — they resolve
+ *  owners only through these wrappers. It does not keep `runProjection` alive:
+ *  the projection's raw composers throw on the same shape (an account at
+ *  `ownedByEntityAtYear` in the trust passes, a liability at
+ *  `liabilityOwnedByHouseholdAtYear`), and an account's ownership snapshot
+ *  reaches this guard first, so the warning below prints before the throw.
  *
  *  The fallback WARNS. It is otherwise indistinguishable from a correct
  *  resolution, and that silence is how a double-applied overlay hides: a caller
@@ -441,7 +449,9 @@ function canFundGifts(
  * this account. The household-share guard (`canFundGifts`) skips retitling when
  * the static owners already encode the transfer (e.g. an ILIT-gifted policy
  * modeled as entity-owned with a redundant gift event for §2035 / ATG) — there
- * `ownersForYear` would over-draw the zero household share and throw.
+ * `ownersForYear` would over-draw the zero household share and throw. That
+ * rescues a direct death-path call, not a projection: `runProjection` still
+ * throws on such an account at its raw reads (see `canFundGifts`).
  */
 export function giftAwareOwners(
   account: AccountWithOwners,

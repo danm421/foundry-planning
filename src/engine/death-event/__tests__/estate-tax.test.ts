@@ -1613,8 +1613,10 @@ describe("computeGrossEstate — liability gifts", () => {
 
   it("books only the decedent's pro-rata share of a GIFTED joint debt", () => {
     // [client .5, spouse .5] less a 40% gift to the trust composes to
-    // [client .3, spouse .3, trust .4]: the client's first death books 30%, not
-    // the joint 50/50 default.
+    // [client .3, spouse .3, trust .4]. The client's first death books 30%: the
+    // joint convention's half, applied to the household's post-gift share
+    // (0.5 × 0.6), not to the whole debt. It is not read off the client's own
+    // .3 row; the even split only makes the two agree.
     const r = computeGrossEstate({
       deceased: "client",
       deathOrder: 1,
