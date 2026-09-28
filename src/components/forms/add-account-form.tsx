@@ -58,6 +58,8 @@ import type { AccountOwner } from "@/engine/ownership";
 import { isRmdEligibleSubType } from "@/engine/rmd";
 import { RETIREMENT_SUBTYPES } from "@/lib/ownership";
 import { isAumEligible } from "@/lib/accounts/aum";
+import { InheritedIraFields } from "./inherited-ira-fields";
+import { canBeInheritedIra, inheritedIraBodyFields, inheritedIraFormError } from "@/lib/accounts/inherited-ira";
 import { FieldTooltip } from "./field-tooltip";
 import { basisFieldLabel, basisFieldHelp } from "@/lib/accounts/basis-label";
 import { TRAD_IRA_SUBTYPES } from "@/engine/ira-basis";
@@ -482,6 +484,14 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   const [priorYearEndValue, setPriorYearEndValue] = useState<string>(
     initial?.priorYearEndValue ?? "",
   );
+  const [inheritedIra, setInheritedIra] = useState<boolean>(initial?.inheritedDeathYear != null);
+  const [inheritedDeathYear, setInheritedDeathYear] = useState<string>(
+    initial?.inheritedDeathYear != null ? String(initial.inheritedDeathYear) : "",
+  );
+  const [inheritedOwnerBirthYear, setInheritedOwnerBirthYear] = useState<string>(
+    initial?.inheritedOwnerBirthYear != null ? String(initial.inheritedOwnerBirthYear) : "",
+  );
+  const [inheritedHeirDisabled, setInheritedHeirDisabled] = useState<boolean>(initial?.inheritedHeirDisabled === true);
   const [annualPropertyTax, setAnnualPropertyTax] = useState(initial?.annualPropertyTax ?? "0");
   const [propertyTaxGrowthRate, setPropertyTaxGrowthRate] = useState(
     initial?.propertyTaxGrowthRate != null ? (Number(initial.propertyTaxGrowthRate) * 100).toString() : "3"
@@ -740,6 +750,10 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     rmdEnabled,
     countsTowardAum,
     priorYearEndValue,
+    inheritedIra,
+    inheritedDeathYear,
+    inheritedOwnerBirthYear,
+    inheritedHeirDisabled,
     annualPropertyTax,
     propertyTaxGrowthRate,
     propertyTaxGrowthSource,
@@ -781,6 +795,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     name, category, subType, hsaCoverage, owners, titlingType, parentBusinessId, accountValue, accountBasis,
     accountRothValue, growthSource, growthRatePct, realEstateGrowthSource,
     realEstateGrowthRatePct, modelPortfolioId, tickerPortfolioId, rmdEnabled, countsTowardAum, priorYearEndValue,
+    inheritedIra, inheritedDeathYear, inheritedOwnerBirthYear, inheritedHeirDisabled,
     annualPropertyTax, propertyTaxGrowthRate, propertyTaxGrowthSource,
     overridePctOi, overridePctLtCg, overridePctQdiv, overridePctTaxExempt,
     turnoverPct, customAllocations, custodian, accountNumberLast4,
@@ -794,20 +809,27 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   ]);
 
   const baselineRef = useRef<string>("");
-  useEffect(() => {
+  // Adjust-during-render, not in an effect: `baselineRef` is read to derive
+  // `isDirty` on THIS render, and setting it in a mount effect instead would
+  // leave THIS already-committed render — and the tab-click handler it
+  // produced — still holding the empty pre-mount baseline. That stale
+  // "isDirty" reads true until some unrelated state change forces a second
+  // render, which is invisible in normal use (a human never clicks a tab
+  // within the same tick as mount) but is exactly what a test does when it
+  // fires a tab click right after `render()`, mid-edit, before submit —
+  // producing a spurious extra autosave PUT with pre-edit values ahead of the
+  // real one. Idempotent via the ref flag, so this only ever runs once.
+  const baselineMountedRef = useRef(false);
+  if (!baselineMountedRef.current) {
+    baselineMountedRef.current = true;
     baselineRef.current = currentSerialized;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }
 
   // A contract that just arrived from the server is not an edit the advisor
-  // made, so it must not count as dirt. Deliberately an adjust-during-render:
-  // `baselineRef` is read to derive `isDirty` on THIS render, and doing it in
-  // an effect would leave the already-committed render — and the tab-click
-  // handler it produced — still holding the old baseline. Gated on "loaded" as
-  // well as the ref because the row and the state flip are batched, so seeing
-  // "loaded" proves the row is already in `currentSerialized`. Idempotent: the
-  // ref clears itself. Only the annuity load is re-baselined here; the form's
-  // mount-only baseline capture is pre-existing and left alone.
+  // made, so it must not count as dirt either — same adjust-during-render
+  // reasoning as above. Gated on "loaded" as well as the ref because the row
+  // and the state flip are batched, so seeing "loaded" proves the row is
+  // already in `currentSerialized`. Idempotent: the ref clears itself.
   if (annuityRebaselineRef.current && annuityLoad === "loaded") {
     annuityRebaselineRef.current = false;
     baselineRef.current = currentSerialized;
@@ -838,9 +860,29 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   // come back 400; the tab shows which field is missing.
   const annuityIncomplete =
     category === "annuity" && annuityContractIncomplete(annuityContract);
+  const inheritedState = useMemo(
+    () => ({ inherited: inheritedIra, deathYear: inheritedDeathYear, ownerBirthYear: inheritedOwnerBirthYear, heirDisabled: inheritedHeirDisabled }),
+    [inheritedIra, inheritedDeathYear, inheritedOwnerBirthYear, inheritedHeirDisabled],
+  );
+  const inheritedFields = useMemo(
+    () => inheritedIraBodyFields(inheritedState, category, subType),
+    [inheritedState, category, subType],
+  );
+  const inheritedActive = inheritedIra && canBeInheritedIra(category, subType);
+  const inheritedError = inheritedIraFormError(inheritedState, category, subType, new Date().getFullYear());
+  // savingsRuleOwnerForAccount is declared further down this component (as
+  // savingsRuleOwner) — called directly here so the RMD tab's heir-role lookup
+  // doesn't have to wait for that later declaration.
+  const inheritedHeirRole = savingsRuleOwnerForAccount({ owners }, familyMembers); // "client" | "spouse" | "joint"
+  const inheritedHeirBirthYear =
+    inheritedHeirRole === "client" ? milestones?.clientBirthYear ?? null
+    : inheritedHeirRole === "spouse" ? milestones?.spouseBirthYear ?? null
+    : null;
+  const inheritedUnavailableReason =
+    inheritedHeirRole === "joint" ? "Only an IRA owned by the client or spouse can be marked inherited." : null;
   const canSave =
     name.trim().length > 0 && !educationBeneficiaryMissing && !equityStrategyIncomplete &&
-    !annuityIncomplete;
+    !annuityIncomplete && inheritedError == null;
 
   // ── An in-progress grant must not be thrown away (audit F42) ───────────────
   // The grant editor saves through its own "Save Grant" button. The dialog's
@@ -1368,7 +1410,8 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       growthRate,
       countsTowardAum,
       rmdEnabled,
-      priorYearEndValue: rmdEnabled && priorYearEndValue !== "" ? priorYearEndValue : null,
+      priorYearEndValue: (rmdEnabled || inheritedActive) && priorYearEndValue !== "" ? priorYearEndValue : null,
+      ...inheritedFields,
       growthSource: usesGrowthDropdown
         ? growthSource
         : category === "real_estate"
@@ -1504,6 +1547,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     canSave, equityScenarioBlocked, subType, category, realEstateGrowthRatePct, growthSource, growthRatePct,
     usesGrowthDropdown, name, owners, titlingType, parentBusinessId, accountValue, accountBasis, accountRothValue,
     rmdEnabled, countsTowardAum, priorYearEndValue, realEstateGrowthSource, modelPortfolioId, tickerPortfolioId, deriveFromHoldings,
+    inheritedFields, inheritedActive,
     turnoverPct, overridePctOi, overridePctLtCg, overridePctQdiv, overridePctTaxExempt,
     annualPropertyTax, propertyTaxGrowthRate, propertyTaxGrowthSource,
     effectiveAccountId, clientId, writer, showAssetMixTab, customAllocations, drivenByHoldings,
@@ -1608,7 +1652,8 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       growthRate,
       countsTowardAum,
       rmdEnabled,
-      priorYearEndValue: rmdEnabled && priorYearEndValue !== "" ? priorYearEndValue : null,
+      priorYearEndValue: (rmdEnabled || inheritedActive) && priorYearEndValue !== "" ? priorYearEndValue : null,
+      ...inheritedFields,
       growthSource: usesGrowthDropdown
         ? growthSource
         : category === "real_estate"
@@ -3017,22 +3062,42 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       {!lockTab && showRmdCheckbox && (
         <div className={activeTab === "rmd" ? "" : "hidden"}>
           <div className="space-y-4">
-            <div>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={rmdEnabled}
-                  onChange={(e) => setRmdEnabled(e.target.checked)}
-                  className="h-4 w-4 rounded border-hair-3 bg-card-2 text-accent focus:ring-accent"
-                />
-                <span className="text-sm font-medium text-ink-3">Subject to RMDs</span>
-              </label>
-              <p className="mt-1 ml-6 text-xs text-ink-3">
-                Required Minimum Distributions apply to pre-tax retirement accounts starting at age 73 or 75.
-              </p>
-            </div>
+            {canBeInheritedIra(category, subType) && (
+              <InheritedIraFields
+                isRoth={subType === "roth_ira"}
+                inherited={inheritedIra}
+                onInheritedChange={setInheritedIra}
+                deathYear={inheritedDeathYear}
+                onDeathYearChange={setInheritedDeathYear}
+                ownerBirthYear={inheritedOwnerBirthYear}
+                onOwnerBirthYearChange={setInheritedOwnerBirthYear}
+                heirDisabled={inheritedHeirDisabled}
+                onHeirDisabledChange={setInheritedHeirDisabled}
+                heirBirthYear={inheritedHeirBirthYear}
+                referenceYear={milestones?.planStart ?? new Date().getFullYear()}
+                unavailableReason={inheritedUnavailableReason}
+                error={inheritedError}
+              />
+            )}
 
-            {rmdEnabled && (
+            {!inheritedActive && (
+              <div>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={rmdEnabled}
+                    onChange={(e) => setRmdEnabled(e.target.checked)}
+                    className="h-4 w-4 rounded border-hair-3 bg-card-2 text-accent focus:ring-accent"
+                  />
+                  <span className="text-sm font-medium text-ink-3">Subject to RMDs</span>
+                </label>
+                <p className="mt-1 ml-6 text-xs text-ink-3">
+                  Required Minimum Distributions apply to pre-tax retirement accounts starting at age 73 or 75.
+                </p>
+              </div>
+            )}
+
+            {(rmdEnabled || inheritedActive) && (
               <div>
                 <label className={fieldLabelClassName} htmlFor="priorYearEndValue">
                   Prior Dec 31 Balance

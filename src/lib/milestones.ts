@@ -52,6 +52,8 @@ export interface ClientMilestones {
   planEnd: number;
   clientRetirement: number;
   clientEnd: number;
+  clientBirthYear?: number;
+  spouseBirthYear?: number;
   spouseRetirement?: number;
   spouseEnd?: number;
   clientSS62?: number;
@@ -78,12 +80,17 @@ export function buildClientMilestones(client: {
   const milestones: ClientMilestones = {
     planStart: planStartYear,
     planEnd: planEndYear,
+    clientBirthYear,
     clientRetirement: clientBirthYear + client.retirementAge,
     clientEnd: clientBirthYear + client.planEndAge,
     clientSS62: clientBirthYear + 62,
     clientSSFRA: clientBirthYear + 67,
     clientSS70: clientBirthYear + 70,
   };
+
+  if (client.spouseDob) {
+    milestones.spouseBirthYear = new Date(client.spouseDob).getFullYear();
+  }
 
   if (client.spouseDob && client.spouseRetirementAge != null) {
     const spouseBirthYear = new Date(client.spouseDob).getFullYear();
