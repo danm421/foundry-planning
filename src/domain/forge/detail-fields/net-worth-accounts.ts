@@ -193,6 +193,32 @@ export const NET_WORTH_ACCOUNT_ENTITIES: readonly DetailEntity[] = [
           "Override for the Dec-31 balance the first projection year's RMD is computed from. Ignored after Year 1. Only shown when rmdEnabled.",
       },
       {
+        key: "inheritedDeathYear",
+        label: "Year of death",
+        kind: "year",
+        nullable: true,
+        defaultValue: null,
+        notes:
+          "The original IRA owner's year of death; only accepted on a Traditional or Roth IRA. Must be sent together with inheritedOwnerBirthYear — the write path rejects one without the other, rejects a value later than the current year, and rejects a value more than 120 years after inheritedOwnerBirthYear.",
+      },
+      {
+        key: "inheritedOwnerBirthYear",
+        label: "Original owner's birth year",
+        kind: "year",
+        nullable: true,
+        defaultValue: null,
+        notes:
+          "The original (deceased) IRA owner's birth year, paired with inheritedDeathYear. The write path rejects a birth year before 1900, and rejects a death/birth pair more than 120 years apart.",
+      },
+      {
+        key: "inheritedHeirDisabled",
+        label: "Heir is disabled or chronically ill",
+        kind: "boolean",
+        defaultValue: false,
+        notes:
+          "Keeps the life-expectancy stretch instead of the 10-year rule for a death in 2020 or later. The write path saves this as false whenever the resulting inheritedDeathYear is null, even if the caller sent true.",
+      },
+      {
         key: "turnoverPct",
         label: "Turnover %",
         kind: "rate",
