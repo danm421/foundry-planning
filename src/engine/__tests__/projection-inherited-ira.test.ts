@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { runProjection } from "../projection";
 import { buildClientData, basePlanSettings, baseClient } from "./fixtures";
+import { TAX_YEAR_2026 } from "./_fixtures/tax-year-2026";
 import { LEGACY_FM_CLIENT } from "../ownership";
-import type { Account, FamilyMember } from "../types";
+import type { Account, Expense, FamilyMember } from "../types";
 
 // Spec example 2: owner born 1945 died 2022 (had started RMDs); heir (the
 // client) born 1975 → 10-year rule with yearly RMDs, empty by Dec 31, 2032.
@@ -130,6 +131,109 @@ describe("projection — inherited Roth IRA", () => {
     const years = runProjection(data);
     expect(years.find((r) => r.year === 2031)!.savings.total).toBe(0);
     expect(years.find((r) => r.year === 2032)!.savings.total).toBeCloseTo(10_000, 6);
+  });
+});
+
+describe("projection — inherited Roth payout is reported as non-taxable income (bracket mode)", () => {
+  // Every YearTaxInput the year can end on must carry the payout, or the tax
+  // result's Non-Taxable Income flickers with whichever pass ran last: the
+  // base input (surplus year), the education fold, the fill-bracket seeded
+  // input, the supplemental loop (checking shortfall) and the legacy
+  // no-checking loop.
+  const owned = [{ kind: "family_member" as const, familyMemberId: LEGACY_FM_CLIENT, percent: 1 }];
+  const brokerage: Account = {
+    id: "acct-brokerage", name: "Brokerage", category: "taxable", subType: "brokerage",
+    titlingType: "jtwros", value: 200_000, basis: 200_000, growthRate: 0, rmdEnabled: false, owners: owned,
+  };
+  // All basis, so a pre-59½ draw is still entirely tax-free.
+  const eduRoth: Account = {
+    id: "acct-edu-roth", name: "Roth IRA (education)", category: "retirement", subType: "roth_ira",
+    titlingType: "jtwros", value: 30_000, basis: 30_000, growthRate: 0, rmdEnabled: false, owners: owned,
+  };
+  const ownIra: Account = {
+    id: "acct-own-ira", name: "Own IRA", category: "retirement", subType: "traditional_ira",
+    titlingType: "jtwros", value: 100_000, basis: 0, growthRate: 0, rmdEnabled: false, owners: owned,
+  };
+  const ownRoth: Account = {
+    id: "acct-own-roth", name: "Own Roth", category: "retirement", subType: "roth_ira",
+    titlingType: "jtwros", value: 0, basis: 0, growthRate: 0, rmdEnabled: false, owners: owned,
+  };
+
+  function year2032(opts: {
+    withChecking: boolean;
+    expense2032?: number;
+    education2032?: boolean;
+    fillBracket2032?: boolean;
+  }) {
+    const expenses: Expense[] = [];
+    if (opts.expense2032) {
+      expenses.push({ id: "exp-2032", name: "One-off", type: "living", annualAmount: opts.expense2032, growthRate: 0, startYear: 2032, endYear: 2032 });
+    }
+    if (opts.education2032) {
+      expenses.push({
+        id: "edu-2032", name: "College", type: "education", annualAmount: 20_000, growthRate: 0,
+        startYear: 2032, endYear: 2032, dedicatedAccountIds: [eduRoth.id], payShortfallOutOfPocket: false,
+      });
+    }
+    const data = buildClientData({
+      client: { ...baseClient, dateOfBirth: `${HEIR_BIRTH_YEAR}-01-01`, spouseName: undefined, spouseDob: undefined },
+      familyMembers: soloClient,
+      accounts: [
+        ...(opts.withChecking ? [checking] : []),
+        brokerage,
+        inheritedIra({ subType: "roth_ira" }),
+        ...(opts.education2032 ? [eduRoth] : []),
+        ...(opts.fillBracket2032 ? [ownIra, ownRoth] : []),
+      ],
+      incomes: [], expenses, liabilities: [], savingsRules: [],
+      withdrawalStrategy: [{ accountId: "acct-brokerage", priorityOrder: 1, startYear: 2026, endYear: 2034 }],
+      rothConversions: opts.fillBracket2032
+        ? [{
+            id: "rc-fill", name: "Fill 22%", destinationAccountId: ownRoth.id, sourceAccountIds: [ownIra.id],
+            conversionType: "fill_up_bracket", fillUpBracket: 0.22, fixedAmount: 0,
+            startYear: 2032, endYear: 2032, indexingRate: 0,
+          }]
+        : [],
+      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2034, taxEngineMode: "bracket" },
+      taxYearRows: [TAX_YEAR_2026],
+    });
+    return runProjection(data).find((r) => r.year === 2032)!;
+  }
+
+  it("surplus year: the 400,000 is non-taxable income and moves no tax number", () => {
+    const y = year2032({ withChecking: true });
+    expect(y.withdrawals.byAccount["acct-brokerage"] ?? 0).toBe(0);
+    expect(y.taxResult!.income.nonTaxableIncome).toBeCloseTo(400_000, 6);
+    expect(y.taxResult!.flow.adjustedGrossIncome).toBe(0);
+    expect(y.expenses.taxes).toBe(0);
+    // The tax result's gross figure is separate from the cash-flow total, which
+    // counts the payout once.
+    expect(y.totalIncome).toBeCloseTo(400_000, 6);
+  });
+
+  it("education draw year: the 400,000 sits alongside the education draw's tax-free slice", () => {
+    const y = year2032({ withChecking: true, education2032: true });
+    expect(y.taxDetail!.bySource["education_tax_free:edu-2032"]?.amount).toBeCloseTo(20_000, 6);
+    expect(y.taxResult!.income.nonTaxableIncome).toBeCloseTo(420_000, 6);
+  });
+
+  it("fill-bracket conversion year (seeded tax input): the 400,000 is still non-taxable income", () => {
+    const y = year2032({ withChecking: true, fillBracket2032: true });
+    expect(y.withdrawals.byAccount["acct-brokerage"] ?? 0).toBe(0);
+    expect(y.taxDetail!.bySource["roth_conversion:rc-fill"]?.amount ?? 0).toBeGreaterThan(0);
+    expect(y.taxResult!.income.nonTaxableIncome).toBeCloseTo(400_000, 6);
+  });
+
+  it("shortfall year (supplemental draw): the 400,000 is still non-taxable income", () => {
+    const y = year2032({ withChecking: true, expense2032: 450_000 });
+    expect(y.withdrawals.byAccount["acct-brokerage"]).toBeGreaterThan(0);
+    expect(y.taxResult!.income.nonTaxableIncome).toBeCloseTo(400_000, 6);
+  });
+
+  it("no checking account, shortfall (legacy draw): the 400,000 is still non-taxable income", () => {
+    const y = year2032({ withChecking: false, expense2032: 450_000 });
+    expect(y.withdrawals.byAccount["acct-brokerage"]).toBeGreaterThan(0);
+    expect(y.taxResult!.income.nonTaxableIncome).toBeCloseTo(400_000, 6);
   });
 });
 

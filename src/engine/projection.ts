@@ -5529,6 +5529,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       spouseAge: ages.spouse,
       isoSpread: equityIsoSpread,
       household: taxHousehold,
+      // An inherited Roth's RMD is recorded as tax-free here, as a Roth draw is.
+      // Display-only (nonTaxableIncome / grossTotalIncome). Every rebuild of
+      // this input below must carry it too, or the stored result drops it.
+      taxFreeRetirementIncome: householdRmdTaxFreeCashIn,
     };
     const taxOut = computeTaxForYear(baseTaxInput);
 
@@ -6815,7 +6819,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // totals (nonTaxableIncome / grossTotalIncome), never taxes / AGI / MAGI — so the
     // pre-supplemental `taxes` and Medicare MAGI already computed above are unchanged.
     if (educationTaxFreeIncome > 0) {
-      finalTaxInput = { ...baseTaxInput, taxFreeRetirementIncome: educationTaxFreeIncome };
+      finalTaxInput = {
+        ...baseTaxInput,
+        taxFreeRetirementIncome: householdRmdTaxFreeCashIn + educationTaxFreeIncome,
+      };
       taxOutForIter = computeTaxForYear(finalTaxInput);
     }
     let convergenceWarning: TrustWarning | null = null;
@@ -6867,6 +6874,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           spouseAge: ages.spouse,
           isoSpread: equityIsoSpread,
           household: taxHousehold,
+          taxFreeRetirementIncome: householdRmdTaxFreeCashIn,
         };
         taxOutForIter = computeTaxForYear(seededTaxInput);
         finalTaxInput = seededTaxInput;
@@ -7030,7 +7038,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           if (bucket) supplementalRetirementBreakdown[bucket] += draw.ordinaryIncome;
         }
 
-        const supplementalTaxFree = educationTaxFreeIncome + sumTaxFreeSlice(supplementalPlan.draws);
+        const supplementalTaxFree =
+          householdRmdTaxFreeCashIn + educationTaxFreeIncome + sumTaxFreeSlice(supplementalPlan.draws);
 
         const supplementalTaxInput: YearTaxInput = {
           taxDetail: taxDetailWithBoth,
@@ -7239,7 +7248,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             spouseAge: ages.spouse,
             isoSpread: equityIsoSpread,
             household: taxHousehold,
-            taxFreeRetirementIncome: educationTaxFreeIncome + sumTaxFreeSlice(supplementalPlan.draws),
+            taxFreeRetirementIncome:
+              householdRmdTaxFreeCashIn + educationTaxFreeIncome + sumTaxFreeSlice(supplementalPlan.draws),
           };
           taxOutForIter = computeTaxForYear(legacyTaxInput);
           finalTaxInput = legacyTaxInput;
