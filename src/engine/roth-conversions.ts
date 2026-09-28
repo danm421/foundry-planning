@@ -3,6 +3,7 @@ import type { BracketTier, FilingStatus } from "@/lib/tax/types";
 import { classifyTransferTax } from "./tax-classification";
 import { isTraditionalIra } from "./ira-basis";
 import { controllingFamilyMember } from "./ownership";
+import { isInheritedIra } from "./inherited-ira";
 
 // ============================================================================
 // Public Types
@@ -197,7 +198,10 @@ export function applyRothConversions(input: RothConversionsInput): RothConversio
     // Resolve sources → only include source accounts that exist and have balance.
     const sources = conv.sourceAccountIds
       .map((id) => accountMap.get(id))
-      .filter((a): a is Account => a != null && (accountBalances[a.id] ?? 0) > 0);
+      .filter(
+        (a): a is Account =>
+          a != null && (accountBalances[a.id] ?? 0) > 0 && !isInheritedIra(a), // a non-spouse heir cannot convert
+      );
     if (sources.length === 0) continue;
 
     const sourcePoolBalance = sources.reduce(
@@ -476,7 +480,7 @@ function _resolveTargetAmount(
  *  individual, so this one is the outlier — unifying it moves conversion
  *  numbers on existing plans and is deliberately left as its own change. */
 function _isPooledTradIra(account: Account): boolean {
-  return isTraditionalIra(account);
+  return isTraditionalIra(account) && !isInheritedIra(account);
 }
 
 function _computeTradIraPool(

@@ -2,6 +2,7 @@ import type { Account, Transfer, AccountLedger } from "./types";
 import { classifyTransferTax } from "./tax-classification";
 import { computeTradIraPool, iraPoolKey, isTraditionalIra } from "./ira-basis";
 import { controllingFamilyMember } from "./ownership";
+import { isInheritedIra } from "./inherited-ira";
 
 // ============================================================================
 // Basis Clamping
@@ -139,6 +140,7 @@ export function applyTransfers(input: TransfersInput): TransfersResult {
         ? computeTradIraPool(accounts, accountBalances, basisMap, iraPoolKey(sourceAccount))
         : undefined,
       ownerAge,
+      sourceIsInherited: isInheritedIra(sourceAccount),
       rothBasis: basisMap[transfer.sourceAccountId] ?? 0,
     });
 

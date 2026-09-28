@@ -36,6 +36,9 @@ export interface TransferTaxInput {
    *  is the right answer for a $0-basis pool. Roth CONVERSIONS keep using
    *  allTraditionalIra{Basis,Balance} — see the note on that pair. */
   sourceTradIraPool?: TradIraPool;
+  /** Source is an inherited IRA: distributions carry no early-withdrawal
+   *  penalty and an inherited Roth's earnings are tax-free. */
+  sourceIsInherited?: boolean;
 }
 
 export interface TransferTaxResult {
@@ -178,7 +181,7 @@ export function classifyTransferTax(input: TransferTaxInput): TransferTaxResult 
   if (sourceCategory === "retirement") {
     const sourceIsRoth = ROTH_SUBTYPES.has(sourceSubType);
     const sourceIs401kOr403b = sourceSubType === "401k" || sourceSubType === "403b";
-    const isEarly = ownerAge < EARLY_WITHDRAWAL_AGE;
+    const isEarly = ownerAge < EARLY_WITHDRAWAL_AGE && !input.sourceIsInherited;
 
     if (sourceIsRoth) {
       return _classifyRothDistribution(amount, rothBasis, isEarly);

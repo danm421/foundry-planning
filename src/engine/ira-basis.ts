@@ -1,5 +1,6 @@
 import { controllingFamilyMember, controllingEntity } from "./ownership";
 import type { Account } from "./types";
+import { isInheritedIra } from "./inherited-ira";
 
 /**
  * Form 8606 aggregation pool: Traditional IRAs ONLY — including SEP and SIMPLE.
@@ -34,6 +35,9 @@ export const EMPTY_TRAD_IRA_POOL: TradIraPool = { balance: 0, basis: 0 };
  * a family-member id, an entity id, or null when ownership is malformed.
  */
 export function iraPoolKey(account: Account): string | null {
+  // A non-spouse heir's inherited IRA is never aggregated with the heir's own
+  // IRAs for Form 8606 — it is a pool of one.
+  if (isInheritedIra(account)) return `inherited:${account.id}`;
   return controllingFamilyMember(account) ?? controllingEntity(account);
 }
 
