@@ -9176,18 +9176,25 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     const routedAtDeath = new Set((year.deathTransfers ?? []).map((t) => t.sourceAccountId));
     for (const acct of data.accounts ?? []) {
       if (routedAtDeath.has(acct.id)) continue;
-      const entityOwner = acct.owners.find((o) => o.kind === "entity") as
-        | { kind: "entity"; entityId: string; percent: number }
-        | undefined;
-      if (!entityOwner) continue;
-      if (entityOwner.percent >= 1) continue; // 100%-entity-owned: snapshot already correct
-      const entityLocked = year.entityAccountSharesEoY
-        ?.get(entityOwner.entityId)
-        ?.get(acct.id);
-      if (entityLocked == null) continue;
+      // The year's owners by the rule `entityAccountSharesEoY` was booked
+      // under (`liveOwnersAt`), not the AUTHORED rows: an account gifted into a
+      // trust has no authored entity row, so this pass never re-split it and
+      // the trust's bucket stayed the in-loop `balance × percent` — decaying
+      // with every household draw while the trust's own row held its lock.
+      // And EVERY entity owner, or a second trust's share lands in the
+      // household bucket.
+      const owners = liveOwnersAt(acct.id, year.year);
+      const entityOwners = owners.filter(
+        (o): o is Extract<AccountOwner, { kind: "entity" }> => o.kind === "entity",
+      );
+      if (entityOwners.length === 0) continue;
+      if (entityOwners.some((o) => o.percent >= 1)) continue; // 100%-entity-owned: snapshot already correct
+      const entityLocked = entityOwners.map((o) =>
+        year.entityAccountSharesEoY?.get(o.entityId)?.get(acct.id),
+      );
+      if (entityLocked.some((v) => v == null)) continue;
       const ledger = year.accountLedgers[acct.id];
       if (!ledger) continue;
-      const entity = stableEntityById[entityOwner.entityId];
       const primaryKey = PORTFOLIO_CATEGORY_TO_BUCKET[acct.category] ?? "taxable";
 
       // Clear stale per-account entries so we can write the locked-share split fresh.
@@ -9195,35 +9202,49 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       delete year.portfolioAssets.trustsAndBusinesses[acct.id];
       delete year.portfolioAssets.accessibleTrustAssets[acct.id];
 
-      if (entity?.includeInPortfolio) {
-        // IIP entity: HH + IIP-entity together fill the primary bucket.
-        // (Locked share exists but the drilldown bundles them — same as the
-        // original Pass 1 behavior, just sourced from ledger.endingValue
-        // instead of accountBalances × inPortfolioFraction so it stays
-        // consistent across paths.)
-        const inPortfolioVal = ledger.endingValue;
-        if (inPortfolioVal > 0) {
-          year.portfolioAssets[primaryKey][acct.id] = inPortfolioVal;
-          if (primaryKey === "business") {
-            year.portfolioAssets.trustsAndBusinesses[acct.id] = inPortfolioVal;
-          }
+      // Each entity holds its lock. An IIP entity's is bundled with the
+      // household in the primary bucket; any other routes by accessibleToClient.
+      let lockedTotal = 0;
+      let inPortfolioVal = 0;
+      entityOwners.forEach((o, i) => {
+        const locked = entityLocked[i]!;
+        lockedTotal += locked;
+        const entity = stableEntityById[o.entityId];
+        if (entity?.includeInPortfolio) {
+          inPortfolioVal += locked;
+          return;
         }
-      } else {
-        // Non-IIP entity: family pool = ledger.endingValue − entity locked.
-        // Entity slice routes by accessibleToClient. Mirror business → t&b.
-        const familyPool = Math.max(0, ledger.endingValue - entityLocked);
-        if (familyPool > 0) {
-          year.portfolioAssets[primaryKey][acct.id] = familyPool;
-          if (primaryKey === "business") {
-            year.portfolioAssets.trustsAndBusinesses[acct.id] = familyPool;
-          }
-        }
+        if (locked <= 0) return;
         const entityBucket = entity?.accessibleToClient
           ? "accessibleTrustAssets"
           : "trustsAndBusinesses";
-        if (entityLocked > 0) {
-          year.portfolioAssets[entityBucket][acct.id] =
-            (year.portfolioAssets[entityBucket][acct.id] ?? 0) + entityLocked;
+        year.portfolioAssets[entityBucket][acct.id] =
+          (year.portfolioAssets[entityBucket][acct.id] ?? 0) + locked;
+      });
+      // The rest splits as the balance sheet splits it (`resolveOwnerSlices`):
+      // a gifted-away share holds `value × percent`, the family members share
+      // what is left by percent — and only the principals' part of that is
+      // household portfolio (`computePortfolioSnapshot`), not a child's row.
+      let familyPercent = 0;
+      let principalPercent = 0;
+      let giftedAwayPercent = 0;
+      for (const o of owners) {
+        if (o.kind === "gifted_away") giftedAwayPercent += o.percent;
+        if (o.kind !== "family_member") continue;
+        familyPercent += o.percent;
+        if (principalFmIds.has(o.familyMemberId)) principalPercent += o.percent;
+      }
+      const familyPool = Math.max(
+        0,
+        ledger.endingValue - lockedTotal - ledger.endingValue * giftedAwayPercent,
+      );
+      if (familyPercent > 0) inPortfolioVal += familyPool * (principalPercent / familyPercent);
+      if (inPortfolioVal > 0) {
+        year.portfolioAssets[primaryKey][acct.id] = inPortfolioVal;
+        // Mirror household + IIP business shares → t&b.
+        if (primaryKey === "business") {
+          year.portfolioAssets.trustsAndBusinesses[acct.id] =
+            (year.portfolioAssets.trustsAndBusinesses[acct.id] ?? 0) + inPortfolioVal;
         }
       }
       mutated = true;
