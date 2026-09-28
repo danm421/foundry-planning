@@ -108,6 +108,78 @@ describe("computeTrustCardData", () => {
     expect(card.primaryAmount).toBe(9_870_000);
     expect(card.narrative).toMatch(/Compounded/);
   });
+
+  // Fix round 1 / I1: inferGrowthRateFromTrust had no pin distinguishing the
+  // gift-aware resolver from the authored-only `a.owners.find(...)` lookup —
+  // every other case's trust holds its account through an AUTHORED entity
+  // row, where old and new selection agree. Here the trust holds the account
+  // ONLY through a gift event, and the account's own growth rate (9%) is
+  // deliberately distinct from DEFAULT_TRUST_GROWTH_RATE (6%): the authored
+  // lookup finds no row, skips the account, and falls back to the 6%
+  // default; the resolved lookup finds the account via the gift and reports
+  // its real 9%.
+  it("infers the gift-funded account's own growth rate, not the 6% default", () => {
+    const GIFT_ONLY_ID = "trust-growth-gift-only";
+    const tree = {
+      entities: [
+        {
+          id: GIFT_ONLY_ID,
+          name: "Gift-only SLAT",
+          entityType: "trust",
+          isIrrevocable: true,
+          trustSubType: "irrevocable",
+          grantor: "client",
+        },
+      ],
+      accounts: [
+        {
+          id: "acc-growth",
+          name: "Brokerage",
+          category: "taxable",
+          value: 10_000_000,
+          growthRate: 0.09, // distinct from DEFAULT_TRUST_GROWTH_RATE (0.06)
+          // No authored entity row — the trust holds this account only via
+          // the gift event below.
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+        },
+      ],
+      giftEvents: [
+        {
+          kind: "asset",
+          year: 2027,
+          accountId: "acc-growth",
+          percent: 0.3,
+          grantor: "client",
+          recipientEntityId: GIFT_ONLY_ID,
+        },
+      ],
+      gifts: [
+        {
+          id: "g-growth",
+          year: 2027,
+          amount: 3_000_000,
+          grantor: "client",
+          recipientEntityId: GIFT_ONLY_ID,
+          useCrummeyPowers: false,
+        },
+      ],
+      planSettings: { planStartYear: 2026, planEndYear: 2054 },
+    } as unknown as ClientData;
+
+    const withResult = [
+      { year: 2054, accountLedgers: { "acc-growth": { endingValue: 30_000_000 } } },
+    ] as unknown as ProjectionYear[];
+
+    const ranked = rankTrustsByContribution(tree, withResult);
+    const card = computeTrustCardData({
+      ranked: ranked[0],
+      tree,
+      withResult,
+      finalDeathYear: 2054,
+    });
+    expect(card.narrative).toContain("9.0%");
+    expect(card.narrative).not.toContain("6.0%");
+  });
 });
 
 describe("synthesizeDelayedTopGift", () => {
@@ -477,6 +549,73 @@ describe("rankTrustsByContribution — gift-resolved", () => {
     const withResult = runProjection(data);
     const ranked = rankTrustsByContribution(data, withResult);
     expect(ranked[0].primaryAmount).toBeCloseTo(3_000_000, 2);
+  });
+
+  // Fix round 1 / M1: compoundedTrustValueAtFinalYear's partitioned-pool
+  // fallback (no entityAccountSharesEoY entry, so `locked` is undefined)
+  // must multiply endingValue by the PUBLISHED pct, not the authored row's
+  // percent — a death partition can rebuild a pool at a share the authored
+  // (pre-death) owners never had. No prior case exercised this: the only
+  // entityAccountSharesEoY-bearing case always has `locked` defined.
+  it("uses the published pool's resolved pct when no locked share exists", () => {
+    const POOL_TRUST_ID = "trust-pool";
+    const tree = {
+      entities: [
+        {
+          id: POOL_TRUST_ID,
+          name: "Pool Trust",
+          entityType: "trust",
+          isIrrevocable: true,
+          trustSubType: "irrevocable",
+          grantor: "client",
+        },
+      ],
+      accounts: [
+        {
+          id: "pool-acc",
+          name: "Partitioned pool",
+          category: "taxable",
+          value: 1_000_000,
+          growthRate: 0,
+          // Authored (pre-death) split: the trust held 20%.
+          owners: [
+            { kind: "family_member", familyMemberId: "fm-client", percent: 0.8 },
+            { kind: "entity", entityId: POOL_TRUST_ID, percent: 0.2 },
+          ],
+        },
+      ],
+      giftEvents: [],
+      gifts: [],
+      planSettings: { planStartYear: 2026, planEndYear: 2054 },
+    } as unknown as ClientData;
+
+    const lastYear = {
+      year: 2054,
+      accountLedgers: { "pool-acc": { endingValue: 1_000_000 } },
+      // A death partition rebuilt the pool: the trust's TRUE post-death
+      // share is 50%, not the pre-death authored 20%. No
+      // entityAccountSharesEoY entry exists for this account, so the
+      // fallback (`endingValue × pct`) must read the PUBLISHED pct.
+      accountOwners: new Map([
+        [
+          "pool-acc",
+          {
+            owners: [
+              { kind: "family_member", familyMemberId: "fm-client", percent: 0.5 },
+              { kind: "entity", entityId: POOL_TRUST_ID, percent: 0.5 },
+            ],
+            giftsReflectedThrough: 2040,
+          },
+        ],
+      ]),
+    } as unknown as ProjectionYear;
+    const withResult = [lastYear] as unknown as ProjectionYear[];
+
+    const ranked = rankTrustsByContribution(tree, withResult);
+    const poolRanked = ranked.find((r) => r.trustId === POOL_TRUST_ID);
+    expect(poolRanked).toBeDefined();
+    // $1M × published 50% = $500k, NOT authored 20% = $200k.
+    expect(poolRanked!.primaryAmount).toBeCloseTo(500_000, 2);
   });
 });
 
