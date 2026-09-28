@@ -553,8 +553,11 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
           setError(json.error ?? "Failed to assign business to trust");
           return;
         }
-        // Refresh router so the new entity_owners + gift rows surface.
+        // Refresh router so the new entity_owners + gift rows surface, and
+        // refetch the gifts list: a gifted business's share on the Assets tab
+        // is read from it, and nothing else re-runs that fetch here.
         router.refresh();
+        setRefetchTick((t) => t + 1);
       } catch {
         setError("Failed to assign business to trust");
       }
@@ -1151,6 +1154,8 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
             familyMembers={assetFamilyMembers ?? []}
             entities={entities}
             businesses={businesses}
+            // A business given to this trust has a gift row and no owner row.
+            businessGifts={fetchedGifts}
             priorDiscounts={transferPriorDiscounts}
             // Gates the picker's valuation-discount field: a business assigned
             // to a revocable trust is not a completed gift, so the route writes

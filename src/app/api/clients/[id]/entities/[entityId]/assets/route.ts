@@ -42,6 +42,7 @@ import {
   entityOwners,
   familyMembers,
   gifts,
+  planSettings,
 } from "@/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import { requireOrgAndUser } from "@/lib/db-helpers";
@@ -49,6 +50,7 @@ import { recordAudit } from "@/lib/audit";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
+import { baseCaseScenarioId } from "@/lib/clients/base-case";
 import type { EntityOwner } from "@/engine/ownership";
 import { planEntityGiftWrites } from "./gift-writes";
 
@@ -168,13 +170,30 @@ export async function POST(
       };
     });
 
-    // An add with no year is dated this calendar year. The route owns the
+    // The base plan's first projection year. plan_settings is seeded at client
+    // creation; a client without a row starts now, as creation would have set.
+    const scenarioId = await baseCaseScenarioId(clientId, firmId);
+    const [settings] = scenarioId
+      ? await db
+          .select({ planStartYear: planSettings.planStartYear })
+          .from(planSettings)
+          .where(
+            and(eq(planSettings.clientId, clientId), eq(planSettings.scenarioId, scenarioId)),
+          )
+      : [];
+    const currentYear = new Date().getFullYear();
+    const planStartYear = settings?.planStartYear ?? currentYear;
+
+    // An add with no year is dated this calendar year — or the plan's first
+    // projection year when the plan starts later, since the engine reads a gift
+    // dated before that as already in the authored owners. The route owns the
     // clock; the planner never reads it.
     const plan = planEntityGiftWrites({
       businessId,
       businessValue: parseFloat(business.value),
       authoredOwners,
       householdMembers,
+      planStartYear,
       // Same reading as the projection loader's business_interest events: this
       // route is the only writer of these rows and always names a trust
       // recipient and a client/spouse grantor.
@@ -192,7 +211,7 @@ export async function POST(
               trustId,
               trustIsIrrevocable: trust.isIrrevocable === true,
               percent: op.percent / 100,
-              year: op.year ?? new Date().getFullYear(),
+              year: op.year ?? Math.max(currentYear, planStartYear),
               valuationDiscount: op.valuationDiscount,
             }
           : { op: "remove", trustId },

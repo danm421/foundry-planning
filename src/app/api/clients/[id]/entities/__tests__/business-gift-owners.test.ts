@@ -26,6 +26,7 @@ function addGift(
     authoredOwners: clientOnly,
     householdMembers: household,
     existingGifts: [],
+    planStartYear: 2026,
     ...input,
     op: { op: "add", trustId: TRUST, trustIsIrrevocable: true, percent: 0.3, year: 2030, ...over },
   });
@@ -38,6 +39,7 @@ function remove(input: Partial<Omit<EntityGiftWritesInput, "op">>) {
     authoredOwners: clientOnly,
     householdMembers: household,
     existingGifts: [],
+    planStartYear: 2026,
     ...input,
     op: { op: "remove", trustId: TRUST },
   });
@@ -74,6 +76,16 @@ describe("planEntityGiftWrites — a gift to an irrevocable trust", () => {
 
   it("dates the gift to the REQUESTED year, not the current calendar year", () => {
     expect(addGift({ year: 2035 }).giftRows[0].year).toBe(2035);
+  });
+
+  it("refuses a gift dated before the plan start year", () => {
+    // The engine reads a gift dated before the first projection year as already
+    // folded into the authored owners — and a gift writes no owner rows — so
+    // it would move no ownership at all while still consuming exemption.
+    const plan = addGift({ year: 2027 }, { planStartYear: 2028 });
+    expect(plan.error).toMatch(/before the plan start year/i);
+    expect(plan.giftRows).toHaveLength(0);
+    expect(addGift({ year: 2028 }, { planStartYear: 2028 }).giftRows[0].year).toBe(2028);
   });
 
   it("writes the FULL undiscounted amount", () => {

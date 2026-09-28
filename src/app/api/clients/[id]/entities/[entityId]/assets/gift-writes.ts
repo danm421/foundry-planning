@@ -37,6 +37,10 @@ export interface EntityGiftWritesInput {
   householdMembers: { id: string; role: "client" | "spouse" | "child" | "other" }[];
   /** Every recorded `business_interest` gift of this business, any recipient. */
   existingGifts: ExistingBusinessGift[];
+  /** The base plan's first projection year. The engine reads a gift dated
+   *  before it as already folded into the authored owners — and a gift writes
+   *  no owner rows — so an earlier gift year is refused. */
+  planStartYear: number;
   op:
     | {
         op: "add";
@@ -149,6 +153,11 @@ function splitBp(totalBp: number, weights: number[]): number[] {
 
 /** A gift of a business interest to an irrevocable trust: gift rows only. */
 function planGift(input: EntityGiftWritesInput, op: AddOp): EntityGiftWritesPlan {
+  if (op.year < input.planStartYear) {
+    return refuse(
+      `The gift year (${op.year}) is before the plan start year (${input.planStartYear})`,
+    );
+  }
   const household = householdAfterGifts(input.businessId, input.authoredOwners, input.existingGifts);
   if (household === null) {
     return refuse("This business's recorded gifts already exceed the household share");

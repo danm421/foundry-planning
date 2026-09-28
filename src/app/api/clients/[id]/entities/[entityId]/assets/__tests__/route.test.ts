@@ -21,6 +21,9 @@
  *  10. Remove on a business the trust doesn't own → 400.
  *  11. Remove on an AUTHORED trust row releases it to the family; no gift.
  *  12. A second gift that overdraws what the first left → 400.
+ *  13. No year on a plan that starts NEXT year → the gift lands in the plan's
+ *      first projection year.
+ *  14. An explicit year before the plan start year → 400; nothing written.
  */
 
 import { readFileSync } from "node:fs";
@@ -154,6 +157,8 @@ d("POST /api/clients/[id]/entities/[entityId]/assets", () => {
     trustOwnerPct?: number;
     /** Other (non-trust) entity owner row on the business (fraction). */
     otherEntityOwnerPct?: number;
+    /** Seeds the base plan's `plan_settings` row with this start year. */
+    planStartYear?: number;
   }) {
     const { db } = dbMod;
     const {
@@ -218,6 +223,15 @@ d("POST /api/clients/[id]/entities/[entityId]/assets", () => {
       .insert(scenarios)
       .values({ clientId: client.id, name: "base", isBaseCase: true })
       .returning();
+    if (opts.planStartYear != null) {
+      // Removed with the scenario (plan_settings cascades on it).
+      await db.insert(schema.planSettings).values({
+        clientId: client.id,
+        scenarioId: scenario.id,
+        planStartYear: opts.planStartYear,
+        planEndYear: opts.planStartYear + 30,
+      });
+    }
 
     const fms = [];
     for (const m of opts.members) {
@@ -715,6 +729,72 @@ d("POST /api/clients/[id]/entities/[entityId]/assets", () => {
       .from(gifts)
       .where(drizzleOrm.eq(gifts.businessEntityId, businessId));
     expect(giftRows.map((g) => parseFloat(g.percent!))).toEqual([0.7]);
+    expect(await ownersOf(businessId)).toEqual([[members[0].id, 1]]);
+  });
+
+  it("13. No year on a plan that starts NEXT year — the gift lands in the plan's first year", async () => {
+    // Dated this calendar year, it would precede the projection, which reads a
+    // pre-start gift as already folded into the authored owners — so it would
+    // move no ownership at all.
+    const planStartYear = new Date().getFullYear() + 1;
+    const { clientId, trustId, businessId } = await setup({
+      members: [{ role: "client", firstName: "Alice" }],
+      trustIrrevocable: true,
+      businessValue: "1000000",
+      businessOwners: [{ memberIdx: 0, percent: 1.0 }],
+      planStartYear,
+    });
+    const { db } = dbMod;
+    const { gifts } = schema;
+
+    const res = await POST(
+      makeReq(clientId, trustId, {
+        op: "add",
+        assetType: "entity",
+        assetId: businessId,
+        percent: 30,
+      }) as never,
+      { params: Promise.resolve({ id: clientId, entityId: trustId }) },
+    );
+    expect(res.status).toBe(200);
+
+    const giftRows = await db
+      .select()
+      .from(gifts)
+      .where(drizzleOrm.eq(gifts.businessEntityId, businessId));
+    expect(giftRows.map((g) => g.year)).toEqual([planStartYear]);
+  });
+
+  it("14. An explicit year before the plan start year → 400, nothing written", async () => {
+    const planStartYear = new Date().getFullYear() + 1;
+    const { clientId, trustId, businessId, members } = await setup({
+      members: [{ role: "client", firstName: "Alice" }],
+      trustIrrevocable: true,
+      businessValue: "1000000",
+      businessOwners: [{ memberIdx: 0, percent: 1.0 }],
+      planStartYear,
+    });
+    const { db } = dbMod;
+    const { gifts } = schema;
+
+    const res = await POST(
+      makeReq(clientId, trustId, {
+        op: "add",
+        assetType: "entity",
+        assetId: businessId,
+        percent: 30,
+        year: planStartYear - 1,
+      }) as never,
+      { params: Promise.resolve({ id: clientId, entityId: trustId }) },
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/before the plan start year/i);
+
+    const giftRows = await db
+      .select()
+      .from(gifts)
+      .where(drizzleOrm.eq(gifts.businessEntityId, businessId));
+    expect(giftRows).toHaveLength(0);
     expect(await ownersOf(businessId)).toEqual([[members[0].id, 1]]);
   });
 

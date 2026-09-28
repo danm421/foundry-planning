@@ -267,6 +267,65 @@ describe("AssetsTab", () => {
     expect(screen.getByText("$680,000")).toBeInTheDocument();
   });
 
+  // ── A business held by GIFT ────────────────────────────────────────────────
+  //
+  // A gift of a business interest to a trust writes a `gifts` row and NO
+  // `entity_owners` row (owner rows are the authored, pre-gift baseline). The
+  // trust's share is therefore its authored rows PLUS its gift rows — without
+  // the second half, a business added to an irrevocable trust vanished from
+  // this list the moment it saved.
+
+  /** Renders the tab over one $280k business with no accounts or liabilities,
+   *  so the row value and the summary are both just business value × share. */
+  function renderGifted(
+    owners: AssetsTabBusiness["owners"],
+    businessGifts: { businessEntityId: string | null; recipientEntityId: string | null; percent: string | null }[],
+  ) {
+    render(
+      <AssetsTab
+        entityId={TRUST_ID}
+        accounts={[]}
+        liabilities={[]}
+        incomes={[]}
+        expenses={[]}
+        familyMembers={familyMembers}
+        entities={entities}
+        businesses={[{ id: "biz-1", name: "Test Bus", value: 280_000, owners }]}
+        businessGifts={businessGifts}
+        onChange={vi.fn()}
+      />
+    );
+  }
+
+  it("lists a business the trust holds only by gift, at its gifted share", () => {
+    renderGifted(
+      [{ kind: "family_member", familyMemberId: "fm-c", percent: 1.0 }],
+      [{ businessEntityId: "biz-1", recipientEntityId: TRUST_ID, percent: "0.3000" }],
+    );
+    expect(screen.getByText("Test Bus")).toBeInTheDocument();
+    expect(screen.getByText("30%")).toBeInTheDocument();
+    // $280k × 30% — once on the row, once as the net trust value.
+    expect(screen.getAllByText("$84,000")).toHaveLength(2);
+    expect(screen.getByLabelText(/Remove Test Bus from trust/i)).toBeInTheDocument();
+  });
+
+  it("adds the gifted share to the authored share: 20% titled + 10% gifted shows 30%", () => {
+    renderGifted(
+      [
+        { kind: "entity", entityId: TRUST_ID, percent: 0.2 },
+        { kind: "family_member", familyMemberId: "fm-c", percent: 0.8 },
+      ],
+      [
+        { businessEntityId: "biz-1", recipientEntityId: TRUST_ID, percent: "0.1000" },
+        // Neither of these is this trust's share of this business.
+        { businessEntityId: "biz-1", recipientEntityId: "other-trust", percent: "0.2500" },
+        { businessEntityId: "biz-other", recipientEntityId: TRUST_ID, percent: "0.4000" },
+      ],
+    );
+    expect(screen.getByText("30%")).toBeInTheDocument();
+    expect(screen.getAllByText("$84,000")).toHaveLength(2);
+  });
+
   // ── Business assignment seam (C1) ──────────────────────────────────────────
   //
   // Assigning a business to a trust moves value out of the taxable estate, and

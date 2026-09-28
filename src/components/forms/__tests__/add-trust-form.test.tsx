@@ -879,6 +879,48 @@ describe("AddTrustForm — Assets tab relays the valuation discount (Task 13)", 
     expect("valuationDiscount" in assetsPostBody(fetchMock)).toBe(false);
   });
 
+  it("lists a business the trust holds by gift, and drops it once a remove deletes the gift", async () => {
+    // A gift writes no owner row, so the trust's share comes from the /gifts
+    // fetch. After the remove, that list must be fetched again — the form's
+    // props do not change here (router.refresh is a stub), so only a refetch
+    // the form triggers itself can take the row away.
+    let giftRows: GiftRowLike[] = [
+      {
+        id: "g1", year: 2030, amount: "300000", grantor: "client",
+        recipientEntityId: TRUST_ID, accountId: null, liabilityId: null,
+        businessEntityId: BUSINESS_ID, percent: "0.3000", parentGiftId: null,
+        useCrummeyPowers: false, valuationDiscount: null, notes: null,
+      } as GiftRowLike,
+    ];
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (typeof url === "string" && url.endsWith("/gifts")) {
+        const rows = giftRows;
+        return { ok: true, json: () => Promise.resolve(rows) };
+      }
+      if (init?.method === "POST" && url.includes(`/entities/${TRUST_ID}/assets`)) {
+        giftRows = []; // the route deleted the trust's gift rows
+      }
+      return { ok: true, json: () => Promise.resolve({ ok: true }) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<AddTrustForm {...defaultProps("assets")} businesses={BUSINESSES} />);
+
+    const removeButton = await screen.findByLabelText("Remove Acme Family LLC from trust");
+    expect(screen.getByText("30%")).toBeInTheDocument();
+
+    fireEvent.click(removeButton);
+    fireEvent.click(screen.getByRole("button", { name: /^Remove$/i }));
+
+    await waitFor(() =>
+      expect(screen.queryByLabelText("Remove Acme Family LLC from trust")).toBeNull(),
+    );
+    expect(JSON.parse(
+      (fetchMock.mock.calls.find(([u, i]) =>
+        typeof u === "string" && u.includes(`/entities/${TRUST_ID}/assets`) && i?.method === "POST",
+      )![1] as RequestInit).body as string,
+    )).toEqual({ op: "remove", assetType: "entity", assetId: BUSINESS_ID });
+  });
+
   it("seeds the picker from a prior discount on the same business", async () => {
     // The Assets tab's own /gifts fetch feeds `priorDiscounts`; the picker
     // reads it once, when the business is selected.

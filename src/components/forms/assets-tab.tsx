@@ -74,11 +74,30 @@ export interface AssetsTabBusiness {
   owners: EntityOwner[];
 }
 
-/** Sum of percents on `b.owners` rows that point at `entityId`. */
-function entitySharePercent(b: AssetsTabBusiness, entityId: string): number {
-  return b.owners
+/** The `gifts` columns that make a row a business-interest gift. */
+export interface AssetsTabBusinessGift {
+  businessEntityId: string | null;
+  recipientEntityId: string | null;
+  /** numeric(6,4) as a string. */
+  percent: string | null;
+}
+
+/** `entityId`'s share of business `b`: its authored `entity_owners` rows plus
+ *  its business-interest gift rows. A gift of a business interest writes a
+ *  gift row and NO owner row — owner rows are the authored, pre-gift baseline
+ *  — so the owner rows alone miss every gifted share. */
+function entitySharePercent(
+  b: AssetsTabBusiness,
+  entityId: string,
+  businessGifts: AssetsTabBusinessGift[],
+): number {
+  const titled = b.owners
     .filter((o) => o.kind === "entity" && o.entityId === entityId)
     .reduce((s, o) => s + o.percent, 0);
+  const gifted = businessGifts
+    .filter((g) => g.businessEntityId === b.id && g.recipientEntityId === entityId)
+    .reduce((s, g) => s + Number(g.percent ?? 0), 0);
+  return titled + gifted;
 }
 
 /** Total ("balance sheet") value of a business: flat valuation + held
@@ -117,6 +136,10 @@ interface AssetsTabProps {
   /** Business entities (LLC/S-corp/etc.) eligible for assignment to this trust.
    *  Optional — when absent the picker won't show the Business Entities section. */
   businesses?: AssetsTabBusiness[];
+  /** The client's gift rows (any kind, any recipient). A business this entity
+   *  holds by GIFT has no owner row, so its share is read from these — see
+   *  `entitySharePercent`. Absent → the authored owner rows alone. */
+  businessGifts?: AssetsTabBusinessGift[];
   /** Most-recent discount per source, keyed `entity:<id>`. Forwarded to the picker. */
   priorDiscounts?: Record<string, number>;
   /** Is this entity irrevocable? Forwarded to the picker, where it gates the
@@ -258,6 +281,7 @@ export default function AssetsTab({
   incomes,
   expenses,
   businesses,
+  businessGifts = [],
   priorDiscounts,
   entityIsIrrevocable,
   hideBusinessAssignment = false,
@@ -274,7 +298,8 @@ export default function AssetsTab({
   // Filter to entity-owned items
   const ownedAccounts = accounts.filter((a) => ownedByEntity(a, entityId) > 0);
   const ownedLiabilities = liabilities.filter((l) => ownedByEntity(l, entityId) > 0);
-  const ownedBusinesses = (businesses ?? []).filter((b) => entitySharePercent(b, entityId) > 0);
+  const businessShare = (b: AssetsTabBusiness) => entitySharePercent(b, entityId, businessGifts);
+  const ownedBusinesses = (businesses ?? []).filter((b) => businessShare(b) > 0);
 
   // Entity-asset id set for income/expense lookup
   const entityAssetIds = new Set(ownedAccounts.map((a) => a.id));
@@ -289,7 +314,7 @@ export default function AssetsTab({
   const totalValue =
     ownedAccounts.reduce((s, a) => s + a.value * ownedByEntity(a, entityId), 0) +
     ownedBusinesses.reduce(
-      (s, b) => s + businessTotalValue(b, accounts, liabilities) * entitySharePercent(b, entityId),
+      (s, b) => s + businessTotalValue(b, accounts, liabilities) * businessShare(b),
       0,
     ) -
     ownedLiabilities.reduce((s, l) => s + l.balance * ownedByEntity(l, entityId), 0);
@@ -345,7 +370,7 @@ export default function AssetsTab({
           <label className={fieldLabelClassName}>Businesses</label>
           <ul className="space-y-1.5">
             {ownedBusinesses.map((b) => {
-              const ownerPct = entitySharePercent(b, entityId);
+              const ownerPct = businessShare(b);
               const proRated = businessTotalValue(b, accounts, liabilities) * ownerPct;
               return (
                 <li
