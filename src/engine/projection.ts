@@ -106,6 +106,7 @@ import { applyTransfers, type TransfersResult } from "./transfers";
 import { applyReinvestments } from "./reinvestments";
 import {
   applyRothConversions,
+  conversionSources,
   fillUpBracketCeiling,
   isTopBracketTarget,
   strategyGrossAmount,
@@ -5326,6 +5327,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       ? taxResolver.getYear(year)?.params.incomeBrackets[convFilingStatus]
       : undefined;
     const jointSolveConvById = new Map<string, RothConversion>();
+    const workingAccountById = new Map(workingAccounts.map((a) => [a.id, a]));
 
     if (data.rothConversions && data.rothConversions.length > 0) {
       const jointSolveConvs: RothConversion[] = [];
@@ -5393,8 +5395,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         for (const conv of jointSolveConvs) {
           if (!_isFillBracketActiveYear(conv, year)) continue;
 
-          const sourceCap = conv.sourceAccountIds.reduce(
-            (sum, sid) => sum + Math.max(0, accountBalances[sid] ?? 0),
+          // The same sources applyRothConversions will draw from — an
+          // inherited IRA listed here must not raise the cap.
+          const sourceCap = conversionSources(conv, workingAccountById, accountBalances).reduce(
+            (sum, a) => sum + (accountBalances[a.id] ?? 0),
             0,
           );
 
@@ -6943,7 +6947,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             const conv = jointSolveConvById.get(cid);
             if (!conv) continue;
             let remaining = target;
-            for (const sid of conv.sourceAccountIds) {
+            for (const { id: sid } of conversionSources(conv, workingAccountById, accountBalances)) {
               if (remaining <= 0) break;
               const avail = reservedBalances[sid] ?? 0;
               const reserve = Math.min(remaining, avail);

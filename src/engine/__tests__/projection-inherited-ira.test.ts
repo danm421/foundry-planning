@@ -3,7 +3,7 @@ import { runProjection } from "../projection";
 import { buildClientData, basePlanSettings, baseClient } from "./fixtures";
 import { TAX_YEAR_2026 } from "./_fixtures/tax-year-2026";
 import { LEGACY_FM_CLIENT } from "../ownership";
-import type { Account, Expense, FamilyMember } from "../types";
+import type { Account, Expense, FamilyMember, RothConversion } from "../types";
 
 // Spec example 2: owner born 1945 died 2022 (had started RMDs); heir (the
 // client) born 1975 → 10-year rule with yearly RMDs, empty by Dec 31, 2032.
@@ -291,26 +291,39 @@ describe("projection — a Roth conversion never draws from an inherited IRA", (
     titlingType: "jtwros", value: 0, basis: 0, growthRate: 0, rmdEnabled: false,
     owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
   };
+  const fixed50k: RothConversion = {
+    id: "rc", name: "Convert 50k", destinationAccountId: ownRoth.id, sourceAccountIds: ["acct-inh"],
+    conversionType: "fixed_amount", fixedAmount: 50_000, startYear: 2026, endYear: 2026, indexingRate: 0,
+  };
+  // Sized by the projection's own joint solve before it is applied, so the
+  // sizer must skip the inherited source too, or it taxes a phantom conversion.
+  const fill22: RothConversion = {
+    id: "rc", name: "Fill 22%", destinationAccountId: ownRoth.id, sourceAccountIds: ["acct-inh"],
+    conversionType: "fill_up_bracket", fillUpBracket: 0.22, fixedAmount: 0, startYear: 2026, endYear: 2026, indexingRate: 0,
+  };
+  const notInherited = { inheritedDeathYear: null, inheritedOwnerBirthYear: null };
 
   // Checking is large enough to pay the conversion's tax without a draw.
-  function year2026(acct: Account) {
+  function year2026(acct: Account, conversions: RothConversion[]) {
     const data = buildClientData({
       client: { ...baseClient, dateOfBirth: `${HEIR_BIRTH_YEAR}-01-01`, spouseName: undefined, spouseDob: undefined },
       familyMembers: soloClient,
       accounts: [{ ...checking, value: 200_000, basis: 200_000 }, acct, ownRoth],
       incomes: [], expenses: [], liabilities: [], savingsRules: [],
       withdrawalStrategy: [],
-      rothConversions: [{
-        id: "rc", name: "Convert 50k", destinationAccountId: ownRoth.id, sourceAccountIds: ["acct-inh"],
-        conversionType: "fixed_amount", fixedAmount: 50_000, startYear: 2026, endYear: 2026, indexingRate: 0,
-      }],
-      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2027 },
+      rothConversions: conversions,
+      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2027, taxEngineMode: "bracket" },
+      taxYearRows: [TAX_YEAR_2026],
     });
     return runProjection(data).find((r) => r.year === 2026)!;
   }
 
-  it("converts nothing: no conversion outflow, no Roth inflow, no conversion income", () => {
-    const y = year2026(inheritedIra());
+  it.each([
+    ["fixed amount", fixed50k],
+    ["fill the 22% bracket", fill22],
+  ])("%s: converts nothing and adds no conversion income or tax", (_, conv) => {
+    const y = year2026(inheritedIra(), [conv]);
+    const baseline = year2026(inheritedIra(), []);
     const inh = y.accountLedgers["acct-inh"];
     expect(inh.entries.filter((e) => e.sourceId === "rc")).toEqual([]);
     // Only the inherited RMD left the account.
@@ -319,13 +332,54 @@ describe("projection — a Roth conversion never draws from an inherited IRA", (
     expect(y.accountLedgers["acct-own-roth"].endingValue).toBe(0);
     expect(y.taxDetail!.bySource["roth_conversion:rc"]).toBeUndefined();
     expect((y.rothConversions ?? []).filter((c) => c.gross > 0)).toEqual([]);
+    // No phantom income: the year is taxed exactly like the no-conversion year.
+    expect(y.taxResult!.flow.adjustedGrossIncome).toBeCloseTo(baseline.taxResult!.flow.adjustedGrossIncome, 6);
+    expect(y.expenses.taxes).toBeCloseTo(baseline.expenses.taxes, 6);
   });
 
-  it("control: without the inherited fields the same conversion moves $50,000", () => {
-    const y = year2026(inheritedIra({ inheritedDeathYear: null, inheritedOwnerBirthYear: null }));
+  it("control: without the inherited fields the fixed conversion moves $50,000", () => {
+    const y = year2026(inheritedIra(notInherited), [fixed50k]);
     const out = y.accountLedgers["acct-inh"].entries.filter((e) => e.sourceId === "rc");
     expect(out.map((e) => e.amount)).toEqual([-50_000]);
     expect(y.accountLedgers["acct-own-roth"].endingValue).toBe(50_000);
     expect(y.taxDetail!.bySource["roth_conversion:rc"]?.amount).toBe(50_000);
+  });
+
+  it("a bracket fill listing the inherited IRA first does not lock it away from spending draws", () => {
+    // The fill converts from the heir's own IRA; the spending shortfall can
+    // only be drawn from the inherited IRA. Reserving the inherited balance for
+    // the conversion (it comes first in the list) would leave the draw at $0.
+    const ownIra: Account = {
+      id: "acct-own-ira", name: "Own IRA", category: "retirement", subType: "traditional_ira",
+      titlingType: "jtwros", value: 200_000, basis: 0, growthRate: 0, rmdEnabled: false,
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+    };
+    const data = buildClientData({
+      client: { ...baseClient, dateOfBirth: `${HEIR_BIRTH_YEAR}-01-01`, spouseName: undefined, spouseDob: undefined },
+      familyMembers: soloClient,
+      accounts: [checking, inheritedIra({ value: 60_000 }), ownIra, ownRoth],
+      incomes: [], liabilities: [], savingsRules: [],
+      expenses: [{ id: "exp-2026", name: "One-off", type: "living", annualAmount: 40_000, growthRate: 0, startYear: 2026, endYear: 2026 }],
+      withdrawalStrategy: [{ accountId: "acct-inh", priorityOrder: 1, startYear: 2026, endYear: 2034 }],
+      rothConversions: [{ ...fill22, sourceAccountIds: ["acct-inh", ownIra.id] }],
+      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2027, taxEngineMode: "bracket" },
+      taxYearRows: [TAX_YEAR_2026],
+    });
+    const y = runProjection(data).find((r) => r.year === 2026)!;
+    // Everything left after the RMD was drawn for spending.
+    expect(y.withdrawals.byAccount["acct-inh"]).toBeCloseTo(60_000 - 60_000 / 35.1, 6);
+    expect(y.accountLedgers["acct-inh"].entries.filter((e) => e.sourceId === "rc")).toEqual([]);
+    const converted = y.accountLedgers["acct-own-roth"].endingValue;
+    expect(converted).toBeGreaterThan(0);
+    expect(y.accountLedgers["acct-own-ira"].endingValue).toBeCloseTo(200_000 - converted, 6);
+  });
+
+  it("control: without the inherited fields the bracket fill converts and is taxed", () => {
+    const y = year2026(inheritedIra(notInherited), [fill22]);
+    const baseline = year2026(inheritedIra(notInherited), []);
+    const moved = y.accountLedgers["acct-own-roth"].endingValue;
+    expect(moved).toBeGreaterThan(50_000);
+    expect(y.taxDetail!.bySource["roth_conversion:rc"]?.amount).toBeCloseTo(moved, 6);
+    expect(y.expenses.taxes).toBeGreaterThan(baseline.expenses.taxes);
   });
 });
