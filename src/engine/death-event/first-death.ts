@@ -46,6 +46,7 @@ import { computeIrdAttributions, hasUntaxedInheritedIrd } from "./ird-tax";
 import { beaForYear } from "@/lib/tax/estate";
 import { computeAdjustedTaxableGiftsByYear } from "@/lib/estate/adjusted-taxable-gifts";
 import { resolveResidenceState } from "../relocation";
+import { giftValueOfAccount } from "../business/business-tree";
 
 interface FirstDeathChainResult {
   accounts: Account[];
@@ -520,11 +521,15 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
   // accountValueAtYear: returns the balance at the gift year when per-year
   // snapshots are available; falls back to the death-year balance otherwise.
   const deathYearBalances = chainResult.accountBalances;
+  // A top-level business is valued consolidated, as the gross estate values it
+  // (`giftValueOfAccount`), so the add-back matches what left the estate.
   const accountValueAtYear = (accountId: string, year: number): number => {
     const yearMap = input.yearEndAccountBalances?.get(year);
-    if (yearMap && yearMap[accountId] != null) return yearMap[accountId];
+    if (yearMap && yearMap[accountId] != null) {
+      return giftValueOfAccount(accountId, input.accounts, yearMap);
+    }
     // Fallback: death-year balance (preserves current behavior when no per-year history).
-    return deathYearBalances[accountId] ?? 0;
+    return giftValueOfAccount(accountId, input.accounts, deathYearBalances);
   };
   // §2035 reversal: exclude asset-gift events for policies pulled back into
   // the gross estate. Without this we'd double-tax — the gift-year value

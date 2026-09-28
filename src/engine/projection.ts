@@ -38,6 +38,7 @@ import {
   type EntityMetadata,
 } from "./entity-cashflow";
 import { computeBusinessYearFlow } from "./business/year-flow";
+import { giftValueOfAccount } from "./business/business-tree";
 import { accrueLockedEntityShare } from "./locked-shares";
 import { buildOwnershipSnapshot } from "./ownership-snapshot";
 import { computeFamilyAccountShares } from "./family-cashflow";
@@ -9510,6 +9511,8 @@ export function runProjectionWithEvents(
   // An asset gift moves OWNERSHIP, not balance — `ownersForYear` rescales owner
   // percentages and never touches accountBalances — so `endingValue` in the gift
   // year is the whole account and `endingValue × percent` is the gift's value.
+  // A top-level business's "whole account" is the consolidated business — see
+  // `giftValueOfAccount` — the same value the gross estate removes a share of.
   const yearByYear = new Map(years.map((y) => [y.year, y]));
   const giftLedger = computeGiftLedger({
     planStartYear: data.planSettings.planStartYear,
@@ -9525,8 +9528,13 @@ export function runProjectionWithEvents(
     annualExclusionsByYear,
     taxInflationRate: data.planSettings.taxInflationRate ?? data.planSettings.inflationRate ?? 0,
     lifetimeExemptionCap: data.planSettings.lifetimeExemptionCap ?? null,
-    accountValueAtYear: (id, y) =>
-      yearByYear.get(y)?.accountLedgers?.[id]?.endingValue ?? 0,
+    accountValueAtYear: (id, y) => {
+      const ledgers = yearByYear.get(y)?.accountLedgers;
+      if (ledgers?.[id] == null) return 0;
+      const balances: Record<string, number> = {};
+      for (const [aid, ledger] of Object.entries(ledgers)) balances[aid] = ledger.endingValue;
+      return giftValueOfAccount(id, data.accounts, balances);
+    },
     // Values a business_interest gift with no explicit `amount` at the
     // entity's year-end value × percent; omitted, such a gift valued at $0.
     entityValueAtYear: buildEntityValueAtYear(years),

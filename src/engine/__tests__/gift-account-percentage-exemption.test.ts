@@ -4,7 +4,7 @@ import type {
   Account, ClientData, ClientInfo, EntitySummary, FamilyMember,
   GiftEvent, PlanSettings,
 } from "../types";
-import { LEGACY_FM_CLIENT } from "../ownership";
+import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../ownership";
 
 const clientFm: FamilyMember = {
   id: LEGACY_FM_CLIENT, role: "client", relationship: "other",
@@ -109,4 +109,104 @@ describe("account-percentage gifts consume real exemption (the () => 0 fix)", ()
     const y = result.giftLedger.find((r) => r.year === 2027)!;
     expect(y.perGrantor.client.taxableGiftsThisYear).toBe(0);
   });
+});
+
+// ── A gift of a BUSINESS is valued on the whole business ────────────────────
+//
+// A top-level business account is valued as ONE thing: its own value plus every
+// account under it via `parentAccountId`. The gross estate already removes the
+// gifted share of that consolidated value; the gift ledger and the adjusted-
+// taxable-gifts add-back at death read the parent's own balance, so a gift of a
+// business with children left the estate at one value and consumed exemption
+// at another.
+
+/** A $`parentValue` top-level business, zero growth, client-owned outright,
+ *  plus — when `childValue` is given — one child cash account under it, owned
+ *  by the business itself (as the app models a business's own cash). */
+function businessTree(parentValue: number, childValue?: number): Account[] {
+  const parent = {
+    id: "biz", name: "Family LLC",
+    category: "business", subType: "llc", businessType: "llc",
+    titlingType: "jtwros",
+    value: parentValue, basis: parentValue,
+    growthRate: 0, rmdEnabled: false,
+    parentAccountId: null,
+    owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+  } as Account;
+  if (childValue == null) return [parent];
+  const child = {
+    id: "biz-cash", name: "Family LLC Cash",
+    category: "cash", subType: "checking",
+    titlingType: "jtwros",
+    value: childValue, basis: childValue,
+    growthRate: 0, rmdEnabled: false,
+    parentAccountId: "biz",
+    owners: [{ kind: "entity", entityId: "biz", percent: 1 }],
+  } as Account;
+  return [parent, child];
+}
+
+const GIFT_15_PCT_OF_BIZ: GiftEvent = {
+  kind: "asset", year: 2028, accountId: "biz", percent: 0.15,
+  grantor: "client", recipientEntityId: "trust-1",
+};
+
+const spouseFm: FamilyMember = {
+  id: LEGACY_FM_SPOUSE, role: "spouse", relationship: "other",
+  firstName: "William", lastName: "Byron", dateOfBirth: "1962-01-01",
+};
+
+/** The client dies in 2029 (1960 + 69), the year after the 2028 gift. Single,
+ *  that is the FINAL death; `married` adds a spouse who outlives the horizon,
+ *  making it the FIRST death. The two run different death-event code. */
+function clientDiesIn2029(data: ClientData, married: boolean): ClientData {
+  if (!married) return { ...data, client: { ...data.client, lifeExpectancy: 69 } };
+  return {
+    ...data,
+    client: {
+      ...data.client, filingStatus: "married_joint", lifeExpectancy: 69,
+      spouseName: "William Byron", spouseDob: "1962-01-01", spouseLifeExpectancy: 95,
+    },
+    familyMembers: [...(data.familyMembers ?? []), spouseFm],
+  };
+}
+
+describe("a gift of a business consumes exemption on the value that leaves the estate", () => {
+  it("consumes exemption on the CONSOLIDATED business value, matching the estate side", () => {
+    // $100M parent + $20M child. The estate side removes 15% × $120M; the gift
+    // side consumed exemption on 15% × $100M. Same gift, two values.
+    const result = runProjectionWithEvents(
+      makeData([GIFT_15_PCT_OF_BIZ], businessTree(100_000_000, 20_000_000)),
+    );
+    const y = result.giftLedger.find((r) => r.year === 2028)!;
+    expect(y.giftsGiven).toBeCloseTo(18_000_000, 2);
+    expect(y.perGrantor.client.taxableGiftsThisYear).toBeCloseTo(18_000_000, 2);
+  });
+
+  it("is unchanged for a business with no children", () => {
+    const result = runProjectionWithEvents(
+      makeData([GIFT_15_PCT_OF_BIZ], businessTree(100_000_000)),
+    );
+    const y = result.giftLedger.find((r) => r.year === 2028)!;
+    expect(y.giftsGiven).toBeCloseTo(15_000_000, 2);
+    expect(y.perGrantor.client.taxableGiftsThisYear).toBeCloseTo(15_000_000, 2);
+  });
+
+  it.each([
+    { death: "first", married: true, deathOrder: 1 },
+    { death: "final", married: false, deathOrder: 2 },
+  ] as const)(
+    "adds the gift back at the client's $death death on the same consolidated value",
+    ({ married, deathOrder }) => {
+      const result = runProjectionWithEvents(clientDiesIn2029(
+        makeData([GIFT_15_PCT_OF_BIZ], businessTree(100_000_000, 20_000_000)),
+        married,
+      ));
+      const death = result.years.find((y) => y.year === 2029)!.estateTax!;
+      expect(death.deathOrder).toBe(deathOrder);
+      expect(death.deceased).toBe("client");
+      // §2001(b) add-back: 15% × ($100M + $20M), not 15% × $100M.
+      expect(death.adjustedTaxableGifts).toBeCloseTo(18_000_000, 2);
+    },
+  );
 });

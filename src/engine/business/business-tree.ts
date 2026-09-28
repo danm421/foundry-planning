@@ -50,3 +50,26 @@ export function consolidatedBusinessValue<T extends TreeNode>(
   }
   return total;
 }
+
+/**
+ * The value an asset gift of `accountId` is a percentage of, read from
+ * `accountBalances`.
+ *
+ * A top-level business is valued as ONE thing: parent flat value plus every
+ * descendant's balance — `consolidatedBusinessValue`, the same valuation the
+ * gross estate removes a gifted share of. The gift side read the parent's own
+ * balance, so a gift of a business with children removed more from the estate
+ * than it consumed in exemption. Every other account (a child account gifted on
+ * its own included) is its own balance.
+ */
+export function giftValueOfAccount<T extends TreeNode & { category: string }>(
+  accountId: string,
+  accounts: T[],
+  accountBalances: Record<string, number>,
+): number {
+  const account = accounts.find((a) => a.id === accountId);
+  if (account?.category === "business" && account.parentAccountId == null) {
+    return consolidatedBusinessValue(accountId, accounts, accountBalances);
+  }
+  return accountBalances[accountId] ?? 0;
+}
