@@ -8870,6 +8870,18 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       Object.assign(basisMap, deathResult.basisMap);
       currentIncomes = deathResult.incomes;
       currentLiabilities = deathResult.liabilities.map(normalizeOwners);
+      // The death's liability partition cut these rows out of a gifted debt: a
+      // household pool still under the ORIGINAL id — whose schedule, built at
+      // plan start, is the whole debt's, so next year's BoY would snap it back
+      // to 100% — and new ids with no schedule at all. Re-anchor each at the
+      // balance it left the death with, so it amortizes as the share it is.
+      for (const l of currentLiabilities) {
+        if (l.giftsReflectedThrough !== year || isHeldFlatLiability(l)) continue;
+        liabilitySchedules.set(
+          l.id,
+          buildLiabilitySchedule({ ...l, balanceAsOfYear: year + 1, balanceAsOfMonth: 1 }),
+        );
+      }
       // Adopt grantor-succession entity flips (e.g. IDGT post-grantor-death).
       // Trust-tax classification reads `currentEntities` at the top of each
       // subsequent year, so the next iteration picks up the flipped state.

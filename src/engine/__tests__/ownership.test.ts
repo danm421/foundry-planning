@@ -10,6 +10,8 @@ import {
   rebalanceOwnersAfterEntityDisposition,
   ownersForYear,
   giftAwareOwners,
+  liabilityOwnersForYear,
+  giftAwareLiabilityOwners,
   sortOwners,
   type AccountOwner,
 } from "../ownership";
@@ -254,5 +256,46 @@ describe("giftsReflectedThrough — a death-partitioned pool is not gifted again
       { kind: "family_member", familyMemberId: "fm-c", percent: 0.6 },
       { kind: "entity", entityId: "t-1", percent: 0.4 },
     ]);
+  });
+});
+
+describe("giftsReflectedThrough on a liability — a death-partitioned debt is not gifted again", () => {
+  // The liability twin of the pool marker above: a death's partition cuts the
+  // gifted share out of a debt and keeps the household's pool under the
+  // original id, so a gift dated at or before the death is already out of it.
+  const client: AccountOwner[] = [{ kind: "family_member", familyMemberId: "fm-c", percent: 1 }];
+  const debt = (reflected?: number) => ({
+    id: "liab-1", owners: client, ...(reflected != null ? { giftsReflectedThrough: reflected } : {}),
+  });
+  const gifts: GiftEvent[] = [
+    { kind: "liability", year: 2027, liabilityId: "liab-1", percent: 0.4, grantor: "client",
+      recipientEntityId: "t-1", parentGiftId: "g-1" },
+    { kind: "liability", year: 2030, liabilityId: "liab-1", percent: 0.2, grantor: "spouse",
+      recipientEntityId: "t-1", parentGiftId: "g-2" },
+  ];
+
+  it("both resolvers skip every liability gift at or before the marker", () => {
+    const d = debt(2029);
+    // By reference: the gross estate's rung reads `!==` as "a gift was applied".
+    expect(giftAwareLiabilityOwners(d, gifts, 2029, 2026)).toBe(d.owners);
+    expect(liabilityOwnersForYear(d, gifts, 2029, 2026)).toEqual(client);
+  });
+
+  it("both still compose a gift dated after the marker — on the pool, not the whole debt", () => {
+    const expected = [
+      { kind: "family_member", familyMemberId: "fm-c", percent: 0.8 },
+      { kind: "entity", entityId: "t-1", percent: 0.2 },
+    ];
+    expect(giftAwareLiabilityOwners(debt(2029), gifts, 2030, 2026)).toEqual(expected);
+    expect(liabilityOwnersForYear(debt(2029), gifts, 2030, 2026)).toEqual(expected);
+  });
+
+  it("an unmarked liability composes exactly as before", () => {
+    const expected = [
+      { kind: "family_member", familyMemberId: "fm-c", percent: expect.closeTo(0.6, 12) },
+      { kind: "entity", entityId: "t-1", percent: 0.4 },
+    ];
+    expect(giftAwareLiabilityOwners(debt(), gifts, 2029, 2026)).toEqual(expected);
+    expect(liabilityOwnersForYear(debt(), gifts, 2029, 2026)).toEqual(expected);
   });
 });

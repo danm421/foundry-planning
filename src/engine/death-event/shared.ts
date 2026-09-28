@@ -2,7 +2,7 @@ import type { ClientInfo, Account, Liability, DeathTransfer, EstateTaxResult, Fa
 import { nextSyntheticId } from "../asset-transactions";
 import type { FilingStatus } from "../../lib/tax/types";
 import type { AccountOwner } from "../ownership";
-import { controllingEntity, controllingFamilyMember, giftAwareOwners, isFullyEntityOwned, ownedByHousehold } from "../ownership";
+import { controllingEntity, controllingFamilyMember, giftAwareLiabilityOwners, giftAwareOwners, isFullyEntityOwned, ownedByHousehold } from "../ownership";
 
 /** Compute the year of the first-death event. Returns null when there is no
  *  spouse, when no lifeExpectancy is set, or when the earliest death falls
@@ -301,6 +301,73 @@ export function routeAtDeath(
     basis: part.familyPool.basis,
     entitySlices: part.entitySlices,
   };
+}
+
+/** The liability side of the death partition — `routeAtDeath`'s twin.
+ *
+ *  A liability gift (the mortgage bundled with a gifted house, or a gifted
+ *  note) moves a share of the debt to a trust or out of the household. Its
+ *  authored rows still name the household, and every death-time consumer
+ *  after the gross estate reads them as dollars: the chain's linked-liability
+ *  follow-through and the §2056(b)(4)(B) encumbrance, the unlinked-debt
+ *  distribution and the spouse-assumed-debt netting, liability bequests, the
+ *  creditor drain. So each gifted liability is split HERE, once, before any of
+ *  them runs — keyed on the LIABILITY's own resolved owners, never its
+ *  property's (a gifted house whose debt was not gifted still owes it all):
+ *
+ *   - each entity row → its own `[entity 1]` row under a synthetic id, unlinked
+ *     (it must not sit on the property the household pool still routes);
+ *   - a `gifted_away` row → nothing: that share of the debt left with its
+ *     recipient, as the gifted-away share of an account does;
+ *   - the household rows → a pool under the ORIGINAL id (linked as authored),
+ *     balance and payments scaled to the household share, owners the authored
+ *     family rows renormalized (lossless under the pro-rata composer).
+ *
+ *  Every row produced is marked `giftsReflectedThrough = year`: the pool keeps
+ *  the id every gift event names, so without it each later gift-aware read
+ *  takes the same gifts out of it again. A liability no gift touches — or a
+ *  declined one — comes back by reference and is untouched. */
+export function partitionGiftedLiabilities(
+  liabilities: Liability[],
+  input: Pick<DeathEventInput, "giftEvents" | "year"> & { planSettings: { planStartYear: number } },
+): Liability[] {
+  const out: Liability[] = [];
+  for (const l of liabilities) {
+    const resolved = giftAwareLiabilityOwners(
+      l, input.giftEvents, input.year, input.planSettings.planStartYear,
+    );
+    if (resolved === l.owners) {
+      out.push(l);
+      continue;
+    }
+    const cut = (share: number, over: Partial<Liability>): Liability => ({
+      ...l,
+      balance: l.balance * share,
+      monthlyPayment: l.monthlyPayment * share,
+      extraPayments: (l.extraPayments ?? []).map((ep) => ({ ...ep, amount: ep.amount * share })),
+      giftsReflectedThrough: input.year,
+      ...over,
+    });
+    for (const o of resolved) {
+      if (o.kind !== "entity") continue;
+      out.push(cut(o.percent, {
+        id: nextSyntheticId("liab-slice"),
+        linkedPropertyId: undefined,
+        owners: [{ kind: "entity", entityId: o.entityId, percent: 1 }],
+      }));
+    }
+    const familyRows = l.owners.filter((o) => o.kind === "family_member");
+    const familySum = familyRows.reduce((s, o) => s + o.percent, 0);
+    const householdShare = resolved
+      .filter((o) => o.kind === "family_member")
+      .reduce((s, o) => s + o.percent, 0);
+    if (householdShare > 1e-9 && familySum > 0) {
+      out.push(cut(householdShare, {
+        owners: familyRows.map((o) => ({ ...o, percent: o.percent / familySum })),
+      }));
+    }
+  }
+  return out;
 }
 
 /** §1014 basis step-up at death. Returns the post-death basis for an
@@ -1476,7 +1543,11 @@ export function distributeFirstDeathUnlinkedLiabilities(
   }
 
   // Compute deceased's fraction per liability (mirrors computeGrossEstate
-  // liability logic post-fix #1).
+  // liability logic post-fix #1). A gifted debt reaches here already cut by
+  // `partitionGiftedLiabilities` into the household's pool: the joint
+  // convention below takes half of a jointly held pool, and the gross estate's
+  // gifted-debt rung books that same half, so the spouse-assumed debt the
+  // marital deduction nets equals what Schedule K subtracted.
   type Bucket = { liab: Liability; deceasedFraction: number };
   const buckets: Bucket[] = [];
   for (const l of candidates) {
@@ -1545,6 +1616,9 @@ export function distributeFirstDeathUnlinkedLiabilities(
           ...(isSurvivorRecipient ? {} : { ownerFamilyMemberId: recFmId }),
           isInterestDeductible: liab.isInterestDeductible,
           owners: [{ kind: "family_member", familyMemberId: recFmId, percent: 1 }],
+          // Cut from a partitioned pool: carries its marker (see
+          // `partitionGiftedLiabilities`), so the projection re-anchors its schedule.
+          ...(liab.giftsReflectedThrough != null ? { giftsReflectedThrough: liab.giftsReflectedThrough } : {}),
         });
         resultingLiabilityId = newId;
       }

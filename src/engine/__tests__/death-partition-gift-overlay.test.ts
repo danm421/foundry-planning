@@ -767,16 +767,14 @@ describe("death — the 40% of a note gifted to a trust leaves the decedent's Sc
     }
   });
 
-  // SENTINEL — passes while its body FAILS. Correct: taxable estate 0. Gross is
-  // 700,500 (1M + 500 checking − 300k retained note) and all of it passes to the
-  // spouse, who assumes the retained 300k: marital 700,500. HEAD: 200,000 — the
-  // unlinked-debt distribution still hands the spouse the WHOLE 500k note, and
-  // the marital deduction nets all 500k (marital 500,500). Before this loop was
-  // gift-aware both sides read 500k and cancelled to 0.
-  // Flip `it.fails` → `it` in Task 13, when the first-death chain distributes /
-  // partitions liabilities gift-aware. (The pin above runs this same fixture
-  // green, so a throw cannot be what makes this pass.)
-  it.fails("taxes nothing at the first death when everything passes to the spouse", () => {
+  // Taxable estate 0. Gross is 700,500 (1M + 500 checking − 300k retained note)
+  // and all of it passes to the spouse, who assumes the retained 300k: marital
+  // 700,500. Was 200,000 (a Task 10 sentinel, flipped in Task 13): the
+  // unlinked-debt distribution handed the spouse the WHOLE 500k note and the
+  // marital deduction netted all 500k (marital 500,500). The death's liability
+  // partition now cuts the trust's 200k out first. (The pin above runs this
+  // same fixture green, so a throw cannot be what makes this pass.)
+  it("taxes nothing at the first death when everything passes to the spouse", () => {
     const years = runProjection({ ...plan({ gifts: [noteToTrust] }), liabilities: [note] });
     expect(at(years, 2029).estateTax?.taxableEstate).toBeCloseTo(0, 2);
   });
@@ -818,17 +816,15 @@ describe("death — a joint house gifted 40% with its bundled mortgage", () => {
     expect(line?.amount).toBeCloseTo(-90_000, 2);
   });
 
-  // SENTINEL — passes while its body FAILS. Correct: taxable estate 0. Gross is
-  // 1,090,500 (1M + 500 checking + 180k house pool − 90k mortgage) and all of it
-  // passes to the spouse, who assumes the decedent's 90k: marital 1,090,500.
-  // HEAD: 60,000 — the partition never splits the linked mortgage, so the whole
-  // mortgage follows the pool to the spouse and the encumbrance netting takes
-  // 150k (marital 1,030,500). Before this loop was gift-aware both sides read
-  // 150k and cancelled to 0.
-  // Flip `it.fails` → `it` in Task 13, when the first-death chain distributes /
-  // partitions liabilities gift-aware. (The case above runs this same fixture
-  // green, so a throw cannot be what makes this pass.)
-  it.fails("taxes nothing at the first death when everything passes to the spouse", () => {
+  // Taxable estate 0. Gross is 1,090,500 (1M + 500 checking + 180k house pool
+  // − 90k mortgage) and all of it passes to the spouse, who assumes the
+  // decedent's 90k: marital 1,090,500. Was 60,000 (a Task 10 sentinel, flipped
+  // in Task 13): the whole mortgage followed the house's pool to the spouse and
+  // the encumbrance netting took 150k (marital 1,030,500). The death's
+  // liability partition now cuts the trust's 40% of the mortgage out first.
+  // (The case above runs this same fixture green, so a throw cannot be what
+  // makes this pass.)
+  it("taxes nothing at the first death when everything passes to the spouse", () => {
     expect(at(run(), 2029).estateTax?.taxableEstate).toBeCloseTo(0, 2);
   });
 });

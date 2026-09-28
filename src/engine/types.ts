@@ -1225,6 +1225,13 @@ export interface Liability {
    *  carries it (e.g. an LLC's mortgage on its real estate). Null for
    *  household / individually-owned liabilities. */
   parentAccountId?: string | null;
+  /** The liability twin of `Account.giftsReflectedThrough`. Set by a death's
+   *  liability partition (`partitionGiftedLiabilities`) on the household pool
+   *  it keeps under the ORIGINAL id and on every row cut from it: liability
+   *  gifts dated at or before this year are ALREADY out of its balance and
+   *  owners, so the gift-aware resolvers skip them. Later gifts still overlay.
+   *  Never set on authored data. */
+  giftsReflectedThrough?: number;
 }
 
 export interface SavingsRule {

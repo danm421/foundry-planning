@@ -337,11 +337,25 @@ export function computeGrossEstate(input: {
         // every no-gift path and a fresh array only when it composed, so `!==`
         // reads "a gift was applied" — keying on "has a family row" instead
         // would pull every ungifted JOINT debt off the linked-property / 50-50
-        // defaults below. The decedent keeps exactly their own family share;
-        // 0 (e.g. wholly gifted to a person) is a real answer and drops the line.
-        pct = lOwners
-          .filter((o) => o.kind === "family_member" && o.familyMemberId === input.deceasedFmId)
-          .reduce((s, o) => s + o.percent, 0);
+        // defaults below.
+        //
+        // What is left of the household's share is booked by the SAME rule the
+        // two later readers of this debt apply: the death's liability partition
+        // keeps that share as a pool, and the unlinked-debt distribution and the
+        // §2056(b)(4)(B) encumbrance netting both give the decedent the joint
+        // convention's half of a jointly held pool at a first death (all of it
+        // at a final death) — as the assets loop does. Three readers, one
+        // convention, so the marital deduction nets exactly what this line
+        // subtracted: a 70/30 debt booked at the decedent's own 70% here
+        // overshot the marital deduction by the difference. A lone family row
+        // is the decedent's own share or nobody's; 0 (e.g. wholly gifted to a
+        // person) is a real answer and drops the line.
+        const family = lOwners.filter((o) => o.kind === "family_member");
+        pct = family.length > 1
+          ? (input.deathOrder === 1 ? 0.5 : 1) * family.reduce((s, o) => s + o.percent, 0)
+          : lOwners
+              .filter((o) => o.kind === "family_member" && o.familyMemberId === input.deceasedFmId)
+              .reduce((s, o) => s + o.percent, 0);
       } else if (l.linkedPropertyId) {
         const linked = accountById.get(l.linkedPropertyId);
         if (!linked) continue;

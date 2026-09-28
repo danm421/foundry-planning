@@ -2448,3 +2448,110 @@ describe("applyFinalDeath orchestrator", () => {
     expect(iraTransfer.recipientId).toBe("child-a");
   });
 });
+
+import { vi } from "vitest";
+import { partitionGiftedLiabilities } from "../death-event/shared";
+import type { GiftEvent } from "../types";
+
+describe("partitionGiftedLiabilities — a gifted debt is cut once at the death", () => {
+  // Resolved at 2029 against the gifts dated 2027: every row the partition
+  // writes is marked 2029, and every owners array it writes sums to 1.
+  const at2029 = (giftEvents: GiftEvent[]) => ({ giftEvents, year: 2029, planSettings: { planStartYear: 2026 } });
+  const CLIENT: Liability["owners"] = [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }];
+  const JOINT: Liability["owners"] = [
+    { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+    { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+  ];
+  const note = (over: Partial<Liability> = {}): Liability => ({
+    id: "note", name: "Note", balance: 500_000, interestRate: 0.05, monthlyPayment: 4_000,
+    startYear: 2026, startMonth: 1, termMonths: 240,
+    extraPayments: [{ id: "x-1", liabilityId: "note", year: 2031, type: "lump_sum", amount: 10_000 }],
+    owners: CLIENT, ...over,
+  });
+  const gift = (percent: number, recipient: Partial<GiftEvent> = { recipientEntityId: "trust-1" }): GiftEvent => ({
+    kind: "liability", year: 2027, liabilityId: "note", percent, grantor: "client",
+    parentGiftId: "g-1", ...recipient,
+  } as GiftEvent);
+  const everyRowSumsToOne = (rows: Liability[]) => {
+    for (const r of rows) {
+      expect(r.owners.reduce((s, o) => s + o.percent, 0)).toBeCloseTo(1, 12);
+    }
+  };
+
+  it("keeps the household's 60% under the original id and cuts the trust's 40% into its own row", () => {
+    const rows = partitionGiftedLiabilities([note()], at2029([gift(0.4)]));
+    expect(rows).toHaveLength(2);
+    const pool = rows.find((r) => r.id === "note")!;
+    expect(pool.balance).toBeCloseTo(300_000, 6);
+    expect(pool.monthlyPayment).toBeCloseTo(2_400, 6);
+    expect(pool.extraPayments[0].amount).toBeCloseTo(6_000, 6);
+    expect(pool.owners).toEqual(CLIENT);
+    expect(pool.giftsReflectedThrough).toBe(2029);
+    const trust = rows.find((r) => r.id !== "note")!;
+    expect(trust.id).toMatch(/^liab-slice-/);
+    expect(trust.balance).toBeCloseTo(200_000, 6);
+    expect(trust.monthlyPayment).toBeCloseTo(1_600, 6);
+    expect(trust.extraPayments[0].amount).toBeCloseTo(4_000, 6);
+    expect(trust.owners).toEqual([{ kind: "entity", entityId: "trust-1", percent: 1 }]);
+    expect(trust.giftsReflectedThrough).toBe(2029);
+    everyRowSumsToOne(rows);
+  });
+
+  it("renormalizes a joint debt's AUTHORED family rows on the pool", () => {
+    const rows = partitionGiftedLiabilities([note({ owners: JOINT })], at2029([gift(0.4)]));
+    const pool = rows.find((r) => r.id === "note")!;
+    expect(pool.balance).toBeCloseTo(300_000, 6);
+    expect(pool.owners).toEqual(JOINT);
+    expect(rows.find((r) => r.id !== "note")!.balance).toBeCloseTo(200_000, 6);
+    everyRowSumsToOne(rows);
+  });
+
+  it("drops a share gifted to a PERSON — that debt left the household with its recipient", () => {
+    const rows = partitionGiftedLiabilities([note()], at2029([gift(0.4, { recipientFamilyMemberId: "kid" })]));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe("note");
+    expect(rows[0].balance).toBeCloseTo(300_000, 6);
+    everyRowSumsToOne(rows);
+  });
+
+  it("leaves no household pool for a debt gifted WHOLLY to a trust", () => {
+    const rows = partitionGiftedLiabilities([note()], at2029([gift(1)]));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toMatch(/^liab-slice-/);
+    expect(rows[0].balance).toBeCloseTo(500_000, 6);
+    everyRowSumsToOne(rows);
+  });
+
+  it("keeps a linked pool on its property and leaves the trust's row unlinked", () => {
+    const rows = partitionGiftedLiabilities(
+      [note({ owners: JOINT, linkedPropertyId: "house" })], at2029([gift(0.4)]),
+    );
+    expect(rows.find((r) => r.id === "note")!.linkedPropertyId).toBe("house");
+    expect(rows.find((r) => r.id !== "note")!.linkedPropertyId).toBeUndefined();
+  });
+
+  it("hands back the SAME row on every no-gift path", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const plain = note();
+      const zero = note();
+      const declined = note();
+      const reflected = note({ giftsReflectedThrough: 2029 });
+      const other = note({ id: "card" });
+      const rows = partitionGiftedLiabilities(
+        [plain, zero, declined, reflected, other],
+        at2029([]),
+      );
+      expect(rows[0]).toBe(plain);
+      expect(partitionGiftedLiabilities([zero], at2029([gift(0)]))[0]).toBe(zero);
+      // 1.4 of a 1.0 household share: `canFundGifts` declines, authored rows stand.
+      expect(partitionGiftedLiabilities([declined], at2029([gift(1.4)]))[0]).toBe(declined);
+      expect(partitionGiftedLiabilities([reflected], at2029([gift(0.4)]))[0]).toBe(reflected);
+      // A gift of another debt leaves this one alone.
+      expect(partitionGiftedLiabilities([other], at2029([gift(0.4)]))[0]).toBe(other);
+      expect(rows).toHaveLength(5);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});

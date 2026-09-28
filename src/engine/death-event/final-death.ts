@@ -13,6 +13,7 @@ import {
   distributeUnlinkedLiabilities,
   drainableShareAtDeath,
   isWhollyGiftedAway,
+  partitionGiftedLiabilities,
   routeAtDeath,
   selectResiduaryTier,
   runPourOut,
@@ -446,7 +447,10 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
   // and the gain is gross DeathTransfer.amount + per-recipient drain attribution.
   const accountBalances = { ...prepared.accountBalances };
   const drainTargetBalances = { ...prepared.accountBalances };
-  let workingLiabs = [...prepared.liabilities];
+  // Partitioned once, after the gross estate read the overlay: the bequests,
+  // the creditor drain's unlinked-debt sum, the pour-out, the chain and the
+  // residual distribution below all read these rows as dollars.
+  let workingLiabs = partitionGiftedLiabilities(prepared.liabilities, prepared);
   let ledger: DeathTransfer[] = [];
 
   // Phase 2.5 (4e) — carve bequeathed unlinked-debt slices out of the

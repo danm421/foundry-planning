@@ -34,7 +34,7 @@ export interface AccountWithOwners {
 
 /** True when a gift dated `year` is already baked into this account's rows:
  *  set by a death partition, which routes the pool net of every gift so far. */
-function giftAlreadyReflected(account: AccountWithOwners, year: number): boolean {
+function giftAlreadyReflected(account: { giftsReflectedThrough?: number }, year: number): boolean {
   return account.giftsReflectedThrough != null && year <= account.giftsReflectedThrough;
 }
 
@@ -342,7 +342,12 @@ export function sortOwners<T extends AccountOwner>(owners: readonly T[]): T[] {
 }
 
 export type LiabilityOwner = AccountOwner; // structurally identical
-export type LiabilityWithOwners = { id: string; owners: LiabilityOwner[] };
+export type LiabilityWithOwners = {
+  id: string;
+  owners: LiabilityOwner[];
+  /** See `Liability.giftsReflectedThrough`. */
+  giftsReflectedThrough?: number;
+};
 
 export function liabilityOwnersForYear(
   liability: LiabilityWithOwners,
@@ -355,7 +360,8 @@ export function liabilityOwnersForYear(
       e.kind === "liability" &&
       e.liabilityId === liability.id &&
       e.year >= projectionStartYear &&
-      e.year <= year,
+      e.year <= year &&
+      !giftAlreadyReflected(liability, e.year),
   ) as Array<Extract<GiftEvent, { kind: "liability" }>>;
   return composeOwnersForYear(
     liability.owners, events, year, "liabilityOwnersForYear", `liability ${liability.id}`,
@@ -486,6 +492,7 @@ export function giftAwareLiabilityOwners(
     if (e.kind !== "liability") continue;
     if (e.liabilityId !== liability.id) continue;
     if (e.year < planStartYear || e.year > year) continue;
+    if (giftAlreadyReflected(liability, e.year)) continue;
     giftedPercent += e.percent;
   }
   if (giftedPercent <= 0) return liability.owners;

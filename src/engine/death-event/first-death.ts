@@ -15,6 +15,7 @@ import {
   drainableShareAtDeath,
   giftAwareOwners,
   isWhollyGiftedAway,
+  partitionGiftedLiabilities,
   routeAtDeath,
   runPourOut,
   type DeathEventInput,
@@ -372,7 +373,14 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
   };
 
   // Phase 1 — 4b precedence chain. Capture its transfer ledger + state.
-  const chainResult = runFirstDeathPrecedenceChain(prepared);
+  // Liabilities go in PARTITIONED (see `partitionGiftedLiabilities`): the
+  // chain's linked follow-through, the encumbrance netting, the pour-out and
+  // the unlinked-debt distribution all read its output. The gross estate below
+  // keeps reading `prepared.liabilities`, where the overlay resolves the gift.
+  const chainResult = runFirstDeathPrecedenceChain({
+    ...prepared,
+    liabilities: partitionGiftedLiabilities(prepared.liabilities, prepared),
+  });
 
   // Phase 2 — compute grantor-succession updates (not yet applied).
   const succession = applyGrantorSuccession({
