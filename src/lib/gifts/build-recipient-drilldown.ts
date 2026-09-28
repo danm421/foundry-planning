@@ -44,6 +44,9 @@ export interface BuildRecipientDrilldownInput {
   >;
   annualExclusion: number;
   accountValueAtYear: (accountId: string, year: number) => number;
+  /** Values a `business_interest` gift with no explicit amount; see
+   *  `ExemptionSummaryInput.entityValueAtYear`. Omitted, such a gift is $0. */
+  entityValueAtYear?: (entityId: string, year: number) => number;
 }
 
 type GroupKind = "family" | "entity" | "external";
@@ -159,6 +162,7 @@ export function buildRecipientDrilldown(
       ([id, v]) => ({ id, kind: v.kind }),
     ),
     accountValueAtYear: input.accountValueAtYear,
+    entityValueAtYear: input.entityValueAtYear,
   }).filter((cg) => cg.year === input.year);
 
   // §2503(b): ONE annual exclusion per donee per grantor per year (AE ×

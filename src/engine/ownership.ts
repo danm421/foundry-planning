@@ -277,6 +277,29 @@ export function ownersForYear(
   );
 }
 
+/** The `business_interest` variant. An entity's owner rows live in the
+ *  `entity_owners` table rather than `account_owners`, and the gift event names
+ *  `entityId` rather than `accountId` — otherwise the composition rules are
+ *  identical, which is why all three share one composer. An entity has no
+ *  death-partition marker, so there is no `giftAlreadyReflected` clause. */
+export function entityOwnersForYear(
+  entity: { id: string; owners: AccountOwner[] },
+  giftEvents: GiftEvent[],
+  year: number,
+  projectionStartYear: number,
+): AccountOwner[] {
+  const events = giftEvents.filter(
+    (e) =>
+      e.kind === "business_interest" &&
+      e.entityId === entity.id &&
+      e.year >= projectionStartYear &&
+      e.year <= year,
+  ) as Array<Extract<GiftEvent, { kind: "business_interest" }>>;
+  return composeOwnersForYear(
+    entity.owners, events, year, "entityOwnersForYear", `entity ${entity.id}`,
+  );
+}
+
 export function ownedByEntityAtYear(
   account: AccountWithOwners,
   events: GiftEvent[],

@@ -31,6 +31,7 @@ import {
 } from "./medicare";
 import { resolveResidenceState } from "./relocation";
 import {
+  buildEntityValueAtYear,
   computeBusinessAccountCashFlow,
   computeEntityCashFlow,
   type BusinessAccountMetadata,
@@ -9513,6 +9514,9 @@ export function runProjectionWithEvents(
     lifetimeExemptionCap: data.planSettings.lifetimeExemptionCap ?? null,
     accountValueAtYear: (id, y) =>
       yearByYear.get(y)?.accountLedgers?.[id]?.endingValue ?? 0,
+    // Values a business_interest gift with no explicit `amount` at the
+    // entity's year-end value × percent; omitted, such a gift valued at $0.
+    entityValueAtYear: buildEntityValueAtYear(years),
   });
   return {
     years,

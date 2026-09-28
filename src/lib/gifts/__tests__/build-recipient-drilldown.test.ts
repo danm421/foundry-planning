@@ -156,6 +156,27 @@ describe("buildRecipientDrilldown", () => {
     });
   });
 
+  it("business_interest GiftEvent without amountOverride falls back to entityValueAtYear × percent", () => {
+    const ev: GiftEvent = {
+      kind: "business_interest",
+      year: 2028,
+      grantor: "client",
+      entityId: "biz-1",
+      percent: 0.3,
+      recipientEntityId: "ent-1",
+    };
+    const groups = buildRecipientDrilldown(
+      baseInput({
+        giftEvents: [ev],
+        entityValueAtYear: (id, y) => (id === "biz-1" && y === 2028 ? 1_000_000 : 0),
+      }),
+    );
+    expect(groups[0].rows[0]).toMatchObject({
+      amount: 300_000,
+      giftValue: 300_000,
+    });
+  });
+
   it("pools one §2503(b) annual exclusion across multiple gifts to the same donee", () => {
     const g1: Gift = {
       id: "g1",

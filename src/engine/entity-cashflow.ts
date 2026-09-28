@@ -92,6 +92,22 @@ export interface BusinessCashFlowRow extends BaseEntityCashFlowRow {
 
 export type EntityCashFlowRow = TrustCashFlowRow | BusinessCashFlowRow;
 
+/** An entity's end-of-year value, read off its cash-flow row: a business row's
+ *  `endingTotalValue`, a trust row's `endingBalance`; 0 when the projection has
+ *  no row for it that year. A `business_interest` gift with no explicit amount
+ *  values at this × its percent, so the gift ledger and every surface that
+ *  re-values the same gift read it through here. */
+export function buildEntityValueAtYear(
+  years: ProjectionYear[],
+): (entityId: string, year: number) => number {
+  const yearByYear = new Map(years.map((y) => [y.year, y]));
+  return (entityId, year) => {
+    const row = yearByYear.get(year)?.entityCashFlow.get(entityId);
+    if (!row) return 0;
+    return row.kind === "business" ? row.endingTotalValue : row.endingBalance;
+  };
+}
+
 export interface EntityMetadata {
   id: string;
   name: string;

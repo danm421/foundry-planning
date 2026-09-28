@@ -3,6 +3,7 @@ import { ClientNotFoundError } from "@/lib/projection/load-client-data";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { runProjectionWithEvents } from "@/engine/projection";
+import { buildEntityValueAtYear } from "@/engine/entity-cashflow";
 import { buildAnnualExclusionMap } from "@/lib/gifts/resolve-annual-exclusion";
 import { computeExemptionSummary } from "@/lib/gifts/compute-exemption-summary";
 import { buildAccountValueAtYear } from "@/lib/estate/account-value-at-year";
@@ -67,6 +68,7 @@ export async function GET(
       // client id, which is in scope.
       accountValueAtYear: (accountId: string, year: number) =>
         valueAtYear(accountId, year) ?? 0,
+      entityValueAtYear: buildEntityValueAtYear(result.years),
       taxInflationRate,
       lifetimeExemptionCap: data.planSettings.lifetimeExemptionCap ?? null,
       hasSpouse: data.client.spouseDob != null,

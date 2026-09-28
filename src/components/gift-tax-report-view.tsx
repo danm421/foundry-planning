@@ -7,6 +7,7 @@ import {
   type ProjectionResult,
 } from "@/engine/projection";
 import type { ClientData } from "@/engine/types";
+import { buildEntityValueAtYear } from "@/engine/entity-cashflow";
 import {
   buildRecipientDrilldown,
   type RecipientGroup,
@@ -126,6 +127,7 @@ export default function GiftTaxReportView({
     const valueAtYear = buildAccountValueAtYear(projection.years);
     const accountValueAtYear = (accountId: string, year: number): number =>
       valueAtYear(accountId, year) ?? 0;
+    const entityValueAtYear = buildEntityValueAtYear(projection.years);
 
     for (const ly of projection.giftLedger) {
       const groups = buildRecipientDrilldown({
@@ -138,6 +140,7 @@ export default function GiftTaxReportView({
         externalBeneficiariesById,
         annualExclusion: annualExclusionsByYear[ly.year] ?? 0,
         accountValueAtYear,
+        entityValueAtYear,
       });
       if (groups.length > 0) out.set(ly.year, groups);
     }

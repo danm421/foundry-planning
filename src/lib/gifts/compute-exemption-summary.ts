@@ -25,6 +25,11 @@ export interface ExemptionSummaryInput {
    * `(id, y) => years.find(...)?.accountLedgers?.[id]?.endingValue ?? 0`.
    */
   accountValueAtYear: (accountId: string, year: number) => number;
+  /** Resolver for a business entity's value in a projection year, used to value
+   *  a `business_interest` gift with no explicit amount. Callers holding a
+   *  projection pass `buildEntityValueAtYear(years)` — the reader the ledger
+   *  uses. Omitted, such a gift values at $0. */
+  entityValueAtYear?: (entityId: string, year: number) => number;
   taxInflationRate: number;
   lifetimeExemptionCap?: number | null;
   hasSpouse?: boolean;
@@ -46,6 +51,7 @@ export function computeExemptionSummary(input: ExemptionSummaryInput): Exemption
   const canonical = toCanonicalGifts(input.gifts, input.giftEvents, {
     entities: input.entities,
     accountValueAtYear: input.accountValueAtYear,
+    entityValueAtYear: input.entityValueAtYear,
   });
   for (const cg of canonical) {
     if (!cg.recipientEntityId) continue;

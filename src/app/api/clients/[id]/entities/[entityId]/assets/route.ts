@@ -234,8 +234,8 @@ export async function POST(
           giftRowsToInsert.push({
             clientId,
             year: currentYear,
-            // FULL undiscounted value. `entityValueAtYear` is never supplied, so
-            // the normalizer values this gift from `amount` (as amountOverride)
+            // FULL undiscounted value. The normalizer values this gift from
+            // `amount` (as amountOverride, which wins over `entityValueAtYear`)
             // and applies `valuationDiscount` to it there. Pre-multiplying here
             // would double-discount.
             amount: giftAmount.toFixed(2),

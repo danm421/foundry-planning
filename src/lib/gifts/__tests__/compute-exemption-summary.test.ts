@@ -44,4 +44,27 @@ describe("computeExemptionSummary", () => {
     // 400,000 × 25% = 100,000 full → 70,000 after a 30% discount.
     expect(summary.perTrust["t1"].client).toBeCloseTo(70_000, 4);
   });
+
+  it("values a business-interest gift with no amount from the supplied entity resolver", () => {
+    const trust = { id: "t1", name: "ILIT", entityType: "trust", isIrrevocable: true,
+      crummeyPowers: false, includeInPortfolio: false, isGrantor: false,
+      beneficiaries: [] } as unknown as import("@/engine/types").EntitySummary;
+    const summary = computeExemptionSummary({
+      giftLedger: [
+        { year: 2030, giftsGiven: 300_000, fullValueTransferred: 300_000, taxableGiftsGiven: 300_000,
+          perGrantor: { client: { taxableGiftsThisYear: 300_000, cumulativeTaxableGifts: 300_000, creditUsed: 0, giftTaxThisYear: 0, cumulativeGiftTax: 0 } },
+          totalGiftTax: 0 },
+      ],
+      gifts: [],
+      giftEvents: [{ kind: "business_interest", year: 2030, entityId: "biz-1", percent: 0.3,
+        grantor: "client", recipientEntityId: "t1" }],
+      entities: [trust],
+      annualExclusionsByYear: { 2030: 18_000 },
+      accountValueAtYear: () => 0,
+      entityValueAtYear: (id, y) => (id === "biz-1" && y === 2030 ? 1_000_000 : 0),
+      taxInflationRate: 0,
+    });
+    // 1,000,000 × 30% — the trust dialog's bar must agree with the ledger beside it.
+    expect(summary.perTrust["t1"]?.client).toBeCloseTo(300_000, 4);
+  });
 });
