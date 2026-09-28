@@ -41,6 +41,26 @@ describe("singleLifeExpectancy", () => {
     expect(singleLifeExpectancy(119)).toBe(1.1);
     expect(singleLifeExpectancy(120)).toBe(1.0);
   });
+  it("matches the whole table, age by age", () => {
+    // Treas. Reg. §1.401(a)(9)-9(b) Table 1 — a literal copy, so a typo in any row goes red.
+    const table = [
+      84.6, 83.7, 82.8, 81.8, 80.8, 79.8, 78.8, 77.9, 76.9, 75.9,
+      74.9, 73.9, 72.9, 71.9, 70.9, 69.9, 69.0, 68.0, 67.0, 66.0,
+      65.0, 64.1, 63.1, 62.1, 61.1, 60.2, 59.2, 58.2, 57.3, 56.3,
+      55.3, 54.4, 53.4, 52.5, 51.5, 50.5, 49.6, 48.6, 47.7, 46.7,
+      45.7, 44.8, 43.8, 42.9, 41.9, 41.0, 40.0, 39.0, 38.1, 37.1,
+      36.2, 35.3, 34.3, 33.4, 32.5, 31.6, 30.6, 29.8, 28.9, 28.0,
+      27.1, 26.2, 25.4, 24.5, 23.7, 22.9, 22.0, 21.2, 20.4, 19.6,
+      18.8, 18.0, 17.2, 16.4, 15.6, 14.8, 14.1, 13.3, 12.6, 11.9,
+      11.2, 10.5, 9.9, 9.3, 8.7, 8.1, 7.6, 7.1, 6.6, 6.1,
+      5.7, 5.3, 4.9, 4.6, 4.3, 4.0, 3.7, 3.4, 3.2, 3.0,
+      2.8, 2.6, 2.5, 2.3, 2.2, 2.1, 2.1, 2.1, 2.0, 2.0,
+      2.0, 2.0, 2.0, 1.9, 1.9, 1.8, 1.8, 1.6, 1.4, 1.1,
+      1.0,
+    ];
+    expect(table).toHaveLength(121);
+    expect(table.map((_, age) => singleLifeExpectancy(age))).toEqual(table);
+  });
   it("clamps ages outside the table", () => {
     expect(singleLifeExpectancy(-3)).toBe(84.6);
     expect(singleLifeExpectancy(130)).toBe(1.0);
@@ -274,6 +294,13 @@ describe("isInheritedIra / inheritedIraInputFor", () => {
     expect(isInheritedIra({ ...base, inheritedDeathYear: null })).toBe(false);
     expect(isInheritedIra({ ...base, inheritedOwnerBirthYear: undefined })).toBe(false);
     expect(isInheritedIra({ ...base, owners: [{ kind: "entity", entityId: "trust-1", percent: 1 }] })).toBe(false);
+  });
+  it("is false when either year is not a whole number (a non-form writer)", () => {
+    const notAYear = [Number.NaN, 2022.5, "" as unknown as number, "2022" as unknown as number];
+    for (const bad of notAYear) {
+      expect(isInheritedIra({ ...base, inheritedDeathYear: bad })).toBe(false);
+      expect(isInheritedIra({ ...base, inheritedOwnerBirthYear: bad })).toBe(false);
+    }
   });
   it("builds the rule input from the account and the heir's birth year", () => {
     expect(inheritedIraInputFor(base, 1975)).toEqual({

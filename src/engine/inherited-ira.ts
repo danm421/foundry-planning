@@ -72,7 +72,7 @@ export function ownerHadStartedRmds(ownerBirthYear: number, deathYear: number, i
 export interface InheritedIraInput {
   deathYear: number;
   ownerBirthYear: number;
-  /** The account owner — the client or spouse who inherited it. */
+  /** The heir — the client or spouse holding the account. */
   heirBirthYear: number;
   heirDisabled: boolean;
   isRoth: boolean;
@@ -202,14 +202,17 @@ export function inheritedRmdLabel(rule: InheritedIraRule, result: InheritedRmdRe
   return `Inherited IRA RMD (${method}, divisor ${(result.divisor ?? 0).toFixed(1)})`;
 }
 
+/** Both years must be whole numbers: a writer that skips the form's validation
+ *  (NaN, "", a string year) leaves the account a regular IRA rather than feeding
+ *  garbage into the divisor math. */
 export function isInheritedIra(
   account: Pick<Account, "category" | "subType" | "owners" | "inheritedDeathYear" | "inheritedOwnerBirthYear">,
 ): boolean {
   return (
     account.category === "retirement" &&
     INHERITABLE_SUBTYPES.has(account.subType) &&
-    account.inheritedDeathYear != null &&
-    account.inheritedOwnerBirthYear != null &&
+    Number.isInteger(account.inheritedDeathYear) &&
+    Number.isInteger(account.inheritedOwnerBirthYear) &&
     controllingFamilyMember(account) != null
   );
 }
