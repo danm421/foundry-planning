@@ -1679,6 +1679,14 @@ export interface DeathEventInput {
   survivor: "client" | "spouse";
   will: Will | null;
   accounts: Account[];
+  /** The account list a lifetime gift is VALUED against — the projection's
+   *  entry-state `data.accounts`, the same list the gift ledger reads. The
+   *  death-year `accounts` has lost any business sold since the gift, so the
+   *  adjusted-taxable-gifts add-back could no longer consolidate it and would
+   *  disagree with the exemption the ledger charged. Every engine call site
+   *  passes it; optional only for direct-call fixtures, which fall back to
+   *  `accounts`. */
+  giftValuationAccounts?: Account[];
   accountBalances: Record<string, number>;
   basisMap: Record<string, number>;
   incomes: Income[];

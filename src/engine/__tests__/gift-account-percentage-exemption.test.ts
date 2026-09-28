@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { runProjectionWithEvents } from "../projection";
 import type {
-  Account, ClientData, ClientInfo, EntitySummary, FamilyMember,
+  Account, ClientData, ClientInfo, EntitySummary, EstateTaxResult, FamilyMember,
   GiftEvent, PlanSettings,
 } from "../types";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../ownership";
@@ -209,4 +209,79 @@ describe("a gift of a business consumes exemption on the value that leaves the e
       expect(death.adjustedTaxableGifts).toBeCloseTo(18_000_000, 2);
     },
   );
+});
+
+// ── …even after the business is sold ────────────────────────────────────────
+//
+// The gift ledger reads the business tree from the plan's own account list. A
+// full sale removes the business AND its children from the death-year account
+// list, so a death closure that read the tree from there could no longer find
+// the business and fell back to the parent's own balance: the ledger charged
+// $18M, the add-back at death $15M. The death closures now read the same list
+// the ledger does (`giftValuationAccounts`).
+
+/** Married: 15% of the business gifted in 2028, the whole business sold at the
+ *  start of 2029 (proceeds to household checking), deaths from 2030 on. */
+function giftThenSell(opts: { clientLE: number; spouseLE: number }): ClientData {
+  const checking = {
+    id: "hh", name: "Household Checking",
+    category: "cash", subType: "checking", titlingType: "jtwros",
+    value: 1_000, basis: 1_000, growthRate: 0, rmdEnabled: false,
+    isDefaultChecking: true,
+    owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+  } as Account;
+  const data = clientDiesIn2029(
+    makeData([GIFT_15_PCT_OF_BIZ], [checking, ...businessTree(100_000_000, 20_000_000)]),
+    true,
+  );
+  return {
+    ...data,
+    client: { ...data.client, lifeExpectancy: opts.clientLE, spouseLifeExpectancy: opts.spouseLE },
+    planSettings: { ...data.planSettings, planEndYear: 2034 },
+    assetTransactions: [{
+      id: "sell-biz", name: "Sell Family LLC", type: "sell", year: 2029,
+      businessAccountId: "biz", proceedsAccountId: "hh",
+    }],
+  };
+}
+
+/** The §2001(b) add-back a death pass computed, rounded to whole dollars. */
+const addBack = (et: EstateTaxResult | undefined) =>
+  et ? Math.round(et.adjustedTaxableGifts) : undefined;
+
+describe("a business sold between the gift and the death still adds back its consolidated value", () => {
+  it("client dies first (2030): the real first death and both 2029 hypothetical orderings", () => {
+    const result = runProjectionWithEvents(giftThenSell({ clientLE: 70, spouseLE: 95 }));
+    const y2029 = result.years.find((y) => y.year === 2029)!;
+    const y2030 = result.years.find((y) => y.year === 2030)!;
+    // The sale really happened before anyone died: it cascaded to the child.
+    expect(y2029.accountLedgers["biz-cash"]?.endingValue ?? 0).toBe(0);
+    expect(y2030.estateTax?.deathOrder).toBe(1);
+    expect(y2030.estateTax?.deceased).toBe("client");
+    expect({
+      realFirstDeath: addBack(y2030.estateTax),
+      hypotheticalClientFirst: addBack(y2029.hypotheticalEstateTax.primaryFirst.firstDeath),
+      hypotheticalClientSecond: addBack(y2029.hypotheticalEstateTax.spouseFirst?.finalDeath),
+    }).toEqual({
+      realFirstDeath: 18_000_000,
+      hypotheticalClientFirst: 18_000_000,
+      hypotheticalClientSecond: 18_000_000,
+    });
+  });
+
+  it("spouse dies first (2030), client in 2032: the real final death and the anchored hypothetical", () => {
+    const result = runProjectionWithEvents(giftThenSell({ clientLE: 72, spouseLE: 68 }));
+    const y2031 = result.years.find((y) => y.year === 2031)!;
+    const y2032 = result.years.find((y) => y.year === 2032)!;
+    expect(result.years.find((y) => y.year === 2030)!.estateTax?.deceased).toBe("spouse");
+    expect(y2032.estateTax?.deathOrder).toBe(2);
+    expect(y2032.estateTax?.deceased).toBe("client");
+    expect({
+      realFinalDeath: addBack(y2032.estateTax),
+      anchoredHypotheticalClientDeath: addBack(y2031.hypotheticalEstateTax.primaryFirst.finalDeath),
+    }).toEqual({
+      realFinalDeath: 18_000_000,
+      anchoredHypotheticalClientDeath: 18_000_000,
+    });
+  });
 });

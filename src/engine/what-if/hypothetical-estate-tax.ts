@@ -28,6 +28,8 @@ export interface HypotheticalEstateTaxInput {
    *  other statuses → single-filer path, only `primaryFirst`. */
   isMarried: boolean;
   accounts: Account[];
+  /** See `DeathEventInput.giftValuationAccounts`. */
+  giftValuationAccounts?: Account[];
   accountBalances: Record<string, number>;
   basisMap: Record<string, number>;
   incomes: Income[];
@@ -89,6 +91,7 @@ function runOrdering(
     survivor,
     will: firstWill,
     accounts: structuredClone(input.accounts),
+    giftValuationAccounts: input.giftValuationAccounts,
     accountBalances: structuredClone(input.accountBalances),
     basisMap: structuredClone(input.basisMap),
     incomes: structuredClone(input.incomes),
@@ -124,6 +127,7 @@ function runOrdering(
     survivor,
     will: finalWill,
     accounts: firstResult.accounts,
+    giftValuationAccounts: input.giftValuationAccounts,
     accountBalances: firstResult.accountBalances,
     basisMap: firstResult.basisMap,
     incomes: firstResult.incomes,
@@ -190,6 +194,8 @@ export interface AnchoredHypotheticalInput {
   // Survivor-only state at year N (post-real-first-death), same fields the loop
   // passes to applyFinalDeath in the real projection.
   accounts: Account[];
+  /** See `DeathEventInput.giftValuationAccounts`. */
+  giftValuationAccounts?: Account[];
   accountBalances: Record<string, number>;
   basisMap: Record<string, number>;
   incomes: Income[];
@@ -230,6 +236,7 @@ export function computeAnchoredHypotheticalEstateTax(
     survivor: input.survivor, // unused internally at final death; mirrors the real call
     will: survivorWill,
     accounts: structuredClone(input.accounts),
+    giftValuationAccounts: input.giftValuationAccounts,
     accountBalances: structuredClone(input.accountBalances),
     basisMap: structuredClone(input.basisMap),
     incomes: structuredClone(input.incomes),

@@ -522,14 +522,16 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
   // snapshots are available; falls back to the death-year balance otherwise.
   const deathYearBalances = chainResult.accountBalances;
   // A top-level business is valued consolidated, as the gross estate values it
-  // (`giftValueOfAccount`), so the add-back matches what left the estate.
+  // (`giftValueOfAccount`), so the add-back matches what left the estate — over
+  // the ledger's account list, which still holds a business sold since the gift.
+  const giftTree = input.giftValuationAccounts ?? input.accounts;
   const accountValueAtYear = (accountId: string, year: number): number => {
     const yearMap = input.yearEndAccountBalances?.get(year);
     if (yearMap && yearMap[accountId] != null) {
-      return giftValueOfAccount(accountId, input.accounts, yearMap);
+      return giftValueOfAccount(accountId, giftTree, yearMap);
     }
     // Fallback: death-year balance (preserves current behavior when no per-year history).
-    return giftValueOfAccount(accountId, input.accounts, deathYearBalances);
+    return giftValueOfAccount(accountId, giftTree, deathYearBalances);
   };
   // §2035 reversal: exclude asset-gift events for policies pulled back into
   // the gross estate. Without this we'd double-tax — the gift-year value
