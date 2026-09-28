@@ -7,8 +7,18 @@ import type {
   MechanismBreakdown,
   AssetTransferLine,
 } from "@/lib/estate/transfer-report";
-import type { ClientData, ProjectionYear } from "@/engine/types";
-import type { ProjectionResult } from "@/engine/projection";
+import type {
+  Account,
+  AssetTransaction,
+  ClientData,
+  EntitySummary,
+  FamilyMember,
+  ProjectionYear,
+  Will,
+} from "@/engine/types";
+import { runProjectionWithEvents, type ProjectionResult } from "@/engine/projection";
+import { buildClientData, basePlanSettings, baseClient } from "@/engine/__tests__/fixtures";
+import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "@/engine/ownership";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { buildEstateFlowSummary } from "@/lib/estate/estate-flow-summary";
 
@@ -2310,5 +2320,250 @@ describe("buildEstateFlowSummary — year-aware OOE (gifts + projection)", () =>
     expect(summary.outOfEstate.irrevTrusts.entities[0].assets).toEqual([
       { label: "Term Policy (death benefit)", amount: 2_000_000 },
     ]);
+  });
+});
+
+// The survivor's box used to read the authored owners × the authored values at
+// every as-of year, while every sibling box resolved the year. It now resolves
+// exactly as the Out-of-Estate box does: the as-of year's ledger, split by the
+// gift overlay and the engine's locked shares; the authored rows only where the
+// projection has no row for the year.
+describe("buildEstateFlowSummary — survivor net worth resolves at the as-of year", () => {
+  /** Cooper dies first; Susan owns a $1M brokerage outright. */
+  function susanOwnsBrokerage(): ClientData {
+    const clientData = emptyClientData();
+    clientData.familyMembers = [
+      { id: "fm-client", role: "client", firstName: "Cooper" },
+      { id: "fm-spouse", role: "spouse", firstName: "Susan" },
+    ] as ClientData["familyMembers"];
+    clientData.entities = [
+      { id: "trust-1", name: "Susan SLAT", entityType: "trust", isIrrevocable: true },
+    ] as unknown as ClientData["entities"];
+    clientData.accounts = [
+      {
+        id: "acc-1",
+        name: "Susan Brokerage",
+        value: 1_000_000,
+        owners: [{ kind: "family_member", familyMemberId: "fm-spouse", percent: 1 }],
+      },
+    ] as unknown as ClientData["accounts"];
+    return clientData;
+  }
+  const susanOwes = (balance: number): ClientData["liabilities"] =>
+    [
+      {
+        id: "liab-1",
+        name: "Mortgage",
+        balance,
+        owners: [{ kind: "family_member", familyMemberId: "fm-spouse", percent: 1 }],
+      },
+    ] as unknown as ClientData["liabilities"];
+  const GIFT_40_TO_TRUST = {
+    kind: "asset", year: 2028, accountId: "acc-1", percent: 0.4,
+    grantor: "spouse", recipientEntityId: "trust-1",
+  } as const;
+
+  /** Hand-built rows 2026 (plan start) … 2030; only the 2030 row carries data. */
+  function rowsThrough2030(
+    endingValues: Record<string, number>,
+    liabilityBalancesBoY: Record<string, number> = {},
+  ): ProjectionResult {
+    const projection = projectionAt(2030, endingValues, undefined, undefined, 2026);
+    projection.years[projection.years.length - 1].liabilityBalancesBoY = liabilityBalancesBoY;
+    return projection;
+  }
+
+  const firstDeath = deathSection({
+    decedent: "client", decedentName: "Cooper", year: 2029, recipients: [], reductions: [],
+  });
+  const survivorAt = (
+    clientData: ClientData,
+    asOfYear: number,
+    projection: ProjectionResult | null,
+  ) =>
+    buildEstateFlowSummary({ ...baseInput({ firstDeath }), clientData, asOfYear, projection })!
+      .survivorNetWorth!;
+
+  it("excludes a share gifted away before the as-of year", () => {
+    const clientData = susanOwnsBrokerage();
+    clientData.giftEvents = [GIFT_40_TO_TRUST];
+    // The trust holds 40% of the 1M ledger from 2028 on; Susan the other 600k.
+    const survivor = survivorAt(clientData, 2030, rowsThrough2030({ "acc-1": 1_000_000 }));
+    expect(survivor.amount).toBeCloseTo(600_000, 2);
+  });
+
+  it("reads the authored value and owners when there is no projection", () => {
+    const clientData = susanOwnsBrokerage();
+    clientData.giftEvents = [GIFT_40_TO_TRUST];
+    expect(survivorAt(clientData, 2025, null).amount).toBeCloseTo(1_000_000, 2);
+  });
+
+  it("is unchanged at AsOf = today, because the projection has no row for plan start − 1", () => {
+    // The chart's "today" is `planStartYear − 1`. The same rows that put 600k
+    // in 2030 have no 2025 row, so the box takes the authored path.
+    const clientData = susanOwnsBrokerage();
+    clientData.giftEvents = [GIFT_40_TO_TRUST];
+    const survivor = survivorAt(clientData, 2025, rowsThrough2030({ "acc-1": 1_000_000 }));
+    expect(survivor.amount).toBeCloseTo(1_000_000, 2);
+  });
+
+  it("nets a gifted liability share out of the survivor's debts", () => {
+    const clientData = susanOwnsBrokerage();
+    clientData.liabilities = susanOwes(200_000);
+    clientData.giftEvents = [
+      { kind: "liability", year: 2028, liabilityId: "liab-1", percent: 0.5,
+        grantor: "spouse", recipientEntityId: "trust-1", parentGiftId: "p1" },
+    ];
+    // A payment-0 loan: the 2030 row's beginning-of-year balance is still the
+    // authored 200k, half of it the trust's from 2028. 1M − 100k.
+    const projection = rowsThrough2030({ "acc-1": 1_000_000 }, { "liab-1": 200_000 });
+    expect(survivorAt(clientData, 2030, projection).amount).toBeCloseTo(900_000, 2);
+  });
+
+  it("values an account at the as-of year's ending balance and a debt at its beginning-of-year balance", () => {
+    // No gifts. The brokerage grew to 1.2M by EoY 2030; the loan, entered at
+    // 250k, amortized to 200k by BoY 2030. 1.2M − 200k — not 1M − 250k.
+    const clientData = susanOwnsBrokerage();
+    clientData.liabilities = susanOwes(250_000);
+    const projection = rowsThrough2030({ "acc-1": 1_200_000 }, { "liab-1": 200_000 });
+    expect(survivorAt(clientData, 2030, projection).amount).toBeCloseTo(1_000_000, 2);
+  });
+
+  // ── Real projections: Cooper (client) dies in 2029, Susan outlives the plan.
+  const TRUST = "trust-1";
+  const FAMILY: FamilyMember[] = [
+    { id: LEGACY_FM_CLIENT, role: "client", relationship: "other",
+      firstName: "Cooper", lastName: "Sample", dateOfBirth: "1960-01-01" },
+    { id: LEGACY_FM_SPOUSE, role: "spouse", relationship: "other",
+      firstName: "Susan", lastName: "Sample", dateOfBirth: "1972-06-15" },
+  ];
+  const trust: EntitySummary = {
+    id: TRUST, name: "Family Trust", entityType: "trust", trustSubType: "irrevocable",
+    isIrrevocable: true, isGrantor: false, includeInPortfolio: false,
+    accessibleToClient: false, grantor: "client",
+  };
+  const JOINT: Account["owners"] = [
+    { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+    { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+  ];
+  const COOPER_ONLY: Account["owners"] = [
+    { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 },
+  ];
+  /** A $1M brokerage (basis 400k, growth 0) beside $1k of joint checking and
+   *  the trust's own empty checking; no income, spending or tax, so every
+   *  figure is one the death explains. */
+  function realPlan(opts: {
+    owners: Account["owners"];
+    wills?: Will[];
+    assetTransactions?: AssetTransaction[];
+  }): ClientData {
+    return buildClientData({
+      client: { ...baseClient, dateOfBirth: "1960-01-01", spouseDob: "1972-06-15",
+        lifeExpectancy: 69, spouseLifeExpectancy: 95 },
+      familyMembers: FAMILY,
+      accounts: [
+        { id: "acc-checking", name: "Checking", category: "cash", subType: "checking",
+          titlingType: "jtwros", value: 1_000, basis: 1_000, growthRate: 0,
+          rmdEnabled: false, isDefaultChecking: true, owners: JOINT },
+        { id: "trust-checking", name: "Trust Checking", category: "cash", subType: "checking",
+          titlingType: "jtwros", value: 0, basis: 0, growthRate: 0,
+          rmdEnabled: false, isDefaultChecking: true,
+          owners: [{ kind: "entity", entityId: TRUST, percent: 1 }] },
+        { id: "acc-1", name: "Brokerage", category: "taxable", subType: "brokerage",
+          titlingType: "jtwros", value: 1_000_000, basis: 400_000, growthRate: 0,
+          rmdEnabled: false, owners: opts.owners },
+      ],
+      entities: [trust],
+      incomes: [], liabilities: [], savingsRules: [], expenses: [], withdrawalStrategy: [],
+      giftEvents: [],
+      wills: opts.wills ?? [],
+      assetTransactions: opts.assetTransactions ?? [],
+      planSettings: { ...basePlanSettings, flatFederalRate: 0, flatStateRate: 0,
+        planStartYear: 2026, planEndYear: 2033 },
+    });
+  }
+  const yearOf = (projection: ProjectionResult, year: number) => {
+    const y = projection.years.find((r) => r.year === year);
+    if (!y) throw new Error(`no projection row for ${year}`);
+    return y;
+  };
+  const summaryAt = (data: ClientData, projection: ProjectionResult, asOfYear: number) =>
+    buildEstateFlowSummary({ ...baseInput({ firstDeath }), clientData: data, asOfYear, projection })!;
+
+  it("gives the survivor the whole joint account after the first death", () => {
+    // The death hands Cooper's half to Susan without a partition, but the
+    // engine's locked family shares carry it: from 2030 Susan's EoY share of
+    // the brokerage is the whole 1M (Cooper's 0), and of the checking all 1k.
+    // The authored 50% rows read 500k + 500.
+    const data = realPlan({ owners: JOINT });
+    const projection = runProjectionWithEvents(data);
+    expect(summaryAt(data, projection, 2030).survivorNetWorth!.lines).toEqual([
+      { label: "Checking", amount: expect.closeTo(1_000, 2) },
+      { label: "Brokerage", amount: expect.closeTo(1_000_000, 2) },
+    ]);
+  });
+
+  // characterization — documented blind spot, future-work
+  it("misses a sole account the survivor inherits in place at the first death", () => {
+    // Cooper's own brokerage passes to Susan at his 2029 death. The engine
+    // retitles it in place — Susan 100%, no partition marker — and a sole
+    // account has no locked family shares, so the box resolves the authored
+    // rows (Cooper's) and the 1M is absent. What is left is the joint
+    // checking, wholly Susan's by its locked shares: 1,000.
+    const data = realPlan({ owners: COOPER_ONLY });
+    const projection = runProjectionWithEvents(data);
+    const y2030 = yearOf(projection, 2030);
+    expect(y2030.accountOwners?.get("acc-1")).toEqual({
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 1 }],
+    });
+    expect(y2030.accountLedgers["acc-1"].endingValue).toBeCloseTo(1_000_000, 2);
+    const survivor = summaryAt(data, projection, 2030).survivorNetWorth!;
+    expect(survivor.lines).toEqual([{ label: "Checking", amount: expect.closeTo(1_000, 2) }]);
+    expect(survivor.amount).toBeCloseTo(1_000, 2);
+  });
+
+  // characterization — documented blind spot, future-work
+  it("a whole-account bequest to a trust, then a sale: the 1041 takes the gain, the trust's row and box never hold the account", () => {
+    const BROKERAGE_TO_TRUST = {
+      id: "will-c", grantor: "client",
+      bequests: [{
+        id: "beq", name: "Brokerage to the trust", kind: "asset", assetMode: "specific",
+        accountId: "acc-1", liabilityId: null, entityId: null,
+        percentage: 100, condition: "always", sortOrder: 0,
+        recipients: [{ recipientKind: "entity", recipientId: TRUST, percentage: 100, sortOrder: 0 }],
+      }],
+    } as unknown as Will;
+    const data = realPlan({
+      owners: COOPER_ONLY,
+      wills: [BROKERAGE_TO_TRUST],
+      assetTransactions: [{ id: "sell", name: "Sell", type: "sell", year: 2031,
+        accountId: "acc-1", overrideSaleValue: 1_200_000 }],
+    });
+    const projection = runProjectionWithEvents(data);
+    const trustRow = (year: number) => {
+      const row = yearOf(projection, year).entityCashFlow.get(TRUST);
+      if (row?.kind !== "trust") throw new Error(`no trust row in ${year}`);
+      return row;
+    };
+
+    // The 2029 death retitles the brokerage to the trust in place, 1M…
+    const y2030 = yearOf(projection, 2030);
+    expect(y2030.accountOwners?.get("acc-1")).toEqual({
+      owners: [{ kind: "entity", entityId: TRUST, percent: 1 }],
+    });
+    expect(y2030.accountLedgers["acc-1"].endingValue).toBeCloseTo(1_000_000, 2);
+    // …but the trust's cash-flow row and the Irrev Trusts box resolve the
+    // authored rows (Cooper's): neither holds it.
+    expect(trustRow(2030).endingBalance).toBe(0);
+    expect(summaryAt(data, projection, 2030).outOfEstate.irrevTrusts.total).toBe(0);
+
+    // The 2031 sale (basis stepped up to 1M at the death, sold for 1.2M)
+    // resolves the sold account's live BoY owners: the whole 200k gain is on
+    // the trust's 1041 and none on the household 1040 — while the trust row's
+    // own sale-gain column reads 0.
+    const y2031 = yearOf(projection, 2031);
+    expect(y2031.trustTaxByEntity?.get(TRUST)?.recognizedCapGains).toBeCloseTo(200_000, 2);
+    expect(y2031.taxDetail?.capitalGains).toBeCloseTo(0, 2);
+    expect(trustRow(2031).assetSaleCapitalGain).toBe(0);
   });
 });

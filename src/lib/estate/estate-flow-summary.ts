@@ -12,10 +12,11 @@ import type {
   RemainderBeneficiaryRef,
 } from "@/engine/types";
 import type { ProjectionResult } from "@/engine/projection";
+import type { AccountOwner } from "@/engine/ownership";
 import {
-  ownedByFamilyMember,
-} from "@/engine/ownership";
-import { ownersForYearSafe } from "@/lib/estate/owners-or-household";
+  liabilityOwnersForYearSafe,
+  ownersForYearSafe,
+} from "@/lib/estate/owners-or-household";
 import { accountSlicesAtYear } from "@/lib/estate/account-owner-slices";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import {
@@ -447,17 +448,41 @@ function consolidateBySource(
 }
 
 /**
- * Survivor's net-worth box on the left rail of the chart — `Σ pct × value`
- * over every account in which they hold any household-side ownership, minus
- * the same percent-weighted share of every liability. Joint accounts thus
- * contribute their share (e.g. 50% of a JTWROS home), matching how the
- * first-death stage box already scales decedent transfers by
+ * Survivor's net-worth box on the left rail of the chart at `asOfYear` — the
+ * survivor's slice of every account in which they hold any household-side
+ * ownership, minus their percent-weighted share of every liability. Joint
+ * accounts thus contribute their share (e.g. 50% of a JTWROS home), matching
+ * how the first-death stage box already scales decedent transfers by
  * `grossEstateDollarsByAccount`. Returns null when there's no surviving spouse
  * (single-filer household).
+ *
+ * Accounts resolve exactly as `computeOutOfEstate` does. With a projection row
+ * for `asOfYear`: the ledger's `endingValue`, split by `accountSlicesAtYear`
+ * over the gift-resolved owners (`ownersForYearSafe`) — a death partition's
+ * published pool and slices, and the locked entity/family shares, included.
+ * With no row (no projection, or the "today" view's `planStartYear − 1`): the
+ * authored value and owners.
+ *
+ * Liabilities: the survivor's percent of `liabilityOwnersForYearSafe` (the
+ * liability gift overlay) times the row's beginning-of-year balance
+ * (`liabilityBalancesBoY`); with no row, the authored balance and owners.
+ * They are gift-aware but DEATH-blind: the projection publishes no liability
+ * ownership, so a gifted liability the engine partitions at a death is
+ * re-resolved from its authored rows here.
+ *
+ * Blind spot (characterized in the tests, future-work): `clientData.accounts`
+ * is the authored data. A death that retitles an account IN PLACE without a
+ * partition publishes no marker or slice, so an as-of year after the death
+ * still reads the authored rows. A joint account survives this — the locked
+ * family shares hand the survivor the decedent's half — but a SOLE account
+ * the survivor inherits, or a whole account a will leaves to a trust, stays
+ * with its authored (dead) owner.
  */
 function computeSurvivorNetWorth(
   clientData: ClientData,
   survivor: { role: "client" | "spouse"; label: string } | null,
+  asOfYear: number,
+  projection: ProjectionResult | null | undefined,
 ): EstateFlowSummary["survivorNetWorth"] {
   if (!survivor) return null;
   const survivorFmId = (clientData.familyMembers ?? []).find(
@@ -466,19 +491,48 @@ function computeSurvivorNetWorth(
   if (!survivorFmId) {
     return { ownerLabel: survivor.label, role: survivor.role, amount: 0, lines: [] };
   }
+  const isSurvivor = (o: AccountOwner) =>
+    o.kind === "family_member" && o.familyMemberId === survivorFmId;
+  const giftEvents = clientData.giftEvents ?? [];
+  const yearRow: ProjectionYear | undefined = projection?.years.find(
+    (y) => y.year === asOfYear,
+  );
+  const projectionStartYear = projection?.years[0]?.year ?? asOfYear;
+
+  const balanceAt = (accountId: string, account: Account): number => {
+    if (yearRow) {
+      const ledger = yearRow.accountLedgers?.[accountId];
+      if (ledger) return ledger.endingValue;
+    }
+    return accountAmount(account);
+  };
+
   const lines: { label: string; amount: number }[] = [];
   for (const account of clientData.accounts ?? []) {
-    const pct = ownedByFamilyMember(account, survivorFmId);
-    if (pct <= 0) continue;
-    const value = typeof account.value === "number" ? account.value : 0;
-    const amount = value * pct;
+    const slices = accountSlicesAtYear({
+      account,
+      yearRow,
+      valueOf: (id) => (id === account.id ? balanceAt(account.id, account) : yearRow?.accountLedgers?.[id]?.endingValue ?? 0),
+      fallbackOwners: () =>
+        yearRow
+          ? ownersForYearSafe(account, giftEvents, asOfYear, projectionStartYear)
+          : account.owners ?? [],
+    });
+    const amount = slices
+      .filter((sl) => isSurvivor(sl.owner))
+      .reduce((s, sl) => s + sl.value, 0);
     if (amount === 0) continue;
     lines.push({ label: account.name, amount });
   }
   for (const liability of clientData.liabilities ?? []) {
-    const pct = ownedByFamilyMember(liability, survivorFmId);
+    const owners = yearRow
+      ? liabilityOwnersForYearSafe(liability, giftEvents, asOfYear, projectionStartYear)
+      : liability.owners ?? [];
+    const pct = owners.filter(isSurvivor).reduce((s, o) => s + o.percent, 0);
     if (pct <= 0) continue;
-    const balance = typeof liability.balance === "number" ? liability.balance : 0;
+    const balance =
+      yearRow?.liabilityBalancesBoY?.[liability.id] ??
+      (typeof liability.balance === "number" ? liability.balance : 0);
     const amount = -balance * pct;
     if (amount === 0) continue;
     lines.push({ label: liability.name, amount });
@@ -1335,7 +1389,12 @@ export function buildEstateFlowSummary(
     survivorRole && survivorLabel
       ? { role: survivorRole, label: survivorLabel }
       : null;
-  const survivorNetWorth = computeSurvivorNetWorth(clientData, survivor);
+  const survivorNetWorth = computeSurvivorNetWorth(
+    clientData,
+    survivor,
+    input.asOfYear,
+    input.projection ?? null,
+  );
 
   const outOfEstate = computeOutOfEstate(
     clientData,

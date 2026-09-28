@@ -1,5 +1,5 @@
-import { entityOwnersForYear, ownersForYear } from "@/engine/ownership";
-import type { AccountOwner, AccountWithOwners } from "@/engine/ownership";
+import { entityOwnersForYear, liabilityOwnersForYear, ownersForYear } from "@/engine/ownership";
+import type { AccountOwner, AccountWithOwners, LiabilityWithOwners } from "@/engine/ownership";
 import type { GiftEvent } from "@/engine/types";
 
 /** Synthetic ownership for an account that carries no account_owners rows
@@ -50,6 +50,26 @@ export function ownersForYearSafe(
     return ownersForYearOrHousehold(account, giftEvents, year, projectionStartYear);
   } catch {
     return account.owners ?? HOUSEHOLD_OWNER_FALLBACK;
+  }
+}
+
+/**
+ * The liability twin of `ownersForYearSafe`: `liabilityOwnersForYear` (the
+ * liability gift overlay), with the same two fallbacks — a liability with no
+ * owner rows is household-owned, and malformed gift events (an overdrawn
+ * household share) fall back to the authored owners instead of throwing.
+ */
+export function liabilityOwnersForYearSafe(
+  liability: LiabilityWithOwners,
+  giftEvents: GiftEvent[],
+  year: number,
+  projectionStartYear: number,
+): AccountOwner[] {
+  if (!liability.owners || liability.owners.length === 0) return HOUSEHOLD_OWNER_FALLBACK;
+  try {
+    return liabilityOwnersForYear(liability, giftEvents, year, projectionStartYear);
+  } catch {
+    return liability.owners;
   }
 }
 
