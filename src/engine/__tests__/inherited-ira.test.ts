@@ -126,6 +126,21 @@ describe("worked examples (spec)", () => {
     expect(resolveInheritedRule({ ...EX5, heirBirthYear: 1966 }).method).toBe("ten_year");
   });
 
+  it("5c. an OLDER heir still stretches, on the heir's life expectancy alone when the owner had not started", () => {
+    // Owner 1955 died 2021 (73 reached 2028 → not started). Heir 1950 is 5 years older.
+    // Heir LE = SLT[72] 17.2 − 4 = 13.2; the owner's 22.0 − 5 = 17.0 must NOT be used.
+    const input: InheritedIraInput = { deathYear: 2021, ownerBirthYear: 1955, heirBirthYear: 1950, heirDisabled: false, isRoth: false };
+    const { rule, r } = run(input, 2026, 100_000);
+    expect(rule).toMatchObject({ regime: "secure", method: "stretch", stretchReason: "age_gap", ownerStartedRmds: false });
+    expect(r.divisor).toBeCloseTo(13.2, 10);
+  });
+
+  it("5d. the 2021–2024 waiver is for the 10-year rule only — a stretch year inside it still pays", () => {
+    const r = run(EX5, 2022, 100_000).r;
+    expect(r.divisor).toBeCloseTo(23.7, 10);
+    expect(r.amount).toBeCloseTo(4_219.41, 2);
+  });
+
   it("6. stretch by disability", () => {
     const { rule, r } = run(EX6, 2026, 100_000);
     expect(rule).toMatchObject({ method: "stretch", stretchReason: "disabled" });
@@ -156,6 +171,8 @@ describe("inheritedRmdForYear edges", () => {
   });
   it("takes nothing from an empty account", () => {
     expect(run(EX1, 2026, 0, 0).r.amount).toBe(0);
+    // A $0 account in its 10-year final year is not a "final payout".
+    expect(run(EX2, 2032, 0, 0).r).toEqual({ amount: 0, divisor: null, fullPayout: false });
   });
   it("never takes more than the current balance", () => {
     expect(run(EX7, 2026, 100_000, 10_000).r.amount).toBe(10_000);
