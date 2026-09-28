@@ -72,9 +72,36 @@ d("accounts-writes core — inherited IRA", () => {
     expect(res.error).toMatch(/Traditional or Roth IRA/);
   });
 
+  // Spec Validation bullet 4: "heirDisabled is ignored (saved false) when the
+  // death year is absent." Pinned at CREATE — no death/owner-birth year sent,
+  // but heirDisabled ticked true. Deleting the create insert's
+  // `p.inheritedDeathYear != null && ...` guard leaves every OTHER test in
+  // this file green (none of them create a non-inherited account with
+  // heirDisabled: true), so this is the only assertion that catches it.
+  it("create ignores heirDisabled when no death year is set", async () => {
+    const res = await createAccountForClient({
+      clientId: COOPER_CLIENT_ID, firmId: COOPER_FIRM_ID, actorId: ACTOR_ID,
+      input: {
+        name: "Non-inherited IRA (test, heirDisabled ticked)", category: "retirement", subType: "traditional_ira",
+        owners: OWNERS, inheritedHeirDisabled: true,
+      },
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    createdIds.push(res.data.id);
+    expect(res.data.inheritedDeathYear).toBeNull();
+    expect(res.data.inheritedOwnerBirthYear).toBeNull();
+    expect(res.data.inheritedHeirDisabled).toBe(false);
+  });
+
   it("update can un-inherit (all three back to null/false)", async () => {
     const created = await createInherited();
     if (!created.ok) throw new Error(created.error);
+    // Precondition — without this, an already-broken create path (fields
+    // never persisted) would make the un-inherit assertions below pass
+    // vacuously (nulling already-null fields).
+    expect(created.data.inheritedDeathYear).toBe(2022);
+    expect(created.data.inheritedHeirDisabled).toBe(true);
     const res = await updateAccountForClient({
       clientId: COOPER_CLIENT_ID, firmId: COOPER_FIRM_ID, actorId: ACTOR_ID, accountId: created.data.id,
       input: { inheritedDeathYear: null, inheritedOwnerBirthYear: null, inheritedHeirDisabled: false },
@@ -96,6 +123,47 @@ d("accounts-writes core — inherited IRA", () => {
     expect(res.ok).toBe(false);
     if (res.ok) return;
     expect(res.status).toBe(400);
+    expect(res.error).toMatch(/Traditional or Roth IRA/);
+  });
+
+  // R1, key-present half: un-inheriting AND explicitly sending
+  // inheritedHeirDisabled: true in the same payload must still save false.
+  // (The other half — the key absent entirely — is the original R1 test below.)
+  it("update un-inheriting while sending heirDisabled:true still saves heirDisabled=false", async () => {
+    const created = await createInherited();
+    if (!created.ok) throw new Error(created.error);
+    const res = await updateAccountForClient({
+      clientId: COOPER_CLIENT_ID, firmId: COOPER_FIRM_ID, actorId: ACTOR_ID, accountId: created.data.id,
+      input: { inheritedDeathYear: null, inheritedOwnerBirthYear: null, inheritedHeirDisabled: true },
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.inheritedDeathYear).toBeNull();
+    expect(res.data.inheritedOwnerBirthYear).toBeNull();
+    expect(res.data.inheritedHeirDisabled).toBe(false);
+  });
+
+  // Protective direction of R1: an unrelated update (no inherited-IRA keys in
+  // the payload at all — e.g. an autosave that only touches `name`) must NOT
+  // touch the death year, owner-birth year, or heirDisabled on an already-
+  // inherited account. A naive R1 implementation that reads the raw
+  // `safeUpdate.inheritedDeathYear` (undefined when the key is absent) instead
+  // of resolving it against `before` would wrongly treat `undefined == null`
+  // as "no death year" and wipe heirDisabled on every unrelated autosave —
+  // silently moving the heir from the stretch schedule to the 10-year rule.
+  it("update touching only an unrelated field leaves an inherited account's years and heirDisabled untouched", async () => {
+    const created = await createInherited();
+    if (!created.ok) throw new Error(created.error);
+    const res = await updateAccountForClient({
+      clientId: COOPER_CLIENT_ID, firmId: COOPER_FIRM_ID, actorId: ACTOR_ID, accountId: created.data.id,
+      input: { name: "Inherited IRA (renamed)" },
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.name).toBe("Inherited IRA (renamed)");
+    expect(res.data.inheritedDeathYear).toBe(2022);
+    expect(res.data.inheritedOwnerBirthYear).toBe(1945);
+    expect(res.data.inheritedHeirDisabled).toBe(true);
   });
 
   // Ruling R1: the spec's "heirDisabled is ignored (saved false) when the death
