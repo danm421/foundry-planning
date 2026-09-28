@@ -39,6 +39,21 @@ export interface TransferTaxInput {
   /** Source is an inherited IRA: distributions carry no early-withdrawal
    *  penalty and an inherited Roth's earnings are tax-free. */
   sourceIsInherited?: boolean;
+  /** Target is an inherited IRA. Only read with `sourceIsInherited` — see
+   *  `isInheritedPayout`. */
+  targetIsInherited?: boolean;
+}
+
+/**
+ * An inherited IRA moved into a retirement account that is not itself
+ * inherited is paid out: a distribution, then a contribution. A non-spouse heir
+ * can neither roll it into their own IRA nor convert it. A trustee-to-trustee
+ * move between inherited IRAs keeps the rollover treatment.
+ */
+export function isInheritedPayout(
+  input: Pick<TransferTaxInput, "sourceIsInherited" | "targetIsInherited" | "targetCategory">,
+): boolean {
+  return input.sourceIsInherited === true && input.targetIsInherited !== true && input.targetCategory === "retirement";
 }
 
 export interface TransferTaxResult {
@@ -146,7 +161,8 @@ export function classifyTransferTax(input: TransferTaxInput): TransferTaxResult 
   }
 
   // ── Retirement → Retirement ──────────────────────────────────────────────
-  if (sourceCategory === "retirement" && targetCategory === "retirement") {
+  // An inherited payout falls through to the distribution branch below.
+  if (sourceCategory === "retirement" && targetCategory === "retirement" && !isInheritedPayout(input)) {
     const sourceIsRoth = ROTH_SUBTYPES.has(sourceSubType);
     const targetIsRoth = ROTH_SUBTYPES.has(targetSubType);
     const sourceIsTaxDeferred = TAX_DEFERRED_SUBTYPES.has(sourceSubType);
@@ -177,7 +193,7 @@ export function classifyTransferTax(input: TransferTaxInput): TransferTaxResult 
     return { taxableOrdinaryIncome: 0, capitalGain: 0, basisReturn: 0, earlyWithdrawalPenalty: 0, label: "tax_free_rollover" };
   }
 
-  // ── Retirement → Non-Retirement (distribution) ───────────────────────────
+  // ── Retirement → Non-Retirement (distribution), and inherited payouts ────
   if (sourceCategory === "retirement") {
     const sourceIsRoth = ROTH_SUBTYPES.has(sourceSubType);
     const sourceIs401kOr403b = sourceSubType === "401k" || sourceSubType === "403b";
