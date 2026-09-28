@@ -555,3 +555,85 @@ describe("deriveSpineData — Phase C plumbing", () => {
     );
   });
 });
+
+describe("deriveSpineData — a lifetime gift in the EoY pair row", () => {
+  // A joint $10M account and one 2030 gift out of it; no growth, no flows, so
+  // at EoY 2031 only the gift moves a number. Each principal's gross estate is
+  // half of what the household keeps (joint convention at a first death).
+  function giftedJointFixture(
+    gift: { percent: number; recipientEntityId?: string; recipientFamilyMemberId?: string },
+  ): ClientData {
+    const base = twoGrantorFixture();
+    const slat: EntitySummary = {
+      id: "trust-slat",
+      name: "SLAT",
+      entityType: "trust",
+      trustSubType: "irrevocable",
+      isIrrevocable: true,
+      isGrantor: false,
+      includeInPortfolio: false,
+      accessibleToClient: false,
+      grantor: "client",
+    };
+    return {
+      ...base,
+      accounts: [
+        {
+          id: "acct-joint",
+          name: "Joint Brokerage",
+          category: "taxable",
+          subType: "brokerage",
+          titlingType: "jtwros",
+          value: 10_000_000,
+          basis: 10_000_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          owners: [
+            { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+            { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+          ],
+        },
+      ],
+      entities: [slat],
+      giftEvents: [
+        { kind: "asset", year: 2030, accountId: "acct-joint", grantor: "client", ...gift },
+      ],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: { ...base.planSettings, flatFederalRate: 0, flatStateRate: 0, inflationRate: 0 },
+    };
+  }
+
+  function pairAtEoY2031(tree: ClientData) {
+    const withResult = runProjectionWithEvents(tree);
+    const data = deriveSpineData({
+      tree, withResult, asOf: "split", pairRowYear: 2031, pairRowMode: "eoy",
+    });
+    if (data.kind !== "two-grantor") throw new Error("expected two-grantor");
+    return data.pair;
+  }
+
+  it("keeps the SLAT's 40% out of both principals' EoY gross estate", () => {
+    // SLAT 4M, household 6M; the SLAT is irrevocable, so it is in neither.
+    // The year's overlay used to re-weight only the AUTHORED rows: from the
+    // engine's locked shares it made them [client .3, spouse .3] with no trust
+    // row, and computeGrossEstate then drew the same gift out of that 0.6
+    // again and threw "sum to 0.6, expected 1".
+    const pair = pairAtEoY2031(giftedJointFixture({ percent: 0.4, recipientEntityId: "trust-slat" }));
+    expect(pair.client.netWorth).toBeCloseTo(3_000_000, 2);
+    expect(pair.spouse.netWorth).toBeCloseTo(3_000_000, 2);
+  });
+
+  it("takes a gift to a person out of the gross estate once, not twice", () => {
+    // Kid 2.5M, household 7.5M. The overlaid rows already hold the gift, and
+    // the raw events ride along to computeGrossEstate: applying it again would
+    // halve the household's share to 5M (2.5M each). The fallback warning
+    // cannot see that — 0.25 never overdraws the 0.75 left — so pin the dollars.
+    const pair = pairAtEoY2031(giftedJointFixture({ percent: 0.25, recipientFamilyMemberId: "fm-child-1" }));
+    expect(pair.client.netWorth).toBeCloseTo(3_750_000, 2);
+    expect(pair.spouse.netWorth).toBeCloseTo(3_750_000, 2);
+  });
+});

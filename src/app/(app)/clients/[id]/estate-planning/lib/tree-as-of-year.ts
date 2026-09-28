@@ -2,6 +2,7 @@ import type { Account, ClientData } from "@/engine/types";
 import type { ProjectionResult } from "@/engine";
 import { isPolicyInForce } from "@/lib/estate/insurance-in-force";
 import { foldPartitionedAccount, isPartitionedAt } from "@/lib/estate/account-owner-slices";
+import { ownersForYearSafe } from "@/lib/estate/owners-or-household";
 
 export type BalanceMode = "boy" | "eoy";
 
@@ -13,10 +14,16 @@ export type BalanceMode = "boy" | "eoy";
  * `liability.balance` directly) consistent with the spine's net-worth values
  * at the same year.
  *
+ * Each account's owners are the year's too: the authored rows with every
+ * lifetime gift through `year` composed on top (`ownersForYearSafe`), so a
+ * gifted trust or person gets its own row. Such an account carries
+ * `giftsReflectedThrough: year`.
+ *
  * `mode` mirrors the Balance Sheet's two views:
  *   - "boy" (Today) — beginning-of-year balances. At planStartYear these
  *     equal the advisor-entered values, so the original tree is returned
- *     unchanged.
+ *     unchanged (authored owners: a gift dated in the plan's first year has
+ *     not happened yet).
  *   - "eoy" (default) — end-of-year balances for the requested year.
  *
  * "Today · 2026" and "End of 2026" land on the same calendar year but
@@ -45,8 +52,14 @@ export function treeAsOfYear(
     const ledger = yearRow.accountLedgers[a.id];
     if (!ledger) return { ...a, value: 0 };
     const value = mode === "boy" ? ledger.beginningValue : ledger.endingValue;
-    if (mode !== "eoy" || a.owners.length <= 1 || value <= 0) {
-      return { ...a, value };
+    // The year's owners: the authored rows with every gift through `year`
+    // composed on top — which ADDS the recipient's row (a trust's `entity`, a
+    // person's `gifted_away`). The marker tells a gift-aware reader handed
+    // these rows alongside the raw events (the spine's gross estate) not to
+    // apply those gifts a second time.
+    const composed = ownersForYearSafe(a, tree.giftEvents ?? [], year, planStartYear);
+    if (mode !== "eoy" || composed.length <= 1 || value <= 0) {
+      return { ...a, value, owners: composed, giftsReflectedThrough: year };
     }
 
     // EoY multi-owner accounts: renormalize percents from the engine's locked
@@ -56,17 +69,25 @@ export function treeAsOfYear(
     // same locked slice the balance sheet shows.
     let totalEntityShare = 0;
     let familyPercentTotal = 0;
-    for (const o of a.owners) {
+    let giftedAwayPercentTotal = 0;
+    for (const o of composed) {
       if (o.kind === "entity") {
         const locked = yearRow.entityAccountSharesEoY?.get(o.entityId)?.get(a.id);
         totalEntityShare += locked ?? value * o.percent;
+      } else if (o.kind === "gifted_away") {
+        giftedAwayPercentTotal += o.percent;
       } else {
         familyPercentTotal += o.percent;
       }
     }
-    const familyPool = Math.max(0, value - totalEntityShare);
+    const familyPoolPreGift = Math.max(0, value - totalEntityShare);
+    const familyPool = Math.max(0, familyPoolPreGift - value * giftedAwayPercentTotal);
+    // Locked family shares are gift-blind toward a gift to a person: they split
+    // a pool that still holds the gifted slice. Scale them onto the post-gift
+    // pool, as `resolveOwnerSlices` does (factor 1 with no such gift).
+    const lockedFmFactor = familyPoolPreGift > 0 ? familyPool / familyPoolPreGift : 1;
 
-    const owners = a.owners.map((o) => {
+    const owners = composed.map((o) => {
       let sliceValue: number;
       if (o.kind === "entity") {
         const locked = yearRow.entityAccountSharesEoY?.get(o.entityId)?.get(a.id);
@@ -76,7 +97,7 @@ export function treeAsOfYear(
           ?.get(o.familyMemberId)
           ?.get(a.id);
         if (lockedFm != null) {
-          sliceValue = lockedFm;
+          sliceValue = lockedFm * lockedFmFactor;
         } else {
           sliceValue =
             familyPercentTotal > 0
@@ -84,13 +105,14 @@ export function treeAsOfYear(
               : value * o.percent;
         }
       } else {
-        // external_beneficiary — no locked share semantics; pro-rate by percent.
+        // gifted_away holds its own `value × percent`; external_beneficiary has
+        // no locked share semantics — both pro-rate by percent.
         sliceValue = value * o.percent;
       }
       return { ...o, percent: sliceValue / value };
     });
 
-    return { ...a, value, owners };
+    return { ...a, value, owners, giftsReflectedThrough: year };
   });
 
   const liabilities = (tree.liabilities ?? []).map((l) => {

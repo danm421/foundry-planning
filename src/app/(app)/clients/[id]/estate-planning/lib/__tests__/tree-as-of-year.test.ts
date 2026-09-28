@@ -175,3 +175,143 @@ describe("treeAsOfYear — locked-share renormalization for mixed-ownership acco
     expect(checkingRow!.ownerPercent).toBe(1);
   });
 });
+
+// A lifetime gift is an OVERLAY on the authored owners: the trust or person it
+// names has no authored row, so the year's owners must ADD one — re-weighting
+// the rows that exist can never show it. $10M account, no growth, no flows, no
+// deaths: only the gift can move a number.
+
+const GIFTED_ACCT = "acct-gifted";
+const FM_SPOUSE = "fm-spouse";
+const FM_KID = "fm-kid";
+const clientOnly: Account["owners"] = [
+  { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 },
+];
+
+function setupGiftedAccount(opts: {
+  owners: Account["owners"];
+  gift: { year: number; percent: number; recipientEntityId?: string; recipientFamilyMemberId?: string };
+}) {
+  const account: Account = {
+    id: GIFTED_ACCT,
+    name: "Gifted Brokerage",
+    category: "taxable",
+    subType: "brokerage",
+    titlingType: "jtwros",
+    value: 10_000_000,
+    basis: 10_000_000,
+    growthRate: 0,
+    rmdEnabled: false,
+    owners: opts.owners,
+  };
+  const data = buildClientData({
+    client: { ...baseClient, dateOfBirth: "1960-01-01" },
+    familyMembers: [
+      ...soloClient,
+      { id: FM_SPOUSE, role: "spouse", relationship: "other", firstName: "Casey",
+        lastName: "Test", dateOfBirth: "1972-06-15" },
+      { id: FM_KID, role: "child", relationship: "child", firstName: "Kit",
+        lastName: "Test", dateOfBirth: "1995-01-01" },
+    ],
+    accounts: [account],
+    entities,
+    incomes: [],
+    expenses: [],
+    liabilities: [],
+    savingsRules: [],
+    withdrawalStrategy: [],
+    giftEvents: [{ kind: "asset", accountId: GIFTED_ACCT, grantor: "client", ...opts.gift }],
+    planSettings: {
+      ...basePlanSettings, flatFederalRate: 0, flatStateRate: 0, inflationRate: 0,
+      planStartYear: 2026, planEndYear: 2032,
+    },
+  });
+  return { data, withResult: runProjectionWithEvents(data) };
+}
+
+describe("treeAsOfYear — gift-shaped changes", () => {
+  it("creates an entity row for a trust that has no authored row", () => {
+    const { data, withResult } = setupGiftedAccount({
+      owners: clientOnly,
+      gift: { year: 2028, percent: 0.3, recipientEntityId: ENT_NON_IIP_LOCKED },
+    });
+    const out = treeAsOfYear(data, withResult, 2030, "eoy");
+    expect(out.accounts[0].owners).toContainEqual(
+      { kind: "entity", entityId: ENT_NON_IIP_LOCKED, percent: 0.3 },
+    );
+    // The rows already carry the gift, so a gift-aware reader handed them
+    // alongside the raw events (the spine's gross estate) must not re-apply it.
+    expect(out.accounts[0].giftsReflectedThrough).toBe(2030);
+  });
+
+  it("creates a gifted_away row for a gift to a person", () => {
+    const { data, withResult } = setupGiftedAccount({
+      owners: clientOnly,
+      gift: { year: 2028, percent: 0.25, recipientFamilyMemberId: FM_KID },
+    });
+    const out = treeAsOfYear(data, withResult, 2030, "eoy");
+    expect(out.accounts[0].owners).toContainEqual({
+      kind: "gifted_away", recipient: { kind: "family_member", id: FM_KID }, percent: 0.25,
+    });
+    expect(out.accounts[0].giftsReflectedThrough).toBe(2030);
+  });
+
+  it("still leaves authored percents alone at BoY", () => {
+    // Mirrors the must-stay-green pin, restated here so this task cannot
+    // regress it without noticing. The gift is dated in the plan's first year:
+    // "Today" is the opening snapshot, before it happens — so only the
+    // planStartYear short-circuit keeps it off these rows.
+    const authored: Account["owners"] = [
+      { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.6 },
+      { kind: "entity", entityId: ENT_NON_IIP_LOCKED, percent: 0.4 },
+    ];
+    const { data, withResult } = setupGiftedAccount({
+      owners: authored,
+      gift: { year: 2026, percent: 0.2, recipientFamilyMemberId: FM_KID },
+    });
+    const out = treeAsOfYear(data, withResult, 2026, "boy");
+    expect(out.accounts[0].owners).toEqual(data.accounts[0].owners);
+  });
+
+  it("composes the gift at BoY of a later year too, and says so", () => {
+    const { data, withResult } = setupGiftedAccount({
+      owners: clientOnly,
+      gift: { year: 2028, percent: 0.3, recipientEntityId: ENT_NON_IIP_LOCKED },
+    });
+    const out = treeAsOfYear(data, withResult, 2031, "boy");
+    const [acct] = out.accounts;
+    expect(acct.value).toBeCloseTo(10_000_000, 2);
+    expect(acct.owners).toHaveLength(2);
+    expect(acct.owners).toContainEqual(
+      { kind: "entity", entityId: ENT_NON_IIP_LOCKED, percent: 0.3 },
+    );
+    const household = acct.owners.find((o) => o.kind === "family_member");
+    expect(household).toMatchObject({ familyMemberId: LEGACY_FM_CLIENT });
+    expect(household!.percent).toBeCloseTo(0.7, 12);
+    expect(acct.giftsReflectedThrough).toBe(2031);
+  });
+
+  it("a gift to a person on a joint account leaves the EoY rows summing to 1", () => {
+    // The engine's locked family shares are gift-blind toward a person gift
+    // (5M each here: the settle step rescales them to `ending − entity locks`,
+    // a pool that still holds the kid's 2.5M). Read raw, the spouses keep .5
+    // each beside the kid's .25 — 1.25 of the account.
+    const { data, withResult } = setupGiftedAccount({
+      owners: [
+        { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+        { kind: "family_member", familyMemberId: FM_SPOUSE, percent: 0.5 },
+      ],
+      gift: { year: 2028, percent: 0.25, recipientFamilyMemberId: FM_KID },
+    });
+    const out = treeAsOfYear(data, withResult, 2030, "eoy");
+    const owners = out.accounts[0].owners;
+    const pct = (pick: (o: (typeof owners)[number]) => boolean) =>
+      owners.filter(pick).reduce((s, o) => s + o.percent, 0);
+    expect(pct((o) => o.kind === "gifted_away")).toBeCloseTo(0.25, 12);
+    expect(pct((o) => o.kind === "family_member" && o.familyMemberId === LEGACY_FM_CLIENT))
+      .toBeCloseTo(0.375, 12);
+    expect(pct((o) => o.kind === "family_member" && o.familyMemberId === FM_SPOUSE))
+      .toBeCloseTo(0.375, 12);
+    expect(pct(() => true)).toBeCloseTo(1, 12);
+  });
+});
