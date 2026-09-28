@@ -2,8 +2,9 @@
  * Verifies non-grantor business entity pass-through tax behavior.
  *
  * Net business income (income - expenses) flows to household taxDetail.ordinaryIncome
- * via the Phase 3 K-1 incidence block at projection.ts:1262-1330. This test locks in
- * that behavior so refactors don't silently regress it.
+ * via the K-1 incidence block in projection.ts ("Phase 3: business-account tax
+ * incidence (passthrough K-1)"). This test locks in that behavior so refactors
+ * don't silently regress it.
  */
 
 import { describe, it, expect } from "vitest";
@@ -322,11 +323,16 @@ describe("business K-1 — gifted share", () => {
     const data = businessFixture();
     data.giftEvents = [{ kind: "asset", year: 2027, accountId: BIZ_ID, percent: 0.15,
       grantor: "client", recipientEntityId: TRUST_ID }];
-    const after = runProjection(data).find((y) => y.year === 2028)!;
+    const years = runProjection(data);
+    const after = years.find((y) => y.year === 2028)!;
     // 85%, not 100%. The trust's 15% is retained at the holder level and does
     // not pass through to the 1040.
     expect(after.taxDetail!.ordinaryIncome).toBeCloseTo(850_000, 2);
     expect(after.taxDetail!.bySource[K1_KEY].amount).toBeCloseTo(850_000, 2);
+    // The gift year itself is already post-gift. Without this, a read that lags
+    // a year behind the gift passes every case in this block.
+    const giftYear = years.find((y) => y.year === 2027)!;
+    expect(giftYear.taxDetail!.ordinaryIncome).toBeCloseTo(850_000, 2);
   });
 
   it("taxes the household on nothing once the business is fully gifted", () => {

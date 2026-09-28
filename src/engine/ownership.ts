@@ -404,10 +404,14 @@ export function liabilityOwnedByHouseholdAtYear(
  *  That fallback keeps a DIRECT caller of the death-event functions
  *  (`computeGrossEstate` and its siblings) alive on such a shape — they resolve
  *  owners only through these wrappers. It does not keep `runProjection` alive:
- *  the projection's raw composers throw on the same shape (an account at
- *  `ownedByEntityAtYear` in the trust passes, a liability at
- *  `liabilityOwnedByHouseholdAtYear`), and an account's ownership snapshot
- *  reaches this guard first, so the warning below prints before the throw.
+ *  the projection's raw composers throw on the same shape. An account throws at
+ *  `computePortfolioSnapshot`, which every account passes through, and — when a
+ *  non-grantor trust exists — at `ownedByEntityAtYear` in the trust passes; a
+ *  liability with a payment due throws at `liabilityOwnedByHouseholdAtYear`.
+ *  An account's ownership snapshot usually reaches this guard first, so the
+ *  warning below prints before the throw — unless a linked income on the
+ *  property, expanded at the top of `runProjection` before the snapshot is
+ *  built, reads it raw first and throws with no warning at all.
  *
  *  The fallback WARNS. It is otherwise indistinguishable from a correct
  *  resolution, and that silence is how a double-applied overlay hides: a caller
@@ -444,14 +448,15 @@ function canFundGifts(
  * double-counted gifted assets (in the gross estate AND in adjusted taxable
  * gifts).
  *
- * Returns `account.owners` unchanged when gift context is absent (every existing
- * direct caller of `computeGrossEstate`) or when no in-window asset gift targets
- * this account. The household-share guard (`canFundGifts`) skips retitling when
- * the static owners already encode the transfer (e.g. an ILIT-gifted policy
- * modeled as entity-owned with a redundant gift event for §2035 / ATG) — there
- * `ownersForYear` would over-draw the zero household share and throw. That
- * rescues a direct death-path call, not a projection: `runProjection` still
- * throws on such an account at its raw reads (see `canFundGifts`).
+ * Returns `account.owners` unchanged when gift context is absent (e.g. a unit
+ * test calling `computeGrossEstate` bare) or when no in-window asset gift
+ * targets this account. The household-share guard (`canFundGifts`) skips
+ * retitling when the static owners already encode the transfer (e.g. an
+ * ILIT-gifted policy modeled as entity-owned with a redundant gift event for
+ * §2035 / ATG) — there `ownersForYear` would over-draw the zero household share
+ * and throw. That rescues a direct death-path call, not a projection:
+ * `runProjection` still throws on such an account at its raw reads (see
+ * `canFundGifts`).
  */
 export function giftAwareOwners(
   account: AccountWithOwners,
