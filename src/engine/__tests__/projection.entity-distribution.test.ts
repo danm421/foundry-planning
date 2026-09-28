@@ -669,7 +669,7 @@ describe("Phase 3 (entity model): EntitySummary business distributes to househol
     expect(row!.endingTotalValue).toBeCloseTo(1_120_000, 0);
   });
 
-  // it.skip: entity-model pro-rating needs entityOwnersForYear (Task 18); Task 19 un-skips this and fixes the fixture to the business_interest event shape.
+  // it.skip: entity-model pro-rating needs entityOwnersForYear (Task 18); Task 19 un-skips this once entityOwnersForYear exists.
   it.skip("pro-rates the $180k across gift-resolved owners: 30% gifted to a trust → household $126k / trust $54k", () => {
     const slat: EntitySummary = {
       id: "slat", name: "SLAT", entityType: "trust", trustSubType: "irrevocable",
@@ -906,7 +906,11 @@ describe("business distributions — pro-rating across gift-resolved owners", ()
     trustCheckingActivationYear?: number;
     /** The trust's share of the business by AUTHORED title, no gift. */
     authoredTrustPct?: number;
+    /** Stands in for the SLAT as the entity that owns `authoredTrustPct` and
+     *  holds the entity checking. */
+    entity?: EntitySummary;
   }): ClientData {
+    const entity = opts.entity ?? trust;
     const base = mkData({
       bizOverrides: {
         distributionPolicyPercent: opts.distPercent,
@@ -914,7 +918,7 @@ describe("business distributions — pro-rating across gift-resolved owners", ()
           ? {
               owners: [
                 { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 - opts.authoredTrustPct },
-                { kind: "entity", entityId: TRUST_ID, percent: opts.authoredTrustPct },
+                { kind: "entity", entityId: entity.id, percent: opts.authoredTrustPct },
               ],
             }
           : {}),
@@ -922,10 +926,10 @@ describe("business distributions — pro-rating across gift-resolved owners", ()
       incomes: [{ ...llcIncome, annualAmount: opts.netIncome }],
     });
     // Entity-owned default checking, which is what `entityCheckingByEntityId`
-    // keys on — a trust's own account, so no business parent.
+    // keys on — the entity's own account, so no business parent.
     const trustChecking: Account = {
-      ...bizChecking(TRUST_ID),
-      name: "SLAT Checking",
+      ...bizChecking(entity.id),
+      name: `${entity.name} Checking`,
       parentAccountId: null,
       activationYear: opts.trustCheckingActivationYear,
     };
@@ -933,7 +937,7 @@ describe("business distributions — pro-rating across gift-resolved owners", ()
       ...base,
       planSettings: { ...planSettings, planEndYear: READ_YEAR },
       accounts: opts.trustChecking === false ? base.accounts : [...base.accounts, trustChecking],
-      entities: [trust],
+      entities: [entity],
     };
   }
 
@@ -959,9 +963,10 @@ describe("business distributions — pro-rating across gift-resolved owners", ()
     const y = readYear(data);
     expect(y.income.business).toBeCloseTo(700_000, 2);
     expect(y.income.bySource[BIZ_ID]).toBeCloseTo(700_000, 2);
-    // Net Cash Flow reads the same sum: $700k less the 29% flat tax on the
-    // household's $700k K-1 share — what household checking actually gains.
-    expect(y.netCashFlow).toBeCloseTo(497_000, 2);
+    // Net Cash Flow reads the same sum, so it must equal what household
+    // checking actually gained this year.
+    const hh = y.accountLedgers[HOUSEHOLD_CHECKING];
+    expect(y.netCashFlow).toBeCloseTo(hh.endingValue - hh.beginningValue, 2);
     expect(creditedTo(y, TRUST_CHECKING)).toBeCloseTo(300_000, 2);
   });
 
@@ -1011,5 +1016,40 @@ describe("business distributions — pro-rating across gift-resolved owners", ()
     const y = readYear(data);
     expect(creditedTo(y, TRUST_CHECKING)).toBeCloseTo(300_000, 2);
     expect(creditedTo(y, HOUSEHOLD_CHECKING)).toBeCloseTo(700_000, 2);
+  });
+
+  // Only an IRREVOCABLE trust's cash is its own. No pass distributes any other
+  // entity's checking onward and the household's withdrawals cannot reach it,
+  // so a slice sent there would strand — and drop out of Business income. Those
+  // owners' slices stay household cash, as they were before pro-rating.
+  it("keeps an AUTHORED revocable trust owner's slice in household checking", () => {
+    const revocable: EntitySummary = {
+      id: "rev-trust", name: "Revocable Trust", entityType: "trust",
+      isIrrevocable: false, isGrantor: true, includeInPortfolio: true,
+      accessibleToClient: true, grantor: "client",
+    };
+    const data = distFixture({
+      netIncome: 1_000_000, distPercent: 1, authoredTrustPct: 0.3, entity: revocable,
+    });
+    const y = readYear(data);
+    expect(creditedTo(y, HOUSEHOLD_CHECKING)).toBeCloseTo(1_000_000, 2);
+    expect(creditedTo(y, "rev-trust-checking")).toBe(0);
+    expect(y.income.business).toBeCloseTo(1_000_000, 2);
+  });
+
+  it("keeps an AUTHORED holding-company owner's slice in household checking", () => {
+    const holdco: EntitySummary = {
+      id: "holdco", name: "HoldCo LLC", includeInPortfolio: true, isGrantor: false,
+      entityType: "llc", distributionPolicyPercent: 1, distributionMode: null,
+      flowMode: "annual", value: 0, basis: 0, valueGrowthRate: 0,
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+    };
+    const data = distFixture({
+      netIncome: 1_000_000, distPercent: 1, authoredTrustPct: 0.3, entity: holdco,
+    });
+    const y = readYear(data);
+    expect(creditedTo(y, HOUSEHOLD_CHECKING)).toBeCloseTo(1_000_000, 2);
+    expect(creditedTo(y, "holdco-checking")).toBe(0);
+    expect(y.income.business).toBeCloseTo(1_000_000, 2);
   });
 });

@@ -5945,10 +5945,17 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // holding 30% of the business saw none of its own distribution. Each leg
       // is deliberate:
       //  - family_member → the owner's default cash, else household checking.
-      //  - entity        → that entity's checking ONLY if it has a balance this
-      //                    year (the `applyBusinessSales` rung). A named account
-      //                    that is not live yet falls back to household rather
-      //                    than dropping the slice on an account nobody books.
+      //  - entity        → an IRREVOCABLE trust's own checking, and only if it
+      //                    has a balance this year (the `applyBusinessSales`
+      //                    rung); a named account that is not live yet falls
+      //                    back to household rather than dropping the slice on
+      //                    an account nobody books. Any other entity (revocable
+      //                    trust, holding company) → household checking, as
+      //                    before: the irrevocable test is the one the trust
+      //                    passes use (`buildNonGrantorTrusts` /
+      //                    `buildGrantorTrusts`), no pass distributes any other
+      //                    entity's checking onward, and the household's
+      //                    withdrawals cannot reach it, so the slice would strand.
       //  - gifted_away   → no credit. A share gifted to a person is out of the
       //                    estate; its cash is paid outside the model.
       // Credits coalesce by destination, so co-owners who share one checking
@@ -5961,9 +5968,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         if (o.kind === "family_member") {
           destinationId = resolveFamilyMemberDefaultCash(o.familyMemberId) ?? defaultChecking?.id;
         } else if (o.kind === "entity") {
-          const named = entityCheckingByEntityId[o.entityId];
-          const creditable = named !== undefined && accountBalances[named] !== undefined;
-          destinationId = creditable ? named : defaultChecking?.id;
+          const owner = entityMap[o.entityId];
+          if (owner?.entityType === "trust" && owner.isIrrevocable === true) {
+            const named = entityCheckingByEntityId[o.entityId];
+            const creditable = named !== undefined && accountBalances[named] !== undefined;
+            destinationId = creditable ? named : defaultChecking?.id;
+          } else {
+            destinationId = defaultChecking?.id;
+          }
         }
         if (!destinationId) continue;
         credits.set(destinationId, (credits.get(destinationId) ?? 0) + slice);
