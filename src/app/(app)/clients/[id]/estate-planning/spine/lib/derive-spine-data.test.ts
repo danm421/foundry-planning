@@ -702,3 +702,55 @@ describe("deriveSpineData — a lifetime gift in the EoY pair row", () => {
     expect(data.pair.spouse.netWorth).toBeCloseTo(0, 2);
   });
 });
+
+describe("deriveSpineData — a death-partitioned account in the EoY pair row", () => {
+  it("values an account the first death partitioned by its folded rows, not its authored ones", () => {
+    // Tom dies in 2048. His brokerage is authored 35% Tom / 35% Linda / 20% an
+    // irrevocable trust / 10% Linda's revocable trust, so the death partitions
+    // it: the family pool carries on under the original id, and each trust's
+    // share is carved out as an account of its own. The authored rows describe
+    // none of that. Only the folded rows the year's overlay builds (with their
+    // `giftsReflectedThrough` marker) do, so the spine must pass those through
+    // rather than swap in the authored rows it uses for every other account.
+    const base = twoGrantorFixture();
+    const tree: ClientData = {
+      ...base,
+      entities: [
+        {
+          id: "trust-irrevocable", name: "Irrevocable Trust", entityType: "trust",
+          trustSubType: "irrevocable", isIrrevocable: true, isGrantor: false,
+          includeInPortfolio: false, accessibleToClient: false, grantor: "client",
+        },
+        {
+          id: "trust-revocable", name: "Linda's Revocable Trust", entityType: "trust",
+          isIrrevocable: false, isGrantor: true, includeInPortfolio: true,
+          accessibleToClient: true, grantor: "spouse",
+        },
+      ],
+      accounts: base.accounts.map((a) =>
+        a.id === "acct-brokerage"
+          ? {
+              ...a,
+              owners: [
+                { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.35 },
+                { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.35 },
+                { kind: "entity", entityId: "trust-irrevocable", percent: 0.2 },
+                { kind: "entity", entityId: "trust-revocable", percent: 0.1 },
+              ],
+            }
+          : a,
+      ),
+    };
+    const withResult = runProjectionWithEvents(tree);
+    const data = deriveSpineData({
+      tree, withResult, asOf: "split", pairRowYear: 2049, pairRowMode: "eoy",
+    });
+    if (data.kind !== "two-grantor") throw new Error("expected two-grantor");
+
+    // Characterized, not hand-derived: a233a0537's figures, before the spine
+    // swapped in authored rows. Handed the authored rows for this account too,
+    // the spine reads 3,361,649.76 / 2,093,259.84.
+    expect(data.pair.client.netWorth).toBeCloseTo(3_270_224.02, 2);
+    expect(data.pair.spouse.netWorth).toBeCloseTo(2_062_784.59, 2);
+  });
+});
