@@ -18,6 +18,7 @@ import type {
   Account,
   Income,
   Expense,
+  GiftEvent,
   PlanSettings,
 } from "../types";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../ownership";
@@ -669,8 +670,7 @@ describe("Phase 3 (entity model): EntitySummary business distributes to househol
     expect(row!.endingTotalValue).toBeCloseTo(1_120_000, 0);
   });
 
-  // it.skip: entity-model pro-rating needs entityOwnersForYear (Task 18); Task 19 un-skips this once entityOwnersForYear exists.
-  it.skip("pro-rates the $180k across gift-resolved owners: 30% gifted to a trust → household $126k / trust $54k", () => {
+  it("pro-rates the $180k across gift-resolved owners: 30% gifted to a trust → household $126k / trust $54k", () => {
     const slat: EntitySummary = {
       id: "slat", name: "SLAT", entityType: "trust", trustSubType: "irrevocable",
       isIrrevocable: true, isGrantor: false, includeInPortfolio: false,
@@ -695,6 +695,143 @@ describe("Phase 3 (entity model): EntitySummary business distributes to househol
     // $180k × 70% to the household, × 30% to the trust.
     expect(creditedTo(y0, "hh-checking")).toBeCloseTo(126_000, 0);
     expect(creditedTo(y0, "slat-checking")).toBeCloseTo(54_000, 0);
+  });
+
+  // ── The same legs as the account-model sweep, over year-resolved owners ──
+  const slat: EntitySummary = {
+    id: "slat", name: "SLAT", entityType: "trust", trustSubType: "irrevocable",
+    isIrrevocable: true, isGrantor: false, includeInPortfolio: false,
+    accessibleToClient: false, grantor: "client",
+  };
+  const giftToSlat = (percent: number, year: number): GiftEvent => ({
+    kind: "business_interest", year, entityId: "llc-ent", percent,
+    grantor: "client", recipientEntityId: "slat",
+  });
+
+  /** The $180k-distribution LLC beside one co-owning entity (the SLAT unless
+   *  `coOwner` says otherwise) that has its own entity checking unless
+   *  `coOwnerChecking` is false. `owners` replaces the LLC's authored owners. */
+  function entityDist(opts: {
+    owners?: EntitySummary["owners"];
+    coOwner?: EntitySummary;
+    coOwnerChecking?: boolean;
+    giftEvents?: GiftEvent[];
+    lifeExpectancy?: number;
+  } = {}) {
+    const coOwner = opts.coOwner ?? slat;
+    const coOwnerChecking: Account = {
+      ...entChecking,
+      id: `${coOwner.id}-checking`,
+      name: `${coOwner.name} Checking`,
+      owners: [{ kind: "entity", entityId: coOwner.id, percent: 1 }],
+    };
+    const base = mkEntityData();
+    return runProjection({
+      ...base,
+      client: { ...client, lifeExpectancy: opts.lifeExpectancy },
+      accounts: opts.coOwnerChecking === false ? base.accounts : [...base.accounts, coOwnerChecking],
+      entities: [{ ...llcEntity, owners: "owners" in opts ? opts.owners : llcEntity.owners }, coOwner],
+      giftEvents: opts.giftEvents ?? [],
+    });
+  }
+
+  /** The LLC's own debit for the year's distribution — always the whole $180k. */
+  const paidByLlc = (y: ReturnType<typeof runProjection>[number]) =>
+    y.accountLedgers["llc-ent-checking"].entries
+      .filter((e) => e.category === "entity_distribution" && e.amount < 0)
+      .reduce((s, e) => s + e.amount, 0);
+
+  it("resolves the owners per year: the gifted 30% leaves the household only from the gift year", () => {
+    const [y2026, y2027] = entityDist({ giftEvents: [giftToSlat(0.3, 2027)] });
+    expect(creditedTo(y2026, "hh-checking")).toBeCloseTo(180_000, 0);
+    expect(creditedTo(y2026, "slat-checking")).toBe(0);
+    expect(creditedTo(y2027, "hh-checking")).toBeCloseTo(126_000, 0);
+    expect(creditedTo(y2027, "slat-checking")).toBeCloseTo(54_000, 0);
+    expect(paidByLlc(y2027)).toBeCloseTo(-180_000, 0);
+  });
+
+  it("reports only the household's slice in the Cash Flow Business income column", () => {
+    // The trust's $54k is not cash the household received (Task 16's rule for
+    // the account model, which the entity model's credits now share).
+    const [y0] = entityDist({ giftEvents: [giftToSlat(0.3, 2026)] });
+    expect(y0.income.business).toBeCloseTo(126_000, 0);
+    expect(y0.income.bySource["llc-ent"]).toBeCloseTo(126_000, 0);
+  });
+
+  it("keeps the gift's split after the client's death", () => {
+    // Client born 1980, life expectancy 46: dies in 2026. The death event never
+    // rewrites an entity's owner rows, so 2027 still composes authored + gift.
+    const years = entityDist({ giftEvents: [giftToSlat(0.3, 2026)], lifeExpectancy: 46 });
+    expect(years[0].estateTax).toBeDefined(); // the death year
+    expect(years[1].year).toBe(2027);
+    expect(creditedTo(years[1], "hh-checking")).toBeCloseTo(126_000, 0);
+    expect(creditedTo(years[1], "slat-checking")).toBeCloseTo(54_000, 0);
+  });
+
+  it("routes an AUTHORED irrevocable trust owner's slice to the trust's checking", () => {
+    const [y0] = entityDist({ owners: [
+      { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.7 },
+      { kind: "entity", entityId: "slat", percent: 0.3 },
+    ] });
+    expect(creditedTo(y0, "hh-checking")).toBeCloseTo(126_000, 0);
+    expect(creditedTo(y0, "slat-checking")).toBeCloseTo(54_000, 0);
+  });
+
+  it("falls back to household checking when the trust has no checking of its own", () => {
+    const [y0] = entityDist({ giftEvents: [giftToSlat(0.3, 2026)], coOwnerChecking: false });
+    expect(creditedTo(y0, "hh-checking")).toBeCloseTo(180_000, 0);
+  });
+
+  // Only an IRREVOCABLE trust's cash is its own: no pass distributes any other
+  // entity's checking onward, so a slice sent there would strand.
+  it("keeps an AUTHORED revocable trust owner's slice in household checking", () => {
+    const revocable: EntitySummary = {
+      id: "rev-trust", name: "Revocable Trust", entityType: "trust",
+      isIrrevocable: false, isGrantor: true, includeInPortfolio: true,
+      accessibleToClient: true, grantor: "client",
+    };
+    const [y0] = entityDist({ coOwner: revocable, owners: [
+      { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.7 },
+      { kind: "entity", entityId: "rev-trust", percent: 0.3 },
+    ] });
+    expect(creditedTo(y0, "hh-checking")).toBeCloseTo(180_000, 0);
+    expect(creditedTo(y0, "rev-trust-checking")).toBe(0);
+    expect(y0.income.business).toBeCloseTo(180_000, 0);
+  });
+
+  it("keeps an AUTHORED holding-company owner's slice in household checking", () => {
+    // isIrrevocable is set so that only the entity-TYPE half of the predicate
+    // can send this slice to household.
+    const holdco: EntitySummary = {
+      id: "holdco", name: "HoldCo LLC", includeInPortfolio: true, isGrantor: false,
+      isIrrevocable: true, entityType: "llc", distributionPolicyPercent: 1,
+      distributionMode: null, flowMode: "annual", value: 0, basis: 0, valueGrowthRate: 0,
+    };
+    const [y0] = entityDist({ coOwner: holdco, owners: [
+      { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.7 },
+      { kind: "entity", entityId: "holdco", percent: 0.3 },
+    ] });
+    expect(creditedTo(y0, "hh-checking")).toBeCloseTo(180_000, 0);
+    expect(creditedTo(y0, "holdco-checking")).toBe(0);
+    expect(y0.income.business).toBeCloseTo(180_000, 0);
+  });
+
+  it("still sends an owner-less business's whole distribution to household checking", () => {
+    // No owner rows at all reads as the household's, as on the balance sheet.
+    const [y0] = entityDist({ owners: undefined });
+    expect(creditedTo(y0, "hh-checking")).toBeCloseTo(180_000, 0);
+    expect(paidByLlc(y0)).toBeCloseTo(-180_000, 0);
+  });
+
+  it("pays an unmodelled partner's share outside the model", () => {
+    // The household holds 50%; nobody in the model holds the rest. The K-1
+    // taxes only the known 50% (P3-6), and the cash follows it.
+    const [y0] = entityDist({ owners: [
+      { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+    ] });
+    expect(creditedTo(y0, "hh-checking")).toBeCloseTo(90_000, 0);
+    expect(totalCredited(y0)).toBeCloseTo(90_000, 0);
+    expect(paidByLlc(y0)).toBeCloseTo(-180_000, 0);
   });
 });
 
@@ -808,6 +945,23 @@ describe("Phase 3 (entity model): EntitySummary business tax incidence (H1)", ()
     const y0 = runProjection(mkTaxData("qbi", { entityOver: { isGrantor: true } }))[0];
     expect(y0.taxDetail!.qbi).toBeCloseTo(100_000, 0);
     expect(y0.taxDetail!.bySource["business_passthrough:llc1"]).toBeDefined();
+  });
+
+  it("taxes only the household's 85% of a $1M net after a 15% gift of the business, from the gift year", () => {
+    // The K-1 read the AUTHORED owners, so the household was taxed on 100%
+    // after giving 15% to a trust.
+    const data = mkTaxData("ordinary", { incomes: [{ ...entIncome, annualAmount: 1_000_000 }] });
+    data.entities = [...(data.entities ?? []), {
+      id: "slat", name: "SLAT", entityType: "trust", trustSubType: "irrevocable",
+      isIrrevocable: true, isGrantor: false, includeInPortfolio: false,
+      accessibleToClient: false, grantor: "client",
+    }];
+    data.giftEvents = [{ kind: "business_interest", year: 2027, entityId: "llc1", percent: 0.15,
+      grantor: "client", recipientEntityId: "slat" }];
+    const [y2026, y2027] = runProjection(data);
+    expect(y2026.taxDetail!.ordinaryIncome).toBeCloseTo(1_000_000, 0);
+    expect(y2027.taxDetail!.ordinaryIncome).toBeCloseTo(850_000, 0);
+    expect(y2027.taxDetail!.bySource["business_passthrough:llc1"].amount).toBeCloseTo(850_000, 0);
   });
 });
 

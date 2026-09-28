@@ -172,6 +172,7 @@ import {
   ownersForYear,
   liabilityOwnedByHouseholdAtYear,
   liabilityOwnersForYear,
+  entityOwnersForYear,
   isFullyEntityOwned,
   controllingFamilyMember,
   controllingEntity,
@@ -2964,18 +2965,21 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     }
 
     // ── Phase 3 (entity model): EntitySummary business K-1 tax incidence ─────
-    // H1: account-model counterpart of the loop above, for businesses modeled
-    // as EntitySummary rows (entityType llc|s_corp|c_corp|partnership|
-    // foundation|other). Their income is skipped by the household-1040 loop
-    // (ownerEntityId rows, lines 1834-1840) on the promise it's taxed here —
-    // but that block only ever iterated account-model businesses, so entity
-    // pass-through income was distributed as cash (the sweep further below) yet
-    // taxed $0. Tax exactly the set that sweep distributes: all non-trust
-    // currentEntities with family owners and positive net income (the sweep
-    // ignores grantor status, so we do too). Trusts keep the 1041/grantor
-    // passes and are excluded. Keyed off ownerEntityId (via
-    // computeBusinessEntityNetIncome) vs the account-model block's ownerAccountId
-    // (via computeBusinessYearFlow), so the two never double-tax the same row.
+    // H1: the counterpart of the loop above for businesses modeled as
+    // EntitySummary rows (entityType llc|s_corp|c_corp|partnership|foundation|
+    // other). The household-1040 income loop skips their ownerEntityId rows on
+    // the promise they are taxed here. Taxes the same set the entity-model
+    // distribution sweep pays out: every non-trust entity with positive net
+    // income, grantor status ignored. Trusts keep the 1041/grantor passes.
+    // Keyed off ownerEntityId (via computeBusinessEntityNetIncome) vs the
+    // account-model block's ownerAccountId, so the two never double-tax a row.
+    //
+    // Owners are resolved PER YEAR (`entityOwnersForYear`): `entity.owners` is
+    // the authored, pre-gift baseline, and a business_interest gift to a trust
+    // moves its share from the household from the gift year on. Reading the
+    // authored rows taxed the household on 100% after a 15% gift. The
+    // family_member filter is P3-6 — only known household shares are taxed; a
+    // trust's share (kind "entity") is not the household's 1040 income.
     for (const entity of currentEntities) {
       if (entity.entityType === "trust") continue;
       const netIncome = computeBusinessEntityNetIncome(
@@ -2989,9 +2993,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       );
       if (netIncome <= 0) continue;
       const treatment = entity.taxTreatment ?? "ordinary";
-      const familyOwners = (entity.owners ?? []).filter(
-        (o) => o.kind === "family_member",
-      );
+      const familyOwners = entityOwnersForYear(
+        { id: entity.id, owners: entity.owners ?? [] },
+        data.giftEvents ?? [],
+        year,
+        planSettings.planStartYear,
+      ).filter((o) => o.kind === "family_member");
       let entityFamilyTaxable = 0;
       for (const owner of familyOwners) {
         const taxableShare = netIncome * owner.percent;
@@ -5911,6 +5918,79 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
 
+    /**
+     * Pays one business distribution: the business's own cash (`payerCashId`,
+     * when it has one) is debited the WHOLE `distAmount`, and each YEAR-RESOLVED
+     * owner's slice is credited where that owner banks. Shared by the account-
+     * model and entity-model sweeps below, so both route a slice the same way:
+     *  - family_member → the owner's default cash, else household checking.
+     *  - entity        → an IRREVOCABLE trust's own checking, and only if it has
+     *                    a balance this year (the `applyBusinessSales` rung); a
+     *                    named account that is not live yet falls back to
+     *                    household rather than dropping the slice on an account
+     *                    nobody books. Any other entity (revocable trust, holding
+     *                    company) → household checking: the irrevocable test is
+     *                    the one the trust passes use (`buildNonGrantorTrusts` /
+     *                    `buildGrantorTrusts`), no pass distributes any other
+     *                    entity's checking onward, and the household's
+     *                    withdrawals cannot reach it, so the slice would strand.
+     *  - gifted_away   → no credit. A share gifted to a person is out of the
+     *                    estate; its cash is paid outside the model.
+     * A share no owner row claims (an entity whose rows sum below 1 — an
+     * unmodelled partner) is likewise paid outside the model, as the K-1 taxes
+     * only known shares (P3-6). A business with NO owner rows at all is the
+     * household's — as the balance sheet reads it — and its whole distribution
+     * goes to household checking. Credits coalesce by destination, so co-owners
+     * who share one checking still produce one entry.
+     *
+     * The whole distribution leaves the payer, gifted-away slice included —
+     * `computeBusinessAccountCashFlow` reports it as `netIncome × distPercent`,
+     * and cash kept back for a person who was paid would inflate what the
+     * household's remaining share is worth.
+     */
+    const payBusinessDistribution = (
+      business: { id: string; name: string },
+      payerCashId: string | undefined,
+      owners: readonly AccountOwner[],
+      distAmount: number,
+    ): void => {
+      const credits = new Map<string, number>();
+      const credit = (destinationId: string | undefined, amount: number) => {
+        if (!destinationId || amount === 0) return;
+        credits.set(destinationId, (credits.get(destinationId) ?? 0) + amount);
+      };
+      if (owners.length === 0) credit(defaultChecking?.id, distAmount);
+      for (const o of owners) {
+        const slice = distAmount * o.percent;
+        if (o.kind === "family_member") {
+          credit(resolveFamilyMemberDefaultCash(o.familyMemberId) ?? defaultChecking?.id, slice);
+        } else if (o.kind === "entity") {
+          const owner = entityMap[o.entityId];
+          const named =
+            owner?.entityType === "trust" && owner.isIrrevocable === true
+              ? entityCheckingByEntityId[o.entityId]
+              : undefined;
+          const creditable = named !== undefined && accountBalances[named] !== undefined;
+          credit(creditable ? named : defaultChecking?.id, slice);
+        }
+      }
+      creditCash(payerCashId, -distAmount, {
+        category: "entity_distribution",
+        label: `Distribution from ${business.name}`,
+        sourceId: business.id,
+        // A label only: name the destination when exactly one account receives.
+        counterpartyId: credits.size === 1 ? [...credits.keys()][0] : undefined,
+      });
+      for (const [destinationId, amount] of credits) {
+        creditCash(destinationId, amount, {
+          category: "entity_distribution",
+          label: `Distribution from ${business.name}`,
+          sourceId: business.id,
+          counterpartyId: business.id, // received from the business
+        });
+      }
+    };
+
     // ── Phase 3: business-account distribution to household ───────────────
     // After income/expense crediting on the business's child cash account,
     // sweep net income to household checking per the business's
@@ -5925,8 +6005,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // Per spec § Phase 3 decisions:
     //   P3-4: same year, audit category "entity_distribution"
     //   P3-5: null distributionPolicyPercent defaults to 1.0
-    //   P3-7: pro-rated across the year's gift-resolved owners (see the legs
-    //         below); was the whole amount to the primary family owner
+    //   P3-7: pro-rated across the year's gift-resolved owners (see
+    //         `payBusinessDistribution`); was the whole amount to the primary
+    //         family owner
     //   P3-8: losses → no distribution (skip net ≤ 0)
     for (const business of businessAccountsThisYear) {
       const flow = computeBusinessYearFlow(
@@ -5980,67 +6061,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       if (netIncome <= 0) continue;
       const distAmount = netIncome * flow.distPercent;
       if (distAmount === 0) continue;
-      // Pro-rate across YEAR-RESOLVED owners. This used to credit the whole
+      // Pro-rated across YEAR-RESOLVED owners. This used to credit the whole
       // distribution to the single highest-percent family owner, so a trust
-      // holding 30% of the business saw none of its own distribution. Each leg
-      // is deliberate:
-      //  - family_member → the owner's default cash, else household checking.
-      //  - entity        → an IRREVOCABLE trust's own checking, and only if it
-      //                    has a balance this year (the `applyBusinessSales`
-      //                    rung); a named account that is not live yet falls
-      //                    back to household rather than dropping the slice on
-      //                    an account nobody books. Any other entity (revocable
-      //                    trust, holding company) → household checking, as
-      //                    before: the irrevocable test is the one the trust
-      //                    passes use (`buildNonGrantorTrusts` /
-      //                    `buildGrantorTrusts`), no pass distributes any other
-      //                    entity's checking onward, and the household's
-      //                    withdrawals cannot reach it, so the slice would strand.
-      //  - gifted_away   → no credit. A share gifted to a person is out of the
-      //                    estate; its cash is paid outside the model.
-      // Credits coalesce by destination, so co-owners who share one checking
-      // still produce one entry.
-      const credits = new Map<string, number>();
-      for (const o of ownershipSnapshot.ownersAt(business, year)) {
-        const slice = distAmount * o.percent;
-        if (slice === 0) continue;
-        let destinationId: string | undefined;
-        if (o.kind === "family_member") {
-          destinationId = resolveFamilyMemberDefaultCash(o.familyMemberId) ?? defaultChecking?.id;
-        } else if (o.kind === "entity") {
-          const owner = entityMap[o.entityId];
-          if (owner?.entityType === "trust" && owner.isIrrevocable === true) {
-            const named = entityCheckingByEntityId[o.entityId];
-            const creditable = named !== undefined && accountBalances[named] !== undefined;
-            destinationId = creditable ? named : defaultChecking?.id;
-          } else {
-            destinationId = defaultChecking?.id;
-          }
-        }
-        if (!destinationId) continue;
-        credits.set(destinationId, (credits.get(destinationId) ?? 0) + slice);
-      }
-      // The business pays the WHOLE distribution, gifted-away slice included —
-      // `computeBusinessAccountCashFlow` reports it as `netIncome × distPercent`,
-      // and cash kept back for a person who was paid would inflate what the
-      // household's remaining share is worth.
-      if (businessCash) {
-        creditCash(businessCash.id, -distAmount, {
-          category: "entity_distribution",
-          label: `Distribution from ${business.name}`,
-          sourceId: business.id,
-          // A label only: name the destination when exactly one account receives.
-          counterpartyId: credits.size === 1 ? [...credits.keys()][0] : undefined,
-        });
-      }
-      for (const [destinationId, amount] of credits) {
-        creditCash(destinationId, amount, {
-          category: "entity_distribution",
-          label: `Distribution from ${business.name}`,
-          sourceId: business.id,
-          counterpartyId: business.id, // received from the business
-        });
-      }
+      // holding 30% of the business saw none of its own distribution.
+      payBusinessDistribution(
+        business,
+        businessCash?.id,
+        ownershipSnapshot.ownersAt(business, year),
+        distAmount,
+      );
     }
 
     // ── Phase 3 (entity model): EntitySummary business distribution ──────────
@@ -6051,10 +6080,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // income/expense routing above (ownerEntityId rows). Without this sweep the
     // net income strands in entity checking forever, annualDistribution is
     // structurally 0, and the entity's value/basis overstate every year
-    // (BUG #17). Same mechanics as the account-model sweep: debit the entity's
-    // cash account, credit the primary family-member owner's default cash
-    // (else household defaultChecking). Trusts use the 1041/grantor passes and
-    // are excluded.
+    // (BUG #17). Same legs as the account-model sweep (`payBusinessDistribution`)
+    // over the entity's YEAR-RESOLVED owners (`entityOwnersForYear` — the
+    // authored rows plus every business_interest gift in force), so a trust
+    // given 30% of the business receives 30% of its distribution. Trusts use the
+    // 1041/grantor passes and are excluded.
     for (const entity of currentEntities) {
       if (entity.entityType === "trust") continue;
       const flowMode = entity.flowMode ?? "annual";
@@ -6078,37 +6108,20 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       );
       const distAmount = netIncome * distPercent;
       if (distAmount === 0) continue;
-      // Destination: primary family-member owner's default cash account, else
-      // household defaultChecking — mirrors the account-model resolution.
-      const primaryOwner = (entity.owners ?? [])
-        .filter((o) => o.kind === "family_member")
-        .slice()
-        .sort((x, y) => y.percent - x.percent)[0] as
-        | { kind: "family_member"; familyMemberId: string; percent: number }
-        | undefined;
-      const destinationId =
-        (primaryOwner
-          ? resolveFamilyMemberDefaultCash(primaryOwner.familyMemberId)
-          : undefined) ?? defaultChecking?.id;
-      const entityCashId = resolveCashAccount(entity.id);
-      // Debit the entity's cash account (only if one exists — without it the
-      // retained share has nowhere to land and the credit flows straight from
-      // entity to owner, same as the account model's no-child-cash mode).
-      if (entityCashId) {
-        creditCash(entityCashId, -distAmount, {
-          category: "entity_distribution",
-          label: `Distribution from ${entity.name ?? "Entity"}`,
-          sourceId: entity.id,
-          counterpartyId: destinationId,
-        });
-      }
-      // Credit owner's default cash account.
-      creditCash(destinationId, distAmount, {
-        category: "entity_distribution",
-        label: `Distribution from ${entity.name ?? "Entity"}`,
-        sourceId: entity.id,
-        counterpartyId: entity.id,
-      });
+      // The entity's own cash pays, when it has one — without it the retained
+      // share has nowhere to land and the credits flow straight from entity to
+      // owner, same as the account model's no-child-cash mode.
+      payBusinessDistribution(
+        { id: entity.id, name: entity.name ?? "Entity" },
+        resolveCashAccount(entity.id),
+        entityOwnersForYear(
+          { id: entity.id, owners: entity.owners ?? [] },
+          data.giftEvents ?? [],
+          year,
+          planSettings.planStartYear,
+        ),
+        distAmount,
+      );
     }
 
     // 8. Liability payments settle against the owning party's cash account —
