@@ -204,6 +204,39 @@ describe("POST /api/clients/[id]/solver/save-to-base", () => {
     });
   });
 
+  it("persists the inherited-IRA fields on insert", async () => {
+    // A scenario-added inherited IRA the Solver mints must carry its
+    // inherited fields onto the base insert — dropping the spread here would
+    // silently un-inherit it (null death year, false heir-disabled) the
+    // moment it's saved to base.
+    const res = await POST(
+      makeRequest({
+        source: "base",
+        mutations: [
+          {
+            kind: "account-upsert",
+            id: "synthetic-new",
+            value: {
+              ...ACCT,
+              category: "retirement",
+              subType: "traditional_ira",
+              inheritedDeathYear: 2022,
+              inheritedOwnerBirthYear: 1945,
+              inheritedHeirDisabled: true,
+            },
+          },
+        ],
+      }),
+      ctx as never,
+    );
+    expect(res.status).toBe(200);
+    expect(inserts[0].values).toMatchObject({
+      inheritedDeathYear: 2022,
+      inheritedOwnerBirthYear: 1945,
+      inheritedHeirDisabled: true,
+    });
+  });
+
   it("clears a stale portfolio link when the account moves off a portfolio", async () => {
     vi.mocked(loadEffectiveTree).mockResolvedValue({
       effectiveTree: { accounts: [{ ...ACCT }], savingsRules: [] },
@@ -276,6 +309,42 @@ describe("POST /api/clients/[id]/solver/save-to-base", () => {
     expect(deletes).toHaveLength(1);
     expect(inserts).toHaveLength(1);
     expect(inserts[0].values).toMatchObject({ familyMemberId: "fm-1", percent: "100" });
+  });
+
+  it("persists the inherited-IRA fields on update", async () => {
+    // An already-base account the Solver edits must carry its inherited
+    // fields onto the base UPDATE — dropping the spread here would silently
+    // un-inherit an existing inherited IRA the next time the Solver saves.
+    vi.mocked(loadEffectiveTree).mockResolvedValue({
+      effectiveTree: { accounts: [{ ...ACCT, category: "retirement", subType: "traditional_ira" }], savingsRules: [] },
+      warnings: [],
+    } as never);
+    const res = await POST(
+      makeRequest({
+        source: "base",
+        mutations: [
+          {
+            kind: "account-upsert",
+            id: "synthetic-new",
+            value: {
+              ...ACCT,
+              category: "retirement",
+              subType: "traditional_ira",
+              inheritedDeathYear: 2022,
+              inheritedOwnerBirthYear: 1945,
+              inheritedHeirDisabled: true,
+            },
+          },
+        ],
+      }),
+      ctx as never,
+    );
+    expect(res.status).toBe(200);
+    expect(updates[0].set).toMatchObject({
+      inheritedDeathYear: 2022,
+      inheritedOwnerBirthYear: 1945,
+      inheritedHeirDisabled: true,
+    });
   });
 
   it("persists a retitle-into-trust on update by rewriting account_owners (#a)", async () => {

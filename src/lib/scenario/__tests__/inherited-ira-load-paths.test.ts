@@ -53,7 +53,7 @@ describe.skipIf(!HAS_DB)("inherited IRA — load paths", () => {
       input: {
         name: "Inherited IRA (load test)", category: "retirement", subType: "traditional_ira", value: "400000",
         owners: [{ kind: "family_member", familyMemberId: COOPER_FM_ID, percent: 1 }],
-        inheritedDeathYear: 2022, inheritedOwnerBirthYear: 1945,
+        inheritedDeathYear: 2022, inheritedOwnerBirthYear: 1945, inheritedHeirDisabled: true,
       },
     });
     if (!res.ok) throw new Error(res.error);
@@ -63,6 +63,9 @@ describe.skipIf(!HAS_DB)("inherited IRA — load paths", () => {
     const acct = effectiveTree.accounts.find((a: Account) => a.id === res.data.id)!;
     expect(acct.inheritedDeathYear).toBe(2022);
     expect(acct.inheritedOwnerBirthYear).toBe(1945);
+    // Dropping this in load-client-data/resolve-entity would silently put a
+    // disabled heir on the 10-year rule instead of the stretch.
+    expect(acct.inheritedHeirDisabled).toBe(true);
     expect(hasInheritedRmd(effectiveTree, res.data.id)).toBe(true);
   });
 

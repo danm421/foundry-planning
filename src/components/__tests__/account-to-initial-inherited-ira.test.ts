@@ -7,10 +7,10 @@ describe("accountToInitial — inherited IRA", () => {
     const row = {
       id: "acct-1", name: "Inherited IRA", category: "retirement", subType: "traditional_ira",
       owner: "client", value: "400000", basis: "0", growthRate: null,
-      inheritedDeathYear: 2022, inheritedOwnerBirthYear: 1945, inheritedHeirDisabled: false,
+      inheritedDeathYear: 2022, inheritedOwnerBirthYear: 1945, inheritedHeirDisabled: true,
     } as AccountRow;
     expect(accountToInitial(row)).toMatchObject({
-      inheritedDeathYear: 2022, inheritedOwnerBirthYear: 1945, inheritedHeirDisabled: false,
+      inheritedDeathYear: 2022, inheritedOwnerBirthYear: 1945, inheritedHeirDisabled: true,
     });
   });
 });
