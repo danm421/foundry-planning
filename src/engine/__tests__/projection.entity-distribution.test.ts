@@ -142,6 +142,19 @@ function endBalance(year: ReturnType<typeof runProjection>[number], acctId: stri
   return year.accountLedgers[acctId]?.endingValue ?? 0;
 }
 
+/** Distribution cash an account RECEIVED in a year: the sum of its positive
+ *  `entity_distribution` entries. The paying side's debit is negative. */
+function creditedTo(year: ReturnType<typeof runProjection>[number], acctId: string): number {
+  return (year.accountLedgers[acctId]?.entries ?? [])
+    .filter((e) => e.category === "entity_distribution" && e.amount > 0)
+    .reduce((s, e) => s + e.amount, 0);
+}
+
+/** Distribution cash received anywhere in the model in a year. */
+function totalCredited(year: ReturnType<typeof runProjection>[number]): number {
+  return Object.keys(year.accountLedgers).reduce((s, id) => s + creditedTo(year, id), 0);
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe("Phase 3: business-account tax incidence", () => {
@@ -655,6 +668,34 @@ describe("Phase 3 (entity model): EntitySummary business distributes to househol
     // Post-fix: $1M + retained $120k = $1.12M.
     expect(row!.endingTotalValue).toBeCloseTo(1_120_000, 0);
   });
+
+  // it.skip: entity-model pro-rating needs entityOwnersForYear (Task 18); Task 19 un-skips this and fixes the fixture to the business_interest event shape.
+  it.skip("pro-rates the $180k across gift-resolved owners: 30% gifted to a trust → household $126k / trust $54k", () => {
+    const slat: EntitySummary = {
+      id: "slat", name: "SLAT", entityType: "trust", trustSubType: "irrevocable",
+      isIrrevocable: true, isGrantor: false, includeInPortfolio: false,
+      accessibleToClient: false, grantor: "client",
+    };
+    const slatChecking: Account = {
+      ...entChecking,
+      id: "slat-checking",
+      name: "SLAT Checking",
+      owners: [{ kind: "entity", entityId: "slat", percent: 1 }],
+    };
+    const base = mkEntityData();
+    const y0 = runProjection({
+      ...base,
+      accounts: [...base.accounts, slatChecking],
+      entities: [llcEntity, slat],
+      giftEvents: [{
+        kind: "business_interest", year: 2026, entityId: "llc-ent", percent: 0.3,
+        grantor: "client", recipientEntityId: "slat",
+      }],
+    })[0];
+    // $180k × 70% to the household, × 30% to the trust.
+    expect(creditedTo(y0, "hh-checking")).toBeCloseTo(126_000, 0);
+    expect(creditedTo(y0, "slat-checking")).toBeCloseTo(54_000, 0);
+  });
 });
 
 describe("Phase 3 (entity model): EntitySummary business tax incidence (H1)", () => {
@@ -831,5 +872,129 @@ describe("Phase 3: business loss-year cash handling (step 12c gap-fill)", () => 
     expect(
       (y0.trustWarnings ?? []).some((w) => w.code === "entity_overdraft"),
     ).toBe(false);
+  });
+});
+
+describe("business distributions — pro-rating across gift-resolved owners", () => {
+  // $1M net income, 100% policy, read in 2028 — the year after a 2027 gift.
+  // The whole distribution used to land on the single highest-percent family
+  // owner's cash, so a trust holding 30% of the business saw none of its own
+  // distribution. No growth and no inflation, so only the ownership split can
+  // move these numbers.
+  const BIZ_ID = "biz-llc";
+  const BIZ_CASH = "biz-llc-checking";
+  const HOUSEHOLD_CHECKING = "hh-checking";
+  const TRUST_ID = "trust-dist";
+  const TRUST_CHECKING = "trust-dist-checking";
+  const READ_YEAR = 2028;
+
+  // Irrevocable, non-grantor, outside the household's reach — the SLAT shape
+  // from gift-overlay-cross-surface.test.ts.
+  const trust: EntitySummary = {
+    id: TRUST_ID, name: "SLAT", entityType: "trust", trustSubType: "irrevocable",
+    isIrrevocable: true, isGrantor: false, includeInPortfolio: false,
+    accessibleToClient: false, grantor: "client",
+  };
+
+  function distFixture(opts: {
+    netIncome: number;
+    distPercent: number;
+    /** false: the trust has no default checking at all. */
+    trustChecking?: boolean;
+    /** The trust's checking exists (so it is NAMED) but joins the projection
+     *  only in this year — before then it has no balance to credit. */
+    trustCheckingActivationYear?: number;
+    /** The trust's share of the business by AUTHORED title, no gift. */
+    authoredTrustPct?: number;
+  }): ClientData {
+    const base = mkData({
+      bizOverrides: {
+        distributionPolicyPercent: opts.distPercent,
+        ...(opts.authoredTrustPct != null
+          ? {
+              owners: [
+                { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 - opts.authoredTrustPct },
+                { kind: "entity", entityId: TRUST_ID, percent: opts.authoredTrustPct },
+              ],
+            }
+          : {}),
+      },
+      incomes: [{ ...llcIncome, annualAmount: opts.netIncome }],
+    });
+    // Entity-owned default checking, which is what `entityCheckingByEntityId`
+    // keys on — a trust's own account, so no business parent.
+    const trustChecking: Account = {
+      ...bizChecking(TRUST_ID),
+      name: "SLAT Checking",
+      parentAccountId: null,
+      activationYear: opts.trustCheckingActivationYear,
+    };
+    return {
+      ...base,
+      planSettings: { ...planSettings, planEndYear: READ_YEAR },
+      accounts: opts.trustChecking === false ? base.accounts : [...base.accounts, trustChecking],
+      entities: [trust],
+    };
+  }
+
+  function readYear(data: ClientData) {
+    return runProjection(data).find((y) => y.year === READ_YEAR)!;
+  }
+
+  it("splits the distribution between the household and the gifted trust", () => {
+    const data = distFixture({ netIncome: 1_000_000, distPercent: 1 });
+    data.giftEvents = [{ kind: "asset", year: 2027, accountId: BIZ_ID, percent: 0.3,
+      grantor: "client", recipientEntityId: TRUST_ID }];
+    const y = readYear(data);
+    expect(creditedTo(y, HOUSEHOLD_CHECKING)).toBeCloseTo(700_000, 2);
+    expect(creditedTo(y, TRUST_CHECKING)).toBeCloseTo(300_000, 2);
+  });
+
+  it("falls back to household checking when the trust has no creditable account", () => {
+    // Rule 2. A trust with no checking must not swallow its slice.
+    const data = distFixture({ netIncome: 1_000_000, distPercent: 1, trustChecking: false });
+    data.giftEvents = [{ kind: "asset", year: 2027, accountId: BIZ_ID, percent: 0.3,
+      grantor: "client", recipientEntityId: TRUST_ID }];
+    const y = readYear(data);
+    expect(creditedTo(y, HOUSEHOLD_CHECKING)).toBeCloseTo(1_000_000, 2);
+  });
+
+  it("falls back to household checking when the trust's checking is named but not yet in the projection", () => {
+    // Rule 2's other rung. The account exists, so the trust NAMES a checking,
+    // but it activates in 2030 and has no balance in 2028. Crediting it would
+    // drop $300k on an account the year never books.
+    const data = distFixture({
+      netIncome: 1_000_000, distPercent: 1, trustCheckingActivationYear: 2030,
+    });
+    data.giftEvents = [{ kind: "asset", year: 2027, accountId: BIZ_ID, percent: 0.3,
+      grantor: "client", recipientEntityId: TRUST_ID }];
+    const y = readYear(data);
+    expect(creditedTo(y, HOUSEHOLD_CHECKING)).toBeCloseTo(1_000_000, 2);
+    expect(totalCredited(y)).toBeCloseTo(1_000_000, 2);
+  });
+
+  it("lets a gifted_away share leave the household entirely", () => {
+    // Rule 3. A share gifted to a PERSON is out of the estate — the cash does
+    // not come back to household checking. The business still pays the whole
+    // distribution: the person is paid outside the model.
+    const data = distFixture({ netIncome: 1_000_000, distPercent: 1 });
+    data.giftEvents = [{ kind: "asset", year: 2027, accountId: BIZ_ID, percent: 0.25,
+      grantor: "client", recipientFamilyMemberId: "fm-kid" }];
+    const y = readYear(data);
+    expect(creditedTo(y, HOUSEHOLD_CHECKING)).toBeCloseTo(750_000, 2);
+    expect(totalCredited(y)).toBeCloseTo(750_000, 2);
+    const bizDebit = y.accountLedgers[BIZ_CASH].entries
+      .filter((e) => e.category === "entity_distribution" && e.amount < 0)
+      .reduce((s, e) => s + e.amount, 0);
+    expect(bizDebit).toBeCloseTo(-1_000_000, 2);
+  });
+
+  it("routes an AUTHORED trust owner's slice to the trust's checking", () => {
+    // The boundary: no gift at all. A trust that owns 30% by title gets its
+    // own 30%, the same as a trust that got there by gift.
+    const data = distFixture({ netIncome: 1_000_000, distPercent: 1, authoredTrustPct: 0.3 });
+    const y = readYear(data);
+    expect(creditedTo(y, TRUST_CHECKING)).toBeCloseTo(300_000, 2);
+    expect(creditedTo(y, HOUSEHOLD_CHECKING)).toBeCloseTo(700_000, 2);
   });
 });

@@ -5885,8 +5885,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // Per spec § Phase 3 decisions:
     //   P3-4: same year, audit category "entity_distribution"
     //   P3-5: null distributionPolicyPercent defaults to 1.0
-    //   P3-7: target is the primary family-member owner's default cash; else
-    //         household defaultChecking
+    //   P3-7: pro-rated across the year's gift-resolved owners (see the legs
+    //         below); was the whole amount to the primary family owner
     //   P3-8: losses → no distribution (skip net ≤ 0)
     for (const business of businessAccountsThisYear) {
       const flow = computeBusinessYearFlow(
@@ -5940,33 +5940,55 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       if (netIncome <= 0) continue;
       const distAmount = netIncome * flow.distPercent;
       if (distAmount === 0) continue;
-      // Destination: primary family-member owner's default cash account.
-      // Falls back to household defaultChecking when the business has no
-      // family owners or the owner has no associated cash account.
-      const primaryOwner = business.owners
-        .filter((o) => o.kind === "family_member")
-        .slice()
-        .sort((x, y) => y.percent - x.percent)[0];
-      const destinationId =
-        (primaryOwner
-          ? resolveFamilyMemberDefaultCash(primaryOwner.familyMemberId)
-          : undefined) ?? defaultChecking?.id;
-      // Debit business cash (only if it exists)
+      // Pro-rate across YEAR-RESOLVED owners. This used to credit the whole
+      // distribution to the single highest-percent family owner, so a trust
+      // holding 30% of the business saw none of its own distribution. Each leg
+      // is deliberate:
+      //  - family_member → the owner's default cash, else household checking.
+      //  - entity        → that entity's checking ONLY if it has a balance this
+      //                    year (the `applyBusinessSales` rung). A named account
+      //                    that is not live yet falls back to household rather
+      //                    than dropping the slice on an account nobody books.
+      //  - gifted_away   → no credit. A share gifted to a person is out of the
+      //                    estate; its cash is paid outside the model.
+      // Credits coalesce by destination, so co-owners who share one checking
+      // still produce one entry.
+      const credits = new Map<string, number>();
+      for (const o of ownershipSnapshot.ownersAt(business, year)) {
+        const slice = distAmount * o.percent;
+        if (slice === 0) continue;
+        let destinationId: string | undefined;
+        if (o.kind === "family_member") {
+          destinationId = resolveFamilyMemberDefaultCash(o.familyMemberId) ?? defaultChecking?.id;
+        } else if (o.kind === "entity") {
+          const named = entityCheckingByEntityId[o.entityId];
+          const creditable = named !== undefined && accountBalances[named] !== undefined;
+          destinationId = creditable ? named : defaultChecking?.id;
+        }
+        if (!destinationId) continue;
+        credits.set(destinationId, (credits.get(destinationId) ?? 0) + slice);
+      }
+      // The business pays the WHOLE distribution, gifted-away slice included —
+      // `computeBusinessAccountCashFlow` reports it as `netIncome × distPercent`,
+      // and cash kept back for a person who was paid would inflate what the
+      // household's remaining share is worth.
       if (businessCash) {
         creditCash(businessCash.id, -distAmount, {
           category: "entity_distribution",
           label: `Distribution from ${business.name}`,
           sourceId: business.id,
-          counterpartyId: destinationId, // distributed to the owner's cash account
+          // A label only: name the destination when exactly one account receives.
+          counterpartyId: credits.size === 1 ? [...credits.keys()][0] : undefined,
         });
       }
-      // Credit owner's default cash account
-      creditCash(destinationId, distAmount, {
-        category: "entity_distribution",
-        label: `Distribution from ${business.name}`,
-        sourceId: business.id,
-        counterpartyId: business.id, // received from the business
-      });
+      for (const [destinationId, amount] of credits) {
+        creditCash(destinationId, amount, {
+          category: "entity_distribution",
+          label: `Distribution from ${business.name}`,
+          sourceId: business.id,
+          counterpartyId: business.id, // received from the business
+        });
+      }
     }
 
     // ── Phase 3 (entity model): EntitySummary business distribution ──────────
