@@ -17,6 +17,7 @@ import type { AccountMeta } from "@/lib/scenario/account-meta";
 import type { AccountRow, LinkedSource } from "@/components/balance-sheet-view";
 import type { StockOptionPlan } from "@/engine/equity/types";
 import { withDerivedEquityValues } from "./equity-derived-values";
+import { inheritedIraRowFields } from "./inherited-ira";
 
 export type AccountMetaRow = Awaited<ReturnType<typeof loadAccountMetaRows>>[number];
 
@@ -95,6 +96,9 @@ type EngineAccountLike = Parameters<typeof controllingEntity>[0] & {
   growthRate: number;
   rmdEnabled?: boolean | null;
   priorYearEndValue?: number | null;
+  inheritedDeathYear?: number | null;
+  inheritedOwnerBirthYear?: number | null;
+  inheritedHeirDisabled?: boolean;
   isDefaultChecking?: boolean;
   owners?: AccountRow["owners"];
   titlingType?: AccountRow["titlingType"];
@@ -165,6 +169,7 @@ export function buildAccountRows({
       growthRate: a.growthRate == null ? null : String(a.growthRate),
       rmdEnabled: a.rmdEnabled ?? null,
       priorYearEndValue: a.priorYearEndValue != null ? String(a.priorYearEndValue) : null,
+      ...inheritedIraRowFields(a),
       ownerEntityId: controllingEntity(a) ?? null,
       // From meta, not from `a` — the engine Account type never carries these.
       countsTowardAum: meta?.countsTowardAum ?? false,

@@ -88,6 +88,10 @@ export interface AccountFormInitial {
    * a decimal string (or null when unset). Only meaningful for RMD-eligible
    * retirement accounts. */
   priorYearEndValue?: string | null;
+  /** Inherited IRA (non-spouse). Null/absent ⇒ not inherited. */
+  inheritedDeathYear?: number | null;
+  inheritedOwnerBirthYear?: number | null;
+  inheritedHeirDisabled?: boolean;
   ownerEntityId?: string | null;
   owners?: AccountOwner[];
   /** Joint-titling regime. Drives §1014(b)(6) full step-up vs §2040(b) 50/50. */

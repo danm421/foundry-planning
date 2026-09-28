@@ -18,6 +18,7 @@ import { LiabilityFormInitial } from "./forms/add-liability-form";
 import type { NoteReceivableFormInitial } from "./forms/add-note-receivable-form";
 import { computeAmortizationSchedule, calcOriginalBalance } from "@/lib/loan-math";
 import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
+import { inheritedIraRowFields } from "@/lib/accounts/inherited-ira";
 import { toSalaryOptions } from "@/lib/savings/salary-options";
 import { LIQUID_PORTFOLIO_CATEGORIES } from "@/engine/portfolio-snapshot";
 import type { ClientMilestones } from "@/lib/milestones";
@@ -83,6 +84,10 @@ export interface AccountRow {
    *  it on save. Only meaningful for taxable/cash/retirement. */
   countsTowardAum?: boolean | null;
   priorYearEndValue?: string | null;
+  /** Inherited IRA (non-spouse). Null/absent ⇒ not inherited. */
+  inheritedDeathYear?: number | null;
+  inheritedOwnerBirthYear?: number | null;
+  inheritedHeirDisabled?: boolean;
   ownerEntityId?: string | null;
   growthSource?: string;
   modelPortfolioId?: string | null;
@@ -306,6 +311,7 @@ export function accountToInitial(a: AccountRow): AccountFormInitial {
     rmdEnabled: a.rmdEnabled ?? null,
     countsTowardAum: a.countsTowardAum ?? false,
     priorYearEndValue: a.priorYearEndValue ?? null,
+    ...inheritedIraRowFields(a),
     ownerEntityId: a.ownerEntityId ?? null,
     growthSource: a.growthSource,
     modelPortfolioId: a.modelPortfolioId ?? null,

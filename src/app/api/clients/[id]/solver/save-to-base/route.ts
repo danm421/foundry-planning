@@ -49,6 +49,7 @@ import {
 } from "@/lib/db-scoping";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { inheritedIraRowFields } from "@/lib/accounts/inherited-ira";
 import { recordAudit } from "@/lib/audit";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
@@ -182,6 +183,7 @@ function accountInsertValues(
     ...accountGrowthBasis(a),
     rmdEnabled: a.rmdEnabled ?? false,
     priorYearEndValue: a.priorYearEndValue != null ? String(a.priorYearEndValue) : null,
+    ...inheritedIraRowFields(a),
     titlingType: a.titlingType ?? "jtwros",
     // 529 / education-savings columns (null for every other category). The
     // beneficiary is required for a real 529; the solver sets it from the goal's
@@ -427,6 +429,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
             rmdEnabled: a.rmdEnabled ?? false,
             priorYearEndValue:
               a.priorYearEndValue != null ? String(a.priorYearEndValue) : null,
+            ...inheritedIraRowFields(a),
             titlingType: a.titlingType ?? "jtwros",
             updatedAt: new Date(),
           })
