@@ -1,8 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { applyBusinessSales, normalizeBusinessSales } from "../asset-transactions";
-import type { Account, AccountLedger, AssetTransaction, Liability } from "../types";
+import type { Account, AccountLedger, AssetTransaction, EntitySummary, GiftEvent, Liability } from "../types";
 import type { ApplyBusinessSalesInput } from "../asset-transactions";
-import type { EntitySummary, GiftEvent } from "../types";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -123,6 +122,7 @@ describe("applyBusinessSales — operating-value-only case", () => {
       accountLedgers,
       year: 2030,
       defaultCheckingId: "acct-cash",
+      entitiesById: {},
       giftEvents: [],
       planStartYear: 2030,
     });
@@ -159,6 +159,7 @@ describe("applyBusinessSales — operating-value-only case", () => {
       accountLedgers: { "acct-cash": makeLedger(0) },
       year: 2030,
       defaultCheckingId: "acct-cash",
+      entitiesById: {},
       giftEvents: [],
       planStartYear: 2030,
     });
@@ -217,6 +218,7 @@ describe("applyBusinessSales — child cascade", () => {
       accountLedgers,
       year: 2030,
       defaultCheckingId: "acct-cash",
+      entitiesById: {},
       giftEvents: [],
       planStartYear: 2030,
     });
@@ -260,6 +262,7 @@ describe("applyBusinessSales — partial sale", () => {
       },
       year: 2030,
       defaultCheckingId: "acct-cash",
+      entitiesById: {},
       giftEvents: [],
       planStartYear: 2030,
     });
@@ -291,6 +294,7 @@ describe("applyBusinessSales — partial sale", () => {
       accountLedgers,
       year: 2030,
       defaultCheckingId: "acct-cash",
+      entitiesById: {},
       giftEvents: [],
       planStartYear: 2030,
     });
@@ -309,6 +313,7 @@ describe("applyBusinessSales — partial sale", () => {
       accountLedgers,
       year: 2031,
       defaultCheckingId: "acct-cash",
+      entitiesById: {},
       giftEvents: [],
       planStartYear: 2030,
     });
@@ -327,6 +332,7 @@ describe("applyBusinessSales — diagnostics", () => {
       accountLedgers: { "acct-cash": makeLedger(0) },
       year: 2030,
       defaultCheckingId: "acct-cash",
+      entitiesById: {},
       giftEvents: [],
       planStartYear: 2030,
     });
@@ -345,6 +351,7 @@ describe("applyBusinessSales — diagnostics", () => {
       accountLedgers: { "acct-cash": makeLedger(0) },
       year: 2030,
       defaultCheckingId: "acct-cash",
+      entitiesById: {},
       giftEvents: [],
       planStartYear: 2030,
     });
@@ -362,6 +369,7 @@ describe("applyBusinessSales — diagnostics", () => {
       accountLedgers: { "acct-cash": makeLedger(0) },
       year: 2030,
       defaultCheckingId: "acct-cash",
+      entitiesById: {},
       giftEvents: [],
       planStartYear: 2030,
     });
@@ -379,6 +387,7 @@ describe("applyBusinessSales — diagnostics", () => {
       accountLedgers: { "acct-cash": makeLedger(0) },
       year: 2030,
       defaultCheckingId: "acct-cash",
+      entitiesById: {},
       giftEvents: [],
       planStartYear: 2030,
     });
@@ -397,6 +406,7 @@ describe("applyBusinessSales — diagnostics", () => {
       accountLedgers: { "acct-cash": makeLedger(0) },
       year: 2030,
       defaultCheckingId: "acct-cash",
+      entitiesById: {},
       giftEvents: [],
       planStartYear: 2030,
     });
@@ -416,6 +426,7 @@ describe("applyBusinessSales — no-op cases", () => {
       accountLedgers: { "acct-cash": makeLedger(0) },
       year: 2030,
       defaultCheckingId: "acct-cash",
+      entitiesById: {},
       giftEvents: [],
       planStartYear: 2030,
     });
@@ -434,6 +445,7 @@ describe("applyBusinessSales — no-op cases", () => {
       accountLedgers: { "acct-cash": makeLedger(0) },
       year: 2030,
       defaultCheckingId: "acct-cash",
+      entitiesById: {},
       giftEvents: [],
       planStartYear: 2030,
     });
@@ -548,6 +560,7 @@ describe("normalizeBusinessSales", () => {
       accountLedgers,
       year: 2030,
       defaultCheckingId: "acct-cash",
+      entitiesById: {},
       giftEvents: [],
       planStartYear: 2030,
     });
@@ -709,7 +722,7 @@ describe("applyBusinessSales — only an irrevocable trust banks its own slice",
   it("sends a holding company's whole-business proceeds to household checking", () => {
     const { input } = entitySale({
       owners: [{ kind: "entity", entityId: ENTITY, percent: 1 }],
-      entity: makeEntity({ entityType: "llc" }),
+      entity: makeEntity({ entityType: "llc", isIrrevocable: true }),
     });
     expect(input.accountBalances[HOUSEHOLD_CHECKING]).toBeCloseTo(10_000_000, 2);
     expect(input.accountBalances[ENTITY_CHECKING]).toBe(0);

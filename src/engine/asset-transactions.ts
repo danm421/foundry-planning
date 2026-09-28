@@ -727,15 +727,15 @@ export interface ApplyBusinessSalesInput {
   accountLedgers: Record<string, AccountLedger>;
   year: number;
   defaultCheckingId: string;
-  /** Entity id → that entity's default-checking account id. Same contract as
-   *  {@link ApplyAssetSalesInput.entityCheckingByEntityId}; a missing entity
-   *  falls back to `defaultCheckingId`. */
+  /** Entity id → that entity's default-checking account id. Reached only by
+   *  an owner `entitiesById` marks as an irrevocable trust; every other
+   *  entity owner's slice goes to household checking instead. */
   entityCheckingByEntityId?: Record<string, string>;
   /** Entity id → the entity as it stands this year. An entity owner's slice
    *  reaches `entityCheckingByEntityId` only when this says it is an
    *  irrevocable trust; an entity missing here counts as any other entity and
    *  its slice goes to household checking. */
-  entitiesById?: Record<string, EntitySummary>;
+  entitiesById: Record<string, EntitySummary>;
   /** Gift context for the PROCEEDS split only: a business partly given away
    *  before the sale deposits each retained owner's slice where that owner
    *  banks. `normalizeBusinessSales` keeps gating on authored owners. */
@@ -931,7 +931,7 @@ export function applyBusinessSales(input: ApplyBusinessSalesInput): BusinessSale
     let uncreditedSlice = false;
     for (const owner of giftAwareOwners(business, giftEvents, year, planStartYear)) {
       if (owner.kind === "gifted_away") continue;
-      const entity = owner.kind === "entity" ? entitiesById?.[owner.entityId] : undefined;
+      const entity = owner.kind === "entity" ? entitiesById[owner.entityId] : undefined;
       const trustChecking =
         owner.kind === "entity" && entity?.entityType === "trust" && entity.isIrrevocable === true
           ? creditable(entityCheckingByEntityId?.[owner.entityId])
