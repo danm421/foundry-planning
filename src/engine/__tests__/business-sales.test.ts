@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { applyBusinessSales, normalizeBusinessSales } from "../asset-transactions";
 import type { Account, AccountLedger, AssetTransaction, Liability } from "../types";
 import type { ApplyBusinessSalesInput } from "../asset-transactions";
-import type { GiftEvent } from "../types";
+import type { EntitySummary, GiftEvent } from "../types";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -561,8 +561,63 @@ describe("normalizeBusinessSales", () => {
   });
 });
 
-// ── Gifted shares ─────────────────────────────────────────────────────────────
-//
+// ── Entity-owned and gifted slices ────────────────────────────────────────────
+
+const HOUSEHOLD_CHECKING = "acct-cash";
+const ENTITY = "ent";
+const ENTITY_CHECKING = "entity-cash";
+
+const makeEntity = (over: Partial<EntitySummary> = {}): EntitySummary => ({
+  id: ENTITY,
+  isGrantor: false,
+  includeInPortfolio: false,
+  ...over,
+});
+const irrevocableTrust = makeEntity({ entityType: "trust", isIrrevocable: true });
+
+/** A $10M, basis-0 business sold whole in 2030 beside one entity whose own
+ *  checking is wired through `entityCheckingByEntityId`. Held 50/50 by B and S
+ *  unless `owners` says otherwise — two household slices, so every case also
+ *  proves they coalesce into ONE deposit. The entity is an irrevocable trust
+ *  unless `entity` says otherwise. Both checkings open at $0, so a balance IS
+ *  the proceeds it received. */
+function entitySale(
+  {
+    giftEvents = [],
+    owners = [
+      { kind: "family_member", familyMemberId: "B", percent: 0.5 },
+      { kind: "family_member", familyMemberId: "S", percent: 0.5 },
+    ],
+    entity = irrevocableTrust,
+  }: { giftEvents?: GiftEvent[]; owners?: Account["owners"]; entity?: EntitySummary },
+  over: Partial<ApplyBusinessSalesInput> = {},
+) {
+  const entityChecking: Account = {
+    ...makeChecking(ENTITY_CHECKING, 0),
+    owners: [{ kind: "entity", entityId: ENTITY, percent: 1 }],
+  };
+  const business = makeBusiness({ value: 10_000_000, basis: 0, owners });
+  const input: ApplyBusinessSalesInput = {
+    sales: [makeSale()],
+    accounts: [makeChecking(HOUSEHOLD_CHECKING, 0), entityChecking, business],
+    liabilities: [],
+    accountBalances: { [HOUSEHOLD_CHECKING]: 0, [ENTITY_CHECKING]: 0 },
+    basisMap: { [HOUSEHOLD_CHECKING]: 0, [ENTITY_CHECKING]: 0 },
+    accountLedgers: {
+      [HOUSEHOLD_CHECKING]: makeLedger(0),
+      [ENTITY_CHECKING]: makeLedger(0),
+    },
+    year: 2030,
+    defaultCheckingId: HOUSEHOLD_CHECKING,
+    entityCheckingByEntityId: { [ENTITY]: ENTITY_CHECKING },
+    entitiesById: { [ENTITY]: entity },
+    giftEvents,
+    planStartYear: 2026,
+    ...over,
+  };
+  return { input, result: applyBusinessSales(input) };
+}
+
 // A share of the business given away before the sale is no longer the
 // household's to sell. `controllingEntity` returns null on any split, so before
 // the proceeds were resolved per gift-aware owner every dollar landed in
@@ -570,70 +625,29 @@ describe("normalizeBusinessSales", () => {
 // HERE and not in `normalizeBusinessSales`: that gate stays on authored owners.
 
 describe("applyBusinessSales — gifted shares", () => {
-  const HOUSEHOLD_CHECKING = "acct-cash";
-  const TRUST_CHECKING = "trust-cash";
-
-  /** A $10M, basis-0 business held 50/50 by B and S — two household slices, so
-   *  every case also proves they coalesce into ONE deposit — sold whole in 2030,
-   *  beside a trust whose own checking is wired through
-   *  `entityCheckingByEntityId`. Both checkings open at $0, so a balance IS the
-   *  proceeds it received. */
-  function giftedSale(giftEvents: GiftEvent[], over: Partial<ApplyBusinessSalesInput> = {}) {
-    const trustChecking: Account = {
-      ...makeChecking(TRUST_CHECKING, 0),
-      owners: [{ kind: "entity", entityId: "trust", percent: 1 }],
-    };
-    const business = makeBusiness({
-      value: 10_000_000,
-      basis: 0,
-      owners: [
-        { kind: "family_member", familyMemberId: "B", percent: 0.5 },
-        { kind: "family_member", familyMemberId: "S", percent: 0.5 },
-      ],
-    });
-    const input: ApplyBusinessSalesInput = {
-      sales: [makeSale()],
-      accounts: [makeChecking(HOUSEHOLD_CHECKING, 0), trustChecking, business],
-      liabilities: [],
-      accountBalances: { [HOUSEHOLD_CHECKING]: 0, [TRUST_CHECKING]: 0 },
-      basisMap: { [HOUSEHOLD_CHECKING]: 0, [TRUST_CHECKING]: 0 },
-      accountLedgers: {
-        [HOUSEHOLD_CHECKING]: makeLedger(0),
-        [TRUST_CHECKING]: makeLedger(0),
-      },
-      year: 2030,
-      defaultCheckingId: HOUSEHOLD_CHECKING,
-      entityCheckingByEntityId: { trust: TRUST_CHECKING },
-      giftEvents,
-      planStartYear: 2026,
-      ...over,
-    };
-    return { input, result: applyBusinessSales(input) };
-  }
-
   const giftOfBiz = (
     percent: number,
     recipient: { recipientEntityId: string } | { recipientFamilyMemberId: string },
   ): GiftEvent => ({ kind: "asset", year: 2028, accountId: "biz", percent, grantor: "client", ...recipient });
-  const toTrust = { recipientEntityId: "trust" };
+  const toTrust = { recipientEntityId: ENTITY };
   const toKid = { recipientFamilyMemberId: "fm-kid" };
 
   it("splits net proceeds between household and the gifted trust", () => {
-    const { input } = giftedSale([giftOfBiz(0.15, toTrust)]);
+    const { input } = entitySale({ giftEvents: [giftOfBiz(0.15, toTrust)] });
     expect(input.accountBalances[HOUSEHOLD_CHECKING]).toBeCloseTo(8_500_000, 2);
-    expect(input.accountBalances[TRUST_CHECKING]).toBeCloseTo(1_500_000, 2);
+    expect(input.accountBalances[ENTITY_CHECKING]).toBeCloseTo(1_500_000, 2);
     // B's and S's slices land in one deposit, not two.
     const deposits = (id: string) =>
       input.accountLedgers[id].entries.map((e) => [Math.round(e.amount), e.isSaleProceeds, Math.round(e.basis ?? 0)]);
     expect(deposits(HOUSEHOLD_CHECKING)).toEqual([[8_500_000, true, 8_500_000]]);
-    expect(deposits(TRUST_CHECKING)).toEqual([[1_500_000, true, 1_500_000]]);
-    expect(input.basisMap[TRUST_CHECKING]).toBeCloseTo(1_500_000, 2);
+    expect(deposits(ENTITY_CHECKING)).toEqual([[1_500_000, true, 1_500_000]]);
+    expect(input.basisMap[ENTITY_CHECKING]).toBeCloseTo(1_500_000, 2);
   });
 
   it("credits a slice gifted to a PERSON to nobody, and leaves its gain for the household ADD", () => {
-    const { input, result } = giftedSale([giftOfBiz(0.2, toKid)]);
+    const { input, result } = entitySale({ giftEvents: [giftOfBiz(0.2, toKid)] });
     expect(input.accountBalances[HOUSEHOLD_CHECKING]).toBeCloseTo(8_000_000, 2);
-    expect(input.accountBalances[TRUST_CHECKING]).toBe(0);
+    expect(input.accountBalances[ENTITY_CHECKING]).toBe(0);
     const credited = Object.values(input.accountBalances).reduce((s, b) => s + b, 0);
     expect(credited).toBeCloseTo(8_000_000, 2);
     // Still the WHOLE $10M gain. The kid's 20% leaves the household 1040 at the
@@ -645,29 +659,67 @@ describe("applyBusinessSales — gifted shares", () => {
   });
 
   it("is unchanged with no gift events", () => {
-    const { input } = giftedSale([]);
+    const { input } = entitySale({});
     expect(input.accountBalances[HOUSEHOLD_CHECKING]).toBeCloseTo(10_000_000, 2);
-    expect(input.accountBalances[TRUST_CHECKING]).toBe(0);
+    expect(input.accountBalances[ENTITY_CHECKING]).toBe(0);
     expect(input.accountLedgers[HOUSEHOLD_CHECKING].entries).toHaveLength(1);
   });
 
   it("still sends every retained slice to an explicit proceeds destination", () => {
     // The explicit pick outranks the trust's own checking, exactly as it
     // outranked every rung for the whole sale before the split.
-    const { input } = giftedSale([giftOfBiz(0.15, toTrust), giftOfBiz(0.2, toKid)], {
+    const { input } = entitySale({ giftEvents: [giftOfBiz(0.15, toTrust), giftOfBiz(0.2, toKid)] }, {
       sales: [makeSale({ proceedsAccountId: HOUSEHOLD_CHECKING })],
     });
     // Household 65% + trust 15% — the kid's 20% still goes nowhere.
     expect(input.accountBalances[HOUSEHOLD_CHECKING]).toBeCloseTo(8_000_000, 2);
-    expect(input.accountBalances[TRUST_CHECKING]).toBe(0);
+    expect(input.accountBalances[ENTITY_CHECKING]).toBe(0);
     expect(input.accountLedgers[HOUSEHOLD_CHECKING].entries).toHaveLength(1);
   });
 
   it("flags a household slice with nowhere to go even when the trust's slice landed", () => {
-    const { input, result } = giftedSale([giftOfBiz(0.15, toTrust)], {
+    const { input, result } = entitySale({ giftEvents: [giftOfBiz(0.15, toTrust)] }, {
       defaultCheckingId: "no-such-account",
     });
-    expect(input.accountBalances[TRUST_CHECKING]).toBeCloseTo(1_500_000, 2);
+    expect(input.accountBalances[ENTITY_CHECKING]).toBeCloseTo(1_500_000, 2);
     expect(result.diagnostics).toEqual([{ transactionId: "tx-1", reason: "no-default-checking" }]);
+  });
+});
+
+// Ruling T17-e: the rule Task 16 adopted for distributions (T16-h), applied to
+// sale proceeds. A revocable trust's or a holding company's checking is an
+// account no trust pass distributes and the household's withdrawals cannot
+// reach, so a slice routed there strands. Only an irrevocable trust banks its
+// own slice — whether it holds part of the business or all of it, and whatever
+// `controllingEntity` would say.
+
+describe("applyBusinessSales — only an irrevocable trust banks its own slice", () => {
+  it("sends a revocable trust's authored 15% to household checking", () => {
+    const { input } = entitySale({
+      owners: [
+        { kind: "family_member", familyMemberId: "B", percent: 0.85 },
+        { kind: "entity", entityId: ENTITY, percent: 0.15 },
+      ],
+      entity: makeEntity({ entityType: "trust", isIrrevocable: false }),
+    });
+    expect(input.accountBalances[HOUSEHOLD_CHECKING]).toBeCloseTo(10_000_000, 2);
+    expect(input.accountBalances[ENTITY_CHECKING]).toBe(0);
+  });
+
+  it("sends a holding company's whole-business proceeds to household checking", () => {
+    const { input } = entitySale({
+      owners: [{ kind: "entity", entityId: ENTITY, percent: 1 }],
+      entity: makeEntity({ entityType: "llc" }),
+    });
+    expect(input.accountBalances[HOUSEHOLD_CHECKING]).toBeCloseTo(10_000_000, 2);
+    expect(input.accountBalances[ENTITY_CHECKING]).toBe(0);
+  });
+
+  it("still pays an irrevocable trust that owns the business outright into its own checking", () => {
+    const { input } = entitySale({
+      owners: [{ kind: "entity", entityId: ENTITY, percent: 1 }],
+    });
+    expect(input.accountBalances[ENTITY_CHECKING]).toBeCloseTo(10_000_000, 2);
+    expect(input.accountBalances[HOUSEHOLD_CHECKING]).toBe(0);
   });
 });

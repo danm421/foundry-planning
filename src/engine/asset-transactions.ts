@@ -1,4 +1,11 @@
-import type { Account, AccountLedger, AssetTransaction, GiftEvent, Liability } from "./types";
+import type {
+  Account,
+  AccountLedger,
+  AssetTransaction,
+  EntitySummary,
+  GiftEvent,
+  Liability,
+} from "./types";
 import type { FilingStatus } from "../lib/tax/types";
 import { LEGACY_FM_CLIENT, controllingEntity, giftAwareOwners } from "./ownership";
 
@@ -724,6 +731,11 @@ export interface ApplyBusinessSalesInput {
    *  {@link ApplyAssetSalesInput.entityCheckingByEntityId}; a missing entity
    *  falls back to `defaultCheckingId`. */
   entityCheckingByEntityId?: Record<string, string>;
+  /** Entity id → the entity as it stands this year. An entity owner's slice
+   *  reaches `entityCheckingByEntityId` only when this says it is an
+   *  irrevocable trust; an entity missing here counts as any other entity and
+   *  its slice goes to household checking. */
+  entitiesById?: Record<string, EntitySummary>;
   /** Gift context for the PROCEEDS split only: a business partly given away
    *  before the sale deposits each retained owner's slice where that owner
    *  banks. `normalizeBusinessSales` keeps gating on authored owners. */
@@ -758,6 +770,7 @@ export function applyBusinessSales(input: ApplyBusinessSalesInput): BusinessSale
     year,
     defaultCheckingId,
     entityCheckingByEntityId,
+    entitiesById,
     giftEvents,
     planStartYear,
   } = input;
@@ -891,12 +904,16 @@ export function applyBusinessSales(input: ApplyBusinessSalesInput): BusinessSale
     // Proceeds follow the SALE-YEAR owners, gift-aware. `controllingEntity`
     // is null on any split, so a business 15% given to a trust used to deposit
     // 100% of its proceeds in household checking. Each retained owner's slice
-    // takes the same rungs as `applyAssetSales`: an explicit destination wins,
-    // then an entity owner's own checking, then household default. Without the
-    // entity rung a trust's proceeds land on the household balance sheet while
-    // its gain is taxed on the trust's own 1041. A `gifted_away` slice is
-    // credited to nobody — its cash left the household with the ownership, and
-    // nothing in the model banks for the recipient.
+    // takes these rungs: an explicit destination wins, then an IRREVOCABLE
+    // trust's own checking, then household default. Without the trust rung a
+    // trust's proceeds land on the household balance sheet while its gain is
+    // taxed on the trust's own 1041. Any other entity (a revocable trust, a
+    // holding company) takes household checking — including one that owns the
+    // business outright: no trust pass distributes its checking onward and the
+    // household's withdrawals cannot reach it, so the slice would strand. The
+    // same rule as business distributions in `runProjection`. A `gifted_away`
+    // slice is credited to nobody — its cash left the household with the
+    // ownership, and nothing in the model banks for the recipient.
     //
     // Proceeds only. `totalCapitalGain` stays whole: every owner's share of the
     // gain leaves the household at the ADD in `runProjection` (CRT, 1041 and
@@ -914,10 +931,13 @@ export function applyBusinessSales(input: ApplyBusinessSalesInput): BusinessSale
     let uncreditedSlice = false;
     for (const owner of giftAwareOwners(business, giftEvents, year, planStartYear)) {
       if (owner.kind === "gifted_away") continue;
+      const entity = owner.kind === "entity" ? entitiesById?.[owner.entityId] : undefined;
+      const trustChecking =
+        owner.kind === "entity" && entity?.entityType === "trust" && entity.isIrrevocable === true
+          ? creditable(entityCheckingByEntityId?.[owner.entityId])
+          : undefined;
       const proceedsAccountId =
-        creditable(sale.proceedsAccountId) ??
-        (owner.kind === "entity" ? creditable(entityCheckingByEntityId?.[owner.entityId]) : undefined) ??
-        creditable(defaultCheckingId);
+        creditable(sale.proceedsAccountId) ?? trustChecking ?? creditable(defaultCheckingId);
       if (!proceedsAccountId) {
         uncreditedSlice = true;
         continue;

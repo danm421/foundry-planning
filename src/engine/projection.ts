@@ -1467,9 +1467,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           accountLedgers,
           year,
           defaultCheckingId: defaultChecking?.id ?? "",
-          // An entity-owned business deposits its proceeds into that entity's
-          // own checking, not the household's.
+          // An irrevocable trust's slice deposits into that trust's own
+          // checking, not the household's.
           entityCheckingByEntityId,
+          entitiesById: entityMap,
           // Proceeds split by the sale-year, gift-aware owners.
           giftEvents: data.giftEvents ?? [],
           planStartYear: planSettings.planStartYear,
