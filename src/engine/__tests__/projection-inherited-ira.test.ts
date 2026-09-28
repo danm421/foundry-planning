@@ -65,10 +65,14 @@ describe("projection — inherited IRA (10-year rule, owner had started RMDs)", 
   it("empties the account in 2032 and leaves it at $0 afterwards", () => {
     const at = project(inheritedIra());
     const final = at(2032).accountLedgers["acct-inh"];
-    expect(final.rmdAmount).toBeGreaterThan(300_000);
-    expect(final.endingValue).toBeCloseTo(0, 6);
+    // At 0% growth each yearly RMD 2026–2031 removes 1/divisor, so 2032 opens
+    // at 400,000 × 29.1 / 35.1. Pins that the yearly RMDs actually ran.
+    expect(final.rmdAmount).toBeCloseTo((400_000 * 29.1) / 35.1, 2);
+    expect(final.endingValue).toBe(0);
     expect(final.entries.some((e) => e.label === "Inherited IRA RMD (10-year rule, final payout)")).toBe(true);
     expect(at(2033).accountLedgers["acct-inh"].rmdAmount).toBe(0);
+    expect(at(2033).accountLedgers["acct-inh"].endingValue).toBe(0);
+    expect(at(2034).accountLedgers["acct-inh"].endingValue).toBe(0);
   });
 
   it("uses priorYearEndValue for the first plan year", () => {
@@ -89,9 +93,43 @@ describe("projection — inherited Roth IRA", () => {
     expect(at(2026).accountLedgers["acct-inh"].rmdAmount).toBe(0);
     const y2032 = at(2032);
     expect(y2032.accountLedgers["acct-inh"].rmdAmount).toBeCloseTo(400_000, 6);
-    expect(y2032.accountLedgers["acct-inh"].endingValue).toBeCloseTo(0, 6);
+    expect(y2032.accountLedgers["acct-inh"].endingValue).toBe(0);
     expect(y2032.taxDetail!.bySource["acct-inh:rmd"]).toBeUndefined();
     expect(y2032.taxDetail!.ordinaryIncome).toBe(0);
+  });
+
+  it("counts the tax-free payout in Total Income, and Net Cash Flow matches the cash that reached checking", () => {
+    const y2032 = project(inheritedIra({ subType: "roth_ira" }))(2032);
+    expect(y2032.totalIncome).toBeCloseTo(400_000, 6);
+    expect(y2032.taxDetail!.ordinaryIncome).toBe(0);
+    const chk = y2032.accountLedgers["acct-checking"];
+    expect(chk.endingValue - chk.beginningValue).toBeCloseTo(400_000, 6);
+    expect(y2032.netCashFlow).toBeCloseTo(chk.endingValue - chk.beginningValue, 6);
+  });
+
+  it("counts the payout as household cash when sizing surplus-capped savings (no checking account)", () => {
+    // Without a default checking account the legacy path caps savings at the
+    // year's household surplus, so the payout must count as an inflow there.
+    const brokerage: Account = {
+      id: "acct-brokerage", name: "Brokerage", category: "taxable", subType: "brokerage",
+      titlingType: "jtwros", value: 0, basis: 0, growthRate: 0, rmdEnabled: false,
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+    };
+    const data = buildClientData({
+      client: { ...baseClient, dateOfBirth: `${HEIR_BIRTH_YEAR}-01-01`, spouseName: undefined, spouseDob: undefined },
+      familyMembers: soloClient,
+      accounts: [brokerage, inheritedIra({ subType: "roth_ira" })],
+      incomes: [], expenses: [], liabilities: [],
+      savingsRules: [{
+        id: "save-brokerage", accountId: "acct-brokerage", annualAmount: 10_000,
+        isDeductible: false, startYear: 2026, endYear: 2034,
+      }],
+      withdrawalStrategy: [],
+      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2034 },
+    });
+    const years = runProjection(data);
+    expect(years.find((r) => r.year === 2031)!.savings.total).toBe(0);
+    expect(years.find((r) => r.year === 2032)!.savings.total).toBeCloseTo(10_000, 6);
   });
 });
 

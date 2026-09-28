@@ -2219,6 +2219,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // household → household tax; grantor entity → household tax; other entity →
     // no household tax (entity handles its own, not modeled yet).
     let householdRmdIncome = 0;
+    // Tax-free RMD cash reaching household checking (an inherited Roth's
+    // payout). `householdRmdIncome` is also the TAXABLE amount, so this rides
+    // separately and is folded into householdInflows / totalIncome only —
+    // mirrors householdNoteCashIn.
+    let householdRmdTaxFreeCashIn = 0;
     let grantorRmdTaxable = 0;
     const rmdBySource: Record<string, { type: string; amount: number }> = {};
     for (const acct of workingAccounts) {
@@ -2330,7 +2335,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       const householdOwner = controllingFamilyMember(acct);
       if (householdOwner != null) {
         householdRmdIncome += rmdTaxable;
-        if (!inheritedInput?.isRoth) {
+        if (inheritedInput?.isRoth) {
+          householdRmdTaxFreeCashIn += rmd - rmdTaxable;
+        } else {
           rmdBySource[`${acct.id}:rmd`] = { type: "ordinary_income", amount: rmdTaxable };
         }
         // Cash still lands in full — only the TAXABLE slice is income.
@@ -6067,7 +6074,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // 10. Savings contributions — with a default checking account, savings apply at the
     // full rule amount (cash leaves checking). Without one, fall back to the legacy
     // surplus cap so behaviour matches the pre-migration engine.
-    const householdInflows = income.total + householdRmdIncome;
+    const householdInflows = income.total + householdRmdIncome + householdRmdTaxFreeCashIn;
     const householdNonSavingsOutflows =
       expenseBreakdown.living +
       expenseBreakdown.other +
@@ -8223,8 +8230,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // Total Income and Net Cash Flow on the cashflow report. Equity proceeds
     // also carry a per-plan income.bySource key for the Other Inflows drill-
     // down; the fold here is what counts them in the Total Income scalar.
+    // householdRmdTaxFreeCashIn: an inherited Roth's RMD cash, which is kept
+    // out of householdRmdIncome because that term is also the taxable amount.
     const totalIncome =
-      displayIncome.total + householdRmdIncome + householdNoteCashIn
+      displayIncome.total + householdRmdIncome + householdRmdTaxFreeCashIn + householdNoteCashIn
       + householdEquityCashIn + householdTrustCashIn; // householdTrustCashIn: audit F8
 
     // ── 14. Surplus allocation (H5) ──
