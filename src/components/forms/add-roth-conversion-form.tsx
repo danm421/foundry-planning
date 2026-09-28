@@ -89,6 +89,9 @@ interface Props {
      *  person (else null/undefined). Used to restrict conversion sources to
      *  accounts owned by the same person as the destination Roth IRA. */
     ownerFamilyMemberId?: string | null;
+    /** Set on an inherited IRA. A non-spouse heir can't convert it or convert
+     *  into it, so it's excluded from both the source and destination lists. */
+    inheritedDeathYear?: number | null;
   }[];
   milestones?: ClientMilestones;
   clientFirstName?: string;
@@ -134,17 +137,18 @@ export default function AddRothConversionForm({
         category: a.category,
         subType: a.subType,
         ownerFamilyMemberId: o && o.kind === "family_member" ? o.familyMemberId : null,
+        inheritedDeathYear: null,
       };
     });
     return [...accounts, ...localRows];
   }, [accounts, newRothAccounts]);
 
   const rothAccounts = useMemo(
-    () => allAccounts.filter((a) => a.category === "retirement" && ROTH_SUBTYPES.has(a.subType)),
+    () => allAccounts.filter((a) => a.category === "retirement" && ROTH_SUBTYPES.has(a.subType) && a.inheritedDeathYear == null),
     [allAccounts],
   );
   const taxDeferredAccounts = useMemo(
-    () => allAccounts.filter((a) => a.category === "retirement" && TAX_DEFERRED_SUBTYPES.has(a.subType)),
+    () => allAccounts.filter((a) => a.category === "retirement" && TAX_DEFERRED_SUBTYPES.has(a.subType) && a.inheritedDeathYear == null),
     [allAccounts],
   );
 

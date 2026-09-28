@@ -477,3 +477,49 @@ describe("AddRothConversionForm — inline Roth IRA creation", () => {
     expect(screen.queryByText("Co-client Trad IRA")).not.toBeInTheDocument();
   });
 });
+
+describe("AddRothConversionForm — inherited IRAs", () => {
+  it("does not offer an inherited IRA as a source", () => {
+    render(
+      <AddRothConversionForm
+        clientId="client-123"
+        accounts={[
+          { id: "acc-roth", name: "Roth IRA", category: "retirement", subType: "roth_ira" },
+          { id: "acc-inh", name: "Inherited IRA", category: "retirement", subType: "traditional_ira", inheritedDeathYear: 2022 },
+        ]}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />,
+    );
+    expect(screen.getByText("No Traditional IRA / 401(k) / SEP / SIMPLE accounts available.")).toBeTruthy();
+  });
+
+  it("control: the same account without a death year is offered", () => {
+    render(
+      <AddRothConversionForm clientId="client-123" accounts={ACCOUNTS} onClose={() => {}} onSaved={() => {}} />,
+    );
+    expect(screen.queryByText("No Traditional IRA / 401(k) / SEP / SIMPLE accounts available.")).toBeNull();
+  });
+
+  // Self-review: the brief's test above only pins the SOURCE filter (an
+  // inherited account can't fund a conversion). A non-spouse heir can't
+  // convert INTO an inherited Roth either — pin that the destination picker
+  // drops it too, distinct from the source assertion above.
+  it("does not offer an inherited Roth IRA as a destination", () => {
+    render(
+      <AddRothConversionForm
+        clientId="client-123"
+        accounts={[
+          { id: "acc-roth", name: "Roth IRA", category: "retirement", subType: "roth_ira" },
+          { id: "acc-inh-roth", name: "Inherited Roth IRA", category: "retirement", subType: "roth_ira", inheritedDeathYear: 2022 },
+          { id: "acc-trad", name: "Traditional IRA", category: "retirement", subType: "traditional_ira" },
+        ]}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />,
+    );
+    const dest = screen.getByLabelText(/Destination Account/i);
+    expect(within(dest).getByText("Roth IRA")).toBeInTheDocument();
+    expect(within(dest).queryByText("Inherited Roth IRA")).not.toBeInTheDocument();
+  });
+});

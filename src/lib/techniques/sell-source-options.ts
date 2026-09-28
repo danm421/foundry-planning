@@ -32,6 +32,9 @@ export interface SellSourceAccount {
   parentAccountId?: string | null;
   /** True when a trust or other entity holds an ownership slice. */
   isEntityOwned?: boolean;
+  /** Set on an inherited IRA. A non-spouse heir can't convert it or convert
+   *  into it, so the Roth-conversion pickers leave it out. */
+  inheritedDeathYear?: number | null;
 }
 
 export interface BusinessSaleOption {

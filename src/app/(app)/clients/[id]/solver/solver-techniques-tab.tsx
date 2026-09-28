@@ -154,6 +154,7 @@ interface Props {
     category: string;
     subType: string;
     ownerFamilyMemberId?: string | null;
+    inheritedDeathYear?: number | null;
   }[];
   liabilities: {
     id: string;
@@ -308,6 +309,7 @@ export function SolverTechniquesTab({
         category: a.category,
         subType: a.subType ?? "",
         ownerFamilyMemberId: controllingFamilyMember(a) ?? null,
+        inheritedDeathYear: a.inheritedDeathYear ?? null,
       }));
     return [...accounts, ...drafts].map(hydrate);
   }, [accounts, workingTree.accounts]);

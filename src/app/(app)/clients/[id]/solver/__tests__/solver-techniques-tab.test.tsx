@@ -368,6 +368,36 @@ describe("SolverTechniquesTab", () => {
     expect(onRegisterAccountMix).not.toHaveBeenCalled();
   });
 
+  // Self-review: the source-filter itself is pinned inside
+  // add-roth-conversion-form.test.tsx. This pins the WIRING one layer up — that
+  // the tab's `accounts` prop actually carries `inheritedDeathYear` through to
+  // the rendered form, so a dropped field here can't silently make the filter
+  // dead in the real app.
+  it("passes inheritedDeathYear through to the Roth-conversion form's source list", () => {
+    render(
+      <SolverTechniquesTab
+        {...baseProps}
+        accounts={[
+          {
+            id: "trad-inh",
+            name: "Inherited Trad IRA",
+            category: "retirement",
+            subType: "traditional_ira",
+            ownerFamilyMemberId: "fm-client",
+            inheritedDeathYear: 2022,
+          },
+        ]}
+        workingTree={tree([])}
+        onChange={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /add roth conversion/i }));
+    expect(
+      screen.getByText("No Traditional IRA / 401(k) / SEP / SIMPLE accounts available."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Inherited Trad IRA")).not.toBeInTheDocument();
+  });
+
   it("offers Estate planning as a catalog card only when baseClientData is provided", () => {
     const base = {
       client: { spouseDob: null }, accounts: [], entities: [], externalBeneficiaries: [],
