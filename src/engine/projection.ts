@@ -95,6 +95,12 @@ import { computeRoth529Rollover } from "./education/roth-rollover";
 import { executeWithdrawals, planSupplementalWithdrawal, categorizeDraw, supplementalDrawSources, type SupplementalDraw } from "./withdrawal";
 import { computeEducationDraw } from "./education/education-funding";
 import { calculateRMD } from "./rmd";
+import {
+  inheritedIraInputFor,
+  inheritedRmdForYear,
+  inheritedRmdLabel,
+  resolveInheritedRule,
+} from "./inherited-ira";
 import { initAnnuityState, stepAnnuityYear, type AnnuityState } from "./annuity";
 import { applyTransfers, type TransfersResult } from "./transfers";
 import { applyReinvestments } from "./reinvestments";
@@ -2216,13 +2222,16 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     let grantorRmdTaxable = 0;
     const rmdBySource: Record<string, { type: string; amount: number }> = {};
     for (const acct of workingAccounts) {
-      if (!acct.rmdEnabled) continue;
       let ownerBirthYear: number;
       if (isSpouseAccount(acct) && spouseBirthYear != null) {
         ownerBirthYear = spouseBirthYear;
       } else {
         ownerBirthYear = clientBirthYear;
       }
+      // An inherited IRA follows the beneficiary schedule whatever
+      // `rmdEnabled` says; the account's owner (client or spouse) is the heir.
+      const inheritedInput = inheritedIraInputFor(acct, ownerBirthYear);
+      if (!acct.rmdEnabled && inheritedInput == null) continue;
       const ownerAge = year - ownerBirthYear;
       // IRS RMD rule: divisor × prior-year-Dec-31 balance. That's BoY of this
       // year (before growth/transfers), captured on the ledger as
@@ -2260,7 +2269,23 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // Cap at the current pre-tax balance so an RMD never forces out Roth
       // dollars (the distribution is booked 100% pre-tax below).
       const preTaxBalance = Math.max(0, currentBalance - (rothValueMap[acct.id] ?? 0));
-      const rmd = Math.min(preTaxBalance, calculateRMD(rmdBasis, ownerAge, ownerBirthYear));
+      let rmd: number;
+      let rmdLedgerLabel: string;
+      if (inheritedInput != null) {
+        const rule = resolveInheritedRule(inheritedInput);
+        const inheritedRmd = inheritedRmdForYear({
+          input: inheritedInput,
+          rule,
+          year,
+          priorYearEndBalance: rmdBasis,
+          currentBalance,
+        });
+        rmd = inheritedRmd.amount;
+        rmdLedgerLabel = inheritedRmdLabel(rule, inheritedRmd);
+      } else {
+        rmd = Math.min(preTaxBalance, calculateRMD(rmdBasis, ownerAge, ownerBirthYear));
+        rmdLedgerLabel = `RMD distribution (age ${ownerAge})`;
+      }
       if (rmd <= 0) continue;
 
       // An RMD is a distribution, so Form 8606 pro-rata applies to it exactly
@@ -2275,7 +2300,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             rmd,
             computeTradIraPool(data.accounts, accountBalances, basisMap, rmdPoolKey),
           );
-      const rmdTaxable = rmd - rmdBasisReturn;
+      // An inherited Roth pays out tax-free (the original owner's 5-year
+      // holding period is assumed met), so nothing reaches the 1040.
+      const rmdTaxable = inheritedInput?.isRoth ? 0 : rmd - rmdBasisReturn;
       const rmdBasisMoved = Math.min(rmdBasisReturn, basisMap[acct.id] ?? 0);
 
       accountBalances[acct.id] = currentBalance - rmd;
@@ -2285,7 +2312,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         accountLedgers[acct.id].endingValue -= rmd;
         accountLedgers[acct.id].entries.push({
           category: "rmd",
-          label: `RMD distribution (age ${ownerAge})`,
+          label: rmdLedgerLabel,
           // Matches the basisMap delta removePoolBasis applies below: a pure
           // pre-tax IRA still moves no basis. Negated only when non-zero —
           // `-Math.min(0, 0)` is -0, which renders as "-$0.00" in the ledger.
@@ -2303,7 +2330,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       const householdOwner = controllingFamilyMember(acct);
       if (householdOwner != null) {
         householdRmdIncome += rmdTaxable;
-        rmdBySource[`${acct.id}:rmd`] = { type: "ordinary_income", amount: rmdTaxable };
+        if (!inheritedInput?.isRoth) {
+          rmdBySource[`${acct.id}:rmd`] = { type: "ordinary_income", amount: rmdTaxable };
+        }
         // Cash still lands in full — only the TAXABLE slice is income.
         creditCash(defaultChecking?.id, rmd, { category: "rmd", label: rmdLabel, sourceId: acct.id, basis: rmd });
       } else if (isFullyEntityOwned(acct)) {
