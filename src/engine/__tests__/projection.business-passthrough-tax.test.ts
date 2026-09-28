@@ -283,3 +283,80 @@ describe("Non-trust business entity-account realization → household tax detail
 // model, business accounts are not entities — they don't surface in
 // entityCashFlow. Outside-basis tracking for business accounts is a Task 1.7+
 // follow-up; deferred.
+
+// ── Gifted business: the K-1 follows the post-gift household share ──────────
+
+const BIZ_ID = llcAccount.id;
+const TRUST_ID = "trust-slat";
+const K1_KEY = `business_passthrough:${BIZ_ID}`;
+
+/** $1M of net business income a year, 100% the client's. The business's own
+ *  income row is the only income — the household-1040 loop skips
+ *  `ownerAccountId` rows — so `ordinaryIncome` carries the K-1 and nothing
+ *  else. The horizon reaches 2029 so every gift below lands INSIDE it: a gift
+ *  past the horizon never takes effect, which would let the year-before case
+ *  pass for the wrong reason. The trust is an irrevocable non-grantor SLAT,
+ *  whose share is taxed at the holder level, never on the 1040. */
+function businessFixture(): ClientData {
+  return {
+    ...mkData(),
+    planSettings: { ...planSettings, planEndYear: 2029 },
+    accounts: [
+      hhChecking,
+      { ...llcAccount, value: 1_000_000, basis: 1_000_000 },
+      llcChecking,
+    ],
+    incomes: [{ ...llcIncome, annualAmount: 1_000_000 }],
+    entities: [
+      {
+        id: TRUST_ID, name: "SLAT", entityType: "trust", trustSubType: "irrevocable",
+        isIrrevocable: true, isGrantor: false, includeInPortfolio: false,
+        accessibleToClient: false, grantor: "client",
+      },
+    ],
+  };
+}
+
+describe("business K-1 — gifted share", () => {
+  it("taxes the household on only its post-gift share", () => {
+    const data = businessFixture();
+    data.giftEvents = [{ kind: "asset", year: 2027, accountId: BIZ_ID, percent: 0.15,
+      grantor: "client", recipientEntityId: TRUST_ID }];
+    const after = runProjection(data).find((y) => y.year === 2028)!;
+    // 85%, not 100%. The trust's 15% is retained at the holder level and does
+    // not pass through to the 1040.
+    expect(after.taxDetail!.ordinaryIncome).toBeCloseTo(850_000, 2);
+    expect(after.taxDetail!.bySource[K1_KEY].amount).toBeCloseTo(850_000, 2);
+  });
+
+  it("taxes the household on nothing once the business is fully gifted", () => {
+    const data = businessFixture();
+    data.giftEvents = [{ kind: "asset", year: 2027, accountId: BIZ_ID, percent: 1,
+      grantor: "client", recipientEntityId: TRUST_ID }];
+    const after = runProjection(data).find((y) => y.year === 2028)!;
+    expect(after.taxDetail!.ordinaryIncome).toBeCloseTo(0, 2);
+    // The drilldown row is written only for a non-zero amount, so a fully
+    // gifted business leaves none at all.
+    expect(after.taxDetail!.bySource[K1_KEY]).toBeUndefined();
+  });
+
+  it("drops a share gifted to a PERSON from the household return too", () => {
+    // `gifted_away` is neither family_member nor entity — it must not be taxed
+    // to the household, and the existing filter already achieves that.
+    const data = businessFixture();
+    data.giftEvents = [{ kind: "asset", year: 2027, accountId: BIZ_ID, percent: 0.2,
+      grantor: "client", recipientFamilyMemberId: "fm-kid" }];
+    const after = runProjection(data).find((y) => y.year === 2028)!;
+    expect(after.taxDetail!.ordinaryIncome).toBeCloseTo(800_000, 2);
+    expect(after.taxDetail!.bySource[K1_KEY].amount).toBeCloseTo(800_000, 2);
+  });
+
+  it("is unchanged in the year BEFORE the gift", () => {
+    const data = businessFixture();
+    data.giftEvents = [{ kind: "asset", year: 2029, accountId: BIZ_ID, percent: 0.15,
+      grantor: "client", recipientEntityId: TRUST_ID }];
+    const before = runProjection(data).find((y) => y.year === 2028)!;
+    expect(before.taxDetail!.ordinaryIncome).toBeCloseTo(1_000_000, 2);
+    expect(before.taxDetail!.bySource[K1_KEY].amount).toBeCloseTo(1_000_000, 2);
+  });
+});

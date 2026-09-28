@@ -2911,9 +2911,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // Pass-through taxation attributes to household owners only. Entity-kind
       // owners (e.g. a trust holding the business) don't pass income through
       // to the household 1040; they retain it at the holder level.
-      const familyOwners = business.owners.filter(
-        (o) => o.kind === "family_member",
-      );
+      //
+      // Year-resolved, not authored: a 15% gift of the business to a trust left
+      // the household taxed on 100%. The family_member filter is unchanged and
+      // does the right thing for both gift shapes — a gift to a trust becomes
+      // kind:"entity" and a gift to a person becomes kind:"gifted_away", and
+      // neither is a family_member. Do NOT widen it.
+      const familyOwners = ownershipSnapshot
+        .ownersAt(business, year)
+        .filter((o) => o.kind === "family_member");
       let businessFamilyTaxable = 0;
       for (const owner of familyOwners) {
         const taxableShare = netIncome * owner.percent;
