@@ -15,7 +15,7 @@
 // One $1M account, growth 0, a 30% gift in 2027, the client dies in 2029, so
 // every number below is a round figure only the gift can explain.
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { runProjection } from "../projection";
 import { buildClientData, basePlanSettings, baseClient } from "./fixtures";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../ownership";
@@ -26,6 +26,8 @@ import type {
   Expense,
   FamilyMember,
   GiftEvent,
+  GrossEstateLine,
+  Liability,
   ProjectionYear,
   Will,
 } from "../types";
@@ -600,5 +602,58 @@ describe("death partition — the post-loop passes read the published ownership"
     // Resolving the authored account sent 30% (60k) to the trust's 1041.
     expect(y.trustTaxByEntity?.get(TRUST)?.recognizedCapGains ?? 0).toBeCloseTo(0, 2);
     expect(y.taxDetail?.capitalGains).toBeCloseTo(200_000, 2);
+  });
+});
+
+describe("death — the 40% of a note gifted to a trust leaves the decedent's Schedule K", () => {
+  // The same household, plus a $500k client-owned note, 40% of it gifted to the
+  // trust in 2027. The gross estate's liabilities loop read the AUTHORED owners
+  // — the only one of its three loops that did — so the trust's 40% stayed on
+  // the client's Schedule K at the real death and in every hypothetical from
+  // the gift year on. The estate suites stayed green on it: no death test
+  // carried a liability gift. Interest 0 and no payment hold the balance flat.
+  const NOTE = "note-1";
+  const note: Liability = {
+    id: NOTE, name: "Note", balance: 500_000, interestRate: 0, monthlyPayment: 0,
+    startYear: 2026, startMonth: 1, termMonths: 0, extraPayments: [],
+    owners: CLIENT_ONLY,
+  };
+  const noteToTrust: GiftEvent = {
+    kind: "liability", year: 2027, liabilityId: NOTE, percent: 0.4, grantor: "client",
+    recipientEntityId: TRUST, parentGiftId: "gift-1",
+  };
+  const noteLine = (lines: GrossEstateLine[] | undefined) =>
+    lines?.find((l) => l.liabilityId === NOTE)?.amount;
+
+  it("books the retained 60% at the real first death and in the hypothetical, without a fallback warning", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const years = runProjection({ ...plan({ gifts: [noteToTrust] }), liabilities: [note] });
+
+      const death = at(years, 2029).estateTax;
+      expect(death?.deathOrder).toBe(1);
+      expect(noteLine(death?.grossEstateLines)).toBeCloseTo(-300_000, 2);
+
+      // "Both die this year" — the gift year, the year before the death, and the
+      // death year itself. Client first, and spouse first with the client as the
+      // FINAL death (the note is still the client's authored row there, so the
+      // gift resolves at deathOrder 2 too). The client-first ordering's final
+      // death is not pinned: its first death still hands the survivor the whole
+      // note gift-blind — that is the unlinked-debt distribution, not this loop.
+      for (const year of [2027, 2028, 2029]) {
+        const hyp = at(years, year).hypotheticalEstateTax;
+        expect(noteLine(hyp.primaryFirst.firstDeath.grossEstateLines)).toBeCloseTo(-300_000, 2);
+        expect(noteLine(hyp.spouseFirst?.finalDeath?.grossEstateLines)).toBeCloseTo(-300_000, 2);
+      }
+      // Control: before the gift the whole note is the client's.
+      const before = at(years, 2026).hypotheticalEstateTax.primaryFirst.firstDeath;
+      expect(noteLine(before.grossEstateLines)).toBeCloseTo(-500_000, 2);
+
+      // The gift is funded (0.4 of a 1.0 household share): the aggregate guard
+      // never declines it, in any year or either death.
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

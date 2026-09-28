@@ -827,8 +827,9 @@ export function applyBeneficiaryDesignations(
 // twin and the composer they share. Re-exported here so the death-event call
 // sites (estate-tax.ts, business-succession.ts) keep their existing imports —
 // an import churn in the same commit as a behavior change makes the diff
-// unreadable.
-export { giftAwareOwners, giftAwareLiabilityOwners } from "../ownership";
+// unreadable. The liability twin is not re-exported: it had no caller here, and
+// its callers import it from `../ownership` directly.
+export { giftAwareOwners } from "../ownership";
 
 /** Deceased's family-member ownership share of a business account, from
  *  already-resolved owners. Accounts always carry an owners array (possibly

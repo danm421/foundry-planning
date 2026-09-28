@@ -8,7 +8,7 @@ import { applyFirstDeath } from "../index";
 import type { DeathEventInput } from "../index";
 import type {
   Account, Liability, DeathTransfer, EntitySummary, GrossEstateLine, PlanSettings,
-  FamilyMember,
+  FamilyMember, GiftEvent,
 } from "../../types";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../../ownership";
 
@@ -1478,5 +1478,180 @@ describe("Bug #5 — spouse-by-familyMemberId beneficiary earns the marital dedu
 
     expect(result.estateTax.maritalDeduction).toBeCloseTo(5_000_000, 2);
     expect(result.estateTax.taxableEstate).toBe(0);
+  });
+});
+
+describe("computeGrossEstate — liability gifts", () => {
+  // Every case above passes no gift context; a `kind: "liability"` GiftEvent
+  // appeared in no death test at all. The assets and business loops already
+  // resolved gift-aware — the liabilities loop read the authored owners, so a
+  // debt partly gifted to a trust stayed wholly on the decedent's Schedule K.
+  const trust1: EntitySummary = {
+    id: "trust-1",
+    includeInPortfolio: false,
+    isGrantor: false,
+    isIrrevocable: true,
+    grantor: "client",
+  };
+  const liabilityGift = (
+    liabilityId: string,
+    percent: number,
+    recipient: { recipientEntityId: string } | { recipientFamilyMemberId: string } = {
+      recipientEntityId: "trust-1",
+    },
+  ): GiftEvent => ({
+    kind: "liability", year: 2027, liabilityId, percent, grantor: "client",
+    parentGiftId: "p1", ...recipient,
+  });
+  const JOINT_DEBT: Liability["owners"] = [
+    { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+    { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+  ];
+
+  it("removes a gifted liability share from the deceased's gross estate", () => {
+    const r = computeGrossEstate({
+      deceased: "client",
+      deathOrder: 1,
+      accounts: [],
+      accountBalances: {},
+      liabilities: [liab("liab-1", 500_000, {
+        name: "Mortgage",
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+      })],
+      entities: [trust1],
+      deceasedFmId: LEGACY_FM_CLIENT,
+      survivorFmId: LEGACY_FM_SPOUSE,
+      giftEvents: [liabilityGift("liab-1", 0.4)],
+      deathYear: 2030,
+      planStartYear: 2026,
+    });
+    const line = r.lines.find((l) => l.liabilityId === "liab-1")!;
+    // 60% of the debt is still the deceased's; 40% went to the trust with the
+    // property. The authored read booked the whole -$500k.
+    expect(line.amount).toBeCloseTo(-300_000, 2);
+  });
+
+  it("leaves an UNLINKED debt with an empty owners array alone", () => {
+    // Gift context present, no gift for this debt: the twin's early-out hands
+    // back the authored `[]`. A bare liabilityOwnersForYear here throws "sum to
+    // 0, expected 1".
+    const r = computeGrossEstate({
+      deceased: "client",
+      deathOrder: 1,
+      accounts: [],
+      accountBalances: {},
+      liabilities: [liab("liab-2", 10_000, { name: "Card", owners: [] })],
+      entities: [],
+      deceasedFmId: LEGACY_FM_CLIENT,
+      survivorFmId: LEGACY_FM_SPOUSE,
+      giftEvents: [],
+      deathYear: 2030,
+      planStartYear: 2026,
+    });
+    const line = r.lines.find((l) => l.liabilityId === "liab-2")!;
+    expect(line.amount).toBeCloseTo(-5_000, 2); // 50/50 at first death, unchanged
+  });
+
+  it("is unchanged when giftEvents is undefined (every existing caller)", () => {
+    const r = computeGrossEstate({
+      deceased: "client",
+      deathOrder: 1,
+      accounts: [],
+      accountBalances: {},
+      liabilities: [liab("liab-3", 500_000, {
+        name: "Mortgage",
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+      })],
+      entities: [],
+      deceasedFmId: LEGACY_FM_CLIENT,
+      survivorFmId: LEGACY_FM_SPOUSE,
+      giftEvents: undefined,
+    });
+    expect(r.lines.find((l) => l.liabilityId === "liab-3")!.amount).toBeCloseTo(-500_000, 2);
+  });
+
+  it("books an UNGIFTED joint unlinked debt 100% at final death, gift context present", () => {
+    // A joint debt has no controlling family member. Were the gift rung keyed on
+    // "has a family row" instead of "a gift was applied", this ungifted debt
+    // would take it and book only the decedent's own 50%.
+    const r = computeGrossEstate({
+      deceased: "spouse",
+      deathOrder: 2,
+      accounts: [],
+      accountBalances: {},
+      liabilities: [liab("joint-card", 20_000, { owners: JOINT_DEBT })],
+      entities: [],
+      deceasedFmId: LEGACY_FM_SPOUSE,
+      survivorFmId: null,
+      giftEvents: [],
+      deathYear: 2030,
+      planStartYear: 2026,
+    });
+    const line = r.lines.find((l) => l.liabilityId === "joint-card")!;
+    expect(line.percentage).toBe(1);
+    expect(line.amount).toBeCloseTo(-20_000, 2);
+  });
+
+  it("still reaches the linked-property rung for an UNGIFTED joint debt on the decedent's sole property", () => {
+    const r = computeGrossEstate({
+      deceased: "client",
+      deathOrder: 1,
+      accounts: [acct("home", 400_000)], // client-only
+      accountBalances: { home: 400_000 },
+      liabilities: [liab("heloc", 100_000, { linkedPropertyId: "home", owners: JOINT_DEBT })],
+      entities: [],
+      deceasedFmId: LEGACY_FM_CLIENT,
+      survivorFmId: LEGACY_FM_SPOUSE,
+      giftEvents: [],
+      deathYear: 2030,
+      planStartYear: 2026,
+    });
+    const line = r.lines.find((l) => l.liabilityId === "heloc")!;
+    expect(line.percentage).toBe(1);
+    expect(line.amount).toBeCloseTo(-100_000, 2);
+  });
+
+  it("books only the decedent's pro-rata share of a GIFTED joint debt", () => {
+    // [client .5, spouse .5] less a 40% gift to the trust composes to
+    // [client .3, spouse .3, trust .4]: the client's first death books 30%, not
+    // the joint 50/50 default.
+    const r = computeGrossEstate({
+      deceased: "client",
+      deathOrder: 1,
+      accounts: [],
+      accountBalances: {},
+      liabilities: [liab("joint-note", 200_000, { owners: JOINT_DEBT })],
+      entities: [trust1],
+      deceasedFmId: LEGACY_FM_CLIENT,
+      survivorFmId: LEGACY_FM_SPOUSE,
+      giftEvents: [liabilityGift("joint-note", 0.4)],
+      deathYear: 2030,
+      planStartYear: 2026,
+    });
+    const line = r.lines.find((l) => l.liabilityId === "joint-note")!;
+    expect(line.percentage).toBeCloseTo(0.3, 9);
+    expect(line.amount).toBeCloseTo(-60_000, 2);
+  });
+
+  it("drops a debt gifted 100% to a PERSON from the gross estate", () => {
+    // Composes to a lone gifted_away row: no family row, no entity row. The
+    // decedent's share is 0 — it must not fall through to the 50/50 default.
+    const r = computeGrossEstate({
+      deceased: "client",
+      deathOrder: 1,
+      accounts: [],
+      accountBalances: {},
+      liabilities: [liab("kid-loan", 80_000, {
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+      })],
+      entities: [],
+      deceasedFmId: LEGACY_FM_CLIENT,
+      survivorFmId: LEGACY_FM_SPOUSE,
+      giftEvents: [liabilityGift("kid-loan", 1, { recipientFamilyMemberId: "kid-a" })],
+      deathYear: 2030,
+      planStartYear: 2026,
+    });
+    expect(r.lines.find((l) => l.liabilityId === "kid-loan")).toBeUndefined();
+    expect(r.total).toBe(0);
   });
 });

@@ -465,7 +465,9 @@ export function giftAwareOwners(
  *  whole point. Unlinked household debts routinely carry `owners: []`, and a
  *  bare `liabilityOwnersForYear` on those sums to 0 and throws "expected 1".
  *  Every death-path liability flows through this, so without the early-out the
- *  first unlinked debt takes down the projection. */
+ *  first unlinked debt takes down the projection. Its id / year-window filters are
+ *  not selection (`liabilityOwnersForYear` re-filters) — they feed the `canFundGifts`
+ *  aggregate guard, so the duplication is load-bearing. */
 export function giftAwareLiabilityOwners(
   liability: LiabilityWithOwners,
   giftEvents: GiftEvent[] | undefined,

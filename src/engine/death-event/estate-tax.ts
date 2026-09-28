@@ -13,7 +13,9 @@ import {
   type ExternalBeneficiarySummary,
 } from "./shared";
 import { computeInheritanceForDeathEvent, inheritanceCodeFor } from "./inheritance-tax";
-import { controllingEntity, ownedByHousehold, controllingFamilyMember } from "../ownership";
+import {
+  controllingEntity, ownedByHousehold, controllingFamilyMember, giftAwareLiabilityOwners,
+} from "../ownership";
 
 // Local helper: legacy business-entity gate. After Task 1.7 purges non-trust
 // entities from `data.entities`, this always returns false and the related
@@ -301,10 +303,20 @@ export function computeGrossEstate(input: {
     // Skip liabilities already distributed to a non-household heir (ownerFamilyMemberId semantics kept)
     if (l.ownerFamilyMemberId) continue;
 
+    // Gift-resolved owners, as the assets loop above and the business loop
+    // below already do. A liability gift (the mortgage bundled with a gifted
+    // house) moves its share to the trust or out of the household, so it must
+    // leave the decedent's Schedule K too. The twin's `giftedPercent <= 0`
+    // early-out is what makes this safe for unlinked debts carrying `owners: []`.
+    const lOwners = giftAwareLiabilityOwners(
+      l, input.giftEvents, input.deathYear, input.planStartYear,
+    );
+    const ownedThing = { owners: lOwners };
+
     let pct = 0;
     let liabilityEntityNoun: EntityNoun | null = null;
 
-    const solEntityId = controllingEntity(l);
+    const solEntityId = controllingEntity(ownedThing);
     if (solEntityId != null) {
       const ent = entityById.get(solEntityId);
       if (!ent) continue;
@@ -315,11 +327,21 @@ export function computeGrossEstate(input: {
       // liability is the source of truth. Only fall back to the linked
       // property's ownership / joint default when the liability has no
       // controlling FM (joint, multi-FM, or empty owners[]).
-      const cfm = controllingFamilyMember(l);
+      const cfm = controllingFamilyMember(ownedThing);
       if (cfm != null) {
         if (cfm === input.deceasedFmId) pct = 1;
         else if (cfm === input.survivorFmId) continue; // survivor-owned
         else continue; // owned by a non-principal heir
+      } else if (lOwners !== l.owners) {
+        // A gift split this debt. The twin returns `l.owners` BY REFERENCE on
+        // every no-gift path and a fresh array only when it composed, so `!==`
+        // reads "a gift was applied" — keying on "has a family row" instead
+        // would pull every ungifted JOINT debt off the linked-property / 50-50
+        // defaults below. The decedent keeps exactly their own family share;
+        // 0 (e.g. wholly gifted to a person) is a real answer and drops the line.
+        pct = lOwners
+          .filter((o) => o.kind === "family_member" && o.familyMemberId === input.deceasedFmId)
+          .reduce((s, o) => s + o.percent, 0);
       } else if (l.linkedPropertyId) {
         const linked = accountById.get(l.linkedPropertyId);
         if (!linked) continue;
