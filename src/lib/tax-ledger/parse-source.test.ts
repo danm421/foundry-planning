@@ -120,6 +120,21 @@ describe("parseHouseholdSource", () => {
     });
     expect(r.type).not.toBe("Investment Income");
   });
+  it("parses an inherited Roth RMD as a NON-TAXABLE RMD row", () => {
+    const r = parseHouseholdSource(
+      "inherited_roth_tax_free:acct1",
+      { type: "tax_free", amount: 400_000 },
+      ctx,
+    );
+    expect(r).toMatchObject({
+      type: "RMD",
+      description: "Non-taxable distribution (inherited Roth IRA)",
+      character: "non_taxable",
+      account: "Traditional IRA",
+      amount: 400_000,
+      taxable: false,
+    });
+  });
   it("parses an annuity taxable distribution without leaking the account UUID", () => {
     const r = parseHouseholdSource(
       "annuity:3f1b0c2a-0000-4000-8000-000000000001",

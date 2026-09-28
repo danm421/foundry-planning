@@ -2337,6 +2337,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         householdRmdIncome += rmdTaxable;
         if (inheritedInput?.isRoth) {
           householdRmdTaxFreeCashIn += rmd - rmdTaxable;
+          // Its own key, not `<id>:rmd`: tax-diff's recognizedForAccount sums
+          // that key as taxable without reading `type`. "tax_free" is the
+          // non-taxable bySource convention (see `annuity_tax_free:`).
+          rmdBySource[`inherited_roth_tax_free:${acct.id}`] = { type: "tax_free", amount: rmd - rmdTaxable };
         } else {
           rmdBySource[`${acct.id}:rmd`] = { type: "ordinary_income", amount: rmdTaxable };
         }

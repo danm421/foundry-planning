@@ -106,6 +106,10 @@ describe("resolveSourceLabel", () => {
     );
   });
 
+  it("labels an inherited Roth RMD's tax-free row by account, not by its key prefix", () => {
+    expect(resolveSourceLabel("inherited_roth_tax_free:acc_2", ctx)).toBe("401k — RMD (tax-free)");
+  });
+
   it("falls back to the raw account id for an annuity the context does not name", () => {
     expect(resolveSourceLabel("annuity:acc_unknown", ctx)).toBe(
       "acc_unknown — Annuity Income",

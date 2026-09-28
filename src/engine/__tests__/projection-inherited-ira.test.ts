@@ -95,7 +95,12 @@ describe("projection — inherited Roth IRA", () => {
     const y2032 = at(2032);
     expect(y2032.accountLedgers["acct-inh"].rmdAmount).toBeCloseTo(400_000, 6);
     expect(y2032.accountLedgers["acct-inh"].endingValue).toBe(0);
-    expect(y2032.taxDetail!.bySource["acct-inh:rmd"]).toBeUndefined();
+    // Recorded as tax-free, and as the account's ONLY row: never
+    // ordinary_income, and never the `<id>:rmd` key, which tax-diff's
+    // recognizedForAccount sums as taxable without reading `type`.
+    const inhRows = Object.entries(y2032.taxDetail!.bySource).filter(([k]) => k.includes("acct-inh"));
+    expect(inhRows.map(([k, v]) => [k, v.type])).toEqual([["inherited_roth_tax_free:acct-inh", "tax_free"]]);
+    expect(inhRows[0][1].amount).toBeCloseTo(400_000, 6);
     expect(y2032.taxDetail!.ordinaryIncome).toBe(0);
   });
 
