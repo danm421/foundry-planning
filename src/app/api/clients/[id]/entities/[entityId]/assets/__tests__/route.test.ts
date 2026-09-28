@@ -3,20 +3,24 @@
  * Exercises real DB via Drizzle — requires DATABASE_URL; suite is skipped if
  * unavailable (mirrors the gifts route test harness).
  *
- * Covers (Task 9):
- *   1. 100% transfer of client-owned LLC to irrevocable trust:
- *      family owner drops to 0, trust gets 100%; 1 gift row inserted at full value.
- *   2. 50% transfer of client-owned LLC to irrevocable trust:
- *      family drops to 50%, trust gets 50%; 1 gift row at value * 0.5.
+ * Covers (Task 9; a gift writes gift rows only since the ownership overlay —
+ * `entity_owners` is the authored baseline and is never rewritten by a gift):
+ *   1. 100% gift of a client-owned LLC to an irrevocable trust: owners
+ *      UNCHANGED; 1 gift row at full value, dated this calendar year.
+ *   2. 50% gift with a requested year: owners UNCHANGED; 1 gift row at
+ *      value * 0.5, dated the requested year.
  *   3. Transfer to a REVOCABLE trust: ownership transfers, NO gift row.
- *   4. 50/50 client+spouse → 100% to irrevocable trust:
+ *   4. 50/50 client+spouse → 100% to irrevocable trust: owners UNCHANGED;
  *      2 gift rows (one per grantor), each at value / 2.
- *   5. Requested percent exceeds available family share:
- *      capped at available family share + gift rows reflect the cap.
+ *   5. Requested percent exceeds the household share → 400; nothing written.
  *   6. Target entity isn't a trust → 400.
  *   7. Picked entity isn't a business → 400.
  *   8. Non-entity asset type → 400 (handled by per-asset PUT endpoints).
- *   9. Remove op releases the trust's share back to family + creates no gift.
+ *   9. Remove on a GIFTED interest deletes the trust's gift rows; owners
+ *      UNCHANGED.
+ *  10. Remove on a business the trust doesn't own → 400.
+ *  11. Remove on an AUTHORED trust row releases it to the family; no gift.
+ *  12. A second gift that overdraws what the first left → 400.
  */
 
 import { readFileSync } from "node:fs";
@@ -321,6 +325,20 @@ d("POST /api/clients/[id]/entities/[entityId]/assets", () => {
     );
   }
 
+  /** The business's `entity_owners` rows as [familyMemberId | ownerEntityId,
+   *  percent], sorted — the authored baseline a gift must leave alone. */
+  async function ownersOf(businessId: string) {
+    const { db } = dbMod;
+    const { entityOwners } = schema;
+    const rows = await db
+      .select()
+      .from(entityOwners)
+      .where(drizzleOrm.eq(entityOwners.entityId, businessId));
+    return rows
+      .map((r) => [r.familyMemberId ?? r.ownerEntityId, parseFloat(r.percent)] as const)
+      .sort(([a], [b]) => String(a).localeCompare(String(b)));
+  }
+
   beforeEach(async () => {
     await cleanup();
     vi.mocked(helpers.requireOrgId).mockResolvedValue(TEST_FIRM);
@@ -329,7 +347,7 @@ d("POST /api/clients/[id]/entities/[entityId]/assets", () => {
 
   // ── tests ──────────────────────────────────────────────────────────────────
 
-  it("1. 100% transfer of client-owned LLC to ILIT — single gift at full value", async () => {
+  it("1. 100% gift of a client-owned LLC to an ILIT — owners untouched, one gift at full value", async () => {
     const { clientId, trustId, businessId, members } = await setup({
       members: [{ role: "client", firstName: "Alice" }],
       trustIrrevocable: true,
@@ -337,7 +355,7 @@ d("POST /api/clients/[id]/entities/[entityId]/assets", () => {
       businessOwners: [{ memberIdx: 0, percent: 1.0 }],
     });
     const { db } = dbMod;
-    const { gifts, entityOwners } = schema;
+    const { gifts } = schema;
 
     const res = await POST(
       makeReq(clientId, trustId, {
@@ -354,13 +372,8 @@ d("POST /api/clients/[id]/entities/[entityId]/assets", () => {
     expect(body.ok).toBe(true);
     expect(body.appliedDebit).toBeCloseTo(1.0, 4);
 
-    const ownerRows = await db
-      .select()
-      .from(entityOwners)
-      .where(drizzleOrm.eq(entityOwners.entityId, businessId));
-    expect(ownerRows).toHaveLength(1);
-    expect(ownerRows[0].ownerEntityId).toBe(trustId);
-    expect(parseFloat(ownerRows[0].percent)).toBeCloseTo(1.0, 4);
+    // The authored baseline is untouched — the engine re-applies the gift.
+    expect(await ownersOf(businessId)).toEqual([[members[0].id, 1]]);
 
     const giftRows = await db
       .select()
@@ -368,22 +381,24 @@ d("POST /api/clients/[id]/entities/[entityId]/assets", () => {
       .where(drizzleOrm.eq(gifts.businessEntityId, businessId));
     expect(giftRows).toHaveLength(1);
     expect(giftRows[0].recipientEntityId).toBe(trustId);
+    expect(giftRows[0].businessEntityId).toBe(businessId);
     expect(parseFloat(giftRows[0].amount!)).toBeCloseTo(1_000_000, 2);
     expect(parseFloat(giftRows[0].percent!)).toBeCloseTo(1.0, 4);
     expect(giftRows[0].grantor).toBe("client");
     expect(giftRows[0].eventKind).toBe("outright");
-    expect(members[0]).toBeDefined();
+    // No year in the body → this calendar year.
+    expect(giftRows[0].year).toBe(new Date().getFullYear());
   });
 
-  it("2. 50% transfer of client-owned LLC to ILIT — gift = value * 0.5", async () => {
-    const { clientId, trustId, businessId } = await setup({
+  it("2. 50% gift of a client-owned LLC to an ILIT in a requested year — gift = value * 0.5", async () => {
+    const { clientId, trustId, businessId, members } = await setup({
       members: [{ role: "client", firstName: "Alice" }],
       trustIrrevocable: true,
       businessValue: "800000",
       businessOwners: [{ memberIdx: 0, percent: 1.0 }],
     });
     const { db } = dbMod;
-    const { gifts, entityOwners } = schema;
+    const { gifts } = schema;
 
     const res = await POST(
       makeReq(clientId, trustId, {
@@ -391,28 +406,22 @@ d("POST /api/clients/[id]/entities/[entityId]/assets", () => {
         assetType: "entity",
         assetId: businessId,
         percent: 50,
+        year: 2031,
       }) as never,
       { params: Promise.resolve({ id: clientId, entityId: trustId }) },
     );
     expect(res.status).toBe(200);
 
-    const ownerRows = await db
-      .select()
-      .from(entityOwners)
-      .where(drizzleOrm.eq(entityOwners.entityId, businessId));
-    // Client at 0.5, trust at 0.5
-    const trustRow = ownerRows.find((r) => r.ownerEntityId === trustId);
-    const fmRow = ownerRows.find((r) => r.familyMemberId !== null);
-    expect(trustRow).toBeDefined();
-    expect(fmRow).toBeDefined();
-    expect(parseFloat(trustRow!.percent)).toBeCloseTo(0.5, 4);
-    expect(parseFloat(fmRow!.percent)).toBeCloseTo(0.5, 4);
+    // Client still holds the authored 100%; the trust's 50% is the gift's.
+    expect(await ownersOf(businessId)).toEqual([[members[0].id, 1]]);
 
     const giftRows = await db
       .select()
       .from(gifts)
       .where(drizzleOrm.eq(gifts.businessEntityId, businessId));
     expect(giftRows).toHaveLength(1);
+    expect(giftRows[0].year).toBe(2031);
+    expect(giftRows[0].recipientEntityId).toBe(trustId);
     expect(parseFloat(giftRows[0].amount!)).toBeCloseTo(400_000, 2);
     expect(parseFloat(giftRows[0].percent!)).toBeCloseTo(0.5, 4);
   });
@@ -452,8 +461,8 @@ d("POST /api/clients/[id]/entities/[entityId]/assets", () => {
     expect(giftRows).toHaveLength(0);
   });
 
-  it("4. 50/50 client+co-client → 100% to ILIT — 2 gift rows (one per grantor)", async () => {
-    const { clientId, trustId, businessId } = await setup({
+  it("4. 50/50 client+co-client → 100% to ILIT — owners untouched, 2 gift rows (one per grantor)", async () => {
+    const { clientId, trustId, businessId, members } = await setup({
       members: [
         { role: "client", firstName: "Alice" },
         { role: "spouse", firstName: "Bob" },
@@ -492,9 +501,18 @@ d("POST /api/clients/[id]/entities/[entityId]/assets", () => {
     expect(parseFloat(spouseGift!.amount!)).toBeCloseTo(1_000_000, 2);
     expect(parseFloat(clientGift!.percent!)).toBeCloseTo(0.5, 4);
     expect(parseFloat(spouseGift!.percent!)).toBeCloseTo(0.5, 4);
+    expect(clientGift!.businessEntityId).toBe(businessId);
+    expect(spouseGift!.businessEntityId).toBe(businessId);
+
+    expect(await ownersOf(businessId)).toEqual(
+      [[members[0].id, 0.5], [members[1].id, 0.5]]
+        .sort(([a], [b]) => String(a).localeCompare(String(b))),
+    );
   });
 
-  it("5. Requested 100% when only 50% is family-owned — caps the trust at the available share", async () => {
+  it("5. Requested 100% when only 50% is household-owned — refused, nothing written", async () => {
+    // The household can give only its own share. The old route "capped" at
+    // 100% by also taking the other entity's 50% — a share nobody gave.
     const { clientId, trustId, businessId } = await setup({
       members: [{ role: "client", firstName: "Alice" }],
       trustIrrevocable: true,
@@ -503,7 +521,8 @@ d("POST /api/clients/[id]/entities/[entityId]/assets", () => {
       otherEntityOwnerPct: 0.5,
     });
     const { db } = dbMod;
-    const { gifts, entityOwners } = schema;
+    const { gifts } = schema;
+    const ownersBefore = await ownersOf(businessId);
 
     const res = await POST(
       makeReq(clientId, trustId, {
@@ -514,29 +533,15 @@ d("POST /api/clients/[id]/entities/[entityId]/assets", () => {
       }) as never,
       { params: Promise.resolve({ id: clientId, entityId: trustId }) },
     );
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    // The helper caps at othersSum = 1.0 (50% family + 50% other entity).
-    expect(body.appliedDebit).toBeCloseTo(1.0, 4);
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/household share/i);
 
-    const ownerRows = await db
-      .select()
-      .from(entityOwners)
-      .where(drizzleOrm.eq(entityOwners.entityId, businessId));
-    const trustRow = ownerRows.find((r) => r.ownerEntityId === trustId);
-    expect(trustRow).toBeDefined();
-    expect(parseFloat(trustRow!.percent)).toBeCloseTo(1.0, 4);
-
-    // Only the FAMILY share generates gifts — the other entity's share does not.
+    expect(await ownersOf(businessId)).toEqual(ownersBefore);
     const giftRows = await db
       .select()
       .from(gifts)
       .where(drizzleOrm.eq(gifts.businessEntityId, businessId));
-    expect(giftRows).toHaveLength(1);
-    expect(giftRows[0].grantor).toBe("client");
-    // Family lost 0.5 of business → gift amount = 1,000,000 * 0.5 = 500,000.
-    expect(parseFloat(giftRows[0].amount!)).toBeCloseTo(500_000, 2);
-    expect(parseFloat(giftRows[0].percent!)).toBeCloseTo(0.5, 4);
+    expect(giftRows).toHaveLength(0);
   });
 
   it("6. Target entity is NOT a trust → 400", async () => {
@@ -579,8 +584,9 @@ d("POST /api/clients/[id]/entities/[entityId]/assets", () => {
     expect(res.status).toBe(400);
   });
 
-  it("9. Remove op releases the trust's share back to the family member and inserts no gift", async () => {
-    // Set up a business 100% owned by the trust (simulating a prior add).
+  it("9. Remove on a GIFTED interest deletes the trust's gift rows and leaves the owners alone", async () => {
+    // Give the business to the trust through the route first (an irrevocable
+    // trust, so the add writes a gift row and no owner rows).
     const { clientId, trustId, businessId, members } = await setup({
       members: [{ role: "client", firstName: "Alice" }],
       trustIrrevocable: true,
@@ -588,10 +594,8 @@ d("POST /api/clients/[id]/entities/[entityId]/assets", () => {
       businessOwners: [{ memberIdx: 0, percent: 1.0 }],
     });
     const { db } = dbMod;
-    const { gifts, entityOwners } = schema;
+    const { gifts } = schema;
 
-    // Transfer the business to the trust (creates a gift row since
-    // trust is irrevocable).
     const addRes = await POST(
       makeReq(clientId, trustId, {
         op: "add",
@@ -607,7 +611,7 @@ d("POST /api/clients/[id]/entities/[entityId]/assets", () => {
       .select()
       .from(gifts)
       .where(drizzleOrm.eq(gifts.businessEntityId, businessId));
-    const giftsAtAdd = giftsAfterAdd.length;
+    expect(giftsAfterAdd).toHaveLength(1);
 
     // Now exercise the remove path.
     const removeRes = await POST(
@@ -620,23 +624,15 @@ d("POST /api/clients/[id]/entities/[entityId]/assets", () => {
     );
     expect(removeRes.status).toBe(200);
 
-    const ownerRowsAfter = await db
-      .select()
-      .from(entityOwners)
-      .where(drizzleOrm.eq(entityOwners.entityId, businessId));
-    // Trust should be gone; client should be the sole owner again.
-    expect(ownerRowsAfter.find((r) => r.ownerEntityId === trustId)).toBeUndefined();
-    const clientRow = ownerRowsAfter.find((r) => r.familyMemberId === members[0].id);
-    expect(clientRow).toBeDefined();
-    expect(parseFloat(clientRow!.percent)).toBeCloseTo(1.0, 4);
+    // The client is the sole authored owner throughout.
+    expect(await ownersOf(businessId)).toEqual([[members[0].id, 1]]);
 
-    // Remove doesn't create new gift rows (undoing a transfer doesn't
-    // generate one — the original gift is the source of record).
+    // The gift was the trust's only claim; undoing it deletes it.
     const giftsAfterRemove = await db
       .select()
       .from(gifts)
       .where(drizzleOrm.eq(gifts.businessEntityId, businessId));
-    expect(giftsAfterRemove.length).toBe(giftsAtAdd);
+    expect(giftsAfterRemove).toHaveLength(0);
   });
 
   it("10. Remove on a business the trust doesn't own → 400", async () => {
@@ -655,6 +651,71 @@ d("POST /api/clients/[id]/entities/[entityId]/assets", () => {
       { params: Promise.resolve({ id: clientId, entityId: trustId }) },
     );
     expect(res.status).toBe(400);
+  });
+
+  it("11. Remove on an AUTHORED trust row releases it to the family and inserts no gift", async () => {
+    const { clientId, trustId, businessId, members } = await setup({
+      members: [{ role: "client", firstName: "Alice" }],
+      trustIrrevocable: true,
+      businessValue: "500000",
+      businessOwners: [{ memberIdx: 0, percent: 0.6 }],
+      trustOwnerPct: 0.4,
+    });
+    const { db } = dbMod;
+    const { gifts } = schema;
+
+    const res = await POST(
+      makeReq(clientId, trustId, {
+        op: "remove",
+        assetType: "entity",
+        assetId: businessId,
+      }) as never,
+      { params: Promise.resolve({ id: clientId, entityId: trustId }) },
+    );
+    expect(res.status).toBe(200);
+
+    expect(await ownersOf(businessId)).toEqual([[members[0].id, 1]]);
+    const giftRows = await db
+      .select()
+      .from(gifts)
+      .where(drizzleOrm.eq(gifts.businessEntityId, businessId));
+    expect(giftRows).toHaveLength(0);
+  });
+
+  it("12. A second gift that overdraws what the first left the household → 400", async () => {
+    const { clientId, trustId, businessId, members } = await setup({
+      members: [{ role: "client", firstName: "Alice" }],
+      trustIrrevocable: true,
+      businessValue: "1000000",
+      businessOwners: [{ memberIdx: 0, percent: 1.0 }],
+    });
+    const { db } = dbMod;
+    const { gifts } = schema;
+    const give = (percent: number) =>
+      POST(
+        makeReq(clientId, trustId, {
+          op: "add",
+          assetType: "entity",
+          assetId: businessId,
+          percent,
+          year: 2030,
+        }) as never,
+        { params: Promise.resolve({ id: clientId, entityId: trustId }) },
+      );
+
+    expect((await give(70)).status).toBe(200);
+    // 30% is left. The AUTHORED owners still say 100%, which is exactly why
+    // the check must read the household share the first gift left.
+    const second = await give(40);
+    expect(second.status).toBe(400);
+    expect((await second.json()).error).toMatch(/household share/i);
+
+    const giftRows = await db
+      .select()
+      .from(gifts)
+      .where(drizzleOrm.eq(gifts.businessEntityId, businessId));
+    expect(giftRows.map((g) => parseFloat(g.percent!))).toEqual([0.7]);
+    expect(await ownersOf(businessId)).toEqual([[members[0].id, 1]]);
   });
 
   it("8. Non-entity asset type returns 400 (handled by per-asset PUT endpoints)", async () => {

@@ -14,16 +14,21 @@
  * for now — they're wired by Tasks 11+ which either expand this route or
  * keep using the existing per-asset PUT endpoints.
  *
- * When the trust is IRREVOCABLE, the route also inserts a §709-style gift
- * row for every family member who lost share — one row per grantor, with
- * `business_entity_id`, `percent`, and a denormalized `amount` snapshot
+ * When the trust is IRREVOCABLE, an `add` is a GIFT: the route inserts a
+ * §709-style gift row for every client/spouse the gift draws share from — one
+ * row per grantor, with `business_entity_id`, `percent`, the gift `year` (the
+ * body's, else this calendar year), and a denormalized `amount` snapshot
  * (= business.value × lostPct) so the report doesn't need to re-multiply.
  * The advisor's `valuation_discount` rides along as a fraction; `amount` stays
  * the FULL undiscounted value and the normalizer applies the discount to it.
+ * A gift writes NO `entity_owners` rows — those are the authored baseline, and
+ * the engine re-applies gifts on every read (see ./gift-writes). A `remove`
+ * deletes the trust's gift rows. Only a REVOCABLE trust's `add`, and a `remove`
+ * of an authored trust row, retitle `entity_owners`.
  *
- * NOT IDEMPOTENT: calling POST twice with the same body transfers share
- * twice AND inserts duplicate gift rows. Callers (the balance-sheet UI)
- * rely on optimistic update + router.refresh to gate double-submission.
+ * NOT IDEMPOTENT: calling POST twice with the same body gives the share twice
+ * (inserts duplicate gift rows, or retitles twice). Callers (the balance-sheet
+ * UI) rely on optimistic update + router.refresh to gate double-submission.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -38,14 +43,14 @@ import {
   familyMembers,
   gifts,
 } from "@/db/schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { requireOrgAndUser } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import type { EntityOwner } from "@/engine/ownership";
-import { applyEntityOwnersOp, EPSILON } from "@/lib/entity-owners-ops";
+import { planEntityGiftWrites } from "./gift-writes";
 
 export const dynamic = "force-dynamic";
 
@@ -127,7 +132,8 @@ export async function POST(
       );
     }
 
-    // Load current owners + household roster.
+    // Load the authored owners, the household roster, and the business's
+    // recorded gift rows — the plan resolves the household share through them.
     const ownerRows = await db
       .select()
       .from(entityOwners)
@@ -136,8 +142,18 @@ export async function POST(
       .select({ id: familyMembers.id, role: familyMembers.role })
       .from(familyMembers)
       .where(eq(familyMembers.clientId, clientId));
+    const businessGiftRows = await db
+      .select({
+        id: gifts.id,
+        year: gifts.year,
+        percent: gifts.percent,
+        recipientEntityId: gifts.recipientEntityId,
+        grantor: gifts.grantor,
+      })
+      .from(gifts)
+      .where(and(eq(gifts.clientId, clientId), eq(gifts.businessEntityId, businessId)));
 
-    const currentOwners: EntityOwner[] = ownerRows.map((r) => {
+    const authoredOwners: EntityOwner[] = ownerRows.map((r) => {
       if (r.familyMemberId) {
         return {
           kind: "family_member" as const,
@@ -152,106 +168,72 @@ export async function POST(
       };
     });
 
-    // Branch the op: `add` debits family share into the trust (and emits gift
-    // rows when the trust is irrevocable); `remove` releases the trust's
-    // share back to existing family-member rows (or falls back to client/
-    // spouse), and never creates gift rows — undoing a transfer doesn't
-    // generate a gift event, since the original gift is the source of record.
-    const percentFraction = op.op === "add" ? op.percent / 100 : 0;
-    const result =
-      op.op === "add"
-        ? applyEntityOwnersOp(currentOwners, {
-            type: "add",
-            trustId,
-            percent: percentFraction,
-          })
-        : applyEntityOwnersOp(
-            currentOwners,
-            { type: "remove", trustId },
-            { familyMembers: householdMembers },
-          );
-
-    if (op.op === "add" && result.appliedDebit < EPSILON) {
-      return NextResponse.json(
-        { error: "No share available to assign to trust" },
-        { status: 400 },
-      );
-    }
-    if (op.op === "remove") {
-      const ownedBefore = currentOwners.some(
-        (o) => o.kind === "entity" && o.entityId === trustId,
-      );
-      if (!ownedBefore) {
-        return NextResponse.json(
-          { error: "Trust does not own this business" },
-          { status: 400 },
-        );
-      }
+    // An add with no year is dated this calendar year. The route owns the
+    // clock; the planner never reads it.
+    const plan = planEntityGiftWrites({
+      businessId,
+      businessValue: parseFloat(business.value),
+      authoredOwners,
+      householdMembers,
+      // Same reading as the projection loader's business_interest events: this
+      // route is the only writer of these rows and always names a trust
+      // recipient and a client/spouse grantor.
+      existingGifts: businessGiftRows.map((g) => ({
+        id: g.id,
+        year: g.year,
+        percent: Number(g.percent),
+        recipientEntityId: g.recipientEntityId!,
+        grantor: g.grantor as "client" | "spouse",
+      })),
+      op:
+        op.op === "add"
+          ? {
+              op: "add",
+              trustId,
+              trustIsIrrevocable: trust.isIrrevocable === true,
+              percent: op.percent / 100,
+              year: op.year ?? new Date().getFullYear(),
+              valuationDiscount: op.valuationDiscount,
+            }
+          : { op: "remove", trustId },
+    });
+    if (plan.error) {
+      return NextResponse.json({ error: plan.error }, { status: 400 });
     }
 
-    // Persist owner replacement + (optionally) gift rows in one transaction.
+    // Apply the plan in one transaction. A gift writes only `gifts` rows; the
+    // authored `entity_owners` baseline is replaced only by a direct retitle.
     await db.transaction(async (tx) => {
-      await tx
-        .delete(entityOwners)
-        .where(eq(entityOwners.entityId, businessId));
-
-      if (result.newOwners.length > 0) {
-        await tx.insert(entityOwners).values(
-          result.newOwners.map((o) => ({
-            entityId: businessId,
-            familyMemberId:
-              o.kind === "family_member" ? o.familyMemberId : null,
-            ownerEntityId: o.kind === "entity" ? o.entityId : null,
-            percent: o.percent.toFixed(4),
-          })),
-        );
+      if (plan.ownerRowsToWrite) {
+        await tx
+          .delete(entityOwners)
+          .where(eq(entityOwners.entityId, businessId));
+        if (plan.ownerRowsToWrite.length > 0) {
+          await tx.insert(entityOwners).values(
+            plan.ownerRowsToWrite.map((o) => ({
+              entityId: businessId,
+              familyMemberId:
+                o.kind === "family_member" ? o.familyMemberId : null,
+              ownerEntityId: o.kind === "entity" ? o.entityId : null,
+              percent: o.percent.toFixed(4),
+            })),
+          );
+        }
       }
-
-      if (op.op === "add" && trust.isIrrevocable && result.familyLosses.length > 0) {
-        const businessValue = parseFloat(business.value);
-        const currentYear = new Date().getFullYear();
-
-        const giftRowsToInsert: Array<{
-          clientId: string;
-          year: number;
-          amount: string;
-          grantor: "client" | "spouse";
-          recipientEntityId: string;
-          businessEntityId: string;
-          percent: string;
-          valuationDiscount: string | null;
-          eventKind: "outright";
-        }> = [];
-
-        for (const loss of result.familyLosses) {
-          const fm = householdMembers.find((m) => m.id === loss.familyMemberId);
-          // Only client/spouse can be a §709 grantor. If the row is owned by
-          // a child or "other" family member, skip — gift assignment for
-          // those is out of scope for §709 reporting and the gifts.grantor
-          // enum only accepts 'client' | 'spouse'.
-          if (fm?.role !== "client" && fm?.role !== "spouse") continue;
-          const giftAmount = businessValue * loss.lost;
-          giftRowsToInsert.push({
-            clientId,
-            year: currentYear,
-            // FULL undiscounted value. The normalizer values this gift from
-            // `amount` (as amountOverride, which wins over `entityValueAtYear`)
-            // and applies `valuationDiscount` to it there. Pre-multiplying here
-            // would double-discount.
-            amount: giftAmount.toFixed(2),
-            grantor: fm.role,
-            recipientEntityId: trustId,
-            businessEntityId: businessId,
-            percent: loss.lost.toFixed(4),
-            valuationDiscount:
-              op.valuationDiscount != null ? op.valuationDiscount.toFixed(4) : null,
-            eventKind: "outright",
-          });
-        }
-
-        if (giftRowsToInsert.length > 0) {
-          await tx.insert(gifts).values(giftRowsToInsert);
-        }
+      if (plan.giftRows.length > 0) {
+        await tx
+          .insert(gifts)
+          .values(plan.giftRows.map((row) => ({ clientId, ...row })));
+      }
+      if (plan.giftRowIdsToDelete.length > 0) {
+        await tx
+          .delete(gifts)
+          .where(
+            and(
+              eq(gifts.clientId, clientId),
+              inArray(gifts.id, plan.giftRowIdsToDelete),
+            ),
+          );
       }
     });
 
@@ -268,13 +250,16 @@ export async function POST(
             : "remove-business-from-trust",
         businessId,
         trustId,
-        requestedPercent: percentFraction,
+        requestedPercent: op.op === "add" ? op.percent / 100 : 0,
         // The one new value this mutation writes that moves lifetime-exemption
         // consumption — audited alongside the percent it rides with.
         valuationDiscount: op.op === "add" ? op.valuationDiscount ?? null : null,
-        appliedDebit: result.appliedDebit,
+        appliedDebit: plan.appliedDebit,
         isIrrevocable: trust.isIrrevocable ?? false,
-        familyLossCount: result.familyLosses.length,
+        giftYear: plan.giftRows[0]?.year ?? null,
+        giftRowsWritten: plan.giftRows.length,
+        giftRowsDeleted: plan.giftRowIdsToDelete.length,
+        ownersRewritten: plan.ownerRowsToWrite !== null,
       }),
     });
 
@@ -286,7 +271,7 @@ export async function POST(
 
     return NextResponse.json({
       ok: true,
-      appliedDebit: result.appliedDebit,
+      appliedDebit: plan.appliedDebit,
       owners: newOwnerRows.map((r) => ({
         kind: r.familyMemberId
           ? ("family_member" as const)

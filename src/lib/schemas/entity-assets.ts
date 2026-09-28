@@ -23,6 +23,10 @@ export const assetOpSchema = z.discriminatedUnion("op", [
     assetId: z.string().uuid(),
     percent: z.number().min(0).max(100),
     valuationDiscount,
+    /** The gift year, for a gift to an irrevocable trust. Absent means the
+     *  current calendar year, resolved by the route. Same bounds as a gift row's
+     *  `year` (./gifts). */
+    year: z.number().int().gte(1900).lte(2200).optional(),
   }),
   z.object({
     op: z.literal("remove"),
