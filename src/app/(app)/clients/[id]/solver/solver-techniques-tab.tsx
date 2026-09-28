@@ -297,6 +297,12 @@ export function SolverTechniquesTab({
             isDefaultChecking: a.isDefaultChecking === true,
             parentAccountId: a.parentAccountId ?? null,
             isEntityOwned: (a.owners ?? []).some((o) => o.kind === "entity"),
+            // Refreshed from the working tree, not the base `accounts` prop:
+            // "Inherited" can be ticked/unticked inside a scenario (plan Review
+            // Focus #5), so the base-sourced flag would otherwise go stale —
+            // offering a scenario-inherited IRA as a source, or hiding one that
+            // was un-inherited in the scenario.
+            inheritedDeathYear: a.inheritedDeathYear ?? null,
           }
         : row;
     };
@@ -309,7 +315,6 @@ export function SolverTechniquesTab({
         category: a.category,
         subType: a.subType ?? "",
         ownerFamilyMemberId: controllingFamilyMember(a) ?? null,
-        inheritedDeathYear: a.inheritedDeathYear ?? null,
       }));
     return [...accounts, ...drafts].map(hydrate);
   }, [accounts, workingTree.accounts]);
