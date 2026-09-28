@@ -400,6 +400,96 @@ describe("death partition — estate costs are not paid out of a fully gifted ac
   });
 });
 
+describe("death partition — the survivor's estate drains leave the trust's slice alone", () => {
+  // The client dies in 2029: the 30% gift of 2027 is peeled off into the
+  // trust's slice and the spouse keeps a 700k pool, marked as reflecting every
+  // gift through 2029. In 2030 the SPOUSE gives the trust 30% of that pool.
+  // The spouse dies in 2032 owing 600k, with nothing else liquid. The final
+  // death drains from the PRE-chain accounts, where that post-death gift is
+  // not partitioned yet: the pool still carries the trust's 210k under its id.
+  //   drainable = 700k × (1 − 0.3) = 490k   (the 2027 gift is behind the marker)
+  //   residual  = 600k − 490k      = 110k
+  // Gift-blind, each drain took the full 600k from the pool — 110k of it the
+  // trust's. Re-applying the 2027 gift on top of the marker would drain only
+  // 700k × 0.7 × 0.7 = 343k.
+  const run = (owed: { debt?: number; estateAdminExpenses?: number }) => {
+    const base = plan({
+      gifts: [toTrust(2027, 0.3), toTrust(2030, 0.3, "spouse")], spouseDies: true,
+      estateAdminExpenses: owed.estateAdminExpenses,
+    });
+    return runProjection({
+      ...base,
+      // Spouse b.1972 dies at 60, in 2032 — two years after the gift.
+      client: { ...base.client, spouseLifeExpectancy: 60 },
+      // No other liquid account: the checking holds nothing.
+      accounts: base.accounts.map((a) => (a.id === "acct-checking" ? { ...a, value: 0, basis: 0 } : a)),
+      liabilities: owed.debt ? [{
+        id: "loan", name: "Personal loan", balance: owed.debt, interestRate: 0, monthlyPayment: 0,
+        startYear: 2026, startMonth: 1, termMonths: 0, extraPayments: [],
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 1 }],
+      }] : [],
+    });
+  };
+
+  it("pays the survivor's creditors out of only the household's 70% of the pool", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const years = run({ debt: 600_000 });
+      const y2032 = at(years, 2032);
+      expect(y2032.estateTax?.deathOrder).toBe(2);
+      // The pool the drain sees: 700k, flat since the 2029 partition.
+      expect(at(years, 2031).accountLedgers[ACC].endingValue).toBeCloseTo(700_000, 2);
+
+      const debits = y2032.estateTax!.creditorPayoffDebits;
+      expect(debits.find((d) => d.accountId === ACC)?.amount).toBeCloseTo(0.7 * 700_000, 2);
+      expect(debits.reduce((s, d) => s + d.amount, 0)).toBeCloseTo(490_000, 2);
+      expect(y2032.estateTax!.creditorPayoffResidual).toBeGreaterThan(0);
+      expect(y2032.estateTax!.creditorPayoffResidual).toBeCloseTo(110_000, 2);
+
+      // Both gifts are funded (0.3 of a 1.0 household share each): the
+      // fallback that hands back the authored owners never fires.
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("pays the survivor's estate costs out of only the household's 70% of the pool", () => {
+    const y2032 = at(run({ estateAdminExpenses: 600_000 }), 2032);
+    expect(y2032.estateTax?.totalTaxesAndExpenses).toBeCloseTo(600_000, 2);
+    const debits = y2032.estateTax!.estateTaxDebits;
+    expect(debits.find((d) => d.accountId === ACC)?.amount).toBeCloseTo(0.7 * 700_000, 2);
+    expect(debits.reduce((s, d) => s + d.amount, 0)).toBeCloseTo(490_000, 2);
+  });
+
+  it("still pays the estate's costs out of the decedent's revocable trust", () => {
+    // The other side of the fraction. A revocable trust's account has no
+    // family row at all, and no gift touches it: the drain's own filter admits
+    // it (revocable, the decedent's grantor trust), and counting only family
+    // rows would have made it undrainable. $50k of admin expenses at the
+    // spouse's 2031 death, and the trust's $100k is the only cash.
+    const REV = "rev-trust";
+    const base = plan({ gifts: [], spouseDies: true, estateAdminExpenses: 50_000 });
+    const years = runProjection({
+      ...base,
+      entities: [...base.entities!, {
+        id: REV, name: "Spouse Revocable", entityType: "trust",
+        isIrrevocable: false, isGrantor: true, includeInPortfolio: true,
+        accessibleToClient: true, grantor: "spouse",
+      }],
+      accounts: [
+        ...base.accounts.map((a) => (a.id === "acct-checking" ? { ...a, value: 0, basis: 0 } : a)),
+        { id: "rev-cash", name: "Trust Cash", category: "cash", subType: "savings",
+          titlingType: "jtwros", value: 100_000, basis: 100_000, growthRate: 0, rmdEnabled: false,
+          owners: [{ kind: "entity", entityId: REV, percent: 1 }] },
+      ],
+    });
+    const death = at(years, 2031).estateTax!;
+    expect(death.deathOrder).toBe(2);
+    expect(death.estateTaxDebits.find((d) => d.accountId === "rev-cash")?.amount).toBeCloseTo(50_000, 2);
+  });
+});
+
 describe("death partition — a wholly gifted IRA after its owner's death", () => {
   // The chain routes nothing out of a wholly gifted account, but it still
   // retitles its AUTHORED rows to the survivor: the readers that ask WHICH

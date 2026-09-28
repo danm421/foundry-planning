@@ -11,6 +11,7 @@ import {
   applyWillSpecificBequests,
   computeSteppedUpBasis,
   distributeUnlinkedLiabilities,
+  drainableShareAtDeath,
   isWhollyGiftedAway,
   routeAtDeath,
   selectResiduaryTier,
@@ -485,6 +486,9 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     amountNeeded: unlinkedDebt,
     accounts: prepared.accounts,
     accountBalances: drainTargetBalances,
+    // These are PRE-chain accounts: a gift dated after the first death's marker
+    // is not partitioned out of the pool yet, so its slice sits in the balance.
+    drainableFraction: (a) => drainableShareAtDeath(a, input),
     eligibilityFilter: (a) => {
       // Its authored rows can still name the decedent, but it is its recipients'.
       if (isWhollyGiftedAway(a, input)) return false;
@@ -621,6 +625,9 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     amountNeeded: previewResult.totalTaxesAndExpenses,
     accounts: prepared.accounts,
     accountBalances: drainTargetBalances,
+    // These are PRE-chain accounts: a gift dated after the first death's marker
+    // is not partitioned out of the pool yet, so its slice sits in the balance.
+    drainableFraction: (a) => drainableShareAtDeath(a, input),
     eligibilityFilter: (a) => {
       // Its authored rows can still name the decedent, but it is its recipients'.
       if (isWhollyGiftedAway(a, input)) return false;

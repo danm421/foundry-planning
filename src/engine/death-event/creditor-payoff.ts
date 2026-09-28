@@ -15,8 +15,9 @@ const LIQUIDATION_CATEGORY_ORDER: ReadonlyArray<Account["category"]> = [
 
 /**
  * Drain liquid accounts to cover `amountNeeded`. Within each category, debit
- * accounts proportionally by current balance. Categories drain in the fixed
- * order above. `real_estate` and `business` accounts are never touched.
+ * accounts proportionally by drainable balance (current balance × the
+ * account's `drainableFraction`). Categories drain in the fixed order above.
+ * `real_estate` and `business` accounts are never touched.
  *
  * If the liquid pool is exhausted before `amountNeeded` is satisfied, the
  * `residual` field in the returned DrainResult is > 0; the caller decides
@@ -28,10 +29,21 @@ export function drainLiquidAssets(input: {
   accounts: Account[];
   accountBalances: Record<string, number>;
   eligibilityFilter: (acct: Account) => boolean;
+  /** Fraction of an eligible account's balance that may actually be drained,
+   *  0..1. Defaults to 1 (whole balance), which is the pre-gift behavior.
+   *
+   *  `eligibilityFilter` is binary and cannot express "70% of this account".
+   *  An account authored [deceased 100%] with 30% gifted to a trust still
+   *  passes the filter, and the drain took the trust's slice with it — while an
+   *  AUTHORED 70/30 account was safely excluded, because controllingFamilyMember
+   *  returns null once any entity row exists. This is that protection, for the
+   *  overlay. Called once per eligible account per category pass. */
+  drainableFraction?: (acct: Account) => number;
 }): DrainResult {
   if (input.amountNeeded <= 0) {
     return { debits: [], drainedTotal: 0, residual: 0 };
   }
+  const fractionOf = input.drainableFraction ?? (() => 1);
 
   let remaining = input.amountNeeded;
   const debits: Array<{ accountId: string; amount: number }> = [];
@@ -39,33 +51,28 @@ export function drainLiquidAssets(input: {
   for (const category of LIQUIDATION_CATEGORY_ORDER) {
     if (remaining <= 0) break;
 
-    const eligible = input.accounts.filter(
-      (a) =>
-        a.category === category &&
-        input.eligibilityFilter(a) &&
-        (input.accountBalances[a.id] ?? 0) > 0,
-    );
+    // Each eligible account's drainable balance, resolved once.
+    const eligible = input.accounts
+      .filter((a) => a.category === category && input.eligibilityFilter(a))
+      .map((a) => ({
+        accountId: a.id,
+        amount:
+          (input.accountBalances[a.id] ?? 0) * Math.max(0, Math.min(1, fractionOf(a))),
+      }))
+      .filter((d) => d.amount > 0);
     if (eligible.length === 0) continue;
 
-    const categoryTotal = eligible.reduce(
-      (sum, a) => sum + (input.accountBalances[a.id] ?? 0),
-      0,
-    );
+    const categoryTotal = eligible.reduce((sum, d) => sum + d.amount, 0);
     if (categoryTotal <= 0) continue;
 
     if (categoryTotal <= remaining) {
       // Drain the entire category.
-      for (const a of eligible) {
-        const bal = input.accountBalances[a.id];
-        debits.push({ accountId: a.id, amount: bal });
-      }
+      debits.push(...eligible);
       remaining -= categoryTotal;
     } else {
       // Proportional drain within this category.
-      for (const a of eligible) {
-        const bal = input.accountBalances[a.id];
-        const share = (bal / categoryTotal) * remaining;
-        debits.push({ accountId: a.id, amount: share });
+      for (const d of eligible) {
+        debits.push({ accountId: d.accountId, amount: (d.amount / categoryTotal) * remaining });
       }
       remaining = 0;
     }

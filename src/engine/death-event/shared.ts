@@ -245,6 +245,24 @@ function noFamilyLeft(a: Account, resolved: AccountOwner[]): boolean {
   return resolved !== a.owners && !resolved.some((o) => o.kind === "family_member");
 }
 
+/** The share of `a` an estate drain at this death may spend — its
+ *  `drainableFraction`. The drain's eligibility filter reads AUTHORED rows and
+ *  is binary: an account the decedent holds 100% on paper, with 30% gifted to a
+ *  trust, still passes it, so only the household's 70% may be taken.
+ *
+ *  When no gift applies (or a declined one hands the authored rows back BY
+ *  REFERENCE) the filter's verdict stands and the whole balance is drainable —
+ *  including a revocable trust's account, which has no family row at all. A
+ *  post-chain pool marked `giftsReflectedThrough` resolves the same way until a
+ *  gift dated after the marker lands on it. */
+export function drainableShareAtDeath(a: Account, input: DeathEventInput): number {
+  const resolved = ownersAtDeath(a, input);
+  if (resolved === a.owners) return 1;
+  return resolved
+    .filter((o) => o.kind === "family_member")
+    .reduce((s, o) => s + o.percent, 0);
+}
+
 /** How the precedence chain routes one account the decedent touched.
  *
  *  `null` — wholly gifted away ({@link isWhollyGiftedAway}): the caller routes

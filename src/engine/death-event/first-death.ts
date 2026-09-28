@@ -12,6 +12,7 @@ import {
   applyWillSpecificBequests,
   computeSteppedUpBasis,
   distributeFirstDeathUnlinkedLiabilities,
+  drainableShareAtDeath,
   giftAwareOwners,
   isWhollyGiftedAway,
   routeAtDeath,
@@ -597,6 +598,9 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     amountNeeded: preview.totalTaxesAndExpenses,
     accounts: accountsAfterBiz,
     accountBalances,
+    // Only the household's own share: a gifted slice is the trust's or has
+    // left the household.
+    drainableFraction: (a) => drainableShareAtDeath(a, input),
     eligibilityFilter: (a) => {
       if (maritalAccountIds.has(a.id)) return false;
       // Its authored rows still name the decedent, but it is its recipients'.

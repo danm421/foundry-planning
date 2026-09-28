@@ -122,3 +122,57 @@ describe("drainLiquidAssets", () => {
     expect(r.debits).toEqual([{ accountId: "c2", amount: 5_000 }]);
   });
 });
+
+// The eligibility filter is binary: an account the decedent holds 100% on
+// paper, with 30% gifted to a trust, still passes it. The fraction is what
+// keeps the trust's slice out of the drain.
+describe("drainLiquidAssets — fractional drains", () => {
+  it("drains only the drainable fraction of an account", () => {
+    const r = drainLiquidAssets({
+      amountNeeded: 1_000_000,
+      accounts: [acct("a1", "cash", 500_000)],
+      accountBalances: { a1: 500_000 },
+      eligibilityFilter: always,
+      drainableFraction: () => 0.7,
+    });
+    expect(r.drainedTotal).toBeCloseTo(350_000, 2);
+    expect(r.residual).toBeCloseTo(650_000, 2);
+    expect(r.debits).toHaveLength(1);
+    expect(r.debits[0]).toMatchObject({ accountId: "a1" });
+    expect(r.debits[0].amount).toBeCloseTo(350_000, 2);
+  });
+
+  it("excludes an account whose drainable fraction is 0", () => {
+    const r = drainLiquidAssets({
+      amountNeeded: 100_000,
+      accounts: [acct("a1", "cash", 500_000), acct("a2", "cash", 500_000)],
+      accountBalances: { a1: 500_000, a2: 500_000 },
+      eligibilityFilter: always,
+      drainableFraction: (a) => (a.id === "a1" ? 0 : 1),
+    });
+    expect(r.debits.map((d) => d.accountId)).toEqual(["a2"]);
+  });
+
+  it("pro-rates within a category using the DRAINABLE balance, not the raw one", () => {
+    const r = drainLiquidAssets({
+      amountNeeded: 100_000,
+      accounts: [acct("a1", "cash", 400_000), acct("a2", "cash", 400_000)],
+      accountBalances: { a1: 400_000, a2: 400_000 },
+      eligibilityFilter: always,
+      drainableFraction: (a) => (a.id === "a1" ? 0.25 : 0.75),
+    });
+    const byId = Object.fromEntries(r.debits.map((d) => [d.accountId, d.amount]));
+    expect(byId.a1).toBeCloseTo(25_000, 2);
+    expect(byId.a2).toBeCloseTo(75_000, 2);
+  });
+
+  it("defaults to whole-balance draining when the fraction is omitted", () => {
+    const r = drainLiquidAssets({
+      amountNeeded: 1_000_000,
+      accounts: [acct("a1", "cash", 500_000)],
+      accountBalances: { a1: 500_000 },
+      eligibilityFilter: always,
+    });
+    expect(r.drainedTotal).toBeCloseTo(500_000, 2);
+  });
+});
