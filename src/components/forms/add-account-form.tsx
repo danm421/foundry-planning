@@ -63,6 +63,7 @@ import { canBeInheritedIra, inheritedIraBodyFields, inheritedIraFormError } from
 import { FieldTooltip } from "./field-tooltip";
 import { basisFieldLabel, basisFieldHelp } from "@/lib/accounts/basis-label";
 import { TRAD_IRA_SUBTYPES } from "@/engine/ira-basis";
+import { personLabel, CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 const isRetirementSubType = (st: string) =>
   (RETIREMENT_SUBTYPES as readonly string[]).includes(st);
@@ -873,19 +874,26 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   // savingsRuleOwner) — called directly here so the RMD tab's heir-role lookup
   // doesn't have to wait for that later declaration.
   const inheritedHeirRole = savingsRuleOwnerForAccount({ owners }, familyMembers); // "client" | "spouse" | "joint"
+  // Names the household member(s) an inherited IRA can be owned by, for the two
+  // messages below. Falls back to the generic role when we have no names to show.
+  const inheritedOwnerLabel = !ownerNames
+    ? `the client or ${CO_CLIENT_LABEL.toLowerCase()}`
+    : ownerNames.spouseName == null
+      ? personLabel("client", ownerNames)
+      : `${personLabel("client", ownerNames)} or ${personLabel("spouse", ownerNames)}`;
   // A ticked box on an IRA since re-owned to a child or an entity blocks the
   // save rather than clearing the typed years: the engine would ignore them for
   // an entity (taking no RMDs at all) and use the client's age for a child.
   const inheritedError =
     inheritedActive && inheritedHeirRole === "joint"
-      ? "Only an IRA owned by the client or spouse can be inherited — untick the box or change the owner back."
+      ? `Only an IRA owned by ${inheritedOwnerLabel} can be inherited — untick the box or change the owner back.`
       : inheritedIraFormError(inheritedState, category, subType, new Date().getFullYear());
   const inheritedHeirBirthYear =
     inheritedHeirRole === "client" ? milestones?.clientBirthYear ?? null
     : inheritedHeirRole === "spouse" ? milestones?.spouseBirthYear ?? null
     : null;
   const inheritedUnavailableReason =
-    inheritedHeirRole === "joint" ? "Only an IRA owned by the client or spouse can be marked inherited." : null;
+    inheritedHeirRole === "joint" ? `Only an IRA owned by ${inheritedOwnerLabel} can be marked inherited.` : null;
   const canSave =
     name.trim().length > 0 && !educationBeneficiaryMissing && !equityStrategyIncomplete &&
     !annuityIncomplete && inheritedError == null;

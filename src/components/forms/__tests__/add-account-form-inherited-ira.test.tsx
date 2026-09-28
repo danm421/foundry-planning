@@ -160,11 +160,11 @@ describe("AddAccountForm — inherited IRA on the RMD tab", () => {
         { kind: "family_member", familyMemberId: "fm-spouse", percent: 0.5 },
       ],
     };
-    renderForm(JOINT);
+    renderForm(JOINT, { ownerNames: { clientName: "Alice", spouseName: "Bob" } });
     fireEvent.click(screen.getByRole("button", { name: "RMD" }));
     const box = screen.getByLabelText("Inherited from someone other than a spouse") as HTMLInputElement;
     expect(box.disabled).toBe(true);
-    expect(screen.getByText(/owned by the client or spouse/)).toBeTruthy();
+    expect(screen.getByText(/owned by Alice or Bob/)).toBeTruthy();
   });
 
   // A ticked IRA re-owned to a child or a trust must not save as inherited:
@@ -184,7 +184,7 @@ describe("AddAccountForm — inherited IRA on the RMD tab", () => {
     fireEvent.click(screen.getByRole("button", { name: "RMD" }));
     await waitFor(() => expect(onAutoSaveStateChange).toHaveBeenLastCalledWith(expect.objectContaining({ canSave: false })));
     expect(screen.getByRole("alert").textContent).toBe(
-      "Only an IRA owned by the client or spouse can be inherited — untick the box or change the owner back.",
+      "Only an IRA owned by the client or co-client can be inherited — untick the box or change the owner back.",
     );
     expect((screen.getByLabelText("Inherited from someone other than a spouse") as HTMLInputElement).checked).toBe(true);
     expect((screen.getByLabelText("Year of death") as HTMLInputElement).value).toBe("2022");

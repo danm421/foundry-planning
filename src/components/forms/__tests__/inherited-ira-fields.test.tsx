@@ -38,10 +38,10 @@ describe("InheritedIraFields", () => {
     expect(screen.queryByTestId("inherited-rule-summary")).toBeNull();
   });
   it("disables an unticked checkbox with the reason when the IRA isn't the client's or spouse's", () => {
-    renderFields({ inherited: false, unavailableReason: "Only an IRA owned by the client or spouse can be marked inherited." });
+    renderFields({ inherited: false, unavailableReason: "Only an IRA owned by the client or co-client can be marked inherited." });
     const box = screen.getByLabelText("Inherited from someone other than a spouse") as HTMLInputElement;
     expect(box.disabled).toBe(true);
-    expect(screen.getByText(/owned by the client or spouse/)).toBeTruthy();
+    expect(screen.getByText(/owned by the client or co-client/)).toBeTruthy();
   });
   it("reports edits", () => {
     const props = renderFields();
