@@ -1470,6 +1470,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           // An entity-owned business deposits its proceeds into that entity's
           // own checking, not the household's.
           entityCheckingByEntityId,
+          // Proceeds split by the sale-year, gift-aware owners.
+          giftEvents: data.giftEvents ?? [],
+          planStartYear: planSettings.planStartYear,
         });
 
         if (businessSaleResult.removedAccountIds.length > 0) {
@@ -3133,6 +3136,31 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     }
     const crtSaleGainTotal = [...crtSaleGainByTxn.values()].reduce((s, g) => s + g, 0);
 
+    // The same net-out for a share GIVEN AWAY before the sale. A gift to a
+    // person or charity resolves to a `gifted_away` owner, which neither the
+    // CRT map above nor the 1041 pass below matches (both route entity rows),
+    // so the recipient's slice of the gain stayed on the household 1040. The
+    // recipient owned that slice when it sold, so the gain is theirs. Kept
+    // here, pro-rated by whole-source percent like the entity passes, and NOT
+    // pre-scaled inside `applyBusinessSales`: a shrunken `totalCapitalGain`
+    // would make the 1041 pass pro-rate a trust's percent against a gain that
+    // already lost the person's share. Post-§121 / post-§165(c) for the same
+    // reason as the CRT map (i5) — it takes back only what the ADD booked.
+    const giftedAwaySaleGainByTxn = new Map<string, number>();
+    for (const item of entityRoutableSales) {
+      let giftedAwayShare = 0;
+      for (const owner of item.owners) {
+        if (owner.kind === "gifted_away") giftedAwayShare += owner.percent;
+      }
+      if (giftedAwayShare > 0) {
+        giftedAwaySaleGainByTxn.set(
+          item.transactionId,
+          (giftedAwaySaleGainByTxn.get(item.transactionId) ?? 0) + item.taxableGain * giftedAwayShare,
+        );
+      }
+    }
+    const giftedAwaySaleGainTotal = [...giftedAwaySaleGainByTxn.values()].reduce((s, g) => s + g, 0);
+
     // Add transfer and sale income to tax detail
     taxDetail.ordinaryIncome += transferResult.taxableOrdinaryIncome;
     taxDetail.ordinaryIncome += rothConversionResult.taxableOrdinaryIncome;
@@ -3153,6 +3181,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // whose loss the Code already disallowed is 0 on BOTH sides, not −$4M on one.
     if (crtSaleGainTotal !== 0) {
       taxDetail.capitalGains -= crtSaleGainTotal;
+    }
+    // Signed and unfloored for the same reason: the recipient's share of a loss
+    // is the recipient's too.
+    if (giftedAwaySaleGainTotal !== 0) {
+      taxDetail.capitalGains -= giftedAwaySaleGainTotal;
     }
     // §165(c) losses disallowed on personal-use property. Display only — they
     // never enter §1222 netting, so they are reported alongside the gains they
@@ -3200,8 +3233,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // sold below basis, and a +$200,000 row under a $0 total for a
       // §121-excluded gain. The second needs no such care: a business sale's raw
       // and taxable gains are equal, since neither §121 nor §165(c) reaches one.
+      //
+      // A gifted-away share is netted the same way, so the row reconciles to the
+      // total once that share has left it.
       const householdGain =
-        item.taxableGain - (crtSaleGainByTxn.get(item.transactionId) ?? 0);
+        item.taxableGain -
+        (crtSaleGainByTxn.get(item.transactionId) ?? 0) -
+        (giftedAwaySaleGainByTxn.get(item.transactionId) ?? 0);
       if (householdGain !== 0) {
         taxDetail.bySource[`${item.kind}:${item.transactionId}`] = {
           type: "capital_gains",

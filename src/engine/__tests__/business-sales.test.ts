@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { applyBusinessSales, normalizeBusinessSales } from "../asset-transactions";
 import type { Account, AccountLedger, AssetTransaction, Liability } from "../types";
+import type { ApplyBusinessSalesInput } from "../asset-transactions";
+import type { GiftEvent } from "../types";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -121,6 +123,8 @@ describe("applyBusinessSales — operating-value-only case", () => {
       accountLedgers,
       year: 2030,
       defaultCheckingId: "acct-cash",
+      giftEvents: [],
+      planStartYear: 2030,
     });
 
     // Gain = 500k − 100k = 400k.
@@ -155,6 +159,8 @@ describe("applyBusinessSales — operating-value-only case", () => {
       accountLedgers: { "acct-cash": makeLedger(0) },
       year: 2030,
       defaultCheckingId: "acct-cash",
+      giftEvents: [],
+      planStartYear: 2030,
     });
 
     expect(result.capitalGains).toBe(100_000);
@@ -211,6 +217,8 @@ describe("applyBusinessSales — child cascade", () => {
       accountLedgers,
       year: 2030,
       defaultCheckingId: "acct-cash",
+      giftEvents: [],
+      planStartYear: 2030,
     });
 
     expect(result.removedBusinessAccountIds).toContain("biz");
@@ -252,6 +260,8 @@ describe("applyBusinessSales — partial sale", () => {
       },
       year: 2030,
       defaultCheckingId: "acct-cash",
+      giftEvents: [],
+      planStartYear: 2030,
     });
 
     // Business operating value halved.
@@ -281,6 +291,8 @@ describe("applyBusinessSales — partial sale", () => {
       accountLedgers,
       year: 2030,
       defaultCheckingId: "acct-cash",
+      giftEvents: [],
+      planStartYear: 2030,
     });
     expect(first.capitalGains).toBeCloseTo(200_000, 0);
     expect(business.value).toBeCloseTo(500_000, 0);
@@ -297,6 +309,8 @@ describe("applyBusinessSales — partial sale", () => {
       accountLedgers,
       year: 2031,
       defaultCheckingId: "acct-cash",
+      giftEvents: [],
+      planStartYear: 2030,
     });
     expect(second.capitalGains).toBeCloseTo(200_000, 0);
   });
@@ -313,6 +327,8 @@ describe("applyBusinessSales — diagnostics", () => {
       accountLedgers: { "acct-cash": makeLedger(0) },
       year: 2030,
       defaultCheckingId: "acct-cash",
+      giftEvents: [],
+      planStartYear: 2030,
     });
     expect(result.diagnostics).toEqual([
       { transactionId: "tx-1", reason: "business-not-found" },
@@ -329,6 +345,8 @@ describe("applyBusinessSales — diagnostics", () => {
       accountLedgers: { "acct-cash": makeLedger(0) },
       year: 2030,
       defaultCheckingId: "acct-cash",
+      giftEvents: [],
+      planStartYear: 2030,
     });
     expect(result.diagnostics[0]?.reason).toBe("invalid-fraction");
     expect(result.removedBusinessAccountIds).toEqual([]);
@@ -344,6 +362,8 @@ describe("applyBusinessSales — diagnostics", () => {
       accountLedgers: { "acct-cash": makeLedger(0) },
       year: 2030,
       defaultCheckingId: "acct-cash",
+      giftEvents: [],
+      planStartYear: 2030,
     });
     expect(result.diagnostics[0]?.reason).toBe("invalid-fraction");
   });
@@ -359,6 +379,8 @@ describe("applyBusinessSales — diagnostics", () => {
       accountLedgers: { "acct-cash": makeLedger(0) },
       year: 2030,
       defaultCheckingId: "acct-cash",
+      giftEvents: [],
+      planStartYear: 2030,
     });
     expect(
       result.diagnostics.find((d) => d.transactionId === "tx-b")?.reason,
@@ -375,6 +397,8 @@ describe("applyBusinessSales — diagnostics", () => {
       accountLedgers: { "acct-cash": makeLedger(0) },
       year: 2030,
       defaultCheckingId: "acct-cash",
+      giftEvents: [],
+      planStartYear: 2030,
     });
     expect(result.diagnostics[0]?.reason).toBe("no-owners");
   });
@@ -392,6 +416,8 @@ describe("applyBusinessSales — no-op cases", () => {
       accountLedgers: { "acct-cash": makeLedger(0) },
       year: 2030,
       defaultCheckingId: "acct-cash",
+      giftEvents: [],
+      planStartYear: 2030,
     });
     expect(result.removedBusinessAccountIds).toEqual([]);
     expect(result.diagnostics).toEqual([]);
@@ -408,6 +434,8 @@ describe("applyBusinessSales — no-op cases", () => {
       accountLedgers: { "acct-cash": makeLedger(0) },
       year: 2030,
       defaultCheckingId: "acct-cash",
+      giftEvents: [],
+      planStartYear: 2030,
     });
     expect(result.removedBusinessAccountIds).toEqual([]);
   });
@@ -520,6 +548,8 @@ describe("normalizeBusinessSales", () => {
       accountLedgers,
       year: 2030,
       defaultCheckingId: "acct-cash",
+      giftEvents: [],
+      planStartYear: 2030,
     });
 
     expect(result.breakdown[0].cascadedAccountIds).toEqual(["child-prop"]);
@@ -528,5 +558,116 @@ describe("normalizeBusinessSales", () => {
     expect(accountBalances["child-prop"]).toBe(0);
     // 400k operating gain + 200k on the warehouse.
     expect(result.capitalGains).toBe(600_000);
+  });
+});
+
+// ── Gifted shares ─────────────────────────────────────────────────────────────
+//
+// A share of the business given away before the sale is no longer the
+// household's to sell. `controllingEntity` returns null on any split, so before
+// the proceeds were resolved per gift-aware owner every dollar landed in
+// household checking. The two boundary pins above are the reason the fix lives
+// HERE and not in `normalizeBusinessSales`: that gate stays on authored owners.
+
+describe("applyBusinessSales — gifted shares", () => {
+  const HOUSEHOLD_CHECKING = "acct-cash";
+  const TRUST_CHECKING = "trust-cash";
+
+  /** A $10M, basis-0 business held 50/50 by B and S — two household slices, so
+   *  every case also proves they coalesce into ONE deposit — sold whole in 2030,
+   *  beside a trust whose own checking is wired through
+   *  `entityCheckingByEntityId`. Both checkings open at $0, so a balance IS the
+   *  proceeds it received. */
+  function giftedSale(giftEvents: GiftEvent[], over: Partial<ApplyBusinessSalesInput> = {}) {
+    const trustChecking: Account = {
+      ...makeChecking(TRUST_CHECKING, 0),
+      owners: [{ kind: "entity", entityId: "trust", percent: 1 }],
+    };
+    const business = makeBusiness({
+      value: 10_000_000,
+      basis: 0,
+      owners: [
+        { kind: "family_member", familyMemberId: "B", percent: 0.5 },
+        { kind: "family_member", familyMemberId: "S", percent: 0.5 },
+      ],
+    });
+    const input: ApplyBusinessSalesInput = {
+      sales: [makeSale()],
+      accounts: [makeChecking(HOUSEHOLD_CHECKING, 0), trustChecking, business],
+      liabilities: [],
+      accountBalances: { [HOUSEHOLD_CHECKING]: 0, [TRUST_CHECKING]: 0 },
+      basisMap: { [HOUSEHOLD_CHECKING]: 0, [TRUST_CHECKING]: 0 },
+      accountLedgers: {
+        [HOUSEHOLD_CHECKING]: makeLedger(0),
+        [TRUST_CHECKING]: makeLedger(0),
+      },
+      year: 2030,
+      defaultCheckingId: HOUSEHOLD_CHECKING,
+      entityCheckingByEntityId: { trust: TRUST_CHECKING },
+      giftEvents,
+      planStartYear: 2026,
+      ...over,
+    };
+    return { input, result: applyBusinessSales(input) };
+  }
+
+  const giftOfBiz = (
+    percent: number,
+    recipient: { recipientEntityId: string } | { recipientFamilyMemberId: string },
+  ): GiftEvent => ({ kind: "asset", year: 2028, accountId: "biz", percent, grantor: "client", ...recipient });
+  const toTrust = { recipientEntityId: "trust" };
+  const toKid = { recipientFamilyMemberId: "fm-kid" };
+
+  it("splits net proceeds between household and the gifted trust", () => {
+    const { input } = giftedSale([giftOfBiz(0.15, toTrust)]);
+    expect(input.accountBalances[HOUSEHOLD_CHECKING]).toBeCloseTo(8_500_000, 2);
+    expect(input.accountBalances[TRUST_CHECKING]).toBeCloseTo(1_500_000, 2);
+    // B's and S's slices land in one deposit, not two.
+    const deposits = (id: string) =>
+      input.accountLedgers[id].entries.map((e) => [Math.round(e.amount), e.isSaleProceeds, Math.round(e.basis ?? 0)]);
+    expect(deposits(HOUSEHOLD_CHECKING)).toEqual([[8_500_000, true, 8_500_000]]);
+    expect(deposits(TRUST_CHECKING)).toEqual([[1_500_000, true, 1_500_000]]);
+    expect(input.basisMap[TRUST_CHECKING]).toBeCloseTo(1_500_000, 2);
+  });
+
+  it("credits a slice gifted to a PERSON to nobody, and leaves its gain for the household ADD", () => {
+    const { input, result } = giftedSale([giftOfBiz(0.2, toKid)]);
+    expect(input.accountBalances[HOUSEHOLD_CHECKING]).toBeCloseTo(8_000_000, 2);
+    expect(input.accountBalances[TRUST_CHECKING]).toBe(0);
+    const credited = Object.values(input.accountBalances).reduce((s, b) => s + b, 0);
+    expect(credited).toBeCloseTo(8_000_000, 2);
+    // Still the WHOLE $10M gain. The kid's 20% leaves the household 1040 at the
+    // household ADD in `runProjection`, beside the CRT net-out, where every
+    // other owner's share is routed — pre-scaling it here would make the
+    // 1041 pass pro-rate a trust's percent against a gain that already shrank.
+    expect(result.capitalGains).toBeCloseTo(10_000_000, 2);
+    expect(result.breakdown[0].netProceeds).toBeCloseTo(10_000_000, 2);
+  });
+
+  it("is unchanged with no gift events", () => {
+    const { input } = giftedSale([]);
+    expect(input.accountBalances[HOUSEHOLD_CHECKING]).toBeCloseTo(10_000_000, 2);
+    expect(input.accountBalances[TRUST_CHECKING]).toBe(0);
+    expect(input.accountLedgers[HOUSEHOLD_CHECKING].entries).toHaveLength(1);
+  });
+
+  it("still sends every retained slice to an explicit proceeds destination", () => {
+    // The explicit pick outranks the trust's own checking, exactly as it
+    // outranked every rung for the whole sale before the split.
+    const { input } = giftedSale([giftOfBiz(0.15, toTrust), giftOfBiz(0.2, toKid)], {
+      sales: [makeSale({ proceedsAccountId: HOUSEHOLD_CHECKING })],
+    });
+    // Household 65% + trust 15% — the kid's 20% still goes nowhere.
+    expect(input.accountBalances[HOUSEHOLD_CHECKING]).toBeCloseTo(8_000_000, 2);
+    expect(input.accountBalances[TRUST_CHECKING]).toBe(0);
+    expect(input.accountLedgers[HOUSEHOLD_CHECKING].entries).toHaveLength(1);
+  });
+
+  it("flags a household slice with nowhere to go even when the trust's slice landed", () => {
+    const { input, result } = giftedSale([giftOfBiz(0.15, toTrust)], {
+      defaultCheckingId: "no-such-account",
+    });
+    expect(input.accountBalances[TRUST_CHECKING]).toBeCloseTo(1_500_000, 2);
+    expect(result.diagnostics).toEqual([{ transactionId: "tx-1", reason: "no-default-checking" }]);
   });
 });

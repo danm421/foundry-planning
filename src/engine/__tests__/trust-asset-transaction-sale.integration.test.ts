@@ -26,6 +26,7 @@ import type {
   EntitySummary,
   Account,
   AssetTransaction,
+  GiftEvent,
   PlanSettings,
 } from "../types";
 import type { TaxYearParameters } from "../../lib/tax/types";
@@ -411,5 +412,112 @@ describe("Trust-owned business sale", () => {
       year2030.taxDetail!.bySource["business_sale:tx-crt-business-sale"],
       "the drill-down itemized a gain the total had already netted out",
     ).toBeUndefined();
+  });
+});
+
+// ── A household business sold after part of it was given away ──────────────
+//
+// `applyBusinessSales` used to credit 100% of the net proceeds to one account
+// (`controllingEntity` is null on any split), and a share gifted to a PERSON
+// resolves to a `gifted_away` owner that no net-out matched — so the kid's
+// slice of the gain stayed on the household 1040. These run the whole
+// projection because the unit tests cannot see the threading from
+// `runProjection`, the household ADD, or the 1041 take-back after it.
+
+describe("Household business sold after a gift of part of it", () => {
+  const BIZ = "family-business";
+  const TX = "tx-family-business-sale";
+
+  const giftOfBiz = (
+    percent: number,
+    recipient: { recipientEntityId: string } | { recipientFamilyMemberId: string },
+  ): GiftEvent => ({ kind: "asset", year: 2028, accountId: BIZ, percent, grantor: "client", ...recipient });
+  const toSlat = { recipientEntityId: "slat-3" };
+  const toKid = { recipientFamilyMemberId: "fm-kid" };
+
+  /** A $10M, basis-0 business the couple hold 50/50 — so the gain IS the sale
+   *  price — sold whole in 2030 through the Businesses picker. Every gift lands
+   *  in 2028, inside the horizon and before the sale. The SLAT's checking is
+   *  entity-titled (the only kind `entityCheckingByEntityId` maps) and opens at
+   *  $0 with no growth, so its ending balance is exactly what it was paid. */
+  function giftedBusinessData(giftEvents: GiftEvent[], slat: EntitySummary = makeSlat()): ClientData {
+    return {
+      client,
+      accounts: [
+        hhChecking,
+        {
+          ...trustChecking,
+          value: 0,
+          basis: 0,
+          owners: [{ kind: "entity", entityId: "slat-3", percent: 1 }],
+        },
+        makeTrustBusiness({
+          id: BIZ,
+          name: "Family Business",
+          value: 10_000_000,
+          basis: 0,
+          owners: [
+            { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+            { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+          ],
+        }),
+      ],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings,
+      familyMembers: [],
+      entities: [slat],
+      assetTransactions: [{ id: TX, name: "Sell Family Business", type: "sell", year: 2030, businessAccountId: BIZ }],
+      taxYearRows: [taxYearRow],
+      giftEvents,
+    };
+  }
+
+  const saleProceeds = (year: ReturnType<typeof runProjection>[number], accountId: string) =>
+    (year.accountLedgers[accountId]?.entries ?? [])
+      .filter((e) => e.isSaleProceeds && e.sourceId === TX)
+      .reduce((s, e) => s + e.amount, 0);
+
+  it("pays the trust's 15% of the proceeds into the trust's own checking", () => {
+    // Grantor, so the trust pays no 1041 tax out of that checking and its
+    // ending balance is the proceeds alone: 0.15 × $10M.
+    const data = giftedBusinessData([giftOfBiz(0.15, toSlat)], { ...makeSlat(), isGrantor: true });
+    const year2030 = runProjection(data).find((y) => y.year === 2030)!;
+
+    expect(
+      year2030.accountLedgers["slat-3-checking"]?.endingValue,
+      "the trust's slice of the proceeds landed on the household balance sheet",
+    ).toBeCloseTo(1_500_000, 2);
+    expect(saleProceeds(year2030, "hh-checking")).toBeCloseTo(8_500_000, 2);
+  });
+
+  it("takes a 20% slice gifted to a person off the household return, total and drill-down", () => {
+    const data = giftedBusinessData([giftOfBiz(0.2, toKid)]);
+    const year2030 = runProjection(data).find((y) => y.year === 2030)!;
+
+    // 0.8 × $10M. The kid owns 20% of what was sold; that gain is the kid's.
+    expect(
+      year2030.taxDetail!.capitalGains,
+      "the kid's 20% of the gain stayed on the household 1040",
+    ).toBeCloseTo(8_000_000, 2);
+    expect(year2030.taxDetail!.bySource[`business_sale:${TX}`]?.amount).toBeCloseTo(8_000_000, 2);
+    // Nor does the kid's 20% of the cash reach the household.
+    expect(saleProceeds(year2030, "hh-checking")).toBeCloseTo(8_000_000, 2);
+  });
+
+  it("leaves the household 65% after a 15% trust gift AND a 20% person gift", () => {
+    // Non-grantor SLAT: its 15% is taken back off the household by the 1041
+    // pass and taxed on the trust's own return; the kid's 20% leaves at the
+    // ADD. $10M − $1.5M − $2M = $6.5M. Had the gain been pre-scaled inside
+    // `applyBusinessSales` instead, the 1041 pass would pro-rate 15% of $8M and
+    // leave the household $6.8M.
+    const data = giftedBusinessData([giftOfBiz(0.15, toSlat), giftOfBiz(0.2, toKid)]);
+    const year2030 = runProjection(data).find((y) => y.year === 2030)!;
+
+    expect(year2030.taxDetail!.capitalGains).toBeCloseTo(6_500_000, 2);
+    expect(year2030.trustTaxByEntity?.get("slat-3")?.recognizedCapGains).toBeCloseTo(1_500_000, 2);
   });
 });

@@ -1,6 +1,6 @@
-import type { Account, AccountLedger, AssetTransaction, Liability } from "./types";
+import type { Account, AccountLedger, AssetTransaction, GiftEvent, Liability } from "./types";
 import type { FilingStatus } from "../lib/tax/types";
-import { LEGACY_FM_CLIENT, controllingEntity } from "./ownership";
+import { LEGACY_FM_CLIENT, controllingEntity, giftAwareOwners } from "./ownership";
 
 /** IRC §121 home-sale exclusion caps by filing status.
  *  Married filing jointly gets $500k; all other statuses (single, head of
@@ -724,6 +724,11 @@ export interface ApplyBusinessSalesInput {
    *  {@link ApplyAssetSalesInput.entityCheckingByEntityId}; a missing entity
    *  falls back to `defaultCheckingId`. */
   entityCheckingByEntityId?: Record<string, string>;
+  /** Gift context for the PROCEEDS split only: a business partly given away
+   *  before the sale deposits each retained owner's slice where that owner
+   *  banks. `normalizeBusinessSales` keeps gating on authored owners. */
+  giftEvents: GiftEvent[];
+  planStartYear: number;
 }
 
 /** Process all business-account-source asset sales for `year`.
@@ -736,7 +741,8 @@ export interface ApplyBusinessSalesInput {
  *
  *  Mutates the following caller-owned working state in place:
  *  - `accountBalances` / `basisMap` / `accountLedgers` — debited for cascaded
- *    child account sales; credited at `defaultCheckingId` for net proceeds.
+ *    child account sales; credited with each sale-year owner's slice of the
+ *    net proceeds (see the proceeds block below).
  *  - `liability.balance` — paid down for each child liability, excluding
  *    those already settled inside `sellAccountFraction` (linked mortgages).
  *  - `business.value` — set to 0 on full sale, scaled by (1 − f) on partial.
@@ -752,6 +758,8 @@ export function applyBusinessSales(input: ApplyBusinessSalesInput): BusinessSale
     year,
     defaultCheckingId,
     entityCheckingByEntityId,
+    giftEvents,
+    planStartYear,
   } = input;
 
   let totalCapitalGains = 0;
@@ -880,46 +888,71 @@ export function applyBusinessSales(input: ApplyBusinessSalesInput): BusinessSale
     totalCapitalGains += totalCapitalGain;
     totalLiabilityPaydown += cascadedPaydown;
 
-    // Same rungs as `applyAssetSales`: an explicit destination wins, then the
-    // owning entity's own checking when one entity owns the business outright,
-    // then household default. Without the entity rung a trust's sale proceeds
-    // land on the household balance sheet while its gain is taxed on the
-    // trust's own 1041.
+    // Proceeds follow the SALE-YEAR owners, gift-aware. `controllingEntity`
+    // is null on any split, so a business 15% given to a trust used to deposit
+    // 100% of its proceeds in household checking. Each retained owner's slice
+    // takes the same rungs as `applyAssetSales`: an explicit destination wins,
+    // then an entity owner's own checking, then household default. Without the
+    // entity rung a trust's proceeds land on the household balance sheet while
+    // its gain is taxed on the trust's own 1041. A `gifted_away` slice is
+    // credited to nobody — its cash left the household with the ownership, and
+    // nothing in the model banks for the recipient.
+    //
+    // Proceeds only. `totalCapitalGain` stays whole: every owner's share of the
+    // gain leaves the household at the ADD in `runProjection` (CRT, 1041 and
+    // gifted-away net-outs), each pro-rated by its whole-business percent.
     //
     // Each rung has to be CREDITABLE, not merely named — resolving to an
     // entity checking that is absent from `accountBalances` would drop the
     // proceeds and report `no-default-checking` with a usable household
     // account sitting right there.
-    const owningEntityId = controllingEntity(business);
-    const entityChecking =
-      owningEntityId != null ? entityCheckingByEntityId?.[owningEntityId] : undefined;
-    const proceedsAccountId = [sale.proceedsAccountId, entityChecking, defaultCheckingId].find(
-      (id) => id && accountBalances[id] !== undefined,
-    );
+    const creditable = (id: string | undefined) =>
+      id && accountBalances[id] !== undefined ? id : undefined;
+    // Shares bound for the same account coalesce into one deposit, so a sale
+    // with no gifts still writes exactly one ledger entry.
+    const shareByAccount = new Map<string, number>();
+    let uncreditedSlice = false;
+    for (const owner of giftAwareOwners(business, giftEvents, year, planStartYear)) {
+      if (owner.kind === "gifted_away") continue;
+      const proceedsAccountId =
+        creditable(sale.proceedsAccountId) ??
+        (owner.kind === "entity" ? creditable(entityCheckingByEntityId?.[owner.entityId]) : undefined) ??
+        creditable(defaultCheckingId);
+      if (!proceedsAccountId) {
+        uncreditedSlice = true;
+        continue;
+      }
+      shareByAccount.set(proceedsAccountId, (shareByAccount.get(proceedsAccountId) ?? 0) + owner.percent);
+    }
 
-    // If nothing is creditable the cap gain is still recognized but cash isn't
-    // deposited; emit a diagnostic so the advisor wires up a checking account.
-    if (proceedsAccountId) {
-      accountBalances[proceedsAccountId] += netProceeds;
-      basisMap[proceedsAccountId] = (basisMap[proceedsAccountId] ?? 0) + netProceeds;
+    for (const [proceedsAccountId, share] of shareByAccount) {
+      const amount = netProceeds * share;
+      accountBalances[proceedsAccountId] += amount;
+      basisMap[proceedsAccountId] = (basisMap[proceedsAccountId] ?? 0) + amount;
       if (accountLedgers[proceedsAccountId]) {
-        accountLedgers[proceedsAccountId].contributions += netProceeds;
-        accountLedgers[proceedsAccountId].endingValue += netProceeds;
+        accountLedgers[proceedsAccountId].contributions += amount;
+        accountLedgers[proceedsAccountId].endingValue += amount;
         accountLedgers[proceedsAccountId].entries.push({
           category: "income",
           label: `Business sale proceeds: ${business.name}`,
-          amount: netProceeds,
+          amount,
           sourceId: sale.id,
           // Asset→cash conversion, not operating income. `entity-cashflow.ts`
           // skips flagged entries so a trust's income column isn't inflated by
           // gross proceeds; the taxable gain is recognized separately. Inert
           // while these deposits only ever reached household checking — load
-          // bearing now that an entity-owned business credits the entity's own.
+          // bearing now that an entity's slice credits the entity's own.
           isSaleProceeds: true,
-          basis: netProceeds, // cash deposit: basis == amount (mirrors basisMap += netProceeds)
+          basis: amount, // cash deposit: basis == amount (mirrors basisMap += amount)
         });
       }
-    } else {
+    }
+
+    // A retained slice with nowhere to go still has its gain recognized, but
+    // its cash is not deposited; emit a diagnostic so the advisor wires up a
+    // checking account. Once per sale, and even when another owner's slice
+    // landed — that is still cash the model dropped.
+    if (uncreditedSlice) {
       diagnostics.push({
         transactionId: sale.id,
         reason: "no-default-checking",
