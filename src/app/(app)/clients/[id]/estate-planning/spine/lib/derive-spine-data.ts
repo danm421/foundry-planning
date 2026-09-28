@@ -31,6 +31,7 @@ import type {
 import type { StateInheritanceTaxResult } from "@/lib/tax/state-inheritance";
 import type { ProjectionResult } from "@/engine";
 import { treeAsOfYear, type BalanceMode } from "../../lib/tree-as-of-year";
+import { isPartitionedAt } from "@/lib/estate/account-owner-slices";
 import { resolveRecipientLabel } from "@/lib/estate/recipient-label";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import type { AsOfValue } from "@/components/report-controls/as-of-dropdown";
@@ -331,10 +332,25 @@ function computeGrossEstateAtYear(
   const yearRow = withResult.years.find((y) => y.year === year);
   const useLockedShares = mode === "eoy" && yearRow != null;
 
+  // computeGrossEstate resolves each account's gifts itself, from the raw
+  // `giftEvents` below, so it takes the AUTHORED owner rows at the year's value
+  // and no `giftsReflectedThrough` marker (which would make it skip them). The
+  // overlay's composed rows will not do even with their marker:
+  // `debtShareByShape` reads a linked property's owners directly, as authored,
+  // and no marker reaches that read. Only an account a death partitioned (the
+  // same test `treeAsOfYear` applies) keeps its folded rows and marker — its
+  // authored rows describe none of it. `treeAsOfYear` maps `tree.accounts`
+  // one-to-one, so index `i` is the same account.
+  const accounts = overlaid.accounts.map((a, i) =>
+    useLockedShares && isPartitionedAt(yearRow, a.id)
+      ? a
+      : { ...a, owners: tree.accounts[i].owners, giftsReflectedThrough: undefined },
+  );
+
   const result = computeGrossEstate({
     deceased: principal,
     deathOrder: 1,
-    accounts: overlaid.accounts,
+    accounts,
     accountBalances,
     liabilities: overlaid.liabilities,
     entities: overlaid.entities ?? [],
@@ -344,7 +360,7 @@ function computeGrossEstateAtYear(
     familyAccountSharesEoY: useLockedShares ? yearRow.familyAccountSharesEoY : undefined,
     // Gift-aware ownership: assets gifted out of the household by `year` leave
     // the gross estate here too, keeping the spine consistent with the estate
-    // report and balance sheet.
+    // report and balance sheet. Applied once, to the authored rows above.
     giftEvents: tree.giftEvents,
     deathYear: year,
     planStartYear,

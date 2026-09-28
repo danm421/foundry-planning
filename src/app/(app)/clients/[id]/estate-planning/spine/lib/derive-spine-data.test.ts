@@ -560,21 +560,22 @@ describe("deriveSpineData — a lifetime gift in the EoY pair row", () => {
   // A joint $10M account and one 2030 gift out of it; no growth, no flows, so
   // at EoY 2031 only the gift moves a number. Each principal's gross estate is
   // half of what the household keeps (joint convention at a first death).
+  const slat: EntitySummary = {
+    id: "trust-slat",
+    name: "SLAT",
+    entityType: "trust",
+    trustSubType: "irrevocable",
+    isIrrevocable: true,
+    isGrantor: false,
+    includeInPortfolio: false,
+    accessibleToClient: false,
+    grantor: "client",
+  };
+
   function giftedJointFixture(
     gift: { percent: number; recipientEntityId?: string; recipientFamilyMemberId?: string },
   ): ClientData {
     const base = twoGrantorFixture();
-    const slat: EntitySummary = {
-      id: "trust-slat",
-      name: "SLAT",
-      entityType: "trust",
-      trustSubType: "irrevocable",
-      isIrrevocable: true,
-      isGrantor: false,
-      includeInPortfolio: false,
-      accessibleToClient: false,
-      grantor: "client",
-    };
     return {
       ...base,
       accounts: [
@@ -628,12 +629,76 @@ describe("deriveSpineData — a lifetime gift in the EoY pair row", () => {
   });
 
   it("takes a gift to a person out of the gross estate once, not twice", () => {
-    // Kid 2.5M, household 7.5M. The overlaid rows already hold the gift, and
-    // the raw events ride along to computeGrossEstate: applying it again would
+    // Kid 2.5M, household 7.5M. The year's tree holds the gift and the raw
+    // events ride along to computeGrossEstate: applying it from both would
     // halve the household's share to 5M (2.5M each). The fallback warning
     // cannot see that — 0.25 never overdraws the 0.75 left — so pin the dollars.
     const pair = pairAtEoY2031(giftedJointFixture({ percent: 0.25, recipientFamilyMemberId: "fm-child-1" }));
     expect(pair.client.netWorth).toBeCloseTo(3_750_000, 2);
     expect(pair.spouse.netWorth).toBeCloseTo(3_750_000, 2);
+  });
+
+  it("leaves a debt on a gifted property with the property's authored owner", () => {
+    // A $1M house wholly the client's, 30% of it gifted to the SLAT in 2028,
+    // and a joint $400k mortgage on it that stays behind. A debt with no single
+    // family owner follows its property's AUTHORED owner — a house gifted
+    // without its debt leaves the whole debt the decedent's — so at EoY 2030
+    // the client nets 700k − 400k and the spouse owes none of it. Handed the
+    // year's composed rows [client .7, trust .3], computeGrossEstate found no
+    // sole owner, took the joint default and split the debt 200k / 200k.
+    const base = twoGrantorFixture();
+    const tree: ClientData = {
+      ...base,
+      accounts: [
+        {
+          id: "acct-house",
+          name: "House",
+          category: "real_estate",
+          subType: "primary_residence",
+          titlingType: "jtwros",
+          value: 1_000_000,
+          basis: 1_000_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+        },
+      ],
+      liabilities: [
+        {
+          id: "liab-house",
+          name: "Mortgage",
+          balance: 400_000,
+          interestRate: 0,
+          monthlyPayment: 0,
+          startYear: 2020,
+          startMonth: 1,
+          termMonths: 600,
+          extraPayments: [],
+          linkedPropertyId: "acct-house",
+          owners: [
+            { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+            { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+          ],
+        },
+      ],
+      entities: [slat],
+      giftEvents: [
+        { kind: "asset", year: 2028, accountId: "acct-house", percent: 0.3,
+          grantor: "client", recipientEntityId: slat.id },
+      ],
+      incomes: [],
+      expenses: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: { ...base.planSettings, flatFederalRate: 0, flatStateRate: 0, inflationRate: 0 },
+    };
+    const withResult = runProjectionWithEvents(tree);
+    const data = deriveSpineData({
+      tree, withResult, asOf: "split", pairRowYear: 2030, pairRowMode: "eoy",
+    });
+    if (data.kind !== "two-grantor") throw new Error("expected two-grantor");
+
+    expect(data.pair.client.netWorth).toBeCloseTo(300_000, 2);
+    expect(data.pair.spouse.netWorth).toBeCloseTo(0, 2);
   });
 });
