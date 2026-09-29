@@ -651,7 +651,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
    * Keyed on trustSubType alone (not `&& splitInterest`): a malformed CRT with
    * no splitInterest snapshot still must not be taxed as an ordinary trust.
    *
-   * Ten call sites, against 12 `effectiveIsGrantor` call sites — the two are NOT
+   * Eleven call sites, against 13 `effectiveIsGrantor` call sites — the two are NOT
    * in 1:1 correspondence, so "every grantor fork has a CRT guard" is the wrong
    * mental model. The sites are:
    *   - buildNonGrantorTrusts .............. keeps the CRT out of the 1041 pass
@@ -664,9 +664,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
    *   - household-1040 trust income rows ... CRT-owned income rows
    *   - sale-gain exemption netting ........ SELECTS the exempt share (inverted)
    *   - sale gains → 1041 hand-off ......... keeps CRT gains out of that pass
+   *   - k1TaxedToHousehold ................. a CRT's business K-1 share (both blocks)
    *
-   * Eight of the ten are individually mutation-killed by
-   * `crt-664c-exemption.test.ts`. The two growth-pass sites marked above
+   * Eight of the first ten are individually mutation-killed by
+   * `crt-664c-exemption.test.ts`; k1TaxedToHousehold by the CRT cases in
+   * `projection.business-passthrough-tax.test.ts` and
+   * `projection.entity-distribution.test.ts`. The two growth-pass sites marked above
    * (grantorTrustIncome, non-grantor push) are defense-in-depth: disabling
    * either ALONE is behaviorally inert (verified byte-identical projection
    * output), because the only consumer of what they feed already filters on the
@@ -2888,7 +2891,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // ── Phase 3: business-account tax incidence (passthrough K-1) ─────────
     // For each top-level business account, compute net income (income rows
     // tagged with ownerAccountId minus expense rows tagged with
-    // ownerAccountId) and flow it to family-member owners' 1040 buckets per
+    // ownerAccountId) and flow it to the household 1040 buckets — family
+    // members' and grantor trusts' shares (`k1TaxedToHousehold`) — per
     // the business' taxTreatment, scaled by each owner's percent.
     // Per spec § Phase 3 decisions:
     //   P3-2: qbi → qbi; ordinary → ordinaryIncome; non_taxable → taxExempt
@@ -2904,6 +2908,17 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         a.parentAccountId == null &&
         !isPreActivation(a, year),
     );
+    // Whose K-1 share lands on the household 1040: a family member's, and a
+    // GRANTOR trust's (IRC §§671-677 — the grantor is taxed on it). A CRT is
+    // tested first, as every grantor fork here does: it is exempt under §664(c)
+    // in either grantor configuration. A non-grantor trust's share and a
+    // `gifted_away` share are not the household's income. Shared by the
+    // account-model and entity-model K-1 blocks below.
+    const k1TaxedToHousehold = (o: AccountOwner): boolean =>
+      o.kind === "family_member" ||
+      (o.kind === "entity" &&
+        !isTaxExemptTrust(o.entityId) &&
+        effectiveIsGrantor(o.entityId, year));
     for (const business of businessAccountsThisYear) {
       const flow = computeBusinessYearFlow(
         business,
@@ -2915,23 +2930,22 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       const netIncome = flow.gross - flow.exp;
       if (netIncome <= 0) continue;
       const treatment = business.businessTaxTreatment ?? "ordinary";
-      // Pass-through taxation attributes to household owners only. Entity-kind
-      // owners (e.g. a trust holding the business) don't pass income through
-      // to the household 1040; they retain it at the holder level.
+      // Pass-through taxation attributes to household owners and grantor
+      // trusts (`k1TaxedToHousehold`). A non-grantor trust holding the business
+      // retains its share at the holder level, off the household 1040.
       //
       // Year-resolved, not authored: a 15% gift of the business to a trust left
-      // the household taxed on 100%. The family_member filter is unchanged and
-      // does the right thing for both gift shapes — a gift to a trust becomes
-      // kind:"entity" and a gift to a person becomes kind:"gifted_away", and
-      // neither is a family_member. Do NOT widen it.
-      const familyOwners = ownershipSnapshot
+      // the household taxed on 100%. A gift to a trust becomes kind:"entity"
+      // (taxed here only while that trust is grantor) and a gift to a person
+      // becomes kind:"gifted_away" (never taxed here).
+      const taxedOwners = ownershipSnapshot
         .ownersAt(business, year)
-        .filter((o) => o.kind === "family_member");
-      let businessFamilyTaxable = 0;
-      for (const owner of familyOwners) {
+        .filter(k1TaxedToHousehold);
+      let businessHouseholdTaxable = 0;
+      for (const owner of taxedOwners) {
         const taxableShare = netIncome * owner.percent;
         if (taxableShare === 0) continue;
-        businessFamilyTaxable += taxableShare;
+        businessHouseholdTaxable += taxableShare;
         switch (treatment) {
           case "qbi":
             taxDetail.qbi += taxableShare;
@@ -2947,12 +2961,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // Flat-rate mode: add to taxableIncome so calculateTaxYearFlat sees it.
       // Non-taxable treatment is excluded — it should not count as taxable income.
       if (treatment !== "non_taxable") {
-        taxableIncome += businessFamilyTaxable;
+        taxableIncome += businessHouseholdTaxable;
       }
       // Drilldown: attribute the business's total taxable amount under one bySource
       // key so reports can identify the source. Owner % split is a 1040 detail
       // not surfaced in bySource.
-      const totalTaxable = netIncome * familyOwners.reduce((s, o) => s + o.percent, 0);
+      const totalTaxable = netIncome * taxedOwners.reduce((s, o) => s + o.percent, 0);
       if (totalTaxable !== 0) {
         const bySourceType =
           treatment === "qbi" ? "qbi"
@@ -2978,9 +2992,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // Owners are resolved PER YEAR (`entityOwnersForYear`): `entity.owners` is
     // the authored, pre-gift baseline, and a business_interest gift to a trust
     // moves its share from the household from the gift year on. Reading the
-    // authored rows taxed the household on 100% after a 15% gift. The
-    // family_member filter is P3-6 — only known household shares are taxed; a
-    // trust's share (kind "entity") is not the household's 1040 income.
+    // authored rows taxed the household on 100% after a 15% gift. The filter
+    // is P3-6 — only known household shares are taxed — plus a GRANTOR trust's
+    // share, which is the grantor's 1040 income (`k1TaxedToHousehold`); a
+    // non-grantor trust's share is not.
     for (const entity of currentEntities) {
       if (entity.entityType === "trust") continue;
       const netIncome = computeBusinessEntityNetIncome(
@@ -2994,17 +3009,17 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       );
       if (netIncome <= 0) continue;
       const treatment = entity.taxTreatment ?? "ordinary";
-      const familyOwners = entityOwnersForYear(
+      const taxedOwners = entityOwnersForYear(
         { id: entity.id, owners: entity.owners ?? [] },
         data.giftEvents ?? [],
         year,
         planSettings.planStartYear,
-      ).filter((o) => o.kind === "family_member");
-      let entityFamilyTaxable = 0;
-      for (const owner of familyOwners) {
+      ).filter(k1TaxedToHousehold);
+      let entityHouseholdTaxable = 0;
+      for (const owner of taxedOwners) {
         const taxableShare = netIncome * owner.percent;
         if (taxableShare === 0) continue;
-        entityFamilyTaxable += taxableShare;
+        entityHouseholdTaxable += taxableShare;
         switch (treatment) {
           case "qbi":
             taxDetail.qbi += taxableShare;
@@ -3020,10 +3035,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // Flat-rate mode reads taxableIncome, not taxDetail buckets — mirror the
       // account-model block (non_taxable stays out of taxableIncome).
       if (treatment !== "non_taxable") {
-        taxableIncome += entityFamilyTaxable;
+        taxableIncome += entityHouseholdTaxable;
       }
       const totalTaxable =
-        netIncome * familyOwners.reduce((s, o) => s + o.percent, 0);
+        netIncome * taxedOwners.reduce((s, o) => s + o.percent, 0);
       if (totalTaxable !== 0) {
         const bySourceType =
           treatment === "qbi" ? "qbi"

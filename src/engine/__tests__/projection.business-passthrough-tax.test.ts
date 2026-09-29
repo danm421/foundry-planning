@@ -366,3 +366,36 @@ describe("business K-1 — gifted share", () => {
     expect(before.taxDetail!.bySource[K1_KEY].amount).toBeCloseTo(1_000_000, 2);
   });
 });
+
+describe("business K-1 — share gifted to a GRANTOR trust", () => {
+  // IRC §§671-677: a grantor trust's income, K-1 pass-through included, is
+  // taxed to the grantor. So a share gifted to one stays on the household
+  // 1040; only a non-grantor trust takes its share off it. A CRT is exempt
+  // under §664(c) in either grantor configuration, so it is tested first.
+  function giftedToTrust(trust: Partial<EntitySummary>): ClientData {
+    const data = businessFixture();
+    data.entities = (data.entities ?? []).map((e) => ({ ...e, ...trust }));
+    data.giftEvents = [{ kind: "asset", year: 2027, accountId: BIZ_ID, percent: 0.3,
+      grantor: "client", recipientEntityId: TRUST_ID }];
+    return data;
+  }
+
+  it("keeps a grantor trust's 30% on the household 1040", () => {
+    const after = runProjection(giftedToTrust({ isGrantor: true })).find((y) => y.year === 2028)!;
+    expect(after.taxDetail!.ordinaryIncome).toBeCloseTo(1_000_000, 2);
+    expect(after.taxDetail!.bySource[K1_KEY].amount).toBeCloseTo(1_000_000, 2);
+  });
+
+  it("takes a non-grantor trust's 30% off the household 1040", () => {
+    const after = runProjection(giftedToTrust({ isGrantor: false })).find((y) => y.year === 2028)!;
+    expect(after.taxDetail!.ordinaryIncome).toBeCloseTo(700_000, 2);
+    expect(after.taxDetail!.bySource[K1_KEY].amount).toBeCloseTo(700_000, 2);
+  });
+
+  it("keeps a CRT's 30% off the 1040 even when it is flagged grantor", () => {
+    const after = runProjection(
+      giftedToTrust({ isGrantor: true, trustSubType: "crt" }),
+    ).find((y) => y.year === 2028)!;
+    expect(after.taxDetail!.ordinaryIncome).toBeCloseTo(700_000, 2);
+  });
+});

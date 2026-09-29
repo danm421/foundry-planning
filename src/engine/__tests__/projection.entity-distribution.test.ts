@@ -963,6 +963,37 @@ describe("Phase 3 (entity model): EntitySummary business tax incidence (H1)", ()
     expect(y2027.taxDetail!.ordinaryIncome).toBeCloseTo(850_000, 0);
     expect(y2027.taxDetail!.bySource["business_passthrough:llc1"].amount).toBeCloseTo(850_000, 0);
   });
+
+  // IRC §§671-677: a grantor trust's K-1 share is the grantor's 1040 income.
+  // A CRT is exempt under §664(c) in either grantor configuration.
+  function giftedToTrust(trust: Partial<EntitySummary>): ClientData {
+    const data = mkTaxData("ordinary", { incomes: [{ ...entIncome, annualAmount: 1_000_000 }] });
+    data.entities = [...(data.entities ?? []), {
+      id: "slat", name: "SLAT", entityType: "trust", trustSubType: "irrevocable",
+      isIrrevocable: true, isGrantor: false, includeInPortfolio: false,
+      accessibleToClient: false, grantor: "client", ...trust,
+    }];
+    data.giftEvents = [{ kind: "business_interest", year: 2027, entityId: "llc1", percent: 0.3,
+      grantor: "client", recipientEntityId: "slat" }];
+    return data;
+  }
+
+  it("keeps a GRANTOR trust's 30% of the K-1 on the household 1040", () => {
+    const y2027 = runProjection(giftedToTrust({ isGrantor: true }))[1];
+    expect(y2027.taxDetail!.ordinaryIncome).toBeCloseTo(1_000_000, 0);
+    expect(y2027.taxDetail!.bySource["business_passthrough:llc1"].amount).toBeCloseTo(1_000_000, 0);
+  });
+
+  it("takes a NON-grantor trust's 30% of the K-1 off the household 1040", () => {
+    const y2027 = runProjection(giftedToTrust({ isGrantor: false }))[1];
+    expect(y2027.taxDetail!.ordinaryIncome).toBeCloseTo(700_000, 0);
+    expect(y2027.taxDetail!.bySource["business_passthrough:llc1"].amount).toBeCloseTo(700_000, 0);
+  });
+
+  it("keeps a CRT's 30% of the K-1 off the 1040 even when it is flagged grantor", () => {
+    const y2027 = runProjection(giftedToTrust({ isGrantor: true, trustSubType: "crt" }))[1];
+    expect(y2027.taxDetail!.ordinaryIncome).toBeCloseTo(700_000, 0);
+  });
 });
 
 describe("Phase 3: business loss-year cash handling (step 12c gap-fill)", () => {
