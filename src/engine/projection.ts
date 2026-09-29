@@ -38,7 +38,7 @@ import {
   type EntityMetadata,
 } from "./entity-cashflow";
 import { computeBusinessYearFlow } from "./business/year-flow";
-import { giftValueOfAccount } from "./business/business-tree";
+import { buildGiftValueAtYear } from "./business/business-tree";
 import { accrueLockedEntityShare } from "./locked-shares";
 import { buildOwnershipSnapshot } from "./ownership-snapshot";
 import { computeFamilyAccountShares } from "./family-cashflow";
@@ -9524,16 +9524,16 @@ export function runProjectionWithEvents(
   const annualExclusionsByYear = buildAnnualExclusionsMap(data.taxYearRows ?? [], data.planSettings);
   // Value an account-percentage gift from the projection the caller just ran.
   // `yearEndAccountBalances` inside runProjection is not in scope here, so read
-  // the per-year ledgers off the returned rows — the same shape the Gift Tax
-  // report resolver uses. A gift year before plan start, or an account not yet
-  // activated, has no ledger entry and correctly resolves to 0.
+  // the per-year ledgers off the returned rows through `buildGiftValueAtYear` —
+  // the same resolver every advisor gift surface uses. A gift year before plan
+  // start, or an account not yet activated, has no ledger entry and resolves to 0.
   //
   // An asset gift moves OWNERSHIP, not balance — `ownersForYear` rescales owner
   // percentages and never touches accountBalances — so `endingValue` in the gift
   // year is the whole account and `endingValue × percent` is the gift's value.
   // A top-level business's "whole account" is the consolidated business — see
   // `giftValueOfAccount` — the same value the gross estate removes a share of.
-  const yearByYear = new Map(years.map((y) => [y.year, y]));
+  const giftValueAtYear = buildGiftValueAtYear(years, data.accounts);
   const giftLedger = computeGiftLedger({
     planStartYear: data.planSettings.planStartYear,
     planEndYear: data.planSettings.planEndYear,
@@ -9548,13 +9548,7 @@ export function runProjectionWithEvents(
     annualExclusionsByYear,
     taxInflationRate: data.planSettings.taxInflationRate ?? data.planSettings.inflationRate ?? 0,
     lifetimeExemptionCap: data.planSettings.lifetimeExemptionCap ?? null,
-    accountValueAtYear: (id, y) => {
-      const ledgers = yearByYear.get(y)?.accountLedgers;
-      if (ledgers?.[id] == null) return 0;
-      const balances: Record<string, number> = {};
-      for (const [aid, ledger] of Object.entries(ledgers)) balances[aid] = ledger.endingValue;
-      return giftValueOfAccount(id, data.accounts, balances);
-    },
+    accountValueAtYear: (id, y) => giftValueAtYear(id, y) ?? 0,
     // Values a business_interest gift with no explicit `amount` at the
     // entity's year-end value × percent; omitted, such a gift valued at $0.
     entityValueAtYear: buildEntityValueAtYear(years),

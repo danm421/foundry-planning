@@ -1,3 +1,5 @@
+import type { ProjectionYear } from "../types";
+
 /** Minimal account shape the tree walk needs. The engine passes full
  *  `Account`s; the balance-sheet report passes its slimmer `AccountLike`. */
 interface TreeNode {
@@ -72,4 +74,33 @@ export function giftValueOfAccount<T extends TreeNode & { category: string }>(
     return consolidatedBusinessValue(accountId, accounts, accountBalances);
   }
   return accountBalances[accountId] ?? 0;
+}
+
+/**
+ * Build the resolver an asset gift is valued with: the gift year's closing
+ * balances (`accountLedgers[*].endingValue`) through `giftValueOfAccount`, so
+ * a top-level business is its consolidated value.
+ *
+ * The one definition for the engine's gift ledger (`runProjectionWithEvents`)
+ * and every advisor surface that previews, reports on, or sizes an asset gift
+ * (`lib/estate/account-value-at-year.ts`). Two copies could quote a different
+ * number than the exemption the gift actually consumes.
+ *
+ * Returns undefined when the projection holds no row for that year or no
+ * ledger for that account (a gift dated before plan start, a pre-activation
+ * account). The ledger treats that as 0; advisor surfaces keep the distinction.
+ * `accounts` is the list the projection ran on (`ClientData.accounts`).
+ */
+export function buildGiftValueAtYear<T extends TreeNode & { category: string }>(
+  years: ProjectionYear[],
+  accounts: T[],
+): (accountId: string, year: number) => number | undefined {
+  const yearByYear = new Map(years.map((y) => [y.year, y]));
+  return (accountId, year) => {
+    const ledgers = yearByYear.get(year)?.accountLedgers;
+    if (ledgers?.[accountId] == null) return undefined;
+    const balances: Record<string, number> = {};
+    for (const [id, ledger] of Object.entries(ledgers)) balances[id] = ledger.endingValue;
+    return giftValueOfAccount(accountId, accounts, balances);
+  };
 }
