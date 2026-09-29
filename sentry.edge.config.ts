@@ -4,6 +4,7 @@
 // https://docs.sentry.io/platforms/javascript/guides/nextjs/
 
 import * as Sentry from "@sentry/nextjs";
+import { scrubSecrets } from "./src/lib/redaction/secrets";
 
 Sentry.init({
   dsn: "https://c82970f9dc95e8d33e3ae5e58292c413@o4511269577621504.ingest.us.sentry.io/4511269622972416",
@@ -13,4 +14,8 @@ Sentry.init({
   enableLogs: true,
 
   sendDefaultPii: false,
+
+  // Mask database/URL credentials anywhere in an error event — its message,
+  // breadcrumbs (console args), extra data, frame variables.
+  beforeSend: scrubSecrets,
 });
