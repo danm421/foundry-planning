@@ -3,6 +3,7 @@ import { deriveSpineData } from "./derive-spine-data";
 import { buildClientData } from "@/engine/__tests__/fixtures";
 import { runProjectionWithEvents } from "@/engine";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "@/engine/ownership";
+import { isPartitionedAt } from "@/lib/estate/account-owner-slices";
 import type { ClientData, EntitySummary, Will } from "@/engine/types";
 
 // ── Fixture helpers ───────────────────────────────────────────────────────────
@@ -746,6 +747,11 @@ describe("deriveSpineData — a death-partitioned account in the EoY pair row", 
       tree, withResult, asOf: "split", pairRowYear: 2049, pairRowMode: "eoy",
     });
     if (data.kind !== "two-grantor") throw new Error("expected two-grantor");
+
+    // Precondition: the death really partitioned it, so a fixture drift fails
+    // here as "wrong path", not below as a number mismatch.
+    const yearRow = withResult.years.find((y) => y.year === 2049)!;
+    expect(isPartitionedAt(yearRow, "acct-brokerage")).toBe(true);
 
     // Characterized, not hand-derived: a233a0537's figures, before the spine
     // swapped in authored rows. Handed the authored rows for this account too,

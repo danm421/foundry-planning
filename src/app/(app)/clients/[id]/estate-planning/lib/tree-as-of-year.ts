@@ -2,7 +2,7 @@ import type { Account, ClientData } from "@/engine/types";
 import type { ProjectionResult } from "@/engine";
 import { isPolicyInForce } from "@/lib/estate/insurance-in-force";
 import { foldPartitionedAccount, isPartitionedAt } from "@/lib/estate/account-owner-slices";
-import { ownersForYearSafe } from "@/lib/estate/owners-or-household";
+import { ownersForYearOrHousehold } from "@/lib/estate/owners-or-household";
 
 export type BalanceMode = "boy" | "eoy";
 
@@ -15,9 +15,13 @@ export type BalanceMode = "boy" | "eoy";
  * at the same year.
  *
  * Each account's owners are the year's too: the authored rows with every
- * lifetime gift through `year` composed on top (`ownersForYearSafe`), so a
- * gifted trust or person gets its own row. Such an account carries
- * `giftsReflectedThrough: year`.
+ * lifetime gift through `year` composed on top, so a gifted trust or person
+ * gets its own row. Such an account carries `giftsReflectedThrough: year`, for
+ * a gift-aware DIRECT caller handed these rows beside the raw events. Gifts
+ * that cannot be composed (an overdraw) leave the authored rows and no marker.
+ * The spine's gross estate is not that caller: it deliberately takes the
+ * authored rows and drops the marker for every account a death did not
+ * partition (`computeGrossEstateAtYear`, T24-g).
  *
  * `mode` mirrors the Balance Sheet's two views:
  *   - "boy" (Today) — beginning-of-year balances. At planStartYear these
@@ -54,12 +58,19 @@ export function treeAsOfYear(
     const value = mode === "boy" ? ledger.beginningValue : ledger.endingValue;
     // The year's owners: the authored rows with every gift through `year`
     // composed on top — which ADDS the recipient's row (a trust's `entity`, a
-    // person's `gifted_away`). The marker tells a gift-aware reader handed
-    // these rows alongside the raw events (the spine's gross estate) not to
-    // apply those gifts a second time.
-    const composed = ownersForYearSafe(a, tree.giftEvents ?? [], year, planStartYear);
+    // person's `gifted_away`). The marker tells a gift-aware direct caller
+    // handed these rows alongside the raw events not to apply those gifts a
+    // second time, so it is stamped only when composition succeeded.
+    let composed: Account["owners"];
+    let marker: { giftsReflectedThrough?: number } = { giftsReflectedThrough: year };
+    try {
+      composed = ownersForYearOrHousehold(a, tree.giftEvents ?? [], year, planStartYear);
+    } catch {
+      composed = a.owners; // overdrawn gifts: authored rows reflect none of them
+      marker = {};
+    }
     if (mode !== "eoy" || composed.length <= 1 || value <= 0) {
-      return { ...a, value, owners: composed, giftsReflectedThrough: year };
+      return { ...a, value, owners: composed, ...marker };
     }
 
     // EoY multi-owner accounts: renormalize percents from the engine's locked
@@ -112,7 +123,7 @@ export function treeAsOfYear(
       return { ...o, percent: sliceValue / value };
     });
 
-    return { ...a, value, owners, giftsReflectedThrough: year };
+    return { ...a, value, owners, ...marker };
   });
 
   const liabilities = (tree.liabilities ?? []).map((l) => {

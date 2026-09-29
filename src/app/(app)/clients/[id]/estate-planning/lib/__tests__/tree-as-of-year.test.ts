@@ -239,8 +239,10 @@ describe("treeAsOfYear — gift-shaped changes", () => {
     expect(out.accounts[0].owners).toContainEqual(
       { kind: "entity", entityId: ENT_NON_IIP_LOCKED, percent: 0.3 },
     );
-    // The rows already carry the gift, so a gift-aware reader handed them
-    // alongside the raw events (the spine's gross estate) must not re-apply it.
+    // The rows already carry the gift, so a gift-aware direct caller handed
+    // them alongside the raw events must not re-apply it. (The spine's gross
+    // estate is not that caller: it takes the authored rows and drops the
+    // marker for an account no death partitioned, T24-g.)
     expect(out.accounts[0].giftsReflectedThrough).toBe(2030);
   });
 
@@ -313,5 +315,26 @@ describe("treeAsOfYear — gift-shaped changes", () => {
     expect(pct((o) => o.kind === "family_member" && o.familyMemberId === FM_SPOUSE))
       .toBeCloseTo(0.375, 12);
     expect(pct(() => true)).toBeCloseTo(1, 12);
+  });
+
+  it("stamps no marker when the gifts could not be composed (an overdraw)", () => {
+    // Two 60% gifts overdraw the household share, so the year's owners fall
+    // back to the authored rows, which reflect NEITHER gift. A marker on them
+    // would tell a gift-aware direct caller to skip gifts never applied. The
+    // engine throws on the overdraw, so it projects the first gift alone.
+    const { data, withResult } = setupGiftedAccount({
+      owners: clientOnly,
+      gift: { year: 2028, percent: 0.6, recipientEntityId: ENT_NON_IIP_LOCKED },
+    });
+    const overdrawn = {
+      ...data,
+      giftEvents: [...(data.giftEvents ?? []), {
+        kind: "asset" as const, accountId: GIFTED_ACCT, grantor: "client" as const,
+        year: 2029, percent: 0.6, recipientFamilyMemberId: FM_KID,
+      }],
+    };
+    const [acct] = treeAsOfYear(overdrawn, withResult, 2030, "eoy").accounts;
+    expect(acct.owners).toEqual(clientOnly);
+    expect(acct.giftsReflectedThrough).toBeUndefined();
   });
 });
