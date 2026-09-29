@@ -2799,3 +2799,52 @@ describe("buildEstateFlowSummary — survivor net worth resolves at the as-of ye
     ]);
   });
 });
+
+// A business with a child account, 25% gifted to a trust. Measured on dev
+// (Surface 3): a flat $57,964 parent, a $9,270 child ($67,234 consolidated),
+// and an engine lock of 25% of the FLAT parent. The trust's line must be 25%
+// of the consolidated value, as the gross estate and the exemption take it.
+describe("buildEstateFlowSummary — OOE values a gifted business share on the consolidated value", () => {
+  it("gives the trust 25% of parent + child, not 25% of the flat parent", () => {
+    const clientData = emptyClientData();
+    clientData.familyMembers = [
+      { id: "fm-client", role: "client", firstName: "Cooper" },
+    ] as ClientData["familyMembers"];
+    clientData.entities = [
+      { id: "snt", entityType: "trust", isIrrevocable: true, name: "Special Needs Trust" },
+    ] as ClientData["entities"];
+    clientData.accounts = [
+      {
+        id: "biz", name: "Consulting Business", category: "business", subType: "llc",
+        value: 50_000,
+        owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+      },
+      {
+        id: "biz-cash", name: "Consulting Business — Cash", category: "cash",
+        subType: "checking", value: 9_000, parentAccountId: "biz", owners: [],
+      },
+    ] as unknown as ClientData["accounts"];
+    clientData.giftEvents = [
+      { kind: "asset", year: 2028, accountId: "biz", percent: 0.25, grantor: "client",
+        recipientEntityId: "snt", eventKind: "outright" },
+    ] as ClientData["giftEvents"];
+    const projection = projectionAt(
+      2030,
+      { biz: 57_964, "biz-cash": 9_270 },
+      new Map([["snt", new Map([["biz", 14_491]])]]),
+    );
+
+    const summary = buildEstateFlowSummary({
+      ...baseInput(),
+      clientData,
+      asOfYear: 2030,
+      projection,
+    })!;
+
+    const snt = summary.outOfEstate.irrevTrusts.entities.find((e) => e.entityId === "snt")!;
+    expect(snt.assets).toHaveLength(1); // the child rolls into the parent, listed once
+    expect(snt.assets[0].label).toBe("Consulting Business");
+    expect(snt.assets[0].amount).toBeCloseTo(16_808.5, 6); // not 14,491
+    expect(summary.outOfEstate.irrevTrusts.total).toBeCloseTo(16_808.5, 6);
+  });
+});

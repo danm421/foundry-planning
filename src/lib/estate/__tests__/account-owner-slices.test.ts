@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveOwnerSlices } from "../account-owner-slices";
+import { accountSlicesAtYear, resolveOwnerSlices } from "../account-owner-slices";
 import type { AccountOwner } from "@/engine/ownership";
 
 const owners: AccountOwner[] = [
@@ -163,5 +163,47 @@ describe("resolveOwnerSlices", () => {
       .filter((s) => s.owner.kind === "family_member")
       .reduce((sum, s) => sum + s.value, 0);
     expect(family).toBeCloseTo(300_000, 2); // 1M − 400k trust − 300k gifted
+  });
+});
+
+// A top-level business with a child account: the caller prices it at the
+// CONSOLIDATED value (parent + children), but the engine locks an entity's
+// share of the FLAT parent ledger value. Measured on dev: a flat $57,964
+// parent, a $9,270 child, 25% gifted to a trust whose lock is 25% of flat.
+describe("accountSlicesAtYear — a consolidated value override", () => {
+  const FLAT = 57_964;
+  const CONSOLIDATED = 67_234; // + the $9,270 child
+  const bizOwners: AccountOwner[] = [
+    { kind: "family_member", familyMemberId: "fm-client", percent: 0.75 },
+    { kind: "entity", entityId: "snt", percent: 0.25 },
+  ];
+  const lockAt = (dollars: number) => new Map([["snt", new Map([["biz", dollars]])]]);
+  const slicesOf = (flat: number, value: number | undefined, lock = lockAt(14_491)) =>
+    accountSlicesAtYear({
+      account: { id: "biz" },
+      yearRow: { entityAccountSharesEoY: lock },
+      valueOf: () => flat,
+      value,
+      fallbackOwners: () => bizOwners,
+    });
+  const valueFor = (slices: ReturnType<typeof slicesOf>, kind: AccountOwner["kind"]) =>
+    slices.find((s) => s.owner.kind === kind)!.value;
+
+  it("scales the locked split to the consolidated value, so the trust gets its share of the child", () => {
+    const slices = slicesOf(FLAT, CONSOLIDATED);
+    expect(valueFor(slices, "entity")).toBeCloseTo(16_808.5, 6); // not 14,491
+    expect(valueFor(slices, "family_member")).toBeCloseTo(50_425.5, 6); // not 52,743
+  });
+
+  it("is exactly resolveOwnerSlices at the flat value with no override, or an override equal to it", () => {
+    const flatSplit = resolveOwnerSlices("biz", bizOwners, FLAT, lockAt(14_491));
+    expect(slicesOf(FLAT, undefined)).toEqual(flatSplit);
+    expect(slicesOf(FLAT, FLAT)).toEqual(flatSplit); // a business with no children
+  });
+
+  it("resolves at the override by percent when the flat value is 0 — no split to scale", () => {
+    const slices = slicesOf(0, 9_270, lockAt(5));
+    expect(valueFor(slices, "entity")).toBeCloseTo(2_317.5, 6);
+    expect(valueFor(slices, "family_member")).toBeCloseTo(6_952.5, 6);
   });
 });

@@ -148,7 +148,8 @@ export function accountSlicesAtYear(args: {
   /** The caller's own resolution of the authored rows (gift overlay applied). */
   fallbackOwners: () => AccountOwner[];
   /** `account.id`'s value when the caller's differs from `valueOf` (e.g. a
-   *  consolidated business). Defaults to `valueOf(account.id)`. */
+   *  consolidated business). Defaults to `valueOf(account.id)`. Each owner
+   *  keeps its share of the split resolved at `valueOf(account.id)`. */
   value?: number;
 }): OwnerSlice[] {
   const { account, yearRow, valueOf, fallbackOwners } = args;
@@ -162,7 +163,23 @@ export function accountSlicesAtYear(args: {
   const published = yearRow?.accountOwners?.get(account.id);
   if (carved.length > 0 && !published) return carved;
   const owners = published?.giftsReflectedThrough != null ? published.owners : fallbackOwners();
-  const slices = resolveOwnerSlices(account.id, owners, args.value ?? valueOf(account.id), ent, fam);
+  // A caller's `value` that differs from the account's own (a business
+  // consolidated across its children) scales the split RESOLVED at the own
+  // value: the engine locks an entity's share of the FLAT ledger value, so
+  // resolving at `value` directly gave the entity its flat lock and left every
+  // child dollar in the family pool. With no own value there is no split to
+  // scale, so it resolves at `value` by percent.
+  const flat = valueOf(account.id);
+  const value = args.value ?? flat;
+  const slices =
+    value === flat
+      ? resolveOwnerSlices(account.id, owners, flat, ent, fam)
+      : flat > 0
+        ? resolveOwnerSlices(account.id, owners, flat, ent, fam).map((s) => ({
+            ...s,
+            value: (s.value / flat) * value,
+          }))
+        : resolveOwnerSlices(account.id, owners, value);
   // One owner, one slice: a post-death gift of the pool to a trust that
   // already holds a slice of it adds to that trust's slice.
   for (const c of carved) {
