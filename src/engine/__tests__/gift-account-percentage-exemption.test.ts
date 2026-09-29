@@ -207,6 +207,10 @@ describe("a gift of a business consumes exemption on the value that leaves the e
       expect(death.deceased).toBe("client");
       // §2001(b) add-back: 15% × ($100M + $20M), not 15% × $100M.
       expect(death.adjustedTaxableGifts).toBeCloseTo(18_000_000, 2);
+      // …and the estate keeps the other 85% of the SAME consolidated value, so
+      // the triad (exemption consumed, add-back, gross estate) is one number.
+      const bizLine = death.grossEstateLines.find((l) => l.accountId === "biz");
+      expect(bizLine?.amount).toBeCloseTo(102_000_000, 2);
     },
   );
 });
