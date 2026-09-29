@@ -54,6 +54,15 @@ export function wordBoxes(pdf: Buffer, page?: number): Word[] {
   }
 }
 
+/** How many sheets react-pdf actually laid out, read off the PDF's page-tree
+ *  node (`<< /Type /Pages /Count n … >>`, written uncompressed by pdfkit) — not
+ *  the count a page's estimator asked for. */
+export function renderedPages(pdf: Buffer): number {
+  const match = /\/Type \/Pages\s*\/Count (\d+)/.exec(pdf.toString("latin1"));
+  if (!match) throw new Error("no page-tree node in the rendered PDF");
+  return Number(match[1]);
+}
+
 /** `pdftotext -bbox` emits XHTML, so a drawn "&" arrives as "&amp;" and never
  *  matches the label a caller is looking for — and real labels have them
  *  ("Rachel & Adam — Retirement"). `&amp;` is undone last, or "&amp;lt;" would

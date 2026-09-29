@@ -5,18 +5,12 @@
 
 import type { ProjectionYear, ClientData } from "@/engine/types";
 import { buildTaxBracketRows } from "@/lib/tax/bracket";
-import {
-  bracketFloorSeries,
-  bracketRateLabel,
-  buildBracketFillModel,
-} from "@/lib/tax/bracket-fill";
-import { bracketFloorColor, dataPalette } from "@/lib/chart-palette";
 import type {
   DrillColumn, DrillPageData, DrillPageOptions, DrillRow,
 } from "../../shared/drill-types";
 import { clipRowsToYears, emptyRangeNote, filterYearsToRange } from "../../shared/year-filter";
 import { buildMarkers } from "../../shared/markers";
-import { buildDrillChartSpec } from "../../shared/build-chart-spec";
+import { buildBracketChartSpec } from "../../charts/bracket-chart-spec";
 
 const DISCLAIMER =
   "This analysis is based on assumptions provided by you. Projections are hypothetical and not guaranteed. Actual results will vary.";
@@ -93,45 +87,10 @@ export function buildTaxBracketFederalDrillData(input: BuildTaxBracketFederalDri
 
   const markers = buildMarkers(clientData, visibleYears, clientName, spouseName);
 
-  // The income tax base as a bar — other income, then the taxable Roth
-  // conversion on top — over one line per federal bracket floor. The chart is
-  // built from the rows the table prints, so the two agree year for year.
-  //
-  // The axis ceiling is the screen chart's (just above the tallest filled
-  // tier's top, so the room left in the bracket shows). A floor is drawn only
-  // while it is under that ceiling: the canvas clips a line that climbs off
-  // the top, but a PDF polyline has no clip, and one 37% floor left running
-  // to $2M by the plan's last year dragged the axis to $2.5M and pressed the
-  // bars into the bottom sixth of the sheet.
-  const fill = buildBracketFillModel(visibleYears);
-  const palette = dataPalette("light");
-  const chartSpec = buildDrillChartSpec({
-    years: fill.years.map((y) => y.year),
-    yMax: fill.yMax,
-    stacks: [
-      {
-        seriesId: "incomeBase", label: "Income tax base",
-        color: palette.blue,
-        values: fill.years.map((y) => y.otherIncome),
-      },
-      {
-        // "Roth conversion", not "Taxable Roth conversion": the longer name
-        // overran its 7pt legend slot into the next swatch. The Taxable
-        // Conversion column below is where the distinction is made.
-        seriesId: "conversion", label: "Roth conversion",
-        color: palette.orange,
-        values: fill.years.map((y) => y.conversion),
-      },
-    ],
-    lines: bracketFloorSeries(fill).map((f) => ({
-      seriesId: `floor-${f.rate}`,
-      label: `${bracketRateLabel(f.rate)} floor`,
-      color: bracketFloorColor(f.rank, "light"),
-      strokeWidth: 1,
-      values: f.values.map((v) => (v < fill.yMax ? v : NaN)),
-    })),
-    markers,
-  });
+  // Charted from the same visible years the table prints, so the two agree
+  // year for year. The Taxable Conversion column is where the chart's
+  // "Roth conversion" slice is told apart from the gross amount.
+  const chartSpec = buildBracketChartSpec(visibleYears, markers);
 
   return {
     title: "Income Tax — Tax Bracket (Federal)",
