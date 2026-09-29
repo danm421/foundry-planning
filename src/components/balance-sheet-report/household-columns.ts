@@ -6,7 +6,7 @@ import {
 } from "@/lib/balance-sheet/attribute";
 import { flatBusinessValueAt } from "@/engine/entity-cashflow";
 import type { FamilyMember, GiftEvent } from "@/engine/types";
-import { entityOwnersAsOf, ownersAsOf } from "./view-model";
+import { businessOfOwnerlessChild, entityOwnersAsOf, ownersAsOf } from "./view-model";
 import {
   foldPartitionedAccount,
   isPartitionedAt,
@@ -183,6 +183,7 @@ export function buildHouseholdColumns(input: BuildHouseholdColumnsInput): Househ
 
   // ── Asset rows by category ────────────────────────────────────────────────
   const rowsByCategory = new Map<HouseholdCategoryKey, OwnerColumnRow[]>();
+  const ownerAccountOf = businessOfOwnerlessChild(accounts);
   function pushRow(cat: HouseholdCategoryKey, row: OwnerColumnRow) {
     const list = rowsByCategory.get(cat) ?? [];
     list.push(row);
@@ -203,18 +204,21 @@ export function buildHouseholdColumns(input: BuildHouseholdColumnsInput): Househ
     // one report can never disagree about who owns what in a given year —
     // including after a first-death partition, where the account is its pool
     // (the survivor's) plus the slices carved out of it, not its authored rows.
+    // A business child with no owner rows takes its business's owners.
+    const ownersOf = () =>
+      ownersAsOf(ownerAccountOf.get(acct.id) ?? acct, giftEvents, valuationYear, planStartYear, asOfMode);
     const folded =
       asOfMode !== "today" && isPartitionedAt(yearData, acct.id)
         ? foldPartitionedAccount({
             account: acct,
             yearRow: yearData,
             valueOf,
-            fallbackOwners: () => ownersAsOf(acct, giftEvents, valuationYear, planStartYear, asOfMode),
+            fallbackOwners: ownersOf,
           })
         : null;
     const value = folded ? folded.value : valueOf(acct.id);
     if (value <= 0) continue;
-    const owners = folded ? folded.owners : ownersAsOf(acct, giftEvents, valuationYear, planStartYear, asOfMode);
+    const owners = folded ? folded.owners : ownersOf();
     const cols = splitToColumns(attributeToColumns({ id: acct.id, value, owners }, ctx));
     if (cols.total <= 0) continue; // entirely OOE / held back
     pushRow(cat, {

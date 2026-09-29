@@ -307,3 +307,49 @@ describe("By-Entity cards after a percentage gift of a business", () => {
     expect(trust.liabilityTotal).toBe(0);
   });
 });
+
+describe("a business CHILD with no owner rows follows its gifted parent (Household = By Entity)", () => {
+  // Measured on dev (Surface 3): a flat $57,964 business, its $9,270 operating
+  // cash child carrying NO owner rows, 25% of the business gifted to a trust,
+  // and the engine's lock at 25% of the FLAT parent. The child must split
+  // 75 / 25 like its parent, not fall back to 100% household.
+  const bizAccounts = [
+    { ...accounts[0], id: "biz-1" },
+    { id: "biz-cash", name: "Whatnot — Cash", category: "cash", owners: [], parentAccountId: "biz-1", businessType: null, titlingType: null },
+  ];
+  const giftYears = [2028, 2029, 2030].map((y) => ({
+    ...year(y),
+    accountLedgers: {
+      "biz-1": { beginningValue: 57_964, endingValue: 57_964 },
+      "biz-cash": { beginningValue: 9_270, endingValue: 9_270 },
+    },
+    entityAccountSharesEoY: new Map([["trust-1", new Map([["biz-1", 14_491]])]]),
+  }));
+  const gift25: GiftEvent = { ...GIFT, year: 2028, percent: 0.25, valuationDiscount: undefined };
+  const input = {
+    accounts: bizAccounts, liabilities: [], entities, familyMembers,
+    projectionYears: giftYears, selectedYear: 2030, asOfMode: "eoy", giftEvents: [gift25],
+  } as Omit<BuildViewModelInput, "view">;
+
+  it("gives the Household Out-of-Estate trust row the By Entity trust card's figure", () => {
+    const household = buildViewModel({ ...input, view: "consolidated" });
+    const trustRow = household.outOfEstateOwnerRows.find((r) => r.ownerName === "New Trust")!;
+    const trustCard = buildViewModel({ ...input, view: "entities" })
+      .entityGroups!.find((g) => g.entityId === "trust-1")!;
+    expect(trustCard.assetTotal).toBeCloseTo(16_808.5, 6); // 25% of 67,234
+    expect(trustRow.assetTotal).toBeCloseTo(trustCard.assetTotal, 6); // not 14,491
+    // The household keeps the other 75% of the child (the donut's Cash), where
+    // an owner-less child used to be dropped from this model entirely.
+    const cash = household.assetCategories.find((c) => c.key === "cash")!;
+    expect(cash.total).toBeCloseTo(6_952.5, 6);
+    // The prior-year totals (YoY, bar chart) book it the same way: flat balances, 0%.
+    expect(cash.yoy?.value).toBe(0);
+  });
+
+  it("splits the child's $9,270 75 / 25 in the household columns", () => {
+    const model = buildHouseholdColumns({ ...input, notesReceivable: [] } as Parameters<typeof buildHouseholdColumns>[0]);
+    const cashRow = model.assetCategories.flatMap((c) => c.rows).find((r) => r.key === "biz-cash")!;
+    expect(cashRow.client).toBeCloseTo(6_952.5, 6); // not 9,270
+    expect(cashRow.total).toBeCloseTo(6_952.5, 6);
+  });
+});

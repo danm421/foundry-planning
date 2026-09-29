@@ -440,6 +440,22 @@ export function ownersAsOf(
   return ownersForYearSafe(account, giftEvents, year, planStartYear);
 }
 
+/** The top-level business of each business CHILD account that has no owner
+ *  rows of its own. Such a child is owned through its business, so its owners
+ *  are read off the business (gift overlay included), splitting it as the
+ *  By-Entity tab does, not through the household fallback, which booked a
+ *  gifted business's operating cash 100% to the household. */
+export function businessOfOwnerlessChild(accounts: AccountLike[]): Map<string, AccountLike> {
+  const byChild = new Map<string, AccountLike>();
+  for (const b of accounts) {
+    if (b.category !== "business" || b.parentAccountId != null) continue;
+    for (const a of collectBusinessTree(b.id, accounts)) {
+      if (a.id !== b.id && a.owners.length === 0) byChild.set(a.id, b);
+    }
+  }
+  return byChild;
+}
+
 /** `ownersAsOf` for a business entity's `entity_owners` rows. A gift of a
  *  business interest writes no owner row — the rows are the authored, pre-gift
  *  baseline — so the gifted share is re-applied here, at the report's year
@@ -513,6 +529,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
   // ── Expand each account into per-owner slices ───────────────────────────
 
   const slices: Slice[] = [];
+  const ownerAccountOf = businessOfOwnerlessChild(accounts);
 
   for (const acct of accounts) {
     // An unmapped category has no in-estate column, but that is a statement
@@ -542,7 +559,8 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
       },
       valueOf: (id) => accountValueForYear(yearData, id, asOfMode),
       value,
-      fallbackOwners: () => ownersAsOf(acct, giftEvents, selectedYear, planStartYear, asOfMode),
+      fallbackOwners: () =>
+        ownersAsOf(ownerAccountOf.get(acct.id) ?? acct, giftEvents, selectedYear, planStartYear, asOfMode),
     });
     // Keep entity-owned accounts even at $0 so an entity's default-cash
     // account stays visible under its entity card — consistent with the
@@ -1405,6 +1423,7 @@ function computeYearTotals(
 
   const byCategory = new Map<AssetCategoryKey, number>();
   let totalLiabilities = 0;
+  const ownerAccountOf = businessOfOwnerlessChild(accounts);
 
   for (const acct of accounts) {
     const categoryKey = DB_TO_KEY[acct.category];
@@ -1417,7 +1436,7 @@ function computeYearTotals(
       // called for the prior year too (YoY) and for every bar-chart point.
       // Always end-of-year here, so never the "today" snapshot.
       fallbackOwners: () =>
-        ownersAsOf(acct, input.giftEvents ?? [], yearData.year, planStartYear, "eoy"),
+        ownersAsOf(ownerAccountOf.get(acct.id) ?? acct, input.giftEvents ?? [], yearData.year, planStartYear, "eoy"),
     });
     for (const { owner, value: sliceValue } of ownerSlices) {
       if (sliceValue <= 0) continue;
