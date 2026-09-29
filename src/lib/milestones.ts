@@ -68,9 +68,12 @@ export interface ClientMilestones {
  *  projection reads a birth year. `new Date(dob).getFullYear()` parses a
  *  date-only string as UTC midnight, so a Jan-1 date reads as the prior year
  *  west of UTC. Only the exposed birth years use this; the milestone years
- *  below still go through `Date` (moving them is future work). */
-function yearOfDateString(date: string): number {
-  return parseInt(date.slice(0, 4), 10);
+ *  below still go through `Date` (moving them is future work). Absent →
+ *  undefined — `date_of_birth` is nullable in the DB. */
+function yearOfDateString(date: string | null | undefined): number | undefined {
+  if (!date) return undefined;
+  const year = parseInt(date.slice(0, 4), 10);
+  return Number.isNaN(year) ? undefined : year;
 }
 
 /**
@@ -89,13 +92,17 @@ export function buildClientMilestones(client: {
   const milestones: ClientMilestones = {
     planStart: planStartYear,
     planEnd: planEndYear,
-    clientBirthYear: yearOfDateString(client.dateOfBirth),
     clientRetirement: clientBirthYear + client.retirementAge,
     clientEnd: clientBirthYear + client.planEndAge,
     clientSS62: clientBirthYear + 62,
     clientSSFRA: clientBirthYear + 67,
     clientSS70: clientBirthYear + 70,
   };
+
+  const exposedClientBirthYear = yearOfDateString(client.dateOfBirth);
+  if (exposedClientBirthYear !== undefined) {
+    milestones.clientBirthYear = exposedClientBirthYear;
+  }
 
   if (client.spouseDob) {
     milestones.spouseBirthYear = yearOfDateString(client.spouseDob);

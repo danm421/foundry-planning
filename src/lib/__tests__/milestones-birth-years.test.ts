@@ -34,4 +34,13 @@ describe("buildClientMilestones — birth years", () => {
       vi.unstubAllEnvs();
     }
   });
+  it("does not throw when dateOfBirth is missing, and omits clientBirthYear", () => {
+    // `date_of_birth` is nullable in the DB — a Solver/Forge working tree can
+    // carry a client without one. `client: {}` here matches the runtime shape
+    // those callers pass.
+    const client = { retirementAge: 65, planEndAge: 95 } as never;
+    expect(() => buildClientMilestones(client, 2026, 2070)).not.toThrow();
+    const m = buildClientMilestones(client, 2026, 2070);
+    expect(m.clientBirthYear).toBeUndefined();
+  });
 });
