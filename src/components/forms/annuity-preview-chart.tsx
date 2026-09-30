@@ -12,7 +12,7 @@ import {
   type ChartData,
   type ChartOptions,
 } from "chart.js";
-import annotationPlugin from "chartjs-plugin-annotation";
+import { annotationPlugin } from "@/lib/chart-annotation-plugin";
 import { Line } from "react-chartjs-2";
 import { initAnnuityState, stepAnnuityYear } from "@/engine/annuity";
 import type { AnnuityContract } from "@/engine/annuity";

@@ -11,7 +11,7 @@ import {
   Tooltip,
   Legend,
 } from "chart.js";
-import annotationPlugin from "chartjs-plugin-annotation";
+import { annotationPlugin } from "@/lib/chart-annotation-plugin";
 import { Line } from "react-chartjs-2";
 import type { ChartOptions, ChartData } from "chart.js";
 import type { ProjectionYear } from "@/engine";
