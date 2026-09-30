@@ -246,7 +246,7 @@ function formatLifeExpectancy(
   return `${age} (${year})`;
 }
 
-interface FamilyViewProps {
+export interface FamilyViewProps {
   clientId: string;
   primary: PrimaryInfo;
   initialMembers: FamilyMember[];
