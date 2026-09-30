@@ -51,6 +51,7 @@ import {
 } from "@/lib/inline-edit/liability-write";
 import type { GrowthContext } from "@/lib/investments/growth-context";
 import type { CategoryDefaultRateMap } from "@/lib/investments/category-default-rates";
+import type { EditorFocus } from "@/lib/scenario/change-editor-target";
 
 type AccountCategory = "taxable" | "cash" | "retirement" | "annuity" | "real_estate" | "business" | "life_insurance" | "notes_receivable" | "stock_options" | "education_savings";
 
@@ -233,6 +234,23 @@ export interface BalanceSheetViewProps {
    * tabbed-view behavior verbatim. */
   embed?: "page" | "wizard";
   section?: "accounts" | "liabilities";
+  /**
+   * Focus mode, for the Solver's Changes tab: open the dialog this page opens
+   * for ONE row and render nothing else. Read once, at mount — key the view by
+   * the focus to switch rows.
+   */
+  focus?: EditorFocus;
+  /**
+   * Called once when focus mode ends. The host must UNMOUNT the view then:
+   * clearing `focus` on a still-mounted view falls through to the full page.
+   *
+   * - No argument: the editor closed normally (cancel, X, Escape, save, delete).
+   * - `"unavailable"`: nothing was opened, because the page itself offers no
+   *   editor for this row — it's gone, its kind isn't edited here, it's a
+   *   life-insurance policy (edited on Insurance), it's a business's sub-row
+   *   whose business isn't listed, or the advisor has view-only access.
+   */
+  onFocusClose?: (outcome?: "unavailable") => void;
 }
 
 const CATEGORY_LABELS: Record<AccountCategory, string> = {
@@ -535,6 +553,52 @@ function AddAssetMenu({ onPick }: { onPick: (cat: AccountCategory) => void }) {
   );
 }
 
+// ── Focus mode ────────────────────────────────────────────────────────────────
+
+/** The focused row, tagged with the dialog the page opens for it. */
+type FocusTarget =
+  | { dialog: "account" | "business"; row: AccountRow }
+  | { dialog: "liability"; row: LiabilityRow };
+
+/**
+ * The dialog the page's own click opens for the focused row, or null when the
+ * page opens none. A top-level in-estate business opens `BusinessDialog` (its
+ * row group's `onClickRow`); a business's sub-account or sub-liability is
+ * listed only inside that row group; a policy click goes to the Insurance page;
+ * legacy notes_receivable accounts aren't listed. Every other account opens the
+ * account dialog — Assets rows, 529s and the Out of Estate panel alike.
+ */
+function findFocusRow(
+  focus: EditorFocus,
+  accounts: AccountRow[],
+  liabilities: LiabilityRow[],
+  accountInEstate: (a: AccountRow) => boolean,
+): FocusTarget | null {
+  const isListedBusiness = (a: AccountRow | undefined) =>
+    !!a && a.category === "business" && !a.parentAccountId && accountInEstate(a);
+  const underListedBusiness = (parentAccountId: string) =>
+    isListedBusiness(accounts.find((a) => a.id === parentAccountId));
+
+  switch (focus.kind) {
+    case "account": {
+      const row = accounts.find((a) => a.id === focus.id);
+      if (!row || row.category === "life_insurance" || row.category === "notes_receivable") return null;
+      if (isListedBusiness(row)) return { dialog: "business", row };
+      // An in-estate sub-account shows only under its business's row group.
+      if (row.parentAccountId && accountInEstate(row) && !underListedBusiness(row.parentAccountId)) return null;
+      return { dialog: "account", row };
+    }
+    case "liability": {
+      const row = liabilities.find((l) => l.id === focus.id);
+      if (!row) return null;
+      if (row.parentAccountId && !underListedBusiness(row.parentAccountId)) return null;
+      return { dialog: "liability", row };
+    }
+    default:
+      return null;
+  }
+}
+
 // ── Balance Sheet ────────────────────────────────────────────────────────────
 
 export default function BalanceSheetView({
@@ -562,6 +626,8 @@ export default function BalanceSheetView({
   planStartYear,
   planEndYear,
   primaryClientBirthYear,
+  focus,
+  onFocusClose,
 }: BalanceSheetViewProps) {
   const isWizard = embed === "wizard";
   const showAssetsCol = !isWizard || section === "accounts";
@@ -663,23 +729,71 @@ export default function BalanceSheetView({
     });
   }
 
+  // In-estate classification. Declared ahead of the editing state below, which
+  // focus mode seeds through `findFocusRow(…, accountInEstate)`.
+  const entityMap = Object.fromEntries(entities.map((e) => [e.id, e]));
+  // Term policies (cash_value = 0) are hidden from Net Worth — face value pays out only on
+  // death, so it's not an asset on the balance sheet. They're managed in the Insurance tab.
+  const isVisibleInNetWorth = (a: AccountRow) =>
+    !(a.category === "life_insurance" && Number(a.value) === 0);
+
+  const BUSINESS_ENTITY_TYPES = new Set(["llc", "s_corp", "c_corp", "partnership", "other"]);
+  // A business entity counts as in-estate when its `entity_owners` rows sum to
+  // 100% (or when the rows are absent — legacy data predates the join table).
+  // Mirrors `familyOwnedFraction` in lib/estate/in-estate-at-year.ts; kept
+  // binary here to avoid splitting individual rows in the UI.
+  const isFamilyOwnedBusiness = (entityId: string | null | undefined): boolean => {
+    if (!entityId) return false;
+    const e = entityMap[entityId];
+    if (!e || !e.entityType || !BUSINESS_ENTITY_TYPES.has(e.entityType)) return false;
+    if (e.owners == null) return true;
+    const sum = e.owners.reduce((s, o) => s + (o.percent ?? 0), 0);
+    return sum >= 0.9999;
+  };
+
+  // An account belongs in-estate when it has no entity owner, or when the
+  // owning entity is a family-owned business interest. 529s are always
+  // out-of-estate — a completed gift under §529, never household property —
+  // so this check runs BEFORE the no-entity-owner fallback below, which would
+  // otherwise default an ownerless 529 (they carry no account_owners rows) to
+  // in-estate the same way it does for household-owned Plaid imports (see
+  // memory: balance-sheet-ownerless-account-drop-fix).
+  const accountInEstate = (a: AccountRow): boolean => {
+    if (a.category === "education_savings") return false;
+    return !a.ownerEntityId || isFamilyOwnedBusiness(a.ownerEntityId);
+  };
+
   const [assetsEdit, setAssetsEdit] = useState(false);
   const [liabilitiesEdit, setLiabilitiesEdit] = useState(false);
 
   // Controlled Add Asset dialog (after category pick)
   const [addCategory, setAddCategory] = useState<AccountCategory | null>(null);
 
-  const [editingAccount, setEditingAccount] = useState<AccountRow | null>(null);
+  // Focus mode's row, snapshotted at mount. Null means the page offers no editor
+  // for it (see `findFocusRow`) or there's no edit access. The editing state
+  // below is seeded exactly as that row's click sets it.
+  const [focusTarget] = useState(() =>
+    focus && canEdit ? findFocusRow(focus, accounts, liabilities, accountInEstate) : null,
+  );
+
+  const [editingAccount, setEditingAccount] = useState<AccountRow | null>(() =>
+    focusTarget?.dialog === "account" ? focusTarget.row : null,
+  );
   const [deletingAccount, setDeletingAccount] = useState<AccountRow | null>(null);
 
-  const [editingLiability, setEditingLiability] = useState<LiabilityRow | null>(null);
+  const [editingLiability, setEditingLiability] = useState<LiabilityRow | null>(() =>
+    focusTarget?.dialog === "liability" ? focusTarget.row : null,
+  );
   const [deletingLiability, setDeletingLiability] = useState<LiabilityRow | null>(null);
 
   const [editingNote, setEditingNote] = useState<NoteReceivable | null>(null);
   const [deletingNote, setDeletingNote] = useState<NoteReceivable | null>(null);
 
-  const [editingBusiness, setEditingBusiness] = useState<BusinessAccount | null>(null);
-  const [businessDialogOpen, setBusinessDialogOpen] = useState(false);
+  // A focused business seeds both, as `openEditBusiness` sets them.
+  const [editingBusiness, setEditingBusiness] = useState<BusinessAccount | null>(() =>
+    focusTarget?.dialog === "business" ? accountRowToBusinessAccount(focusTarget.row) : null,
+  );
+  const [businessDialogOpen, setBusinessDialogOpen] = useState(() => focusTarget?.dialog === "business");
   const [addLiabilityOpen, setAddLiabilityOpen] = useState(false);
   // When "+ Add sub-account" / "+ Add sub-liability" fires from inside the
   // Business dialog's Assets tab, capture the business id so the freshly-opened
@@ -729,38 +843,6 @@ export default function BalanceSheetView({
     });
   // Which business' Incomes popover is open (null = none).
   const [incomesPopoverFor, setIncomesPopoverFor] = useState<string | null>(null);
-
-  const entityMap = Object.fromEntries(entities.map((e) => [e.id, e]));
-  // Term policies (cash_value = 0) are hidden from Net Worth — face value pays out only on
-  // death, so it's not an asset on the balance sheet. They're managed in the Insurance tab.
-  const isVisibleInNetWorth = (a: AccountRow) =>
-    !(a.category === "life_insurance" && Number(a.value) === 0);
-
-  const BUSINESS_ENTITY_TYPES = new Set(["llc", "s_corp", "c_corp", "partnership", "other"]);
-  // A business entity counts as in-estate when its `entity_owners` rows sum to
-  // 100% (or when the rows are absent — legacy data predates the join table).
-  // Mirrors `familyOwnedFraction` in lib/estate/in-estate-at-year.ts; kept
-  // binary here to avoid splitting individual rows in the UI.
-  const isFamilyOwnedBusiness = (entityId: string | null | undefined): boolean => {
-    if (!entityId) return false;
-    const e = entityMap[entityId];
-    if (!e || !e.entityType || !BUSINESS_ENTITY_TYPES.has(e.entityType)) return false;
-    if (e.owners == null) return true;
-    const sum = e.owners.reduce((s, o) => s + (o.percent ?? 0), 0);
-    return sum >= 0.9999;
-  };
-
-  // An account belongs in-estate when it has no entity owner, or when the
-  // owning entity is a family-owned business interest. 529s are always
-  // out-of-estate — a completed gift under §529, never household property —
-  // so this check runs BEFORE the no-entity-owner fallback below, which would
-  // otherwise default an ownerless 529 (they carry no account_owners rows) to
-  // in-estate the same way it does for household-owned Plaid imports (see
-  // memory: balance-sheet-ownerless-account-drop-fix).
-  const accountInEstate = (a: AccountRow): boolean => {
-    if (a.category === "education_savings") return false;
-    return !a.ownerEntityId || isFamilyOwnedBusiness(a.ownerEntityId);
-  };
 
   // Legacy notes_receivable accounts are sourced from `notesReceivable` now.
   // Reads the MERGED rows so an in-flight inline edit shows immediately — and
@@ -1015,6 +1097,222 @@ export default function BalanceSheetView({
     }
     return `${(Number(a.growthRate) * 100).toFixed(1)}%`;
   }
+
+  // Every dialog, built once: the page renders them under its panels, focus
+  // mode renders them alone.
+  const dialogsNode = (
+    <>
+      {/* Business dialog — handles both add (from the menu) and edit (row click).
+       *  Every other category routes to the shared AddAccountDialog.
+       *  Conditionally mounted so every open is a fresh session — BusinessDialog
+       *  seeds `mode`/`currentBusiness` from props via useState (initial-value only),
+       *  so a persistently-mounted instance would keep stale state across opens. */}
+      {businessDialogOpen && (
+        <BusinessDialog
+          clientId={clientId}
+          mode={editingBusiness ? "edit" : "add"}
+          business={editingBusiness ?? undefined}
+          open
+          onOpenChange={(o) => {
+            if (!o) {
+              setBusinessDialogOpen(false);
+              setEditingBusiness(null);
+            }
+          }}
+          familyMembers={familyMembers}
+          entities={entities}
+          allAccounts={accounts}
+          allLiabilities={liabilities}
+          onDataChanged={() => router.refresh()}
+          onSaved={() => {/* router.refresh handled inside the form */}}
+          onRequestDelete={
+            editingBusiness
+              ? () => setDeletingAccount(
+                  accounts.find((a) => a.id === editingBusiness.id) ?? null,
+                )
+              : undefined
+          }
+          onOpenAddAccount={(bizId) => {
+            setAddAccountParentBusinessId(bizId);
+            setAddCategory("cash");
+          }}
+          onOpenAddLiability={(bizId) => {
+            setAddLiabilityParentBusinessId(bizId);
+            setAddLiabilityOpen(true);
+          }}
+          incomes={incomes}
+          expenses={expenses}
+          planStartYear={planStartYear}
+          planEndYear={planEndYear}
+          primaryClientBirthYear={primaryClientBirthYear}
+          // TODO Task 11+: wire onOpenAddIncome/onOpenAddExpense/onEditIncome/onEditExpense
+          // to the existing IncomeDialog/ExpenseDialog in income-expenses-view.tsx.
+          // Those dialogs are mounted in a sibling view so cross-component wiring is
+          // non-trivial. For v1 the Flows tab is read-only; add/edit uses existing entry points.
+        />
+      )}
+      <AddAccountDialog
+        clientId={clientId}
+        category={addCategory ?? undefined}
+        label={addCategory ? CATEGORY_LABELS[addCategory] : undefined}
+        entities={entities}
+        businesses={businessOptions}
+        rothIraAccounts={rothIraAccounts}
+        familyMembers={familyMembers}
+        categoryDefaults={categoryDefaults}
+        modelPortfolios={modelPortfolios}
+        fundPortfolios={fundPortfolios}
+        ownerNames={ownerNames}
+        salaries={salaryOptions}
+        assetClasses={assetClasses}
+        portfolioAllocationsMap={portfolioAllocationsMap}
+        categoryDefaultSources={categoryDefaultSources}
+        milestones={milestones}
+        clientFirstName={ownerNames.clientName.split(" ")[0]}
+        spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
+        existingAccountNames={accounts.map((a) => a.name)}
+        resolvedInflationRate={resolvedInflationRate}
+        initialParentAccountId={addAccountParentBusinessId}
+        open={addCategory !== null}
+        onOpenChange={(o) => {
+          if (!o) {
+            setAddCategory(null);
+            setAddAccountParentBusinessId(null);
+          }
+        }}
+      />
+
+      {/* Edit dialogs */}
+      <AddAccountDialog
+        clientId={clientId}
+        entities={entities}
+        businesses={businessOptions}
+        rothIraAccounts={rothIraAccounts}
+        familyMembers={familyMembers}
+        categoryDefaults={categoryDefaults}
+        modelPortfolios={modelPortfolios}
+        fundPortfolios={fundPortfolios}
+        ownerNames={ownerNames}
+        salaries={salaryOptions}
+        assetClasses={assetClasses}
+        categoryDefaultSources={categoryDefaultSources}
+        portfolioAllocationsMap={portfolioAllocationsMap}
+        milestones={milestones}
+        clientFirstName={ownerNames.clientName.split(" ")[0]}
+        spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
+        resolvedInflationRate={resolvedInflationRate}
+        open={!!editingAccount}
+        onOpenChange={(o) => !o && setEditingAccount(null)}
+        editing={editingAccount ? accountToInitial(editingAccount) : undefined}
+        onRequestDelete={() => {
+          if (editingAccount) setDeletingAccount(editingAccount);
+        }}
+      />
+
+      <AddLiabilityDialog
+        clientId={clientId}
+        realEstateAccounts={realEstateAccounts}
+        entities={entities}
+        businesses={businessOptions}
+        familyMembers={familyMembers}
+        clientFirstName={ownerNames.clientName.split(" ")[0]}
+        spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
+        open={!!editingLiability}
+        onOpenChange={(o) => !o && setEditingLiability(null)}
+        editing={editingLiability ? liabilityToInitial(editingLiability) : undefined}
+        onRequestDelete={() => {
+          if (editingLiability) setDeletingLiability(editingLiability);
+        }}
+      />
+
+      {/* Second AddLiabilityDialog instance — opens from BusinessAssetsTab's
+          "+ Add sub-liability" button. Distinct from the legacy menu-triggered
+          instance above; consolidate when the legacy add menu is reworked. */}
+      <AddLiabilityDialog
+        clientId={clientId}
+        realEstateAccounts={realEstateAccounts}
+        entities={entities}
+        businesses={businessOptions}
+        familyMembers={familyMembers}
+        clientFirstName={ownerNames.clientName.split(" ")[0]}
+        spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
+        initialParentAccountId={addLiabilityParentBusinessId}
+        open={addLiabilityOpen}
+        onOpenChange={(o) => {
+          if (!o) {
+            setAddLiabilityOpen(false);
+            setAddLiabilityParentBusinessId(null);
+          }
+        }}
+      />
+
+      <AddAccountDialog
+        clientId={clientId}
+        entities={entities}
+        familyMembers={familyMembers}
+        categoryDefaults={categoryDefaults}
+        modelPortfolios={modelPortfolios}
+        fundPortfolios={fundPortfolios}
+        ownerNames={ownerNames}
+        assetClasses={assetClasses}
+        categoryDefaultSources={categoryDefaultSources}
+        portfolioAllocationsMap={portfolioAllocationsMap}
+        milestones={milestones}
+        clientFirstName={ownerNames.clientName.split(" ")[0]}
+        spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
+        resolvedInflationRate={resolvedInflationRate}
+        open={!!editingNote}
+        onOpenChange={(o) => !o && setEditingNote(null)}
+        editingNote={editingNote ? noteToInitial(editingNote) : undefined}
+        onRequestDelete={() => {
+          if (editingNote) setDeletingNote(editingNote);
+        }}
+      />
+
+      <AccountDeleteDialog
+        clientId={clientId}
+        account={deletingAccount ? { id: deletingAccount.id, name: deletingAccount.name } : null}
+        onCancel={() => setDeletingAccount(null)}
+        onConfirm={async () => {
+          if (deletingAccount) await performAccountDelete(deletingAccount.id);
+        }}
+      />
+
+      <ConfirmDeleteDialog
+        open={!!deletingLiability}
+        title="Delete Liability"
+        message={deletingLiability ? `Delete "${deletingLiability.name}"?` : ""}
+        onCancel={() => setDeletingLiability(null)}
+        onConfirm={async () => {
+          if (deletingLiability) await performLiabilityDelete(deletingLiability.id);
+        }}
+      />
+
+      <ConfirmDeleteDialog
+        open={!!deletingNote}
+        title="Delete Note Receivable"
+        message={deletingNote ? `Delete "${deletingNote.name}"?` : ""}
+        onCancel={() => setDeletingNote(null)}
+        onConfirm={async () => {
+          if (deletingNote) await performNoteDelete(deletingNote.id);
+        }}
+      />
+    </>
+  );
+
+  // Focus mode hands control back once its editor is gone, however it went:
+  // cancel, save, a confirmed delete (which closes the editor directly, not
+  // through its onOpenChange) — or, as "unavailable", when none ever opened.
+  const focusDialogOpen = editingAccount !== null || editingLiability !== null || businessDialogOpen;
+  const focusClosedRef = useRef(false);
+  useEffect(() => {
+    if (!focus || focusDialogOpen || focusClosedRef.current) return;
+    focusClosedRef.current = true;
+    if (focusTarget) onFocusClose?.();
+    else onFocusClose?.("unavailable");
+  }, [focus, focusTarget, focusDialogOpen, onFocusClose]);
+
+  if (focus) return dialogsNode;
 
   return (
     <div className="space-y-6">
@@ -1494,201 +1792,7 @@ export default function BalanceSheetView({
         </div>
       )}
 
-      {/* Business dialog — handles both add (from the menu) and edit (row click).
-       *  Every other category routes to the shared AddAccountDialog.
-       *  Conditionally mounted so every open is a fresh session — BusinessDialog
-       *  seeds `mode`/`currentBusiness` from props via useState (initial-value only),
-       *  so a persistently-mounted instance would keep stale state across opens. */}
-      {businessDialogOpen && (
-        <BusinessDialog
-          clientId={clientId}
-          mode={editingBusiness ? "edit" : "add"}
-          business={editingBusiness ?? undefined}
-          open
-          onOpenChange={(o) => {
-            if (!o) {
-              setBusinessDialogOpen(false);
-              setEditingBusiness(null);
-            }
-          }}
-          familyMembers={familyMembers}
-          entities={entities}
-          allAccounts={accounts}
-          allLiabilities={liabilities}
-          onDataChanged={() => router.refresh()}
-          onSaved={() => {/* router.refresh handled inside the form */}}
-          onRequestDelete={
-            editingBusiness
-              ? () => setDeletingAccount(
-                  accounts.find((a) => a.id === editingBusiness.id) ?? null,
-                )
-              : undefined
-          }
-          onOpenAddAccount={(bizId) => {
-            setAddAccountParentBusinessId(bizId);
-            setAddCategory("cash");
-          }}
-          onOpenAddLiability={(bizId) => {
-            setAddLiabilityParentBusinessId(bizId);
-            setAddLiabilityOpen(true);
-          }}
-          incomes={incomes}
-          expenses={expenses}
-          planStartYear={planStartYear}
-          planEndYear={planEndYear}
-          primaryClientBirthYear={primaryClientBirthYear}
-          // TODO Task 11+: wire onOpenAddIncome/onOpenAddExpense/onEditIncome/onEditExpense
-          // to the existing IncomeDialog/ExpenseDialog in income-expenses-view.tsx.
-          // Those dialogs are mounted in a sibling view so cross-component wiring is
-          // non-trivial. For v1 the Flows tab is read-only; add/edit uses existing entry points.
-        />
-      )}
-      <AddAccountDialog
-        clientId={clientId}
-        category={addCategory ?? undefined}
-        label={addCategory ? CATEGORY_LABELS[addCategory] : undefined}
-        entities={entities}
-        businesses={businessOptions}
-        rothIraAccounts={rothIraAccounts}
-        familyMembers={familyMembers}
-        categoryDefaults={categoryDefaults}
-        modelPortfolios={modelPortfolios}
-        fundPortfolios={fundPortfolios}
-        ownerNames={ownerNames}
-        salaries={salaryOptions}
-        assetClasses={assetClasses}
-        portfolioAllocationsMap={portfolioAllocationsMap}
-        categoryDefaultSources={categoryDefaultSources}
-        milestones={milestones}
-        clientFirstName={ownerNames.clientName.split(" ")[0]}
-        spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
-        existingAccountNames={accounts.map((a) => a.name)}
-        resolvedInflationRate={resolvedInflationRate}
-        initialParentAccountId={addAccountParentBusinessId}
-        open={addCategory !== null}
-        onOpenChange={(o) => {
-          if (!o) {
-            setAddCategory(null);
-            setAddAccountParentBusinessId(null);
-          }
-        }}
-      />
-
-      {/* Edit dialogs */}
-      <AddAccountDialog
-        clientId={clientId}
-        entities={entities}
-        businesses={businessOptions}
-        rothIraAccounts={rothIraAccounts}
-        familyMembers={familyMembers}
-        categoryDefaults={categoryDefaults}
-        modelPortfolios={modelPortfolios}
-        fundPortfolios={fundPortfolios}
-        ownerNames={ownerNames}
-        salaries={salaryOptions}
-        assetClasses={assetClasses}
-        categoryDefaultSources={categoryDefaultSources}
-        portfolioAllocationsMap={portfolioAllocationsMap}
-        milestones={milestones}
-        clientFirstName={ownerNames.clientName.split(" ")[0]}
-        spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
-        resolvedInflationRate={resolvedInflationRate}
-        open={!!editingAccount}
-        onOpenChange={(o) => !o && setEditingAccount(null)}
-        editing={editingAccount ? accountToInitial(editingAccount) : undefined}
-        onRequestDelete={() => {
-          if (editingAccount) setDeletingAccount(editingAccount);
-        }}
-      />
-
-      <AddLiabilityDialog
-        clientId={clientId}
-        realEstateAccounts={realEstateAccounts}
-        entities={entities}
-        businesses={businessOptions}
-        familyMembers={familyMembers}
-        clientFirstName={ownerNames.clientName.split(" ")[0]}
-        spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
-        open={!!editingLiability}
-        onOpenChange={(o) => !o && setEditingLiability(null)}
-        editing={editingLiability ? liabilityToInitial(editingLiability) : undefined}
-        onRequestDelete={() => {
-          if (editingLiability) setDeletingLiability(editingLiability);
-        }}
-      />
-
-      {/* Second AddLiabilityDialog instance — opens from BusinessAssetsTab's
-          "+ Add sub-liability" button. Distinct from the legacy menu-triggered
-          instance above; consolidate when the legacy add menu is reworked. */}
-      <AddLiabilityDialog
-        clientId={clientId}
-        realEstateAccounts={realEstateAccounts}
-        entities={entities}
-        businesses={businessOptions}
-        familyMembers={familyMembers}
-        clientFirstName={ownerNames.clientName.split(" ")[0]}
-        spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
-        initialParentAccountId={addLiabilityParentBusinessId}
-        open={addLiabilityOpen}
-        onOpenChange={(o) => {
-          if (!o) {
-            setAddLiabilityOpen(false);
-            setAddLiabilityParentBusinessId(null);
-          }
-        }}
-      />
-
-      <AddAccountDialog
-        clientId={clientId}
-        entities={entities}
-        familyMembers={familyMembers}
-        categoryDefaults={categoryDefaults}
-        modelPortfolios={modelPortfolios}
-        fundPortfolios={fundPortfolios}
-        ownerNames={ownerNames}
-        assetClasses={assetClasses}
-        categoryDefaultSources={categoryDefaultSources}
-        portfolioAllocationsMap={portfolioAllocationsMap}
-        milestones={milestones}
-        clientFirstName={ownerNames.clientName.split(" ")[0]}
-        spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
-        resolvedInflationRate={resolvedInflationRate}
-        open={!!editingNote}
-        onOpenChange={(o) => !o && setEditingNote(null)}
-        editingNote={editingNote ? noteToInitial(editingNote) : undefined}
-        onRequestDelete={() => {
-          if (editingNote) setDeletingNote(editingNote);
-        }}
-      />
-
-      <AccountDeleteDialog
-        clientId={clientId}
-        account={deletingAccount ? { id: deletingAccount.id, name: deletingAccount.name } : null}
-        onCancel={() => setDeletingAccount(null)}
-        onConfirm={async () => {
-          if (deletingAccount) await performAccountDelete(deletingAccount.id);
-        }}
-      />
-
-      <ConfirmDeleteDialog
-        open={!!deletingLiability}
-        title="Delete Liability"
-        message={deletingLiability ? `Delete "${deletingLiability.name}"?` : ""}
-        onCancel={() => setDeletingLiability(null)}
-        onConfirm={async () => {
-          if (deletingLiability) await performLiabilityDelete(deletingLiability.id);
-        }}
-      />
-
-      <ConfirmDeleteDialog
-        open={!!deletingNote}
-        title="Delete Note Receivable"
-        message={deletingNote ? `Delete "${deletingNote.name}"?` : ""}
-        onCancel={() => setDeletingNote(null)}
-        onConfirm={async () => {
-          if (deletingNote) await performNoteDelete(deletingNote.id);
-        }}
-      />
+      {dialogsNode}
     </div>
   );
 }
