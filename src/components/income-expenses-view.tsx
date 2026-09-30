@@ -30,6 +30,8 @@ import type { ClientInfo as EngineClientInfo, PlanSettings, Income as EngineInco
 import type { IncomeTaxType } from "@/engine/tax-adjustments";
 import type { AccountOwner } from "@/engine/ownership";
 import { SocialSecurityCard } from "./social-security-card";
+import { SocialSecurityDialog } from "./social-security-dialog";
+import type { EditorFocus } from "@/lib/scenario/change-editor-target";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useClientAccess } from "./client-access-provider";
 import Row from "@/components/income-expenses/row";
@@ -245,6 +247,14 @@ export interface IncomeExpensesViewProps {
    * wizard can give goals their own step. Mirrors BalanceSheetView's `section`.
    */
   section?: "cash-flow" | "goals";
+  /**
+   * Focus mode, for the Solver's Changes tab: open the dialog this page opens
+   * for ONE row and render nothing else. Read once, at mount — key the view by
+   * the focus to switch rows.
+   */
+  focus?: EditorFocus;
+  /** Called once the focused dialog is gone (cancel, save, delete) or couldn't open. */
+  onFocusClose?: () => void;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1740,6 +1750,48 @@ function ExpenseDialog({
 
 
 
+// ── Focus mode ────────────────────────────────────────────────────────────────
+
+/** The focused row, tagged with the dialog the page opens for it. A Social
+ *  Security row is an `income`, but the page edits it in `SocialSecurityDialog`
+ *  (through `SocialSecurityCard`), never in `IncomeDialog`. */
+type FocusTarget =
+  | { dialog: "income" | "social_security"; row: Income }
+  | { dialog: "expense"; row: Expense }
+  | { dialog: "savings_rule"; row: SavingsRule };
+
+/** The page's own test for which flows get a pencil. Entity- and business-owned
+ *  rows sit in read-only rollups instead, and the dialogs can't carry
+ *  `ownerEntityId` — saving one would drop a scenario's ownership edit. */
+const hasPagePencil = (row: { ownerEntityId?: string | null; ownerAccountId?: string | null }) =>
+  !row.ownerEntityId && !row.ownerAccountId;
+
+function findFocusRow(
+  focus: EditorFocus,
+  incomes: Income[],
+  expenses: Expense[],
+  savingsRules: SavingsRule[],
+): FocusTarget | null {
+  switch (focus.kind) {
+    case "income": {
+      const row = incomes.find((i) => i.id === focus.id);
+      if (!row) return null;
+      if (row.type === "social_security") return { dialog: "social_security", row };
+      return hasPagePencil(row) ? { dialog: "income", row } : null;
+    }
+    case "expense": {
+      const row = expenses.find((e) => e.id === focus.id);
+      return row && hasPagePencil(row) ? { dialog: "expense", row } : null;
+    }
+    case "savings_rule": {
+      const row = savingsRules.find((r) => r.id === focus.id);
+      return row ? { dialog: "savings_rule", row } : null;
+    }
+    default:
+      return null;
+  }
+}
+
 // ── Main View ─────────────────────────────────────────────────────────────────
 
 export default function IncomeExpensesView({
@@ -1762,6 +1814,8 @@ export default function IncomeExpensesView({
   onOpenEntity,
   embed = "page",
   section = "cash-flow",
+  focus,
+  onFocusClose,
 }: IncomeExpensesViewProps) {
   const isWizard = embed === "wizard";
   const goalsOnly = section === "goals";
@@ -1776,19 +1830,33 @@ export default function IncomeExpensesView({
   const [incomeEdit, setIncomeEdit] = useState(false);
   const [expenseEdit, setExpenseEdit] = useState(false);
 
-  // Dialog state — a single dialog per entity type, controlled by (open, editing, defaultType)
+  // Focus mode's row, snapshotted at mount. Null means nothing to open: the row
+  // is gone, this view doesn't edit that kind, or — as on the page — no edit access.
+  const [focusTarget] = useState(() =>
+    focus && canEdit ? findFocusRow(focus, initialIncomes, initialExpenses, initialSavingsRules) : null,
+  );
+
+  // Dialog state — a single dialog per entity type, controlled by (open, editing, defaultType).
+  // Focus mode seeds the same state a row's pencil sets.
   const [incomeDialog, setIncomeDialog] = useState<{
     open: boolean;
     editing?: Income;
     defaultType?: IncomeType;
-  }>({ open: false });
+  }>(() => (focusTarget?.dialog === "income" ? { open: true, editing: focusTarget.row } : { open: false }));
   const [expenseDialog, setExpenseDialog] = useState<{
     open: boolean;
     editing?: Expense;
     defaultType?: ExpenseType;
     defaultIsGoal?: boolean;
-  }>({ open: false });
-  const [savingsDialog, setSavingsDialog] = useState<{ open: boolean; editing?: SavingsRule }>({ open: false });
+  }>(() => (focusTarget?.dialog === "expense" ? { open: true, editing: focusTarget.row } : { open: false }));
+  const [savingsDialog, setSavingsDialog] = useState<{ open: boolean; editing?: SavingsRule }>(() =>
+    focusTarget?.dialog === "savings_rule" ? { open: true, editing: focusTarget.row } : { open: false },
+  );
+  // The page opens Social Security only through `SocialSecurityCard`, which it
+  // renders only with both SS props — focus mode needs the same two.
+  const [ssFocusRow, setSsFocusRow] = useState<Income | null>(() =>
+    focusTarget?.dialog === "social_security" && ssClientInfo && ssPlanSettings ? focusTarget.row : null,
+  );
 
   // Delete confirms
   const [deletingIncome, setDeletingIncome] = useState<Income | null>(null);
@@ -2041,8 +2109,104 @@ export default function IncomeExpensesView({
     );
   }
 
-  // The expense editor and its delete confirm are rendered by BOTH layouts
-  // below, so they're built once here instead of duplicated per branch.
+  // The editors and their delete confirms are rendered by more than one layout
+  // below (the expense pair by all three, the rest by the cash-flow layout and
+  // focus mode), so they're built once here instead of duplicated per branch.
+  const incomeDialogNode = incomeDialog.open ? (
+    <IncomeDialog
+      key={incomeDialog.editing?.id ?? "new"}
+      clientId={clientId}
+      accounts={accounts}
+      entities={entities}
+      clientInfo={clientInfo}
+      ownerNames={ownerNames}
+      open={incomeDialog.open}
+      onOpenChange={(o) => setIncomeDialog((d) => ({ ...d, open: o, editing: o ? d.editing : undefined }))}
+      defaultType={incomeDialog.defaultType}
+      editing={incomeDialog.editing}
+      onSaved={(income, mode) => {
+        if (mode === "create") setIncomeList((prev) => [...prev, income]);
+        else setIncomeList((prev) => prev.map((i) => (i.id === income.id ? income : i)));
+      }}
+      onRequestDelete={() => {
+        if (incomeDialog.editing) setDeletingIncome(incomeDialog.editing);
+      }}
+      schedule={incomeDialog.editing ? incomeSchedules[incomeDialog.editing.id] : undefined}
+      resolvedInflationRate={resolvedInflationRate}
+    />
+  ) : null;
+
+  const incomeDeleteConfirmNode = (
+    <ConfirmDeleteDialog
+      open={!!deletingIncome}
+      title="Delete Income"
+      message={deletingIncome ? `Delete "${deletingIncome.name}"?` : ""}
+      onCancel={() => setDeletingIncome(null)}
+      onConfirm={async () => {
+        if (!deletingIncome) return;
+        const ok = await performScenarioDelete(
+          "income",
+          deletingIncome.id,
+          `/api/clients/${clientId}/incomes/${deletingIncome.id}`,
+        );
+        if (ok) {
+          setIncomeList((prev) => prev.filter((i) => i.id !== deletingIncome.id));
+          setIncomeDialog({ open: false });
+          setDeletingIncome(null);
+        }
+      }}
+    />
+  );
+
+  const savingsDialogNode = savingsDialog.open ? (
+    <SavingsRuleDialog
+      clientId={clientId}
+      accounts={accounts}
+      open={savingsDialog.open}
+      onOpenChange={(o) => setSavingsDialog((d) => ({ ...d, open: o, editing: o ? d.editing : undefined }))}
+      editing={savingsDialog.editing}
+      onSaved={(rule, mode) => {
+        if (mode === "create") setSavingsRuleList((prev) => [...prev, rule]);
+        else setSavingsRuleList((prev) => prev.map((r) => (r.id === rule.id ? rule : r)));
+      }}
+      onRequestDelete={() => {
+        if (savingsDialog.editing) setDeletingSavings(savingsDialog.editing);
+      }}
+      schedule={savingsDialog.editing ? savingsSchedules[savingsDialog.editing.id] : undefined}
+      clientInfo={clientInfo}
+      ownerNames={ownerNames}
+      familyMembers={familyMembers}
+      resolvedInflationRate={resolvedInflationRate}
+      salaries={toSalaryOptions(incomeList, ownerNames)}
+    />
+  ) : null;
+
+  const savingsDeleteConfirmNode = (
+    <ConfirmDeleteDialog
+      open={!!deletingSavings}
+      title="Delete Savings Rule"
+      message={
+        deletingSavings
+          ? `Delete savings rule for "${accountMap[deletingSavings.accountId]?.name ?? "account"}"?`
+          : ""
+      }
+      onCancel={() => setDeletingSavings(null)}
+      onConfirm={async () => {
+        if (!deletingSavings) return;
+        const ok = await performScenarioDelete(
+          "savings_rule",
+          deletingSavings.id,
+          `/api/clients/${clientId}/savings-rules/${deletingSavings.id}`,
+        );
+        if (ok) {
+          setSavingsRuleList((prev) => prev.filter((r) => r.id !== deletingSavings.id));
+          setSavingsDialog({ open: false });
+          setDeletingSavings(null);
+        }
+      }}
+    />
+  );
+
   const expenseDialogNode = expenseDialog.open ? (
     <ExpenseDialog
       key={expenseDialog.editing?.id ?? "new"}
@@ -2095,7 +2259,44 @@ export default function IncomeExpensesView({
     />
   );
 
+  // Focus mode hands control back once its editor is gone, however it went:
+  // cancel, save, a confirmed delete (which closes the editor directly, not
+  // through its onOpenChange), or never opened at all.
+  const focusDialogOpen = incomeDialog.open || expenseDialog.open || savingsDialog.open || ssFocusRow !== null;
+  const focusClosedRef = useRef(false);
+  useEffect(() => {
+    if (!focus || focusDialogOpen || focusClosedRef.current) return;
+    focusClosedRef.current = true;
+    onFocusClose?.();
+  }, [focus, focusDialogOpen, onFocusClose]);
+
   // ── Render ────────────────────────────────────────────────────────────────
+
+  if (focus) {
+    return (
+      <>
+        {incomeDialogNode}
+        {expenseDialogNode}
+        {savingsDialogNode}
+        {/* The dialog `SocialSecurityCard` opens, minus the card. */}
+        {ssFocusRow && ssClientInfo && ssPlanSettings && (
+          <SocialSecurityDialog
+            clientId={clientId}
+            owner={ssFocusRow.owner === "spouse" ? "spouse" : "client"}
+            existingRow={ssFocusRow as unknown as EngineIncome}
+            clientInfo={ssClientInfo}
+            planSettings={ssPlanSettings}
+            incomes={incomeList}
+            onClose={() => setSsFocusRow(null)}
+            onSaved={() => setSsFocusRow(null)}
+          />
+        )}
+        {incomeDeleteConfirmNode}
+        {expenseDeleteConfirmNode}
+        {savingsDeleteConfirmNode}
+      </>
+    );
+  }
 
   if (goalsOnly) {
     // Goals have no table of their own: they are expenses that either are
@@ -2226,7 +2427,7 @@ export default function IncomeExpensesView({
                 // double-count the per-group subtotal.
                 const items = incomeList.filter(
                   (i) =>
-                    group.types.includes(i.type) && !i.ownerEntityId && !i.ownerAccountId,
+                    group.types.includes(i.type) && hasPagePencil(i),
                 );
                 if (items.length === 0) return null;
                 const subtotal = items.reduce((s, i) => s + Number(i.annualAmount), 0);
@@ -2488,7 +2689,7 @@ export default function IncomeExpensesView({
               // double-count the per-group subtotal.
               const items = expenseList.filter(
                 (e) =>
-                  group.types.includes(e.type) && !e.ownerEntityId && !e.ownerAccountId,
+                  group.types.includes(e.type) && hasPagePencil(e),
               );
               if (items.length === 0) return null;
               // Living-expense rows edit their amount inline. The row-level
@@ -2536,101 +2737,18 @@ export default function IncomeExpensesView({
       </Panel>
 
       {/* Dialogs */}
-      {incomeDialog.open && (
-        <IncomeDialog
-          key={incomeDialog.editing?.id ?? "new"}
-          clientId={clientId}
-          accounts={accounts}
-          entities={entities}
-          clientInfo={clientInfo}
-          ownerNames={ownerNames}
-          open={incomeDialog.open}
-          onOpenChange={(o) => setIncomeDialog((d) => ({ ...d, open: o, editing: o ? d.editing : undefined }))}
-          defaultType={incomeDialog.defaultType}
-          editing={incomeDialog.editing}
-          onSaved={(income, mode) => {
-            if (mode === "create") setIncomeList((prev) => [...prev, income]);
-            else setIncomeList((prev) => prev.map((i) => (i.id === income.id ? income : i)));
-          }}
-          onRequestDelete={() => {
-            if (incomeDialog.editing) setDeletingIncome(incomeDialog.editing);
-          }}
-          schedule={incomeDialog.editing ? incomeSchedules[incomeDialog.editing.id] : undefined}
-          resolvedInflationRate={resolvedInflationRate}
-        />
-      )}
+      {incomeDialogNode}
 
       {expenseDialogNode}
 
-      {savingsDialog.open && (
-        <SavingsRuleDialog
-          clientId={clientId}
-          accounts={accounts}
-          open={savingsDialog.open}
-          onOpenChange={(o) => setSavingsDialog((d) => ({ ...d, open: o, editing: o ? d.editing : undefined }))}
-          editing={savingsDialog.editing}
-          onSaved={(rule, mode) => {
-            if (mode === "create") setSavingsRuleList((prev) => [...prev, rule]);
-            else setSavingsRuleList((prev) => prev.map((r) => (r.id === rule.id ? rule : r)));
-          }}
-          onRequestDelete={() => {
-            if (savingsDialog.editing) setDeletingSavings(savingsDialog.editing);
-          }}
-          schedule={savingsDialog.editing ? savingsSchedules[savingsDialog.editing.id] : undefined}
-          clientInfo={clientInfo}
-          ownerNames={ownerNames}
-          familyMembers={familyMembers}
-          resolvedInflationRate={resolvedInflationRate}
-          salaries={toSalaryOptions(incomeList, ownerNames)}
-        />
-      )}
+      {savingsDialogNode}
 
       {/* Delete confirms */}
-      <ConfirmDeleteDialog
-        open={!!deletingIncome}
-        title="Delete Income"
-        message={deletingIncome ? `Delete "${deletingIncome.name}"?` : ""}
-        onCancel={() => setDeletingIncome(null)}
-        onConfirm={async () => {
-          if (!deletingIncome) return;
-          const ok = await performScenarioDelete(
-            "income",
-            deletingIncome.id,
-            `/api/clients/${clientId}/incomes/${deletingIncome.id}`,
-          );
-          if (ok) {
-            setIncomeList((prev) => prev.filter((i) => i.id !== deletingIncome.id));
-            setIncomeDialog({ open: false });
-            setDeletingIncome(null);
-          }
-        }}
-      />
+      {incomeDeleteConfirmNode}
 
       {expenseDeleteConfirmNode}
 
-      <ConfirmDeleteDialog
-        open={!!deletingSavings}
-        title="Delete Savings Rule"
-        message={
-          deletingSavings
-            ? `Delete savings rule for "${accountMap[deletingSavings.accountId]?.name ?? "account"}"?`
-            : ""
-        }
-        onCancel={() => setDeletingSavings(null)}
-        onConfirm={async () => {
-          if (!deletingSavings) return;
-          const ok = await performScenarioDelete(
-            "savings_rule",
-            deletingSavings.id,
-            `/api/clients/${clientId}/savings-rules/${deletingSavings.id}`,
-          );
-          if (ok) {
-            setSavingsRuleList((prev) => prev.filter((r) => r.id !== deletingSavings.id));
-            setSavingsDialog({ open: false });
-            setDeletingSavings(null);
-          }
-        }}
-      />
+      {savingsDeleteConfirmNode}
 
     </div>
   );
