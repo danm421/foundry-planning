@@ -21,6 +21,7 @@ import { resolveInflationRate } from "@/lib/inflation";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { buildIncomeRows } from "@/lib/balance-sheet/build-income-rows";
 import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
+import { inheritedIraRowFields } from "@/lib/accounts/inherited-ira";
 
 /** Bundle of props the wizard's Accounts and Liabilities steps both need.
  * Mirrors the standard balance-sheet page loader at
@@ -187,6 +188,7 @@ export async function loadBalanceSheetStepData(clientId: string, firmId: string)
       growthRate: a.growthRate == null ? null : String(a.growthRate),
       rmdEnabled: a.rmdEnabled ?? null,
       priorYearEndValue: a.priorYearEndValue != null ? String(a.priorYearEndValue) : null,
+      ...inheritedIraRowFields(a),
       ownerEntityId: controllingEntity(a) ?? null,
       // From meta, not from `a` — the engine Account type never carries this.
       countsTowardAum: meta?.countsTowardAum ?? false,

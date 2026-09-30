@@ -368,6 +368,131 @@ describe("SolverTechniquesTab", () => {
     expect(onRegisterAccountMix).not.toHaveBeenCalled();
   });
 
+  // Note: `workingTree.accounts` is `[]` here, so `hydrate`'s engine lookup
+  // misses and falls back to `row` unchanged. This pins the pre-existing
+  // `...row` spread (the base `accounts` prop's field survives untouched)
+  // plus the form's own source filter — NOT the working-tree refresh added in
+  // fix round 1 below, which only fires when the id IS present in
+  // `workingTree.accounts`.
+  it("carries a base-sourced inheritedDeathYear through to the Roth-conversion form's source list", () => {
+    render(
+      <SolverTechniquesTab
+        {...baseProps}
+        accounts={[
+          {
+            id: "trad-inh",
+            name: "Inherited Trad IRA",
+            category: "retirement",
+            subType: "traditional_ira",
+            ownerFamilyMemberId: "fm-client",
+            inheritedDeathYear: 2022,
+          },
+        ]}
+        workingTree={tree([])}
+        onChange={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /add roth conversion/i }));
+    expect(
+      screen.getByText("No Traditional IRA / 401(k) / SEP / SIMPLE accounts available."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Inherited Trad IRA")).not.toBeInTheDocument();
+  });
+
+  // Fix round 1: `hydrate` must refresh `inheritedDeathYear` from the WORKING
+  // tree, not just carry the base `accounts` prop's value through unchanged.
+  // "Inherited" can be ticked/unticked inside a scenario (plan Review Focus
+  // #5) — the base prop alone would go stale in both directions.
+  it("picks up a scenario-only inherited flag: base account isn't inherited, the working tree ticks it", () => {
+    const workingTree = {
+      accounts: [
+        {
+          id: "trad-1",
+          name: "Trad IRA",
+          category: "retirement",
+          subType: "traditional_ira",
+          value: 500000,
+          basis: 0,
+          growthRate: 0.05,
+          rmdEnabled: true,
+          titlingType: "jtwros",
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+          inheritedDeathYear: 2022,
+        },
+      ],
+      rothConversions: [],
+    } as unknown as ClientData;
+
+    render(
+      <SolverTechniquesTab
+        {...baseProps}
+        accounts={[
+          {
+            id: "trad-1",
+            name: "Trad IRA",
+            category: "retirement",
+            subType: "traditional_ira",
+            ownerFamilyMemberId: "fm-client",
+            // Base is NOT inherited — the scenario is what makes it so.
+            inheritedDeathYear: null,
+          },
+        ]}
+        workingTree={workingTree}
+        onChange={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /add roth conversion/i }));
+    expect(
+      screen.getByText("No Traditional IRA / 401(k) / SEP / SIMPLE accounts available."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Trad IRA")).not.toBeInTheDocument();
+  });
+
+  it("picks up a scenario un-inheriting: base account is inherited, the working tree clears it", () => {
+    const workingTree = {
+      accounts: [
+        {
+          id: "trad-1",
+          name: "Trad IRA",
+          category: "retirement",
+          subType: "traditional_ira",
+          value: 500000,
+          basis: 0,
+          growthRate: 0.05,
+          rmdEnabled: true,
+          titlingType: "jtwros",
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+          inheritedDeathYear: null,
+        },
+      ],
+      rothConversions: [],
+    } as unknown as ClientData;
+
+    render(
+      <SolverTechniquesTab
+        {...baseProps}
+        accounts={[
+          {
+            id: "trad-1",
+            name: "Trad IRA",
+            category: "retirement",
+            subType: "traditional_ira",
+            ownerFamilyMemberId: "fm-client",
+            // Base IS inherited — the scenario un-ticks it.
+            inheritedDeathYear: 2022,
+          },
+        ]}
+        workingTree={workingTree}
+        onChange={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /add roth conversion/i }));
+    expect(
+      screen.queryByText("No Traditional IRA / 401(k) / SEP / SIMPLE accounts available."),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Trad IRA")).toBeInTheDocument();
+  });
+
   it("offers Estate planning as a catalog card only when baseClientData is provided", () => {
     const base = {
       client: { spouseDob: null }, accounts: [], entities: [], externalBeneficiaries: [],

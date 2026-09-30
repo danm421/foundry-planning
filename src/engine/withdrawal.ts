@@ -1,5 +1,6 @@
 import { splitAnnuityDistribution } from "./annuity/tax";
 import { computeTradIraPool, iraPoolKey, isTraditionalIra, proRataBasisReturn, type TradIraPool } from "./ira-basis";
+import { isInheritedIra } from "./inherited-ira";
 import type { WithdrawalPriority, Account } from "./types";
 
 interface WithdrawalResult {
@@ -143,7 +144,11 @@ export function categorizeDraw(input: CategorizeDrawInput): SupplementalDraw {
 
     const isRoth = account.subType === "roth_ira";
     const is401kOr403b = account.subType === "401k" || account.subType === "403b";
-    const isPreAge = ownerAge < 59.5;
+    // Distributions from an inherited IRA are "on account of death" — never
+    // penalized (§72(t)(2)(A)(ii)). Treating the heir as past 59½ also makes an
+    // inherited Roth's earnings come out tax-free, which is the rule once the
+    // original owner's 5-year clock is met (assumed).
+    const isPreAge = ownerAge < 59.5 && !isInheritedIra(account);
 
     if (isRoth) {
       // F2 ordering: contributions/basis come out first, tax- and penalty-free

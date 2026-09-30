@@ -29,6 +29,7 @@ const POPULATED: TaxSummaryPageData = {
     minRate: 0.12,
     maxRate: 0.35,
   },
+  bracketChart: null,
   composition: {
     year: 2042,
     roth: 300_000,

@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import type { ProjectionYear } from "@/engine";
 import type { TaxResult, BracketTier } from "@/lib/tax/types";
-import { buildBracketFillModel } from "../tax-bracket-chart";
-import { makeYear as makeBareYear } from "./fixtures";
+import { bracketFloorSeries, bracketRateLabel, buildBracketFillModel } from "../bracket-fill";
+import { makeYear as makeBareYear } from "@/components/cashflow/charts/__tests__/fixtures";
 
 const tier10: BracketTier = { from: 0, to: 23_200, rate: 0.1 };
 const tier12: BracketTier = { from: 23_200, to: 94_300, rate: 0.12 };
@@ -98,7 +98,7 @@ describe("buildBracketFillModel", () => {
     expect(y.otherIncome).toBe(80_000);
   });
 
-  it("carries each year's own bracket ladder, so a filing-status flip shows the ceilings halving", () => {
+  it("carries each year's own bracket ladder, so a filing-status flip shows the floors halving", () => {
     const model = buildBracketFillModel([
       makeYear(2045, 120_000, mfjBrackets),
       makeYear(2046, 120_000, singleBrackets),
@@ -161,5 +161,79 @@ describe("buildBracketFillModel", () => {
     expect(model.years).toEqual([]);
     expect(model.rates).toEqual([]);
     expect(model.yMax).toBe(0);
+  });
+});
+
+describe("bracketFloorSeries", () => {
+  it("draws one line per bracket, at that bracket's floor in each year's own dollars", () => {
+    // Income in the 22% tier both years; the single-filer ladder in 2046
+    // halves every floor, so each line steps down instead of drifting up.
+    const model = buildBracketFillModel([
+      makeYear(2045, 120_000, mfjBrackets),
+      makeYear(2046, 90_000, singleBrackets),
+    ]);
+    const floors = bracketFloorSeries(model);
+    // 37% is drawn too: its single-filer floor (191,950) sits under the 225k ceiling.
+    expect(floors.map((f) => f.rate)).toEqual([0.12, 0.22, 0.24, 0.37]);
+    expect(floors.find((f) => f.rate === 0.22)!.values).toEqual([94_300, 47_150]);
+    expect(floors.find((f) => f.rate === 0.24)!.values).toEqual([201_050, 100_525]);
+    expect(floors.find((f) => f.rate === 0.37)!.values).toEqual([383_900, 191_950]);
+  });
+
+  it("leaves the bottom bracket out — its floor is $0, a line along the axis", () => {
+    const floors = bracketFloorSeries(buildBracketFillModel([makeYear(2026, 120_000)]));
+    expect(floors.some((f) => f.rate === 0.1)).toBe(false);
+  });
+
+  it("leaves out a floor the axis never reaches, so the legend names only lines that are drawn", () => {
+    // 22% tier: ceiling 201,050 → yMax 225k. The 37% floor at 383,900 is
+    // above the chart everywhere.
+    const model = buildBracketFillModel([makeYear(2026, 120_000)]);
+    const floors = bracketFloorSeries(model);
+    expect(floors.map((f) => f.rate)).toEqual([0.12, 0.22, 0.24]);
+    expect(floors.every((f) => f.values.some((v) => v < model.yMax))).toBe(true);
+  });
+
+  it("keeps a floor that is on the chart in at least one year", () => {
+    const model = buildBracketFillModel([
+      makeYear(2026, 120_000), // 22% → yMax would be 225k alone
+      makeYear(2027, 250_000), // 24% → ceiling 383,900 pulls yMax past the 37% floor
+    ]);
+    expect(bracketFloorSeries(model).map((f) => f.rate)).toEqual([0.12, 0.22, 0.24, 0.37]);
+  });
+
+  it("keys colour by the rate's rank in the whole ladder, not by its place among the drawn lines", () => {
+    const model = buildBracketFillModel([makeYear(2026, 120_000)]);
+    const floors = bracketFloorSeries(model);
+    // 10% is rank 0 and never drawn; 12% must still be rank 1, not rank 0.
+    expect(floors.map((f) => [f.rate, f.rank])).toEqual([
+      [0.12, 1],
+      [0.22, 2],
+      [0.24, 3],
+    ]);
+  });
+
+  it("breaks a line with NaN in a year whose ladder has no tier at that rate", () => {
+    // A stressor lifts 22% to 25% from 2027: the 22% line must stop, and a
+    // 25% line must start, rather than either bridging the year it is absent.
+    const stressed: BracketTier[] = [tier10, tier12, { ...tier22, rate: 0.25 }, tier24, tier37];
+    const model = buildBracketFillModel([
+      makeYear(2026, 120_000, mfjBrackets),
+      makeYear(2027, 120_000, stressed),
+    ]);
+    const floors = bracketFloorSeries(model);
+    expect(floors.find((f) => f.rate === 0.22)!.values).toEqual([94_300, NaN]);
+    expect(floors.find((f) => f.rate === 0.25)!.values).toEqual([NaN, 94_300]);
+  });
+
+  it("is empty for an empty model", () => {
+    expect(bracketFloorSeries(buildBracketFillModel([]))).toEqual([]);
+  });
+});
+
+describe("bracketRateLabel", () => {
+  it("prints a federal rate as a whole percent", () => {
+    expect(bracketRateLabel(0.22)).toBe("22%");
+    expect(bracketRateLabel(0.1)).toBe("10%");
   });
 });

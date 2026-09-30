@@ -99,11 +99,18 @@ import { computeRoth529Rollover } from "./education/roth-rollover";
 import { executeWithdrawals, planSupplementalWithdrawal, categorizeDraw, supplementalDrawSources, type SupplementalDraw } from "./withdrawal";
 import { computeEducationDraw } from "./education/education-funding";
 import { calculateRMD } from "./rmd";
+import {
+  inheritedIraInputFor,
+  inheritedRmdForYear,
+  inheritedRmdLabel,
+  resolveInheritedRule,
+} from "./inherited-ira";
 import { initAnnuityState, stepAnnuityYear, type AnnuityState } from "./annuity";
 import { applyTransfers, type TransfersResult } from "./transfers";
 import { applyReinvestments } from "./reinvestments";
 import {
   applyRothConversions,
+  conversionSources,
   fillUpBracketCeiling,
   isTopBracketTarget,
   strategyGrossAmount,
@@ -2251,16 +2258,24 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // household → household tax; grantor entity → household tax; other entity →
     // no household tax (entity handles its own, not modeled yet).
     let householdRmdIncome = 0;
+    // Tax-free RMD cash reaching household checking (an inherited Roth's
+    // payout). `householdRmdIncome` is also the TAXABLE amount, so this rides
+    // separately and is folded into householdInflows / totalIncome only —
+    // mirrors householdNoteCashIn.
+    let householdRmdTaxFreeCashIn = 0;
     let grantorRmdTaxable = 0;
     const rmdBySource: Record<string, { type: string; amount: number }> = {};
     for (const acct of workingAccounts) {
-      if (!acct.rmdEnabled) continue;
       let ownerBirthYear: number;
       if (isSpouseAccount(acct) && spouseBirthYear != null) {
         ownerBirthYear = spouseBirthYear;
       } else {
         ownerBirthYear = clientBirthYear;
       }
+      // An inherited IRA follows the beneficiary schedule whatever
+      // `rmdEnabled` says; the account's owner (client or spouse) is the heir.
+      const inheritedInput = inheritedIraInputFor(acct, ownerBirthYear);
+      if (!acct.rmdEnabled && inheritedInput == null) continue;
       const ownerAge = year - ownerBirthYear;
       // IRS RMD rule: divisor × prior-year-Dec-31 balance. That's BoY of this
       // year (before growth/transfers), captured on the ledger as
@@ -2298,7 +2313,23 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // Cap at the current pre-tax balance so an RMD never forces out Roth
       // dollars (the distribution is booked 100% pre-tax below).
       const preTaxBalance = Math.max(0, currentBalance - (rothValueMap[acct.id] ?? 0));
-      const rmd = Math.min(preTaxBalance, calculateRMD(rmdBasis, ownerAge, ownerBirthYear));
+      let rmd: number;
+      let rmdLedgerLabel: string;
+      if (inheritedInput != null) {
+        const rule = resolveInheritedRule(inheritedInput);
+        const inheritedRmd = inheritedRmdForYear({
+          input: inheritedInput,
+          rule,
+          year,
+          priorYearEndBalance: rmdBasis,
+          currentBalance,
+        });
+        rmd = inheritedRmd.amount;
+        rmdLedgerLabel = inheritedRmdLabel(rule, inheritedRmd);
+      } else {
+        rmd = Math.min(preTaxBalance, calculateRMD(rmdBasis, ownerAge, ownerBirthYear));
+        rmdLedgerLabel = `RMD distribution (age ${ownerAge})`;
+      }
       if (rmd <= 0) continue;
 
       // An RMD is a distribution, so Form 8606 pro-rata applies to it exactly
@@ -2313,7 +2344,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             rmd,
             computeTradIraPool(data.accounts, accountBalances, basisMap, rmdPoolKey),
           );
-      const rmdTaxable = rmd - rmdBasisReturn;
+      // An inherited Roth pays out tax-free (the original owner's 5-year
+      // holding period is assumed met), so nothing reaches the 1040.
+      const rmdTaxable = inheritedInput?.isRoth ? 0 : rmd - rmdBasisReturn;
       const rmdBasisMoved = Math.min(rmdBasisReturn, basisMap[acct.id] ?? 0);
 
       accountBalances[acct.id] = currentBalance - rmd;
@@ -2323,7 +2356,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         accountLedgers[acct.id].endingValue -= rmd;
         accountLedgers[acct.id].entries.push({
           category: "rmd",
-          label: `RMD distribution (age ${ownerAge})`,
+          label: rmdLedgerLabel,
           // Matches the basisMap delta removePoolBasis applies below: a pure
           // pre-tax IRA still moves no basis. Negated only when non-zero —
           // `-Math.min(0, 0)` is -0, which renders as "-$0.00" in the ledger.
@@ -2341,7 +2374,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       const householdOwner = controllingFamilyMember(acct);
       if (householdOwner != null) {
         householdRmdIncome += rmdTaxable;
-        rmdBySource[`${acct.id}:rmd`] = { type: "ordinary_income", amount: rmdTaxable };
+        if (inheritedInput?.isRoth) {
+          householdRmdTaxFreeCashIn += rmd - rmdTaxable;
+          // Its own key, not `<id>:rmd`: tax-diff's recognizedForAccount sums
+          // that key as taxable without reading `type`. "tax_free" is the
+          // non-taxable bySource convention (see `annuity_tax_free:`).
+          rmdBySource[`inherited_roth_tax_free:${acct.id}`] = { type: "tax_free", amount: rmd - rmdTaxable };
+        } else {
+          rmdBySource[`${acct.id}:rmd`] = { type: "ordinary_income", amount: rmdTaxable };
+        }
         // Cash still lands in full — only the TAXABLE slice is income.
         creditCash(defaultChecking?.id, rmd, { category: "rmd", label: rmdLabel, sourceId: acct.id, basis: rmd });
       } else if (isFullyEntityOwned(acct)) {
@@ -5393,6 +5434,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       ? taxResolver.getYear(year)?.params.incomeBrackets[convFilingStatus]
       : undefined;
     const jointSolveConvById = new Map<string, RothConversion>();
+    const workingAccountById = new Map(workingAccounts.map((a) => [a.id, a]));
 
     if (data.rothConversions && data.rothConversions.length > 0) {
       const jointSolveConvs: RothConversion[] = [];
@@ -5460,8 +5502,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         for (const conv of jointSolveConvs) {
           if (!_isFillBracketActiveYear(conv, year)) continue;
 
-          const sourceCap = conv.sourceAccountIds.reduce(
-            (sum, sid) => sum + Math.max(0, accountBalances[sid] ?? 0),
+          // The same sources applyRothConversions will draw from — an
+          // inherited IRA listed here must not raise the cap.
+          const sourceCap = conversionSources(conv, workingAccountById, accountBalances).reduce(
+            (sum, a) => sum + (accountBalances[a.id] ?? 0),
             0,
           );
 
@@ -5600,6 +5644,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       spouseAge: ages.spouse,
       isoSpread: equityIsoSpread,
       household: taxHousehold,
+      // An inherited Roth's RMD is recorded as tax-free here, as a Roth draw is.
+      // Display-only (nonTaxableIncome / grossTotalIncome). Every rebuild of
+      // this input below must carry it too, or the stored result drops it.
+      taxFreeRetirementIncome: householdRmdTaxFreeCashIn,
     };
     const taxOut = computeTaxForYear(baseTaxInput);
 
@@ -6185,7 +6233,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // 10. Savings contributions — with a default checking account, savings apply at the
     // full rule amount (cash leaves checking). Without one, fall back to the legacy
     // surplus cap so behaviour matches the pre-migration engine.
-    const householdInflows = income.total + householdRmdIncome;
+    const householdInflows = income.total + householdRmdIncome + householdRmdTaxFreeCashIn;
     const householdNonSavingsOutflows =
       expenseBreakdown.living +
       expenseBreakdown.other +
@@ -6926,7 +6974,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // totals (nonTaxableIncome / grossTotalIncome), never taxes / AGI / MAGI — so the
     // pre-supplemental `taxes` and Medicare MAGI already computed above are unchanged.
     if (educationTaxFreeIncome > 0) {
-      finalTaxInput = { ...baseTaxInput, taxFreeRetirementIncome: educationTaxFreeIncome };
+      finalTaxInput = {
+        ...baseTaxInput,
+        taxFreeRetirementIncome: householdRmdTaxFreeCashIn + educationTaxFreeIncome,
+      };
       taxOutForIter = computeTaxForYear(finalTaxInput);
     }
     let convergenceWarning: TrustWarning | null = null;
@@ -6978,6 +7029,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           spouseAge: ages.spouse,
           isoSpread: equityIsoSpread,
           household: taxHousehold,
+          taxFreeRetirementIncome: householdRmdTaxFreeCashIn,
         };
         taxOutForIter = computeTaxForYear(seededTaxInput);
         finalTaxInput = seededTaxInput;
@@ -7042,7 +7094,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             const conv = jointSolveConvById.get(cid);
             if (!conv) continue;
             let remaining = target;
-            for (const sid of conv.sourceAccountIds) {
+            for (const { id: sid } of conversionSources(conv, workingAccountById, accountBalances)) {
               if (remaining <= 0) break;
               const avail = reservedBalances[sid] ?? 0;
               const reserve = Math.min(remaining, avail);
@@ -7141,7 +7193,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           if (bucket) supplementalRetirementBreakdown[bucket] += draw.ordinaryIncome;
         }
 
-        const supplementalTaxFree = educationTaxFreeIncome + sumTaxFreeSlice(supplementalPlan.draws);
+        const supplementalTaxFree =
+          householdRmdTaxFreeCashIn + educationTaxFreeIncome + sumTaxFreeSlice(supplementalPlan.draws);
 
         const supplementalTaxInput: YearTaxInput = {
           taxDetail: taxDetailWithBoth,
@@ -7350,7 +7403,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             spouseAge: ages.spouse,
             isoSpread: equityIsoSpread,
             household: taxHousehold,
-            taxFreeRetirementIncome: educationTaxFreeIncome + sumTaxFreeSlice(supplementalPlan.draws),
+            taxFreeRetirementIncome:
+              householdRmdTaxFreeCashIn + educationTaxFreeIncome + sumTaxFreeSlice(supplementalPlan.draws),
           };
           taxOutForIter = computeTaxForYear(legacyTaxInput);
           finalTaxInput = legacyTaxInput;
@@ -8343,8 +8397,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // Total Income and Net Cash Flow on the cashflow report. Equity proceeds
     // also carry a per-plan income.bySource key for the Other Inflows drill-
     // down; the fold here is what counts them in the Total Income scalar.
+    // householdRmdTaxFreeCashIn: an inherited Roth's RMD cash, which is kept
+    // out of householdRmdIncome because that term is also the taxable amount.
     const totalIncome =
-      displayIncome.total + householdRmdIncome + householdNoteCashIn
+      displayIncome.total + householdRmdIncome + householdRmdTaxFreeCashIn + householdNoteCashIn
       + householdEquityCashIn + householdTrustCashIn; // householdTrustCashIn: audit F8
 
     // ── 14. Surplus allocation (H5) ──

@@ -76,12 +76,17 @@ const SRC = join(process.cwd(), "src");
  *  deduction (tax-analysis/findings/business.ts). An unmarried co-client does not qualify, so
  *  saying "co-client" there would ship factually wrong tax guidance. Scoped to the qualified
  *  phrase so a bare "spouse" in ordinary advisor copy still trips the scanner.
+ *  `someone\s+other\s+than\s+a\s+spouse` protects the inherited-IRA checkbox label in
+ *  inherited-ira-fields.tsx: "Inherited from someone other than a spouse" is the IRS's own
+ *  non-spouse-beneficiary distinction (it says who the decedent wasn't, not who the heir is),
+ *  so "co-client" can't substitute for it. Scoped to the full phrase, not bare "spouse", so
+ *  ordinary advisor-facing copy elsewhere still trips the scanner.
  *
  *  Global on purpose: `violations()` only ever `.replace()`s with it (never `.test()`s, which
  *  would be stateful on a /g/ regex), because it has to strip EVERY term of art from a hit
  *  before judging the remainder. */
 const TERMS_OF_ART =
-  /(surviving\s+spouse|spousal|married\s+filing|qualifying\s+widow|marital\s+deduction|ex[-\s]spouse|former\s+spouse|deceased\s+spouse|legal\s+spouse|non[-\s]spouse,?\s*non[-\s]charity)/gi;
+  /(surviving\s+spouse|spousal|married\s+filing|qualifying\s+widow|marital\s+deduction|ex[-\s]spouse|former\s+spouse|deceased\s+spouse|legal\s+spouse|non[-\s]spouse,?\s*non[-\s]charity|someone\s+other\s+than\s+a\s+spouse)/gi;
 
 /** Files that are legitimately about the marital relationship, forever.
  *

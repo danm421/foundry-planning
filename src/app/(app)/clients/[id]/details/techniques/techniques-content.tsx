@@ -208,6 +208,7 @@ export async function TechniquesContent({ clientId: id, scenarioParam }: Techniq
     isDefaultChecking: a.isDefaultChecking === true,
     parentAccountId: a.parentAccountId ?? null,
     isEntityOwned: (a.owners ?? []).some((o) => o.kind === "entity"),
+    inheritedDeathYear: a.inheritedDeathYear ?? null,
   }));
 
   const liabilityOptions = liabilityRows.map((l) => ({

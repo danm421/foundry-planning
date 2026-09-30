@@ -5,6 +5,29 @@ import type { TableMarker } from "../../types";
 const markers: TableMarker[] = [];
 
 describe("buildDrillChartSpec — y-domain", () => {
+  it("ignores a gap (NaN) in a line when sizing the axis", () => {
+    const spec = buildDrillChartSpec({
+      years: [2030, 2031],
+      stacks: [{ seriesId: "a", label: "A", color: "#000", values: [100, 200] }],
+      lines: [{ seriesId: "floor", label: "22% floor", color: "#000", values: [NaN, 150] }],
+      markers,
+    });
+    expect(Number.isFinite(spec.yAxis.domain[1])).toBe(true);
+    expect(spec.yAxis.domain[1]).toBeGreaterThanOrEqual(200);
+    expect(spec.yAxis.ticks.length).toBeGreaterThan(1);
+  });
+
+  it("takes an explicit ceiling over one sized from the data", () => {
+    const spec = buildDrillChartSpec({
+      years: [2030, 2031],
+      yMax: 550_000,
+      stacks: [{ seriesId: "a", label: "A", color: "#000", values: [100, 200] }],
+      markers,
+    });
+    expect(spec.yAxis.domain).toEqual([0, 550_000]);
+    expect(spec.yAxis.ticks.at(-1)).toBeLessThanOrEqual(550_000);
+  });
+
   it("keeps a zero floor for all-positive data (regression)", () => {
     const spec = buildDrillChartSpec({
       years: [2030, 2031],

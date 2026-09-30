@@ -89,6 +89,10 @@ type RawAccount = {
   overridePctQdiv: string | null;
   overridePctTaxExempt: string | null;
   priorYearEndValue: string | number | null;
+  /** Inherited IRA inputs. Scenario overlays may carry these as strings. */
+  inheritedDeathYear?: string | number | null;
+  inheritedOwnerBirthYear?: string | number | null;
+  inheritedHeirDisabled?: boolean | null;
   insuredPerson: string | null;
   titlingType: "jtwros" | "community_property";
   owners?: AccountOwner[];
@@ -251,6 +255,9 @@ export function resolveAccountFromRaw(
     growthRate,
     rmdEnabled: raw.rmdEnabled,
     priorYearEndValue: nNullable(raw.priorYearEndValue),
+    inheritedDeathYear: nNullable(raw.inheritedDeathYear) ?? null,
+    inheritedOwnerBirthYear: nNullable(raw.inheritedOwnerBirthYear) ?? null,
+    inheritedHeirDisabled: raw.inheritedHeirDisabled === true,
     beneficiaries: raw.beneficiaries ?? ctx.beneficiariesByAccountId?.get(raw.id),
     isDefaultChecking: raw.isDefaultChecking,
     realization,

@@ -91,6 +91,8 @@ const NUMERIC_FIELDS_BY_KIND: Partial<Record<TargetKind, readonly string[]>> = {
     "growthRate",
     "priorYearEndValue",
     "activationYear",
+    "inheritedDeathYear",
+    "inheritedOwnerBirthYear",
     "annualPropertyTax",
     "propertyTaxGrowthRate",
     "distributionPolicyPercent",

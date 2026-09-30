@@ -17,7 +17,8 @@ import { isValidElement, type ElementType, type ReactElement, type ReactNode } f
 import { Polyline, Text as SvgText } from "@react-pdf/renderer";
 import { CONTENT_W, LABEL_COL_W, VALUE_COL_W, MAX_COLUMNS } from "./geom";
 import { PAGE_WIDTH_PORTRAIT, PAGE_PAD_X } from "@/components/presentations/shared/page-frame";
-import { ComparisonChartPdf, polylineRuns } from "./chart-pdf";
+import { ComparisonChartPdf } from "./chart-pdf";
+import { polylineRuns } from "../cash-flow/chart-geom";
 import { ChartLegend } from "@/components/presentations/pages/retirement-comparison/chart-legend-pdf";
 import {
   buildComparisonChartSpec,

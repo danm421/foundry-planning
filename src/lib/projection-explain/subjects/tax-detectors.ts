@@ -4,7 +4,6 @@
 // EXACT income-side dollars from ledger data; assembly (explain.ts) attaches the
 // estimated tax impact.
 import type { ProjectionYear } from "@/engine/types";
-import { rmdTotal } from "@/lib/retirement/retirement-inflows";
 import type { DrillContext, Finding } from "../types";
 import { LINE_FLOOR, RATIO_SHIFT_POINTS, ROTH_SLICE_MIN, money, pct } from "../types";
 import { recognizedForAccount, type FundingRow, type TaxChangeFinding, type TaxYearDiff } from "./tax-diff";
@@ -136,15 +135,31 @@ export function detectFundingCharacterShift(a: DetectorArgs): Finding | null {
   };
 }
 
+/** Taxable RMD dollars by account: the engine's `<accountId>:rmd` rows, which
+ *  carry only the slice that reaches the 1040. An inherited Roth payout (keyed
+ *  `inherited_roth_tax_free:`) and a Form 8606 basis return never land there, so
+ *  neither is narrated as ordinary income. The gross `rmdTotal` stays as is —
+ *  tax-diff's funding reconciliation needs the cash. */
+function taxableRmds(y: ProjectionYear): { id: string; amount: number }[] {
+  const rows: { id: string; amount: number }[] = [];
+  for (const [key, row] of Object.entries(y.taxDetail?.bySource ?? {})) {
+    const m = /^([^:]+):rmd$/.exec(key);
+    if (m && row.amount > 0) rows.push({ id: m[1], amount: row.amount });
+  }
+  return rows;
+}
+
+const sumAmounts = (rows: { amount: number }[]) => rows.reduce((s, r) => s + r.amount, 0);
+
 export function detectRmdChange(a: DetectorArgs): TaxChangeFinding | null {
-  const before = rmdTotal(a.prev);
-  const after = rmdTotal(a.next);
+  const nextRows = taxableRmds(a.next);
+  const before = sumAmounts(taxableRmds(a.prev));
+  const after = sumAmounts(nextRows);
   const d = Math.round(after - before);
   if (Math.abs(d) < LINE_FLOOR) return null;
   const onset = before < 1 && after > 0;
-  const perAccount = Object.entries(a.next.accountLedgers)
-    .filter(([, l]) => l.rmdAmount > 0)
-    .map(([id, l]) => `${a.ctx.accountNames[id] ?? id} ${money(l.rmdAmount)}`)
+  const perAccount = nextRows
+    .map((r) => `${a.ctx.accountNames[r.id] ?? r.id} ${money(r.amount)}`)
     .join(", ");
   return {
     kind: "rmd",

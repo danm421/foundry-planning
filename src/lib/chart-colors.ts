@@ -7,7 +7,13 @@ import { chartSeriesColors } from "./chart-palette";
 // Re-export the pure helpers so existing client imports keep working from one
 // place. Server/PDF/lib code must import these from `./chart-palette` directly
 // (this module is client-only because of the theme hooks below).
-export { chartChrome, chartSeriesColors, dataPalette, statusColors } from "./chart-palette";
+export {
+  bracketFloorColor,
+  chartChrome,
+  chartSeriesColors,
+  dataPalette,
+  statusColors,
+} from "./chart-palette";
 export type { ChartChrome, DataColorKey } from "./chart-palette";
 
 /**

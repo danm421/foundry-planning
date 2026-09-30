@@ -36,6 +36,27 @@ export interface TransferTaxInput {
    *  is the right answer for a $0-basis pool. Roth CONVERSIONS keep using
    *  allTraditionalIra{Basis,Balance} — see the note on that pair. */
   sourceTradIraPool?: TradIraPool;
+  /** Source is an inherited IRA: distributions carry no early-withdrawal
+   *  penalty and an inherited Roth's earnings are tax-free. */
+  sourceIsInherited?: boolean;
+  /** Target is an inherited IRA. Only read with `sourceIsInherited` — see
+   *  `isInheritedPayout`. */
+  targetIsInherited?: boolean;
+}
+
+/**
+ * An inherited IRA moved into any other retirement account is paid out: a
+ * distribution, then a contribution. A non-spouse heir can neither roll it into
+ * their own IRA nor convert it. Only a trustee-to-trustee move into another
+ * inherited IRA of the SAME kind keeps the rollover treatment — so an inherited
+ * source never reaches the Roth-conversion branch.
+ */
+export function isInheritedPayout(
+  input: Pick<TransferTaxInput, "sourceIsInherited" | "targetIsInherited" | "targetCategory" | "sourceSubType" | "targetSubType">,
+): boolean {
+  if (input.sourceIsInherited !== true || input.targetCategory !== "retirement") return false;
+  const likeForLike = input.targetIsInherited === true && input.sourceSubType === input.targetSubType;
+  return !likeForLike;
 }
 
 export interface TransferTaxResult {
@@ -143,7 +164,8 @@ export function classifyTransferTax(input: TransferTaxInput): TransferTaxResult 
   }
 
   // ── Retirement → Retirement ──────────────────────────────────────────────
-  if (sourceCategory === "retirement" && targetCategory === "retirement") {
+  // An inherited payout falls through to the distribution branch below.
+  if (sourceCategory === "retirement" && targetCategory === "retirement" && !isInheritedPayout(input)) {
     const sourceIsRoth = ROTH_SUBTYPES.has(sourceSubType);
     const targetIsRoth = ROTH_SUBTYPES.has(targetSubType);
     const sourceIsTaxDeferred = TAX_DEFERRED_SUBTYPES.has(sourceSubType);
@@ -174,11 +196,11 @@ export function classifyTransferTax(input: TransferTaxInput): TransferTaxResult 
     return { taxableOrdinaryIncome: 0, capitalGain: 0, basisReturn: 0, earlyWithdrawalPenalty: 0, label: "tax_free_rollover" };
   }
 
-  // ── Retirement → Non-Retirement (distribution) ───────────────────────────
+  // ── Retirement → Non-Retirement (distribution), and inherited payouts ────
   if (sourceCategory === "retirement") {
     const sourceIsRoth = ROTH_SUBTYPES.has(sourceSubType);
     const sourceIs401kOr403b = sourceSubType === "401k" || sourceSubType === "403b";
-    const isEarly = ownerAge < EARLY_WITHDRAWAL_AGE;
+    const isEarly = ownerAge < EARLY_WITHDRAWAL_AGE && !input.sourceIsInherited;
 
     if (sourceIsRoth) {
       return _classifyRothDistribution(amount, rothBasis, isEarly);

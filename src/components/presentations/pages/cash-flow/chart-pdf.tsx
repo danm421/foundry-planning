@@ -3,7 +3,7 @@ import type { ChartSpec } from "@/lib/presentations/charts/types";
 import { scaleLinear } from "d3-scale";
 import { PRESENTATION_THEME } from "@/lib/presentations/theme";
 import {
-  bandScale, legendLayout, legendSlot, markerLabelLayout,
+  bandScale, legendLayout, legendSlot, markerLabelLayout, polylineRuns,
   LEGEND_LABEL_X, stackRects,
 } from "./chart-geom";
 
@@ -18,6 +18,8 @@ export function CashflowChartPdf({ spec }: { spec: ChartSpec }) {
     .range([innerH, 0]);
 
   const barWidth = x.bandwidth();
+  // Every line overlay is drawn through the same bar centres.
+  const barCentres = spec.xAxis.domain.map((xv) => (x(xv) ?? 0) + barWidth / 2);
 
   // The legend starts at the left margin, so the room it has is the plot's own
   // width — never the canvas's.
@@ -92,22 +94,19 @@ export function CashflowChartPdf({ spec }: { spec: ChartSpec }) {
             />
           )}
 
-          {/* Line overlay (expenses) */}
-          {spec.lines.map((ln) => {
-            const points = spec.xAxis.domain.map((xv, i) => {
-              const cx = (x(xv) ?? 0) + barWidth / 2;
-              const cy = y(ln.values[i]);
-              return `${cx},${cy}`;
-            }).join(" ");
-            return (
+          {/* Line overlays (an expense total, a bracket floor). A series
+              breaks where it has no value — see `polylineRuns`. */}
+          {spec.lines.flatMap((ln) => {
+            const points = barCentres.map((cx, i) => ({ x: cx, y: y(ln.values[i] ?? NaN) }));
+            return polylineRuns(points).map((run, k) => (
               <Polyline
-                key={`ln-${ln.seriesId}`}
-                points={points}
+                key={`ln-${ln.seriesId}-${k}`}
+                points={run}
                 stroke={ln.color}
                 strokeWidth={ln.strokeWidth}
                 fill="none"
               />
-            );
+            ));
           })}
 
           {/* Markers — vertical dashed line + label. The line always stands on

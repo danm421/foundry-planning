@@ -36,6 +36,9 @@ export interface ChartSpec {
     label: string;
     color: string;
     strokeWidth: number;
+    /** One per domain entry. `NaN` is a gap: the renderer breaks the line
+     *  there rather than bridging a year the series has no value for (a
+     *  bracket floor the ladder did not carry that year). */
     values: number[];
   }>;
 

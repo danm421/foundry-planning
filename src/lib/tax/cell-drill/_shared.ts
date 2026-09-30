@@ -63,6 +63,11 @@ export function resolveSourceLabel(
     const name = ctx.accountNames[acctId] ?? acctId;
     return `${name} — Annuity Income (tax-free)`;
   }
+  if (sourceId.startsWith("inherited_roth_tax_free:")) {
+    const acctId = sourceId.slice("inherited_roth_tax_free:".length);
+    const name = ctx.accountNames[acctId] ?? acctId;
+    return `${name} — RMD (tax-free)`;
+  }
   if (sourceId.startsWith("annuity:")) {
     const acctId = sourceId.slice("annuity:".length);
     const name = ctx.accountNames[acctId] ?? acctId;

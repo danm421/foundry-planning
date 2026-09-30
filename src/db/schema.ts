@@ -2314,6 +2314,13 @@ export const accounts = pgTable("accounts", {
   // custodian's letter. Ignored after Year 1 (the engine tracks year-end
   // balances itself).
   priorYearEndValue: decimal("prior_year_end_value", { precision: 15, scale: 2 }),
+  // Inherited IRA (Traditional/Roth from a non-spouse). A non-null death year
+  // marks the account inherited and switches the engine to the beneficiary RMD
+  // schedule (engine/inherited-ira.ts). The two years are set together — see
+  // accounts_inherited_fields_paired.
+  inheritedDeathYear: integer("inherited_death_year"),
+  inheritedOwnerBirthYear: integer("inherited_owner_birth_year"),
+  inheritedHeirDisabled: boolean("inherited_heir_disabled").notNull().default(false),
   // Optional future-activation year: the account is absent from the projection
   // (no balance, growth, contributions, premiums, or death benefit) until this
   // year, then appears at `value`. Null ⇒ active from plan start. `*_ref` is an
@@ -2431,6 +2438,10 @@ export const accounts = pgTable("accounts", {
   // Engine load path filters every projection by (client_id, scenario_id);
   // accounts is the hottest table and was previously full-scanned (audit F7).
   clientScenarioIdx: index("accounts_client_scenario_idx").on(t.clientId, t.scenarioId),
+  inheritedFieldsPaired: check(
+    "accounts_inherited_fields_paired",
+    sql`(${t.inheritedDeathYear} IS NULL) = (${t.inheritedOwnerBirthYear} IS NULL)`,
+  ),
   // Prevents duplicate external accounts per client+provider+externalId.
   externalAccountUnique: uniqueIndex("accounts_client_external_uq")
     .on(t.clientId, t.externalProvider, t.externalId)

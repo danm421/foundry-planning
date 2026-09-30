@@ -1,7 +1,8 @@
 import type { Account, Transfer, AccountLedger } from "./types";
-import { classifyTransferTax } from "./tax-classification";
+import { classifyTransferTax, isInheritedPayout } from "./tax-classification";
 import { computeTradIraPool, iraPoolKey, isTraditionalIra } from "./ira-basis";
 import { controllingFamilyMember } from "./ownership";
+import { isInheritedIra } from "./inherited-ira";
 
 // ============================================================================
 // Basis Clamping
@@ -114,6 +115,8 @@ export function applyTransfers(input: TransfersInput): TransfersResult {
 
     // Classify tax treatment
     const sourceFresh = freshBasisMap?.[transfer.sourceAccountId] ?? 0;
+    const sourceIsInherited = isInheritedIra(sourceAccount);
+    const targetIsInherited = isInheritedIra(targetAccount);
     const taxResult = classifyTransferTax({
       sourceCategory: sourceAccount.category,
       sourceSubType: sourceAccount.subType,
@@ -139,6 +142,8 @@ export function applyTransfers(input: TransfersInput): TransfersResult {
         ? computeTradIraPool(accounts, accountBalances, basisMap, iraPoolKey(sourceAccount))
         : undefined,
       ownerAge,
+      sourceIsInherited,
+      targetIsInherited,
       rothBasis: basisMap[transfer.sourceAccountId] ?? 0,
     });
 
@@ -166,6 +171,13 @@ export function applyTransfers(input: TransfersInput): TransfersResult {
     // Task 6 lands if needed—the asymmetry is acceptable if source-side ledger
     // "what left for target" semantics is preferable to "raw basis shed".
     let basisMoved: number;
+    const inheritedPayout = isInheritedPayout({
+      sourceIsInherited,
+      targetIsInherited,
+      targetCategory: targetAccount.category,
+      sourceSubType: sourceAccount.subType,
+      targetSubType: targetAccount.subType,
+    });
     if (sourceAccount.category === "taxable" || sourceAccount.category === "cash") {
       const srcBasisBefore = basisMap[transfer.sourceAccountId] ?? 0;
       basisMap[transfer.sourceAccountId] = Math.max(0, srcBasisBefore - taxResult.basisReturn);
@@ -178,6 +190,19 @@ export function applyTransfers(input: TransfersInput): TransfersResult {
         const consumed = Math.min(sourceFresh, actualAmount);
         freshBasisMap[transfer.sourceAccountId] = Math.max(0, sourceFresh - consumed);
       }
+    } else if (inheritedPayout) {
+      // Paid out of the inherited IRA, then contributed. Basis leaves the
+      // source the way the distribution recognized it — a Roth's contributions
+      // first, a Traditional's own-pool pro-rata slice — and every dollar that
+      // lands in the target is after-tax, so the target's basis rises by the
+      // full amount (a later draw must not tax it again).
+      const srcBasisBefore = basisMap[transfer.sourceAccountId] ?? 0;
+      basisMoved = Math.min(
+        srcBasisBefore,
+        sourceAccount.subType === "roth_ira" ? actualAmount : taxResult.basisReturn,
+      );
+      basisMap[transfer.sourceAccountId] = srcBasisBefore - basisMoved;
+      basisMap[transfer.targetAccountId] = (basisMap[transfer.targetAccountId] ?? 0) + actualAmount;
     } else if (sourceAccount.subType === "roth_ira") {
       // BUG #11: a Roth IRA distribution is contributions-first (basis FIRST),
       // mirroring _classifyRothDistribution above. Pro-rata _updateBasis would
@@ -224,7 +249,7 @@ export function applyTransfers(input: TransfersInput): TransfersResult {
     }
 
     // ── Update ledgers ───────────────────────────────────────────────────────
-    _updateLedgers(transfer, actualAmount, basisMoved, taxResult.label, accountLedgers);
+    _updateLedgers(transfer, actualAmount, basisMoved, inheritedPayout ? actualAmount : basisMoved, taxResult.label, accountLedgers);
 
     // ── Accumulate withdrawalDetail on the source ledger (spec 2026-05-11) ──
     if (sourceAccount.category === "taxable" || sourceAccount.category === "cash") {
@@ -301,7 +326,9 @@ function _computeTradIraPool(
   let allTraditionalIraBasis = 0;
 
   for (const account of accounts) {
-    if (isTraditionalIra(account)) {
+    // An inherited IRA is its own pool — never aggregated with the heir's
+    // (matches `_isPooledTradIra` in roth-conversions.ts).
+    if (isTraditionalIra(account) && !isInheritedIra(account)) {
       allTraditionalIraBalance += accountBalances[account.id] ?? 0;
       allTraditionalIraBasis += basisMap[account.id] ?? 0;
     }
@@ -376,6 +403,9 @@ function _updateLedgers(
   transfer: Transfer,
   amount: number,
   basisMoved: number,
+  /** Basis credited to the target — `basisMoved`, except on an inherited
+   *  payout, where the whole amount arrives after-tax. */
+  basisIn: number,
   label: string,
   accountLedgers: Record<string, AccountLedger>,
 ): void {
@@ -402,7 +432,7 @@ function _updateLedgers(
       label: transfer.name,
       amount,
       sourceId: transfer.id,
-      basis: basisMoved, // proportional basis arriving at the target
+      basis: basisIn, // basis arriving at the target
       counterpartyId: transfer.sourceAccountId, // moved from the transfer source
     });
   }

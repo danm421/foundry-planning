@@ -23,15 +23,63 @@ describe("buildTaxBracketFederalDrillData", () => {
     expect(d.table.columns.find((c) => c.key === "changeInBase")!.signColor).toBe(true);
   });
 
-  it("emits an Into/Remaining bracket-fill chart with a conversion line", () => {
-    const d = buildTaxBracketFederalDrillData({ ...base, options: { range: "full", showCallout: false } });
-    expect(d.chartSpec!.stacks.map((s) => s.seriesId)).toEqual(["intoBracket", "remainingInBracket"]);
-    expect(d.chartSpec!.lines.map((l) => l.seriesId)).toEqual(["conversionTaxable"]);
+  it("charts the income tax base as other income plus the taxable conversion, over the bracket floors", () => {
+    const years = makeTaxYears();
+    years.find((y) => y.year === 2026)!.rothConversions = [
+      { id: "rc1", name: "Fill 24%", gross: 50_000, taxable: 50_000, requested: 50_000, limitedBy: null },
+    ];
+    const d = buildTaxBracketFederalDrillData({ ...base, years, options: { range: "full", showCallout: false } });
+    expect(d.chartSpec!.stacks.map((s) => s.seriesId)).toEqual(["incomeBase", "conversion"]);
     const i = d.chartSpec!.xAxis.domain.indexOf(2026);
-    const into = d.chartSpec!.stacks.find((s) => s.seriesId === "intoBracket")!;
-    const remaining = d.chartSpec!.stacks.find((s) => s.seriesId === "remainingInBracket")!;
-    expect(into.values[i]).toBe(300);          // 384_200 - 383_900
-    expect(remaining.values[i]).toBe(103_250); // 487_450 - 384_200
+    const incomeBase = d.chartSpec!.stacks.find((s) => s.seriesId === "incomeBase")!;
+    const conversion = d.chartSpec!.stacks.find((s) => s.seriesId === "conversion")!;
+    // The two slices stack to exactly the income tax base, 384_200.
+    expect(conversion.values[i]).toBe(50_000);
+    expect(incomeBase.values[i]).toBe(334_200);
+    // One line per floor in view, in each year's own dollars. The fixture's
+    // 2026 ladder is 10/22/24/32 and its 2031 ladder 10/12/22, so every rate
+    // but 10% (a $0 floor, never drawn) gets a line — and each line breaks in
+    // the years whose ladder has no tier at its rate.
+    const floor = (label: string) => d.chartSpec!.lines.find((l) => l.label === label)!.values;
+    expect(d.chartSpec!.lines.map((l) => l.label)).toEqual(["12% floor", "22% floor", "24% floor", "32% floor"]);
+    const j = d.chartSpec!.xAxis.domain.indexOf(2031);
+    expect([floor("22% floor")[i], floor("22% floor")[j]]).toEqual([23_200, 94_300]);
+    expect([floor("24% floor")[i], floor("24% floor")[j]]).toEqual([383_900, NaN]);
+    expect([floor("12% floor")[i], floor("12% floor")[j]]).toEqual([NaN, 23_200]);
+    // The legend names every series and every floor.
+    expect(d.chartSpec!.legend.items.map((it) => it.label)).toEqual([
+      "Income tax base", "Roth conversion", "12% floor", "22% floor", "24% floor", "32% floor",
+    ]);
+  });
+
+  it("shares the screen chart's ceiling and stops a floor at it, so no line can drag the axis up", () => {
+    // 2026 sits in the 24% tier (top 487_450) → the shared ceiling is 550k.
+    // The 32% floor is 487_450 there; a year whose ladder put it above the
+    // ceiling must print no point, or the PDF polyline — which nothing clips
+    // — would stretch the axis to fit it.
+    const years = makeTaxYears();
+    const y2031 = years.find((y) => y.year === 2031)!;
+    y2031.taxResult!.diag.incomeBracketsForFiling = [
+      { from: 0, to: 23_200, rate: 0.10 },
+      { from: 23_200, to: 94_300, rate: 0.12 },
+      { from: 94_300, to: 700_000, rate: 0.22 },
+      { from: 700_000, to: null, rate: 0.32 },
+    ];
+    const d = buildTaxBracketFederalDrillData({ ...base, years, options: { range: "full", showCallout: false } });
+    expect(d.chartSpec!.yAxis.domain[1]).toBe(550_000);
+    const floor32 = d.chartSpec!.lines.find((l) => l.label === "32% floor")!.values;
+    const i = d.chartSpec!.xAxis.domain.indexOf(2026);
+    const j = d.chartSpec!.xAxis.domain.indexOf(2031);
+    expect(floor32[i]).toBe(487_450);
+    expect(floor32[j]).toBeNaN();
+  });
+
+  it("colours each floor by its rank in the ladder, never with the bars' blue or orange", () => {
+    const d = buildTaxBracketFederalDrillData({ ...base, options: { range: "full", showCallout: false } });
+    const barColors = d.chartSpec!.stacks.map((s) => s.color);
+    const lineColors = d.chartSpec!.lines.map((l) => l.color);
+    expect(new Set(lineColors).size).toBe(lineColors.length);
+    for (const c of lineColors) expect(barColors).not.toContain(c);
   });
 
   it("first visible year has changeInBase 0; later years show the delta", () => {
@@ -74,12 +122,13 @@ describe("buildTaxBracketFederalDrillData — AMT years (F5)", () => {
     expect(d.footnote).not.toContain("AMT");
   });
 
-  it("drops the headroom band out of the chart too, so the bar cannot claim room", () => {
+  it("still charts the year's income tax base — the bar is what was earned, the footnote is what AMT does to the next dollar", () => {
     const d = buildTaxBracketFederalDrillData({
       ...base, years: yearsWithAmt(), options: { range: "full", showCallout: false },
     });
     const i = d.chartSpec!.xAxis.domain.indexOf(2026);
-    expect(d.chartSpec!.stacks.find((s) => s.seriesId === "remainingInBracket")!.values[i]).toBe(0);
+    const total = d.chartSpec!.stacks.reduce((sum, s) => sum + s.values[i], 0);
+    expect(total).toBe(384_200);
   });
 
   it("keeps the ordinary years' headroom intact", () => {

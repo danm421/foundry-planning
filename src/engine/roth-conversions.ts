@@ -3,6 +3,7 @@ import type { BracketTier, FilingStatus } from "@/lib/tax/types";
 import { classifyTransferTax } from "./tax-classification";
 import { isTraditionalIra } from "./ira-basis";
 import { controllingFamilyMember } from "./ownership";
+import { isInheritedIra } from "./inherited-ira";
 
 // ============================================================================
 // Public Types
@@ -165,6 +166,23 @@ function _findTierByIdentity(
   return tiers.find((t) => Math.abs((t.baseRate ?? t.rate) - targetRate) < 1e-9);
 }
 
+/**
+ * The accounts a conversion can actually draw from, in source-list order: they
+ * exist, hold a balance, and are not inherited IRAs (a non-spouse heir cannot
+ * convert). The projection's joint-solve sizer caps and reserves against this
+ * same list — sizing against the raw `sourceAccountIds` taxes a conversion
+ * that never happens.
+ */
+export function conversionSources(
+  conv: RothConversion,
+  accountMap: ReadonlyMap<string, Account>,
+  accountBalances: Record<string, number>,
+): Account[] {
+  return conv.sourceAccountIds
+    .map((id) => accountMap.get(id))
+    .filter((a): a is Account => a != null && (accountBalances[a.id] ?? 0) > 0 && !isInheritedIra(a));
+}
+
 export function applyRothConversions(input: RothConversionsInput): RothConversionsResult {
   const {
     conversions,
@@ -194,10 +212,7 @@ export function applyRothConversions(input: RothConversionsInput): RothConversio
     const destAccount = accountMap.get(conv.destinationAccountId);
     if (!destAccount) continue;
 
-    // Resolve sources → only include source accounts that exist and have balance.
-    const sources = conv.sourceAccountIds
-      .map((id) => accountMap.get(id))
-      .filter((a): a is Account => a != null && (accountBalances[a.id] ?? 0) > 0);
+    const sources = conversionSources(conv, accountMap, accountBalances);
     if (sources.length === 0) continue;
 
     const sourcePoolBalance = sources.reduce(
@@ -476,7 +491,7 @@ function _resolveTargetAmount(
  *  individual, so this one is the outlier — unifying it moves conversion
  *  numbers on existing plans and is deliberately left as its own change. */
 function _isPooledTradIra(account: Account): boolean {
-  return isTraditionalIra(account);
+  return isTraditionalIra(account) && !isInheritedIra(account);
 }
 
 function _computeTradIraPool(

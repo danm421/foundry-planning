@@ -14,7 +14,11 @@ import type { ChartSpec } from "@/lib/presentations/charts/types";
  * on a bar centre, and a test that recomputed that centre from its own copy of
  * these numbers would go on passing after the chart's changed underneath it.
  */
-export function bandScale(spec: ChartSpec) {
+export function bandScale(spec: {
+  width: number;
+  margin: { left: number; right: number };
+  xAxis: { domain: number[] };
+}) {
   return scaleBand<number>()
     .domain(spec.xAxis.domain)
     .range([0, spec.width - spec.margin.left - spec.margin.right])
@@ -24,6 +28,49 @@ export function bandScale(spec: ChartSpec) {
 export interface BarRect {
   y: number;       // top edge in pixel space
   height: number;
+}
+
+export interface PlotPoint {
+  x: number;
+  y: number;
+}
+
+/**
+ * One `points` string per contiguous run of drawable points — the gap contract's
+ * renderer half.
+ *
+ * Two plans can run to different end years, so the chart's x domain is the union
+ * and a plan that stops early has NO value for the later years (and a bracket
+ * floor has none in a year its ladder did not carry). The spec writes `NaN`
+ * there, because `ChartSpec.lines[].values` is `number[]` with no null channel
+ * and a zero would draw a cliff to the axis that the series does not have.
+ *
+ * Shared by every PDF chart that draws a line: joining every point into ONE
+ * `<Polyline>` would emit the literal token `"481,NaN"` into the points
+ * attribute and corrupt the whole line, so the run is closed on a non-finite
+ * value instead and a series that has no value for a year simply stops.
+ *
+ * The test is finiteness of the COMPUTED coordinate, not of the source value: it
+ * catches the `NaN` sentinel and an x that falls outside the band domain, which
+ * are the same defect at the point where it matters.
+ *
+ * A one-point run is kept rather than filtered: it is a valid points attribute
+ * that draws nothing, which is exactly what a single year with no neighbour
+ * should look like.
+ */
+export function polylineRuns(points: ReadonlyArray<PlotPoint>): string[] {
+  const runs: string[] = [];
+  let run: string[] = [];
+  const close = () => {
+    if (run.length > 0) runs.push(run.join(" "));
+    run = [];
+  };
+  for (const p of points) {
+    if (Number.isFinite(p.x) && Number.isFinite(p.y)) run.push(`${p.x},${p.y}`);
+    else close();
+  }
+  close();
+  return runs;
 }
 
 export function stackRects(

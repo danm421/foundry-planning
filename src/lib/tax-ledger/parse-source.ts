@@ -82,6 +82,10 @@ export function parseHouseholdSource(
     const acctId = key.slice("annuity_tax_free:".length);
     return { type: "Annuity Income", description: "Return of basis (§72)", character, account: ctx.accountNames[acctId] ?? acctId, amount, taxable };
   }
+  if (key.startsWith("inherited_roth_tax_free:")) {
+    const acctId = key.slice("inherited_roth_tax_free:".length);
+    return { type: "RMD", description: "Non-taxable distribution (inherited Roth IRA)", character, account: ctx.accountNames[acctId] ?? acctId, amount, taxable };
+  }
   if (key.startsWith("annuity:")) {
     const acctId = key.slice("annuity:".length);
     return { type: "Annuity Income", description: "Taxable distribution", character, account: ctx.accountNames[acctId] ?? acctId, amount, taxable };

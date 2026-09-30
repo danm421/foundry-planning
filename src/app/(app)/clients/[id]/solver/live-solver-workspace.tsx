@@ -1559,6 +1559,7 @@ export function LiveSolverWorkspace({
               category: a.category,
               subType: a.subType ?? "",
               ownerFamilyMemberId: controllingFamilyMember(a),
+              inheritedDeathYear: a.inheritedDeathYear ?? null,
             }))}
             liabilities={(baseClientData.liabilities ?? []).map((l) => ({
               id: l.id,

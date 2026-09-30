@@ -897,6 +897,18 @@ export interface Account {
    */
   priorYearEndValue?: number;
   /**
+   * Inherited IRA (Traditional / Roth IRA from a non-spouse). A non-null
+   * `inheritedDeathYear` marks the account inherited and switches the RMD step
+   * to the beneficiary schedule in engine/inherited-ira.ts. Ignored on every
+   * other sub-type and on accounts not owned 100% by one family member.
+   */
+  inheritedDeathYear?: number | null;
+  /** Original owner's birth year. Set together with `inheritedDeathYear`. */
+  inheritedOwnerBirthYear?: number | null;
+  /** Heir is disabled or chronically ill — an eligible designated beneficiary
+   *  who may stretch payouts over life expectancy (deaths 2020+). */
+  inheritedHeirDisabled?: boolean;
+  /**
    * Optional activation year: the account does not exist in the projection
    * before this year, then appears at `value` (a windfall) and behaves
    * normally after. Null / undefined ⇒ active from plan start (default).

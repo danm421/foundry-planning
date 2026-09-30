@@ -1,5 +1,7 @@
-// Tax Bracket (Federal) drill — mirrors the in-app Tax Bracket / Federal table.
-// Reuses buildTaxBracketRows from the tax lib. Table-only.
+// Tax Bracket (Federal) drill — mirrors the in-app Tax Bracket / Federal table
+// and its chart. Reuses buildTaxBracketRows and the bracket-fill model from
+// the tax lib, so the sheet draws the same bars over the same floors as the
+// solver and the income-tax page.
 
 import type { ProjectionYear, ClientData } from "@/engine/types";
 import { buildTaxBracketRows } from "@/lib/tax/bracket";
@@ -8,8 +10,7 @@ import type {
 } from "../../shared/drill-types";
 import { clipRowsToYears, emptyRangeNote, filterYearsToRange } from "../../shared/year-filter";
 import { buildMarkers } from "../../shared/markers";
-import { buildDrillChartSpec } from "../../shared/build-chart-spec";
-import { PRESENTATION_THEME } from "../../theme";
+import { buildBracketChartSpec } from "../../charts/bracket-chart-spec";
 
 const DISCLAIMER =
   "This analysis is based on assumptions provided by you. Projections are hypothetical and not guaranteed. Actual results will vary.";
@@ -86,27 +87,10 @@ export function buildTaxBracketFederalDrillData(input: BuildTaxBracketFederalDri
 
   const markers = buildMarkers(clientData, visibleYears, clientName, spouseName);
 
-  const chartSpec = buildDrillChartSpec({
-    years: bracketRows.map((br) => br.year),
-    stacks: [
-      {
-        seriesId: "intoBracket", label: "Into Bracket",
-        color: PRESENTATION_THEME.accent,
-        values: bracketRows.map((br) => br.intoBracket),
-      },
-      {
-        seriesId: "remainingInBracket", label: "Remaining in Bracket",
-        color: PRESENTATION_THEME.hair,
-        values: bracketRows.map((br) => br.remainingInBracket ?? 0),
-      },
-    ],
-    lines: [{
-      seriesId: "conversionTaxable", label: "Taxable Conversion",
-      color: PRESENTATION_THEME.steel,
-      values: bracketRows.map((br) => br.conversionTaxable),
-    }],
-    markers,
-  });
+  // Charted from the same visible years the table prints, so the two agree
+  // year for year. The Taxable Conversion column is where the chart's
+  // "Roth conversion" slice is told apart from the gross amount.
+  const chartSpec = buildBracketChartSpec(visibleYears, markers);
 
   return {
     title: "Income Tax — Tax Bracket (Federal)",

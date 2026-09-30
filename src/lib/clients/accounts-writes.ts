@@ -71,6 +71,7 @@ import {
   synthesizeLegacyAccountOwners,
 } from "@/lib/ownership";
 import { accountCreateSchema } from "@/lib/schemas/accounts";
+import { validateInheritedIraFields } from "@/lib/accounts/inherited-ira";
 import { AddBusinessInputSchema } from "@/lib/schemas/accounts-business";
 import { syncAccountFromHoldings } from "@/lib/investments/sync-account-from-holdings";
 import { baseCaseScenarioId } from "./base-case";
@@ -149,6 +150,16 @@ export async function createAccountForClient(args: {
       return writeError(400, "A 529 requires a designated beneficiary (family member or name).");
     }
   }
+
+  // ── Inherited IRA fields (spec 2026-09-28) ─────────────────────────────────
+  const inheritedError = validateInheritedIraFields({
+    category,
+    subType: p.subType ?? "other",
+    inheritedDeathYear: p.inheritedDeathYear,
+    inheritedOwnerBirthYear: p.inheritedOwnerBirthYear,
+    currentYear: new Date().getFullYear(),
+  });
+  if (inheritedError) return writeError(400, inheritedError);
 
   // ── Cross-tenant / cross-firm FK asserts (port ~161-192) ──────────────────
   const entCheck = await assertEntitiesInClient(clientId, [p.ownerEntityId]);
@@ -238,6 +249,9 @@ export async function createAccountForClient(args: {
         rmdEnabled: p.rmdEnabled,
         countsTowardAum: p.countsTowardAum,
         priorYearEndValue: p.priorYearEndValue == null ? null : String(p.priorYearEndValue),
+        inheritedDeathYear: p.inheritedDeathYear ?? null,
+        inheritedOwnerBirthYear: p.inheritedOwnerBirthYear ?? null,
+        inheritedHeirDisabled: p.inheritedDeathYear != null && p.inheritedHeirDisabled === true,
         growthSource: p.growthSource as AccountRow["growthSource"],
         modelPortfolioId: p.modelPortfolioId ?? null,
         tickerPortfolioId: p.tickerPortfolioId ?? null,
@@ -429,6 +443,22 @@ export async function updateAccountForClient(args: {
     }
   }
 
+  // ── Inherited IRA fields: validate the RESULTING row, since update is partial.
+  const resolvedField = <T,>(key: string, fallback: T): T =>
+    key in safeUpdate ? ((safeUpdate as Record<string, unknown>)[key] as T) : fallback;
+  const resultInheritedDeathYear = resolvedField<number | null>(
+    "inheritedDeathYear",
+    before.inheritedDeathYear,
+  );
+  const inheritedError = validateInheritedIraFields({
+    category: resultCategory,
+    subType: resolvedField("subType", before.subType),
+    inheritedDeathYear: resultInheritedDeathYear,
+    inheritedOwnerBirthYear: resolvedField("inheritedOwnerBirthYear", before.inheritedOwnerBirthYear),
+    currentYear: new Date().getFullYear(),
+  });
+  if (inheritedError) return writeError(400, inheritedError);
+
   // ── isDefaultChecking system-managed guards (port ~81-114) ────────────────
   if (before.isDefaultChecking) {
     if ("category" in safeUpdate && safeUpdate.category !== before.category) {
@@ -475,6 +505,15 @@ export async function updateAccountForClient(args: {
   // Strip owners from the spread — owners live in account_owners, not accounts.
   const { owners: _stripOwners, ...accountUpdate } = safeUpdate;
   void _stripOwners;
+
+  // Ruling R1 (spec 2026-09-28): heirDisabled is ignored (saved false) whenever
+  // the RESULTING death year is null — even if the caller sent true. Mirrors the
+  // create path's `p.inheritedDeathYear != null && p.inheritedHeirDisabled ===
+  // true` guard; unconditional so the invariant holds even when the caller sent
+  // inheritedHeirDisabled without touching inheritedDeathYear in the same payload.
+  if (resultInheritedDeathYear == null) {
+    (accountUpdate as Record<string, unknown>).inheritedHeirDisabled = false;
+  }
 
   let updated: AccountRow;
   await db.transaction(async (tx) => {

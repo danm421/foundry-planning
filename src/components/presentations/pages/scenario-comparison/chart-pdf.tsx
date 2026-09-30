@@ -4,50 +4,7 @@ import type { ChartSpec } from "@/lib/presentations/charts/types";
 import { PRESENTATION_THEME as T } from "@/lib/presentations/theme";
 import { MONO } from "@/components/presentations/pages/retirement-comparison/chart-axis";
 import { ChartLegend } from "@/components/presentations/pages/retirement-comparison/chart-legend-pdf";
-import { bandScale, markerLabelLayout } from "@/components/presentations/pages/cash-flow/chart-geom";
-
-export interface PlotPoint {
-  x: number;
-  y: number;
-}
-
-/**
- * One `points` string per contiguous run of drawable points — the gap contract's
- * renderer half.
- *
- * Two plans can run to different end years, so the chart's x domain is the union
- * and a plan that stops early has NO value for the later years. `chart-spec.ts`
- * writes `NaN` there, because `ChartSpec.lines[].values` is `number[]` with no
- * null channel and a zero would draw a cliff to the axis that the plan does not
- * have.
- *
- * The cash-flow renderer joins every point into ONE `<Polyline>`. Doing that
- * here would emit the literal token `"481,NaN"` into the points attribute and
- * corrupt the whole line, so the run is closed on a non-finite value instead and
- * a plan that ends early simply stops being drawn.
- *
- * The test is finiteness of the COMPUTED coordinate, not of the source value: it
- * catches the `NaN` sentinel and an x that falls outside the band domain, which
- * are the same defect at the point where it matters.
- *
- * A one-point run is kept rather than filtered: it is a valid points attribute
- * that draws nothing, which is exactly what a single year with no neighbour
- * should look like.
- */
-export function polylineRuns(points: ReadonlyArray<PlotPoint>): string[] {
-  const runs: string[] = [];
-  let run: string[] = [];
-  const close = () => {
-    if (run.length > 0) runs.push(run.join(" "));
-    run = [];
-  };
-  for (const p of points) {
-    if (Number.isFinite(p.x) && Number.isFinite(p.y)) run.push(`${p.x},${p.y}`);
-    else close();
-  }
-  close();
-  return runs;
-}
+import { bandScale, markerLabelLayout, polylineRuns } from "@/components/presentations/pages/cash-flow/chart-geom";
 
 /**
  * The four-column portfolio chart: one line per column over the union of every

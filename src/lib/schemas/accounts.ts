@@ -98,6 +98,8 @@ const nullDefaultCreate = {
   accountNumberLast4: z.string().nullable().optional().default(null),
   activationYear: z.number().int().gte(1900).lte(2200).nullable().optional().default(null),
   activationYearRef: yearRefZodEnum.nullable().optional().default(null),
+  inheritedDeathYear: z.number().int().nullable().optional().default(null),
+  inheritedOwnerBirthYear: z.number().int().nullable().optional().default(null),
 };
 
 const nullDefaultUpdate = {
@@ -114,6 +116,8 @@ const nullDefaultUpdate = {
   accountNumberLast4: z.string().nullable().optional(),
   activationYear: z.number().int().gte(1900).lte(2200).nullable().optional(),
   activationYearRef: yearRefZodEnum.nullable().optional(),
+  inheritedDeathYear: z.number().int().nullable().optional(),
+  inheritedOwnerBirthYear: z.number().int().nullable().optional(),
 };
 
 // CREATE: name/category required; loose fields default to mirror the POST route's
@@ -127,6 +131,7 @@ export const accountCreateSchema = z
     basis: decOrZeroOptional.default("0"),
     rothValue: decOrZeroOptional.default("0"),
     rmdEnabled: z.boolean().optional().default(false),
+    inheritedHeirDisabled: z.boolean().optional().default(false),
     countsTowardAum: z.boolean().optional().default(false),
     growthSource: z.string().optional().default("default"),
     turnoverPct: z.union([z.number(), z.string()]).optional().default("0"),
@@ -165,6 +170,7 @@ export const accountUpdateSchema = z.object({
   basis: decOrZeroOptional,
   rothValue: decOrZeroOptional,
   rmdEnabled: z.boolean().optional(),
+  inheritedHeirDisabled: z.boolean().optional(),
   countsTowardAum: z.boolean().optional(),
   growthSource: z.string().optional(),
   turnoverPct: z.union([z.number(), z.string()]).optional(),
