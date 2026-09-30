@@ -790,6 +790,15 @@ export async function PUT(req: NextRequest, ctx: RouteCtx) {
         Object.keys((c.payload ?? {}) as Record<string, unknown>),
       );
     }
+    // Ruling F-I1-put: the writer reads an omitted toggleGroupId as "keep the
+    // row's group" (for the Details editors). A re-save here keeps its own,
+    // older rule instead, stated explicitly: a target this save puts in no
+    // group is unlinked (null) — except an edit the writer folds into an
+    // existing `add` row, which keeps the add's group (omitted), as it always
+    // did.
+    const addedTargets = new Set(
+      existing.filter((c) => c.opType === "add").map((c) => `${c.targetKind}:${c.targetId}`),
+    );
 
     const existingGroups = await loadScenarioToggleGroups(scenarioId);
 
@@ -843,13 +852,14 @@ export async function PUT(req: NextRequest, ctx: RouteCtx) {
           for (const f of fields) {
             desiredFields[f] = workingFieldValue(workingTree, targetKind, d.targetId, f);
           }
+          const keepsAddGroup = !gid && addedTargets.has(`${d.targetKind}:${d.targetId}`);
           await applyEntityEdit({
             scenarioId,
             firmId,
             targetKind,
             targetId: d.targetId,
             desiredFields,
-            ...(gid ? { toggleGroupId: gid } : {}),
+            ...(keepsAddGroup ? {} : { toggleGroupId: gid ?? null }),
             tx,
           });
         } else if (d.opType === "add") {
@@ -858,7 +868,7 @@ export async function PUT(req: NextRequest, ctx: RouteCtx) {
             firmId,
             targetKind,
             entity: d.payload as { id: string } & Record<string, unknown>,
-            ...(gid ? { toggleGroupId: gid } : {}),
+            toggleGroupId: gid ?? null,
             tx,
           });
         } else {
@@ -867,6 +877,7 @@ export async function PUT(req: NextRequest, ctx: RouteCtx) {
             firmId,
             targetKind,
             targetId: d.targetId,
+            toggleGroupId: null,
             tx,
           });
         }

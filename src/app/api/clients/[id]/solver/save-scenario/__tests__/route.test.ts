@@ -649,6 +649,110 @@ describe("PUT /api/clients/[id]/solver/save-scenario", () => {
       expect(call.toggleGroupId).toBe("existing-gid");
     }
   });
+
+  // Ruling F-I1-put: the writer now reads an omitted group as "keep the row's
+  // group" (F-I1, for the Details editors). This route keeps its pre-F-I1
+  // semantics by saying so explicitly: a target this save puts in no group is
+  // unlinked (null) — except an edit folded into an existing `add` row, which
+  // the old writer left in the add's group (omission), so the route omits it.
+  describe("a target this save puts in no group", () => {
+    const account = {
+      id: "acct-1", category: "cash" as const, revocableTrustName: "Family Trust", owners: [],
+      name: "Checking", subType: "checking", value: 50000, basis: 0, growthRate: 0.02,
+      rmdEnabled: false, titlingType: "jtwros" as const,
+    };
+    const scenarioRow = (opType: "add" | "edit", toggleGroupId: string) => ({
+      id: `row-${opType}`, scenarioId: SCENARIO_ID, opType, targetKind: "account", targetId: account.id,
+      payload: opType === "add" ? account : { revocableTrustName: { from: null, to: "Family Trust" } },
+      toggleGroupId, orderIndex: 0,
+    });
+
+    beforeEach(() => {
+      vi.mocked(loadEffectiveTree).mockResolvedValue({
+        effectiveTree: {
+          client: {
+            firstName: "Cooper", lastName: "Smith", dateOfBirth: "1965-03-15", retirementAge: 65,
+            retirementMonth: 1, planEndAge: 95, lifeExpectancy: 95, filingStatus: "single",
+          },
+          accounts: [account],
+          incomes: [], expenses: [], savingsRules: [], rothConversions: [],
+          assetTransactions: [], reinvestments: [], gifts: [], externalBeneficiaries: [],
+          entities: [], liabilities: [], withdrawalStrategy: [],
+          planSettings: {} as never,
+        },
+      } as never);
+      vi.mocked(loadScenarioToggleGroups).mockResolvedValue([
+        { id: "grp-funding", scenarioId: SCENARIO_ID, name: "Move into Family Trust", defaultOn: true, requiresGroupId: null, orderIndex: 0 },
+      ] as never);
+    });
+
+    // The revocable-trust tag is cleared while another edit stays, so the
+    // account is no longer in a funding set: it must leave that group.
+    it("an edit re-saved over an edit row in a group passes toggleGroupId: null (unlinks)", async () => {
+      vi.mocked(loadScenarioChanges).mockResolvedValue([scenarioRow("edit", "grp-funding")] as never);
+
+      const res = await PUT(
+        makeUpdateRequest({
+          scenarioId: SCENARIO_ID,
+          mutations: [
+            { kind: "account-upsert", id: account.id, value: { ...account, revocableTrustName: null, value: 60000 } },
+          ],
+        }),
+        ctx,
+      );
+
+      expect(res.status).toBe(200);
+      const calls = vi.mocked(applyEntityEdit).mock.calls.map((c) => c[0]);
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toHaveProperty("toggleGroupId", null);
+    });
+
+    it("an edit folded into an existing add row omits the group, so the add keeps its own", async () => {
+      vi.mocked(loadScenarioChanges).mockResolvedValue([scenarioRow("add", "grp-funding")] as never);
+
+      await PUT(
+        makeUpdateRequest({
+          scenarioId: SCENARIO_ID,
+          mutations: [{ kind: "account-upsert", id: account.id, value: { ...account, value: 60000 } }],
+        }),
+        ctx,
+      );
+
+      const calls = vi.mocked(applyEntityEdit).mock.calls.map((c) => c[0]);
+      expect(calls).toHaveLength(1);
+      expect(calls[0].toggleGroupId).toBeUndefined();
+    });
+
+    it("an add passes toggleGroupId: null", async () => {
+      await PUT(
+        makeUpdateRequest({
+          scenarioId: SCENARIO_ID,
+          mutations: [
+            { kind: "account-upsert", id: "acct-new", value: { ...account, id: "acct-new", revocableTrustName: null } },
+          ],
+        }),
+        ctx,
+      );
+
+      const calls = vi.mocked(applyEntityAdd).mock.calls.map((c) => c[0]);
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toHaveProperty("toggleGroupId", null);
+    });
+
+    it("a remove passes toggleGroupId: null", async () => {
+      await PUT(
+        makeUpdateRequest({
+          scenarioId: SCENARIO_ID,
+          mutations: [{ kind: "account-upsert", id: account.id, value: null }],
+        }),
+        ctx,
+      );
+
+      const calls = vi.mocked(applyEntityRemove).mock.calls.map((c) => c[0]);
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toHaveProperty("toggleGroupId", null);
+    });
+  });
 });
 
 // ── Scenario-PARTITIONED tables ─────────────────────────────────────────────
