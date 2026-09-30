@@ -5,8 +5,9 @@
  * With `focus` set the view must render only the form the page's own Edit
  * button would open for that row, seeded with that row, and hand control back
  * through `onFocusClose` whenever that form goes away (cancel, save) or never
- * could open — the row is missing, its kind isn't edited here, or the advisor
- * has view-only access.
+ * could open — the row is missing, its kind isn't edited here, the advisor
+ * has view-only access, or it's a reinvestment (its form hydrates from the
+ * base plan, so a save would overwrite the scenario).
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -187,8 +188,7 @@ const fetchMock = vi.fn<FetchLike>(async () => ({ ok: true, status: 200, json: a
 beforeEach(() => {
   submit.mockReset();
   fetchMock.mockClear();
-  // The reinvestment form fetches its detail fields and custom groups, the
-  // transaction form its projected hints; an empty list satisfies each.
+  // The transaction form fetches its projected hints; an empty list will do.
   vi.stubGlobal("fetch", fetchMock);
 });
 
@@ -213,14 +213,6 @@ describe("TechniquesView focus mode — which form opens", () => {
     renderFocused({ kind: "transfer", id: "tr-1" });
 
     expect(within(transferForm()).getByDisplayValue("Brokerage Sweep")).toBeTruthy();
-    expectNoPageChrome();
-  });
-
-  it("reinvestment → the reinvestment form, pre-filled with that row, and nothing else", () => {
-    renderFocused({ kind: "reinvestment", id: "ri-1" });
-
-    expect(screen.getByRole("dialog", { name: "Edit Reinvestment" })).toBeTruthy();
-    expect(inputValue("reinvestment-name")).toBe("Glide Path Switch");
     expectNoPageChrome();
   });
 
@@ -275,7 +267,13 @@ describe("TechniquesView focus mode — unavailable", () => {
   });
 
   it("an id that belongs to another kind → unavailable", async () => {
-    await expectUnavailable(renderFocused({ kind: "reinvestment", id: "rc-1" }));
+    await expectUnavailable(renderFocused({ kind: "transfer", id: "rc-1" }));
+  });
+
+  // The form backfills portfolio, rates and groups from a base-only GET, so
+  // saving inside a scenario would write base values over the scenario's.
+  it("a reinvestment → unavailable, even though the row is there", async () => {
+    await expectUnavailable(renderFocused({ kind: "reinvestment", id: "ri-1" }));
   });
 
   it("without edit permission → unavailable, as the page offers no Edit button either", async () => {
@@ -291,7 +289,6 @@ describe("TechniquesView focus mode — closing", () => {
   // A normal close carries no outcome at all — not even an explicit undefined.
   it.each([
     { kind: "roth_conversion" as const, id: "rc-1", title: "Edit Roth Conversion" },
-    { kind: "reinvestment" as const, id: "ri-1", title: "Edit Reinvestment" },
     { kind: "relocation" as const, id: "rl-1", title: "Edit Relocation" },
     { kind: "asset_transaction" as const, id: "tx-sell", title: "Edit Transaction" },
   ])("cancelling the $kind form calls onFocusClose()", ({ kind, id, title }) => {
@@ -327,7 +324,6 @@ describe("TechniquesView focus mode — closing", () => {
 
   it.each([
     { kind: "roth_conversion" as const, id: "rc-1", formId: "roth-conversion-form" },
-    { kind: "reinvestment" as const, id: "ri-1", formId: "reinvestment-form" },
     { kind: "relocation" as const, id: "rl-1", formId: "relocation-form" },
   ])("a successful $kind save calls onFocusClose()", async ({ kind, id, formId }) => {
     submit.mockResolvedValue({ ok: true, json: async () => ({ id }) });

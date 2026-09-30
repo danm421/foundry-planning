@@ -176,7 +176,8 @@ export interface TechniquesViewProps {
    * - No argument: the form closed normally (cancel, close, save).
    * - `"unavailable"`: nothing was opened, because the page itself offers no
    *   editor for this row — it's gone, its kind isn't edited here, or the
-   *   advisor has view-only access.
+   *   advisor has view-only access — or it's a reinvestment, whose form would
+   *   save base-plan values over the scenario's.
    */
   onFocusClose?: (outcome?: "unavailable") => void;
 }
@@ -974,17 +975,17 @@ function AssetTransactionsTable({
 type FocusTarget =
   | { kind: "roth_conversion"; row: RothConversionRow }
   | { kind: "transfer"; row: TransferRow }
-  | { kind: "reinvestment"; row: ReinvestmentRow }
   | { kind: "relocation"; row: RelocationRow }
   | { kind: "asset_transaction"; row: AssetTransactionRow };
 
 /** The row the page's Edit button would open for `focus`, or null. Every row
- *  the page lists has an Edit button, so any row found here is editable. */
+ *  the page lists has an Edit button, so any row found here is editable —
+ *  reinvestments aside (see below). */
 function findFocusRow(
   focus: EditorFocus,
   rows: Pick<
     TechniquesViewProps,
-    "rothConversions" | "transfers" | "reinvestments" | "relocations" | "assetTransactions"
+    "rothConversions" | "transfers" | "relocations" | "assetTransactions"
   >,
 ): FocusTarget | null {
   const byId = <T extends { id: string }>(list: T[]) => list.find((r) => r.id === focus.id);
@@ -997,10 +998,10 @@ function findFocusRow(
       const row = byId(rows.transfers);
       return row ? { kind: focus.kind, row } : null;
     }
-    case "reinvestment": {
-      const row = byId(rows.reinvestments);
-      return row ? { kind: focus.kind, row } : null;
-    }
+    // Its form backfills portfolio/rates/groups from a base-only GET, so a save
+    // here overwrites the scenario — future-work "Reinvestment form hydrates from the base plan".
+    case "reinvestment":
+      return null;
     case "relocation": {
       const row = byId(rows.relocations);
       return row ? { kind: focus.kind, row } : null;
@@ -1045,7 +1046,7 @@ export default function TechniquesView({
   // button sets it — for a transaction leg, that opens its whole bundle.
   const [focusTarget] = useState(() =>
     focus && canEdit
-      ? findFocusRow(focus, { rothConversions, transfers, reinvestments, relocations, assetTransactions })
+      ? findFocusRow(focus, { rothConversions, transfers, relocations, assetTransactions })
       : null,
   );
 
@@ -1054,9 +1055,7 @@ export default function TechniquesView({
     focusTarget?.kind === "transfer" ? focusTarget.row : null,
   );
   const [showAddReinvestment, setShowAddReinvestment] = useState(false);
-  const [editingReinvestment, setEditingReinvestment] = useState<ReinvestmentInitialData | null>(() =>
-    focusTarget?.kind === "reinvestment" ? focusTarget.row : null,
-  );
+  const [editingReinvestment, setEditingReinvestment] = useState<ReinvestmentInitialData | null>(null);
   const [showAddRelocation, setShowAddRelocation] = useState(false);
   const [editingRelocation, setEditingRelocation] = useState<RelocationRow | null>(() =>
     focusTarget?.kind === "relocation" ? focusTarget.row : null,
@@ -1281,7 +1280,6 @@ export default function TechniquesView({
   const focusFormOpen =
     editingRothConversion !== null ||
     editingTransfer !== null ||
-    editingReinvestment !== null ||
     editingRelocation !== null ||
     editingTransaction !== null;
   const focusClosedRef = useRef(false);
