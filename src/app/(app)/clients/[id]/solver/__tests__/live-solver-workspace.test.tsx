@@ -1400,7 +1400,8 @@ describe("LiveSolverWorkspace — opening a change from the Changes tab", () => 
     render(<LiveSolverWorkspace {...baseProps} changesPanel={panelWith(change)} />);
     fireEvent.click(leftTab("Scenario changes"));
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit Open me" }));
+    // Ruling F-M4: a jump to a Solver tab is named "Open …", not "Edit …".
+    fireEvent.click(screen.getByRole("button", { name: "Open Open me" }));
 
     expect(leftTab(tab)).toHaveAttribute("aria-selected", "true");
     expect(leftTab("Scenario changes")).toHaveAttribute("aria-selected", "false");
