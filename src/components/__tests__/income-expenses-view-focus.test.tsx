@@ -190,10 +190,11 @@ describe("IncomeExpensesView focus mode", () => {
     expect(screen.getByText("Using custom schedule")).toBeTruthy();
   });
 
-  it("a row that isn't there → onFocusClose once, nothing rendered", async () => {
+  it("a row that isn't there → onFocusClose(\"unavailable\") once, nothing rendered", async () => {
     const { container, onFocusClose, rerender } = renderFocused({ kind: "income", id: "gone" });
 
     await waitFor(() => expect(onFocusClose).toHaveBeenCalledTimes(1));
+    expect(onFocusClose).toHaveBeenCalledWith("unavailable");
     expect(container).toBeEmptyDOMElement();
 
     // A parent re-render with fresh inline props must not close it again.
@@ -205,10 +206,27 @@ describe("IncomeExpensesView focus mode", () => {
     expect(onFocusClose).toHaveBeenCalledTimes(1);
   });
 
-  it("a kind this view doesn't edit → onFocusClose, nothing rendered", async () => {
+  it("a kind this view doesn't edit → onFocusClose(\"unavailable\"), nothing rendered", async () => {
     const { container, onFocusClose } = renderFocused({ kind: "account", id: "acct-1" });
 
     await waitFor(() => expect(onFocusClose).toHaveBeenCalledTimes(1));
+    expect(onFocusClose).toHaveBeenCalledWith("unavailable");
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("Social Security without plan settings → unavailable, as the page shows no SS card", async () => {
+    const onFocusClose = vi.fn();
+    const { container } = render(
+      <IncomeExpensesView
+        {...BASE_PROPS}
+        ssPlanSettings={undefined}
+        focus={{ kind: "income", id: "inc-ss-1" }}
+        onFocusClose={onFocusClose}
+      />,
+    );
+
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledTimes(1));
+    expect(onFocusClose).toHaveBeenCalledWith("unavailable");
     expect(container).toBeEmptyDOMElement();
   });
 
@@ -217,7 +235,7 @@ describe("IncomeExpensesView focus mode", () => {
   it.each([
     { label: "an entity-owned income", focus: { kind: "income" as const, id: "inc-trust" } },
     { label: "a business-owned expense", focus: { kind: "expense" as const, id: "exp-biz" } },
-  ])("$label → closes, as the page offers no editor for it", async ({ focus }) => {
+  ])("$label → unavailable, as the page offers no editor for it", async ({ focus }) => {
     const onFocusClose = vi.fn();
     const { container } = render(
       <IncomeExpensesView
@@ -230,63 +248,71 @@ describe("IncomeExpensesView focus mode", () => {
     );
 
     await waitFor(() => expect(onFocusClose).toHaveBeenCalledTimes(1));
+    expect(onFocusClose).toHaveBeenCalledWith("unavailable");
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("without edit permission → closes, as the page offers no editor either", async () => {
+  it("without edit permission → unavailable, as the page offers no editor either", async () => {
     const { container, onFocusClose } = renderFocused({ kind: "income", id: "inc-1" }, vi.fn(), "view");
 
     await waitFor(() => expect(onFocusClose).toHaveBeenCalledTimes(1));
+    expect(onFocusClose).toHaveBeenCalledWith("unavailable");
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("closing the income dialog calls onFocusClose", () => {
+  // A normal close carries no outcome at all — not even an explicit undefined.
+  it("closing the income dialog calls onFocusClose()", () => {
     const { onFocusClose } = renderFocused({ kind: "income", id: "inc-1" });
     expect(onFocusClose).not.toHaveBeenCalled();
 
     fireEvent.click(headerCloseButton("Edit Income"));
 
     expect(onFocusClose).toHaveBeenCalledTimes(1);
+    expect(onFocusClose).toHaveBeenCalledWith();
   });
 
-  it("closing the expense dialog calls onFocusClose", () => {
+  it("closing the expense dialog calls onFocusClose()", () => {
     const { onFocusClose } = renderFocused({ kind: "expense", id: "exp-1" });
 
     fireEvent.click(headerCloseButton("Edit Expense"));
 
     expect(onFocusClose).toHaveBeenCalledTimes(1);
+    expect(onFocusClose).toHaveBeenCalledWith();
   });
 
-  it("cancelling the savings-rule dialog calls onFocusClose", () => {
+  it("cancelling the savings-rule dialog calls onFocusClose()", () => {
     const { onFocusClose } = renderFocused({ kind: "savings_rule", id: "sr-1" });
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     expect(onFocusClose).toHaveBeenCalledTimes(1);
+    expect(onFocusClose).toHaveBeenCalledWith();
   });
 
-  it("cancelling the Social Security dialog calls onFocusClose", () => {
+  it("cancelling the Social Security dialog calls onFocusClose()", () => {
     const { onFocusClose } = renderFocused({ kind: "income", id: "inc-ss-1" });
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     expect(onFocusClose).toHaveBeenCalledTimes(1);
+    expect(onFocusClose).toHaveBeenCalledWith();
   });
 
-  it("a successful save calls onFocusClose", async () => {
+  it("a successful save calls onFocusClose()", async () => {
     submit.mockResolvedValue({ ok: true, json: async () => ({ ...INCOME, name: "Alice Salary" }) });
     const { onFocusClose } = renderFocused({ kind: "income", id: "inc-1" });
 
     fireEvent.submit(document.getElementById("income-form-fields") as HTMLFormElement);
 
     await waitFor(() => expect(onFocusClose).toHaveBeenCalledTimes(1));
+    expect(onFocusClose).toHaveBeenCalledWith();
     expect(submit).toHaveBeenCalledWith(
       expect.objectContaining({ op: "edit", targetKind: "income", targetId: "inc-1" }),
       expect.anything(),
     );
   });
 
-  it("a confirmed delete calls onFocusClose", async () => {
+  it("a confirmed delete calls onFocusClose()", async () => {
     submit.mockResolvedValue({ ok: true, status: 204 });
     const { onFocusClose } = renderFocused({ kind: "expense", id: "exp-1" });
 
@@ -295,6 +321,7 @@ describe("IncomeExpensesView focus mode", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 
     await waitFor(() => expect(onFocusClose).toHaveBeenCalledTimes(1));
+    expect(onFocusClose).toHaveBeenCalledWith();
     expect(submit).toHaveBeenCalledWith(
       { op: "remove", targetKind: "expense", targetId: "exp-1" },
       expect.anything(),

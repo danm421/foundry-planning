@@ -253,8 +253,16 @@ export interface IncomeExpensesViewProps {
    * the focus to switch rows.
    */
   focus?: EditorFocus;
-  /** Called once the focused dialog is gone (cancel, save, delete) or couldn't open. */
-  onFocusClose?: () => void;
+  /**
+   * Called once when focus mode ends. The host must UNMOUNT the view then:
+   * clearing `focus` on a still-mounted view falls through to the full page.
+   *
+   * - No argument: the editor closed normally (cancel, X, Escape, save, delete).
+   * - `"unavailable"`: nothing was opened, because the page itself offers no
+   *   editor for this row — it's gone, its kind isn't edited here, it's an
+   *   entity- or business-owned flow, or the advisor has view-only access.
+   */
+  onFocusClose?: (outcome?: "unavailable") => void;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1830,11 +1838,15 @@ export default function IncomeExpensesView({
   const [incomeEdit, setIncomeEdit] = useState(false);
   const [expenseEdit, setExpenseEdit] = useState(false);
 
-  // Focus mode's row, snapshotted at mount. Null means nothing to open: the row
-  // is gone, this view doesn't edit that kind, or — as on the page — no edit access.
-  const [focusTarget] = useState(() =>
-    focus && canEdit ? findFocusRow(focus, initialIncomes, initialExpenses, initialSavingsRules) : null,
-  );
+  // Focus mode's row, snapshotted at mount. Null means the page offers no editor
+  // for it: the row is gone, this view doesn't edit that kind, the page gives it
+  // no pencil, or there's no edit access. Social Security also needs both SS
+  // props — the page opens it only through `SocialSecurityCard`, which it
+  // renders only with them.
+  const [focusTarget] = useState(() => {
+    const target = focus && canEdit ? findFocusRow(focus, initialIncomes, initialExpenses, initialSavingsRules) : null;
+    return target?.dialog === "social_security" && !(ssClientInfo && ssPlanSettings) ? null : target;
+  });
 
   // Dialog state — a single dialog per entity type, controlled by (open, editing, defaultType).
   // Focus mode seeds the same state a row's pencil sets.
@@ -1852,10 +1864,8 @@ export default function IncomeExpensesView({
   const [savingsDialog, setSavingsDialog] = useState<{ open: boolean; editing?: SavingsRule }>(() =>
     focusTarget?.dialog === "savings_rule" ? { open: true, editing: focusTarget.row } : { open: false },
   );
-  // The page opens Social Security only through `SocialSecurityCard`, which it
-  // renders only with both SS props — focus mode needs the same two.
   const [ssFocusRow, setSsFocusRow] = useState<Income | null>(() =>
-    focusTarget?.dialog === "social_security" && ssClientInfo && ssPlanSettings ? focusTarget.row : null,
+    focusTarget?.dialog === "social_security" ? focusTarget.row : null,
   );
 
   // Delete confirms
@@ -2261,14 +2271,15 @@ export default function IncomeExpensesView({
 
   // Focus mode hands control back once its editor is gone, however it went:
   // cancel, save, a confirmed delete (which closes the editor directly, not
-  // through its onOpenChange), or never opened at all.
+  // through its onOpenChange) — or, as "unavailable", when none ever opened.
   const focusDialogOpen = incomeDialog.open || expenseDialog.open || savingsDialog.open || ssFocusRow !== null;
   const focusClosedRef = useRef(false);
   useEffect(() => {
     if (!focus || focusDialogOpen || focusClosedRef.current) return;
     focusClosedRef.current = true;
-    onFocusClose?.();
-  }, [focus, focusDialogOpen, onFocusClose]);
+    if (focusTarget) onFocusClose?.();
+    else onFocusClose?.("unavailable");
+  }, [focus, focusTarget, focusDialogOpen, onFocusClose]);
 
   // ── Render ────────────────────────────────────────────────────────────────
 
