@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { ASSUMPTIONS_TABS, assumptionsTabQuery, resolveAssumptionsTab } from "./tabs";
 import AssumptionsSubtabs from "@/components/assumptions-subtabs";
@@ -22,6 +23,7 @@ import type { LiquidAccount, AssetAccount } from "@/components/account-groups/ty
 import { type RiskLevel } from "@/lib/risk-levels";
 import type { FilingStatus } from "@/lib/tax/types";
 import type { TaxAdjustmentRow } from "@/components/forms/add-tax-adjustment-form";
+import type { EditorFocus } from "@/lib/scenario/change-editor-target";
 
 export interface DeductionsTabData {
   derivedRows: DerivedRow[];
@@ -121,6 +123,21 @@ export interface AssumptionsClientProps {
   taxAdjustmentRows: TaxAdjustmentRow[];
   liquidAccounts: LiquidAccount[];
   allAccounts: AssetAccount[];
+  /**
+   * Focus mode, for the Solver's Changes tab. Read once, at mount — key the
+   * view by the focus. Nothing on this page opens in focus mode: see
+   * `onFocusClose`.
+   */
+  focus?: EditorFocus;
+  /**
+   * Called once, with `"unavailable"`, whenever `focus` is set; the view
+   * renders nothing, and the host must UNMOUNT it (clearing `focus` on a
+   * still-mounted view falls through to the full page). The Deductions, Tax
+   * Adjustments and Withdrawal lists hold the BASE plan's rows whatever
+   * scenario is selected, so a focused editor would open on base values and
+   * its save would overwrite the scenario's own change with them.
+   */
+  onFocusClose?: (outcome?: "unavailable") => void;
 }
 
 export default function AssumptionsClient({
@@ -141,11 +158,24 @@ export default function AssumptionsClient({
   taxAdjustmentRows,
   liquidAccounts,
   allAccounts,
+  focus,
+  onFocusClose,
 }: AssumptionsClientProps) {
   // Tab lives in the URL so the risk detail card can deep-link to
   // ?tab=growth-inflation, and so the back button steps through tabs.
   const searchParams = useSearchParams();
   const activeTab = resolveAssumptionsTab(searchParams.get("tab"));
+
+  // Focus mode opens nothing here (see `onFocusClose`) — hand control back
+  // at once, and only once.
+  const focusClosedRef = useRef(false);
+  useEffect(() => {
+    if (!focus || focusClosedRef.current) return;
+    focusClosedRef.current = true;
+    onFocusClose?.("unavailable");
+  }, [focus, onFocusClose]);
+
+  if (focus) return null;
 
   function handleTabChange(id: string) {
     // pushState (not router.push) -- syncs useSearchParams without re-running
