@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import BequestDialog, { type BequestDraft } from "@/components/bequest-dialog";
+import DialogShell from "@/components/dialog-shell";
 import WillResiduarySection from "@/components/forms/will-residuary-section";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useClientAccess } from "@/components/client-access-provider";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
+import type { EditorFocus } from "@/lib/scenario/change-editor-target";
 // Local copy — `BUSINESS_ENTITY_TYPES` was removed from `in-estate-weights.ts`
 // in the business-as-asset migration. This UI is being phased out separately;
 // keep the gate inline until then.
@@ -130,6 +132,26 @@ export interface WillsPanelProps {
   externalBeneficiaries: WillsPanelExternal[];
   entities: WillsPanelEntity[];
   initialWills: WillsPanelWill[];
+  /**
+   * Focus mode, for the Solver's Changes tab: show the focused will's section
+   * — the page edits a will in place, there is no will dialog — alone, inside a
+   * dialog, and nothing else. Read once, at mount — key the view by the focus
+   * to switch wills.
+   */
+  focus?: EditorFocus;
+  /**
+   * Called once when focus mode ends. The host must UNMOUNT the view then:
+   * clearing `focus` on a still-mounted view falls through to the full page.
+   *
+   * - No argument: the advisor closed the dialog (Done, Close or Escape). Each
+   *   edit inside the section saves on its own, as on the page, so saving
+   *   does not end focus.
+   * - `"unavailable"`: nothing was opened, because the page itself shows no
+   *   editable section for this will — it's gone, it's the co-client's with
+   *   no co-client on file, the page shows another will for that grantor, the
+   *   kind isn't a will, or the advisor has view-only access.
+   */
+  onFocusClose?: (outcome?: "unavailable") => void;
 }
 
 const CONDITION_LABEL: Record<WillCondition, string> = {
@@ -227,6 +249,21 @@ function draftToBequest(draft: BequestDraft): WillsPanelBequest {
   };
 }
 
+/** The will whose section the page shows for `focus`, or null when the page
+ *  shows no section for it. The page renders one section per grantor — the
+ *  co-client's only when there is one — holding that grantor's FIRST will. */
+function findFocusWill(
+  focus: EditorFocus,
+  wills: WillsPanelWill[],
+  primary: WillsPanelPrimary,
+): WillsPanelWill | null {
+  if (focus.kind !== "will") return null;
+  const will = wills.find((w) => w.id === focus.id);
+  if (!will) return null;
+  if (will.grantor === "spouse" && !primary.spouseName) return null;
+  return wills.find((w) => w.grantor === will.grantor) === will ? will : null;
+}
+
 export default function WillsPanel(props: WillsPanelProps) {
   const { permission } = useClientAccess();
   const canEdit = permission === "edit";
@@ -238,7 +275,16 @@ export default function WillsPanel(props: WillsPanelProps) {
     familyMembers,
     externalBeneficiaries,
     entities,
+    focus,
+    onFocusClose,
   } = props;
+  // Focus mode's will, snapshotted at mount. Null means the page shows no
+  // editable section for it: the will is gone, hidden, or there's no edit
+  // access.
+  const [focusWill] = useState(() =>
+    focus && canEdit ? findFocusWill(focus, initialWills, primary) : null,
+  );
+  const [focusOpen, setFocusOpen] = useState(() => focusWill != null);
   const businessEntities = useMemo(
     () => entities.filter((e) => e.entityType != null && BUSINESS_ENTITY_TYPES.has(e.entityType)),
     [entities],
@@ -458,11 +504,24 @@ export default function WillsPanel(props: WillsPanelProps) {
     }
   }
 
-  return (
+  // Focus mode hands control back once its dialog is closed, or, as
+  // "unavailable", when it never opened.
+  const focusClosedRef = useRef(false);
+  useEffect(() => {
+    if (!focus || focusOpen || focusClosedRef.current) return;
+    focusClosedRef.current = true;
+    if (focusWill) onFocusClose?.();
+    else onFocusClose?.("unavailable");
+  }, [focus, focusWill, focusOpen, onFocusClose]);
+
+  // Focus mode shows only the focused will's grantor.
+  const grantors: readonly WillGrantor[] = focusWill ? [focusWill.grantor] : ["client", "spouse"];
+
+  const panel = (
     <div className="space-y-8">
       {saving && <div className="text-xs text-ink-3">Saving…</div>}
       {error && <div className="text-xs text-red-400">{error}</div>}
-      {(["client", "spouse"] as const).map((g) => {
+      {grantors.map((g) => {
         if (g === "spouse" && !primary.spouseName) return null;
         const will = wills.find((w) => w.grantor === g);
         const grantorWarnings = warnings.filter((x) => x.grantor === g);
@@ -753,4 +812,23 @@ export default function WillsPanel(props: WillsPanelProps) {
       })}
     </div>
   );
+
+  if (focus) {
+    if (!focusWill || !focusOpen) return null;
+    return (
+      <DialogShell
+        open
+        onOpenChange={(open) => {
+          if (!open) setFocusOpen(false);
+        }}
+        title="Edit will"
+        size="lg"
+        secondaryAction={{ label: "Done", onClick: () => setFocusOpen(false) }}
+      >
+        {panel}
+      </DialogShell>
+    );
+  }
+
+  return panel;
 }
