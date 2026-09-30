@@ -239,6 +239,7 @@ describe("WillsPanel focus mode — closing", () => {
     { how: "Done", close: () => fireEvent.click(within(editWillDialog()).getByRole("button", { name: "Done" })) },
     { how: "the Close button", close: () => fireEvent.click(within(editWillDialog()).getByRole("button", { name: "Close" })) },
     { how: "Escape", close: () => fireEvent.keyDown(window, { key: "Escape" }) },
+    { how: "the backdrop", close: () => fireEvent.click(screen.getByTestId("dialog-overlay")) },
   ])("closing with $how calls onFocusClose()", ({ close }) => {
     const { onFocusClose, container } = renderFocused({ kind: "will", id: "will-client" });
     expect(onFocusClose).not.toHaveBeenCalled();
@@ -248,6 +249,38 @@ describe("WillsPanel focus mode — closing", () => {
     expect(onFocusClose).toHaveBeenCalledTimes(1);
     expect(onFocusClose).toHaveBeenCalledWith();
     expect(container).toBeEmptyDOMElement();
+  });
+
+  // Ruling F-wills: closing unmounts the view, so a close mid-save would hide a
+  // failed save's error for good.
+  it("ignores every close while a save is pending, and shows the error when it fails", async () => {
+    let settle!: (res: Pick<Response, "ok" | "status" | "json">) => void;
+    fetchMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          settle = resolve;
+        }),
+    );
+    const { onFocusClose } = renderFocused({ kind: "will", id: "will-client" });
+    fireEvent.click(within(editWillDialog()).getByRole("button", { name: "Delete bequest" }));
+    await waitFor(() => expect(within(editWillDialog()).getByText("Saving…")).toBeTruthy());
+
+    const done = within(editWillDialog()).getByRole("button", { name: "Done" });
+    expect(done).toHaveProperty("disabled", true);
+    fireEvent.click(done);
+    fireEvent.click(within(editWillDialog()).getByRole("button", { name: "Close" }));
+    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.click(screen.getByTestId("dialog-overlay"));
+    expect(editWillDialog()).toBeTruthy();
+    expect(onFocusClose).not.toHaveBeenCalled();
+
+    settle({ ok: false, status: 500, json: async () => ({}) });
+
+    await waitFor(() =>
+      expect(within(editWillDialog()).getByText("scenario edit failed: HTTP 500")).toBeTruthy(),
+    );
+    expect(within(editWillDialog()).getByRole("button", { name: "Done" })).toHaveProperty("disabled", false);
+    expect(onFocusClose).not.toHaveBeenCalled();
   });
 
   it("Escape inside the bequest dialog closes only that dialog, not the will editor", () => {

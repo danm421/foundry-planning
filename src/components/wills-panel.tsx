@@ -144,9 +144,10 @@ export interface WillsPanelProps {
    * Called once when focus mode ends. The host must UNMOUNT the view then:
    * clearing `focus` on a still-mounted view falls through to the full page.
    *
-   * - No argument: the advisor closed the dialog (Done, Close or Escape). Each
-   *   edit inside the section saves on its own, as on the page, so saving
-   *   does not end focus.
+   * - No argument: the advisor closed the dialog (Done, Close, Escape or the
+   *   backdrop). Each edit inside the section saves on its own, as on the
+   *   page, so saving does not end focus — and while a save is in flight the
+   *   dialog ignores every close, so a failed save's error stays visible.
    * - `"unavailable"`: nothing was opened, because the page itself shows no
    *   editable section for this will — it's gone, it's the co-client's with
    *   no co-client on file, the page shows another will for that grantor, the
@@ -814,11 +815,13 @@ export default function WillsPanel(props: WillsPanelProps) {
       <DialogShell
         open
         onOpenChange={(open) => {
-          if (!open) setFocusOpen(false);
+          // Closing unmounts the view (the host's contract), so a close while
+          // a save is in flight would hide that save's error for good.
+          if (!open && !saving) setFocusOpen(false);
         }}
         title="Edit will"
         size="lg"
-        secondaryAction={{ label: "Done", onClick: () => setFocusOpen(false) }}
+        secondaryAction={{ label: "Done", onClick: () => setFocusOpen(false), disabled: saving }}
       >
         {panel}
       </DialogShell>
