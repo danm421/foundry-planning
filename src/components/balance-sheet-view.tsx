@@ -248,7 +248,8 @@ export interface BalanceSheetViewProps {
    * - `"unavailable"`: nothing was opened, because the page itself offers no
    *   editor for this row — it's gone, its kind isn't edited here, it's a
    *   life-insurance policy (edited on Insurance), it's a business's sub-row
-   *   whose business isn't listed, or the advisor has view-only access.
+   *   whose business isn't listed, or the advisor has view-only access — or
+   *   it's a household business, whose BusinessDialog would save to the base.
    */
   onFocusClose?: (outcome?: "unavailable") => void;
 }
@@ -557,16 +558,16 @@ function AddAssetMenu({ onPick }: { onPick: (cat: AccountCategory) => void }) {
 
 /** The focused row, tagged with the dialog the page opens for it. */
 type FocusTarget =
-  | { dialog: "account" | "business"; row: AccountRow }
+  | { dialog: "account"; row: AccountRow }
   | { dialog: "liability"; row: LiabilityRow };
 
 /**
- * The dialog the page's own click opens for the focused row, or null when the
- * page opens none. A top-level in-estate business opens `BusinessDialog` (its
- * row group's `onClickRow`); a business's sub-account or sub-liability is
- * listed only inside that row group; a policy click goes to the Insurance page;
- * legacy notes_receivable accounts aren't listed. Every other account opens the
- * account dialog — Assets rows, 529s and the Out of Estate panel alike.
+ * The dialog the page's own click opens for the focused row, or null when
+ * focus mode opens none. A business's sub-account or sub-liability is listed
+ * only inside its business's row group; a policy click goes to the Insurance
+ * page; legacy notes_receivable accounts aren't listed. Every other account
+ * opens the account dialog — Assets rows, 529s and the Out of Estate panel
+ * alike — except the listed businesses themselves (see below).
  */
 function findFocusRow(
   focus: EditorFocus,
@@ -583,7 +584,9 @@ function findFocusRow(
     case "account": {
       const row = accounts.find((a) => a.id === focus.id);
       if (!row || row.category === "life_insurance" || row.category === "notes_receivable") return null;
-      if (isListedBusiness(row)) return { dialog: "business", row };
+      // The page edits it in BusinessDialog, whose saves bypass the scenario writer
+      // (future-work "Business dialog saves to the BASE plan") — never open it here.
+      if (isListedBusiness(row)) return null;
       // An in-estate sub-account shows only under its business's row group.
       if (row.parentAccountId && accountInEstate(row) && !underListedBusiness(row.parentAccountId)) return null;
       return { dialog: "account", row };
@@ -789,11 +792,8 @@ export default function BalanceSheetView({
   const [editingNote, setEditingNote] = useState<NoteReceivable | null>(null);
   const [deletingNote, setDeletingNote] = useState<NoteReceivable | null>(null);
 
-  // A focused business seeds both, as `openEditBusiness` sets them.
-  const [editingBusiness, setEditingBusiness] = useState<BusinessAccount | null>(() =>
-    focusTarget?.dialog === "business" ? accountRowToBusinessAccount(focusTarget.row) : null,
-  );
-  const [businessDialogOpen, setBusinessDialogOpen] = useState(() => focusTarget?.dialog === "business");
+  const [editingBusiness, setEditingBusiness] = useState<BusinessAccount | null>(null);
+  const [businessDialogOpen, setBusinessDialogOpen] = useState(false);
   const [addLiabilityOpen, setAddLiabilityOpen] = useState(false);
   // When "+ Add sub-account" / "+ Add sub-liability" fires from inside the
   // Business dialog's Assets tab, capture the business id so the freshly-opened
@@ -1303,7 +1303,7 @@ export default function BalanceSheetView({
   // Focus mode hands control back once its editor is gone, however it went:
   // cancel, save, a confirmed delete (which closes the editor directly, not
   // through its onOpenChange) — or, as "unavailable", when none ever opened.
-  const focusDialogOpen = editingAccount !== null || editingLiability !== null || businessDialogOpen;
+  const focusDialogOpen = editingAccount !== null || editingLiability !== null;
   const focusClosedRef = useRef(false);
   useEffect(() => {
     if (!focus || focusDialogOpen || focusClosedRef.current) return;

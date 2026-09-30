@@ -64,7 +64,8 @@ const BROKERAGE: AccountRow = {
   owners: CLIENT_OWNS,
 };
 
-/** A top-level, household-owned business: the page opens BusinessDialog. */
+/** A top-level, household-owned business. The page edits it in BusinessDialog,
+ *  whose saves bypass the scenario writer, so focus mode reports it unavailable. */
 const BUSINESS: AccountRow = {
   id: "acct-biz",
   name: "Acme Widgets LLC",
@@ -91,7 +92,7 @@ const BUSINESS_CASH: AccountRow = {
 };
 
 /** A trust-owned business sits in the Out of Estate panel, whose click opens
- *  the plain account dialog — not BusinessDialog. */
+ *  the plain account dialog (a scenario-aware writer) — not BusinessDialog. */
 const TRUST_BUSINESS: AccountRow = {
   id: "acct-trust-biz",
   name: "Gifted Holdings LLC",
@@ -173,8 +174,7 @@ function renderFocused(
 
 const dialog = (title: string) => within(screen.getByRole("dialog", { name: title }));
 
-/** Every page-chrome landmark focus mode must leave out. By heading, not text:
- *  BusinessDialog has an "Assets" tab of its own. */
+/** Every page-chrome landmark focus mode must leave out. */
 function expectNoPageChrome() {
   expect(screen.queryByRole("heading", { name: "Assets" })).toBeNull();
   expect(screen.queryByRole("heading", { name: "Liabilities" })).toBeNull();
@@ -188,14 +188,11 @@ async function expectUnavailable(utils: { container: HTMLElement; onFocusClose: 
   expect(utils.container).toBeEmptyDOMElement();
 }
 
-let fetchMock: ReturnType<typeof vi.fn>;
-
 beforeEach(() => {
   submit.mockReset();
-  // The dialogs fetch side data on open (savings rules, allocations, flow
-  // overrides, cascade dependents); an empty list satisfies every one of them.
-  fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => [] }));
-  vi.stubGlobal("fetch", fetchMock);
+  // The dialogs fetch side data on open (savings rules, allocations, cascade
+  // dependents); an empty list satisfies every one of them.
+  vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => [] })));
 });
 
 afterEach(() => {
@@ -214,24 +211,6 @@ describe("BalanceSheetView focus mode — which dialog opens", () => {
     expect((document.getElementById("name") as HTMLInputElement).value).toBe("Brokerage Account");
     expect(screen.queryByRole("dialog", { name: "Edit Business" })).toBeNull();
     expectNoPageChrome();
-  });
-
-  it("a top-level household business → BusinessDialog for that business", () => {
-    renderFocused({ kind: "account", id: "acct-biz" });
-
-    expect(screen.getByRole("dialog", { name: "Edit Business" })).toBeTruthy();
-    expect((document.getElementById("biz-name") as HTMLInputElement).value).toBe("Acme Widgets LLC");
-    expect(screen.queryByRole("dialog", { name: "Edit Account" })).toBeNull();
-    expectNoPageChrome();
-  });
-
-  it("the business's Assets tab lists its sub-rows — BusinessDialog got the full lists", () => {
-    renderFocused({ kind: "account", id: "acct-biz" });
-
-    fireEvent.click(dialog("Edit Business").getByRole("button", { name: "Assets" }));
-
-    expect(screen.getByText("Acme Operating Cash")).toBeTruthy();
-    expect(screen.getByText("Acme Equipment Loan")).toBeTruthy();
   });
 
   it("a business's sub-account → the account dialog, as its row group opens it", () => {
@@ -288,6 +267,12 @@ describe("BalanceSheetView focus mode — unavailable", () => {
     await expectUnavailable(renderFocused({ kind: "income", id: "acct-taxable" }));
   });
 
+  // BusinessDialog's Details and Notes saves PUT the base account, bypassing the
+  // scenario — from the Solver that would overwrite the base plan.
+  it("a top-level household business → unavailable, never BusinessDialog", async () => {
+    await expectUnavailable(renderFocused({ kind: "account", id: "acct-biz" }));
+  });
+
   it("a life-insurance policy → unavailable, as the page sends it to Insurance", async () => {
     await expectUnavailable(renderFocused({ kind: "account", id: "acct-policy" }));
   });
@@ -309,7 +294,6 @@ describe("BalanceSheetView focus mode — closing", () => {
   // A normal close carries no outcome at all — not even an explicit undefined.
   it.each([
     { label: "account", focus: { kind: "account" as const, id: "acct-taxable" }, title: "Edit Account" },
-    { label: "business", focus: { kind: "account" as const, id: "acct-biz" }, title: "Edit Business" },
     { label: "liability", focus: { kind: "liability" as const, id: "liab-mortgage" }, title: "Edit Liability" },
   ])("cancelling the $label dialog calls onFocusClose()", ({ focus, title }) => {
     const { onFocusClose } = renderFocused(focus);
@@ -325,7 +309,6 @@ describe("BalanceSheetView focus mode — closing", () => {
   // then would unmount the confirm with it.
   it.each([
     { label: "account", focus: { kind: "account" as const, id: "acct-taxable" }, title: "Edit Account", confirm: "Delete Account" },
-    { label: "business", focus: { kind: "account" as const, id: "acct-biz" }, title: "Edit Business", confirm: "Delete Account" },
     { label: "liability", focus: { kind: "liability" as const, id: "liab-mortgage" }, title: "Edit Liability", confirm: "Delete Liability" },
   ])("asking to delete from the $label dialog opens the confirm, not onFocusClose", ({ focus, title, confirm }) => {
     const { onFocusClose } = renderFocused(focus);
@@ -362,25 +345,6 @@ describe("BalanceSheetView focus mode — closing", () => {
     expect(submit).toHaveBeenCalledWith(
       expect.objectContaining({ op: "edit", targetKind: "account", targetId: "acct-taxable" }),
       expect.anything(),
-    );
-  });
-
-  it("a successful business save calls onFocusClose()", async () => {
-    // BusinessDialog saves with a bare PUT, not through the scenario writer.
-    fetchMock.mockImplementation(async (_url: string, init?: { method?: string }) =>
-      init?.method === "PUT"
-        ? { ok: true, status: 200, json: async () => ({ ...BUSINESS, value: 500000, basis: 100000 }) }
-        : { ok: true, status: 200, json: async () => [] },
-    );
-    const { onFocusClose } = renderFocused({ kind: "account", id: "acct-biz" });
-
-    fireEvent.submit(document.getElementById("business-details-form") as HTMLFormElement);
-
-    await waitFor(() => expect(onFocusClose).toHaveBeenCalledTimes(1));
-    expect(onFocusClose).toHaveBeenCalledWith();
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/clients/c1/accounts/acct-biz",
-      expect.objectContaining({ method: "PUT" }),
     );
   });
 
