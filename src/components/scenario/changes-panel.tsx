@@ -60,12 +60,12 @@ export interface ChangesPanelProps {
   /**
    * `rail` (default) is the 360px right-edge drawer used today; its markup is
    * unchanged. `embedded` is for mounting the panel inside a host layout (the
-   * Solver's left pane, wired up in a later task) — it drops the fixed width
+   * Solver's left-pane Changes tab) — it drops the fixed width
    * and left border for `w-full`.
    */
   variant?: "rail" | "embedded";
   /**
-   * Opens a change's full editor (wired up by a later task). When provided,
+   * Opens a change's full editor (the Solver's Changes tab). When provided,
    * leaf-row titles become clickable, gated per-row by `canOpenChange`.
    */
   onOpenChange?: (change: ChangesPanelChange) => void;

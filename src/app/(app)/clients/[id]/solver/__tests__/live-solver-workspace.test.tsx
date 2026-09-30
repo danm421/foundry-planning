@@ -1365,3 +1365,44 @@ describe("LiveSolverWorkspace — the reports must never sit on a stale recomput
     expect(screen.getByTestId("chart-current-total")).toHaveTextContent("999999");
   }, 15_000);
 });
+
+describe("LiveSolverWorkspace — opening a change from the Changes tab", () => {
+  // The Changes tab's own tests cover which target each change resolves to;
+  // this pins the wiring: a Solver-tab target switches the workspace's left pane.
+  const changeOf = (targetKind: string, payload: Record<string, unknown>) => ({
+    id: `chg-${targetKind}`,
+    scenarioId: "scn-1",
+    opType: "edit" as const,
+    targetKind: targetKind as never,
+    targetId: "00000000-0000-4000-8000-000000000001",
+    payload,
+    toggleGroupId: null,
+    orderIndex: 0,
+    updatedAt: new Date("2026-01-01T00:00:00Z"),
+    enabled: true,
+    label: "Open me",
+  });
+  const panelWith = (change: ReturnType<typeof changeOf>) => ({
+    scenarioId: "scn-1",
+    scenarioName: "Retire at 62",
+    changes: [change],
+    toggleGroups: [],
+    cascadeWarnings: [],
+    targetNames: {},
+  });
+  const leftTab = (name: string) =>
+    within(screen.getByRole("tablist", { name: "Solver editing surface" })).getByRole("tab", { name });
+
+  it.each([
+    ["a stress-test change", "Stress Test", changeOf("plan_settings", { ssBenefitHaircut: 0.2 })],
+    ["a life-expectancy change", "Retirement", changeOf("client", { lifeExpectancy: 92, planEndAge: 92 })],
+  ])("%s switches the left pane to %s", (_label, tab, change) => {
+    render(<LiveSolverWorkspace {...baseProps} changesPanel={panelWith(change)} />);
+    fireEvent.click(leftTab("Scenario changes"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Open me" }));
+
+    expect(leftTab(tab)).toHaveAttribute("aria-selected", "true");
+    expect(leftTab("Scenario changes")).toHaveAttribute("aria-selected", "false");
+  });
+});

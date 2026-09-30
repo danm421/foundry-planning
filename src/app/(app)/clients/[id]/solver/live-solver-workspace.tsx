@@ -1637,7 +1637,11 @@ export function LiveSolverWorkspace({
         )}
 
         {activeTab === "changes" && (
-          <SolverChangesTab clientId={clientId} panel={changesPanel ?? null} />
+          <SolverChangesTab
+            clientId={clientId}
+            panel={changesPanel ?? null}
+            onOpenSolverTab={setActiveTab}
+          />
         )}
           </div>
         </div>

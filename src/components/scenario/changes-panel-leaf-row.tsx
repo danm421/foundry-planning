@@ -46,7 +46,7 @@ export interface ChangesPanelLeafRowProps {
   customLabel?: string | null;
   /**
    * When set, the title renders as a button that calls this to open the
-   * change's full editor (wired up by a later task). Absent (or the row was
+   * change's full editor (the Solver's Changes tab). Absent (or the row was
    * gated out by `canOpenChange` upstream) → the title stays a static div.
    */
   onOpen?: () => void;
