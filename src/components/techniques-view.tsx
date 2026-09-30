@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useScenarioState } from "@/hooks/use-scenario-state";
@@ -18,6 +18,7 @@ import type { ClientMilestones, YearRef } from "@/lib/milestones";
 import { YEAR_REF_LABELS } from "@/lib/milestones";
 import { formatReinvestmentScope } from "@/lib/solver/technique-summaries";
 import { USPS_STATE_NAMES, type USPSStateCode } from "@/lib/usps-states";
+import type { EditorFocus } from "@/lib/scenario/change-editor-target";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -162,6 +163,22 @@ export interface TechniquesViewProps {
   milestones?: ClientMilestones;
   clientFirstName?: string;
   spouseFirstName?: string;
+  /**
+   * Focus mode, for the Solver's Changes tab: open the form this page opens
+   * for ONE row and render nothing else. Read once, at mount — key the view by
+   * the focus to switch rows.
+   */
+  focus?: EditorFocus;
+  /**
+   * Called once when focus mode ends. The host must UNMOUNT the view then:
+   * clearing `focus` on a still-mounted view falls through to the full page.
+   *
+   * - No argument: the form closed normally (cancel, close, save).
+   * - `"unavailable"`: nothing was opened, because the page itself offers no
+   *   editor for this row — it's gone, its kind isn't edited here, or the
+   *   advisor has view-only access.
+   */
+  onFocusClose?: (outcome?: "unavailable") => void;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -951,6 +968,52 @@ function AssetTransactionsTable({
   );
 }
 
+// ── Focus mode ────────────────────────────────────────────────────────────────
+
+/** The focused row, tagged with its kind — each kind has one form. */
+type FocusTarget =
+  | { kind: "roth_conversion"; row: RothConversionRow }
+  | { kind: "transfer"; row: TransferRow }
+  | { kind: "reinvestment"; row: ReinvestmentRow }
+  | { kind: "relocation"; row: RelocationRow }
+  | { kind: "asset_transaction"; row: AssetTransactionRow };
+
+/** The row the page's Edit button would open for `focus`, or null. Every row
+ *  the page lists has an Edit button, so any row found here is editable. */
+function findFocusRow(
+  focus: EditorFocus,
+  rows: Pick<
+    TechniquesViewProps,
+    "rothConversions" | "transfers" | "reinvestments" | "relocations" | "assetTransactions"
+  >,
+): FocusTarget | null {
+  const byId = <T extends { id: string }>(list: T[]) => list.find((r) => r.id === focus.id);
+  switch (focus.kind) {
+    case "roth_conversion": {
+      const row = byId(rows.rothConversions);
+      return row ? { kind: focus.kind, row } : null;
+    }
+    case "transfer": {
+      const row = byId(rows.transfers);
+      return row ? { kind: focus.kind, row } : null;
+    }
+    case "reinvestment": {
+      const row = byId(rows.reinvestments);
+      return row ? { kind: focus.kind, row } : null;
+    }
+    case "relocation": {
+      const row = byId(rows.relocations);
+      return row ? { kind: focus.kind, row } : null;
+    }
+    case "asset_transaction": {
+      const row = byId(rows.assetTransactions);
+      return row ? { kind: focus.kind, row } : null;
+    }
+    default:
+      return null;
+  }
+}
+
 // ── Main View ─────────────────────────────────────────────────────────────────
 
 export default function TechniquesView({
@@ -967,6 +1030,8 @@ export default function TechniquesView({
   milestones,
   clientFirstName,
   spouseFirstName,
+  focus,
+  onFocusClose,
 }: TechniquesViewProps) {
   const router = useRouter();
   const writer = useScenarioWriter(clientId);
@@ -974,25 +1039,48 @@ export default function TechniquesView({
   const { permission } = useClientAccess();
   const canEdit = permission === "edit";
 
+  // Focus mode's row, snapshotted at mount. Null means the page offers no editor
+  // for it: the row is gone, this view doesn't edit that kind, or there's no
+  // edit access. The editing state below is seeded exactly as that row's Edit
+  // button sets it — for a transaction leg, that opens its whole bundle.
+  const [focusTarget] = useState(() =>
+    focus && canEdit
+      ? findFocusRow(focus, { rothConversions, transfers, reinvestments, relocations, assetTransactions })
+      : null,
+  );
+
   const [showAddTransfer, setShowAddTransfer] = useState(false);
-  const [editingTransfer, setEditingTransfer] = useState<TransferRow | null>(null);
+  const [editingTransfer, setEditingTransfer] = useState<TransferRow | null>(() =>
+    focusTarget?.kind === "transfer" ? focusTarget.row : null,
+  );
   const [showAddReinvestment, setShowAddReinvestment] = useState(false);
-  const [editingReinvestment, setEditingReinvestment] = useState<ReinvestmentInitialData | null>(null);
+  const [editingReinvestment, setEditingReinvestment] = useState<ReinvestmentInitialData | null>(() =>
+    focusTarget?.kind === "reinvestment" ? focusTarget.row : null,
+  );
   const [showAddRelocation, setShowAddRelocation] = useState(false);
-  const [editingRelocation, setEditingRelocation] = useState<RelocationRow | null>(null);
+  const [editingRelocation, setEditingRelocation] = useState<RelocationRow | null>(() =>
+    focusTarget?.kind === "relocation" ? focusTarget.row : null,
+  );
   const [showAddTransaction, setShowAddTransaction] = useState(false);
-  const [editingTransaction, setEditingTransaction] = useState<AssetTransactionRow | null>(null);
+  const [editingTransaction, setEditingTransaction] = useState<AssetTransactionRow | null>(() =>
+    focusTarget?.kind === "asset_transaction" ? focusTarget.row : null,
+  );
   const [showAddRothConversion, setShowAddRothConversion] = useState(false);
-  const [editingRothConversion, setEditingRothConversion] = useState<RothConversionInitialData | null>(null);
+  const [editingRothConversion, setEditingRothConversion] = useState<RothConversionInitialData | null>(() =>
+    focusTarget?.kind === "roth_conversion" ? focusTarget.row : null,
+  );
   const [projectionYears, setProjectionYears] = useState<ProjectionYear[] | null>(null);
+  const focusMode = Boolean(focus);
 
   // Load projection so transaction rows can display the projected BoY sale
   // value and mortgage payoff for the sale year (matches what the engine will
   // use). Pass the active scenario so scenario-only accounts (e.g. an
   // entity-owned asset added inside this scenario) resolve a real value —
   // without it the endpoint loads base-plan data and a scenario-only sell
-  // account prices at $0, yielding a bogus negative NET preview.
+  // account prices at $0, yielding a bogus negative NET preview. Focus mode
+  // shows no rows, so it skips the fetch and the projection run.
   useEffect(() => {
+    if (focusMode) return;
     let cancelled = false;
     async function loadProjection() {
       try {
@@ -1010,7 +1098,7 @@ export default function TechniquesView({
     }
     loadProjection();
     return () => { cancelled = true; };
-  }, [clientId, scenarioId]);
+  }, [clientId, scenarioId, focusMode]);
 
   const projectedMortgagePayoffFor = useMemo(() => {
     return (liabilityId: string, year: number): number | null => {
@@ -1101,86 +1189,10 @@ export default function TechniquesView({
     router.refresh();
   }
 
-  return (
-    <div className="space-y-6">
-      <SectionShell
-        title="Roth Conversions"
-        help="Move dollars from tax-deferred accounts (Traditional IRA, 401(k)) into a Roth IRA, paying ordinary income tax now in exchange for tax-free growth and withdrawals."
-        count={rothConversions.length}
-        addLabel="+ Add Roth Conversion"
-        onAdd={canEdit ? () => setShowAddRothConversion(true) : undefined}
-      >
-        <RothConversionsTable
-          rows={rothConversions}
-          accounts={accounts}
-          onEdit={canEdit ? (c) => setEditingRothConversion(c) : undefined}
-          onDelete={canEdit ? (id) => handleDeleteRothConversion(id) : undefined}
-        />
-      </SectionShell>
-
-      <SectionShell
-        title="Transfers"
-        help="Move money between accounts on a one-time, recurring, or scheduled basis. Classification (Roth conversion, rollover, distribution, liquidation) is inferred from the source and target account types."
-        count={transfers.length}
-        addLabel="+ Add Transfer"
-        onAdd={canEdit ? () => setShowAddTransfer(true) : undefined}
-      >
-        <TransfersTable
-          rows={transfers}
-          accounts={accounts}
-          onEdit={canEdit ? (t) => setEditingTransfer(t) : undefined}
-          onDelete={canEdit ? (id) => handleDeleteTransfer(id) : undefined}
-        />
-      </SectionShell>
-
-      <SectionShell
-        title="Reinvestments"
-        help="Re-allocate an account at a chosen year — switch to a model portfolio or a custom growth rate. Optionally realize embedded gains as taxes in the switch year."
-        count={reinvestments.length}
-        addLabel="+ Add Reinvestment"
-        onAdd={canEdit ? () => setShowAddReinvestment(true) : undefined}
-      >
-        <ReinvestmentsTable
-          rows={reinvestments}
-          onEdit={canEdit ? (r) => setEditingReinvestment(r) : undefined}
-          onDelete={canEdit ? (id) => handleDeleteReinvestment(id) : undefined}
-        />
-      </SectionShell>
-
-      <SectionShell
-        title="Relocation"
-        help="Model the household moving to a different state in a chosen year. From that year on, state income tax and state estate/inheritance tax reflect the new state — until a later relocation overrides it."
-        count={relocations.length}
-        addLabel="+ Add Relocation"
-        onAdd={canEdit ? () => setShowAddRelocation(true) : undefined}
-      >
-        <RelocationsTable
-          rows={relocations}
-          onEdit={canEdit ? (r) => setEditingRelocation(r) : undefined}
-          onDelete={canEdit ? (id) => handleDeleteRelocation(id) : undefined}
-        />
-      </SectionShell>
-
-      <SectionShell
-        title="Asset Transactions"
-        help="Buy or sell a specific asset (real estate, business interest, vehicle). Sells use the projected end-of-year value unless overridden; Sell+Buy lets you roll proceeds into a replacement purchase."
-        count={assetTransactions.length}
-        addLabel="+ Add Transaction"
-        onAdd={canEdit ? () => setShowAddTransaction(true) : undefined}
-      >
-        <AssetTransactionsTable
-          rows={assetTransactions}
-          accounts={accounts}
-          liabilities={liabilities}
-          businesses={businesses}
-          pastBuys={pastBuys}
-          projectedSaleValueFor={projectedSaleValueFor}
-          projectedMortgagePayoffFor={projectedMortgagePayoffFor}
-          onEdit={canEdit ? (t) => setEditingTransaction(t) : undefined}
-          onDelete={canEdit ? (id) => handleDeleteTransaction(id) : undefined}
-        />
-      </SectionShell>
-
+  // Every form, built once: the page renders them under its sections, focus
+  // mode renders them alone.
+  const formsNode = (
+    <>
       {canEdit && (showAddTransfer || editingTransfer) && (
         <AddTransferForm
           clientId={clientId}
@@ -1261,6 +1273,108 @@ export default function TechniquesView({
           onSaved={() => { setShowAddTransaction(false); setEditingTransaction(null); router.refresh(); }}
         />
       )}
+    </>
+  );
+
+  // Focus mode hands control back once its form is gone — cancel or save —
+  // or, as "unavailable", when none ever opened.
+  const focusFormOpen =
+    editingRothConversion !== null ||
+    editingTransfer !== null ||
+    editingReinvestment !== null ||
+    editingRelocation !== null ||
+    editingTransaction !== null;
+  const focusClosedRef = useRef(false);
+  useEffect(() => {
+    if (!focus || focusFormOpen || focusClosedRef.current) return;
+    focusClosedRef.current = true;
+    if (focusTarget) onFocusClose?.();
+    else onFocusClose?.("unavailable");
+  }, [focus, focusTarget, focusFormOpen, onFocusClose]);
+
+  if (focus) return formsNode;
+
+  return (
+    <div className="space-y-6">
+      <SectionShell
+        title="Roth Conversions"
+        help="Move dollars from tax-deferred accounts (Traditional IRA, 401(k)) into a Roth IRA, paying ordinary income tax now in exchange for tax-free growth and withdrawals."
+        count={rothConversions.length}
+        addLabel="+ Add Roth Conversion"
+        onAdd={canEdit ? () => setShowAddRothConversion(true) : undefined}
+      >
+        <RothConversionsTable
+          rows={rothConversions}
+          accounts={accounts}
+          onEdit={canEdit ? (c) => setEditingRothConversion(c) : undefined}
+          onDelete={canEdit ? (id) => handleDeleteRothConversion(id) : undefined}
+        />
+      </SectionShell>
+
+      <SectionShell
+        title="Transfers"
+        help="Move money between accounts on a one-time, recurring, or scheduled basis. Classification (Roth conversion, rollover, distribution, liquidation) is inferred from the source and target account types."
+        count={transfers.length}
+        addLabel="+ Add Transfer"
+        onAdd={canEdit ? () => setShowAddTransfer(true) : undefined}
+      >
+        <TransfersTable
+          rows={transfers}
+          accounts={accounts}
+          onEdit={canEdit ? (t) => setEditingTransfer(t) : undefined}
+          onDelete={canEdit ? (id) => handleDeleteTransfer(id) : undefined}
+        />
+      </SectionShell>
+
+      <SectionShell
+        title="Reinvestments"
+        help="Re-allocate an account at a chosen year — switch to a model portfolio or a custom growth rate. Optionally realize embedded gains as taxes in the switch year."
+        count={reinvestments.length}
+        addLabel="+ Add Reinvestment"
+        onAdd={canEdit ? () => setShowAddReinvestment(true) : undefined}
+      >
+        <ReinvestmentsTable
+          rows={reinvestments}
+          onEdit={canEdit ? (r) => setEditingReinvestment(r) : undefined}
+          onDelete={canEdit ? (id) => handleDeleteReinvestment(id) : undefined}
+        />
+      </SectionShell>
+
+      <SectionShell
+        title="Relocation"
+        help="Model the household moving to a different state in a chosen year. From that year on, state income tax and state estate/inheritance tax reflect the new state — until a later relocation overrides it."
+        count={relocations.length}
+        addLabel="+ Add Relocation"
+        onAdd={canEdit ? () => setShowAddRelocation(true) : undefined}
+      >
+        <RelocationsTable
+          rows={relocations}
+          onEdit={canEdit ? (r) => setEditingRelocation(r) : undefined}
+          onDelete={canEdit ? (id) => handleDeleteRelocation(id) : undefined}
+        />
+      </SectionShell>
+
+      <SectionShell
+        title="Asset Transactions"
+        help="Buy or sell a specific asset (real estate, business interest, vehicle). Sells use the projected end-of-year value unless overridden; Sell+Buy lets you roll proceeds into a replacement purchase."
+        count={assetTransactions.length}
+        addLabel="+ Add Transaction"
+        onAdd={canEdit ? () => setShowAddTransaction(true) : undefined}
+      >
+        <AssetTransactionsTable
+          rows={assetTransactions}
+          accounts={accounts}
+          liabilities={liabilities}
+          businesses={businesses}
+          pastBuys={pastBuys}
+          projectedSaleValueFor={projectedSaleValueFor}
+          projectedMortgagePayoffFor={projectedMortgagePayoffFor}
+          onEdit={canEdit ? (t) => setEditingTransaction(t) : undefined}
+          onDelete={canEdit ? (id) => handleDeleteTransaction(id) : undefined}
+        />
+      </SectionShell>
+
+      {formsNode}
     </div>
   );
 }
