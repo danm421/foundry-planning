@@ -270,4 +270,56 @@ describe("ToggleGroupCard", () => {
       screen.queryByRole("option", { name: "Child group" }),
     ).not.toBeInTheDocument();
   });
+
+  describe("openable rows", () => {
+    it("forwards onOpenChange to its leaf rows when canOpenChange is absent", () => {
+      const onOpenChange = vi.fn();
+      const change = makeChange({ id: "c-1", payload: { name: "Group change" } });
+      render(
+        <ToggleGroupCard
+          clientId="c1"
+          group={makeGroup()}
+          changes={[change]}
+          allGroups={[makeGroup()]}
+          onOpenChange={onOpenChange}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: /^Roth conversions/ }));
+      fireEvent.click(screen.getByRole("button", { name: "Edit Group change" }));
+      expect(onOpenChange).toHaveBeenCalledWith(change);
+    });
+
+    it("does not render an openable button when canOpenChange returns false", () => {
+      const onOpenChange = vi.fn();
+      render(
+        <ToggleGroupCard
+          clientId="c1"
+          group={makeGroup()}
+          changes={[makeChange({ id: "c-1", payload: { name: "Group change" } })]}
+          allGroups={[makeGroup()]}
+          onOpenChange={onOpenChange}
+          canOpenChange={() => false}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: /^Roth conversions/ }));
+      expect(
+        screen.queryByRole("button", { name: "Edit Group change" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("rows stay non-openable when onOpenChange is not provided", () => {
+      render(
+        <ToggleGroupCard
+          clientId="c1"
+          group={makeGroup()}
+          changes={[makeChange({ id: "c-1", payload: { name: "Group change" } })]}
+          allGroups={[makeGroup()]}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: /^Roth conversions/ }));
+      expect(
+        screen.queryByRole("button", { name: "Edit Group change" }),
+      ).not.toBeInTheDocument();
+    });
+  });
 });

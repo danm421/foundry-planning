@@ -20,7 +20,7 @@ import { useRouter } from "next/navigation";
 import { TrashIcon } from "@/components/icons";
 import { ChangesPanelLeafRow } from "./changes-panel-leaf-row";
 import type { ToggleGroup } from "@/engine/scenario/types";
-import type { ChangesPanelChange } from "./changes-panel";
+import { resolveOnOpen, type ChangesPanelChange } from "./changes-panel";
 
 export interface ToggleGroupCardProps {
   clientId: string;
@@ -30,6 +30,10 @@ export interface ToggleGroupCardProps {
   allGroups: ToggleGroup[];
   /** See ChangesPanelProps.targetNames. */
   targetNames?: Record<string, string>;
+  /** See ChangesPanelProps.onOpenChange. Forwarded to this card's own leaf rows. */
+  onOpenChange?: (change: ChangesPanelChange) => void;
+  /** See ChangesPanelProps.canOpenChange. Forwarded to this card's own leaf rows. */
+  canOpenChange?: (change: ChangesPanelChange) => boolean;
 }
 
 export function ToggleGroupCard({
@@ -38,6 +42,8 @@ export function ToggleGroupCard({
   changes,
   allGroups,
   targetNames,
+  onOpenChange,
+  canOpenChange,
 }: ToggleGroupCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [defaultOn, setDefaultOn] = useState(group.defaultOn);
@@ -212,6 +218,7 @@ export function ToggleGroupCard({
                 enabled={c.enabled}
                 targetName={targetNames?.[`${c.targetKind}:${c.targetId}`]}
                 customLabel={c.label}
+                onOpen={resolveOnOpen(c, onOpenChange, canOpenChange)}
               />
             ))
           )}

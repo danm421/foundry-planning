@@ -57,6 +57,36 @@ export interface ChangesPanelProps {
   targetNames?: Record<string, string>;
   /** Extra classes merged onto the root aside (e.g. `h-full` in the drawer). */
   className?: string;
+  /**
+   * `rail` (default) is the 360px right-edge drawer used today; its markup is
+   * unchanged. `embedded` is for mounting the panel inside a host layout (the
+   * Solver's left pane, wired up in a later task) — it drops the fixed width
+   * and left border for `w-full`.
+   */
+  variant?: "rail" | "embedded";
+  /**
+   * Opens a change's full editor (wired up by a later task). When provided,
+   * leaf-row titles become clickable, gated per-row by `canOpenChange`.
+   */
+  onOpenChange?: (change: ChangesPanelChange) => void;
+  /** Per-row gate for `onOpenChange`. Absent → every row is openable. */
+  canOpenChange?: (change: ChangesPanelChange) => boolean;
+}
+
+/**
+ * Ready-to-call open callback for a leaf row: undefined when no `onOpenChange`
+ * was given, or when a supplied `canOpenChange` returns false for this
+ * change. Absent `canOpenChange`, every change is openable. Shared by
+ * `UngroupedSection` and `ToggleGroupCard` so both gate the same way.
+ */
+export function resolveOnOpen(
+  change: ChangesPanelChange,
+  onOpenChange?: (change: ChangesPanelChange) => void,
+  canOpenChange?: (change: ChangesPanelChange) => boolean,
+): (() => void) | undefined {
+  if (!onOpenChange) return undefined;
+  if (canOpenChange && !canOpenChange(change)) return undefined;
+  return () => onOpenChange(change);
 }
 
 export function ChangesPanel({
@@ -68,6 +98,9 @@ export function ChangesPanel({
   cascadeWarnings,
   targetNames,
   className = "",
+  variant = "rail",
+  onOpenChange,
+  canOpenChange,
 }: ChangesPanelProps) {
   const [editing, setEditing] = useState(false);
 
@@ -75,10 +108,13 @@ export function ChangesPanel({
     .filter((c) => c.toggleGroupId == null)
     .sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt));
 
+  const asideClassName =
+    variant === "embedded"
+      ? `w-full border-hair bg-card flex flex-col ${className}`
+      : `w-[360px] shrink-0 border-l border-hair bg-card flex flex-col ${className}`;
+
   return (
-    <aside
-      className={`w-[360px] shrink-0 border-l border-hair bg-card flex flex-col ${className}`}
-    >
+    <aside className={asideClassName}>
       <PanelHeader
         scenarioName={scenarioName}
         changesCount={changes.length}
@@ -101,12 +137,16 @@ export function ChangesPanel({
             groups={toggleGroups}
             changes={changes}
             targetNames={targetNames}
+            onOpenChange={onOpenChange}
+            canOpenChange={canOpenChange}
           />
           <UngroupedSection
             clientId={clientId}
             scenarioId={scenarioId}
             changes={ungrouped}
             targetNames={targetNames}
+            onOpenChange={onOpenChange}
+            canOpenChange={canOpenChange}
           />
         </div>
       )}
@@ -157,11 +197,15 @@ function ToggleGroupsSection({
   groups,
   changes,
   targetNames,
+  onOpenChange,
+  canOpenChange,
 }: {
   clientId: string;
   groups: ToggleGroup[];
   changes: ChangesPanelChange[];
   targetNames?: Record<string, string>;
+  onOpenChange?: (change: ChangesPanelChange) => void;
+  canOpenChange?: (change: ChangesPanelChange) => boolean;
 }) {
   if (groups.length === 0) return null;
   // Sort by orderIndex asc for stable rendering (matches API GET order).
@@ -179,6 +223,8 @@ function ToggleGroupsSection({
           changes={changes.filter((c) => c.toggleGroupId === g.id)}
           allGroups={sortedGroups}
           targetNames={targetNames}
+          onOpenChange={onOpenChange}
+          canOpenChange={canOpenChange}
         />
       ))}
     </div>
@@ -190,11 +236,15 @@ function UngroupedSection({
   scenarioId,
   changes,
   targetNames,
+  onOpenChange,
+  canOpenChange,
 }: {
   clientId: string;
   scenarioId: string;
   changes: ChangesPanelChange[];
   targetNames?: Record<string, string>;
+  onOpenChange?: (change: ChangesPanelChange) => void;
+  canOpenChange?: (change: ChangesPanelChange) => boolean;
 }) {
   if (changes.length === 0) {
     return (
@@ -217,6 +267,7 @@ function UngroupedSection({
           enabled={c.enabled}
           targetName={targetNames?.[`${c.targetKind}:${c.targetId}`]}
           customLabel={c.label}
+          onOpen={resolveOnOpen(c, onOpenChange, canOpenChange)}
         />
       ))}
     </div>

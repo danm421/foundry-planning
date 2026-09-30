@@ -191,4 +191,130 @@ describe("ChangesPanel", () => {
     expect(screen.getByTestId("toggle-group-card-g-2")).toBeInTheDocument();
   });
 
+  describe("variant", () => {
+    it("defaults to 'rail' and leaves the existing markup untouched", () => {
+      const { container } = render(
+        <ChangesPanel
+          clientId="c1"
+          scenarioId="s1"
+          scenarioName="Rail"
+          changes={[]}
+          toggleGroups={[]}
+          cascadeWarnings={[]}
+        />,
+      );
+      expect(container.querySelector("aside")?.className).toBe(
+        "w-[360px] shrink-0 border-l border-hair bg-card flex flex-col ",
+      );
+    });
+
+    it("'embedded' drops the rail's fixed width/border for w-full", () => {
+      const { container } = render(
+        <ChangesPanel
+          clientId="c1"
+          scenarioId="s1"
+          scenarioName="Embedded"
+          changes={[]}
+          toggleGroups={[]}
+          cascadeWarnings={[]}
+          variant="embedded"
+        />,
+      );
+      const aside = container.querySelector("aside");
+      expect(aside?.className).toContain("w-full");
+      expect(aside?.className).not.toContain("w-[360px]");
+      expect(aside?.className).not.toContain("shrink-0");
+      expect(aside?.className).not.toContain("border-l");
+    });
+  });
+
+  describe("openable rows", () => {
+    it("no onOpenChange means rows stay non-openable", () => {
+      render(
+        <ChangesPanel
+          clientId="c1"
+          scenarioId="s1"
+          scenarioName="Default"
+          changes={[makeChange({ payload: { name: "Static" } })]}
+          toggleGroups={[]}
+          cascadeWarnings={[]}
+        />,
+      );
+      expect(screen.queryByRole("button", { name: "Edit Static" })).not.toBeInTheDocument();
+    });
+
+    it("absent canOpenChange makes every row openable when onOpenChange is provided", () => {
+      const onOpenChange = vi.fn();
+      render(
+        <ChangesPanel
+          clientId="c1"
+          scenarioId="s1"
+          scenarioName="Any"
+          changes={[makeChange({ payload: { name: "Any change" } })]}
+          toggleGroups={[]}
+          cascadeWarnings={[]}
+          onOpenChange={onOpenChange}
+        />,
+      );
+      const button = screen.getByRole("button", { name: "Edit Any change" });
+      fireEvent.click(button);
+      expect(onOpenChange).toHaveBeenCalledTimes(1);
+    });
+
+    it("gates openability per-row via canOpenChange and fires onOpenChange with the change", () => {
+      const onOpenChange = vi.fn();
+      const openable = makeChange({ id: "c-open", payload: { name: "Openable" } });
+      const blocked = makeChange({ id: "c-blocked", payload: { name: "Blocked" } });
+      render(
+        <ChangesPanel
+          clientId="c1"
+          scenarioId="s1"
+          scenarioName="Openable"
+          changes={[openable, blocked]}
+          toggleGroups={[]}
+          cascadeWarnings={[]}
+          onOpenChange={onOpenChange}
+          canOpenChange={(c) => c.id === "c-open"}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Edit Openable" }));
+      expect(onOpenChange).toHaveBeenCalledWith(openable);
+      expect(screen.queryByRole("button", { name: "Edit Blocked" })).not.toBeInTheDocument();
+    });
+
+    it("forwards onOpenChange/canOpenChange to toggle-group-card leaf rows", () => {
+      const onOpenChange = vi.fn();
+      const grouped = makeChange({
+        id: "c-grouped",
+        toggleGroupId: "g-1",
+        payload: { name: "Grouped change" },
+      });
+      render(
+        <ChangesPanel
+          clientId="c1"
+          scenarioId="s1"
+          scenarioName="Grouped"
+          changes={[grouped]}
+          toggleGroups={[
+            {
+              id: "g-1",
+              scenarioId: "s1",
+              name: "Roth conversions",
+              defaultOn: true,
+              requiresGroupId: null,
+              orderIndex: 0,
+            },
+          ] as ToggleGroup[]}
+          cascadeWarnings={[]}
+          onOpenChange={onOpenChange}
+        />,
+      );
+      // Expand the group card to reveal its leaf row.
+      fireEvent.click(screen.getByRole("button", { name: /^Roth conversions/ }));
+      const button = screen.getByRole("button", { name: "Edit Grouped change" });
+      fireEvent.click(button);
+      expect(onOpenChange).toHaveBeenCalledWith(grouped);
+    });
+  });
+
 });

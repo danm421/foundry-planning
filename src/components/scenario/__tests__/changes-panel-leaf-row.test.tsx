@@ -314,4 +314,56 @@ describe("ChangesPanelLeafRow", () => {
     });
   });
 
+  describe("openable title", () => {
+    it("renders the title as a plain div (no button) when onOpen is not provided", () => {
+      render(
+        <ChangesPanelLeafRow
+          clientId="c1"
+          scenarioId="s1"
+          enabled={true}
+          change={makeChange({ payload: { name: "Consulting income" } })}
+        />,
+      );
+      expect(screen.getByText("Consulting income").tagName).toBe("DIV");
+      expect(
+        screen.queryByRole("button", { name: "Edit Consulting income" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("renders the title as a button with aria-label 'Edit <title>' when onOpen is provided, and fires it on click", () => {
+      const onOpen = vi.fn();
+      render(
+        <ChangesPanelLeafRow
+          clientId="c1"
+          scenarioId="s1"
+          enabled={true}
+          change={makeChange({ payload: { name: "Consulting income" } })}
+          onOpen={onOpen}
+        />,
+      );
+      const button = screen.getByRole("button", { name: "Edit Consulting income" });
+      expect(button.tagName).toBe("BUTTON");
+      fireEvent.click(button);
+      expect(onOpen).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps the rename editor swap-in unaffected when onOpen is provided", () => {
+      const onOpen = vi.fn();
+      render(
+        <ChangesPanelLeafRow
+          clientId="c1"
+          scenarioId="s1"
+          enabled={true}
+          change={makeChange({ payload: { name: "Consulting income" } })}
+          onOpen={onOpen}
+        />,
+      );
+      fireEvent.click(screen.getByLabelText("Rename change"));
+      expect(screen.getByRole("textbox", { name: /change label/i })).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Edit Consulting income" }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
 });

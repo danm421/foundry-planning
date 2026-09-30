@@ -44,6 +44,12 @@ export interface ChangesPanelLeafRowProps {
   targetName?: string;
   /** User rename for this change; when set, replaces the whole computed title. */
   customLabel?: string | null;
+  /**
+   * When set, the title renders as a button that calls this to open the
+   * change's full editor (wired up by a later task). Absent (or the row was
+   * gated out by `canOpenChange` upstream) → the title stays a static div.
+   */
+  onOpen?: () => void;
 }
 
 export function ChangesPanelLeafRow({
@@ -53,6 +59,7 @@ export function ChangesPanelLeafRow({
   enabled,
   targetName,
   customLabel,
+  onOpen,
 }: ChangesPanelLeafRowProps) {
   const router = useRouter();
   const op = OP_ICON[change.opType];
@@ -135,7 +142,18 @@ export function ChangesPanelLeafRow({
           />
         ) : (
           <>
-            <div className="text-sm text-ink truncate">{labelFor(change, targetName, customLabel)}</div>
+            {onOpen ? (
+              <button
+                type="button"
+                onClick={onOpen}
+                aria-label={`Edit ${labelFor(change, targetName, customLabel)}`}
+                className="text-sm text-ink truncate w-full text-left hover:text-accent-ink hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent rounded"
+              >
+                {labelFor(change, targetName, customLabel)}
+              </button>
+            ) : (
+              <div className="text-sm text-ink truncate">{labelFor(change, targetName, customLabel)}</div>
+            )}
             <div className="text-xs text-ink-3 truncate">{subtextFor(change)}</div>
           </>
         )}
