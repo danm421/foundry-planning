@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { giftScenarioRemove } from "@/lib/gifts/gift-write";
@@ -23,6 +23,7 @@ import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import type { AssetsTabAccount, AssetsTabLiability, AssetsTabIncome, AssetsTabExpense, AssetsTabFamilyMember, AssetsTabBusiness } from "./forms/assets-tab";
 import type { AccountOwner } from "@/engine/ownership";
 import { ageOnDate, birthYearFromDob, yearForAge } from "@/lib/age-year";
+import type { EditorFocus } from "@/lib/scenario/change-editor-target";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -277,6 +278,25 @@ export interface FamilyViewProps {
   embed?: "page" | "wizard";
   /** When `embed === "wizard"`, only render this section. */
   section?: "household" | "family" | "entities" | "externals";
+  /**
+   * Focus mode, for the Solver's Changes tab: open the dialog this page opens
+   * for ONE row and render nothing else. Read once, at mount — key the view by
+   * the focus to switch rows.
+   */
+  focus?: EditorFocus;
+  /**
+   * Called once when focus mode ends. The host must UNMOUNT the view then:
+   * clearing `focus` on a still-mounted view falls through to the full page.
+   *
+   * - No argument: the dialog closed normally (cancel, close, save, or a
+   *   confirmed delete).
+   * - `"unavailable"`: nothing was opened, because the page itself offers no
+   *   editor for this row — it's gone, the page lists no row for it, its kind
+   *   isn't edited here, or the advisor has view-only access — or it's an
+   *   external beneficiary or a recurring gift series, whose editors can write
+   *   the base plan even inside a scenario.
+   */
+  onFocusClose?: (outcome?: "unavailable") => void;
 }
 
 const RELATIONSHIP_LABELS: Record<Relationship, string> = {
@@ -299,6 +319,10 @@ const RELATIONSHIP_LABELS: Record<Relationship, string> = {
 // Task 11's dependent-eligible relationship set — the row select only makes
 // sense for members who could ever be claimed as a dependent.
 const DEPENDENT_ELIGIBLE_RELATIONSHIPS = new Set<Relationship>(["child", "stepchild"]);
+
+/** The relationships the Family Members table lists, in order. A member with
+ *  any other relationship has no row on the page. */
+const LISTED_RELATIONSHIPS: Relationship[] = ["child", "stepchild", "grandchild", "parent", "sibling", "other"];
 
 export const ENTITY_LABELS: Record<EntityType, string> = {
   trust: "Trust",
@@ -351,6 +375,52 @@ export function TrashIcon() {
   );
 }
 
+// ── Focus mode ────────────────────────────────────────────────────────────────
+
+/** The focused row, tagged with the dialog the page opens for it. */
+type FocusTarget =
+  | { kind: "client" }
+  | { kind: "family_member"; row: FamilyMember }
+  | { kind: "entity"; row: Entity }
+  | { kind: "gift"; row: Gift };
+
+/** The row the page's own click would open for `focus`, or null when the page
+ *  offers no editor for it. */
+function findFocusRow(
+  focus: EditorFocus,
+  rows: { clientId: string; members: FamilyMember[]; entities: Entity[]; gifts: Gift[] },
+): FocusTarget | null {
+  const byId = <T extends { id: string }>(list: T[]) => list.find((r) => r.id === focus.id) ?? null;
+  switch (focus.kind) {
+    // The profile dialog. Ruling P3 routes a plan_settings planEndYear change
+    // here too, since life expectancy is edited on it.
+    case "client":
+      return focus.id === rows.clientId ? { kind: "client" } : null;
+    case "family_member": {
+      const row = byId(rows.members);
+      return row && LISTED_RELATIONSHIPS.includes(row.relationship) ? { kind: "family_member", row } : null;
+    }
+    case "entity": {
+      const row = byId(rows.entities);
+      return row ? { kind: "entity", row } : null;
+    }
+    // One-time gifts only. A series a change points at is always that `gift`
+    // change's overlay row (the scenario's own series never becomes a change),
+    // and the series dialog PATCHes/DELETEs `gift_series` by id alone — when
+    // the overlay re-uses a base series' id, that rewrites the base plan.
+    case "gift": {
+      const row = byId(rows.gifts);
+      return row ? { kind: "gift", row } : null;
+    }
+    // Its inline row form PATCHes the base `external_beneficiaries` row with a
+    // bare fetch, so a save inside a scenario would rewrite the base plan.
+    case "external_beneficiary":
+      return null;
+    default:
+      return null;
+  }
+}
+
 // ── Main Family View ──────────────────────────────────────────────────────────
 
 export default function FamilyView({
@@ -375,10 +445,28 @@ export default function FamilyView({
   contacts,
   embed = "page",
   section,
+  focus,
+  onFocusClose,
 }: FamilyViewProps) {
   const writer = useScenarioWriter(clientId);
   const { permission } = useClientAccess();
   const canEdit = permission === "edit";
+
+  // Focus mode's row, snapshotted at mount. Null means the page offers no editor
+  // for it: the row is gone or unlisted, this view doesn't edit that kind, or
+  // there's no edit access. The dialog state below is seeded exactly as that
+  // row's own click sets it.
+  const [focusTarget] = useState(() =>
+    focus && canEdit
+      ? findFocusRow(focus, {
+          clientId,
+          members: initialMembers,
+          entities: initialEntities,
+          gifts: initialGifts,
+        })
+      : null,
+  );
+
   const [members, setMembers] = useState<FamilyMember[]>(initialMembers);
   const [entities, setEntities] = useState<Entity[]>(initialEntities);
   const [externals, setExternals] = useState<ExternalBeneficiary[]>(initialExternalBeneficiaries);
@@ -387,14 +475,18 @@ export default function FamilyView({
   const [giftsState, setGiftsState] = useState<Gift[]>(initialGifts);
   const [giftSeriesState, setGiftSeriesState] = useState<GiftSeriesLite[]>(initialGiftSeries);
 
-  const [memberDialogOpen, setMemberDialogOpen] = useState(false);
-  const [editingMember, setEditingMember] = useState<FamilyMember | undefined>();
+  const [memberDialogOpen, setMemberDialogOpen] = useState(() => focusTarget?.kind === "family_member");
+  const [editingMember, setEditingMember] = useState<FamilyMember | undefined>(() =>
+    focusTarget?.kind === "family_member" ? focusTarget.row : undefined,
+  );
   const [deletingMember, setDeletingMember] = useState<FamilyMember | null>(null);
   const [membersEdit, setMembersEdit] = useState(false);
   const [claimedAsDependentError, setClaimedAsDependentError] = useState<string | null>(null);
 
-  const [entityDialogOpen, setEntityDialogOpen] = useState(false);
-  const [editingEntity, setEditingEntity] = useState<Entity | undefined>();
+  const [entityDialogOpen, setEntityDialogOpen] = useState(() => focusTarget?.kind === "entity");
+  const [editingEntity, setEditingEntity] = useState<Entity | undefined>(() =>
+    focusTarget?.kind === "entity" ? focusTarget.row : undefined,
+  );
   const [deletingEntity, setDeletingEntity] = useState<Entity | null>(null);
   const [entitiesEdit, setEntitiesEdit] = useState(false);
 
@@ -429,8 +521,10 @@ export default function FamilyView({
   }, [clientId]);
 
   useEffect(() => {
+    // Focus mode shows no revocable-trust table, so it skips the fetch.
+    if (focus) return;
     void fetchRevocableTrusts();
-  }, [fetchRevocableTrusts]);
+  }, [fetchRevocableTrusts, focus]);
 
   const [accountDialogOpen, setAccountDialogOpen] = useState(false);
   const [accountDialogEditing, setAccountDialogEditing] = useState<AccountFormInitial | undefined>(undefined);
@@ -440,7 +534,10 @@ export default function FamilyView({
   const primaryAge = computeAge(primary.dateOfBirth);
   const spouseAge = primary.spouseDob ? computeAge(primary.spouseDob) : null;
 
-  const [editProfileOpen, setEditProfileOpen] = useState(false);
+  const [editProfileOpen, setEditProfileOpen] = useState(() => focusTarget?.kind === "client");
+  // The gift dialog's own state lives in GiftsSection; this tracks whether the
+  // focused one is still up.
+  const [giftFocusOpen, setGiftFocusOpen] = useState(() => focusTarget?.kind === "gift");
 
   const profileInitial: ClientFormInitial = {
     id: clientId,
@@ -531,6 +628,204 @@ export default function FamilyView({
     }
   }
 
+  // The page's editors and their delete confirms, built once: the page renders
+  // them in place, focus mode renders them alone.
+  const clientDialogNode = (
+    <AddClientDialog
+      open={editProfileOpen}
+      onOpenChange={setEditProfileOpen}
+      editing={profileInitial}
+    />
+  );
+
+  const dialogsNode = (
+    <>
+      {memberDialogOpen && (
+        <FamilyMemberDialog
+          key={editingMember?.id ?? "new"}
+          clientId={clientId}
+          open={memberDialogOpen}
+          onOpenChange={setMemberDialogOpen}
+          editing={editingMember}
+          onSaved={(m, mode) => {
+            if (mode === "create") setMembers((prev) => [...prev, m]);
+            else setMembers((prev) => prev.map((x) => (x.id === m.id ? m : x)));
+          }}
+          onRequestDelete={() => {
+            if (editingMember) setDeletingMember(editingMember);
+          }}
+        />
+      )}
+
+      {entityDialogOpen && (
+        <EntityDialog
+          key={editingEntity?.id ?? "new"}
+          clientId={clientId}
+          open={entityDialogOpen}
+          onOpenChange={setEntityDialogOpen}
+          editing={editingEntity}
+          household={{
+            client: { firstName: primary.firstName },
+            spouse: primary.spouseName ? { firstName: primary.spouseName } : null,
+          }}
+          members={members}
+          externals={externals}
+          otherEntities={entities
+            .filter((e) => e.id !== editingEntity?.id)
+            .map((e) => ({ id: e.id, name: e.name }))}
+          initialDesignations={designations}
+          accounts={initialFullAccounts}
+          liabilities={initialFullLiabilities}
+          incomes={initialFullIncomes}
+          expenses={initialFullExpenses}
+          businesses={initialFullBusinesses}
+          assetFamilyMembers={initialAssetFamilyMembers}
+          primaryClientBirthYear={
+            primary.dateOfBirth
+              ? new Date(primary.dateOfBirth).getFullYear()
+              : undefined
+          }
+          planEndYear={
+            primary.dateOfBirth
+              ? new Date(primary.dateOfBirth).getFullYear() + primary.lifeExpectancy
+              : undefined
+          }
+          planStartYear={planStartYear}
+          onSaved={handleEntitySaved}
+          onAutoSaved={handleEntitySaved}
+          onRequestDelete={() => {
+            if (editingEntity) setDeletingEntity(editingEntity);
+          }}
+        />
+      )}
+
+      {revocableTagDialogOpen && (
+        <RevocableTrustTagDialog
+          key={editingRevocableTrust?.id ?? "new-revocable-tag"}
+          clientId={clientId}
+          editing={editingRevocableTrust}
+          accounts={accounts}
+          onSaved={async () => {
+            await fetchRevocableTrusts();
+            setRevocableTagDialogOpen(false);
+          }}
+          onClose={() => setRevocableTagDialogOpen(false)}
+        />
+      )}
+
+      {accountDialogOpen && (
+        <AddAccountDialog
+          clientId={clientId}
+          open={accountDialogOpen}
+          onOpenChange={(open) => {
+            setAccountDialogOpen(open);
+            if (!open) {
+              setAccountDialogInitialTab("details");
+              setAccountDialogLockTab(false);
+            }
+          }}
+          editing={accountDialogEditing}
+          initialTab={accountDialogInitialTab}
+          lockTab={accountDialogLockTab}
+          familyMembers={[]}
+        />
+      )}
+
+      <ConfirmDeleteDialog
+        open={!!deletingMember}
+        title="Delete Family Member"
+        message={deletingMember ? `Delete ${deletingMember.firstName}${deletingMember.lastName ? " " + deletingMember.lastName : ""}?` : ""}
+        onCancel={() => setDeletingMember(null)}
+        onConfirm={async () => {
+          if (!deletingMember) return;
+          const res = await writer.submit(
+            { op: "remove", targetKind: "family_member", targetId: deletingMember.id },
+            {
+              url: `/api/clients/${clientId}/family-members/${deletingMember.id}`,
+              method: "DELETE",
+            },
+          );
+          if (res.ok || res.status === 204) {
+            setMembers((prev) => prev.filter((m) => m.id !== deletingMember.id));
+            setMemberDialogOpen(false);
+            setDeletingMember(null);
+          }
+        }}
+      />
+
+      <ConfirmDeleteDialog
+        open={!!deletingEntity}
+        title="Delete Trust"
+        message={
+          deletingEntity
+            ? `Delete ${deletingEntity.name}? Any accounts owned by this trust will revert to the primary owner.`
+            : ""
+        }
+        onCancel={() => setDeletingEntity(null)}
+        onConfirm={async () => {
+          if (!deletingEntity) return;
+          const res = await writer.submit(
+            { op: "remove", targetKind: "entity", targetId: deletingEntity.id },
+            {
+              url: `/api/clients/${clientId}/entities/${deletingEntity.id}`,
+              method: "DELETE",
+            },
+          );
+          if (res.ok || res.status === 204) {
+            setEntities((prev) => prev.filter((e) => e.id !== deletingEntity.id));
+            setEntityDialogOpen(false);
+            setDeletingEntity(null);
+          }
+        }}
+      />
+    </>
+  );
+
+  // One props object for the Gifts table and, in focus mode, its dialog alone.
+  const giftsSectionProps = {
+    clientId,
+    members,
+    externals,
+    entities,
+    accounts,
+    gifts: giftsState,
+    series: giftSeriesState,
+    annualExclusionByYear,
+    planStartYear,
+    scenarioId,
+    hasSpouse: primary.spouseName != null,
+    onChangeGifts: setGiftsState,
+    onChangeSeries: setGiftSeriesState,
+    canEdit,
+  };
+
+  // Focus mode hands control back once its dialog is gone — cancel, save or a
+  // confirmed delete — or, as "unavailable", when none ever opened.
+  const focusDialogOpen = editProfileOpen || memberDialogOpen || entityDialogOpen || giftFocusOpen;
+  const focusClosedRef = useRef(false);
+  useEffect(() => {
+    if (!focus || focusDialogOpen || focusClosedRef.current) return;
+    focusClosedRef.current = true;
+    if (focusTarget) onFocusClose?.();
+    else onFocusClose?.("unavailable");
+  }, [focus, focusTarget, focusDialogOpen, onFocusClose]);
+
+  if (focus) {
+    return (
+      <>
+        {clientDialogNode}
+        {dialogsNode}
+        {focusTarget?.kind === "gift" && (
+          <GiftsSection
+            {...giftsSectionProps}
+            focusGift={focusTarget.row}
+            onFocusDialogClose={() => setGiftFocusOpen(false)}
+          />
+        )}
+      </>
+    );
+  }
+
   return (
     <div className="space-y-8">
       {/* Primary household */}
@@ -580,11 +875,7 @@ export default function FamilyView({
         </section>
       )}
 
-      <AddClientDialog
-        open={editProfileOpen}
-        onOpenChange={setEditProfileOpen}
-        editing={profileInitial}
-      />
+      {clientDialogNode}
 
       {/* Family members */}
       {(embed !== "wizard" || section === "family") && (
@@ -643,7 +934,7 @@ export default function FamilyView({
                 </tr>
               </thead>
               <tbody className="divide-y divide-hair">
-                {(["child", "stepchild", "grandchild", "parent", "sibling", "other"] as Relationship[]).flatMap((rel) =>
+                {LISTED_RELATIONSHIPS.flatMap((rel) =>
                   byRel[rel].map((m) => (
                     <tr
                       key={m.id}
@@ -861,22 +1152,7 @@ export default function FamilyView({
       )}
 
       {embed !== "wizard" && (
-      <GiftsSection
-        clientId={clientId}
-        members={members}
-        externals={externals}
-        entities={entities}
-        accounts={accounts}
-        gifts={giftsState}
-        series={giftSeriesState}
-        annualExclusionByYear={annualExclusionByYear}
-        planStartYear={planStartYear}
-        scenarioId={scenarioId}
-        hasSpouse={primary.spouseName != null}
-        onChangeGifts={setGiftsState}
-        onChangeSeries={setGiftSeriesState}
-        canEdit={canEdit}
-      />
+      <GiftsSection {...giftsSectionProps} />
       )}
 
       {embed !== "wizard" && (
@@ -908,144 +1184,7 @@ export default function FamilyView({
       />
       )}
 
-      {memberDialogOpen && (
-        <FamilyMemberDialog
-          key={editingMember?.id ?? "new"}
-          clientId={clientId}
-          open={memberDialogOpen}
-          onOpenChange={setMemberDialogOpen}
-          editing={editingMember}
-          onSaved={(m, mode) => {
-            if (mode === "create") setMembers((prev) => [...prev, m]);
-            else setMembers((prev) => prev.map((x) => (x.id === m.id ? m : x)));
-          }}
-          onRequestDelete={() => {
-            if (editingMember) setDeletingMember(editingMember);
-          }}
-        />
-      )}
-
-      {entityDialogOpen && (
-        <EntityDialog
-          key={editingEntity?.id ?? "new"}
-          clientId={clientId}
-          open={entityDialogOpen}
-          onOpenChange={setEntityDialogOpen}
-          editing={editingEntity}
-          household={{
-            client: { firstName: primary.firstName },
-            spouse: primary.spouseName ? { firstName: primary.spouseName } : null,
-          }}
-          members={members}
-          externals={externals}
-          otherEntities={entities
-            .filter((e) => e.id !== editingEntity?.id)
-            .map((e) => ({ id: e.id, name: e.name }))}
-          initialDesignations={designations}
-          accounts={initialFullAccounts}
-          liabilities={initialFullLiabilities}
-          incomes={initialFullIncomes}
-          expenses={initialFullExpenses}
-          businesses={initialFullBusinesses}
-          assetFamilyMembers={initialAssetFamilyMembers}
-          primaryClientBirthYear={
-            primary.dateOfBirth
-              ? new Date(primary.dateOfBirth).getFullYear()
-              : undefined
-          }
-          planEndYear={
-            primary.dateOfBirth
-              ? new Date(primary.dateOfBirth).getFullYear() + primary.lifeExpectancy
-              : undefined
-          }
-          planStartYear={planStartYear}
-          onSaved={handleEntitySaved}
-          onAutoSaved={handleEntitySaved}
-          onRequestDelete={() => {
-            if (editingEntity) setDeletingEntity(editingEntity);
-          }}
-        />
-      )}
-
-      {revocableTagDialogOpen && (
-        <RevocableTrustTagDialog
-          key={editingRevocableTrust?.id ?? "new-revocable-tag"}
-          clientId={clientId}
-          editing={editingRevocableTrust}
-          accounts={accounts}
-          onSaved={async () => {
-            await fetchRevocableTrusts();
-            setRevocableTagDialogOpen(false);
-          }}
-          onClose={() => setRevocableTagDialogOpen(false)}
-        />
-      )}
-
-      {accountDialogOpen && (
-        <AddAccountDialog
-          clientId={clientId}
-          open={accountDialogOpen}
-          onOpenChange={(open) => {
-            setAccountDialogOpen(open);
-            if (!open) {
-              setAccountDialogInitialTab("details");
-              setAccountDialogLockTab(false);
-            }
-          }}
-          editing={accountDialogEditing}
-          initialTab={accountDialogInitialTab}
-          lockTab={accountDialogLockTab}
-          familyMembers={[]}
-        />
-      )}
-
-      <ConfirmDeleteDialog
-        open={!!deletingMember}
-        title="Delete Family Member"
-        message={deletingMember ? `Delete ${deletingMember.firstName}${deletingMember.lastName ? " " + deletingMember.lastName : ""}?` : ""}
-        onCancel={() => setDeletingMember(null)}
-        onConfirm={async () => {
-          if (!deletingMember) return;
-          const res = await writer.submit(
-            { op: "remove", targetKind: "family_member", targetId: deletingMember.id },
-            {
-              url: `/api/clients/${clientId}/family-members/${deletingMember.id}`,
-              method: "DELETE",
-            },
-          );
-          if (res.ok || res.status === 204) {
-            setMembers((prev) => prev.filter((m) => m.id !== deletingMember.id));
-            setMemberDialogOpen(false);
-            setDeletingMember(null);
-          }
-        }}
-      />
-
-      <ConfirmDeleteDialog
-        open={!!deletingEntity}
-        title="Delete Trust"
-        message={
-          deletingEntity
-            ? `Delete ${deletingEntity.name}? Any accounts owned by this trust will revert to the primary owner.`
-            : ""
-        }
-        onCancel={() => setDeletingEntity(null)}
-        onConfirm={async () => {
-          if (!deletingEntity) return;
-          const res = await writer.submit(
-            { op: "remove", targetKind: "entity", targetId: deletingEntity.id },
-            {
-              url: `/api/clients/${clientId}/entities/${deletingEntity.id}`,
-              method: "DELETE",
-            },
-          );
-          if (res.ok || res.status === 204) {
-            setEntities((prev) => prev.filter((e) => e.id !== deletingEntity.id));
-            setEntityDialogOpen(false);
-            setDeletingEntity(null);
-          }
-        }}
-      />
+      {dialogsNode}
     </div>
   );
 }
@@ -1096,10 +1235,15 @@ function GiftsSection(props: {
   onChangeGifts: Dispatch<SetStateAction<Gift[]>>;
   onChangeSeries: Dispatch<SetStateAction<GiftSeriesLite[]>>;
   canEdit: boolean;
+  /** Focus mode: open the dialog on this gift, as its Edit button does, and
+   *  render only the dialog. */
+  focusGift?: Gift;
+  /** Focus mode: the dialog closed (cancel or save). */
+  onFocusDialogClose?: () => void;
 }) {
   const writer = useScenarioWriter(props.clientId);
   const [adding, setAdding] = useState(false);
-  const [editingGift, setEditingGift] = useState<Gift | null>(null);
+  const [editingGift, setEditingGift] = useState<Gift | null>(() => props.focusGift ?? null);
   const [editingSeries, setEditingSeries] = useState<GiftSeriesLite | null>(null);
 
   const recipientLabel = (
@@ -1150,7 +1294,45 @@ function GiftsSection(props: {
   const dialogOpen = adding || editingGift != null || editingSeries != null;
   // A save can move a gift between the two lists, so close on BOTH, never just
   // the one the dialog opened on.
-  const closeDialog = () => { setAdding(false); setEditingGift(null); setEditingSeries(null); };
+  const closeDialog = () => { setAdding(false); setEditingGift(null); setEditingSeries(null); props.onFocusDialogClose?.(); };
+
+  // The page renders it inside the section; focus mode renders it alone.
+  const giftDialogNode = dialogOpen ? (
+    <GiftDialog
+      clientId={props.clientId}
+      scenarioId={props.scenarioId}
+      hasSpouse={props.hasSpouse}
+      members={props.members}
+      externals={props.externals}
+      entities={props.entities}
+      accounts={props.accounts}
+      annualExclusionByYear={props.annualExclusionByYear}
+      planStartYear={props.planStartYear}
+      editingGift={editingGift}
+      editingSeries={editingSeries}
+      onClose={closeDialog}
+      onSavedGift={(g) => {
+        props.onChangeGifts((cur) =>
+          cur.some((x) => x.id === g.id) ? cur.map((x) => (x.id === g.id ? g : x)) : [...cur, g],
+        );
+        closeDialog();
+      }}
+      onSavedSeries={(s) => {
+        props.onChangeSeries((cur) =>
+          cur.some((x) => x.id === s.id) ? cur.map((x) => (x.id === s.id ? s : x)) : [...cur, s],
+        );
+        closeDialog();
+      }}
+      onRemovedGift={(id) =>
+        props.onChangeGifts((cur) => cur.filter((x) => x.id !== id))
+      }
+      onRemovedSeries={(id) =>
+        props.onChangeSeries((cur) => cur.filter((x) => x.id !== id))
+      }
+    />
+  ) : null;
+
+  if (props.focusGift) return giftDialogNode;
 
   return (
     <section className="mt-6 rounded-lg border border-hair bg-card p-4">
@@ -1167,40 +1349,7 @@ function GiftsSection(props: {
         )}
       </div>
 
-      {dialogOpen && (
-        <GiftDialog
-          clientId={props.clientId}
-          scenarioId={props.scenarioId}
-          hasSpouse={props.hasSpouse}
-          members={props.members}
-          externals={props.externals}
-          entities={props.entities}
-          accounts={props.accounts}
-          annualExclusionByYear={props.annualExclusionByYear}
-          planStartYear={props.planStartYear}
-          editingGift={editingGift}
-          editingSeries={editingSeries}
-          onClose={closeDialog}
-          onSavedGift={(g) => {
-            props.onChangeGifts((cur) =>
-              cur.some((x) => x.id === g.id) ? cur.map((x) => (x.id === g.id ? g : x)) : [...cur, g],
-            );
-            closeDialog();
-          }}
-          onSavedSeries={(s) => {
-            props.onChangeSeries((cur) =>
-              cur.some((x) => x.id === s.id) ? cur.map((x) => (x.id === s.id ? s : x)) : [...cur, s],
-            );
-            closeDialog();
-          }}
-          onRemovedGift={(id) =>
-            props.onChangeGifts((cur) => cur.filter((x) => x.id !== id))
-          }
-          onRemovedSeries={(id) =>
-            props.onChangeSeries((cur) => cur.filter((x) => x.id !== id))
-          }
-        />
-      )}
+      {giftDialogNode}
 
       {props.gifts.length === 0 && props.series.length === 0 ? (
         <p className="text-sm text-ink-3">No gifts recorded.</p>
