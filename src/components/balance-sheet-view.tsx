@@ -179,7 +179,7 @@ export interface IncomeRow {
   inflationStartYear?: number | null;
 }
 
-interface BalanceSheetViewProps {
+export interface BalanceSheetViewProps {
   clientId: string;
   accounts: AccountRow[];
   liabilities: LiabilityRow[];
