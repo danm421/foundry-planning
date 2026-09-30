@@ -90,3 +90,16 @@ export function EducationIcon(props: SVGProps<SVGSVGElement>): ReactElement {
     </svg>
   );
 }
+
+/** Scenario changes — Lucide `list-checks` (a checklist of applied edits). */
+export function ChangesIcon(props: SVGProps<SVGSVGElement>): ReactElement {
+  return (
+    <svg {...base} aria-hidden="true" {...props}>
+      <path d="m3 17 2 2 4-4" />
+      <path d="m3 7 2 2 4-4" />
+      <path d="M13 6h8" />
+      <path d="M13 12h8" />
+      <path d="M13 18h8" />
+    </svg>
+  );
+}

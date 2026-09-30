@@ -14,6 +14,7 @@ import {
   type EducationReturnStat,
 } from "@/lib/reports/education-mc-inputs";
 import { loadReportLayout } from "@/lib/solver/report-layout-store";
+import { loadPanelData } from "@/lib/scenario/load-panel-data";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import { detectDefaultGrowthAtInflationFor } from "@/lib/investments/default-growth-at-inflation";
 import { LiveSolverWorkspace } from "./live-solver-workspace";
@@ -31,7 +32,7 @@ interface Props {
 }
 
 export async function SolverContent({ clientId, firmId, userId, source }: Props) {
-  const [baseLoaded, sourceLoaded, scenarioRow] = await Promise.all([
+  const [baseLoaded, sourceLoaded, scenarioRow, changesPanel] = await Promise.all([
     loadEffectiveTree(clientId, firmId, "base", {}),
     source === "base"
       ? null
@@ -43,6 +44,9 @@ export async function SolverContent({ clientId, firmId, userId, source }: Props)
           .from(scenarios)
           .where(and(eq(scenarios.id, source), eq(scenarios.clientId, clientId)))
           .then((rows) => rows[0] ?? null),
+    source === "base"
+      ? null
+      : loadPanelData(clientId, source, firmId),
   ]);
   const scenarioName = scenarioRow?.name ?? null;
 
@@ -213,6 +217,7 @@ export async function SolverContent({ clientId, firmId, userId, source }: Props)
       educationSeed={educationSeed}
       initialReportLayout={reportLayout}
       defaultGrowthWarning={defaultGrowthWarning}
+      changesPanel={changesPanel}
     />
   );
 }

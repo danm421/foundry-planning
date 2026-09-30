@@ -78,7 +78,10 @@ import {
   StressTestIcon,
   LifeInsuranceIcon,
   EducationIcon,
+  ChangesIcon,
 } from "./solver-tab-icons";
+import { SolverChangesTab } from "./solver-changes-tab";
+import type { PanelData } from "@/lib/scenario/load-panel-data";
 
 function growthForType(type: QuickAddType, d: { taxable: number; retirement: number; cash: number }): number {
   if (type === "cash") return d.cash;
@@ -124,11 +127,14 @@ interface Props {
    *  inflation default; null/absent when the plan has real return assumptions
    *  (optional so the many workspace tests need not stub it). */
   defaultGrowthWarning?: DefaultGrowthAtInflation | null;
+  /** Server-loaded Changes panel data for the active scenario (null on the
+   *  base case). Optional so the many workspace tests need not stub it. */
+  changesPanel?: PanelData | null;
 }
 
 /** Left-pane input tabs, in display order. Mirrors SolverChartPanel's REPORT_TABS.
  *  `label` is the full name (aria-label + hover title); `short` is what renders
- *  under the icon so all five tabs fit the pane without a horizontal scroll. */
+ *  under the icon so all six tabs fit the pane without a horizontal scroll. */
 const LEFT_TABS: {
   id: InputTab;
   label: string;
@@ -140,6 +146,7 @@ const LEFT_TABS: {
   { id: "stress_test", label: "Stress Test", short: "Stress", icon: StressTestIcon },
   { id: "life_insurance", label: "Life Insurance", short: "Insurance", icon: LifeInsuranceIcon },
   { id: "education", label: "Education", short: "Education", icon: EducationIcon },
+  { id: "changes", label: "Scenario changes", short: "Changes", icon: ChangesIcon },
 ];
 
 // Persisted collapse of the inputs (left) pane, so the reports pane can run the
@@ -199,6 +206,7 @@ export function LiveSolverWorkspace({
   educationSeed,
   initialReportLayout,
   defaultGrowthWarning,
+  changesPanel,
 }: Props) {
   const router = useRouter();
   const currentYear = new Date().getFullYear();
@@ -1626,6 +1634,10 @@ export function LiveSolverWorkspace({
             growth529={categoryGrowthDefaults.retirement}
             onOpenReport={reportOpener("education")}
           />
+        )}
+
+        {activeTab === "changes" && (
+          <SolverChangesTab clientId={clientId} panel={changesPanel ?? null} />
         )}
           </div>
         </div>
