@@ -1,15 +1,17 @@
 // src/lib/scenario/change-editor-target.ts
 //
 // Pure, framework-free resolver: given a scenario change, decides WHERE that
-// change is edited — which Details page (and which entity within it) or,
-// for a plan_settings stress-test override, the Solver's Stress tab.
+// change is edited — which Details page (and which entity within it) or a
+// Solver tab: Stress for a plan_settings stress-test override, Retirement for
+// the plan horizon and the client's retirement / life-expectancy fields.
 // Returns null when the change has nothing to open: it's a `remove`, it's
 // disabled, or its targetKind is a child row that is never written as its
 // own change (it lives nested under a parent entity's payload instead).
 //
 // See the plan's Architecture section (Task 3 table) for the full
-// targetKind → page mapping, and controller rulings P3 / T3-a for the
-// plan_settings branch and why the resolver never looks past targetKind.
+// targetKind → page mapping, controller ruling T3-a for why the resolver never
+// looks past targetKind otherwise, and T4d-horizon (which superseded P3) for
+// the Retirement-tab branches.
 
 import type { OpType, TargetKind } from "@/engine/scenario/types";
 
@@ -29,7 +31,7 @@ export interface EditorFocus {
 
 export type ChangeEditorTarget =
   | { surface: "details"; page: DetailsEditorPage; focus: EditorFocus }
-  | { surface: "solver-tab"; tab: "stress_test" }
+  | { surface: "solver-tab"; tab: "stress_test" | "retirement" }
   | null;
 
 /**
@@ -77,6 +79,24 @@ const DETAILS_PAGE_BY_KIND: Partial<Record<TargetKind, DetailsEditorPage>> = {
   withdrawal_strategy: "assumptions",
 };
 
+// Ruling T4d-horizon: the Solver's Retirement tab (`SolverRowRetirementAges` /
+// `SolverRowLifeExpectancy` in live-solver-workspace.tsx, tab id "retirement")
+// owns the plan horizon. Its life-expectancy save writes the pair together —
+// `client.planEndAge` plus `plan_settings.planEndYear` — while the Family
+// page's `AddClientDialog`, in scenario mode, writes neither, so a horizon or
+// retirement change opened there could not be edited faithfully. These are
+// exactly the `client` fields `mutationsToScenarioChanges` writes for its
+// retirement-age and life-expectancy mutations (plus the derived planEndAge).
+const RETIREMENT_TAB_CLIENT_FIELDS = new Set([
+  "retirementAge",
+  "retirementMonth",
+  "spouseRetirementAge",
+  "spouseRetirementMonth",
+  "lifeExpectancy",
+  "spouseLifeExpectancy",
+  "planEndAge",
+]);
+
 // plan_settings fields that toggle the Solver's Stress tab — mirrors the
 // stress-* mutations in src/lib/solver/mutations-to-scenario-changes.ts.
 const STRESS_FIELDS = new Set([
@@ -88,14 +108,18 @@ const STRESS_FIELDS = new Set([
   "taxRateStress",
 ]);
 
-export function resolveChangeEditor(
-  change: ChangeEditorInput,
-  clientId: string,
-): ChangeEditorTarget {
+export function resolveChangeEditor(change: ChangeEditorInput): ChangeEditorTarget {
   if (change.opType === "remove" || !change.enabled) return null;
 
   if (change.targetKind === "plan_settings") {
-    return resolvePlanSettingsTarget(change.payload, clientId);
+    return resolvePlanSettingsTarget(change.payload);
+  }
+
+  if (change.targetKind === "client") {
+    const fields = payloadFields(change.payload);
+    if (fields && fields.length > 0 && fields.every((f) => RETIREMENT_TAB_CLIENT_FIELDS.has(f))) {
+      return { surface: "solver-tab", tab: "retirement" };
+    }
   }
 
   const page = DETAILS_PAGE_BY_KIND[change.targetKind];
@@ -108,27 +132,23 @@ export function resolveChangeEditor(
   };
 }
 
-// Ruling P3: a payload containing planEndYear resolves to family/client
-// using the passed-in clientId (plan_settings is a singleton row, so
-// targetId isn't the client's id). Otherwise: every field a stress field ->
-// the Stress tab; anything else (mixed, empty, or non-object) -> null.
-function resolvePlanSettingsTarget(
-  payload: unknown,
-  clientId: string,
-): ChangeEditorTarget {
+/** The changed field names of an edit payload, or null when it isn't an object. */
+function payloadFields(payload: unknown): string[] | null {
   if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
     return null;
   }
+  return Object.keys(payload as Record<string, unknown>);
+}
 
-  const fields = Object.keys(payload as Record<string, unknown>);
-  if (fields.length === 0) return null;
+// Ruling T4d-horizon: a payload containing planEndYear -> the Retirement tab,
+// ahead of the stress check. Otherwise: every field a stress field -> the
+// Stress tab; anything else (mixed, empty, or non-object) -> null.
+function resolvePlanSettingsTarget(payload: unknown): ChangeEditorTarget {
+  const fields = payloadFields(payload);
+  if (!fields || fields.length === 0) return null;
 
   if (fields.includes("planEndYear")) {
-    return {
-      surface: "details",
-      page: "family",
-      focus: { kind: "client", id: clientId },
-    };
+    return { surface: "solver-tab", tab: "retirement" };
   }
 
   if (fields.every((field) => STRESS_FIELDS.has(field))) {

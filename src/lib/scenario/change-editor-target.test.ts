@@ -22,12 +22,12 @@ function change(overrides: Partial<ChangeEditorInput>): ChangeEditorInput {
 describe("resolveChangeEditor", () => {
   it("returns null for a remove", () => {
     expect(
-      resolveChangeEditor(change({ opType: "remove", payload: null }), CLIENT_ID),
+      resolveChangeEditor(change({ opType: "remove", payload: null })),
     ).toBeNull();
   });
 
   it("returns null for a disabled change", () => {
-    expect(resolveChangeEditor(change({ enabled: false }), CLIENT_ID)).toBeNull();
+    expect(resolveChangeEditor(change({ enabled: false }))).toBeNull();
   });
 
   const mapped: Array<[TargetKind, DetailsEditorPage]> = [
@@ -56,7 +56,7 @@ describe("resolveChangeEditor", () => {
     "%s -> details/%s with focus = { kind: targetKind, id: targetId }",
     (targetKind, page) => {
       expect(
-        resolveChangeEditor(change({ targetKind, targetId: "row-42" }), CLIENT_ID),
+        resolveChangeEditor(change({ targetKind, targetId: "row-42" })),
       ).toEqual({
         surface: "details",
         page,
@@ -74,7 +74,6 @@ describe("resolveChangeEditor", () => {
           targetId: "g1",
           payload: { id: "g1", name: "Gift" },
         }),
-        CLIENT_ID,
       ),
     ).toEqual({
       surface: "details",
@@ -100,11 +99,11 @@ describe("resolveChangeEditor", () => {
   ];
 
   it.each(childKinds)("%s (a child row) has no standalone editor target", (targetKind) => {
-    expect(resolveChangeEditor(change({ targetKind }), CLIENT_ID)).toBeNull();
+    expect(resolveChangeEditor(change({ targetKind }))).toBeNull();
   });
 
   describe("plan_settings", () => {
-    it("planEndYear alone -> family/client with the supplied clientId", () => {
+    it("planEndYear alone -> the Solver's Retirement tab", () => {
       expect(
         resolveChangeEditor(
           change({
@@ -112,13 +111,8 @@ describe("resolveChangeEditor", () => {
             targetId: "plan-settings-row",
             payload: { planEndYear: { from: 2060, to: 2065 } },
           }),
-          CLIENT_ID,
         ),
-      ).toEqual({
-        surface: "details",
-        page: "family",
-        focus: { kind: "client", id: CLIENT_ID },
-      });
+      ).toEqual({ surface: "solver-tab", tab: "retirement" });
     });
 
     it("a single stress field -> the Solver's Stress tab", () => {
@@ -128,7 +122,6 @@ describe("resolveChangeEditor", () => {
             targetKind: "plan_settings",
             payload: { livingExpenseInflationOverride: { from: null, to: 0.04 } },
           }),
-          CLIENT_ID,
         ),
       ).toEqual({ surface: "solver-tab", tab: "stress_test" });
     });
@@ -150,12 +143,11 @@ describe("resolveChangeEditor", () => {
               taxRateStress: { from: null, to: { points: [], startYear: 2030 } },
             },
           }),
-          CLIENT_ID,
         ),
       ).toEqual({ surface: "solver-tab", tab: "stress_test" });
     });
 
-    it("a stress field mixed with planEndYear -> family/client, not the Stress tab", () => {
+    it("a stress field mixed with planEndYear -> the Retirement tab, not the Stress tab", () => {
       expect(
         resolveChangeEditor(
           change({
@@ -165,13 +157,8 @@ describe("resolveChangeEditor", () => {
               planEndYear: { from: 2060, to: 2065 },
             },
           }),
-          CLIENT_ID,
         ),
-      ).toEqual({
-        surface: "details",
-        page: "family",
-        focus: { kind: "client", id: CLIENT_ID },
-      });
+      ).toEqual({ surface: "solver-tab", tab: "retirement" });
     });
 
     it("a stress field mixed with an unrelated non-stress field -> null", () => {
@@ -184,7 +171,6 @@ describe("resolveChangeEditor", () => {
               filingStatus: { from: "single", to: "married" },
             },
           }),
-          CLIENT_ID,
         ),
       ).toBeNull();
     });
@@ -193,7 +179,6 @@ describe("resolveChangeEditor", () => {
       expect(
         resolveChangeEditor(
           change({ targetKind: "plan_settings", payload: {} }),
-          CLIENT_ID,
         ),
       ).toBeNull();
     });
@@ -202,19 +187,16 @@ describe("resolveChangeEditor", () => {
       expect(
         resolveChangeEditor(
           change({ targetKind: "plan_settings", payload: "not-an-object" }),
-          CLIENT_ID,
         ),
       ).toBeNull();
       expect(
         resolveChangeEditor(
           change({ targetKind: "plan_settings", payload: null }),
-          CLIENT_ID,
         ),
       ).toBeNull();
       expect(
         resolveChangeEditor(
           change({ targetKind: "plan_settings", payload: ["planEndYear"] }),
-          CLIENT_ID,
         ),
       ).toBeNull();
     });
@@ -223,13 +205,89 @@ describe("resolveChangeEditor", () => {
       expect(
         resolveChangeEditor(
           change({ targetKind: "plan_settings", opType: "remove", payload: null }),
-          CLIENT_ID,
         ),
       ).toBeNull();
       expect(
         resolveChangeEditor(
           change({ targetKind: "plan_settings", enabled: false }),
-          CLIENT_ID,
+        ),
+      ).toBeNull();
+    });
+  });
+
+  // Ruling T4d-horizon: the client fields the Solver's Retirement tab writes
+  // open that tab; anything else stays on the Family page's client dialog.
+  describe("client", () => {
+    const clientChange = (payload: unknown) =>
+      change({ targetKind: "client", targetId: CLIENT_ID, payload });
+    const family = { surface: "details", page: "family", focus: { kind: "client", id: CLIENT_ID } };
+    const retirementTab = { surface: "solver-tab", tab: "retirement" };
+
+    it("{ lifeExpectancy, planEndAge } (a Solver life-expectancy save) -> the Retirement tab", () => {
+      expect(
+        resolveChangeEditor(
+          clientChange({
+            lifeExpectancy: { from: 90, to: 95 },
+            planEndAge: { from: 90, to: 95 },
+          }),
+        ),
+      ).toEqual(retirementTab);
+    });
+
+    it("{ retirementAge } -> the Retirement tab", () => {
+      expect(
+        resolveChangeEditor(clientChange({ retirementAge: { from: 65, to: 67 } })),
+      ).toEqual(retirementTab);
+    });
+
+    it("every Retirement-tab field at once (both spouses) -> the Retirement tab", () => {
+      expect(
+        resolveChangeEditor(
+          clientChange({
+            retirementAge: { from: 65, to: 67 },
+            retirementMonth: { from: 1, to: 6 },
+            spouseRetirementAge: { from: 65, to: 66 },
+            spouseRetirementMonth: { from: 1, to: 3 },
+            lifeExpectancy: { from: 90, to: 95 },
+            spouseLifeExpectancy: { from: 92, to: 94 },
+            planEndAge: { from: 92, to: 95 },
+          }),
+        ),
+      ).toEqual(retirementTab);
+    });
+
+    it("{ firstName } -> family/client with the change's targetId", () => {
+      expect(
+        resolveChangeEditor(clientChange({ firstName: { from: "Al", to: "Alice" } })),
+      ).toEqual(family);
+    });
+
+    it("a Retirement-tab field mixed with any other field -> family/client", () => {
+      expect(
+        resolveChangeEditor(
+          clientChange({
+            lifeExpectancy: { from: 90, to: 95 },
+            dateOfBirth: { from: "1960-01-01", to: "1961-01-01" },
+          }),
+        ),
+      ).toEqual(family);
+    });
+
+    it("an empty or non-object payload -> family/client", () => {
+      expect(resolveChangeEditor(clientChange({}))).toEqual(family);
+      expect(resolveChangeEditor(clientChange(null))).toEqual(family);
+      expect(resolveChangeEditor(clientChange(["retirementAge"]))).toEqual(family);
+    });
+
+    it("a removed or disabled client edit is still null", () => {
+      expect(
+        resolveChangeEditor(
+          change({ targetKind: "client", opType: "remove", payload: null }),
+        ),
+      ).toBeNull();
+      expect(
+        resolveChangeEditor(
+          change({ targetKind: "client", enabled: false, payload: { retirementAge: { from: 65, to: 67 } } }),
         ),
       ).toBeNull();
     });
