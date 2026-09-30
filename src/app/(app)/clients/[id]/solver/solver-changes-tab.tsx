@@ -9,11 +9,13 @@
 // Clicking a change's title opens where it's edited (resolveChangeEditor):
 // a Solver tab (Stress, Retirement) switches the left pane; a Details page
 // opens that row's own editor in place (SolverChangeEditor). Rows with
-// nowhere to open, and every row for a view-only advisor, stay plain text.
+// nowhere to open, rows in a switched-off toggle group, and every row for a
+// view-only advisor, stay plain text.
 
 import { useState } from "react";
 import { ChangesPanel, type ChangesPanelChange } from "@/components/scenario/changes-panel";
 import { useClientAccess } from "@/components/client-access-provider";
+import { resolveEffectiveToggleState } from "@/engine/scenario/applyChanges";
 import { resolveChangeEditor } from "@/lib/scenario/change-editor-target";
 import type { PanelData } from "@/lib/scenario/load-panel-data";
 import { SolverChangeEditor, type DetailsEditorTarget } from "./solver-change-editor";
@@ -42,6 +44,15 @@ export function SolverChangesTab({ clientId, panel, onOpenSolverTab }: Props) {
       </div>
     );
   }
+
+  // Ruling F-C1: only a change the scenario currently applies can be opened.
+  // The editors load the tree with every group at its saved on/off state, so a
+  // change in a switched-off group (or one whose required parent group is off)
+  // would open on base values — and saving would delete the change or pull it
+  // out of its group. Same test the engine applies (`applyScenarioChanges`).
+  const groupOn = resolveEffectiveToggleState({}, panel.toggleGroups);
+  const isApplied = (change: ChangesPanelChange) =>
+    change.toggleGroupId == null || groupOn[change.toggleGroupId] === true;
 
   function openChange(change: ChangesPanelChange) {
     const target = resolveChangeEditor(change);
@@ -74,7 +85,7 @@ export function SolverChangesTab({ clientId, panel, onOpenSolverTab }: Props) {
         cascadeWarnings={panel.cascadeWarnings}
         targetNames={panel.targetNames}
         onOpenChange={openChange}
-        canOpenChange={(c) => canEdit && resolveChangeEditor(c) !== null}
+        canOpenChange={(c) => canEdit && isApplied(c) && resolveChangeEditor(c) !== null}
       />
     </>
   );

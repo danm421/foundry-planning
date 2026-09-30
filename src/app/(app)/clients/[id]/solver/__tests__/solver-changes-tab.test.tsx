@@ -6,6 +6,7 @@ import { ClientAccessProvider } from "@/components/client-access-provider";
 import type { PanelData } from "@/lib/scenario/load-panel-data";
 import type { ChangesPanelChange } from "@/components/scenario/changes-panel";
 import type { EditorFocus } from "@/lib/scenario/change-editor-target";
+import type { ToggleGroup } from "@/engine/scenario/types";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }),
@@ -81,19 +82,34 @@ function makePanel(overrides: Partial<PanelData> = {}): PanelData {
 
 function renderTab(
   changes: ChangesPanelChange[],
-  { permission = "edit" as "edit" | "view" } = {},
+  {
+    permission = "edit" as "edit" | "view",
+    toggleGroups = [] as ToggleGroup[],
+  } = {},
 ) {
   const onOpenSolverTab = vi.fn();
   render(
     <ClientAccessProvider value={{ permission, access: "own" }}>
       <SolverChangesTab
         clientId={CLIENT_ID}
-        panel={makePanel({ changes })}
+        panel={makePanel({ changes, toggleGroups })}
         onOpenSolverTab={onOpenSolverTab}
       />
     </ClientAccessProvider>,
   );
   return { onOpenSolverTab };
+}
+
+function makeGroup(overrides: Partial<ToggleGroup> = {}): ToggleGroup {
+  return {
+    id: "g-1",
+    scenarioId: SCENARIO_ID,
+    name: "Roth ladder",
+    defaultOn: true,
+    requiresGroupId: null,
+    orderIndex: 0,
+    ...overrides,
+  };
 }
 
 /** A promise the test resolves or rejects by hand. */
@@ -145,6 +161,57 @@ describe("SolverChangesTab — which rows open", () => {
       makeChange({ opType: "edit", targetKind: "plan_settings", payload: { inflationRate: 0.03 } }),
     ]);
     expect(screen.queryByRole("button", { name: /^Edit / })).not.toBeInTheDocument();
+  });
+
+  // Ruling F-C1: the editors load the tree with groups at their saved on/off
+  // state, so a change in a switched-off group would open on base values, and
+  // saving would delete it or pull it out of its group.
+  describe("toggle groups", () => {
+    /** Expand every group card so its leaf rows render. */
+    function expandGroups() {
+      for (const name of [/^Roth ladder/, /^Parent group/]) {
+        const card = screen.queryByRole("button", { name });
+        if (card) fireEvent.click(card);
+      }
+    }
+
+    it("a change in a group that is on is openable", () => {
+      renderTab([makeChange({ toggleGroupId: "g-1" })], { toggleGroups: [makeGroup()] });
+      expandGroups();
+      expect(screen.getByRole("button", { name: "Edit Side income" })).toBeInTheDocument();
+    });
+
+    it("a change in a group that is off is not openable", () => {
+      renderTab([makeChange({ toggleGroupId: "g-1" })], {
+        toggleGroups: [makeGroup({ defaultOn: false })],
+      });
+      expandGroups();
+      expect(screen.getByTestId("leaf-row-c-1")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Edit Side income" })).not.toBeInTheDocument();
+    });
+
+    it("a change whose group is on but requires a group that is off is not openable", () => {
+      renderTab([makeChange({ toggleGroupId: "g-1" })], {
+        toggleGroups: [
+          makeGroup({ requiresGroupId: "g-parent" }),
+          makeGroup({ id: "g-parent", name: "Parent group", defaultOn: false, orderIndex: 1 }),
+        ],
+      });
+      expandGroups();
+      expect(screen.getByTestId("leaf-row-c-1")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Edit Side income" })).not.toBeInTheDocument();
+    });
+
+    it("a change whose group and required parent are both on is openable", () => {
+      renderTab([makeChange({ toggleGroupId: "g-1" })], {
+        toggleGroups: [
+          makeGroup({ requiresGroupId: "g-parent" }),
+          makeGroup({ id: "g-parent", name: "Parent group", orderIndex: 1 }),
+        ],
+      });
+      expandGroups();
+      expect(screen.getByRole("button", { name: "Edit Side income" })).toBeInTheDocument();
+    });
   });
 
   it("a view-only advisor can open nothing", () => {
