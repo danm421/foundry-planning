@@ -295,6 +295,93 @@ d("scenario_changes writer route", () => {
     expect(res.status).toBe(400);
   });
 
+  // Ruling F-I1: `useScenarioWriter` — every Details editor's save — never
+  // sends a group id, so the route must pass omission through as "didn't say"
+  // (keep the row's group). Only an explicit null unlinks.
+  describe("toggle-group link on re-save", () => {
+    async function post(body: Record<string, unknown>) {
+      const res = await route.POST(
+        makeReq("http://test.local/changes", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+        { params: Promise.resolve({ id: COOPER_CLIENT_ID, sid: scenarioId }) },
+      );
+      expect(res.status).toBe(200);
+    }
+
+    async function makeGroup(): Promise<string> {
+      const [group] = await dbMod.db
+        .insert(schema.scenarioToggleGroups)
+        .values({ scenarioId, name: "Route test group" })
+        .returning();
+      return group.id;
+    }
+
+    async function rowsFor(targetId: string) {
+      const { scenarioChanges } = schema;
+      const { and, eq } = drizzleOrm;
+      return dbMod.db
+        .select()
+        .from(scenarioChanges)
+        .where(and(eq(scenarioChanges.scenarioId, scenarioId), eq(scenarioChanges.targetId, targetId)));
+    }
+
+    const salaryEdit = (annualAmount: number) => ({
+      op: "edit",
+      targetKind: "income",
+      targetId: COOPER_SALARY_INCOME_ID,
+      desiredFields: { annualAmount },
+    });
+
+    beforeEach(() => {
+      vi.mocked(helpers.requireOrgId).mockResolvedValue(COOPER_FIRM_ID);
+    });
+
+    it("an edit of an edit that sends no group id keeps the group", async () => {
+      const groupId = await makeGroup();
+      await post({ ...salaryEdit(300000), toggleGroupId: groupId });
+
+      await post(salaryEdit(275000));
+
+      const rows = await rowsFor(COOPER_SALARY_INCOME_ID);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].payload).toEqual({ annualAmount: { from: COOPER_SALARY_BASE_AMOUNT, to: 275000 } });
+      expect(rows[0].toggleGroupId).toBe(groupId);
+    });
+
+    it("an edit of an add that sends no group id keeps the group", async () => {
+      const groupId = await makeGroup();
+      const id = randomUUID();
+      await post({
+        op: "add",
+        targetKind: "income",
+        entity: { id, name: "Consulting", annualAmount: 40000 },
+        toggleGroupId: groupId,
+      });
+
+      await post({ op: "edit", targetKind: "income", targetId: id, desiredFields: { annualAmount: 45000 } });
+
+      const rows = await rowsFor(id);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].opType).toBe("add");
+      expect(rows[0].payload).toMatchObject({ annualAmount: 45000 });
+      expect(rows[0].toggleGroupId).toBe(groupId);
+    });
+
+    it("an explicit null group id still unlinks", async () => {
+      const groupId = await makeGroup();
+      await post({ ...salaryEdit(300000), toggleGroupId: groupId });
+
+      await post({ ...salaryEdit(275000), toggleGroupId: null });
+
+      const rows = await rowsFor(COOPER_SALARY_INCOME_ID);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].toggleGroupId).toBeNull();
+    });
+  });
+
   it("DELETE returns 400 when search params are missing", async () => {
     vi.mocked(helpers.requireOrgId).mockResolvedValue(COOPER_FIRM_ID);
 

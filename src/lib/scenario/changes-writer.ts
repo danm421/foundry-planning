@@ -151,6 +151,20 @@ function valuesEqual(a: unknown, b: unknown): boolean {
   }
 }
 
+/**
+ * The `toggleGroupId` column for an upsert's conflict (re-save) branch:
+ * undefined = the caller didn't say, so the existing row keeps its group;
+ * null = unlink; a string = link there. A brand-new row's INSERT defaults an
+ * unsaid group to null. Every Details editor re-saves without a group id
+ * (`useScenarioWriter` never sends one), so overwriting on omission silently
+ * pulled grouped changes out of their group — always on (Ruling F-I1).
+ */
+function keepGroupUnlessSaid(
+  toggleGroupId: string | null | undefined,
+): { toggleGroupId?: string | null } {
+  return toggleGroupId === undefined ? {} : { toggleGroupId };
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -285,7 +299,7 @@ export async function applyEntityEdit(args: ApplyEntityEditArgs): Promise<void> 
         ],
         set: {
           payload: diff,
-          toggleGroupId,
+          ...keepGroupUnlessSaid(args.toggleGroupId),
           updatedAt: new Date(),
         },
       });
@@ -346,7 +360,7 @@ export async function applyEntityAdd(
       ],
       set: {
         payload: entity,
-        toggleGroupId,
+        ...keepGroupUnlessSaid(args.toggleGroupId),
         updatedAt: new Date(),
       },
     });
@@ -473,7 +487,7 @@ export async function applyEntityRemove(args: ApplyEntityRemoveArgs): Promise<vo
           scenarioChanges.opType,
         ],
         set: {
-          toggleGroupId,
+          ...keepGroupUnlessSaid(args.toggleGroupId),
           updatedAt: new Date(),
         },
       });

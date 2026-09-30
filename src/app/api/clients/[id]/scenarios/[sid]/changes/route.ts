@@ -98,6 +98,8 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         { status: 400 },
       );
     }
+    // `toggleGroupId` passes through as sent: omitted (undefined) means "didn't
+    // say" and a re-save keeps the row's group; null unlinks (Ruling F-I1).
     const body = parsed.data;
 
     // When the change is assigned to a toggle group, verify the group belongs
@@ -130,7 +132,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
           targetKind: body.targetKind as TargetKind,
           targetId: body.targetId,
           desiredFields: body.desiredFields,
-          toggleGroupId: body.toggleGroupId ?? null,
+          toggleGroupId: body.toggleGroupId,
         });
         await recordAudit({
           action: "scenario_change.upsert",
@@ -154,7 +156,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
           // The Zod refine above guarantees entity.id is a non-empty string;
           // cast for the writer's `BaseEntity` shape.
           entity: body.entity as { id: string } & Record<string, unknown>,
-          toggleGroupId: body.toggleGroupId ?? null,
+          toggleGroupId: body.toggleGroupId,
         });
         await recordAudit({
           action: "scenario_change.upsert",
@@ -176,7 +178,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
           firmId,
           targetKind: body.targetKind as TargetKind,
           targetId: body.targetId,
-          toggleGroupId: body.toggleGroupId ?? null,
+          toggleGroupId: body.toggleGroupId,
         });
         await recordAudit({
           action: "scenario_change.upsert",

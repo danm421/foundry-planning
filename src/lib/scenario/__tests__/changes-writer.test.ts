@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { clients, scenarios, scenarioChanges } from "@/db/schema";
+import { clients, scenarios, scenarioChanges, scenarioToggleGroups } from "@/db/schema";
 import {
   applyEntityEdit,
   applyEntityAdd,
@@ -517,6 +517,103 @@ describe.skipIf(!HAS_DB)("changes-writer", () => {
       expect(rows).toHaveLength(1);
       expect(rows[0].opType).toBe("remove");
       expect(rows[0].payload).toBeNull();
+    });
+  });
+
+  // Ruling F-I1: `toggleGroupId` undefined means "didn't say" — a re-save that
+  // omits it keeps the row's group; only an explicit null unlinks it. Every
+  // Details editor re-saves without a group id, so treating omission as
+  // "unlink" silently pulled grouped changes out of their group (always on).
+  describe("toggle-group link on re-save", () => {
+    async function makeGroup(): Promise<string> {
+      const [group] = await db
+        .insert(scenarioToggleGroups)
+        .values({ scenarioId, name: "Writer test group" })
+        .returning();
+      return group.id;
+    }
+
+    async function groupOf(targetId: string, opType: "add" | "edit" | "remove") {
+      const [row] = await db
+        .select()
+        .from(scenarioChanges)
+        .where(
+          and(
+            eq(scenarioChanges.scenarioId, scenarioId),
+            eq(scenarioChanges.targetId, targetId),
+            eq(scenarioChanges.opType, opType),
+          ),
+        );
+      return row?.toggleGroupId;
+    }
+
+    const salaryEdit = (annualAmount: number) => ({
+      scenarioId,
+      firmId: COOPER_FIRM_ID,
+      targetKind: "income" as const,
+      targetId: COOPER_SALARY_INCOME_ID,
+      desiredFields: { annualAmount },
+    });
+
+    it("an edit re-saved without a group id keeps its group", async () => {
+      const groupId = await makeGroup();
+      await applyEntityEdit({ ...salaryEdit(300000), toggleGroupId: groupId });
+
+      await applyEntityEdit(salaryEdit(275000));
+
+      expect(await groupOf(COOPER_SALARY_INCOME_ID, "edit")).toBe(groupId);
+    });
+
+    it("an edit re-saved with an explicit null leaves its group", async () => {
+      const groupId = await makeGroup();
+      await applyEntityEdit({ ...salaryEdit(300000), toggleGroupId: groupId });
+
+      await applyEntityEdit({ ...salaryEdit(275000), toggleGroupId: null });
+
+      expect(await groupOf(COOPER_SALARY_INCOME_ID, "edit")).toBeNull();
+    });
+
+    it("a new edit row with no group id is ungrouped", async () => {
+      await applyEntityEdit(salaryEdit(300000));
+
+      expect(await groupOf(COOPER_SALARY_INCOME_ID, "edit")).toBeNull();
+    });
+
+    it("an add re-saved without a group id keeps its group", async () => {
+      // A gift's every save is an `add` (lib/gifts/gift-write.ts), so a
+      // re-save lands on this upsert's conflict branch.
+      const groupId = await makeGroup();
+      const entity = {
+        id: randomUUID(),
+        clientId: COOPER_CLIENT_ID,
+        name: "Grouped account",
+        category: "taxable",
+        subType: "brokerage",
+        owner: "client",
+        value: 1000,
+        basis: 0,
+      };
+      const add = { scenarioId, firmId: COOPER_FIRM_ID, targetKind: "account" as const };
+      await applyEntityAdd({ ...add, entity, toggleGroupId: groupId });
+
+      await applyEntityAdd({ ...add, entity: { ...entity, value: 2000 } });
+
+      expect(await groupOf(entity.id, "add")).toBe(groupId);
+    });
+
+    it("a remove re-saved without a group id keeps its group", async () => {
+      const groupId = await makeGroup();
+      const remove = {
+        scenarioId,
+        firmId: COOPER_FIRM_ID,
+        targetKind: "income" as const,
+        targetId: COOPER_SALARY_INCOME_ID,
+      };
+      await applyEntityRemove({ ...remove, toggleGroupId: groupId });
+
+      await applyEntityRemove(remove);
+
+      expect(await groupOf(COOPER_SALARY_INCOME_ID, "remove")).toBe(groupId);
     });
   });
 
