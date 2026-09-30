@@ -3226,6 +3226,9 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
 
     </form>
 
+    {/* Outside the form on purpose: SavingsRuleDialog renders its own <form>,
+        and DialogShell doesn't portal, so nesting it here would make its Save
+        do a native browser submit. Same constraint as add-trust-form.tsx. */}
     {isEdit && srDialogOpen && (
       <SavingsRuleDialog
         clientId={clientId}

@@ -913,367 +913,377 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
   }), [saveAsyncImpl]);
 
   return (
-    <form id="add-trust-form" onSubmit={handleSubmit} className="space-y-4">
-      {error && <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>}
+    <>
+      {/* A Fragment, not a <form>: DialogShell doesn't portal, so anything that
+          renders its own <form> must stay a SIBLING of #add-trust-form rather
+          than a child. Nested, a real browser answers the inner Save with a
+          native submit — it navigates, drops `?scenario=`, and never POSTs.
+          Pinned by add-trust-form-nested-form.test.tsx; full story there. */}
+      <form id="add-trust-form" onSubmit={handleSubmit} className="space-y-4">
+        {error && <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>}
 
-      <div className={activeTab !== "details" ? "hidden" : ""}>
-        {/* Name */}
-        <div>
-          <label className={fieldLabelClassName} htmlFor="trust-name">Name <span className="text-red-500">*</span></label>
-          <input
-            ref={nameInputRef}
-            id="trust-name"
-            type="text"
-            required
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g., Smith Family Trust"
-            className={inputClassName}
-          />
-        </div>
+        <div className={activeTab !== "details" ? "hidden" : ""}>
+          {/* Name */}
+          <div>
+            <label className={fieldLabelClassName} htmlFor="trust-name">Name <span className="text-red-500">*</span></label>
+            <input
+              ref={nameInputRef}
+              id="trust-name"
+              type="text"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g., Smith Family Trust"
+              className={inputClassName}
+            />
+          </div>
 
-        {/* Type + Trustee */}
-        <div className="grid grid-cols-2 gap-4 mt-4">
-          <div>
-            <label className={fieldLabelClassName} htmlFor="trust-type">Type <span className="text-red-500">*</span></label>
-            <select id="trust-type" required value={trustSubType} onChange={(e) => setTrustSubType(e.target.value as TrustSubType | "")} className={selectClassName}>
-              <option value="" disabled>— select type —</option>
-              {Object.entries(TRUST_TYPE_LABELS)
-                .map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
+          {/* Type + Trustee */}
+          <div className="grid grid-cols-2 gap-4 mt-4">
+            <div>
+              <label className={fieldLabelClassName} htmlFor="trust-type">Type <span className="text-red-500">*</span></label>
+              <select id="trust-type" required value={trustSubType} onChange={(e) => setTrustSubType(e.target.value as TrustSubType | "")} className={selectClassName}>
+                <option value="" disabled>— select type —</option>
+                {Object.entries(TRUST_TYPE_LABELS)
+                  .map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={fieldLabelClassName} htmlFor="trust-trustee">Trustee</label>
+              <input id="trust-trustee" type="text" value={trustee} onChange={(e) => setTrustee(e.target.value)} placeholder="e.g., Linda, or Fidelity Trust Co." className={inputClassName} />
+            </div>
           </div>
-          <div>
-            <label className={fieldLabelClassName} htmlFor="trust-trustee">Trustee</label>
-            <input id="trust-trustee" type="text" value={trustee} onChange={(e) => setTrustee(e.target.value)} placeholder="e.g., Linda, or Fidelity Trust Co." className={inputClassName} />
-          </div>
-        </div>
 
-        {/* Grantor + Trust Ends */}
-        <div className="grid grid-cols-2 gap-4 mt-4">
-          <div>
-            <label className={fieldLabelClassName} htmlFor="trust-grantor">Grantor</label>
-            <select id="trust-grantor" value={grantor} onChange={(e) => setGrantor(e.target.value as "client" | "spouse" | "")} className={selectClassName}>
-              <option value="">Third party (none)</option>
-              <option value="client">Client</option>
-              <option value="spouse">Co-client</option>
-            </select>
+          {/* Grantor + Trust Ends */}
+          <div className="grid grid-cols-2 gap-4 mt-4">
+            <div>
+              <label className={fieldLabelClassName} htmlFor="trust-grantor">Grantor</label>
+              <select id="trust-grantor" value={grantor} onChange={(e) => setGrantor(e.target.value as "client" | "spouse" | "")} className={selectClassName}>
+                <option value="">Third party (none)</option>
+                <option value="client">Client</option>
+                <option value="spouse">Co-client</option>
+              </select>
+            </div>
+            <div>
+              <TrustEndsSelect household={household} value={trustEnds} onChange={setTrustEnds} id="trust-ends" />
+            </div>
           </div>
-          <div>
-            <TrustEndsSelect household={household} value={trustEnds} onChange={setTrustEnds} id="trust-ends" />
-          </div>
-        </div>
 
-        {/* Income + Remainder Beneficiaries — side-by-side when both visible.
-            Income is hidden for revocable trusts; remainder falls back to full width. */}
-        <div className={`mt-4 grid gap-4 ${showDistributionAndIncome ? "grid-cols-2" : "grid-cols-1"}`}>
-          {showDistributionAndIncome && (
+          {/* Income + Remainder Beneficiaries — side-by-side when both visible.
+              Income is hidden for revocable trusts; remainder falls back to full width. */}
+          <div className={`mt-4 grid gap-4 ${showDistributionAndIncome ? "grid-cols-2" : "grid-cols-1"}`}>
+            {showDistributionAndIncome && (
+              <BeneficiaryRowList
+                tier="income"
+                allowEntities={false}
+                rows={incomeRows}
+                onChange={setIncomeRows}
+                members={members}
+                externals={externals}
+                entities={[]}
+                household={household}
+              />
+            )}
             <BeneficiaryRowList
-              tier="income"
-              allowEntities={false}
-              rows={incomeRows}
-              onChange={setIncomeRows}
+              tier="remainder"
+              allowEntities={true}
+              rows={remainderRows}
+              onChange={setRemainderRows}
               members={members}
               externals={externals}
-              entities={[]}
+              entities={entities.filter((e) => e.id !== editing?.id)}
               household={household}
             />
-          )}
-          <BeneficiaryRowList
-            tier="remainder"
-            allowEntities={true}
-            rows={remainderRows}
-            onChange={setRemainderRows}
-            members={members}
-            externals={externals}
-            entities={entities.filter((e) => e.id !== editing?.id)}
-            household={household}
-          />
-        </div>
+          </div>
 
-        {/* Distribution Policy (hidden for revocable) */}
-        {showDistributionAndIncome && (
+          {/* Distribution Policy (hidden for revocable) */}
+          {showDistributionAndIncome && (
+            <div className="mt-4 rounded-[var(--radius-sm)] border border-hair bg-card-2 p-3 space-y-3">
+              <div className="flex items-center gap-3 flex-wrap">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-3">
+                  Distribution Policy
+                </span>
+                <div className="flex gap-1 text-xs">
+                  {([
+                    ["none", "None"],
+                    ["fixed", "Fixed $"],
+                    ["pct_liquid", "% liquid"],
+                    ["pct_income", "% income"],
+                  ] as const).map(([val, label]) => {
+                    const active = val === "none" ? distributionMode === null : distributionMode === val;
+                    return (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => setDistributionMode(val === "none" ? null : val)}
+                        className={
+                          "rounded-md border px-2 py-0.5 text-xs font-medium transition-colors " +
+                          (active
+                            ? "border-accent bg-accent/15 text-accent"
+                            : "border-hair bg-card text-ink-3 hover:border-hair-2 hover:text-ink-2")
+                        }
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              {distributionMode === "fixed" && (
+                <div>
+                  <label className={fieldLabelClassName} htmlFor="dist-amount">Annual amount</label>
+                  <CurrencyInput id="dist-amount" value={distributionAmount} onChange={setDistributionAmount} />
+                </div>
+              )}
+              {(distributionMode === "pct_liquid" || distributionMode === "pct_income") && (
+                <div>
+                  <label className={fieldLabelClassName} htmlFor="dist-percent">Annual percent</label>
+                  <PercentInput id="dist-percent" value={distributionPercent} onChange={setDistributionPercent} />
+                </div>
+              )}
+            </div>
+          )}
+
+          {trustSubType === "clt" && (
+            <div className="mt-4">
+              <CltDetailsSection
+                value={splitInterest}
+                onChange={setSplitInterest}
+                familyMembers={members.map((m) => ({
+                  id: m.id,
+                  firstName: m.firstName,
+                  dateOfBirth: m.dateOfBirth ?? null,
+                }))}
+                charities={externals
+                  .filter((e) => e.kind === "charity")
+                  .map((e) => ({ id: e.id, name: e.name }))}
+                fundingAccounts={fundingAccounts}
+                fundingPicks={splitInterestFundingPicks}
+                onFundingPicksChange={setSplitInterestFundingPicks}
+                defaultGrantor={grantor === "" ? "client" : grantor}
+              />
+            </div>
+          )}
+
+          {trustSubType === "crt" && (
+            <div className="mt-4">
+              <CrtDetailsSection
+                value={splitInterest}
+                onChange={setSplitInterest}
+                familyMembers={members.map((m) => ({
+                  id: m.id,
+                  firstName: m.firstName,
+                  dateOfBirth: m.dateOfBirth ?? null,
+                }))}
+                charities={externals
+                  .filter((e) => e.kind === "charity")
+                  .map((e) => ({ id: e.id, name: e.name }))}
+                fundingAccounts={fundingAccounts}
+                fundingPicks={splitInterestFundingPicks}
+                onFundingPicksChange={setSplitInterestFundingPicks}
+                defaultGrantor={grantor === "" ? "client" : grantor}
+              />
+            </div>
+          )}
+
+          {/* Provisions */}
           <div className="mt-4 rounded-[var(--radius-sm)] border border-hair bg-card-2 p-3 space-y-3">
-            <div className="flex items-center gap-3 flex-wrap">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-3">
-                Distribution Policy
-              </span>
-              <div className="flex gap-1 text-xs">
-                {([
-                  ["none", "None"],
-                  ["fixed", "Fixed $"],
-                  ["pct_liquid", "% liquid"],
-                  ["pct_income", "% income"],
-                ] as const).map(([val, label]) => {
-                  const active = val === "none" ? distributionMode === null : distributionMode === val;
-                  return (
-                    <button
-                      key={val}
-                      type="button"
-                      onClick={() => setDistributionMode(val === "none" ? null : val)}
-                      className={
-                        "rounded-md border px-2 py-0.5 text-xs font-medium transition-colors " +
-                        (active
-                          ? "border-accent bg-accent/15 text-accent"
-                          : "border-hair bg-card text-ink-3 hover:border-hair-2 hover:text-ink-2")
-                      }
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-3">
+              Provisions
             </div>
-            {distributionMode === "fixed" && (
-              <div>
-                <label className={fieldLabelClassName} htmlFor="dist-amount">Annual amount</label>
-                <CurrencyInput id="dist-amount" value={distributionAmount} onChange={setDistributionAmount} />
-              </div>
-            )}
-            {(distributionMode === "pct_liquid" || distributionMode === "pct_income") && (
-              <div>
-                <label className={fieldLabelClassName} htmlFor="dist-percent">Annual percent</label>
-                <PercentInput id="dist-percent" value={distributionPercent} onChange={setDistributionPercent} />
-              </div>
-            )}
-          </div>
-        )}
-
-        {trustSubType === "clt" && (
-          <div className="mt-4">
-            <CltDetailsSection
-              value={splitInterest}
-              onChange={setSplitInterest}
-              familyMembers={members.map((m) => ({
-                id: m.id,
-                firstName: m.firstName,
-                dateOfBirth: m.dateOfBirth ?? null,
-              }))}
-              charities={externals
-                .filter((e) => e.kind === "charity")
-                .map((e) => ({ id: e.id, name: e.name }))}
-              fundingAccounts={fundingAccounts}
-              fundingPicks={splitInterestFundingPicks}
-              onFundingPicksChange={setSplitInterestFundingPicks}
-              defaultGrantor={grantor === "" ? "client" : grantor}
-            />
-          </div>
-        )}
-
-        {trustSubType === "crt" && (
-          <div className="mt-4">
-            <CrtDetailsSection
-              value={splitInterest}
-              onChange={setSplitInterest}
-              familyMembers={members.map((m) => ({
-                id: m.id,
-                firstName: m.firstName,
-                dateOfBirth: m.dateOfBirth ?? null,
-              }))}
-              charities={externals
-                .filter((e) => e.kind === "charity")
-                .map((e) => ({ id: e.id, name: e.name }))}
-              fundingAccounts={fundingAccounts}
-              fundingPicks={splitInterestFundingPicks}
-              onFundingPicksChange={setSplitInterestFundingPicks}
-              defaultGrantor={grantor === "" ? "client" : grantor}
-            />
-          </div>
-        )}
-
-        {/* Provisions */}
-        <div className="mt-4 rounded-[var(--radius-sm)] border border-hair bg-card-2 p-3 space-y-3">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-3">
-            Provisions
-          </div>
-          <div className="divide-y divide-hair">
-            {isIrrevocable && (
+            <div className="divide-y divide-hair">
+              {isIrrevocable && (
+                <ProvisionRow
+                  label="Crummey powers"
+                  tooltip="Gives beneficiaries a short window (typically 30–60 days) to withdraw new contributions. Qualifies gifts to the trust for the annual gift-tax exclusion."
+                  checked={crummeyPowers}
+                  onChange={setCrummeyPowers}
+                />
+              )}
+              {isIrrevocable && (
+                <ProvisionRow
+                  label="Sprinkle provisions"
+                  tooltip="Lets the client tap trust liquid assets once household liquid assets run out (HEMS / distribution-committee clause). Surfaces the trust in the Accessible Trust Assets column on the cash-flow drill."
+                  checked={sprinkleProvisions}
+                  onChange={setSprinkleProvisions}
+                />
+              )}
               <ProvisionRow
-                label="Crummey powers"
-                tooltip="Gives beneficiaries a short window (typically 30–60 days) to withdraw new contributions. Qualifies gifts to the trust for the annual gift-tax exclusion."
-                checked={crummeyPowers}
-                onChange={setCrummeyPowers}
+                label="Grantor trust"
+                tooltip="Trust income is taxed on the grantor's personal 1040 — the household pays the tax instead of the trust."
+                checked={isGrantor}
+                onChange={(v) => {
+                  setIsGrantor(v);
+                  if (!v) setGrantorStatusEndYear("");
+                }}
               />
-            )}
-            {isIrrevocable && (
-              <ProvisionRow
-                label="Sprinkle provisions"
-                tooltip="Lets the client tap trust liquid assets once household liquid assets run out (HEMS / distribution-committee clause). Surfaces the trust in the Accessible Trust Assets column on the cash-flow drill."
-                checked={sprinkleProvisions}
-                onChange={setSprinkleProvisions}
-              />
-            )}
-            <ProvisionRow
-              label="Grantor trust"
-              tooltip="Trust income is taxed on the grantor's personal 1040 — the household pays the tax instead of the trust."
-              checked={isGrantor}
-              onChange={(v) => {
-                setIsGrantor(v);
-                if (!v) setGrantorStatusEndYear("");
-              }}
-            />
-            {trustSubType === "clt" && (
-              <p className="text-ink-4 pt-1 text-xs">
-                Grantor CLT: the grantor deducts the present value of the charity&rsquo;s
-                lead interest up front, in the funding year (§170(f)(2)(B)), and is taxed
-                on the trust&rsquo;s income each year. Non-grantor CLT: no up-front
-                deduction &mdash; the trust deducts each year&rsquo;s payment to charity
-                instead (§642(c)).
-              </p>
-            )}
-          </div>
-          {isIrrevocable && isGrantor && (
-            <div className="pt-1">
-              <label className={fieldLabelClassName} htmlFor="grantor-status-end-year">
-                Grantor status ends after year <span className="text-ink-4 font-normal">(optional)</span>
-              </label>
-              <input
-                id="grantor-status-end-year"
-                type="number"
-                min={1900}
-                max={2200}
-                step={1}
-                value={grantorStatusEndYear}
-                onChange={(e) =>
-                  setGrantorStatusEndYear(e.target.value === "" ? "" : parseInt(e.target.value, 10))
-                }
-                placeholder="Leave blank for permanent"
-                className={inputClassName}
-              />
+              {trustSubType === "clt" && (
+                <p className="text-ink-4 pt-1 text-xs">
+                  Grantor CLT: the grantor deducts the present value of the charity&rsquo;s
+                  lead interest up front, in the funding year (§170(f)(2)(B)), and is taxed
+                  on the trust&rsquo;s income each year. Non-grantor CLT: no up-front
+                  deduction &mdash; the trust deducts each year&rsquo;s payment to charity
+                  instead (§642(c)).
+                </p>
+              )}
             </div>
+            {isIrrevocable && isGrantor && (
+              <div className="pt-1">
+                <label className={fieldLabelClassName} htmlFor="grantor-status-end-year">
+                  Grantor status ends after year <span className="text-ink-4 font-normal">(optional)</span>
+                </label>
+                <input
+                  id="grantor-status-end-year"
+                  type="number"
+                  min={1900}
+                  max={2200}
+                  step={1}
+                  value={grantorStatusEndYear}
+                  onChange={(e) =>
+                    setGrantorStatusEndYear(e.target.value === "" ? "" : parseInt(e.target.value, 10))
+                  }
+                  placeholder="Leave blank for permanent"
+                  className={inputClassName}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className={activeTab !== "assets" ? "hidden" : ""}>
+          {editing && accounts !== undefined ? (
+            <AssetsTab
+              entityId={editing.id}
+              accounts={accounts ?? []}
+              liabilities={liabilities ?? []}
+              incomes={incomes ?? []}
+              expenses={expenses ?? []}
+              familyMembers={assetFamilyMembers ?? []}
+              entities={entities}
+              businesses={businesses}
+              // A business given to this trust has a gift row and no owner row.
+              businessGifts={fetchedGifts}
+              priorDiscounts={transferPriorDiscounts}
+              // Gates the picker's valuation-discount field: a business assigned
+              // to a revocable trust is not a completed gift, so the route writes
+              // no gift row and a discount there would be silently dropped.
+              entityIsIrrevocable={isIrrevocable}
+              entityLabel="trust"
+              onChange={handleAssetTabOp}
+            />
+          ) : (
+            <p className="text-[13px] text-ink-3 text-center py-6">
+              Asset management is available when editing an existing trust from the Estate Planning page.
+            </p>
           )}
         </div>
-      </div>
 
-      <div className={activeTab !== "assets" ? "hidden" : ""}>
-        {editing && accounts !== undefined ? (
-          <AssetsTab
-            entityId={editing.id}
-            accounts={accounts ?? []}
-            liabilities={liabilities ?? []}
-            incomes={incomes ?? []}
-            expenses={expenses ?? []}
-            familyMembers={assetFamilyMembers ?? []}
-            entities={entities}
-            businesses={businesses}
-            // A business given to this trust has a gift row and no owner row.
-            businessGifts={fetchedGifts}
-            priorDiscounts={transferPriorDiscounts}
-            // Gates the picker's valuation-discount field: a business assigned
-            // to a revocable trust is not a completed gift, so the route writes
-            // no gift row and a discount there would be silently dropped.
-            entityIsIrrevocable={isIrrevocable}
-            entityLabel="trust"
-            onChange={handleAssetTabOp}
-          />
-        ) : (
-          <p className="text-[13px] text-ink-3 text-center py-6">
-            Asset management is available when editing an existing trust from the Estate Planning page.
-          </p>
-        )}
-      </div>
-
-      <div className={activeTab !== "flows" ? "hidden" : ""}>
-        {editing ? (
-          <FlowsTab
-            clientId={clientId}
-            entityId={editing.id}
-            entityName={editing.name}
-            entityType="trust"
-            income={entityIncome ?? null}
-            expense={entityExpense ?? null}
-            distributionPolicyPercent={null /* trusts don't use this in P1 */}
-            taxTreatment={editing.taxTreatment ?? "ordinary"}
-            flowMode={editing.flowMode ?? "annual"}
-            planStartYear={new Date().getFullYear()}
-            defaultEndYear={planEndYear ?? new Date().getFullYear() + 30}
-            planEndYear={planEndYear ?? new Date().getFullYear() + 30}
-            primaryClientBirthYear={primaryClientBirthYear ?? new Date().getFullYear() - 55}
-            initialFlowOverrides={initialFlowOverrides ?? []}
-            onScheduleSaveBindingChange={onScheduleSaveBindingChange}
-          />
-        ) : (
-          <p className="text-[13px] text-ink-3 text-center py-6">
-            Flows are available when editing an existing trust.
-          </p>
-        )}
-      </div>
-
-      <div className={activeTab !== "transfers" ? "hidden" : ""}>
-        {editing ? (
-          <>
-            {transferFetchError && (
-              <div role="alert" className="text-xs text-red-400 mb-2">
-                Couldn&apos;t load transfers: {transferFetchError}
-              </div>
-            )}
-            <TransfersTab
-              events={transferEvents}
-              series={transferSeries}
-              exemption={exemption}
-              totalConsumedByThisTrust={totalConsumedByThisTrust}
-              onAdd={(kind) => setOpenModal(kind)}
-              // onEdit intentionally omitted — edit mode not yet implemented.
-              // Each modal form needs an `editing` prop and a PATCH path.
-              // Tracked in future-work/estate.md.
-              onDelete={async (item) => {
-                const isSeries = "annualAmount" in item;
-                try {
-                  // The row kinds this list mixes are scenario-scoped in
-                  // DIFFERENT ways, so they delete differently.
-                  //
-                  // A gift_series row carries a real `scenario_id` — its own row
-                  // per scenario, not an overlay — so the direct DELETE, scoped
-                  // to the active scenario's partition like this list's GET, IS
-                  // the scenario-correct delete. A `gift` change row would leave
-                  // that row alive: back on reload, copied into base on promote.
-                  //
-                  // An OVERLAY series (the scenario's own `gift` change) has no
-                  // such row — the series route would 404 — and a one-time gift
-                  // has no scenario_id at all: every scenario reads the one base
-                  // row through an overlay. Both delete as a `remove` change.
-                  const isOverlaySeries = isSeries && "overlay" in item && item.overlay === true;
-                  const res =
-                    isSeries && !isOverlaySeries
-                      ? await fetch(
-                          `/api/clients/${clientId}/gifts/series/${item.id}${
-                            scenarioId ? `?scenario=${encodeURIComponent(scenarioId)}` : ""
-                          }`,
-                          { method: "DELETE" },
-                        )
-                      : await scenarioWriter.submit(giftScenarioRemove(item.id), {
-                          url: isSeries
-                            ? `/api/clients/${clientId}/gifts/series/${item.id}`
-                            : `/api/clients/${clientId}/gifts/${item.id}`,
-                          method: "DELETE",
-                        });
-                  if (!res.ok) {
-                    const j = await res.json().catch(() => ({}));
-                    throw new Error((j as { error?: string }).error ?? `HTTP ${res.status}`);
-                  }
-                  if (isSeries) {
-                    setTransferSeries((prev) => prev.filter((s) => s.id !== item.id));
-                  } else {
-                    setTransferEvents((prev) => prev.filter((e) => e.id !== item.id));
-                  }
-                } catch (err) {
-                  console.error("[transfers-tab] delete failed:", err);
-                  setTransferFetchError(err instanceof Error ? err.message : "Delete failed");
-                }
-              }}
+        <div className={activeTab !== "flows" ? "hidden" : ""}>
+          {editing ? (
+            <FlowsTab
+              clientId={clientId}
+              entityId={editing.id}
+              entityName={editing.name}
+              entityType="trust"
+              income={entityIncome ?? null}
+              expense={entityExpense ?? null}
+              distributionPolicyPercent={null /* trusts don't use this in P1 */}
+              taxTreatment={editing.taxTreatment ?? "ordinary"}
+              flowMode={editing.flowMode ?? "annual"}
+              planStartYear={new Date().getFullYear()}
+              defaultEndYear={planEndYear ?? new Date().getFullYear() + 30}
+              planEndYear={planEndYear ?? new Date().getFullYear() + 30}
+              primaryClientBirthYear={primaryClientBirthYear ?? new Date().getFullYear() - 55}
+              initialFlowOverrides={initialFlowOverrides ?? []}
+              onScheduleSaveBindingChange={onScheduleSaveBindingChange}
             />
-          </>
-        ) : (
-          <p className="text-[13px] text-ink-3 text-center py-6">
-            Transfer management is available when editing an existing trust.
-          </p>
-        )}
-      </div>
+          ) : (
+            <p className="text-[13px] text-ink-3 text-center py-6">
+              Flows are available when editing an existing trust.
+            </p>
+          )}
+        </div>
 
-      <div className={activeTab !== "notes" ? "hidden" : ""}>
-        <label className={fieldLabelClassName} htmlFor="trust-notes">Notes</label>
-        <textarea id="trust-notes" rows={8} value={notes} onChange={(e) => setNotes(e.target.value)} className={textareaClassName} />
-      </div>
+        <div className={activeTab !== "transfers" ? "hidden" : ""}>
+          {editing ? (
+            <>
+              {transferFetchError && (
+                <div role="alert" className="text-xs text-red-400 mb-2">
+                  Couldn&apos;t load transfers: {transferFetchError}
+                </div>
+              )}
+              <TransfersTab
+                events={transferEvents}
+                series={transferSeries}
+                exemption={exemption}
+                totalConsumedByThisTrust={totalConsumedByThisTrust}
+                onAdd={(kind) => setOpenModal(kind)}
+                // onEdit intentionally omitted — edit mode not yet implemented.
+                // Each modal form needs an `editing` prop and a PATCH path.
+                // Tracked in future-work/estate.md.
+                onDelete={async (item) => {
+                  const isSeries = "annualAmount" in item;
+                  try {
+                    // The row kinds this list mixes are scenario-scoped in
+                    // DIFFERENT ways, so they delete differently.
+                    //
+                    // A gift_series row carries a real `scenario_id` — its own row
+                    // per scenario, not an overlay — so the direct DELETE, scoped
+                    // to the active scenario's partition like this list's GET, IS
+                    // the scenario-correct delete. A `gift` change row would leave
+                    // that row alive: back on reload, copied into base on promote.
+                    //
+                    // An OVERLAY series (the scenario's own `gift` change) has no
+                    // such row — the series route would 404 — and a one-time gift
+                    // has no scenario_id at all: every scenario reads the one base
+                    // row through an overlay. Both delete as a `remove` change.
+                    const isOverlaySeries = isSeries && "overlay" in item && item.overlay === true;
+                    const res =
+                      isSeries && !isOverlaySeries
+                        ? await fetch(
+                            `/api/clients/${clientId}/gifts/series/${item.id}${
+                              scenarioId ? `?scenario=${encodeURIComponent(scenarioId)}` : ""
+                            }`,
+                            { method: "DELETE" },
+                          )
+                        : await scenarioWriter.submit(giftScenarioRemove(item.id), {
+                            url: isSeries
+                              ? `/api/clients/${clientId}/gifts/series/${item.id}`
+                              : `/api/clients/${clientId}/gifts/${item.id}`,
+                            method: "DELETE",
+                          });
+                    if (!res.ok) {
+                      const j = await res.json().catch(() => ({}));
+                      throw new Error((j as { error?: string }).error ?? `HTTP ${res.status}`);
+                    }
+                    if (isSeries) {
+                      setTransferSeries((prev) => prev.filter((s) => s.id !== item.id));
+                    } else {
+                      setTransferEvents((prev) => prev.filter((e) => e.id !== item.id));
+                    }
+                  } catch (err) {
+                    console.error("[transfers-tab] delete failed:", err);
+                    setTransferFetchError(err instanceof Error ? err.message : "Delete failed");
+                  }
+                }}
+              />
+            </>
+          ) : (
+            <p className="text-[13px] text-ink-3 text-center py-6">
+              Transfer management is available when editing an existing trust.
+            </p>
+          )}
+        </div>
 
+        <div className={activeTab !== "notes" ? "hidden" : ""}>
+          <label className={fieldLabelClassName} htmlFor="trust-notes">Notes</label>
+          <textarea id="trust-notes" rows={8} value={notes} onChange={(e) => setNotes(e.target.value)} className={textareaClassName} />
+        </div>
+      </form>
+
+      {/* Outside the form for the reason above: SellToTrustDialog renders its
+          own <form id="sell-to-trust-form">. This panel holds no trust fields,
+          so it loses nothing by sitting here. */}
       <div className={activeTab !== "notes-sales" ? "hidden" : ""}>
         {editing ? (
           showNotesAndSales(editing) ? (
@@ -1383,7 +1393,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
           />
         </DialogShell>
       )}
-    </form>
+    </>
   );
 });
 
