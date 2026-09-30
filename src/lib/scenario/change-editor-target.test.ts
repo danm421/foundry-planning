@@ -37,19 +37,12 @@ describe("resolveChangeEditor", () => {
     ["account", "net-worth"],
     ["liability", "net-worth"],
     ["roth_conversion", "techniques"],
-    ["reinvestment", "techniques"],
     ["relocation", "techniques"],
     ["asset_transaction", "techniques"],
     ["transfer", "techniques"],
     ["client", "family"],
-    ["family_member", "family"],
-    ["entity", "family"],
     ["gift", "family"],
-    ["external_beneficiary", "family"],
     ["will", "wills"],
-    ["client_deduction", "assumptions"],
-    ["client_tax_adjustment", "assumptions"],
-    ["withdrawal_strategy", "assumptions"],
   ];
 
   it.each(mapped)(
@@ -80,6 +73,48 @@ describe("resolveChangeEditor", () => {
       page: "family",
       focus: { kind: "gift", id: "g1" },
     });
+  });
+
+  // Ruling F-I2: kinds whose Details editor is known to write the base plan or
+  // revert the scenario's change inside a scenario. Whatever the op.
+  describe("unsupported", () => {
+    const unsupportedKinds: TargetKind[] = [
+      "reinvestment",
+      "family_member",
+      "external_beneficiary",
+      "client_deduction",
+      "client_tax_adjustment",
+      "withdrawal_strategy",
+    ];
+
+    it.each(unsupportedKinds.flatMap((k) => [[k, "edit"], [k, "add"]] as const))(
+      "a %s %s -> unsupported",
+      (targetKind, opType) => {
+        expect(resolveChangeEditor(change({ targetKind, opType }))).toEqual({ surface: "unsupported" });
+      },
+    );
+
+    // Ruling F-I3: every trust-dialog tab saves an edit's payload as that tab's
+    // diff alone, wiping the rest; an add's saves merge into the add payload.
+    it("an entity edit -> unsupported", () => {
+      expect(resolveChangeEditor(change({ targetKind: "entity", opType: "edit" }))).toEqual({
+        surface: "unsupported",
+      });
+    });
+
+    it("an entity add -> family/entity, the trust dialog", () => {
+      expect(
+        resolveChangeEditor(change({ targetKind: "entity", opType: "add", targetId: "t1", payload: { id: "t1" } })),
+      ).toEqual({ surface: "details", page: "family", focus: { kind: "entity", id: "t1" } });
+    });
+
+    it.each([...unsupportedKinds, "entity"] as TargetKind[])(
+      "a removed or disabled %s is still null",
+      (targetKind) => {
+        expect(resolveChangeEditor(change({ targetKind, opType: "remove", payload: null }))).toBeNull();
+        expect(resolveChangeEditor(change({ targetKind, enabled: false }))).toBeNull();
+      },
+    );
   });
 
   // Child kinds are never written as their own change row (they live nested

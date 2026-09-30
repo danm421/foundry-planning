@@ -24,7 +24,7 @@ const { loadChangeEditorPropsMock, makeStubView } = vi.hoisted(() => ({
       marker,
     }: {
       focus?: EditorFocus;
-      onFocusClose?: (outcome?: "unavailable") => void;
+      onFocusClose?: (outcome?: "unavailable" | "unsupported") => void;
       marker?: string;
     }) {
       return (
@@ -34,6 +34,9 @@ const { loadChangeEditorPropsMock, makeStubView } = vi.hoisted(() => ({
           </button>
           <button type="button" onClick={() => onFocusClose?.("unavailable")}>
             stub unavailable
+          </button>
+          <button type="button" onClick={() => onFocusClose?.("unsupported")}>
+            stub unsupported
           </button>
         </div>
       );
@@ -48,6 +51,8 @@ vi.mock("@/components/family-view", () => ({ default: makeStubView("family") }))
 vi.mock("@/components/wills-panel", () => ({ default: makeStubView("wills") }));
 
 const CLIENT_ID = "c1";
+const UNSUPPORTED_MESSAGE =
+  "This change can't be edited inside a scenario yet. You can still switch it off or delete it here.";
 const SCENARIO_ID = "s-1";
 const TARGET_ID = "11111111-2222-3333-4444-555555555555";
 
@@ -354,20 +359,40 @@ describe("SolverChangesTab — opening a Details editor", () => {
     );
   });
 
+  // Ruling F-I2: an editor known to write the base plan or revert the change
+  // inside a scenario gets an explanation, never a link to that same editor.
   it.each([
-    ["client_deduction", "deductions"],
-    ["client_tax_adjustment", "tax-adjustments"],
-    ["withdrawal_strategy", "withdrawal"],
-  ] as const)("a %s change links straight to the Assumptions %s tab, no load", (targetKind, tab) => {
-    renderTab([makeChange({ targetKind })]);
+    ["reinvestment", "edit"],
+    ["family_member", "edit"],
+    ["external_beneficiary", "add"],
+    ["client_deduction", "add"],
+    ["client_tax_adjustment", "edit"],
+    ["withdrawal_strategy", "edit"],
+    ["entity", "edit"],
+  ] as const)("a %s %s explains it can't be edited here — no link, no load", (targetKind, opType) => {
+    renderTab([makeChange({ targetKind, opType })]);
 
     fireEvent.click(screen.getByRole("button", { name: /^Edit / }));
 
     expect(loadChangeEditorPropsMock).not.toHaveBeenCalled();
-    expect(screen.getByRole("link", { name: "Edit this on the Details page" })).toHaveAttribute(
-      "href",
-      `/clients/${CLIENT_ID}/details/assumptions?tab=${tab}&scenario=${SCENARIO_ID}`,
-    );
+    expect(screen.getByRole("status")).toHaveTextContent(UNSUPPORTED_MESSAGE);
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByText(UNSUPPORTED_MESSAGE)).not.toBeInTheDocument();
+  });
+
+  it("'unsupported' from the view unmounts it and explains, with no link", async () => {
+    loadChangeEditorPropsMock.mockResolvedValue({ page: "net-worth", props: { clientId: CLIENT_ID, accounts: [] } });
+    renderTab([makeChange({ targetKind: "account" })]);
+    fireEvent.click(screen.getByRole("button", { name: /^Edit / }));
+    await screen.findByTestId("view-net-worth");
+
+    fireEvent.click(screen.getByRole("button", { name: "stub unsupported" }));
+
+    expect(screen.queryByTestId("view-net-worth")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(UNSUPPORTED_MESSAGE);
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
   });
 
   it("a failed load shows inline, and Try again retries", async () => {
@@ -395,13 +420,11 @@ describe("SolverChangesTab — opening a Details editor", () => {
       makeChange({ id: "c-2", targetKind: "client_deduction", payload: { name: "Charity" } }),
     ]);
     fireEvent.click(screen.getByRole("button", { name: "Edit Charity" }));
-    expect(screen.getByRole("link", { name: "Edit this on the Details page" })).toBeInTheDocument();
+    expect(screen.getByText(UNSUPPORTED_MESSAGE)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Edit Side income" }));
 
-    await waitFor(() =>
-      expect(screen.queryByRole("link", { name: "Edit this on the Details page" })).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText(UNSUPPORTED_MESSAGE)).not.toBeInTheDocument());
     expect(await screen.findByTestId("view-income-expenses")).toBeInTheDocument();
   });
 });

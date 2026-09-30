@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useScenarioState } from "@/hooks/use-scenario-state";
-import { useFocusCloseOnce } from "@/hooks/use-focus-close-once";
+import { useFocusCloseOnce, type FocusCloseOutcome } from "@/hooks/use-focus-close-once";
 import { useClientAccess } from "@/components/client-access-provider";
 import AddTransferForm from "./forms/add-transfer-form";
 import AddReinvestmentForm, { type ReinvestmentInitialData } from "./forms/add-reinvestment-form";
@@ -180,7 +180,7 @@ export interface TechniquesViewProps {
    *   advisor has view-only access — or it's a reinvestment, whose form would
    *   save base-plan values over the scenario's.
    */
-  onFocusClose?: (outcome?: "unavailable") => void;
+  onFocusClose?: (outcome?: FocusCloseOutcome) => void;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1283,7 +1283,7 @@ export default function TechniquesView({
     editingTransfer !== null ||
     editingRelocation !== null ||
     editingTransaction !== null;
-  useFocusCloseOnce(focus, Boolean(focusTarget), focusFormOpen, onFocusClose);
+  useFocusCloseOnce(focus, focusTarget, focusFormOpen, onFocusClose);
 
   if (focus) return formsNode;
 

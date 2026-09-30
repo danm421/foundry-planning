@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
-import { useFocusCloseOnce } from "@/hooks/use-focus-close-once";
+import { useFocusCloseOnce, type FocusCloseOutcome } from "@/hooks/use-focus-close-once";
 import AddAccountDialog from "./add-account-dialog";
 import BusinessDialog from "./business-dialog";
 import type { BusinessAccount } from "./business-dialog/types";
@@ -249,10 +249,11 @@ export interface BalanceSheetViewProps {
    * - `"unavailable"`: nothing was opened, because the page itself offers no
    *   editor for this row — it's gone, its kind isn't edited here, it's a
    *   life-insurance policy (edited on Insurance), it's a business's sub-row
-   *   whose business isn't listed, or the advisor has view-only access — or
-   *   it's a household business, whose BusinessDialog would save to the base.
+   *   whose business isn't listed, or the advisor has view-only access.
+   * - `"unsupported"`: nothing was opened, because the row is a household
+   *   business, whose BusinessDialog would save to the base plan.
    */
-  onFocusClose?: (outcome?: "unavailable") => void;
+  onFocusClose?: (outcome?: FocusCloseOutcome) => void;
 }
 
 const CATEGORY_LABELS: Record<AccountCategory, string> = {
@@ -563,10 +564,11 @@ type FocusTarget =
   | { dialog: "liability"; row: LiabilityRow };
 
 /**
- * The dialog the page's own click opens for the focused row, or null when
- * focus mode opens none. A business's sub-account or sub-liability is listed
- * only inside its business's row group; a policy click goes to the Insurance
- * page; legacy notes_receivable accounts aren't listed. Every other account
+ * The dialog the page's own click opens for the focused row — or null when
+ * focus mode opens none, or "unsupported" for a listed business (see below).
+ * A business's sub-account or sub-liability is listed only inside its
+ * business's row group; a policy click goes to the Insurance page; legacy
+ * notes_receivable accounts aren't listed. Every other account
  * opens the account dialog — Assets rows, 529s and the Out of Estate panel
  * alike — except the listed businesses themselves (see below).
  */
@@ -575,7 +577,7 @@ function findFocusRow(
   accounts: AccountRow[],
   liabilities: LiabilityRow[],
   accountInEstate: (a: AccountRow) => boolean,
-): FocusTarget | null {
+): FocusTarget | "unsupported" | null {
   const isListedBusiness = (a: AccountRow | undefined) =>
     !!a && a.category === "business" && !a.parentAccountId && accountInEstate(a);
   const underListedBusiness = (parentAccountId: string) =>
@@ -586,8 +588,9 @@ function findFocusRow(
       const row = accounts.find((a) => a.id === focus.id);
       if (!row || row.category === "life_insurance" || row.category === "notes_receivable") return null;
       // The page edits it in BusinessDialog, whose saves bypass the scenario writer
-      // (future-work "Business dialog saves to the BASE plan") — never open it here.
-      if (isListedBusiness(row)) return null;
+      // (future-work "Business dialog saves to the BASE plan") — never open it
+      // here (Rulings T4b-business, F-I2).
+      if (isListedBusiness(row)) return "unsupported";
       // An in-estate sub-account shows only under its business's row group.
       if (row.parentAccountId && accountInEstate(row) && !underListedBusiness(row.parentAccountId)) return null;
       return { dialog: "account", row };
@@ -774,11 +777,13 @@ export default function BalanceSheetView({
   const [addCategory, setAddCategory] = useState<AccountCategory | null>(null);
 
   // Focus mode's row, snapshotted at mount. Null means the page offers no editor
-  // for it (see `findFocusRow`) or there's no edit access. The editing state
+  // for it (see `findFocusRow`) or there's no edit access; "unsupported" means
+  // it does, but that editor would write the base plan. The editing state
   // below is seeded exactly as that row's click sets it.
-  const [focusTarget] = useState(() =>
+  const [focusFound] = useState(() =>
     focus && canEdit ? findFocusRow(focus, accounts, liabilities, accountInEstate) : null,
   );
+  const focusTarget = focusFound === "unsupported" ? null : focusFound;
 
   const [editingAccount, setEditingAccount] = useState<AccountRow | null>(() =>
     focusTarget?.dialog === "account" ? focusTarget.row : null,
@@ -1303,9 +1308,9 @@ export default function BalanceSheetView({
 
   // Focus mode hands control back once its editor is gone, however it went:
   // cancel, save, a confirmed delete (which closes the editor directly, not
-  // through its onOpenChange) — or, as "unavailable", when none ever opened.
+  // through its onOpenChange) — or, with its reason, when none ever opened.
   const focusDialogOpen = editingAccount !== null || editingLiability !== null;
-  useFocusCloseOnce(focus, Boolean(focusTarget), focusDialogOpen, onFocusClose);
+  useFocusCloseOnce(focus, focusFound, focusDialogOpen, onFocusClose);
 
   if (focus) return dialogsNode;
 

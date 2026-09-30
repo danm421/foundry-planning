@@ -26,13 +26,6 @@ import type { TechniquesViewProps } from "@/components/techniques-view";
 import type { FamilyViewProps } from "@/components/family-view";
 import type { WillsPanelProps } from "@/components/wills-panel";
 
-/**
- * The Details pages the Solver opens in place. Not "assumptions": every focus
- * there comes back "unavailable" (Ruling T4e-assumptions), so the host links
- * straight to the page without a round trip.
- */
-export type SolverEditorPage = Exclude<DetailsEditorPage, "assumptions">;
-
 /** One Details view's props — never the page's sibling data (banners, firmId). */
 export type ChangeEditorViewProps =
   | { page: "income-expenses"; props: IncomeExpensesViewProps }
@@ -57,7 +50,7 @@ const INPUT = z.object({
 export async function loadChangeEditorProps(
   clientId: string,
   scenarioId: string,
-  page: SolverEditorPage,
+  page: DetailsEditorPage,
 ): Promise<ChangeEditorViewProps> {
   const input = INPUT.parse({ clientId, scenarioId, page });
 

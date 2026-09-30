@@ -12,6 +12,10 @@
 //   the Solver re-derives from the fresh scenario tree.
 // - "unavailable" → the Details page itself wouldn't open this row here
 //   (Ruling T4-unavailable) → unmount the view, show a link to that page.
+// - "unsupported" → the row's editor is known to write the base plan inside a
+//   scenario (Ruling F-I2) → unmount the view, explain, and link nowhere: the
+//   Details page has the same bug. A kind the resolver already knows is
+//   unsupported gets the same message without a round trip.
 //
 // The views are loaded with next/dynamic so five large Details views stay out
 // of the Solver's initial bundle.
@@ -20,8 +24,7 @@ import { startTransition, useEffect, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import type { ChangeEditorTarget, EditorFocus } from "@/lib/scenario/change-editor-target";
-import type { TargetKind } from "@/engine/scenario/types";
-import type { AssumptionsTabId } from "@/app/(app)/clients/[id]/details/assumptions/tabs";
+import type { FocusCloseOutcome } from "@/hooks/use-focus-close-once";
 import { loadChangeEditorProps, type ChangeEditorViewProps } from "./change-editor-actions";
 
 const LoadingLine = () => <HostStrip role="status">Opening the editor…</HostStrip>;
@@ -46,10 +49,13 @@ const HOST_STRIP_ACTION_CLASS =
 /** A change the resolver sends to a Details page. */
 export type DetailsEditorTarget = Extract<ChangeEditorTarget, { surface: "details" }>;
 
+/** A change the host handles itself: a Details editor, or an explanation. */
+export type EditorHostTarget = Extract<ChangeEditorTarget, { surface: "details" | "unsupported" }>;
+
 interface Props {
   clientId: string;
   scenarioId: string;
-  target: DetailsEditorTarget;
+  target: EditorHostTarget;
   /** The editor closed normally, or the advisor dismissed a message. */
   onDone: () => void;
 }
@@ -58,28 +64,26 @@ type HostState =
   | { status: "loading" }
   | { status: "error" }
   | { status: "open"; loaded: ChangeEditorViewProps }
-  | { status: "unavailable"; href: string };
+  | { status: "unavailable"; href: string }
+  | { status: "unsupported" };
 
-// Assumptions: every focus is unavailable (Ruling T4e-assumptions), so the host
-// links straight to the page's matching tab instead of loading it.
-const ASSUMPTIONS_TAB_BY_KIND: Partial<Record<TargetKind, AssumptionsTabId>> = {
-  client_deduction: "deductions",
-  client_tax_adjustment: "tax-adjustments",
-  withdrawal_strategy: "withdrawal",
-};
+export function SolverChangeEditor({ target, onDone, ...rest }: Props) {
+  if (target.surface === "unsupported") return <UnsupportedStrip onDismiss={onDone} />;
+  return <DetailsChangeEditor {...rest} target={target} onDone={onDone} />;
+}
 
-export function SolverChangeEditor({ clientId, scenarioId, target, onDone }: Props) {
+function DetailsChangeEditor({
+  clientId,
+  scenarioId,
+  target,
+  onDone,
+}: Props & { target: DetailsEditorTarget }) {
   const { page, focus } = target;
-  const [state, setState] = useState<HostState>(() =>
-    page === "assumptions"
-      ? { status: "unavailable", href: detailsHref(clientId, scenarioId, target) }
-      : { status: "loading" },
-  );
+  const [state, setState] = useState<HostState>({ status: "loading" });
   // Bumped by "Try again" to re-run the load.
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    if (page === "assumptions") return;
     let cancelled = false;
     startTransition(async () => {
       try {
@@ -94,9 +98,13 @@ export function SolverChangeEditor({ clientId, scenarioId, target, onDone }: Pro
     };
   }, [clientId, scenarioId, page, attempt]);
 
-  function onFocusClose(outcome?: "unavailable") {
-    if (outcome !== "unavailable") {
+  function onFocusClose(outcome?: FocusCloseOutcome) {
+    if (outcome === undefined) {
       onDone();
+      return;
+    }
+    if (outcome === "unsupported") {
+      setState({ status: "unsupported" });
       return;
     }
     const lifeInsurance =
@@ -137,16 +145,30 @@ export function SolverChangeEditor({ clientId, scenarioId, target, onDone }: Pro
           </Link>
         </HostStrip>
       );
+    case "unsupported":
+      return <UnsupportedStrip onDismiss={onDone} />;
     case "open":
       return renderView(state.loaded, focus, onFocusClose);
   }
+}
+
+/** Ruling F-I2: no link — the Details page's editor has the same bug. */
+function UnsupportedStrip({ onDismiss }: { onDismiss: () => void }) {
+  return (
+    <HostStrip role="status" onDismiss={onDismiss}>
+      <span>
+        This change can&apos;t be edited inside a scenario yet. You can still switch it off or
+        delete it here.
+      </span>
+    </HostStrip>
+  );
 }
 
 /** The loaded Details view in focus mode, keyed by the focus it reads at mount. */
 function renderView(
   loaded: ChangeEditorViewProps,
   focus: EditorFocus,
-  onFocusClose: (outcome?: "unavailable") => void,
+  onFocusClose: (outcome?: FocusCloseOutcome) => void,
 ): ReactNode {
   const key = `${focus.kind}:${focus.id}`;
   switch (loaded.page) {
@@ -166,7 +188,7 @@ function renderView(
 /**
  * Where the Details page edits this change, inside the same scenario. A
  * life-insurance account is edited on Insurance, not Net Worth (the Net Worth
- * page routes its policy rows there too); an Assumptions kind opens its tab.
+ * page routes its policy rows there too).
  */
 function detailsHref(
   clientId: string,
@@ -180,8 +202,6 @@ function detailsHref(
     path = "insurance";
     query.set("policy", focus.id);
   }
-  const tab = page === "assumptions" ? ASSUMPTIONS_TAB_BY_KIND[focus.kind] : undefined;
-  if (tab) query.set("tab", tab);
   query.set("scenario", scenarioId);
   return `/clients/${clientId}/details/${path}?${query.toString()}`;
 }

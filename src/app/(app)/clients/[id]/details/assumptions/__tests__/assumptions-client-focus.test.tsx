@@ -25,8 +25,9 @@ import AssumptionsClient, {
 } from "../assumptions-client";
 import { ClientAccessProvider } from "@/components/client-access-provider";
 import type { EditorFocus } from "@/lib/scenario/change-editor-target";
+import type { FocusCloseOutcome } from "@/hooks/use-focus-close-once";
 
-type OnFocusClose = Mock<(outcome?: "unavailable") => void>;
+type OnFocusClose = Mock<(outcome?: FocusCloseOutcome) => void>;
 
 // ---------------------------------------------------------------------------
 // Fixture — one row of each kind the resolver sends to this page.

@@ -30,6 +30,7 @@ vi.mock("next/navigation", () => ({
 import WillsPanel, { type WillsPanelProps, type WillsPanelWill } from "@/components/wills-panel";
 import { ClientAccessProvider } from "@/components/client-access-provider";
 import type { EditorFocus } from "@/lib/scenario/change-editor-target";
+import type { FocusCloseOutcome } from "@/hooks/use-focus-close-once";
 
 // ---------------------------------------------------------------------------
 // Fixture
@@ -37,7 +38,7 @@ import type { EditorFocus } from "@/lib/scenario/change-editor-target";
 
 const CLIENT_ID = "c-1";
 
-type OnFocusClose = Mock<(outcome?: "unavailable") => void>;
+type OnFocusClose = Mock<(outcome?: FocusCloseOutcome) => void>;
 
 const CLIENT_WILL: WillsPanelWill = {
   id: "will-client",

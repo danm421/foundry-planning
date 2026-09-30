@@ -7,9 +7,10 @@
  * `onFocusClose` whenever that dialog goes away (cancel, save) or never could
  * open — the row is missing, its kind isn't edited here, the advisor has
  * view-only access, or it's a family member (its dialog is seeded from the
- * base plan, so a save would revert the scenario's change), an external
- * beneficiary or a gift series (their editors can write the base plan even
- * inside a scenario).
+ * base plan, so a save would revert the scenario's change) or an external
+ * beneficiary (its editor can write the base plan even inside a scenario) —
+ * all "unavailable" — or it's a gift series, whose editor can write the base
+ * plan too ("unsupported", Ruling F-I2).
  *
  * The Solver is always inside a scenario, so `?scenario=` is in the URL and
  * `use-scenario-writer` is NOT mocked: the save tests pin that each focused
@@ -182,11 +183,15 @@ function expectNoPageChrome() {
   }
 }
 
-async function expectUnavailable(utils: { container: HTMLElement; onFocusClose: ReturnType<typeof vi.fn> }) {
+type Focused = { container: HTMLElement; onFocusClose: ReturnType<typeof vi.fn> };
+
+/** Nothing opened: `onFocusClose(outcome)` once, and nothing rendered. */
+async function expectNothingOpened(utils: Focused, outcome: "unavailable" | "unsupported") {
   await waitFor(() => expect(utils.onFocusClose).toHaveBeenCalledTimes(1));
-  expect(utils.onFocusClose).toHaveBeenCalledWith("unavailable");
+  expect(utils.onFocusClose).toHaveBeenCalledWith(outcome);
   expect(utils.container).toBeEmptyDOMElement();
 }
+const expectUnavailable = (utils: Focused) => expectNothingOpened(utils, "unavailable");
 
 type FetchInit = { method?: string; body?: string } | undefined;
 type FetchLike = (url: string, init?: FetchInit) => Promise<Pick<Response, "ok" | "status" | "json">>;
@@ -299,15 +304,24 @@ describe("FamilyView focus mode — unavailable", () => {
     await expectUnavailable(renderFocused({ kind: "external_beneficiary", id: "ext-1" }));
   });
 
+  it("without edit permission → unavailable, as the page offers no editor either", async () => {
+    await expectUnavailable(renderFocused({ kind: "entity", id: "ent-ilit" }, vi.fn(), "view"));
+  });
+});
+
+// Ruling F-I2: rows whose editor is known to write the base plan inside a
+// scenario report "unsupported" — the host shows no Details-page link, as the
+// page carries the same bug.
+describe("FamilyView focus mode — unsupported", () => {
   // A series a change points at is that change's overlay row, and the series
   // dialog PATCHes `gift_series` by id alone — a base series' id rewrites the
   // base plan. (The one-time side of the same kind opens: see above.)
-  it("a gift series → unavailable, even though the row is there", async () => {
-    await expectUnavailable(renderFocused({ kind: "gift", id: "series-1" }));
+  it("a gift series → unsupported, even though the row is there", async () => {
+    await expectNothingOpened(renderFocused({ kind: "gift", id: "series-1" }), "unsupported");
   });
 
-  it("without edit permission → unavailable, as the page offers no editor either", async () => {
-    await expectUnavailable(renderFocused({ kind: "entity", id: "ent-ilit" }, vi.fn(), "view"));
+  it("without edit permission a gift series is unavailable, like every row", async () => {
+    await expectUnavailable(renderFocused({ kind: "gift", id: "series-1" }, vi.fn(), "view"));
   });
 });
 

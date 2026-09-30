@@ -8,7 +8,8 @@
 //
 // Clicking a change's title opens where it's edited (resolveChangeEditor):
 // a Solver tab (Stress, Retirement) switches the left pane; a Details page
-// opens that row's own editor in place (SolverChangeEditor). Rows with
+// opens that row's own editor in place (SolverChangeEditor), which also
+// explains a change whose editor can't be used inside a scenario. Rows with
 // nowhere to open, rows in a switched-off toggle group, and every row for a
 // view-only advisor, stay plain text.
 
@@ -18,7 +19,7 @@ import { useClientAccess } from "@/components/client-access-provider";
 import { resolveEffectiveToggleState } from "@/engine/scenario/applyChanges";
 import { resolveChangeEditor } from "@/lib/scenario/change-editor-target";
 import type { PanelData } from "@/lib/scenario/load-panel-data";
-import { SolverChangeEditor, type DetailsEditorTarget } from "./solver-change-editor";
+import { SolverChangeEditor, type EditorHostTarget } from "./solver-change-editor";
 import type { InputTab } from "./report-tab-link";
 
 interface Props {
@@ -35,7 +36,7 @@ export function SolverChangesTab({ clientId, panel, onOpenSolverTab }: Props) {
   const canEdit = permission === "edit";
   // `seq` remounts the editor on every click, so re-opening the same change
   // (or replacing a message) always starts a fresh load.
-  const [editing, setEditing] = useState<{ target: DetailsEditorTarget; seq: number } | null>(null);
+  const [editing, setEditing] = useState<{ target: EditorHostTarget; seq: number } | null>(null);
 
   if (!panel) {
     return (

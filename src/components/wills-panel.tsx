@@ -5,7 +5,7 @@ import BequestDialog, { type BequestDraft } from "@/components/bequest-dialog";
 import DialogShell from "@/components/dialog-shell";
 import WillResiduarySection from "@/components/forms/will-residuary-section";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
-import { useFocusCloseOnce } from "@/hooks/use-focus-close-once";
+import { useFocusCloseOnce, type FocusCloseOutcome } from "@/hooks/use-focus-close-once";
 import { useClientAccess } from "@/components/client-access-provider";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import type { EditorFocus } from "@/lib/scenario/change-editor-target";
@@ -152,7 +152,7 @@ export interface WillsPanelProps {
    *   no co-client on file, the page shows another will for that grantor, the
    *   kind isn't a will, or the advisor has view-only access.
    */
-  onFocusClose?: (outcome?: "unavailable") => void;
+  onFocusClose?: (outcome?: FocusCloseOutcome) => void;
 }
 
 const CONDITION_LABEL: Record<WillCondition, string> = {
@@ -507,7 +507,7 @@ export default function WillsPanel(props: WillsPanelProps) {
 
   // Focus mode hands control back once its dialog is closed, or, as
   // "unavailable", when it never opened.
-  useFocusCloseOnce(focus, Boolean(focusWill), focusOpen, onFocusClose);
+  useFocusCloseOnce(focus, focusWill, focusOpen, onFocusClose);
 
   // Focus mode shows only the focused will's grantor.
   const grantors: readonly WillGrantor[] = focusWill ? [focusWill.grantor] : ["client", "spouse"];

@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useFocusCloseOnce } from "@/hooks/use-focus-close-once";
+import { useFocusCloseOnce, type FocusCloseOutcome } from "@/hooks/use-focus-close-once";
 import { ASSUMPTIONS_TABS, assumptionsTabQuery, resolveAssumptionsTab } from "./tabs";
 import AssumptionsSubtabs from "@/components/assumptions-subtabs";
 import TaxRatesForm from "@/components/forms/tax-rates-form";
@@ -137,7 +137,7 @@ export interface AssumptionsClientProps {
    * scenario is selected, so a focused editor would open on base values and
    * its save would overwrite the scenario's own change with them.
    */
-  onFocusClose?: (outcome?: "unavailable") => void;
+  onFocusClose?: (outcome?: FocusCloseOutcome) => void;
 }
 
 export default function AssumptionsClient({
@@ -168,7 +168,7 @@ export default function AssumptionsClient({
 
   // Focus mode opens nothing here (see `onFocusClose`) — hand control back
   // at once, and only once.
-  useFocusCloseOnce(focus, false, false, onFocusClose);
+  useFocusCloseOnce(focus, null, false, onFocusClose);
 
   if (focus) return null;
 

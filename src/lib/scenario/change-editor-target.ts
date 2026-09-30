@@ -3,7 +3,9 @@
 // Pure, framework-free resolver: given a scenario change, decides WHERE that
 // change is edited — which Details page (and which entity within it) or a
 // Solver tab: Stress for a plan_settings stress-test override, Retirement for
-// the plan horizon and the client's retirement / life-expectancy fields.
+// the plan horizon and the client's retirement / life-expectancy fields — or
+// "unsupported" when the kind's Details editor is known to corrupt data inside
+// a scenario (Ruling F-I2).
 // Returns null when the change has nothing to open: it's a `remove`, it's
 // disabled, or its targetKind is a child row that is never written as its
 // own change (it lives nested under a parent entity's payload instead).
@@ -20,8 +22,7 @@ export type DetailsEditorPage =
   | "net-worth"
   | "techniques"
   | "family"
-  | "wills"
-  | "assumptions";
+  | "wills";
 
 export interface EditorFocus {
   kind: TargetKind;
@@ -32,6 +33,7 @@ export interface EditorFocus {
 export type ChangeEditorTarget =
   | { surface: "details"; page: DetailsEditorPage; focus: EditorFocus }
   | { surface: "solver-tab"; tab: "stress_test" | "retirement" }
+  | { surface: "unsupported" }
   | null;
 
 /**
@@ -55,8 +57,9 @@ export interface ChangeEditorInput {
 //
 // Kinds absent here are child rows (*_schedule_override, extra_payment,
 // will_bequest*, beneficiary_designation, life_insurance_*, transfer_schedule)
-// that are never written as their own change row, plus `plan_settings`,
-// which is resolved separately below.
+// that are never written as their own change row, `plan_settings`, which is
+// resolved separately below, and the Assumptions kinds, whose page has no
+// per-row editor to open (Ruling T4e-assumptions).
 const DETAILS_PAGE_BY_KIND: Partial<Record<TargetKind, DetailsEditorPage>> = {
   income: "income-expenses",
   expense: "income-expenses",
@@ -74,10 +77,34 @@ const DETAILS_PAGE_BY_KIND: Partial<Record<TargetKind, DetailsEditorPage>> = {
   gift: "family",
   external_beneficiary: "family",
   will: "wills",
-  client_deduction: "assumptions",
-  client_tax_adjustment: "assumptions",
-  withdrawal_strategy: "assumptions",
 };
+
+// Ruling F-I2: kinds whose Details editor is KNOWN to corrupt data inside a
+// scenario — it writes the base plan, or it opens on base values so a save
+// reverts the scenario's own change. The Solver explains instead of opening
+// (or linking to) that editor. Delete an entry once its Details-page bug is
+// fixed (vault `future-work/scenarios.md`).
+//   reinvestment — its form backfills from the base-only reinvestments GET
+//     (T4c-reinvestment).
+//   family_member — the page lists members from the base table (T4d-member).
+//   external_beneficiary — its inline form PATCHes the base row (T4d-extben).
+//   client_deduction / client_tax_adjustment / withdrawal_strategy — the page
+//     lists base-case rows whatever the scenario (T4e-assumptions).
+const UNSUPPORTED_KINDS: ReadonlySet<TargetKind> = new Set<TargetKind>([
+  "reinvestment",
+  "family_member",
+  "external_beneficiary",
+  "client_deduction",
+  "client_tax_adjustment",
+  "withdrawal_strategy",
+]);
+
+/** An `entity` edit is unsupported too (Ruling F-I3): every trust-dialog tab
+ *  saves the edit's payload as that tab's diff alone, wiping the rest. An
+ *  entity `add` is safe — the writer merges saves into the add payload. */
+function isUnsupported({ targetKind, opType }: ChangeEditorInput): boolean {
+  return UNSUPPORTED_KINDS.has(targetKind) || (targetKind === "entity" && opType === "edit");
+}
 
 // Ruling T4d-horizon: the Solver's Retirement tab (`SolverRowRetirementAges` /
 // `SolverRowLifeExpectancy` in live-solver-workspace.tsx, tab id "retirement")
@@ -110,6 +137,8 @@ const STRESS_FIELDS = new Set([
 
 export function resolveChangeEditor(change: ChangeEditorInput): ChangeEditorTarget {
   if (change.opType === "remove" || !change.enabled) return null;
+
+  if (isUnsupported(change)) return { surface: "unsupported" };
 
   if (change.targetKind === "plan_settings") {
     return resolvePlanSettingsTarget(change.payload);

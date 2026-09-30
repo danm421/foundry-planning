@@ -6,7 +6,8 @@
  * would open for that row, seeded with that row, and hand control back through
  * `onFocusClose` whenever that dialog goes away (cancel, save, delete) or never
  * could open — the row is missing, its kind isn't edited here, or the page
- * itself offers no editor for it.
+ * itself offers no editor for it ("unavailable") — or its editor is known to
+ * write the base plan inside a scenario ("unsupported": a household business).
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -182,11 +183,15 @@ function expectNoPageChrome() {
   expect(screen.queryByText("Net Worth")).toBeNull();
 }
 
-async function expectUnavailable(utils: { container: HTMLElement; onFocusClose: ReturnType<typeof vi.fn> }) {
+type Focused = { container: HTMLElement; onFocusClose: ReturnType<typeof vi.fn> };
+
+/** Nothing opened: `onFocusClose(outcome)` once, and nothing rendered. */
+async function expectNothingOpened(utils: Focused, outcome: "unavailable" | "unsupported") {
   await waitFor(() => expect(utils.onFocusClose).toHaveBeenCalledTimes(1));
-  expect(utils.onFocusClose).toHaveBeenCalledWith("unavailable");
+  expect(utils.onFocusClose).toHaveBeenCalledWith(outcome);
   expect(utils.container).toBeEmptyDOMElement();
 }
+const expectUnavailable = (utils: Focused) => expectNothingOpened(utils, "unavailable");
 
 beforeEach(() => {
   submit.mockReset();
@@ -267,12 +272,6 @@ describe("BalanceSheetView focus mode — unavailable", () => {
     await expectUnavailable(renderFocused({ kind: "income", id: "acct-taxable" }));
   });
 
-  // BusinessDialog's Details and Notes saves PUT the base account, bypassing the
-  // scenario — from the Solver that would overwrite the base plan.
-  it("a top-level household business → unavailable, never BusinessDialog", async () => {
-    await expectUnavailable(renderFocused({ kind: "account", id: "acct-biz" }));
-  });
-
   it("a life-insurance policy → unavailable, as the page sends it to Insurance", async () => {
     await expectUnavailable(renderFocused({ kind: "account", id: "acct-policy" }));
   });
@@ -283,6 +282,21 @@ describe("BalanceSheetView focus mode — unavailable", () => {
 
   it("without edit permission → unavailable, as the page offers no editor either", async () => {
     await expectUnavailable(renderFocused({ kind: "account", id: "acct-taxable" }, vi.fn(), "view"));
+  });
+});
+
+// Ruling F-I2: rows whose editor is known to write the base plan inside a
+// scenario report "unsupported" — the host shows no Details-page link, as the
+// page carries the same bug.
+describe("BalanceSheetView focus mode — unsupported", () => {
+  // BusinessDialog's Details and Notes saves PUT the base account, bypassing the
+  // scenario — from the Solver that would overwrite the base plan.
+  it("a top-level household business → unsupported, never BusinessDialog", async () => {
+    await expectNothingOpened(renderFocused({ kind: "account", id: "acct-biz" }), "unsupported");
+  });
+
+  it("without edit permission a household business is unavailable, like every row", async () => {
+    await expectUnavailable(renderFocused({ kind: "account", id: "acct-biz" }, vi.fn(), "view"));
   });
 });
 

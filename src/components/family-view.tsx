@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
-import { useFocusCloseOnce } from "@/hooks/use-focus-close-once";
+import { useFocusCloseOnce, type FocusCloseOutcome } from "@/hooks/use-focus-close-once";
 import { giftScenarioRemove } from "@/lib/gifts/gift-write";
 import { useClientAccess } from "./client-access-provider";
 import { inputClassName, selectBaseClassName } from "@/components/forms/input-styles";
@@ -294,11 +294,13 @@ export interface FamilyViewProps {
    * - `"unavailable"`: nothing was opened, because the page itself offers no
    *   editor for this row — it's gone, its kind isn't edited here, or the
    *   advisor has view-only access — or it's a family member (its dialog opens
-   *   on base-plan values, so a save would revert the scenario's change), an
-   *   external beneficiary or a recurring gift series (their editors can write
-   *   the base plan even inside a scenario).
+   *   on base-plan values, so a save would revert the scenario's change) or an
+   *   external beneficiary (its editor can write the base plan even inside a
+   *   scenario).
+   * - `"unsupported"`: nothing was opened, because the row is a recurring gift
+   *   series, whose editor can write the base plan even inside a scenario.
    */
-  onFocusClose?: (outcome?: "unavailable") => void;
+  onFocusClose?: (outcome?: FocusCloseOutcome) => void;
 }
 
 const RELATIONSHIP_LABELS: Record<Relationship, string> = {
@@ -381,12 +383,12 @@ type FocusTarget =
   | { kind: "entity"; row: Entity }
   | { kind: "gift"; row: Gift };
 
-/** The row the page's own click would open for `focus`, or null when the page
- *  offers no editor for it. */
+/** The row the page's own click would open for `focus`, null when the page
+ *  offers no editor for it, or "unsupported" for a gift series (see below). */
 function findFocusRow(
   focus: EditorFocus,
-  rows: { clientId: string; entities: Entity[]; gifts: Gift[] },
-): FocusTarget | null {
+  rows: { clientId: string; entities: Entity[]; gifts: Gift[]; giftSeries: GiftSeriesLite[] },
+): FocusTarget | "unsupported" | null {
   const byId = <T extends { id: string }>(list: T[]) => list.find((r) => r.id === focus.id) ?? null;
   switch (focus.kind) {
     // The profile dialog. (Horizon and retirement-age changes open the Solver's
@@ -405,10 +407,12 @@ function findFocusRow(
     // One-time gifts only. A series a change points at is always that `gift`
     // change's overlay row (the scenario's own series never becomes a change),
     // and the series dialog PATCHes/DELETEs `gift_series` by id alone — when
-    // the overlay re-uses a base series' id, that rewrites the base plan.
+    // the overlay re-uses a base series' id, that rewrites the base plan
+    // (Rulings T4d-series, F-I2).
     case "gift": {
       const row = byId(rows.gifts);
-      return row ? { kind: "gift", row } : null;
+      if (row) return { kind: "gift", row };
+      return byId(rows.giftSeries) ? "unsupported" : null;
     }
     // Its inline row form PATCHes the base `external_beneficiaries` row with a
     // bare fetch, so a save inside a scenario would rewrite the base plan.
@@ -452,17 +456,20 @@ export default function FamilyView({
 
   // Focus mode's row, snapshotted at mount. Null means the page offers no editor
   // for it: the row is gone, this view doesn't edit that kind, or there's no
-  // edit access. The dialog state below is seeded exactly as that
-  // row's own click sets it.
-  const [focusTarget] = useState(() =>
+  // edit access; "unsupported" means it does, but that editor would write the
+  // base plan. The dialog state below is seeded exactly as that row's own
+  // click sets it.
+  const [focusFound] = useState(() =>
     focus && canEdit
       ? findFocusRow(focus, {
           clientId,
           entities: initialEntities,
           gifts: initialGifts,
+          giftSeries: initialGiftSeries,
         })
       : null,
   );
+  const focusTarget = focusFound === "unsupported" ? null : focusFound;
 
   const [members, setMembers] = useState<FamilyMember[]>(initialMembers);
   const [entities, setEntities] = useState<Entity[]>(initialEntities);
@@ -795,9 +802,9 @@ export default function FamilyView({
   };
 
   // Focus mode hands control back once its dialog is gone — cancel, save or a
-  // confirmed delete — or, as "unavailable", when none ever opened.
+  // confirmed delete — or, with its reason, when none ever opened.
   const focusDialogOpen = editProfileOpen || entityDialogOpen || giftFocusOpen;
-  useFocusCloseOnce(focus, Boolean(focusTarget), focusDialogOpen, onFocusClose);
+  useFocusCloseOnce(focus, focusFound, focusDialogOpen, onFocusClose);
 
   if (focus) {
     return (

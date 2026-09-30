@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useFocusCloseOnce } from "@/hooks/use-focus-close-once";
+import { useFocusCloseOnce, type FocusCloseOutcome } from "@/hooks/use-focus-close-once";
 import GrowthSourceRadio from "./forms/growth-source-radio";
 import { DedicatedFundingPicker } from "./forms/dedicated-funding-picker";
 import { PaymentMonthSelect } from "./forms/payment-month-select";
@@ -263,7 +263,7 @@ export interface IncomeExpensesViewProps {
    *   editor for this row — it's gone, its kind isn't edited here, it's an
    *   entity- or business-owned flow, or the advisor has view-only access.
    */
-  onFocusClose?: (outcome?: "unavailable") => void;
+  onFocusClose?: (outcome?: FocusCloseOutcome) => void;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -2274,7 +2274,7 @@ export default function IncomeExpensesView({
   // cancel, save, a confirmed delete (which closes the editor directly, not
   // through its onOpenChange) — or, as "unavailable", when none ever opened.
   const focusDialogOpen = incomeDialog.open || expenseDialog.open || savingsDialog.open || ssFocusRow !== null;
-  useFocusCloseOnce(focus, Boolean(focusTarget), focusDialogOpen, onFocusClose);
+  useFocusCloseOnce(focus, focusTarget, focusDialogOpen, onFocusClose);
 
   // ── Render ────────────────────────────────────────────────────────────────
 
