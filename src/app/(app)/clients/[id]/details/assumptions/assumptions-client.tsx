@@ -98,7 +98,7 @@ interface ModelPortfolioOption {
   riskLevel: RiskLevel | null;
 }
 
-interface AssumptionsClientProps {
+export interface AssumptionsClientProps {
   clientId: string;
   /** The household's composite risk level (Task 9+), falling back to the
    *  legacy `clients.riskTolerance` column when no profile row exists yet --
