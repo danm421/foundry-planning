@@ -196,13 +196,29 @@ describe("resolveChangeEditor", () => {
       ).toEqual({ surface: "solver-tab", tab: "retirement" });
     });
 
-    it("a stress field mixed with an unrelated non-stress field -> null", () => {
+    // Ruling F-M2: the Solver folds every plan_settings edit into ONE row per
+    // scenario, so a stress lever often shares it with other settings.
+    it("a stress field mixed with a non-stress field -> the Stress tab", () => {
       expect(
         resolveChangeEditor(
           change({
             targetKind: "plan_settings",
             payload: {
               marketShock: { from: null, to: { year: 2028, drawdownPct: 0.3 } },
+              surplusSpendPct: { from: 0, to: 0.5 },
+            },
+          }),
+        ),
+      ).toEqual({ surface: "solver-tab", tab: "stress_test" });
+    });
+
+    it("non-stress fields only -> null", () => {
+      expect(
+        resolveChangeEditor(
+          change({
+            targetKind: "plan_settings",
+            payload: {
+              surplusSpendPct: { from: 0, to: 0.5 },
               filingStatus: { from: "single", to: "married" },
             },
           }),

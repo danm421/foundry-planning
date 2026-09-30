@@ -170,8 +170,10 @@ function payloadFields(payload: unknown): string[] | null {
 }
 
 // Ruling T4d-horizon: a payload containing planEndYear -> the Retirement tab,
-// ahead of the stress check. Otherwise: every field a stress field -> the
-// Stress tab; anything else (mixed, empty, or non-object) -> null.
+// ahead of the stress check. Otherwise ANY stress field -> the Stress tab
+// (Ruling F-M2: the Solver folds every plan_settings edit into one row per
+// scenario, so a stress lever often shares it with other settings); anything
+// else (no stress field, empty, or non-object) -> null.
 function resolvePlanSettingsTarget(payload: unknown): ChangeEditorTarget {
   const fields = payloadFields(payload);
   if (!fields || fields.length === 0) return null;
@@ -180,7 +182,7 @@ function resolvePlanSettingsTarget(payload: unknown): ChangeEditorTarget {
     return { surface: "solver-tab", tab: "retirement" };
   }
 
-  if (fields.every((field) => STRESS_FIELDS.has(field))) {
+  if (fields.some((field) => STRESS_FIELDS.has(field))) {
     return { surface: "solver-tab", tab: "stress_test" };
   }
 

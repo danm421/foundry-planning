@@ -71,6 +71,8 @@ export interface ChangesPanelProps {
   onOpenChange?: (change: ChangesPanelChange) => void;
   /** Per-row gate for `onOpenChange`. Absent → every row is openable. */
   canOpenChange?: (change: ChangesPanelChange) => boolean;
+  /** Per-row verb for the open button's accessible name. Absent → "Edit". */
+  openVerbFor?: (change: ChangesPanelChange) => "Edit" | "Open";
 }
 
 /**
@@ -101,6 +103,7 @@ export function ChangesPanel({
   variant = "rail",
   onOpenChange,
   canOpenChange,
+  openVerbFor,
 }: ChangesPanelProps) {
   const [editing, setEditing] = useState(false);
 
@@ -139,6 +142,7 @@ export function ChangesPanel({
             targetNames={targetNames}
             onOpenChange={onOpenChange}
             canOpenChange={canOpenChange}
+            openVerbFor={openVerbFor}
           />
           <UngroupedSection
             clientId={clientId}
@@ -147,6 +151,7 @@ export function ChangesPanel({
             targetNames={targetNames}
             onOpenChange={onOpenChange}
             canOpenChange={canOpenChange}
+            openVerbFor={openVerbFor}
           />
         </div>
       )}
@@ -199,6 +204,7 @@ function ToggleGroupsSection({
   targetNames,
   onOpenChange,
   canOpenChange,
+  openVerbFor,
 }: {
   clientId: string;
   groups: ToggleGroup[];
@@ -206,6 +212,7 @@ function ToggleGroupsSection({
   targetNames?: Record<string, string>;
   onOpenChange?: (change: ChangesPanelChange) => void;
   canOpenChange?: (change: ChangesPanelChange) => boolean;
+  openVerbFor?: (change: ChangesPanelChange) => "Edit" | "Open";
 }) {
   if (groups.length === 0) return null;
   // Sort by orderIndex asc for stable rendering (matches API GET order).
@@ -225,6 +232,7 @@ function ToggleGroupsSection({
           targetNames={targetNames}
           onOpenChange={onOpenChange}
           canOpenChange={canOpenChange}
+          openVerbFor={openVerbFor}
         />
       ))}
     </div>
@@ -238,6 +246,7 @@ function UngroupedSection({
   targetNames,
   onOpenChange,
   canOpenChange,
+  openVerbFor,
 }: {
   clientId: string;
   scenarioId: string;
@@ -245,6 +254,7 @@ function UngroupedSection({
   targetNames?: Record<string, string>;
   onOpenChange?: (change: ChangesPanelChange) => void;
   canOpenChange?: (change: ChangesPanelChange) => boolean;
+  openVerbFor?: (change: ChangesPanelChange) => "Edit" | "Open";
 }) {
   if (changes.length === 0) {
     return (
@@ -268,6 +278,7 @@ function UngroupedSection({
           targetName={targetNames?.[`${c.targetKind}:${c.targetId}`]}
           customLabel={c.label}
           onOpen={resolveOnOpen(c, onOpenChange, canOpenChange)}
+          openVerb={openVerbFor?.(c)}
         />
       ))}
     </div>

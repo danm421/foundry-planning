@@ -87,6 +87,8 @@ export function SolverChangesTab({ clientId, panel, onOpenSolverTab }: Props) {
         targetNames={panel.targetNames}
         onOpenChange={openChange}
         canOpenChange={(c) => canEdit && isApplied(c) && resolveChangeEditor(c) !== null}
+        // Ruling F-M4: a jump to a Solver tab opens a tab, not an editor.
+        openVerbFor={(c) => (resolveChangeEditor(c)?.surface === "solver-tab" ? "Open" : "Edit")}
       />
     </>
   );

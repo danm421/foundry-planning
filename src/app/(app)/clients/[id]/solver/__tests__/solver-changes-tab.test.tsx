@@ -227,25 +227,40 @@ describe("SolverChangesTab — which rows open", () => {
       ],
       { permission: "view" },
     );
-    expect(screen.queryByRole("button", { name: /^Edit / })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^(Edit|Open) / })).not.toBeInTheDocument();
   });
 });
 
+// Ruling F-M4: a row that jumps to a Solver tab is named "Open …" — it opens
+// a tab, not an editor.
 describe("SolverChangesTab — Solver-tab jumps", () => {
   it("a stress-test change switches to the Stress tab, no editor load", () => {
     const { onOpenSolverTab } = renderTab([
       makeChange({ opType: "edit", targetKind: "plan_settings", payload: { marketShock: { year: 2030 } } }),
     ]);
-    fireEvent.click(screen.getByRole("button", { name: /^Edit / }));
+    fireEvent.click(screen.getByRole("button", { name: /^Open / }));
     expect(onOpenSolverTab).toHaveBeenCalledWith("stress_test");
     expect(loadChangeEditorPropsMock).not.toHaveBeenCalled();
+  });
+
+  // Ruling F-M2: the Solver folds every plan_settings edit into one row.
+  it("a stress lever sharing its row with another setting still opens the Stress tab", () => {
+    const { onOpenSolverTab } = renderTab([
+      makeChange({
+        opType: "edit",
+        targetKind: "plan_settings",
+        payload: { marketShock: { year: 2030 }, surplusSpendPct: { from: 0, to: 0.5 } },
+      }),
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: /^Open / }));
+    expect(onOpenSolverTab).toHaveBeenCalledWith("stress_test");
   });
 
   it("a life-expectancy change switches to the Retirement tab", () => {
     const { onOpenSolverTab } = renderTab([
       makeChange({ opType: "edit", targetKind: "client", payload: { lifeExpectancy: 95, planEndAge: 95 } }),
     ]);
-    fireEvent.click(screen.getByRole("button", { name: /^Edit / }));
+    fireEvent.click(screen.getByRole("button", { name: /^Open / }));
     expect(onOpenSolverTab).toHaveBeenCalledWith("retirement");
     expect(loadChangeEditorPropsMock).not.toHaveBeenCalled();
   });
@@ -254,8 +269,18 @@ describe("SolverChangesTab — Solver-tab jumps", () => {
     const { onOpenSolverTab } = renderTab([
       makeChange({ opType: "edit", targetKind: "plan_settings", payload: { planEndYear: 2070 } }),
     ]);
-    fireEvent.click(screen.getByRole("button", { name: /^Edit / }));
+    fireEvent.click(screen.getByRole("button", { name: /^Open / }));
     expect(onOpenSolverTab).toHaveBeenCalledWith("retirement");
+  });
+
+  it("an editor row stays 'Edit …', an unsupported one too (its click explains)", () => {
+    renderTab([
+      makeChange(),
+      makeChange({ id: "c-2", targetKind: "reinvestment", opType: "edit", payload: { name: "Reinvest" } }),
+    ]);
+    expect(screen.getByRole("button", { name: "Edit Side income" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit Reinvest" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Open / })).not.toBeInTheDocument();
   });
 });
 

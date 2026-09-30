@@ -282,6 +282,35 @@ describe("ChangesPanel", () => {
       expect(screen.queryByRole("button", { name: "Edit Blocked" })).not.toBeInTheDocument();
     });
 
+    it("names each row's button with openVerbFor, in both sections", () => {
+      const ungrouped = makeChange({ id: "c-ungrouped", payload: { name: "Stress lever" } });
+      const grouped = makeChange({ id: "c-grouped", toggleGroupId: "g-1", payload: { name: "Grouped change" } });
+      render(
+        <ChangesPanel
+          clientId="c1"
+          scenarioId="s1"
+          scenarioName="Verbs"
+          changes={[ungrouped, grouped]}
+          toggleGroups={[
+            {
+              id: "g-1",
+              scenarioId: "s1",
+              name: "Roth conversions",
+              defaultOn: true,
+              requiresGroupId: null,
+              orderIndex: 0,
+            },
+          ] as ToggleGroup[]}
+          cascadeWarnings={[]}
+          onOpenChange={vi.fn()}
+          openVerbFor={() => "Open"}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: /^Roth conversions/ }));
+      expect(screen.getByRole("button", { name: "Open Stress lever" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Open Grouped change" })).toBeInTheDocument();
+    });
+
     it("forwards onOpenChange/canOpenChange to toggle-group-card leaf rows", () => {
       const onOpenChange = vi.fn();
       const grouped = makeChange({

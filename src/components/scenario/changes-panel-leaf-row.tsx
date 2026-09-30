@@ -50,6 +50,9 @@ export interface ChangesPanelLeafRowProps {
    * gated out by `canOpenChange` upstream) → the title stays a static div.
    */
   onOpen?: () => void;
+  /** The open button's accessible verb: "Edit" (default) opens an editor,
+   *  "Open" jumps somewhere else (e.g. a Solver tab). */
+  openVerb?: "Edit" | "Open";
 }
 
 export function ChangesPanelLeafRow({
@@ -60,6 +63,7 @@ export function ChangesPanelLeafRow({
   targetName,
   customLabel,
   onOpen,
+  openVerb = "Edit",
 }: ChangesPanelLeafRowProps) {
   const router = useRouter();
   const op = OP_ICON[change.opType];
@@ -146,7 +150,7 @@ export function ChangesPanelLeafRow({
               <button
                 type="button"
                 onClick={onOpen}
-                aria-label={`Edit ${labelFor(change, targetName, customLabel)}`}
+                aria-label={`${openVerb} ${labelFor(change, targetName, customLabel)}`}
                 className="text-sm text-ink truncate w-full text-left hover:text-accent-ink hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent rounded"
               >
                 {labelFor(change, targetName, customLabel)}

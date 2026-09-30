@@ -34,6 +34,8 @@ export interface ToggleGroupCardProps {
   onOpenChange?: (change: ChangesPanelChange) => void;
   /** See ChangesPanelProps.canOpenChange. Forwarded to this card's own leaf rows. */
   canOpenChange?: (change: ChangesPanelChange) => boolean;
+  /** See ChangesPanelProps.openVerbFor. Forwarded to this card's own leaf rows. */
+  openVerbFor?: (change: ChangesPanelChange) => "Edit" | "Open";
 }
 
 export function ToggleGroupCard({
@@ -44,6 +46,7 @@ export function ToggleGroupCard({
   targetNames,
   onOpenChange,
   canOpenChange,
+  openVerbFor,
 }: ToggleGroupCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [defaultOn, setDefaultOn] = useState(group.defaultOn);
@@ -219,6 +222,7 @@ export function ToggleGroupCard({
                 targetName={targetNames?.[`${c.targetKind}:${c.targetId}`]}
                 customLabel={c.label}
                 onOpen={resolveOnOpen(c, onOpenChange, canOpenChange)}
+                openVerb={openVerbFor?.(c)}
               />
             ))
           )}

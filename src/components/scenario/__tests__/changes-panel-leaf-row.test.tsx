@@ -347,6 +347,21 @@ describe("ChangesPanelLeafRow", () => {
       expect(onOpen).toHaveBeenCalledTimes(1);
     });
 
+    it("names the button 'Open <title>' when openVerb is 'Open' (a jump to another tab, not an editor)", () => {
+      render(
+        <ChangesPanelLeafRow
+          clientId="c1"
+          scenarioId="s1"
+          enabled={true}
+          change={makeChange({ payload: { name: "Consulting income" } })}
+          onOpen={vi.fn()}
+          openVerb="Open"
+        />,
+      );
+      expect(screen.getByRole("button", { name: "Open Consulting income" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Edit Consulting income" })).not.toBeInTheDocument();
+    });
+
     it("keeps the rename editor swap-in unaffected when onOpen is provided", () => {
       const onOpen = vi.fn();
       render(
