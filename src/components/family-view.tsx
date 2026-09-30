@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
+import { useFocusCloseOnce } from "@/hooks/use-focus-close-once";
 import { giftScenarioRemove } from "@/lib/gifts/gift-write";
 import { useClientAccess } from "./client-access-provider";
 import { inputClassName, selectBaseClassName } from "@/components/forms/input-styles";
@@ -796,13 +797,7 @@ export default function FamilyView({
   // Focus mode hands control back once its dialog is gone — cancel, save or a
   // confirmed delete — or, as "unavailable", when none ever opened.
   const focusDialogOpen = editProfileOpen || entityDialogOpen || giftFocusOpen;
-  const focusClosedRef = useRef(false);
-  useEffect(() => {
-    if (!focus || focusDialogOpen || focusClosedRef.current) return;
-    focusClosedRef.current = true;
-    if (focusTarget) onFocusClose?.();
-    else onFocusClose?.("unavailable");
-  }, [focus, focusTarget, focusDialogOpen, onFocusClose]);
+  useFocusCloseOnce(focus, Boolean(focusTarget), focusDialogOpen, onFocusClose);
 
   if (focus) {
     return (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useFocusCloseOnce } from "@/hooks/use-focus-close-once";
 import GrowthSourceRadio from "./forms/growth-source-radio";
 import { DedicatedFundingPicker } from "./forms/dedicated-funding-picker";
 import { PaymentMonthSelect } from "./forms/payment-month-select";
@@ -2273,13 +2274,7 @@ export default function IncomeExpensesView({
   // cancel, save, a confirmed delete (which closes the editor directly, not
   // through its onOpenChange) — or, as "unavailable", when none ever opened.
   const focusDialogOpen = incomeDialog.open || expenseDialog.open || savingsDialog.open || ssFocusRow !== null;
-  const focusClosedRef = useRef(false);
-  useEffect(() => {
-    if (!focus || focusDialogOpen || focusClosedRef.current) return;
-    focusClosedRef.current = true;
-    if (focusTarget) onFocusClose?.();
-    else onFocusClose?.("unavailable");
-  }, [focus, focusTarget, focusDialogOpen, onFocusClose]);
+  useFocusCloseOnce(focus, Boolean(focusTarget), focusDialogOpen, onFocusClose);
 
   // ── Render ────────────────────────────────────────────────────────────────
 

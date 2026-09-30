@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
+import { useFocusCloseOnce } from "@/hooks/use-focus-close-once";
 import AddAccountDialog from "./add-account-dialog";
 import BusinessDialog from "./business-dialog";
 import type { BusinessAccount } from "./business-dialog/types";
@@ -1304,13 +1305,7 @@ export default function BalanceSheetView({
   // cancel, save, a confirmed delete (which closes the editor directly, not
   // through its onOpenChange) — or, as "unavailable", when none ever opened.
   const focusDialogOpen = editingAccount !== null || editingLiability !== null;
-  const focusClosedRef = useRef(false);
-  useEffect(() => {
-    if (!focus || focusDialogOpen || focusClosedRef.current) return;
-    focusClosedRef.current = true;
-    if (focusTarget) onFocusClose?.();
-    else onFocusClose?.("unavailable");
-  }, [focus, focusTarget, focusDialogOpen, onFocusClose]);
+  useFocusCloseOnce(focus, Boolean(focusTarget), focusDialogOpen, onFocusClose);
 
   if (focus) return dialogsNode;
 

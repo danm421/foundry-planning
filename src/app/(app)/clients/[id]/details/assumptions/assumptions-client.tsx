@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
+import { useFocusCloseOnce } from "@/hooks/use-focus-close-once";
 import { ASSUMPTIONS_TABS, assumptionsTabQuery, resolveAssumptionsTab } from "./tabs";
 import AssumptionsSubtabs from "@/components/assumptions-subtabs";
 import TaxRatesForm from "@/components/forms/tax-rates-form";
@@ -168,12 +168,7 @@ export default function AssumptionsClient({
 
   // Focus mode opens nothing here (see `onFocusClose`) — hand control back
   // at once, and only once.
-  const focusClosedRef = useRef(false);
-  useEffect(() => {
-    if (!focus || focusClosedRef.current) return;
-    focusClosedRef.current = true;
-    onFocusClose?.("unavailable");
-  }, [focus, onFocusClose]);
+  useFocusCloseOnce(focus, false, false, onFocusClose);
 
   if (focus) return null;
 

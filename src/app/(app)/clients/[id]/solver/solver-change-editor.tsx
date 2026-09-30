@@ -38,6 +38,11 @@ const TechniquesView = dynamic(() => import("@/components/techniques-view"), {
 const FamilyView = dynamic(() => import("@/components/family-view"), { loading: LoadingLine });
 const WillsPanel = dynamic(() => import("@/components/wills-panel"), { loading: LoadingLine });
 
+// Shared by the "Try again" button and the fallback Details-page link below —
+// both are a `HostStrip`'s one inline action.
+const HOST_STRIP_ACTION_CLASS =
+  "font-medium text-ink hover:text-accent-ink hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent rounded";
+
 /** A change the resolver sends to a Details page. */
 export type DetailsEditorTarget = Extract<ChangeEditorTarget, { surface: "details" }>;
 
@@ -114,7 +119,7 @@ export function SolverChangeEditor({ clientId, scenarioId, target, onDone }: Pro
               setState({ status: "loading" });
               setAttempt((n) => n + 1);
             }}
-            className="font-medium text-ink hover:text-accent-ink hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent rounded"
+            className={HOST_STRIP_ACTION_CLASS}
           >
             Try again
           </button>
@@ -126,7 +131,7 @@ export function SolverChangeEditor({ clientId, scenarioId, target, onDone }: Pro
           <span>Not editable from the Solver.</span>
           <Link
             href={state.href}
-            className="font-medium text-ink hover:text-accent-ink hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent rounded"
+            className={HOST_STRIP_ACTION_CLASS}
           >
             Edit this on the Details page
           </Link>

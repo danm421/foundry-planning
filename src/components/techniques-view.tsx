@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useScenarioState } from "@/hooks/use-scenario-state";
+import { useFocusCloseOnce } from "@/hooks/use-focus-close-once";
 import { useClientAccess } from "@/components/client-access-provider";
 import AddTransferForm from "./forms/add-transfer-form";
 import AddReinvestmentForm, { type ReinvestmentInitialData } from "./forms/add-reinvestment-form";
@@ -1282,13 +1283,7 @@ export default function TechniquesView({
     editingTransfer !== null ||
     editingRelocation !== null ||
     editingTransaction !== null;
-  const focusClosedRef = useRef(false);
-  useEffect(() => {
-    if (!focus || focusFormOpen || focusClosedRef.current) return;
-    focusClosedRef.current = true;
-    if (focusTarget) onFocusClose?.();
-    else onFocusClose?.("unavailable");
-  }, [focus, focusTarget, focusFormOpen, onFocusClose]);
+  useFocusCloseOnce(focus, Boolean(focusTarget), focusFormOpen, onFocusClose);
 
   if (focus) return formsNode;
 

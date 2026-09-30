@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import BequestDialog, { type BequestDraft } from "@/components/bequest-dialog";
 import DialogShell from "@/components/dialog-shell";
 import WillResiduarySection from "@/components/forms/will-residuary-section";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
+import { useFocusCloseOnce } from "@/hooks/use-focus-close-once";
 import { useClientAccess } from "@/components/client-access-provider";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import type { EditorFocus } from "@/lib/scenario/change-editor-target";
@@ -506,13 +507,7 @@ export default function WillsPanel(props: WillsPanelProps) {
 
   // Focus mode hands control back once its dialog is closed, or, as
   // "unavailable", when it never opened.
-  const focusClosedRef = useRef(false);
-  useEffect(() => {
-    if (!focus || focusOpen || focusClosedRef.current) return;
-    focusClosedRef.current = true;
-    if (focusWill) onFocusClose?.();
-    else onFocusClose?.("unavailable");
-  }, [focus, focusWill, focusOpen, onFocusClose]);
+  useFocusCloseOnce(focus, Boolean(focusWill), focusOpen, onFocusClose);
 
   // Focus mode shows only the focused will's grantor.
   const grantors: readonly WillGrantor[] = focusWill ? [focusWill.grantor] : ["client", "spouse"];

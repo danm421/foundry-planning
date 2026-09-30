@@ -219,8 +219,10 @@ afterEach(() => {
 
 describe("FamilyView focus mode — which dialog opens", () => {
   it("client → the Edit Client dialog, pre-filled with the effective client, and nothing else", () => {
-    // Ruling P3: a plan_settings change carrying planEndYear arrives as the
-    // client, since life expectancy is edited on this dialog.
+    // Checks Life Expectancy pre-fills too, not just firstName — confirming
+    // the dialog is seeded from the full client record. (A plan_settings
+    // change carrying planEndYear no longer arrives here as the client focus:
+    // Ruling T4d-horizon routes it to the Solver's Retirement tab instead.)
     renderFocused({ kind: "client", id: CLIENT_ID });
 
     const client = dialog("Edit Client");

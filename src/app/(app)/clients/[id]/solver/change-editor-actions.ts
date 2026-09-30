@@ -68,15 +68,15 @@ export async function loadChangeEditorProps(
 
   switch (input.page) {
     case "income-expenses":
-      return { page: input.page, props: okProps(await loadIncomeExpensesViewProps(clientId, scenarioId)) };
+      return { page: input.page, props: okProps(await loadIncomeExpensesViewProps(input.clientId, input.scenarioId)) };
     case "net-worth":
-      return { page: input.page, props: okProps(await loadNetWorthViewProps(clientId, scenarioId)) };
+      return { page: input.page, props: okProps(await loadNetWorthViewProps(input.clientId, input.scenarioId)) };
     case "techniques":
-      return { page: input.page, props: okProps(await loadTechniquesViewProps(clientId, scenarioId)) };
+      return { page: input.page, props: okProps(await loadTechniquesViewProps(input.clientId, input.scenarioId)) };
     case "family":
-      return { page: input.page, props: (await loadFamilyViewProps(clientId, scenarioId)).props };
+      return { page: input.page, props: (await loadFamilyViewProps(input.clientId, input.scenarioId)).props };
     case "wills":
-      return { page: input.page, props: okProps(await loadWillsViewProps(clientId, scenarioId)) };
+      return { page: input.page, props: okProps(await loadWillsViewProps(input.clientId, input.scenarioId)) };
   }
 }
 
