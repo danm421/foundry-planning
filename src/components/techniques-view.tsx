@@ -147,7 +147,7 @@ export interface RelocationRow {
   destinationState: USPSStateCode;
 }
 
-interface TechniquesViewProps {
+export interface TechniquesViewProps {
   clientId: string;
   transfers: TransferRow[];
   reinvestments: ReinvestmentRow[];
