@@ -291,10 +291,11 @@ export interface FamilyViewProps {
    * - No argument: the dialog closed normally (cancel, close, save, or a
    *   confirmed delete).
    * - `"unavailable"`: nothing was opened, because the page itself offers no
-   *   editor for this row — it's gone, the page lists no row for it, its kind
-   *   isn't edited here, or the advisor has view-only access — or it's an
-   *   external beneficiary or a recurring gift series, whose editors can write
-   *   the base plan even inside a scenario.
+   *   editor for this row — it's gone, its kind isn't edited here, or the
+   *   advisor has view-only access — or it's a family member (its dialog opens
+   *   on base-plan values, so a save would revert the scenario's change), an
+   *   external beneficiary or a recurring gift series (their editors can write
+   *   the base plan even inside a scenario).
    */
   onFocusClose?: (outcome?: "unavailable") => void;
 }
@@ -319,10 +320,6 @@ const RELATIONSHIP_LABELS: Record<Relationship, string> = {
 // Task 11's dependent-eligible relationship set — the row select only makes
 // sense for members who could ever be claimed as a dependent.
 const DEPENDENT_ELIGIBLE_RELATIONSHIPS = new Set<Relationship>(["child", "stepchild"]);
-
-/** The relationships the Family Members table lists, in order. A member with
- *  any other relationship has no row on the page. */
-const LISTED_RELATIONSHIPS: Relationship[] = ["child", "stepchild", "grandchild", "parent", "sibling", "other"];
 
 export const ENTITY_LABELS: Record<EntityType, string> = {
   trust: "Trust",
@@ -380,7 +377,6 @@ export function TrashIcon() {
 /** The focused row, tagged with the dialog the page opens for it. */
 type FocusTarget =
   | { kind: "client" }
-  | { kind: "family_member"; row: FamilyMember }
   | { kind: "entity"; row: Entity }
   | { kind: "gift"; row: Gift };
 
@@ -388,18 +384,19 @@ type FocusTarget =
  *  offers no editor for it. */
 function findFocusRow(
   focus: EditorFocus,
-  rows: { clientId: string; members: FamilyMember[]; entities: Entity[]; gifts: Gift[] },
+  rows: { clientId: string; entities: Entity[]; gifts: Gift[] },
 ): FocusTarget | null {
   const byId = <T extends { id: string }>(list: T[]) => list.find((r) => r.id === focus.id) ?? null;
   switch (focus.kind) {
-    // The profile dialog. Ruling P3 routes a plan_settings planEndYear change
-    // here too, since life expectancy is edited on it.
+    // The profile dialog. (Horizon and retirement-age changes open the Solver's
+    // Retirement tab instead — ruling T4d-horizon.)
     case "client":
       return focus.id === rows.clientId ? { kind: "client" } : null;
-    case "family_member": {
-      const row = byId(rows.members);
-      return row && LISTED_RELATIONSHIPS.includes(row.relationship) ? { kind: "family_member", row } : null;
-    }
+    // The page lists members from the base `family_members` table, so the
+    // dialog would open on base values and its save would revert the scenario's
+    // own edit — ruling T4d-member.
+    case "family_member":
+      return null;
     case "entity": {
       const row = byId(rows.entities);
       return row ? { kind: "entity", row } : null;
@@ -453,14 +450,13 @@ export default function FamilyView({
   const canEdit = permission === "edit";
 
   // Focus mode's row, snapshotted at mount. Null means the page offers no editor
-  // for it: the row is gone or unlisted, this view doesn't edit that kind, or
-  // there's no edit access. The dialog state below is seeded exactly as that
+  // for it: the row is gone, this view doesn't edit that kind, or there's no
+  // edit access. The dialog state below is seeded exactly as that
   // row's own click sets it.
   const [focusTarget] = useState(() =>
     focus && canEdit
       ? findFocusRow(focus, {
           clientId,
-          members: initialMembers,
           entities: initialEntities,
           gifts: initialGifts,
         })
@@ -475,10 +471,8 @@ export default function FamilyView({
   const [giftsState, setGiftsState] = useState<Gift[]>(initialGifts);
   const [giftSeriesState, setGiftSeriesState] = useState<GiftSeriesLite[]>(initialGiftSeries);
 
-  const [memberDialogOpen, setMemberDialogOpen] = useState(() => focusTarget?.kind === "family_member");
-  const [editingMember, setEditingMember] = useState<FamilyMember | undefined>(() =>
-    focusTarget?.kind === "family_member" ? focusTarget.row : undefined,
-  );
+  const [memberDialogOpen, setMemberDialogOpen] = useState(false);
+  const [editingMember, setEditingMember] = useState<FamilyMember | undefined>();
   const [deletingMember, setDeletingMember] = useState<FamilyMember | null>(null);
   const [membersEdit, setMembersEdit] = useState(false);
   const [claimedAsDependentError, setClaimedAsDependentError] = useState<string | null>(null);
@@ -801,7 +795,7 @@ export default function FamilyView({
 
   // Focus mode hands control back once its dialog is gone — cancel, save or a
   // confirmed delete — or, as "unavailable", when none ever opened.
-  const focusDialogOpen = editProfileOpen || memberDialogOpen || entityDialogOpen || giftFocusOpen;
+  const focusDialogOpen = editProfileOpen || entityDialogOpen || giftFocusOpen;
   const focusClosedRef = useRef(false);
   useEffect(() => {
     if (!focus || focusDialogOpen || focusClosedRef.current) return;
@@ -934,7 +928,7 @@ export default function FamilyView({
                 </tr>
               </thead>
               <tbody className="divide-y divide-hair">
-                {LISTED_RELATIONSHIPS.flatMap((rel) =>
+                {(["child", "stepchild", "grandchild", "parent", "sibling", "other"] as Relationship[]).flatMap((rel) =>
                   byRel[rel].map((m) => (
                     <tr
                       key={m.id}

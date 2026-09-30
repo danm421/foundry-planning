@@ -5,8 +5,9 @@
  * With `focus` set the view must render only the dialog the page itself opens
  * for that row, seeded with that row, and hand control back through
  * `onFocusClose` whenever that dialog goes away (cancel, save) or never could
- * open — the row is missing, the page lists no row to click, its kind isn't
- * edited here, the advisor has view-only access, or it's an external
+ * open — the row is missing, its kind isn't edited here, the advisor has
+ * view-only access, or it's a family member (its dialog is seeded from the
+ * base plan, so a save would revert the scenario's change), an external
  * beneficiary or a gift series (their editors can write the base plan even
  * inside a scenario).
  *
@@ -132,18 +133,6 @@ const PROPS: FamilyViewProps = {
       notes: null,
       claimedAsDependent: "auto",
     },
-    // The table lists only child/stepchild/grandchild/parent/sibling/other, so
-    // the page has no row to click for a cousin.
-    {
-      id: "fm-cousin",
-      firstName: "Carl",
-      lastName: "Cousin",
-      relationship: "cousin",
-      role: "other",
-      dateOfBirth: null,
-      notes: null,
-      claimedAsDependent: "auto",
-    },
   ],
   initialEntities: [TRUST],
   initialExternalBeneficiaries: [{ id: "ext-1", name: "Red Cross", kind: "charity", notes: null }],
@@ -240,14 +229,6 @@ describe("FamilyView focus mode — which dialog opens", () => {
     expectNoPageChrome();
   });
 
-  it("family_member → the Edit Family Member dialog, pre-filled with that member, and nothing else", () => {
-    renderFocused({ kind: "family_member", id: "fm-child" });
-
-    expect(screen.getByRole("dialog", { name: "Edit Family Member" })).toBeTruthy();
-    expect(inputValue("fm-first")).toBe("Bobby");
-    expectNoPageChrome();
-  });
-
   it("entity → the Edit Trust dialog, pre-filled with that trust, and nothing else", () => {
     renderFocused({ kind: "entity", id: "ent-ilit" });
 
@@ -266,9 +247,9 @@ describe("FamilyView focus mode — which dialog opens", () => {
   });
 
   it("does not load the page's revocable-trust list, which only its table shows", async () => {
-    renderFocused({ kind: "family_member", id: "fm-child" });
+    renderFocused({ kind: "entity", id: "ent-ilit" });
 
-    await waitFor(() => expect(screen.getByRole("dialog", { name: "Edit Family Member" })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("dialog", { name: "Edit Trust" })).toBeTruthy());
     expect(fetchMock.mock.calls.some(([url]) => url.includes("revocable-trusts"))).toBe(false);
   });
 });
@@ -279,14 +260,14 @@ describe("FamilyView focus mode — which dialog opens", () => {
 
 describe("FamilyView focus mode — unavailable", () => {
   it("a row that isn't there → onFocusClose(\"unavailable\") once, nothing rendered", async () => {
-    const utils = renderFocused({ kind: "family_member", id: "gone" });
+    const utils = renderFocused({ kind: "entity", id: "gone" });
 
     await expectUnavailable(utils);
 
     // A parent re-render with fresh inline props must not close it again.
     utils.rerender(
       <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
-        <FamilyView {...PROPS} focus={{ kind: "family_member", id: "gone" }} onFocusClose={utils.onFocusClose} />
+        <FamilyView {...PROPS} focus={{ kind: "entity", id: "gone" }} onFocusClose={utils.onFocusClose} />
       </ClientAccessProvider>,
     );
     expect(utils.onFocusClose).toHaveBeenCalledTimes(1);
@@ -304,8 +285,10 @@ describe("FamilyView focus mode — unavailable", () => {
     await expectUnavailable(renderFocused({ kind: "client", id: "someone-else" }));
   });
 
-  it("a family member the table doesn't list (a cousin) → unavailable, as the page has no row to click", async () => {
-    await expectUnavailable(renderFocused({ kind: "family_member", id: "fm-cousin" }));
+  // Ruling T4d-member: the page lists members from the base table, so the
+  // dialog opens on base values and a save would revert the scenario's edit.
+  it("a family member → unavailable, even though the row is there", async () => {
+    await expectUnavailable(renderFocused({ kind: "family_member", id: "fm-child" }));
   });
 
   // Its inline row form PATCHes the base table with a bare fetch, so a save
@@ -334,7 +317,6 @@ describe("FamilyView focus mode — closing", () => {
   // A normal close carries no outcome at all — not even an explicit undefined.
   it.each([
     { focus: { kind: "client" as const, id: CLIENT_ID }, title: "Edit Client" },
-    { focus: { kind: "family_member" as const, id: "fm-child" }, title: "Edit Family Member" },
     { focus: { kind: "entity" as const, id: "ent-ilit" }, title: "Edit Trust" },
     { focus: { kind: "gift" as const, id: "gift-1" }, title: "Edit gift" },
   ])("cancelling the $title dialog ($focus.id) calls onFocusClose()", ({ focus, title }) => {
@@ -347,13 +329,13 @@ describe("FamilyView focus mode — closing", () => {
     expect(onFocusClose).toHaveBeenCalledWith();
   });
 
-  it("asking to delete a family member opens the confirm and keeps focus open", () => {
-    const { onFocusClose } = renderFocused({ kind: "family_member", id: "fm-child" });
+  it("asking to delete a trust opens the confirm and keeps focus open", () => {
+    const { onFocusClose } = renderFocused({ kind: "entity", id: "ent-ilit" });
 
-    fireEvent.click(dialog("Edit Family Member").getByRole("button", { name: "Delete…" }));
+    fireEvent.click(dialog("Edit Trust").getByRole("button", { name: "Delete" }));
 
-    expect(screen.getByRole("dialog", { name: "Delete Family Member" })).toBeTruthy();
-    expect(screen.getByRole("dialog", { name: "Edit Family Member" })).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "Delete Trust" })).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "Edit Trust" })).toBeTruthy();
     expect(onFocusClose).not.toHaveBeenCalled();
   });
 
@@ -366,18 +348,6 @@ describe("FamilyView focus mode — closing", () => {
     expect(onFocusClose).toHaveBeenCalledWith();
     expect(scenarioChangeBodies()).toEqual([
       expect.objectContaining({ op: "edit", targetKind: "client", targetId: CLIENT_ID }),
-    ]);
-  });
-
-  it("a successful family-member save writes a scenario edit, then calls onFocusClose()", async () => {
-    const { onFocusClose } = renderFocused({ kind: "family_member", id: "fm-child" });
-
-    fireEvent.submit(document.getElementById("family-member-dialog-form") as HTMLFormElement);
-
-    await waitFor(() => expect(onFocusClose).toHaveBeenCalledTimes(1));
-    expect(onFocusClose).toHaveBeenCalledWith();
-    expect(scenarioChangeBodies()).toEqual([
-      expect.objectContaining({ op: "edit", targetKind: "family_member", targetId: "fm-child" }),
     ]);
   });
 
