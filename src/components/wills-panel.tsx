@@ -121,7 +121,7 @@ export interface WillsPanelEntity {
   value?: number;
 }
 
-interface WillsPanelProps {
+export interface WillsPanelProps {
   clientId: string;
   primary: WillsPanelPrimary;
   accounts: WillsPanelAccount[];
