@@ -132,12 +132,9 @@ const DETAILS_PAGE_BY_KIND: Partial<Record<TargetKind, DetailsEditorPage>> = {
 // reverts the scenario's own change. The Solver explains instead of opening
 // (or linking to) that editor. Delete an entry once its Details-page bug is
 // fixed (vault `future-work/scenarios.md`).
-//   reinvestment — its form backfills from the base-only reinvestments GET
-//     (T4c-reinvestment).
 //   family_member — the page lists members from the base table (T4d-member).
 //   external_beneficiary — its inline form PATCHes the base row (T4d-extben).
 const UNSUPPORTED_KINDS: ReadonlySet<TargetKind> = new Set<TargetKind>([
-  "reinvestment",
   "family_member",
   "external_beneficiary",
 ]);

@@ -6,8 +6,7 @@
  * button would open for that row, seeded with that row, and hand control back
  * through `onFocusClose` whenever that form goes away (cancel, save) or never
  * could open — the row is missing, its kind isn't edited here, the advisor
- * has view-only access, or it's a reinvestment (its form hydrates from the
- * base plan, so a save would overwrite the scenario).
+ * has view-only access.
  */
 
 import { StrictMode } from "react";
@@ -121,6 +120,13 @@ const PROPS: TechniquesViewProps = {
       yearRef: null,
       targetType: "model_portfolio",
       realizeTaxesOnSwitch: false,
+      // This row's own detail fields, as the loader supplies them.
+      modelPortfolioId: "mp-1",
+      customGrowthRate: null,
+      customPctOrdinaryIncome: null,
+      customPctLtCapitalGains: null,
+      customPctQualifiedDividends: null,
+      customPctTaxExempt: null,
     },
   ],
   relocations: [{ id: "rl-1", name: "Move to Florida", year: 2033, destinationState: "FL" }],
@@ -217,6 +223,15 @@ describe("TechniquesView focus mode — which form opens", () => {
     expectNoPageChrome();
   });
 
+  it("reinvestment → the reinvestment form, pre-filled with that row, and nothing else", () => {
+    renderFocused({ kind: "reinvestment", id: "ri-1" });
+
+    expect(screen.getByRole("dialog", { name: "Edit Reinvestment" })).toBeTruthy();
+    expect(inputValue("reinvestment-name")).toBe("Glide Path Switch");
+    expect((screen.getByLabelText(/model portfolio/i) as HTMLSelectElement).value).toBe("mp-1");
+    expectNoPageChrome();
+  });
+
   it("relocation → the relocation form, pre-filled with that row, and nothing else", () => {
     renderFocused({ kind: "relocation", id: "rl-1" });
 
@@ -271,10 +286,8 @@ describe("TechniquesView focus mode — unavailable", () => {
     await expectUnavailable(renderFocused({ kind: "transfer", id: "rc-1" }));
   });
 
-  // The form backfills portfolio, rates and groups from a base-only GET, so
-  // saving inside a scenario would write base values over the scenario's.
-  it("a reinvestment → unavailable, even though the row is there", async () => {
-    await expectUnavailable(renderFocused({ kind: "reinvestment", id: "ri-1" }));
+  it("a reinvestment id that isn't there → unavailable", async () => {
+    await expectUnavailable(renderFocused({ kind: "reinvestment", id: "gone" }));
   });
 
   it("without edit permission → unavailable, as the page offers no Edit button either", async () => {
@@ -378,6 +391,7 @@ describe("TechniquesView focus mode — closing", () => {
 describe("TechniquesView focus mode — create and delete intents", () => {
   it.each([
     { kind: "roth_conversion" as const, title: "New Roth Conversion" },
+    { kind: "reinvestment" as const, title: "Add Reinvestment" },
     { kind: "relocation" as const, title: "Add Relocation" },
     { kind: "asset_transaction" as const, title: "Add Asset Transactions" },
   ])("create $kind opens the empty form alone, and cancel closes", ({ kind, title }) => {
@@ -432,6 +446,13 @@ describe("TechniquesView focus mode — create and delete intents", () => {
       await expectAddedAndClosed(onFocusClose, "roth_conversion");
     });
 
+    it("reinvestment", async () => {
+      const { onFocusClose } = renderFocused({ intent: "create", kind: "reinvestment" });
+      fireEvent.click(screen.getByRole("button", { name: /Joint Brokerage/i }));
+      fireEvent.submit(document.getElementById("reinvestment-form") as HTMLFormElement);
+      await expectAddedAndClosed(onFocusClose, "reinvestment");
+    });
+
     it("transfer", async () => {
       const { onFocusClose } = renderFocused({ intent: "create", kind: "transfer" });
       fireEvent.submit(screen.getByRole("heading", { name: "Add Transfer" }).closest("form") as HTMLFormElement);
@@ -445,14 +466,6 @@ describe("TechniquesView focus mode — create and delete intents", () => {
     });
   });
 
-  // Its form backfills from a base-only GET until the reinvestment task lands.
-  it("create reinvestment → unsupported, nothing rendered", async () => {
-    const utils = renderFocused({ intent: "create", kind: "reinvestment" });
-    await waitFor(() => expect(utils.onFocusClose).toHaveBeenCalledTimes(1));
-    expect(utils.onFocusClose).toHaveBeenCalledWith("unsupported");
-    expect(utils.container).toBeEmptyDOMElement();
-  });
-
   it("create for a kind this view doesn't create → unavailable", async () => {
     await expectUnavailable(renderFocused({ intent: "create", kind: "account" }));
   });
@@ -460,6 +473,7 @@ describe("TechniquesView focus mode — create and delete intents", () => {
   it.each([
     { kind: "roth_conversion" as const, id: "rc-1", url: "/api/clients/c-1/roth-conversions?rothConversionId=rc-1" },
     { kind: "transfer" as const, id: "tr-1", url: "/api/clients/c-1/transfers?transferId=tr-1" },
+    { kind: "reinvestment" as const, id: "ri-1", url: "/api/clients/c-1/reinvestments?reinvestmentId=ri-1" },
     { kind: "relocation" as const, id: "rl-1", url: "/api/clients/c-1/relocations?relocationId=rl-1" },
     { kind: "asset_transaction" as const, id: "tx-buy", url: "/api/clients/c-1/asset-transactions?transactionId=tx-buy" },
   ])("delete $kind removes that row through the writer with no prompt, then closes", async ({ kind, id, url }) => {
@@ -516,12 +530,6 @@ describe("TechniquesView focus mode — create and delete intents", () => {
     await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith());
     expect(submit).toHaveBeenCalledTimes(1);
     expect(onFocusClose).toHaveBeenCalledTimes(1);
-  });
-
-  it("delete reinvestment → unsupported, no write", async () => {
-    const utils = renderFocused({ intent: "delete", kind: "reinvestment", id: "ri-1" });
-    await waitFor(() => expect(utils.onFocusClose).toHaveBeenCalledWith("unsupported"));
-    expect(submit).not.toHaveBeenCalled();
   });
 
   it.each([

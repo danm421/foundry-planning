@@ -139,3 +139,138 @@ describe("AddReinvestmentForm — draft mode", () => {
     expect(nonGroupCalls()).toEqual([]);
   });
 });
+
+const EDIT_ROW = {
+  id: "ri-1",
+  name: "Shift mix",
+  accountIds: ["acc-taxable"],
+  groupKeys: [] as string[],
+  year: 2030,
+  yearRef: null,
+  targetType: "model_portfolio" as const,
+  realizeTaxesOnSwitch: false,
+  // The loader supplies the detail fields: this row's own portfolio.
+  modelPortfolioId: "mp-2",
+  customGrowthRate: null,
+  customPctOrdinaryIncome: null,
+  customPctLtCapitalGains: null,
+  customPctQualifiedDividends: null,
+  customPctTaxExempt: null,
+};
+
+function renderEdit(initialData: Record<string, unknown> = EDIT_ROW) {
+  const onSaved = vi.fn();
+  render(
+    <AddReinvestmentForm
+      clientId="client-123"
+      accounts={ACCOUNTS}
+      modelPortfolios={MODEL_PORTFOLIOS}
+      onClose={() => {}}
+      onSaved={onSaved}
+      initialData={initialData as never}
+    />,
+  );
+  return { onSaved };
+}
+
+const urls = () => fetchMock.mock.calls.map(([url]) => String(url));
+const bodyOf = (call: unknown[]) => JSON.parse((call[1] as { body: string }).body);
+
+describe("AddReinvestmentForm — opens on the row it was given", () => {
+  it("does not fetch the base reinvestments when the loader supplied the detail fields", async () => {
+    renderEdit();
+
+    const select = (await screen.findByLabelText(/model portfolio/i)) as HTMLSelectElement;
+    expect(select.value).toBe("mp-2");
+    await waitFor(() => expect(urls()).toContain("/api/clients/client-123/account-groups"));
+    expect(nonGroupCalls()).toEqual([]);
+  });
+
+  it("a custom-target row (portfolio null) is also supplied, so it does not fetch either", async () => {
+    renderEdit({ ...EDIT_ROW, targetType: "custom", modelPortfolioId: null, customGrowthRate: 0.065 });
+
+    // The row's own rate, as a percent, is in the form from the first render.
+    expect(await screen.findByDisplayValue("6.5")).toBeTruthy();
+    expect(nonGroupCalls()).toEqual([]);
+  });
+
+  it("still backfills from the reinvestments list when the detail fields were not supplied (base mode)", async () => {
+    const { modelPortfolioId: _omit, ...legacy } = EDIT_ROW;
+    void _omit;
+    fetchMock.mockImplementation(async (url: string) =>
+      String(url).endsWith("/account-groups")
+        ? { ok: true, json: async () => [] }
+        : {
+            ok: true,
+            json: async () => [
+              { id: "ri-1", modelPortfolioId: "mp-2", customGrowthRate: null, groupKeys: [] },
+            ],
+          },
+    );
+    renderEdit(legacy);
+
+    await waitFor(() => expect(urls()).toContain("/api/clients/client-123/reinvestments"));
+  });
+});
+
+describe("AddReinvestmentForm — scenario mode", () => {
+  beforeEach(() => {
+    searchParamsMock = new URLSearchParams("scenario=scn-1");
+  });
+
+  it("saves the scenario's portfolio as ONE scenario change — no base GET, no base write", async () => {
+    const { onSaved } = renderEdit();
+    await screen.findByLabelText(/model portfolio/i);
+
+    fireEvent.submit(document.getElementById("reinvestment-form")!);
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+
+    // The WHOLE request list: the custom-group load, then one scenario change.
+    expect(urls()).toEqual([
+      "/api/clients/client-123/account-groups",
+      "/api/clients/client-123/scenarios/scn-1/changes",
+    ]);
+    const change = bodyOf(fetchMock.mock.calls[1]);
+    expect(change).toMatchObject({ op: "edit", targetKind: "reinvestment", targetId: "ri-1" });
+    // The scenario's own portfolio, not the first model or a base row's.
+    expect(change.desiredFields.modelPortfolioId).toBe("mp-2");
+  });
+
+  it("an add posts one scenario change carrying a fresh id — no base write", async () => {
+    const onSaved = vi.fn();
+    render(
+      <AddReinvestmentForm
+        clientId="client-123"
+        accounts={ACCOUNTS}
+        modelPortfolios={MODEL_PORTFOLIOS}
+        onClose={() => {}}
+        onSaved={onSaved}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Joint Brokerage/i }));
+    fireEvent.submit(document.getElementById("reinvestment-form")!);
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+
+    expect(nonGroupCalls().map(([url]) => String(url))).toEqual([
+      "/api/clients/client-123/scenarios/scn-1/changes",
+    ]);
+    const change = bodyOf(nonGroupCalls()[0]);
+    expect(change).toMatchObject({ op: "add", targetKind: "reinvestment" });
+    expect(change.entity.id).toEqual(expect.any(String));
+    expect(change.entity.accountIds).toEqual(["acc-taxable"]);
+  });
+});
+
+describe("AddReinvestmentForm — base mode", () => {
+  it("an edit still PUTs the base reinvestments route", async () => {
+    const { onSaved } = renderEdit();
+    await screen.findByLabelText(/model portfolio/i);
+
+    fireEvent.submit(document.getElementById("reinvestment-form")!);
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+
+    const put = nonGroupCalls().find(([, init]) => (init as { method?: string })?.method === "PUT")!;
+    expect(String(put[0])).toBe("/api/clients/client-123/reinvestments");
+    expect(bodyOf(put)).toMatchObject({ reinvestmentId: "ri-1", modelPortfolioId: "mp-2" });
+  });
+});

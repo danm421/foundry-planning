@@ -499,7 +499,6 @@ describe("SolverChangesTab — opening a Details editor", () => {
   // Ruling F-I2: an editor known to write the base plan or revert the change
   // inside a scenario gets an explanation, never a link to that same editor.
   it.each([
-    ["reinvestment", "edit"],
     ["family_member", "edit"],
     ["external_beneficiary", "add"],
   ] as const)("a %s %s explains it can't be edited here — no link, no load", (targetKind, opType) => {
@@ -564,7 +563,7 @@ describe("SolverChangesTab — opening a Details editor", () => {
     loadChangeEditorPropsMock.mockResolvedValue({ page: "income-expenses", props: { clientId: CLIENT_ID } });
     renderTab([
       makeChange(),
-      makeChange({ id: "c-2", targetKind: "reinvestment", payload: { name: "Charity" } }),
+      makeChange({ id: "c-2", targetKind: "family_member", payload: { name: "Charity" } }),
     ]);
     fireEvent.click(screen.getByRole("button", { name: "Edit Charity" }));
     expect(screen.getByText(UNSUPPORTED_MESSAGE)).toBeInTheDocument();

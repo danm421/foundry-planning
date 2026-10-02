@@ -273,4 +273,120 @@ describe("applyScenarioChangesWithRefs — reinvestment re-resolution", () => {
     expect(ri.newGrowthRate).toBeCloseTo(0.04);
     expect(ri.soldFractionByAccount["a-brokerage"]).toBeCloseTo(0.8);
   });
+
+  // A reinvestment can target account GROUPS as well as individual accounts. The
+  // engine reads only the expanded `accountIds`; the base load expands groups, but
+  // a scenario `add` / `edit` writes just the form's raw picks — `groupKeys` plus
+  // the individually picked ids — so the overlay has to expand them too, or a
+  // group-only reinvestment targets nothing and projects as a no-op.
+  describe("group targets", () => {
+    const groupTree = (): ClientData => {
+      const tree = baseTree();
+      tree.accounts = [
+        { id: "a-brokerage", category: "taxable" },
+        { id: "a-cash", category: "cash" },
+        { id: "a-ira", category: "retirement" },
+        { id: "a-house", category: "real_estate" },
+      ] as unknown as ClientData["accounts"];
+      return tree;
+    };
+    const groupOnlyAdd = (groupKeys: string[], over: Record<string, unknown> = {}): ScenarioChange => {
+      const change = addReinvestmentChange();
+      return {
+        ...change,
+        toggleGroupId: (over.toggleGroupId as string | null | undefined) ?? null,
+        payload: { ...(change.payload as object), accountIds: [], groupKeys },
+      };
+    };
+
+    it("expands a default group key on a scenario-added, group-only reinvestment", () => {
+      const { effectiveTree } = applyScenarioChangesWithRefs(
+        groupTree(),
+        [groupOnlyAdd(["taxable"])],
+        {},
+        [],
+        makeResolutionContext(),
+      );
+      const ri = effectiveTree.reinvestments![0];
+      expect(ri.accountIds).toEqual(["a-brokerage"]);
+      expect(ri.groupKeys).toEqual(["taxable"]);
+      // The resolved turnover follows the expanded accounts, so the switch bites.
+      expect(ri.soldFractionByAccount["a-brokerage"]).toBeCloseTo(0.8);
+    });
+
+    it("expands all-liquid to every liquid account and never an illiquid one", () => {
+      const { effectiveTree } = applyScenarioChangesWithRefs(
+        groupTree(),
+        [groupOnlyAdd(["all-liquid"])],
+        {},
+        [],
+        makeResolutionContext(),
+      );
+      expect([...effectiveTree.reinvestments![0].accountIds].sort()).toEqual(
+        ["a-brokerage", "a-cash", "a-ira"],
+      );
+    });
+
+    it("expands a custom group from the context's member map and keeps the individual picks", () => {
+      const ctx = makeResolutionContext();
+      ctx.accountGroupMembersById = new Map([["grp-custom", ["a-cash"]]]);
+      const change = groupOnlyAdd(["grp-custom"]);
+      (change.payload as { accountIds: string[] }).accountIds = ["a-ira"];
+      const { effectiveTree } = applyScenarioChangesWithRefs(groupTree(), [change], {}, [], ctx);
+      expect([...effectiveTree.reinvestments![0].accountIds].sort()).toEqual(["a-cash", "a-ira"]);
+    });
+
+    it("re-expands when a scenario edit changes only the group keys", () => {
+      const base = groupTree();
+      base.reinvestments = [
+        {
+          id: "ri-1",
+          name: "Switch",
+          accountIds: ["a-brokerage"],
+          groupKeys: ["taxable"],
+          year: 2035,
+          newGrowthRate: 0,
+          soldFractionByAccount: {},
+          realizeTaxesOnSwitch: false,
+          targetType: "model_portfolio",
+          modelPortfolioId: "mp-conservative",
+        } as Reinvestment,
+      ];
+      const edit: ScenarioChange = {
+        id: "ch1",
+        scenarioId: "scn1",
+        opType: "edit",
+        targetKind: "reinvestment",
+        targetId: "ri-1",
+        payload: { accountIds: { from: ["a-brokerage"], to: [] }, groupKeys: { from: ["taxable"], to: ["cash"] } },
+        toggleGroupId: null,
+        orderIndex: 0,
+      };
+      const { effectiveTree } = applyScenarioChangesWithRefs(base, [edit], {}, [], makeResolutionContext());
+      expect(effectiveTree.reinvestments![0].accountIds).toEqual(["a-cash"]);
+    });
+
+    it("does not expand a reinvestment whose toggle group is switched off", () => {
+      const group = { id: "g1", scenarioId: "scn1", name: "G", defaultOn: true, requiresGroupId: null, orderIndex: 0 };
+      const { effectiveTree } = applyScenarioChangesWithRefs(
+        groupTree(),
+        [groupOnlyAdd(["taxable"], { toggleGroupId: "g1" })],
+        { g1: false },
+        [group],
+        makeResolutionContext(),
+      );
+      expect(effectiveTree.reinvestments ?? []).toEqual([]);
+    });
+
+    it("leaves a reinvestment with no group keys exactly as it was", () => {
+      const { effectiveTree } = applyScenarioChangesWithRefs(
+        groupTree(),
+        [addReinvestmentChange()],
+        {},
+        [],
+        makeResolutionContext(),
+      );
+      expect(effectiveTree.reinvestments![0].accountIds).toEqual(["a-brokerage"]);
+    });
+  });
 });

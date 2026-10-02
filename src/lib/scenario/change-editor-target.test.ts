@@ -39,6 +39,7 @@ describe("resolveChangeEditor", () => {
     ["account", "net-worth"],
     ["liability", "net-worth"],
     ["roth_conversion", "techniques"],
+    ["reinvestment", "techniques"],
     ["relocation", "techniques"],
     ["asset_transaction", "techniques"],
     ["transfer", "techniques"],
@@ -64,6 +65,12 @@ describe("resolveChangeEditor", () => {
     },
   );
 
+  it.each(["edit", "add"] as const)("a reinvestment %s -> techniques, the reinvestment form", (opType) => {
+    expect(
+      resolveChangeEditor(change({ targetKind: "reinvestment", opType, targetId: "ri-1", payload: { id: "ri-1" } })),
+    ).toEqual({ surface: "details", page: "techniques", focus: { kind: "reinvestment", id: "ri-1" } });
+  });
+
   it("resolves an add the same way as an edit", () => {
     expect(
       resolveChangeEditor(
@@ -85,7 +92,6 @@ describe("resolveChangeEditor", () => {
   // revert the scenario's change inside a scenario. Whatever the op.
   describe("unsupported", () => {
     const unsupportedKinds: TargetKind[] = [
-      "reinvestment",
       "family_member",
       "external_beneficiary",
     ];

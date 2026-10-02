@@ -12,12 +12,12 @@ import { isLiquid, type AccountCategory } from "@/lib/account-groups/liquid-filt
 import { DEFAULT_GROUP_KEYS, DEFAULT_NAMES } from "@/lib/account-groups/resolver";
 
 /**
- * Shape passed in when editing. The card-level fields come straight from
- * `ReinvestmentRow`. The DB-backed edit path leaves the detail fields
- * (`modelPortfolioId`, `customGrowthRate`, custom realization percents)
- * undefined and the form re-fetches them from `GET /api/clients/:id/reinvestments`
- * on mount. The solver's draft path can't fetch (drafts aren't persisted), so it
- * supplies the detail fields directly off the in-memory engine object instead.
+ * Shape passed in when editing. The Techniques loader and the solver's draft
+ * path both supply the detail fields (`modelPortfolioId`, `customGrowthRate`,
+ * custom realization percents) off the effective tree, so the form opens on the
+ * row's own values — the scenario's, inside a scenario. A caller that leaves
+ * `modelPortfolioId` undefined gets them backfilled from the base-case
+ * reinvestments list instead (base mode only).
  */
 export interface ReinvestmentInitialData {
   id: string;
@@ -205,18 +205,12 @@ export default function AddReinvestmentForm({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // On edit, re-fetch the editable detail fields from the API.
-  // ReinvestmentRow is mapped from the framework-free engine type
-  // `Reinvestment`, which deliberately carries only the *resolved* growth
-  // profile (newGrowthRate/newRealization) — not the raw DB inputs the edit
-  // form needs (modelPortfolioId, customGrowthRate, custom realization %s).
-  // Those are resolved away at load time; the engine never needs them. Rather
-  // than pollute the engine type with DB/UI shape, the form re-fetches them.
-  // Draft mode (onSubmitDraft) seeds detail fields from `initialData` directly —
-  // the draft isn't in the DB, so a fetch would find nothing and clobber the
-  // seeded model with the default. Only the DB-backed edit path needs the fetch.
+  // Backfill the editable detail fields from the base-case list, but only when
+  // the caller didn't supply them (`modelPortfolioId` is null, not undefined,
+  // for a custom-target row). The list is base-only, so a caller inside a
+  // scenario must always supply them. Draft mode seeds them from `initialData`.
   useEffect(() => {
-    if (!initialData || onSubmitDraft) return;
+    if (!initialData || onSubmitDraft || initialData.modelPortfolioId !== undefined) return;
     const editId = initialData.id;
     let cancelled = false;
     async function loadDetail() {
@@ -427,8 +421,6 @@ export default function AddReinvestmentForm({
         return;
       }
 
-      const newReinvestmentId = makeId();
-
       const res = initialData
         ? await writer.submit(
             {
@@ -447,7 +439,7 @@ export default function AddReinvestmentForm({
             {
               op: "add",
               targetKind: "reinvestment",
-              entity: { id: newReinvestmentId, ...body },
+              entity: { id: makeId(), ...body },
             },
             {
               url: `/api/clients/${clientId}/reinvestments`,

@@ -49,6 +49,11 @@ export interface ResolutionContext {
   /** Account ids whose resolved `propertyTaxGrowthRate` came from the inflation
    *  rate (propertyTaxGrowthSource === "inflation"). */
   accountPropertyTaxFromInflation?: Set<string>;
+  /** Liquid member account ids per custom account-group id. Populated by
+   *  `loadClientData`; the scenario overlay reuses it to expand a scenario
+   *  reinvestment's `groupKeys` into `accountIds` (default group keys expand
+   *  from the effective accounts' categories instead). */
+  accountGroupMembersById?: Map<string, string[]>;
 }
 
 type Numericish = string | number | null | undefined;

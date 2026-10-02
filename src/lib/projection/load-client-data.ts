@@ -896,6 +896,20 @@ const loadClientDataCached = cache(
 
     // Convert Drizzle decimal strings to numbers for the engine
 
+    // Group-target expansion context (live group reference). Default keys
+    // expand from account category; custom UUIDs from their liquid members.
+    const accountCategoryById = new Map<string, AccountCategory>(
+      accountRows.map((a) => [a.id, a.category as AccountCategory]),
+    );
+    const customGroupMembersById = new Map<string, string[]>();
+    for (const m of accountGroupMemberRows) {
+      const cat = accountCategoryById.get(m.accountId);
+      if (cat == null || !isLiquid(cat)) continue; // groups are liquid-only
+      const list = customGroupMembersById.get(m.accountGroupId) ?? [];
+      list.push(m.accountId);
+      customGroupMembersById.set(m.accountGroupId, list);
+    }
+
     const resolutionCtx: ResolutionContext = {
       resolver,
       resolvedInflationRate,
@@ -914,6 +928,7 @@ const loadClientDataCached = cache(
       },
       accountGrowthFromInflation,
       accountPropertyTaxFromInflation,
+      accountGroupMembersById: customGroupMembersById,
     };
 
     const mappedAccounts = accountRows.map((a) => {
@@ -1421,20 +1436,6 @@ const loadClientDataCached = cache(
     // `resolveReinvestments`. Carrying the raw inputs lets `lookupBaseEntity`
     // (which reads the effective base tree) produce a correct raw-keyed diff
     // for scenario edits, and lets the scenario overlay re-resolve.
-
-    // Group-target expansion context (live group reference). Default keys
-    // expand from account category; custom UUIDs from their liquid members.
-    const accountCategoryById = new Map<string, AccountCategory>(
-      accountRows.map((a) => [a.id, a.category as AccountCategory]),
-    );
-    const customGroupMembersById = new Map<string, string[]>();
-    for (const m of accountGroupMemberRows) {
-      const cat = accountCategoryById.get(m.accountId);
-      if (cat == null || !isLiquid(cat)) continue; // groups are liquid-only
-      const list = customGroupMembersById.get(m.accountGroupId) ?? [];
-      list.push(m.accountId);
-      customGroupMembersById.set(m.accountGroupId, list);
-    }
 
     const rawReinvestments: Reinvestment[] = reinvestmentRows.map((r) => {
       const individualAccountIds = reinvestmentAccountRows
