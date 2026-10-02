@@ -16,6 +16,7 @@
 // the Retirement-tab branches.
 
 import type { OpType, TargetKind } from "@/engine/scenario/types";
+import { CLIENT_SINGLETON_FORM_KEYS } from "@/lib/scenario/plan-settings-fields";
 import { GROWTH_SETTINGS_KEYS } from "@/lib/scenario/growth-settings-override";
 
 export type DetailsEditorPage =
@@ -152,6 +153,10 @@ function isUnsupported({ targetKind }: ChangeEditorInput): boolean {
 // retirement change opened there could not be edited faithfully. These are
 // exactly the `client` fields `mutationsToScenarioChanges` writes for its
 // retirement-age and life-expectancy mutations (plus the derived planEndAge).
+// The `client` fields `TaxRatesForm` writes (CLIENT_SINGLETON_FORM_KEYS); the
+// Family page's client dialog has no control for them.
+const TAX_RATES_CLIENT_FIELDS = new Set<string>(CLIENT_SINGLETON_FORM_KEYS);
+
 const RETIREMENT_TAB_CLIENT_FIELDS = new Set([
   "retirementAge",
   "retirementMonth",
@@ -187,6 +192,13 @@ export function resolveChangeEditor(change: ChangeEditorInput): ChangeEditorTarg
     if (fields && fields.length > 0 && fields.every((f) => RETIREMENT_TAB_CLIENT_FIELDS.has(f))) {
       return { surface: "solver-tab", tab: "retirement" };
     }
+    if (fields && fields.length > 0 && fields.every((f) => TAX_RATES_CLIENT_FIELDS.has(f))) {
+      return {
+        surface: "details",
+        page: "assumptions",
+        focus: { kind: "plan_settings", id: "tax-rates" },
+      };
+    }
   }
 
   const page = DETAILS_PAGE_BY_KIND[change.targetKind];
@@ -220,9 +232,9 @@ const GROWTH_FIELDS: ReadonlySet<string> = new Set(GROWTH_SETTINGS_KEYS);
 // ahead of the stress check. Otherwise ANY stress field -> the Stress tab
 // (Ruling F-M2: the Solver folds every plan_settings edit into one row per
 // scenario, so a stress lever often shares it with other settings). What is
-// left opens on the Assumptions page, on the tab that owns the first
-// recognised key: growth keys -> "growth-inflation", surplus keys ->
-// "withdrawal", anything else -> "tax-rates". An empty or non-object payload
+// left opens on the Assumptions page, on a tab chosen by priority: any growth
+// key -> "growth-inflation", else any surplus key -> "withdrawal", else
+// "tax-rates". An empty or non-object payload
 // has nothing to open (null).
 function resolvePlanSettingsTarget(payload: unknown): ChangeEditorTarget {
   const fields = payloadFields(payload);

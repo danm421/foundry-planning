@@ -80,6 +80,17 @@ describe("SurplusCashFlowForm — spend all until retirement", () => {
 });
 
 describe("SurplusCashFlowForm — autosave", () => {
+  it("in base mode (no ?scenario=) the whole request list is one PUT /plan-settings", async () => {
+    renderForm(false);
+    fireEvent.change(document.getElementById("surplusSpendPct")!, { target: { value: "40" } });
+    await settleAutosave();
+
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    const calls = (global.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls.map((c) => c[0])).toEqual(["/api/clients/client-1/plan-settings"]);
+    expect((calls[0][1] as RequestInit).method).toBe("PUT");
+  });
+
   it("has no Save button and saves the spend percentage on change", async () => {
     renderForm(false);
     expect(screen.queryByRole("button", { name: /^save$/i })).toBeNull();

@@ -111,6 +111,16 @@ describe("TaxRatesForm — autosave", () => {
     expect(body).toEqual({ probateCostRate: "0.04" });
   });
 
+  it("in base mode (no ?scenario=) the whole request list is one PUT /plan-settings", async () => {
+    renderForm();
+    fireEvent.change(document.getElementById("probateCostRate")!, { target: { value: "4" } });
+    await settleAutosave();
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(fetchMock.mock.calls.map((c) => c[0])).toEqual(["/api/clients/test-client-id/plan-settings"]);
+    expect(fetchMock.mock.calls[0][1].method).toBe("PUT");
+  });
+
   it("coalesces a burst of edits into one request", async () => {
     renderForm();
 

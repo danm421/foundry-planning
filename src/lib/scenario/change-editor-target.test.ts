@@ -328,6 +328,41 @@ describe("resolveChangeEditor", () => {
       ).toEqual(retirementTab);
     });
 
+    it("coverage-only fields -> the Assumptions Tax Rates tab", () => {
+      const target = {
+        surface: "details",
+        page: "assumptions",
+        focus: { kind: "plan_settings", id: "tax-rates" },
+      };
+      expect(
+        resolveChangeEditor(
+          change({
+            targetKind: "client",
+            targetId: CLIENT_ID,
+            payload: {
+              coveredByWorkplacePlan: { from: "auto", to: "yes" },
+              spouseCoveredByWorkplacePlan: { from: "auto", to: "no" },
+            },
+          }),
+        ),
+      ).toEqual(target);
+    });
+
+    it("coverage mixed with a name field still -> family", () => {
+      expect(
+        resolveChangeEditor(
+          change({
+            targetKind: "client",
+            targetId: CLIENT_ID,
+            payload: {
+              coveredByWorkplacePlan: { from: "auto", to: "yes" },
+              firstName: { from: "A", to: "B" },
+            },
+          }),
+        ),
+      ).toEqual(family);
+    });
+
     it("{ firstName } -> family/client with the change's targetId", () => {
       expect(
         resolveChangeEditor(clientChange({ firstName: { from: "Al", to: "Alice" } })),

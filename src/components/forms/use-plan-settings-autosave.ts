@@ -64,6 +64,8 @@ export function usePlanSettingsAutosave(
           edits.push({ targetKind: "client", op: "edit", targetId: clientId, desiredFields: fields.client });
         }
         // The writer refreshes the page itself once the batch lands.
+        // The base fallback is unreachable: `scenarioId` here and the writer's
+        // both come from the same `useScenarioState`, so the writer is in scenario mode.
         res = await submit(edits, { url: "", method: "PUT" });
         if (res.ok) {
           setState("saved");

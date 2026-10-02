@@ -119,6 +119,9 @@ function WithdrawalDialog({
       if (e.key !== "Escape") return;
       const surfaces = document.querySelectorAll("[data-dialog-surface]");
       if (surfaces[surfaces.length - 1] !== surfaceRef.current) return;
+      // Not order-dependent: an outer shell's listener may be re-registered
+      // after this one, so stop it from also seeing this Escape.
+      e.stopImmediatePropagation();
       onOpenChange(false);
     }
     window.addEventListener("keydown", onKey);

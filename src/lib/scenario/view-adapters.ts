@@ -27,7 +27,7 @@ import type {
   EntitySummary,
 } from "@/engine/types";
 import { controllingEntity, type AccountOwner } from "@/engine/ownership";
-import type { AssumptionsSettings } from "@/app/(app)/clients/[id]/details/assumptions/assumptions-client";
+import type { AssumptionsSettings } from "@/lib/plan-settings/assumptions-settings";
 
 // ── Income ────────────────────────────────────────────────────────────────────
 
