@@ -221,3 +221,28 @@ describe("estimateAssumptionsPageCount", () => {
     expect(estimateAssumptionsPageCount(overviewOnly, { includeAccountTable: false, includeCmaAppendix: false, showAccountValues: true })).toBe(1);
   });
 });
+
+describe("LTC stress event", () => {
+  it("lists the LTC stress event in plain words", () => {
+    const cd = clientData();
+    const d = buildAssumptionsData(
+      input({
+        clientData: {
+          ...cd,
+          client: { ...cd.client, firstName: "John" },
+          accounts: [...cd.accounts, { id: "home", name: "Home", category: "real_estate", growthRate: 0.04, value: 800000 }],
+          ltcEvents: [{
+            id: "3f1c2d7e-8a1b-4c5d-9e0f-112233445566", name: "LTC", includePolicies: true,
+            livingExpenseCutPct: 1,
+            homeSale: { accountId: "home", saleYear: 2051, price: { mode: "projected" }, sellingCostPct: 0.06 },
+            people: [{ person: "client", startAge: 85, years: 3, careSetting: "nursing_private", annualCost: 129_575, costInflation: 0.05 }],
+          }],
+        } as unknown as ClientData,
+      }),
+    );
+    expect(d.stressTests).toContainEqual({
+      label: "Long-term care",
+      value: "John in care 2051–2053, living expenses cut 100%, home sold 2051",
+    });
+  });
+});

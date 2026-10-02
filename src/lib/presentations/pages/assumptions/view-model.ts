@@ -2,7 +2,9 @@
 // Framework-free. Tax/inflation/horizon/withdrawal come from planSettings (scenario-
 // effective); account/CMA sections come from the base-case investments bundle.
 
-import type { PlanSettings, WithdrawalPriority } from "@/engine/types";
+import type { ClientData, PlanSettings, WithdrawalPriority } from "@/engine/types";
+import { resolveLtcEvent } from "@/engine/ltc-event";
+import { ltcPersonFirstName } from "@/lib/ltc/ltc-event-name";
 import type { InvestmentsBundle, CategoryGrowthDefault } from "@/lib/presentations/investments-bundle";
 import { exactCurrency } from "@/lib/presentations/format";
 import {
@@ -46,7 +48,7 @@ export function buildAssumptionsData(input: BuildAssumptionsInput): AssumptionsP
     ? buildCategoryGrowth(investments, ps.inflationRate, geoByClassId, portfolioNameById)
     : [];
   const withdrawalOrder = buildWithdrawalOrder(clientData.withdrawalStrategy, clientData.accounts);
-  const stressTests = buildStressTests(ps);
+  const stressTests = buildStressTests(ps, clientData);
 
   const accounts = options.includeAccountTable
     ? buildAccounts(clientData.accounts, investments, portfolioNameById, options.showAccountValues)
@@ -187,7 +189,7 @@ function buildWithdrawalOrder(
     .filter((n): n is string => n != null);
 }
 
-function buildStressTests(ps: PlanSettings): AssumptionRow[] {
+function buildStressTests(ps: PlanSettings, tree?: ClientData): AssumptionRow[] {
   const rows: AssumptionRow[] = [];
   if (ps.ssBenefitHaircut) rows.push({ label: "SS benefit haircut", value: `${formatPct(ps.ssBenefitHaircut.pct)} from ${ps.ssBenefitHaircut.startYear}` });
   if (ps.disabilityEvent) {
@@ -220,6 +222,19 @@ function buildStressTests(ps: PlanSettings): AssumptionRow[] {
       label: "Tax rates rise",
       value: `${formatPoints(ps.taxRateStress.points)} on federal ordinary and capital-gains rates from ${ps.taxRateStress.startYear}`,
     });
+  }
+  const ltc = tree ? resolveLtcEvent(tree) : null;
+  if (tree && ltc && ltc.people.length > 0) {
+    const event = tree.ltcEvents![0];
+    const parts = ltc.people.map(
+      (p) => `${ltcPersonFirstName(p.person, tree.client)} in care ${p.startYear}–${p.endYear}`,
+    );
+    if (event.livingExpenseCutPct != null && event.livingExpenseCutPct > 0) {
+      // Whole percent, not formatPct's "100.0%": the advisor typed a whole number.
+      parts.push(`living expenses cut ${Math.round(event.livingExpenseCutPct * 100)}%`);
+    }
+    if (ltc.homeSale) parts.push(`home sold ${ltc.homeSale.saleYear}`);
+    rows.push({ label: "Long-term care", value: parts.join(", ") });
   }
   return rows;
 }
