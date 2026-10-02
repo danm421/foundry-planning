@@ -3,9 +3,7 @@
 // Pure, framework-free resolver: given a scenario change, decides WHERE that
 // change is edited — which Details page (and which entity within it) or a
 // Solver tab: Stress for a plan_settings stress-test override, Retirement for
-// the plan horizon and the client's retirement / life-expectancy fields — or
-// "unsupported" when the kind's Details editor is known to corrupt data inside
-// a scenario (Ruling F-I2).
+// the plan horizon and the client's retirement / life-expectancy fields.
 // Returns null when the change has nothing to open: it's a `remove`, it's
 // disabled, or its targetKind is a child row that is never written as its
 // own change (it lives nested under a parent entity's payload instead).
@@ -65,6 +63,21 @@ export interface CreateFocus {
 }
 export type EditorFocus = EditFocus | DeleteFocus | CreateFocus;
 
+/**
+ * Per Details page, the focus kinds its views' `findFocusRow` open a dialog for.
+ * `note_receivable` is on no page: nothing opens it this release (it is
+ * `NOT_YET_READY`). Each view's focus test pins its own entry.
+ */
+export const PAGE_FOCUS_KINDS: Record<DetailsEditorPage, readonly FocusKind[]> = {
+  "income-expenses": ["income", "expense", "savings_rule"],
+  "net-worth": ["account", "liability"],
+  techniques: ["roth_conversion", "transfer", "reinvestment", "relocation", "asset_transaction"],
+  family: ["client", "family_member", "entity", "gift", "external_beneficiary"],
+  wills: ["will"],
+  insurance: ["account", "disability_policy"],
+  assumptions: ["plan_settings", "client_deduction", "client_tax_adjustment", "withdrawal_strategy"],
+};
+
 /** The row id a focus names, or null for a create. */
 export function focusRowId(focus: EditorFocus): string | null {
   return focus.intent === "create" ? null : focus.id;
@@ -78,7 +91,6 @@ export function isEditFocus(focus: EditorFocus): focus is EditFocus {
 export type ChangeEditorTarget =
   | { surface: "details"; page: DetailsEditorPage; focus: EditorFocus }
   | { surface: "solver-tab"; tab: "stress_test" | "retirement" }
-  | { surface: "unsupported" }
   | null;
 
 /**
@@ -127,19 +139,6 @@ const DETAILS_PAGE_BY_KIND: Partial<Record<TargetKind, DetailsEditorPage>> = {
   withdrawal_strategy: "assumptions",
 };
 
-// Ruling F-I2: kinds whose Details editor is KNOWN to corrupt data inside a
-// scenario — it writes the base plan, or it opens on base values so a save
-// reverts the scenario's own change — get an explanation instead of an editor
-// (or a link to one). Delete an entry once its Details-page bug is fixed (vault
-// `future-work/scenarios.md`). None is left: the family member and external
-// beneficiary editors now read and write the scenario. (A view can still report
-// one row as unsupported through `onFocusClose`.)
-const UNSUPPORTED_KINDS: ReadonlySet<TargetKind> = new Set<TargetKind>();
-
-function isUnsupported({ targetKind }: ChangeEditorInput): boolean {
-  return UNSUPPORTED_KINDS.has(targetKind);
-}
-
 // Ruling T4d-horizon: the Solver's Retirement tab (`SolverRowRetirementAges` /
 // `SolverRowLifeExpectancy` in live-solver-workspace.tsx, tab id "retirement")
 // owns the plan horizon. Its life-expectancy save writes the pair together —
@@ -175,8 +174,6 @@ const STRESS_FIELDS = new Set([
 
 export function resolveChangeEditor(change: ChangeEditorInput): ChangeEditorTarget {
   if (change.opType === "remove" || !change.enabled) return null;
-
-  if (isUnsupported(change)) return { surface: "unsupported" };
 
   if (change.targetKind === "plan_settings") {
     return resolvePlanSettingsTarget(change.payload);

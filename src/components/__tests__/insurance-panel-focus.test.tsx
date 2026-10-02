@@ -20,7 +20,7 @@ vi.mock("next/navigation", () => ({
 
 import InsurancePanel, { type InsurancePanelProps } from "@/components/insurance-panel";
 import { ClientAccessProvider } from "@/components/client-access-provider";
-import type { EditorFocus } from "@/lib/scenario/change-editor-target";
+import { PAGE_FOCUS_KINDS, type EditorFocus } from "@/lib/scenario/change-editor-target";
 import type { FocusCloseOutcome } from "@/hooks/use-focus-close-once";
 
 const CLIENT_FM = "11111111-1111-4111-8111-111111111111";
@@ -126,4 +126,8 @@ describe("InsurancePanel focus mode", () => {
   it("is unavailable under view-only access", async () => {
     await expectUnavailable(renderFocused({ kind: "account", id: "p-whole" }, { permission: "view" }));
   });
+});
+
+it("PAGE_FOCUS_KINDS lists the kinds this view handles", () => {
+  expect(PAGE_FOCUS_KINDS["insurance"]).toEqual(expect.arrayContaining(["account"]));
 });

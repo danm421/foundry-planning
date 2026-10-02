@@ -30,7 +30,7 @@ vi.mock("next/navigation", () => ({
 
 import WillsPanel, { type WillsPanelProps, type WillsPanelWill } from "@/components/wills-panel";
 import { ClientAccessProvider } from "@/components/client-access-provider";
-import type { EditorFocus } from "@/lib/scenario/change-editor-target";
+import { PAGE_FOCUS_KINDS, type EditorFocus } from "@/lib/scenario/change-editor-target";
 import type { FocusCloseOutcome } from "@/hooks/use-focus-close-once";
 
 // ---------------------------------------------------------------------------
@@ -477,4 +477,8 @@ describe("WillsPanel focus mode — create and delete intents", () => {
     await expectUnavailable(renderFocused(focus, { props }));
     expect(fetchMock).not.toHaveBeenCalled();
   });
+});
+
+it("PAGE_FOCUS_KINDS lists the kinds this view handles", () => {
+  expect(PAGE_FOCUS_KINDS["wills"]).toEqual(expect.arrayContaining(["will"]));
 });

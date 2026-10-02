@@ -21,7 +21,7 @@ vi.mock("next/navigation", () => ({
 
 import DisabilityPanel, { type DisabilityPanelProps } from "@/components/disability-panel";
 import { ClientAccessProvider } from "@/components/client-access-provider";
-import type { EditorFocus } from "@/lib/scenario/change-editor-target";
+import { PAGE_FOCUS_KINDS, type EditorFocus } from "@/lib/scenario/change-editor-target";
 import type { FocusCloseOutcome } from "@/hooks/use-focus-close-once";
 
 const POLICY: DisabilityPolicy = {
@@ -155,4 +155,8 @@ describe("DisabilityPanel focus mode", () => {
   it("is unavailable under view-only access", async () => {
     await expectUnavailable(renderFocused({ kind: "disability_policy", id: "d-1" }, { permission: "view" }));
   });
+});
+
+it("PAGE_FOCUS_KINDS lists the kinds this view handles", () => {
+  expect(PAGE_FOCUS_KINDS["insurance"]).toEqual(expect.arrayContaining(["disability_policy"]));
 });

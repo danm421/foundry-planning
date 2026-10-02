@@ -34,7 +34,7 @@ import TechniquesView, {
   type TechniquesViewProps,
 } from "@/components/techniques-view";
 import { ClientAccessProvider } from "@/components/client-access-provider";
-import type { EditorFocus } from "@/lib/scenario/change-editor-target";
+import { PAGE_FOCUS_KINDS, type EditorFocus } from "@/lib/scenario/change-editor-target";
 
 // ---------------------------------------------------------------------------
 // Fixture
@@ -546,4 +546,8 @@ describe("TechniquesView focus mode — create and delete intents", () => {
     await expectUnavailable(renderFocused({ intent: "delete", kind: "transfer", id: "tr-1" }, vi.fn(), "view"));
     expect(submit).not.toHaveBeenCalled();
   });
+});
+
+it("PAGE_FOCUS_KINDS lists the kinds this view handles", () => {
+  expect(PAGE_FOCUS_KINDS["techniques"]).toEqual(expect.arrayContaining(["roth_conversion", "transfer", "reinvestment", "relocation", "asset_transaction"]));
 });

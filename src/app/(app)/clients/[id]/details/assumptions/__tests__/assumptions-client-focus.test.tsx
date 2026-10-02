@@ -24,7 +24,7 @@ import AssumptionsClient, {
   type AssumptionsClientProps,
 } from "../assumptions-client";
 import { ClientAccessProvider } from "@/components/client-access-provider";
-import type { EditorFocus } from "@/lib/scenario/change-editor-target";
+import { PAGE_FOCUS_KINDS, type EditorFocus } from "@/lib/scenario/change-editor-target";
 import type { FocusCloseOutcome } from "@/hooks/use-focus-close-once";
 
 type OnFocusClose = Mock<(outcome?: FocusCloseOutcome) => void>;
@@ -610,4 +610,8 @@ describe("AssumptionsClient without focus", () => {
     expect(screen.getByText("First Baptist Church")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Edit First Baptist Church" })).toBeTruthy();
   });
+});
+
+it("PAGE_FOCUS_KINDS lists the kinds this view handles", () => {
+  expect(PAGE_FOCUS_KINDS["assumptions"]).toEqual(expect.arrayContaining(["plan_settings", "client_deduction", "client_tax_adjustment", "withdrawal_strategy"]));
 });

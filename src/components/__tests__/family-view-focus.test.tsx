@@ -40,7 +40,7 @@ import FamilyView, {
   type GiftSeriesLite,
 } from "@/components/family-view";
 import { ClientAccessProvider } from "@/components/client-access-provider";
-import type { EditorFocus } from "@/lib/scenario/change-editor-target";
+import { PAGE_FOCUS_KINDS, type EditorFocus } from "@/lib/scenario/change-editor-target";
 
 // ---------------------------------------------------------------------------
 // Fixture
@@ -703,4 +703,8 @@ describe("FamilyView focus mode — create and delete intents", () => {
     await expectNothingOpened(renderFocused({ intent: "delete", kind: "gift", id: "series-1" }), "unsupported");
     expect(scenarioChangeBodies()).toEqual([]);
   });
+});
+
+it("PAGE_FOCUS_KINDS lists the kinds this view handles", () => {
+  expect(PAGE_FOCUS_KINDS["family"]).toEqual(expect.arrayContaining(["client", "family_member", "entity", "gift", "external_beneficiary"]));
 });

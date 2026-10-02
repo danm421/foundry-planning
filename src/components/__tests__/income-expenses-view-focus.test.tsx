@@ -26,7 +26,7 @@ vi.mock("next/navigation", () => ({
 
 import IncomeExpensesView from "@/components/income-expenses-view";
 import { ClientAccessProvider } from "@/components/client-access-provider";
-import type { EditorFocus } from "@/lib/scenario/change-editor-target";
+import { PAGE_FOCUS_KINDS, type EditorFocus } from "@/lib/scenario/change-editor-target";
 
 // ---------------------------------------------------------------------------
 // Fixture
@@ -448,4 +448,8 @@ describe("IncomeExpensesView focus mode", () => {
       expect(onFocusClose).toHaveBeenCalledTimes(1);
     });
   });
+});
+
+it("PAGE_FOCUS_KINDS lists the kinds this view handles", () => {
+  expect(PAGE_FOCUS_KINDS["income-expenses"]).toEqual(expect.arrayContaining(["income", "expense", "savings_rule"]));
 });

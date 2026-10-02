@@ -33,7 +33,7 @@ vi.mock("@/components/toast", () => ({
 import BalanceSheetView, { type AccountRow, type LiabilityRow } from "@/components/balance-sheet-view";
 import { ClientAccessProvider } from "@/components/client-access-provider";
 import type { CategoryDefaults } from "@/components/forms/add-account-form";
-import type { EditorFocus } from "@/lib/scenario/change-editor-target";
+import { PAGE_FOCUS_KINDS, type EditorFocus } from "@/lib/scenario/change-editor-target";
 
 // ---------------------------------------------------------------------------
 // Fixture
@@ -527,4 +527,8 @@ describe("BalanceSheetView focus mode — delete intent", () => {
     expect(submit).toHaveBeenCalledTimes(1);
     expect(onFocusClose).toHaveBeenCalledTimes(1);
   });
+});
+
+it("PAGE_FOCUS_KINDS lists the kinds this view handles", () => {
+  expect(PAGE_FOCUS_KINDS["net-worth"]).toEqual(expect.arrayContaining(["account", "liability"]));
 });

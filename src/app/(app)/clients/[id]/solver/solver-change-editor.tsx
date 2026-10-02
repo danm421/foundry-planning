@@ -14,10 +14,10 @@
 //   the view and say so, instead of closing as if the change had been made.
 // - "unavailable" → the Details page itself wouldn't open this row here
 //   (Ruling T4-unavailable) → unmount the view, show a link to that page.
-// - "unsupported" → the row's editor is known to write the base plan inside a
-//   scenario (Ruling F-I2) → unmount the view, explain, and link nowhere: the
-//   Details page has the same bug. A kind the resolver already knows is
-//   unsupported gets the same message without a round trip.
+// - "unsupported" → the row's editor would write the base plan inside a
+//   scenario (Ruling F-I2; e.g. a recurring gift in the scenario's own series
+//   partition) → unmount the view, explain, and link nowhere: the Details page
+//   has the same bug.
 //
 // The views are loaded with next/dynamic so five large Details views stay out
 // of the Solver's initial bundle.
@@ -70,8 +70,8 @@ const HOST_STRIP_ACTION_CLASS =
 /** A change the resolver sends to a Details page. */
 export type DetailsEditorTarget = Extract<ChangeEditorTarget, { surface: "details" }>;
 
-/** A change the host handles itself: a Details editor, or an explanation. */
-export type EditorHostTarget = Extract<ChangeEditorTarget, { surface: "details" | "unsupported" }>;
+/** A change the host opens: a Details editor. */
+export type EditorHostTarget = DetailsEditorTarget;
 
 interface Props {
   clientId: string;
@@ -93,19 +93,14 @@ type HostState =
   | { status: "unavailable"; href: string }
   | { status: "unsupported" };
 
-export function SolverChangeEditor({ target, onDone, ...rest }: Props) {
-  if (target.surface === "unsupported") return <UnsupportedStrip onDismiss={onDone} />;
-  return <DetailsChangeEditor {...rest} target={target} onDone={onDone} />;
-}
-
-function DetailsChangeEditor({
+export function SolverChangeEditor({
   clientId,
   scenarioId,
   target,
   label,
   onDone,
   onWrite,
-}: Props & { target: DetailsEditorTarget }) {
+}: Props) {
   const { page, focus } = target;
   const focusId = focusRowId(focus);
   const [state, setState] = useState<HostState>({ status: "loading" });
