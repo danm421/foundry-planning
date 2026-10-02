@@ -93,6 +93,7 @@ export function ScenarioChipRow({
   const [renameBusy, setRenameBusy] = useState(false);
   const [renameError, setRenameError] = useState<string | null>(null);
   const [promoteTarget, setPromoteTarget] = useState<ScenarioChip | null>(null);
+  const [promoteError, setPromoteError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
@@ -203,6 +204,10 @@ export function ScenarioChipRow({
 
   async function handlePromote(s: ScenarioChip) {
     setPromotingId(s.id);
+    setPromoteError(null);
+    // The promote is one transaction (compensated on failure), so a failed
+    // request left the base plan untouched — say so and keep the dialog open.
+    const failed = () => setPromoteError("Couldn't promote this scenario. Nothing was changed — try again.");
     try {
       const res = await fetch(
         `/api/clients/${clientId}/scenarios/${s.id}/promote`,
@@ -213,13 +218,23 @@ export function ScenarioChipRow({
           body: JSON.stringify({ toggleState: {} }),
         },
       );
-      if (!res.ok) return;
+      if (!res.ok) {
+        failed();
+        return;
+      }
+      setPromoteTarget(null);
       setScenario(null); // base is now the promoted plan
       router.refresh();
+    } catch {
+      failed();
     } finally {
       setPromotingId(null);
-      setPromoteTarget(null);
     }
+  }
+
+  function closePromote() {
+    setPromoteTarget(null);
+    setPromoteError(null);
   }
 
   return (
@@ -248,7 +263,8 @@ export function ScenarioChipRow({
         <PromoteScenarioDialog
           scenarioName={promoteTarget.name}
           busy={promotingId === promoteTarget.id}
-          onCancel={() => setPromoteTarget(null)}
+          error={promoteError}
+          onCancel={closePromote}
           onConfirm={() => void handlePromote(promoteTarget)}
         />
       )}

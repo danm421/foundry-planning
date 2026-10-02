@@ -399,4 +399,60 @@ describe("ScenarioChipRow", () => {
       screen.getByRole("button", { name: /Save name for Roth conversion/ }),
     ).toBeDisabled();
   });
+
+  // Browser pass C: a 500 from promote left the dialog on "Promoting…" with no
+  // explanation. A failure now stays in the dialog with an error and the
+  // controls re-armed, and nothing switches the screen to base.
+  describe("promote to base case", () => {
+    async function openPromote(user: ReturnType<typeof userEvent.setup>) {
+      vi.mocked(useScenarioState).mockReturnValue({ scenarioId: "s1", setScenario: setScenarioSpy });
+      render(<ScenarioChipRow clientId={CLIENT_ID} scenarios={SCENARIOS} />);
+      await openMenu(user);
+      await user.click(screen.getByRole("button", { name: /Promote scenario Roth conversion/ }));
+      const dialog = screen.getByRole("dialog", { name: "Promote to base case" });
+      await user.type(screen.getByPlaceholderText("Roth conversion"), "Roth conversion");
+      return dialog;
+    }
+
+    it("a failed promote shows an error and re-enables the dialog", async () => {
+      const user = userEvent.setup();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => ({ ok: false, status: 500, json: async () => ({ error: "Internal server error" }) })),
+      );
+      const dialog = await openPromote(user);
+
+      await user.click(screen.getByRole("button", { name: "Promote to base case" }));
+
+      expect(await screen.findByRole("alert")).toHaveTextContent(/Couldn't promote this scenario/);
+      expect(dialog).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Promote to base case" })).toBeEnabled();
+      expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
+      expect(setScenarioSpy).not.toHaveBeenCalled();
+      expect(refreshSpy).not.toHaveBeenCalled();
+    });
+
+    it("a network failure is surfaced the same way", async () => {
+      const user = userEvent.setup();
+      vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("Failed to fetch"); }));
+      await openPromote(user);
+
+      await user.click(screen.getByRole("button", { name: "Promote to base case" }));
+
+      expect(await screen.findByRole("alert")).toHaveTextContent(/Couldn't promote this scenario/);
+      expect(screen.getByRole("button", { name: "Promote to base case" })).toBeEnabled();
+    });
+
+    it("a successful promote closes the dialog and switches to base", async () => {
+      const user = userEvent.setup();
+      vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ ok: true }) })));
+      await openPromote(user);
+
+      await user.click(screen.getByRole("button", { name: "Promote to base case" }));
+
+      await vi.waitFor(() => expect(screen.queryByRole("dialog", { name: "Promote to base case" })).toBeNull());
+      expect(setScenarioSpy).toHaveBeenCalledWith(null);
+      expect(refreshSpy).toHaveBeenCalled();
+    });
+  });
 });

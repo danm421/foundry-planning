@@ -6,6 +6,8 @@ import { inputClassName } from "@/components/forms/input-styles";
 interface PromoteScenarioDialogProps {
   scenarioName: string;
   busy: boolean;
+  /** Why the last attempt failed; the dialog stays open to retry or cancel. */
+  error?: string | null;
   onCancel: () => void;
   onConfirm: () => void;
 }
@@ -18,6 +20,7 @@ interface PromoteScenarioDialogProps {
 export function PromoteScenarioDialog({
   scenarioName,
   busy,
+  error,
   onCancel,
   onConfirm,
 }: PromoteScenarioDialogProps) {
@@ -105,6 +108,11 @@ export function PromoteScenarioDialog({
             placeholder={scenarioName}
             className={`${inputClassName} mt-2`}
           />
+          {error && !busy && (
+            <p role="alert" className="mt-3 text-[13px] text-crit">
+              {error}
+            </p>
+          )}
         </div>
 
         {/* Footer */}
