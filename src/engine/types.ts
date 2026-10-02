@@ -1581,8 +1581,8 @@ export interface PlanSettings {
   // has already resolved them into every row's growth rate and into
   // `inflationRate` above. They ride on the tree so a scenario's Growth &
   // Inflation editor opens on the scenario's values and the writer can diff
-  // them. Medicare premium inflation is not here: `ClientData` already carries
-  // it under the same names.
+  // them. The Medicare pair mirrors the root `ClientData` fields of the same
+  // names, which are the ones the engine reads.
   inflationRateSource?: "asset_class" | "custom";
   defaultGrowthTaxable?: number;
   defaultGrowthCash?: number;
@@ -1599,6 +1599,8 @@ export interface PlanSettings {
   modelPortfolioIdTaxable?: string | null;
   modelPortfolioIdCash?: string | null;
   modelPortfolioIdRetirement?: string | null;
+  medicarePremiumInflationRate?: number;
+  medicarePremiumInflationEnabled?: boolean;
 }
 
 // ── Output Types ─────────────────────────────────────────────────────────────

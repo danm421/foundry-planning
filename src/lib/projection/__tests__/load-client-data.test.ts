@@ -812,7 +812,7 @@ describe("loadClientDataWithContext — scenario growth & inflation override", (
     expect(resolutionContext.resolvedInflationInputs?.inflationRateSource).toBe("custom");
   });
 
-  it("carries a Medicare premium inflation override to the top-level ClientData fields", async () => {
+  it("carries a Medicare premium inflation override to the top-level ClientData fields and planSettings", async () => {
     seedValidFixture();
     dbState.planSettings = [
       {
@@ -822,10 +822,17 @@ describe("loadClientDataWithContext — scenario growth & inflation override", (
       } as unknown as typeof planSettingsRow,
     ];
 
+    const base = await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
     const { clientData } = await loadClientDataWithContext(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID, {
       planSettingsOverride: { medicarePremiumInflationRate: 0.06, medicarePremiumInflationEnabled: true },
     });
 
+    // The raw pair rides on planSettings for editors, base values first…
+    expect(base.planSettings.medicarePremiumInflationRate).toBe(0.03);
+    expect(base.planSettings.medicarePremiumInflationEnabled).toBe(false);
+    // …then the override's, on both the editor copy and the root fields the engine reads.
+    expect(clientData.planSettings.medicarePremiumInflationRate).toBe(0.06);
+    expect(clientData.planSettings.medicarePremiumInflationEnabled).toBe(true);
     expect(clientData.medicarePremiumInflationRate).toBeCloseTo(0.06, 10);
     expect(clientData.medicarePremiumInflationEnabled).toBe(true);
   });

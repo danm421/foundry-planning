@@ -1174,6 +1174,11 @@ const loadClientDataCached = cache(
       modelPortfolioIdTaxable: settings.modelPortfolioIdTaxable,
       modelPortfolioIdCash: settings.modelPortfolioIdCash,
       modelPortfolioIdRetirement: settings.modelPortfolioIdRetirement,
+      medicarePremiumInflationRate:
+        settings.medicarePremiumInflationRate != null
+          ? parseFloat(settings.medicarePremiumInflationRate)
+          : undefined,
+      medicarePremiumInflationEnabled: settings.medicarePremiumInflationEnabled,
     };
 
     // ── Income-tier beneficiary designations grouped by entity ──────────────

@@ -238,6 +238,8 @@ exports[`loadClientData > returns a fully populated ClientData for a valid clien
     "inflationRateSource": "custom",
     "irdTaxRate": 0,
     "lifetimeExemptionCap": null,
+    "medicarePremiumInflationEnabled": undefined,
+    "medicarePremiumInflationRate": undefined,
     "modelPortfolioIdCash": null,
     "modelPortfolioIdRetirement": null,
     "modelPortfolioIdTaxable": null,
