@@ -78,8 +78,14 @@ export function draftMutationsTargeting(
 function matches(m: SolverMutation, target: DraftTarget): boolean {
   const { kind, id } = target;
 
-  // The Assumptions singletons: the withdrawal tab owns the surplus split.
-  if (kind === "plan_settings") return id === "withdrawal" && m.kind === "surplus-allocation";
+  // The Assumptions singletons: the withdrawal tab owns the surplus split, and
+  // the tax-rates tab owns `lifetimeExemptionCap`, which the Stress tab's
+  // exemption-cap lever also writes.
+  if (kind === "plan_settings") {
+    if (id === "withdrawal") return m.kind === "surplus-allocation";
+    if (id === "tax-rates") return m.kind === "stress-exemption-cap";
+    return false;
+  }
 
   if (kind === "client") {
     return m.kind === "retirement-age" || m.kind === "life-expectancy";

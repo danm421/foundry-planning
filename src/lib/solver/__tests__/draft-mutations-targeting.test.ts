@@ -127,6 +127,20 @@ describe("draftMutationsTargeting", () => {
     expect(draftMutationsTargeting(ms, { kind: "plan_settings", id: "tax-rates" })).toEqual([]);
   });
 
+  // The Tax rates form edits `lifetimeExemptionCap` — exactly what the Stress
+  // tab's exemption-cap lever writes, so a stale lever would override the saved
+  // value in the working tree and be written back by Save to scenario.
+  it("supersedes the stress-exemption-cap lever for the tax-rates tab only", () => {
+    const ms: SolverMutation[] = [
+      { kind: "stress-exemption-cap", cap: 5_000_000 },
+      { kind: "stress-inflation", rate: 0.05 },
+      { kind: "surplus-allocation", spendPct: 50, saveAccountId: null, spendAllUntilRetirement: false },
+    ];
+    expect(draftMutationsTargeting(ms, { kind: "plan_settings", id: "tax-rates" })).toEqual([ms[0]]);
+    expect(draftMutationsTargeting(ms, { kind: "plan_settings", id: "withdrawal" })).toEqual([ms[2]]);
+    expect(draftMutationsTargeting(ms, { kind: "plan_settings", id: "growth-inflation" })).toEqual([]);
+  });
+
   it("supersedes the living-expense levers for a flagged living expense", () => {
     const ms: SolverMutation[] = [
       { kind: "living-expense-scale", multiplier: 1.1 },
