@@ -134,12 +134,16 @@ export const DETAIL_TYPES: readonly DetailType[] = [
   row("client_info", "People", "Client info", "family", "client", EDIT_ONLY),
 ];
 
-// Types whose Details editor still has an open workstream: the Add menu and the
-// picker show them greyed ("Coming in this release") and they open nothing.
-// Each workstream's task deletes its keys here; the last one leaves it empty.
+// Types whose Details editor cannot write a scenario yet: the Add menu and the
+// pickers show them greyed with `NOT_YET_READY_TITLE` and they open nothing.
+// Notes receivable stay here until they become scenario-scoped — no task in
+// this release removes them (they are not "coming").
 export const NOT_YET_READY: ReadonlySet<DetailTypeKey> = new Set<DetailTypeKey>([
   "note_receivable",
 ]);
+
+/** The tooltip on a greyed `NOT_YET_READY` type or row. */
+export const NOT_YET_READY_TITLE = "Not available inside a scenario yet";
 
 // The three Assumptions singletons always focus their own tab, whatever id the caller passes.
 export const SINGLETON_FOCUS_ID: Partial<Record<DetailTypeKey, string>> = {

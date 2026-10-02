@@ -9,6 +9,7 @@ import type { InventoryItem } from "@/lib/scenario/plan-inventory";
 import {
   DETAIL_GROUP_ORDER,
   NOT_YET_READY,
+  NOT_YET_READY_TITLE,
   detailType,
   type DetailGroup,
 } from "@/lib/scenario/plan-detail-catalog";
@@ -85,7 +86,7 @@ export function SolverDetailPicker({ anchor, title, items, onPick, onClose }: So
                     role="option"
                     aria-selected={false}
                     disabled={notReady}
-                    title={notReady ? "Coming in this release" : undefined}
+                    title={notReady ? NOT_YET_READY_TITLE : undefined}
                     onClick={() => onPick(item)}
                     className="flex w-full flex-col px-3 py-1.5 text-left hover:bg-card-2 focus-visible:bg-card-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
                   >

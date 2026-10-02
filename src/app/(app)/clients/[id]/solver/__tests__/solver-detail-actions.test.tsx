@@ -112,7 +112,7 @@ describe("SolverDetailActions — Add menu", () => {
     fireEvent.click(screen.getByRole("button", { name: "+ Add" }));
     const note = screen.getByRole("button", { name: "Note receivable" });
     expect(note).toBeDisabled();
-    expect(note).toHaveAttribute("title", "Coming in this release");
+    expect(note).toHaveAttribute("title", "Not available inside a scenario yet");
     fireEvent.click(note);
     expect(onAdd).not.toHaveBeenCalled();
   });
@@ -179,7 +179,7 @@ describe("SolverDetailActions — Edit and Delete pickers", () => {
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     const opt = screen.getByRole("option", { name: /Loan to Sam/ });
     expect(opt).toBeDisabled();
-    expect(opt).toHaveAttribute("title", "Coming in this release");
+    expect(opt).toHaveAttribute("title", "Not available inside a scenario yet");
     fireEvent.click(opt);
     expect(onEdit).not.toHaveBeenCalled();
   });

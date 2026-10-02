@@ -13,6 +13,7 @@ import {
   DETAIL_GROUP_ORDER,
   DETAIL_TYPES,
   NOT_YET_READY,
+  NOT_YET_READY_TITLE,
   type DetailType,
   type DetailTypeKey,
 } from "@/lib/scenario/plan-detail-catalog";
@@ -190,7 +191,7 @@ function AddRow({
   const title = noWillToAdd
     ? "Everyone in this plan already has a will"
     : notReady
-      ? "Coming in this release"
+      ? NOT_YET_READY_TITLE
       : undefined;
   if (!variants) {
     return (
