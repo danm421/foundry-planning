@@ -23,6 +23,7 @@ import type { OpType, TargetKind } from "@/engine/scenario/types";
 import type { PlanSettings } from "@/engine/types";
 import { ForbiddenError } from "@/lib/authz";
 import { findClientInFirm } from "@/lib/db-scoping";
+import { ltcEventSchema } from "@/lib/schemas/ltc-event";
 import { loadEffectiveTree } from "./loader";
 
 /**
@@ -235,6 +236,14 @@ export interface ApplyEntityEditArgs {
  * Changes panel rendered as two leaf rows for a single in-scenario entity.
  */
 export async function applyEntityEdit(args: ApplyEntityEditArgs): Promise<void> {
+  // An LTC event is saved whole: an edit would merge an unvalidated partial
+  // payload into it. A change to the event is re-saved whole as an `add`,
+  // which `applyEntityAdd` validates and upserts.
+  if (args.targetKind === "ltc_event") {
+    throw new Error(
+      "changes-writer: targetKind=ltc_event has no edit (re-save the whole event as an add)",
+    );
+  }
   const { scenarioId, firmId, targetKind, targetId, desiredFields } = args;
   const toggleGroupId = args.toggleGroupId ?? null;
 
@@ -409,7 +418,18 @@ export interface ApplyEntityAddArgs {
 export async function applyEntityAdd(
   args: ApplyEntityAddArgs,
 ): Promise<{ targetId: string }> {
-  const { scenarioId, firmId, targetKind, entity } = args;
+  const { scenarioId, firmId, targetKind } = args;
+  let { entity } = args;
+  // An LTC event has no Details form to shape it, so it is validated whole
+  // here, where every caller lands. The parsed copy is stored, which drops
+  // any unknown key.
+  if (targetKind === "ltc_event") {
+    const ltc = ltcEventSchema.safeParse(entity);
+    if (!ltc.success) {
+      throw new Error(`changes-writer: invalid ltc_event entity: ${ltc.error.message}`);
+    }
+    entity = ltc.data;
+  }
   const toggleGroupId = args.toggleGroupId ?? null;
 
   await assertScenarioInFirm(scenarioId, firmId);
