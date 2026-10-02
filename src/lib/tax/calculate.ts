@@ -23,6 +23,53 @@ interface CalcOptions {
   probeNextDollar?: boolean;
 }
 
+/** The CalcInput fields that §1222 netting and §86 SS taxability read. */
+type SsTaxabilityFields = Pick<
+  CalcInput,
+  | "filingStatus" | "earnedIncome" | "ordinaryIncome" | "interestIncome"
+  | "qualifiedDividends" | "longTermCapitalGains" | "shortTermCapitalGains"
+  | "capitalLossCarryforwardIn" | "qbiIncome" | "aboveLineDeductions"
+  | "socialSecurityGross" | "taxExemptInterest" | "taxExemptIncome"
+>;
+
+function capitalNettingOf(input: SsTaxabilityFields) {
+  return netCapitalGainsAndLosses({
+    longTermGain: input.longTermCapitalGains,
+    shortTermGain: input.shortTermCapitalGains,
+    carryforwardIn: input.capitalLossCarryforwardIn ?? emptyCapitalLossCarryforward(),
+    filingStatus: input.filingStatus,
+  });
+}
+
+/** §86 taxable Social Security, exactly as `calculateTaxYear` computes it.
+ *  Exported for a caller that needs it BEFORE it can finish the input — the
+ *  §213 medical floor in engine/year-tax.ts, which is 7.5% of an AGI that
+ *  includes this — so it reads the same figure instead of re-deriving it.
+ *
+ *  Per IRS Pub 915 the "combined income" test uses AGI — i.e. gross taxable
+ *  income minus above-the-line adjustments — not raw gross. Using gross
+ *  over-taxes SS for clients making traditional 401(k) / HSA contributions,
+ *  because those dollars would have come out before AGI. */
+export function taxableSocialSecurityOf(
+  input: SsTaxabilityFields,
+  netting = capitalNettingOf(input),
+): number {
+  const grossOther =
+    input.earnedIncome
+    + input.ordinaryIncome + (input.interestIncome ?? 0) + netting.netShortTermGain
+    + input.qualifiedDividends + netting.netLongTermGain + input.qbiIncome
+    - netting.capitalLossDeduction;
+  return calcTaxableSocialSecurity({
+    ssGross: input.socialSecurityGross,
+    otherIncome: Math.max(0, grossOther - input.aboveLineDeductions),
+    // §86 combined income counts tax-exempt INTEREST only (Form 1040 line 2a),
+    // not the broad non-taxable bucket. Fall back to taxExemptIncome for callers
+    // that haven't migrated to the narrow field.
+    taxExemptInterest: input.taxExemptInterest ?? input.taxExemptIncome,
+    filingStatus: input.filingStatus,
+  });
+}
+
 export function calculateTaxYear(input: CalcInput, opts: CalcOptions = {}): TaxResult {
   const { probeNextDollar = true } = opts;
   const p = input.taxParams;
@@ -34,12 +81,7 @@ export function calculateTaxYear(input: CalcInput, opts: CalcOptions = {}): TaxR
   // reduces AGI, and AGI drives §86 SS taxability, NIIT, IRMAA MAGI, QBI
   // thresholds and state GTI — so netting here means none of those call sites
   // need to know losses exist.
-  const netting = netCapitalGainsAndLosses({
-    longTermGain: input.longTermCapitalGains,
-    shortTermGain: input.shortTermCapitalGains,
-    carryforwardIn: input.capitalLossCarryforwardIn ?? emptyCapitalLossCarryforward(),
-    filingStatus: fs,
-  });
+  const netting = capitalNettingOf(input);
   const capitalLossDeduction = netting.capitalLossDeduction;
 
   const earnedIncome = input.earnedIncome;
@@ -57,23 +99,8 @@ export function calculateTaxYear(input: CalcInput, opts: CalcOptions = {}): TaxR
   const capitalGains = netting.netLongTermGain;
   const shortCapitalGains = netting.netShortTermGain;
 
-  // 2. SS taxability. Per IRS Pub 915 the "combined income" test uses AGI —
-  // i.e. gross taxable income minus above-the-line adjustments — not raw
-  // gross. Using gross over-taxes SS for clients making traditional 401(k) /
-  // HSA contributions, because those dollars would have come out before AGI.
-  const grossOther =
-    earnedIncome + ordinaryIncome + dividends + capitalGains + input.qbiIncome
-    - capitalLossDeduction;
-  const otherIncomeForSs = Math.max(0, grossOther - input.aboveLineDeductions);
-  const taxableSocialSecurity = calcTaxableSocialSecurity({
-    ssGross: input.socialSecurityGross,
-    otherIncome: otherIncomeForSs,
-    // §86 combined income counts tax-exempt INTEREST only (Form 1040 line 2a),
-    // not the broad non-taxable bucket. Fall back to taxExemptIncome for callers
-    // that haven't migrated to the narrow field.
-    taxExemptInterest: input.taxExemptInterest ?? input.taxExemptIncome,
-    filingStatus: fs,
-  });
+  // 2. SS taxability (see taxableSocialSecurityOf).
+  const taxableSocialSecurity = taxableSocialSecurityOf(input, netting);
   const nonTaxableSs = input.socialSecurityGross - taxableSocialSecurity;
   const nonTaxableIncome =
     input.taxExemptIncome + (input.taxFreeRetirementIncome ?? 0) + nonTaxableSs;

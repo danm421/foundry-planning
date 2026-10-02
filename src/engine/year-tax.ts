@@ -9,6 +9,7 @@ import type { CharityBucket } from "./charitable-deduction";
 import { calculateTaxYearBracket, calculateTaxYearFlat, makeEmptyTaxParams } from "./tax";
 import { computeCharitableDeductionForYear, computeCharitableNoItemize } from "./charitable-deduction";
 import { getAdditionalStdDeduction } from "../lib/tax/senior-deductions";
+import { taxableSocialSecurityOf } from "../lib/tax/calculate";
 
 export interface YearTaxInput {
   /** taxDetail with all scheduled income + (optionally) supplemental withdrawal income layered in */
@@ -137,7 +138,30 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
 
   // Approximate AGI for §170(b) bucket math (exact AGI is computed inside calculateTaxYearBracket).
   const charityAgi = Math.max(0, taxableIncome - aboveLineWithSeca);
-  const medicalDeduction = Math.max(0, input.medicalExpenses - 0.075 * charityAgi);
+
+  // The income half of the bracket call below, hoisted so the §213 floor reads
+  // taxable Social Security from the same fields calculate.ts will.
+  const bracketIncome = {
+    filingStatus,
+    earnedIncome: taxDetail.earnedIncome,
+    ordinaryIncome: Math.max(0, taxDetail.ordinaryIncome - interestIncomeForTax),
+    interestIncome: interestIncomeForTax,
+    qualifiedDividends: taxDetail.dividends,
+    longTermCapitalGains: taxDetail.capitalGains,
+    shortTermCapitalGains: taxDetail.stCapitalGains,
+    qbiIncome: taxDetail.qbi,
+    taxExemptIncome: taxDetail.taxExempt,
+    // Narrow muni-only subset for the §86 SS combined-income test (mirrors the
+    // IRMAA-MAGI bucket); the broad taxExempt total still feeds income display.
+    taxExemptInterest: taxDetail.taxExemptInterest,
+    socialSecurityGross,
+    aboveLineDeductions: aboveLineWithSeca,
+    capitalLossCarryforwardIn,
+  };
+  // §213: 7.5% of AGI. `charityAgi` comes from the `taxableIncome` scalar,
+  // which carries no Social Security, so the taxable share is added back.
+  const medicalAgi = charityAgi + taxableSocialSecurityOf(bracketIncome);
+  const medicalDeduction = Math.max(0, input.medicalExpenses - 0.075 * medicalAgi);
   // F23: the itemize-vs-standard election must compare (existing itemized + THIS
   // YEAR's candidate charitable deduction) against the standard deduction. The
   // threshold must match calculate.ts: include the §63(f) additional standard
@@ -236,24 +260,12 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
 
   const taxResult = useBracket
     ? calculateTaxYearBracket({
-        year, filingStatus,
-        earnedIncome: taxDetail.earnedIncome,
+        ...bracketIncome,
+        year,
         // Netted out of FICA / Additional Medicare only — still bracket-taxed,
         // still in AGI, still earned income for the credit layer.
         ficaExemptEarnedIncome: taxDetail.ficaExemptEarnedIncome,
-        ordinaryIncome: Math.max(0, taxDetail.ordinaryIncome - interestIncomeForTax),
-        interestIncome: interestIncomeForTax,
-        qualifiedDividends: taxDetail.dividends,
-        longTermCapitalGains: taxDetail.capitalGains,
-        shortTermCapitalGains: taxDetail.stCapitalGains,
-        qbiIncome: taxDetail.qbi,
-        taxExemptIncome: taxDetail.taxExempt,
-        // Narrow muni-only subset for the §86 SS combined-income test (mirrors the
-        // IRMAA-MAGI bucket); the broad taxExempt total still feeds income display.
-        taxExemptInterest: taxDetail.taxExemptInterest,
         taxFreeRetirementIncome: input.taxFreeRetirementIncome,
-        socialSecurityGross,
-        aboveLineDeductions: aboveLineWithSeca,
         itemizedDeductions,
         flatStateRate: planSettings.flatStateRate,
         taxParams: resolved!.params,
@@ -269,7 +281,6 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
         // taxesPaid is already the capped total (Math.min(rawSalt, saltCap)).
         saltDeducted: deductionBreakdownOut?.belowLine.taxesPaid ?? 0,
         household: input.household,
-        capitalLossCarryforwardIn,
       }, { probeNextDollar: input.measureNextDollarRate !== false })
     : calculateTaxYearFlat({
         taxableIncome,
