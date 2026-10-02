@@ -16,6 +16,10 @@ import BeneficiarySummary from "./beneficiary-summary";
 import GiftDialog from "@/components/gift-dialog";
 import AddAccountDialog from "./add-account-dialog";
 import FamilyMemberDialog from "./family-member-dialog";
+import ExternalBeneficiaryDialog, {
+  removeExternalBeneficiary,
+  saveExternalBeneficiary,
+} from "./external-beneficiary-dialog";
 import type { AccountFormInitial } from "./forms/add-account-form";
 import type { BeneficiaryRef, EntityFlowMode, GiftEventKind } from "@/engine/types";
 import type { ClientFormInitial } from "./forms/add-client-form";
@@ -389,31 +393,54 @@ type FocusTarget =
   | { kind: "client" }
   | { kind: "entity"; row: Entity }
   | { kind: "gift"; row: Gift }
+  | { kind: "member"; row: FamilyMember }
+  | { kind: "external"; row: ExternalBeneficiary }
   // A create opens the empty dialog; a delete runs the page's delete on the row
   // with no dialog at all.
-  | { kind: "create"; of: "gift" }
-  | { kind: "delete"; of: "entity" | "gift"; id: string };
+  | { kind: "create"; of: "gift" | "member" | "external" }
+  | { kind: "delete"; of: "entity" | "gift" | "member" | "external"; id: string };
 
 /** The row the page's own click would open for `focus`, null when the page
  *  offers no editor for it, or "unsupported" for a gift series (see below). */
 function findFocusRow(
   focus: EditorFocus,
-  rows: { clientId: string; entities: Entity[]; gifts: Gift[]; giftSeries: GiftSeriesLite[] },
+  rows: {
+    clientId: string;
+    entities: Entity[];
+    gifts: Gift[];
+    giftSeries: GiftSeriesLite[];
+    members: FamilyMember[];
+    externals: ExternalBeneficiary[];
+  },
 ): FocusTarget | "unsupported" | null {
   const byId = <T extends { id: string }>(list: T[]) => list.find((r) => r.id === focusRowId(focus)) ?? null;
-  // Gifts add through the empty GiftDialog. A trust add is unsupported:
-  // EntityDialog always renders AddTrustForm, whose `saveAsyncImpl` refuses
-  // every create while a scenario is active. Members and external beneficiaries
-  // stay out until their editors write the scenario.
+  // Gifts add through the empty GiftDialog; members and charities through their
+  // own dialogs. A trust add is unsupported: EntityDialog always renders
+  // AddTrustForm, whose `saveAsyncImpl` refuses every create while a scenario is
+  // active.
   if (focus.intent === "create") {
-    if (focus.kind === "entity") return "unsupported";
-    return focus.kind === "gift" ? { kind: "create", of: "gift" } : null;
+    switch (focus.kind) {
+      case "entity":
+        return "unsupported";
+      case "gift":
+        return { kind: "create", of: "gift" };
+      case "family_member":
+        return { kind: "create", of: "member" };
+      case "external_beneficiary":
+        return { kind: "create", of: "external" };
+      default:
+        return null;
+    }
   }
   if (focus.intent === "delete") {
     switch (focus.kind) {
       // Every listed entity has a trash icon, whatever its type.
       case "entity":
         return byId(rows.entities) ? { kind: "delete", of: "entity", id: focus.id } : null;
+      case "family_member":
+        return byId(rows.members) ? { kind: "delete", of: "member", id: focus.id } : null;
+      case "external_beneficiary":
+        return byId(rows.externals) ? { kind: "delete", of: "external", id: focus.id } : null;
       // One-time gifts only; a series' delete is not scenario-safe (see "gift" below).
       case "gift":
         if (byId(rows.gifts)) return { kind: "delete", of: "gift", id: focus.id };
@@ -428,11 +455,10 @@ function findFocusRow(
     // Retirement tab instead — ruling T4d-horizon.)
     case "client":
       return focus.id === rows.clientId ? { kind: "client" } : null;
-    // The page lists members from the base `family_members` table, so the
-    // dialog would open on base values and its save would revert the scenario's
-    // own edit — ruling T4d-member.
-    case "family_member":
-      return null;
+    case "family_member": {
+      const row = byId(rows.members);
+      return row ? { kind: "member", row } : null;
+    }
     case "entity": {
       const row = byId(rows.entities);
       return row ? { kind: "entity", row } : null;
@@ -447,10 +473,10 @@ function findFocusRow(
       if (row) return { kind: "gift", row };
       return byId(rows.giftSeries) ? "unsupported" : null;
     }
-    // Its inline row form PATCHes the base `external_beneficiaries` row with a
-    // bare fetch, so a save inside a scenario would rewrite the base plan.
-    case "external_beneficiary":
-      return null;
+    case "external_beneficiary": {
+      const row = byId(rows.externals);
+      return row ? { kind: "external", row } : null;
+    }
     default:
       return null;
   }
@@ -499,6 +525,8 @@ export default function FamilyView({
           entities: initialEntities,
           gifts: initialGifts,
           giftSeries: initialGiftSeries,
+          members: initialMembers,
+          externals: initialExternalBeneficiaries,
         })
       : null,
   );
@@ -510,7 +538,7 @@ export default function FamilyView({
   // Straight from props, not a mount-time copy: a scenario save refreshes the
   // page, and the Beneficiaries editor must reopen on the rows that were saved.
   const accounts = initialAccounts;
-  const [designations] = useState<Designation[]>(initialDesignations);
+  const designations = initialDesignations;
   // The scenario's people, trusts and charities for the account form's
   // Beneficiaries tab. `members` excludes the household principals, so they are
   // added back (by role, with the names the page shows) as the old
@@ -551,8 +579,16 @@ export default function FamilyView({
   const [giftsState, setGiftsState] = useState<Gift[]>(initialGifts);
   const [giftSeriesState, setGiftSeriesState] = useState<GiftSeriesLite[]>(initialGiftSeries);
 
-  const [memberDialogOpen, setMemberDialogOpen] = useState(false);
-  const [editingMember, setEditingMember] = useState<FamilyMember | undefined>();
+  const [memberDialogOpen, setMemberDialogOpen] = useState(
+    () => focusTarget?.kind === "member" || (focusTarget?.kind === "create" && focusTarget.of === "member"),
+  );
+  const [editingMember, setEditingMember] = useState<FamilyMember | undefined>(
+    focusTarget?.kind === "member" ? focusTarget.row : undefined,
+  );
+  // Focus mode's charity dialog; the page edits charities inline instead.
+  const [externalFocusOpen, setExternalFocusOpen] = useState(
+    () => focusTarget?.kind === "external" || (focusTarget?.kind === "create" && focusTarget.of === "external"),
+  );
   const [deletingMember, setDeletingMember] = useState<FamilyMember | null>(null);
   const [membersEdit, setMembersEdit] = useState(false);
   const [claimedAsDependentError, setClaimedAsDependentError] = useState<string | null>(null);
@@ -704,6 +740,20 @@ export default function FamilyView({
     }
   }
 
+  // The page's member delete, shared with focus mode's delete intent.
+  async function performMemberDelete(member: FamilyMember): Promise<boolean> {
+    const res = await writer.submit(
+      { op: "remove", targetKind: "family_member", targetId: member.id },
+      {
+        url: `/api/clients/${clientId}/family-members/${member.id}`,
+        method: "DELETE",
+      },
+    );
+    if (!(res.ok || res.status === 204)) return false;
+    setMembers((prev) => prev.filter((m) => m.id !== member.id));
+    return true;
+  }
+
   // The page's entity delete, shared with focus mode's delete intent.
   async function performEntityDelete(entity: Entity): Promise<boolean> {
     const res = await writer.submit(
@@ -727,6 +777,16 @@ export default function FamilyView({
           if (of === "entity") {
             const entity = entities.find((e) => e.id === id);
             return entity ? performEntityDelete(entity) : false;
+          }
+          if (of === "member") {
+            const member = members.find((m) => m.id === id);
+            return member ? performMemberDelete(member) : false;
+          }
+          if (of === "external") {
+            const res = await removeExternalBeneficiary(writer, clientId, id);
+            if (!(res.ok || res.status === 204)) return false;
+            setExternals((prev) => prev.filter((x) => x.id !== id));
+            return true;
           }
           const res = await removeGift(writer, clientId, id);
           if (!res.ok) return false;
@@ -763,6 +823,23 @@ export default function FamilyView({
           onRequestDelete={() => {
             if (editingMember) setDeletingMember(editingMember);
           }}
+        />
+      )}
+
+      {externalFocusOpen && (
+        <ExternalBeneficiaryDialog
+          key={focusTarget?.kind === "external" ? focusTarget.row.id : "new"}
+          clientId={clientId}
+          open={externalFocusOpen}
+          onOpenChange={setExternalFocusOpen}
+          editing={focusTarget?.kind === "external" ? focusTarget.row : undefined}
+          onSaved={(saved) =>
+            setExternals((prev) =>
+              prev.some((x) => x.id === saved.id)
+                ? prev.map((x) => (x.id === saved.id ? saved : x))
+                : [...prev, saved],
+            )
+          }
         />
       )}
 
@@ -848,15 +925,7 @@ export default function FamilyView({
         onCancel={() => setDeletingMember(null)}
         onConfirm={async () => {
           if (!deletingMember) return;
-          const res = await writer.submit(
-            { op: "remove", targetKind: "family_member", targetId: deletingMember.id },
-            {
-              url: `/api/clients/${clientId}/family-members/${deletingMember.id}`,
-              method: "DELETE",
-            },
-          );
-          if (res.ok || res.status === 204) {
-            setMembers((prev) => prev.filter((m) => m.id !== deletingMember.id));
+          if (await performMemberDelete(deletingMember)) {
             setMemberDialogOpen(false);
             setDeletingMember(null);
           }
@@ -903,7 +972,8 @@ export default function FamilyView({
 
   // Focus mode hands control back once its dialog is gone — cancel, save or a
   // confirmed delete — or, with its reason, when none ever opened.
-  const focusDialogOpen = editProfileOpen || entityDialogOpen || giftFocusOpen || focusDeleting;
+  const focusDialogOpen =
+    editProfileOpen || entityDialogOpen || memberDialogOpen || externalFocusOpen || giftFocusOpen || focusDeleting;
   useFocusCloseOnce(focus, focusFound, focusDialogOpen, onFocusClose);
 
   // A delete shows no dialog.
@@ -1556,6 +1626,7 @@ function ExternalBeneficiariesSection({
   setExternals: React.Dispatch<React.SetStateAction<ExternalBeneficiary[]>>;
   canEdit: boolean;
 }) {
+  const writer = useScenarioWriter(clientId);
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editMode, setEditMode] = useState(false);
@@ -1620,6 +1691,7 @@ function ExternalBeneficiariesSection({
                 editingId === x.id ? (
                   <ExternalBeneficiaryRowForm
                     key={x.id}
+                    writer={writer}
                     clientId={clientId}
                     initial={x}
                     onCancel={() => setEditingId(null)}
@@ -1664,6 +1736,7 @@ function ExternalBeneficiariesSection({
               )}
               {adding && (
                 <ExternalBeneficiaryRowForm
+                  writer={writer}
                   clientId={clientId}
                   onCancel={() => setAdding(false)}
                   onSaved={(saved) => {
@@ -1685,10 +1758,7 @@ function ExternalBeneficiariesSection({
         onCancel={() => setDeleting(null)}
         onConfirm={async () => {
           if (!deleting) return;
-          const res = await fetch(
-            `/api/clients/${clientId}/external-beneficiaries/${deleting.id}`,
-            { method: "DELETE" },
-          );
+          const res = await removeExternalBeneficiary(writer, clientId, deleting.id);
           if (res.ok || res.status === 204) {
             setExternals((prev) => prev.filter((x) => x.id !== deleting.id));
             setDeleting(null);
@@ -1704,12 +1774,14 @@ function ExternalBeneficiariesSection({
 }
 
 function ExternalBeneficiaryRowForm({
+  writer,
   clientId,
   initial,
   onCancel,
   onSaved,
   onError,
 }: {
+  writer: ReturnType<typeof useScenarioWriter>;
   clientId: string;
   initial?: ExternalBeneficiary;
   onCancel: () => void;
@@ -1729,20 +1801,11 @@ function ExternalBeneficiaryRowForm({
     setSaving(true);
     onError(null);
     try {
-      const isEdit = Boolean(initial);
-      const url = isEdit
-        ? `/api/clients/${clientId}/external-beneficiaries/${initial!.id}`
-        : `/api/clients/${clientId}/external-beneficiaries`;
-      const res = await fetch(url, {
-        method: isEdit ? "PATCH" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), kind, notes: notes.trim() || null }),
+      const saved = await saveExternalBeneficiary(writer, clientId, initial, {
+        name: name.trim(),
+        kind,
+        notes: notes.trim() || null,
       });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        throw new Error(j.error ?? `HTTP ${res.status}`);
-      }
-      const saved = (await res.json()) as ExternalBeneficiary;
       onSaved(saved);
     } catch (e) {
       onError(e instanceof Error ? e.message : String(e));

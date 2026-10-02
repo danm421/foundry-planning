@@ -129,15 +129,12 @@ const DETAILS_PAGE_BY_KIND: Partial<Record<TargetKind, DetailsEditorPage>> = {
 
 // Ruling F-I2: kinds whose Details editor is KNOWN to corrupt data inside a
 // scenario — it writes the base plan, or it opens on base values so a save
-// reverts the scenario's own change. The Solver explains instead of opening
-// (or linking to) that editor. Delete an entry once its Details-page bug is
-// fixed (vault `future-work/scenarios.md`).
-//   family_member — the page lists members from the base table (T4d-member).
-//   external_beneficiary — its inline form PATCHes the base row (T4d-extben).
-const UNSUPPORTED_KINDS: ReadonlySet<TargetKind> = new Set<TargetKind>([
-  "family_member",
-  "external_beneficiary",
-]);
+// reverts the scenario's own change — get an explanation instead of an editor
+// (or a link to one). Delete an entry once its Details-page bug is fixed (vault
+// `future-work/scenarios.md`). None is left: the family member and external
+// beneficiary editors now read and write the scenario. (A view can still report
+// one row as unsupported through `onFocusClose`.)
+const UNSUPPORTED_KINDS: ReadonlySet<TargetKind> = new Set<TargetKind>();
 
 function isUnsupported({ targetKind }: ChangeEditorInput): boolean {
   return UNSUPPORTED_KINDS.has(targetKind);

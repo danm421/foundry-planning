@@ -152,4 +152,22 @@ describe("Beneficiary Summary → Edit, inside a scenario", () => {
     const household = screen.getByRole("group", { name: "Household" });
     expect(Array.from(household.querySelectorAll("option")).map((o) => o.textContent)).toEqual(["Alice T", "Bob T"]);
   });
+
+  it("lists a member and a charity the scenario added in the pick lists, with no base GET", async () => {
+    await act(async () => {
+      render(
+        tree(
+          pageProps({
+            initialMembers: [{ id: "fm-scn", firstName: "Zed", lastName: "T", relationship: "child", role: "child", dateOfBirth: null, notes: null }],
+            initialExternalBeneficiaries: [{ id: "ext-scn", name: "Scenario Library", kind: "charity", notes: null }],
+          }),
+        ),
+      );
+    });
+    fireEvent.click(screen.getByRole("button", { name: "open beneficiaries" }));
+    await screen.findByText("sum: 100.00%");
+    expect(screen.getByRole("option", { name: /Zed/ })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Scenario Library (charity)" })).toBeInTheDocument();
+    expect(requestList().filter((l) => l.includes("family-members") || l.includes("external-beneficiaries"))).toEqual([]);
+  });
 });

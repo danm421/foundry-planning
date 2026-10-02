@@ -4,8 +4,6 @@ import {
   clients,
   crmHouseholdContacts,
   scenarios,
-  familyMembers,
-  externalBeneficiaries,
   entities,
 } from "@/db/schema";
 import { eq, and, asc } from "drizzle-orm";
@@ -72,14 +70,8 @@ export async function loadWillsViewProps(
   // here when the user has a `?scenario=` selected). Read them from
   // `effectiveTree.wills` instead of querying the base tables directly —
   // `loadEffectiveTree` already merges scenario_changes for us.
-  const [familyRows, externalRows, entityRows, { effectiveTree }] =
+  const [entityRows, { effectiveTree }] =
     await Promise.all([
-      db.select().from(familyMembers).where(eq(familyMembers.clientId, id)).orderBy(asc(familyMembers.firstName)),
-      db
-        .select()
-        .from(externalBeneficiaries)
-        .where(eq(externalBeneficiaries.clientId, id))
-        .orderBy(asc(externalBeneficiaries.name)),
       db.select().from(entities).where(eq(entities.clientId, id)).orderBy(asc(entities.name)),
       loadEffectiveTree(id, firmId, scenarioParam ?? "base", {}),
     ]);
@@ -152,16 +144,22 @@ export async function loadWillsViewProps(
     ownerEntityId: controllingEntity(a) ?? null,
     value: a.value,
   }));
-  const fams: WillsPanelFamilyMember[] = familyRows.map((f) => ({
-    id: f.id,
-    firstName: f.firstName,
-    lastName: f.lastName ?? null,
-    role: f.role,
-  }));
-  const exts: WillsPanelExternal[] = externalRows.map((e) => ({
-    id: e.id,
-    name: e.name,
-  }));
+  // People and charities a bequest can name come off the tree, so ones a
+  // scenario added are pickable and ones it removed are not.
+  const fams: WillsPanelFamilyMember[] = [...(effectiveTree.familyMembers ?? [])]
+    .sort((a, b) => a.firstName.localeCompare(b.firstName))
+    .map((f) => ({
+      id: f.id,
+      firstName: f.firstName,
+      lastName: f.lastName ?? null,
+      role: f.role,
+    }));
+  const exts: WillsPanelExternal[] = [...(effectiveTree.externalBeneficiaries ?? [])]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((e) => ({
+      id: e.id,
+      name: e.name,
+    }));
   const ents: WillsPanelEntity[] = entityRows.map((e) => ({
     id: e.id,
     name: e.name,

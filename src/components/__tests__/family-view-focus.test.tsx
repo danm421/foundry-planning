@@ -6,11 +6,8 @@
  * for that row, seeded with that row, and hand control back through
  * `onFocusClose` whenever that dialog goes away (cancel, save) or never could
  * open — the row is missing, its kind isn't edited here, the advisor has
- * view-only access, or it's a family member (its dialog is seeded from the
- * base plan, so a save would revert the scenario's change) or an external
- * beneficiary (its editor can write the base plan even inside a scenario) —
- * all "unavailable" — or it's a gift series, whose editor can write the base
- * plan too ("unsupported", Ruling F-I2).
+ * view-only access — all "unavailable" — or it's a gift series, whose editor
+ * can write the base plan ("unsupported", Ruling F-I2).
  *
  * The Solver is always inside a scenario, so `?scenario=` is in the URL and
  * `use-scenario-writer` is NOT mocked: the save tests pin that each focused
@@ -237,6 +234,23 @@ describe("FamilyView focus mode — which dialog opens", () => {
     expectNoPageChrome();
   });
 
+  it("family_member → the Edit Family Member dialog, pre-filled with that member, and nothing else", () => {
+    renderFocused({ kind: "family_member", id: "fm-child" });
+
+    expect(screen.getByRole("dialog", { name: "Edit Family Member" })).toBeTruthy();
+    expect(inputValue("fm-first")).toBe("Bobby");
+    expect(inputValue("fm-last")).toBe("Test");
+    expectNoPageChrome();
+  });
+
+  it("external_beneficiary → the Edit Charity dialog, pre-filled with that charity, and nothing else", () => {
+    renderFocused({ kind: "external_beneficiary", id: "ext-1" });
+
+    expect(screen.getByRole("dialog", { name: "Edit Charity / External Beneficiary" })).toBeTruthy();
+    expect(inputValue("ext-name")).toBe("Red Cross");
+    expectNoPageChrome();
+  });
+
   it("entity → the Edit Trust dialog, pre-filled with that trust, and nothing else", () => {
     renderFocused({ kind: "entity", id: "ent-ilit" });
 
@@ -293,16 +307,12 @@ describe("FamilyView focus mode — unavailable", () => {
     await expectUnavailable(renderFocused({ kind: "client", id: "someone-else" }));
   });
 
-  // Ruling T4d-member: the page lists members from the base table, so the
-  // dialog opens on base values and a save would revert the scenario's edit.
-  it("a family member → unavailable, even though the row is there", async () => {
-    await expectUnavailable(renderFocused({ kind: "family_member", id: "fm-child" }));
+  it("a family member that isn't there → unavailable", async () => {
+    await expectUnavailable(renderFocused({ kind: "family_member", id: "gone" }));
   });
 
-  // Its inline row form PATCHes the base table with a bare fetch, so a save
-  // inside a scenario would rewrite the base plan.
-  it("an external beneficiary → unavailable, even though the row is there", async () => {
-    await expectUnavailable(renderFocused({ kind: "external_beneficiary", id: "ext-1" }));
+  it("an external beneficiary that isn't there → unavailable", async () => {
+    await expectUnavailable(renderFocused({ kind: "external_beneficiary", id: "gone" }));
   });
 
   it("without edit permission → unavailable, as the page offers no editor either", async () => {
@@ -445,12 +455,111 @@ describe("FamilyView focus mode — create and delete intents", () => {
     expect(fetchMock.mock.calls.some(([, init]) => init?.method === "DELETE")).toBe(false);
   });
 
-  it.each(["family_member", "external_beneficiary", "client"] as const)(
-    "create %s → unavailable until its editor is scenario-safe",
-    async (kind) => {
-      await expectUnavailable(renderFocused({ intent: "create", kind }));
-    },
-  );
+  it("create client → unavailable", async () => {
+    await expectUnavailable(renderFocused({ intent: "create", kind: "client" }));
+  });
+
+  it("create family_member opens the empty Add Family Member dialog alone, and cancel closes", () => {
+    const { onFocusClose } = renderFocused({ intent: "create", kind: "family_member" });
+
+    expect(screen.getByRole("dialog", { name: "Add Family Member" })).toBeTruthy();
+    expect(inputValue("fm-first")).toBe("");
+    expectNoPageChrome();
+    expect(onFocusClose).not.toHaveBeenCalled();
+
+    fireEvent.click(dialog("Add Family Member").getByRole("button", { name: "Cancel" }));
+    expect(onFocusClose).toHaveBeenCalledTimes(1);
+    expect(onFocusClose).toHaveBeenCalledWith();
+  });
+
+  it("create family_member saves a scenario add, nothing else, then closes with no outcome", async () => {
+    const { onFocusClose } = renderFocused({ intent: "create", kind: "family_member" });
+
+    fireEvent.change(document.getElementById("fm-first")!, { target: { value: "Tom" } });
+    fireEvent.click(dialog("Add Family Member").getByRole("button", { name: "Add" }));
+
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledTimes(1));
+    expect(onFocusClose).toHaveBeenCalledWith();
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method)).toHaveLength(1);
+    expect(scenarioChangeBodies()).toEqual([
+      expect.objectContaining({
+        op: "add",
+        targetKind: "family_member",
+        entity: expect.objectContaining({ firstName: "Tom", lastName: null }),
+      }),
+    ]);
+  });
+
+  it("create external_beneficiary saves a scenario add, nothing else, then closes with no outcome", async () => {
+    const { onFocusClose } = renderFocused({ intent: "create", kind: "external_beneficiary" });
+    expect(screen.getByRole("dialog", { name: "Add Charity / External Beneficiary" })).toBeTruthy();
+
+    fireEvent.change(document.getElementById("ext-name")!, { target: { value: "Library" } });
+    fireEvent.click(dialog("Add Charity / External Beneficiary").getByRole("button", { name: "Add" }));
+
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledTimes(1));
+    expect(onFocusClose).toHaveBeenCalledWith();
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method)).toHaveLength(1);
+    expect(scenarioChangeBodies()).toEqual([
+      expect.objectContaining({
+        op: "add",
+        targetKind: "external_beneficiary",
+        entity: expect.objectContaining({ name: "Library", kind: "charity", charityType: "public" }),
+      }),
+    ]);
+  });
+
+  it("edit family_member saves a scenario edit, nothing else, then closes with no outcome", async () => {
+    const { onFocusClose } = renderFocused({ kind: "family_member", id: "fm-child" });
+
+    fireEvent.change(document.getElementById("fm-first")!, { target: { value: "Robert" } });
+    fireEvent.click(dialog("Edit Family Member").getByRole("button", { name: "Save Changes" }));
+
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledTimes(1));
+    expect(onFocusClose).toHaveBeenCalledWith();
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method)).toHaveLength(1);
+    expect(scenarioChangeBodies()).toEqual([
+      expect.objectContaining({
+        op: "edit",
+        targetKind: "family_member",
+        targetId: "fm-child",
+        desiredFields: expect.objectContaining({ firstName: "Robert" }),
+      }),
+    ]);
+  });
+
+  it("edit external_beneficiary saves a scenario edit, nothing else, then closes with no outcome", async () => {
+    const { onFocusClose } = renderFocused({ kind: "external_beneficiary", id: "ext-1" });
+
+    fireEvent.change(document.getElementById("ext-name")!, { target: { value: "Red Cross II" } });
+    fireEvent.click(dialog("Edit Charity / External Beneficiary").getByRole("button", { name: "Save Changes" }));
+
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledTimes(1));
+    expect(onFocusClose).toHaveBeenCalledWith();
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method)).toHaveLength(1);
+    expect(scenarioChangeBodies()).toEqual([
+      expect.objectContaining({
+        op: "edit",
+        targetKind: "external_beneficiary",
+        targetId: "ext-1",
+        desiredFields: { name: "Red Cross II", kind: "charity", notes: null },
+      }),
+    ]);
+  });
+
+  it.each([
+    { kind: "family_member" as const, id: "fm-child" },
+    { kind: "external_beneficiary" as const, id: "ext-1" },
+  ])("delete $kind removes it with a scenario change, no prompt, then closes with no outcome", async ({ kind, id }) => {
+    const { onFocusClose, container } = renderFocused({ intent: "delete", kind, id });
+
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledTimes(1));
+    expect(onFocusClose).toHaveBeenCalledWith();
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method)).toHaveLength(1);
+    expect(scenarioChangeBodies()).toEqual([{ op: "remove", targetKind: kind, targetId: id }]);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(container).toBeEmptyDOMElement();
+  });
 
   it("delete entity removes it with a scenario change, no prompt, then closes with no outcome", async () => {
     const { onFocusClose, container } = renderFocused({ intent: "delete", kind: "entity", id: "ent-ilit" });
@@ -493,6 +602,8 @@ describe("FamilyView focus mode — create and delete intents", () => {
   it.each([
     { kind: "entity" as const, id: "ent-ilit" },
     { kind: "gift" as const, id: "gift-1" },
+    { kind: "family_member" as const, id: "fm-child" },
+    { kind: "external_beneficiary" as const, id: "ext-1" },
   ])("delete $kind does not close before the write resolves", async ({ kind, id }) => {
     let release!: () => void;
     fetchMock.mockImplementation(
@@ -513,6 +624,8 @@ describe("FamilyView focus mode — create and delete intents", () => {
   it.each([
     { kind: "entity" as const, id: "ent-ilit" },
     { kind: "gift" as const, id: "gift-1" },
+    { kind: "family_member" as const, id: "fm-child" },
+    { kind: "external_beneficiary" as const, id: "ext-1" },
   ])("delete $kind reports \"failed\" when the write fails", async ({ kind, id }) => {
     fetchMock.mockImplementation(async () => ({ ok: false, status: 500, json: async () => ({}) }));
     const { onFocusClose } = renderFocused({ intent: "delete", kind, id });
@@ -538,8 +651,8 @@ describe("FamilyView focus mode — create and delete intents", () => {
   it.each([
     { label: "an entity that isn't there", focus: { intent: "delete", kind: "entity", id: "gone" } as EditorFocus },
     { label: "a gift that isn't there", focus: { intent: "delete", kind: "gift", id: "gone" } as EditorFocus },
-    { label: "a family member", focus: { intent: "delete", kind: "family_member", id: "fm-child" } as EditorFocus },
-    { label: "an external beneficiary", focus: { intent: "delete", kind: "external_beneficiary", id: "ext-1" } as EditorFocus },
+    { label: "a family member that isn't there", focus: { intent: "delete", kind: "family_member", id: "gone" } as EditorFocus },
+    { label: "an external beneficiary that isn't there", focus: { intent: "delete", kind: "external_beneficiary", id: "gone" } as EditorFocus },
   ])("delete of $label → unavailable, no write", async ({ focus }) => {
     await expectUnavailable(renderFocused(focus));
     expect(scenarioChangeBodies()).toEqual([]);

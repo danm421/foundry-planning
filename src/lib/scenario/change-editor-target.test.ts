@@ -88,20 +88,18 @@ describe("resolveChangeEditor", () => {
     });
   });
 
-  // Ruling F-I2: kinds whose Details editor is known to write the base plan or
-  // revert the scenario's change inside a scenario. Whatever the op.
-  describe("unsupported", () => {
-    const unsupportedKinds: TargetKind[] = [
-      "family_member",
-      "external_beneficiary",
-    ];
-
-    it.each(unsupportedKinds.flatMap((k) => [[k, "edit"], [k, "add"]] as const))(
-      "a %s %s -> unsupported",
-      (targetKind, opType) => {
-        expect(resolveChangeEditor(change({ targetKind, opType }))).toEqual({ surface: "unsupported" });
-      },
-    );
+  // Ruling F-I2: no kind is known to corrupt a scenario any more, so every kind
+  // with a Details page resolves to it (family members and charities included).
+  describe("kinds that once were unsupported", () => {
+    it.each(["family_member", "external_beneficiary"] as const)("a %s edit or add -> family", (targetKind) => {
+      for (const opType of ["edit", "add"] as const) {
+        expect(resolveChangeEditor(change({ targetKind, opType, targetId: "x1" }))).toEqual({
+          surface: "details",
+          page: "family",
+          focus: { kind: targetKind, id: "x1" },
+        });
+      }
+    });
 
     // The writer merges each trust-dialog tab's save into the edit's payload,
     // so an entity edit opens the trust dialog like an add does.
@@ -119,7 +117,7 @@ describe("resolveChangeEditor", () => {
       ).toEqual({ surface: "details", page: "family", focus: { kind: "entity", id: "t1" } });
     });
 
-    it.each([...unsupportedKinds, "entity"] as TargetKind[])(
+    it.each(["family_member", "external_beneficiary", "entity"] as TargetKind[])(
       "a removed or disabled %s is still null",
       (targetKind) => {
         expect(resolveChangeEditor(change({ targetKind, opType: "remove", payload: null }))).toBeNull();

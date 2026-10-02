@@ -79,6 +79,9 @@ export default function FamilyMemberDialog({
       domesticPartner: data.get("domesticPartner") === "on",
       inheritanceClassOverride,
     };
+    // A blank last name is stored as null, so an unchanged save writes the same
+    // value the base row holds and the scenario change collapses to nothing.
+    const scenarioBody = { ...body, lastName: body.lastName || null };
     try {
       const newMemberId =
         typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
@@ -91,7 +94,7 @@ export default function FamilyMemberDialog({
               op: "edit",
               targetKind: "family_member",
               targetId: editing!.id,
-              desiredFields: body,
+              desiredFields: scenarioBody,
             },
             {
               url: `/api/clients/${clientId}/family-members/${editing!.id}`,
@@ -103,7 +106,7 @@ export default function FamilyMemberDialog({
             {
               op: "add",
               targetKind: "family_member",
-              entity: { id: newMemberId, ...body },
+              entity: { id: newMemberId, ...scenarioBody },
             },
             {
               url: `/api/clients/${clientId}/family-members`,
@@ -119,7 +122,7 @@ export default function FamilyMemberDialog({
         ? {
             id: isEdit ? editing!.id : newMemberId,
             firstName: body.firstName,
-            lastName: body.lastName || null,
+            lastName: scenarioBody.lastName,
             relationship: body.relationship as FamilyMember["relationship"],
             dateOfBirth: body.dateOfBirth,
             notes: body.notes,

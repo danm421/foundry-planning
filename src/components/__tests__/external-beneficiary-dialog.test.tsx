@@ -78,4 +78,32 @@ describe("ExternalBeneficiaryDialog", () => {
     );
     expect(screen.getByRole("button", { name: /add/i })).toBeDisabled();
   });
+
+  it("opens on the row being edited and PATCHes it in base mode", async () => {
+    const onSaved = vi.fn();
+    const user = userEvent.setup();
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ id: "e1", name: "Red Cross II", kind: "charity", notes: "x" }),
+    });
+    render(
+      <ExternalBeneficiaryDialog
+        clientId="c1"
+        open
+        onOpenChange={() => {}}
+        editing={{ id: "e1", name: "Red Cross", kind: "charity", notes: "x" }}
+        onSaved={onSaved}
+      />,
+    );
+    expect(screen.getByLabelText(/name/i)).toHaveValue("Red Cross");
+    await user.clear(screen.getByLabelText(/name/i));
+    await user.type(screen.getByLabelText(/name/i), "Red Cross II");
+    await user.click(screen.getByRole("button", { name: "Save Changes" }));
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockFetch).toHaveBeenCalledWith(
+      "/api/clients/c1/external-beneficiaries/e1",
+      expect.objectContaining({ method: "PATCH" }),
+    );
+    expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ id: "e1", name: "Red Cross II" }));
+  });
 });

@@ -6,13 +6,12 @@ import {
   familyMembers,
   entities,
   externalBeneficiaries,
-  beneficiaryDesignations,
   gifts,
   giftSeries,
   taxYearParameters,
   scenarios as scenariosTable,
 } from "@/db/schema";
-import { eq, and, asc, notInArray } from "drizzle-orm";
+import { eq, and, asc } from "drizzle-orm";
 import { buildAnnualExclusionMap } from "@/lib/gifts/resolve-annual-exclusion";
 import { getOrgId } from "@/lib/db-helpers";
 import type {
@@ -29,6 +28,7 @@ import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { loadActiveGiftChanges } from "@/lib/scenario/changes";
 import { buildFamilyPrimary } from "./family-primary";
 import { entitySummaryToRow, overlayScenarioGiftRows } from "@/lib/gifts/scenario-rows";
+import type { BeneficiaryRef, EntitySummary } from "@/engine/types";
 import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
 import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
 
@@ -66,33 +66,20 @@ export async function loadFamilyViewProps(
     .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId));
   const spouseContact = contactRows.find((c) => c.role === "spouse") ?? null;
 
-  const [memberRows, allMemberRows, entityRows, externalRows, designationRows, giftRows, { effectiveTree }, contacts, scenarioRows] =
+  // The base member and charity rows are read only for `notes`, which the
+  // engine's FamilyMember / ExternalBeneficiary don't carry: everything the
+  // page lists comes from the effective tree below.
+  const [baseMemberRows, entityRows, baseExternalRows, giftRows, { effectiveTree }, contacts, scenarioRows] =
     await Promise.all([
       db
-        .select()
-        .from(familyMembers)
-        .where(
-          and(
-            eq(familyMembers.clientId, id),
-            notInArray(familyMembers.role, ["client", "spouse"]),
-          ),
-        )
-        .orderBy(asc(familyMembers.relationship), asc(familyMembers.firstName)),
-      db
-        .select()
+        .select({ id: familyMembers.id, notes: familyMembers.notes })
         .from(familyMembers)
         .where(eq(familyMembers.clientId, id)),
       db.select().from(entities).where(eq(entities.clientId, id)).orderBy(asc(entities.name)),
       db
-        .select()
+        .select({ id: externalBeneficiaries.id, notes: externalBeneficiaries.notes })
         .from(externalBeneficiaries)
-        .where(eq(externalBeneficiaries.clientId, id))
-        .orderBy(asc(externalBeneficiaries.name)),
-      db
-        .select()
-        .from(beneficiaryDesignations)
-        .where(eq(beneficiaryDesignations.clientId, id))
-        .orderBy(asc(beneficiaryDesignations.tier), asc(beneficiaryDesignations.sortOrder)),
+        .where(eq(externalBeneficiaries.clientId, id)),
       db
         .select()
         .from(gifts)
@@ -136,7 +123,9 @@ export async function loadFamilyViewProps(
   // The three `entities` columns the engine's EntitySummary doesn't carry.
   // Keyed by id so a trust that exists only as a scenario change simply has no
   // entry and falls back to the row builder's defaults.
-  const entityExtras = new Map(
+  // A scenario-added trust carries these as extra keys on its payload, which the
+  // effective tree keeps at runtime, so the tree's value wins over the base row's.
+  const baseEntityExtras = new Map(
     entityRows.map((e) => [
       e.id,
       {
@@ -146,34 +135,63 @@ export async function loadFamilyViewProps(
       },
     ]),
   );
+  const entityExtrasFor = (e: EntitySummary) => {
+    const base = baseEntityExtras.get(e.id);
+    const runtime = e as EntitySummary & { owner?: "client" | "spouse" | "joint" | null };
+    // `beneficiaries` on the tree is the engine's BeneficiaryRef list, a different
+    // shape from this page's name/percentage rows: only the latter is taken.
+    const treeRows = (e.beneficiaries ?? []) as unknown as Array<Record<string, unknown>>;
+    const nameRows = treeRows.length > 0 && treeRows.every((r) => "name" in r);
+    return {
+      notes: e.notes ?? base?.notes ?? null,
+      owner: runtime.owner ?? base?.owner ?? null,
+      beneficiaries: nameRows ? (treeRows as unknown as NamePctRow[]) : (base?.beneficiaries ?? null),
+    };
+  };
 
-  const members: FamilyMember[] = memberRows.map((m) => ({
-    id: m.id,
-    firstName: m.firstName,
-    lastName: m.lastName ?? null,
-    relationship: m.relationship,
-    role: m.role,
-    dateOfBirth: m.dateOfBirth ?? null,
-    notes: m.notes ?? null,
-    domesticPartner: m.domesticPartner,
-    inheritanceClassOverride: m.inheritanceClassOverride ?? {},
-    claimedAsDependent: m.claimedAsDependent,
-  }));
+  // Members and charities come from the effective tree too: neither table is
+  // scenario-scoped, so one added or edited in a scenario would otherwise be
+  // invisible here (and an edit would open on base values).
+  const baseNotes = new Map(baseMemberRows.map((m) => [m.id, m.notes]));
+  const treeMembers = effectiveTree.familyMembers ?? [];
+  const members: FamilyMember[] = treeMembers
+    .filter((m) => m.role !== "client" && m.role !== "spouse")
+    .map((m) => ({
+      id: m.id,
+      firstName: m.firstName,
+      lastName: m.lastName ?? null,
+      relationship: m.relationship,
+      role: m.role ?? "other",
+      dateOfBirth: m.dateOfBirth ?? null,
+      // `notes` isn't on the engine type: a scenario add/edit carries it as an
+      // extra key, otherwise the base row's.
+      notes: (m as { notes?: string | null }).notes ?? baseNotes.get(m.id) ?? null,
+      domesticPartner: m.domesticPartner ?? false,
+      inheritanceClassOverride: m.inheritanceClassOverride ?? {},
+      claimedAsDependent: m.claimedAsDependent ?? "auto",
+    }))
+    .sort(
+      (a, b) =>
+        a.relationship.localeCompare(b.relationship) || a.firstName.localeCompare(b.firstName),
+    );
 
   // Sourced from the effective tree, not the `entities` table: that table has
   // no scenario column, so a trust added in the solver and saved to a scenario
   // would otherwise never appear here. The tree already carries the scenario's
   // entity adds/edits/removes.
   const ents: Entity[] = (effectiveTree.entities ?? [])
-    .map((e) => entitySummaryToRow(e, entityExtras.get(e.id)))
+    .map((e) => entitySummaryToRow(e, entityExtrasFor(e)))
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  const externals: ExternalBeneficiary[] = externalRows.map((e) => ({
-    id: e.id,
-    name: e.name,
-    kind: e.kind,
-    notes: e.notes ?? null,
-  }));
+  const baseExternalNotes = new Map(baseExternalRows.map((e) => [e.id, e.notes]));
+  const externals: ExternalBeneficiary[] = (effectiveTree.externalBeneficiaries ?? [])
+    .map((e) => ({
+      id: e.id,
+      name: e.name,
+      kind: e.kind,
+      notes: (e as { notes?: string | null }).notes ?? baseExternalNotes.get(e.id) ?? null,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   const accts: AccountLite[] = accountRows.map((a) => ({
     id: a.id,
@@ -225,7 +243,7 @@ export async function loadFamilyViewProps(
     growthSource: e.growthSource ?? null,
     inflationStartYear: e.inflationStartYear ?? null,
   }));
-  const assetFamilyMembers = allMemberRows.map((m) => ({
+  const assetFamilyMembers = treeMembers.map((m) => ({
     id: m.id,
     role: (m.role as "client" | "spouse" | "child" | "other"),
     firstName: m.firstName,
@@ -254,20 +272,61 @@ export async function loadFamilyViewProps(
       owners: e.owners ?? [],
     }));
 
-  const designations: Designation[] = designationRows.map((d) => ({
-    id: d.id,
-    targetKind: d.targetKind,
-    accountId: d.accountId,
-    entityId: d.entityId,
-    tier: d.tier,
-    familyMemberId: d.familyMemberId,
-    externalBeneficiaryId: d.externalBeneficiaryId,
-    entityIdRef: d.entityIdRef ?? null,
-    householdRole: (d.householdRole as "client" | "spouse" | null) ?? null,
-    distributionForm: d.distributionForm ?? null,
-    percentage: parseFloat(d.percentage),
-    sortOrder: d.sortOrder,
-  }));
+  // Off the effective tree, so a scenario's beneficiary edits show here and the
+  // trust dialog opens on them. Accounts and trusts carry primary/contingent
+  // rows (with their stored ids); a trust's income and remainder tiers are the
+  // data-only lists the loader builds from the same table.
+  const designations: Designation[] = [];
+  const fromRef = (
+    r: BeneficiaryRef,
+    target: Pick<Designation, "targetKind" | "accountId" | "entityId">,
+  ): Designation => ({
+    id: r.id,
+    ...target,
+    tier: r.tier,
+    familyMemberId: r.familyMemberId ?? null,
+    externalBeneficiaryId: r.externalBeneficiaryId ?? null,
+    entityIdRef: r.entityIdRef ?? null,
+    householdRole: r.householdRole ?? null,
+    percentage: r.percentage,
+    sortOrder: r.sortOrder,
+  });
+  for (const a of effectiveTree.accounts) {
+    for (const r of a.beneficiaries ?? []) {
+      designations.push(fromRef(r, { targetKind: "account", accountId: a.id, entityId: null }));
+    }
+  }
+  for (const e of effectiveTree.entities ?? []) {
+    const target = { targetKind: "trust", accountId: null, entityId: e.id } as const;
+    for (const r of e.beneficiaries ?? []) designations.push(fromRef(r, target));
+    (e.incomeBeneficiaries ?? []).forEach((r, i) =>
+      designations.push({
+        id: `${e.id}:income:${i}`,
+        ...target,
+        tier: "income",
+        familyMemberId: r.familyMemberId ?? null,
+        externalBeneficiaryId: r.externalBeneficiaryId ?? null,
+        entityIdRef: r.entityId ?? null,
+        householdRole: r.householdRole ?? null,
+        percentage: r.percentage,
+        sortOrder: i,
+      }),
+    );
+    (e.remainderBeneficiaries ?? []).forEach((r, i) =>
+      designations.push({
+        id: `${e.id}:remainder:${i}`,
+        ...target,
+        tier: "remainder",
+        familyMemberId: r.familyMemberId ?? null,
+        externalBeneficiaryId: r.externalBeneficiaryId ?? null,
+        entityIdRef: r.entityIdRef ?? null,
+        householdRole: r.householdRole ?? null,
+        distributionForm: r.distributionForm ?? null,
+        percentage: r.percentage,
+        sortOrder: i,
+      }),
+    );
+  }
 
   const baseGiftsList = giftRows
     .filter((g) => g.parentGiftId == null) // hide auto-bundled liability child rows

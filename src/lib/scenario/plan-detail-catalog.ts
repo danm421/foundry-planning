@@ -139,7 +139,7 @@ export const DETAIL_TYPES: readonly DetailType[] = [
 // Each workstream's task deletes its keys here; the last one leaves it empty.
 export const NOT_YET_READY: ReadonlySet<DetailTypeKey> = new Set<DetailTypeKey>([
   "note_receivable",
-  "gift_series", "family_member", "external_beneficiary",
+  "gift_series",
 ]);
 
 // The three Assumptions singletons always focus their own tab, whatever id the caller passes.

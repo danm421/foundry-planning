@@ -495,24 +495,6 @@ describe("SolverChangesTab — opening a Details editor", () => {
     );
   });
 
-  // Ruling F-I2: an editor known to write the base plan or revert the change
-  // inside a scenario gets an explanation, never a link to that same editor.
-  it.each([
-    ["family_member", "edit"],
-    ["external_beneficiary", "add"],
-  ] as const)("a %s %s explains it can't be edited here — no link, no load", (targetKind, opType) => {
-    renderTab([makeChange({ targetKind, opType })]);
-
-    fireEvent.click(screen.getByRole("button", { name: /^Edit / }));
-
-    expect(loadChangeEditorPropsMock).not.toHaveBeenCalled();
-    expect(screen.getByRole("status")).toHaveTextContent(UNSUPPORTED_MESSAGE);
-    expect(screen.queryByRole("link")).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
-    expect(screen.queryByText(UNSUPPORTED_MESSAGE)).not.toBeInTheDocument();
-  });
-
   it.each(["client_deduction", "client_tax_adjustment", "withdrawal_strategy"] as const)(
     "a %s change opens the Assumptions editor in place",
     async (targetKind) => {
@@ -558,13 +540,20 @@ describe("SolverChangesTab — opening a Details editor", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
+  // No kind is "unsupported" at the resolver any more; a view still reports it
+  // (a gift series' editor, a trust create), and the host explains.
   it("opening another change replaces the fallback message", async () => {
-    loadChangeEditorPropsMock.mockResolvedValue({ page: "income-expenses", props: { clientId: CLIENT_ID } });
+    loadChangeEditorPropsMock.mockImplementation(async (_client, _scenario, page) => ({
+      page,
+      props: { clientId: CLIENT_ID, accounts: [] },
+    }));
     renderTab([
       makeChange(),
-      makeChange({ id: "c-2", targetKind: "family_member", payload: { name: "Charity" } }),
+      makeChange({ id: "c-2", targetKind: "account", payload: { name: "Brokerage" } }),
     ]);
-    fireEvent.click(screen.getByRole("button", { name: "Edit Charity" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit Brokerage" }));
+    await screen.findByTestId("view-net-worth");
+    fireEvent.click(screen.getByRole("button", { name: "stub unsupported" }));
     expect(screen.getByText(UNSUPPORTED_MESSAGE)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Edit Side income" }));
