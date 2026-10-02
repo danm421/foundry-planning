@@ -14,6 +14,7 @@
 // the Retirement-tab branches.
 
 import type { OpType, TargetKind } from "@/engine/scenario/types";
+import type { LtcEvent } from "@/engine/types";
 import { CLIENT_SINGLETON_FORM_KEYS } from "@/lib/scenario/plan-settings-fields";
 import { GROWTH_SETTINGS_KEYS } from "@/lib/scenario/growth-settings-override";
 
@@ -91,6 +92,7 @@ export function isEditFocus(focus: EditorFocus): focus is EditFocus {
 export type ChangeEditorTarget =
   | { surface: "details"; page: DetailsEditorPage; focus: EditorFocus }
   | { surface: "solver-tab"; tab: "stress_test" | "retirement" }
+  | { surface: "ltc-event"; changeId: string; event: LtcEvent }
   | null;
 
 /**
@@ -100,6 +102,8 @@ export type ChangeEditorTarget =
  * flag is exactly what the resolver needs.
  */
 export interface ChangeEditorInput {
+  /** The change row's id; only the LTC dialog needs it. */
+  id?: string;
   opType: OpType;
   targetKind: TargetKind;
   targetId: string;
@@ -174,6 +178,14 @@ const STRESS_FIELDS = new Set([
 
 export function resolveChangeEditor(change: ChangeEditorInput): ChangeEditorTarget {
   if (change.opType === "remove" || !change.enabled) return null;
+
+  if (change.targetKind === "ltc_event") {
+    // No Details page exists for a scenario-only stress event; the Solver
+    // hosts its own dialog (spec Phase 1, "Opening the editor").
+    return change.id
+      ? { surface: "ltc-event", changeId: change.id, event: change.payload as LtcEvent }
+      : null;
+  }
 
   if (change.targetKind === "plan_settings") {
     return resolvePlanSettingsTarget(change.payload);

@@ -9,6 +9,7 @@ import type { EditorFocus } from "@/lib/scenario/change-editor-target";
 import type { ToggleGroup } from "@/engine/scenario/types";
 import type { InventoryItem } from "@/lib/scenario/plan-inventory";
 import type { ClientData } from "@/engine/types";
+import { buildClientData } from "@/engine/__tests__/fixtures";
 import { useScenarioWriteListener } from "@/hooks/scenario-write-listener";
 
 vi.mock("next/navigation", () => ({
@@ -838,5 +839,52 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
     fireEvent.click(screen.getByRole("button", { name: "stub write" }));
     expect(onTargetsWritten).toHaveBeenCalledTimes(1);
     expect(onTargetsWritten.mock.calls[0][1]).toBe("Side income");
+  });
+});
+
+describe("SolverChangesTab — LTC event", () => {
+  const ltcEvent = {
+    id: "3f1c2d7e-8a1b-4c5d-9e0f-112233445566",
+    name: "Long-term care — John 85–87",
+    people: [
+      { person: "client", startAge: 85, years: 3, careSetting: "nursing_private", annualCost: 129575, costInflation: 0.05 },
+    ],
+    livingExpenseCutPct: null,
+    homeSale: null,
+    includePolicies: true,
+  };
+  const ltcChange = () =>
+    makeChange({ id: "c-ltc", targetKind: "ltc_event", targetId: ltcEvent.id, payload: ltcEvent });
+
+  function renderWithPending(onInitialOpenConsumed: () => void, initialOpenChangeId: string | null) {
+    render(
+      <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
+        <SolverChangesTab
+          clientId={CLIENT_ID}
+          panel={makePanel({ changes: [ltcChange()] })}
+          inventory={[]}
+          planTree={buildClientData()}
+          willGrantors={[]}
+          onOpenSolverTab={vi.fn()}
+          onTargetsWritten={vi.fn()}
+          initialOpenChangeId={initialOpenChangeId}
+          onInitialOpenConsumed={onInitialOpenConsumed}
+        />
+      </ClientAccessProvider>,
+    );
+  }
+
+  it("a pending change id opens the LTC dialog on arrival and is consumed", () => {
+    const consumed = vi.fn();
+    renderWithPending(consumed, "c-ltc");
+    expect(screen.getByText("Long-term care event")).toBeInTheDocument();
+    expect(consumed).toHaveBeenCalledTimes(1);
+  });
+
+  it("with nothing pending, no dialog opens and nothing is consumed", () => {
+    const consumed = vi.fn();
+    renderWithPending(consumed, null);
+    expect(screen.queryByText("Long-term care event")).not.toBeInTheDocument();
+    expect(consumed).not.toHaveBeenCalled();
   });
 });

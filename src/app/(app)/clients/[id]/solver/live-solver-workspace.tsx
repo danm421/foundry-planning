@@ -1699,6 +1699,9 @@ export function LiveSolverWorkspace({
               willGrantors={willGrantors}
               onTargetsWritten={onTargetsWritten}
               onOpenSolverTab={setActiveTab}
+              projectionYears={currentProjection}
+              initialOpenChangeId={pendingOpenChangeId}
+              onInitialOpenConsumed={() => setPendingOpenChangeId(null)}
             />
           </>
         )}

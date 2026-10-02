@@ -21,11 +21,11 @@
 // nowhere to open, rows in a switched-off toggle group, and every row for a
 // view-only advisor, stay plain text.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useScenarioModeUI } from "@/components/scenario/scenario-mode-wrapper";
 import { ChangesPanel, type ChangesPanelChange } from "@/components/scenario/changes-panel";
 import { labelFor } from "@/components/scenario/changes-panel-leaf-row";
-import type { ClientData } from "@/engine/types";
+import type { ClientData, LtcEvent, ProjectionYear } from "@/engine/types";
 import { useClientAccess } from "@/components/client-access-provider";
 import { resolveEffectiveToggleState } from "@/engine/scenario/applyChanges";
 import { focusRowId, resolveChangeEditor, type CreateVariant } from "@/lib/scenario/change-editor-target";
@@ -34,6 +34,7 @@ import type { InventoryItem, WillGrantor } from "@/lib/scenario/plan-inventory";
 import type { ScenarioWriteEvent } from "@/hooks/scenario-write-listener";
 import type { PanelData } from "@/lib/scenario/load-panel-data";
 import { SolverChangeEditor, type EditorHostTarget } from "./solver-change-editor";
+import { LtcEventDialog } from "./ltc-event-dialog";
 import { SolverDetailActions } from "./solver-detail-actions";
 import { SolverDeleteConfirm } from "./solver-delete-confirm";
 import type { InputTab } from "./report-tab-link";
@@ -53,6 +54,12 @@ interface Props {
   onTargetsWritten: (events: ScenarioWriteEvent[], label: string) => void;
   /** Switches the Solver's left pane to the tab that edits a change. */
   onOpenSolverTab: (tab: InputTab) => void;
+  /** The current projection, for the LTC dialog's home-sale preview. */
+  projectionYears?: ProjectionYear[];
+  /** A change to open on arrival (the Stress row's "edit on the Changes tab"). */
+  initialOpenChangeId?: string | null;
+  /** Called once the pending change has been handled, so the caller clears it. */
+  onInitialOpenConsumed?: () => void;
 }
 
 export function SolverChangesTab({
@@ -63,6 +70,9 @@ export function SolverChangesTab({
   willGrantors,
   onTargetsWritten,
   onOpenSolverTab,
+  projectionYears,
+  initialOpenChangeId,
+  onInitialOpenConsumed,
 }: Props) {
   const { permission } = useClientAccess();
   const { openCreate } = useScenarioModeUI();
@@ -73,6 +83,17 @@ export function SolverChangesTab({
   const [editing, setEditing] = useState<{ target: EditorHostTarget; seq: number; label: string } | null>(null);
   // A delete waits here for the advisor's confirmation before it reaches the host.
   const [confirming, setConfirming] = useState<InventoryItem | null>(null);
+  // The LTC event has no Details page; its dialog is mounted here, not in the host.
+  const [ltcEditing, setLtcEditing] = useState<{ event: LtcEvent; seq: number } | null>(null);
+
+  // One-shot open on arrival, then tell the workspace the pending id is spent.
+  useEffect(() => {
+    if (!panel || !initialOpenChangeId) return;
+    const change = panel.changes.find((c) => c.id === initialOpenChangeId);
+    if (change && canEdit && isApplied(change)) openChange(change);
+    onInitialOpenConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot open on arrival
+  }, [initialOpenChangeId]);
 
   if (!panel) {
     return (
@@ -122,6 +143,10 @@ export function SolverChangesTab({
       onOpenSolverTab(target.tab);
       return;
     }
+    if (target.surface === "ltc-event") {
+      setLtcEditing((prev) => ({ event: target.event, seq: (prev?.seq ?? 0) + 1 }));
+      return;
+    }
     openEditor(target, labelFor(change, panel?.targetNames[`${change.targetKind}:${change.targetId}`], change.label));
   }
 
@@ -154,6 +179,17 @@ export function SolverChangesTab({
             openEditor(detailEditorTarget(confirming.typeKey, { intent: "delete", id: confirming.id }), confirming.label);
             setConfirming(null);
           }}
+        />
+      )}
+      {ltcEditing && (
+        <LtcEventDialog
+          key={ltcEditing.seq}
+          clientId={clientId}
+          scenarioId={panel.scenarioId}
+          event={ltcEditing.event}
+          tree={planTree}
+          projectionYears={projectionYears ?? []}
+          onDone={() => setLtcEditing(null)}
         />
       )}
       {editing && (

@@ -420,3 +420,17 @@ describe("focus intents", () => {
     expect(focusRowId({ intent: "create", kind: "income" })).toBeNull();
   });
 });
+
+describe("resolveChangeEditor — ltc_event", () => {
+  it("an ltc_event add opens the LTC dialog surface", () => {
+    const event = { id: "3f1c2d7e-8a1b-4c5d-9e0f-112233445566", name: "LTC", people: [], livingExpenseCutPct: null, homeSale: null, includePolicies: true };
+    expect(
+      resolveChangeEditor({ id: "chg-1", opType: "add", targetKind: "ltc_event", targetId: event.id, payload: event, enabled: true }),
+    ).toEqual({ surface: "ltc-event", changeId: "chg-1", event });
+  });
+  it("a switched-off ltc_event opens nothing (existing rule)", () => {
+    expect(
+      resolveChangeEditor({ id: "chg-1", opType: "add", targetKind: "ltc_event", targetId: "x", payload: {}, enabled: false }),
+    ).toBeNull();
+  });
+});
