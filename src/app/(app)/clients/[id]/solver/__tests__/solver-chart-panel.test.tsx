@@ -68,8 +68,8 @@ vi.mock("@/components/charts/solver-withdrawal-chart", () => ({
 // Renders `rows` so the assertions below can tell a wired-up panel from one
 // that was handed the empty array the non-Withdrawals branches pass.
 vi.mock("../solver-withdrawal-panel", () => ({
-  SolverWithdrawalPanel: ({ rows }: { rows: { year: number }[] }) => (
-    <div data-testid="table-withdrawals">rows:{rows.length}</div>
+  SolverWithdrawalPanel: ({ rows, clientLifeExpectancy }: { rows: { year: number }[]; clientLifeExpectancy?: number }) => (
+    <div data-testid="table-withdrawals" data-client-le={clientLifeExpectancy}>rows:{rows.length}</div>
   ),
 }));
 // The real row builder runs (importOriginal), wrapped so the "built only while
@@ -253,6 +253,7 @@ function ControlledPanel({
   baseGifts = [],
   mutations = [],
   currentProjection = [] as ProjectionYear[],
+  tree = workingTree,
 }: {
   initialReport?: ReportKey;
   computeStatus?: "fresh" | "stale" | "computing" | "error";
@@ -261,6 +262,7 @@ function ControlledPanel({
   baseGifts?: EstateFlowGift[];
   mutations?: SolverMutation[];
   currentProjection?: ProjectionYear[];
+  tree?: ClientData;
 }) {
   const [activeReport, setActiveReport] = useState<ReportKey>(initialReport);
   const [cashflowSubTab, setCashflowSubTab] = useState<CashflowSubTab>("cashflow");
@@ -269,7 +271,7 @@ function ControlledPanel({
       currentProjection={currentProjection}
       firstDeathYear={null}
       baseProjection={[] as ProjectionYear[]}
-      workingTree={workingTree}
+      workingTree={tree}
       baseTree={workingTree}
       computeStatus={computeStatus}
       clientId="client-1"
@@ -367,6 +369,29 @@ describe("SolverChartPanel", () => {
     // `rows:0` here would mean the memo's gate never opened for one of them.
     expect(screen.getByTestId("chart-withdrawals")).toHaveTextContent("rows:2");
     expect(screen.getByTestId("table-withdrawals")).toHaveTextContent("rows:2");
+  });
+
+  it("the Withdrawals table's ages follow an LTC event's care-shortened lifespan", async () => {
+    // Pat (1960, life expectancy 95) in care 2045–2047: the projection's own
+    // lifespan ends at 87, so the age column must too.
+    const inCare = {
+      ...workingTree,
+      client: { ...workingTree.client, lifeExpectancy: 95, retirementAge: 65 },
+      planSettings: { ...workingTree.planSettings, planEndYear: 2055 },
+      savingsRules: [],
+      withdrawalStrategy: [],
+      ltcEvents: [
+        {
+          id: "3f1c2d7e-8a1b-4c5d-9e0f-112233445566", name: "LTC", livingExpenseCutPct: null, homeSale: null,
+          includePolicies: true,
+          people: [{ person: "client", startAge: 85, years: 3, careSetting: "nursing_private", annualCost: 129_575, costInflation: 0.05 }],
+        },
+      ],
+    } as unknown as ClientData;
+    render(<ControlledPanel currentProjection={withdrawalProjection} tree={inCare} />);
+    await userEvent.click(screen.getByRole("tab", { name: "Cash Flow" }));
+    await userEvent.click(screen.getByRole("button", { name: "Withdrawals" }));
+    expect(screen.getByTestId("table-withdrawals").dataset.clientLe).toBe("87");
   });
 
   it("returns to the cash-flow chart when the Cash Flow sub-tab is re-selected", async () => {

@@ -503,8 +503,8 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
   // shared helper is the source of truth; chart timeline markers are derived
   // from it, clamped to the visible window.
   const eventsByYear = useMemo(
-    () => (clientData ? buildLifeEventsByYear(clientData.client) : {}),
-    [clientData],
+    () => (ltcTree ? buildLifeEventsByYear(ltcTree.client) : {}),
+    [ltcTree],
   );
 
   const firstYear = visibleYears[0]?.year ?? 0;
@@ -2765,8 +2765,8 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           planStartYear={planStartYear}
           planEndYear={planEndYear}
           clientRetirementYear={clientRetirementYear}
-          clientLifeExpectancy={clientData?.client.lifeExpectancy}
-          spouseLifeExpectancy={clientData?.client.spouseLifeExpectancy}
+          clientLifeExpectancy={ltcTree?.client.lifeExpectancy}
+          spouseLifeExpectancy={ltcTree?.client.spouseLifeExpectancy}
           clientData={{
             incomes: clientData?.incomes ?? [],
             accounts: clientData?.accounts ?? [],

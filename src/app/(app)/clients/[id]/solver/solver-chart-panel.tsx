@@ -3,6 +3,7 @@
 import { useMemo, useState, useSyncExternalStore } from "react";
 import dynamic from "next/dynamic";
 import type { ClientData, ProjectionYear } from "@/engine";
+import { applyLtcEvent } from "@/engine/ltc-event";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
 import DialogTabs from "@/components/dialog-tabs";
 import { deriveWorkingGifts } from "@/lib/solver/working-gifts";
@@ -329,6 +330,9 @@ export function SolverChartPanel({
   }, [tab, currentProjection, workingTree, ownerNames]);
 
   const isWithdrawalSubTab = tab === "cashflow" && cashflowSubTab === "withdrawals";
+  // The projection runs on the LTC-expanded tree (care-shortened lifespan), so
+  // the Withdrawals ages read its client, never the raw working tree's.
+  const ltcClient = useMemo(() => applyLtcEvent(workingTree).data.client, [workingTree]);
 
   // Built only while the Withdrawals sub-tab is open — the chart and the table below
   // it read the same rows, so the account→tax-bucket walk happens once per
@@ -516,8 +520,8 @@ export function SolverChartPanel({
         rows={withdrawalRows}
         selectedYear={selectedYear}
         onYearClick={onYearClick}
-        clientLifeExpectancy={workingTree.client.lifeExpectancy}
-        spouseLifeExpectancy={workingTree.client.spouseLifeExpectancy}
+        clientLifeExpectancy={ltcClient.lifeExpectancy}
+        spouseLifeExpectancy={ltcClient.spouseLifeExpectancy}
       />
     ) : isMonthlySubTab ? (
       <SolverMonthlyCashFlowPanel

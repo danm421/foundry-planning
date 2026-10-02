@@ -7,6 +7,7 @@ import {
   type ProjectionResult,
 } from "@/engine/projection";
 import type { ClientData } from "@/engine/types";
+import { applyLtcEvent } from "@/engine/ltc-event";
 import {
   buildYearlyEstateReport,
   type Ordering,
@@ -88,8 +89,10 @@ export default function YearlyEstateReportView({
     });
   }, [projection, clientData, ordering, ownerNames, ownerDobs]);
 
+  // Deaths fall where the projection put them — at the end of an LTC
+  // scenario's care, not at the plan's saved life expectancy.
   const eventsByYear = useMemo(
-    () => (clientData ? buildLifeEventsByYear(clientData.client) : undefined),
+    () => (clientData ? buildLifeEventsByYear(applyLtcEvent(clientData).data.client) : undefined),
     [clientData],
   );
 

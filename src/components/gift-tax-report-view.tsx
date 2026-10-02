@@ -8,6 +8,7 @@ import {
 } from "@/engine/projection";
 import type { ClientData } from "@/engine/types";
 import { buildEntityValueAtYear } from "@/engine/entity-cashflow";
+import { applyLtcEvent } from "@/engine/ltc-event";
 import {
   buildRecipientDrilldown,
   type RecipientGroup,
@@ -191,8 +192,10 @@ export default function GiftTaxReportView({
     return breaches;
   }, [projection, ownerNames]);
 
+  // Deaths fall where the projection put them — at the end of an LTC
+  // scenario's care, not at the plan's saved life expectancy.
   const eventsByYear = useMemo(
-    () => (tree ? buildLifeEventsByYear(tree.client) : undefined),
+    () => (tree ? buildLifeEventsByYear(applyLtcEvent(tree).data.client) : undefined),
     [tree],
   );
 

@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useViewParam } from "@/hooks/use-view-param";
 import IncomeTaxSkeleton from "@/app/(app)/clients/[id]/cashflow/income-tax/loading-skeleton";
 import { runProjection } from "@/engine";
+import { applyLtcEvent } from "@/engine/ltc-event";
 import type { ClientData, ProjectionYear } from "@/engine";
 import type { MedicareCoverage } from "@/engine/types";
 import { MedicareSetupDialog } from "@/components/medicare/medicare-setup-dialog";
@@ -131,10 +132,19 @@ export default function IncomeTaxReport({ clientId }: Props) {
     });
   }, [cellDrill, ctx]);
 
+  // runProjection expands the LTC event itself (care-shortened lifespan,
+  // possibly a later plan end). Read the same expanded tree for the year range
+  // and the age column, so the report shows every year the projection ran.
+  // Never feed it back to runProjection.
+  const ltcTree = useMemo(
+    () => (clientData ? applyLtcEvent(clientData).data : null),
+    [clientData],
+  );
+
   const planStartYear =
     clientData?.planSettings.planStartYear ?? new Date().getFullYear();
   const planEndYear =
-    clientData?.planSettings.planEndYear ?? planStartYear + 50;
+    ltcTree?.planSettings.planEndYear ?? planStartYear + 50;
 
   const clientRetirementYear = useMemo(() => {
     if (!clientData?.client.dateOfBirth || !clientData?.client.retirementAge) {
@@ -334,8 +344,8 @@ export default function IncomeTaxReport({ clientId }: Props) {
             planStartYear={planStartYear}
             planEndYear={planEndYear}
             clientRetirementYear={clientRetirementYear}
-            clientLifeExpectancy={clientData?.client.lifeExpectancy}
-            spouseLifeExpectancy={clientData?.client.spouseLifeExpectancy}
+            clientLifeExpectancy={ltcTree?.client.lifeExpectancy}
+            spouseLifeExpectancy={ltcTree?.client.spouseLifeExpectancy}
             clientData={clientData}
             clientId={clientId}
             onMedicareInflationChange={handleMedicareInflationChange}

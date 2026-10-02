@@ -22,6 +22,10 @@ function clientData(): ClientData {
       { accountId: "a2", priorityOrder: 1, startYear: 2026, endYear: 2055 },
       { accountId: "a1", priorityOrder: 2, startYear: 2026, endYear: 2055 },
     ],
+    // Required on ClientData; an LTC event's pre-pass reads them.
+    incomes: [],
+    expenses: [],
+    savingsRules: [],
     planSettings: {
       flatFederalRate: 0.22, flatStateRate: 0.05, inflationRate: 0.03,
       planStartYear: 2026, planEndYear: 2055, taxEngineMode: "flat",
@@ -244,5 +248,32 @@ describe("LTC stress event", () => {
       label: "Long-term care",
       value: "John in care 2051–2053, living expenses cut 100%, home sold 2051",
     });
+  });
+
+  const withCare = (startAge: number, years: number) => {
+    const cd = clientData();
+    return {
+      ...cd,
+      client: { ...cd.client, firstName: "John", lifeExpectancy: 95, spouseLifeExpectancy: 80 },
+      ltcEvents: [{
+        id: "3f1c2d7e-8a1b-4c5d-9e0f-112233445566", name: "LTC", includePolicies: true,
+        livingExpenseCutPct: null, homeSale: null,
+        people: [{ person: "client", startAge, years, careSetting: "nursing_private", annualCost: 129_575, costInflation: 0.05 }],
+      }],
+    } as unknown as ClientData;
+  };
+
+  it("one care year reads as a year, not a range", () => {
+    const d = buildAssumptionsData(input({ clientData: withCare(85, 1) }));
+    expect(d.stressTests).toContainEqual({ label: "Long-term care", value: "John in care 2051" });
+  });
+
+  it("Plan end and Length follow care that runs past the plan's end", () => {
+    // John (1966) in care 2061–2063; Jane (1968, life expectancy 80) dies 2048.
+    // The plan as saved ends 2055; the projection runs to John's death in 2063.
+    const d = buildAssumptionsData(input({ clientData: withCare(95, 3) }));
+    const horizon = d.overviewSections.find((s) => s.heading === "Plan Horizon")!;
+    expect(horizon.rows).toContainEqual({ label: "Plan end", value: "2063" });
+    expect(horizon.rows).toContainEqual({ label: "Length", value: "38 years" });
   });
 });

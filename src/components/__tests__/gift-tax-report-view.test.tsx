@@ -127,4 +127,35 @@ describe("GiftTaxReportView", () => {
     expect(screen.getByRole("alert").textContent).toMatch(/Cooper/);
     expect(screen.getByRole("alert").textContent).toMatch(/2032/);
   });
+
+  it("marks the death in the last care year of an LTC scenario, not at the plan's life expectancy", async () => {
+    // Cooper (1973) in care 2058–2060; his saved life expectancy (95) is 2068.
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ...treeFixture,
+        accounts: [], incomes: [], expenses: [], savingsRules: [], withdrawalStrategy: [],
+        ltcEvents: [{
+          id: "3f1c2d7e-8a1b-4c5d-9e0f-112233445566", name: "LTC", includePolicies: true,
+          livingExpenseCutPct: null, homeSale: null,
+          people: [{ person: "client", startAge: 85, years: 3, careSetting: "nursing_private", annualCost: 129_575, costInflation: 0.05 }],
+        }],
+      }),
+    }) as unknown as typeof fetch;
+    const quietYear = (year: number): GiftLedgerYear => ({
+      year, giftsGiven: 0, fullValueTransferred: 0, taxableGiftsGiven: 0, totalGiftTax: 0,
+      perGrantor: { client: { taxableGiftsThisYear: 0, cumulativeTaxableGifts: 0, creditUsed: 0, giftTaxThisYear: 0, cumulativeGiftTax: 0 } },
+    });
+    setProjectionResult([quietYear(2060), quietYear(2068)]);
+    render(
+      <GiftTaxReportView
+        clientId="c1"
+        ownerNames={{ clientName: "Cooper", spouseName: null }}
+        ownerDobs={{ clientDob: "1973-01-01", spouseDob: null }}
+      />,
+    );
+    const row2060 = await screen.findByTestId("gift-row-2060");
+    expect(row2060.querySelector('[aria-label="Cooper passes"]')).not.toBeNull();
+    expect(screen.getByTestId("gift-row-2068").querySelector('[aria-label="Cooper passes"]')).toBeNull();
+  });
 });
