@@ -21,3 +21,40 @@ describe("registry dispatch", () => {
     expect(row.what.length).toBeGreaterThan(0);
   });
 });
+
+describe("insurance describers", () => {
+  const std = { eliminationDays: 7, benefitPct: 0.6, durationWeeks: 13, monthlyMax: null };
+  const ltd = {
+    eliminationDays: 90, benefitPct: 0.6, monthlyMax: 10000,
+    benefitPeriod: { mode: "to_age", age: 65 },
+  };
+  const named = { targetNames: { "disability_policy:dp1": "Group disability" }, resolve: ctx.resolve };
+
+  it("describes an added disability policy's coverage layers in the Insurance area", () => {
+    const row = describeChange(ch({
+      targetKind: "disability_policy", targetId: "dp1",
+      payload: { id: "dp1", name: "Group disability", shortTerm: std, longTerm: ltd, annualPremium: 1200 },
+    }), named);
+    expect(row.area).toBe("Insurance");
+    expect(row.what).toBe("+ Group disability");
+    const d = row.detail.join(" ");
+    expect(d).toContain("STD 60% · 13 wks");
+    expect(d).toContain("LTD 60% to 65");
+  });
+
+  it("formats an edited coverage layer instead of printing a dash", () => {
+    const row = describeChange(ch({
+      targetKind: "disability_policy", targetId: "dp1", opType: "edit",
+      payload: { shortTerm: { from: std, to: null } },
+    }), named);
+    expect(row.area).toBe("Insurance");
+    expect(row.what).toBe("Group disability · Short term");
+    expect(row.before).toBe("STD 60% · 13 wks");
+    expect(row.after).toBe("None");
+  });
+
+  it("moves life insurance policies to the Insurance area", () => {
+    const row = describeChange(ch({ targetKind: "life_insurance_policy", opType: "remove" }), ctx);
+    expect(row.area).toBe("Insurance");
+  });
+});

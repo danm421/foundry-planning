@@ -93,6 +93,10 @@ type RawAccount = {
   inheritedDeathYear?: string | number | null;
   inheritedOwnerBirthYear?: string | number | null;
   inheritedHeirDisabled?: boolean | null;
+  /** The base loader stamps these on after resolving; a scenario `add` reaches
+   *  the engine through this resolver alone, so they must pass through here. */
+  activationYear?: string | number | null;
+  activationYearRef?: string | null;
   insuredPerson: string | null;
   titlingType: "jtwros" | "community_property";
   owners?: AccountOwner[];
@@ -258,6 +262,8 @@ export function resolveAccountFromRaw(
     inheritedDeathYear: nNullable(raw.inheritedDeathYear) ?? null,
     inheritedOwnerBirthYear: nNullable(raw.inheritedOwnerBirthYear) ?? null,
     inheritedHeirDisabled: raw.inheritedHeirDisabled === true,
+    activationYear: nNullable(raw.activationYear) ?? null,
+    activationYearRef: raw.activationYearRef ?? null,
     beneficiaries: raw.beneficiaries ?? ctx.beneficiariesByAccountId?.get(raw.id),
     isDefaultChecking: raw.isDefaultChecking,
     realization,
@@ -303,7 +309,7 @@ export function resolveAccountFromRaw(
 /** When the policy specifies a post-payout model portfolio, resolve it into
  *  a flat `postPayoutGrowthRate` plus a `postPayoutRealization` mix. The
  *  engine reads only the resolved values, never the portfolio id. */
-function resolvePostPayoutPortfolio(
+export function resolvePostPayoutPortfolio(
   policy: Account["lifeInsurance"],
   resolver: GrowthSourceResolver,
 ): Account["lifeInsurance"] {

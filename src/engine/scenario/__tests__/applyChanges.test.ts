@@ -3,7 +3,7 @@ import { describe, it, expect } from "vitest";
 import { resolveEffectiveToggleState } from "../applyChanges";
 import { applyScenarioChanges } from "../applyChanges";
 import type { ToggleGroup } from "../types";
-import type { ClientData, Account } from "@/engine/types";
+import type { ClientData, Account, DisabilityPolicy } from "@/engine/types";
 import type { ScenarioChange } from "../types";
 
 describe("resolveEffectiveToggleState", () => {
@@ -1102,5 +1102,64 @@ describe("applyScenarioChanges — asset_transaction property tax", () => {
     // Pin the actual failure mode: the projection compounds `1 + rate`, which
     // concatenates to "10.03" when the rate leaks through as a string.
     expect(1 + tx.propertyTaxGrowthRate!).toBe(1.03);
+  });
+});
+
+describe("applyScenarioChanges — disability_policy", () => {
+  // Engine-shaped (`DisabilityPolicy`), as `formToPolicy` emits it.
+  const DP_BASE: DisabilityPolicy = {
+    id: "dp-base",
+    name: "Group LTD",
+    insured: "client",
+    coveredEarningsMode: "salary",
+    coveredEarningsAmount: null,
+    shortTerm: { eliminationDays: 7, benefitPct: 0.6, durationWeeks: 13, monthlyMax: null },
+    longTerm: {
+      eliminationDays: 90,
+      benefitPct: 0.6,
+      monthlyMax: 10_000,
+      benefitPeriod: { mode: "to_age", age: 65 },
+    },
+    benefitTaxable: true,
+    colaRate: 0,
+    annualPremium: 1200,
+    premiumPayer: "insured",
+  };
+
+  const change = (over: Partial<ScenarioChange>): ScenarioChange => ({
+    id: "ch1",
+    scenarioId: "s1",
+    opType: "add",
+    targetKind: "disability_policy",
+    targetId: DP_BASE.id,
+    payload: null,
+    toggleGroupId: null,
+    orderIndex: 0,
+    ...over,
+  });
+
+  it("adds, edits and removes a disability policy", () => {
+    const tree = { ...minimalClientData(), disabilityPolicies: [DP_BASE] };
+    const added = { ...DP_BASE, id: "dp-new", name: "New LTD" };
+    const out = applyScenarioChanges(
+      tree,
+      [
+        change({ id: "ch-add", opType: "add", targetId: "dp-new", payload: added }),
+        change({
+          id: "ch-edit",
+          opType: "edit",
+          payload: { annualPremium: { from: 1200, to: "1500" } },
+          orderIndex: 1,
+        }),
+      ],
+      {},
+      [],
+    );
+    expect(out.effectiveTree.disabilityPolicies!.map((p) => p.id)).toEqual([DP_BASE.id, "dp-new"]);
+    // The form posts decimals as strings; the edit must reach the engine as a number.
+    expect(out.effectiveTree.disabilityPolicies![0].annualPremium).toBe(1500);
+
+    const removed = applyScenarioChanges(tree, [change({ opType: "remove" })], {}, []);
+    expect(removed.effectiveTree.disabilityPolicies).toEqual([]);
   });
 });

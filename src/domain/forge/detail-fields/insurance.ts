@@ -448,9 +448,12 @@ export const INSURANCE_ENTITIES: readonly DetailEntity[] = [
       module: "@/lib/schemas/disability-policies",
       export: "disabilityPolicyCreateSchema",
     },
-    // disabilityPolicies has a clientId column and no scenarioId — one row
-    // set is visible from every scenario, like life insurance policies but
-    // unlike scenario-scoped tables such as accounts.
+    // disabilityPolicies has a clientId column and no scenarioId, so a write
+    // through these routes lands in the one base row set. A scenario overlays
+    // that set through `disability_policy` scenario changes, which never touch
+    // this table. Stays false: Statement Chat refuses to identity-match a
+    // scenarioScoped entity (`loadExistingRows`), and with no scenario column
+    // there are no other scenarios' rows to mis-match.
     scenarioScoped: false,
     documentEvidence: true,
     identity: ["name", "insured", "carrier"],

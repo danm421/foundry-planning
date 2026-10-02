@@ -8,6 +8,7 @@ export type ChangeArea =
   | "Savings"
   | "Assets"
   | "Liabilities"
+  | "Insurance"
   | "Estate"
   | "Taxes";
 

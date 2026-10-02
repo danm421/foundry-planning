@@ -30,6 +30,7 @@ import {
   wills,
   entities,
   relocations,
+  disabilityPolicies,
 } from "@/db/schema";
 import {
   writeAccountChildren,
@@ -154,4 +155,7 @@ export const PROMOTE_TABLE_REGISTRY: Partial<Record<TargetKind, RegistryEntry>> 
   will: { table: wills, childWriter: writeWillChildren, childUpdater: updateWillChildren },
   entity: { table: entities },
   relocation: { table: relocations },
+  // Incomplete: promoting still needs a `translate` from the engine payload's
+  // `shortTerm` / `longTerm` objects to the has*/std*/ltd* columns.
+  disability_policy: { table: disabilityPolicies },
 };

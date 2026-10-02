@@ -1,10 +1,17 @@
 import { describe, it, expect } from "vitest";
-import { resolveAddPayload } from "../loader";
+import { applyScenarioChangesWithRefs, resolveAddPayload } from "../loader";
 import { createGrowthSourceResolver } from "@/lib/projection/resolve-growth-source";
 import type { ResolutionContext } from "@/lib/projection/resolve-entity";
 import type { ScenarioChange } from "@/engine/scenario/types";
+import type { Account, ClientData } from "@/engine/types";
 
-function makeCtx(): ResolutionContext {
+type GrowthInputs = Parameters<typeof createGrowthSourceResolver>[0];
+
+function makeCtx(
+  portfolios: Partial<
+    Pick<GrowthInputs, "assetClasses" | "modelPortfolios" | "modelPortfolioAllocations">
+  > = {},
+): ResolutionContext {
   const resolver = createGrowthSourceResolver({
     planSettings: {
       growthSourceTaxable: "default",
@@ -24,9 +31,9 @@ function makeCtx(): ResolutionContext {
       defaultGrowthLifeInsurance: "0.03",
       inflationAssetClassId: null,
     },
-    assetClasses: [],
-    modelPortfolios: [],
-    modelPortfolioAllocations: [],
+    assetClasses: portfolios.assetClasses ?? [],
+    modelPortfolios: portfolios.modelPortfolios ?? [],
+    modelPortfolioAllocations: portfolios.modelPortfolioAllocations ?? [],
     accountAssetAllocations: [],
     clientCmaOverrides: [],
   });
@@ -183,5 +190,98 @@ describe("resolveAddPayload", () => {
     };
     const out = resolveAddPayload(change, makeCtx());
     expect(out).toBe(change);
+  });
+});
+
+describe("applyScenarioChangesWithRefs — edited life-insurance post-payout portfolio", () => {
+  // `resolveAddPayload` resolves an ADDED policy's post-payout model portfolio,
+  // but an `edit` replaces `lifeInsurance` wholesale with the dialog's raw
+  // fields, so the edit path has to resolve it as well.
+  // One model portfolio: 5%, all ordinary income — distinct from the raw 4%.
+  const portfolioCtx = () =>
+    makeCtx({
+      assetClasses: [
+        {
+          id: "ac-1",
+          geometricReturn: "0.05",
+          pctOrdinaryIncome: "1",
+          pctLtCapitalGains: "0",
+          pctQualifiedDividends: "0",
+          pctTaxExempt: "0",
+        },
+      ],
+      modelPortfolios: [{ id: "mp-1" }],
+      modelPortfolioAllocations: [{ portfolioId: "mp-1", assetClassId: "ac-1", weight: "1" }],
+    });
+
+  const policy = {
+    faceValue: 1_000_000,
+    costBasis: 0,
+    premiumAmount: 0,
+    premiumYears: null,
+    premiumPayer: "owner",
+    policyType: "term",
+    termIssueYear: 2020,
+    termLengthYears: 20,
+    endsAtInsuredRetirement: false,
+    cashValueGrowthMode: "basic",
+    premiumScheduleMode: "off",
+    deathBenefitScheduleMode: "off",
+    incomeScheduleMode: "off",
+    postPayoutGrowthRate: 0.04,
+    postPayoutModelPortfolioId: null,
+    cashValueSchedule: [],
+  } as unknown as NonNullable<Account["lifeInsurance"]>;
+
+  function tree(): ClientData {
+    return {
+      client: { dateOfBirth: "1970-06-15", retirementAge: 65, planEndAge: 95, filingStatus: "single" },
+      planSettings: { planStartYear: 2025, planEndYear: 2065 },
+      accounts: [
+        {
+          id: "li-1",
+          name: "Term policy",
+          category: "life_insurance",
+          subType: "term",
+          value: 0,
+          basis: 0,
+          growthRate: 0,
+          owners: [],
+          insuredPerson: "client",
+          lifeInsurance: policy,
+        },
+      ],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      transfers: [],
+      rothConversions: [],
+    } as unknown as ClientData;
+  }
+
+  it("resolves the post-payout model portfolio an edit sets", () => {
+    const ctx = portfolioCtx();
+    const edit: ScenarioChange = {
+      ...baseChange,
+      targetId: "li-1",
+      opType: "edit",
+      targetKind: "account",
+      payload: {
+        lifeInsurance: {
+          from: policy,
+          to: { ...policy, postPayoutModelPortfolioId: "mp-1" },
+        },
+      },
+    };
+
+    const { effectiveTree } = applyScenarioChangesWithRefs(tree(), [edit], {}, [], ctx);
+
+    const li = effectiveTree.accounts.find((a) => a.id === "li-1")!.lifeInsurance!;
+    const p = ctx.resolver.resolvePortfolio("mp-1");
+    expect(p.geoReturn).toBeCloseTo(0.05); // the control: the portfolio is not the raw 4%
+    expect(li.postPayoutGrowthRate).toBe(p.geoReturn);
+    expect(li.postPayoutRealization?.pctOrdinaryIncome).toBe(1);
   });
 });

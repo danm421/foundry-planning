@@ -537,8 +537,9 @@ export interface ClientData {
    *  installment-sale principal (basis recovery + §1(h) LTCG) per IRC §453.
    *  Engine consumption arrives in spec 2025-04-notes-receivable-installment. */
   notesReceivable?: NoteReceivable[];
-  /** Disability income policies. Client-level facts, not scenario-scoped —
-   *  they carry no scenario_id and are absent from promote-table-registry.
+  /** Disability income policies. The base rows are client-level (the table has
+   *  no scenario_id), and a scenario overlays them through `disability_policy`
+   *  add / edit / remove changes, so this is the scenario's effective set.
    *  Consumed only when `planSettings.disabilityEvent` is set. */
   disabilityPolicies?: DisabilityPolicy[];
   /** Per-person Medicare coverage overrides. Empty/undefined = use defaults for all enrolled persons. */

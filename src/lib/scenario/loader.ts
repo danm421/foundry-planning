@@ -9,6 +9,7 @@ import {
   resolveIncomeFromRaw,
   resolveExpenseFromRaw,
   resolveSavingsRuleFromRaw,
+  resolvePostPayoutPortfolio,
   type ResolutionContext,
 } from "@/lib/projection/resolve-entity";
 import type { AccountFlowOverride, ClientData, EntityFlowOverride } from "@/engine/types";
@@ -126,6 +127,32 @@ export function applyScenarioChangesWithRefs(
     toggleState,
     groups,
   );
+
+  // An `account` edit replaces `lifeInsurance` wholesale with the dialog's raw
+  // fields, so a newly chosen post-payout model portfolio arrives unresolved —
+  // the engine reads only the resolved rate and realization. Re-resolve every
+  // account an edit touched; an add was already resolved by `resolveAddPayload`.
+  // Idempotent, so a toggled-off edit re-resolves its base policy to itself.
+  const editedPolicyIds = new Set(
+    nonGiftChanges
+      .filter(
+        (c) =>
+          c.opType === "edit" &&
+          c.targetKind === "account" &&
+          Object.hasOwn((c.payload ?? {}) as object, "lifeInsurance"),
+      )
+      .map((c) => c.targetId),
+  );
+  if (resolutionContext && editedPolicyIds.size > 0) {
+    effectiveTree.accounts = effectiveTree.accounts.map((a) =>
+      editedPolicyIds.has(a.id)
+        ? {
+            ...a,
+            lifeInsurance: resolvePostPayoutPortfolio(a.lifeInsurance, resolutionContext.resolver),
+          }
+        : a,
+    );
+  }
 
   const refResolved = resolveRefYears(effectiveTree);
 

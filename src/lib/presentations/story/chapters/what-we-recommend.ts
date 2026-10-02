@@ -50,6 +50,7 @@ const AREA_PHRASE: Record<ChangeArea, string> = {
   // Not "your accounts": the area covers real estate and businesses too.
   Assets: "what you own",
   Liabilities: "what you owe",
+  Insurance: "your insurance coverage",
   Estate: "your estate plan",
   Taxes: "your taxes",
 };

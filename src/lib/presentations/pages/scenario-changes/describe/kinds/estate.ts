@@ -42,11 +42,6 @@ DESCRIBERS.beneficiary_designation = simpleDescriber({
   segments: [() => "Account beneficiary"],
 });
 
-DESCRIBERS.life_insurance_policy = simpleDescriber({
-  area: "Estate", noun: "life insurance policy", whatMode: "name",
-  segments: [],
-});
-
 DESCRIBERS.life_insurance_cash_value_schedule = simpleDescriber({
   area: "Estate", noun: "policy cash value", whatMode: "name",
   segments: [() => "Custom cash-value schedule"],

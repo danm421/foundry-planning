@@ -360,6 +360,39 @@ describe("resolveAccountFromRaw", () => {
     expect(acct.growthRate).toBeCloseTo(0.08, 6);
     expect(acct.realization?.pctLtCapitalGains).toBeCloseTo(0.7, 6);
   });
+
+  // The base loader stamps the activation year on AFTER resolving, but a
+  // scenario `add` goes through this resolver alone (`resolveAddPayload`), so a
+  // future-dated account added in a scenario used to start in year one.
+  const rawBrokerage = {
+    ...baseRawAccount,
+    id: "a12",
+    name: "Windfall",
+    category: "taxable" as const,
+    subType: "individual",
+    value: "100000",
+    basis: "100000",
+    growthSource: "default",
+    growthRate: null,
+  };
+
+  it("keeps the activation year on a resolved account", () => {
+    const acct = resolveAccountFromRaw(
+      { ...rawBrokerage, activationYear: 2031, activationYearRef: null },
+      makeCtx(),
+    );
+    expect(acct.activationYear).toBe(2031);
+    expect(acct.activationYearRef).toBeNull();
+  });
+
+  it("keeps the activation-year milestone ref and coerces a string year", () => {
+    const acct = resolveAccountFromRaw(
+      { ...rawBrokerage, activationYear: "2040", activationYearRef: "client_retirement" },
+      makeCtx(),
+    );
+    expect(acct.activationYear).toBe(2040);
+    expect(acct.activationYearRef).toBe("client_retirement");
+  });
 });
 
 describe("resolveIncomeFromRaw", () => {

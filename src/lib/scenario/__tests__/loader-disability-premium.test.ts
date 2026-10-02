@@ -119,3 +119,23 @@ describe("applyScenarioChangesWithRefs — disability premium re-synthesis", () 
     expect(rows[0].endYear).toBe(2035);
   });
 });
+
+describe("applyScenarioChangesWithRefs — scenario-added disability policy", () => {
+  it("synthesizes a premium for a scenario-added disability policy", () => {
+    const tree = { ...baseTree([]), disabilityPolicies: [] };
+    const add: ScenarioChange = {
+      id: "ch-add",
+      scenarioId: "scn1",
+      opType: "add",
+      targetKind: "disability_policy",
+      targetId: policy.id,
+      payload: { ...policy, premiumPayer: "insured", annualPremium: 900 },
+      toggleGroupId: null,
+      orderIndex: 0,
+    };
+    const { effectiveTree } = applyScenarioChangesWithRefs(tree, [add], {}, []);
+    const rows = disabilityRows(effectiveTree);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].annualAmount).toBe(900);
+  });
+});

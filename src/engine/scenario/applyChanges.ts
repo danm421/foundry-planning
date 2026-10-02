@@ -250,6 +250,9 @@ const NUMERIC_FIELDS_BY_KIND: Partial<Record<TargetKind, readonly string[]>> = {
     "planEndYear",
     "livingExpenseInflationOverride",
   ],
+  // `shortTerm` / `longTerm` are nested objects, out of reach of this flat
+  // table; the dialog's `formToPolicy` builds them from number-typed fields.
+  disability_policy: ["coveredEarningsAmount", "colaRate", "annualPremium"],
   client: [
     "retirementAge",
     "retirementMonth",
@@ -313,6 +316,7 @@ export const TARGET_KIND_TO_FIELD: Record<TargetKind, keyof ClientData | null> =
   gift: "gifts",
   will: "wills",
   entity: "entities",
+  disability_policy: "disabilityPolicies",
   // Singletons: handled specially (not a list) — see SINGLETON_KIND_TO_FIELD
   client: null,
   plan_settings: null,
