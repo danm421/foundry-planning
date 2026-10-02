@@ -124,6 +124,13 @@ describe("SolverDetailActions — Add menu", () => {
     expect(onAdd).toHaveBeenCalledWith("business");
   });
 
+  it("Reinvestment is ready: it adds", () => {
+    const { onAdd } = setup();
+    fireEvent.click(screen.getByRole("button", { name: "+ Add" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reinvestment" }));
+    expect(onAdd).toHaveBeenCalledWith("reinvestment");
+  });
+
   it("Escape closes the menu", () => {
     setup();
     fireEvent.click(screen.getByRole("button", { name: "+ Add" }));
