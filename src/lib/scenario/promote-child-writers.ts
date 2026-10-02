@@ -221,13 +221,15 @@ async function insertBeneficiaryRows(
 
 /** Inserts liabilityOwners and extraPayments rows.
  *  liabilityOwners has no externalBeneficiaryId column (only family_member /
- *  entity). Mirrors the Liability.owners / Liability.extraPayments shapes. */
+ *  entity). Mirrors the Liability.owners / Liability.extraPayments shapes.
+ *  Owner refs go through `ctx.idRemap`, like account owners. */
 export async function writeLiabilityChildren(
   tx: PromoteTx,
   parentId: string,
   raw: Record<string, unknown>,
+  ctx: ChildWriterCtx,
 ): Promise<void> {
-  await insertLiabilityOwnerRows(tx, parentId, raw.owners);
+  await insertLiabilityOwnerRows(tx, parentId, raw.owners, ctx);
   await insertExtraPaymentRows(tx, parentId, raw.extraPayments);
 }
 
@@ -247,10 +249,11 @@ export async function updateLiabilityChildren(
   tx: PromoteTx,
   parentId: string,
   set: Record<string, unknown>,
+  ctx: ChildWriterCtx,
 ): Promise<void> {
   if ("owners" in set) {
     await tx.delete(liabilityOwners).where(eq(liabilityOwners.liabilityId, parentId));
-    await insertLiabilityOwnerRows(tx, parentId, set.owners);
+    await insertLiabilityOwnerRows(tx, parentId, set.owners, ctx);
   }
   if ("extraPayments" in set) {
     await tx.delete(extraPayments).where(eq(extraPayments.liabilityId, parentId));
@@ -273,12 +276,12 @@ export async function updateLiabilityChildren(
  * tables. Representing these owners properly needs a migration; until then a
  * legible failure beats a constraint violation.
  */
-function liabilityOwnerColumns(o: Record<string, unknown>) {
+function liabilityOwnerColumns(o: Record<string, unknown>, ctx: ChildWriterCtx) {
   switch (o.kind) {
     case "family_member":
-      return { familyMemberId: (o.familyMemberId ?? null) as string | null, entityId: null };
+      return { familyMemberId: remapId(o.familyMemberId, ctx), entityId: null };
     case "entity":
-      return { familyMemberId: null, entityId: (o.entityId ?? null) as string | null };
+      return { familyMemberId: null, entityId: remapId(o.entityId, ctx) };
     default:
       throw new Error(
         `liability owner kind "${String(o.kind)}" has no liability_owners column — ` +
@@ -291,11 +294,12 @@ async function insertLiabilityOwnerRows(
   tx: PromoteTx,
   liabilityId: string,
   raw: unknown,
+  ctx: ChildWriterCtx,
 ): Promise<void> {
   for (const o of (raw as Array<Record<string, unknown>> | undefined) ?? []) {
     const values = coerceForTable(liabilityOwners, {
       liabilityId,
-      ...liabilityOwnerColumns(o),
+      ...liabilityOwnerColumns(o, ctx),
       percent: o.percent,
     });
     await tx.insert(liabilityOwners).values(values as never);

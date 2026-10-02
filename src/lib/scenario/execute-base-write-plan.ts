@@ -170,15 +170,17 @@ export async function executeBaseWritePlan(
     // A kind whose change payload is an editor DRAFT rather than a row must be
     // reshaped first — `coerceForTable` keeps only exact column-name matches,
     // so an untranslated draft loses every field the row names differently,
-    // silently. `translate` is absent on every kind but `gift`.
+    // silently. Only `gift` (a draft) and `disability_policy` (the engine's
+    // nested shape) have a `translate`.
     const translated = entry.translate ? entry.translate(ins.raw) : ins.raw;
     // Remap AFTER translate, not before. A gift draft names its recipient
     // NESTED (`recipient: {kind, id}`) and it only becomes a `recipientEntityId`
     // column once the translator has run, so a remap that fired first could
     // never see it and carried a scenario-only entity id straight into the FK.
-    // Byte-identical for every other kind (no `translate`, so this is `ins.raw`
-    // either way) and for the gift's own `accountId`, which `giftDraftToRow`
-    // copies through untouched.
+    // Order is irrelevant for kinds with no `translate` (this is `ins.raw` either
+    // way), for `disability_policy` (its translator renames no ref column) and
+    // for the gift's own `accountId`, which `giftDraftToRow` copies through
+    // untouched.
     const payload = remapRefs(translated, idRemap);
     const values: Record<string, unknown> = {
       ...coerceForTable(entry.table, payload),
@@ -347,6 +349,11 @@ export interface ClientRefs {
  * Ids that a same-batch insert of the matching kind satisfies are left out: they
  * are synthetic, only exist once the transaction has inserted them, and a
  * `db`-scoped read outside that transaction could never find them.
+ *
+ * INVARIANT: every consumer of a skipped id must remap it through `idRemap`
+ * (the account and liability child writers do). A consumer that writes the raw
+ * id lets a crafted add whose targetId is another firm's real row smuggle that
+ * id past this guard.
  */
 export function collectClientRefs(plan: BaseWritePlan): ClientRefs {
   const inBatch = (kind: string) =>

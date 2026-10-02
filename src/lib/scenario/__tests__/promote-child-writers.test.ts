@@ -292,6 +292,15 @@ describe("updateAccountChildren", () => {
     expect(updated).toHaveLength(0);
   });
 
+  it("an edit that clears `lifeInsurance` deletes only the policy row (its schedule cascades)", async () => {
+    const { tx, inserted, deleted, updated } = makeTx();
+    await updateAccountChildren(tx as never, "acct-1", { lifeInsurance: null }, makeCtx());
+    expect(deleted).toHaveLength(1);
+    expect(deleted[0].table).toBe(lifeInsurancePolicies);
+    expect(deleted[0].where).toEqual(eq(lifeInsurancePolicies.accountId, "acct-1"));
+    expect([...inserted, ...updated]).toHaveLength(0);
+  });
+
   it("a carrier-only edit updates the policy's display columns and nothing else", async () => {
     const { tx, inserted, deleted, updated } = makeTx();
     await updateAccountChildren(tx as never, "acct-1", { carrier: "New Mutual" }, makeCtx());
@@ -325,7 +334,7 @@ describe("writeLiabilityChildren", () => {
     const raw = {
       owners: [{ kind: "family_member", familyMemberId: "fm2", percent: 100 }],
     };
-    await writeLiabilityChildren(tx as never, "liab-db-id", raw);
+    await writeLiabilityChildren(tx as never, "liab-db-id", raw, makeCtx());
     expect(inserted).toHaveLength(1);
     const vals = inserted[0].values as Record<string, unknown>;
     expect(vals.liabilityId).toBe("liab-db-id");
@@ -338,7 +347,7 @@ describe("writeLiabilityChildren", () => {
     const raw = {
       extraPayments: [{ year: 2030, type: "lump_sum", amount: 5000 }],
     };
-    await writeLiabilityChildren(tx as never, "liab2", raw);
+    await writeLiabilityChildren(tx as never, "liab2", raw, makeCtx());
     expect(inserted).toHaveLength(1);
     const vals = inserted[0].values as Record<string, unknown>;
     expect(vals.liabilityId).toBe("liab2");
@@ -352,13 +361,13 @@ describe("writeLiabilityChildren", () => {
       owners: [{ kind: "entity", entityId: "ent2", percent: 100 }],
       extraPayments: [{ year: 2028, type: "per_payment", amount: 200 }],
     };
-    await writeLiabilityChildren(tx as never, "liab3", raw);
+    await writeLiabilityChildren(tx as never, "liab3", raw, makeCtx());
     expect(inserted).toHaveLength(2);
   });
 
   it("skips missing arrays gracefully", async () => {
     const { tx, inserted } = makeTx();
-    await writeLiabilityChildren(tx as never, "liab4", {});
+    await writeLiabilityChildren(tx as never, "liab4", {}, makeCtx());
     expect(inserted).toHaveLength(0);
   });
 
@@ -380,7 +389,7 @@ describe("writeLiabilityChildren", () => {
         ],
       };
       await expect(
-        writeLiabilityChildren(tx as never, "liab-x", raw),
+        writeLiabilityChildren(tx as never, "liab-x", raw, makeCtx()),
       ).rejects.toThrow(new RegExp(`${kind}.*liability_owners`));
       // The good row may already be in; what matters is that the failure is
       // legible rather than a constraint name from Postgres.
@@ -391,9 +400,12 @@ describe("writeLiabilityChildren", () => {
   it("throws for an unmappable owner on an EDIT too, not just an add", async () => {
     const { tx } = makeTx();
     await expect(
-      updateLiabilityChildren(tx as never, "liab-x", {
-        owners: [{ kind: "gifted_away", recipient: { kind: "entity", id: "e1" }, percent: 1 }],
-      }),
+      updateLiabilityChildren(
+        tx as never,
+        "liab-x",
+        { owners: [{ kind: "gifted_away", recipient: { kind: "entity", id: "e1" }, percent: 1 }] },
+        makeCtx(),
+      ),
     ).rejects.toThrow(/gifted_away.*liability_owners/);
   });
 });
@@ -928,7 +940,7 @@ describe("updateWillChildren", () => {
 describe("updateLiabilityChildren", () => {
   it("no-ops when neither array is in the edit set", async () => {
     const { tx, inserted, deleted } = makeTx();
-    await updateLiabilityChildren(tx as never, "liab-1", { balance: 90000 });
+    await updateLiabilityChildren(tx as never, "liab-1", { balance: 90000 }, makeCtx());
     expect(inserted).toHaveLength(0);
     expect(deleted).toHaveLength(0);
   });
@@ -938,7 +950,7 @@ describe("updateLiabilityChildren", () => {
     const set = {
       owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
     };
-    await updateLiabilityChildren(tx as never, "liab-1", set);
+    await updateLiabilityChildren(tx as never, "liab-1", set, makeCtx());
     expect(deleted.map((d) => d.table)).toEqual([liabilityOwners]);
     expect(inserted).toHaveLength(1);
     expect(inserted[0].values as Record<string, unknown>).toMatchObject({
@@ -952,12 +964,51 @@ describe("updateLiabilityChildren", () => {
   it("rewrites extra payments independently of owners", async () => {
     const { tx, inserted, deleted } = makeTx();
     const set = { extraPayments: [{ year: 2030, type: "lump_sum", amount: 5000 }] };
-    await updateLiabilityChildren(tx as never, "liab-1", set);
+    await updateLiabilityChildren(tx as never, "liab-1", set, makeCtx());
     expect(deleted.map((d) => d.table)).toEqual([extraPayments]);
     expect(inserted).toHaveLength(1);
     expect(inserted[0].values as Record<string, unknown>).toMatchObject({
       liabilityId: "liab-1",
       year: 2030,
     });
+  });
+
+});
+
+// The tenant guard (`collectClientRefs`) skips an owner id that a same-batch
+// `entity` / `family_member` insert names, on the promise that every consumer
+// remaps it. A liability writer that wrote the raw id broke that promise twice:
+// a crafted `entity` add whose targetId is ANOTHER firm's entity id slipped that
+// id past the guard into `liability_owners` (a global FK), and a liability owned
+// by a trust the same scenario creates FK-crashed the promote.
+describe("liability owner refs are remapped through ctx.idRemap", () => {
+  const remap = () =>
+    makeCtx(
+      new Map([
+        ["ent-syn", "ent-real"],
+        ["fm-syn", "fm-real"],
+      ]),
+    );
+  const owners = [
+    { kind: "entity", entityId: "ent-syn", percent: 0.5 },
+    { kind: "family_member", familyMemberId: "fm-syn", percent: 0.5 },
+  ];
+
+  it("on a liability add", async () => {
+    const { tx, inserted } = makeTx();
+    await writeLiabilityChildren(tx as never, "liab-1", { owners }, remap());
+    expect(rowsIn(inserted, liabilityOwners)).toEqual([
+      expect.objectContaining({ liabilityId: "liab-1", entityId: "ent-real", familyMemberId: null }),
+      expect.objectContaining({ liabilityId: "liab-1", entityId: null, familyMemberId: "fm-real" }),
+    ]);
+  });
+
+  it("on a liability edit", async () => {
+    const { tx, inserted } = makeTx();
+    await updateLiabilityChildren(tx as never, "liab-1", { owners }, remap());
+    expect(rowsIn(inserted, liabilityOwners)).toEqual([
+      expect.objectContaining({ entityId: "ent-real", familyMemberId: null }),
+      expect.objectContaining({ entityId: null, familyMemberId: "fm-real" }),
+    ]);
   });
 });

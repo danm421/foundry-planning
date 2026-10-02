@@ -616,6 +616,72 @@ d("promote route — live-Neon integration (disposable client)", () => {
     expect(s3).toBeTruthy();
   });
 
+  // ── Test 9: a liability owned by a trust the SAME scenario creates ─────────
+  // The liability owner writer used to write the raw synthetic entity id, so
+  // this FK-crashed the whole promote as a 500 — and the tenant guard skips that
+  // id on the promise that it is remapped.
+  it("promotes a liability owned by a trust the same scenario creates, pointed at the new entity row", async () => {
+    const { db } = dbMod;
+    const { entities, liabilities, liabilityOwners, scenarioChanges, scenarios } = schema;
+    const { and, eq } = drizzleOrm;
+
+    const S4_ID = randomUUID();
+    const ENT_SYN = randomUUID();
+    const LIAB_SYN = randomUUID();
+    await db
+      .insert(scenarios)
+      .values({ id: S4_ID, clientId: CLIENT_ID, name: "Trust Debt", isBaseCase: false });
+    await db.insert(scenarioChanges).values([
+      {
+        scenarioId: S4_ID,
+        opType: "add",
+        targetKind: "entity",
+        targetId: ENT_SYN,
+        payload: { id: ENT_SYN, name: "Promote Liability Trust", entityType: "trust" },
+        orderIndex: 0,
+      },
+      {
+        scenarioId: S4_ID,
+        opType: "add",
+        targetKind: "liability",
+        targetId: LIAB_SYN,
+        payload: {
+          id: LIAB_SYN,
+          name: "Trust-Owned Note",
+          balance: 50000,
+          interestRate: 0.05,
+          monthlyPayment: 500,
+          startYear: 2026,
+          termMonths: 120,
+          owners: [{ kind: "entity", entityId: ENT_SYN, percent: 1 }],
+        },
+        orderIndex: 1,
+      },
+    ]);
+
+    const res = await route.POST(makeRequest({ toggleState: {} }), {
+      params: Promise.resolve({ id: CLIENT_ID, sid: S4_ID }),
+    });
+    expect(res.status).toBe(200);
+
+    const [trust] = await db
+      .select()
+      .from(entities)
+      .where(and(eq(entities.clientId, CLIENT_ID), eq(entities.name, "Promote Liability Trust")));
+    expect(trust).toBeTruthy();
+    expect(trust.id).not.toBe(ENT_SYN);
+    const [liab] = await db
+      .select()
+      .from(liabilities)
+      .where(and(eq(liabilities.scenarioId, BASE_ID), eq(liabilities.name, "Trust-Owned Note")));
+    const owners = await db
+      .select()
+      .from(liabilityOwners)
+      .where(eq(liabilityOwners.liabilityId, liab.id));
+    expect(owners).toHaveLength(1);
+    expect(owners[0]).toMatchObject({ entityId: trust.id, familyMemberId: null });
+  });
+
   // ── Optional: Equivalence assertion via compareEffectiveTrees ───────────────
   // NOTE: loadEffectiveTree is wrapped in React cache(). In the test environment
   // the same cache context might return a stale (pre-promote) base tree after
