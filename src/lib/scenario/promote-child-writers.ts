@@ -597,9 +597,10 @@ export async function writeWillChildren(
   tx: PromoteTx,
   parentId: string,
   raw: Record<string, unknown>,
+  ctx: ChildWriterCtx,
 ): Promise<void> {
-  await insertWillBequestRows(tx, parentId, raw.bequests);
-  await insertWillResiduaryRows(tx, parentId, raw.residuaryRecipients);
+  await insertWillBequestRows(tx, parentId, raw.bequests, ctx);
+  await insertWillResiduaryRows(tx, parentId, raw.residuaryRecipients, ctx);
 }
 
 /**
@@ -620,23 +621,29 @@ export async function updateWillChildren(
   tx: PromoteTx,
   parentId: string,
   set: Record<string, unknown>,
+  ctx: ChildWriterCtx,
 ): Promise<void> {
   if ("bequests" in set) {
     await tx.delete(willBequests).where(eq(willBequests.willId, parentId));
-    await insertWillBequestRows(tx, parentId, set.bequests);
+    await insertWillBequestRows(tx, parentId, set.bequests, ctx);
   }
   if ("residuaryRecipients" in set) {
     await tx
       .delete(willResiduaryRecipients)
       .where(eq(willResiduaryRecipients.willId, parentId));
-    await insertWillResiduaryRows(tx, parentId, set.residuaryRecipients);
+    await insertWillResiduaryRows(tx, parentId, set.residuaryRecipients, ctx);
   }
 }
 
+/** A bequest's `accountId` / `entityId` / `liabilityId` are global foreign keys
+ *  that the promote tenant guard (`collectClientRefs`) skips when a same-batch
+ *  insert names them, so each is remapped here. A recipient id (no foreign key)
+ *  is remapped too, so it never points at a synthetic id. */
 async function insertWillBequestRows(
   tx: PromoteTx,
   willId: string,
   raw: unknown,
+  ctx: ChildWriterCtx,
 ): Promise<void> {
   for (const b of (raw as Array<Record<string, unknown>> | undefined) ?? []) {
     const bequestValues = coerceForTable(willBequests, {
@@ -644,9 +651,9 @@ async function insertWillBequestRows(
       name: b.name,
       kind: b.kind,
       assetMode: b.assetMode ?? null,
-      accountId: b.accountId ?? null,
-      entityId: b.entityId ?? null,
-      liabilityId: b.liabilityId ?? null,
+      accountId: remapId(b.accountId, ctx),
+      entityId: remapId(b.entityId, ctx),
+      liabilityId: remapId(b.liabilityId, ctx),
       percentage: b.percentage,
       condition: b.condition,
       sortOrder: b.sortOrder,
@@ -660,7 +667,7 @@ async function insertWillBequestRows(
       const recipientValues = coerceForTable(willBequestRecipients, {
         bequestId: inserted.id,
         recipientKind: r.recipientKind,
-        recipientId: r.recipientId ?? null,
+        recipientId: remapId(r.recipientId, ctx),
         percentage: r.percentage,
         sortOrder: r.sortOrder,
       });
@@ -673,12 +680,13 @@ async function insertWillResiduaryRows(
   tx: PromoteTx,
   willId: string,
   raw: unknown,
+  ctx: ChildWriterCtx,
 ): Promise<void> {
   for (const r of (raw as Array<Record<string, unknown>> | undefined) ?? []) {
     const values = coerceForTable(willResiduaryRecipients, {
       willId,
       recipientKind: r.recipientKind,
-      recipientId: r.recipientId ?? null,
+      recipientId: remapId(r.recipientId, ctx),
       tier: r.tier ?? "primary",
       percentage: r.percentage,
       sortOrder: r.sortOrder,

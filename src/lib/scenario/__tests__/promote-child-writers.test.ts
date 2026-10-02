@@ -12,6 +12,7 @@ import {
   reinvestmentAccounts,
   reinvestmentGroups,
   savingsRuleSalaryIncomes,
+  willBequestRecipients,
   willBequests,
   willResiduaryRecipients,
 } from "@/db/schema";
@@ -895,7 +896,7 @@ describe("writeWillChildren", () => {
       ],
     };
 
-    await writeWillChildren(tx as never, "will-db-id", raw);
+    await writeWillChildren(tx as never, "will-db-id", raw, makeCtx());
 
     // 1 bequest + 1 bequest recipient + 1 residuary recipient = 3 inserts
     expect(inserted).toHaveLength(3);
@@ -933,7 +934,7 @@ describe("writeWillChildren", () => {
         },
       }),
     };
-    await writeWillChildren(tx as never, "w2", {});
+    await writeWillChildren(tx as never, "w2", {}, makeCtx());
     expect(inserted).toHaveLength(0);
   });
 });
@@ -950,7 +951,7 @@ describe("writeWillChildren", () => {
 describe("updateWillChildren", () => {
   it("no-ops when neither array is in the edit set", async () => {
     const { tx, inserted, deleted } = makeTx();
-    await updateWillChildren(tx as never, "will-1", { grantor: "spouse" });
+    await updateWillChildren(tx as never, "will-1", { grantor: "spouse" }, makeCtx());
     expect(inserted).toHaveLength(0);
     expect(deleted).toHaveLength(0);
   });
@@ -969,7 +970,7 @@ describe("updateWillChildren", () => {
         },
       ],
     };
-    await updateWillChildren(tx as never, "will-1", set);
+    await updateWillChildren(tx as never, "will-1", set, makeCtx());
     expect(deleted.map((d) => d.table)).toEqual([willBequests]);
     expect(inserted.map((i) => i.table)).toHaveLength(2);
     expect(inserted[0].values as Record<string, unknown>).toMatchObject({ willId: "will-1" });
@@ -981,7 +982,7 @@ describe("updateWillChildren", () => {
 
   it("clears every bequest when the dissolve emptied the array", async () => {
     const { tx, inserted, deleted } = makeTx();
-    await updateWillChildren(tx as never, "will-1", { bequests: [] });
+    await updateWillChildren(tx as never, "will-1", { bequests: [] }, makeCtx());
     expect(deleted.map((d) => d.table)).toEqual([willBequests]);
     expect(inserted).toHaveLength(0);
   });
@@ -993,7 +994,7 @@ describe("updateWillChildren", () => {
         { recipientKind: "family_member", recipientId: "fm-spouse", percentage: 40, sortOrder: 0 },
       ],
     };
-    await updateWillChildren(tx as never, "will-1", set);
+    await updateWillChildren(tx as never, "will-1", set, makeCtx());
     expect(deleted.map((d) => d.table)).toEqual([willResiduaryRecipients]);
     expect(inserted).toHaveLength(1);
     expect(inserted[0].values as Record<string, unknown>).toMatchObject({
@@ -1079,5 +1080,80 @@ describe("liability owner refs are remapped through ctx.idRemap", () => {
       expect.objectContaining({ entityId: "ent-real", familyMemberId: null }),
       expect.objectContaining({ entityId: null, familyMemberId: "fm-real" }),
     ]);
+  });
+});
+
+// The tenant guard (`collectClientRefs`) skips a bequest's account / entity /
+// liability id that a same-batch insert names, on the promise that every
+// consumer remaps it. A bequest writer that wrote the raw id broke that promise:
+// a bequest naming a trust the same scenario creates FK-crashed the promote, and
+// a crafted add whose targetId is ANOTHER firm's real row slipped that id past
+// the guard into `will_bequests` (global FKs).
+describe("will bequest refs are remapped through ctx.idRemap", () => {
+  const remap = () =>
+    makeCtx(
+      new Map([
+        ["acc-syn", "acc-real"],
+        ["ent-syn", "ent-real"],
+        ["liab-syn", "liab-real"],
+        ["fm-syn", "fm-real"],
+      ]),
+    );
+  const bequests = [
+    {
+      name: "House", kind: "asset", assetMode: "specific", accountId: "acc-syn", entityId: null,
+      liabilityId: null, percentage: 100, condition: "always", sortOrder: 0,
+      recipients: [{ recipientKind: "family_member", recipientId: "fm-syn", percentage: 100, sortOrder: 0 }],
+    },
+    {
+      name: "To the trust", kind: "asset", assetMode: "specific", accountId: null, entityId: "ent-syn",
+      liabilityId: null, percentage: 100, condition: "always", sortOrder: 1, recipients: [],
+    },
+    {
+      name: "Mortgage", kind: "liability", assetMode: null, accountId: null, entityId: null,
+      liabilityId: "liab-syn", percentage: 100, condition: "always", sortOrder: 2, recipients: [],
+    },
+  ];
+  const expectRemapped = (inserted: { table: unknown; values: unknown }[]) => {
+    expect(rowsIn(inserted, willBequests)).toEqual([
+      expect.objectContaining({ name: "House", accountId: "acc-real", entityId: null, liabilityId: null }),
+      expect.objectContaining({ name: "To the trust", accountId: null, entityId: "ent-real" }),
+      expect.objectContaining({ name: "Mortgage", liabilityId: "liab-real" }),
+    ]);
+    expect(rowsIn(inserted, willBequestRecipients)).toEqual([
+      expect.objectContaining({ recipientId: "fm-real" }),
+    ]);
+  };
+
+  it("on a will add", async () => {
+    const { tx, inserted } = makeTx();
+    await writeWillChildren(
+      tx as never,
+      "will-1",
+      { bequests, residuaryRecipients: [{ recipientKind: "family_member", recipientId: "fm-syn", percentage: 100, sortOrder: 0 }] },
+      remap(),
+    );
+    expectRemapped(inserted);
+    expect(rowsIn(inserted, willResiduaryRecipients)).toEqual([expect.objectContaining({ recipientId: "fm-real" })]);
+  });
+
+  it("on a will edit", async () => {
+    const { tx, inserted } = makeTx();
+    await updateWillChildren(tx as never, "will-1", { bequests }, remap());
+    expectRemapped(inserted);
+  });
+
+  it("passes base-plan ids through unchanged", async () => {
+    const { tx, inserted } = makeTx();
+    await writeWillChildren(
+      tx as never,
+      "will-1",
+      { bequests: [{ ...bequests[0], accountId: "acc-base", entityId: "ent-base", liabilityId: "liab-base", recipients: [{ recipientKind: "entity", recipientId: "ent-base", percentage: 100, sortOrder: 0 }] }] },
+      remap(),
+    );
+    expect(rowsIn(inserted, willBequests)).toEqual([
+      expect.objectContaining({ accountId: "acc-base", entityId: "ent-base", liabilityId: "liab-base" }),
+    ]);
+    expect(rowsIn(inserted, willBequestRecipients)).toEqual([expect.objectContaining({ recipientId: "ent-base" })]);
   });
 });

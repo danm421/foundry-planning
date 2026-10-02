@@ -739,6 +739,7 @@ describe("collectClientRefs", () => {
       externalBeneficiaryIds: ["eb-other"],
       entityIds: ["ent-base", "ent-owner"],
       accountIds: [],
+      liabilityIds: [],
     });
   });
 
@@ -752,6 +753,7 @@ describe("collectClientRefs", () => {
       externalBeneficiaryIds: [],
       entityIds: [],
       accountIds: [],
+      liabilityIds: [],
     });
   });
 
@@ -777,5 +779,46 @@ describe("collectClientRefs", () => {
       ],
     };
     expect(collectClientRefs(plan).accountIds).toEqual(["acc-picked", "acc-edit", "acc-legacy"]);
+  });
+
+  // will_bequests.{account_id, entity_id, liability_id} are GLOBAL FKs, written
+  // by the will child writer / updater: collect exactly those, skipping a row
+  // this batch creates (remapped in the txn). Recipients carry no FK.
+  it("collects a will's bequest account, entity and liability from inserts and updates, skipping same-batch rows", () => {
+    const bequest = (over: Record<string, unknown>) => ({
+      name: "b", kind: "asset", percentage: 100, condition: "always", sortOrder: 0,
+      accountId: null, entityId: null, liabilityId: null, recipients: [], ...over,
+    });
+    const plan: BaseWritePlan = {
+      ...emptyPlan(),
+      inserts: [
+        { kind: "account", targetId: "acc-syn", raw: { id: "acc-syn" } },
+        { kind: "entity", targetId: "ent-syn", raw: { id: "ent-syn" } },
+        { kind: "liability", targetId: "liab-syn", raw: { id: "liab-syn" } },
+        {
+          kind: "will",
+          targetId: "will-syn",
+          raw: {
+            bequests: [
+              bequest({ accountId: "acc-syn", entityId: "ent-syn" }),
+              bequest({ accountId: "acc-base", entityId: "ent-base" }),
+              bequest({ kind: "liability", liabilityId: "liab-syn" }),
+              bequest({ kind: "liability", liabilityId: "liab-base" }),
+            ],
+          },
+        },
+      ],
+      updates: [
+        { kind: "will", id: "will-1", set: { bequests: [bequest({ accountId: "acc-edit", entityId: "ent-edit", liabilityId: "liab-edit" })] } },
+        { kind: "will", id: "will-2", set: { grantor: "spouse" } },
+      ],
+    };
+    expect(collectClientRefs(plan)).toEqual({
+      familyMemberIds: [],
+      externalBeneficiaryIds: [],
+      entityIds: ["ent-base", "ent-edit"],
+      accountIds: ["acc-base", "acc-edit"],
+      liabilityIds: ["liab-base", "liab-edit"],
+    });
   });
 });

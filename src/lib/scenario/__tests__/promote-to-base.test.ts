@@ -189,3 +189,76 @@ describe("promoteScenarioToBase — the planner's inputs", () => {
     expect(h.plannerArgs[4]).toBe(h.groupMembers);
   });
 });
+
+// will_bequests.{account_id, entity_id, liability_id} are GLOBAL foreign keys,
+// and promote writes a will's bequests into them — a crafted bequest naming
+// another client's row must be refused before the transaction, like any other
+// ref; one naming a row the same promote adds must pass (and be remapped).
+describe("promoteScenarioToBase tenant guard — will bequests", () => {
+  const willPlan = (over: Partial<BaseWritePlan>): BaseWritePlan => ({
+    inserts: [],
+    updates: [],
+    singletonUpdates: [],
+    removes: [],
+    giftSeries: { upserts: [], removes: [] },
+    ...over,
+  });
+  const bequest = (over: Record<string, unknown>) => ({
+    name: "b", kind: "asset", assetMode: "specific", percentage: 100, condition: "always", sortOrder: 0,
+    accountId: null, entityId: null, liabilityId: null, recipients: [], ...over,
+  });
+  const addWill = (bequests: unknown[]) => ({
+    kind: "will" as const,
+    targetId: "will-syn",
+    raw: { id: "will-syn", grantor: "client", bequests },
+  });
+
+  beforeEach(() => {
+    h.transaction.mockClear();
+    h.ownAccountIds = ["acc-own"];
+  });
+
+  it.each([
+    ["entity", { entityId: "ent-other-client" }, "ent-other-client"],
+    ["account", { accountId: "acc-other-client" }, "acc-other-client"],
+    ["liability", { kind: "liability", liabilityId: "liab-other-client" }, "liab-other-client"],
+  ])("refuses a bequest naming another client's %s before the transaction opens", async (_kind, over, id) => {
+    h.plan = willPlan({ inserts: [addWill([bequest(over)])] });
+    await expect(promoteScenarioToBase(ARGS)).rejects.toMatchObject({
+      code: "invalid_ref",
+      message: expect.stringContaining(id),
+    });
+    expect(h.transaction).not.toHaveBeenCalled();
+  });
+
+  it("refuses an edit whose bequests name another client's entity", async () => {
+    h.plan = willPlan({
+      updates: [{ kind: "will", id: "will-1", set: { bequests: [bequest({ entityId: "ent-other-client" })] } }],
+    });
+    await expect(promoteScenarioToBase(ARGS)).rejects.toMatchObject({ code: "invalid_ref" });
+    expect(h.transaction).not.toHaveBeenCalled();
+  });
+
+  it("promotes a bequest naming a trust, account and liability the same promote adds", async () => {
+    h.plan = willPlan({
+      inserts: [
+        { kind: "entity", targetId: "ent-syn", raw: { id: "ent-syn", name: "New trust" } },
+        { kind: "account", targetId: "acc-syn", raw: { id: "acc-syn", name: "New brokerage" } },
+        { kind: "liability", targetId: "liab-syn", raw: { id: "liab-syn", name: "New loan" } },
+        addWill([
+          bequest({ entityId: "ent-syn" }),
+          bequest({ accountId: "acc-syn" }),
+          bequest({ kind: "liability", liabilityId: "liab-syn" }),
+        ]),
+      ],
+    });
+    await promoteScenarioToBase(ARGS);
+    expect(h.transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("promotes a bequest naming the client's own account", async () => {
+    h.plan = willPlan({ inserts: [addWill([bequest({ accountId: "acc-own" })])] });
+    await promoteScenarioToBase(ARGS);
+    expect(h.transaction).toHaveBeenCalledTimes(1);
+  });
+});

@@ -17,6 +17,7 @@ import {
   assertEntitiesInClient,
   assertExternalBeneficiariesInClient,
   assertFamilyMembersInClient,
+  assertLiabilitiesInClient,
   type FkCheck,
 } from "@/lib/db-scoping";
 import type { BaseWritePlan } from "./promote-to-base-types";
@@ -332,31 +333,33 @@ function remapRefs(
   return out;
 }
 
-/** The family-member / external-beneficiary / entity / account ids a plan's
- *  child rows will reference. */
+/** The family-member / external-beneficiary / entity / account / liability ids
+ *  a plan's child rows will reference. */
 export interface ClientRefs {
   familyMemberIds: string[];
   externalBeneficiaryIds: string[];
   entityIds: string[];
   accountIds: string[];
+  liabilityIds: string[];
 }
 
 /**
  * PURE. Every family member, external beneficiary and entity named by an
- * `owners` or `beneficiaries` array in the plan's inserts and updates, and every
+ * `owners` or `beneficiaries` array in the plan's inserts and updates, every
  * account a reinvestment picks (`reinvestmentPicksKey`: the picks, or a legacy
- * `accountIds`; never the unstored union beside the picks). Those land in
- * `account_owners`, `liability_owners`, `beneficiary_designations` and
- * `reinvestment_accounts`, whose foreign keys are GLOBAL, and the scenario
- * changes route validates nothing — so without a check a crafted id could
- * attach another firm's person, trust or account to this client's rows.
+ * `accountIds`; never the unstored union beside the picks), and every account,
+ * entity and liability a will's bequests name. Those land in `account_owners`,
+ * `liability_owners`, `beneficiary_designations`, `reinvestment_accounts` and
+ * `will_bequests`, whose foreign keys are GLOBAL, and the scenario changes
+ * route validates nothing — so without a check a crafted id could attach
+ * another firm's person, trust, account or liability to this client's rows.
  *
  * Ids that a same-batch insert of the matching kind satisfies are left out: they
  * are synthetic, only exist once the transaction has inserted them, and a
  * `db`-scoped read outside that transaction could never find them.
  *
  * INVARIANT: every consumer of a skipped id must remap it through `idRemap`
- * (the account, liability and reinvestment child writers do). A consumer that
+ * (the account, liability, reinvestment and will child writers do). A consumer that
  * writes the raw id lets a crafted add whose targetId is another firm's real
  * row smuggle that id past this guard.
  */
@@ -368,12 +371,14 @@ export function collectClientRefs(plan: BaseWritePlan): ClientRefs {
     externalBeneficiaryIds: inBatch("external_beneficiary"),
     entityIds: inBatch("entity"),
     accountIds: inBatch("account"),
+    liabilityIds: inBatch("liability"),
   };
   const found = {
     familyMemberIds: new Set<string>(),
     externalBeneficiaryIds: new Set<string>(),
     entityIds: new Set<string>(),
     accountIds: new Set<string>(),
+    liabilityIds: new Set<string>(),
   };
   const add = (bucket: keyof ClientRefs, id: unknown) => {
     if (typeof id === "string" && id.length > 0 && !skip[bucket].has(id)) found[bucket].add(id);
@@ -383,6 +388,13 @@ export function collectClientRefs(plan: BaseWritePlan): ClientRefs {
       const picksKey = reinvestmentPicksKey(payload);
       for (const id of (picksKey ? (payload[picksKey] as unknown[] | null) : null) ?? []) {
         add("accountIds", id);
+      }
+    }
+    if (kind === "will") {
+      for (const b of (payload.bequests as Record<string, unknown>[] | undefined) ?? []) {
+        add("accountIds", b.accountId);
+        add("entityIds", b.entityId);
+        add("liabilityIds", b.liabilityId);
       }
     }
     for (const o of (payload.owners as Record<string, unknown>[] | undefined) ?? []) {
@@ -403,6 +415,7 @@ export function collectClientRefs(plan: BaseWritePlan): ClientRefs {
     externalBeneficiaryIds: [...found.externalBeneficiaryIds],
     entityIds: [...found.entityIds],
     accountIds: [...found.accountIds],
+    liabilityIds: [...found.liabilityIds],
   };
 }
 
@@ -417,6 +430,7 @@ export async function assertRefsInClient(
     assertExternalBeneficiariesInClient(clientId, refs.externalBeneficiaryIds),
     assertEntitiesInClient(clientId, refs.entityIds),
     assertAccountsInClient(clientId, refs.accountIds),
+    assertLiabilitiesInClient(clientId, refs.liabilityIds),
   ]);
   return checks.find((c) => !c.ok) ?? { ok: true };
 }
