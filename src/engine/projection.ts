@@ -53,7 +53,7 @@ import {
 } from "./ira-basis";
 import { synthesizeDisabilityBenefits } from "./disability-benefits";
 import { expandLinkedIncomes } from "./linked-income";
-import { applyLtcEvent } from "./ltc-event";
+import { applyLtcEvent, medicalDeductibleForYear } from "./ltc-event";
 import { computeExpenses } from "./expenses";
 import { computeLiabilities } from "./liabilities";
 import { isHeldFlatLiability } from "./liability-kind";
@@ -4787,6 +4787,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           return { ...seca, additionalMedicare };
         })()
       : { seTax: 0, deductibleHalf: 0, additionalMedicare: 0 };
+    // §213 medical (LTC care cost) — floor applied inside computeTaxForYear.
+    const medicalExpensesThisYear = medicalDeductibleForYear(data.expenses, year);
     // Plan 3a — collect external-charity gifts so the tax helper can apply IRC §170(b)
     // AGI limits + decay + FIFO carryforward consumption. Bucket cash gifts as
     // public/private; v1 simplification: gift events carry no asset-class metadata yet.
@@ -5147,6 +5149,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             shortTerm: capGainsInTaxableIncome.shortTerm,
           },
           charityGiftsThisYear,
+          medicalExpenses: medicalExpensesThisYear,
           secaResult,
           transferEarlyWithdrawalPenalty: 0,
           interestIncomeForTax,
@@ -5635,6 +5638,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       capitalLossCarryforwardIn: capitalLossCarryforward,
       capitalGainsInTaxableIncome: capGainsInTaxableIncome,
       charityGiftsThisYear,
+      medicalExpenses: medicalExpensesThisYear,
       secaResult,
       transferEarlyWithdrawalPenalty: preSupplementalEarlyPenalty,
       interestIncomeForTax,
@@ -7024,6 +7028,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           // component, so the folded pair is unchanged.
           capitalGainsInTaxableIncome: capGainsInTaxableIncome,
           charityGiftsThisYear,
+          medicalExpenses: medicalExpensesThisYear,
           secaResult,
           transferEarlyWithdrawalPenalty: preSupplementalEarlyPenalty,
           interestIncomeForTax,
@@ -7229,6 +7234,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             shortTerm: capGainsInTaxableIncome.shortTerm,
           },
           charityGiftsThisYear,
+          medicalExpenses: medicalExpensesThisYear,
           secaResult,
           transferEarlyWithdrawalPenalty: preSupplementalEarlyPenalty,
           interestIncomeForTax,
@@ -7398,6 +7404,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
               shortTerm: capGainsInTaxableIncome.shortTerm,
             },
             charityGiftsThisYear,
+            medicalExpenses: medicalExpensesThisYear,
             secaResult,
             transferEarlyWithdrawalPenalty: preSupplementalEarlyPenalty,
             interestIncomeForTax,

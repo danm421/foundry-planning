@@ -51,6 +51,14 @@ export interface YearTaxInput {
    *  Required (not optional) on purpose: `tsc` is the completeness check that
    *  every YearTaxInput rebuild keeps this in lockstep with `taxableIncome`. */
   capitalGainsInTaxableIncome: { longTerm: number; shortTerm: number };
+  /** §213 medical expenses this year, BEFORE the 7.5%-of-AGI floor (today:
+   *  LTC care cost; see medicalDeductibleForYear). The floor needs AGI, so it
+   *  is applied here, beside charity's AGI math, on every convergence pass.
+   *  Required on purpose — `tsc` is the check that every YearTaxInput rebuild
+   *  in projection.ts carries it (same discipline as
+   *  capitalGainsInTaxableIncome). Allowed for AMT at the same floor:
+   *  §56(b)(1)(B) was struck in 2020, so there is no AMT add-back. */
+  medicalExpenses: number;
   /** SECA result (already computed upstream). `additionalMedicare` is the
    *  SE-side 0.9% surtax (IRC §1401(b)(2)) — added to flow.additionalMedicare
    *  and the federal/total tax here alongside seTax. */
@@ -129,6 +137,7 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
 
   // Approximate AGI for §170(b) bucket math (exact AGI is computed inside calculateTaxYearBracket).
   const charityAgi = Math.max(0, taxableIncome - aboveLineWithSeca);
+  const medicalDeduction = Math.max(0, input.medicalExpenses - 0.075 * charityAgi);
   // F23: the itemize-vs-standard election must compare (existing itemized + THIS
   // YEAR's candidate charitable deduction) against the standard deduction. The
   // threshold must match calculate.ts: include the §63(f) additional standard
@@ -155,7 +164,7 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
   });
 
   const willItemize = useBracket
-    ? itemizedIn + candidate.deductionThisYear > effectiveStd
+    ? itemizedIn + medicalDeduction + candidate.deductionThisYear > effectiveStd
     : false;
 
   // Commit the matching branch. When standard wins, no carryforward is consumed —
@@ -189,7 +198,7 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
     charityDeductionThisYear = Math.max(0, charityDeductionThisYear - floor);
   }
 
-  const itemizedDeductions = itemizedIn + charityDeductionThisYear;
+  const itemizedDeductions = itemizedIn + charityDeductionThisYear + medicalDeduction;
 
   // Patch deduction breakdown for charity (mirrors projection.ts:1703-1715).
   // Uses the floored amount (F22) so the breakdown matches the deduction taken.
@@ -204,6 +213,23 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
         charitable: newCharitable,
         itemizedTotal: newItemizedTotal,
         taxDeductions: Math.max(newItemizedTotal, deductionBreakdownIn.belowLine.standardDeduction),
+      },
+    };
+  }
+  if (deductionBreakdownOut && medicalDeduction > 0) {
+    const bl = deductionBreakdownOut.belowLine;
+    const itemizedTotal = bl.itemizedTotal + medicalDeduction;
+    deductionBreakdownOut = {
+      ...deductionBreakdownOut,
+      belowLine: {
+        ...bl,
+        otherItemized: bl.otherItemized + medicalDeduction,
+        itemizedTotal,
+        taxDeductions: Math.max(itemizedTotal, bl.standardDeduction),
+        bySource: {
+          ...bl.bySource,
+          medical: { label: "Medical expenses above 7.5% of AGI", amount: medicalDeduction },
+        },
       },
     };
   }

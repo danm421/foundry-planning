@@ -29,6 +29,7 @@ function input(over: Partial<YearTaxInput> = {}): YearTaxInput {
     deductionBreakdownIn: null,
     capitalLossCarryforwardIn: { shortTerm: 0, longTerm: 0 },
     capitalGainsInTaxableIncome: { longTerm: 0, shortTerm: 0 },
+    medicalExpenses: 0,
     ...over,
   };
 }
