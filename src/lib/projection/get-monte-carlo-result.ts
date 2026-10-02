@@ -19,7 +19,8 @@ export const getMonteCarloResult = cache(
       ).effectiveTree;
       // Thread scenarioId for the ACTIVE scenario's own MC seed (F16), and the
       // effective tree so startingLiquidBalance is per-scenario (Depth 1).
-      // Mixes/volatility/correlations stay base-sourced inside loadMonteCarloData.
+      // Volatility/correlations and each account's own mix stay base-sourced
+      // inside loadMonteCarloData; category growth defaults follow the tree.
       const mcPayload = await loadMonteCarloData(
         clientId,
         firmId,

@@ -68,7 +68,7 @@ describe("solve_goal", () => {
       target: { kind: "retirement-age", person: "client" },
       targetPoS: 0.85,
     });
-    expect(loadMonteCarloData).toHaveBeenCalledWith("client-1", "firm-1", "base");
+    expect(loadMonteCarloData).toHaveBeenCalledWith("client-1", "firm-1", "base", [], { id: "tree" });
     expect(solveTarget).toHaveBeenCalledWith(
       expect.objectContaining({
         effectiveTree: { id: "tree" },

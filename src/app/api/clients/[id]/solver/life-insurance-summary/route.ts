@@ -87,17 +87,21 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     }
 
     // ── Proceeds growth + MC payload with the synthetic-policy mix injected.
-    //    MC returns/mixes stay base/firm-sourced (matching
-    //    getOrComputeLifeInsuranceSolve); the working tree flows through the
-    //    solve via `tree` below. ──
+    //    The payload is built on the SOURCE's effective tree (its liquid set
+    //    and category growth defaults), matching getOrComputeLifeInsuranceSolve;
+    //    the working tree flows through the solve via `tree` below. ──
     const proceeds = await loadLiProceedsGrowth(
       firmId,
       assumptions.modelPortfolioId,
       DEFAULT_LI_GROWTH,
     );
-    const mcPayload = await loadMonteCarloData(clientId, firmId, source, [
-      { accountId: SYNTHETIC_POLICY_ID, mix: proceeds.mix },
-    ]);
+    const mcPayload = await loadMonteCarloData(
+      clientId,
+      firmId,
+      source,
+      [{ accountId: SYNTHETIC_POLICY_ID, mix: proceeds.mix }],
+      effectiveTree,
+    );
 
     const solved = await computeLiSolved({
       tree: workingTree,

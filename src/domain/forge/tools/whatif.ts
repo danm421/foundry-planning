@@ -498,8 +498,9 @@ export function buildWhatIfTools(toolCtx: ForgeToolContext): StructuredToolInter
         scenarioId,
         {},
       );
-      // Reuse the persisted per-scenario MC seed so the solve is reproducible.
-      const mcPayload = await loadMonteCarloData(clientId, ctx.firmId, scenarioId);
+      // Reuse the persisted per-scenario MC seed so the solve is reproducible;
+      // the tree carries the scenario's growth settings and liquid accounts.
+      const mcPayload = await loadMonteCarloData(clientId, ctx.firmId, scenarioId, [], effectiveTree);
 
       // PoS levers always resolve to the PoS branch of SolveResultEvent.
       const result = (await solveTarget({
@@ -557,8 +558,9 @@ export function buildWhatIfTools(toolCtx: ForgeToolContext): StructuredToolInter
       if (denied) return denied;
 
       const { effectiveTree } = await loadEffectiveTree(clientId, ctx.firmId, scenarioId, {});
-      // Reuse the persisted per-scenario MC seed for reproducibility.
-      const mcPayload = await loadMonteCarloData(clientId, ctx.firmId, scenarioId);
+      // Reuse the persisted per-scenario MC seed for reproducibility; the tree
+      // carries the scenario's growth settings and liquid accounts.
+      const mcPayload = await loadMonteCarloData(clientId, ctx.firmId, scenarioId, [], effectiveTree);
 
       const result = await solveMaxSpending({
         tree: effectiveTree,

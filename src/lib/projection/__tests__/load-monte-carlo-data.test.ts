@@ -19,6 +19,8 @@ import {
   FIXTURE_CLIENT_ID,
   FIXTURE_TICKER_ACCOUNT_ID,
   FIXTURE_ASSET_CLASS_ID,
+  FIXTURE_ACCOUNT_ID_1,
+  FIXTURE_PORTFOLIO_ID,
   clientRow,
   scenarioRow,
   planSettingsRow,
@@ -249,6 +251,67 @@ describe("loadMonteCarloData", () => {
       effectiveTree as never,
     );
     expect(payload.startingLiquidBalance).toBe(400000);
+  });
+
+  // A "default"-sourced taxable account: it inherits the category's growth.
+  const DEFAULT_TAXABLE_ID = "00000000-0000-0000-0000-000000000023";
+  const seedDefaultTaxableAccount = () => {
+    dbState.accounts = [
+      ...dbState.accounts,
+      { ...accountRows[0], id: DEFAULT_TAXABLE_ID, name: "Default Brokerage", growthSource: "default" },
+    ];
+  };
+  const treeWithSettings = (planSettings: Record<string, unknown>) =>
+    ({ accounts: [], entities: [], planSettings }) as never;
+  const TAXABLE_ON_PORTFOLIO = {
+    growthSourceTaxable: "model_portfolio",
+    modelPortfolioIdTaxable: FIXTURE_PORTFOLIO_ID,
+    growthSourceCash: "custom",
+    modelPortfolioIdCash: null,
+    growthSourceRetirement: "custom",
+    modelPortfolioIdRetirement: null,
+  };
+
+  it("randomizes default taxable accounts with the model portfolio the tree's plan settings switch the category to", async () => {
+    // The base row keeps the taxable category on a custom rate; a scenario's
+    // growth edits reach only the tree's plan settings (W9).
+    seedValidFixture({ monteCarloSeed: 12345678 });
+    seedDefaultTaxableAccount();
+
+    const base = await loadMonteCarloData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
+    expect(base.accountMixes.find((m) => m.accountId === DEFAULT_TAXABLE_ID)).toBeUndefined();
+
+    const payload = await loadMonteCarloData(
+      FIXTURE_CLIENT_ID,
+      FIXTURE_FIRM_ID,
+      "base",
+      [],
+      treeWithSettings(TAXABLE_ON_PORTFOLIO),
+    );
+    expect(payload.accountMixes.find((m) => m.accountId === DEFAULT_TAXABLE_ID)).toEqual({
+      accountId: DEFAULT_TAXABLE_ID,
+      segments: [{ fromYear: 0, mix: [{ assetClassId: FIXTURE_ASSET_CLASS_ID, weight: 1 }] }],
+    });
+    // An account's own custom rate still wins over the category default.
+    expect(payload.accountMixes.find((m) => m.accountId === FIXTURE_ACCOUNT_ID_1)).toBeUndefined();
+  });
+
+  it("keeps the base row's category defaults for a tree that matches them or carries none", async () => {
+    seedValidFixture({ monteCarloSeed: 12345678 });
+    dbState.planSettings = [
+      { ...planSettingsRow, ...TAXABLE_ON_PORTFOLIO } as unknown as typeof planSettingsRow,
+    ];
+    seedDefaultTaxableAccount();
+
+    const noTree = await loadMonteCarloData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
+    expect(noTree.accountMixes.find((m) => m.accountId === DEFAULT_TAXABLE_ID)).toBeDefined();
+
+    const load = (tree: never) =>
+      loadMonteCarloData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID, "base", [], tree);
+    // Same values as the base row (base mode), and a tree from before the raw
+    // keys rode on plan settings.
+    expect((await load(treeWithSettings(TAXABLE_ON_PORTFOLIO))).accountMixes).toEqual(noTree.accountMixes);
+    expect((await load(treeWithSettings({}))).accountMixes).toEqual(noTree.accountMixes);
   });
 
   it("ticker_portfolio account contributes look-through mix to accountMixes", async () => {

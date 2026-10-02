@@ -58,7 +58,7 @@ describe("solve_max_spending", () => {
     } satisfies MaxSpendResult);
     const tool = toolByName("solve_max_spending");
     await tool.invoke({ clientId: "client-1", scenarioId: "base", targetPoS: 0.85 });
-    expect(loadMonteCarloData).toHaveBeenCalledWith("client-1", "firm-1", "base");
+    expect(loadMonteCarloData).toHaveBeenCalledWith("client-1", "firm-1", "base", [], { id: "tree" });
     expect(solveMaxSpending).toHaveBeenCalledWith(
       expect.objectContaining({ tree: { id: "tree" }, mcPayload: PAYLOAD, targetPoS: 0.85 }),
     );

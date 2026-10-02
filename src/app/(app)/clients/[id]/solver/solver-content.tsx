@@ -50,7 +50,10 @@ export async function SolverContent({ clientId, firmId, userId, source }: Props)
   ]);
   const scenarioName = scenarioRow?.name ?? null;
 
-  const growthResolver = baseLoaded.resolutionContext?.resolver;
+  // The scenario's own context: its growth & inflation settings resolve at load
+  // time (W9), so the base context would show the base plan's defaults.
+  const growthContext = (sourceLoaded ?? baseLoaded).resolutionContext;
+  const growthResolver = growthContext?.resolver;
   const categoryGrowthDefaults = {
     taxable: growthResolver?.resolveCategoryDefault("taxable").rate ?? 0.06,
     retirement: growthResolver?.resolveCategoryDefault("retirement").rate ?? 0.06,
@@ -137,19 +140,18 @@ export async function SolverContent({ clientId, firmId, userId, source }: Props)
   const solverTree = sourceTree ?? baseTree;
 
   // Same untouched-defaults check the Net Worth tab runs. Counts the tree this
-  // surface DISPLAYS, as Net Worth does: the CATEGORY source is base-scoped
-  // (plan_settings is resolved pre-overlay), but an account's own growthSource
-  // is scenario-overlaid, so reading the base tree here would report a
-  // different count than Net Worth for the same scenario.
+  // surface DISPLAYS, with that tree's context: both the CATEGORY source and
+  // an account's own growthSource are scenario-scoped, so reading the base
+  // here would report a different count than Net Worth for the same scenario.
   const defaultGrowthWarning = detectDefaultGrowthAtInflationFor(
-    baseLoaded.resolutionContext,
+    growthContext,
     solverTree.accounts,
   );
   const hasEducationGoals = solverTree.expenses.some(
     (e) => e.type === "education" && (e.dedicatedAccountIds?.length ?? 0) > 0,
   );
   const educationMcPromise = hasEducationGoals
-    ? loadMonteCarloData(clientId, firmId, source).catch(() => null)
+    ? loadMonteCarloData(clientId, firmId, source, [], solverTree).catch(() => null)
     : null;
 
   const lifeInsuranceSettings = await loadLifeInsuranceSettings(
@@ -172,11 +174,12 @@ export async function SolverContent({ clientId, firmId, userId, source }: Props)
       const assetClassStats = new Map<string, EducationReturnStat>(
         mcData.indices.map((i) => [i.id, { arithMean: i.arithMean, stdDev: i.stdDev }]),
       );
-      // Segments are sorted ascending by fromYear, so [0] is the base mix —
-      // the right allocation for near-term education goals.
+      // The fromYear-0 segment is the base mix — the right allocation for
+      // near-term education goals. An account with no base mix may still carry
+      // a reinvestment's later segment; it stays fixed-rate here.
       const accountMixes = mcData.accountMixes.map((m) => ({
         accountId: m.accountId,
-        mix: m.segments[0]?.mix ?? [],
+        mix: m.segments.find((s) => s.fromYear === 0)?.mix ?? [],
       }));
       educationReturnStats = buildEducationReturnStats({
         expenses: solverTree.expenses,

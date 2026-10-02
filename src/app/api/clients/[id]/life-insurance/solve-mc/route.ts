@@ -133,12 +133,17 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         // Inject the synthetic policy's model-portfolio mix so the §101
         // proceeds randomize through Monte Carlo. The transformed payout
         // account keeps id === SYNTHETIC_POLICY_ID. The MC payload stays
-        // `source`-based (returns / liquid set / startingLiquidBalance), matching
+        // `source`-based (returns / liquid set / startingLiquidBalance /
+        // category growth defaults, from the source's effective tree), matching
         // getOrComputeLifeInsuranceSolve + the /solver/life-insurance-summary
         // route; the working tree drives the projection via solveLifeInsuranceNeedMc.
-        const mcPayload = await loadMonteCarloData(clientId, access.firmId, source, [
-          { accountId: SYNTHETIC_POLICY_ID, mix: proceeds.mix },
-        ]);
+        const mcPayload = await loadMonteCarloData(
+          clientId,
+          access.firmId,
+          source,
+          [{ accountId: SYNTHETIC_POLICY_ID, mix: proceeds.mix }],
+          effectiveTree,
+        );
         // `coverEstateTaxes` is handled at the route level — the addend is computed
         // (below) and folded into `mcPayload.requiredMinimumAssetLevel`; the engine
         // solver does not see `coverEstateTaxes` itself.

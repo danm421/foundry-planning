@@ -240,7 +240,8 @@ d("promote route — live-Neon integration (disposable client)", () => {
     try {
       const { db } = dbMod;
       const { eq } = drizzleOrm;
-      const { scenarioSnapshots, clients, crmHouseholds } = schema;
+      const { scenarioSnapshots, clients, crmHouseholds, modelPortfolios, assetClasses } =
+        schema;
 
       // 1. Remove snapshots (no FK cascade from clients → snapshots)
       await db
@@ -255,6 +256,11 @@ d("promote route — live-Neon integration (disposable client)", () => {
       await db
         .delete(crmHouseholds)
         .where(eq(crmHouseholds.id, HH_ID));
+
+      // 4. Remove the firm's CMA rows (firm-scoped, not under the client;
+      //    portfolios cascade their allocations)
+      await db.delete(modelPortfolios).where(eq(modelPortfolios.firmId, FIRM_ID));
+      await db.delete(assetClasses).where(eq(assetClasses.firmId, FIRM_ID));
     } catch (err) {
       console.error("promote integration test afterAll cleanup failed:", err);
     }
@@ -680,6 +686,84 @@ d("promote route — live-Neon integration (disposable client)", () => {
       .where(eq(liabilityOwners.liabilityId, liab.id));
     expect(owners).toHaveLength(1);
     expect(owners[0]).toMatchObject({ entityId: trust.id, familyMemberId: null });
+  });
+
+  // ── Test 10: growth & inflation settings round-trip (W9) ───────────────────
+  // A scenario's growth & inflation edits resolve through an override load, so
+  // the base they promote into must reload to the very tree the scenario showed.
+  it("promotes growth and inflation settings: the base reloads to the scenario's tree", async () => {
+    const { db } = dbMod;
+    const {
+      accounts,
+      assetClasses,
+      modelPortfolios,
+      modelPortfolioAllocations,
+      scenarioChanges,
+      scenarios,
+    } = schema;
+    const { loadEffectiveTree } = await import("@/lib/scenario/loader");
+    const { compareEffectiveTrees } = await import("@/lib/scenario/promote-self-check");
+
+    const S5_ID = randomUUID();
+    const PORTFOLIO_ID = randomUUID();
+    const [equity] = await db
+      .insert(assetClasses)
+      .values({ firmId: FIRM_ID, name: "Promote Test Equity", geometricReturn: "0.0640" })
+      .returning();
+    await db
+      .insert(modelPortfolios)
+      .values({ id: PORTFOLIO_ID, firmId: FIRM_ID, name: "Promote Test All Equity" });
+    await db
+      .insert(modelPortfolioAllocations)
+      .values({ modelPortfolioId: PORTFOLIO_ID, assetClassId: equity.id, weight: "1.0000" });
+    // Inherits the taxable category default ("default" growth source).
+    await db.insert(accounts).values({
+      clientId: CLIENT_ID,
+      scenarioId: BASE_ID,
+      name: "Default-Growth Brokerage",
+      category: "taxable",
+      subType: "brokerage",
+      value: "100000",
+    });
+    await db
+      .insert(scenarios)
+      .values({ id: S5_ID, clientId: CLIENT_ID, name: "Growth Plan", isBaseCase: false });
+    await db.insert(scenarioChanges).values({
+      scenarioId: S5_ID,
+      opType: "edit",
+      targetKind: "plan_settings",
+      // The plan_settings singleton is addressed by the client id.
+      targetId: CLIENT_ID,
+      payload: {
+        growthSourceTaxable: { from: "inflation", to: "model_portfolio" },
+        modelPortfolioIdTaxable: { from: null, to: PORTFOLIO_ID },
+        inflationRateSource: { from: "asset_class", to: "custom" },
+        inflationRate: { from: 0.03, to: 0.035 },
+      },
+      orderIndex: 0,
+    });
+
+    const { effectiveTree: before } = await loadEffectiveTree(CLIENT_ID, FIRM_ID, "base", {});
+    const { effectiveTree: target } = await loadEffectiveTree(CLIENT_ID, FIRM_ID, S5_ID, {});
+    // The scenario really moved the plan: its default account grows at the
+    // portfolio's return, and the custom inflation rate applies.
+    const brokerage = target.accounts.find((a) => a.name === "Default-Growth Brokerage");
+    expect(brokerage?.growthRate).toBeCloseTo(0.064, 6);
+    expect(target.planSettings).toMatchObject({
+      growthSourceTaxable: "model_portfolio",
+      modelPortfolioIdTaxable: PORTFOLIO_ID,
+      inflationRateSource: "custom",
+      inflationRate: 0.035,
+    });
+    expect(compareEffectiveTrees(target, before).equal).toBe(false);
+
+    const res = await route.POST(makeRequest({ toggleState: {} }), {
+      params: Promise.resolve({ id: CLIENT_ID, sid: S5_ID }),
+    });
+    expect(res.status).toBe(200);
+
+    const { effectiveTree: after } = await loadEffectiveTree(CLIENT_ID, FIRM_ID, "base", {});
+    expect(compareEffectiveTrees(target, after)).toEqual({ equal: true, diffs: [] });
   });
 
   // ── Optional: Equivalence assertion via compareEffectiveTrees ───────────────

@@ -164,9 +164,10 @@ export async function getOrComputeLifeInsuranceSolve(args: {
   // Mirror the over-time + solve-mc routes:
   //  - over-time loads the effective tree and `loadLiProceedsGrowth`.
   //  - solve-mc loads the effective tree, the same proceeds, and the MC payload
-  //    with the synthetic-policy mix injected (NO effectiveTree passed — the
-  //    live route omits it, so the in-estate liquid set + startingLiquidBalance
-  //    stay base-sourced; reproduce that exactly for shape fidelity).
+  //    with the synthetic-policy mix injected, built on that SOURCE tree (not
+  //    the live working tree), so the in-estate liquid set, startingLiquid-
+  //    Balance and category growth defaults follow the scenario. Reproduce that
+  //    exactly for shape fidelity.
   const [{ effectiveTree }, proceeds] = await Promise.all([
     loadEffectiveTree(args.clientId, args.firmId, args.scenarioId, {}),
     loadLiProceedsGrowth(
@@ -175,9 +176,13 @@ export async function getOrComputeLifeInsuranceSolve(args: {
       DEFAULT_LI_GROWTH,
     ),
   ]);
-  const mcPayload = await loadMonteCarloData(args.clientId, args.firmId, args.scenarioId, [
-    { accountId: SYNTHETIC_POLICY_ID, mix: proceeds.mix },
-  ]);
+  const mcPayload = await loadMonteCarloData(
+    args.clientId,
+    args.firmId,
+    args.scenarioId,
+    [{ accountId: SYNTHETIC_POLICY_ID, mix: proceeds.mix }],
+    effectiveTree,
+  );
 
   const inputHash = hashLifeInsuranceInputs({
     tree: effectiveTree,

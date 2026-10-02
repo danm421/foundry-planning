@@ -59,11 +59,12 @@ export const loadMonteCarloData = cache(
     scenarioId: string | "base" = "base",
     extraAccountMixes: ReadonlyArray<{ accountId: string; mix: AccountAssetMix[] }> = [],
     // Optional per-scenario effective tree. When provided, the in-estate liquid
-    // account set + startingLiquidBalance are derived from it (Depth 1).
-    // Account MIXES, asset-class volatility, and correlations stay base/firm-
-    // sourced (the tree's engine Account drops growthSource/modelPortfolioId).
-    // Omitted → byte-identical base behavior.
-    effectiveTree?: Pick<ClientData, "accounts" | "entities" | "reinvestments">,
+    // account set + startingLiquidBalance are derived from it (Depth 1), and
+    // the category growth defaults come from its planSettings (W9). Each
+    // account's own growth source, asset-class volatility, and correlations
+    // stay base/firm-sourced (the tree's engine Account drops the raw
+    // allocation inputs). Omitted → byte-identical base behavior.
+    effectiveTree?: Pick<ClientData, "accounts" | "entities" | "reinvestments" | "planSettings">,
   ): Promise<MonteCarloPayload> => {
     const [client] = await db
       .select()
@@ -75,7 +76,8 @@ export const loadMonteCarloData = cache(
     // settings, mixes, correlations). Non-base scenarios are overlay diffs, not
     // physical clones, so these queries only have rows under the base scenario
     // id — mixes & volatility intentionally stay base-sourced. (startingLiquid-
-    // Balance is the exception: it follows `effectiveTree` when one is passed.)
+    // Balance and the category growth defaults are the exceptions: they follow
+    // `effectiveTree` when one is passed.)
     const [scenario] = await db
       .select()
       .from(scenarios)
@@ -226,14 +228,19 @@ export const loadMonteCarloData = cache(
       return entityId == null || entityInPortfolio.get(entityId) === true;
     };
 
-    // Per-category default growth source + model portfolio from plan_settings.
+    // Per-category default growth source + model portfolio. A scenario's growth
+    // edits reach only the tree's planSettings (its override load, W9), so read
+    // them there when the tree carries them; otherwise (no tree, or one from
+    // before these keys rode on planSettings) the base row.
     // Only the three investable categories have category-level defaults;
     // growthDefaultCategory folds education_savings into retirement.
+    const treeSettings = effectiveTree?.planSettings;
+    const growthSettings = treeSettings?.growthSourceTaxable !== undefined ? treeSettings : settings;
     const categoryDefault = (rawCategory: string): { source: string; portfolioId: string | null } => {
       const category = growthDefaultCategory(rawCategory);
-      if (category === "taxable") return { source: settings.growthSourceTaxable, portfolioId: settings.modelPortfolioIdTaxable };
-      if (category === "cash") return { source: settings.growthSourceCash, portfolioId: settings.modelPortfolioIdCash };
-      if (category === "retirement") return { source: settings.growthSourceRetirement, portfolioId: settings.modelPortfolioIdRetirement };
+      if (category === "taxable") return { source: growthSettings.growthSourceTaxable ?? "custom", portfolioId: growthSettings.modelPortfolioIdTaxable ?? null };
+      if (category === "cash") return { source: growthSettings.growthSourceCash ?? "custom", portfolioId: growthSettings.modelPortfolioIdCash ?? null };
+      if (category === "retirement") return { source: growthSettings.growthSourceRetirement ?? "custom", portfolioId: growthSettings.modelPortfolioIdRetirement ?? null };
       return { source: "custom", portfolioId: null };
     };
 
@@ -353,8 +360,8 @@ export const loadMonteCarloData = cache(
     // Reads/persists the ACTIVE scenario's own seed (seedScenario), so each
     // scenario reproduces its own Monte Carlo draws. Account mixes, asset-class
     // volatility, and correlations stay base/firm-sourced (see the base-scenario
-    // comment near the top). startingLiquidBalance and the in-estate liquid
-    // account set follow effectiveTree when one is supplied.
+    // comment near the top). startingLiquidBalance, the in-estate liquid account
+    // set and the category growth defaults follow effectiveTree when supplied.
     let seed = seedScenario.monteCarloSeed;
     if (seed == null) {
       seed = generateSeed();
