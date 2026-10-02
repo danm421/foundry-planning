@@ -7,7 +7,6 @@ import type {
 } from "@/engine/types";
 import type { AccountOwner } from "@/engine/ownership";
 import { runProjection } from "@/engine/projection";
-import { resolveLtcEvent } from "@/engine/ltc-event";
 import type { ProjectionYear } from "@/engine/types";
 
 /**
@@ -84,25 +83,8 @@ const DEFAULT_LIFE_EXPECTANCY = 95;
  * back to the deceased client's own projected death year. The horizon never
  * shrinks (the caller only ever *extends* `planEndYear`), so a single-filer
  * what-if simply keeps its existing horizon — a sane no-op.
- *
- * A survivor in long-term care dies in their last care year. When that runs
- * past their life expectancy, the projection runs to it (applyLtcEvent), so
- * that year is the one read; care ending earlier leaves the year as it was.
  */
 function survivorDeathYear(
-  data: ClientData,
-  deceased: "client" | "spouse",
-): number {
-  const lifeExpectancyYear = survivorLifeExpectancyYear(data, deceased);
-  const careDeathYear = resolveLtcEvent(data)?.people.find(
-    (p) => p.person === survivorRole(deceased),
-  )?.endYear;
-  return careDeathYear != null && careDeathYear > lifeExpectancyYear
-    ? careDeathYear
-    : lifeExpectancyYear;
-}
-
-function survivorLifeExpectancyYear(
   data: ClientData,
   deceased: "client" | "spouse",
 ): number {
