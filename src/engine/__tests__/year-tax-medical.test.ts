@@ -88,6 +88,20 @@ describe("medical deduction (§213, 7.5% of AGI)", () => {
     expect(Math.abs(medical - Math.max(0, 80_000 - 0.075 * agi))).toBeLessThan(1);
   });
 
+  it("a negative-AGI year deducts no more medical than was paid", () => {
+    // A 40,000 long-term loss and no other income: AGI is −3,000 (§1211(b)).
+    // 7.5% of a NEGATIVE AGI must not raise the deduction above the 80,000 paid.
+    const base = input({ taxableIncome: -40_000, medicalExpenses: 80_000 });
+    const out = computeTaxForYear(withBreakdown({
+      ...base,
+      taxDetail: { ...base.taxDetail, ordinaryIncome: 0, capitalGains: -40_000 },
+      totalIncome: 0,
+      capitalGainsInTaxableIncome: { longTerm: -40_000, shortTerm: 0 },
+    }));
+    expect(out.taxResult.flow.adjustedGrossIncome).toBeLessThan(0);
+    expect(out.deductionBreakdown!.belowLine.bySource.medical.amount).toBe(80_000);
+  });
+
   it("charity and medical in the same year both itemize, each on its own line", () => {
     // 10,000 of other itemized (taxes paid), a 20,000 cash gift, 80,000 of care.
     const out = computeTaxForYear(withBreakdown({

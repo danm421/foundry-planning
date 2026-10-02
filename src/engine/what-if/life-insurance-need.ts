@@ -334,6 +334,15 @@ export function buildLifeInsuranceWhatIfData(
     }
     out.client.spouseLifeExpectancy = deathYear - birthYear(out.client.spouseDob);
   }
+  //    A long-term care event would reset that life expectancy to the end of
+  //    the deceased's care (applyLtcEvent runs first in runProjection), so the
+  //    premature death supersedes their care. The survivor's care stays; an
+  //    event left with nobody in care goes, with its home sale and expense cut.
+  if (out.ltcEvents) {
+    out.ltcEvents = out.ltcEvents
+      .map((e) => ({ ...e, people: e.people.filter((p) => p.person !== deceased) }))
+      .filter((e) => e.people.length > 0);
+  }
 
   // 2. Synthetic policy. Drop any prior assembler-injected policy first so
   //    re-running the assembler (e.g. the bisection) replaces it.

@@ -9,7 +9,8 @@ import {
 } from "../life-insurance-need";
 import { solveLifeInsuranceNeed } from "@/lib/life-insurance/solve-need";
 import { assumptions } from "@/lib/life-insurance/__tests__/test-helpers";
-import type { ClientData } from "@/engine/types";
+import type { ClientData, LtcCarePerson, LtcEvent } from "@/engine/types";
+import { applyLtcEvent, ltcCareExpenseId, ltcHomeSaleId } from "@/engine/ltc-event";
 import {
   baseClient,
   basePlanSettings,
@@ -469,5 +470,51 @@ describe("liabilityBalancesAtDeathYear base-projection memo", () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+// R33 — a what-if death supersedes the LTC event for the DECEASED only: the
+// pre-pass inside runProjection would otherwise reset their life expectancy to
+// the end of their care and the premature death would never happen.
+describe("buildLifeInsuranceWhatIfData — LTC event", () => {
+  const LTC_ID = "3f1c2d7e-8a1b-4c5d-9e0f-112233445566";
+  const care = (person: "client" | "spouse", startAge: number, years: number): LtcCarePerson => ({
+    person, startAge, years, careSetting: "nursing_private", annualCost: 129_575, costInflation: 0.05,
+  });
+  const withLtc = (event: Partial<LtcEvent>): ClientData => ({
+    ...marriedBase(),
+    ltcEvents: [
+      { id: LTC_ID, name: "LTC", people: [care("client", 85, 3)], livingExpenseCutPct: null, homeSale: null, includePolicies: true, ...event },
+    ],
+  });
+  const whatIf = (data: ClientData) =>
+    buildLifeInsuranceWhatIfData({
+      data, deceased: "client", deathYear: 2030, faceValue: 1_000_000, proceedsGrowthRate: 0.05,
+      livingExpenseAtDeath: null, payoffLiabilityIds: [],
+    });
+
+  it("the person in care dies in the what-if death year, not at the end of their care", () => {
+    const years = runProjection(whatIf(withLtc({})));
+    const firstDeath = years.find((y) => (y.deathTransfers ?? []).some((t) => t.deathOrder === 1));
+    expect(firstDeath?.year).toBe(2030);
+  });
+
+  it("both in care, the client dies: the spouse's care still bills, the client's never does", () => {
+    // Client care 2055–2057 (1970 + 85); spouse care 2058–2059 (1972 + 86).
+    const years = runProjection(whatIf(withLtc({ people: [care("client", 85, 3), care("spouse", 86, 2)] })));
+    const billed = (person: "client" | "spouse", year: number) =>
+      years.find((y) => y.year === year)?.expenses.bySource[ltcCareExpenseId(LTC_ID, person)];
+    expect(billed("spouse", 2058)).toBeCloseTo(129_575 * 1.05 ** 32, 2);
+    expect(billed("spouse", 2059)).toBeCloseTo(129_575 * 1.05 ** 33, 2);
+    for (const y of years) expect(y.expenses.bySource[ltcCareExpenseId(LTC_ID, "client")]).toBeUndefined();
+  });
+
+  it("an event for the deceased alone is dropped — no care rows, no home sale, no cut", () => {
+    const sale = { accountId: "acct-home", saleYear: 2056, price: { mode: "projected" as const }, sellingCostPct: 0.06 };
+    const out = whatIf(withLtc({ livingExpenseCutPct: 1, homeSale: sale }));
+    expect(out.ltcEvents).toEqual([]);
+    expect(applyLtcEvent(out).data).toBe(out); // the pre-pass has nothing to apply
+    const years = runProjection(out);
+    expect(years.some((y) => y.income.bySource?.[`technique-proceeds:${ltcHomeSaleId(LTC_ID)}`])).toBe(false);
   });
 });

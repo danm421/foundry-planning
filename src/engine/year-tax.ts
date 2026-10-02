@@ -160,9 +160,10 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
   };
   // §213: 7.5% of the AGI calculate.ts reports — not `charityAgi`, whose
   // `taxableIncome` scalar carries no Social Security and folds signed gross
-  // gains with no §1211(b) cap or carryforward netting.
+  // gains with no §1211(b) cap or carryforward netting. A negative AGI floors
+  // at 0, so the deduction never exceeds what was paid.
   const medicalDeduction = input.medicalExpenses > 0
-    ? Math.max(0, input.medicalExpenses - 0.075 * agiOf(bracketIncome).adjustedGrossIncome)
+    ? Math.max(0, input.medicalExpenses - 0.075 * Math.max(0, agiOf(bracketIncome).adjustedGrossIncome))
     : 0;
   // F23: the itemize-vs-standard election must compare (existing itemized + THIS
   // YEAR's candidate charitable deduction) against the standard deduction. The

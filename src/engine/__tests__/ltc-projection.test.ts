@@ -118,6 +118,21 @@ describe("LTC event through runProjectionWithEvents", () => {
     expect(result.giftLedger.map((g) => g.year)).toEqual(result.years.map((y) => y.year));
   });
 
+  it("a gift in a care-extended year gets its annual exclusion", () => {
+    // 2056 is past the raw planEndYear (2055) but inside John's care (2055–2057).
+    const data = buildClientData({
+      client: { ...baseClient, lifeExpectancy: 95, spouseLifeExpectancy: 80 },
+      planSettings: { ...basePlanSettings, planEndYear: 2055 },
+      gifts: [{ id: "g-2056", year: 2056, amount: 19_000, grantor: "client", useCrummeyPowers: false }],
+      ltcEvents: [
+        { id: ID, name: "LTC", people: [john85for3], livingExpenseCutPct: null, homeSale: null, includePolicies: true },
+      ],
+    });
+    const y2056 = runProjectionWithEvents(data).giftLedger.find((g) => g.year === 2056)!;
+    expect(y2056.giftsGiven).toBe(19_000);
+    expect(y2056.perGrantor.client.taxableGiftsThisYear).toBe(0); // 19,000 fully excluded
+  });
+
   it("without an event the gift ledger still runs to planEndYear, past a final death", () => {
     // Both die by 2052 (John 1970+80, Jane 1972+80); the projection stops there.
     const data = buildClientData({ client: { ...baseClient, lifeExpectancy: 80, spouseLifeExpectancy: 80 } });
@@ -127,9 +142,11 @@ describe("LTC event through runProjectionWithEvents", () => {
   });
 });
 
-// R12 — the Techniques sale and the LTC sale fall in the SAME year. The applied
-// tree lists the Techniques row first, so it sells; the LTC row must find
-// nothing left: no second proceeds, no second loan payoff, no crash.
+// R12 — the Techniques sale and the LTC sale fall in the SAME year. The
+// Techniques sale sells; the LTC sale is dropped with a home_already_sold
+// warning (I6): no second proceeds, no second loan payoff, no crash. The
+// engine-level guard for a second same-year sale is pinned in
+// asset-transactions.test.ts.
 describe("LTC home sale in the same year as a Techniques sale of that home", () => {
   const checking: Account = {
     id: "acct-checking",

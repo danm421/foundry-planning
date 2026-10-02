@@ -9591,7 +9591,15 @@ export function runProjectionWithEvents(
   const years = runProjection(data, options);
   const firstIdx = years.findIndex((y) => y.estateTax?.deathOrder === 1);
   const secondIdx = years.findIndex((y) => y.estateTax?.deathOrder === 2);
-  const annualExclusionsByYear = buildAnnualExclusionsMap(data.taxYearRows ?? [], data.planSettings);
+  // `data` is the raw input: an LTC event can extend the horizon inside
+  // runProjection only, so the gift ledger and its annual exclusions cover
+  // every year the projection ran. Without one the projection never passes
+  // planEndYear, so this is planEndYear as before.
+  const planEndYear = Math.max(data.planSettings.planEndYear, years[years.length - 1]?.year ?? 0);
+  const annualExclusionsByYear = buildAnnualExclusionsMap(data.taxYearRows ?? [], {
+    ...data.planSettings,
+    planEndYear,
+  });
   // Value an account-percentage gift from the projection the caller just ran.
   // `yearEndAccountBalances` inside runProjection is not in scope here, so read
   // the per-year ledgers off the returned rows through `buildGiftValueAtYear` —
@@ -9606,10 +9614,7 @@ export function runProjectionWithEvents(
   const giftValueAtYear = buildGiftValueAtYear(years, data.accounts);
   const giftLedger = computeGiftLedger({
     planStartYear: data.planSettings.planStartYear,
-    // `data` is the raw input: an LTC event can extend the horizon inside
-    // runProjection only, so cover every year it actually ran. Without one the
-    // projection never passes planEndYear, so this is planEndYear as before.
-    planEndYear: Math.max(data.planSettings.planEndYear, years[years.length - 1]?.year ?? 0),
+    planEndYear,
     hasSpouse: data.client.spouseDob != null,
     priorTaxableGifts: data.planSettings.priorTaxableGifts ?? { client: 0, spouse: 0 },
     gifts: data.gifts ?? [],

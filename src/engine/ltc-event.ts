@@ -104,7 +104,7 @@ export function resolveLtcEvent(data: ClientData): LtcResolution | null {
           t.enabled !== false &&
           t.accountId === accountId &&
           (t.fractionSold == null || t.fractionSold >= 1) &&
-          t.year < saleYear,
+          t.year <= saleYear,
       );
       if (earlier) warnings.push({ kind: "home_already_sold", accountId, soldYear: earlier.year });
       else homeSale = { accountId, saleYear };
@@ -178,15 +178,18 @@ export function applyLtcEvent(data: ClientData): {
   // 4. Home sale — a plain full sell; the existing sale code does payoff/§121/proceeds.
   const sale: AssetTransaction[] = [];
   if (resolution.homeSale && event.homeSale) {
+    const { accountId } = resolution.homeSale;
     sale.push({
       id: ltcHomeSaleId(event.id),
       name: "Home sale — long-term care",
       type: "sell",
       year: event.homeSale.saleYear,
-      accountId: event.homeSale.accountId,
+      accountId,
       overrideSaleValue: event.homeSale.price.mode === "custom" ? event.homeSale.price.amount : undefined,
       transactionCostPct: event.homeSale.sellingCostPct,
-      qualifiesForHomeSaleExclusion: true,
+      // §121 only for the household's home; a rental or commercial property
+      // sold to pay for care gets no exclusion.
+      qualifiesForHomeSaleExclusion: data.accounts.find((a) => a.id === accountId)?.subType === "primary_residence",
       fractionSold: null,
     });
   }

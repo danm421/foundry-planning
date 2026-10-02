@@ -7,7 +7,7 @@ import {
   medicalDeductibleForYear,
 } from "../ltc-event";
 import { computeExpenses } from "../expenses";
-import { buildClientData, baseClient, basePlanSettings, sampleExpenses } from "./fixtures";
+import { buildClientData, baseClient, basePlanSettings, sampleAccounts, sampleExpenses } from "./fixtures";
 import type { ClientData, LtcEvent, LtcCarePerson } from "../types";
 
 const EVENT_ID = "3f1c2d7e-8a1b-4c5d-9e0f-112233445566";
@@ -91,6 +91,17 @@ describe("resolveLtcEvent", () => {
     // The care still applies; only the second sale is dropped.
     const applied = applyLtcEvent(d).data;
     expect(applied.assetTransactions!.map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  it("skips a home sale when a Techniques sale of that home falls in the SAME year", () => {
+    const d = plan(
+      { homeSale: { accountId: "acct-home", saleYear: 2055, price: { mode: "projected" }, sellingCostPct: 0.06 } },
+      { assetTransactions: [{ id: "t1", name: "Sell home", type: "sell", year: 2055, accountId: "acct-home" }] },
+    );
+    const r = resolveLtcEvent(d)!;
+    expect(r.homeSale).toBeNull();
+    expect(r.warnings).toContainEqual({ kind: "home_already_sold", accountId: "acct-home", soldYear: 2055 });
+    expect(applyLtcEvent(d).data.assetTransactions!.map((t) => t.id)).toEqual(["t1"]);
   });
 
   it("warns when the home account is gone", () => {
@@ -215,6 +226,19 @@ describe("applyLtcEvent", () => {
       qualifiesForHomeSaleExclusion: true,
       fractionSold: null,
     });
+  });
+
+  it("claims the §121 exclusion only for a primary residence — never for a rental", () => {
+    const rental = { ...sampleAccounts.find((a) => a.id === "acct-home")!, id: "acct-rental", subType: "rental_property" };
+    const sold = (accountId: string) =>
+      applyLtcEvent(
+        plan(
+          { homeSale: { accountId, saleYear: 2055, price: { mode: "projected" }, sellingCostPct: 0.06 } },
+          { accounts: [...sampleAccounts, rental] },
+        ),
+      ).data.assetTransactions!.find((t) => t.id === ltcHomeSaleId(EVENT_ID))!;
+    expect(sold("acct-home").qualifiesForHomeSaleExclusion).toBe(true);
+    expect(sold("acct-rental").qualifiesForHomeSaleExclusion).toBe(false);
   });
 
   it("a projected-price sale leaves overrideSaleValue undefined", () => {
