@@ -448,8 +448,8 @@ describe("IncomeExpensesView focus mode", () => {
       expect(onFocusClose).toHaveBeenCalledTimes(1);
     });
   });
-});
 
-it("PAGE_FOCUS_KINDS lists the kinds this view handles", () => {
-  expect(PAGE_FOCUS_KINDS["income-expenses"]).toEqual(expect.arrayContaining(["income", "expense", "savings_rule"]));
+  it("PAGE_FOCUS_KINDS lists exactly the kinds this view handles", () => {
+    expect(PAGE_FOCUS_KINDS["income-expenses"]).toEqual(["income", "expense", "savings_rule"]);
+  });
 });

@@ -529,6 +529,8 @@ describe("BalanceSheetView focus mode — delete intent", () => {
   });
 });
 
-it("PAGE_FOCUS_KINDS lists the kinds this view handles", () => {
-  expect(PAGE_FOCUS_KINDS["net-worth"]).toEqual(expect.arrayContaining(["account", "liability"]));
+describe("BalanceSheetView focus mode — the kinds it handles", () => {
+  it("PAGE_FOCUS_KINDS lists exactly the kinds this view handles", () => {
+    expect(PAGE_FOCUS_KINDS["net-worth"]).toEqual(["account", "liability"]);
+  });
 });

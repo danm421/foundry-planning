@@ -612,6 +612,8 @@ describe("AssumptionsClient without focus", () => {
   });
 });
 
-it("PAGE_FOCUS_KINDS lists the kinds this view handles", () => {
-  expect(PAGE_FOCUS_KINDS["assumptions"]).toEqual(expect.arrayContaining(["plan_settings", "client_deduction", "client_tax_adjustment", "withdrawal_strategy"]));
+describe("AssumptionsClient focus mode — the kinds it handles", () => {
+  it("PAGE_FOCUS_KINDS lists exactly the kinds this view handles", () => {
+    expect(PAGE_FOCUS_KINDS["assumptions"]).toEqual(["plan_settings", "client_deduction", "client_tax_adjustment", "withdrawal_strategy"]);
+  });
 });

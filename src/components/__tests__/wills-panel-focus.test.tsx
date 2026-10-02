@@ -479,6 +479,8 @@ describe("WillsPanel focus mode — create and delete intents", () => {
   });
 });
 
-it("PAGE_FOCUS_KINDS lists the kinds this view handles", () => {
-  expect(PAGE_FOCUS_KINDS["wills"]).toEqual(expect.arrayContaining(["will"]));
+describe("WillsPanel focus mode — the kinds it handles", () => {
+  it("PAGE_FOCUS_KINDS lists exactly the kinds this view handles", () => {
+    expect(PAGE_FOCUS_KINDS["wills"]).toEqual(["will"]);
+  });
 });

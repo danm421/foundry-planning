@@ -705,6 +705,8 @@ describe("FamilyView focus mode — create and delete intents", () => {
   });
 });
 
-it("PAGE_FOCUS_KINDS lists the kinds this view handles", () => {
-  expect(PAGE_FOCUS_KINDS["family"]).toEqual(expect.arrayContaining(["client", "family_member", "entity", "gift", "external_beneficiary"]));
+describe("FamilyView focus mode — the kinds it handles", () => {
+  it("PAGE_FOCUS_KINDS lists exactly the kinds this view handles", () => {
+    expect(PAGE_FOCUS_KINDS["family"]).toEqual(["client", "family_member", "entity", "gift", "external_beneficiary"]);
+  });
 });
