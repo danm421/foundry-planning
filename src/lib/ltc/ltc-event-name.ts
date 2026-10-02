@@ -1,9 +1,10 @@
 import type { ClientInfo, LtcEvent } from "@/engine/types";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 /** First name of the person in care, for labels. */
 export function ltcPersonFirstName(person: "client" | "spouse", client: ClientInfo): string {
   if (person === "client") return client.firstName;
-  return client.spouseName?.trim().split(/\s+/)[0] || "Spouse";
+  return client.spouseName?.trim().split(/\s+/)[0] || CO_CLIENT_LABEL;
 }
 
 /** The Changes-list label for an LTC event. Ages, not years, because that is

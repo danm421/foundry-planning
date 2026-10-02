@@ -187,7 +187,7 @@ export function LtcEventFields({
               onCommit={(d) => commit({ livingExpenseCutPct: clamp(d, 0, 1) })}
             />
             <p className="mt-1 text-[11px] text-ink-3">
-              100% stops living expenses during care. Use less when a spouse is still at home.
+              100% stops living expenses during care. Use less when the co-client is still at home.
             </p>
             {notAppliedNote}
           </div>
