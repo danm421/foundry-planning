@@ -8,6 +8,7 @@ import { HelpTip } from "@/components/help-tip";
 import type { ClientMilestones } from "@/lib/milestones";
 import { useClientAccess } from "@/components/client-access-provider";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
+import { DEDUCTION_TYPE_LABELS } from "@/lib/tax/deduction-type-labels";
 
 interface ItemizedRow {
   id: string;
@@ -23,13 +24,6 @@ interface ItemizedRow {
 }
 
 const fmt = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
-
-const TYPE_LABELS: Record<string, string> = {
-  charitable: "Charitable",
-  above_line: "Above-the-Line",
-  below_line: "Below-the-Line",
-  property_tax: "Property Tax (SALT)",
-};
 
 const OWNER_LABELS: Record<string, string> = {
   client: "Client",
@@ -127,7 +121,7 @@ export function DeductionsItemizedList({
                 return (
                   <li key={r.id} className={`${ROW_GRID} text-sm`}>
                     <span className="flex items-center gap-1 truncate text-xs text-ink-3">
-                      <span className="truncate">{TYPE_LABELS[r.type]}</span>
+                      <span className="truncate">{DEDUCTION_TYPE_LABELS[r.type]}</span>
                       {isSaltType && <HelpTip text="Subject to the SALT cap." />}
                     </span>
                     <span className="truncate text-ink">{r.name ?? "—"}</span>

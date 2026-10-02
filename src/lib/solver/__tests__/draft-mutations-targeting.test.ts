@@ -104,12 +104,50 @@ describe("draftMutationsTargeting", () => {
     }
   });
 
-  it("matches nothing for plan_settings", () => {
+  it("supersedes surplus-allocation for the withdrawal tab only", () => {
     const ms: SolverMutation[] = [
+      { kind: "surplus-allocation", spendPct: 50, saveAccountId: null, spendAllUntilRetirement: false },
       { kind: "stress-inflation", rate: 0.05 },
-      { kind: "retirement-age", person: "client", age: 65 },
     ];
+    expect(draftMutationsTargeting(ms, { kind: "plan_settings", id: "withdrawal" })).toEqual([ms[0]]);
     expect(draftMutationsTargeting(ms, { kind: "plan_settings", id: "tax-rates" })).toEqual([]);
+  });
+
+  it("supersedes the living-expense levers for a flagged living expense", () => {
+    const ms: SolverMutation[] = [
+      { kind: "living-expense-scale", multiplier: 1.1 },
+      { kind: "living-expense-amount", amount: 9 },
+    ];
+    expect(draftMutationsTargeting(ms, { kind: "expense", id: "x", livingExpense: true })).toEqual(ms);
+    expect(draftMutationsTargeting(ms, { kind: "expense", id: "x" })).toEqual([]);
+  });
+
+  it("supersedes a whole trust dissolve when any member is targeted", () => {
+    const ms: SolverMutation[] = [
+      { kind: "entity-upsert", id: "t1", value: null },
+      { kind: "account-upsert", id: "a1", value: null, removedRefId: "t1" },
+      { kind: "income-upsert", id: "i1", value: null, removedRefId: "t1" },
+      { kind: "expense-upsert", id: "e1", value: null, removedRefId: "t1" },
+      { kind: "account-upsert", id: "a2", value: null, removedRefId: "t9" },
+    ];
+    expect(draftMutationsTargeting(ms, { kind: "entity", id: "t1" })).toEqual(ms.slice(0, 4));
+  });
+
+  it("supersedes a whole charity removal", () => {
+    const ms: SolverMutation[] = [
+      { kind: "external-beneficiary-upsert", id: "b1", value: null },
+      { kind: "account-upsert", id: "a1", value: null, removedRefId: "b1" },
+    ];
+    expect(draftMutationsTargeting(ms, { kind: "external_beneficiary", id: "b1" })).toEqual(ms);
+  });
+
+  it("pulls in a note's source-account retitle", () => {
+    const ms: SolverMutation[] = [
+      { kind: "note-receivable-upsert", id: "n1", value: null, sourceAccountId: "a1" },
+      { kind: "account-upsert", id: "a1", value: null },
+      { kind: "account-upsert", id: "a2", value: null },
+    ];
+    expect(draftMutationsTargeting(ms, { kind: "note_receivable", id: "n1" })).toEqual(ms.slice(0, 2));
   });
 
   it("matches nothing for a kind with no solver mutation", () => {

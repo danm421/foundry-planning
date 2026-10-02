@@ -2,15 +2,34 @@
 //
 // Pure, client-safe inventory of every plan detail the Solver's Changes tab
 // can Edit or Delete, built from the Solver's persisted scenario tree plus its
-// gift list. Synthesized rows (policy premiums, policy income, entity checking)
-// are dropped — the advisor never created them and cannot edit them.
+// gift list.
+//
+// Two kinds of row are dropped:
+//   - Synthesized rows the advisor never created: `withSynthesizedPremiums` and
+//     `withSynthesizedDisabilityPremiums` (premium expenses),
+//     `withSynthesizedPolicyIncome` (policy income, all `source: "policy"`) and
+//     `withSynthesizedEntityChecking` (`isSyntheticEntityChecking` accounts).
+//   - Rows their Details view refuses to open (spec R5: an item that can't open
+//     must not be listed). Each skip mirrors that view's `findFocusRow` at ROW
+//     level — `hasPagePencil` in income-expenses-view and `isListedBusiness` /
+//     `underListedBusiness` / `accountInEstate` in balance-sheet-view. Whole
+//     types gated until a later task stay listed.
 
 import type { ClientData } from "@/engine/types";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
+import { controllingEntity } from "@/engine/ownership";
 import { isSyntheticEntityChecking } from "@/lib/entities/entity-checking";
+import { isRetirementLivingExpense } from "@/lib/solver/living-expense";
+import { DEDUCTION_TYPE_LABELS } from "@/lib/tax/deduction-type-labels";
 import { groupAssetTransactionBundles } from "@/lib/solver/asset-transaction-bundles";
 import { describeChangeTarget } from "./describe-change-target";
-import { DETAIL_GROUP_ORDER, DETAIL_TYPES, detailType, type DetailTypeKey } from "./plan-detail-catalog";
+import {
+  DETAIL_GROUP_ORDER,
+  DETAIL_TYPES,
+  SINGLETON_FOCUS_ID,
+  detailType,
+  type DetailTypeKey,
+} from "./plan-detail-catalog";
 
 export interface InventoryItem {
   key: string; // `${typeKey}:${id}`
@@ -21,16 +40,10 @@ export interface InventoryItem {
   sublabel?: string;
   canEdit: boolean;
   canDelete: boolean;
-  /** For draft reconciliation: the savings rule's account, or the SS row's person. */
-  draftRef?: { accountId?: string; person?: "client" | "spouse" };
+  /** For draft reconciliation: the savings rule's account, the SS row's person,
+   *  or a living expense the `living-expense-*` levers modify. */
+  draftRef?: { accountId?: string; person?: "client" | "spouse"; livingExpense?: boolean };
 }
-
-const DEDUCTION_LABELS: Record<string, string> = {
-  charitable: "Charitable deduction",
-  above_line: "Above-the-line deduction",
-  below_line: "Itemized deduction",
-  property_tax: "Property tax deduction",
-};
 
 const fullName = (m: { firstName: string; lastName?: string | null }) =>
   [m.firstName, m.lastName].filter(Boolean).join(" ");
@@ -61,23 +74,54 @@ export function buildPlanInventory(
 
   const accountsById = new Map(tree.accounts.map((a) => [a.id, a]));
 
+  // Mirrors `accountInEstate` / `isListedBusiness` in balance-sheet-view.
+  const entitiesById = new Map((tree.entities ?? []).map((e) => [e.id, e]));
+  const isFamilyOwnedBusiness = (entityId: string | null) => {
+    const e = entityId ? entitiesById.get(entityId) : undefined;
+    if (!e?.entityType || !["llc", "s_corp", "c_corp", "partnership", "other"].includes(e.entityType)) {
+      return false;
+    }
+    if (e.owners == null) return true;
+    return e.owners.reduce((sum, o) => sum + (o.percent ?? 0), 0) >= 0.9999;
+  };
+  const accountInEstate = (a: ClientData["accounts"][number]) =>
+    a.category !== "education_savings" &&
+    (!controllingEntity(a) || isFamilyOwnedBusiness(controllingEntity(a)));
+  const underListedBusiness = (parentAccountId: string) => {
+    const p = accountsById.get(parentAccountId);
+    return !!p && p.category === "business" && !p.parentAccountId && accountInEstate(p);
+  };
+
+  // Mirrors `hasPagePencil` in income-expenses-view: entity- and business-owned
+  // rows sit in read-only rollups.
+  const hasPagePencil = (r: { ownerEntityId?: string | null; ownerAccountId?: string | null }) =>
+    !r.ownerEntityId && !r.ownerAccountId;
+
   for (const inc of tree.incomes) {
     if (inc.source === "policy") continue;
     if (inc.type === "social_security") {
       const person = inc.owner === "spouse" ? "spouse" : "client";
       add("social_security", inc.id, inc.name, { draftRef: { person } });
-    } else {
+    } else if (hasPagePencil(inc)) {
       add("income", inc.id, inc.name);
     }
   }
 
+  const planStartYear = tree.planSettings?.planStartYear;
   for (const e of tree.expenses) {
-    if (e.source === "policy") continue;
-    add("expense", e.id, e.name, { canDelete: !e.isDefault });
+    if (e.source === "policy" || !hasPagePencil(e)) continue;
+    // The rows the `living-expense-scale` / `living-expense-amount` levers rewrite.
+    const livingExpense = planStartYear !== undefined && isRetirementLivingExpense(e, planStartYear);
+    add("expense", e.id, e.name, {
+      canDelete: !e.isDefault,
+      draftRef: livingExpense ? { livingExpense } : undefined,
+    });
   }
 
   for (const a of tree.accounts) {
-    if (isSyntheticEntityChecking(a.id)) continue;
+    if (isSyntheticEntityChecking(a.id) || a.category === "notes_receivable") continue;
+    // A sub-account shows only under a business Net Worth lists.
+    if (a.parentAccountId && accountInEstate(a) && !underListedBusiness(a.parentAccountId)) continue;
     const typeKey: DetailTypeKey =
       a.category === "business" && a.parentAccountId == null
         ? "business"
@@ -95,7 +139,10 @@ export function buildPlanInventory(
     });
   }
 
-  for (const l of tree.liabilities) add("liability", l.id, l.name);
+  for (const l of tree.liabilities) {
+    if (l.parentAccountId && !underListedBusiness(l.parentAccountId)) continue;
+    add("liability", l.id, l.name);
+  }
   for (const d of tree.disabilityPolicies ?? []) add("disability_policy", d.id, d.name);
 
   // Every entity type opens the Family page's entity dialog, so all are "trust / entity".
@@ -131,7 +178,7 @@ export function buildPlanInventory(
   for (const bundle of groupAssetTransactionBundles(tree.assetTransactions ?? [])) {
     for (const leg of bundle.legs) {
       add("asset_transaction", leg.id, leg.name, {
-        sublabel: bundle.bundleId ? bundle.name : undefined,
+        sublabel: bundle.legs.length > 1 ? bundle.name : undefined,
       });
     }
   }
@@ -140,16 +187,16 @@ export function buildPlanInventory(
   for (const d of tree.deductions ?? []) {
     const id = (d as { id?: string }).id;
     if (!id) continue;
-    add("deduction", id, DEDUCTION_LABELS[d.type] ?? "Deduction", {
+    add("deduction", id, DEDUCTION_TYPE_LABELS[d.type] ?? "Deduction", {
       sublabel: `${d.startYear}–${d.endYear}`,
     });
   }
   for (const t of tree.taxAdjustments ?? []) add("tax_adjustment", t.id, t.name?.trim() || "Tax adjustment");
 
   add("client_info", clientId, fullName(tree.client) || "Client info");
-  add("tax_rates", "tax-rates", detailType("tax_rates").label);
-  add("growth_inflation", "growth-inflation", detailType("growth_inflation").label);
-  add("savings_withdrawals", "withdrawal", detailType("savings_withdrawals").label);
+  for (const key of ["tax_rates", "growth_inflation", "savings_withdrawals"] as const) {
+    add(key, SINGLETON_FOCUS_ID[key]!, detailType(key).label);
+  }
 
   const groupRank = (k: DetailTypeKey) => DETAIL_GROUP_ORDER.indexOf(detailType(k).group);
   const typeRank = (k: DetailTypeKey) => DETAIL_TYPES.findIndex((t) => t.key === k);

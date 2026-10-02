@@ -132,7 +132,7 @@ export const DETAIL_TYPES: readonly DetailType[] = [
 ];
 
 // The three Assumptions singletons always focus their own tab, whatever id the caller passes.
-const SINGLETON_FOCUS_ID: Partial<Record<DetailTypeKey, string>> = {
+export const SINGLETON_FOCUS_ID: Partial<Record<DetailTypeKey, string>> = {
   tax_rates: "tax-rates",
   growth_inflation: "growth-inflation",
   savings_withdrawals: "withdrawal",
