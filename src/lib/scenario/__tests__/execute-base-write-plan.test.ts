@@ -738,6 +738,7 @@ describe("collectClientRefs", () => {
       familyMemberIds: ["fm-base"],
       externalBeneficiaryIds: ["eb-other"],
       entityIds: ["ent-base", "ent-owner"],
+      accountIds: [],
     });
   });
 
@@ -750,6 +751,31 @@ describe("collectClientRefs", () => {
       familyMemberIds: [],
       externalBeneficiaryIds: [],
       entityIds: [],
+      accountIds: [],
     });
+  });
+
+  // reinvestment_accounts.account_id is a GLOBAL FK: collect exactly the ids the
+  // reinvestment child writer / updater write — the picks key, or a legacy
+  // `accountIds` standing in for it — never the union beside a picks key (it is
+  // not stored), and never an account this batch creates (remapped in the txn).
+  it("collects a reinvestment's picks from inserts and updates, skipping same-batch accounts", () => {
+    const plan: BaseWritePlan = {
+      ...emptyPlan(),
+      inserts: [
+        { kind: "account", targetId: "acc-syn", raw: { id: "acc-syn" } },
+        {
+          kind: "reinvestment",
+          targetId: "ri-syn",
+          raw: { pickedAccountIds: ["acc-syn", "acc-picked"], accountIds: ["acc-syn", "acc-picked", "acc-union-only"] },
+        },
+      ],
+      updates: [
+        { kind: "reinvestment", id: "ri-1", set: { pickedAccountIds: ["acc-edit"] } },
+        { kind: "reinvestment", id: "ri-2", set: { accountIds: ["acc-legacy"] } },
+        { kind: "reinvestment", id: "ri-3", set: { groupKeys: ["taxable"] } },
+      ],
+    };
+    expect(collectClientRefs(plan).accountIds).toEqual(["acc-picked", "acc-edit", "acc-legacy"]);
   });
 });

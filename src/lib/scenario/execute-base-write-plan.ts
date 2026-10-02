@@ -13,6 +13,7 @@ import { and, eq, getTableColumns } from "drizzle-orm";
 import type { PgColumn, PgTable } from "drizzle-orm/pg-core";
 import { clients, planSettings } from "@/db/schema";
 import {
+  assertAccountsInClient,
   assertEntitiesInClient,
   assertExternalBeneficiariesInClient,
   assertFamilyMembersInClient,
@@ -20,6 +21,7 @@ import {
 } from "@/lib/db-scoping";
 import type { BaseWritePlan } from "./promote-to-base-types";
 import { PROMOTE_TABLE_REGISTRY, type PromoteTx } from "./promote-table-registry";
+import { reinvestmentPicksKey } from "./promote-child-writers";
 import { coerceForTable } from "./promote-coerce";
 
 interface ExecCtx {
@@ -330,30 +332,33 @@ function remapRefs(
   return out;
 }
 
-/** The family-member / external-beneficiary / entity ids a plan's child rows
- *  will reference. */
+/** The family-member / external-beneficiary / entity / account ids a plan's
+ *  child rows will reference. */
 export interface ClientRefs {
   familyMemberIds: string[];
   externalBeneficiaryIds: string[];
   entityIds: string[];
+  accountIds: string[];
 }
 
 /**
  * PURE. Every family member, external beneficiary and entity named by an
- * `owners` or `beneficiaries` array in the plan's inserts and updates. Those
- * land in `account_owners`, `liability_owners` and `beneficiary_designations`,
- * whose foreign keys are GLOBAL, and the scenario changes route validates
- * nothing — so without a check a crafted id could attach another firm's person
- * or trust to this client's account.
+ * `owners` or `beneficiaries` array in the plan's inserts and updates, and every
+ * account a reinvestment picks (`reinvestmentPicksKey`: the picks, or a legacy
+ * `accountIds`; never the unstored union beside the picks). Those land in
+ * `account_owners`, `liability_owners`, `beneficiary_designations` and
+ * `reinvestment_accounts`, whose foreign keys are GLOBAL, and the scenario
+ * changes route validates nothing — so without a check a crafted id could
+ * attach another firm's person, trust or account to this client's rows.
  *
  * Ids that a same-batch insert of the matching kind satisfies are left out: they
  * are synthetic, only exist once the transaction has inserted them, and a
  * `db`-scoped read outside that transaction could never find them.
  *
  * INVARIANT: every consumer of a skipped id must remap it through `idRemap`
- * (the account and liability child writers do). A consumer that writes the raw
- * id lets a crafted add whose targetId is another firm's real row smuggle that
- * id past this guard.
+ * (the account, liability and reinvestment child writers do). A consumer that
+ * writes the raw id lets a crafted add whose targetId is another firm's real
+ * row smuggle that id past this guard.
  */
 export function collectClientRefs(plan: BaseWritePlan): ClientRefs {
   const inBatch = (kind: string) =>
@@ -362,16 +367,24 @@ export function collectClientRefs(plan: BaseWritePlan): ClientRefs {
     familyMemberIds: inBatch("family_member"),
     externalBeneficiaryIds: inBatch("external_beneficiary"),
     entityIds: inBatch("entity"),
+    accountIds: inBatch("account"),
   };
   const found = {
     familyMemberIds: new Set<string>(),
     externalBeneficiaryIds: new Set<string>(),
     entityIds: new Set<string>(),
+    accountIds: new Set<string>(),
   };
   const add = (bucket: keyof ClientRefs, id: unknown) => {
     if (typeof id === "string" && id.length > 0 && !skip[bucket].has(id)) found[bucket].add(id);
   };
-  const walk = (payload: Record<string, unknown>) => {
+  const walk = (kind: string, payload: Record<string, unknown>) => {
+    if (kind === "reinvestment") {
+      const picksKey = reinvestmentPicksKey(payload);
+      for (const id of (picksKey ? (payload[picksKey] as unknown[] | null) : null) ?? []) {
+        add("accountIds", id);
+      }
+    }
     for (const o of (payload.owners as Record<string, unknown>[] | undefined) ?? []) {
       add("familyMemberIds", o.familyMemberId);
       add("externalBeneficiaryIds", o.externalBeneficiaryId);
@@ -383,12 +396,13 @@ export function collectClientRefs(plan: BaseWritePlan): ClientRefs {
       add("entityIds", b.entityIdRef);
     }
   };
-  for (const ins of plan.inserts) walk(ins.raw);
-  for (const u of plan.updates) walk(u.set);
+  for (const ins of plan.inserts) walk(ins.kind, ins.raw);
+  for (const u of plan.updates) walk(u.kind, u.set);
   return {
     familyMemberIds: [...found.familyMemberIds],
     externalBeneficiaryIds: [...found.externalBeneficiaryIds],
     entityIds: [...found.entityIds],
+    accountIds: [...found.accountIds],
   };
 }
 
@@ -402,6 +416,7 @@ export async function assertRefsInClient(
     assertFamilyMembersInClient(clientId, refs.familyMemberIds),
     assertExternalBeneficiariesInClient(clientId, refs.externalBeneficiaryIds),
     assertEntitiesInClient(clientId, refs.entityIds),
+    assertAccountsInClient(clientId, refs.accountIds),
   ]);
   return checks.find((c) => !c.ok) ?? { ok: true };
 }

@@ -521,8 +521,9 @@ export async function writeRothConversionChildren(
 /** Where a reinvestment payload keeps its one-by-one picks: `pickedAccountIds`,
  *  or — on a change written before that key existed — `accountIds`. Never the
  *  union `accountIds` beside a picks key: base stores the picks alone (the
- *  reinvestments route's `accountIds`), and loading re-expands the groups. */
-function reinvestmentPicksKey(raw: Record<string, unknown>): "pickedAccountIds" | "accountIds" | null {
+ *  reinvestments route's `accountIds`), and loading re-expands the groups.
+ *  Also how the promote tenant guard finds the ids to check (`collectClientRefs`). */
+export function reinvestmentPicksKey(raw: Record<string, unknown>): "pickedAccountIds" | "accountIds" | null {
   if ("pickedAccountIds" in raw) return "pickedAccountIds";
   return "accountIds" in raw ? "accountIds" : null;
 }
