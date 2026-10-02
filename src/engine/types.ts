@@ -546,6 +546,10 @@ export interface ClientData {
    *  add / edit / remove changes, so this is the scenario's effective set.
    *  Consumed only when `planSettings.disabilityEvent` is set. */
   disabilityPolicies?: DisabilityPolicy[];
+  /** Long-term care stress events from the active scenario's `ltc_event`
+   *  changes. Scenario-only — never in the base plan, never promoted. The
+   *  engine uses the first; the UI never writes a second. */
+  ltcEvents?: LtcEvent[];
   /** Per-person Medicare coverage overrides. Empty/undefined = use defaults for all enrolled persons. */
   medicareCoverage?: MedicareCoverage[];
   /** Annual rate at which Medicare premiums inflate forward from their base year.
@@ -1018,6 +1022,53 @@ export interface DisabilityEvent {
   startYear: number;
   /** Inclusive last disabled year. Null / absent = never recovers. */
   endYear?: number | null;
+}
+
+/** Where the person in care receives it. Drives the cost preset and, in
+ *  Phase 2, a policy's home-care benefit percentage. */
+export type CareSetting =
+  | "in_home"
+  | "assisted_living"
+  | "nursing_semi_private"
+  | "nursing_private"
+  | "custom";
+
+export interface LtcCarePerson {
+  person: "client" | "spouse";
+  /** Care starts 1 January of the year this person turns `startAge`. */
+  startAge: number;
+  /** Whole years of care. The person dies in the last one. */
+  years: number;
+  careSetting: CareSetting;
+  /** Today's dollars (plan start year). */
+  annualCost: number;
+  /** Decimal growth rate of the care cost. */
+  costInflation: number;
+}
+
+export interface LtcHomeSale {
+  accountId: string;
+  saleYear: number;
+  /** `custom.amount` is in sale-year dollars. */
+  price: { mode: "projected" } | { mode: "custom"; amount: number };
+  sellingCostPct: number;
+}
+
+/** Long-term care stress event. Scenario-only (`ltc_event` change rows) and
+ *  expanded into ordinary rows by `applyLtcEvent` at the top of runProjection.
+ *  See src/engine/ltc-event.ts. */
+export interface LtcEvent {
+  /** UUID — equals the scenario change's targetId. */
+  id: string;
+  /** Changes-list label, e.g. "Long-term care — John 85–87 · home sold 2055".
+   *  Display only; the UI refreshes it with `ltcEventName` on every save. */
+  name: string;
+  people: LtcCarePerson[];
+  /** null = cut box unchecked; 1 = cut living expenses to $0. */
+  livingExpenseCutPct: number | null;
+  homeSale: LtcHomeSale | null;
+  /** Phase 2 (LTC policies). Inert in Phase 1. */
+  includePolicies: boolean;
 }
 
 /** A hole punched in a time-windowed row: it pays nothing from `fromYear`
