@@ -188,6 +188,7 @@ export default function AddRothConversionForm({
     initialData?.sourceAccountIds ?? [],
   );
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const requiresEndYear = conversionType === "deplete_over_period";
   const showFixedAmount = conversionType === "fixed_amount";
@@ -295,20 +296,23 @@ export default function AddRothConversionForm({
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    // Inline, like the other Techniques editors: a native alert() was dismissed
+    // by browser automation (the Add looked like a no-op) and swallowed Escape.
+    setError(null);
     if (!destinationAccountId) {
-      alert("Pick a destination Roth account before saving.");
+      setError("Pick a destination Roth account before saving.");
       return;
     }
     if (sourceAccountIds.length === 0) {
-      alert("Pick at least one source account.");
+      setError("Pick at least one source account.");
       return;
     }
     if (showFixedAmount && (!fixedAmount || parseFloat(fixedAmount) <= 0)) {
-      alert("Enter a fixed amount greater than zero.");
+      setError("Enter a fixed amount greater than zero.");
       return;
     }
     if (requiresEndYear && endYear <= startYear - 1) {
-      alert("End year must be on or after start year.");
+      setError("End year must be on or after start year.");
       return;
     }
 
@@ -385,7 +389,7 @@ export default function AddRothConversionForm({
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        alert(`Failed to save: ${(err as { error?: string }).error ?? res.statusText}`);
+        setError(`Failed to save: ${(err as { error?: string }).error ?? res.statusText}`);
         return;
       }
 
@@ -411,6 +415,14 @@ export default function AddRothConversionForm({
       }}
     >
       <form id="roth-conversion-form" onSubmit={handleSubmit} className="space-y-5">
+        {error && (
+          <p
+            role="alert"
+            className="rounded-[var(--radius-sm)] border border-crit/40 bg-crit/10 px-3 py-2 text-[13px] text-crit"
+          >
+            {error}
+          </p>
+        )}
         {/* Name */}
         <div>
           <label className={fieldLabelClassName} htmlFor="rc-name">

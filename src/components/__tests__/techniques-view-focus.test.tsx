@@ -316,6 +316,18 @@ describe("TechniquesView focus mode — closing", () => {
     expect(onFocusClose).toHaveBeenCalledWith();
   });
 
+  // Browser pass A: "Escape doesn't close" the Roth editor opened from the
+  // Solver's + Add. It closes like every other Techniques editor.
+  it.each([
+    { focus: { intent: "create" as const, kind: "roth_conversion" as const } },
+    { focus: { kind: "roth_conversion" as const, id: "rc-1" } },
+  ])("Escape closes the Roth conversion form ($focus.kind)", ({ focus }) => {
+    const { onFocusClose } = renderFocused(focus);
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+    expect(onFocusClose).toHaveBeenCalledTimes(1);
+    expect(onFocusClose).toHaveBeenCalledWith();
+  });
+
   it("cancelling the transfer form calls onFocusClose()", () => {
     const { onFocusClose } = renderFocused({ kind: "transfer", id: "tr-1" });
 

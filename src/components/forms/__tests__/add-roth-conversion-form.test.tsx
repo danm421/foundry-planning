@@ -523,3 +523,55 @@ describe("AddRothConversionForm — inherited IRAs", () => {
     expect(within(dest).queryByText("Inherited Roth IRA")).not.toBeInTheDocument();
   });
 });
+
+// Browser pass A: "Add Conversion" with no source account looked like a silent
+// no-op — the form answered with a native alert(), which browsers automation
+// dismisses and which swallows the advisor's Escape. Validation now shows
+// inline, the way the other Techniques editors (reinvestment) do.
+describe("AddRothConversionForm — inline validation", () => {
+  it("no source account: shows the message inline, sends nothing, raises no native alert", async () => {
+    const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => {});
+    render(
+      <AddRothConversionForm clientId="client-123" accounts={ACCOUNTS} onClose={() => {}} onSaved={() => {}} />,
+    );
+    fireEvent.change(screen.getByPlaceholderText("e.g., Roth Conversion 1"), { target: { value: "Conv A" } });
+    fireEvent.change(screen.getByLabelText(/Fixed Amount/i), { target: { value: "10000" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add Conversion" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Pick at least one source account.");
+    expect(alertSpy).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
+  });
+
+  it("the message clears once the form is valid and saves", async () => {
+    render(
+      <AddRothConversionForm clientId="client-123" accounts={ACCOUNTS} onClose={() => {}} onSaved={() => {}} />,
+    );
+    fireEvent.change(screen.getByLabelText(/Fixed Amount/i), { target: { value: "10000" } });
+    fireEvent.change(screen.getByPlaceholderText("e.g., Roth Conversion 1"), { target: { value: "Conv A" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add Conversion" }));
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /\+ Add/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Add Conversion" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("a rejected save shows the server's error inline", async () => {
+    const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => {});
+    fetchMock.mockResolvedValueOnce({ ok: false, statusText: "Bad Request", json: async () => ({ error: "Source must be a pre-tax account" }) });
+    render(
+      <AddRothConversionForm clientId="client-123" accounts={ACCOUNTS} onClose={() => {}} onSaved={() => {}} />,
+    );
+    fireEvent.change(screen.getByLabelText(/Fixed Amount/i), { target: { value: "10000" } });
+    await fillFormAndSubmit();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Failed to save: Source must be a pre-tax account");
+    expect(alertSpy).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
+  });
+});
