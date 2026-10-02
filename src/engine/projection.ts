@@ -4373,9 +4373,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         growthRate: e.growthRate,
         inflationStartYear: e.inflationStartYear,
         // This narrowed copy is the one expense view that skips
-        // `itemProrationGate`; drop `suspended` here and a row's hole is
-        // invisible to the deduction math. See `SuspensionWindow`.
+        // `itemProrationGate`; drop `suspended` or `scaleWindows` here and a
+        // row's hole or LTC cut is invisible to the deduction math. See
+        // `SuspensionWindow` / `ScaleWindow`.
         suspended: e.suspended,
+        scaleWindows: e.scaleWindows,
       }));
       const isGrantorThisYear = (entityId: string) => effectiveIsGrantor(entityId, year);
 

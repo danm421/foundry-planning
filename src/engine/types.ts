@@ -1104,7 +1104,8 @@ export interface SuspensionWindow {
 /** Years in which a row costs a fraction of its normal amount. `factor` 0
  *  behaves like a suspension. Written by the LTC pre-pass (living-expense
  *  cut); the writer merges overlapping care years first, so windows on one
- *  row never overlap. */
+ *  row never overlap. Like `suspended`, it is copied into the deduction
+ *  mapping, the one expense consumer outside `itemProrationGate`. */
 export interface ScaleWindow {
   startYear: number;
   endYear: number;

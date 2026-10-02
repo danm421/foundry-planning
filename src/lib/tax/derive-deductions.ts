@@ -15,7 +15,8 @@
 
 import type { FilingStatus, TaxYearParameters } from "./types";
 import type { LiabilityType } from "@/engine/liability-kind";
-import type { SuspensionWindow } from "@/engine/types";
+import type { ScaleWindow, SuspensionWindow } from "@/engine/types";
+import { scaleFactorFor } from "@/engine/retirement-proration";
 import { studentLoanInterestDeduction, traditionalIraDeductibleAmount } from "./thresholds";
 
 // ── Contribution interface ──────────────────────────────────────────────────
@@ -308,6 +309,10 @@ export interface ExpenseForDeduction {
    *  is deductible today; the field is here so the first one that is does not
    *  get deducted through its own suspension in silence. */
   suspended?: SuspensionWindow | null;
+  /** Carried through from `Expense.scaleWindows` (the LTC living-expense cut),
+   *  for the same reason as `suspended`: without it a cut row is still
+   *  deducted at its full amount. */
+  scaleWindows?: ScaleWindow[] | null;
 }
 
 /** Same rule as `itemProrationGate`'s suspension check, applied to the narrowed
@@ -319,10 +324,12 @@ function activeInYear(exp: ExpenseForDeduction, year: number): boolean {
   return hole.throughYear != null && year > hole.throughYear;
 }
 
-function inflateExpense(exp: ExpenseForDeduction, year: number): number {
+/** The row's amount in `year`: inflated, then scaled as `itemProrationGate` would. */
+function amountInYear(exp: ExpenseForDeduction, year: number): number {
   const baseYear = exp.inflationStartYear ?? exp.startYear;
   const elapsed = year - baseYear;
-  return exp.annualAmount * Math.pow(1 + exp.growthRate, Math.max(0, elapsed));
+  return exp.annualAmount * Math.pow(1 + exp.growthRate, Math.max(0, elapsed))
+    * scaleFactorFor(exp.scaleWindows, year);
 }
 
 export function deriveAboveLineFromExpenses(
@@ -333,7 +340,7 @@ export function deriveAboveLineFromExpenses(
   for (const exp of expenses) {
     if (exp.deductionType !== "above_line") continue;
     if (!activeInYear(exp, year)) continue;
-    total += inflateExpense(exp, year);
+    total += amountInYear(exp, year);
   }
   return { aboveLine: total, itemized: 0, saltPool: 0 };
 }
@@ -347,7 +354,7 @@ export function deriveItemizedFromExpenses(
   for (const exp of expenses) {
     if (!exp.deductionType || exp.deductionType === "above_line") continue;
     if (!activeInYear(exp, year)) continue;
-    const amount = inflateExpense(exp, year);
+    const amount = amountInYear(exp, year);
     if (exp.deductionType === "property_tax") {
       saltPool += amount;
     } else {

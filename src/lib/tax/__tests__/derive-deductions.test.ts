@@ -371,6 +371,15 @@ describe("deriveItemizedFromExpenses", () => {
     const result = deriveItemizedFromExpenses(2026, [makeExpense("charitable", 10000, 2026, 2076, 0.03, 2024)]);
     expect(result.itemized).toBeCloseTo(10609, 0);
   });
+
+  it("deducts only the scaled amount inside a scale window (LTC expense cut)", () => {
+    // Like `suspended`, this module bypasses `itemProrationGate`, so a row the
+    // LTC cut halves must be halved here too — or the cut is still deducted.
+    const exp = { ...makeExpense("below_line", 8000), scaleWindows: [{ startYear: 2027, endYear: 2027, factor: 0.5 }] };
+    expect(deriveItemizedFromExpenses(2026, [exp]).itemized).toBe(8000);
+    expect(deriveItemizedFromExpenses(2027, [exp]).itemized).toBe(4000);
+    expect(deriveItemizedFromExpenses(2028, [exp]).itemized).toBe(8000);
+  });
 });
 
 // ── Mortgage interest helper ────────────────────────────────────────────────
