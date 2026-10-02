@@ -76,6 +76,33 @@ describe("ChangesPanelLeafRow", () => {
     ).toBeInTheDocument();
   });
 
+  // Browser pass A: a life-policy edit's subtext printed the whole
+  // `lifeInsurance` object as JSON on both sides.
+  it("describes a life-policy edit by its face value, premium and type — no JSON", () => {
+    const base = { policyType: "term", faceValue: 0, premiumAmount: 1200, costBasis: 0, cashValueSchedule: [] };
+    render(
+      <ChangesPanelLeafRow
+        clientId="c1"
+        scenarioId="s1"
+        enabled={true}
+        change={makeChange({
+          opType: "edit",
+          targetKind: "account",
+          payload: {
+            lifeInsurance: {
+              from: base,
+              to: { ...base, policyType: "whole", faceValue: 600000, premiumAmount: 1500 },
+            },
+          },
+        })}
+      />,
+    );
+    expect(
+      screen.getByText("Policy: face value $0 → $600,000 · premium $1,200 → $1,500 · type Term → Whole life"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/\{/)).toBeNull();
+  });
+
   describe("delete confirmation", () => {
     it("does not delete on first trash click; shows a confirm popover", () => {
       render(

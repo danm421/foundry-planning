@@ -13,7 +13,44 @@ export type ChangeUnit =
 
 /** The readable name of an edited field: a name, never a value. */
 export function describeFieldLabel(targetKind: string, field: string): string {
+  if (field === "lifeInsurance") return "policy terms";
   return (targetKind === "plan_settings" && GROWTH_FIELD_LABELS[field]) || field;
+}
+
+const POLICY_TYPE_LABEL: Record<string, string> = {
+  term: "Term",
+  whole: "Whole life",
+  universal: "Universal",
+  variable: "Variable",
+};
+
+const money = (v: unknown) => (typeof v === "number" ? `$${Math.round(v).toLocaleString()}` : "—");
+const policyType = (v: unknown) => (typeof v === "string" ? (POLICY_TYPE_LABEL[v] ?? v) : "—");
+
+// The headline terms of a life policy, in reading order.
+const POLICY_HEADLINES: Array<[key: string, label: string, fmt: (v: unknown) => string]> = [
+  ["faceValue", "face value", money],
+  ["premiumAmount", "premium", money],
+  ["policyType", "type", policyType],
+];
+
+/**
+ * A life policy edit (`lifeInsurance: {from, to}`, the whole nested policy on
+ * both sides) as words: the headline terms that moved — face value, premium,
+ * type — or "other terms changed" when only a secondary one did (schedule,
+ * basis, payer…). Never the raw object.
+ */
+export function describeLifeInsuranceDiff(from: unknown, to: unknown): string {
+  const obj = (v: unknown) => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
+  const a = obj(from);
+  const b = obj(to);
+  if (!b) return "Policy: removed";
+  if (!a) return `Policy: added (${policyType(b.policyType)}, ${money(b.faceValue)} face value)`;
+  const moved = POLICY_HEADLINES.filter(([k]) => JSON.stringify(a[k]) !== JSON.stringify(b[k])).map(
+    ([k, label, fmt]) => `${label} ${fmt(a[k])} → ${fmt(b[k])}`,
+  );
+  if (moved.length > 0) return `Policy: ${moved.join(" · ")}`;
+  return "Policy: other terms changed";
 }
 
 /** One side of a field change. A model portfolio is a bare uuid, so it reads as
@@ -68,6 +105,9 @@ export function describeChangeUnit(unit: ChangeUnit, targetNames: Record<string,
     if (fields.length === 1) {
       const f = fields[0];
       const { from, to } = payload[f];
+      if (f === "lifeInsurance") {
+        return `Changed policy terms on ${name}: ${describeLifeInsuranceDiff(from, to).replace(/^Policy: /, "")}.`;
+      }
       return `Changed ${describeFieldLabel(c.targetKind, f)} on ${name}: ${fmtFieldVal(c.targetKind, f, from)} → ${fmtFieldVal(c.targetKind, f, to)}.`;
     }
     return `Changed ${fields.length} fields on ${name}: ${fields.map((f) => describeFieldLabel(c.targetKind, f)).join(", ")}.`;

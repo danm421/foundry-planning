@@ -21,6 +21,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PencilIcon, TrashIcon } from "@/components/icons";
 import type { ScenarioChange } from "@/engine/scenario/types";
+import { describeLifeInsuranceDiff } from "@/lib/scenario/scenario-change-describe";
 
 const OP_ICON: Record<ScenarioChange["opType"], { glyph: string; color: string }> = {
   add: { glyph: "+", color: "text-good" },
@@ -366,6 +367,8 @@ function subtextFor(change: ScenarioChange): string {
       ) {
         return "";
       }
+      // A life policy edit carries the whole nested policy on both sides.
+      if (f === "lifeInsurance") return describeLifeInsuranceDiff(fromTo.from, fromTo.to);
       return `${f}: Base ${formatVal(fromTo.from)} → Scenario ${formatVal(fromTo.to)}`;
     })
     .filter(Boolean)

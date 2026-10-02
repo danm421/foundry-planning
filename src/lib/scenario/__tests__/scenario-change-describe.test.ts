@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { describeChangeUnit, type ChangeUnit } from "../scenario-change-describe";
+import { describeChangeUnit, describeLifeInsuranceDiff, type ChangeUnit } from "../scenario-change-describe";
 
 const targetNames: Record<string, string> = {
   "income:i1": "Cooper's Salary",
@@ -195,5 +195,46 @@ describe("describeChangeUnit — growth & inflation settings", () => {
 
   it("prints a toggle as On / Off", () => {
     expect(settingsEdit({ medicarePremiumInflationEnabled: { from: true, to: false } })).toContain("On → Off");
+  });
+});
+
+describe("describeLifeInsuranceDiff", () => {
+  const base = { policyType: "term", faceValue: 500000, premiumAmount: 900, costBasis: 0, cashValueSchedule: [] };
+
+  it("names the headline changes", () => {
+    expect(describeLifeInsuranceDiff(base, { ...base, faceValue: 750000, premiumAmount: 1200 })).toBe(
+      "Policy: face value $500,000 → $750,000 · premium $900 → $1,200",
+    );
+  });
+
+  it("falls back to 'other terms' when only a secondary field moved", () => {
+    expect(describeLifeInsuranceDiff(base, { ...base, cashValueSchedule: [{ year: 2027, cashValue: 1 }] })).toBe(
+      "Policy: other terms changed",
+    );
+  });
+
+  it("reads a policy added to or cleared from the account", () => {
+    expect(describeLifeInsuranceDiff(undefined, base)).toBe("Policy: added (Term, $500,000 face value)");
+    expect(describeLifeInsuranceDiff(base, null)).toBe("Policy: removed");
+  });
+
+  it("an edit unit on one policy field reads humanely, not [object Object]", () => {
+    const unit: ChangeUnit = {
+      kind: "single",
+      change: {
+        id: "c1",
+        scenarioId: "s",
+        opType: "edit",
+        targetKind: "account",
+        targetId: "acct-1",
+        payload: { lifeInsurance: { from: base, to: { ...base, faceValue: 600000 } } },
+        toggleGroupId: null,
+        orderIndex: 0,
+        enabled: true,
+      },
+    };
+    expect(describeChangeUnit(unit, { "account:acct-1": "Whole Life" })).toBe(
+      "Changed policy terms on Whole Life: face value $500,000 → $600,000.",
+    );
   });
 });
