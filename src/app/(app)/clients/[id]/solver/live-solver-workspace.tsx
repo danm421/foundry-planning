@@ -288,6 +288,20 @@ export function LiveSolverWorkspace({
   // The Stress row's "Edit on Changes tab" sets this; the Changes tab opens
   // that change's editor on arrival and clears it.
   const [pendingOpenChangeId, setPendingOpenChangeId] = useState<string | null>(null);
+  // Every left tab shares one scroll container, so a tab used to open at the
+  // previous one's offset: after editing a lever far down Retirement, the
+  // Changes toolbar sat scrolled out of view under the sticky tab strip, and
+  // the scroll that brought it back closed the Add / Edit popover the same
+  // click had opened (SolverAnchoredPopover closes on an outside scroll). Each
+  // tab now opens at its top.
+  const leftPaneRef = useRef<HTMLDivElement | null>(null);
+  const selectLeftTab = useCallback(
+    (tab: InputTab) => {
+      if (tab !== activeTab && leftPaneRef.current) leftPaneRef.current.scrollTop = 0;
+      setActiveTab(tab);
+    },
+    [activeTab],
+  );
 
   // Inputs pane collapsed? Starts open and we remember the advisor's choice
   // across sessions. Read from localStorage after mount (not in the initializer)
@@ -1455,6 +1469,7 @@ export function LiveSolverWorkspace({
             hidden, and the inputs always show. Hidden rather than unmounted so
             the tab and form state survive a collapse. */}
         <div
+          ref={leftPaneRef}
           id={SOLVER_INPUTS_PANE_ID}
           className={`relative min-h-0 overflow-x-hidden overflow-y-auto border-b border-hair lg:border-b-0${
             leftCollapsed ? " lg:hidden" : ""
@@ -1476,7 +1491,7 @@ export function LiveSolverWorkspace({
                   aria-selected={active}
                   aria-label={t.label}
                   title={t.label}
-                  onClick={() => setActiveTab(t.id)}
+                  onClick={() => selectLeftTab(t.id)}
                   className={
                     active
                       ? "flex min-w-0 flex-1 flex-col items-center gap-1 border-b-2 border-accent px-1 py-1.5 text-[11px] font-medium text-accent"
@@ -1663,7 +1678,7 @@ export function LiveSolverWorkspace({
             onLtcSaved={() => router.refresh()}
             onEditLtcOnChangesTab={(id) => {
               setPendingOpenChangeId(id);
-              setActiveTab("changes");
+              selectLeftTab("changes");
             }}
           />
         )}
@@ -1711,7 +1726,7 @@ export function LiveSolverWorkspace({
               planTree={initialSourceClientData}
               willGrantors={willGrantors}
               onTargetsWritten={onTargetsWritten}
-              onOpenSolverTab={setActiveTab}
+              onOpenSolverTab={selectLeftTab}
               projectionYears={currentProjection}
               initialOpenChangeId={pendingOpenChangeId}
               onInitialOpenConsumed={() => setPendingOpenChangeId(null)}

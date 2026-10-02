@@ -1517,3 +1517,37 @@ describe("LiveSolverWorkspace — long-term care draft vs a saved event", () => 
     expect(screen.queryByText(/by the long-term care stress test/)).toBeNull();
   });
 });
+
+// Browser pass A: with an unsaved lever, the FIRST click on the Changes tab's
+// "+ Add" / "Edit" did nothing. Editing the lever scrolled the shared left pane
+// down the Retirement tab, and switching tabs kept that offset, so the Changes
+// toolbar sat scrolled out of view under the sticky tab strip. Bringing it back
+// into view scrolled the pane, and SolverAnchoredPopover closes on any outside
+// scroll — so the popover the click opened was closed by that scroll. Each left
+// tab now opens at its top.
+describe("LiveSolverWorkspace — left tabs open at their top", () => {
+  const panel = { scenarioId: "scn-1", scenarioName: "S", changes: [], toggleGroups: [], cascadeWarnings: [], targetNames: {} };
+
+  it("switching tabs resets the left pane's scroll, so the Changes toolbar is in view", () => {
+    render(<LiveSolverWorkspace {...baseProps} changesPanel={panel} />);
+    const tabs = screen.getByRole("tablist", { name: "Solver editing surface" });
+    const pane = tabs.parentElement as HTMLElement;
+    pane.scrollTop = 640; // as if a lever far down the Retirement tab was edited
+
+    fireEvent.click(within(tabs).getByRole("tab", { name: "Scenario changes" }));
+
+    expect(pane.scrollTop).toBe(0);
+    expect(screen.getByRole("button", { name: "+ Add" })).toBeInTheDocument();
+  });
+
+  it("re-clicking the active tab leaves the scroll alone", () => {
+    render(<LiveSolverWorkspace {...baseProps} changesPanel={panel} />);
+    const tabs = screen.getByRole("tablist", { name: "Solver editing surface" });
+    const pane = tabs.parentElement as HTMLElement;
+    pane.scrollTop = 640;
+
+    fireEvent.click(within(tabs).getByRole("tab", { name: "Retirement" }));
+
+    expect(pane.scrollTop).toBe(640);
+  });
+});
