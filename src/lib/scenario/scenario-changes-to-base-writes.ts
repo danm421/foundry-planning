@@ -1,8 +1,10 @@
 // src/lib/scenario/scenario-changes-to-base-writes.ts
 //
-// PURE. Translates a scenario's overlay (scenario_changes filtered by toggle
-// state) into a BaseWritePlan describing INSERT/UPDATE/DELETE operations on the
-// base-case rows. Cascade deletes (dropping transfers/reinvestments/etc. that
+// No IO: a pure function of its inputs. (It is still server-only: the
+// `SCENARIO_ONLY_KINDS` import loads promote-table-registry, which pulls in
+// `@/db/schema` and the promote child writers.) Translates a scenario's overlay
+// (scenario_changes filtered by toggle state) into a BaseWritePlan describing
+// INSERT/UPDATE/DELETE operations on the base-case rows. Cascade deletes (dropping transfers/reinvestments/etc. that
 // dangled on a removed account) are taken from the engine's own
 // applyScenarioChanges warnings, so we reuse the engine's cascade rules rather
 // than re-deriving them here.

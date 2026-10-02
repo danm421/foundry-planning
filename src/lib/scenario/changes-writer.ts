@@ -6,7 +6,9 @@
 // delete-when-revert-to-base, and add/remove handling that collapses inverse
 // pairs (remove-of-an-add becomes a no-op delete, not a remove row) — except
 // for `gift`, which has no `edit` op and so always keeps the remove marker.
-// See `applyEntityRemove`.
+// See `applyEntityRemove`. `ltc_event` has no `edit` op either (it is saved
+// whole, as an `add`), but it is scenario-only, so its remove collapses like
+// any other add.
 //
 // The Postgres trigger from Plan 2 Task 1 forbids any non-base writes to
 // scenario-bearing tables, so this writer is the *only* sanctioned path for
@@ -421,8 +423,10 @@ export async function applyEntityAdd(
   const { scenarioId, firmId, targetKind } = args;
   let { entity } = args;
   // An LTC event has no Details form to shape it, so it is validated whole
-  // here, where every caller lands. The parsed copy is stored, which drops
-  // any unknown key.
+  // here, where the changes route, Forge and the Solver's "update this
+  // scenario" land. (The Solver's "save as new scenario" inserts its rows
+  // directly; its adds are validated by the mutation schema instead.) The
+  // parsed copy is stored, which drops any unknown key.
   if (targetKind === "ltc_event") {
     const ltc = ltcEventSchema.safeParse(entity);
     if (!ltc.success) {
@@ -530,9 +534,11 @@ export async function applyEntityRemove(args: ApplyEntityRemoveArgs): Promise<vo
     // full draft (lib/gifts/gift-write.ts). Editing a base gift in a scenario
     // therefore leaves an `add` row on a base gift's id, and collapsing that
     // add on delete would resurrect the base row un-edited while the UI showed
-    // the gift gone. Every other kind reaches `applyEntityEdit`, which writes
-    // an `edit` row for a base entity and only merges into an `add` when one
-    // already exists — so for them `hasAdd` really does mean scenario-only.
+    // the gift gone. Every other kind but `ltc_event` reaches `applyEntityEdit`,
+    // which writes an `edit` row for a base entity and only merges into an
+    // `add` when one already exists; an `ltc_event` exists only as an `add`
+    // (scenario-only, no base row). So for all of them `hasAdd` really does
+    // mean scenario-only.
     const hasAdd = existing.some((r) => r.opType === "add");
     if (hasAdd && targetKind !== "gift") {
       // Drop both add and any edit row for this target.

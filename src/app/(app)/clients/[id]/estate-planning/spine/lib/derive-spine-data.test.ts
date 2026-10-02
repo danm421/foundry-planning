@@ -476,7 +476,9 @@ describe("deriveSpineData — an LTC scenario", () => {
     const withResult = runProjectionWithEvents(tree);
     const data = deriveSpineData({ tree, withResult, asOf: "split" });
     if (data.kind !== "two-grantor") throw new Error("expected two-grantor");
-    expect(data.firstDeath.year).toBe(2041); // 1970 + 70 + 2 − 1, not 1970 + 78
+    // 1970 + 70 + 2 − 1. This year is read off the projection, so it holds with
+    // or without the spine's own care-adjusted math; the two cases below pin that.
+    expect(data.firstDeath.year).toBe(2041);
   });
 
   it("names the spouse in care as the first death when care moves her death ahead", () => {

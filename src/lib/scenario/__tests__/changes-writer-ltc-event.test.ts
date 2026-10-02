@@ -3,8 +3,9 @@
 // The shared writer's `ltc_event` guard (Ruling R22). An LTC event is saved
 // whole — an `add` upserts it, a `remove` drops it, and an `edit` is refused.
 // The guard lives in the writer, not a route, because three callers reach it:
-// the changes route, Forge `propose_changes`, and the Solver save. Both checks
-// run BEFORE any DB access, so a refused write never reaches the database.
+// the changes route, Forge `propose_changes`, and the Solver's "update this
+// scenario" save. Both checks run BEFORE any DB access, so a refused write
+// never reaches the database.
 //
 // Fake `db` rather than the live one: the evidence is whether the writer
 // touched the DB at all, and what payload it handed to the insert.
