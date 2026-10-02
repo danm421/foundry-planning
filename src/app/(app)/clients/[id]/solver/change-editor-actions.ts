@@ -21,11 +21,13 @@ import { loadTechniquesViewProps } from "@/app/(app)/clients/[id]/details/techni
 import { loadFamilyViewProps } from "@/app/(app)/clients/[id]/details/family/load-view-props";
 import { loadWillsViewProps } from "@/app/(app)/clients/[id]/details/wills/load-view-props";
 import { loadAssumptionsViewProps } from "@/app/(app)/clients/[id]/details/assumptions/load-view-props";
+import { loadInsuranceViewProps } from "@/app/(app)/clients/[id]/details/insurance/load-view-props";
 import type { IncomeExpensesViewProps } from "@/components/income-expenses-view";
 import type { BalanceSheetViewProps } from "@/components/balance-sheet-view";
 import type { TechniquesViewProps } from "@/components/techniques-view";
 import type { FamilyViewProps } from "@/components/family-view";
 import type { WillsPanelProps } from "@/components/wills-panel";
+import type { InsurancePanelProps } from "@/components/insurance-panel";
 import type { AssumptionsClientProps } from "@/app/(app)/clients/[id]/details/assumptions/assumptions-client";
 
 /** One Details view's props — never the page's sibling data (banners, firmId). */
@@ -35,6 +37,7 @@ export type ChangeEditorViewProps =
   | { page: "techniques"; props: TechniquesViewProps }
   | { page: "family"; props: FamilyViewProps }
   | { page: "wills"; props: WillsPanelProps }
+  | { page: "insurance"; props: InsurancePanelProps }
   | { page: "assumptions"; props: AssumptionsClientProps };
 
 // A server action is a public endpoint: check the shape before any query (a
@@ -76,9 +79,8 @@ export async function loadChangeEditorProps(
     case "assumptions":
       return { page: input.page, props: okProps(await loadAssumptionsViewProps(input.clientId, input.scenarioId)) };
     case "insurance":
-      // The Insurance loader arrives with its own task; the catalog marks
-      // insurance types not ready until then, so nothing asks for it yet.
-      throw new Error("Not available yet");
+      // Life policies only: the page's disability panel has no Solver editor yet.
+      return { page: input.page, props: okProps(await loadInsuranceViewProps(input.clientId, input.scenarioId)) };
   }
 }
 

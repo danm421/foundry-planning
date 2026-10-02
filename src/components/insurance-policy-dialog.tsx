@@ -3,8 +3,10 @@
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { LifeInsurancePolicy } from "@/engine/types";
-import type { OwnerRef } from "@/lib/insurance-policies/owner-ref";
+import type { BeneficiaryRef, LifeInsurancePolicy } from "@/engine/types";
+import { ownerRefToEngineOwners, type OwnerRef } from "@/lib/insurance-policies/owner-ref";
+import { mapPolicyTypeToSubType } from "@/lib/insurance-policies/sub-type";
+import { useScenarioWriter, type ScenarioEdit } from "@/hooks/use-scenario-writer";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import type {
   InsurancePanelAccount,
@@ -264,22 +266,17 @@ function applyPolicyTypeTransition(
   return patch;
 }
 
-// Build the payload for POST / PATCH. Both endpoints accept the same shape;
-// PATCH's schema just makes every field optional. We send all fields for
-// simplicity — the server only writes what's provided and our state always
-// carries a complete snapshot.
-function buildPayload(state: PolicyFormState): Record<string, unknown> {
+/** The policy row's fields — the engine's `LifeInsurancePolicy`, which is also
+ *  what the base routes take (flat) and a scenario account carries as
+ *  `lifeInsurance`. */
+function buildLifeInsurance(state: PolicyFormState) {
   // Free-form makes the per-year grid authoritative for every column, so the
   // three schedule modes are no longer chosen independently — they're simply
   // on in free-form mode and off in basic mode.
   const scheduleMode = state.cashValueGrowthMode === "free_form" ? "scheduled" : "off";
-  const payload: Record<string, unknown> = {
-    name: state.name.trim(),
+  return {
     policyType: state.policyType,
-    insuredPerson: state.insuredPerson,
-    ownerRef: state.ownerRef,
     faceValue: state.faceValue,
-    cashValue: state.cashValue,
     costBasis: state.costBasis,
     premiumAmount: state.premiumAmount,
     premiumYears: state.premiumYears,
@@ -287,9 +284,6 @@ function buildPayload(state: PolicyFormState): Record<string, unknown> {
     termIssueYear: state.termIssueYear,
     termLengthYears: state.termLengthYears,
     endsAtInsuredRetirement: state.endsAtInsuredRetirement,
-    // Activation is persisted onto the account row by the LI create/edit routes.
-    activationYear: state.activationYear,
-    activationYearRef: state.activationYearRef,
     cashValueGrowthMode: state.cashValueGrowthMode,
     premiumScheduleMode: scheduleMode,
     deathBenefitScheduleMode: scheduleMode,
@@ -304,12 +298,50 @@ function buildPayload(state: PolicyFormState): Record<string, unknown> {
     // modes are off so the rows are inert, and sending [] wipes orphan rows.
     cashValueSchedule: state.cashValueSchedule,
   };
-  return payload;
+}
+
+// Build the payload for POST / PATCH. Both endpoints accept the same shape;
+// PATCH's schema just makes every field optional. We send all fields for
+// simplicity — the server only writes what's provided and our state always
+// carries a complete snapshot.
+function buildPayload(state: PolicyFormState): Record<string, unknown> {
+  return {
+    name: state.name.trim(),
+    insuredPerson: state.insuredPerson,
+    ownerRef: state.ownerRef,
+    cashValue: state.cashValue,
+    // Activation is persisted onto the account row by the LI create/edit routes.
+    activationYear: state.activationYear,
+    activationYearRef: state.activationYearRef,
+    ...buildLifeInsurance(state),
+  };
+}
+
+/** The same policy as a scenario account: engine field names, `owners` as the
+ *  engine's ownership rows, and the policy nested under `lifeInsurance`. An
+ *  edit sends all of it (the account's `lifeInsurance` is replaced wholesale);
+ *  an add also names the category and the account-level basis the policy
+ *  doesn't use (its cost basis lives on the policy). */
+function buildScenarioAccountFields(
+  state: PolicyFormState,
+  ownerCtx: { clientFmId: string | null; spouseFmId: string | null },
+): Record<string, unknown> {
+  return {
+    name: state.name.trim(),
+    subType: mapPolicyTypeToSubType(state.policyType),
+    insuredPerson: state.insuredPerson,
+    value: state.cashValue,
+    activationYear: state.activationYear,
+    activationYearRef: state.activationYearRef,
+    owners: ownerRefToEngineOwners(state.ownerRef, ownerCtx),
+    lifeInsurance: buildLifeInsurance(state),
+  };
 }
 
 export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps) {
   const { clientId, clientFirstName, spouseFirstName, mode, policyId, onClose } = props;
   const router = useRouter();
+  const writer = useScenarioWriter(clientId);
 
   const seededState = useMemo<PolicyFormState | null>(() => {
     if (mode === "create") {
@@ -373,6 +405,13 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
   // (undefined) prop, and subsequent saves PATCH instead of POST.
   const [effectiveMode, setEffectiveMode] = useState<"create" | "edit">(mode);
   const [effectivePolicyId, setEffectivePolicyId] = useState<string | undefined>(policyId);
+  // Inside a scenario the Beneficiaries tab opens on the policy's own
+  // designations (from the effective tree), and a save there must outlive the
+  // tab: switching away and back remounts it, and the props are only as fresh
+  // as the last page load.
+  const [scenarioBeneficiaries, setScenarioBeneficiaries] = useState<BeneficiaryRef[] | undefined>(
+    () => props.accounts.find((a) => a.id === policyId)?.beneficiaries,
+  );
   const [nameInvalid, setNameInvalid] = useState(false);
   // Snapshot of the last saved state, for dirty-tracking. Initialized to the
   // seeded values so a freshly-opened dialog is "clean" until the user edits.
@@ -490,19 +529,34 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
     });
   }
 
-  // Pure save against the API. Returns a SaveResult so both the explicit Save
-  // button and the auto-save-on-tab-switch path can share this logic without
-  // either having to know about the other's side-effects (refresh, close).
+  // Pure save. Base mode talks to the policy routes; inside a scenario the same
+  // save is a scenario account change (`useScenarioWriter` picks). Returns a
+  // SaveResult so both the explicit Save button and the auto-save-on-tab-switch
+  // path can share this logic without either having to know about the other's
+  // side-effects (refresh, close). No refresh from the writer: the dialog
+  // refreshes once, on close.
   async function performSave(): Promise<SaveResult & { recordId?: string }> {
-    const url =
-      effectiveMode === "create"
+    const creating = effectiveMode === "create";
+    const newId = crypto.randomUUID();
+    const ownerCtx = {
+      clientFmId: props.familyMembers.find((f) => f.role === "client")?.id ?? null,
+      spouseFmId: props.familyMembers.find((f) => f.role === "spouse")?.id ?? null,
+    };
+    const fields = buildScenarioAccountFields(state, ownerCtx);
+    const edit: ScenarioEdit = creating
+      ? {
+          op: "add",
+          targetKind: "account",
+          entity: { id: newId, category: "life_insurance", basis: "0", ...fields },
+        }
+      : { op: "edit", targetKind: "account", targetId: effectivePolicyId, desiredFields: fields };
+    const response = await writer.submit(edit, {
+      url: creating
         ? `/api/clients/${clientId}/insurance-policies`
-        : `/api/clients/${clientId}/insurance-policies/${effectivePolicyId}`;
-    const method = effectiveMode === "create" ? "POST" : "PATCH";
-    const response = await fetch(url, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildPayload(state)),
+        : `/api/clients/${clientId}/insurance-policies/${effectivePolicyId}`,
+      method: creating ? "POST" : "PATCH",
+      body: buildPayload(state),
+      skipRefresh: true,
     });
     if (!response.ok) {
       // The routes answer a schema rejection with `{ error: "Invalid body",
@@ -517,6 +571,8 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
         }),
       };
     }
+    // The scenario writer answers with the change row, not the new record.
+    if (writer.scenarioActive) return { ok: true, recordId: creating ? newId : undefined };
     const json = (await response.json().catch(() => ({}))) as { id?: string };
     return { ok: true, recordId: json.id };
   }
@@ -573,9 +629,13 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
     setError(null);
     setSubmitting(true);
     try {
-      const response = await fetch(
-        `/api/clients/${clientId}/insurance-policies/${effectivePolicyId}`,
-        { method: "DELETE" },
+      const response = await writer.submit(
+        { op: "remove", targetKind: "account", targetId: effectivePolicyId },
+        {
+          url: `/api/clients/${clientId}/insurance-policies/${effectivePolicyId}`,
+          method: "DELETE",
+          skipRefresh: true,
+        },
       );
       if (!response.ok) {
         const body = (await response.json().catch(() => ({}))) as {
@@ -669,6 +729,8 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
               spouseFirstName={spouseFirstName}
               mode={effectiveMode}
               policyId={effectivePolicyId}
+              scenarioBeneficiaries={scenarioBeneficiaries}
+              onScenarioSaved={setScenarioBeneficiaries}
               members={props.familyMembers}
               externals={props.externalBeneficiaries}
               entities={props.entities}

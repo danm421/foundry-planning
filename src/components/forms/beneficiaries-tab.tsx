@@ -17,6 +17,10 @@ interface BeneficiariesTabProps {
   clientId: string;
   accountId: string;
   active: boolean;
+  /** Inside a scenario: the account's designations as the effective tree
+   *  carries them. The tab opens on these instead of fetching the base ones —
+   *  a scenario-added account isn't in base at all. */
+  scenarioBeneficiaries?: BeneficiaryRef[];
 }
 
 // `beneficiary_designations.percentage` is a Postgres `decimal`, which Drizzle
@@ -27,6 +31,23 @@ function normalizeDesignations(rows: Designation[]): Designation[] {
     ...d,
     percentage:
       typeof d.percentage === "string" ? parseFloat(d.percentage) : d.percentage,
+  }));
+}
+
+/** A scenario's `BeneficiaryRef`s as the editor's rows. */
+function refsToDesignations(refs: BeneficiaryRef[], accountId: string): Designation[] {
+  return refs.map((r) => ({
+    id: r.id,
+    targetKind: "account",
+    accountId,
+    entityId: null,
+    tier: r.tier,
+    familyMemberId: r.familyMemberId ?? null,
+    externalBeneficiaryId: r.externalBeneficiaryId ?? null,
+    entityIdRef: r.entityIdRef ?? null,
+    householdRole: r.householdRole ?? null,
+    percentage: r.percentage,
+    sortOrder: r.sortOrder,
   }));
 }
 
@@ -351,7 +372,13 @@ function AccountBeneficiaryEditor({
   );
 }
 
-export default function BeneficiariesTab({ clientId, accountId, active }: BeneficiariesTabProps) {
+export default function BeneficiariesTab({
+  clientId,
+  accountId,
+  active,
+  scenarioBeneficiaries,
+}: BeneficiariesTabProps) {
+  const { scenarioActive } = useScenarioWriter(clientId);
   const [loaded, setLoaded] = useState(false);
   const [designations, setDesignations] = useState<Designation[]>([]);
   const [members, setMembers] = useState<FamilyMember[]>([]);
@@ -370,13 +397,20 @@ export default function BeneficiariesTab({ clientId, accountId, active }: Benefi
     async function load() {
       try {
         const [dRes, mRes, eRes, entRes] = await Promise.all([
-          fetch(`/api/clients/${clientId}/accounts/${accountId}/beneficiaries`),
+          scenarioActive
+            ? null
+            : fetch(`/api/clients/${clientId}/accounts/${accountId}/beneficiaries`),
           fetch(`/api/clients/${clientId}/family-members`),
           fetch(`/api/clients/${clientId}/external-beneficiaries`),
           fetch(`/api/clients/${clientId}/entities`),
         ]);
-        if (!dRes.ok || !mRes.ok || !eRes.ok || !entRes.ok) throw new Error("Failed to load beneficiary data");
-        const [d, m, e, ent] = (await Promise.all([dRes.json(), mRes.json(), eRes.json(), entRes.json()])) as [
+        if ((dRes && !dRes.ok) || !mRes.ok || !eRes.ok || !entRes.ok) throw new Error("Failed to load beneficiary data");
+        const [d, m, e, ent] = (await Promise.all([
+          dRes ? dRes.json() : refsToDesignations(scenarioBeneficiaries ?? [], accountId),
+          mRes.json(),
+          eRes.json(),
+          entRes.json(),
+        ])) as [
           Designation[],
           FamilyMember[],
           ExternalBeneficiary[],
@@ -405,7 +439,7 @@ export default function BeneficiariesTab({ clientId, accountId, active }: Benefi
     return () => {
       cancelled = true;
     };
-  }, [active, loaded, clientId, accountId]);
+  }, [active, loaded, clientId, accountId, scenarioActive, scenarioBeneficiaries]);
 
   if (error) return <p className="text-sm text-red-400">{error}</p>;
   if (!loaded) return <p className="text-sm text-ink-3">Loading…</p>;

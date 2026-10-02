@@ -3,9 +3,6 @@ import { db } from "@/db";
 import {
   clients,
   scenarios,
-  familyMembers,
-  entities,
-  externalBeneficiaries,
   modelPortfolios,
   modelPortfolioAllocations,
   assetClasses,
@@ -15,7 +12,6 @@ import {
 import { eq, and, asc } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import { loadPoliciesByAccountIds } from "@/lib/insurance-policies/load-policies";
-import { loadDisabilityPolicies } from "@/lib/insurance-policies/load-disability-policies";
 import { computeScheduleYearRange } from "@/lib/insurance-policies/schedule-years";
 import { resolveInflationRate } from "@/lib/inflation";
 import {
@@ -66,31 +62,12 @@ export async function loadInsuranceViewProps(
   }
 
   const [
-    familyRows,
-    entityRows,
-    externalRows,
     portfolioRows,
     allocationRows,
     assetClassRows,
     settingsRows,
-    { effectiveTree },
-    disabilityPolicies,
+    { effectiveTree, resolutionContext },
   ] = await Promise.all([
-    db
-      .select()
-      .from(familyMembers)
-      .where(eq(familyMembers.clientId, id))
-      .orderBy(asc(familyMembers.firstName)),
-    db
-      .select()
-      .from(entities)
-      .where(eq(entities.clientId, id))
-      .orderBy(asc(entities.name)),
-    db
-      .select()
-      .from(externalBeneficiaries)
-      .where(eq(externalBeneficiaries.clientId, id))
-      .orderBy(asc(externalBeneficiaries.name)),
     db
       .select({ id: modelPortfolios.id, name: modelPortfolios.name })
       .from(modelPortfolios)
@@ -103,8 +80,6 @@ export async function loadInsuranceViewProps(
       .from(planSettings)
       .where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenario.id))),
     loadEffectiveTree(id, firmId, scenarioParam ?? "base", {}),
-    // Client-level, like life insurance — no scenario lookup.
-    loadDisabilityPolicies(id),
   ]);
 
   const acMap = new Map(assetClassRows.map((ac) => [ac.id, ac]));
@@ -132,20 +107,44 @@ export async function loadInsuranceViewProps(
       ));
     if (override) clientInflationOverride = override;
   }
-  const resolvedInflationRate = resolveInflationRate(
-    {
-      inflationRateSource: settings?.inflationRateSource ?? "custom",
-      inflationRate: settings?.inflationRate ?? "0",
-    },
-    firmInflationAc ? { geometricReturn: firmInflationAc.geometricReturn } : null,
-    clientInflationOverride,
-  );
+  // In a scenario the inflation rate is the SCENARIO's: its growth edits are
+  // folded onto the tree, not onto the base settings row.
+  const resolvedInflationRate =
+    scenarioParam && resolutionContext
+      ? resolutionContext.resolvedInflationRate
+      : resolveInflationRate(
+          {
+            inflationRateSource: settings?.inflationRateSource ?? "custom",
+            inflationRate: settings?.inflationRate ?? "0",
+          },
+          firmInflationAc ? { geometricReturn: firmInflationAc.geometricReturn } : null,
+          clientInflationOverride,
+        );
 
   const accountRows = [...effectiveTree.accounts].sort((a, b) => a.name.localeCompare(b.name));
   const lifeAccountIds = accountRows
     .filter((a) => a.category === "life_insurance")
     .map((a) => a.id);
-  const policies = await loadPoliciesByAccountIds(lifeAccountIds);
+  // The tree carries each policy — scenario-added and scenario-edited ones
+  // included. A policy that names a post-payout model portfolio carries that
+  // portfolio's RESOLVED rate in the tree (the engine reads only the resolved
+  // value), which would pre-fill the dialog's custom-rate box with the
+  // portfolio's rate. The raw custom rate is on the base row, so read it back
+  // for policies that have one; a scenario-added policy has none and keeps the
+  // tree's rate.
+  const baseRawPolicies = await loadPoliciesByAccountIds(lifeAccountIds);
+  const policies: InsurancePanelProps["policies"] = {};
+  for (const a of accountRows) {
+    if (a.category !== "life_insurance" || !a.lifeInsurance) continue;
+    const policy = a.lifeInsurance;
+    policies[a.id] = {
+      ...policy,
+      postPayoutGrowthRate:
+        policy.postPayoutModelPortfolioId && baseRawPolicies[a.id]
+          ? baseRawPolicies[a.id].postPayoutGrowthRate
+          : policy.postPayoutGrowthRate,
+    };
+  }
 
   const clientFmId =
     (effectiveTree.familyMembers ?? []).find((fm) => fm.role === "client")?.id ?? null;
@@ -168,29 +167,37 @@ export async function loadInsuranceViewProps(
       value: String(a.value),
       activationYear: a.activationYear ?? null,
       activationYearRef: a.activationYearRef ?? null,
+      beneficiaries: a.beneficiaries,
     };
   });
-  const fams: InsurancePanelFamilyMember[] = familyRows.map((f) => ({
-    id: f.id,
-    firstName: f.firstName,
-    lastName: f.lastName ?? null,
-    relationship: f.relationship,
-    role: f.role,
-    dateOfBirth: f.dateOfBirth ?? null,
-    notes: f.notes ?? null,
-  }));
-  const ents: InsurancePanelEntity[] = entityRows.map((e) => ({
-    id: e.id,
-    name: e.name,
-    entityType: e.entityType,
-    crummeyPowers: e.crummeyPowers,
-  }));
-  const exts: InsurancePanelExternal[] = externalRows.map((e) => ({
-    id: e.id,
-    name: e.name,
-    kind: e.kind,
-    notes: e.notes ?? null,
-  }));
+  const fams: InsurancePanelFamilyMember[] = [...(effectiveTree.familyMembers ?? [])]
+    .sort((x, y) => x.firstName.localeCompare(y.firstName))
+    .map((f) => ({
+      id: f.id,
+      firstName: f.firstName,
+      lastName: f.lastName ?? null,
+      relationship: f.relationship,
+      role: f.role,
+      dateOfBirth: f.dateOfBirth ?? null,
+      // The tree carries no free-text notes, and no insurance surface shows them.
+      notes: null,
+    }));
+  const ents: InsurancePanelEntity[] = [...(effectiveTree.entities ?? [])]
+    .sort((x, y) => (x.name ?? "").localeCompare(y.name ?? ""))
+    .map((e) => ({
+      id: e.id,
+      name: e.name ?? "",
+      entityType: e.entityType ?? "trust",
+      crummeyPowers: e.crummeyPowers ?? false,
+    }));
+  const exts: InsurancePanelExternal[] = [...(effectiveTree.externalBeneficiaries ?? [])]
+    .sort((x, y) => x.name.localeCompare(y.name))
+    .map((e) => ({
+      id: e.id,
+      name: e.name,
+      kind: e.kind,
+      notes: null,
+    }));
   const portfolios: InsurancePanelModelPortfolio[] = portfolioRows.map((p) => ({
     id: p.id,
     name: p.name,
@@ -204,13 +211,13 @@ export async function loadInsuranceViewProps(
       lifeExpectancy: effectiveTree.client.lifeExpectancy ?? 95,
       spouseDob: effectiveTree.client.spouseDob ?? null,
       spouseLifeExpectancy: effectiveTree.client.spouseLifeExpectancy ?? null,
-      planStartYear: settings?.planStartYear ?? new Date().getFullYear(),
-      planEndYear: settings?.planEndYear ?? new Date().getFullYear() + 30,
+      planStartYear: effectiveTree.planSettings.planStartYear,
+      planEndYear: effectiveTree.planSettings.planEndYear,
     });
 
   // Milestones power the policy dialog's activation-year picker.
-  const planStartYear = settings?.planStartYear ?? new Date().getFullYear();
-  const planEndYear = settings?.planEndYear ?? new Date().getFullYear() + 30;
+  const planStartYear = effectiveTree.planSettings.planStartYear;
+  const planEndYear = effectiveTree.planSettings.planEndYear;
   const milestones = buildClientMilestones(
     {
       dateOfBirth: effectiveTree.client.dateOfBirth,
@@ -275,7 +282,7 @@ export async function loadInsuranceViewProps(
     },
     disabilityProps: {
       clientId: id,
-      policies: disabilityPolicies,
+      policies: effectiveTree.disabilityPolicies ?? [],
       clientFirstName: effectiveTree.client.firstName,
       spouseFirstName: effectiveTree.client.spouseName ?? null,
       currentSalaryByPerson: { client: salaryFor("client"), spouse: salaryFor("spouse") },

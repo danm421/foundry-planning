@@ -20,9 +20,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import type { ClientMilestones } from "@/lib/milestones";
 
+let searchParams = new URLSearchParams();
 vi.mock("next/navigation", () => ({
-  useSearchParams: () => ({ get: () => null }),
+  useSearchParams: () => searchParams,
   useRouter: () => ({ refresh: vi.fn() }),
+  usePathname: () => "/clients/c1/details/insurance",
 }));
 vi.mock("@/components/insurance-policy-dialog", () => ({ default: () => null }));
 
@@ -87,6 +89,7 @@ function mount(over: Record<string, unknown> = {}, permission: "edit" | "view" =
 }
 
 beforeEach(() => {
+  searchParams = new URLSearchParams();
   global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) }) as never;
 });
 
@@ -192,5 +195,93 @@ describe("InsurancePanel inline cells", () => {
     expect(screen.queryByRole("button", { name: /^Edit amount for/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Change /})).not.toBeInTheDocument();
     expect(screen.getByText("$500,000")).toBeInTheDocument();
+  });
+});
+
+// Inside a scenario every inline cell writes a scenario change (R1): the WHOLE
+// request list is scenario-changes POSTs — never the base PATCH route.
+describe("InsurancePanel inline cells inside a scenario", () => {
+  const WHOLE_POLICY = {
+    faceValue: 500000, costBasis: 0, premiumAmount: 9000, premiumYears: null,
+    premiumPayer: "owner", policyType: "whole", termIssueYear: null, termLengthYears: null,
+    endsAtInsuredRetirement: false, cashValueGrowthMode: "basic",
+    premiumScheduleMode: "off", deathBenefitScheduleMode: "off", incomeScheduleMode: "off",
+    postPayoutGrowthRate: 0.06, postPayoutModelPortfolioId: null, cashValueSchedule: [],
+  };
+
+  beforeEach(() => {
+    searchParams = new URLSearchParams("scenario=scn-1");
+  });
+
+  function requests() {
+    const calls = (global.fetch as unknown as { mock: { calls: [string, { method: string; body: string }][] } }).mock.calls;
+    return calls.map(([url, init]) => ({ line: `${init.method} ${url}`, body: JSON.parse(init.body) }));
+  }
+  const CHANGES = "POST /api/clients/c1/scenarios/scn-1/changes";
+
+  it("maps cash value to the engine field `value`", async () => {
+    mount();
+    fireEvent.click(screen.getByRole("button", { name: "Edit amount for Whole 100 cash value" }));
+    const input = screen.getByRole("textbox", { name: "Amount for Whole 100 cash value" });
+    fireEvent.change(input, { target: { value: "200000" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
+    expect(requests()).toEqual([
+      { line: CHANGES, body: { op: "edit", targetKind: "account", targetId: "p-whole", desiredFields: { value: 200000 } } },
+    ]);
+  });
+
+  it("sends face value as a full lifeInsurance object merged from the current row", async () => {
+    mount({ policies: { "p-term": { policyType: "term", faceValue: 1000000, premiumAmount: 1200 }, "p-whole": WHOLE_POLICY } });
+    fireEvent.click(screen.getByRole("button", { name: "Edit amount for Whole 100 face value" }));
+    const input = screen.getByRole("textbox", { name: "Amount for Whole 100 face value" });
+    fireEvent.change(input, { target: { value: "750000" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
+    expect(requests()).toEqual([
+      {
+        line: CHANGES,
+        body: {
+          op: "edit", targetKind: "account", targetId: "p-whole",
+          desiredFields: { lifeInsurance: { ...WHOLE_POLICY, faceValue: 750000 } },
+        },
+      },
+    ]);
+  });
+
+  it("sends premium the same way, and insured as a plain field", async () => {
+    mount({ policies: { "p-term": { policyType: "term", faceValue: 1000000, premiumAmount: 1200 }, "p-whole": WHOLE_POLICY } });
+    fireEvent.click(screen.getByRole("button", { name: "Edit amount for Whole 100 premium" }));
+    const input = screen.getByRole("textbox", { name: "Amount for Whole 100 premium" });
+    fireEvent.change(input, { target: { value: "9500" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
+    expect(requests()[0].body.desiredFields).toEqual({
+      lifeInsurance: { ...WHOLE_POLICY, premiumAmount: 9500 },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Change insured for Whole 100" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Insured for Whole 100" }), { target: { value: "spouse" } });
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(2));
+    expect(requests().map((r) => r.line)).toEqual([CHANGES, CHANGES]);
+    expect(requests()[1].body.desiredFields).toEqual({ insuredPerson: "spouse" });
+  });
+
+  it("sends the activation year with its anchor as plain account fields", async () => {
+    mount();
+    fireEvent.click(screen.getByRole("button", { name: "Change activation year for Whole 100" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Activation year for Whole 100" }), {
+      target: { value: "client_retirement" },
+    });
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
+    expect(requests()).toEqual([
+      {
+        line: CHANGES,
+        body: {
+          op: "edit", targetKind: "account", targetId: "p-whole",
+          desiredFields: { activationYear: 2035, activationYearRef: "client_retirement" },
+        },
+      },
+    ]);
   });
 });

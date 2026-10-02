@@ -16,9 +16,11 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import type { ClientMilestones } from "@/lib/milestones";
 import { insurancePolicyCreateSchema } from "@/lib/schemas/insurance-policies";
 
+let searchParams = new URLSearchParams();
 vi.mock("next/navigation", () => ({
-  useSearchParams: () => ({ get: () => null }),
+  useSearchParams: () => searchParams,
   useRouter: () => ({ refresh: vi.fn() }),
+  usePathname: () => "/clients/c1/details/insurance",
 }));
 
 import InsurancePolicyDialog, {
@@ -86,6 +88,7 @@ function submit() {
 }
 
 beforeEach(() => {
+  searchParams = new URLSearchParams();
   global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ id: "new" }) }) as never;
 });
 
@@ -145,5 +148,36 @@ describe("Add policy → create", () => {
 
     expect(await screen.findByText("Death benefit: enter a number.")).toBeInTheDocument();
     expect(screen.queryByText(/Invalid body/)).not.toBeInTheDocument();
+  });
+});
+
+describe("Add policy → create, inside a scenario", () => {
+  it("posts one engine-shaped account add and never touches /insurance-policies", async () => {
+    searchParams = new URLSearchParams("scenario=scn-1");
+    render(<InsurancePolicyDialog {...props()} />);
+    fillTermFields();
+    submit();
+
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    const calls = (global.fetch as unknown as { mock: { calls: [string, { method: string; body: string }][] } }).mock.calls;
+    // The WHOLE request list: one scenario-changes POST, nothing else.
+    expect(calls.map(([url, init]) => `${init.method} ${url}`)).toEqual([
+      "POST /api/clients/c1/scenarios/scn-1/changes",
+    ]);
+    const body = JSON.parse(calls[0][1].body);
+    expect(body).toMatchObject({
+      op: "add",
+      targetKind: "account",
+      entity: {
+        category: "life_insurance",
+        subType: "term",
+        insuredPerson: "client",
+        value: 0,
+        basis: "0",
+        owners: [{ kind: "family_member", familyMemberId: CLIENT_FM, percent: 1 }],
+        lifeInsurance: { faceValue: 1000000, policyType: "term", termIssueYear: 2026, termLengthYears: 20 },
+      },
+    });
+    expect(body.entity.id).toMatch(/^[0-9a-f-]{36}$/);
   });
 });

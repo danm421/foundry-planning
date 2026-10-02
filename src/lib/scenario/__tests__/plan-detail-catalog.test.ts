@@ -80,7 +80,7 @@ describe("NOT_YET_READY", () => {
   it("holds the types whose workstream is still open", () => {
     expect([...NOT_YET_READY].sort()).toEqual(
       [
-        "business", "note_receivable", "life_policy", "disability_policy", "gift_series",
+        "business", "note_receivable", "disability_policy", "gift_series",
         "family_member", "external_beneficiary", "reinvestment",
       ].sort(),
     );

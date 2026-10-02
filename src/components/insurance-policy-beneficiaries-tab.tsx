@@ -6,6 +6,7 @@ import {
   useEffect,
   useImperativeHandle,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import type {
@@ -20,6 +21,8 @@ import {
   selectBaseClassName,
 } from "./forms/input-styles";
 import type { SaveResult } from "@/lib/use-tab-auto-save";
+import type { BeneficiaryRef } from "@/engine/types";
+import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { describeApiError, type ApiErrorBody } from "@/lib/api-error-message";
 
 /** Imperative handle the dialog uses to trigger a save on tab switch / submit. */
@@ -42,6 +45,12 @@ interface InsurancePolicyBeneficiariesTabProps {
   /** Owners of the policy account — used to detect trust ownership. Pass
    *  `[]` for mode === "create" (no account yet). */
   policyOwners: { kind: string; entityId?: string }[];
+  /** Inside a scenario: the policy's designations as the effective tree carries
+   *  them. The tab opens on these instead of fetching the base ones. */
+  scenarioBeneficiaries?: BeneficiaryRef[];
+  /** Inside a scenario: called with the refs a save just wrote, so the parent
+   *  can hand them back if the tab remounts. */
+  onScenarioSaved?: (refs: BeneficiaryRef[]) => void;
   /** Reports dirty/canSave so the dialog can drive the unified Save Changes /
    *  auto-save-on-tab-switch flow. */
   onAutoSaveStateChange?: (state: { isDirty: boolean; canSave: boolean }) => void;
@@ -70,6 +79,27 @@ function normalize(rows: DesignationRow[]): Designation[] {
       typeof r.percentage === "string" ? parseFloat(r.percentage) : r.percentage,
   }));
 }
+
+/** A scenario's `BeneficiaryRef`s as the editor's rows. */
+function refsToDesignations(refs: BeneficiaryRef[], accountId: string): Designation[] {
+  return refs.map((r) => ({
+    id: r.id,
+    targetKind: "account",
+    accountId,
+    entityId: null,
+    tier: r.tier,
+    familyMemberId: r.familyMemberId ?? null,
+    externalBeneficiaryId: r.externalBeneficiaryId ?? null,
+    entityIdRef: r.entityIdRef ?? null,
+    householdRole: r.householdRole ?? null,
+    percentage: r.percentage,
+    sortOrder: r.sortOrder,
+  }));
+}
+
+/** Rows added in the editor carry throwaway ids (`tmp-…`, `seed-…`); a scenario
+ *  stores the ref ids, so mint real ones before saving. */
+const isPlaceholderId = (id: string) => id.startsWith("tmp-") || id.startsWith("seed-");
 
 function rowHasSelection(r: Designation): boolean {
   return Boolean(
@@ -106,6 +136,7 @@ const AccountBeneficiaryEditor = forwardRef<
      *  for life insurance, matching the auto-seed filter below. */
     trusts: { id: string; name: string | null }[];
     initial: Designation[];
+    onScenarioSaved?: (refs: BeneficiaryRef[]) => void;
     onAutoSaveStateChange?: (state: { isDirty: boolean; canSave: boolean }) => void;
   }
 >(function AccountBeneficiaryEditor(
@@ -118,10 +149,12 @@ const AccountBeneficiaryEditor = forwardRef<
     externals,
     trusts,
     initial,
+    onScenarioSaved,
     onAutoSaveStateChange,
   },
   ref,
 ) {
+  const { submit, scenarioActive } = useScenarioWriter(clientId);
   const [rows, setRows] = useState<Designation[]>(initial);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [lockedKeys, setLockedKeys] = useState<ReadonlySet<string>>(() => new Set());
@@ -149,6 +182,46 @@ const AccountBeneficiaryEditor = forwardRef<
   const saveAsync = useCallback(async (): Promise<SaveResult> => {
     setSaveError(null);
     try {
+      // Inside a scenario: one account edit carrying the full BeneficiaryRef[]
+      // — the shape `forms/beneficiaries-tab.tsx` writes. No refresh here; the
+      // dialog refreshes once, on close.
+      if (scenarioActive) {
+        const withIds = rows.map((r) => (isPlaceholderId(r.id) ? { ...r, id: crypto.randomUUID() } : r));
+        const refs: BeneficiaryRef[] = withIds
+          .filter((r) => r.tier === "primary" || r.tier === "contingent")
+          .map((r) => ({
+            id: r.id,
+            tier: r.tier as "primary" | "contingent",
+            percentage: r.percentage,
+            familyMemberId: r.familyMemberId ?? undefined,
+            externalBeneficiaryId: r.externalBeneficiaryId ?? undefined,
+            entityIdRef: r.entityIdRef ?? undefined,
+            householdRole: r.householdRole ?? undefined,
+            sortOrder: r.sortOrder,
+          }));
+        const res = await submit(
+          {
+            op: "edit",
+            targetKind: "account",
+            targetId: accountId,
+            desiredFields: { beneficiaries: refs },
+          },
+          { url, method: "PUT", skipRefresh: true },
+        );
+        if (!res.ok) {
+          const j = (await res.json().catch(() => ({}))) as ApiErrorBody;
+          const message = describeApiError(j, res.status, {
+            labels: BENEFICIARY_FIELD_LABELS,
+            fallback: "We couldn't save these beneficiaries.",
+          });
+          setSaveError(message);
+          return { ok: false, error: message };
+        }
+        setRows(withIds);
+        setBaseline(JSON.stringify(withIds));
+        onScenarioSaved?.(refs);
+        return { ok: true };
+      }
       const body = rows.map((r) => ({
         tier: r.tier,
         percentage: r.percentage,
@@ -189,7 +262,7 @@ const AccountBeneficiaryEditor = forwardRef<
       setSaveError(message);
       return { ok: false, error: message };
     }
-  }, [rows, url]);
+  }, [rows, url, submit, scenarioActive, accountId, onScenarioSaved]);
 
   useImperativeHandle(ref, () => ({ saveAsync }), [saveAsync]);
 
@@ -444,14 +517,21 @@ const InsurancePolicyBeneficiariesTab = forwardRef<
     externals,
     entities,
     policyOwners,
+    scenarioBeneficiaries,
+    onScenarioSaved,
     onAutoSaveStateChange,
   },
   ref,
 ) {
   const isCreate = mode === "create" || !policyId;
+  // Inside a scenario the base designations GET is the wrong source (a
+  // scenario-added policy isn't in base at all): open on the tree's own.
+  const { scenarioActive } = useScenarioWriter(clientId);
 
-  const [loading, setLoading] = useState(!isCreate);
-  const [designations, setDesignations] = useState<Designation[]>([]);
+  const [loading, setLoading] = useState(!isCreate && !scenarioActive);
+  const [designations, setDesignations] = useState<Designation[]>(() =>
+    scenarioActive && policyId ? refsToDesignations(scenarioBeneficiaries ?? [], policyId) : [],
+  );
   const [error, setError] = useState<string | null>(null);
 
   // While the editor isn't mounted (create mode, loading, error) there is
@@ -463,13 +543,17 @@ const InsurancePolicyBeneficiariesTab = forwardRef<
     }
   }, [isCreate, loading, error, onAutoSaveStateChange]);
 
-  // Expose a no-op saveAsync until the editor mounts and overrides this via
-  // its own forwardRef. Without this, the dialog's ref would be null when
-  // submit fires from another tab and dirty=false (which is the common case).
+  // The dialog's handle: a no-op until the editor mounts, then the editor's own
+  // save. Without it the dialog's ref would be null when submit fires from
+  // another tab and dirty=false (which is the common case). It delegates rather
+  // than handing the editor the dialog's ref: inside a scenario the editor
+  // mounts on the first render, and this handle, set after the child's, would
+  // overwrite the editor's.
+  const editorRef = useRef<InsurancePolicyBeneficiariesAutoSaveHandle | null>(null);
   useImperativeHandle(
     ref,
     () => ({
-      saveAsync: async () => ({ ok: true as const }),
+      saveAsync: async () => (editorRef.current ? editorRef.current.saveAsync() : { ok: true as const }),
     }),
     [],
   );
@@ -512,7 +596,7 @@ const InsurancePolicyBeneficiariesTab = forwardRef<
   }, [designations, trustOwnerId, policyId]);
 
   useEffect(() => {
-    if (isCreate) return;
+    if (isCreate || scenarioActive) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -555,7 +639,7 @@ const InsurancePolicyBeneficiariesTab = forwardRef<
     return () => {
       cancelled = true;
     };
-  }, [isCreate, clientId, policyId]);
+  }, [isCreate, scenarioActive, clientId, policyId]);
 
   if (isCreate) {
     return (
@@ -582,7 +666,7 @@ const InsurancePolicyBeneficiariesTab = forwardRef<
 
   return (
     <AccountBeneficiaryEditor
-      ref={ref}
+      ref={editorRef}
       clientId={clientId}
       accountId={policyId!}
       clientFirstName={clientFirstName}
@@ -591,6 +675,7 @@ const InsurancePolicyBeneficiariesTab = forwardRef<
       externals={externals}
       trusts={trusts}
       initial={seededDesignations}
+      onScenarioSaved={onScenarioSaved}
       onAutoSaveStateChange={onAutoSaveStateChange}
     />
   );

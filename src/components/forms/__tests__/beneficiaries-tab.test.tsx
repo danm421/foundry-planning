@@ -3,8 +3,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 const submitMock = vi.fn();
+let scenarioActive = true;
 vi.mock("@/hooks/use-scenario-writer", () => ({
-  useScenarioWriter: () => ({ submit: submitMock, scenarioActive: true }),
+  useScenarioWriter: () => ({ submit: submitMock, scenarioActive }),
 }));
 
 
@@ -14,6 +15,7 @@ describe("BeneficiariesTab", () => {
   const mockFetch = vi.fn();
 
   beforeEach(() => {
+    scenarioActive = true;
     global.fetch = mockFetch as unknown as typeof fetch;
     mockFetch.mockReset();
     submitMock.mockReset();
@@ -47,6 +49,7 @@ describe("BeneficiariesTab", () => {
   });
 
   it("renders tier sums as numbers when the API returns string percentages", async () => {
+    scenarioActive = false; // the base load reads the designations GET
     mockFetch.mockReset();
     mockFetch
       .mockResolvedValueOnce({
@@ -90,6 +93,7 @@ describe("BeneficiariesTab", () => {
   });
 
   it("shows household principals by name under Household, not as family kin", async () => {
+    scenarioActive = false; // the base load reads the designations GET
     mockFetch.mockReset();
     mockFetch
       .mockResolvedValueOnce({

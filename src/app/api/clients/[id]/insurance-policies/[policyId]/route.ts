@@ -16,31 +16,13 @@ import {
   ownerRefToAccountOwnerRows,
   type OwnerRef,
 } from "@/lib/insurance-policies/owner-ref";
+import { mapPolicyTypeToSubType } from "@/lib/insurance-policies/sub-type";
 import { assertOwnerRefInClient } from "@/lib/insurance-policies/assert-owner-ref";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
-
-// Zod `policyType` uses short names; the accounts.subType enum uses
-// the longer canonical forms. Duplicated here (rather than imported
-// from the list route) because the sibling file doesn't export it —
-// refactoring that would sprawl beyond this task's scope.
-function mapPolicyTypeToSubType(
-  t: "term" | "whole" | "universal" | "variable",
-): "term" | "whole_life" | "universal_life" | "variable_life" {
-  switch (t) {
-    case "term":
-      return "term";
-    case "whole":
-      return "whole_life";
-    case "universal":
-      return "universal_life";
-    case "variable":
-      return "variable_life";
-  }
-}
 
 // PATCH /api/clients/[id]/insurance-policies/[policyId] — partial update
 // of a life-insurance policy (the underlying account + policy row +

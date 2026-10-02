@@ -82,6 +82,7 @@ vi.mock("@/lib/scenario/plan-detail-catalog", async (importOriginal) => {
   return { ...orig, NOT_YET_READY: notYetReady };
 });
 vi.mock("@/components/wills-panel", () => ({ default: makeStubView("wills") }));
+vi.mock("@/components/insurance-panel", () => ({ default: makeStubView("insurance") }));
 vi.mock("@/app/(app)/clients/[id]/details/assumptions/assumptions-client", () => ({
   default: makeStubView("assumptions"),
 }));
@@ -386,7 +387,7 @@ describe("SolverChangesTab — opening a Details editor", () => {
     ["entity", "family"],
     ["will", "wills"],
   ] as const)("a %s change opens the %s view", async (targetKind, page) => {
-    loadChangeEditorPropsMock.mockResolvedValue({ page, props: { clientId: CLIENT_ID } });
+    loadChangeEditorPropsMock.mockResolvedValue({ page, props: { clientId: CLIENT_ID, accounts: [] } });
     renderTab([makeChange({ targetKind })]);
 
     fireEvent.click(screen.getByRole("button", { name: /^Edit / }));
@@ -427,20 +428,37 @@ describe("SolverChangesTab — opening a Details editor", () => {
     expect(screen.queryByRole("link", { name: "Edit this on the Details page" })).not.toBeInTheDocument();
   });
 
-  it("an unavailable life-insurance account links to the Insurance page, not Net Worth", async () => {
-    loadChangeEditorPropsMock.mockResolvedValue({
-      page: "net-worth",
-      props: { clientId: CLIENT_ID, accounts: [{ id: TARGET_ID, category: "life_insurance" }] },
-    });
+  it("a life-insurance account change opens on the Insurance page, not Net Worth", async () => {
+    loadChangeEditorPropsMock.mockImplementation(async (_c: string, _s: string, page: string) =>
+      page === "insurance"
+        ? { page: "insurance", props: { clientId: CLIENT_ID } }
+        : { page: "net-worth", props: { clientId: CLIENT_ID, accounts: [{ id: TARGET_ID, category: "life_insurance" }] } },
+    );
+    renderTab([makeChange({ targetKind: "account" })]);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Edit / }));
+
+    const view = await screen.findByTestId("view-insurance");
+    expect(JSON.parse(view.getAttribute("data-focus")!)).toEqual({ kind: "account", id: TARGET_ID });
+    expect(loadChangeEditorPropsMock.mock.calls.map((c) => c[2])).toEqual(["net-worth", "insurance"]);
+    expect(screen.queryByTestId("view-net-worth")).not.toBeInTheDocument();
+  });
+
+  it("an unavailable life policy links to the Insurance page in this scenario", async () => {
+    loadChangeEditorPropsMock.mockImplementation(async (_c: string, _s: string, page: string) =>
+      page === "insurance"
+        ? { page: "insurance", props: { clientId: CLIENT_ID } }
+        : { page: "net-worth", props: { clientId: CLIENT_ID, accounts: [{ id: TARGET_ID, category: "life_insurance" }] } },
+    );
     renderTab([makeChange({ targetKind: "account" })]);
     fireEvent.click(screen.getByRole("button", { name: /^Edit / }));
-    await screen.findByTestId("view-net-worth");
+    await screen.findByTestId("view-insurance");
 
     fireEvent.click(screen.getByRole("button", { name: "stub unavailable" }));
 
     expect(screen.getByRole("link", { name: "Edit this on the Details page" })).toHaveAttribute(
       "href",
-      `/clients/${CLIENT_ID}/details/insurance?policy=${TARGET_ID}&scenario=${SCENARIO_ID}`,
+      `/clients/${CLIENT_ID}/details/insurance?scenario=${SCENARIO_ID}`,
     );
   });
 

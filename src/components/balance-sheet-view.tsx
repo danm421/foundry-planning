@@ -25,6 +25,7 @@ import { toSalaryOptions } from "@/lib/savings/salary-options";
 import { LIQUID_PORTFOLIO_CATEGORIES } from "@/engine/portfolio-snapshot";
 import type { ClientMilestones } from "@/lib/milestones";
 import type { AccountOwner } from "@/engine/ownership";
+import type { BeneficiaryRef } from "@/engine/types";
 import {
   buildNoteReceivableSchedule,
   type NoteReceivable,
@@ -126,6 +127,9 @@ export interface AccountRow {
    *  the family member's first+last name when beneficiaryFamilyMemberId is
    *  set, else beneficiaryName. */
   beneficiaryDisplayName?: string | null;
+  /** Beneficiary designations as the effective tree carries them. Inside a
+   *  scenario the account form's Beneficiaries tab opens on these. */
+  beneficiaries?: BeneficiaryRef[];
 }
 
 export interface LiabilityRow {
@@ -361,6 +365,7 @@ export function accountToInitial(a: AccountRow): AccountFormInitial {
     rothRolloverEnabled: a.rothRolloverEnabled ?? false,
     rothRolloverStartYear: a.rothRolloverStartYear ?? null,
     rothRolloverAccountId: a.rothRolloverAccountId ?? null,
+    beneficiaries: a.beneficiaries,
   };
 }
 

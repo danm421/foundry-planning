@@ -55,6 +55,7 @@ import { growthEditModeFor } from "@/lib/inline-edit/growth-options";
 import type { FundPortfolioOption } from "@/lib/investments/load-fund-portfolio-options";
 import { OwnershipEditor } from "./ownership-editor";
 import type { AccountOwner } from "@/engine/ownership";
+import type { BeneficiaryRef } from "@/engine/types";
 import { isRmdEligibleSubType } from "@/engine/rmd";
 import { RETIREMENT_SUBTYPES } from "@/lib/ownership";
 import { isAumEligible } from "@/lib/accounts/aum";
@@ -131,6 +132,9 @@ export interface AccountFormInitial {
   rothRolloverEnabled?: boolean;
   rothRolloverStartYear?: number | null;
   rothRolloverAccountId?: string | null;
+  /** Beneficiary designations as the effective tree carries them. Inside a
+   *  scenario the Beneficiaries tab opens on these, not the base GET. */
+  beneficiaries?: BeneficiaryRef[];
 }
 
 export interface BusinessOption {
@@ -3204,7 +3208,12 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
         {!effectiveAccountId ? (
           <p className="text-sm text-ink-3">Save the account first, then designate beneficiaries.</p>
         ) : (
-          <BeneficiariesTab clientId={clientId} accountId={effectiveAccountId} active={activeTab === "beneficiaries"} />
+          <BeneficiariesTab
+            clientId={clientId}
+            accountId={effectiveAccountId}
+            active={activeTab === "beneficiaries"}
+            scenarioBeneficiaries={initial?.beneficiaries}
+          />
         )}
       </div>
 

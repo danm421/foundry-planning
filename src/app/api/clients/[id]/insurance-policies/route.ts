@@ -18,6 +18,7 @@ import {
   ownerRefToAccountOwnerRows,
   type OwnerRef,
 } from "@/lib/insurance-policies/owner-ref";
+import { mapPolicyTypeToSubType } from "@/lib/insurance-policies/sub-type";
 import { assertOwnerRefInClient } from "@/lib/insurance-policies/assert-owner-ref";
 import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
@@ -34,24 +35,6 @@ async function getBaseCaseScenarioId(
     .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true)));
 
   return scenario?.id ?? null;
-}
-
-// Zod `policyType` uses short names; the accounts.subType enum uses
-// the longer canonical forms. Mapping is 1:1 but explicit so a future
-// enum addition surfaces as a TS error instead of a silent fallthrough.
-function mapPolicyTypeToSubType(
-  t: "term" | "whole" | "universal" | "variable",
-): "term" | "whole_life" | "universal_life" | "variable_life" {
-  switch (t) {
-    case "term":
-      return "term";
-    case "whole":
-      return "whole_life";
-    case "universal":
-      return "universal_life";
-    case "variable":
-      return "variable_life";
-  }
 }
 
 // GET /api/clients/[id]/insurance-policies

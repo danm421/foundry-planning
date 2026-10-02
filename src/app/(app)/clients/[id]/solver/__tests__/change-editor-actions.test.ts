@@ -28,6 +28,9 @@ vi.mock("@/app/(app)/clients/[id]/details/wills/load-view-props", () => ({
 vi.mock("@/app/(app)/clients/[id]/details/assumptions/load-view-props", () => ({
   loadAssumptionsViewProps: vi.fn(),
 }));
+vi.mock("@/app/(app)/clients/[id]/details/insurance/load-view-props", () => ({
+  loadInsuranceViewProps: vi.fn(),
+}));
 
 import { loadChangeEditorProps } from "../change-editor-actions";
 import { requireClientEditAccess } from "@/lib/clients/authz";
@@ -38,6 +41,7 @@ import { loadTechniquesViewProps } from "@/app/(app)/clients/[id]/details/techni
 import { loadFamilyViewProps } from "@/app/(app)/clients/[id]/details/family/load-view-props";
 import { loadWillsViewProps } from "@/app/(app)/clients/[id]/details/wills/load-view-props";
 import { loadAssumptionsViewProps } from "@/app/(app)/clients/[id]/details/assumptions/load-view-props";
+import { loadInsuranceViewProps } from "@/app/(app)/clients/[id]/details/insurance/load-view-props";
 
 const CLIENT_ID = "00000000-0000-4000-8000-000000000001";
 const SCENARIO_ID = "00000000-0000-4000-8000-000000000002";
@@ -50,6 +54,7 @@ const loaders = [
   loadFamilyViewProps,
   loadWillsViewProps,
   loadAssumptionsViewProps,
+  loadInsuranceViewProps,
 ];
 
 const okScope = (overrides: Record<string, unknown> = {}) => ({
@@ -139,19 +144,32 @@ describe("loadChangeEditorProps — assumptions and insurance", () => {
     await expect(loadChangeEditorProps(CLIENT_ID, SCENARIO_ID, "assumptions")).rejects.toThrow();
   });
 
-  it("insurance is not available until its loader lands, but still passes the access gates first", async () => {
-    await expect(loadChangeEditorProps(CLIENT_ID, SCENARIO_ID, "insurance")).rejects.toThrow(
-      "Not available yet",
-    );
+  it("insurance → the life-policy panel's props only, dropping the disability panel's", async () => {
+    const props = { clientId: CLIENT_ID, marker: "insurance" };
+    vi.mocked(loadInsuranceViewProps).mockResolvedValue({
+      status: "ok",
+      props,
+      disabilityProps: { clientId: CLIENT_ID },
+    } as never);
+
+    const result = await loadChangeEditorProps(CLIENT_ID, SCENARIO_ID, "insurance");
+
+    expect(result).toEqual({ page: "insurance", props });
     expect(requireClientEditAccess).toHaveBeenCalledWith(CLIENT_ID);
-    expectNoLoaderCalled();
+    expect(loadInsuranceViewProps).toHaveBeenCalledWith(CLIENT_ID, SCENARIO_ID);
   });
 
-  it("insurance on the base case is refused before it reaches the stub", async () => {
+  it("insurance rejects when the plan has no base case", async () => {
+    vi.mocked(loadInsuranceViewProps).mockResolvedValue({ status: "no-base-case" });
+    await expect(loadChangeEditorProps(CLIENT_ID, SCENARIO_ID, "insurance")).rejects.toThrow();
+  });
+
+  it("insurance on the base case is refused before any loader runs", async () => {
     vi.mocked(assertScenarioRouteScope).mockResolvedValue(okScope({ isBaseCase: true }) as never);
     await expect(loadChangeEditorProps(CLIENT_ID, SCENARIO_ID, "insurance")).rejects.toThrow(
       "The base case has no changes to edit",
     );
+    expectNoLoaderCalled();
   });
 });
 

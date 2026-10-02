@@ -139,7 +139,7 @@ export const DETAIL_TYPES: readonly DetailType[] = [
 // Each workstream's task deletes its keys here; the last one leaves it empty.
 export const NOT_YET_READY: ReadonlySet<DetailTypeKey> = new Set<DetailTypeKey>([
   "business", "note_receivable",
-  "life_policy", "disability_policy",
+  "disability_policy",
   "gift_series", "family_member", "external_beneficiary", "reinvestment",
 ]);
 

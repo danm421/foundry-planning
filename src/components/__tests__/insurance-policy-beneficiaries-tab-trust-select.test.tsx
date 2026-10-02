@@ -8,6 +8,8 @@ import InsurancePolicyBeneficiariesTab, {
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+  usePathname: () => "/clients/c-1/details/insurance",
 }));
 
 const ENTITIES = [

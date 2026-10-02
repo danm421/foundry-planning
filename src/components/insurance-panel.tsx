@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import type { LifeInsurancePolicy } from "@/engine/types";
+import { useSearchParams } from "next/navigation";
+import type { BeneficiaryRef, LifeInsurancePolicy } from "@/engine/types";
 import type {
   accounts,
   entities,
@@ -17,6 +17,10 @@ import { InlineAmount } from "@/components/forms/inline-amount";
 import { InlineSelect } from "@/components/forms/inline-select";
 import InlineYearCell from "@/components/forms/inline-year-cell";
 import { usePendingEdits } from "@/hooks/use-pending-edits";
+import { useScenarioWriter } from "@/hooks/use-scenario-writer";
+import { useFocusCloseOnce, type FocusCloseOutcome } from "@/hooks/use-focus-close-once";
+import { useFocusDelete } from "@/hooks/use-focus-delete";
+import { focusRowId, isEditFocus, type EditorFocus } from "@/lib/scenario/change-editor-target";
 
 type AccountRow = typeof accounts.$inferSelect;
 type EntityRow = typeof entities.$inferSelect;
@@ -36,6 +40,9 @@ export interface InsurancePanelAccount {
   activationYear: number | null;
   /** Milestone anchor for `activationYear`; null = a plain calendar year. */
   activationYearRef: string | null;
+  /** The policy's beneficiary designations as the effective tree carries them —
+   *  inside a scenario the policy dialog's Beneficiaries tab opens on these. */
+  beneficiaries?: BeneficiaryRef[];
 }
 
 export interface InsurancePanelFamilyMember {
@@ -88,6 +95,20 @@ export interface InsurancePanelProps {
    *  when present (mirrors the Add Account form pattern). */
   milestones?: ClientMilestones;
   embed?: "page" | "wizard";
+  /**
+   * Focus mode, for the Solver's Changes tab: open the dialog this page opens
+   * for one life policy (an account edit or delete, or a `life_insurance`
+   * create), alone and with no page chrome. Read once at mount; remount to
+   * switch rows.
+   */
+  focus?: EditorFocus;
+  /**
+   * Called once when focus mode ends. The host must UNMOUNT the view then:
+   * clearing `focus` on a still-mounted view falls through to the full page.
+   * No argument = the editor closed; an outcome = it never opened or the
+   * delete did not land.
+   */
+  onFocusClose?: (outcome?: FocusCloseOutcome) => void;
 }
 
 const POLICY_TYPE_GROUPS = [
@@ -115,13 +136,61 @@ type InsuranceEditRow = InsurancePanelAccount & {
   premiumAmount: number;
 };
 
+type DialogState = { mode: "create" } | { mode: "edit"; policyId: string };
+
+/** The focused life policy's action, or null when this page offers no editor
+ *  for the row (a disability policy, a missing id, a non-policy account). */
+type FocusTarget = DialogState | { mode: "delete"; policyId: string };
+
+function findFocusTarget(
+  focus: EditorFocus,
+  policies: InsurancePanelProps["policies"],
+): FocusTarget | null {
+  if (focus.kind !== "account") return null;
+  if (focus.intent === "create") {
+    return focus.variant === "life_insurance" ? { mode: "create" } : null;
+  }
+  const id = focusRowId(focus);
+  if (!id || !policies[id]) return null;
+  if (focus.intent === "delete") return { mode: "delete", policyId: id };
+  return isEditFocus(focus) ? { mode: "edit", policyId: id } : null;
+}
+
+/**
+ * The scenario account-edit fields for one wire PATCH body (see `savePolicyField`).
+ * Face value and premium sit inside `lifeInsurance`, which an edit replaces
+ * wholesale, so they carry the whole current policy.
+ */
+function scenarioFieldsForPatch(
+  patch: Record<string, unknown>,
+  policy: LifeInsurancePolicy | undefined,
+): Record<string, unknown> {
+  const { cashValue, faceValue, premiumAmount, ...plain } = patch;
+  const fields: Record<string, unknown> = { ...plain };
+  if (cashValue !== undefined) fields.value = cashValue;
+  if (faceValue !== undefined || premiumAmount !== undefined) {
+    fields.lifeInsurance = {
+      ...policy,
+      ...(faceValue !== undefined && { faceValue }),
+      ...(premiumAmount !== undefined && { premiumAmount }),
+    };
+  }
+  return fields;
+}
+
 export default function InsurancePanel(props: InsurancePanelProps) {
+  const { focus, onFocusClose } = props;
   const { permission } = useClientAccess();
   const canEdit = permission === "edit";
-  const router = useRouter();
-  const [dialogState, setDialogState] = useState<
-    { mode: "create" } | { mode: "edit"; policyId: string } | null
-  >(null);
+  const writer = useScenarioWriter(props.clientId);
+
+  // Focus mode's row, snapshotted at mount. Null means this page offers no
+  // editor for it here.
+  const [focusFound] = useState(() =>
+    focus && canEdit ? findFocusTarget(focus, props.policies) : null,
+  );
+  const focusDialog = focusFound && focusFound.mode !== "delete" ? focusFound : null;
+  const [dialogState, setDialogState] = useState<DialogState | null>(focusDialog);
 
   const searchParams = useSearchParams();
   const policyParam = searchParams?.get("policy") ?? null;
@@ -165,11 +234,12 @@ export default function InsurancePanel(props: InsurancePanelProps) {
   const pending = usePendingEdits(rows);
 
   /**
-   * Raw PATCH, matching `insurance-policy-dialog.tsx`. This page is NOT
-   * scenario-aware, and neither is the dialog beside it — routing inline edits
-   * through `useScenarioWriter` would record a scenario change for one control
-   * and a base mutation for the other on the same row. Making the page
-   * scenario-aware is tracked in future-work/ui.md.
+   * One inline-cell write. `patch` is the WIRE body the policy route takes (the
+   * base-mode PATCH); inside a scenario the same change goes to the writer as an
+   * account edit in the ENGINE's field names: `cashValue` is the account's
+   * `value`, and face value and premium live inside `lifeInsurance`, which an
+   * edit replaces wholesale — so they send the whole policy, merged from the
+   * row on screen.
    *
    * `optimistic` must use the SERVER's representation of each field, not the
    * wire body's: `value` is decimal-as-string, so an optimistic number would
@@ -182,18 +252,43 @@ export default function InsurancePanel(props: InsurancePanelProps) {
     optimistic: Partial<InsuranceEditRow>,
   ): Promise<boolean> {
     return pending.apply(policyId, optimistic, async () => {
-      const res = await fetch(
-        `/api/clients/${props.clientId}/insurance-policies/${policyId}`,
+      const res = await writer.submit(
         {
+          op: "edit",
+          targetKind: "account",
+          targetId: policyId,
+          desiredFields: scenarioFieldsForPatch(patch, props.policies[policyId]),
+        },
+        {
+          url: `/api/clients/${props.clientId}/insurance-policies/${policyId}`,
           method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(patch),
+          body: patch,
         },
       );
-      if (res.ok) router.refresh();
       return res.ok;
     });
   }
+
+  // Focus mode's delete: the dialog's own delete, with no prompt. Its in-flight
+  // flag keeps `useFocusCloseOnce` quiet until the delete has landed.
+  const focusDeleting = useFocusDelete(
+    focusFound?.mode === "delete"
+      ? async () => {
+          const policyId = focusFound.policyId;
+          const res = await writer.submit(
+            { op: "remove", targetKind: "account", targetId: policyId },
+            {
+              url: `/api/clients/${props.clientId}/insurance-policies/${policyId}`,
+              method: "DELETE",
+            },
+          );
+          return res.ok;
+        }
+      : null,
+    onFocusClose,
+  );
+  // Focus mode hands control back once its dialog is gone: cancel, save, delete.
+  useFocusCloseOnce(focus, focusFound, dialogState !== null || focusDeleting, onFocusClose);
 
   const hasAny = pending.rows.length > 0;
 
@@ -243,6 +338,30 @@ export default function InsurancePanel(props: InsurancePanelProps) {
     // ref.kind === "external"
     return props.externalBeneficiaries.find((x) => x.id === ref.id)?.name ?? "External";
   }
+
+  const dialogElement = canEdit && dialogState && (
+    <InsurancePolicyDialog
+      clientId={props.clientId}
+      clientFirstName={props.clientFirstName}
+      spouseFirstName={props.spouseFirstName}
+      accounts={props.accounts}
+      policies={props.policies}
+      entities={props.entities}
+      familyMembers={props.familyMembers}
+      externalBeneficiaries={props.externalBeneficiaries}
+      modelPortfolios={props.modelPortfolios}
+      resolvedInflationRate={props.resolvedInflationRate}
+      scheduleStartYear={props.scheduleStartYear}
+      scheduleEndYear={props.scheduleEndYear}
+      milestones={props.milestones}
+      mode={dialogState.mode}
+      policyId={dialogState.mode === "edit" ? dialogState.policyId : undefined}
+      onClose={() => setDialogState(null)}
+    />
+  );
+
+  // Focus mode shows the focused policy's dialog alone: no page, no table.
+  if (focus) return <>{dialogElement}</>;
 
   return (
     <div className="flex flex-col gap-6">
@@ -451,26 +570,7 @@ export default function InsurancePanel(props: InsurancePanelProps) {
         );
       })}
 
-      {canEdit && dialogState && (
-        <InsurancePolicyDialog
-          clientId={props.clientId}
-          clientFirstName={props.clientFirstName}
-          spouseFirstName={props.spouseFirstName}
-          accounts={props.accounts}
-          policies={props.policies}
-          entities={props.entities}
-          familyMembers={props.familyMembers}
-          externalBeneficiaries={props.externalBeneficiaries}
-          modelPortfolios={props.modelPortfolios}
-          resolvedInflationRate={props.resolvedInflationRate}
-          scheduleStartYear={props.scheduleStartYear}
-          scheduleEndYear={props.scheduleEndYear}
-          milestones={props.milestones}
-          mode={dialogState.mode}
-          policyId={dialogState.mode === "edit" ? dialogState.policyId : undefined}
-          onClose={() => setDialogState(null)}
-        />
-      )}
+      {dialogElement}
     </div>
   );
 }

@@ -25,7 +25,12 @@
 import { createContext, startTransition, useContext, useEffect, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { focusRowId, type ChangeEditorTarget, type EditorFocus } from "@/lib/scenario/change-editor-target";
+import {
+  focusRowId,
+  type ChangeEditorTarget,
+  type DetailsEditorPage,
+  type EditorFocus,
+} from "@/lib/scenario/change-editor-target";
 import type { FocusCloseOutcome } from "@/hooks/use-focus-close-once";
 import { ScenarioWriteListener, type ScenarioWriteEvent } from "@/hooks/scenario-write-listener";
 import { loadChangeEditorProps, type ChangeEditorViewProps } from "./change-editor-actions";
@@ -50,6 +55,7 @@ const TechniquesView = dynamic(() => import("@/components/techniques-view"), {
 });
 const FamilyView = dynamic(() => import("@/components/family-view"), { loading: LoadingLine });
 const WillsPanel = dynamic(() => import("@/components/wills-panel"), { loading: LoadingLine });
+const InsurancePanel = dynamic(() => import("@/components/insurance-panel"), { loading: LoadingLine });
 const AssumptionsClient = dynamic(
   () => import("@/app/(app)/clients/[id]/details/assumptions/assumptions-client"),
   { loading: LoadingLine },
@@ -100,6 +106,7 @@ function DetailsChangeEditor({
   onWrite,
 }: Props & { target: DetailsEditorTarget }) {
   const { page, focus } = target;
+  const focusId = focusRowId(focus);
   const [state, setState] = useState<HostState>({ status: "loading" });
   // Bumped by "Try again" to re-run the load.
   const [attempt, setAttempt] = useState(0);
@@ -108,7 +115,13 @@ function DetailsChangeEditor({
     let cancelled = false;
     startTransition(async () => {
       try {
-        const loaded = await loadChangeEditorProps(clientId, scenarioId, page);
+        let loaded = await loadChangeEditorProps(clientId, scenarioId, page);
+        // A life policy is an `account` change, so the resolver sends it to Net
+        // Worth, whose editor won't open it. Its editor is Insurance: reload
+        // the page that owns it.
+        if (isLifePolicyOnNetWorth(loaded, focusId)) {
+          loaded = await loadChangeEditorProps(clientId, scenarioId, "insurance");
+        }
         if (!cancelled) setState({ status: "open", loaded });
       } catch {
         if (!cancelled) setState({ status: "error" });
@@ -117,7 +130,7 @@ function DetailsChangeEditor({
     return () => {
       cancelled = true;
     };
-  }, [clientId, scenarioId, page, attempt]);
+  }, [clientId, scenarioId, page, focusId, attempt]);
 
   function onFocusClose(outcome?: FocusCloseOutcome) {
     if (outcome === undefined) {
@@ -132,11 +145,7 @@ function DetailsChangeEditor({
       setState({ status: "failed" });
       return;
     }
-    const lifeInsurance =
-      state.status === "open" &&
-      state.loaded.page === "net-worth" &&
-      state.loaded.props.accounts.some((a) => a.id === focusRowId(focus) && a.category === "life_insurance");
-    setState({ status: "unavailable", href: detailsHref(clientId, scenarioId, target, lifeInsurance) });
+    setState({ status: "unavailable", href: detailsHref(clientId, scenarioId, state.status === "open" ? state.loaded.page : page) });
   }
 
   const deleting = focus.intent === "delete";
@@ -226,30 +235,26 @@ function renderView(
       return <FamilyView key={key} {...loaded.props} focus={focus} onFocusClose={onFocusClose} />;
     case "wills":
       return <WillsPanel key={key} {...loaded.props} focus={focus} onFocusClose={onFocusClose} />;
+    case "insurance":
+      return <InsurancePanel key={key} {...loaded.props} focus={focus} onFocusClose={onFocusClose} />;
     case "assumptions":
       return <AssumptionsClient key={key} {...loaded.props} focus={focus} onFocusClose={onFocusClose} />;
   }
 }
 
-/**
- * Where the Details page edits this change, inside the same scenario. A
- * life-insurance account is edited on Insurance, not Net Worth (the Net Worth
- * page routes its policy rows there too).
- */
-function detailsHref(
-  clientId: string,
-  scenarioId: string,
-  { page, focus }: DetailsEditorTarget,
-  lifeInsurance = false,
-): string {
-  const query = new URLSearchParams();
-  let path: string = page;
-  if (lifeInsurance) {
-    path = "insurance";
-    query.set("policy", focusRowId(focus) ?? "");
-  }
-  query.set("scenario", scenarioId);
-  return `/clients/${clientId}/details/${path}?${query.toString()}`;
+/** True when `loaded` is Net Worth and the focused account on it is a life policy. */
+function isLifePolicyOnNetWorth(loaded: ChangeEditorViewProps, focusId: string | null): boolean {
+  return (
+    focusId !== null &&
+    loaded.page === "net-worth" &&
+    loaded.props.accounts.some((a) => a.id === focusId && a.category === "life_insurance")
+  );
+}
+
+/** Where the Details page edits this change, inside the same scenario. */
+function detailsHref(clientId: string, scenarioId: string, page: DetailsEditorPage): string {
+  const query = new URLSearchParams({ scenario: scenarioId });
+  return `/clients/${clientId}/details/${page}?${query.toString()}`;
 }
 
 /** The small, quiet line the host's own states render in, above the list. */

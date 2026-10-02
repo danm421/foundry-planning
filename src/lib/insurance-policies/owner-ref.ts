@@ -53,6 +53,20 @@ export function ownerRefToAccountOwnerRows(
   return [{ familyMemberId: null, entityId: null, externalBeneficiaryId: ref.id, percent: "1.0000" }];
 }
 
+/** The same translation as `ownerRefToAccountOwnerRows`, shaped as the engine's
+ *  `AccountOwner[]` — what a scenario account change carries as `owners`. */
+export function ownerRefToEngineOwners(
+  ref: OwnerRef,
+  ctx: OwnerRefContext,
+): AccountOwner[] {
+  return ownerRefToAccountOwnerRows(ref, ctx).map((r): AccountOwner => {
+    const percent = Number(r.percent);
+    if (r.familyMemberId) return { kind: "family_member", familyMemberId: r.familyMemberId, percent };
+    if (r.entityId) return { kind: "entity", entityId: r.entityId, percent };
+    return { kind: "external_beneficiary", externalBeneficiaryId: r.externalBeneficiaryId!, percent };
+  });
+}
+
 const EPS = 0.0001;
 
 /** Derive an `OwnerRef` from a populated `AccountOwner[]`. Mirrors the

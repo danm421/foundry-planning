@@ -103,6 +103,7 @@ type EngineAccountLike = Parameters<typeof controllingEntity>[0] & {
   owners?: AccountRow["owners"];
   titlingType?: AccountRow["titlingType"];
   parentAccountId?: string | null;
+  beneficiaries?: AccountRow["beneficiaries"];
   education529?: {
     grantorFamilyMemberId?: string | null;
     grantorName?: string | null;
@@ -198,6 +199,7 @@ export function buildAccountRows({
       rothRolloverStartYear: a.education529?.rothRolloverStartYear ?? null,
       rothRolloverAccountId: a.education529?.rothRolloverAccountId ?? null,
       beneficiaryDisplayName: beneficiaryDisplayNameFor(a.education529),
+      beneficiaries: a.beneficiaries,
     };
   });
 }
