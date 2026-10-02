@@ -12,6 +12,7 @@ import LiabilityAmortizationTab from "./liability-amortization-tab";
 import DialogShell from "./dialog-shell";
 import TabAutoSaveIndicator from "./tab-auto-save-indicator";
 import { useTabAutoSave } from "@/lib/use-tab-auto-save";
+import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import type { ClientMilestones } from "@/lib/milestones";
 
 type TabId = "details" | "amortization";
@@ -51,6 +52,7 @@ export default function AddLiabilityDialog({
   initialParentAccountId,
 }: AddLiabilityDialogProps) {
   const router = useRouter();
+  const { scenarioActive } = useScenarioWriter(clientId);
   const isControlled = open !== undefined;
   const [internalOpen, setInternalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>("details");
@@ -187,6 +189,7 @@ export default function AddLiabilityDialog({
             forgiveAtTermEnd={liveValues.forgiveAtTermEnd}
             balanceAsOfMonth={liveValues.balanceAsOfMonth}
             balanceAsOfYear={liveValues.balanceAsOfYear}
+            scenarioActive={scenarioActive}
           />
         )}
       </DialogShell>

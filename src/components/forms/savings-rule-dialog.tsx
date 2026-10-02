@@ -760,6 +760,7 @@ export default function SavingsRuleDialog({
           startYear={startYear}
           endYear={endYear}
           initialOverrides={stagedSchedule}
+          scenarioActive={writer.scenarioActive}
           onSave={async (overrides) => {
             if (editing) {
               await fetch(`/api/clients/${clientId}/savings-rules/${editing.id}/schedule`, {

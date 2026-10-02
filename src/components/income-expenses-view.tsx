@@ -1100,6 +1100,7 @@ function IncomeDialog({
               startYear={startYear}
               endYear={endYear}
               initialOverrides={stagedSchedule}
+              scenarioActive={writer.scenarioActive}
               onSave={async (overrides) => {
                 if (editing) {
                   await fetch(`/api/clients/${clientId}/incomes/${editing.id}/schedule`, {
@@ -1734,6 +1735,7 @@ function ExpenseDialog({
               startYear={startYear}
               endYear={endYear}
               initialOverrides={stagedSchedule}
+              scenarioActive={writer.scenarioActive}
               onSave={async (overrides) => {
                 if (editing) {
                   await fetch(`/api/clients/${clientId}/expenses/${editing.id}/schedule`, {

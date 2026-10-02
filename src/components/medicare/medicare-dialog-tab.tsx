@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { MedicareCoverage } from "@/engine/types";
+import { BasePlanOnly } from "@/components/base-plan-only";
 import { inputClassName, selectClassName, fieldLabelClassName } from "@/components/forms/input-styles";
 import {
   DEFAULT_MEDIGAP_MONTHLY_AT_BASE_YEAR,
@@ -16,6 +17,9 @@ interface Props {
   /** YYYY-MM-DD; used to default enrollment year to the year the person turns 65. */
   ownerDob?: string | null;
   onSaved: (coverage: MedicareCoverage) => void;
+  /** Inside a scenario: `medicare_coverage` has no scenario column, so a save
+   *  would change the base plan — the tab is read-only with the base-only note. */
+  scenarioActive?: boolean;
 }
 
 function defaultEnrollmentYear(dob?: string | null): number | null {
@@ -25,7 +29,14 @@ function defaultEnrollmentYear(dob?: string | null): number | null {
   return birthYear + DEFAULT_MEDICARE_ENROLLMENT_AGE;
 }
 
-export function MedicareDialogTab({ clientId, owner, existing, ownerDob, onSaved }: Props) {
+export function MedicareDialogTab({
+  clientId,
+  owner,
+  existing,
+  ownerDob,
+  onSaved,
+  scenarioActive = false,
+}: Props) {
   const [enrollmentYear, setEnrollmentYear] = useState<number | null>(
     existing?.enrollmentYear ?? defaultEnrollmentYear(ownerDob),
   );
@@ -69,96 +80,100 @@ export function MedicareDialogTab({ clientId, owner, existing, ownerDob, onSaved
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <label htmlFor="medicare-enrollment-year" className={fieldLabelClassName}>Enrollment year</label>
-        <input
-          id="medicare-enrollment-year"
-          type="number"
-          aria-label="enrollment year"
-          value={enrollmentYear ?? ""}
-          placeholder="Year person turns 65"
-          onChange={e => setEnrollmentYear(e.target.value ? Number(e.target.value) : null)}
-          className={inputClassName}
-        />
-        <p className="text-[11px] text-ink-3 mt-1">Defer if still on employer plan past 65.</p>
-      </div>
-
-      <div>
-        <label htmlFor="medicare-coverage-type" className={fieldLabelClassName}>Coverage type</label>
-        <select
-          id="medicare-coverage-type"
-          aria-label="coverage type"
-          value={coverageType}
-          onChange={e => setCoverageType(e.target.value as "original" | "advantage")}
-          className={selectClassName}
-        >
-          <option value="original">Original Medicare</option>
-          <option value="advantage">Medicare Advantage</option>
-        </select>
-      </div>
-
-      <div>
-        <label htmlFor="medicare-medigap" className={fieldLabelClassName}>Medigap monthly ($)</label>
-        <input
-          id="medicare-medigap"
-          type="number"
-          aria-label="medigap monthly"
-          value={medigap ?? ""}
-          placeholder="National avg ~$170"
-          onChange={e => setMedigap(e.target.value ? Number(e.target.value) : null)}
-          className={inputClassName}
-        />
-      </div>
-
-      <div>
-        <label htmlFor="medicare-partd" className={fieldLabelClassName}>Part D plan monthly ($)</label>
-        <input
-          id="medicare-partd"
-          type="number"
-          aria-label="part d monthly"
-          value={partD ?? ""}
-          placeholder="National avg ~$46"
-          onChange={e => setPartD(e.target.value ? Number(e.target.value) : null)}
-          className={inputClassName}
-        />
-      </div>
-
-      <div>
-        <label className="flex items-center gap-2 text-[13px] text-ink-2 cursor-pointer">
+      <BasePlanOnly readOnly={scenarioActive}>
+        <div>
+          <label htmlFor="medicare-enrollment-year" className={fieldLabelClassName}>Enrollment year</label>
           <input
-            type="checkbox"
-            aria-label="estimate prior-year magi from projection"
-            checked={estimateFromProjection}
-            onChange={(e) => setEstimateFromProjection(e.target.checked)}
-            className="h-4 w-4 rounded border-hair text-accent focus:ring-1 focus:ring-accent"
+            id="medicare-enrollment-year"
+            type="number"
+            aria-label="enrollment year"
+            value={enrollmentYear ?? ""}
+            placeholder="Year person turns 65"
+            onChange={e => setEnrollmentYear(e.target.value ? Number(e.target.value) : null)}
+            className={inputClassName}
           />
-          <span>Estimate prior-year MAGI from projection</span>
-        </label>
-        {!estimateFromProjection && (
-          <div className="mt-3">
-            <label htmlFor="medicare-magi" className={fieldLabelClassName}>Prior-year MAGI ($, optional)</label>
-            <input
-              id="medicare-magi"
-              type="number"
-              aria-label="prior year magi"
-              value={priorMagi ?? ""}
-              placeholder="Used for IRMAA in years 1–2"
-              onChange={e => setPriorMagi(e.target.value ? Number(e.target.value) : null)}
-              className={inputClassName}
-            />
-            <p className="text-[11px] text-ink-3 mt-1">Leave blank to estimate from the current-year projection.</p>
-          </div>
-        )}
-      </div>
+          <p className="text-[11px] text-ink-3 mt-1">Defer if still on employer plan past 65.</p>
+        </div>
 
-      <button
-        type="button"
-        onClick={handleSave}
-        disabled={saving}
-        className="self-end rounded-[var(--radius-sm)] bg-accent text-accent-on px-4 h-9 text-[13px] font-medium hover:bg-accent-ink disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {saving ? "Saving…" : "Save"}
-      </button>
+        <div>
+          <label htmlFor="medicare-coverage-type" className={fieldLabelClassName}>Coverage type</label>
+          <select
+            id="medicare-coverage-type"
+            aria-label="coverage type"
+            value={coverageType}
+            onChange={e => setCoverageType(e.target.value as "original" | "advantage")}
+            className={selectClassName}
+          >
+            <option value="original">Original Medicare</option>
+            <option value="advantage">Medicare Advantage</option>
+          </select>
+        </div>
+
+        <div>
+          <label htmlFor="medicare-medigap" className={fieldLabelClassName}>Medigap monthly ($)</label>
+          <input
+            id="medicare-medigap"
+            type="number"
+            aria-label="medigap monthly"
+            value={medigap ?? ""}
+            placeholder="National avg ~$170"
+            onChange={e => setMedigap(e.target.value ? Number(e.target.value) : null)}
+            className={inputClassName}
+          />
+        </div>
+
+        <div>
+          <label htmlFor="medicare-partd" className={fieldLabelClassName}>Part D plan monthly ($)</label>
+          <input
+            id="medicare-partd"
+            type="number"
+            aria-label="part d monthly"
+            value={partD ?? ""}
+            placeholder="National avg ~$46"
+            onChange={e => setPartD(e.target.value ? Number(e.target.value) : null)}
+            className={inputClassName}
+          />
+        </div>
+
+        <div>
+          <label className="flex items-center gap-2 text-[13px] text-ink-2 cursor-pointer">
+            <input
+              type="checkbox"
+              aria-label="estimate prior-year magi from projection"
+              checked={estimateFromProjection}
+              onChange={(e) => setEstimateFromProjection(e.target.checked)}
+              className="h-4 w-4 rounded border-hair text-accent focus:ring-1 focus:ring-accent"
+            />
+            <span>Estimate prior-year MAGI from projection</span>
+          </label>
+          {!estimateFromProjection && (
+            <div className="mt-3">
+              <label htmlFor="medicare-magi" className={fieldLabelClassName}>Prior-year MAGI ($, optional)</label>
+              <input
+                id="medicare-magi"
+                type="number"
+                aria-label="prior year magi"
+                value={priorMagi ?? ""}
+                placeholder="Used for IRMAA in years 1–2"
+                onChange={e => setPriorMagi(e.target.value ? Number(e.target.value) : null)}
+                className={inputClassName}
+              />
+              <p className="text-[11px] text-ink-3 mt-1">Leave blank to estimate from the current-year projection.</p>
+            </div>
+          )}
+        </div>
+      </BasePlanOnly>
+
+      {!scenarioActive && (
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={saving}
+          className="self-end rounded-[var(--radius-sm)] bg-accent text-accent-on px-4 h-9 text-[13px] font-medium hover:bg-accent-ink disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {saving ? "Saving…" : "Save"}
+        </button>
+      )}
     </div>
   );
 }

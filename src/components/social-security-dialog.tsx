@@ -392,6 +392,7 @@ export function SocialSecurityDialog({
           owner={owner}
           existing={existingMedicare}
           ownerDob={ownerDob}
+          scenarioActive={writer.scenarioActive}
           onSaved={() => { /* keep dialog open; parent doesn't need to know about Medicare yet */ }}
         />
       )}

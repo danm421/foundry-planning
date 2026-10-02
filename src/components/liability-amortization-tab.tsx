@@ -13,6 +13,7 @@ import {
   Legend,
 } from "chart.js";
 import { useThemeName, chartChrome, dataPalette, statusColors } from "@/lib/chart-colors";
+import { BasePlanOnlyNote } from "@/components/base-plan-only";
 import {
   computeAmortizationSchedule,
   calcOriginalBalance,
@@ -78,6 +79,10 @@ interface LiabilityAmortizationTabProps {
   balanceAsOfMonth?: number;
   balanceAsOfYear?: number;
   forgiveAtTermEnd: boolean;
+  /** Inside a scenario: extra payments have no scenario column, so adding or
+   *  removing one would change the base plan — the tab is read-only (the base
+   *  payments every scenario inherits still show) with the base-only note. */
+  scenarioActive?: boolean;
 }
 
 export default function LiabilityAmortizationTab({
@@ -92,6 +97,7 @@ export default function LiabilityAmortizationTab({
   balanceAsOfMonth,
   balanceAsOfYear,
   forgiveAtTermEnd,
+  scenarioActive = false,
 }: LiabilityAmortizationTabProps) {
   const theme = useThemeName();
   const chrome = chartChrome(theme);
@@ -328,6 +334,7 @@ export default function LiabilityAmortizationTab({
 
   return (
     <div className="max-h-[70vh] overflow-y-auto space-y-6">
+      {scenarioActive && <BasePlanOnlyNote />}
       {/* Chart */}
       <div className="rounded-lg bg-card p-4">
         <Line data={chartData} options={buildChartOptions(chrome)} />
@@ -425,7 +432,7 @@ export default function LiabilityAmortizationTab({
                     ) : yearExtras.length > 0 ? (
                       <div className="flex items-center justify-end gap-1">
                         <span>{fmt(row.extraPayment)}</span>
-                        {yearExtras.map((ep) => (
+                        {!scenarioActive && yearExtras.map((ep) => (
                           <button
                             key={ep.id}
                             onClick={() => removeExtraPayment(ep.id)}
@@ -436,7 +443,7 @@ export default function LiabilityAmortizationTab({
                           </button>
                         ))}
                       </div>
-                    ) : row.endingBalance > 0 && liabilityId && isFutureOrCurrent ? (
+                    ) : row.endingBalance > 0 && liabilityId && isFutureOrCurrent && !scenarioActive ? (
                       <button
                         onClick={() => {
                           setEditingYear(row.year);
