@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import DialogShell from "./dialog-shell";
 import AddAccountForm, { AccountFormInitial, EntityOption, CategoryDefaults, ModelPortfolioOption, BusinessOption } from "./forms/add-account-form";
 import type { BeneficiaryPickLists } from "./forms/beneficiaries-tab";
+import type { SavingsRuleRow } from "./forms/savings-rule-dialog";
 import type { SalaryOption } from "./forms/salary-basis-fields";
 import type { FundPortfolioOption } from "@/lib/investments/load-fund-portfolio-options";
 import AddNoteReceivableForm, { NoteReceivableFormInitial } from "./forms/add-note-receivable-form";
@@ -33,6 +34,8 @@ interface AddAccountDialogProps {
   familyMembers?: { id: string; role: "client" | "spouse" | "child" | "other"; firstName: string }[];
   /** The scenario's own people, trusts and charities for the Beneficiaries tab. */
   beneficiaryPickLists?: BeneficiaryPickLists;
+  /** The scenario's effective savings rules for the Savings tab. */
+  savingsRules?: SavingsRuleRow[];
   categoryDefaults?: CategoryDefaults;
   modelPortfolios?: ModelPortfolioOption[];
   fundPortfolios?: FundPortfolioOption[];
@@ -75,6 +78,7 @@ export default function AddAccountDialog({
   rothIraAccounts,
   familyMembers,
   beneficiaryPickLists,
+  savingsRules,
   categoryDefaults,
   modelPortfolios,
   fundPortfolios,
@@ -193,6 +197,7 @@ export default function AddAccountDialog({
               rothIraAccounts={rothIraAccounts}
               familyMembers={familyMembers}
               beneficiaryPickLists={beneficiaryPickLists}
+              savingsRules={savingsRules}
               categoryDefaults={categoryDefaults}
               modelPortfolios={modelPortfolios}
               fundPortfolios={fundPortfolios}

@@ -26,7 +26,7 @@ import type { GrowthContext } from "@/lib/investments/growth-context";
 import { controllingEntity } from "@/engine/ownership";
 import { buildAccountRows, loadAccountMetaRows, linkedSourceMapFrom } from "@/lib/accounts/load-account-rows";
 import { categoryDefaultRates } from "@/lib/investments/category-default-rates";
-import { planSettingsEngineToFormProps } from "@/lib/scenario/view-adapters";
+import { planSettingsEngineToFormProps, savingsRuleEngineToView } from "@/lib/scenario/view-adapters";
 import { buildIncomeRows } from "@/lib/balance-sheet/build-income-rows";
 import {
   detectDefaultGrowthAtInflationFor,
@@ -423,6 +423,9 @@ export async function loadNetWorthViewProps(
         })),
         entities: (effectiveTree.entities ?? []).map((e) => ({ id: e.id, name: e.name ?? "" })),
       },
+      // The account dialog's Savings tab lists these inside a scenario instead
+      // of GETting the base plan's rules.
+      savingsRules: effectiveTree.savingsRules.map(savingsRuleEngineToView),
       categoryDefaults,
       modelPortfolios: modelPortfolioOptions,
       fundPortfolios: fundPortfolioOptions,

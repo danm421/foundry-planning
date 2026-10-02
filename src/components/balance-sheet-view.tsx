@@ -27,6 +27,7 @@ import type { ClientMilestones } from "@/lib/milestones";
 import type { AccountOwner } from "@/engine/ownership";
 import type { BeneficiaryRef } from "@/engine/types";
 import type { BeneficiaryPickLists } from "./forms/beneficiaries-tab";
+import type { SavingsRuleRow } from "./forms/savings-rule-dialog";
 import {
   buildNoteReceivableSchedule,
   type NoteReceivable,
@@ -227,6 +228,9 @@ export interface BalanceSheetViewProps {
   /** The scenario's own people, trusts and charities for the account form's
    *  Beneficiaries tab (from the effective tree, not the base tables). */
   beneficiaryPickLists?: BeneficiaryPickLists;
+  /** The effective savings rules, for the account form's Savings tab inside a
+   *  scenario (where the base `/savings-rules` GET would be wrong). */
+  savingsRules?: SavingsRuleRow[];
   categoryDefaults: CategoryDefaults;
   modelPortfolios?: ModelPortfolioOption[];
   fundPortfolios?: FundPortfolioOption[];
@@ -698,6 +702,7 @@ export default function BalanceSheetView({
   entities,
   familyMembers,
   beneficiaryPickLists,
+  savingsRules,
   categoryDefaults,
   modelPortfolios,
   fundPortfolios,
@@ -1279,6 +1284,7 @@ export default function BalanceSheetView({
         rothIraAccounts={rothIraAccounts}
         familyMembers={familyMembers}
         beneficiaryPickLists={beneficiaryPickLists}
+        savingsRules={savingsRules}
         categoryDefaults={categoryDefaults}
         modelPortfolios={modelPortfolios}
         fundPortfolios={fundPortfolios}
@@ -1310,6 +1316,7 @@ export default function BalanceSheetView({
         rothIraAccounts={rothIraAccounts}
         familyMembers={familyMembers}
         beneficiaryPickLists={beneficiaryPickLists}
+        savingsRules={savingsRules}
         categoryDefaults={categoryDefaults}
         modelPortfolios={modelPortfolios}
         fundPortfolios={fundPortfolios}
@@ -1372,6 +1379,7 @@ export default function BalanceSheetView({
         entities={entities}
         familyMembers={familyMembers}
         beneficiaryPickLists={beneficiaryPickLists}
+        savingsRules={savingsRules}
         categoryDefaults={categoryDefaults}
         modelPortfolios={modelPortfolios}
         fundPortfolios={fundPortfolios}

@@ -194,6 +194,10 @@ interface AddAccountFormProps {
   /** The scenario's own people, trusts and charities for the Beneficiaries tab.
    *  Without them the tab lists the base plan's. */
   beneficiaryPickLists?: BeneficiaryPickLists;
+  /** The plan's effective savings rules (every account's). Read only inside a
+   *  scenario, where the Savings tab lists them instead of GETting the base
+   *  plan's. */
+  savingsRules?: SavingsRuleRow[];
   categoryDefaults?: CategoryDefaults;
   /** Real names used in the owner dropdown. Falls back to "Client"/"Co-client" if absent. */
   ownerNames?: { clientName: string; spouseName: string | null };
@@ -346,6 +350,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   rothIraAccounts = [],
   familyMembers = [],
   beneficiaryPickLists,
+  savingsRules,
   categoryDefaults,
   ownerNames,
   salaries,
@@ -413,13 +418,19 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     el.select();
   }, [isEdit, lockTab]);
 
-  const [accountSavingsRules, setAccountSavingsRules] = useState<SavingsRuleRow[]>([]);
+  // Inside a scenario the page hands over the scenario's effective rules: the
+  // GET below reads the BASE plan, and a rule opened from it would save base
+  // values back over the scenario's own edits (and miss rules it added).
+  const scenarioSavingsRules = writer.scenarioActive ? savingsRules : undefined;
+  const [accountSavingsRules, setAccountSavingsRules] = useState<SavingsRuleRow[]>(
+    () => scenarioSavingsRules?.filter((r) => r.accountId === initial?.id) ?? [],
+  );
   const [srDialogOpen, setSrDialogOpen] = useState(false);
   const [srDialogEditing, setSrDialogEditing] = useState<SavingsRuleRow | undefined>(undefined);
   const [deletingSr, setDeletingSr] = useState<SavingsRuleRow | null>(null);
 
   useEffect(() => {
-    if (!isEdit || !initial?.id) return;
+    if (!isEdit || !initial?.id || scenarioSavingsRules) return;
     let cancelled = false;
     (async () => {
       try {
@@ -432,7 +443,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       }
     })();
     return () => { cancelled = true; };
-  }, [clientId, initial?.id, isEdit]);
+  }, [clientId, initial?.id, isEdit, scenarioSavingsRules]);
 
   const [loading, setLoading] = useState(false);
 

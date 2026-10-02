@@ -149,7 +149,7 @@ const gatedNote = () => ({
   toggleGroupId: "group-owned-by-another-scenario",
 });
 
-function seedTree(notesReceivable: unknown[]) {
+function seedTree(notesReceivable: unknown[], savingsRules: unknown[] = []) {
   vi.mocked(loadEffectiveTree).mockResolvedValue({
     effectiveTree: {
       client: { firstName: "Cooper", lastName: "Smith" },
@@ -157,6 +157,7 @@ function seedTree(notesReceivable: unknown[]) {
       liabilities: [],
       incomes: [],
       expenses: [],
+      savingsRules,
       familyMembers: [],
       stockOptionPlans: [],
       notesReceivable,
@@ -225,5 +226,34 @@ describe("Net Worth — toggle-gated notes receivable", () => {
     const notes = await notesHandedToBalanceSheet("some-scenario-id");
 
     expect(notes.map((n) => n.id)).toEqual(["note-base", "note-gated"]);
+  });
+});
+
+// The account dialog's Savings tab lists these inside a scenario instead of
+// GETting the base plan's `/savings-rules` (whose rule would save base values
+// back over the scenario's edits). They must be the EFFECTIVE tree's rules.
+describe("Net Worth — savings rules for the account dialog", () => {
+  it("hands the balance sheet the effective tree's savings rules, as view rows", async () => {
+    seedTree([], [
+      {
+        id: "sr-1",
+        accountId: "acct-1",
+        annualAmount: 9000,
+        annualPercent: null,
+        isDeductible: true,
+        applyContributionLimit: true,
+        contributeMax: false,
+        startYear: 2026,
+        endYear: 2040,
+        employerMatchPct: null,
+        employerMatchCap: null,
+        employerMatchAmount: null,
+      },
+    ]);
+    const tree = await NetWorthContent({ clientId: CLIENT_ID, scenarioParam: "scn-1" });
+    const props = findBalanceSheet(tree)!.props as { savingsRules?: Record<string, unknown>[] };
+    expect(props.savingsRules).toEqual([
+      expect.objectContaining({ id: "sr-1", accountId: "acct-1", annualAmount: "9000" }),
+    ]);
   });
 });
