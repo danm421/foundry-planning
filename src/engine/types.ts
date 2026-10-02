@@ -1315,7 +1315,9 @@ export interface WithdrawalPriority {
   priorityOrder: number;
   startYear: number;
   endYear: number;
-  /** Display keys for the Assumptions editor; the engine never reads them. */
+  /** Milestone anchors. The projection never reads them directly, but
+   *  `resolveRefYears` re-derives `startYear`/`endYear` from them on scenario
+   *  and live-Solver loads, so a moved milestone moves the window. */
   startYearRef?: string | null;
   endYearRef?: string | null;
 }

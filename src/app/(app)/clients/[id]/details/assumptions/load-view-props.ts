@@ -15,7 +15,7 @@ import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import { buildModelPortfolioOptions } from "@/lib/cma/model-portfolio-options";
 import type { AssumptionsClientProps } from "./assumptions-client";
-import { buildClientMilestones, resolveMilestone, type YearRef } from "@/lib/milestones";
+import { treeMilestones, withdrawalRowsForDisplay } from "./scenario-milestones";
 import { resolveInflationRate } from "@/lib/inflation";
 import { amortizeLiability } from "@/engine/liabilities";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
@@ -49,19 +49,13 @@ export async function loadAssumptionsViewProps(
 
   if (!clientRow) notFound();
 
-  // CRM contacts — sole identity source for milestone math.
+  // CRM contacts — a primary contact with a date of birth is required.
   const contactRows = await db
     .select()
     .from(crmHouseholdContacts)
     .where(eq(crmHouseholdContacts.householdId, clientRow.crmHouseholdId));
   const primaryContact = contactRows.find((c) => c.role === "primary");
-  const spouseContact = contactRows.find((c) => c.role === "spouse");
   if (!primaryContact?.dateOfBirth) notFound();
-  const client = {
-    ...clientRow,
-    dateOfBirth: primaryContact.dateOfBirth,
-    spouseDob: spouseContact?.dateOfBirth ?? null,
-  };
 
   // One read for both: the base case (the plan settings below still key off it)
   // and the scenario being viewed, whose name titles the Solver's focus dialog.
@@ -109,8 +103,6 @@ export async function loadAssumptionsViewProps(
   // rows: read them from the effective tree, not the base tables.
   const deductionRows = effectiveTree.deductions ?? [];
   const taxAdjustmentTreeRows = effectiveTree.taxAdjustments ?? [];
-  // Copied: the milestone pass below rewrites years in place.
-  const withdrawalRows = effectiveTree.withdrawalStrategy.map((w) => ({ ...w, id: w.id! }));
 
   // Derive per-account owner key ("client" | "spouse" | "joint") for UI display.
   const _clientFmId = (effectiveTree.familyMembers ?? []).find((fm) => fm.role === "client")?.id ?? null;
@@ -204,20 +196,12 @@ export async function loadAssumptionsViewProps(
     riskLevel: portfolioRows.find((p) => p.id === o.id)?.riskLevel ?? null,
   }));
 
-  const milestones = buildClientMilestones(client, settings.planStartYear, settings.planEndYear);
+  // The scenario's milestones: a scenario that moves retirement moves every
+  // milestone-anchored year the editors show and pre-fill.
+  const milestones = treeMilestones(effectiveTree);
 
-  // Resolution-on-read: re-resolve milestone refs to the live years (display
-  // only: a read never writes).
-  for (const row of withdrawalRows) {
-    if (row.startYearRef) {
-      const resolved = resolveMilestone(row.startYearRef as YearRef, milestones, "start");
-      if (resolved != null) row.startYear = resolved;
-    }
-    if (row.endYearRef) {
-      const resolved = resolveMilestone(row.endYearRef as YearRef, milestones, "end");
-      if (resolved != null) row.endYear = resolved;
-    }
-  }
+  // Resolution-on-read, display only: a read never writes.
+  const withdrawalRows = withdrawalRowsForDisplay(effectiveTree.withdrawalStrategy, milestones);
 
   // ── Deductions-tab derived data ─────────────────────────────────────────
   const currentYear = new Date().getFullYear();

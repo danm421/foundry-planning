@@ -140,6 +140,11 @@ function lastRequest() {
   return { url, method: init.method, body: JSON.parse(init.body) };
 }
 
+/** Exactly one request was made, and it went to the scenario changes route. */
+function expectOnlyScenarioWrite() {
+  expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([CHANGES_URL]);
+}
+
 beforeEach(() => {
   fetchMock.mockReset();
   fetchMock.mockImplementation(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
@@ -175,7 +180,7 @@ describe("AssumptionsClient focus mode — deductions", () => {
 
     await waitFor(() => expect(onFocusClose).toHaveBeenCalledTimes(1));
     expect(onFocusClose).toHaveBeenCalledWith();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expectOnlyScenarioWrite();
     expect(lastRequest()).toMatchObject({
       url: CHANGES_URL,
       method: "POST",
@@ -191,6 +196,7 @@ describe("AssumptionsClient focus mode — deductions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith());
+    expectOnlyScenarioWrite();
     expect(lastRequest()).toMatchObject({
       url: CHANGES_URL,
       method: "POST",
@@ -212,7 +218,7 @@ describe("AssumptionsClient focus mode — deductions", () => {
 
     await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith());
     expect(window.confirm).not.toHaveBeenCalled();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expectOnlyScenarioWrite();
     expect(lastRequest()).toMatchObject({
       url: CHANGES_URL,
       method: "POST",
@@ -231,6 +237,7 @@ describe("AssumptionsClient focus mode — tax adjustments", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith());
+    expectOnlyScenarioWrite();
     expect(lastRequest()).toMatchObject({
       url: CHANGES_URL,
       method: "POST",
@@ -246,6 +253,7 @@ describe("AssumptionsClient focus mode — tax adjustments", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith());
+    expectOnlyScenarioWrite();
     expect(lastRequest()).toMatchObject({
       url: CHANGES_URL,
       method: "POST",
@@ -258,6 +266,7 @@ describe("AssumptionsClient focus mode — tax adjustments", () => {
 
     await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith());
     expect(window.confirm).not.toHaveBeenCalled();
+    expectOnlyScenarioWrite();
     expect(lastRequest()).toMatchObject({
       url: CHANGES_URL,
       method: "POST",
@@ -275,6 +284,7 @@ describe("AssumptionsClient focus mode — withdrawal order", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
 
     await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith());
+    expectOnlyScenarioWrite();
     expect(lastRequest()).toMatchObject({
       url: CHANGES_URL,
       method: "POST",
@@ -289,6 +299,7 @@ describe("AssumptionsClient focus mode — withdrawal order", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add Entry" }));
 
     await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith());
+    expectOnlyScenarioWrite();
     expect(lastRequest()).toMatchObject({
       url: CHANGES_URL,
       method: "POST",
@@ -301,6 +312,7 @@ describe("AssumptionsClient focus mode — withdrawal order", () => {
 
     await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith());
     expect(window.confirm).not.toHaveBeenCalled();
+    expectOnlyScenarioWrite();
     expect(lastRequest()).toMatchObject({
       url: CHANGES_URL,
       method: "POST",

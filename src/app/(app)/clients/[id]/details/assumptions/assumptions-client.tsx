@@ -137,7 +137,10 @@ export interface AssumptionsClientProps {
    *   edit, create or delete → that list's own form (a delete runs silently);
    * - `plan_settings` with id `"withdrawal"` → that tab, in a dialog.
    * Anything else reports `"unavailable"`; the Tax Rates and Growth &
-   * Inflation tabs write the BASE plan settings whatever the scenario.
+   * Inflation tabs write the BASE plan settings whatever the scenario. So does
+   * `SurplusCashFlowForm`, inside the "withdrawal" dialog, which PUTs base
+   * `/plan-settings` until Task 14 — why `savings_withdrawals` stays in
+   * `NOT_YET_READY`.
    */
   focus?: EditorFocus;
   /**
@@ -148,6 +151,9 @@ export interface AssumptionsClientProps {
    */
   onFocusClose?: (outcome?: FocusCloseOutcome) => void;
 }
+
+/** Stable "found" marker for the singleton dialog (a fresh `{}` per render would re-run the close hook's effect). */
+const SINGLETON_FOUND = {};
 
 /** The focus kinds whose list opens its own editor, as that list's focus mode. */
 const ROW_FOCUS_KINDS = ["client_deduction", "client_tax_adjustment", "withdrawal_strategy"] as const;
@@ -196,7 +202,7 @@ export default function AssumptionsClient({
   // handed to its list does not come through here), and closes the dialog's.
   useFocusCloseOnce(
     rowFocusKind ? undefined : focus,
-    withdrawalFocus ? {} : null,
+    withdrawalFocus ? SINGLETON_FOUND : null,
     withdrawalDialogOpen,
     onFocusClose,
   );

@@ -98,7 +98,7 @@ export function DeductionsItemizedList({
     );
     router.refresh();
     onChange?.();
-    return res.ok || res.status === 204;
+    return res.ok;
   }
 
   const focusDeleting = useFocusDelete(
