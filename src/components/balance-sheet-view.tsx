@@ -26,6 +26,7 @@ import { LIQUID_PORTFOLIO_CATEGORIES } from "@/engine/portfolio-snapshot";
 import type { ClientMilestones } from "@/lib/milestones";
 import type { AccountOwner } from "@/engine/ownership";
 import type { BeneficiaryRef } from "@/engine/types";
+import type { BeneficiaryPickLists } from "./forms/beneficiaries-tab";
 import {
   buildNoteReceivableSchedule,
   type NoteReceivable,
@@ -210,6 +211,9 @@ export interface BalanceSheetViewProps {
   primaryClientBirthYear?: number;
   entities: EntityOption[];
   familyMembers?: { id: string; role: "client" | "spouse" | "child" | "other"; firstName: string }[];
+  /** The scenario's own people, trusts and charities for the account form's
+   *  Beneficiaries tab (from the effective tree, not the base tables). */
+  beneficiaryPickLists?: BeneficiaryPickLists;
   categoryDefaults: CategoryDefaults;
   modelPortfolios?: ModelPortfolioOption[];
   fundPortfolios?: FundPortfolioOption[];
@@ -365,7 +369,7 @@ export function accountToInitial(a: AccountRow): AccountFormInitial {
     rothRolloverEnabled: a.rothRolloverEnabled ?? false,
     rothRolloverStartYear: a.rothRolloverStartYear ?? null,
     rothRolloverAccountId: a.rothRolloverAccountId ?? null,
-    beneficiaries: a.beneficiaries,
+    beneficiaries: a.beneficiaries ?? [],
   };
 }
 
@@ -663,6 +667,7 @@ export default function BalanceSheetView({
   expenses = [],
   entities,
   familyMembers,
+  beneficiaryPickLists,
   categoryDefaults,
   modelPortfolios,
   fundPortfolios,
@@ -1232,6 +1237,7 @@ export default function BalanceSheetView({
         businesses={businessOptions}
         rothIraAccounts={rothIraAccounts}
         familyMembers={familyMembers}
+        beneficiaryPickLists={beneficiaryPickLists}
         categoryDefaults={categoryDefaults}
         modelPortfolios={modelPortfolios}
         fundPortfolios={fundPortfolios}
@@ -1262,6 +1268,7 @@ export default function BalanceSheetView({
         businesses={businessOptions}
         rothIraAccounts={rothIraAccounts}
         familyMembers={familyMembers}
+        beneficiaryPickLists={beneficiaryPickLists}
         categoryDefaults={categoryDefaults}
         modelPortfolios={modelPortfolios}
         fundPortfolios={fundPortfolios}
@@ -1323,6 +1330,7 @@ export default function BalanceSheetView({
         clientId={clientId}
         entities={entities}
         familyMembers={familyMembers}
+        beneficiaryPickLists={beneficiaryPickLists}
         categoryDefaults={categoryDefaults}
         modelPortfolios={modelPortfolios}
         fundPortfolios={fundPortfolios}

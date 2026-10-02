@@ -23,6 +23,7 @@ import {
 import type { SaveResult } from "@/lib/use-tab-auto-save";
 import type { BeneficiaryRef } from "@/engine/types";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
+import { refsToDesignations } from "./forms/beneficiary-designations";
 import { describeApiError, type ApiErrorBody } from "@/lib/api-error-message";
 
 /** Imperative handle the dialog uses to trigger a save on tab switch / submit. */
@@ -77,23 +78,6 @@ function normalize(rows: DesignationRow[]): Designation[] {
     ...r,
     percentage:
       typeof r.percentage === "string" ? parseFloat(r.percentage) : r.percentage,
-  }));
-}
-
-/** A scenario's `BeneficiaryRef`s as the editor's rows. */
-function refsToDesignations(refs: BeneficiaryRef[], accountId: string): Designation[] {
-  return refs.map((r) => ({
-    id: r.id,
-    targetKind: "account",
-    accountId,
-    entityId: null,
-    tier: r.tier,
-    familyMemberId: r.familyMemberId ?? null,
-    externalBeneficiaryId: r.externalBeneficiaryId ?? null,
-    entityIdRef: r.entityIdRef ?? null,
-    householdRole: r.householdRole ?? null,
-    percentage: r.percentage,
-    sortOrder: r.sortOrder,
   }));
 }
 
@@ -206,6 +190,8 @@ const AccountBeneficiaryEditor = forwardRef<
             targetId: accountId,
             desiredFields: { beneficiaries: refs },
           },
+          // The base PUT (no body) is unreachable here: `scenarioActive` means the
+          // writer posts the scenario change instead of calling it.
           { url, method: "PUT", skipRefresh: true },
         );
         if (!res.ok) {

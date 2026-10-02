@@ -183,6 +183,7 @@ export async function loadFamilyViewProps(
     subType: a.subType,
     ownerFamilyMemberId: controllingFamilyMember(a) ?? null,
     ownerEntityId: controllingEntity(a) ?? null,
+    beneficiaries: a.beneficiaries,
   }));
 
   // Full asset data for the trust Assets tab

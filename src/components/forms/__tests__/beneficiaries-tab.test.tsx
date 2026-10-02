@@ -19,7 +19,8 @@ describe("BeneficiariesTab", () => {
     global.fetch = mockFetch as unknown as typeof fetch;
     mockFetch.mockReset();
     submitMock.mockReset();
-    // initial load: designations, family-members, external-beneficiaries, entities
+    // Base-mode load: designations, family-members, external-beneficiaries, entities
+    // (a scenario open from tree data requests nothing).
     mockFetch
       .mockResolvedValueOnce({ ok: true, json: async () => [] })
       .mockResolvedValueOnce({ ok: true, json: async () => [] })
@@ -33,7 +34,16 @@ describe("BeneficiariesTab", () => {
   });
 
   it("saves through the scenario writer as an account edit", async () => {
-    render(<BeneficiariesTab clientId="c1" accountId="a1" active />);
+    mockFetch.mockReset(); // opened from tree data: no loads at all
+    render(
+      <BeneficiariesTab
+        clientId="c1"
+        accountId="a1"
+        active
+        scenarioBeneficiaries={[]}
+        pickLists={{ members: [], externals: [], entities: [] }}
+      />,
+    );
 
     await screen.findByRole("heading", { name: /primary/i, level: 4 });
     fireEvent.click(screen.getByRole("button", { name: /save beneficiaries/i }));
@@ -46,6 +56,7 @@ describe("BeneficiariesTab", () => {
       targetId: "a1",
     });
     expect(edit.desiredFields).toHaveProperty("beneficiaries");
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it("renders tier sums as numbers when the API returns string percentages", async () => {

@@ -26,6 +26,7 @@ import type { DisabilityPanelProps } from "@/components/disability-panel";
 import { resolveCoveredEarnings } from "@/engine/disability-benefits";
 import type { DisabilityPolicy } from "@/engine/types";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { loadScenarioChanges } from "@/lib/scenario/changes";
 import { ownerRefFromOwners } from "@/lib/insurance-policies/owner-ref";
 import { buildClientMilestones } from "@/lib/milestones";
 
@@ -129,20 +130,34 @@ export async function loadInsuranceViewProps(
   // included. A policy that names a post-payout model portfolio carries that
   // portfolio's RESOLVED rate in the tree (the engine reads only the resolved
   // value), which would pre-fill the dialog's custom-rate box with the
-  // portfolio's rate. The raw custom rate is on the base row, so read it back
-  // for policies that have one; a scenario-added policy has none and keeps the
-  // tree's rate.
+  // portfolio's rate. The raw custom rate is what the policy was saved with: the
+  // latest scenario change that set one (adds are resolved only at load, edits
+  // are stored as sent), else the base row.
   const baseRawPolicies = await loadPoliciesByAccountIds(lifeAccountIds);
+  const scenarioRawRate = new Map<string, number>();
+  if (scenarioParam) {
+    const changes = [...(await loadScenarioChanges(scenarioParam))].sort(
+      (x, y) => x.orderIndex - y.orderIndex,
+    );
+    for (const c of changes) {
+      const rate = (c.payload as { lifeInsurance?: { postPayoutGrowthRate?: unknown } } | null)
+        ?.lifeInsurance?.postPayoutGrowthRate;
+      if (c.targetKind === "account" && c.opType !== "remove" && typeof rate === "number") {
+        scenarioRawRate.set(c.targetId, rate);
+      }
+    }
+  }
   const policies: InsurancePanelProps["policies"] = {};
   for (const a of accountRows) {
     if (a.category !== "life_insurance" || !a.lifeInsurance) continue;
     const policy = a.lifeInsurance;
     policies[a.id] = {
       ...policy,
-      postPayoutGrowthRate:
-        policy.postPayoutModelPortfolioId && baseRawPolicies[a.id]
-          ? baseRawPolicies[a.id].postPayoutGrowthRate
-          : policy.postPayoutGrowthRate,
+      postPayoutGrowthRate: policy.postPayoutModelPortfolioId
+        ? (scenarioRawRate.get(a.id) ??
+          baseRawPolicies[a.id]?.postPayoutGrowthRate ??
+          policy.postPayoutGrowthRate)
+        : policy.postPayoutGrowthRate,
     };
   }
 

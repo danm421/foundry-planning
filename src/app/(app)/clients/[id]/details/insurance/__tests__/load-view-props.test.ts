@@ -34,11 +34,13 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("@/lib/db-helpers", () => ({ getOrgId: vi.fn(async () => FIRM_ID) }));
 vi.mock("@/lib/scenario/loader", () => ({ loadEffectiveTree: vi.fn() }));
+vi.mock("@/lib/scenario/changes", () => ({ loadScenarioChanges: vi.fn() }));
 vi.mock("@/lib/insurance-policies/load-policies", () => ({ loadPoliciesByAccountIds: vi.fn() }));
 
 import { loadInsuranceViewProps } from "../load-view-props";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { loadPoliciesByAccountIds } from "@/lib/insurance-policies/load-policies";
+import { loadScenarioChanges } from "@/lib/scenario/changes";
 
 const policy = (over: Record<string, unknown> = {}) => ({
   faceValue: 500000, costBasis: 0, premiumAmount: 9000, premiumYears: null, premiumPayer: "owner",
@@ -93,6 +95,11 @@ beforeEach(() => {
   };
   vi.mocked(loadEffectiveTree).mockReset();
   vi.mocked(loadPoliciesByAccountIds).mockReset();
+  vi.mocked(loadScenarioChanges).mockReset().mockResolvedValue([]);
+});
+
+const change = (over: Record<string, unknown>) => ({
+  id: "c", scenarioId: "scn-9", toggleGroupId: null, orderIndex: 0, targetKind: "account", ...over,
 });
 
 async function ok(scenarioParam?: string) {
@@ -163,5 +170,41 @@ describe("loadInsuranceViewProps", () => {
     expect(disabilityProps.planStartYear).toBe(2030);
     expect(disabilityProps.planEndYear).toBe(2070);
     expect(disabilityProps.policies).toEqual([{ id: "d1", name: "LTD", insured: "client" }]);
+  });
+
+  it("prefers the raw rate a scenario ADD was saved with over the portfolio's resolved one", async () => {
+    mountTree(tree({ accounts: [lifeAccount("scn-added", "New", policy({ postPayoutGrowthRate: 0.0544, postPayoutModelPortfolioId: MP }))] }));
+    vi.mocked(loadScenarioChanges).mockResolvedValue([
+      change({ opType: "add", targetId: "scn-added", payload: { lifeInsurance: { postPayoutGrowthRate: 0.09, postPayoutModelPortfolioId: MP } } }),
+    ] as never);
+    expect((await ok("scn-9")).props.policies["scn-added"].postPayoutGrowthRate).toBe(0.09);
+  });
+
+  it("prefers the latest scenario EDIT's raw rate over the base row's, for a base policy", async () => {
+    mountTree(
+      tree({ accounts: [lifeAccount("p1", "Whole 100", policy({ postPayoutGrowthRate: 0.0544, postPayoutModelPortfolioId: MP }))] }),
+      { p1: policy({ postPayoutGrowthRate: 0.07, postPayoutModelPortfolioId: MP }) },
+    );
+    vi.mocked(loadScenarioChanges).mockResolvedValue([
+      change({ opType: "edit", targetId: "p1", orderIndex: 2, payload: { lifeInsurance: { postPayoutGrowthRate: 0.11 } } }),
+      change({ opType: "edit", targetId: "p1", orderIndex: 1, payload: { lifeInsurance: { postPayoutGrowthRate: 0.1 } } }),
+      change({ opType: "edit", targetId: "p1", orderIndex: 3, payload: { name: "renamed" } }),
+    ] as never);
+    expect((await ok("scn-9")).props.policies.p1.postPayoutGrowthRate).toBe(0.11);
+  });
+});
+
+describe("loadInsuranceViewProps in base mode", () => {
+  it("reads no scenario changes, resolves inflation from the settings, and restores the base raw rate", async () => {
+    rowsByTable.plan_settings = [{ inflationRateSource: "custom", inflationRate: "0.04" }];
+    mountTree(
+      tree({ accounts: [lifeAccount("p1", "Whole 100", policy({ postPayoutGrowthRate: 0.0544, postPayoutModelPortfolioId: MP }))] }),
+      { p1: policy({ postPayoutGrowthRate: 0.07, postPayoutModelPortfolioId: MP }) },
+    );
+    const { props } = await ok(undefined);
+    expect(loadEffectiveTree).toHaveBeenCalledWith(CLIENT_ID, FIRM_ID, "base", {});
+    expect(loadScenarioChanges).not.toHaveBeenCalled();
+    expect(props.resolvedInflationRate).toBe(0.04);
+    expect(props.policies.p1.postPayoutGrowthRate).toBe(0.07);
   });
 });

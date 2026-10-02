@@ -267,6 +267,35 @@ describe("InsurancePanel inline cells inside a scenario", () => {
     expect(requests()[1].body.desiredFields).toEqual({ insuredPerson: "spouse" });
   });
 
+  it("a second quick commit carries BOTH new values (props have not refreshed between them)", async () => {
+    mount({ policies: { "p-term": { policyType: "term", faceValue: 1000000, premiumAmount: 1200 }, "p-whole": WHOLE_POLICY } });
+    fireEvent.click(screen.getByRole("button", { name: "Edit amount for Whole 100 face value" }));
+    const face = screen.getByRole("textbox", { name: "Amount for Whole 100 face value" });
+    fireEvent.change(face, { target: { value: "750000" } });
+    fireEvent.keyDown(face, { key: "Enter" });
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit amount for Whole 100 premium" }));
+    const premium = screen.getByRole("textbox", { name: "Amount for Whole 100 premium" });
+    fireEvent.change(premium, { target: { value: "9500" } });
+    fireEvent.keyDown(premium, { key: "Enter" });
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(2));
+
+    expect(requests()[1].body.desiredFields).toEqual({
+      lifeInsurance: { ...WHOLE_POLICY, faceValue: 750000, premiumAmount: 9500 },
+    });
+  });
+
+  it("leaves the derived post-payout mix out of the stored policy", async () => {
+    mount({ policies: { "p-term": { policyType: "term", faceValue: 1000000, premiumAmount: 1200 }, "p-whole": { ...WHOLE_POLICY, postPayoutRealization: { pctOrdinaryIncome: 1 } } } });
+    fireEvent.click(screen.getByRole("button", { name: "Edit amount for Whole 100 premium" }));
+    const premium = screen.getByRole("textbox", { name: "Amount for Whole 100 premium" });
+    fireEvent.change(premium, { target: { value: "9500" } });
+    fireEvent.keyDown(premium, { key: "Enter" });
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
+    expect(requests()[0].body.desiredFields.lifeInsurance).not.toHaveProperty("postPayoutRealization");
+  });
+
   it("sends the activation year with its anchor as plain account fields", async () => {
     mount();
     fireEvent.click(screen.getByRole("button", { name: "Change activation year for Whole 100" }));

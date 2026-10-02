@@ -403,6 +403,26 @@ export async function loadNetWorthViewProps(
       primaryClientBirthYear: parseInt(primaryContact.dateOfBirth.slice(0, 4), 10),
       entities: entityOptions,
       familyMembers: familyMemberRows,
+      // From the effective tree so a trust the scenario deleted or renamed shows
+      // as the scenario has it.
+      beneficiaryPickLists: {
+        members: (effectiveTree.familyMembers ?? []).map((f) => ({
+          id: f.id,
+          firstName: f.firstName,
+          lastName: f.lastName,
+          relationship: f.relationship,
+          role: f.role,
+          dateOfBirth: f.dateOfBirth,
+          notes: null,
+        })),
+        externals: (effectiveTree.externalBeneficiaries ?? []).map((x) => ({
+          id: x.id,
+          name: x.name,
+          kind: x.kind,
+          notes: null,
+        })),
+        entities: (effectiveTree.entities ?? []).map((e) => ({ id: e.id, name: e.name ?? "" })),
+      },
       categoryDefaults,
       modelPortfolios: modelPortfolioOptions,
       fundPortfolios: fundPortfolioOptions,

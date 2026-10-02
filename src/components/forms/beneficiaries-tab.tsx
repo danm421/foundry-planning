@@ -8,19 +8,32 @@ import type {
   Tier,
 } from "../family-view";
 import { redistributeTier, splitEvenly } from "./auto-split-percentages";
+import { refsToDesignations } from "./beneficiary-designations";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import type { BeneficiaryRef } from "@/engine/types";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import { inputBaseClassName, selectBaseClassName } from "./input-styles";
 
+/** The lists the editor offers beneficiaries from. */
+export interface BeneficiaryPickLists {
+  members: FamilyMember[];
+  externals: ExternalBeneficiary[];
+  entities: Array<{ id: string; name: string }>;
+}
+
 interface BeneficiariesTabProps {
   clientId: string;
   accountId: string;
   active: boolean;
-  /** Inside a scenario: the account's designations as the effective tree
-   *  carries them. The tab opens on these instead of fetching the base ones —
-   *  a scenario-added account isn't in base at all. */
+  /** The account's designations as the effective tree carries them. Read only
+   *  inside a scenario, where the tab opens on these instead of the base GET
+   *  (a scenario-added account isn't in base at all). `undefined` means the
+   *  caller has no tree data, and the tab falls back to the GET. */
   scenarioBeneficiaries?: BeneficiaryRef[];
+  /** The effective tree's family members, external beneficiaries and entities.
+   *  Inside a scenario, supplying them skips the base GETs (which would offer
+   *  a trust the scenario deleted, or a renamed one under its base name). */
+  pickLists?: BeneficiaryPickLists;
 }
 
 // `beneficiary_designations.percentage` is a Postgres `decimal`, which Drizzle
@@ -31,23 +44,6 @@ function normalizeDesignations(rows: Designation[]): Designation[] {
     ...d,
     percentage:
       typeof d.percentage === "string" ? parseFloat(d.percentage) : d.percentage,
-  }));
-}
-
-/** A scenario's `BeneficiaryRef`s as the editor's rows. */
-function refsToDesignations(refs: BeneficiaryRef[], accountId: string): Designation[] {
-  return refs.map((r) => ({
-    id: r.id,
-    targetKind: "account",
-    accountId,
-    entityId: null,
-    tier: r.tier,
-    familyMemberId: r.familyMemberId ?? null,
-    externalBeneficiaryId: r.externalBeneficiaryId ?? null,
-    entityIdRef: r.entityIdRef ?? null,
-    householdRole: r.householdRole ?? null,
-    percentage: r.percentage,
-    sortOrder: r.sortOrder,
   }));
 }
 
@@ -377,6 +373,7 @@ export default function BeneficiariesTab({
   accountId,
   active,
   scenarioBeneficiaries,
+  pickLists,
 }: BeneficiariesTabProps) {
   const { scenarioActive } = useScenarioWriter(clientId);
   const [loaded, setLoaded] = useState(false);
@@ -394,22 +391,22 @@ export default function BeneficiariesTab({
     if (!active || loaded) return;
     setError(null);
     let cancelled = false;
+    const fromTree = scenarioActive && scenarioBeneficiaries !== undefined;
+    const listsFromTree = scenarioActive && pickLists !== undefined;
     async function load() {
       try {
         const [dRes, mRes, eRes, entRes] = await Promise.all([
-          scenarioActive
-            ? null
-            : fetch(`/api/clients/${clientId}/accounts/${accountId}/beneficiaries`),
-          fetch(`/api/clients/${clientId}/family-members`),
-          fetch(`/api/clients/${clientId}/external-beneficiaries`),
-          fetch(`/api/clients/${clientId}/entities`),
+          fromTree ? null : fetch(`/api/clients/${clientId}/accounts/${accountId}/beneficiaries`),
+          listsFromTree ? null : fetch(`/api/clients/${clientId}/family-members`),
+          listsFromTree ? null : fetch(`/api/clients/${clientId}/external-beneficiaries`),
+          listsFromTree ? null : fetch(`/api/clients/${clientId}/entities`),
         ]);
-        if ((dRes && !dRes.ok) || !mRes.ok || !eRes.ok || !entRes.ok) throw new Error("Failed to load beneficiary data");
+        if ([dRes, mRes, eRes, entRes].some((r) => r && !r.ok)) throw new Error("Failed to load beneficiary data");
         const [d, m, e, ent] = (await Promise.all([
           dRes ? dRes.json() : refsToDesignations(scenarioBeneficiaries ?? [], accountId),
-          mRes.json(),
-          eRes.json(),
-          entRes.json(),
+          mRes ? mRes.json() : pickLists!.members,
+          eRes ? eRes.json() : pickLists!.externals,
+          entRes ? entRes.json() : pickLists!.entities,
         ])) as [
           Designation[],
           FamilyMember[],
@@ -439,7 +436,7 @@ export default function BeneficiariesTab({
     return () => {
       cancelled = true;
     };
-  }, [active, loaded, clientId, accountId, scenarioActive, scenarioBeneficiaries]);
+  }, [active, loaded, clientId, accountId, scenarioActive, scenarioBeneficiaries, pickLists]);
 
   if (error) return <p className="text-sm text-red-400">{error}</p>;
   if (!loaded) return <p className="text-sm text-ink-3">Loading…</p>;

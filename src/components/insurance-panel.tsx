@@ -169,8 +169,11 @@ function scenarioFieldsForPatch(
   const fields: Record<string, unknown> = { ...plain };
   if (cashValue !== undefined) fields.value = cashValue;
   if (faceValue !== undefined || premiumAmount !== undefined) {
+    // The resolved payout mix is derived at load; the stored policy is the raw one.
+    const { postPayoutRealization: _derived, ...raw } = policy ?? ({} as LifeInsurancePolicy);
+    void _derived;
     fields.lifeInsurance = {
-      ...policy,
+      ...raw,
       ...(faceValue !== undefined && { faceValue }),
       ...(premiumAmount !== undefined && { premiumAmount }),
     };
@@ -251,13 +254,22 @@ export default function InsurancePanel(props: InsurancePanelProps) {
     patch: Record<string, unknown>,
     optimistic: Partial<InsuranceEditRow>,
   ): Promise<boolean> {
+    // An edit replaces the stored `lifeInsurance` whole, so the merge must start
+    // from what is on screen: the props are only as fresh as the last refresh,
+    // and a second commit made before it lands would put the first one's old
+    // value back.
+    const row = pending.rows.find((r) => r.id === policyId);
+    const current = props.policies[policyId] && {
+      ...props.policies[policyId],
+      ...(row && { faceValue: row.faceValue, premiumAmount: row.premiumAmount }),
+    };
     return pending.apply(policyId, optimistic, async () => {
       const res = await writer.submit(
         {
           op: "edit",
           targetKind: "account",
           targetId: policyId,
-          desiredFields: scenarioFieldsForPatch(patch, props.policies[policyId]),
+          desiredFields: scenarioFieldsForPatch(patch, current),
         },
         {
           url: `/api/clients/${props.clientId}/insurance-policies/${policyId}`,

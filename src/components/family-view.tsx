@@ -17,7 +17,7 @@ import GiftDialog from "@/components/gift-dialog";
 import AddAccountDialog from "./add-account-dialog";
 import FamilyMemberDialog from "./family-member-dialog";
 import type { AccountFormInitial } from "./forms/add-account-form";
-import type { EntityFlowMode, GiftEventKind } from "@/engine/types";
+import type { BeneficiaryRef, EntityFlowMode, GiftEventKind } from "@/engine/types";
 import type { ClientFormInitial } from "./forms/add-client-form";
 import type { ClientWithContacts } from "@/lib/clients/get-client-with-contacts";
 import { type TrustSubType } from "@/lib/entities/trust";
@@ -170,6 +170,9 @@ export type AccountLite = {
   subType: string;
   ownerFamilyMemberId: string | null;
   ownerEntityId: string | null;
+  /** The account's designations as the effective tree carries them. The
+   *  Beneficiaries editor opens on these inside a scenario. */
+  beneficiaries?: BeneficiaryRef[];
 };
 
 export type RevocableTrustTag = {
@@ -361,6 +364,9 @@ function accountLiteToFormInitial(a: AccountLite): AccountFormInitial {
     basis: "0",
     growthRate: null,
     ownerEntityId: a.ownerEntityId ?? null,
+    // That tab opens on these inside a scenario; without them one save would
+    // replace the scenario's whole set with only the rows added here.
+    beneficiaries: a.beneficiaries ?? [],
   };
 }
 
@@ -792,6 +798,11 @@ export default function FamilyView({
           initialTab={accountDialogInitialTab}
           lockTab={accountDialogLockTab}
           familyMembers={[]}
+          beneficiaryPickLists={{
+            members,
+            externals,
+            entities: entities.map((e) => ({ id: e.id, name: e.name })),
+          }}
         />
       )}
 

@@ -2,7 +2,8 @@
 /**
  * The add-account form's Beneficiaries tab inside a scenario (R1): the account's
  * designations come from the scenario's own refs, never the base
- * `/accounts/:id/beneficiaries` GET, and Save writes one scenario account edit
+ * `/accounts/:id/beneficiaries` GET and its pick lists from the tree's, and Save
+ * writes one scenario account edit
  * through the real writer — never the base PUT. Base mode keeps its REST calls.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -35,25 +36,40 @@ beforeEach(() => {
 });
 afterEach(() => vi.restoreAllMocks());
 
+const PICK_LISTS = {
+  members: [{ id: "fm-1", firstName: "Susan", lastName: "C", relationship: "child" as const, role: "child" as const, dateOfBirth: null, notes: null }],
+  externals: [{ id: "ext-1", name: "Red Cross", kind: "charity" as const, notes: null }],
+  entities: [{ id: "ent-1", name: "Renamed ILIT" }],
+};
+
 describe("BeneficiariesTab inside a scenario", () => {
-  it("shows the scenario's designations and saves one scenario account edit", async () => {
-    render(<BeneficiariesTab clientId="c1" accountId="a1" active scenarioBeneficiaries={REFS} />);
+  it("opens on the scenario's designations and pick lists and saves one scenario account edit — nothing else is requested", async () => {
+    render(
+      <BeneficiariesTab clientId="c1" accountId="a1" active scenarioBeneficiaries={REFS} pickLists={PICK_LISTS} />,
+    );
     expect(await screen.findByText("sum: 100.00%")).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Renamed ILIT" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /save beneficiaries/i }));
-    await waitFor(() =>
-      expect(requestList()).toContain("POST /api/clients/c1/scenarios/scn-1/changes"),
-    );
+    await waitFor(() => expect(requestList()).toHaveLength(1));
 
-    // The lists the editor offers load as before; the account's own designations
-    // and the base PUT never appear.
-    expect(requestList().filter((l) => l.includes("/beneficiaries") && !l.includes("external"))).toEqual([]);
-    expect(requestList().some((l) => l.startsWith("PUT "))).toBe(false);
-    const post = fetchCalls().find(([, init]) => init?.method === "POST")!;
-    expect(JSON.parse(post[1]!.body as string)).toMatchObject({
+    // The WHOLE request list.
+    expect(requestList()).toEqual(["POST /api/clients/c1/scenarios/scn-1/changes"]);
+    expect(JSON.parse(fetchCalls()[0][1]!.body as string)).toMatchObject({
       op: "edit", targetKind: "account", targetId: "a1",
       desiredFields: { beneficiaries: REFS },
     });
+  });
+
+  it("falls back to the GETs when the caller has no tree data (undefined, not [])", async () => {
+    render(<BeneficiariesTab clientId="c1" accountId="a1" active />);
+    await screen.findByRole("heading", { name: /primary/i, level: 4 });
+    expect(requestList()).toEqual([
+      "GET /api/clients/c1/accounts/a1/beneficiaries",
+      "GET /api/clients/c1/family-members",
+      "GET /api/clients/c1/external-beneficiaries",
+      "GET /api/clients/c1/entities",
+    ]);
   });
 });
 

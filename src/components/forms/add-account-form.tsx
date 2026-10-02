@@ -8,7 +8,7 @@ import { HoldingsTab } from "./holdings-tab";
 import { BENEFICIARY_REQUIRED_MESSAGE } from "@/lib/accounts/is-529";
 import { setAccountDeriveFromHoldings } from "@/lib/investments/holdings-client";
 import type { GrowthSource } from "@/lib/investments/allocation";
-import BeneficiariesTab from "./beneficiaries-tab";
+import BeneficiariesTab, { type BeneficiaryPickLists } from "./beneficiaries-tab";
 import GrantsTab from "./equity/grants-tab";
 import {
   AnnuityTab,
@@ -190,6 +190,9 @@ interface AddAccountFormProps {
   /** Household Roth IRA accounts offered as a 529→Roth SECURE 2.0 rollover destination. */
   rothIraAccounts?: BusinessOption[];
   familyMembers?: { id: string; role: "client" | "spouse" | "child" | "other"; firstName: string }[];
+  /** The scenario's own people, trusts and charities for the Beneficiaries tab.
+   *  Without them the tab lists the base plan's. */
+  beneficiaryPickLists?: BeneficiaryPickLists;
   categoryDefaults?: CategoryDefaults;
   /** Real names used in the owner dropdown. Falls back to "Client"/"Co-client" if absent. */
   ownerNames?: { clientName: string; spouseName: string | null };
@@ -341,6 +344,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   businesses,
   rothIraAccounts = [],
   familyMembers = [],
+  beneficiaryPickLists,
   categoryDefaults,
   ownerNames,
   salaries,
@@ -3213,6 +3217,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
             accountId={effectiveAccountId}
             active={activeTab === "beneficiaries"}
             scenarioBeneficiaries={initial?.beneficiaries}
+            pickLists={beneficiaryPickLists}
           />
         )}
       </div>

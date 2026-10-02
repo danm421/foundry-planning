@@ -537,12 +537,12 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
   // refreshes once, on close.
   async function performSave(): Promise<SaveResult & { recordId?: string }> {
     const creating = effectiveMode === "create";
-    const newId = crypto.randomUUID();
     const ownerCtx = {
       clientFmId: props.familyMembers.find((f) => f.role === "client")?.id ?? null,
       spouseFmId: props.familyMembers.find((f) => f.role === "spouse")?.id ?? null,
     };
     const fields = buildScenarioAccountFields(state, ownerCtx);
+    const newId = creating ? crypto.randomUUID() : undefined;
     const edit: ScenarioEdit = creating
       ? {
           op: "add",
@@ -572,7 +572,7 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
       };
     }
     // The scenario writer answers with the change row, not the new record.
-    if (writer.scenarioActive) return { ok: true, recordId: creating ? newId : undefined };
+    if (writer.scenarioActive) return { ok: true, recordId: newId };
     const json = (await response.json().catch(() => ({}))) as { id?: string };
     return { ok: true, recordId: json.id };
   }
