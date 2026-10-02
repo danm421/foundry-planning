@@ -100,8 +100,28 @@ export function scenarioChangesToBaseWrites(
         // for `gift_series`, absence IS off, so the partition row goes.
         if (series.enabled === false) plan.giftSeries.removes.push(c.targetId);
         else plan.giftSeries.upserts.push({ id: c.targetId, draft: series });
+        // A one-time gift switched to recurring is this ONE add under the gift's
+        // own id (no `remove` row), so the base `gifts` row under that id has to
+        // go or it survives beside its replacement. Only when base HAS such a
+        // gift, so a brand-new series plans no removal at all. `tree.gifts` is
+        // cash-only; an asset gift exists only as a `giftEvents` entry, so both
+        // are read.
+        const baseHasGift =
+          baseTree.gifts?.some((g) => g.id === c.targetId) ||
+          baseTree.giftEvents?.some(
+            (e) => (e as { sourceGiftId?: string }).sourceGiftId === c.targetId,
+          );
+        if (baseHasGift) {
+          plan.removes.push({ kind: "gift", id: c.targetId, cascade: false });
+        }
         continue;
       }
+      // The mirror: a recurring gift switched to one-time is a one-time add on
+      // the series' id. As with `remove` below, the change cannot say which
+      // table the id lives in and no lookup is needed — a delete that matches
+      // nothing is a harmless no-op — so the partition row under that id goes
+      // or `copyGiftSeriesToBase` would carry it into base beside the new gift.
+      if (c.targetKind === "gift") plan.giftSeries.removes.push(c.targetId);
       plan.inserts.push({
         kind: c.targetKind,
         targetId: c.targetId,

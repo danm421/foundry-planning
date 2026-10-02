@@ -205,6 +205,7 @@ const baseProps = {
   categoryGrowthDefaults: { taxable: 0.06, retirement: 0.06, cash: 0.02 },
   retirementDefaultMix: [],
   baseGifts: [],
+  overlayGiftSeriesIds: [],
   initialReportLayout: resolveReportLayout(null),
 };
 

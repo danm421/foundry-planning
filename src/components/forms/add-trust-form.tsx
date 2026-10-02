@@ -1217,28 +1217,34 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
               onDelete={async (item) => {
                 const isSeries = "annualAmount" in item;
                 try {
-                  // The two row kinds this list mixes are scenario-scoped in
+                  // The row kinds this list mixes are scenario-scoped in
                   // DIFFERENT ways, so they delete differently.
                   //
                   // A gift_series row carries a real `scenario_id` — its own row
-                  // per scenario, not an overlay — and this list only ever shows
-                  // the active scenario's series, so the direct DELETE already
-                  // IS the scenario-correct delete. A `gift` change row would
-                  // leave that row alive: back on reload, copied into base on
-                  // promote, and gone from the projection, which honors overlays.
+                  // per scenario, not an overlay — so the direct DELETE, scoped
+                  // to the active scenario's partition like this list's GET, IS
+                  // the scenario-correct delete. A `gift` change row would leave
+                  // that row alive: back on reload, copied into base on promote.
                   //
-                  // A one-time gift has no scenario_id — every scenario reads the
-                  // one base row through an overlay — so a delete inside a
-                  // scenario has to record a `remove` change instead.
-                  const res = isSeries
-                    ? await fetch(
-                        `/api/clients/${clientId}/gifts/series/${item.id}`,
-                        { method: "DELETE" },
-                      )
-                    : await scenarioWriter.submit(giftScenarioRemove(item.id), {
-                        url: `/api/clients/${clientId}/gifts/${item.id}`,
-                        method: "DELETE",
-                      });
+                  // An OVERLAY series (the scenario's own `gift` change) has no
+                  // such row — the series route would 404 — and a one-time gift
+                  // has no scenario_id at all: every scenario reads the one base
+                  // row through an overlay. Both delete as a `remove` change.
+                  const isOverlaySeries = isSeries && "overlay" in item && item.overlay === true;
+                  const res =
+                    isSeries && !isOverlaySeries
+                      ? await fetch(
+                          `/api/clients/${clientId}/gifts/series/${item.id}${
+                            scenarioId ? `?scenario=${encodeURIComponent(scenarioId)}` : ""
+                          }`,
+                          { method: "DELETE" },
+                        )
+                      : await scenarioWriter.submit(giftScenarioRemove(item.id), {
+                          url: isSeries
+                            ? `/api/clients/${clientId}/gifts/series/${item.id}`
+                            : `/api/clients/${clientId}/gifts/${item.id}`,
+                          method: "DELETE",
+                        });
                   if (!res.ok) {
                     const j = await res.json().catch(() => ({}));
                     throw new Error((j as { error?: string }).error ?? `HTTP ${res.status}`);
@@ -1456,6 +1462,9 @@ interface GiftSeriesRow {
   annualAmount: string;
   inflationAdjust: boolean;
   useCrummeyPowers: boolean;
+  /** Set by the series GET on a scenario's own `gift` change (an overlay
+   *  series), which has no `gift_series` row. */
+  overlay?: true;
 }
 
 // ── Transfer mappers ─────────────────────────────────────────────────────────
@@ -1557,6 +1566,7 @@ function toTransferSeries(all: GiftSeriesRow[], trustId: string): TransferSeries
       inflationAdjust: s.inflationAdjust,
       useCrummeyPowers: s.useCrummeyPowers,
       grantor: s.grantor === "joint" ? "client" : s.grantor,
+      ...(s.overlay && { overlay: true as const }),
     }));
 }
 

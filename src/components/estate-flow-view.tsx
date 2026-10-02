@@ -51,6 +51,10 @@ export interface EstateFlowViewProps {
   ownerNames: { clientName: string; spouseName: string | null };
   initialClientData: ClientData;
   initialGifts: EstateFlowGift[];
+  /** Which of `initialGifts`' recurring gifts are the scenario's own `gift`
+   *  changes (overlay series) rather than `gift_series` rows. They have no
+   *  series row, so they edit and delete as `gift` changes. */
+  overlaySeriesIds?: string[];
   cpi: number;
   scenarios?: ScenarioOption[];
   snapshots?: SnapshotOption[];
@@ -139,11 +143,22 @@ async function persistGiftChange(
   change: GiftChange,
   submit: UseScenarioWriter["submit"],
   series: SeriesRouteTarget,
+  overlaySeriesIds: ReadonlySet<string> = new Set(),
 ): Promise<Response> {
   const { op, gift } = change;
 
   // ── series ────────────────────────────────────────────────────────────────
   if (gift.kind === "series") {
+    // An overlay series is the scenario's own `gift` change: no `gift_series`
+    // row exists for the series route to find. It saves exactly as the gift
+    // dialog saves it — an add under its own id, or a remove.
+    if (overlaySeriesIds.has(gift.id) && op !== "add") {
+      const direct = {
+        url: seriesUrl(`/api/clients/${clientId}/gifts/series/${gift.id}`, series),
+        method: op === "remove" ? ("DELETE" as const) : ("PATCH" as const),
+      };
+      return submit(op === "remove" ? giftScenarioRemove(gift.id) : giftScenarioAdd(gift), direct);
+    }
     if (op === "remove") {
       return series.request({
         url: seriesUrl(`/api/clients/${clientId}/gifts/series/${gift.id}`, series),
@@ -254,6 +269,10 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
   const router = useRouter();
   const pathname = usePathname();
   const writer = useScenarioWriter(props.clientId);
+  const overlaySeriesIds = useMemo(
+    () => new Set(props.overlaySeriesIds),
+    [props.overlaySeriesIds],
+  );
 
   // A named scenario is active when scenarioId is set and is not the base case.
   const isNamedScenario = props.scenarioId !== "base";
@@ -457,10 +476,16 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
       // `add`s (their client UUIDs are still absent from `initialGifts`).
       for (const change of giftChanges) {
         needsExplicitRefresh = true;
-        const res = await persistGiftChange(props.clientId, change, submit, {
-          scenarioId: isNamedScenario ? props.scenarioId : null,
-          request: submitDirect,
-        });
+        const res = await persistGiftChange(
+          props.clientId,
+          change,
+          submit,
+          {
+            scenarioId: isNamedScenario ? props.scenarioId : null,
+            request: submitDirect,
+          },
+          overlaySeriesIds,
+        );
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
           const apiMsg =
@@ -487,7 +512,7 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
     } finally {
       setIsSaving(false);
     }
-  }, [canEdit, pendingChanges, giftChanges, isNamedScenario, isWizard, submit, submitDirect, props.clientId, props.scenarioId, router]);
+  }, [canEdit, pendingChanges, giftChanges, isNamedScenario, isWizard, submit, submitDirect, overlaySeriesIds, props.clientId, props.scenarioId, router]);
 
   const handleSaveAsNew = useCallback(async () => {
     if (!canEdit) return;

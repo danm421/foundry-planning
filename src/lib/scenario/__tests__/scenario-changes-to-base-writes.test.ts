@@ -493,6 +493,66 @@ describe("scenarioChangesToBaseWrites — the gift_series section", () => {
     expect(plan.giftSeries.upserts).toEqual([]);
   });
 
+  // A one-time <-> recurring switch is ONE `gift` add under the gift's own id,
+  // so the add must retire the row the other table holds under that id, or Save
+  // to base leaves the old gift beside its replacement (counted twice).
+  const oneTime = (id: string) => ({
+    id,
+    kind: "cash-once",
+    year: 2030,
+    amount: 50_000,
+    grantor: "client",
+    recipient: { kind: "entity", id: "trust-1" },
+    crummey: false,
+  });
+  const treeWithBaseGift = (id: string): ClientData =>
+    ({
+      ...minimalClientData(),
+      gifts: [{ id, year: 2030, amount: 1, grantor: "client" }],
+    }) as unknown as ClientData;
+
+  it("one-time -> recurring: one series upsert AND removal of the base gift under that id", () => {
+    const payload = seriesDraft({ id: "g-base" });
+    const plan = scenarioChangesToBaseWrites(
+      treeWithBaseGift("g-base"),
+      [seriesAdd(payload)],
+      [],
+      {},
+    );
+    expect(plan.giftSeries.upserts).toEqual([{ id: "g-base", draft: payload }]);
+    expect(plan.removes).toEqual([{ kind: "gift", id: "g-base", cascade: false }]);
+    expect(plan.inserts).toHaveLength(0);
+  });
+
+  it("one-time ASSET gift -> recurring also removes the base gift (it lives only in giftEvents)", () => {
+    const tree = {
+      ...minimalClientData(),
+      giftEvents: [{ kind: "asset", year: 2030, accountId: "a1", percent: 0.1, sourceGiftId: "g-asset" }],
+    } as unknown as ClientData;
+    const plan = scenarioChangesToBaseWrites(tree, [seriesAdd(seriesDraft({ id: "g-asset" }))], [], {});
+    expect(plan.removes).toEqual([{ kind: "gift", id: "g-asset", cascade: false }]);
+  });
+
+  it("recurring -> one-time: the gift insert AND removal of the series row under that id", () => {
+    const cash = oneTime("gs1");
+    const plan = scenarioChangesToBaseWrites(minimalClientData(), [seriesAdd(cash)], [], {});
+    expect(plan.inserts).toEqual([{ kind: "gift", targetId: "gs1", raw: cash }]);
+    expect(plan.giftSeries.removes).toEqual(["gs1"]);
+    expect(plan.giftSeries.upserts).toEqual([]);
+  });
+
+  it("a brand-new overlay series emits no gift removal", () => {
+    const plan = scenarioChangesToBaseWrites(
+      minimalClientData(),
+      [seriesAdd(seriesDraft({ id: "gs-new" }))],
+      [],
+      {},
+    );
+    expect(plan.removes).toEqual([]);
+    expect(plan.giftSeries.removes).toEqual([]);
+    expect(plan.giftSeries.upserts).toHaveLength(1);
+  });
+
   it("treats a series add toggled OFF as a REMOVE of the partition row", () => {
     // The solver's "off" toggle emits the whole draft with `enabled: false`,
     // and `applyGiftsToClientData` skips those — so the scenario's numbers

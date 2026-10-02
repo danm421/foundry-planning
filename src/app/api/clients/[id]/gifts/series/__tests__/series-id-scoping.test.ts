@@ -77,6 +77,11 @@ const scopedWhere = (scenarioId: string) => ({
   ],
 });
 
+/** Without `?scenario=` the filter is exactly what it always was: id + client. */
+const unscopedWhere = {
+  and: [{ eq: [giftSeries.id, SERIES] }, { eq: [giftSeries.clientId, CLIENT] }],
+};
+
 describe("gift series [seriesId] route — partition scoping", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -116,12 +121,18 @@ describe("gift series [seriesId] route — partition scoping", () => {
     expect(setSpy).not.toHaveBeenCalled();
   });
 
-  it("base mode (no param) targets the base-case partition", async () => {
-    resolveScenarioId.mockResolvedValue("BASE");
+  it("no ?scenario= keeps exactly the id + client filter and never resolves a scenario", async () => {
     expect((await PATCH(req("PATCH"), ctx)).status).toBe(200);
     expect((await DELETE(req("DELETE"), ctx)).status).toBe(200);
-    expect(resolveScenarioId).toHaveBeenCalledWith(CLIENT, null);
-    expect(updateWhere).toHaveBeenCalledWith(scopedWhere("BASE"));
-    expect(deleteWhere).toHaveBeenCalledWith(scopedWhere("BASE"));
+    expect(resolveScenarioId).not.toHaveBeenCalled();
+    expect(updateWhere).toHaveBeenCalledWith(unscopedWhere);
+    expect(deleteWhere).toHaveBeenCalledWith(unscopedWhere);
+  });
+
+  it("no ?scenario= still reaches a row in a non-base partition, as before", async () => {
+    // The unscoped filter cannot tell partitions apart, so the id alone decides:
+    // a mock that matches (i.e. a row exists under that id) is a 200.
+    updateWhere.mockResolvedValue([{ id: SERIES, scenarioId: "NON-BASE" }]);
+    expect((await PATCH(req("PATCH"), ctx)).status).toBe(200);
   });
 });

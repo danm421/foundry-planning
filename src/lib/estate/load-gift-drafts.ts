@@ -2,7 +2,7 @@ import { db } from "@/db";
 import { clients, scenarios, gifts, giftSeries } from "@/db/schema";
 import { eq, and, asc } from "drizzle-orm";
 import { loadActiveGiftChanges } from "@/lib/scenario/changes";
-import { overlayGiftDrafts, partitionGiftChanges } from "@/lib/scenario/apply-gift-overlays";
+import { overlayGiftDrafts } from "@/lib/scenario/apply-gift-overlays";
 import {
   giftRowToDraft,
   giftSeriesRowToDraft,
@@ -51,15 +51,17 @@ export async function loadGiftDraftState(
     loadActiveGiftChanges(resolved.id),
   ]);
 
-  const drafts = overlayGiftDrafts(
-    [
-      ...giftRows.map(giftRowToDraft).filter((g): g is EstateFlowGift => g !== null),
-      ...giftSeriesRows.map((r) => giftSeriesRowToDraft(r)),
-    ],
-    giftChanges,
-  );
-  const overlaySeriesIds = partitionGiftChanges(giftChanges)
-    .adds.filter((a) => a.kind === "series")
-    .map((a) => a.id);
+  const baseDrafts = [
+    ...giftRows.map(giftRowToDraft).filter((g): g is EstateFlowGift => g !== null),
+    ...giftSeriesRows.map((r) => giftSeriesRowToDraft(r)),
+  ];
+  const drafts = overlayGiftDrafts(baseDrafts, giftChanges);
+  // The overlay keeps surviving base drafts by reference and appends the
+  // changes' own payloads, so a series that is not one of `baseDrafts` is an
+  // overlay series.
+  const baseSet = new Set(baseDrafts);
+  const overlaySeriesIds = drafts
+    .filter((g) => g.kind === "series" && !baseSet.has(g))
+    .map((g) => g.id);
   return { drafts, overlaySeriesIds };
 }

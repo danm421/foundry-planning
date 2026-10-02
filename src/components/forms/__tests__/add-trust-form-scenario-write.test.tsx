@@ -328,11 +328,36 @@ describe("AddTrustForm — gift reads and writes follow the active scenario", ()
 
     await waitFor(() => expect(giftWrites(fetchMock).length).toBe(1));
     const [url, init] = giftWrites(fetchMock)[0];
-    expect(String(url)).toBe(`/api/clients/${CLIENT_ID}/gifts/series/${SERIES_ID}`);
+    // Scoped to the active scenario's partition, as this list's GET is.
+    expect(String(url)).toBe(
+      `/api/clients/${CLIENT_ID}/gifts/series/${SERIES_ID}?scenario=${SCENARIO_ID}`,
+    );
     expect((init as RequestInit).method).toBe("DELETE");
     // Zero traffic to the scenario writer — this is the whole point.
     expect(urlsOf(fetchMock).some((u) => u.includes("/changes"))).toBe(false);
     // And the row still leaves the list.
+    await waitFor(() => expect(screen.queryByLabelText("Delete series")).toBeNull());
+  });
+
+  it("SCENARIO MODE: lists an overlay series and deletes it as a `gift` remove — never the series route", async () => {
+    // The series GET returns the scenario's overlay series beside its partition
+    // rows, marked `overlay`. It has no `gift_series` row, so the series route
+    // would 404 on it: it deletes as a change, like the gift dialog does.
+    searchParams = new URLSearchParams(`scenario=${SCENARIO_ID}`);
+    const fetchMock = installFetch([], [{ ...SERIES_ROW, id: "ov-series", overlay: true }]);
+
+    render(<AddTrustForm {...props("transfers", trust())} />);
+    fireEvent.click(await screen.findByLabelText("Delete series"));
+
+    await waitFor(() => expect(giftWrites(fetchMock).length).toBe(1));
+    const [url, init] = giftWrites(fetchMock)[0];
+    expect(String(url)).toBe(changesUrl);
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({
+      op: "remove",
+      targetKind: "gift",
+      targetId: "ov-series",
+    });
+    expect(urlsOf(fetchMock).some((u) => u.includes("/gifts/series/"))).toBe(false);
     await waitFor(() => expect(screen.queryByLabelText("Delete series")).toBeNull());
   });
 
@@ -350,7 +375,9 @@ describe("AddTrustForm — gift reads and writes follow the active scenario", ()
     await waitFor(() => expect(giftWrites(fetchMock).length).toBe(2));
 
     const [seriesCall, giftCall] = giftWrites(fetchMock);
-    expect(String(seriesCall[0])).toBe(`/api/clients/${CLIENT_ID}/gifts/series/${SERIES_ID}`);
+    expect(String(seriesCall[0])).toBe(
+      `/api/clients/${CLIENT_ID}/gifts/series/${SERIES_ID}?scenario=${SCENARIO_ID}`,
+    );
     expect(String(giftCall[0])).toBe(changesUrl);
     expect(JSON.parse((giftCall[1] as RequestInit).body as string)).toEqual({
       op: "remove",

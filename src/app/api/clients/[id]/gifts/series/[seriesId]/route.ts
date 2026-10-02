@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { entities, familyMembers, externalBeneficiaries, giftSeries } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, type SQL } from "drizzle-orm";
 import { requireOrgAndUser } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { requireClientEditAccess } from "@/lib/clients/authz";
@@ -12,6 +12,26 @@ import { parseBody } from "@/lib/schemas/common";
 import { giftSeriesUpdateSchema } from "@/lib/schemas/gift-series";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * The partition filter for a series write. With `?scenario=` the write lands in
+ * that scenario's partition only, so a wrong-partition id matches nothing (404);
+ * a foreign or unknown scenario resolves to nothing and 404s before any write.
+ * Without it the filter is exactly the id + client one callers have always had —
+ * base mode is unchanged.
+ */
+async function resolvePartitionOr404(
+  request: NextRequest,
+  clientId: string,
+): Promise<{ scope: SQL[] } | { response: NextResponse }> {
+  const requested = new URL(request.url).searchParams.get("scenario");
+  if (requested == null) return { scope: [] };
+  const scenarioId = await resolveScenarioId(clientId, requested);
+  if (!scenarioId) {
+    return { response: NextResponse.json({ error: "Scenario not found" }, { status: 404 }) };
+  }
+  return { scope: [eq(giftSeries.scenarioId, scenarioId)] };
+}
 
 // PATCH /api/clients/[id]/gifts/series/[seriesId] — partial update
 export async function PATCH(
@@ -24,17 +44,8 @@ export async function PATCH(
     const { firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
 
-    // `gift_series` is partitioned by `scenario_id`: the write lands in the
-    // partition `?scenario=` names (the base case's when absent), never in
-    // whichever partition happens to hold the id. A foreign or unknown scenario
-    // resolves to nothing and 404s before any write.
-    const scenarioId = await resolveScenarioId(
-      id,
-      new URL(request.url).searchParams.get("scenario"),
-    );
-    if (!scenarioId) {
-      return NextResponse.json({ error: "Scenario not found" }, { status: 404 });
-    }
+    const partition = await resolvePartitionOr404(request, id);
+    if ("response" in partition) return partition.response;
 
     const parsed = await parseBody(giftSeriesUpdateSchema, request);
     if (!parsed.ok) return parsed.response;
@@ -145,13 +156,7 @@ export async function PATCH(
         ...(d.notes !== undefined && { notes: d.notes ?? null }),
         updatedAt: new Date(),
       })
-      .where(
-        and(
-          eq(giftSeries.id, seriesId),
-          eq(giftSeries.clientId, id),
-          eq(giftSeries.scenarioId, scenarioId),
-        ),
-      )
+      .where(and(eq(giftSeries.id, seriesId), eq(giftSeries.clientId, id), ...partition.scope))
       .returning();
 
     if (!updated) {
@@ -187,27 +192,12 @@ export async function DELETE(
     const { firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
 
-    // `gift_series` is partitioned by `scenario_id`: the write lands in the
-    // partition `?scenario=` names (the base case's when absent), never in
-    // whichever partition happens to hold the id. A foreign or unknown scenario
-    // resolves to nothing and 404s before any write.
-    const scenarioId = await resolveScenarioId(
-      id,
-      new URL(request.url).searchParams.get("scenario"),
-    );
-    if (!scenarioId) {
-      return NextResponse.json({ error: "Scenario not found" }, { status: 404 });
-    }
+    const partition = await resolvePartitionOr404(request, id);
+    if ("response" in partition) return partition.response;
 
     const [deleted] = await db
       .delete(giftSeries)
-      .where(
-        and(
-          eq(giftSeries.id, seriesId),
-          eq(giftSeries.clientId, id),
-          eq(giftSeries.scenarioId, scenarioId),
-        ),
-      )
+      .where(and(eq(giftSeries.id, seriesId), eq(giftSeries.clientId, id), ...partition.scope))
       .returning();
 
     if (!deleted) {

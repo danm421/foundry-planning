@@ -10,10 +10,14 @@ import { requireClientEditAccess } from "@/lib/clients/authz";
 import { getBaseCaseScenarioId, resolveScenarioId } from "@/lib/scenario/resolve-scenario-param";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
+import { loadActiveGiftChanges } from "@/lib/scenario/changes";
+import { partitionGiftChanges } from "@/lib/scenario/apply-gift-overlays";
+import { giftDraftToSeriesRow } from "@/lib/gifts/scenario-rows";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/clients/[id]/gifts/series — list gift_series rows for base-case scenario
+// GET /api/clients/[id]/gifts/series — list gift_series rows for the base case, or
+// for ?scenario= the partition plus that scenario's overlay series
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -34,7 +38,20 @@ export async function GET(
       .from(giftSeries)
       .where(and(eq(giftSeries.clientId, id), eq(giftSeries.scenarioId, scenarioId)));
 
-    return NextResponse.json(rows);
+    if (requestedScenario == null || requestedScenario === "base") {
+      return NextResponse.json(rows);
+    }
+
+    // A scenario's recurring gifts are also its own `gift` changes (overlay
+    // series), which no partition row carries. List them beside the partition
+    // rows, marked `overlay`, the way `overlayScenarioGiftRows` does for the
+    // Family page: an add on a partition row's id replaces it, a remove drops it.
+    const { targeted, adds } = partitionGiftChanges(await loadActiveGiftChanges(scenarioId));
+    const overlay = adds.flatMap((a) => {
+      const row = giftDraftToSeriesRow(a);
+      return row ? [{ ...row, overlay: true as const }] : [];
+    });
+    return NextResponse.json([...rows.filter((r) => !targeted.has(r.id)), ...overlay]);
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

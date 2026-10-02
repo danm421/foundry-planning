@@ -7,7 +7,7 @@ import { eq, and } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { loadProjectionForRef } from "@/lib/scenario/load-projection-for-ref";
-import { loadGiftDrafts } from "@/lib/estate/load-gift-drafts";
+import { loadGiftDraftState } from "@/lib/estate/load-gift-drafts";
 import { prepareEstateFlowTree } from "@/lib/estate/estate-flow-tree";
 import EstateFlowView from "@/components/estate-flow-view";
 
@@ -29,13 +29,13 @@ export async function EstateFlowContent({
   // gift_series is scenario-scoped, so resolve the concrete scenario UUID first.
   // Mirrors load-client-data.ts / loadEffectiveTree: "base" → the client's
   // base-case scenario row; otherwise the searchParams UUID, firm-scoped via
-  // the join on clients. loadGiftDrafts does its own internal scenario lookup +
+  // the join on clients. loadGiftDraftState does its own internal scenario lookup +
   // gift queries, so it runs in parallel here.
   //
   // The do-nothing baseline (left side of the Comparison tab) is loaded in
   // parallel since it always derives from the base case regardless of the
   // active scenario — see loadProjectionForRef.
-  const [effectiveResult, scenarioRows, initialGifts, doNothingLoad] = await Promise.all([
+  const [effectiveResult, scenarioRows, giftState, doNothingLoad] = await Promise.all([
     loadEffectiveTree(clientId, firmId, scenarioId, {}).catch(() => notFound()),
     db
       .select({
@@ -46,7 +46,7 @@ export async function EstateFlowContent({
       .from(scenariosTable)
       .innerJoin(clients, eq(clients.id, scenariosTable.clientId))
       .where(and(eq(scenariosTable.clientId, clientId), eq(clients.firmId, firmId))),
-    loadGiftDrafts(clientId, firmId, scenarioId),
+    loadGiftDraftState(clientId, firmId, scenarioId),
     loadProjectionForRef(clientId, firmId, { kind: "do-nothing" }),
   ]);
   const { effectiveTree } = effectiveResult;
@@ -71,7 +71,8 @@ export async function EstateFlowContent({
         spouseName: spouseName ?? null,
       }}
       initialClientData={giftFreeTree}
-      initialGifts={initialGifts}
+      initialGifts={giftState.drafts}
+      overlaySeriesIds={giftState.overlaySeriesIds}
       cpi={cpi}
       scenarios={scenarioRows}
       snapshots={[]}

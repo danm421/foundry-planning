@@ -75,6 +75,9 @@ vi.mock("@/components/estate-flow-report-tab", () => ({
       <button type="button" onClick={() => setWorkingGifts((cur) => removeGift(cur, SERIES_GIFT.id))}>
         delete series
       </button>
+      <button type="button" onClick={() => setWorkingGifts((cur) => updateGift(cur, EDITED_SERIES))}>
+        edit series
+      </button>
     </div>
   ),
 }));
@@ -128,6 +131,7 @@ const SERIES_GIFT: EstateFlowGift = {
   recipient: { kind: "entity", id: "ent-trust" },
   crummey: false,
 };
+const EDITED_SERIES: EstateFlowGift = { ...SERIES_GIFT, annualAmount: 25_000 };
 const NEW_SERIES: EstateFlowGift = { ...SERIES_GIFT, id: "gs-new", annualAmount: 18_000 };
 
 /** The `gifts/series` POST body `NEW_SERIES` produces. Identical in both
@@ -165,7 +169,7 @@ function writeCalls(): Array<{ url: string; method: string; body: unknown }> {
 }
 
 /** `scenarioId` is what the PAGE resolved server-side, NOT the write mode. */
-async function renderView(scenarioId: string) {
+async function renderView(scenarioId: string, overlaySeriesIds: string[] = []) {
   await act(async () => {
     render(
       <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
@@ -190,6 +194,7 @@ async function renderView(scenarioId: string) {
             ],
           })}
           initialGifts={[CASH_GIFT, SERIES_GIFT]}
+          overlaySeriesIds={overlaySeriesIds}
           cpi={0.03}
         />
       </ClientAccessProvider>,
@@ -359,6 +364,55 @@ describe("EstateFlowView — gift saves follow the active scenario", () => {
     const [call] = writeCalls();
     expect(call.url).toBe(`/api/clients/${CLIENT_ID}/gifts/series/gs-1`);
     expect(call.method).toBe("DELETE");
+  });
+
+  // ── an OVERLAY series (the scenario's own `gift` change) ──────────────────
+  // It has no `gift_series` row, so the series route would 404 on it. It edits
+  // and deletes as `gift` changes, exactly as the gift dialog does.
+  it("edits an overlay series as ONE `gift` add under its id — never the series route", async () => {
+    searchParams = new URLSearchParams("scenario=scn-1");
+    await renderView("scn-1", ["gs-1"]);
+    await click("edit series");
+    await saveInPlace();
+    await waitFor(() => expect(writeCalls()).toHaveLength(1));
+
+    expect(writeCalls()).toEqual([
+      {
+        url: `/api/clients/${CLIENT_ID}/scenarios/scn-1/changes`,
+        method: "POST",
+        body: expect.objectContaining({
+          op: "add",
+          targetKind: "gift",
+          entity: expect.objectContaining({ kind: "series", id: "gs-1", annualAmount: 25_000 }),
+        }),
+      },
+    ]);
+  });
+
+  it("deletes an overlay series as a `gift` remove — never the series route", async () => {
+    searchParams = new URLSearchParams("scenario=scn-1");
+    await renderView("scn-1", ["gs-1"]);
+    await click("delete series");
+    await saveInPlace();
+    await waitFor(() => expect(writeCalls()).toHaveLength(1));
+
+    expect(writeCalls()).toEqual([
+      {
+        url: `/api/clients/${CLIENT_ID}/scenarios/scn-1/changes`,
+        method: "POST",
+        body: { op: "remove", targetKind: "gift", targetId: "gs-1" },
+      },
+    ]);
+  });
+
+  it("a partition series (not in overlaySeriesIds) still edits through its scenario-scoped route", async () => {
+    searchParams = new URLSearchParams("scenario=scn-1");
+    await renderView("scn-1", []);
+    await click("edit series");
+    await saveInPlace();
+    await waitFor(() => expect(writeCalls()).toHaveLength(1));
+    expect(writeCalls()[0].url).toBe(`/api/clients/${CLIENT_ID}/gifts/series/gs-1?scenario=scn-1`);
+    expect(writeCalls()[0].method).toBe("PATCH");
   });
 
   // ── "Save as new scenario" ───────────────────────────────────────────────

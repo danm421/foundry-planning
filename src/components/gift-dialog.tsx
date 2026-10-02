@@ -129,7 +129,10 @@ export default function GiftDialog(props: GiftDialogProps) {
    *    `remove` on it would name the row the `add` had just written — and
    *    `applyEntityRemove`'s gift branch deletes the `add` before writing the
    *    marker, so the gift the advisor just saved would vanish from the
-   *    scenario while the dialog repainted it as saved. The one exception is a
+   *    scenario while the dialog repainted it as saved. Save to base stays
+   *    correct without a `remove` too: `scenarioChangesToBaseWrites` pairs a
+   *    series-shaped add with a removal of the base `gifts` row under that id,
+   *    and a one-time add with a removal of the `gift_series` row under it. The one exception is a
    *    series that is a real `gift_series` row in the scenario's own partition:
    *    a one-time replacement is a different id in a different store, so the
    *    stale row has to be DELETEd or it is double-counted beside its

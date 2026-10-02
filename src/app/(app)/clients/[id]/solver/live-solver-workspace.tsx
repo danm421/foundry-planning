@@ -120,7 +120,7 @@ interface Props {
   baseGifts: EstateFlowGift[];
   /** Which of `baseGifts`' recurring gifts are the scenario's own `gift`
    *  changes. Only those are listed in the Changes tab (they alone open). */
-  overlayGiftSeriesIds?: string[];
+  overlayGiftSeriesIds: string[];
   /** Blended dedicated-pool return stats per education goalId (from the plan MC
    *  data), driving the Education report's per-goal POS gauge. Optional — the
    *  panel falls back to a neutral per-goal default when absent. */

@@ -56,6 +56,8 @@ export interface TransferSeries {
   inflationAdjust: boolean;
   useCrummeyPowers: boolean;
   grantor: "client" | "spouse";
+  /** A scenario's own `gift` change (see the series GET) rather than a row. */
+  overlay?: true;
 }
 
 export interface ExemptionDisplay {
