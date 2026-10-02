@@ -23,8 +23,8 @@ interface CalcOptions {
   probeNextDollar?: boolean;
 }
 
-/** The CalcInput fields that §1222 netting and §86 SS taxability read. */
-type SsTaxabilityFields = Pick<
+/** The CalcInput fields that §1222 netting, §86 SS taxability and AGI read. */
+type AgiFields = Pick<
   CalcInput,
   | "filingStatus" | "earnedIncome" | "ordinaryIncome" | "interestIncome"
   | "qualifiedDividends" | "longTermCapitalGains" | "shortTermCapitalGains"
@@ -32,7 +32,7 @@ type SsTaxabilityFields = Pick<
   | "socialSecurityGross" | "taxExemptInterest" | "taxExemptIncome"
 >;
 
-function capitalNettingOf(input: SsTaxabilityFields) {
+function capitalNettingOf(input: AgiFields) {
   return netCapitalGainsAndLosses({
     longTermGain: input.longTermCapitalGains,
     shortTermGain: input.shortTermCapitalGains,
@@ -41,25 +41,24 @@ function capitalNettingOf(input: SsTaxabilityFields) {
   });
 }
 
-/** §86 taxable Social Security, exactly as `calculateTaxYear` computes it.
- *  Exported for a caller that needs it BEFORE it can finish the input — the
- *  §213 medical floor in engine/year-tax.ts, which is 7.5% of an AGI that
- *  includes this — so it reads the same figure instead of re-deriving it.
- *
- *  Per IRS Pub 915 the "combined income" test uses AGI — i.e. gross taxable
- *  income minus above-the-line adjustments — not raw gross. Using gross
- *  over-taxes SS for clients making traditional 401(k) / HSA contributions,
- *  because those dollars would have come out before AGI. */
-export function taxableSocialSecurityOf(
-  input: SsTaxabilityFields,
-  netting = capitalNettingOf(input),
-): number {
+/** Taxable Social Security, total income and AGI, exactly as
+ *  `calculateTaxYear` computes them — it calls this. Exported for a caller
+ *  that needs AGI BEFORE it can finish the input: the §213 medical floor in
+ *  engine/year-tax.ts is 7.5% of it, so it reads this figure instead of
+ *  re-deriving it. */
+export function agiOf(input: AgiFields, netting = capitalNettingOf(input)) {
+  // Same ordinary bucket as calculateTaxYear's (interest + net STCG included).
+  const ordinaryIncome =
+    input.ordinaryIncome + (input.interestIncome ?? 0) + netting.netShortTermGain;
+
+  // §86 SS taxability. Per IRS Pub 915 the "combined income" test uses AGI —
+  // i.e. gross taxable income minus above-the-line adjustments — not raw
+  // gross. Using gross over-taxes SS for clients making traditional 401(k) /
+  // HSA contributions, because those dollars would have come out before AGI.
   const grossOther =
-    input.earnedIncome
-    + input.ordinaryIncome + (input.interestIncome ?? 0) + netting.netShortTermGain
-    + input.qualifiedDividends + netting.netLongTermGain + input.qbiIncome
-    - netting.capitalLossDeduction;
-  return calcTaxableSocialSecurity({
+    input.earnedIncome + ordinaryIncome + input.qualifiedDividends
+    + netting.netLongTermGain + input.qbiIncome - netting.capitalLossDeduction;
+  const taxableSocialSecurity = calcTaxableSocialSecurity({
     ssGross: input.socialSecurityGross,
     otherIncome: Math.max(0, grossOther - input.aboveLineDeductions),
     // §86 combined income counts tax-exempt INTEREST only (Form 1040 line 2a),
@@ -68,6 +67,23 @@ export function taxableSocialSecurityOf(
     taxExemptInterest: input.taxExemptInterest ?? input.taxExemptIncome,
     filingStatus: input.filingStatus,
   });
+
+  // The §1211(b) deduction is a negative line inside total income (Form 1040
+  // line 7 goes negative), NOT a below-line deduction.
+  const totalIncome =
+    input.earnedIncome +
+    taxableSocialSecurity +
+    ordinaryIncome +
+    input.qualifiedDividends +
+    netting.netLongTermGain +
+    input.qbiIncome -
+    netting.capitalLossDeduction;
+
+  return {
+    taxableSocialSecurity,
+    totalIncome,
+    adjustedGrossIncome: totalIncome - input.aboveLineDeductions,
+  };
 }
 
 export function calculateTaxYear(input: CalcInput, opts: CalcOptions = {}): TaxResult {
@@ -99,26 +115,12 @@ export function calculateTaxYear(input: CalcInput, opts: CalcOptions = {}): TaxR
   const capitalGains = netting.netLongTermGain;
   const shortCapitalGains = netting.netShortTermGain;
 
-  // 2. SS taxability (see taxableSocialSecurityOf).
-  const taxableSocialSecurity = taxableSocialSecurityOf(input, netting);
+  // 2–3. SS taxability, total income and AGI (see agiOf).
+  const { taxableSocialSecurity, totalIncome, adjustedGrossIncome } = agiOf(input, netting);
   const nonTaxableSs = input.socialSecurityGross - taxableSocialSecurity;
   const nonTaxableIncome =
     input.taxExemptIncome + (input.taxFreeRetirementIncome ?? 0) + nonTaxableSs;
-
-  // The §1211(b) deduction is a negative line inside total income (Form 1040
-  // line 7 goes negative), NOT a below-line deduction.
-  const totalIncome =
-    earnedIncome +
-    taxableSocialSecurity +
-    ordinaryIncome +
-    dividends +
-    capitalGains +
-    input.qbiIncome -
-    capitalLossDeduction;
   const grossTotalIncome = totalIncome + nonTaxableIncome;
-
-  // 3. AGI
-  const adjustedGrossIncome = totalIncome - input.aboveLineDeductions;
 
   // 4. Below-line deductions (standard or itemized, whichever larger). The §63(f)
   //    additional standard deduction (65+/blind boxes) augments the STANDARD path

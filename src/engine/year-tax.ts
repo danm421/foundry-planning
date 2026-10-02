@@ -9,7 +9,7 @@ import type { CharityBucket } from "./charitable-deduction";
 import { calculateTaxYearBracket, calculateTaxYearFlat, makeEmptyTaxParams } from "./tax";
 import { computeCharitableDeductionForYear, computeCharitableNoItemize } from "./charitable-deduction";
 import { getAdditionalStdDeduction } from "../lib/tax/senior-deductions";
-import { taxableSocialSecurityOf } from "../lib/tax/calculate";
+import { agiOf } from "../lib/tax/calculate";
 
 export interface YearTaxInput {
   /** taxDetail with all scheduled income + (optionally) supplemental withdrawal income layered in */
@@ -140,7 +140,7 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
   const charityAgi = Math.max(0, taxableIncome - aboveLineWithSeca);
 
   // The income half of the bracket call below, hoisted so the §213 floor reads
-  // taxable Social Security from the same fields calculate.ts will.
+  // AGI from the same fields calculate.ts will.
   const bracketIncome = {
     filingStatus,
     earnedIncome: taxDetail.earnedIncome,
@@ -158,10 +158,12 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
     aboveLineDeductions: aboveLineWithSeca,
     capitalLossCarryforwardIn,
   };
-  // §213: 7.5% of AGI. `charityAgi` comes from the `taxableIncome` scalar,
-  // which carries no Social Security, so the taxable share is added back.
-  const medicalAgi = charityAgi + taxableSocialSecurityOf(bracketIncome);
-  const medicalDeduction = Math.max(0, input.medicalExpenses - 0.075 * medicalAgi);
+  // §213: 7.5% of the AGI calculate.ts reports — not `charityAgi`, whose
+  // `taxableIncome` scalar carries no Social Security and folds signed gross
+  // gains with no §1211(b) cap or carryforward netting.
+  const medicalDeduction = input.medicalExpenses > 0
+    ? Math.max(0, input.medicalExpenses - 0.075 * agiOf(bracketIncome).adjustedGrossIncome)
+    : 0;
   // F23: the itemize-vs-standard election must compare (existing itemized + THIS
   // YEAR's candidate charitable deduction) against the standard deduction. The
   // threshold must match calculate.ts: include the §63(f) additional standard
