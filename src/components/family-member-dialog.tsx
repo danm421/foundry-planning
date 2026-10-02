@@ -79,9 +79,11 @@ export default function FamilyMemberDialog({
       domesticPartner: data.get("domesticPartner") === "on",
       inheritanceClassOverride,
     };
-    // A blank last name is stored as null, so an unchanged save writes the same
-    // value the base row holds and the scenario change collapses to nothing.
-    const scenarioBody = { ...body, lastName: body.lastName || null };
+    // A blank last name goes back as the opened row's own blank ("" when the base
+    // routes stored it so, else null), so an unchanged save writes the value the
+    // base row holds and the scenario change collapses to nothing.
+    const blankLastName = editing?.lastName === "" ? "" : null;
+    const scenarioBody = { ...body, lastName: body.lastName || blankLastName };
     try {
       const newMemberId =
         typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
@@ -122,7 +124,7 @@ export default function FamilyMemberDialog({
         ? {
             id: isEdit ? editing!.id : newMemberId,
             firstName: body.firstName,
-            lastName: scenarioBody.lastName,
+            lastName: body.lastName || null,
             relationship: body.relationship as FamilyMember["relationship"],
             dateOfBirth: body.dateOfBirth,
             notes: body.notes,

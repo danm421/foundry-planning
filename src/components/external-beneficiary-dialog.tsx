@@ -129,11 +129,11 @@ export default function ExternalBeneficiaryDialog({
     >
       <form id={FORM_ID} onSubmit={handleSubmit} className="space-y-4">
         {error && (
-          <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>
+          <p className="rounded bg-crit/10 px-3 py-2 text-sm text-crit">{error}</p>
         )}
         <div>
           <label htmlFor="ext-name" className={fieldLabelClassName}>
-            Name <span className="text-red-500">*</span>
+            Name <span className="text-crit">*</span>
           </label>
           <input
             id="ext-name"

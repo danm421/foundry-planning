@@ -118,6 +118,22 @@ describe("loadFamilyViewProps — members and charities", () => {
     expect(props.initialMembers[2]).toMatchObject({ role: "other", claimedAsDependent: "auto" });
   });
 
+  it("orders members by relationship in the enum's declaration order, not alphabetically", async () => {
+    mountTree(
+      tree({
+        familyMembers: [
+          ...tree().familyMembers,
+          member({ id: "gp", relationship: "grandparent", firstName: "A" }),
+          member({ id: "ggc", relationship: "great_grandchild", firstName: "A" }),
+          member({ id: "par", relationship: "parent", firstName: "A" }),
+          member({ id: "ch", relationship: "child", firstName: "A" }),
+        ],
+      }),
+    );
+    const { props } = await loadFamilyViewProps(CLIENT_ID, SCENARIO_ID);
+    expect(props.initialMembers.map((m) => m.id)).toEqual(["ch", "ggc", "par", "gp"]);
+  });
+
   it("lists a charity the scenario added, with the base row's notes when the tree has none", async () => {
     rowsByTable.external_beneficiaries = [{ id: "ext-1", notes: "base charity note" }];
     mountTree(

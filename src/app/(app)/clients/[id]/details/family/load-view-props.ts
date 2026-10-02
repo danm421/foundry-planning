@@ -6,6 +6,7 @@ import {
   familyMembers,
   entities,
   externalBeneficiaries,
+  familyRelationshipEnum,
   gifts,
   giftSeries,
   taxYearParameters,
@@ -31,6 +32,8 @@ import { entitySummaryToRow, overlayScenarioGiftRows } from "@/lib/gifts/scenari
 import type { BeneficiaryRef, EntitySummary } from "@/engine/types";
 import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
 import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
+
+const RELATIONSHIP_ORDER: readonly string[] = familyRelationshipEnum.enumValues;
 
 export interface FamilyViewPropsResult {
   props: FamilyViewProps;
@@ -138,14 +141,12 @@ export async function loadFamilyViewProps(
   const entityExtrasFor = (e: EntitySummary) => {
     const base = baseEntityExtras.get(e.id);
     const runtime = e as EntitySummary & { owner?: "client" | "spouse" | "joint" | null };
-    // `beneficiaries` on the tree is the engine's BeneficiaryRef list, a different
-    // shape from this page's name/percentage rows: only the latter is taken.
-    const treeRows = (e.beneficiaries ?? []) as unknown as Array<Record<string, unknown>>;
-    const nameRows = treeRows.length > 0 && treeRows.every((r) => "name" in r);
+    // `beneficiaries` stays the base row's: the tree's is the engine's
+    // BeneficiaryRef list, a different shape from this page's name/percentage rows.
     return {
       notes: e.notes ?? base?.notes ?? null,
       owner: runtime.owner ?? base?.owner ?? null,
-      beneficiaries: nameRows ? (treeRows as unknown as NamePctRow[]) : (base?.beneficiaries ?? null),
+      beneficiaries: base?.beneficiaries ?? null,
     };
   };
 
@@ -170,9 +171,11 @@ export async function loadFamilyViewProps(
       inheritanceClassOverride: m.inheritanceClassOverride ?? {},
       claimedAsDependent: m.claimedAsDependent ?? "auto",
     }))
+    // The old query sorted the pgEnum, i.e. by declaration order.
     .sort(
       (a, b) =>
-        a.relationship.localeCompare(b.relationship) || a.firstName.localeCompare(b.firstName),
+        RELATIONSHIP_ORDER.indexOf(a.relationship) - RELATIONSHIP_ORDER.indexOf(b.relationship) ||
+        a.firstName.localeCompare(b.firstName),
     );
 
   // Sourced from the effective tree, not the `entities` table: that table has
@@ -275,7 +278,8 @@ export async function loadFamilyViewProps(
   // Off the effective tree, so a scenario's beneficiary edits show here and the
   // trust dialog opens on them. Accounts and trusts carry primary/contingent
   // rows (with their stored ids); a trust's income and remainder tiers are the
-  // data-only lists the loader builds from the same table.
+  // data-only lists the loader builds from the same table, in stored sort order,
+  // so each row's sortOrder is its rank in that list.
   const designations: Designation[] = [];
   const fromRef = (
     r: BeneficiaryRef,

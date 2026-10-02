@@ -4,9 +4,8 @@ import {
   clients,
   crmHouseholdContacts,
   scenarios,
-  entities,
 } from "@/db/schema";
-import { eq, and, asc } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import type {
   WillAssetMode,
@@ -70,11 +69,7 @@ export async function loadWillsViewProps(
   // here when the user has a `?scenario=` selected). Read them from
   // `effectiveTree.wills` instead of querying the base tables directly —
   // `loadEffectiveTree` already merges scenario_changes for us.
-  const [entityRows, { effectiveTree }] =
-    await Promise.all([
-      db.select().from(entities).where(eq(entities.clientId, id)).orderBy(asc(entities.name)),
-      loadEffectiveTree(id, firmId, scenarioParam ?? "base", {}),
-    ]);
+  const { effectiveTree } = await loadEffectiveTree(id, firmId, scenarioParam ?? "base", {});
 
   const accountRows = [...effectiveTree.accounts].sort((a, b) => a.name.localeCompare(b.name));
   const liabilityRows = [...effectiveTree.liabilities].sort((a, b) => a.name.localeCompare(b.name));
@@ -160,12 +155,15 @@ export async function loadWillsViewProps(
       id: e.id,
       name: e.name,
     }));
-  const ents: WillsPanelEntity[] = entityRows.map((e) => ({
-    id: e.id,
-    name: e.name,
-    entityType: e.entityType ?? undefined,
-    value: parseFloat(e.value ?? "0") + (entityOwnedAccountTotals.get(e.id) ?? 0),
-  }));
+  // Trusts off the tree too, so a scenario-added one is a bequest target.
+  const ents: WillsPanelEntity[] = [...(effectiveTree.entities ?? [])]
+    .map((e) => ({
+      id: e.id,
+      name: e.name ?? "",
+      entityType: e.entityType ?? undefined,
+      value: (e.value ?? 0) + (entityOwnedAccountTotals.get(e.id) ?? 0),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
   const liabs: WillsPanelLiability[] = liabilityRows.map((l) => ({
     id: l.id,
     name: l.name,

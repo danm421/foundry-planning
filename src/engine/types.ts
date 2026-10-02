@@ -384,6 +384,8 @@ export interface FamilyMember {
    * fixtures keep compiling — read with `?? "auto"`.
    */
   claimedAsDependent?: "auto" | "yes" | "no";
+  /** Display-only (the Family page). No projection rule reads it. */
+  notes?: string | null;
 }
 
 export type GiftEventKind = "outright" | "clt_remainder_interest";
@@ -477,6 +479,8 @@ export interface ExternalBeneficiary {
   name: string;
   kind: "charity" | "individual";
   charityType: "public" | "private";
+  /** Display-only (the Family page). No projection rule reads it. */
+  notes?: string | null;
 }
 
 export interface ClientData {

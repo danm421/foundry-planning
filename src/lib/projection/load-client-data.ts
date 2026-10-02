@@ -1239,6 +1239,8 @@ const loadClientDataCached = cache(
               inArray(beneficiaryDesignations.entityId, entityRows.map((e) => e.id)),
             ),
           )
+          // Stored order: the Family page lists these by their position.
+          .orderBy(asc(beneficiaryDesignations.sortOrder))
       : [];
 
     type IncomeBeneficiary = NonNullable<import("@/engine/types").EntitySummary["incomeBeneficiaries"]>[number];
@@ -1275,6 +1277,7 @@ const loadClientDataCached = cache(
               inArray(beneficiaryDesignations.entityId, entityRows.map((e) => e.id)),
             ),
           )
+          .orderBy(asc(beneficiaryDesignations.sortOrder))
       : [];
 
     type RemainderBeneficiary = NonNullable<
@@ -1419,6 +1422,8 @@ const loadClientDataCached = cache(
       name: r.name,
       kind: r.kind,
       charityType: r.charityType,
+      // Display-only (the Family page shows it); no projection rule reads it.
+      notes: r.notes ?? null,
     }));
 
     const mappedTransfers = transferRows.map((t) => {
@@ -1729,6 +1734,8 @@ const loadClientDataCached = cache(
       // default in the schema, so the `??` only covers a row read through a
       // narrower select.
       claimedAsDependent: f.claimedAsDependent ?? "auto",
+      // Display-only (the Family page shows it); no projection rule reads it.
+      notes: f.notes ?? null,
     }));
 
     const clientInfo = {

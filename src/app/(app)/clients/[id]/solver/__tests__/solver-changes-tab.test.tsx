@@ -540,6 +540,19 @@ describe("SolverChangesTab — opening a Details editor", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
+  it("the unsupported message can be dismissed", async () => {
+    loadChangeEditorPropsMock.mockResolvedValue({ page: "net-worth", props: { clientId: CLIENT_ID, accounts: [] } });
+    renderTab([makeChange({ targetKind: "account" })]);
+    fireEvent.click(screen.getByRole("button", { name: /^Edit / }));
+    await screen.findByTestId("view-net-worth");
+    fireEvent.click(screen.getByRole("button", { name: "stub unsupported" }));
+    expect(screen.getByText(UNSUPPORTED_MESSAGE)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+
+    expect(screen.queryByText(UNSUPPORTED_MESSAGE)).not.toBeInTheDocument();
+  });
+
   // No kind is "unsupported" at the resolver any more; a view still reports it
   // (a gift series' editor, a trust create), and the host explains.
   it("opening another change replaces the fallback message", async () => {

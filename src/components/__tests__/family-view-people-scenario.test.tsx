@@ -136,6 +136,15 @@ describe("external beneficiaries on the Family page", () => {
     ]);
   });
 
+  it("scenario: an unchanged save of a charity with notes sends the row's own values", async () => {
+    renderPage({ initialExternalBeneficiaries: [{ id: "ext-1", name: "Red Cross", kind: "charity", notes: "Annual gift" }] });
+    const ext = section("External Beneficiaries");
+    fireEvent.click(ext.getByText("Red Cross"));
+    fireEvent.click(ext.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(changeBodies()).toHaveLength(1));
+    expect(changeBodies()[0].desiredFields).toEqual({ name: "Red Cross", kind: "charity", notes: "Annual gift" });
+  });
+
   it("scenario: delete writes one scenario remove, nothing else", async () => {
     renderPage();
     const ext = section("External Beneficiaries");

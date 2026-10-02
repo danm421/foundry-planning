@@ -63,12 +63,12 @@ const minimalClientData = (): ClientData =>
 describe("PROMOTE_TABLE_REGISTRY — the gift-only opt-ins", () => {
   // Inertness, asserted rather than assumed: the executor now branches on both
   // of these, so every other kind's behaviour is unchanged only for as long as
-  // no other entry grows one silently.
-  it("registers a translate hook for gift and for no other kind", () => {
+  // no other entry grows one silently (`disability_policy` reshapes the engine's nested policy).
+  it("registers a translate hook for exactly gift and disability_policy", () => {
     const withTranslate = Object.entries(PROMOTE_TABLE_REGISTRY)
       .filter(([, entry]) => entry?.translate !== undefined)
       .map(([kind]) => kind);
-    expect(withTranslate).toEqual(["gift"]);
+    expect(withTranslate.sort()).toEqual(["disability_policy", "gift"]);
   });
 
   it("still refuses to translate a recurring series into a `gifts` row", () => {

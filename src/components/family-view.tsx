@@ -754,6 +754,18 @@ export default function FamilyView({
     return true;
   }
 
+  // The charity delete, shared by the section's confirm and focus mode's intent.
+  // Resolves to the failure message, or null once the row is gone.
+  async function performExternalDelete(id: string): Promise<string | null> {
+    const res = await removeExternalBeneficiary(writer, clientId, id);
+    if (!(res.ok || res.status === 204)) {
+      const j = await res.json().catch(() => ({}));
+      return j.error ?? `Failed to delete (HTTP ${res.status})`;
+    }
+    setExternals((prev) => prev.filter((x) => x.id !== id));
+    return null;
+  }
+
   // The page's entity delete, shared with focus mode's delete intent.
   async function performEntityDelete(entity: Entity): Promise<boolean> {
     const res = await writer.submit(
@@ -782,12 +794,7 @@ export default function FamilyView({
             const member = members.find((m) => m.id === id);
             return member ? performMemberDelete(member) : false;
           }
-          if (of === "external") {
-            const res = await removeExternalBeneficiary(writer, clientId, id);
-            if (!(res.ok || res.status === 204)) return false;
-            setExternals((prev) => prev.filter((x) => x.id !== id));
-            return true;
-          }
+          if (of === "external") return (await performExternalDelete(id)) === null;
           const res = await removeGift(writer, clientId, id);
           if (!res.ok) return false;
           setGiftsState((prev) => prev.filter((g) => g.id !== id));
@@ -1323,6 +1330,7 @@ export default function FamilyView({
           clientId={clientId}
           externals={externals}
           setExternals={setExternals}
+          onDelete={performExternalDelete}
           canEdit={canEdit}
         />
       )}
@@ -1619,11 +1627,13 @@ function ExternalBeneficiariesSection({
   clientId,
   externals,
   setExternals,
+  onDelete,
   canEdit,
 }: {
   clientId: string;
   externals: ExternalBeneficiary[];
   setExternals: React.Dispatch<React.SetStateAction<ExternalBeneficiary[]>>;
+  onDelete: (id: string) => Promise<string | null>;
   canEdit: boolean;
 }) {
   const writer = useScenarioWriter(clientId);
@@ -1758,15 +1768,9 @@ function ExternalBeneficiariesSection({
         onCancel={() => setDeleting(null)}
         onConfirm={async () => {
           if (!deleting) return;
-          const res = await removeExternalBeneficiary(writer, clientId, deleting.id);
-          if (res.ok || res.status === 204) {
-            setExternals((prev) => prev.filter((x) => x.id !== deleting.id));
-            setDeleting(null);
-          } else {
-            const j = await res.json().catch(() => ({}));
-            setError(j.error ?? `Failed to delete (HTTP ${res.status})`);
-            setDeleting(null);
-          }
+          const failure = await onDelete(deleting.id);
+          if (failure) setError(failure);
+          setDeleting(null);
         }}
       />
     </section>

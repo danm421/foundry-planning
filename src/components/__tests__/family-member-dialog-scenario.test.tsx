@@ -63,4 +63,31 @@ describe("FamilyMemberDialog inside a scenario", () => {
     const { entity } = JSON.parse(mockFetch.mock.calls[0][1].body as string);
     expect(entity.lastName).toBeNull();
   });
+
+  // The base tree keeps a stored "" last name as "", and the base routes store a
+  // blank one that way, so an unchanged save must send "" back, not null.
+  it("an unchanged save of a member stored with an empty last name sends \"\"", async () => {
+    const user = userEvent.setup();
+    render(<FamilyMemberDialog clientId="c1" open onOpenChange={() => {}} onSaved={vi.fn()} editing={{ ...EDITING, lastName: "" } as never} />);
+    await user.click(screen.getByRole("button", { name: "Save Changes" }));
+    const { desiredFields } = JSON.parse(mockFetch.mock.calls[0][1].body as string);
+    expect(desiredFields.lastName).toBe("");
+  });
+
+  it("clearing a real last name sends null", async () => {
+    const user = userEvent.setup();
+    render(<FamilyMemberDialog clientId="c1" open onOpenChange={() => {}} onSaved={vi.fn()} editing={{ ...EDITING, lastName: "Lee" } as never} />);
+    await user.clear(screen.getByLabelText(/last name/i));
+    await user.click(screen.getByRole("button", { name: "Save Changes" }));
+    const { desiredFields } = JSON.parse(mockFetch.mock.calls[0][1].body as string);
+    expect(desiredFields.lastName).toBeNull();
+  });
+
+  it("an unchanged save of a member with notes sends the row's own notes", async () => {
+    const user = userEvent.setup();
+    render(<FamilyMemberDialog clientId="c1" open onOpenChange={() => {}} onSaved={vi.fn()} editing={{ ...EDITING, notes: "Allergic" } as never} />);
+    await user.click(screen.getByRole("button", { name: "Save Changes" }));
+    const { desiredFields } = JSON.parse(mockFetch.mock.calls[0][1].body as string);
+    expect(desiredFields.notes).toBe("Allergic");
+  });
 });

@@ -41,7 +41,7 @@ beforeEach(() => {
     scenarios: [{ id: "base", clientId: CLIENT_ID, isBaseCase: true }],
     family_members: [{ id: "fm-base-only", firstName: "Gone", lastName: null, role: "child" }],
     external_beneficiaries: [{ id: "ext-base-only", name: "Gone Charity" }],
-    entities: [],
+    entities: [{ id: "ent-base-only", name: "Gone Trust", entityType: "trust", value: "0" }],
   };
   vi.mocked(loadEffectiveTree).mockReset();
   vi.mocked(loadEffectiveTree).mockResolvedValue({
@@ -53,6 +53,7 @@ beforeEach(() => {
         { id: "fm-scn", firstName: "Zed", lastName: "C", role: "child" },
         { id: "fm-a", firstName: "Amy", lastName: null, role: "child" },
       ],
+      entities: [{ id: "ent-scn", name: "Scenario Trust", entityType: "trust", value: 250000 }],
       externalBeneficiaries: [{ id: "ext-scn", name: "Library", kind: "charity", charityType: "public" }],
     },
     warnings: [],
@@ -66,6 +67,14 @@ describe("loadWillsViewProps", () => {
     if (result.status !== "ok") throw new Error("expected ok");
     expect(result.props.familyMembers.map((m) => m.id)).toEqual(["fm-a", "fm-scn"]);
     expect(result.props.externalBeneficiaries).toEqual([{ id: "ext-scn", name: "Library" }]);
+  });
+
+  it("lists the scenario's trusts, valued with the accounts they hold", async () => {
+    const result = await loadWillsViewProps(CLIENT_ID, "scn-9");
+    if (result.status !== "ok") throw new Error("expected ok");
+    expect(result.props.entities).toEqual([
+      { id: "ent-scn", name: "Scenario Trust", entityType: "trust", value: 250000 },
+    ]);
   });
 
   it("still offers the scenario's wills as they are", async () => {
