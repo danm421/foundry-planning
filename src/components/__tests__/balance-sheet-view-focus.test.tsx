@@ -458,6 +458,36 @@ describe("BalanceSheetView focus mode — delete intent", () => {
     await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith());
   });
 
+  it("the default checking account → unavailable, no write", async () => {
+    const onFocusClose = vi.fn();
+    render(
+      <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
+        <BalanceSheetView
+          {...BASE_PROPS}
+          accounts={[...BASE_PROPS.accounts, { ...BROKERAGE, id: "acct-chk", isDefaultChecking: true }]}
+          focus={{ intent: "delete", kind: "account", id: "acct-chk" }}
+          onFocusClose={onFocusClose}
+        />
+      </ClientAccessProvider>,
+    );
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith("unavailable"));
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it("a rejected write → failed", async () => {
+    submit.mockRejectedValue(new Error("network"));
+    const { onFocusClose } = renderFocused({ intent: "delete", kind: "account", id: "acct-taxable" });
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith("failed"));
+    expect(onFocusClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("without edit permission → unavailable, no write", async () => {
+    await expectUnavailable(
+      renderFocused({ intent: "delete", kind: "account", id: "acct-taxable" }, vi.fn(), "view"),
+    );
+    expect(submit).not.toHaveBeenCalled();
+  });
+
   it("a life-insurance policy → unavailable, no write", async () => {
     await expectUnavailable(renderFocused({ intent: "delete", kind: "account", id: "acct-policy" }));
     expect(submit).not.toHaveBeenCalled();

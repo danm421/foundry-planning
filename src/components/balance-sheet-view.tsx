@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
 import { useFocusCloseOnce, type FocusCloseOutcome } from "@/hooks/use-focus-close-once";
+import { useFocusDelete } from "@/hooks/use-focus-delete";
 import AddAccountDialog from "./add-account-dialog";
 import BusinessDialog from "./business-dialog";
 import type { BusinessAccount } from "./business-dialog/types";
@@ -296,6 +297,10 @@ const ADDABLE_CATEGORIES: AccountCategory[] = [
   "notes_receivable",
 ];
 
+/** The addable categories that open `AddAccountDialog` directly: a business and
+ *  a note receivable have their own editors and are handled apart. */
+const CREATE_CATEGORIES = ADDABLE_CATEGORIES.filter((c) => c !== "business" && c !== "notes_receivable");
+
 const ENTITY_TYPE_LABELS: Record<string, string> = {
   trust: "Trust",
   llc: "LLC",
@@ -568,17 +573,6 @@ type FocusTarget =
   | { dialog: "create_liability" }
   | { dialog: "delete"; kind: "account" | "liability"; id: string };
 
-/** The categories the page's add menu opens `AddAccountDialog` for. A business
- *  and a note receivable have their own editors and are handled apart. */
-const CREATE_CATEGORIES: readonly string[] = [
-  "taxable",
-  "cash",
-  "retirement",
-  "annuity",
-  "real_estate",
-  "stock_options",
-  "education_savings",
-];
 
 /**
  * The dialog the page's own click opens for the focused row — or null when
@@ -599,6 +593,15 @@ function findFocusRow(
     !!a && a.category === "business" && !a.parentAccountId && accountInEstate(a);
   const underListedBusiness = (parentAccountId: string) =>
     isListedBusiness(accounts.find((a) => a.id === parentAccountId));
+  // Whether the page lists the row at all. A policy's click goes to the Insurance
+  // page and legacy notes aren't listed; an in-estate sub-account shows only
+  // under its business's row group.
+  const accountIsListed = (row: AccountRow) =>
+    row.category !== "life_insurance" &&
+    row.category !== "notes_receivable" &&
+    !(row.parentAccountId && accountInEstate(row) && !underListedBusiness(row.parentAccountId));
+  const liabilityIsListed = (row: LiabilityRow) =>
+    !row.parentAccountId || underListedBusiness(row.parentAccountId);
 
   if (focus.intent === "create") {
     if (focus.kind === "liability") return { dialog: "create_liability" };
@@ -606,21 +609,19 @@ function findFocusRow(
     if (focus.kind !== "account") return null;
     // A business create stays unsupported until its dialog saves through the scenario writer.
     if (focus.variant === "business") return "unsupported";
-    return focus.variant && CREATE_CATEGORIES.includes(focus.variant)
-      ? { dialog: "create_account", category: focus.variant as AccountCategory }
-      : null;
+    const category = CREATE_CATEGORIES.find((c) => c === focus.variant);
+    return category ? { dialog: "create_account", category } : null;
   }
   if (focus.intent === "delete") {
     if (focus.kind === "account") {
       const row = accounts.find((a) => a.id === focus.id);
-      // A policy's delete lives on the Insurance page; legacy notes aren't listed.
-      if (!row || row.category === "life_insurance" || row.category === "notes_receivable") return null;
-      if (row.parentAccountId && accountInEstate(row) && !underListedBusiness(row.parentAccountId)) return null;
+      // The page offers no delete for the default checking account.
+      if (!row || !accountIsListed(row) || row.isDefaultChecking) return null;
       return { dialog: "delete", kind: "account", id: row.id };
     }
     if (focus.kind === "liability") {
       const row = liabilities.find((l) => l.id === focus.id);
-      if (!row || (row.parentAccountId && !underListedBusiness(row.parentAccountId))) return null;
+      if (!row || !liabilityIsListed(row)) return null;
       return { dialog: "delete", kind: "liability", id: row.id };
     }
     return null;
@@ -629,19 +630,16 @@ function findFocusRow(
   switch (focus.kind) {
     case "account": {
       const row = accounts.find((a) => a.id === focus.id);
-      if (!row || row.category === "life_insurance" || row.category === "notes_receivable") return null;
+      if (!row || !accountIsListed(row)) return null;
       // The page edits it in BusinessDialog, whose saves bypass the scenario writer
       // (future-work "Business dialog saves to the BASE plan") — never open it
       // here (Rulings T4b-business, F-I2).
       if (isListedBusiness(row)) return "unsupported";
-      // An in-estate sub-account shows only under its business's row group.
-      if (row.parentAccountId && accountInEstate(row) && !underListedBusiness(row.parentAccountId)) return null;
       return { dialog: "account", row };
     }
     case "liability": {
       const row = liabilities.find((l) => l.id === focus.id);
-      if (!row) return null;
-      if (row.parentAccountId && !underListedBusiness(row.parentAccountId)) return null;
+      if (!row || !liabilityIsListed(row)) return null;
       return { dialog: "liability", row };
     }
     default:
@@ -830,10 +828,6 @@ export default function BalanceSheetView({
     focusTarget?.dialog === "create_account" ? focusTarget.category : null,
   );
 
-  // A delete focus opens no dialog, so this in-flight flag is what keeps
-  // `useFocusCloseOnce` from handing control back at mount, before the delete runs.
-  const [focusDeleting, setFocusDeleting] = useState(() => focusTarget?.dialog === "delete");
-  const focusDeleteStarted = useRef(false);
 
   const [editingAccount, setEditingAccount] = useState<AccountRow | null>(() =>
     focusTarget?.dialog === "account" ? focusTarget.row : null,
@@ -1103,22 +1097,17 @@ export default function BalanceSheetView({
     return true;
   }
 
-  // Focus mode's delete: the page's own delete, run once at mount with no prompt.
-  // Success clears the in-flight flag so `useFocusCloseOnce` closes; a failure
-  // keeps it set (so that hook stays quiet) and reports "failed" itself.
-  useEffect(() => {
-    if (focusTarget?.dialog !== "delete" || focusDeleteStarted.current) return;
-    focusDeleteStarted.current = true;
-    const { kind, id } = focusTarget;
-    void (kind === "account" ? performAccountDelete(id, { silent: true }) : performLiabilityDelete(id, { silent: true }))
-      .catch(() => false)
-      .then((ok) => {
-        if (ok) setFocusDeleting(false);
-        else onFocusClose?.("failed");
-      });
-    // Mount-only: focus and its target are snapshotted at mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Focus mode's delete: the page's own delete, with no prompt. Its in-flight
+  // flag joins `focusDialogOpen` below.
+  const focusDeleting = useFocusDelete(
+    focusTarget?.dialog === "delete"
+      ? () =>
+          focusTarget.kind === "account"
+            ? performAccountDelete(focusTarget.id, { silent: true })
+            : performLiabilityDelete(focusTarget.id, { silent: true })
+      : null,
+    onFocusClose,
+  );
 
   function handleAccountClick(a: AccountRow) {
     if (assetsEdit) return; // edit mode: user is toggling delete affordances, not opening details

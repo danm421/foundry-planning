@@ -362,7 +362,7 @@ describe("IncomeExpensesView focus mode", () => {
       expect(submit).toHaveBeenCalledTimes(1);
       expect(submit).toHaveBeenCalledWith(
         { op: "remove", targetKind: "expense", targetId: "exp-1" },
-        expect.anything(),
+        { url: "/api/clients/c1/expenses/exp-1", method: "DELETE" },
       );
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
       expect(container).toBeEmptyDOMElement();
@@ -392,6 +392,41 @@ describe("IncomeExpensesView focus mode", () => {
       const { onFocusClose } = renderFocused({ intent: "delete", kind: "expense", id: "gone" });
       await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith("unavailable"));
       expect(submit).not.toHaveBeenCalled();
+    });
+
+    it("delete of a default expense → unavailable, no write", async () => {
+      const onFocusClose = vi.fn();
+      render(
+        <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
+          <IncomeExpensesView
+            {...BASE_PROPS}
+            initialExpenses={[{ ...EXPENSE, id: "exp-default", isDefault: true }]}
+            focus={{ intent: "delete", kind: "expense", id: "exp-default" }}
+            onFocusClose={onFocusClose}
+          />
+        </ClientAccessProvider>,
+      );
+      await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith("unavailable"));
+      expect(submit).not.toHaveBeenCalled();
+    });
+
+    it("delete of a Social Security income → unavailable, no write", async () => {
+      const { onFocusClose } = renderFocused({ intent: "delete", kind: "income", id: "inc-ss-1" });
+      await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith("unavailable"));
+      expect(submit).not.toHaveBeenCalled();
+    });
+
+    it("delete without edit permission → unavailable, no write", async () => {
+      const { onFocusClose } = renderFocused({ intent: "delete", kind: "expense", id: "exp-1" }, vi.fn(), "view");
+      await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith("unavailable"));
+      expect(submit).not.toHaveBeenCalled();
+    });
+
+    it("delete whose write rejects (network error) → failed", async () => {
+      submit.mockRejectedValue(new Error("network"));
+      const { onFocusClose } = renderFocused({ intent: "delete", kind: "expense", id: "exp-1" });
+      await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith("failed"));
+      expect(onFocusClose).toHaveBeenCalledTimes(1);
     });
 
     it("delete runs once under StrictMode", async () => {

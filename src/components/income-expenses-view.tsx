@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useFocusCloseOnce, type FocusCloseOutcome } from "@/hooks/use-focus-close-once";
+import { useFocusDelete } from "@/hooks/use-focus-delete";
 import GrowthSourceRadio from "./forms/growth-source-radio";
 import { DedicatedFundingPicker } from "./forms/dedicated-funding-picker";
 import { PaymentMonthSelect } from "./forms/payment-month-select";
@@ -1795,8 +1796,8 @@ function findFocusRow(
     switch (focus.kind) {
       case "income": {
         const row = incomes.find((i) => i.id === focus.id);
-        // The Social Security card has no entity/business owner, so no pencil test.
-        return row && (row.type === "social_security" || hasPagePencil(row))
+        // The page has no Social Security delete (its card is edit-only).
+        return row && row.type !== "social_security" && hasPagePencil(row)
           ? { dialog: "delete", kind: "income", id: row.id }
           : null;
       }
@@ -1911,11 +1912,6 @@ export default function IncomeExpensesView({
   const [ssFocusRow, setSsFocusRow] = useState<Income | null>(() =>
     focusTarget?.dialog === "social_security" ? focusTarget.row : null,
   );
-
-  // A delete focus opens no dialog, so this in-flight flag is what keeps
-  // `useFocusCloseOnce` from handing control back at mount, before the delete runs.
-  const [focusDeleting, setFocusDeleting] = useState(() => focusTarget?.dialog === "delete");
-  const focusDeleteStarted = useRef(false);
 
   // Delete confirms
   const [deletingIncome, setDeletingIncome] = useState<Income | null>(null);
@@ -2083,26 +2079,25 @@ export default function IncomeExpensesView({
     return true;
   }
 
-  // Focus mode's delete: the page's own delete, run once at mount with no prompt.
-  // Success clears the in-flight flag so `useFocusCloseOnce` closes; a failure
-  // keeps it set (so that hook stays quiet) and reports "failed" itself.
-  useEffect(() => {
-    if (focusTarget?.dialog !== "delete" || focusDeleteStarted.current) return;
-    focusDeleteStarted.current = true;
-    const { kind, id } = focusTarget;
-    const path = { income: "incomes", expense: "expenses", savings_rule: "savings-rules" }[kind];
-    void performScenarioDelete(kind, id, `/api/clients/${clientId}/${path}/${id}`, { silent: true })
-      .catch(() => false)
-      .then((ok) => {
-        if (!ok) return onFocusClose?.("failed");
-        if (kind === "income") setIncomeList((prev) => prev.filter((i) => i.id !== id));
-        else if (kind === "expense") setExpenseList((prev) => prev.filter((e) => e.id !== id));
-        else setSavingsRuleList((prev) => prev.filter((r) => r.id !== id));
-        setFocusDeleting(false);
-      });
-    // Mount-only: focus and its target are snapshotted at mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Focus mode's delete: the page's own delete, with no prompt. Its in-flight
+  // flag joins `focusDialogOpen` below.
+  const focusDeleting = useFocusDelete(
+    focusTarget?.dialog === "delete"
+      ? async () => {
+          const { kind, id } = focusTarget;
+          const path = { income: "incomes", expense: "expenses", savings_rule: "savings-rules" }[kind];
+          const ok = await performScenarioDelete(kind, id, `/api/clients/${clientId}/${path}/${id}`, {
+            silent: true,
+          });
+          if (!ok) return false;
+          if (kind === "income") setIncomeList((prev) => prev.filter((i) => i.id !== id));
+          else if (kind === "expense") setExpenseList((prev) => prev.filter((e) => e.id !== id));
+          else setSavingsRuleList((prev) => prev.filter((r) => r.id !== id));
+          return true;
+        }
+      : null,
+    onFocusClose,
+  );
 
   /**
    * One expense row, inline cells and all. Shared by the Expenses panel and the
