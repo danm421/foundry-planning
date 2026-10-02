@@ -182,23 +182,4 @@ describe("LtcStressRow (saved)", () => {
     expect(await screen.findByText(/couldn.t save/i)).toBeTruthy();
     expect(onResetField).not.toHaveBeenCalled();
   });
-
-  // R22 part 3: a leftover draft must never outlive a saved event, on or off.
-  it.each([true, false])("a stale draft is reset when a saved event exists (enabled: %s)", (enabled) => {
-    const onResetField = vi.fn();
-    render(
-      <LtcStressRow tree={plan} projectionYears={[]} scenarioId="s1" scenarioName="With care" clientId="c1"
-        savedChange={saved(enabled)} hasDraft onChange={vi.fn()} onResetField={onResetField} onSaved={vi.fn()} onEditOnChangesTab={vi.fn()} />,
-    );
-    expect(onResetField).toHaveBeenCalledWith(["stress-ltc"]);
-  });
-
-  it("does not reset anything when a saved event exists but there is no draft", () => {
-    const onResetField = vi.fn();
-    render(
-      <LtcStressRow tree={plan} projectionYears={[]} scenarioId="s1" scenarioName="With care" clientId="c1"
-        savedChange={saved(true)} hasDraft={false} onChange={vi.fn()} onResetField={onResetField} onSaved={vi.fn()} onEditOnChangesTab={vi.fn()} />,
-    );
-    expect(onResetField).not.toHaveBeenCalled();
-  });
 });

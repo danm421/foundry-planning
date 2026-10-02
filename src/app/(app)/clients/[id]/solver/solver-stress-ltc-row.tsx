@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { ClientData, ProjectionYear } from "@/engine/types";
 import type { SolverMutation, SolverMutationKey } from "@/lib/solver/types";
 import type { ChangesPanelChange } from "@/components/scenario/changes-panel";
@@ -22,8 +22,6 @@ export function LtcStressRow(props: {
   scenarioName: string | null;
   clientId: string;
   savedChange: ChangesPanelChange | null;
-  /** True while the Solver holds a `stress-ltc` draft (lets the row drop one a saved event has outlived). */
-  hasDraft?: boolean;
   onChange(m: SolverMutation): void;
   onResetField(keys: SolverMutationKey[]): void;
   onSaved(): void;
@@ -32,14 +30,6 @@ export function LtcStressRow(props: {
   const event = props.tree.ltcEvents?.[0] ?? null;
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
-
-  // Stale-draft rule: a saved event (on or off) is the truth. A draft stored in
-  // the browser that predates it would still drive the preview and the Solver's
-  // saves. Only fires while a draft exists, so it cannot loop.
-  const { savedChange, hasDraft, onResetField } = props;
-  useEffect(() => {
-    if (savedChange && hasDraft) onResetField(["stress-ltc"]);
-  }, [savedChange, hasDraft, onResetField]);
 
   async function addAsChange() {
     if (!event || !props.scenarioId) return;

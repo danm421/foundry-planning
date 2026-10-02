@@ -7,6 +7,7 @@ import { useClientAccess } from "@/components/client-access-provider";
 import type { ClientData, ProjectionYear, SavingsRule } from "@/engine";
 import { controllingFamilyMember } from "@/engine/ownership";
 import { isAbsorbingLivingRow } from "@/engine/surplus-spend";
+import { resolveLtcEvent } from "@/engine/ltc-event";
 import type { QuickAddType } from "@/lib/solver/quick-add-account";
 import { buildAdditionalSavingsAccount } from "@/lib/solver/quick-add-account";
 import { applyMutations } from "@/lib/solver/apply-mutations";
@@ -1131,6 +1132,14 @@ export function LiveSolverWorkspace({
     clearMutations,
   });
 
+  // Stale-draft rule: once a scenario holds a saved LTC event (on or off) it is
+  // the truth. A leftover `stress-ltc` draft (restored from browser storage) would
+  // drive the preview and the header's Update/Save-as-new on EVERY tab, so it is
+  // dropped here, not in the Stress row. Only fires while a draft exists.
+  useEffect(() => {
+    if (savedLtcChange && mutationMap.has("stress-ltc")) clearMutations(["stress-ltc"]);
+  }, [savedLtcChange, mutationMap, clearMutations]);
+
   const handleSolveStart = useCallback(
     (
       target: SolveLeverKey,
@@ -1487,7 +1496,7 @@ export function LiveSolverWorkspace({
                   workingClient={workingTree.client}
                   onChange={pushMutation}
                   onResetField={clearMutations}
-                  ltcPeople={(workingTree.ltcEvents?.[0]?.people ?? []).map((p) => p.person)}
+                  ltcPeople={resolveLtcEvent(workingTree)?.people.map((p) => p.person) ?? []}
                 />
               </div>
               <SolverRowLivingExpenseScale
@@ -1638,7 +1647,6 @@ export function LiveSolverWorkspace({
             scenarioId={isScenarioSource ? initialSource : null}
             scenarioName={scenarioName ?? null}
             savedLtcChange={savedLtcChange}
-            hasLtcDraft={mutationMap.has("stress-ltc")}
             onLtcSaved={() => router.refresh()}
             onEditLtcOnChangesTab={(id) => {
               setPendingOpenChangeId(id);

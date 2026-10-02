@@ -1408,3 +1408,84 @@ describe("LiveSolverWorkspace — opening a change from the Changes tab", () => 
     expect(leftTab("Scenario changes")).toHaveAttribute("aria-selected", "false");
   });
 });
+
+describe("LiveSolverWorkspace — long-term care draft vs a saved event", () => {
+  const ltcEvent = (startAge: number) => ({
+    id: "3f1c2d7e-8a1b-4c5d-9e0f-112233445566",
+    name: "Long-term care — Cooper",
+    people: [{ person: "client", startAge, years: 3, careSetting: "nursing_private", annualCost: 129_575, costInflation: 0.05 }],
+    livingExpenseCutPct: null,
+    homeSale: null,
+    includePolicies: true,
+  });
+  const savedPanel = (enabled: boolean) => ({
+    scenarioId: "scn-1",
+    scenarioName: "With care",
+    changes: [
+      {
+        id: "chg-ltc",
+        scenarioId: "scn-1",
+        opType: "add" as const,
+        targetKind: "ltc_event" as never,
+        targetId: "3f1c2d7e-8a1b-4c5d-9e0f-112233445566",
+        payload: ltcEvent(85),
+        toggleGroupId: null,
+        orderIndex: 0,
+        updatedAt: new Date("2026-01-01T00:00:00Z"),
+        enabled,
+        label: null,
+      },
+    ],
+    toggleGroups: [],
+    cascadeWarnings: [],
+    targetNames: {},
+  });
+  const draftKey = () => solverDraftKey(baseProps.clientId, baseProps.userId, "base");
+  const seedLtcDraft = (startAge = 85) =>
+    localStorage.setItem(
+      draftKey(),
+      JSON.stringify({
+        v: 1,
+        draft: { mutations: [{ kind: "stress-ltc", value: ltcEvent(startAge) }], solvedSeed: null, savingsAccountMixes: [] },
+      }),
+    );
+
+  // The Retirement tab is the one the Solver opens on, so the rule must hold
+  // there: "Update this scenario" in the header posts every draft mutation.
+  it.each([true, false])(
+    "drops a stale stress-ltc draft while the Retirement tab is open (saved event enabled: %s)",
+    async (enabled) => {
+      seedLtcDraft();
+      render(<LiveSolverWorkspace {...baseProps} changesPanel={savedPanel(enabled)} />);
+      await waitFor(() => expect(localStorage.getItem(draftKey())).toBeNull());
+    },
+  );
+
+  it("keeps the draft when no event is saved", async () => {
+    seedLtcDraft();
+    render(<LiveSolverWorkspace {...baseProps} />);
+    await screen.findByText(/restored/i);
+    expect(localStorage.getItem(draftKey())).not.toBeNull();
+  });
+
+  const withPlanStart = {
+    ...baseProps,
+    initialSourceClientData: {
+      ...(baseProps.initialSourceClientData as object),
+      planSettings: { planStartYear: 2026, planEndYear: 2060 },
+    } as never,
+  };
+
+  it("shows the life-expectancy hint for a person in care", async () => {
+    seedLtcDraft(85);
+    render(<LiveSolverWorkspace {...withPlanStart} />);
+    expect(await screen.findByText("Set by the long-term care stress test.")).toBeTruthy();
+  });
+
+  it("shows no hint when the person's care would start before the plan (the test sets nothing)", async () => {
+    seedLtcDraft(50); // 1965 + 50 = 2015, before the 2026 plan start
+    render(<LiveSolverWorkspace {...withPlanStart} />);
+    await screen.findByText(/restored/i);
+    expect(screen.queryByText("Set by the long-term care stress test.")).toBeNull();
+  });
+});
