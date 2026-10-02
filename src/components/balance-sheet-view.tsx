@@ -561,7 +561,24 @@ function AddAssetMenu({ onPick }: { onPick: (cat: AccountCategory) => void }) {
 /** The focused row, tagged with the dialog the page opens for it. */
 type FocusTarget =
   | { dialog: "account"; row: AccountRow }
-  | { dialog: "liability"; row: LiabilityRow };
+  | { dialog: "liability"; row: LiabilityRow }
+  // A create opens the empty dialog; a delete runs the page's delete on the row
+  // with no dialog at all.
+  | { dialog: "create_account"; category: AccountCategory }
+  | { dialog: "create_liability" }
+  | { dialog: "delete"; kind: "account" | "liability"; id: string };
+
+/** The categories the page's add menu opens `AddAccountDialog` for. A business
+ *  and a note receivable have their own editors and are handled apart. */
+const CREATE_CATEGORIES: readonly string[] = [
+  "taxable",
+  "cash",
+  "retirement",
+  "annuity",
+  "real_estate",
+  "stock_options",
+  "education_savings",
+];
 
 /**
  * The dialog the page's own click opens for the focused row — or null when
@@ -583,7 +600,31 @@ function findFocusRow(
   const underListedBusiness = (parentAccountId: string) =>
     isListedBusiness(accounts.find((a) => a.id === parentAccountId));
 
-  // Only an edit focus opens a row here; create and delete are not built yet.
+  if (focus.intent === "create") {
+    if (focus.kind === "liability") return { dialog: "create_liability" };
+    if (focus.kind === "note_receivable" || focus.variant === "note_receivable") return "unsupported";
+    if (focus.kind !== "account") return null;
+    // A business create stays unsupported until its dialog saves through the scenario writer.
+    if (focus.variant === "business") return "unsupported";
+    return focus.variant && CREATE_CATEGORIES.includes(focus.variant)
+      ? { dialog: "create_account", category: focus.variant as AccountCategory }
+      : null;
+  }
+  if (focus.intent === "delete") {
+    if (focus.kind === "account") {
+      const row = accounts.find((a) => a.id === focus.id);
+      // A policy's delete lives on the Insurance page; legacy notes aren't listed.
+      if (!row || row.category === "life_insurance" || row.category === "notes_receivable") return null;
+      if (row.parentAccountId && accountInEstate(row) && !underListedBusiness(row.parentAccountId)) return null;
+      return { dialog: "delete", kind: "account", id: row.id };
+    }
+    if (focus.kind === "liability") {
+      const row = liabilities.find((l) => l.id === focus.id);
+      if (!row || (row.parentAccountId && !underListedBusiness(row.parentAccountId))) return null;
+      return { dialog: "delete", kind: "liability", id: row.id };
+    }
+    return null;
+  }
   if (!isEditFocus(focus)) return null;
   switch (focus.kind) {
     case "account": {
@@ -775,9 +816,6 @@ export default function BalanceSheetView({
   const [assetsEdit, setAssetsEdit] = useState(false);
   const [liabilitiesEdit, setLiabilitiesEdit] = useState(false);
 
-  // Controlled Add Asset dialog (after category pick)
-  const [addCategory, setAddCategory] = useState<AccountCategory | null>(null);
-
   // Focus mode's row, snapshotted at mount. Null means the page offers no editor
   // for it (see `findFocusRow`) or there's no edit access; "unsupported" means
   // it does, but that editor would write the base plan. The editing state
@@ -786,6 +824,16 @@ export default function BalanceSheetView({
     focus && canEdit ? findFocusRow(focus, accounts, liabilities, accountInEstate) : null,
   );
   const focusTarget = focusFound === "unsupported" ? null : focusFound;
+
+  // Controlled Add Asset dialog (after category pick)
+  const [addCategory, setAddCategory] = useState<AccountCategory | null>(() =>
+    focusTarget?.dialog === "create_account" ? focusTarget.category : null,
+  );
+
+  // A delete focus opens no dialog, so this in-flight flag is what keeps
+  // `useFocusCloseOnce` from handing control back at mount, before the delete runs.
+  const [focusDeleting, setFocusDeleting] = useState(() => focusTarget?.dialog === "delete");
+  const focusDeleteStarted = useRef(false);
 
   const [editingAccount, setEditingAccount] = useState<AccountRow | null>(() =>
     focusTarget?.dialog === "account" ? focusTarget.row : null,
@@ -802,7 +850,7 @@ export default function BalanceSheetView({
 
   const [editingBusiness, setEditingBusiness] = useState<BusinessAccount | null>(null);
   const [businessDialogOpen, setBusinessDialogOpen] = useState(false);
-  const [addLiabilityOpen, setAddLiabilityOpen] = useState(false);
+  const [addLiabilityOpen, setAddLiabilityOpen] = useState(() => focusTarget?.dialog === "create_liability");
   // When "+ Add sub-account" / "+ Add sub-liability" fires from inside the
   // Business dialog's Assets tab, capture the business id so the freshly-opened
   // add dialog seeds parent-business → that business (ownership defaults to it).
@@ -1003,21 +1051,25 @@ export default function BalanceSheetView({
     .filter((a) => a.category === "retirement" && a.subType === "roth_ira")
     .map((a) => ({ id: a.id, name: a.name }));
 
-  async function performAccountDelete(id: string) {
+  // `silent` is focus mode's: the failure goes out through onFocusClose("failed")
+  // rather than the page's alert(). Resolves true when the row is gone.
+  async function performAccountDelete(id: string, { silent = false }: { silent?: boolean } = {}) {
     const res = await writer.submit(
       { op: "remove", targetKind: "account", targetId: id },
       { url: `/api/clients/${clientId}/accounts/${id}`, method: "DELETE" },
     );
     if (!res.ok && res.status !== 204) {
+      if (silent) return false;
       const json = await res.json().catch(() => ({}));
       alert(json.error ?? "Failed to delete account");
-      return;
+      return false;
     }
     setDeletingAccount(null);
     setEditingAccount(null);
     setEditingBusiness(null);
     setBusinessDialogOpen(false);
     router.refresh();
+    return true;
   }
 
   async function performNoteDelete(id: string) {
@@ -1034,20 +1086,39 @@ export default function BalanceSheetView({
     router.refresh();
   }
 
-  async function performLiabilityDelete(id: string) {
+  async function performLiabilityDelete(id: string, { silent = false }: { silent?: boolean } = {}) {
     const res = await writer.submit(
       { op: "remove", targetKind: "liability", targetId: id },
       { url: `/api/clients/${clientId}/liabilities/${id}`, method: "DELETE" },
     );
     if (!res.ok && res.status !== 204) {
+      if (silent) return false;
       const json = await res.json().catch(() => ({}));
       alert(json.error ?? "Failed to delete liability");
-      return;
+      return false;
     }
     setDeletingLiability(null);
     setEditingLiability(null);
     router.refresh();
+    return true;
   }
+
+  // Focus mode's delete: the page's own delete, run once at mount with no prompt.
+  // Success clears the in-flight flag so `useFocusCloseOnce` closes; a failure
+  // keeps it set (so that hook stays quiet) and reports "failed" itself.
+  useEffect(() => {
+    if (focusTarget?.dialog !== "delete" || focusDeleteStarted.current) return;
+    focusDeleteStarted.current = true;
+    const { kind, id } = focusTarget;
+    void (kind === "account" ? performAccountDelete(id, { silent: true }) : performLiabilityDelete(id, { silent: true }))
+      .catch(() => false)
+      .then((ok) => {
+        if (ok) setFocusDeleting(false);
+        else onFocusClose?.("failed");
+      });
+    // Mount-only: focus and its target are snapshotted at mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function handleAccountClick(a: AccountRow) {
     if (assetsEdit) return; // edit mode: user is toggling delete affordances, not opening details
@@ -1311,9 +1382,16 @@ export default function BalanceSheetView({
   // Focus mode hands control back once its editor is gone, however it went:
   // cancel, save, a confirmed delete (which closes the editor directly, not
   // through its onOpenChange) — or, with its reason, when none ever opened.
-  const focusDialogOpen = editingAccount !== null || editingLiability !== null;
+  const focusDialogOpen =
+    editingAccount !== null ||
+    editingLiability !== null ||
+    focusDeleting ||
+    addCategory !== null ||
+    addLiabilityOpen ||
+    businessDialogOpen;
   useFocusCloseOnce(focus, focusFound, focusDialogOpen, onFocusClose);
 
+  if (focus?.intent === "delete") return null;
   if (focus) return dialogsNode;
 
   return (

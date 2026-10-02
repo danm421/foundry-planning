@@ -8,8 +8,9 @@
  * delete) or never could open (row missing, kind not handled here).
  */
 
+import { StrictMode } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 
 const submit = vi.fn();
 
@@ -326,5 +327,90 @@ describe("IncomeExpensesView focus mode", () => {
       { op: "remove", targetKind: "expense", targetId: "exp-1" },
       expect.anything(),
     );
+  });
+
+  describe("create and delete intents", () => {
+    it.each([
+      { kind: "income" as const, title: "Add Income" },
+      { kind: "expense" as const, title: "Add Expense" },
+    ])("create $kind opens the empty dialog and closes on cancel", async ({ kind, title }) => {
+      const { onFocusClose } = renderFocused({ intent: "create", kind });
+      expect(await screen.findByRole("heading", { name: title })).toBeInTheDocument();
+      expect(onFocusClose).not.toHaveBeenCalled();
+      fireEvent.click(headerCloseButton(title));
+      await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith());
+      expect(onFocusClose).toHaveBeenCalledTimes(1);
+    });
+
+    it("create savings_rule opens the empty savings-rule dialog and closes on cancel", async () => {
+      const { onFocusClose } = renderFocused({ intent: "create", kind: "savings_rule" });
+      expect(await screen.findByText("Add Savings Rule")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+      await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith());
+    });
+
+    it("create for a kind this view doesn't create → unavailable", async () => {
+      const { onFocusClose } = renderFocused({ intent: "create", kind: "account" });
+      await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith("unavailable"));
+    });
+
+    it("delete intent removes the row with no prompt, then closes", async () => {
+      submit.mockResolvedValue({ ok: true, status: 204 });
+      const { onFocusClose, container } = renderFocused({ intent: "delete", kind: "expense", id: "exp-1" });
+      await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith());
+      expect(onFocusClose).toHaveBeenCalledTimes(1);
+      expect(submit).toHaveBeenCalledTimes(1);
+      expect(submit).toHaveBeenCalledWith(
+        { op: "remove", targetKind: "expense", targetId: "exp-1" },
+        expect.anything(),
+      );
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(container).toBeEmptyDOMElement();
+    });
+
+    it("delete intent reports a failed write without alert()", async () => {
+      const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => {});
+      submit.mockResolvedValue({ ok: false, status: 500, json: async () => ({}) });
+      const { onFocusClose } = renderFocused({ intent: "delete", kind: "income", id: "inc-1" });
+      await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith("failed"));
+      expect(onFocusClose).toHaveBeenCalledTimes(1);
+      expect(alertSpy).not.toHaveBeenCalled();
+      alertSpy.mockRestore();
+    });
+
+    it("delete intent does not close before the delete resolves", async () => {
+      let resolve!: (r: Response) => void;
+      submit.mockReturnValue(new Promise<Response>((r) => (resolve = r)));
+      const { onFocusClose } = renderFocused({ intent: "delete", kind: "expense", id: "exp-1" });
+      await act(async () => {});
+      expect(onFocusClose).not.toHaveBeenCalled();
+      resolve({ ok: true, status: 204 } as Response);
+      await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith());
+    });
+
+    it("delete of a row the page can't delete (missing) → unavailable, no write", async () => {
+      const { onFocusClose } = renderFocused({ intent: "delete", kind: "expense", id: "gone" });
+      await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith("unavailable"));
+      expect(submit).not.toHaveBeenCalled();
+    });
+
+    it("delete runs once under StrictMode", async () => {
+      submit.mockResolvedValue({ ok: true, status: 204 });
+      const onFocusClose = vi.fn();
+      render(
+        <StrictMode>
+          <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
+            <IncomeExpensesView
+              {...BASE_PROPS}
+              focus={{ intent: "delete", kind: "savings_rule", id: "sr-1" }}
+              onFocusClose={onFocusClose}
+            />
+          </ClientAccessProvider>
+        </StrictMode>,
+      );
+      await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith());
+      expect(submit).toHaveBeenCalledTimes(1);
+      expect(onFocusClose).toHaveBeenCalledTimes(1);
+    });
   });
 });

@@ -10,8 +10,9 @@
  * write the base plan inside a scenario ("unsupported": a household business).
  */
 
+import { StrictMode } from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within, act } from "@testing-library/react";
 
 const submit = vi.fn();
 
@@ -374,5 +375,111 @@ describe("BalanceSheetView focus mode — closing", () => {
       expect.objectContaining({ op: "edit", targetKind: "liability", targetId: "liab-mortgage" }),
       expect.anything(),
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Create and delete intents
+// ---------------------------------------------------------------------------
+
+describe("BalanceSheetView focus mode — create intent", () => {
+  it("an account create opens the empty dialog for its category and closes on cancel", async () => {
+    const { onFocusClose } = renderFocused({ intent: "create", kind: "account", variant: "cash" });
+
+    expect(await screen.findByRole("dialog", { name: "Add Cash Account" })).toBeTruthy();
+    // A fresh form: the category's default name, no existing row loaded.
+    expect((document.getElementById("name") as HTMLInputElement).value).toBe("Cash Account");
+    expect(onFocusClose).not.toHaveBeenCalled();
+
+    fireEvent.click(dialog("Add Cash Account").getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith());
+    expect(onFocusClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("a liability create opens the empty liability dialog and closes on cancel", async () => {
+    const { onFocusClose } = renderFocused({ intent: "create", kind: "liability" });
+
+    expect(await screen.findByRole("dialog", { name: "Add Liability" })).toBeTruthy();
+
+    fireEvent.click(dialog("Add Liability").getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith());
+    expect(onFocusClose).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { label: "a business", focus: { intent: "create" as const, kind: "account" as const, variant: "business" as const } },
+    { label: "a note receivable", focus: { intent: "create" as const, kind: "note_receivable" as const } },
+  ])("$label create → unsupported until its dialog is scenario-aware", async ({ focus }) => {
+    await expectNothingOpened(renderFocused(focus), "unsupported");
+  });
+
+  it("a life-insurance create → unavailable, as the Insurance page owns it", async () => {
+    await expectUnavailable(renderFocused({ intent: "create", kind: "account", variant: "life_insurance" }));
+  });
+});
+
+describe("BalanceSheetView focus mode — delete intent", () => {
+  it.each([
+    { label: "account", focus: { intent: "delete" as const, kind: "account" as const, id: "acct-taxable" }, targetKind: "account", targetId: "acct-taxable" },
+    { label: "liability", focus: { intent: "delete" as const, kind: "liability" as const, id: "liab-mortgage" }, targetKind: "liability", targetId: "liab-mortgage" },
+  ])("removes the $label with no prompt, then closes", async ({ focus, targetKind, targetId }) => {
+    submit.mockResolvedValue({ ok: true, status: 204 });
+    const { onFocusClose, container } = renderFocused(focus);
+
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith());
+    expect(onFocusClose).toHaveBeenCalledTimes(1);
+    expect(submit).toHaveBeenCalledWith({ op: "remove", targetKind, targetId }, expect.anything());
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("reports a failed write without alert()", async () => {
+    const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => {});
+    submit.mockResolvedValue({ ok: false, status: 500, json: async () => ({}) });
+    const { onFocusClose } = renderFocused({ intent: "delete", kind: "liability", id: "liab-mortgage" });
+
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith("failed"));
+    expect(onFocusClose).toHaveBeenCalledTimes(1);
+    expect(alertSpy).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
+  });
+
+  it("does not close before the delete resolves", async () => {
+    let resolve!: (r: Response) => void;
+    submit.mockReturnValue(new Promise<Response>((r) => (resolve = r)));
+    const { onFocusClose } = renderFocused({ intent: "delete", kind: "account", id: "acct-taxable" });
+
+    await act(async () => {});
+    expect(onFocusClose).not.toHaveBeenCalled();
+
+    resolve({ ok: true, status: 204 } as Response);
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith());
+  });
+
+  it("a life-insurance policy → unavailable, no write", async () => {
+    await expectUnavailable(renderFocused({ intent: "delete", kind: "account", id: "acct-policy" }));
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it("runs once under StrictMode", async () => {
+    submit.mockResolvedValue({ ok: true, status: 204 });
+    const onFocusClose = vi.fn();
+    render(
+      <StrictMode>
+        <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
+          <BalanceSheetView
+            {...BASE_PROPS}
+            focus={{ intent: "delete", kind: "account", id: "acct-taxable" }}
+            onFocusClose={onFocusClose}
+          />
+        </ClientAccessProvider>
+      </StrictMode>,
+    );
+
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith());
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(onFocusClose).toHaveBeenCalledTimes(1);
   });
 });
