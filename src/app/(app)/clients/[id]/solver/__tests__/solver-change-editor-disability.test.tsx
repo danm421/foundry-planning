@@ -30,9 +30,8 @@ const CLIENT: ClientInfo = {
   filingStatus: "married_joint",
 };
 
-describe("SolverChangeEditor — disability focus", () => {
-  it("a create focus mounts the disability panel and opens its Add dialog", async () => {
-    loadMock.mockResolvedValue({
+function disabilityLoad() {
+  return {
       page: "insurance",
       props: { clientId: "c1" },
       disabilityProps: {
@@ -47,7 +46,12 @@ describe("SolverChangeEditor — disability focus", () => {
         planEndYear: 2060,
         client: CLIENT,
       },
-    });
+  };
+}
+
+describe("SolverChangeEditor — disability focus", () => {
+  it("a create focus mounts the disability panel and opens its Add dialog", async () => {
+    loadMock.mockResolvedValue(disabilityLoad());
     render(
       <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
         <SolverChangeEditor
@@ -64,5 +68,40 @@ describe("SolverChangeEditor — disability focus", () => {
       </ClientAccessProvider>,
     );
     expect(await screen.findByRole("dialog", { name: "Add disability policy" })).toBeInTheDocument();
+  });
+
+  // The view reports "unavailable" when the focused row is not in the plan. For
+  // an edit that means "this editor can't open it here — try Details"; for a
+  // DELETE the row is simply gone, and pointing at the Details editor reads wrong.
+  function renderMissing(intent: "edit" | "delete") {
+    loadMock.mockResolvedValue(disabilityLoad());
+    render(
+      <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
+        <SolverChangeEditor
+          clientId="c1"
+          scenarioId="scn-1"
+          label="Disability policy"
+          onDone={vi.fn()}
+          target={{
+            surface: "details",
+            page: "insurance",
+            focus: { intent, kind: "disability_policy", id: "dp-gone" },
+          }}
+        />
+      </ClientAccessProvider>,
+    );
+  }
+
+  it("a delete whose row has vanished says so, with no Details link", async () => {
+    renderMissing("delete");
+    expect(await screen.findByText("This item is no longer in the plan.")).toBeInTheDocument();
+    expect(screen.queryByText("Not editable from the Solver.")).toBeNull();
+    expect(screen.queryByRole("link", { name: /details page/i })).toBeNull();
+  });
+
+  it("an edit whose row is missing still points at the Details page", async () => {
+    renderMissing("edit");
+    expect(await screen.findByText("Not editable from the Solver.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /details page/i })).toBeInTheDocument();
   });
 });

@@ -173,6 +173,15 @@ export function SolverChangeEditor({
           </HostStrip>
         );
       case "unavailable":
+        // A delete's row has vanished (removed elsewhere, or by a cascade):
+        // there is nothing left to remove, and no editor to point at.
+        if (deleting) {
+          return (
+            <HostStrip role="status" onDismiss={onDone}>
+              <span>This item is no longer in the plan.</span>
+            </HostStrip>
+          );
+        }
         return (
           <HostStrip role="status" onDismiss={onDone}>
             <span>Not editable from the Solver.</span>
