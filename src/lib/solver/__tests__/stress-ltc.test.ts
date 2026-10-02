@@ -39,3 +39,44 @@ describe("stress-ltc", () => {
     expect(isBaseSavableMutation({ kind: "stress-ltc", value: event })).toBe(false);
   });
 });
+
+// Every ltc_event write is a WHOLE event: an add (the writer upserts it) or a
+// remove — the writer refuses an ltc_event edit. One event per scenario.
+describe("stress-ltc scenario drafts", () => {
+  const changed: LtcEvent = {
+    ...event,
+    name: "Long-term care — John 85–88",
+    people: [{ ...event.people[0], years: 4 }],
+  };
+  const other: LtcEvent = { ...event, id: "9a8b7c6d-5e4f-4a3b-8c2d-1e0f99887766" };
+  const draftsFor = (ltcEvents: LtcEvent[], value: LtcEvent | null) =>
+    mutationsToScenarioChanges(buildClientData({ ltcEvents }), "c1", [{ kind: "stress-ltc", value }]);
+
+  it("no saved event: adds the whole event", () => {
+    expect(draftsFor([], event)).toEqual([
+      { opType: "add", targetKind: "ltc_event", targetId: event.id, payload: event, orderIndex: 0 },
+    ]);
+  });
+  it("the saved event changed: re-adds the whole event, never an edit", () => {
+    expect(draftsFor([event], changed)).toEqual([
+      { opType: "add", targetKind: "ltc_event", targetId: event.id, payload: changed, orderIndex: 0 },
+    ]);
+  });
+  it("a different id: removes the saved event, then adds the new one", () => {
+    expect(draftsFor([event], other)).toEqual([
+      { opType: "remove", targetKind: "ltc_event", targetId: event.id, payload: null, orderIndex: 0 },
+      { opType: "add", targetKind: "ltc_event", targetId: other.id, payload: other, orderIndex: 1 },
+    ]);
+  });
+  it("cleared: removes the saved event", () => {
+    expect(draftsFor([event], null)).toEqual([
+      { opType: "remove", targetKind: "ltc_event", targetId: event.id, payload: null, orderIndex: 0 },
+    ]);
+  });
+  it("cleared with no saved event: nothing", () => {
+    expect(draftsFor([], null)).toEqual([]);
+  });
+  it("identical to the saved event: nothing", () => {
+    expect(draftsFor([event], structuredClone(event))).toEqual([]);
+  });
+});

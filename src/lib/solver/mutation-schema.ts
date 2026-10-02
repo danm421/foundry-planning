@@ -49,12 +49,16 @@ const INCOME_TAX_TYPE = z.enum(INCOME_TAX_TYPE_VALUES);
 
 // `ltcEventSchema` and the engine's `LtcEvent` are written separately (the
 // care-setting list twice over), so nothing ties them but this: it fails to
-// compile when either shape drifts — a field added, renamed, made optional or
-// nullable on one side only, or a care setting the other doesn't list.
+// compile unless the two types are IDENTICAL — any field added (optional or
+// required), removed, renamed, made optional or nullable on one side only, at
+// the top level or inside `people[]`/`homeSale`, or a care setting the other
+// doesn't list. Mutual assignability is not enough: an optional field on one
+// side still assigns both ways, and the schema would strip it silently.
 type Expect<T extends true> = T;
-type MutuallyAssignable<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+type Equal<A, B> =
+  (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-type _LtcEventSchemaMatchesEngine = Expect<MutuallyAssignable<z.infer<typeof ltcEventSchema>, LtcEvent>>;
+type _LtcEventSchemaMatchesEngine = Expect<Equal<z.infer<typeof ltcEventSchema>, LtcEvent>>;
 
 const YEAR = z.number().int().min(1950).max(2150);
 // The savings-rule year anchors. Enumerated (not a free string) because the

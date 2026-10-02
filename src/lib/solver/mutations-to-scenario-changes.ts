@@ -515,16 +515,39 @@ export function mutationsToScenarioChanges(
         break;
       }
       case "stress-ltc": {
-        const existing = (source.ltcEvents ?? [])[0];
-        const id = m.value?.id ?? existing?.id;
-        if (!id) break;
-        pushTechniqueUpsert(
-          nonClientDrafts,
-          "ltc_event",
-          existing && existing.id === id ? (existing as unknown as Record<string, unknown>) : undefined,
-          id,
-          m.value as unknown as Record<string, unknown> | null,
-        );
+        // Always the WHOLE event — an `add` (the writer upserts it) or a
+        // `remove`, never a field-diff `edit`, which the writer refuses for
+        // ltc_event. One event per scenario: a new id replaces the saved one,
+        // as `applyMutations` does, rather than sitting beside it.
+        const saved = (source.ltcEvents ?? [])[0];
+        const next = m.value;
+        if (saved && saved.id !== next?.id) {
+          nonClientDrafts.push({
+            opType: "remove",
+            targetKind: "ltc_event",
+            targetId: saved.id,
+            payload: null,
+            orderIndex: 0,
+          });
+        }
+        if (!next) break;
+        const unchanged =
+          saved?.id === next.id &&
+          Object.keys(
+            diffTechniqueFields(
+              saved as unknown as Record<string, unknown>,
+              next as unknown as Record<string, unknown>,
+            ),
+          ).length === 0;
+        if (!unchanged) {
+          nonClientDrafts.push({
+            opType: "add",
+            targetKind: "ltc_event",
+            targetId: next.id,
+            payload: next,
+            orderIndex: 0,
+          });
+        }
         break;
       }
       case "savings-rule-upsert": {
@@ -882,7 +905,7 @@ function diffTechniqueFields(
 
 function pushTechniqueUpsert(
   drafts: SolverScenarioChangeDraft[],
-  targetKind: "account" | "liability" | "savings_rule" | "roth_conversion" | "asset_transaction" | "reinvestment" | "income" | "expense" | "gift" | "external_beneficiary" | "entity" | "relocation" | "will" | "ltc_event",
+  targetKind: "account" | "liability" | "savings_rule" | "roth_conversion" | "asset_transaction" | "reinvestment" | "income" | "expense" | "gift" | "external_beneficiary" | "entity" | "relocation" | "will",
   existing: Record<string, unknown> | undefined,
   id: string,
   value: Record<string, unknown> | null,
