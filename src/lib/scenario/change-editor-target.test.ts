@@ -96,11 +96,13 @@ describe("resolveChangeEditor", () => {
       },
     );
 
-    // Ruling F-I3: every trust-dialog tab saves an edit's payload as that tab's
-    // diff alone, wiping the rest; an add's saves merge into the add payload.
-    it("an entity edit -> unsupported", () => {
-      expect(resolveChangeEditor(change({ targetKind: "entity", opType: "edit" }))).toEqual({
-        surface: "unsupported",
+    // The writer merges each trust-dialog tab's save into the edit's payload,
+    // so an entity edit opens the trust dialog like an add does.
+    it("an entity edit -> family/entity, the trust dialog", () => {
+      expect(resolveChangeEditor(change({ targetKind: "entity", opType: "edit", targetId: "t1" }))).toEqual({
+        surface: "details",
+        page: "family",
+        focus: { kind: "entity", id: "t1" },
       });
     });
 

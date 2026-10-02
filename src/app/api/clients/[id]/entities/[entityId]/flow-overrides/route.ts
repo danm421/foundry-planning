@@ -12,20 +12,33 @@ import { recordAudit } from "@/lib/audit";
 import { flowOverrideBulkSchema } from "@/lib/schemas/flow-overrides";
 import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { findScenarioOnlyEntity } from "@/lib/scenario/route-scope";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
 
-async function authorize(clientId: string, entityId: string) {
+const SCENARIO_ONLY_MESSAGE =
+  "Per-year schedules aren't available for a trust that exists only in this scenario.";
+
+async function authorize(clientId: string, entityId: string, scenarioId: string | null) {
   const firmId = await requireOrgId();
   const a = await verifyClientAccess(clientId);
   if (!a.ok)
-    return { error: "Client not found", status: 404 as const };
+    return { response: NextResponse.json({ error: "Client not found" }, { status: 404 }) };
   const [ent] = await db
     .select()
     .from(entities)
     .where(and(eq(entities.id, entityId), eq(entities.clientId, clientId)));
-  if (!ent) return { error: "Entity not found", status: 404 as const };
+  if (!ent) {
+    // A trust that exists only in the open scenario has no base row and no
+    // per-year schedule: GET answers an empty grid.
+    if (scenarioId) {
+      const only = await findScenarioOnlyEntity(clientId, scenarioId, a.firmId, entityId);
+      if (only.kind === "miss") return { response: only.response };
+      if (only.found) return { scenarioOnly: true as const };
+    }
+    return { response: NextResponse.json({ error: "Entity not found" }, { status: 404 }) };
+  }
   return { firmId, ent };
 }
 
@@ -43,10 +56,9 @@ export async function GET(
   try {
     const { id, entityId } = await params;
     const scenarioId = req.nextUrl.searchParams.get("scenarioId");
-    const auth = await authorize(id, entityId);
-    if ("error" in auth) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status });
-    }
+    const auth = await authorize(id, entityId, scenarioId);
+    if ("response" in auth && auth.response) return auth.response;
+    if ("scenarioOnly" in auth) return NextResponse.json({ overrides: [] });
     if (scenarioId) {
       const [scenario] = await db
         .select()
@@ -104,7 +116,16 @@ export async function PUT(
       .select()
       .from(entities)
       .where(and(eq(entities.id, entityId), eq(entities.clientId, id)));
-    if (!ent) return NextResponse.json({ error: "Entity not found" }, { status: 404 });
+    if (!ent) {
+      if (scenarioId) {
+        const only = await findScenarioOnlyEntity(id, scenarioId, firmId, entityId);
+        if (only.kind === "miss") return only.response;
+        if (only.found) {
+          return NextResponse.json({ error: SCENARIO_ONLY_MESSAGE }, { status: 400 });
+        }
+      }
+      return NextResponse.json({ error: "Entity not found" }, { status: 404 });
+    }
     if (scenarioId) {
       const [scenario] = await db
         .select()

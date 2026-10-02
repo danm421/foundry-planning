@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import FlowsTab, { type ScheduleSaveBinding, type ScheduleSaveInput } from "../flows-tab";
 
 const submitMock = vi.fn();
+let mockScenarioId: string | null = null;
 let fetchMock: ReturnType<typeof vi.fn>;
 
 vi.mock("@/hooks/use-scenario-writer", () => ({
@@ -15,12 +16,13 @@ vi.mock("@/hooks/use-scenario-writer", () => ({
 
 vi.mock("@/hooks/use-scenario-state", () => ({
   useScenarioState: () => ({
-    scenarioId: null,
+    scenarioId: mockScenarioId,
     setScenario: vi.fn(),
   }),
 }));
 
 beforeEach(() => {
+  mockScenarioId = null;
   submitMock.mockReset();
   submitMock.mockResolvedValue({
     ok: true,
@@ -163,6 +165,17 @@ describe("FlowsTab", () => {
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/clients/client-1/entities/ent-1/ensure-cash",
+        { method: "POST" },
+      ),
+    );
+  });
+
+  it("appends ?scenario= to the ensure-cash POST while a scenario is open", async () => {
+    mockScenarioId = "scn-1";
+    render(<FlowsTab {...baseProps} />);
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/clients/client-1/entities/ent-1/ensure-cash?scenario=scn-1",
         { method: "POST" },
       ),
     );

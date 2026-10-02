@@ -17,7 +17,7 @@
 import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { scenarios } from "@/db/schema";
+import { scenarioChanges, scenarios } from "@/db/schema";
 import { verifyClientAccess } from "@/lib/clients/authz";
 
 export type ScenarioRouteScope =
@@ -64,4 +64,33 @@ export async function assertScenarioRouteScope(
     };
   }
   return { kind: "ok", scenario };
+}
+
+/**
+ * Whether `entityId` is a trust that exists only in `scenarioId` — a
+ * `scenario_changes` add row, with no base `entities` row. The scenario is
+ * scoped to the client and firm first (via `assertScenarioRouteScope`), so a
+ * foreign scenario id never reaches the `scenario_changes` read. A scope miss
+ * comes back as the 404 response to return as-is.
+ */
+export async function findScenarioOnlyEntity(
+  clientId: string,
+  scenarioId: string,
+  firmId: string,
+  entityId: string,
+): Promise<{ kind: "miss"; response: NextResponse } | { kind: "ok"; found: boolean }> {
+  const scope = await assertScenarioRouteScope(clientId, scenarioId, firmId);
+  if (scope.kind === "miss") return scope;
+  const [row] = await db
+    .select({ id: scenarioChanges.id })
+    .from(scenarioChanges)
+    .where(
+      and(
+        eq(scenarioChanges.scenarioId, scenarioId),
+        eq(scenarioChanges.targetKind, "entity"),
+        eq(scenarioChanges.targetId, entityId),
+        eq(scenarioChanges.opType, "add"),
+      ),
+    );
+  return { kind: "ok", found: !!row };
 }

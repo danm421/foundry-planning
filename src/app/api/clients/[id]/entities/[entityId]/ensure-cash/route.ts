@@ -8,6 +8,7 @@ import {
 } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { requireClientEditAccess } from "@/lib/clients/authz";
+import { findScenarioOnlyEntity } from "@/lib/scenario/route-scope";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +30,7 @@ export const dynamic = "force-dynamic";
  * account until manually corrected.
  */
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string; entityId: string }> },
 ) {
   try {
@@ -43,6 +44,14 @@ export async function POST(
       .from(entities)
       .where(and(eq(entities.id, entityId), eq(entities.clientId, id)));
     if (!ent) {
+      // A trust that exists only in the open scenario has no base row, hence no
+      // base scenario to heal: nothing to create, and not an error.
+      const scenarioId = req.nextUrl.searchParams.get("scenario");
+      if (scenarioId) {
+        const only = await findScenarioOnlyEntity(id, scenarioId, firmId, entityId);
+        if (only.kind === "miss") return only.response;
+        if (only.found) return NextResponse.json({ created: 0 });
+      }
       return NextResponse.json({ error: "Entity not found" }, { status: 404 });
     }
 

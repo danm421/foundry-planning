@@ -101,11 +101,14 @@ export default function FlowsTab(props: FlowsTabProps) {
   // failure here is acceptable.
   useEffect(() => {
     if (props.skipEnsureCash) return;
+    // `?scenario=` lets the route recognise a trust that exists only in the
+    // open scenario (nothing to heal) instead of 404ing on it.
+    const qs = scenarioId ? `?scenario=${encodeURIComponent(scenarioId)}` : "";
     fetch(
-      `/api/clients/${props.clientId}/entities/${props.entityId}/ensure-cash`,
+      `/api/clients/${props.clientId}/entities/${props.entityId}/ensure-cash${qs}`,
       { method: "POST" },
     ).catch(() => {});
-  }, [props.clientId, props.entityId, props.skipEnsureCash]);
+  }, [props.clientId, props.entityId, props.skipEnsureCash, scenarioId]);
 
   async function handleModeChange(next: EntityFlowMode) {
     if (next === mode) return;

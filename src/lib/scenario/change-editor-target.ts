@@ -142,11 +142,8 @@ const UNSUPPORTED_KINDS: ReadonlySet<TargetKind> = new Set<TargetKind>([
   "withdrawal_strategy",
 ]);
 
-/** An `entity` edit is unsupported too (Ruling F-I3): every trust-dialog tab
- *  saves the edit's payload as that tab's diff alone, wiping the rest. An
- *  entity `add` is safe — the writer merges saves into the add payload. */
-function isUnsupported({ targetKind, opType }: ChangeEditorInput): boolean {
-  return UNSUPPORTED_KINDS.has(targetKind) || (targetKind === "entity" && opType === "edit");
+function isUnsupported({ targetKind }: ChangeEditorInput): boolean {
+  return UNSUPPORTED_KINDS.has(targetKind);
 }
 
 // Ruling T4d-horizon: the Solver's Retirement tab (`SolverRowRetirementAges` /
