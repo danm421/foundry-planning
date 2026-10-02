@@ -465,6 +465,18 @@ export function LiveSolverWorkspace({
   // scenario so its report reproduces the same PoS.
   const [solvedSeed, setSolvedSeed] = useState<number | null>(null);
 
+  // A save from the Changes tab (or any Details editor) lands in the persisted
+  // scenario, and `router.refresh()` hands over a new tree. The projection
+  // recomputes off it, but only an edit marks the Scenario PoS stale — so a new
+  // persisted tree counts as one, and the auto-run below relaunches Monte Carlo.
+  // Adjusted during render (React's "state from a changed prop" pattern).
+  const [persistedTree, setPersistedTree] = useState(initialSourceClientData);
+  if (persistedTree !== initialSourceClientData) {
+    setPersistedTree(initialSourceClientData);
+    setSolvedPoS(null);
+    setEditNonce((n) => n + 1);
+  }
+
   type ActiveSolve = {
     target: SolveLeverKey;
     targetPoS?: number;

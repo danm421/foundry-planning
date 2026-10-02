@@ -871,6 +871,33 @@ describe("LiveSolverWorkspace — Monte Carlo auto-run", () => {
     expect(workingOnlyNonces().size).toBe(1);
   }, 10_000);
 
+  // Browser pass B: a Growth & inflation save from the Changes tab moved the
+  // chart but never reran Monte Carlo. A Details save lands in the scenario and
+  // `router.refresh()` hands the workspace a new persisted tree; the projection
+  // recomputes off that, but the gauge only went stale on a LEVER edit, so the
+  // working PoS kept describing the old plan. A new persisted tree is an edit.
+  it("reruns the working plan's MC when a save hands it a new persisted tree", async () => {
+    mcStateRef.current = { status: "ready", baseSuccessRate: 0.8, workingSuccessRate: 0.85 };
+    const scenarioProps = { ...baseProps, initialSource: "scn-1" };
+    const { rerender } = render(<LiveSolverWorkspace key="scn-1" {...scenarioProps} />);
+    const workingOnlyRan = () => mcCalls.some((c) => c.enabled && c.includeBase === false);
+    await new Promise((r) => setTimeout(r, 2500));
+    // Mounting alone launches no working-only run.
+    expect(workingOnlyRan()).toBe(false);
+
+    // What router.refresh() delivers after the save: fresh tree + projection.
+    rerender(
+      <LiveSolverWorkspace
+        key="scn-1"
+        {...scenarioProps}
+        initialSourceClientData={{ ...(baseProps.initialSourceClientData as object), planSettings: { growthSourceTaxable: "model_portfolio" } } as never}
+        initialSourceProjection={[{ year: 2026, portfolioAssets: { total: 1_200_000 } }] as never}
+      />,
+    );
+
+    await waitFor(() => expect(workingOnlyRan()).toBe(true), { timeout: 4000 });
+  }, 10_000);
+
   it("cached Base % survives the edit-driven auto-run", async () => {
     // Seed a ready result so the component's cached-base effect fires on mount
     // and sets cachedBaseSuccess=0.8. The two-pane design shows the base value
