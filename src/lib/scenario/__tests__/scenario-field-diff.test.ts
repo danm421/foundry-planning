@@ -4,6 +4,8 @@
 // the Changes list. No DB — the writer's live-DB suite lives beside this file.
 import { describe, it, expect } from "vitest";
 import { buildFieldDiff } from "../changes-writer";
+import { scenarioAccountEditFields } from "@/lib/accounts/scenario-account-fields";
+import { withoutRestatedInflationStart } from "@/lib/todays-dollars";
 
 /** A base life policy as `loadPolicies` builds it — `faceValue` first. */
 const LOADED_POLICY = {
@@ -99,5 +101,44 @@ describe("buildFieldDiff — nested objects compare canonically", () => {
         notes: null,
       }),
     ).toEqual({});
+  });
+});
+
+// Browser pass A: a one-field edit also recorded a second field as null —
+// `growthRate` on a default-growth Taxable account (the form sends null for a
+// derived rate; the base tree holds the RESOLVED rate) and `inflationStartYear`
+// on an income (the form's null restates the row's "inflate from start", which
+// the base stores as the start year itself). The producers now leave those out.
+describe("a one-field scenario edit records exactly that field", () => {
+  it("account: a value edit on a default-growth account diffs only `value`", () => {
+    const base = { id: "acct-1", name: "Taxable Account", value: 185405.09, growthRate: 0.03235347, growthSource: "default" };
+    const formBody = { name: "Taxable Account", value: "1111111", growthRate: null, growthSource: "default" };
+    expect(Object.keys(buildFieldDiff(formBody, base))).toEqual(["value", "growthRate"]); // the defect
+    expect(Object.keys(buildFieldDiff(scenarioAccountEditFields(formBody), base))).toEqual(["value"]);
+  });
+
+  it("account: a custom rate is still sent", () => {
+    const body = { value: "1", growthRate: "0.07", growthSource: "custom" };
+    expect(scenarioAccountEditFields(body)).toEqual(body);
+  });
+
+  it("income: an amount edit on a nominal-dollars row diffs only `annualAmount`", () => {
+    const base = { id: "inc-1", annualAmount: 250000, startYear: 2026, inflationStartYear: 2026 };
+    const formBody = { annualAmount: "111111", startYear: "2026", inflationStartYear: null };
+    expect(Object.keys(buildFieldDiff(formBody, base))).toEqual(["annualAmount", "inflationStartYear"]); // the defect
+    const fields = withoutRestatedInflationStart(formBody, base);
+    expect(Object.keys(buildFieldDiff(fields, base))).toEqual(["annualAmount"]);
+  });
+
+  it("income: a moved start year still sends the null (the stored year would mean today's dollars)", () => {
+    const row = { startYear: 2026, inflationStartYear: 2026 };
+    const body = { annualAmount: "1", startYear: "2030", inflationStartYear: null };
+    expect(withoutRestatedInflationStart(body, row)).toEqual(body);
+  });
+
+  it("income: turning today's dollars off a today's-dollars row still sends the null", () => {
+    const row = { startYear: 2035, inflationStartYear: 2026 };
+    const body = { annualAmount: "1", startYear: "2035", inflationStartYear: null };
+    expect(withoutRestatedInflationStart(body, row)).toEqual(body);
   });
 });

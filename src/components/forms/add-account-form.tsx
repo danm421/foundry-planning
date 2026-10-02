@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { AssetMixTab, type AssetClassOption } from "./asset-mix-tab";
 import { BasePlanOnly } from "@/components/base-plan-only";
+import { scenarioAccountEditFields } from "@/lib/accounts/scenario-account-fields";
 import { HoldingsTab } from "./holdings-tab";
 import { BENEFICIARY_REQUIRED_MESSAGE } from "@/lib/accounts/is-529";
 import { setAccountDeriveFromHoldings } from "@/lib/investments/holdings-client";
@@ -1500,7 +1501,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
             op: "edit",
             targetKind: "account",
             targetId,
-            desiredFields: accountBody,
+            desiredFields: scenarioAccountEditFields(accountBody),
           },
           {
             url: `/api/clients/${clientId}/accounts/${targetId}`,
@@ -1741,7 +1742,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
             op: "edit",
             targetKind: "account",
             targetId,
-            desiredFields: accountBody,
+            desiredFields: scenarioAccountEditFields(accountBody),
           },
           {
             url: `/api/clients/${clientId}/accounts/${targetId}`,

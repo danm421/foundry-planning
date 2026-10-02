@@ -27,7 +27,7 @@ import {
 import { livingSlotRank } from "@/lib/living-slot-order";
 import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
 import { isGoalExpense, educationGoalYears, EDUCATION_GOAL_YEARS } from "@/lib/goals";
-import { isTodaysDollars } from "@/lib/todays-dollars";
+import { isTodaysDollars, withoutRestatedInflationStart } from "@/lib/todays-dollars";
 import type { ClientInfo as EngineClientInfo, PlanSettings, Income as EngineIncome } from "@/engine/types";
 import type { IncomeTaxType } from "@/engine/tax-adjustments";
 import type { AccountOwner } from "@/engine/ownership";
@@ -713,7 +713,7 @@ function IncomeDialog({
               op: "edit",
               targetKind: "income",
               targetId: editing!.id,
-              desiredFields: body,
+              desiredFields: withoutRestatedInflationStart(body, editing!),
             }
           : {
               op: "add",
@@ -1341,7 +1341,7 @@ function ExpenseDialog({
               op: "edit",
               targetKind: "expense",
               targetId: editing!.id,
-              desiredFields: body,
+              desiredFields: withoutRestatedInflationStart(body, editing!),
             }
           : {
               op: "add",
