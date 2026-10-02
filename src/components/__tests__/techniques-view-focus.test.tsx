@@ -10,8 +10,9 @@
  * base plan, so a save would overwrite the scenario).
  */
 
+import { StrictMode } from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within, act } from "@testing-library/react";
 
 const submit = vi.fn();
 
@@ -367,5 +368,132 @@ describe("TechniquesView focus mode — closing", () => {
         expect.anything(),
       );
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Create and delete intents
+// ---------------------------------------------------------------------------
+
+describe("TechniquesView focus mode — create and delete intents", () => {
+  it.each([
+    { kind: "roth_conversion" as const, title: "New Roth Conversion" },
+    { kind: "relocation" as const, title: "Add Relocation" },
+    { kind: "asset_transaction" as const, title: "Add Asset Transactions" },
+  ])("create $kind opens the empty form alone, and cancel closes", ({ kind, title }) => {
+    const { onFocusClose } = renderFocused({ intent: "create", kind });
+
+    expect(screen.getByRole("dialog", { name: title })).toBeTruthy();
+    expectNoPageChrome();
+    expect(onFocusClose).not.toHaveBeenCalled();
+
+    fireEvent.click(dialog(title).getByRole("button", { name: "Cancel" }));
+    expect(onFocusClose).toHaveBeenCalledTimes(1);
+    expect(onFocusClose).toHaveBeenCalledWith();
+  });
+
+  it("create transfer opens the empty transfer form alone, and cancel closes", () => {
+    const { onFocusClose } = renderFocused({ intent: "create", kind: "transfer" });
+
+    expect(screen.getByRole("heading", { name: "Add Transfer" })).toBeTruthy();
+    expectNoPageChrome();
+
+    const form = screen.getByRole("heading", { name: "Add Transfer" }).closest("form") as HTMLFormElement;
+    fireEvent.click(within(form).getByRole("button", { name: "Cancel" }));
+    expect(onFocusClose).toHaveBeenCalledTimes(1);
+    expect(onFocusClose).toHaveBeenCalledWith();
+  });
+
+  // Its form backfills from a base-only GET until the reinvestment task lands.
+  it("create reinvestment → unsupported, nothing rendered", async () => {
+    const utils = renderFocused({ intent: "create", kind: "reinvestment" });
+    await waitFor(() => expect(utils.onFocusClose).toHaveBeenCalledTimes(1));
+    expect(utils.onFocusClose).toHaveBeenCalledWith("unsupported");
+    expect(utils.container).toBeEmptyDOMElement();
+  });
+
+  it("create for a kind this view doesn't create → unavailable", async () => {
+    await expectUnavailable(renderFocused({ intent: "create", kind: "account" }));
+  });
+
+  it.each([
+    { kind: "roth_conversion" as const, id: "rc-1", url: "/api/clients/c-1/roth-conversions?rothConversionId=rc-1" },
+    { kind: "transfer" as const, id: "tr-1", url: "/api/clients/c-1/transfers?transferId=tr-1" },
+    { kind: "relocation" as const, id: "rl-1", url: "/api/clients/c-1/relocations?relocationId=rl-1" },
+    { kind: "asset_transaction" as const, id: "tx-buy", url: "/api/clients/c-1/asset-transactions?transactionId=tx-buy" },
+  ])("delete $kind removes that row through the writer with no prompt, then closes", async ({ kind, id, url }) => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => {});
+    submit.mockResolvedValue({ ok: true, status: 204 });
+    const { onFocusClose, container } = renderFocused({ intent: "delete", kind, id });
+
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledTimes(1));
+    expect(onFocusClose).toHaveBeenCalledWith();
+    // The writer turns this into a scenario `remove` change inside a scenario
+    // (R1); the fallback is only ever used with no scenario active.
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(submit).toHaveBeenCalledWith(
+      { op: "remove", targetKind: kind, targetId: id },
+      { url, method: "DELETE" },
+    );
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(alertSpy).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(container).toBeEmptyDOMElement();
+    confirmSpy.mockRestore();
+    alertSpy.mockRestore();
+  });
+
+  it("delete does not close before the write resolves", async () => {
+    let resolve!: (r: Pick<Response, "ok" | "status">) => void;
+    submit.mockReturnValue(new Promise((r) => (resolve = r)));
+    const { onFocusClose } = renderFocused({ intent: "delete", kind: "transfer", id: "tr-1" });
+    await act(async () => {});
+    expect(onFocusClose).not.toHaveBeenCalled();
+    resolve({ ok: true, status: 204 });
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith());
+  });
+
+  it("delete reports \"failed\" when the write fails", async () => {
+    submit.mockResolvedValue({ ok: false, status: 500 });
+    const { onFocusClose } = renderFocused({ intent: "delete", kind: "relocation", id: "rl-1" });
+
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith("failed"));
+    expect(onFocusClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("delete runs once under StrictMode", async () => {
+    submit.mockResolvedValue({ ok: true, status: 204 });
+    const onFocusClose = vi.fn();
+    render(
+      <StrictMode>
+        <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
+          <TechniquesView {...PROPS} focus={{ intent: "delete", kind: "transfer", id: "tr-1" }} onFocusClose={onFocusClose} />
+        </ClientAccessProvider>
+      </StrictMode>,
+    );
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith());
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(onFocusClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("delete reinvestment → unsupported, no write", async () => {
+    const utils = renderFocused({ intent: "delete", kind: "reinvestment", id: "ri-1" });
+    await waitFor(() => expect(utils.onFocusClose).toHaveBeenCalledWith("unsupported"));
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { label: "a row that isn't there", focus: { intent: "delete", kind: "transfer", id: "gone" } as EditorFocus },
+    { label: "an id that belongs to another kind", focus: { intent: "delete", kind: "transfer", id: "rc-1" } as EditorFocus },
+    { label: "a kind this view doesn't edit", focus: { intent: "delete", kind: "account", id: "acc-cash" } as EditorFocus },
+  ])("delete of $label → unavailable, no write", async ({ focus }) => {
+    await expectUnavailable(renderFocused(focus));
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it("delete without edit permission → unavailable, no write", async () => {
+    await expectUnavailable(renderFocused({ intent: "delete", kind: "transfer", id: "tr-1" }, vi.fn(), "view"));
+    expect(submit).not.toHaveBeenCalled();
   });
 });

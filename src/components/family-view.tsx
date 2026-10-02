@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useFocusCloseOnce, type FocusCloseOutcome } from "@/hooks/use-focus-close-once";
+import { useFocusDelete } from "@/hooks/use-focus-delete";
 import { giftScenarioRemove } from "@/lib/gifts/gift-write";
 import { useClientAccess } from "./client-access-provider";
 import { inputClassName, selectBaseClassName } from "@/components/forms/input-styles";
@@ -24,7 +25,7 @@ import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import type { AssetsTabAccount, AssetsTabLiability, AssetsTabIncome, AssetsTabExpense, AssetsTabFamilyMember, AssetsTabBusiness } from "./forms/assets-tab";
 import type { AccountOwner } from "@/engine/ownership";
 import { ageOnDate, birthYearFromDob, yearForAge } from "@/lib/age-year";
-import { isEditFocus, type EditorFocus } from "@/lib/scenario/change-editor-target";
+import { focusRowId, isEditFocus, type EditorFocus } from "@/lib/scenario/change-editor-target";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -381,7 +382,11 @@ export function TrashIcon() {
 type FocusTarget =
   | { kind: "client" }
   | { kind: "entity"; row: Entity }
-  | { kind: "gift"; row: Gift };
+  | { kind: "gift"; row: Gift }
+  // A create opens the empty dialog; a delete runs the page's delete on the row
+  // with no dialog at all.
+  | { kind: "create"; of: "entity" | "gift" }
+  | { kind: "delete"; of: "entity" | "gift"; id: string };
 
 /** The row the page's own click would open for `focus`, null when the page
  *  offers no editor for it, or "unsupported" for a gift series (see below). */
@@ -389,9 +394,27 @@ function findFocusRow(
   focus: EditorFocus,
   rows: { clientId: string; entities: Entity[]; gifts: Gift[]; giftSeries: GiftSeriesLite[] },
 ): FocusTarget | "unsupported" | null {
-  // Only an edit focus opens a row here; create and delete are not built yet.
+  const byId = <T extends { id: string }>(list: T[]) => list.find((r) => r.id === focusRowId(focus)) ?? null;
+  // The page adds trusts of any type through the empty EntityDialog, and gifts
+  // through the empty GiftDialog. Members and external beneficiaries stay out
+  // until their editors write the scenario.
+  if (focus.intent === "create") {
+    return focus.kind === "entity" || focus.kind === "gift" ? { kind: "create", of: focus.kind } : null;
+  }
+  if (focus.intent === "delete") {
+    switch (focus.kind) {
+      // Every listed entity has a trash icon, whatever its type.
+      case "entity":
+        return byId(rows.entities) ? { kind: "delete", of: "entity", id: focus.id } : null;
+      // One-time gifts only; a series' delete is not scenario-safe (see "gift" below).
+      case "gift":
+        if (byId(rows.gifts)) return { kind: "delete", of: "gift", id: focus.id };
+        return byId(rows.giftSeries) ? "unsupported" : null;
+      default:
+        return null;
+    }
+  }
   if (!isEditFocus(focus)) return null;
-  const byId = <T extends { id: string }>(list: T[]) => list.find((r) => r.id === focus.id) ?? null;
   switch (focus.kind) {
     // The profile dialog. (Horizon and retirement-age changes open the Solver's
     // Retirement tab instead — ruling T4d-horizon.)
@@ -487,7 +510,9 @@ export default function FamilyView({
   const [membersEdit, setMembersEdit] = useState(false);
   const [claimedAsDependentError, setClaimedAsDependentError] = useState<string | null>(null);
 
-  const [entityDialogOpen, setEntityDialogOpen] = useState(() => focusTarget?.kind === "entity");
+  const [entityDialogOpen, setEntityDialogOpen] = useState(
+    () => focusTarget?.kind === "entity" || (focusTarget?.kind === "create" && focusTarget.of === "entity"),
+  );
   const [editingEntity, setEditingEntity] = useState<Entity | undefined>(() =>
     focusTarget?.kind === "entity" ? focusTarget.row : undefined,
   );
@@ -541,7 +566,9 @@ export default function FamilyView({
   const [editProfileOpen, setEditProfileOpen] = useState(() => focusTarget?.kind === "client");
   // The gift dialog's own state lives in GiftsSection; this tracks whether the
   // focused one is still up.
-  const [giftFocusOpen, setGiftFocusOpen] = useState(() => focusTarget?.kind === "gift");
+  const [giftFocusOpen, setGiftFocusOpen] = useState(
+    () => focusTarget?.kind === "gift" || (focusTarget?.kind === "create" && focusTarget.of === "gift"),
+  );
 
   const profileInitial: ClientFormInitial = {
     id: clientId,
@@ -631,6 +658,39 @@ export default function FamilyView({
       );
     }
   }
+
+  // The page's entity delete, shared with focus mode's delete intent.
+  async function performEntityDelete(entity: Entity): Promise<boolean> {
+    const res = await writer.submit(
+      { op: "remove", targetKind: "entity", targetId: entity.id },
+      {
+        url: `/api/clients/${clientId}/entities/${entity.id}`,
+        method: "DELETE",
+      },
+    );
+    if (!(res.ok || res.status === 204)) return false;
+    setEntities((prev) => prev.filter((e) => e.id !== entity.id));
+    return true;
+  }
+
+  // Focus mode's delete: the page's own delete, with no prompt. Its in-flight
+  // flag joins `focusDialogOpen` below.
+  const focusDeleting = useFocusDelete(
+    focusTarget?.kind === "delete"
+      ? async () => {
+          const { of, id } = focusTarget;
+          if (of === "entity") {
+            const entity = entities.find((e) => e.id === id);
+            return entity ? performEntityDelete(entity) : false;
+          }
+          const res = await removeGift(writer, clientId, id);
+          if (!res.ok) return false;
+          setGiftsState((prev) => prev.filter((g) => g.id !== id));
+          return true;
+        }
+      : null,
+    onFocusClose,
+  );
 
   // The page's editors and their delete confirms, built once: the page renders
   // them in place, focus mode renders them alone.
@@ -768,15 +828,7 @@ export default function FamilyView({
         onCancel={() => setDeletingEntity(null)}
         onConfirm={async () => {
           if (!deletingEntity) return;
-          const res = await writer.submit(
-            { op: "remove", targetKind: "entity", targetId: deletingEntity.id },
-            {
-              url: `/api/clients/${clientId}/entities/${deletingEntity.id}`,
-              method: "DELETE",
-            },
-          );
-          if (res.ok || res.status === 204) {
-            setEntities((prev) => prev.filter((e) => e.id !== deletingEntity.id));
+          if (await performEntityDelete(deletingEntity)) {
             setEntityDialogOpen(false);
             setDeletingEntity(null);
           }
@@ -805,8 +857,11 @@ export default function FamilyView({
 
   // Focus mode hands control back once its dialog is gone — cancel, save or a
   // confirmed delete — or, with its reason, when none ever opened.
-  const focusDialogOpen = editProfileOpen || entityDialogOpen || giftFocusOpen;
+  const focusDialogOpen = editProfileOpen || entityDialogOpen || giftFocusOpen || focusDeleting;
   useFocusCloseOnce(focus, focusFound, focusDialogOpen, onFocusClose);
+
+  // A delete shows no dialog.
+  if (focusTarget?.kind === "delete") return null;
 
   if (focus) {
     return (
@@ -817,6 +872,13 @@ export default function FamilyView({
           <GiftsSection
             {...giftsSectionProps}
             focusGift={focusTarget.row}
+            onFocusDialogClose={() => setGiftFocusOpen(false)}
+          />
+        )}
+        {focusTarget?.kind === "create" && focusTarget.of === "gift" && (
+          <GiftsSection
+            {...giftsSectionProps}
+            focusCreate
             onFocusDialogClose={() => setGiftFocusOpen(false)}
           />
         )}
@@ -1210,6 +1272,19 @@ function PersonCard({ name, badge, fields }: { name: string; badge: string; fiel
   );
 }
 
+// Inside a scenario a gift deletes as a `remove` change (see GiftsSection), so
+// the page and focus mode's delete intent share this one writer call.
+function removeGift(
+  writer: ReturnType<typeof useScenarioWriter>,
+  clientId: string,
+  id: string,
+): Promise<Response> {
+  return writer.submit(giftScenarioRemove(id), {
+    url: `/api/clients/${clientId}/gifts/${id}`,
+    method: "DELETE",
+  });
+}
+
 function GiftsSection(props: {
   clientId: string;
   members: FamilyMember[];
@@ -1236,11 +1311,14 @@ function GiftsSection(props: {
   /** Focus mode: open the dialog on this gift, as its Edit button does, and
    *  render only the dialog. */
   focusGift?: Gift;
+  /** Focus mode: open the empty dialog, as `+ Add gift` does, and render only
+   *  the dialog. */
+  focusCreate?: boolean;
   /** Focus mode: the dialog closed (cancel or save). */
   onFocusDialogClose?: () => void;
 }) {
   const writer = useScenarioWriter(props.clientId);
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState(() => props.focusCreate === true);
   const [editingGift, setEditingGift] = useState<Gift | null>(() => props.focusGift ?? null);
   const [editingSeries, setEditingSeries] = useState<GiftSeriesLite | null>(null);
 
@@ -1270,10 +1348,7 @@ function GiftsSection(props: {
   // resurrect the un-edited base gift while the page showed it gone
   // (changes-writer.ts, and commit 1611a6853 which made gifts the exception).
   async function deleteGift(id: string) {
-    const res = await writer.submit(giftScenarioRemove(id), {
-      url: `/api/clients/${props.clientId}/gifts/${id}`,
-      method: "DELETE",
-    });
+    const res = await removeGift(writer, props.clientId, id);
     if (res.ok) props.onChangeGifts(props.gifts.filter((x) => x.id !== id));
   }
   // A series deletes the SAME way in both modes. `gift_series` carries a real
@@ -1330,7 +1405,7 @@ function GiftsSection(props: {
     />
   ) : null;
 
-  if (props.focusGift) return giftDialogNode;
+  if (props.focusGift || props.focusCreate) return giftDialogNode;
 
   return (
     <section className="mt-6 rounded-lg border border-hair bg-card p-4">

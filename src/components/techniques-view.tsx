@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useScenarioState } from "@/hooks/use-scenario-state";
 import { useFocusCloseOnce, type FocusCloseOutcome } from "@/hooks/use-focus-close-once";
+import { useFocusDelete } from "@/hooks/use-focus-delete";
 import { useClientAccess } from "@/components/client-access-provider";
 import AddTransferForm from "./forms/add-transfer-form";
 import AddReinvestmentForm, { type ReinvestmentInitialData } from "./forms/add-reinvestment-form";
@@ -19,7 +20,7 @@ import type { ClientMilestones, YearRef } from "@/lib/milestones";
 import { YEAR_REF_LABELS } from "@/lib/milestones";
 import { formatReinvestmentScope } from "@/lib/solver/technique-summaries";
 import { USPS_STATE_NAMES, type USPSStateCode } from "@/lib/usps-states";
-import { isEditFocus, type EditorFocus } from "@/lib/scenario/change-editor-target";
+import { focusRowId, isEditFocus, type EditorFocus } from "@/lib/scenario/change-editor-target";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -977,21 +978,56 @@ type FocusTarget =
   | { kind: "roth_conversion"; row: RothConversionRow }
   | { kind: "transfer"; row: TransferRow }
   | { kind: "relocation"; row: RelocationRow }
-  | { kind: "asset_transaction"; row: AssetTransactionRow };
+  | { kind: "asset_transaction"; row: AssetTransactionRow }
+  // A create opens the empty form; a delete runs the page's delete on the row
+  // with no form at all.
+  | { kind: "create"; of: "roth_conversion" | "transfer" | "relocation" | "asset_transaction" }
+  | { kind: "delete"; of: "roth_conversion" | "transfer" | "relocation" | "asset_transaction"; id: string };
 
-/** The row the page's Edit button would open for `focus`, or null. Every row
- *  the page lists has an Edit button, so any row found here is editable —
- *  reinvestments aside (see below). */
+/** The row the page's Edit button would open for `focus`, or null; "unsupported"
+ *  for a reinvestment create or delete (see below). Every row the page lists has
+ *  Edit and Delete buttons, so any row found here is editable and deletable —
+ *  an edit of a reinvestment aside. */
 function findFocusRow(
   focus: EditorFocus,
   rows: Pick<
     TechniquesViewProps,
-    "rothConversions" | "transfers" | "relocations" | "assetTransactions"
+    "rothConversions" | "transfers" | "relocations" | "assetTransactions" | "reinvestments"
   >,
-): FocusTarget | null {
-  // Only an edit focus opens a row here; create and delete are not built yet.
+): FocusTarget | "unsupported" | null {
+  const byId = <T extends { id: string }>(list: T[]) => list.find((r) => r.id === focusRowId(focus));
+  if (focus.intent === "create") {
+    switch (focus.kind) {
+      case "roth_conversion":
+      case "transfer":
+      case "relocation":
+      case "asset_transaction":
+        return { kind: "create", of: focus.kind };
+      // Its form backfills from a base-only GET; unsupported until it is
+      // scenario-safe.
+      case "reinvestment":
+        return "unsupported";
+      default:
+        return null;
+    }
+  }
+  if (focus.intent === "delete") {
+    switch (focus.kind) {
+      case "roth_conversion":
+        return byId(rows.rothConversions) ? { kind: "delete", of: focus.kind, id: focus.id } : null;
+      case "transfer":
+        return byId(rows.transfers) ? { kind: "delete", of: focus.kind, id: focus.id } : null;
+      case "relocation":
+        return byId(rows.relocations) ? { kind: "delete", of: focus.kind, id: focus.id } : null;
+      case "asset_transaction":
+        return byId(rows.assetTransactions) ? { kind: "delete", of: focus.kind, id: focus.id } : null;
+      case "reinvestment":
+        return byId(rows.reinvestments) ? "unsupported" : null;
+      default:
+        return null;
+    }
+  }
   if (!isEditFocus(focus)) return null;
-  const byId = <T extends { id: string }>(list: T[]) => list.find((r) => r.id === focus.id);
   switch (focus.kind) {
     case "roth_conversion": {
       const row = byId(rows.rothConversions);
@@ -1047,27 +1083,30 @@ export default function TechniquesView({
   // for it: the row is gone, this view doesn't edit that kind, or there's no
   // edit access. The editing state below is seeded exactly as that row's Edit
   // button sets it — for a transaction leg, that opens its whole bundle.
-  const [focusTarget] = useState(() =>
+  const [focusFound] = useState(() =>
     focus && canEdit
-      ? findFocusRow(focus, { rothConversions, transfers, relocations, assetTransactions })
+      ? findFocusRow(focus, { rothConversions, transfers, relocations, assetTransactions, reinvestments })
       : null,
   );
+  const focusTarget = focusFound === "unsupported" ? null : focusFound;
+  const focusCreates = (of: "roth_conversion" | "transfer" | "relocation" | "asset_transaction") =>
+    focusTarget?.kind === "create" && focusTarget.of === of;
 
-  const [showAddTransfer, setShowAddTransfer] = useState(false);
+  const [showAddTransfer, setShowAddTransfer] = useState(() => focusCreates("transfer"));
   const [editingTransfer, setEditingTransfer] = useState<TransferRow | null>(() =>
     focusTarget?.kind === "transfer" ? focusTarget.row : null,
   );
   const [showAddReinvestment, setShowAddReinvestment] = useState(false);
   const [editingReinvestment, setEditingReinvestment] = useState<ReinvestmentInitialData | null>(null);
-  const [showAddRelocation, setShowAddRelocation] = useState(false);
+  const [showAddRelocation, setShowAddRelocation] = useState(() => focusCreates("relocation"));
   const [editingRelocation, setEditingRelocation] = useState<RelocationRow | null>(() =>
     focusTarget?.kind === "relocation" ? focusTarget.row : null,
   );
-  const [showAddTransaction, setShowAddTransaction] = useState(false);
+  const [showAddTransaction, setShowAddTransaction] = useState(() => focusCreates("asset_transaction"));
   const [editingTransaction, setEditingTransaction] = useState<AssetTransactionRow | null>(() =>
     focusTarget?.kind === "asset_transaction" ? focusTarget.row : null,
   );
-  const [showAddRothConversion, setShowAddRothConversion] = useState(false);
+  const [showAddRothConversion, setShowAddRothConversion] = useState(() => focusCreates("roth_conversion"));
   const [editingRothConversion, setEditingRothConversion] = useState<RothConversionInitialData | null>(() =>
     focusTarget?.kind === "roth_conversion" ? focusTarget.row : null,
   );
@@ -1134,9 +1173,12 @@ export default function TechniquesView({
     [assetTransactions],
   );
 
+  // The delete handlers return the writer's Response (null without edit
+  // access) so focus mode's delete intent can tell a failed write; the page
+  // ignores it.
   async function handleDeleteTransfer(transferId: string) {
-    if (!canEdit) return;
-    await writer.submit(
+    if (!canEdit) return null;
+    const res = await writer.submit(
       { op: "remove", targetKind: "transfer", targetId: transferId },
       {
         url: `/api/clients/${clientId}/transfers?transferId=${transferId}`,
@@ -1144,11 +1186,12 @@ export default function TechniquesView({
       },
     );
     router.refresh();
+    return res;
   }
 
   async function handleDeleteReinvestment(reinvestmentId: string) {
-    if (!canEdit) return;
-    await writer.submit(
+    if (!canEdit) return null;
+    const res = await writer.submit(
       { op: "remove", targetKind: "reinvestment", targetId: reinvestmentId },
       {
         url: `/api/clients/${clientId}/reinvestments?reinvestmentId=${reinvestmentId}`,
@@ -1156,20 +1199,22 @@ export default function TechniquesView({
       },
     );
     router.refresh();
+    return res;
   }
 
   async function handleDeleteRelocation(relocationId: string) {
-    if (!canEdit) return;
-    await writer.submit(
+    if (!canEdit) return null;
+    const res = await writer.submit(
       { op: "remove", targetKind: "relocation", targetId: relocationId },
       { url: `/api/clients/${clientId}/relocations?relocationId=${relocationId}`, method: "DELETE" },
     );
     router.refresh();
+    return res;
   }
 
   async function handleDeleteTransaction(transactionId: string) {
-    if (!canEdit) return;
-    await writer.submit(
+    if (!canEdit) return null;
+    const res = await writer.submit(
       { op: "remove", targetKind: "asset_transaction", targetId: transactionId },
       {
         url: `/api/clients/${clientId}/asset-transactions?transactionId=${transactionId}`,
@@ -1177,11 +1222,12 @@ export default function TechniquesView({
       },
     );
     router.refresh();
+    return res;
   }
 
   async function handleDeleteRothConversion(rothConversionId: string) {
-    if (!canEdit) return;
-    await writer.submit(
+    if (!canEdit) return null;
+    const res = await writer.submit(
       { op: "remove", targetKind: "roth_conversion", targetId: rothConversionId },
       {
         url: `/api/clients/${clientId}/roth-conversions?rothConversionId=${rothConversionId}`,
@@ -1189,6 +1235,7 @@ export default function TechniquesView({
       },
     );
     router.refresh();
+    return res;
   }
 
   // Every form, built once: the page renders them under its sections, focus
@@ -1278,15 +1325,40 @@ export default function TechniquesView({
     </>
   );
 
+  // Focus mode's delete: the page's own delete handler, with no prompt. Its
+  // in-flight flag joins `focusFormOpen` below.
+  const focusDeleting = useFocusDelete(
+    focusTarget?.kind === "delete"
+      ? async () => {
+          const { of, id } = focusTarget;
+          const res = await {
+            roth_conversion: handleDeleteRothConversion,
+            transfer: handleDeleteTransfer,
+            relocation: handleDeleteRelocation,
+            asset_transaction: handleDeleteTransaction,
+          }[of](id);
+          return res !== null && (res.ok || res.status === 204);
+        }
+      : null,
+    onFocusClose,
+  );
+
   // Focus mode hands control back once its form is gone — cancel or save —
-  // or, as "unavailable", when none ever opened.
+  // and any delete has finished, or, as "unavailable", when none ever opened.
   const focusFormOpen =
     editingRothConversion !== null ||
     editingTransfer !== null ||
     editingRelocation !== null ||
-    editingTransaction !== null;
-  useFocusCloseOnce(focus, focusTarget, focusFormOpen, onFocusClose);
+    editingTransaction !== null ||
+    showAddRothConversion ||
+    showAddTransfer ||
+    showAddRelocation ||
+    showAddTransaction ||
+    focusDeleting;
+  useFocusCloseOnce(focus, focusFound, focusFormOpen, onFocusClose);
 
+  // A delete shows no form.
+  if (focusTarget?.kind === "delete") return null;
   if (focus) return formsNode;
 
   return (

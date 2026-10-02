@@ -17,8 +17,9 @@
  * dialog writes to the scenario, not the base plan.
  */
 
+import { StrictMode } from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within, act } from "@testing-library/react";
 
 const SCENARIO_ID = "scn-1";
 
@@ -390,5 +391,152 @@ describe("FamilyView focus mode — closing", () => {
     expect(scenarioChangeBodies()).toEqual([
       expect.objectContaining({ op: "add", targetKind: "gift", entity: expect.objectContaining({ id: "gift-1" }) }),
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Create and delete intents
+// ---------------------------------------------------------------------------
+
+describe("FamilyView focus mode — create and delete intents", () => {
+  const LLC: Entity = { ...TRUST, id: "ent-llc", name: "Test Holdings LLC", entityType: "llc", trustSubType: null };
+  const WITH_LLC: FamilyViewProps = { ...PROPS, initialEntities: [TRUST, LLC] };
+
+  function renderWith(props: FamilyViewProps, focus: EditorFocus, onFocusClose = vi.fn()) {
+    const utils = render(
+      <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
+        <FamilyView {...props} focus={focus} onFocusClose={onFocusClose} />
+      </ClientAccessProvider>,
+    );
+    return { ...utils, onFocusClose };
+  }
+
+  it("create entity opens the empty Add Trust dialog alone, and cancel closes", () => {
+    const { onFocusClose } = renderFocused({ intent: "create", kind: "entity" });
+
+    expect(screen.getByRole("dialog", { name: "Add Trust" })).toBeTruthy();
+    expect(inputValue("trust-name")).not.toBe(TRUST.name);
+    expectNoPageChrome();
+    expect(onFocusClose).not.toHaveBeenCalled();
+
+    fireEvent.click(dialog("Add Trust").getByRole("button", { name: "Cancel" }));
+    expect(onFocusClose).toHaveBeenCalledTimes(1);
+    expect(onFocusClose).toHaveBeenCalledWith();
+  });
+
+  it("create gift opens the empty Add a gift dialog alone, and cancel closes", () => {
+    const { onFocusClose } = renderFocused({ intent: "create", kind: "gift" });
+
+    expect(screen.getByRole("dialog", { name: "Add a gift" })).toBeTruthy();
+    expectNoPageChrome();
+    expect(onFocusClose).not.toHaveBeenCalled();
+
+    fireEvent.click(dialog("Add a gift").getByRole("button", { name: "Cancel" }));
+    expect(onFocusClose).toHaveBeenCalledTimes(1);
+    expect(onFocusClose).toHaveBeenCalledWith();
+  });
+
+  it.each(["family_member", "external_beneficiary", "client"] as const)(
+    "create %s → unavailable until its editor is scenario-safe",
+    async (kind) => {
+      await expectUnavailable(renderFocused({ intent: "create", kind }));
+    },
+  );
+
+  it("delete entity removes it with a scenario change, no prompt, then closes with no outcome", async () => {
+    const { onFocusClose, container } = renderFocused({ intent: "delete", kind: "entity", id: "ent-ilit" });
+
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledTimes(1));
+    expect(onFocusClose).toHaveBeenCalledWith();
+    expect(scenarioChangeBodies()).toEqual([
+      expect.objectContaining({ op: "remove", targetKind: "entity", targetId: "ent-ilit" }),
+    ]);
+    // R1: inside a scenario, never a base DELETE.
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === "DELETE")).toBe(false);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("delete works for any entity type the page lists, not only trusts (Ruling P2)", async () => {
+    const { onFocusClose } = renderWith(WITH_LLC, { intent: "delete", kind: "entity", id: "ent-llc" });
+
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith());
+    expect(scenarioChangeBodies()).toEqual([
+      expect.objectContaining({ op: "remove", targetKind: "entity", targetId: "ent-llc" }),
+    ]);
+  });
+
+  it("delete gift removes it with a scenario change, no prompt, then closes with no outcome", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { onFocusClose, container } = renderFocused({ intent: "delete", kind: "gift", id: "gift-1" });
+
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledTimes(1));
+    expect(onFocusClose).toHaveBeenCalledWith();
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(scenarioChangeBodies()).toEqual([
+      expect.objectContaining({ op: "remove", targetKind: "gift", targetId: "gift-1" }),
+    ]);
+    expect(container).toBeEmptyDOMElement();
+    confirmSpy.mockRestore();
+  });
+
+  it.each([
+    { kind: "entity" as const, id: "ent-ilit" },
+    { kind: "gift" as const, id: "gift-1" },
+  ])("delete $kind does not close before the write resolves", async ({ kind, id }) => {
+    let release!: () => void;
+    fetchMock.mockImplementation(
+      (url) =>
+        new Promise((resolve) => {
+          const ok = { ok: true, status: 200, json: async () => (url.endsWith("/changes") ? { ok: true } : []) };
+          if (url.endsWith("/changes")) release = () => resolve(ok);
+          else resolve(ok);
+        }),
+    );
+    const { onFocusClose } = renderFocused({ intent: "delete", kind, id });
+    await act(async () => {});
+    expect(onFocusClose).not.toHaveBeenCalled();
+    release();
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith());
+  });
+
+  it.each([
+    { kind: "entity" as const, id: "ent-ilit" },
+    { kind: "gift" as const, id: "gift-1" },
+  ])("delete $kind reports \"failed\" when the write fails", async ({ kind, id }) => {
+    fetchMock.mockImplementation(async () => ({ ok: false, status: 500, json: async () => ({}) }));
+    const { onFocusClose } = renderFocused({ intent: "delete", kind, id });
+
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith("failed"));
+    expect(onFocusClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("delete runs once under StrictMode", async () => {
+    const onFocusClose = vi.fn();
+    render(
+      <StrictMode>
+        <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
+          <FamilyView {...PROPS} focus={{ intent: "delete", kind: "entity", id: "ent-ilit" }} onFocusClose={onFocusClose} />
+        </ClientAccessProvider>
+      </StrictMode>,
+    );
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith());
+    expect(scenarioChangeBodies()).toHaveLength(1);
+    expect(onFocusClose).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { label: "an entity that isn't there", focus: { intent: "delete", kind: "entity", id: "gone" } as EditorFocus },
+    { label: "a gift that isn't there", focus: { intent: "delete", kind: "gift", id: "gone" } as EditorFocus },
+    { label: "a family member", focus: { intent: "delete", kind: "family_member", id: "fm-child" } as EditorFocus },
+    { label: "an external beneficiary", focus: { intent: "delete", kind: "external_beneficiary", id: "ext-1" } as EditorFocus },
+  ])("delete of $label → unavailable, no write", async ({ focus }) => {
+    await expectUnavailable(renderFocused(focus));
+    expect(scenarioChangeBodies()).toEqual([]);
+  });
+
+  it("delete of a gift series → unsupported, no write", async () => {
+    await expectNothingOpened(renderFocused({ intent: "delete", kind: "gift", id: "series-1" }), "unsupported");
+    expect(scenarioChangeBodies()).toEqual([]);
   });
 });

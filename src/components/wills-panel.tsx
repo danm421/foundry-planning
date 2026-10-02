@@ -9,6 +9,7 @@ import { useFocusCloseOnce, type FocusCloseOutcome } from "@/hooks/use-focus-clo
 import { useClientAccess } from "@/components/client-access-provider";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import { isEditFocus, type EditorFocus } from "@/lib/scenario/change-editor-target";
+import { useFocusDelete } from "@/hooks/use-focus-delete";
 // Local copy — `BUSINESS_ENTITY_TYPES` was removed from `in-estate-weights.ts`
 // in the business-as-asset migration. This UI is being phased out separately;
 // keep the gate inline until then.
@@ -251,20 +252,31 @@ function draftToBequest(draft: BequestDraft): WillsPanelBequest {
   };
 }
 
-/** The will whose section the page shows for `focus`, or null when the page
- *  shows no section for it. The page renders one section per grantor — the
- *  co-client's only when there is one — holding that grantor's FIRST will. */
+/** What focus mode shows: one grantor's section, plus, for a delete, the will
+ *  that section's Delete will button removes. */
+type FocusWill = { grantor: WillGrantor; deleteWillId?: string };
+
+/** The section the page shows for `focus`, or null when the page shows none.
+ *  The page renders one section per grantor — the co-client's only when there
+ *  is one — holding that grantor's FIRST will. A create opens the grantor's
+ *  section (empty, or holding the will it already has); its save does the add. */
 function findFocusWill(
   focus: EditorFocus,
   wills: WillsPanelWill[],
   primary: WillsPanelPrimary,
-): WillsPanelWill | null {
-  // Only an edit focus opens a row here; create and delete are not built yet.
-  if (focus.kind !== "will" || !isEditFocus(focus)) return null;
+): FocusWill | null {
+  if (focus.kind !== "will") return null;
+  if (focus.intent === "create") {
+    const grantor = focus.variant;
+    if (grantor !== "client" && grantor !== "spouse") return null;
+    return grantor === "spouse" && !primary.spouseName ? null : { grantor };
+  }
   const will = wills.find((w) => w.id === focus.id);
   if (!will) return null;
   if (will.grantor === "spouse" && !primary.spouseName) return null;
-  return wills.find((w) => w.grantor === will.grantor) === will ? will : null;
+  if (wills.find((w) => w.grantor === will.grantor) !== will) return null;
+  if (isEditFocus(focus)) return { grantor: will.grantor };
+  return { grantor: will.grantor, deleteWillId: will.id };
 }
 
 export default function WillsPanel(props: WillsPanelProps) {
@@ -287,7 +299,8 @@ export default function WillsPanel(props: WillsPanelProps) {
   const [focusWill] = useState(() =>
     focus && canEdit ? findFocusWill(focus, initialWills, primary) : null,
   );
-  const [focusOpen, setFocusOpen] = useState(() => focusWill != null);
+  // A delete opens no dialog; `focusDeleting` below holds focus open for it.
+  const [focusOpen, setFocusOpen] = useState(() => focusWill != null && focusWill.deleteWillId === undefined);
   const businessEntities = useMemo(
     () => entities.filter((e) => e.entityType != null && BUSINESS_ENTITY_TYPES.has(e.entityType)),
     [entities],
@@ -459,7 +472,7 @@ export default function WillsPanel(props: WillsPanelProps) {
     await saveWillFull(g, nextBequests, existing?.residuaryRecipients ?? []);
   }
 
-  async function deleteWill(g: WillGrantor, willId: string) {
+  async function deleteWill(g: WillGrantor, willId: string): Promise<boolean> {
     setSaving(true);
     setError(null);
     try {
@@ -480,8 +493,10 @@ export default function WillsPanel(props: WillsPanelProps) {
         }
       }
       setWills((prev) => prev.filter((w) => w.grantor !== g));
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Delete failed");
+      return false;
     } finally {
       setSaving(false);
     }
@@ -507,9 +522,16 @@ export default function WillsPanel(props: WillsPanelProps) {
     }
   }
 
-  // Focus mode hands control back once its dialog is closed, or, as
-  // "unavailable", when it never opened.
-  useFocusCloseOnce(focus, focusWill, focusOpen, onFocusClose);
+  // Focus mode's delete: the page's own delete, with no confirm prompt.
+  const focusDeleteId = focusWill?.deleteWillId;
+  const focusDeleting = useFocusDelete(
+    focusWill && focusDeleteId !== undefined ? () => deleteWill(focusWill.grantor, focusDeleteId) : null,
+    onFocusClose,
+  );
+
+  // Focus mode hands control back once its dialog is closed and any delete has
+  // finished, or, as "unavailable", when it never opened.
+  useFocusCloseOnce(focus, focusWill, focusOpen || focusDeleting, onFocusClose);
 
   // Focus mode shows only the focused will's grantor.
   const grantors: readonly WillGrantor[] = focusWill ? [focusWill.grantor] : ["client", "spouse"];
@@ -811,7 +833,7 @@ export default function WillsPanel(props: WillsPanelProps) {
   );
 
   if (focus) {
-    if (!focusWill || !focusOpen) return null;
+    if (!focusWill || !focusOpen) return null; // a delete shows no dialog
     return (
       <DialogShell
         open

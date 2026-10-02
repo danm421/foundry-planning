@@ -16,8 +16,9 @@
  * the focused section writes to the scenario, not the base plan.
  */
 
+import { StrictMode } from "react";
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
-import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within, act } from "@testing-library/react";
 
 const SCENARIO_ID = "scn-1";
 
@@ -321,5 +322,111 @@ describe("WillsPanel focus mode — closing", () => {
     fireEvent.click(within(editWillDialog()).getByRole("button", { name: "Done" }));
     expect(onFocusClose).toHaveBeenCalledTimes(1);
     expect(onFocusClose).toHaveBeenCalledWith();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Create and delete intents
+// ---------------------------------------------------------------------------
+
+describe("WillsPanel focus mode — create and delete intents", () => {
+  const NO_WILLS: WillsPanelProps = { ...PROPS, initialWills: [] };
+
+  it.each([
+    { variant: "client" as const, shown: "Alice Test's Will", hidden: "Bob Test's Will" },
+    { variant: "spouse" as const, shown: "Bob Test's Will", hidden: "Alice Test's Will" },
+  ])("create $variant opens that grantor's empty section alone", ({ variant, shown, hidden }) => {
+    const { onFocusClose } = renderFocused({ intent: "create", kind: "will", variant }, { props: NO_WILLS });
+
+    const dialog = within(editWillDialog());
+    expect(dialog.getByRole("heading", { name: shown })).toBeTruthy();
+    expect(dialog.queryByRole("heading", { name: hidden })).toBeNull();
+    expect(dialog.getByRole("button", { name: "+ Add bequest" })).toBeTruthy();
+    expect(dialog.queryByRole("button", { name: "Delete will" })).toBeNull();
+    expect(onFocusClose).not.toHaveBeenCalled();
+
+    fireEvent.click(dialog.getByRole("button", { name: "Done" }));
+    expect(onFocusClose).toHaveBeenCalledTimes(1);
+    expect(onFocusClose).toHaveBeenCalledWith();
+  });
+
+  it("create for the co-client with no co-client on file, or with no variant → unavailable", async () => {
+    const noSpouse: WillsPanelProps = { ...NO_WILLS, primary: { ...PROPS.primary, spouseName: null } };
+    await expectUnavailable(renderFocused({ intent: "create", kind: "will", variant: "spouse" }, { props: noSpouse }));
+  });
+
+  it("create with no variant → unavailable", async () => {
+    await expectUnavailable(renderFocused({ intent: "create", kind: "will" }, { props: NO_WILLS }));
+  });
+
+  it("delete removes the will with a scenario change, no prompt, then closes with no outcome", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { onFocusClose, container } = renderFocused({ intent: "delete", kind: "will", id: "will-spouse" });
+
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledTimes(1));
+    expect(onFocusClose).toHaveBeenCalledWith();
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(scenarioChangeBodies()).toEqual([
+      expect.objectContaining({ op: "remove", targetKind: "will", targetId: "will-spouse" }),
+    ]);
+    // R1: inside a scenario, never a base DELETE.
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === "DELETE")).toBe(false);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(container).toBeEmptyDOMElement();
+    confirmSpy.mockRestore();
+  });
+
+  it("delete does not close before the write resolves", async () => {
+    let release!: () => void;
+    fetchMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve({ ok: true, status: 200, json: async () => ({ ok: true }) });
+        }),
+    );
+    const { onFocusClose } = renderFocused({ intent: "delete", kind: "will", id: "will-client" });
+    await act(async () => {});
+    expect(onFocusClose).not.toHaveBeenCalled();
+    release();
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith());
+  });
+
+  it("delete reports \"failed\" when the write fails", async () => {
+    fetchMock.mockImplementation(async () => ({ ok: false, status: 500, json: async () => ({}) }));
+    const { onFocusClose } = renderFocused({ intent: "delete", kind: "will", id: "will-client" });
+
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith("failed"));
+    expect(onFocusClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("delete runs once under StrictMode", async () => {
+    const onFocusClose = vi.fn();
+    render(
+      <StrictMode>
+        <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
+          <WillsPanel {...PROPS} focus={{ intent: "delete", kind: "will", id: "will-client" }} onFocusClose={onFocusClose} />
+        </ClientAccessProvider>
+      </StrictMode>,
+    );
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith());
+    expect(scenarioChangeBodies()).toHaveLength(1);
+    expect(onFocusClose).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { label: "a will that isn't there", focus: { intent: "delete", kind: "will", id: "gone" } as EditorFocus, props: PROPS },
+    {
+      label: "a co-client will with no co-client on file",
+      focus: { intent: "delete", kind: "will", id: "will-spouse" } as EditorFocus,
+      props: { ...PROPS, primary: { ...PROPS.primary, spouseName: null } },
+    },
+    {
+      label: "a second will for the same grantor",
+      focus: { intent: "delete", kind: "will", id: "will-client-2" } as EditorFocus,
+      props: { ...PROPS, initialWills: [CLIENT_WILL, { ...CLIENT_WILL, id: "will-client-2" }] },
+    },
+  ])("delete of $label → unavailable, no write", async ({ focus, props }) => {
+    await expectUnavailable(renderFocused(focus, { props }));
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
