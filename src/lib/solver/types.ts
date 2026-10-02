@@ -18,6 +18,7 @@ import type {
   EntitySummary,
   Relocation,
   Will,
+  LtcEvent,
 } from "@/engine/types";
 import type { NoteReceivable } from "@/engine/notes-receivable/types";
 import type { ProjectionResult } from "@/engine";
@@ -196,6 +197,7 @@ export type SolverMutation =
   | { kind: "stress-market-crash"; year: number; drawdownPct: number }
   | { kind: "stress-exemption-cap"; cap: number }
   | { kind: "stress-tax-rates"; points: number; startYear: number }
+  | { kind: "stress-ltc"; value: LtcEvent | null }
   | {
       kind: "surplus-allocation";
       spendPct: number;
@@ -260,6 +262,7 @@ export type SolverMutationKey =
   | "stress-market-crash"
   | "stress-exemption-cap"
   | "stress-tax-rates"
+  | "stress-ltc"
   | "surplus-allocation";
 
 export function mutationKey(m: SolverMutation): SolverMutationKey {
@@ -372,6 +375,8 @@ export function mutationKey(m: SolverMutation): SolverMutationKey {
       return "stress-exemption-cap";
     case "stress-tax-rates":
       return "stress-tax-rates";
+    case "stress-ltc":
+      return "stress-ltc";
     case "surplus-allocation":
       return "surplus-allocation";
   }
@@ -414,7 +419,7 @@ export interface SolverSaveResponse {
  *  (the route fills that in once the new scenarios row exists). */
 export interface SolverScenarioChangeDraft {
   opType: "add" | "edit" | "remove";
-  targetKind: "client" | "plan_settings" | "account" | "income" | "expense" | "savings_rule" | "roth_conversion" | "asset_transaction" | "reinvestment" | "gift" | "external_beneficiary" | "entity" | "relocation" | "liability" | "will";
+  targetKind: "client" | "plan_settings" | "account" | "income" | "expense" | "savings_rule" | "roth_conversion" | "asset_transaction" | "reinvestment" | "gift" | "external_beneficiary" | "entity" | "relocation" | "liability" | "will" | "ltc_event";
   targetId: string;
   /** edit: { field: { from, to } } map. add: full entity. remove: null. */
   payload: unknown;

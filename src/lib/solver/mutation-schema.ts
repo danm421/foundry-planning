@@ -12,7 +12,9 @@ import { valuationDiscount } from "@/lib/schemas/common";
 import { isUSPSStateCode } from "@/lib/usps-states";
 import { MAX_RATE_STRESS_POINTS } from "@/lib/tax/rate-stress";
 import { YEAR_REFS } from "@/lib/milestones";
+import { ltcEventSchema } from "@/lib/schemas/ltc-event";
 import type { IncomeTaxType } from "@/engine/tax-adjustments";
+import type { LtcEvent } from "@/engine/types";
 
 const PERSON = z.enum(["client", "spouse"]);
 
@@ -44,6 +46,15 @@ type MissingIncomeTaxType = Exclude<IncomeTaxType, (typeof INCOME_TAX_TYPE_VALUE
 const _INCOME_TAX_TYPE_IS_EXHAUSTIVE: never[] = [] as MissingIncomeTaxType[];
 
 const INCOME_TAX_TYPE = z.enum(INCOME_TAX_TYPE_VALUES);
+
+// `ltcEventSchema` and the engine's `LtcEvent` are written separately (the
+// care-setting list twice over), so nothing ties them but this: it fails to
+// compile when either shape drifts — a field added, renamed, made optional or
+// nullable on one side only, or a care setting the other doesn't list.
+type Expect<T extends true> = T;
+type MutuallyAssignable<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+type _LtcEventSchemaMatchesEngine = Expect<MutuallyAssignable<z.infer<typeof ltcEventSchema>, LtcEvent>>;
 
 const YEAR = z.number().int().min(1950).max(2150);
 // The savings-rule year anchors. Enumerated (not a free string) because the
@@ -842,6 +853,10 @@ export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
     // transform clamp and the UI clamp can never drift apart.
     points: z.number().min(0).max(MAX_RATE_STRESS_POINTS),
     startYear: YEAR,
+  }),
+  z.object({
+    kind: z.literal("stress-ltc"),
+    value: ltcEventSchema.nullable(),
   }),
   z.object({
     kind: z.literal("surplus-allocation"),

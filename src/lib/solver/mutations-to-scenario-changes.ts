@@ -514,6 +514,19 @@ export function mutationsToScenarioChanges(
         );
         break;
       }
+      case "stress-ltc": {
+        const existing = (source.ltcEvents ?? [])[0];
+        const id = m.value?.id ?? existing?.id;
+        if (!id) break;
+        pushTechniqueUpsert(
+          nonClientDrafts,
+          "ltc_event",
+          existing && existing.id === id ? (existing as unknown as Record<string, unknown>) : undefined,
+          id,
+          m.value as unknown as Record<string, unknown> | null,
+        );
+        break;
+      }
       case "savings-rule-upsert": {
         pushTechniqueUpsert(
           nonClientDrafts,
@@ -869,7 +882,7 @@ function diffTechniqueFields(
 
 function pushTechniqueUpsert(
   drafts: SolverScenarioChangeDraft[],
-  targetKind: "account" | "liability" | "savings_rule" | "roth_conversion" | "asset_transaction" | "reinvestment" | "income" | "expense" | "gift" | "external_beneficiary" | "entity" | "relocation" | "will",
+  targetKind: "account" | "liability" | "savings_rule" | "roth_conversion" | "asset_transaction" | "reinvestment" | "income" | "expense" | "gift" | "external_beneficiary" | "entity" | "relocation" | "will" | "ltc_event",
   existing: Record<string, unknown> | undefined,
   id: string,
   value: Record<string, unknown> | null,

@@ -85,6 +85,8 @@ const NON_BASE_SAVABLE = new Set<SolverMutation["kind"]>([
   // column for it, so reporting savable would make Save-to-base drop it AND
   // clear it from the working set.
   "stress-tax-rates",
+  // `ltc_event` is scenario-only — it never reaches the base plan.
+  "stress-ltc",
 ]);
 
 export function isBaseSavableMutation(m: SolverMutation): boolean {

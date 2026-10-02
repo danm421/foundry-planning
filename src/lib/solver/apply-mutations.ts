@@ -447,6 +447,12 @@ export function applyMutations(
         };
         break;
       }
+      case "stress-ltc": {
+        // Its own list, not planSettings — the scenario stores it as its own
+        // `ltc_event` change so it toggles alone (spec decision 2).
+        result.ltcEvents = m.value ? [m.value] : [];
+        break;
+      }
       case "surplus-allocation": {
         result.planSettings = {
           ...result.planSettings,
