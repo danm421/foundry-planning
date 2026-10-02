@@ -354,6 +354,43 @@ describe("applyScenarioChanges — edit", () => {
     const result = applyScenarioChanges(base, [change], {}, []);
     expect((result.effectiveTree.planSettings as unknown as { taxBracketCap: number }).taxBracketCap).toBe(0.22);
   });
+
+  it("coerces numeric strings on plan_settings singleton edits", () => {
+    const base = minimalClientData();
+    base.planSettings = { flatStateRate: 0.05 } as unknown as ClientData["planSettings"];
+
+    const change: ScenarioChange = {
+      id: "ch1", scenarioId: "s1", opType: "edit", targetKind: "plan_settings",
+      targetId: "c1",
+      payload: {
+        flatStateRate: { from: 0.05, to: "0.06" },
+        marketShock: { from: null, to: { year: 2030, drawdownPct: 0.3 } },
+      },
+      toggleGroupId: null, orderIndex: 0,
+    };
+
+    const out = applyScenarioChanges(base, [change], {}, []);
+    expect(out.effectiveTree.planSettings.flatStateRate).toBe(0.06);
+    expect(out.effectiveTree.planSettings.marketShock).toEqual({ year: 2030, drawdownPct: 0.3 });
+  });
+
+  it("coerces numeric strings on client singleton edits", () => {
+    const base = minimalClientData();
+
+    const change: ScenarioChange = {
+      id: "ch1", scenarioId: "s1", opType: "edit", targetKind: "client",
+      targetId: "c1",
+      payload: {
+        retirementAge: { from: 65, to: "67" },
+        filingStatus: { from: "married_joint", to: "single" },
+      },
+      toggleGroupId: null, orderIndex: 0,
+    };
+
+    const out = applyScenarioChanges(base, [change], {}, []);
+    expect(out.effectiveTree.client.retirementAge).toBe(67);
+    expect(out.effectiveTree.client.filingStatus).toBe("single");
+  });
 });
 
 describe("applyScenarioChanges — remove", () => {

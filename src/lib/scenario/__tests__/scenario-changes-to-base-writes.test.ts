@@ -128,6 +128,46 @@ describe("scenarioChangesToBaseWrites", () => {
     ]);
   });
 
+  it("writes plan_settings edits under their DB column names", () => {
+    const changes: ScenarioChange[] = [
+      {
+        ...baseChange,
+        id: "ch5",
+        opType: "edit",
+        targetKind: "plan_settings",
+        targetId: "ps1",
+        payload: {
+          outOfHouseholdRate: { from: 0.37, to: 0.4 },
+          capitalLossCarryforwardShortTerm: { from: null, to: 3000 },
+          capitalLossCarryforwardLongTerm: { from: null, to: 5000 },
+          priorTaxableGifts: { from: { client: 0, spouse: 0 }, to: { client: 1, spouse: 2 } },
+        },
+      },
+      {
+        ...baseChange,
+        id: "ch6",
+        opType: "edit",
+        targetKind: "client",
+        targetId: "c1",
+        payload: { coveredByWorkplacePlan: { from: "auto", to: "yes" } },
+      },
+    ];
+    const plan = scenarioChangesToBaseWrites(minimalClientData(), changes, [], {});
+    expect(plan.singletonUpdates).toEqual([
+      {
+        kind: "plan_settings",
+        set: {
+          outOfHouseholdDniRate: 0.4,
+          capitalLossCarryforwardSt: 3000,
+          capitalLossCarryforwardLt: 5000,
+          priorTaxableGiftsClient: 1,
+          priorTaxableGiftsSpouse: 2,
+        },
+      },
+      { kind: "client", set: { coveredByWorkplacePlan: "yes" } },
+    ]);
+  });
+
   it("folds an engine cascade drop into a cascade BaseRemove", () => {
     const tree = minimalClientData();
     tree.transfers = [

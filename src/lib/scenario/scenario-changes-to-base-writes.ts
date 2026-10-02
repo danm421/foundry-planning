@@ -24,6 +24,7 @@ import type {
 } from "@/engine/scenario/types";
 import type { BaseWritePlan } from "./promote-to-base-types";
 import { isEstateFlowGiftDraft } from "./apply-gift-overlays";
+import { planSettingsEngineToColumns } from "./plan-settings-fields";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 
 /** CascadeWarning.kind → the TargetKind whose base row must be deleted. The two
@@ -111,7 +112,10 @@ export function scenarioChangesToBaseWrites(
       const diff = (c.payload ?? {}) as Record<string, { from: unknown; to: unknown }>;
       const set: Record<string, unknown> = {};
       for (const [field, fv] of Object.entries(diff)) set[field] = fv.to;
-      if (c.targetKind === "client" || c.targetKind === "plan_settings") {
+      if (c.targetKind === "plan_settings") {
+        // Scenario edits carry ENGINE keys; the base row wants its columns.
+        plan.singletonUpdates.push({ kind: c.targetKind, set: planSettingsEngineToColumns(set) });
+      } else if (c.targetKind === "client") {
         plan.singletonUpdates.push({ kind: c.targetKind, set });
       } else {
         plan.updates.push({ kind: c.targetKind, id: c.targetId, set });

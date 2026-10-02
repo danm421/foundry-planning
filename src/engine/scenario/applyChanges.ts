@@ -227,9 +227,41 @@ const NUMERIC_FIELDS_BY_KIND: Partial<Record<TargetKind, readonly string[]>> = {
   // the priorityOrder sort run on string values. priorityOrder is already a
   // number; listing it is a harmless safety no-op.
   withdrawal_strategy: ["priorityOrder", "startYear", "endYear"],
+  // Singletons are edit-only (`applyEdit`'s singleton branch). Engine key
+  // names — the form→engine rename lives in `lib/scenario/plan-settings-fields`.
+  // Nested values (`priorTaxableGifts`, `marketShock`, `ssBenefitHaircut`) are
+  // out of reach of this flat table.
+  plan_settings: [
+    "flatFederalRate",
+    "flatStateRate",
+    "flatStateEstateRate",
+    "irdTaxRate",
+    "probateCostRate",
+    "estateAdminExpenses",
+    "pvDiscountRate",
+    "lifetimeExemptionCap",
+    "taxInflationRate",
+    "ssWageGrowthRate",
+    "outOfHouseholdRate",
+    "capitalLossCarryforwardShortTerm",
+    "capitalLossCarryforwardLongTerm",
+    "surplusSpendPct",
+    "planStartYear",
+    "planEndYear",
+    "livingExpenseInflationOverride",
+  ],
+  client: [
+    "retirementAge",
+    "retirementMonth",
+    "lifeExpectancy",
+    "spouseRetirementAge",
+    "spouseRetirementMonth",
+    "spouseLifeExpectancy",
+    "planEndAge",
+  ],
 };
 
-function toNumberIfNumericString(v: unknown): unknown {
+export function toNumberIfNumericString(v: unknown): unknown {
   if (typeof v !== "string" || v === "") return v;
   const n = Number(v);
   return Number.isFinite(n) ? n : v;
@@ -393,7 +425,7 @@ function applyEdit(tree: ClientData, change: ScenarioChange): void {
   if (singletonField != null) {
     const singleton = tree[singletonField] as unknown as Record<string, unknown>;
     for (const [k, { to }] of Object.entries(diff)) {
-      singleton[k] = to;
+      singleton[k] = coerceEditValue(change.targetKind, k, to);
     }
     return;
   }
