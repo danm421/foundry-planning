@@ -1576,6 +1576,29 @@ export interface PlanSettings {
    *  AMT, NIIT, state tax, and every threshold are deliberately unaffected —
    *  see src/lib/tax/rate-stress.ts. */
   taxRateStress?: TaxRateStress;
+
+  // Raw DB-named settings for editors; the engine never reads them. The loader
+  // has already resolved them into every row's growth rate and into
+  // `inflationRate` above. They ride on the tree so a scenario's Growth &
+  // Inflation editor opens on the scenario's values and the writer can diff
+  // them. Medicare premium inflation is not here: `ClientData` already carries
+  // it under the same names.
+  inflationRateSource?: "asset_class" | "custom";
+  defaultGrowthTaxable?: number;
+  defaultGrowthCash?: number;
+  defaultGrowthRetirement?: number;
+  defaultGrowthRealEstate?: number;
+  defaultGrowthBusiness?: number;
+  defaultGrowthLifeInsurance?: number;
+  growthSourceTaxable?: string;
+  growthSourceCash?: string;
+  growthSourceRetirement?: string;
+  growthSourceRealEstate?: string;
+  growthSourceBusiness?: string;
+  growthSourceLifeInsurance?: string;
+  modelPortfolioIdTaxable?: string | null;
+  modelPortfolioIdCash?: string | null;
+  modelPortfolioIdRetirement?: string | null;
 }
 
 // ── Output Types ─────────────────────────────────────────────────────────────

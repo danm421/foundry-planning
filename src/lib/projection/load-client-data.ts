@@ -105,6 +105,8 @@ import { type AllocationMap } from "./reinvestment-sold-fraction";
 import { resolveReinvestments } from "./resolve-reinvestments";
 import { expandReinvestmentTargets } from "./expand-reinvestment-targets";
 import { isLiquid, type AccountCategory } from "@/lib/account-groups/liquid-filter";
+import { stableStringify } from "@/lib/compute-cache/hash";
+import type { GrowthSettingsOverride } from "@/lib/scenario/growth-settings-override";
 
 export class ClientNotFoundError extends Error {
   constructor(public clientId: string) {
@@ -147,11 +149,55 @@ function giftRecipientFields(g: {
   };
 }
 
-export const loadClientDataWithContext = cache(
+/** Fold a scenario's growth & inflation override onto the raw plan_settings
+ *  row, in the row's own shape (decimal columns as strings). An override model
+ *  portfolio the firm no longer has becomes null: a dangling id resolves to a
+ *  0% portfolio, while null falls back to the category's default rate. */
+function withGrowthOverride(
+  settings: typeof planSettings.$inferSelect,
+  override: GrowthSettingsOverride,
+  firmPortfolioIds: ReadonlySet<string>,
+): typeof planSettings.$inferSelect {
+  const folded: Record<string, unknown> = { ...settings };
+  for (const [key, value] of Object.entries(override)) {
+    const danglingPortfolio =
+      key.startsWith("modelPortfolioId") && typeof value === "string" && !firmPortfolioIds.has(value);
+    folded[key] = danglingPortfolio ? null : typeof value === "number" ? String(value) : value;
+  }
+  return folded as typeof planSettings.$inferSelect;
+}
+
+/**
+ * The client's base-case tree plus the context its rows were resolved with.
+ *
+ * `planSettingsOverride` carries a scenario's growth & inflation edits. They
+ * are folded onto the raw plan_settings row before anything resolves, so
+ * every growth rate, the engine's inflation rate and the returned context all
+ * follow them (W9). Without one, this is the plain base load.
+ */
+export function loadClientDataWithContext(
+  clientId: string,
+  firmId: string,
+  opts?: { planSettingsOverride?: GrowthSettingsOverride },
+): Promise<{ clientData: ClientData; resolutionContext: ResolutionContext }> {
+  const override = opts?.planSettingsOverride ?? {};
+  // React `cache` compares arguments by identity, so the override travels as
+  // canonical JSON: equal overrides share one load, and "" is the base load.
+  return loadClientDataCached(
+    clientId,
+    firmId,
+    Object.keys(override).length > 0 ? stableStringify(override) : "",
+  );
+}
+
+const loadClientDataCached = cache(
   async (
     clientId: string,
     firmId: string,
+    overrideKey: string,
   ): Promise<{ clientData: ClientData; resolutionContext: ResolutionContext }> => {
+    const override: GrowthSettingsOverride = overrideKey ? JSON.parse(overrideKey) : {};
+
     // Verify client access
     const [client] = await db
       .select()
@@ -352,11 +398,16 @@ export const loadClientDataWithContext = cache(
       savingsOverrideMap.set(row.savingsRuleId, bucket);
     }
 
-    const [settings] = planSettingsRows;
+    const [baseSettings] = planSettingsRows;
 
-    if (!settings) {
+    if (!baseSettings) {
       throw new ProjectionInputError(`Client ${clientId} has no plan_settings row`);
     }
+    const settings = withGrowthOverride(
+      baseSettings,
+      override,
+      new Set(portfolioRows.map((p) => p.id)),
+    );
 
     // Position-aware milestone resolution. When a row has a startYearRef /
     // endYearRef set, re-derive its numeric year so the engine sees the
@@ -1105,6 +1156,24 @@ export const loadClientDataWithContext = cache(
       surplusSpendPct: settings.surplusSpendPct != null ? parseFloat(settings.surplusSpendPct) : 0,
       surplusSaveAccountId: settings.surplusSaveAccountId ?? null,
       surplusSpendAllUntilRetirement: settings.surplusSpendAllUntilRetirement ?? false,
+      // Raw growth & inflation settings, view-only: everything above and every
+      // row's growth rate are already resolved from them.
+      inflationRateSource: settings.inflationRateSource,
+      defaultGrowthTaxable: parseFloat(settings.defaultGrowthTaxable),
+      defaultGrowthCash: parseFloat(settings.defaultGrowthCash),
+      defaultGrowthRetirement: parseFloat(settings.defaultGrowthRetirement),
+      defaultGrowthRealEstate: parseFloat(settings.defaultGrowthRealEstate),
+      defaultGrowthBusiness: parseFloat(settings.defaultGrowthBusiness),
+      defaultGrowthLifeInsurance: parseFloat(settings.defaultGrowthLifeInsurance),
+      growthSourceTaxable: settings.growthSourceTaxable,
+      growthSourceCash: settings.growthSourceCash,
+      growthSourceRetirement: settings.growthSourceRetirement,
+      growthSourceRealEstate: settings.growthSourceRealEstate,
+      growthSourceBusiness: settings.growthSourceBusiness,
+      growthSourceLifeInsurance: settings.growthSourceLifeInsurance,
+      modelPortfolioIdTaxable: settings.modelPortfolioIdTaxable,
+      modelPortfolioIdCash: settings.modelPortfolioIdCash,
+      modelPortfolioIdRetirement: settings.modelPortfolioIdRetirement,
     };
 
     // ── Income-tier beneficiary designations grouped by entity ──────────────

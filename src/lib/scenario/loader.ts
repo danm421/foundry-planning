@@ -33,6 +33,7 @@ import { withSynthesizedEntityChecking } from "@/lib/entities/entity-checking";
 import { resolveRefYears } from "@/lib/year-refs";
 import { applyGiftOverlays } from "./apply-gift-overlays";
 import { loadScenarioChanges, loadScenarioToggleGroups } from "./changes";
+import { growthSettingsOverride, stripGrowthSettingsKeys } from "./growth-settings-override";
 
 /**
  * Walks an `add` change's raw payload through the matching resolver so the
@@ -66,8 +67,10 @@ export function resolveAddPayload(
 export interface LoadEffectiveTreeResult {
   effectiveTree: ClientData;
   warnings: CascadeWarning[];
-  /** Resolution context from the base client-data load. Used by the live
-   *  solver to re-resolve reinvestments added/edited via solver mutations.
+  /** Resolution context the scenario's tree was built on: the base load's, or
+   *  the growth-override load's when the scenario edits growth or inflation
+   *  settings. Used by the live solver to re-resolve reinvestments
+   *  added/edited via solver mutations.
    *  Optional because `applyScenarioChangesWithRefs` (used directly in some
    *  tests) does not always have one. */
   resolutionContext?: ResolutionContext;
@@ -103,6 +106,8 @@ export interface LoadEffectiveTreeResult {
  * edits `plan_settings.inflationRate`, `reResolveInflationGrowth` recomputes the
  * resolved rate from the effective plan settings and re-applies it to every
  * inflation-sourced entity. No-ops (same tree) when the rate is unchanged.
+ * `loadEffectiveTree` strips growth & inflation keys and resolves them through
+ * an override load instead, so on that path this is a backstop that no-ops.
  *
  * Premium re-synthesis: life-insurance premium expenses are re-derived from the
  * effective accounts via `withSynthesizedPremiums`. Base-load synthesis runs on
@@ -237,7 +242,7 @@ export const loadEffectiveTree = cache(
     scenarioId: string | "base",
     toggleState: ToggleState,
   ): Promise<LoadEffectiveTreeResult> => {
-    const { clientData: baseTree, resolutionContext } =
+    const { clientData: baseTree, resolutionContext: baseContext } =
       await loadClientDataWithContext(clientId, firmId);
 
     let resolvedScenario;
@@ -292,7 +297,7 @@ export const loadEffectiveTree = cache(
       return {
         effectiveTree: withSynthesizedEntityChecking(filteredBase),
         warnings: [],
-        resolutionContext,
+        resolutionContext: baseContext,
       };
     }
 
@@ -344,6 +349,17 @@ export const loadEffectiveTree = cache(
             ),
     ]);
 
+    // Growth & inflation settings are resolved at load time, so an overlay
+    // edit of them would come too late. When this scenario's ACTIVE
+    // plan_settings edits carry any, load the base again with them folded onto
+    // the raw settings, and build the scenario on that tree and its context.
+    // No such edits → the base load above, alone, exactly as before.
+    const override = growthSettingsOverride(changes, toggleState, groups);
+    const { clientData: settingsTree, resolutionContext } =
+      Object.keys(override).length > 0
+        ? await loadClientDataWithContext(clientId, firmId, { planSettingsOverride: override })
+        : { clientData: baseTree, resolutionContext: baseContext };
+
     // Per-entity inheritance: the writer at PUT
     // /api/clients/[id]/entities/[entityId]/flow-overrides?scenarioId=…
     // replaces flow overrides for a single (entity, scenario) pair, so the
@@ -356,7 +372,7 @@ export const loadEffectiveTree = cache(
     const scenarioEntityIdsWithOverrides = new Set(
       scenarioFlowOverrideRows.map((r) => r.entityId),
     );
-    const inheritedBaseRows = (baseTree.entityFlowOverrides ?? []).filter(
+    const inheritedBaseRows = (settingsTree.entityFlowOverrides ?? []).filter(
       (r) => !scenarioEntityIdsWithOverrides.has(r.entityId),
     );
     // Same per-key inheritance for account flow overrides: if the scenario has
@@ -365,13 +381,13 @@ export const loadEffectiveTree = cache(
     const scenarioAccountIdsWithOverrides = new Set(
       scenarioAccountFlowOverrideRows.map((r) => r.accountId),
     );
-    const inheritedBaseAccountRows = (baseTree.accountFlowOverrides ?? []).filter(
+    const inheritedBaseAccountRows = (settingsTree.accountFlowOverrides ?? []).filter(
       (r) => !scenarioAccountIdsWithOverrides.has(r.accountId),
     );
     const treeForChanges: ClientData = resolvedScenario.isBaseCase
-      ? baseTree
+      ? settingsTree
       : {
-          ...baseTree,
+          ...settingsTree,
           entityFlowOverrides: [
             ...inheritedBaseRows,
             ...scenarioFlowOverrideRows.map(
@@ -400,7 +416,9 @@ export const loadEffectiveTree = cache(
           ],
         };
 
-    const resolvedChanges = changes.map((c) => resolveAddPayload(c, resolutionContext));
+    const resolvedChanges = stripGrowthSettingsKeys(changes).map((c) =>
+      resolveAddPayload(c, resolutionContext),
+    );
 
     const result = applyScenarioChangesWithRefs(
       treeForChanges,

@@ -54,6 +54,7 @@ import {
   tickerPortfolioAccountRow,
   FIXTURE_ACCOUNT_ID_1,
   FIXTURE_FAMILY_MEMBER_ID,
+  FIXTURE_PORTFOLIO_ID,
 } from "./fixtures/sample-rows";
 import { ownersForYear } from "@/engine/ownership";
 
@@ -234,7 +235,7 @@ vi.mock("@/db", async () => {
 });
 
 // Import SUT after vi.mock (vitest hoists vi.mock above all imports)
-import { loadClientData, ClientNotFoundError } from "../load-client-data";
+import { loadClientData, loadClientDataWithContext, ClientNotFoundError } from "../load-client-data";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -751,5 +752,118 @@ describe("loadClientData — business sales", () => {
     expect(sale).toBeDefined();
     expect(sale!.businessAccountId).toBeUndefined();
     expect(sale!.accountId).toBe("acct-1");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Scenario growth & inflation override (W9)
+// ---------------------------------------------------------------------------
+
+describe("loadClientDataWithContext — scenario growth & inflation override", () => {
+  /** Account 1 (taxable) on its category's default growth instead of its own rate. */
+  function seedDefaultSourcedTaxable() {
+    seedValidFixture();
+    dbState.accounts = [
+      { ...accountRows[0], growthSource: "default", growthRate: null },
+      accountRows[1],
+    ] as unknown as typeof dbState.accounts;
+  }
+  const taxableGrowth = (data: Awaited<ReturnType<typeof loadClientData>>) =>
+    data.accounts.find((a) => a.id === FIXTURE_ACCOUNT_ID_1)!.growthRate;
+
+  it("resolves a default-sourced account against the override's category default", async () => {
+    seedDefaultSourcedTaxable();
+    dbState.planSettings = [
+      { ...planSettingsRow, growthSourceTaxable: "inflation" } as unknown as typeof planSettingsRow,
+    ];
+
+    const base = await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
+    const { clientData } = await loadClientDataWithContext(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID, {
+      planSettingsOverride: { growthSourceTaxable: "custom", defaultGrowthTaxable: 0.09 },
+    });
+
+    expect(taxableGrowth(base)).toBeCloseTo(0.03, 10); // base: category on inflation
+    expect(taxableGrowth(clientData)).toBeCloseTo(0.09, 10);
+    // The raw settings ride along as view-only keys, override applied.
+    expect(clientData.planSettings.growthSourceTaxable).toBe("custom");
+    expect(clientData.planSettings.defaultGrowthTaxable).toBe(0.09);
+  });
+
+  it("resolves inflation-sourced rows and the engine inflation rate under the override", async () => {
+    seedValidFixture();
+    dbState.planSettings = [
+      { ...planSettingsRow, inflationRateSource: "asset_class" } as unknown as typeof planSettingsRow,
+    ];
+    dbState.assetClasses = [assetClassRow, { ...inflationAssetClassRow, geometricReturn: "0.0250" }];
+    dbState.incomes = [{ ...incomeRow, growthSource: "inflation" } as unknown as typeof incomeRow];
+
+    const base = await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
+    const { clientData, resolutionContext } = await loadClientDataWithContext(
+      FIXTURE_CLIENT_ID,
+      FIXTURE_FIRM_ID,
+      { planSettingsOverride: { inflationRateSource: "custom", inflationRate: 0.05 } },
+    );
+
+    expect(base.incomes[0].growthRate).toBeCloseTo(0.025, 10);
+    expect(clientData.incomes[0].growthRate).toBeCloseTo(0.05, 10);
+    expect(clientData.planSettings.inflationRate).toBeCloseTo(0.05, 10);
+    expect(clientData.planSettings.inflationRateSource).toBe("custom");
+    expect(resolutionContext.resolvedInflationRate).toBeCloseTo(0.05, 10);
+    expect(resolutionContext.resolvedInflationInputs?.inflationRateSource).toBe("custom");
+  });
+
+  it("carries a Medicare premium inflation override to the top-level ClientData fields", async () => {
+    seedValidFixture();
+    dbState.planSettings = [
+      {
+        ...planSettingsRow,
+        medicarePremiumInflationRate: "0.0300",
+        medicarePremiumInflationEnabled: false,
+      } as unknown as typeof planSettingsRow,
+    ];
+
+    const { clientData } = await loadClientDataWithContext(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID, {
+      planSettingsOverride: { medicarePremiumInflationRate: 0.06, medicarePremiumInflationEnabled: true },
+    });
+
+    expect(clientData.medicarePremiumInflationRate).toBeCloseTo(0.06, 10);
+    expect(clientData.medicarePremiumInflationEnabled).toBe(true);
+  });
+
+  it("nulls an override model portfolio the firm no longer has, so the category falls back to its default rate", async () => {
+    seedDefaultSourcedTaxable();
+    // us-equity at 9% so the live portfolio reads differently from the 7% default.
+    dbState.assetClasses = [{ ...assetClassRow, geometricReturn: "0.0900" }, inflationAssetClassRow];
+
+    const live = await loadClientDataWithContext(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID, {
+      planSettingsOverride: {
+        growthSourceTaxable: "model_portfolio",
+        modelPortfolioIdTaxable: FIXTURE_PORTFOLIO_ID,
+      },
+    });
+    const gone = await loadClientDataWithContext(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID, {
+      planSettingsOverride: {
+        growthSourceTaxable: "model_portfolio",
+        modelPortfolioIdTaxable: "00000000-0000-0000-0000-00000000dead",
+      },
+    });
+
+    expect(taxableGrowth(live.clientData)).toBeCloseTo(0.09, 10);
+    expect(live.clientData.planSettings.modelPortfolioIdTaxable).toBe(FIXTURE_PORTFOLIO_ID);
+    // Without the null, a dangling id resolves to a 0% portfolio.
+    expect(taxableGrowth(gone.clientData)).toBeCloseTo(0.07, 10);
+    expect(gone.clientData.planSettings.modelPortfolioIdTaxable).toBeNull();
+  });
+
+  it("an empty override loads exactly what no override loads", async () => {
+    seedValidFixture();
+
+    const none = await loadClientDataWithContext(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
+    const empty = await loadClientDataWithContext(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID, {
+      planSettingsOverride: {},
+    });
+
+    expect(empty.clientData).toEqual(none.clientData);
+    expect(empty.resolutionContext.resolvedInflationRate).toBe(none.resolutionContext.resolvedInflationRate);
   });
 });

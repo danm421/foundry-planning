@@ -9,13 +9,12 @@
 // already-resolved base-entity growth rates would otherwise stay stale — the
 // overlay sits on a pre-resolved tree.
 //
-// The growth-source resolver is invariant under a scenario: the CMA /
-// model-portfolio / category fields it reads are NOT carried on the
-// scenario-editable `EnginePlanSettings`, so the ONLY resolution input a
-// scenario can change is the resolved inflation rate. This module recomputes
-// that rate from the effective plan settings and re-applies it to every
-// inflation-sourced entity. Idempotent: when the rate is unchanged it returns
-// the input tree unchanged.
+// This module recomputes the resolved inflation rate from the effective plan
+// settings and re-applies it to every inflation-sourced entity. Idempotent:
+// when the rate is unchanged it returns the input tree unchanged. The scenario
+// loader no longer depends on it: a scenario's growth & inflation edits reach
+// the tree through an override base load (`growth-settings-override.ts`), so
+// there it is a backstop whose rate comparison no-ops.
 
 import type { ClientData } from "@/engine/types";
 import { resolveInflationRate } from "@/lib/inflation";
